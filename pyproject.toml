@@ -1,0 +1,57 @@
+[project]
+name = "klave-engine"
+version = "0.1.0"
+description = "CPU-only construction drawing intelligence MVP"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ezdxf>=1.3",
+    "shapely>=2.0",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.2",
+    "fastapi>=0.111",
+    "uvicorn>=0.29",
+    "streamlit>=1.35",
+    "typer>=0.12",
+    "plotly>=6.8.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+klave = "klave_engine.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["packages/klave_engine"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom uses calls in argument defaults.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "packages"
+ignore_missing_imports = true
+check_untyped_defs = true
