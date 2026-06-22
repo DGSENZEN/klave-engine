@@ -13,6 +13,7 @@ from klave_engine.costing.models import (
 from klave_engine.costing.report import generate_cost_report
 from klave_engine.costing.schedule import direct_spend_by_period
 from klave_engine.detection.results import Detection, DetectionType
+from klave_engine.detection.views import SheetSegmentation, ViewKind, ViewRegion
 from klave_engine.dxf.units import DrawingUnits
 from klave_engine.graph.evidence import EvidencePacket
 
@@ -167,3 +168,127 @@ def test_full_report_artifacts(sample_detections, tmp_path) -> None:
     content = path.read_text(encoding="utf-8")
     assert "COSTO DIRECTO TOTAL" in content
     assert "PRECIO DE VENTA" in content
+
+
+# --- view-aware (segmented) costing -------------------------------------------
+
+
+def _plan(view_id, level_key, npt, det_ids):
+    return ViewRegion(
+        view_id=view_id, title=view_id, kind=ViewKind.plan, level_key=level_key,
+        npt_level=npt, anchor=(0.0, 0.0), detection_ids=det_ids,
+    )
+
+
+def test_segmented_columns_dedup_max_plan_and_npt_height() -> None:
+    # Same 5 columns drawn in two plans (10 detections) → count once = 5,
+    # height from NPT (top 6.0 m), not 2× or the assumed 3.0 m.
+    cols_cim = [_detection(i, DetectionType.column_tag) for i in range(5)]
+    cols_pb = [_detection(10 + i, DetectionType.column_tag) for i in range(5)]
+    dets = cols_cim + cols_pb
+    seg = SheetSegmentation(
+        views=[
+            _plan("v_cim", "cimentacion", 0.0, [d.detection_id for d in cols_cim]),
+            _plan("v_pb", "planta_baja", 6.0, [d.detection_id for d in cols_pb]),
+        ],
+        assignment={d.detection_id: ("v_cim" if d in cols_cim else "v_pb") for d in dets},
+        is_segmented=True,
+        npt_levels=[0.0, 6.0],
+    )
+    report = generate_cost_report("p", dets, METERS, CostingConfig(), seg)
+    est1 = next(line for line in report.boq.lines if line.concept_code == "EST-001")
+    a = CostingAssumptions()
+    assert est1.raw_quantity == 5.0  # max over plans, not 10
+    assert est1.quantity == pytest.approx(5 * a.column_section_m2 * 6.0)  # NPT height
+
+
+def test_segmented_footings_foundation_only() -> None:
+    found = [_detection(i, DetectionType.footing, estimated_area=2.0) for i in range(3)]
+    roof = [_detection(20 + i, DetectionType.footing, estimated_area=9.9) for i in range(8)]
+    dets = found + roof
+    seg = SheetSegmentation(
+        views=[
+            _plan("v_cim", "cimentacion", 0.0, [d.detection_id for d in found]),
+            _plan("v_azo", "azotea", 6.0, [d.detection_id for d in roof]),
+        ],
+        assignment={d.detection_id: ("v_cim" if d in found else "v_azo") for d in dets},
+        is_segmented=True,
+        npt_levels=[0.0, 6.0],
+    )
+    report = generate_cost_report("p", dets, METERS, CostingConfig(), seg)
+    cim2 = next(line for line in report.boq.lines if line.concept_code == "CIM-002")
+    # only the 3 foundation footings count; the 8 false roof footings are excluded
+    assert cim2.source_detection_count == 3
+    assert cim2.raw_quantity == pytest.approx(6.0)  # 3 × 2.0 m²
+
+
+def test_segmented_measured_section_clamped() -> None:
+    # A column whose marker section is implausibly large is rejected → assumed.
+    big = _detection(0, DetectionType.column_tag, section_area_du2=250.0)
+    ok = _detection(1, DetectionType.column_tag, section_area_du2=0.09)
+    dets = [big, ok]
+    seg = SheetSegmentation(
+        views=[_plan("v", "planta_baja", 3.0, [d.detection_id for d in dets])],
+        assignment={d.detection_id: "v" for d in dets},
+        is_segmented=True,
+        npt_levels=[0.0, 3.0],
+    )
+    # one plan view alone still segments=True here; column volume uses that plan
+    report = generate_cost_report("p", dets, METERS, CostingConfig(), seg)
+    est1 = next(line for line in report.boq.lines if line.concept_code == "EST-001")
+    # big rejected → assumed 0.09; ok accepted → 0.09; both ~0.09 here
+    assert est1.quantity == pytest.approx((0.09 + 0.09) * 3.0, abs=1e-6)
+
+
+def test_non_segmented_matches_flat(sample_detections) -> None:
+    flat = generate_cost_report("p", sample_detections, METERS, CostingConfig())
+    empty_seg = SheetSegmentation(views=[], assignment={}, is_segmented=False)
+    with_seg = generate_cost_report("p", sample_detections, METERS, CostingConfig(), empty_seg)
+    assert flat.boq.direct_cost_total == with_seg.boq.direct_cost_total
+
+
+# --- live recompute (parameter / price overrides) -----------------------------
+
+from klave_engine.costing.insumos import apply_price_overrides, default_price_book
+from klave_engine.costing.models import CostingOverrides
+from klave_engine.costing.recompute import build_cost_report, load_costing_inputs
+
+
+def test_price_override_scales_apu_and_total(sample_detections) -> None:
+    base = generate_cost_report("p", sample_detections, METERS, CostingConfig())
+    # Double the price of concrete; the concrete-bearing lines must rise.
+    book = apply_price_overrides(default_price_book(), {"MAT-CONC250": 2650.0 * 2})
+    bumped = generate_cost_report(
+        "p", sample_detections, METERS, CostingConfig(), price_book=book
+    )
+    assert bumped.boq.direct_cost_total > base.boq.direct_cost_total
+    assert bumped.integration.grand_total > base.integration.grand_total
+
+
+def test_indirects_override_changes_sale_price(sample_detections) -> None:
+    cfg = CostingConfig()
+    cfg.indirects.profit_pct = 25.0  # was 10
+    base = generate_cost_report("p", sample_detections, METERS, CostingConfig())
+    bumped = generate_cost_report("p", sample_detections, METERS, cfg)
+    assert bumped.integration.sale_price > base.integration.sale_price
+    assert bumped.boq.direct_cost_total == base.boq.direct_cost_total  # CD unchanged
+
+
+def test_recompute_roundtrip_from_artifacts(sample_detections, tmp_path) -> None:
+    from klave_engine.common.io import write_json
+    from klave_engine.detection.views import SheetSegmentation
+
+    processed = tmp_path / "processed"
+    processed.mkdir()
+    write_json(processed / "detections.json", sample_detections)
+    write_json(processed / "drawing_units.json", METERS)
+    write_json(
+        processed / "views.json",
+        SheetSegmentation(views=[], assignment={}, is_segmented=False),
+    )
+
+    inputs = load_costing_inputs(processed, "p")
+    assert len(inputs.detections) == len(sample_detections)
+    over = CostingOverrides(config=CostingConfig(), insumo_prices={"MAT-ACERO": 30000.0})
+    report = build_cost_report(inputs, over)
+    assert report.boq.direct_cost_total > 0

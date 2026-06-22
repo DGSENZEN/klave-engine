@@ -11,12 +11,44 @@ from klave_engine.costing.boq import generate_bill_of_quantities
 from klave_engine.costing.catalog import build_default_catalog
 from klave_engine.costing.financial import build_financial_plan
 from klave_engine.costing.integration import integrate_costs
-from klave_engine.costing.models import CostingConfig, CostReport
+from klave_engine.costing.models import (
+    CostingAssumptions,
+    CostingConfig,
+    CostReport,
+    Resource,
+)
 from klave_engine.costing.schedule import build_schedule
+from klave_engine.detection.dimensions import DimensionInventory
 from klave_engine.detection.results import Detection
+from klave_engine.detection.views import SheetSegmentation
 from klave_engine.dxf.units import DrawingUnits
 
 logger = get_logger(__name__)
+
+
+def _calibrate_assumptions(
+    base: CostingAssumptions, dimensions: DimensionInventory | None
+) -> tuple[CostingAssumptions, list[str]]:
+    """Override assumed geometry with dimensions measured from the drawing."""
+    if dimensions is None:
+        return base, []
+    calibrated = base.model_copy(deep=True)
+    notes: list[str] = []
+    section = dimensions.typical_section_m2
+    if section is not None:
+        a, b = dimensions.typical_section_cm  # type: ignore[misc]
+        calibrated.column_section_m2 = section
+        notes.append(
+            f"Sección de columna/castillo {a}x{b} cm = {section:.4f} m² tomada del "
+            "plano (verificar contra el cuadro de castillos)."
+        )
+    if dimensions.typical_wall_thickness_cm is not None:
+        notes.append(
+            f"Espesor de muro {dimensions.typical_wall_thickness_cm} cm detectado en el plano."
+        )
+    if dimensions.vigueta_system is not None:
+        notes.append(f"Sistema de losa detectado: vigueta y bovedilla {dimensions.vigueta_system}.")
+    return calibrated, notes
 
 
 def generate_cost_report(
@@ -24,15 +56,26 @@ def generate_cost_report(
     detections: list[Detection],
     units: DrawingUnits,
     config: CostingConfig | None = None,
+    segmentation: SheetSegmentation | None = None,
+    dimensions: DimensionInventory | None = None,
+    price_book: dict[str, Resource] | None = None,
 ) -> CostReport:
     config = config or CostingConfig()
-    catalog = build_default_catalog(config.assumptions)
-    apus = build_all_apus(catalog)
+    assumptions, calibration_notes = _calibrate_assumptions(config.assumptions, dimensions)
+    catalog = build_default_catalog(assumptions)
+    apus = build_all_apus(catalog, price_book)
     boq = generate_bill_of_quantities(
-        project_id, detections, units, catalog, apus, config.currency
+        project_id, detections, units, catalog, apus, config.currency,
+        segmentation=segmentation, assumptions=assumptions,
     )
+    boq.assumptions.extend(calibration_notes)
     integration = integrate_costs(boq.direct_cost_total, config.indirects)
-    schedule = build_schedule(boq, catalog, config.schedule)
+    levels = (
+        max(len(segmentation.superstructure_views()), 1)
+        if segmentation is not None and segmentation.is_segmented
+        else 1
+    )
+    schedule = build_schedule(boq, catalog, config.schedule, levels=levels)
     financial = build_financial_plan(schedule, integration, config.financial, config.currency)
 
     report = CostReport(

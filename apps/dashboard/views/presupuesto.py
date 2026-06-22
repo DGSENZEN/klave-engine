@@ -53,6 +53,41 @@ def render() -> None:
         st.subheader("Importe por fase")
         st.bar_chart(boq["totals_by_phase"], horizontal=True)
 
+    dims = load_artifact(root, "dimensions.json")
+    if dims:
+        with st.expander("Dimensiones detectadas en el plano"):
+            cols = st.columns(4)
+            section = dims.get("typical_section_cm")
+            cols[0].metric(
+                "Sección típica",
+                f"{section[0]}×{section[1]} cm" if section else "—",
+            )
+            cols[1].metric(
+                "Espesor de muro", f"{dims['typical_wall_thickness_cm']} cm"
+                if dims.get("typical_wall_thickness_cm") else "—",
+            )
+            cols[2].metric("Sistema de losa", dims.get("vigueta_system") or "—")
+            cols[3].metric("Cotas (DIMENSION)", dims.get("dimension_count", 0))
+            if dims.get("typical_wall_thickness_source"):
+                st.caption(f"Fuente del espesor de muro: {dims['typical_wall_thickness_source']}")
+            if dims.get("measured_dimensions_cm"):
+                st.caption("Cotas medidas a escala de elemento (cm): " + ", ".join(
+                    f"{k}({v})" for k, v in list(dims["measured_dimensions_cm"].items())[:12]))
+            if dims.get("block_classes"):
+                st.caption("Clases de bloque: " + ", ".join(
+                    f"{k}({v})" for k, v in dims["block_classes"].items()))
+            if dims.get("sections_cm"):
+                st.caption("Secciones (cm): " + ", ".join(
+                    f"{k}×{v}" for k, v in dims["sections_cm"].items()))
+            if dims.get("block_specs"):
+                st.caption("Blocks: " + ", ".join(
+                    f"{k}×{v}" for k, v in dims["block_specs"].items()))
+            if dims.get("rebar_calls"):
+                st.caption("Acero: " + ", ".join(
+                    f"{k}({v})" for k, v in list(dims["rebar_calls"].items())[:10]))
+            for note in dims.get("notes", []):
+                st.write(f"- {note}")
+
     with st.expander("Supuestos del presupuesto"):
         for assumption in boq["assumptions"]:
             st.write(f"- {assumption}")

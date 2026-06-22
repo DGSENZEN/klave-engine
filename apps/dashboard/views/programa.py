@@ -81,6 +81,8 @@ def render() -> None:
                 "Actividad": a["description"],
                 "Fase": a["phase"],
                 "Cantidad": f"{a['quantity']:,.2f} {a['unit']}",
+                "Rendimiento": f"{a['rendimiento_per_day']:g} {a['unit']}/día",
+                "Cuadrillas": a.get("crews", 1),
                 "Duración (días)": a["duration_days"],
                 "Inicio (día)": a["start_day"],
                 "Fin (día)": a["end_day"],

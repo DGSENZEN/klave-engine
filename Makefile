@@ -33,7 +33,13 @@ eval-demo:
 	uv run python -m klave_engine.evals.regression_suite
 
 api:
-	uv run uvicorn apps.api.main:app --reload --port 8000
+	KLAVE_DATA_DIR=data uv run uvicorn apps.api.main:app --reload --port 8000
+
+web-install:
+	npm --prefix apps/web install
+
+web:
+	npm --prefix apps/web run dev
 
 dashboard:
 	uv run streamlit run apps/dashboard/app.py

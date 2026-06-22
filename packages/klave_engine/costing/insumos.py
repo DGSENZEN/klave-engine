@@ -12,6 +12,21 @@ REFERENCE_PRICE_DISCLAIMER = (
     "cotizaciones vigentes del proyecto."
 )
 
+def default_price_book() -> dict[str, "Resource"]:
+    """A fresh, mutable copy of the reference insumos (so edits never leak)."""
+    return {code: resource.model_copy(deep=True) for code, resource in RESOURCES.items()}
+
+
+def apply_price_overrides(
+    book: dict[str, "Resource"], overrides: dict[str, float]
+) -> dict[str, "Resource"]:
+    """Override unit costs by resource code (descriptions/units unchanged)."""
+    for code, unit_cost in overrides.items():
+        if code in book:
+            book[code] = book[code].model_copy(update={"unit_cost": float(unit_cost)})
+    return book
+
+
 RESOURCES: dict[str, Resource] = {
     r.code: r
     for r in [

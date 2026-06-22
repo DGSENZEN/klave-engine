@@ -23,6 +23,7 @@ SUPPORTED_DXF_TYPES = {
     "TEXT",
     "MTEXT",
     "INSERT",
+    "DIMENSION",
 }
 
 # Approximate average glyph width as a fraction of text height.
@@ -30,7 +31,13 @@ TEXT_WIDTH_FACTOR = 0.6
 
 
 def _exact_bbox(entity: Any) -> BBox | None:
-    extents = ezdxf_bbox.extents([entity], fast=True)
+    # Computing an INSERT's extents explodes its block into virtual entities;
+    # real-world files often reference missing/anonymous block definitions,
+    # which raises DXFStructureError. Treat any such failure as "no bbox".
+    try:
+        extents = ezdxf_bbox.extents([entity], fast=True)
+    except Exception:
+        return None
     if not extents.has_data:
         return None
     return (
@@ -150,6 +157,30 @@ def normalize_entity(
         properties.update(height=height, insert=insert)
         bbox = _approximate_text_bbox(insert, text, height)
         notes.append("MText bbox approximated from insert point and char height")
+    elif dxf_type == "DIMENSION":
+        entity_type = EntityType.dimension
+        try:
+            measurement = float(entity.get_measurement())
+        except Exception:
+            measurement = None
+        properties["measurement"] = measurement
+        # Extension-line origins: the two points the dimension actually measures.
+        span: list[Point] | None = None
+        if entity.dxf.hasattr("defpoint2") and entity.dxf.hasattr("defpoint3"):
+            span = [
+                (float(entity.dxf.defpoint2.x), float(entity.dxf.defpoint2.y)),
+                (float(entity.dxf.defpoint3.x), float(entity.dxf.defpoint3.y)),
+            ]
+            properties["measured_segment"] = span
+            points = span
+        bbox = _exact_bbox(entity)
+        if bbox is None and span is not None:
+            bbox = bbox_from_points(span)
+        elif bbox is None and entity.dxf.hasattr("text_midpoint"):
+            mid = (float(entity.dxf.text_midpoint.x), float(entity.dxf.text_midpoint.y))
+            bbox = (mid[0], mid[1], mid[0], mid[1])
+        if measurement is not None:
+            notes.append(f"Dimensión medida del plano = {measurement:.3f} u.dib.")
     else:  # INSERT
         entity_type = EntityType.insert
         block_name = str(entity.dxf.name)

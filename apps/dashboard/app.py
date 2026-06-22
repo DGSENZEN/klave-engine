@@ -17,6 +17,7 @@ from views import (
     programa,
     resumen,
     riesgos,
+    vistas,
 )
 
 st.set_page_config(
@@ -31,6 +32,7 @@ navigation = st.navigation(
             st.Page(resumen.render, title="Resumen", icon="📋", url_path="resumen",
                     default=True),
             st.Page(plano.render, title="Visor del Plano", icon="📐", url_path="plano"),
+            st.Page(vistas.render, title="Vistas del Plano", icon="🗂️", url_path="vistas"),
             st.Page(detecciones.render, title="Detecciones", icon="🔎",
                     url_path="detecciones"),
             st.Page(grafo.render, title="Grafo", icon="🕸️", url_path="grafo"),

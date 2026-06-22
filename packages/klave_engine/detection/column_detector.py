@@ -12,10 +12,30 @@ from klave_engine.detection.results import (
 from klave_engine.detection.text_patterns import TextPatternConfig, match_category
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.geometry.bbox import bbox_area, bbox_center
-from klave_engine.geometry.measurements import line_length
+from klave_engine.geometry.measurements import line_length, polygon_area
 from klave_engine.geometry.spatial_index import SpatialIndex
 from klave_engine.graph.evidence import EvidencePacket
 from klave_engine.graph.schema import EdgeType, GraphEdge, GraphNode, NodeType
+
+
+def _marker_section(marker: NormalizedEntity) -> tuple[float | None, str]:
+    """Real cross-section area of a column marker in drawing units².
+
+    Circle → π r²; closed polyline → polygon area; anything else → bbox area.
+    """
+    if marker.entity_type == EntityType.circle:
+        radius = marker.properties.get("radius")
+        if radius:
+            return 3.141592653589793 * float(radius) ** 2, "marcador_circular"
+    if (
+        marker.entity_type == EntityType.polyline
+        and marker.is_closed
+        and marker.points
+        and len(marker.points) >= 3
+    ):
+        return polygon_area(marker.points), "marcador_poligonal"
+    area = bbox_area(marker.bbox)
+    return (area if area > 0 else None), "marcador_bbox"
 
 
 class ColumnDetectorConfig(BaseModel):
@@ -25,11 +45,6 @@ class ColumnDetectorConfig(BaseModel):
     layer_hints: list[str] = Field(
         default_factory=lambda: ["COL", "COLUMN", "COLUMNA", "CASTILLO", "DADO"]
     )
-    base_confidence: float = 0.5
-    grid_bonus: float = 0.2
-    geometry_bonus: float = 0.2
-    layer_bonus: float = 0.1
-    max_confidence: float = 0.95
 
 
 def detect_columns(
@@ -51,7 +66,14 @@ def detect_columns(
         d
         for d in (grid_output.detections if grid_output else [])
         if d.detection_type == DetectionType.grid_intersection
+        and d.properties.get("point") is not None
     ]
+    # Precompute intersection points once for vectorized nearest-grid queries.
+    grid_points = np.array(
+        [d.properties["point"] for d in grid_intersections], dtype=float
+    ) if grid_intersections else np.empty((0, 2))
+
+    model = ConfidenceModel.model_validate(model_for("column_tag").model_dump())
 
     for entity in entities:
         if not entity.is_textual or not entity.text:
@@ -59,37 +81,32 @@ def detect_columns(
         if match_category(entity.text, text_config, "column_tag") is None:
             continue
 
-        confidence = config.base_confidence
         notes = [f"Text '{entity.text.strip()}' matched column tag pattern"]
         source_entities = [entity.entity_id]
         properties: dict = {"has_nearby_grid": False}
-        center = bbox_center(entity.bbox)
+        features: dict[str, float] = {}
+        cx, cy = bbox_center(entity.bbox)
 
-        # Grid proximity bonus.
-        nearest_grid: Detection | None = None
-        nearest_grid_distance = float("inf")
-        for intersection in grid_intersections:
-            point = intersection.properties.get("point")
-            if point is None:
-                continue
-            distance = line_length(center, tuple(point))
-            if distance < nearest_grid_distance:
-                nearest_grid, nearest_grid_distance = intersection, distance
-        if nearest_grid is not None and nearest_grid_distance <= config.grid_search_radius:
-            confidence += config.grid_bonus
-            properties.update(
-                has_nearby_grid=True,
-                nearest_grid=nearest_grid.label,
-                nearest_grid_distance=round(nearest_grid_distance, 3),
-            )
-            notes.append(
-                f"Near grid intersection {nearest_grid.label} "
-                f"(distance {nearest_grid_distance:.1f})"
-            )
-        else:
-            notes.append("No grid intersection within search radius")
+        # Grid proximity: vectorized nearest intersection (NumPy broadcast).
+        if len(grid_points):
+            distances = np.hypot(grid_points[:, 0] - cx, grid_points[:, 1] - cy)
+            nearest_idx = int(distances.argmin())
+            nearest_grid_distance = float(distances[nearest_idx])
+            if nearest_grid_distance <= config.grid_search_radius:
+                nearest_grid = grid_intersections[nearest_idx]
+                features[NEAR_GRID] = 1.0
+                properties.update(
+                    has_nearby_grid=True,
+                    nearest_grid=nearest_grid.label,
+                    nearest_grid_distance=round(nearest_grid_distance, 3),
+                )
+                notes.append(
+                    f"Near grid intersection {nearest_grid.label} "
+                    f"(distance {nearest_grid_distance:.1f})"
+                )
 
-        # Marker geometry bonus: circle, insert, or small closed polyline nearby.
+        # Marker geometry: circle/insert/small closed polyline nearby; when found
+        # measure its real cross-section so costing uses the actual section.
         marker_id: str | None = None
         for hit in index.entities_near_entity(entity.entity_id, config.geometry_search_radius):
             other = index.get(hit.entity_id)
@@ -102,15 +119,21 @@ def detect_columns(
                 marker_id = other.entity_id
                 break
         if marker_id is not None:
-            confidence += config.geometry_bonus
+            features[MARKER] = 1.0
             source_entities.append(marker_id)
-            notes.append("Marker geometry (circle/block/closed polyline) found nearby")
+            section, section_source = _marker_section(index.get(marker_id))
+            if section is not None:
+                properties["section_area_du2"] = round(section, 6)
+                properties["section_source"] = section_source
+                notes.append(
+                    f"Sección medida del marcador: {section:.4f} u.dib.² ({section_source})"
+                )
 
         if layer_matches(entity.layer, config.layer_hints):
-            confidence += config.layer_bonus
-            notes.append(f"Layer '{entity.layer}' matches column layer hint")
+            features[SEMANTIC_LAYER] = 1.0
 
-        confidence = round(min(confidence, config.max_confidence), 4)
+        confidence = round(model.score(features), 4)
+        notes.extend(model.explain(features))
         detection_id = detection_ids.next()
         evidence = EvidencePacket(
             source=entity.source_file,

@@ -21,7 +21,14 @@ data/**/converted/
 data/**/processed/
 data/**/reports/
 data/projects_registry.json
+data/uploads/
 reports/
+
+# Web app (Next.js)
+apps/web/node_modules/
+apps/web/.next/
+apps/web/out/
+apps/web/.env.local
 
 # OS
 .DS_Store

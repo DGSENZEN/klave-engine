@@ -20,7 +20,9 @@ from klave_engine.conversion.dwg_to_dxf import (
     DwgToDxfConverter,
     convert_project,
 )
+from klave_engine.costing.insumos import apply_price_overrides, default_price_book
 from klave_engine.costing.models import CostingConfig, CostReport
+from klave_engine.costing.recompute import load_overrides
 from klave_engine.costing.report import (
     boq_to_csv,
     cost_report_to_markdown,
@@ -32,11 +34,13 @@ from klave_engine.detection.detail_reference_detector import (
     DetailReferenceDetectorConfig,
     detect_detail_references,
 )
+from klave_engine.detection.dimensions import build_dimension_inventory
 from klave_engine.detection.footing_detector import FootingDetectorConfig, detect_footings
 from klave_engine.detection.grid_detector import GridDetectorConfig, detect_grid
 from klave_engine.detection.results import Detection, DetectorOutput
 from klave_engine.detection.slab_detector import SlabDetectorConfig, detect_slabs
 from klave_engine.detection.text_patterns import TextPatternConfig
+from klave_engine.detection.views import segment_views
 from klave_engine.detection.wall_detector import WallDetectorConfig, detect_walls
 from klave_engine.dxf.blocks import summarize_blocks
 from klave_engine.dxf.entities import NormalizedEntity
@@ -299,9 +303,40 @@ def run_full_pipeline(
     )
     write_json(processed / "risk_report.json", result.risk_report)
 
-    costing_config = load_costing_config(settings.costing_config_path)
+    segmentation = segment_views(result.entities, result.detections)
+    write_json(processed / "views.json", segmentation)
+    log_stage(
+        logger,
+        "views_segmented",
+        project_id=manifest.project_id,
+        segmented=segmentation.is_segmented,
+        plan_views=len(segmentation.plan_views()),
+        npt_levels=segmentation.npt_levels,
+    )
+
+    dimensions = build_dimension_inventory(result.entities, units.to_meters() or 1.0)
+    write_json(processed / "dimensions.json", dimensions)
+    log_stage(
+        logger,
+        "dimensions_parsed",
+        project_id=manifest.project_id,
+        dimension_count=dimensions.dimension_count,
+        typical_section_cm=dimensions.typical_section_cm,
+        typical_wall_cm=dimensions.typical_wall_thickness_cm,
+        vigueta=dimensions.vigueta_system,
+    )
+
+    # Reapply any user costing edits so they survive a full reprocess.
+    overrides = load_overrides(processed)
+    if overrides is not None:
+        costing_config = overrides.config
+        price_book = apply_price_overrides(default_price_book(), overrides.insumo_prices)
+    else:
+        costing_config = load_costing_config(settings.costing_config_path)
+        price_book = None
     result.cost_report = generate_cost_report(
-        manifest.project_id, result.detections, units, costing_config
+        manifest.project_id, result.detections, units, costing_config,
+        segmentation, dimensions, price_book=price_book,
     )
     write_json(processed / "cost_report.json", result.cost_report)
     boq_to_csv(result.cost_report, reports / "presupuesto.csv")

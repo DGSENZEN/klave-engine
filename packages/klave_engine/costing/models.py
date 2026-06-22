@@ -60,6 +60,20 @@ class QuantityKind(StrEnum):
     AREA = "area"
 
 
+class ViewScope(StrEnum):
+    """How a concept aggregates across the plan views on a segmented sheet.
+
+    Only applied when the sheet is segmented into ≥2 plan views; otherwise the
+    flat (count/sum) computation is used unchanged.
+    """
+
+    ALL = "all"  # every detection (also the non-segmented fallback)
+    FOOTPRINT_ONCE = "footprint_once"  # largest single plan view (e.g. trazo)
+    FOUNDATION_ONLY = "foundation_only"  # only the foundation plan (cimentación)
+    SUPERSTRUCTURE_SUM = "superstructure_sum"  # sum of non-foundation plans (losa, muros)
+    COLUMN_VOLUME = "column_volume"  # max-count plan × measured section × total height
+
+
 class QuantityRule(BaseModel):
     detection_type: DetectionType
     kind: QuantityKind
@@ -75,8 +89,12 @@ class Concept(BaseModel):
     # Multiplier from the raw measured quantity (count / meters / m²)
     # to the concept unit, e.g. column count × section × height → m³.
     quantity_factor: float = 1.0
+    view_scope: ViewScope = ViewScope.ALL
     assumptions: list[str] = Field(default_factory=list)
-    production_rate_per_day: float  # concept units per day per crew
+    # Rendimiento: concept units installed per crew per working day (QPI).
+    production_rate_per_day: float
+    # Order within a phase for sequencing trades (lower runs first).
+    sequence_order: int = 0
 
 
 class BoqLine(BaseModel):
@@ -130,6 +148,8 @@ class ScheduleActivity(BaseModel):
     phase: str
     quantity: float
     unit: str
+    rendimiento_per_day: float  # quantitative performance indicator by work type
+    crews: int
     duration_days: int
     start_day: int
     end_day: int
@@ -200,8 +220,13 @@ class IndirectsConfig(BaseModel):
 
 class ScheduleConfig(BaseModel):
     workdays_per_month: int = 24
-    phase_overlap_pct: float = 30.0
+    # Activities inside a phase follow each other (trades in sequence) with
+    # this overlap; phases fast-track onto the previous phase with theirs.
+    intra_phase_overlap_pct: float = 50.0
+    phase_overlap_pct: float = 15.0
     crews_per_activity: int = 1
+    # Multi-level structures cannot be compressed below one cycle per level.
+    per_level_cycle_days: int = 15
 
 
 class FinancialConfig(BaseModel):
@@ -218,6 +243,15 @@ class CostingConfig(BaseModel):
     indirects: IndirectsConfig = Field(default_factory=IndirectsConfig)
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
     financial: FinancialConfig = Field(default_factory=FinancialConfig)
+
+
+class CostingOverrides(BaseModel):
+    """User edits to costing inputs, persisted per project and applied on
+    recompute (and on the next full run). Insumo prices override unit costs by
+    resource code."""
+
+    config: CostingConfig = Field(default_factory=CostingConfig)
+    insumo_prices: dict[str, float] = Field(default_factory=dict)
 
 
 class CostReport(BaseModel):

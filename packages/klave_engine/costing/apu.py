@@ -75,5 +75,7 @@ def build_apu(
     )
 
 
-def build_all_apus(concepts: list[Concept]) -> dict[str, UnitPriceAnalysis]:
-    return {concept.code: build_apu(concept) for concept in concepts}
+def build_all_apus(
+    concepts: list[Concept], resources: dict[str, Resource] | None = None
+) -> dict[str, UnitPriceAnalysis]:
+    return {concept.code: build_apu(concept, resources=resources) for concept in concepts}
