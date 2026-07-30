@@ -32,3 +32,6 @@ apps/web/.env.local
 
 # OS
 .DS_Store
+
+# Local isolated development worktrees
+.worktrees/
