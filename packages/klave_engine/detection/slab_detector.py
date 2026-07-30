@@ -3,25 +3,28 @@
 from pydantic import BaseModel, Field
 
 from klave_engine.common.ids import IdGenerator
+from klave_engine.detection.confidence import (
+    IS_HATCH,
+    LARGE_AREA,
+    SEMANTIC_LAYER,
+    model_for,
+)
 from klave_engine.detection.results import (
-    Detection,
     DetectionType,
     DetectorOutput,
     layer_matches,
+    make_detection,
 )
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.geometry.bbox import bbox_area
 from klave_engine.geometry.measurements import polygon_area
-from klave_engine.graph.evidence import EvidencePacket
-from klave_engine.graph.schema import EdgeType, GraphEdge, GraphNode, NodeType
 
 
 class SlabDetectorConfig(BaseModel):
     min_area: float = 10000.0
     layer_hints: list[str] = Field(default_factory=lambda: ["SLAB", "DECK", "LOSA"])
-    hatch_base_confidence: float = 0.5
-    polyline_base_confidence: float = 0.4
-    layer_bonus: float = 0.2
+    # An area this many× the minimum counts as strong "large area" evidence.
+    large_area_factor: float = 3.0
 
 
 def _estimated_area(entity: NormalizedEntity) -> float:
@@ -34,20 +37,19 @@ def detect_slabs(
     entities: list[NormalizedEntity],
     config: SlabDetectorConfig | None = None,
     detection_ids: IdGenerator | None = None,
-    edge_ids: IdGenerator | None = None,
 ) -> DetectorOutput:
     config = config or SlabDetectorConfig()
     detection_ids = detection_ids or IdGenerator("det")
-    edge_ids = edge_ids or IdGenerator("sedge")
     output = DetectorOutput(detector_name="slab_detector")
+    model = model_for("slab_region")
 
     slab_counter = 0
     for entity in entities:
+        features: dict[str, float] = {}
         if entity.entity_type == EntityType.hatch:
-            base_confidence = config.hatch_base_confidence
+            features[IS_HATCH] = 1.0
             method = "slab_region_from_hatch"
         elif entity.entity_type == EntityType.polyline and entity.is_closed:
-            base_confidence = config.polyline_base_confidence
             method = "slab_region_from_large_closed_polyline"
         else:
             continue
@@ -56,55 +58,27 @@ def detect_slabs(
         if area < config.min_area:
             continue
 
-        confidence = base_confidence
         notes = [f"Estimated area {area:.1f} above slab minimum {config.min_area:.0f}"]
+        if area >= config.min_area * config.large_area_factor:
+            features[LARGE_AREA] = 1.0
         if layer_matches(entity.layer, config.layer_hints):
-            confidence += config.layer_bonus
-            notes.append(f"Layer '{entity.layer}' matches slab layer hint")
+            features[SEMANTIC_LAYER] = 1.0
 
-        confidence = round(confidence, 4)
+        confidence = round(model.score(features), 4)
+        notes.extend(model.explain(features))
         slab_counter += 1
-        detection_id = detection_ids.next()
-        evidence = EvidencePacket(
-            source=entity.source_file,
-            method=method,
-            entity_ids=[entity.entity_id],
-            bbox=entity.bbox,
-            confidence=confidence,
-            notes=notes,
-        )
-        detection = Detection(
-            detection_id=detection_id,
-            detection_type=DetectionType.slab_region,
-            label=f"SLAB{slab_counter}",
-            bbox=entity.bbox,
-            source_entities=[entity.entity_id],
-            graph_nodes=[detection_id],
-            confidence=confidence,
-            evidence=evidence,
-            properties={"estimated_area": round(area, 3)},
-        )
-        output.detections.append(detection)
-        output.nodes.append(
-            GraphNode(
-                node_id=detection_id,
-                node_type=NodeType.slab_region,
-                label=detection.label,
-                bbox=entity.bbox,
-                source_entities=[entity.entity_id],
-                properties=detection.properties,
-                confidence=confidence,
-                evidence=evidence,
-            )
-        )
-        output.edges.append(
-            GraphEdge(
-                edge_id=edge_ids.next(),
-                edge_type=EdgeType.possible_structural_element,
-                source_node_id=detection_id,
-                target_node_id=entity.entity_id,
-                confidence=confidence,
-                evidence=evidence,
+        output.detections.append(
+            make_detection(
+                detection_ids.next(),
+                DetectionType.slab_region,
+                f"SLAB{slab_counter}",
+                entity.bbox,
+                confidence,
+                [entity.entity_id],
+                method,
+                notes,
+                {"estimated_area": round(area, 3)},
+                entity.source_file,
             )
         )
     return output

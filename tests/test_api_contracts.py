@@ -1,5 +1,8 @@
 """API contract tests: full create -> process -> inspect flow over the demo project."""
 
+import time
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 from klave_engine.common.config import Settings
@@ -7,6 +10,20 @@ from klave_engine.evals.fixtures import write_demo_project
 
 from apps.api.dependencies import get_settings as api_get_settings
 from apps.api.main import create_app
+
+
+def _wait_for_processing(client: TestClient, project_id: str) -> dict:
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        response = client.get(f"/projects/{project_id}/status")
+        assert response.status_code == 200, response.text
+        status = response.json()
+        if status["state"] == "processed":
+            return status
+        if status["state"] == "failed":
+            pytest.fail(status.get("error") or "processing failed")
+        time.sleep(0.02)
+    pytest.fail("processing did not finish within 10 seconds")
 
 
 @pytest.fixture(scope="module")
@@ -27,7 +44,8 @@ def project_id(client: TestClient) -> str:
     assert response.status_code == 201, response.text
     project_id = response.json()["project_id"]
     process = client.post(f"/projects/{project_id}/process")
-    assert process.status_code == 200, process.text
+    assert process.status_code == 202, process.text
+    _wait_for_processing(client, project_id)
     return project_id
 
 
@@ -41,6 +59,45 @@ def test_invalid_root_path_is_structured_error(client: TestClient) -> None:
     response = client.post("/projects", json={"project_name": "x", "root_path": "/nope"})
     assert response.status_code == 400
     assert response.json()["detail"]["error_type"] == "invalid_root_path"
+
+
+def test_external_project_root_is_rejected(client: TestClient, tmp_path: Path) -> None:
+    response = client.post(
+        "/projects", json={"project_name": "x", "root_path": str(tmp_path)}
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"]["error_type"] == "unmanaged_project_root"
+
+
+def test_upload_rejects_path_like_filename(client: TestClient) -> None:
+    response = client.post(
+        "/projects/upload",
+        files={"file": ("../escape.dxf", b"0\nSECTION\n2\nHEADER\n0\nEOF\n")},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"]["error_type"] == "invalid_filename"
+
+
+def test_upload_rejects_content_type_spoofing(client: TestClient) -> None:
+    response = client.post(
+        "/projects/upload", files={"file": ("plano.dxf", b"not a drawing")}
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["error_type"] == "invalid_file_signature"
+
+
+def test_upload_accepts_uppercase_dxf_extension(client: TestClient) -> None:
+    data_dir = client.app.dependency_overrides[api_get_settings]().data_dir
+    drawing = data_dir / "demo_project_001" / "drawings" / "S-101.dxf"
+    response = client.post(
+        "/projects/upload", files={"file": ("S-101.DXF", drawing.read_bytes())}
+    )
+
+    assert response.status_code == 202, response.text
+    _wait_for_processing(client, response.json()["project_id"])
+    project = client.get(f"/projects/{response.json()['project_id']}").json()
+    assert project["processing_status"] == "processed"
+    assert project["source_files"][0]["path"] == "drawings/source.dxf"
 
 
 def test_unknown_project_is_404(client: TestClient) -> None:
@@ -79,10 +136,10 @@ def test_graph_endpoint(client: TestClient, project_id: str) -> None:
 def test_detections_endpoint_min_confidence(client: TestClient, project_id: str) -> None:
     everything = client.get(f"/projects/{project_id}/detections").json()
     confident = client.get(
-        f"/projects/{project_id}/detections", params={"min_confidence": 0.7}
+        f"/projects/{project_id}/detections", params={"min_confidence": 0.9}
     ).json()
     assert confident["total"] < everything["total"]
-    assert all(d["confidence"] >= 0.7 for d in confident["detections"])
+    assert all(d["confidence"] >= 0.9 for d in confident["detections"])
 
 
 def test_quantities_endpoint(client: TestClient, project_id: str) -> None:
@@ -102,3 +159,21 @@ def test_risks_endpoint(client: TestClient, project_id: str) -> None:
 def test_report_endpoint(client: TestClient, project_id: str) -> None:
     body = client.get(f"/projects/{project_id}/report").json()
     assert "# Project Summary" in body["markdown"]
+
+
+def test_recompute_publishes_derived_cost_without_mutating_run(
+    client: TestClient, project_id: str
+) -> None:
+    before = client.get(f"/projects/{project_id}/costs").json()
+    response = client.post(
+        f"/projects/{project_id}/recompute",
+        json={"insumo_prices": {"MAT-CONC250": 5300.0}},
+    )
+
+    assert response.status_code == 200, response.text
+    after = client.get(f"/projects/{project_id}/costs").json()
+    assert after["boq"]["direct_cost_total"] > before["boq"]["direct_cost_total"]
+    root = client.app.dependency_overrides[api_get_settings]().data_dir / "demo_project_001"
+    control = root / "processed"
+    assert (control / "cost_report_override.json").exists()
+    assert not (control / "cost_report.json").exists()

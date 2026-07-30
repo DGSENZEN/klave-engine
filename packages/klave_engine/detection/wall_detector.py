@@ -4,11 +4,12 @@ from pydantic import BaseModel, Field
 from shapely.geometry import LineString
 
 from klave_engine.common.ids import IdGenerator
+from klave_engine.detection.confidence import GEOM_PLAUSIBLE, SEMANTIC_LAYER, model_for
 from klave_engine.detection.results import (
-    Detection,
     DetectionType,
     DetectorOutput,
     layer_matches,
+    make_detection,
 )
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.geometry.bbox import bbox_union
@@ -18,8 +19,6 @@ from klave_engine.geometry.measurements import (
     segment_angle_degrees,
 )
 from klave_engine.geometry.spatial_index import SpatialIndex
-from klave_engine.graph.evidence import EvidencePacket
-from klave_engine.graph.schema import EdgeType, GraphEdge, GraphNode, NodeType
 
 
 class WallDetectorConfig(BaseModel):
@@ -28,8 +27,6 @@ class WallDetectorConfig(BaseModel):
     angle_tolerance_deg: float = 2.0
     min_overlap_ratio: float = 0.5
     layer_hints: list[str] = Field(default_factory=lambda: ["WALL", "MURO"])
-    base_confidence: float = 0.5
-    layer_bonus: float = 0.2
 
 
 Segment = tuple[tuple[float, float], tuple[float, float]]
@@ -58,12 +55,11 @@ def detect_walls(
     index: SpatialIndex,
     config: WallDetectorConfig | None = None,
     detection_ids: IdGenerator | None = None,
-    edge_ids: IdGenerator | None = None,
 ) -> DetectorOutput:
     config = config or WallDetectorConfig()
     detection_ids = detection_ids or IdGenerator("det")
-    edge_ids = edge_ids or IdGenerator("wedge")
     output = DetectorOutput(detector_name="wall_detector")
+    model = model_for("wall")
 
     candidates: dict[str, tuple[NormalizedEntity, Segment, float]] = {
         e.entity_id: (e, (e.points[0], e.points[1]),
@@ -99,67 +95,37 @@ def detect_walls(
             if min_len == 0 or overlap / min_len < config.min_overlap_ratio:
                 continue
 
-            confidence = config.base_confidence
             notes = [
                 f"Parallel line pair with gap {gap:.1f} and overlap {overlap:.1f}",
             ]
+            # A clean, well-overlapping pair is plausible wall geometry.
+            features: dict[str, float] = {GEOM_PLAUSIBLE: 1.0}
             if layer_matches(first.layer, config.layer_hints) or layer_matches(
                 second.layer, config.layer_hints
             ):
-                confidence += config.layer_bonus
-                notes.append("Layer matches wall layer hint")
+                features[SEMANTIC_LAYER] = 1.0
 
-            confidence = round(confidence, 4)
+            confidence = round(model.score(features), 4)
+            notes.extend(model.explain(features))
             wall_counter += 1
-            detection_id = detection_ids.next()
-            wall_bbox = bbox_union(first.bbox, second.bbox)
             source_entities = [first.entity_id, second.entity_id]
-            evidence = EvidencePacket(
-                source=first.source_file,
-                method="wall_paired_parallel_lines",
-                entity_ids=source_entities,
-                bbox=wall_bbox,
-                confidence=confidence,
-                notes=notes,
-            )
-            detection = Detection(
-                detection_id=detection_id,
-                detection_type=DetectionType.wall,
-                label=f"W{wall_counter}",
-                bbox=wall_bbox,
-                source_entities=source_entities,
-                graph_nodes=[detection_id],
-                confidence=confidence,
-                evidence=evidence,
-                properties={
-                    "estimated_length": round(overlap, 3),
-                    "estimated_thickness": round(gap, 3),
-                },
-            )
-            output.detections.append(detection)
-            output.nodes.append(
-                GraphNode(
-                    node_id=detection_id,
-                    node_type=NodeType.wall,
-                    label=detection.label,
-                    bbox=wall_bbox,
-                    source_entities=source_entities,
-                    properties=detection.properties,
-                    confidence=confidence,
-                    evidence=evidence,
+            output.detections.append(
+                make_detection(
+                    detection_ids.next(),
+                    DetectionType.wall,
+                    f"W{wall_counter}",
+                    bbox_union(first.bbox, second.bbox),
+                    confidence,
+                    source_entities,
+                    "wall_paired_parallel_lines",
+                    notes,
+                    {
+                        "estimated_length": round(overlap, 3),
+                        "estimated_thickness": round(gap, 3),
+                    },
+                    first.source_file,
                 )
             )
-            for entity_id in source_entities:
-                output.edges.append(
-                    GraphEdge(
-                        edge_id=edge_ids.next(),
-                        edge_type=EdgeType.possible_structural_element,
-                        source_node_id=detection_id,
-                        target_node_id=entity_id,
-                        confidence=confidence,
-                        evidence=evidence,
-                    )
-                )
             used.update(source_entities)
             break
     return output

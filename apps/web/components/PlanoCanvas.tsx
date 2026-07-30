@@ -1,9 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Geometry } from "@/lib/api";
+import type { DetectionOverlay, Geometry } from "@/lib/api";
 
-export const DETECTION_COLORS: Record<string, string> = {
+// Family-first palette; detection-type keys keep old runs rendering.
+export const FAMILY_COLORS: Record<string, string> = {
+  castillo: "#ea580c",
+  columna: "#dc2626",
+  trabe: "#2563eb",
+  contratrabe: "#4f46e5",
+  zapata: "#b45309",
+  losa: "#059669",
+  muro: "#7c3aed",
+  eje: "#94a3b8",
+  interseccion_ejes: "#64748b",
+  referencia_detalle: "#db2777",
+  // Legacy detection-type fallbacks (runs without taxonomy).
   grid_line: "#94a3b8",
   grid_intersection: "#64748b",
   column_tag: "#dc2626",
@@ -14,7 +26,18 @@ export const DETECTION_COLORS: Record<string, string> = {
   detail_reference: "#db2777",
 };
 
-export const DETECTION_LABELS: Record<string, string> = {
+export const FAMILY_LABELS: Record<string, string> = {
+  castillo: "Castillos",
+  columna: "Columnas",
+  trabe: "Trabes",
+  contratrabe: "Contratrabes",
+  zapata: "Zapatas",
+  losa: "Losas",
+  muro: "Muros",
+  eje: "Ejes",
+  interseccion_ejes: "Intersecciones",
+  referencia_detalle: "Referencias",
+  // Legacy detection-type fallbacks.
   grid_line: "Ejes",
   grid_intersection: "Intersecciones",
   column_tag: "Columnas/castillos",
@@ -25,23 +48,38 @@ export const DETECTION_LABELS: Record<string, string> = {
   detail_reference: "Referencias",
 };
 
+/** Grouping key for legend + visibility: family when available, else type. */
+export function familyOf(d: DetectionOverlay): string {
+  return d.family || d.type;
+}
+
+export function detectionTitle(d: DetectionOverlay): string {
+  const base = d.family_label || FAMILY_LABELS[d.type] || d.type;
+  const name = d.mark || d.display_label || d.label;
+  return `${base} ${name}`.trim();
+}
+
 type View = { scale: number; ox: number; oy: number };
 
 export function PlanoCanvas({
   geometry,
   visibleLayers,
-  visibleTypes,
+  visibleFamilies,
   minConfidence,
+  selectedId,
+  onSelect,
 }: {
   geometry: Geometry;
   visibleLayers: Set<string>;
-  visibleTypes: Set<string>;
+  visibleFamilies: Set<string>;
   minConfidence: number;
+  selectedId?: string | null;
+  onSelect?: (detection: DetectionOverlay | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<View | null>(null);
-  const dragRef = useRef<{ x: number; y: number } | null>(null);
+  const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
   const [, force] = useState(0);
 
@@ -68,6 +106,11 @@ export function PlanoCanvas({
     x * v.scale + v.ox,
     -y * v.scale + v.oy,
   ];
+
+  const isVisible = useCallback(
+    (d: DetectionOverlay) => visibleFamilies.has(familyOf(d)) && d.confidence >= minConfidence,
+    [visibleFamilies, minConfidence],
+  );
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -118,25 +161,31 @@ export function PlanoCanvas({
     // Detection overlays
     const showLabels = v.scale > 6;
     for (const d of geometry.detections) {
-      if (!visibleTypes.has(d.type) || d.confidence < minConfidence) continue;
-      const color = DETECTION_COLORS[d.type] ?? "#111827";
+      if (!isVisible(d)) continue;
+      const color = FAMILY_COLORS[familyOf(d)] ?? "#111827";
+      const selected = d.id === selectedId;
       const [x1, y1] = toScreen(d.bbox[0], d.bbox[1], v);
       const [x2, y2] = toScreen(d.bbox[2], d.bbox[3], v);
+      const rx = Math.min(x1, x2);
+      const ry = Math.min(y1, y2);
+      const rw = Math.abs(x2 - x1) || 2;
+      const rh = Math.abs(y2 - y1) || 2;
+      if (selected) {
+        ctx.fillStyle = `${color}2e`;
+        ctx.fillRect(rx - 2, ry - 2, rw + 4, rh + 4);
+      }
       ctx.strokeStyle = color;
-      ctx.lineWidth = 1.4;
-      ctx.strokeRect(
-        Math.min(x1, x2),
-        Math.min(y1, y2),
-        Math.abs(x2 - x1) || 2,
-        Math.abs(y2 - y1) || 2,
-      );
-      if (showLabels) {
+      ctx.lineWidth = selected ? 2.4 : 1.4;
+      ctx.strokeRect(rx, ry, rw, rh);
+      if (showLabels || selected) {
         ctx.fillStyle = color;
-        ctx.font = "10px ui-sans-serif, system-ui";
-        ctx.fillText(d.label, Math.min(x1, x2), Math.min(y1, y2) - 3);
+        ctx.font = selected
+          ? "600 11px ui-sans-serif, system-ui"
+          : "10px ui-sans-serif, system-ui";
+        ctx.fillText(d.mark || d.display_label || d.label, rx, ry - 3);
       }
     }
-  }, [geometry, visibleLayers, visibleTypes, minConfidence]);
+  }, [geometry, visibleLayers, isVisible, selectedId]);
 
   useEffect(() => {
     fit();
@@ -151,6 +200,27 @@ export function PlanoCanvas({
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [draw]);
+
+  function hitTest(mx: number, my: number): DetectionOverlay | null {
+    const v = viewRef.current;
+    if (!v) return null;
+    const wx = (mx - v.ox) / v.scale;
+    const wy = -(my - v.oy) / v.scale;
+    let best: DetectionOverlay | null = null;
+    let bestArea = Infinity;
+    for (const d of geometry.detections) {
+      if (!isVisible(d)) continue;
+      const [a, b, c, dd] = d.bbox;
+      if (wx >= a - 0.05 && wx <= c + 0.05 && wy >= b - 0.05 && wy <= dd + 0.05) {
+        const area = Math.max(c - a, 0.01) * Math.max(dd - b, 0.01);
+        if (area < bestArea) {
+          best = d;
+          bestArea = area;
+        }
+      }
+    }
+    return best;
+  }
 
   function onWheel(e: React.WheelEvent) {
     const v = viewRef.current;
@@ -169,39 +239,46 @@ export function PlanoCanvas({
   }
 
   function onMouseDown(e: React.MouseEvent) {
-    dragRef.current = { x: e.clientX, y: e.clientY };
+    dragRef.current = { x: e.clientX, y: e.clientY, moved: false };
   }
   function onMouseMove(e: React.MouseEvent) {
     const v = viewRef.current;
     if (!v) return;
     if (dragRef.current) {
-      v.ox += e.clientX - dragRef.current.x;
-      v.oy += e.clientY - dragRef.current.y;
-      dragRef.current = { x: e.clientX, y: e.clientY };
+      const dx = e.clientX - dragRef.current.x;
+      const dy = e.clientY - dragRef.current.y;
+      if (Math.abs(dx) + Math.abs(dy) > 2) dragRef.current.moved = true;
+      v.ox += dx;
+      v.oy += dy;
+      dragRef.current = { ...dragRef.current, x: e.clientX, y: e.clientY };
       draw();
       return;
     }
-    // hover tooltip: nearest detection containing the cursor (world space)
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    const wx = (mx - v.ox) / v.scale;
-    const wy = -(my - v.oy) / v.scale;
-    let hit: string | null = null;
-    for (const d of geometry.detections) {
-      if (!visibleTypes.has(d.type) || d.confidence < minConfidence) continue;
-      const [a, b, c, dd] = d.bbox;
-      if (wx >= a - 0.05 && wx <= c + 0.05 && wy >= b - 0.05 && wy <= dd + 0.05) {
-        hit = `${DETECTION_LABELS[d.type] ?? d.type}: ${d.label} · ${(d.confidence * 100).toFixed(0)}%`;
-        break;
-      }
-    }
-    setTooltip(hit ? { x: mx, y: my, text: hit } : null);
+    const hit = hitTest(mx, my);
+    setTooltip(
+      hit
+        ? {
+            x: mx,
+            y: my,
+            text: `${detectionTitle(hit)} · ${(hit.confidence * 100).toFixed(0)}%`,
+          }
+        : null,
+    );
   }
-  function onMouseUp() {
+  function onMouseUp(e: React.MouseEvent) {
+    const wasDrag = dragRef.current?.moved;
     dragRef.current = null;
+    if (wasDrag || !onSelect) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    onSelect(hit && hit.id === selectedId ? null : hit);
   }
 
   return (
@@ -213,20 +290,20 @@ export function PlanoCanvas({
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
         onMouseLeave={() => {
-          onMouseUp();
+          dragRef.current = null;
           setTooltip(null);
         }}
         className="h-full w-full cursor-grab active:cursor-grabbing"
       />
       <button
         onClick={fit}
-        className="absolute right-3 top-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium shadow-sm hover:bg-[var(--surface-2)]"
+        className="absolute right-3 top-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium shadow-sm transition hover:bg-[var(--surface-2)]"
       >
         Ajustar vista
       </button>
       {tooltip && (
         <div
-          className="pointer-events-none absolute z-10 rounded-md bg-slate-900 px-2 py-1 text-xs text-white shadow-lg"
+          className="pointer-events-none absolute z-10 max-w-xs rounded-md bg-slate-900/95 px-2.5 py-1.5 text-xs text-white shadow-lg"
           style={{ left: tooltip.x + 12, top: tooltip.y + 12 }}
         >
           {tooltip.text}

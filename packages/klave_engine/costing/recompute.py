@@ -29,6 +29,7 @@ from klave_engine.dxf.units import DrawingUnits
 logger = get_logger(__name__)
 
 OVERRIDES_FILENAME = "costing_overrides.json"
+COST_REPORT_OVERRIDE_FILENAME = "cost_report_override.json"
 
 
 class CostingInputs:
@@ -94,17 +95,18 @@ def build_cost_report(inputs: CostingInputs, overrides: CostingOverrides) -> Cos
 
 
 def recompute_and_persist(
-    processed_dir: Path,
+    input_dir: Path,
+    control_dir: Path,
     reports_dir: Path,
     project_id: str,
     overrides: CostingOverrides,
 ) -> CostReport:
-    """Recompute costs with new overrides, rewrite artifacts, and persist edits."""
-    inputs = load_costing_inputs(processed_dir, project_id)
+    """Recompute costs from an immutable run and persist a derived scenario."""
+    inputs = load_costing_inputs(input_dir, project_id)
     report = build_cost_report(inputs, overrides)
 
-    write_json(processed_dir / "cost_report.json", report)
-    save_overrides(processed_dir, overrides)
+    write_json(control_dir / COST_REPORT_OVERRIDE_FILENAME, report)
+    save_overrides(control_dir, overrides)
     boq_to_csv(report, reports_dir / "presupuesto.csv")
     write_text(reports_dir / "resumen_costos.md", cost_report_to_markdown(report))
 

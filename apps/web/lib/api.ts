@@ -15,6 +15,26 @@ async function getJSON<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function postJSON<T>(
+  path: string,
+  body: unknown,
+  headers?: Record<string, string>,
+): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail: unknown;
+    try {
+      detail = (await res.json())?.detail;
+    } catch {}
+    throw new ApiError(res.status, path, detail);
+  }
+  return res.json() as Promise<T>;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, public path: string, public detail?: unknown) {
     super(`API ${status} on ${path}`);
@@ -32,11 +52,39 @@ export type ProjectSummary = {
 
 export type ProjectStatus = {
   project_id: string;
+  job_id?: string;
+  run_id?: string;
   state: "queued" | "running" | "processed" | "failed" | "unknown" | string;
   stage: string;
   error?: string | null;
   entity_count?: number;
   detection_count?: number;
+};
+
+export type ProjectEvent = {
+  seq: number;
+  ts: string;
+  type:
+    | "project_created"
+    | "project_updated"
+    | "job_updated"
+    | "run_published"
+    | "costing_updated"
+    | "presence_updated"
+    | "collaborator_activity"
+    | string;
+  project_id: string | null;
+  actor: string | null;
+  data: Record<string, unknown>;
+};
+
+export type PresenceViewer = {
+  client_id: string;
+  actor: string;
+  location_path: string;
+  location_label: string;
+  joined_at: string;
+  updated_at: string;
 };
 
 export type Geometry = {
@@ -56,6 +104,15 @@ export type DetectionOverlay = {
   label: string;
   confidence: number;
   bbox: [number, number, number, number];
+  /** Tag read from the plano (e.g. "K-5"); empty for untagged elements. */
+  mark: string;
+  /** Canonical family (castillo, columna, trabe, …); empty on old runs. */
+  family: string;
+  family_label: string;
+  /** Stable system name (e.g. "CAS-05"). */
+  display_label: string;
+  /** Spanish evidence sentence composed by the engine. */
+  description: string;
 };
 
 export type BoqLine = {
@@ -162,25 +219,56 @@ export type CostingConfigFull = {
 export type CostingConfigResponse = {
   config: CostingConfigFull;
   insumos: Insumo[];
+  insumo_prices: Record<string, number>;
   has_overrides: boolean;
+  version: number;
+  updated_by: string | null;
+  updated_at: string | null;
 };
 
 export type CostingOverrides = {
   config: CostingConfigFull;
   insumo_prices: Record<string, number>;
+  version: number;
+};
+
+export type ProjectActivity = {
+  client_id?: string | null;
+  action: string;
+  label?: string;
+  location_path?: string;
+  location_label?: string;
 };
 
 export const getCostingConfig = (id: string) =>
   getJSON<CostingConfigResponse>(`/projects/${id}/costing-config`);
 
-export async function recompute(id: string, overrides: CostingOverrides): Promise<CostReport> {
-  const res = await fetch(`${API_BASE}/projects/${id}/recompute`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(overrides),
+export function recompute(
+  id: string,
+  overrides: CostingOverrides,
+  actor?: string,
+  clientId?: string | null,
+): Promise<CostReport> {
+  return postJSON<CostReport>(`/projects/${id}/recompute`, overrides, {
+    ...(actor ? { "X-Actor": actor } : {}),
+    ...(clientId ? { "X-Client-Id": clientId } : {}),
   });
-  if (!res.ok) throw new ApiError(res.status, "/recompute");
-  return res.json();
+}
+
+export async function publishActivity(
+  id: string,
+  activity: ProjectActivity,
+  actor?: string,
+): Promise<void> {
+  await postJSON(`/projects/${id}/activity`, activity, actor ? { "X-Actor": actor } : undefined);
+}
+
+export async function publishPresence(
+  id: string,
+  update: { client_id: string; location_path?: string; location_label?: string },
+  actor?: string,
+): Promise<void> {
+  await postJSON(`/projects/${id}/presence`, update, actor ? { "X-Actor": actor } : undefined);
 }
 
 export const getViews = (id: string) =>
@@ -188,10 +276,17 @@ export const getViews = (id: string) =>
 export const getDimensions = (id: string) =>
   getJSON<Dimensions>(`/projects/${id}/dimensions`).catch(() => null);
 
-export async function uploadProject(file: File): Promise<{ project_id: string; warnings: string[] }> {
+export async function uploadProject(
+  file: File,
+  actor?: string,
+): Promise<{ project_id: string; warnings: string[] }> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${API_BASE}/projects/upload`, { method: "POST", body: form });
+  const res = await fetch(`${API_BASE}/projects/upload`, {
+    method: "POST",
+    headers: actor ? { "X-Actor": actor } : undefined,
+    body: form,
+  });
   if (!res.ok) {
     let detail: unknown;
     try {

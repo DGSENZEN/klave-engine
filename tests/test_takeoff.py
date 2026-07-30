@@ -1,9 +1,9 @@
 """Quantity takeoff over the full detector suite on the demo fixture."""
 
 import pytest
+from klave_engine.detection.suite import DetectorSuiteConfig, run_detectors
 from klave_engine.evals.fixtures import DEMO_GOLD
 from klave_engine.evals.takeoff_eval import evaluate_takeoff
-from klave_engine.pipeline import DetectorSuiteConfig, run_detectors
 from klave_engine.takeoff.quantities import generate_quantity_report
 
 

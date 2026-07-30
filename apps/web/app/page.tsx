@@ -12,7 +12,8 @@ import {
   CircleAlert,
 } from "lucide-react";
 import { ApiError, listProjects, uploadProject, type ProjectSummary } from "@/lib/api";
-import { Badge } from "@/components/ui";
+import { eventsUrl, getBrowserActor, parseProjectEvent } from "@/lib/collab";
+import { Badge, Skeleton } from "@/components/ui";
 
 const STATUS_TONE: Record<string, "success" | "warning" | "primary" | "default"> = {
   processed: "success",
@@ -30,9 +31,33 @@ export default function Landing() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    listProjects()
-      .then(setProjects)
-      .catch(() => setProjects([]));
+    let active = true;
+    function refreshProjects() {
+      listProjects()
+        .then((items) => {
+          if (active) setProjects(items);
+        })
+        .catch(() => {
+          if (active) setProjects([]);
+        });
+    }
+    refreshProjects();
+    const source = new EventSource(eventsUrl());
+    source.onmessage = (message) => {
+      const event = parseProjectEvent(message);
+      if (
+        event?.type === "project_created" ||
+        event?.type === "project_updated" ||
+        event?.type === "job_updated" ||
+        event?.type === "run_published"
+      ) {
+        refreshProjects();
+      }
+    };
+    return () => {
+      active = false;
+      source.close();
+    };
   }, []);
 
   async function handleFile(file: File) {
@@ -43,7 +68,7 @@ export default function Landing() {
     }
     setUploading(true);
     try {
-      const { project_id } = await uploadProject(file);
+      const { project_id } = await uploadProject(file, getBrowserActor());
       router.push(`/proyecto/${project_id}`);
     } catch (e) {
       const detail =
@@ -56,13 +81,15 @@ export default function Landing() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-10">
-      <header className="mb-10 flex items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--primary)] text-white">
-          <Building2 size={22} />
+    <div className="mx-auto max-w-5xl px-6 py-12">
+      <header className="rise-in mb-10 flex items-center gap-3.5">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--primary)] to-[#3730a3] text-white shadow-[var(--shadow-md)]">
+          <Building2 size={24} />
         </div>
         <div>
-          <h1 className="text-xl font-semibold">Klave · Ingeniería de Costos</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Klave · Ingeniería de Costos
+          </h1>
           <p className="text-sm text-[var(--muted)]">
             Sube un plano estructural y obtén presupuesto, programa y flujo financiero.
           </p>
@@ -81,8 +108,10 @@ export default function Landing() {
           const f = e.dataTransfer.files?.[0];
           if (f) handleFile(f);
         }}
-        className={`card flex cursor-pointer flex-col items-center justify-center gap-3 px-6 py-14 text-center transition ${
-          dragging ? "border-[var(--primary)] bg-blue-50/40" : "hover:border-[var(--primary)]"
+        className={`rise-in flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed bg-[var(--surface)] px-6 py-16 text-center shadow-[var(--shadow-xs)] transition ${
+          dragging
+            ? "border-[var(--primary)] bg-[var(--primary-soft)]"
+            : "border-[var(--border-strong,var(--border))] hover:border-[var(--primary)] hover:bg-[var(--primary-soft)]/40"
         }`}
       >
         <input
@@ -103,7 +132,7 @@ export default function Landing() {
           </>
         ) : (
           <>
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--surface-2)]">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--primary-soft)]">
               <UploadCloud className="text-[var(--primary)]" size={28} />
             </div>
             <p className="text-base font-medium">
@@ -125,8 +154,9 @@ export default function Landing() {
           Proyectos recientes
         </h2>
         {projects === null ? (
-          <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
-            <Loader2 className="animate-spin" size={16} /> Cargando…
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Skeleton className="h-[76px]" />
+            <Skeleton className="h-[76px]" />
           </div>
         ) : projects.length === 0 ? (
           <p className="text-sm text-[var(--muted)]">
@@ -138,10 +168,10 @@ export default function Landing() {
               <Link
                 key={p.project_id}
                 href={`/proyecto/${p.project_id}`}
-                className="card group flex items-center gap-3 p-4 transition hover:shadow-sm"
+                className="card card-hover group flex items-center gap-3 p-4"
               >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--surface-2)]">
-                  <FileText size={18} className="text-[var(--muted)]" />
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--primary-soft)]">
+                  <FileText size={18} className="text-[var(--primary)]" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{p.name}</div>

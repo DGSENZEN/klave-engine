@@ -3,13 +3,16 @@
 import pytest
 from klave_engine.costing.apu import build_all_apus
 from klave_engine.costing.catalog import build_default_catalog
+from klave_engine.costing.insumos import apply_price_overrides, default_price_book
 from klave_engine.costing.integration import integrate_costs
 from klave_engine.costing.models import (
     CostingAssumptions,
     CostingConfig,
+    CostingOverrides,
     IndirectsConfig,
     ResourceType,
 )
+from klave_engine.costing.recompute import build_cost_report, load_costing_inputs
 from klave_engine.costing.report import generate_cost_report
 from klave_engine.costing.schedule import direct_spend_by_period
 from klave_engine.detection.results import Detection, DetectionType
@@ -248,10 +251,6 @@ def test_non_segmented_matches_flat(sample_detections) -> None:
 
 
 # --- live recompute (parameter / price overrides) -----------------------------
-
-from klave_engine.costing.insumos import apply_price_overrides, default_price_book
-from klave_engine.costing.models import CostingOverrides
-from klave_engine.costing.recompute import build_cost_report, load_costing_inputs
 
 
 def test_price_override_scales_apu_and_total(sample_detections) -> None:

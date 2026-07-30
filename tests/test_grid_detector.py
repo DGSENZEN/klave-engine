@@ -21,7 +21,7 @@ def test_grid_lines_detected_with_labels(demo_entities, demo_index) -> None:
     output = detect_grid(demo_entities, demo_index)
     grid_lines = [d for d in output.detections if d.detection_type == DetectionType.grid_line]
     assert sorted(d.label for d in grid_lines) == ["1", "2", "A", "B"]
-    assert all(d.confidence == 0.9 for d in grid_lines)
+    assert all(d.confidence >= 0.85 for d in grid_lines)  # labeled + semantic layer
     axes = {d.label: d.properties["axis"] for d in grid_lines}
     assert axes == {"A": "horizontal", "B": "horizontal", "1": "vertical", "2": "vertical"}
 

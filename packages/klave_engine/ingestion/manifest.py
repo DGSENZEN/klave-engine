@@ -60,13 +60,20 @@ class ProjectManifest(BaseModel):
         return {f.sheet_number for f in self.source_files if f.sheet_number}
 
     def dxf_paths(self) -> list[Path]:
-        """All parseable DXF files: native DXF sources plus successful conversions."""
+        """Unique parseable DXF files: native DXF sources plus successful
+        conversions (deduplicated so no sheet is parsed twice)."""
         root = self.root()
-        paths = [root / f.path for f in self.source_files if f.file_type == FileType.dxf]
-        paths += [
-            root / f.path for f in self.converted_files if f.conversion_status == "success"
-        ]
-        return paths
+        candidates = [
+            root / f.path for f in self.source_files if f.file_type == FileType.dxf
+        ] + [root / f.path for f in self.converted_files if f.conversion_status == "success"]
+        seen: set[Path] = set()
+        unique: list[Path] = []
+        for path in candidates:
+            resolved = path.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                unique.append(path)
+        return unique
 
 
 def manifest_path(project_root: Path, processed_dir_name: str = "processed") -> Path:

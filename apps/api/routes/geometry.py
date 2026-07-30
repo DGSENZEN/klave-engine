@@ -60,6 +60,12 @@ def get_geometry(
             "label": d["label"],
             "confidence": d["confidence"],
             "bbox": d["bbox"],
+            # Taxonomy (empty for runs older than the enrichment step).
+            "mark": d.get("mark", ""),
+            "family": d.get("family", ""),
+            "family_label": d.get("family_label", ""),
+            "display_label": d.get("display_label", ""),
+            "description": d.get("description", ""),
         }
         for d in detections
     ]

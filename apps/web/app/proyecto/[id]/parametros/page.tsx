@@ -1,17 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RotateCcw, Calculator, Loader2 } from "lucide-react";
+import { RotateCcw, Calculator, Loader2, CircleAlert } from "lucide-react";
 import {
+  ApiError,
   getCostingConfig,
+  getCosts,
   recompute,
   money,
+  type CostingConfigResponse,
   type CostingConfigFull,
   type CostReport,
   type Insumo,
+  type ProjectEvent,
 } from "@/lib/api";
-import { Card, SectionTitle, Spinner, Badge } from "@/components/ui";
+import { Button, Card, SectionTitle, Badge, Skeleton } from "@/components/ui";
+import { useProjectLive } from "@/components/ProjectLive";
+import { actorLabel } from "@/lib/collab";
 
 const LABELS: Record<string, string> = {
   // assumptions
@@ -43,6 +49,13 @@ const TYPE_LABELS: Record<string, string> = {
   equipo: "Equipo",
 };
 
+type ConflictDetail = {
+  error_type?: string;
+  current_version?: number;
+  updated_by?: string | null;
+  message?: string;
+};
+
 export default function ParametrosPage() {
   const { id } = useParams<{ id: string }>();
   const [config, setConfig] = useState<CostingConfigFull | null>(null);
@@ -50,66 +63,189 @@ export default function ParametrosPage() {
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [report, setReport] = useState<CostReport | null>(null);
   const [baseline, setBaseline] = useState<{ direct: number; total: number } | null>(null);
+  const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [conflict, setConflict] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const activityTimer = useRef<number | null>(null);
+  const { latestEvent, actorName, clientId, sendActivity } = useProjectLive();
+
+  const applyConfigResponse = useCallback((response: CostingConfigResponse) => {
+    setConfig(response.config);
+    setInsumos(response.insumos);
+    setPrices(response.insumo_prices);
+    setVersion(response.version);
+  }, []);
+
+  const isRemoteEvent = useCallback(
+    (event: ProjectEvent): boolean => {
+      const eventClientId = event.data.client_id;
+      if (typeof eventClientId === "string" && clientId) return eventClientId !== clientId;
+      return event.actor !== actorName;
+    },
+    [actorName, clientId],
+  );
 
   useEffect(() => {
-    getCostingConfig(id).then((r) => {
-      setConfig(r.config);
-      setInsumos(r.insumos);
-    });
-  }, [id]);
+    let active = true;
+    Promise.all([getCostingConfig(id), getCosts(id)])
+      .then(([r, c]) => {
+        if (!active) return;
+        applyConfigResponse(r);
+        setReport(c);
+        setBaseline({ direct: c.boq.direct_cost_total, total: c.integration.grand_total });
+        setDirty(false);
+        setConflict(null);
+        setError(null);
+      })
+      .catch(() => {
+        if (active) setError("No se pudieron cargar los parámetros.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [applyConfigResponse, id]);
 
-  // Establish a baseline (current saved report) to diff against.
   useEffect(() => {
-    import("@/lib/api").then(({ getCosts }) =>
-      getCosts(id)
-        .then((c) => {
-          setReport(c);
-          setBaseline({
-            direct: c.boq.direct_cost_total,
-            total: c.integration.grand_total,
-          });
-        })
-        .catch(() => {}),
-    );
-  }, [id]);
+    if (!latestEvent) return;
+    if (latestEvent.type === "costing_updated" && isRemoteEvent(latestEvent) && dirty) {
+      const handle = window.setTimeout(() => {
+        setConflict(`${actorLabel(latestEvent.actor)} actualizó los parámetros — recargar`);
+      }, 0);
+      return () => window.clearTimeout(handle);
+    }
+    if (latestEvent.type !== "costing_updated" && latestEvent.type !== "run_published") return;
+
+    let active = true;
+    Promise.all([getCostingConfig(id), getCosts(id)])
+      .then(([r, c]) => {
+        if (!active) return;
+        applyConfigResponse(r);
+        setReport(c);
+        setBaseline({ direct: c.boq.direct_cost_total, total: c.integration.grand_total });
+        setDirty(false);
+        setConflict(null);
+        setError(null);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [applyConfigResponse, dirty, id, isRemoteEvent, latestEvent]);
+
+  useEffect(
+    () => () => {
+      if (activityTimer.current) window.clearTimeout(activityTimer.current);
+    },
+    [],
+  );
+
+  function announceEdit(label: string) {
+    if (activityTimer.current) window.clearTimeout(activityTimer.current);
+    activityTimer.current = window.setTimeout(() => {
+      sendActivity("editing_costing", label);
+    }, 350);
+  }
 
   function setField(group: keyof CostingConfigFull, key: string, value: number) {
     setConfig((c) => (c ? { ...c, [group]: { ...(c[group] as object), [key]: value } } : c));
     setDirty(true);
+    setConflict(null);
+    announceEdit(LABELS[key] ?? key);
   }
-  function setPrice(code: string, value: number) {
+  function setPrice(code: string, label: string, value: number) {
     setPrices((p) => ({ ...p, [code]: value }));
     setDirty(true);
+    setConflict(null);
+    announceEdit(label);
+  }
+
+  function conflictMessage(detail: ConflictDetail | undefined) {
+    return `${actorLabel(detail?.updated_by)} actualizó los parámetros — recargar`;
+  }
+
+  function handleSaveError(err: unknown) {
+    if (err instanceof ApiError && err.status === 409) {
+      const detail = err.detail as ConflictDetail | undefined;
+      if (detail?.error_type === "version_conflict") {
+        setConflict(conflictMessage(detail));
+        return;
+      }
+      setError(detail?.message ?? "El proyecto está ocupado; inténtalo de nuevo.");
+      return;
+    }
+    setError("No se pudo recalcular el presupuesto.");
+  }
+
+  async function reloadFromServer() {
+    setBusy(true);
+    try {
+      const [r, c] = await Promise.all([getCostingConfig(id), getCosts(id)]);
+      applyConfigResponse(r);
+      setReport(c);
+      setBaseline({ direct: c.boq.direct_cost_total, total: c.integration.grand_total });
+      setDirty(false);
+      setConflict(null);
+      setError(null);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function doRecompute() {
     if (!config) return;
+    sendActivity("saving_costing", "Recalculando costos");
     setBusy(true);
+    setError(null);
+    setConflict(null);
     try {
-      const c = await recompute(id, { config, insumo_prices: prices });
+      const c = await recompute(
+        id,
+        { config, insumo_prices: prices, version },
+        actorName,
+        clientId,
+      );
+      const r = await getCostingConfig(id);
+      applyConfigResponse(r);
       setReport(c);
       setDirty(false);
+    } catch (err) {
+      handleSaveError(err);
     } finally {
       setBusy(false);
     }
   }
 
   async function doReset() {
+    sendActivity("resetting_costing", "Restableciendo parámetros");
     setBusy(true);
+    setError(null);
+    setConflict(null);
     try {
-      const c = await recompute(id, {
-        config: { currency: "MXN", assumptions: {}, indirects: {}, schedule: {}, financial: {} },
-        insumo_prices: {},
-      });
+      const c = await recompute(
+        id,
+        {
+          config: {
+            currency: "MXN",
+            assumptions: {},
+            indirects: {},
+            schedule: {},
+            financial: {},
+          },
+          insumo_prices: {},
+          version,
+        },
+        actorName,
+        clientId,
+      );
       const r = await getCostingConfig(id);
-      setConfig(r.config);
-      setInsumos(r.insumos);
-      setPrices({});
+      applyConfigResponse(r);
       setReport(c);
       setBaseline({ direct: c.boq.direct_cost_total, total: c.integration.grand_total });
       setDirty(false);
+    } catch (err) {
+      handleSaveError(err);
     } finally {
       setBusy(false);
     }
@@ -125,14 +261,19 @@ export default function ParametrosPage() {
 
   if (!config) {
     return (
-      <div className="flex h-screen items-center justify-center gap-2 text-sm text-[var(--muted)]">
-        <Spinner className="h-5 w-5" /> Cargando parámetros…
+      <div className="px-8 py-7">
+        <Skeleton className="mb-6 h-14 w-96" />
+        <div className="grid gap-4 lg:grid-cols-3">
+          <Skeleton className="h-64" />
+          <Skeleton className="h-64" />
+          <Skeleton className="h-64" />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="px-8 py-7 pb-28">
+    <div className="rise-in px-8 py-7 pb-28">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Parámetros e insumos</h1>
         <p className="text-sm text-[var(--muted)]">
@@ -141,9 +282,41 @@ export default function ParametrosPage() {
         </p>
       </div>
 
+      {conflict && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div className="flex min-w-0 items-center gap-2">
+            <CircleAlert size={16} className="shrink-0" />
+            <span className="truncate">{conflict}</span>
+          </div>
+          <button
+            onClick={reloadFromServer}
+            disabled={busy}
+            className="shrink-0 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-amber-900 shadow-sm disabled:opacity-50"
+          >
+            Recargar
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <CircleAlert size={16} /> {error}
+        </div>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-3">
-        <Group title="Supuestos geométricos" group="assumptions" config={config} onChange={setField} />
-        <Group title="Indirectos y sobrecosto" group="indirects" config={config} onChange={setField} />
+        <Group
+          title="Supuestos geométricos"
+          group="assumptions"
+          config={config}
+          onChange={setField}
+        />
+        <Group
+          title="Indirectos y sobrecosto"
+          group="indirects"
+          config={config}
+          onChange={setField}
+        />
         <Group title="Financiero" group="financial" config={config} onChange={setField} />
       </div>
 
@@ -177,8 +350,10 @@ export default function ParametrosPage() {
                   <input
                     type="number"
                     step="any"
-                    defaultValue={ins.unit_cost}
-                    onChange={(e) => setPrice(ins.code, Number(e.target.value))}
+                    value={prices[ins.code] ?? ins.unit_cost}
+                    onChange={(e) =>
+                      setPrice(ins.code, ins.description, Number(e.target.value))
+                    }
                     className="w-32 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-right tabular focus:border-[var(--primary)] focus:outline-none"
                   />
                 </td>
@@ -189,10 +364,14 @@ export default function ParametrosPage() {
       </Card>
 
       {/* Sticky live summary */}
-      <div className="fixed bottom-0 left-64 right-0 border-t border-[var(--border)] bg-[var(--surface)]/95 px-8 py-3 backdrop-blur">
+      <div className="fixed bottom-0 left-64 right-0 border-t border-[var(--border)] bg-[var(--surface)]/95 px-8 py-3 shadow-[0_-4px_16px_rgba(16,24,40,0.06)] backdrop-blur">
         <div className="flex items-center justify-between gap-6">
           <div className="flex items-center gap-8 text-sm">
-            <Summary label="Costo directo" value={report?.boq.direct_cost_total} delta={delta?.direct} />
+            <Summary
+              label="Costo directo"
+              value={report?.boq.direct_cost_total}
+              delta={delta?.direct}
+            />
             <Summary label="Precio de venta" value={report?.integration.sale_price} />
             <Summary
               label="Total c/ contingencia"
@@ -202,21 +381,18 @@ export default function ParametrosPage() {
             />
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={doReset}
-              disabled={busy}
-              className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm font-medium hover:bg-[var(--surface-2)] disabled:opacity-50"
-            >
+            <Button onClick={doReset} disabled={busy || !!conflict}>
               <RotateCcw size={15} /> Restablecer
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="primary"
               onClick={doRecompute}
-              disabled={busy || !dirty}
-              className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              disabled={busy || !dirty || !!conflict}
+              className="px-4"
             >
               {busy ? <Loader2 size={15} className="animate-spin" /> : <Calculator size={15} />}
               {dirty ? "Recalcular" : "Actualizado"}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -246,7 +422,7 @@ function Group({
             <input
               type="number"
               step="any"
-              defaultValue={value}
+              value={value}
               onChange={(e) => onChange(group, key, Number(e.target.value))}
               className="w-28 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-right tabular focus:border-[var(--primary)] focus:outline-none"
             />

@@ -1,8 +1,8 @@
 """Risk rule triggering on the demo fixture."""
 
 import pytest
+from klave_engine.detection.suite import DetectorSuiteConfig, run_detectors
 from klave_engine.evals.fixtures import DEMO_GOLD
-from klave_engine.pipeline import DetectorSuiteConfig, run_detectors
 from klave_engine.risks.rules import Severity, generate_risk_report
 from klave_engine.takeoff.quantities import generate_quantity_report
 
@@ -21,6 +21,27 @@ def test_expected_risk_types_trigger(risk_report) -> None:
     found_types = {f.risk_type for f in risk_report.findings}
     for expected in DEMO_GOLD["expected_risk_types"]:
         assert expected in found_types, f"missing risk type: {expected}"
+
+
+def test_low_confidence_detection_triggers_risk(demo_manifest) -> None:
+    """A detection below the threshold must raise the low-confidence risk
+    (covered here rather than via the demo fixture, whose elements all sit on
+    semantic layers and score high)."""
+    from klave_engine.detection.results import Detection, DetectionType
+    from klave_engine.graph.evidence import EvidencePacket
+
+    weak = Detection(
+        detection_id="det_weak",
+        detection_type=DetectionType.wall,
+        label="W?",
+        bbox=(0.0, 0.0, 1.0, 1.0),
+        confidence=0.45,
+        evidence=EvidencePacket(source="x.dxf", method="test"),
+        properties={"estimated_length": 5.0},
+    )
+    report = generate_risk_report("p", demo_manifest, [], [weak], None)
+    types = {f.risk_type for f in report.findings}
+    assert "low_confidence_detection_in_takeoff" in types
 
 
 def test_unresolved_detail_reference_is_high_and_specific(risk_report) -> None:

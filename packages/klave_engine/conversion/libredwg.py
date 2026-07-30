@@ -18,15 +18,18 @@ def dwg2dxf_available() -> bool:
     return shutil.which("dwg2dxf") is not None
 
 
-def convert_dwg_to_dxf(source: Path, timeout_seconds: int = 180) -> tuple[Path | None, str]:
-    """Convert one DWG to a sibling DXF. Returns (dxf_path or None, message)."""
+def convert_dwg_to_dxf(
+    source: Path, output: Path | None = None, timeout_seconds: int = 180
+) -> tuple[Path | None, str]:
+    """Convert one DWG to DXF (sibling by default). Returns (dxf_path or None, message)."""
     if source.suffix.lower() != ".dwg":
         return source, "Archivo ya es DXF; no requiere conversión."
     executable = shutil.which("dwg2dxf")
     if executable is None:
         return None, "Convertidor dwg2dxf (LibreDWG) no encontrado en el servidor."
 
-    output = source.with_suffix(".dxf")
+    output = output or source.with_suffix(".dxf")
+    output.parent.mkdir(parents=True, exist_ok=True)
     try:
         completed = subprocess.run(
             [executable, "-o", str(output), str(source)],

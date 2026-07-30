@@ -1,4 +1,4 @@
-.PHONY: install test lint typecheck demo-data ingest-demo convert-demo parse-demo process-demo eval-demo api dashboard clean
+.PHONY: install test lint typecheck demo-data ingest-demo convert-demo parse-demo process-demo eval-demo api web web-install clean
 
 DEMO_PROJECT := data/demo/demo_project_001
 
@@ -40,9 +40,6 @@ web-install:
 
 web:
 	npm --prefix apps/web run dev
-
-dashboard:
-	uv run streamlit run apps/dashboard/app.py
 
 clean:
 	rm -rf data/demo/*/processed data/demo/*/reports data/demo/*/converted reports/*.json reports/*.md

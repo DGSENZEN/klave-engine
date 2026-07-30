@@ -1,24 +1,40 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f6f7f9;
+  --background: #f6f8fb;
   --surface: #ffffff;
-  --surface-2: #f1f3f6;
-  --foreground: #0f172a;
-  --muted: #64748b;
-  --border: #e2e8f0;
-  --primary: #1d4ed8;
+  --surface-2: #eff2f7;
+  --surface-3: #e3e8f0;
+  --sidebar: #fbfcfe;
+  --foreground: #0b1526;
+  --muted: #667487;
+  --border: #e8ecf2;
+  --border-strong: #d3dae4;
+  --primary: #2c58e0;
+  --primary-hover: #2247c4;
+  --primary-soft: #eef3ff;
   --primary-fg: #ffffff;
   --accent: #0d9488;
+  --accent-soft: #ecfdf8;
   --danger: #dc2626;
+  --danger-soft: #fef2f2;
   --warning: #d97706;
+  --warning-soft: #fffbeb;
   --success: #16a34a;
+  --success-soft: #f0fdf4;
+  --ring: rgba(44, 88, 224, 0.3);
+  --shadow-xs: 0 1px 2px rgba(11, 21, 38, 0.04);
+  --shadow-sm: 0 1px 2px rgba(11, 21, 38, 0.05), 0 1px 3px rgba(11, 21, 38, 0.06);
+  --shadow-md: 0 2px 6px -1px rgba(11, 21, 38, 0.06), 0 8px 20px -6px rgba(11, 21, 38, 0.12);
+  --shadow-lg: 0 10px 15px -5px rgba(11, 21, 38, 0.09), 0 24px 40px -10px rgba(11, 21, 38, 0.16);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-sidebar: var(--sidebar);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-border: var(--border);
@@ -38,10 +54,32 @@ body {
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(1200px 600px at 100% -10%, rgba(44, 88, 224, 0.05), transparent 60%),
+    var(--background);
+  background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  letter-spacing: -0.006em;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.018em;
+}
+
+::selection {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 ::-webkit-scrollbar {
@@ -49,20 +87,102 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #cdd5df;
   border-radius: 6px;
   border: 2px solid var(--background);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #9aa4b2;
 }
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 14px;
+  box-shadow: var(--shadow-xs);
+}
+
+.card-hover {
+  transition: box-shadow 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+.card-hover:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* Loading shimmer */
+.skeleton {
+  border-radius: 8px;
+  background: linear-gradient(
+    100deg,
+    var(--surface-2) 40%,
+    var(--surface-3) 50%,
+    var(--surface-2) 60%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 130% 0;
+  }
+  to {
+    background-position: -30% 0;
+  }
+}
+
+/* Entry animations */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.rise-in {
+  animation: rise-in 240ms ease-out both;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+.toast-in {
+  animation: toast-in 200ms ease-out both;
+}
+
+/* Range inputs (confidence slider) */
+input[type="range"] {
+  appearance: none;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  height: 15px;
+  width: 15px;
+  border-radius: 999px;
+  background: var(--primary);
+  border: 2.5px solid #fff;
+  box-shadow: var(--shadow-sm);
+  transition: transform 120ms ease;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
 }

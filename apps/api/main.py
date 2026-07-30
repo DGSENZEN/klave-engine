@@ -10,6 +10,7 @@ from klave_engine.common.logging import configure_logging
 from apps.api.routes import (
     detections,
     entities,
+    events,
     geometry,
     graph,
     health,
@@ -36,6 +37,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health.router)
+    app.include_router(events.router)
     app.include_router(projects.router)
     app.include_router(entities.router)
     app.include_router(geometry.router)

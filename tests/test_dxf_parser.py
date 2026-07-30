@@ -48,7 +48,8 @@ def test_missing_file_raises_parse_error(tmp_path: Path) -> None:
 
 def test_manifest_creation(demo_project_root: Path) -> None:
     manifest = ingest_project(demo_project_root)
-    assert manifest.project_id == "demo_project_001"
+    assert manifest.project_id.startswith("demo_project_001_")
+    assert manifest.project_id != "demo_project_001"
     assert len(manifest.source_files) == 1
     assert manifest.source_files[0].sheet_number == "S-101"
     assert manifest.source_files[0].discipline == "structural"
@@ -58,6 +59,45 @@ def test_sheet_number_inference() -> None:
     assert infer_sheet_number("S-101.dwg") == "S-101"
     assert infer_sheet_number("plan_S201_rev2.dxf") == "S201"
     assert infer_sheet_number("notes.dxf") is None
+
+
+def test_ingest_uses_unique_stable_ids_for_same_named_roots(tmp_path: Path) -> None:
+    first = tmp_path / "one" / "project"
+    second = tmp_path / "two" / "project"
+    for root in (first, second):
+        (root / "drawings").mkdir(parents=True)
+        (root / "drawings" / "S-101.DXF").write_text("placeholder")
+
+    first_manifest = ingest_project(first)
+    second_manifest = ingest_project(second)
+
+    assert first_manifest.project_id != second_manifest.project_id
+    assert ingest_project(first).project_id == first_manifest.project_id
+    assert first_manifest.source_files[0].file_type.value == "dxf"
+
+
+def test_parser_preserves_project_relative_source_paths(tmp_path: Path) -> None:
+    paths = []
+    for directory in ("drawings/a", "drawings/b"):
+        path = tmp_path / directory / "S-101.dxf"
+        path.parent.mkdir(parents=True)
+        doc = ezdxf.new("R2018")
+        doc.modelspace().add_line((0, 0), (1, 1))
+        doc.saveas(path)
+        paths.append(path)
+
+    drawings = DxfParser().parse_files(
+        paths, source_files=["drawings/a/S-101.dxf", "drawings/b/S-101.dxf"]
+    )
+
+    assert [drawing.source_file for drawing in drawings] == [
+        "drawings/a/S-101.dxf",
+        "drawings/b/S-101.dxf",
+    ]
+    assert {entity.source_file for drawing in drawings for entity in drawing.entities} == {
+        "drawings/a/S-101.dxf",
+        "drawings/b/S-101.dxf",
+    }
 
 
 def test_value_with_embedded_newline_is_recovered(tmp_path: Path) -> None:

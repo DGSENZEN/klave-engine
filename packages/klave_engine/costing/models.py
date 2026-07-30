@@ -248,10 +248,18 @@ class CostingConfig(BaseModel):
 class CostingOverrides(BaseModel):
     """User edits to costing inputs, persisted per project and applied on
     recompute (and on the next full run). Insumo prices override unit costs by
-    resource code."""
+    resource code.
+
+    ``version`` implements optimistic concurrency for collaboration: a client
+    submits the version it edited on top of, and the API rejects the write
+    (409) if someone else saved in between — no silent last-write-wins on
+    money-bearing parameters."""
 
     config: CostingConfig = Field(default_factory=CostingConfig)
     insumo_prices: dict[str, float] = Field(default_factory=dict)
+    version: int = 0
+    updated_by: str | None = None
+    updated_at: datetime | None = None
 
 
 class CostReport(BaseModel):

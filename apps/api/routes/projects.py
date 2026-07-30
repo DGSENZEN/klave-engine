@@ -1,20 +1,24 @@
+import re
 import shutil
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile
 from klave_engine.common.config import Settings
 from klave_engine.common.ids import short_uuid, slugify
 from klave_engine.conversion.libredwg import convert_dwg_to_dxf
+from klave_engine.ingestion.manifest import ConvertedFile, save_manifest
 from klave_engine.ingestion.project_loader import ingest_project
-from klave_engine.pipeline import run_full_pipeline
 from pydantic import BaseModel
 
 from apps.api.dependencies import ProjectStore, get_settings, get_store
-from apps.api.jobs import JOB_STORE
+from apps.api.events import BUS, clean_actor
+from apps.api.jobs import JOB_STORE, JobQueueFullError
 
 router = APIRouter(prefix="/projects")
 
 ALLOWED_SUFFIXES = {".dwg", ".dxf"}
+UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 
 class CreateProjectRequest(BaseModel):
@@ -22,13 +26,82 @@ class CreateProjectRequest(BaseModel):
     root_path: str
 
 
-class ProcessSummaryResponse(BaseModel):
+class ProcessAcceptedResponse(BaseModel):
     project_id: str
-    processing_status: str
-    entity_count: int
-    detection_count: int
-    risk_count: int
-    warnings: list[str]
+    job_id: str
+    run_id: str
+    state: str
+    stage: str
+
+
+def _validated_upload_name(filename: str) -> tuple[str, str]:
+    """Validate the client-provided display name before touching the filesystem."""
+    if (
+        not filename
+        or len(filename) > 255
+        or "\x00" in filename
+        or "/" in filename
+        or "\\" in filename
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail={"error_type": "invalid_filename", "message": "Nombre de archivo inválido."},
+        )
+    suffix = Path(filename).suffix.lower()
+    if suffix not in ALLOWED_SUFFIXES:
+        raise HTTPException(
+            status_code=400,
+            detail={"error_type": "unsupported_file", "filename": filename},
+        )
+    return filename, suffix
+
+
+def _validate_upload_signature(suffix: str, header: bytes) -> None:
+    """Reject obvious content-type spoofing before invoking a CAD parser/converter."""
+    valid = False
+    if suffix == ".dwg":
+        valid = bool(re.fullmatch(rb"AC10\d{2}", header[:6]))
+    elif header.startswith(b"AutoCAD Binary DXF"):
+        valid = True
+    else:
+        # ASCII DXF permits comments before the first SECTION, so look for a
+        # complete group-code/value pair rather than assuming byte zero.
+        valid = bool(re.search(rb"(?:^|[\r\n])\s*0\s*[\r\n]+\s*SECTION(?:[\r\n]|$)", header))
+    if not valid:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_type": "invalid_file_signature",
+                "message": "El archivo no coincide con el formato DWG/DXF declarado.",
+            },
+        )
+
+
+async def _save_upload(file: UploadFile, destination: Path, max_bytes: int) -> None:
+    """Stream an upload with a hard byte limit and remove partial files on failure."""
+    written = 0
+    header = bytearray()
+    try:
+        with destination.open("xb") as out:
+            while chunk := await file.read(UPLOAD_CHUNK_BYTES):
+                written += len(chunk)
+                if written > max_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail={
+                            "error_type": "upload_too_large",
+                            "max_upload_bytes": max_bytes,
+                        },
+                    )
+                if len(header) < 64 * 1024:
+                    header.extend(chunk[: 64 * 1024 - len(header)])
+                out.write(chunk)
+        _validate_upload_signature(destination.suffix.lower(), bytes(header))
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+    finally:
+        await file.close()
 
 
 @router.get("")
@@ -44,7 +117,7 @@ def list_projects(store: ProjectStore = Depends(get_store)) -> dict:
             entry["created_at"] = manifest.created_at.isoformat()
         except Exception:
             entry["status"] = "unknown"
-        job = JOB_STORE.get(project_id)
+        job = JOB_STORE.get(project_id, Path(root), store.settings)
         if job is not None and job.state in ("queued", "running"):
             entry["status"] = job.state
         projects.append(entry)
@@ -55,6 +128,7 @@ def list_projects(store: ProjectStore = Depends(get_store)) -> dict:
 @router.post("", status_code=201)
 def create_project(
     request: CreateProjectRequest,
+    x_actor: Annotated[str | None, Header()] = None,
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
@@ -64,48 +138,40 @@ def create_project(
             status_code=400,
             detail={"error_type": "invalid_root_path", "root_path": request.root_path},
         )
+    root = store.managed_root(root)
     manifest = ingest_project(
         root,
         project_name=request.project_name,
         processed_dir_name=settings.processed_dir_name,
     )
     store.register(manifest.project_id, root)
+    BUS.publish(
+        "project_created",
+        project_id=manifest.project_id,
+        actor=clean_actor(x_actor),
+        data={"project_name": manifest.project_name},
+    )
     return manifest.model_dump(mode="json")
 
 
 @router.post("/upload", status_code=202)
 async def upload_project(
-    background: BackgroundTasks,
     file: UploadFile,
+    x_actor: Annotated[str | None, Header()] = None,
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
     """Accept a DWG/DXF upload, convert if needed, and process in the background."""
-    filename = file.filename or "plano.dxf"
-    suffix = Path(filename).suffix.lower()
-    if suffix not in ALLOWED_SUFFIXES:
-        raise HTTPException(
-            status_code=400,
-            detail={"error_type": "unsupported_file", "filename": filename},
-        )
+    filename, suffix = _validated_upload_name(file.filename or "plano.dxf")
 
     project_id = f"{slugify(Path(filename).stem)[:32] or 'plano'}_{short_uuid('p')[2:]}"
-    root = settings.data_dir / "uploads" / project_id
+    root = (settings.data_dir / "uploads" / project_id).resolve()
     drawings = root / "drawings"
     drawings.mkdir(parents=True, exist_ok=True)
-    saved = drawings / filename
-    with saved.open("wb") as out:
-        shutil.copyfileobj(file.file, out)
-
-    warnings: list[str] = []
-    if suffix == ".dwg":
-        dxf_path, message = convert_dwg_to_dxf(saved)
-        if dxf_path is None:
-            raise HTTPException(
-                status_code=422,
-                detail={"error_type": "conversion_failed", "message": message},
-            )
-        warnings.append(message)
+    # Do not place client-controlled names on disk. The original name remains
+    # display metadata only; storage names are deterministic and path-safe.
+    saved = drawings / f"source{suffix}"
+    await _save_upload(file, saved, settings.max_upload_bytes)
 
     manifest = ingest_project(
         root,
@@ -113,13 +179,56 @@ async def upload_project(
         project_id=project_id,
         processed_dir_name=settings.processed_dir_name,
     )
+
+    warnings: list[str] = []
+    if suffix == ".dwg":
+        dxf_path, message = convert_dwg_to_dxf(saved)
+        if dxf_path is None:
+            shutil.rmtree(root)
+            raise HTTPException(
+                status_code=422,
+                detail={"error_type": "conversion_failed", "message": message},
+            )
+        source = next(
+            source for source in manifest.source_files if source.path == "drawings/source.dwg"
+        )
+        converted = root / settings.converted_dir_name / source.file_id / "source.dxf"
+        converted.parent.mkdir(parents=True, exist_ok=True)
+        dxf_path.replace(converted)
+        manifest.converted_files.append(
+            ConvertedFile(
+                source_file_id=source.file_id,
+                path=str(converted.relative_to(root)),
+            )
+        )
+        save_manifest(manifest, settings.processed_dir_name)
+        warnings.append(message)
+
     store.register(project_id, root)
-    JOB_STORE.start(project_id)
-    background.add_task(JOB_STORE.run, project_id, root, settings)
+    BUS.publish(
+        "project_created",
+        project_id=project_id,
+        actor=clean_actor(x_actor),
+        data={"project_name": manifest.project_name},
+    )
+    try:
+        job, _ = JOB_STORE.enqueue(project_id, root, settings)
+    except JobQueueFullError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error_type": "processing_queue_full",
+                "project_id": project_id,
+                "message": "La cola de procesamiento está llena. Inténtalo de nuevo pronto.",
+            },
+            headers={"Retry-After": "30"},
+        ) from exc
     return {
         "project_id": project_id,
         "project_name": manifest.project_name,
-        "state": "queued",
+        "job_id": job.job_id,
+        "run_id": job.run_id,
+        "state": job.state,
         "warnings": warnings,
     }
 
@@ -129,11 +238,13 @@ def project_status(
     project_id: str, store: ProjectStore = Depends(get_store)
 ) -> dict:
     """Processing status for the upload-progress screen."""
-    store.get_root(project_id)  # 404 if unknown
-    job = JOB_STORE.get(project_id)
+    root = store.get_root(project_id)  # 404 if unknown
+    job = JOB_STORE.get(project_id, root, store.settings)
     if job is not None:
         return {
             "project_id": project_id,
+            "job_id": job.job_id,
+            "run_id": job.run_id,
             "state": job.state,
             "stage": job.stage,
             "error": job.error,
@@ -162,6 +273,7 @@ def get_project(project_id: str, store: ProjectStore = Depends(get_store)) -> di
 @router.post("/{project_id}/ingest")
 def reingest_project(
     project_id: str,
+    x_actor: Annotated[str | None, Header()] = None,
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
@@ -170,21 +282,34 @@ def reingest_project(
         project_id=project_id,
         processed_dir_name=settings.processed_dir_name,
     )
+    BUS.publish(
+        "project_updated",
+        project_id=project_id,
+        actor=clean_actor(x_actor),
+        data={"project_name": manifest.project_name},
+    )
     return manifest.model_dump(mode="json")
 
 
-@router.post("/{project_id}/process")
+@router.post("/{project_id}/process", status_code=202)
 def process_project(
     project_id: str,
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
-) -> ProcessSummaryResponse:
-    result = run_full_pipeline(store.get_root(project_id), settings)
-    return ProcessSummaryResponse(
-        project_id=result.manifest.project_id,
-        processing_status=result.manifest.processing_status.value,
-        entity_count=len(result.entities),
-        detection_count=len(result.detections),
-        risk_count=len(result.risk_report.findings) if result.risk_report else 0,
-        warnings=result.warnings,
+) -> ProcessAcceptedResponse:
+    root = store.get_root(project_id)
+    try:
+        job, _ = JOB_STORE.enqueue(project_id, root, settings)
+    except JobQueueFullError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={"error_type": "processing_queue_full", "project_id": project_id},
+            headers={"Retry-After": "30"},
+        ) from exc
+    return ProcessAcceptedResponse(
+        project_id=project_id,
+        job_id=job.job_id,
+        run_id=job.run_id,
+        state=job.state,
+        stage=job.stage,
     )

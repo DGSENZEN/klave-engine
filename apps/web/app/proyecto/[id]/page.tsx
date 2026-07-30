@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Map, Receipt, Ruler, Layers } from "lucide-react";
+import { Map, Receipt, Ruler, Layers, Banknote, TrendingUp, ShieldCheck, CalendarDays } from "lucide-react";
 import {
   getCosts,
   getViews,
@@ -13,19 +13,34 @@ import {
   type Views,
   type Dimensions,
 } from "@/lib/api";
-import { Card, Metric, SectionTitle, Badge } from "@/components/ui";
+import { Card, Metric, SectionTitle, Skeleton } from "@/components/ui";
+import { useProjectLive } from "@/components/ProjectLive";
 
 export default function Resumen() {
   const { id } = useParams<{ id: string }>();
   const [costs, setCosts] = useState<CostReport | null>(null);
   const [views, setViews] = useState<Views | null>(null);
   const [dims, setDims] = useState<Dimensions | null>(null);
+  const { latestEvent, connectionEpoch } = useProjectLive();
 
+  // connectionEpoch: a reconnect may have skipped events, so reload everything.
   useEffect(() => {
     getCosts(id).then(setCosts).catch(() => {});
     getViews(id).then(setViews).catch(() => {});
     getDimensions(id).then(setDims).catch(() => {});
-  }, [id]);
+  }, [id, connectionEpoch]);
+
+  useEffect(() => {
+    if (!latestEvent) return;
+    if (latestEvent.type === "costing_updated") {
+      getCosts(id).then(setCosts).catch(() => {});
+    }
+    if (latestEvent.type === "run_published") {
+      getCosts(id).then(setCosts).catch(() => {});
+      getViews(id).then(setViews).catch(() => {});
+      getDimensions(id).then(setDims).catch(() => {});
+    }
+  }, [id, latestEvent]);
 
   const months = costs ? Math.round(costs.schedule.total_duration_days / 24) : 0;
 
@@ -50,23 +65,30 @@ export default function Resumen() {
       </div>
 
       {costs && (
-        <>
+        <div className="rise-in">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Metric label="Costo directo" value={money(costs.integration.direct_cost)} />
+            <Metric
+              label="Costo directo"
+              value={money(costs.integration.direct_cost)}
+              icon={<Banknote size={16} />}
+            />
             <Metric
               label="Precio de venta"
               value={money(costs.integration.sale_price)}
               hint={`factor ${costs.integration.overcost_factor.toFixed(3)}`}
+              icon={<TrendingUp size={16} />}
             />
             <Metric
               label="Total c/ contingencia"
               value={money(costs.integration.grand_total)}
               accent="primary"
+              icon={<ShieldCheck size={16} />}
             />
             <Metric
               label="Plazo estimado"
               value={`${costs.schedule.total_duration_days} días`}
               hint={`~${months} meses · ${costs.schedule.phases.length} fases`}
+              icon={<CalendarDays size={16} />}
             />
           </div>
 
@@ -123,11 +145,22 @@ export default function Resumen() {
             Precios de insumos de referencia (MXN); sustituir por cotizaciones del proyecto.
             Cantidades deduplicadas por vista; revisar conceptos de baja confianza.
           </p>
-        </>
+        </div>
       )}
 
       {!costs && (
-        <div className="text-sm text-[var(--muted)]">Cargando indicadores…</div>
+        <div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Skeleton className="h-[104px]" />
+            <Skeleton className="h-[104px]" />
+            <Skeleton className="h-[104px]" />
+            <Skeleton className="h-[104px]" />
+          </div>
+          <div className="mt-6 grid gap-4 lg:grid-cols-3">
+            <Skeleton className="h-56 lg:col-span-2" />
+            <Skeleton className="h-56" />
+          </div>
+        </div>
       )}
     </div>
   );
@@ -156,22 +189,32 @@ function Row({
 function PhaseBars({ totals }: { totals: Record<string, number> }) {
   const entries = Object.entries(totals);
   const max = Math.max(...entries.map(([, v]) => v), 1);
+  const sum = entries.reduce((acc, [, v]) => acc + v, 0) || 1;
   const colors: Record<string, string> = {
     Preliminares: "#0d9488",
     Cimentación: "#d97706",
     Estructura: "#1d4ed8",
   };
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {entries.map(([phase, value]) => (
         <div key={phase}>
-          <div className="mb-1 flex items-center justify-between text-sm">
-            <span>{phase}</span>
+          <div className="mb-1.5 flex items-baseline justify-between text-sm">
+            <span className="flex items-center gap-2">
+              <span
+                className="h-2.5 w-2.5 rounded-sm"
+                style={{ background: colors[phase] ?? "#64748b" }}
+              />
+              {phase}
+              <span className="text-xs text-[var(--muted)]">
+                {((value / sum) * 100).toFixed(0)}%
+              </span>
+            </span>
             <span className="font-medium tabular">{money(value)}</span>
           </div>
           <div className="h-2.5 overflow-hidden rounded-full bg-[var(--surface-2)]">
             <div
-              className="h-full rounded-full"
+              className="h-full rounded-full transition-[width] duration-500"
               style={{
                 width: `${(value / max) * 100}%`,
                 background: colors[phase] ?? "#64748b",

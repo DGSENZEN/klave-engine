@@ -113,13 +113,15 @@ DEMO_GOLD: dict = {
         "estimated_slab_area": 120000.0,
         "detail_reference_count": 2,
         "unresolved_detail_reference_count": 1,
-        "low_confidence_detection_count": 2,
+        # Every demo element sits on a semantic layer, so the evidence-fusion
+        # model scores them all ≥0.7; the low-confidence path is covered by a
+        # targeted unit test instead (test_risks.py).
+        "low_confidence_detection_count": 0,
     },
     "expected_risk_types": [
         "unresolved_detail_reference",
         "column_tag_without_grid",
         "duplicate_column_tag",
-        "low_confidence_detection_in_takeoff",
         "unknown_drawing_units",
     ],
 }

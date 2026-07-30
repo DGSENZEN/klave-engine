@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2, Loader2, CircleAlert, Building2 } from "lucide-react";
 import { getStatus, type ProjectStatus } from "@/lib/api";
+import { parseProjectEvent, projectEventsUrl } from "@/lib/collab";
+import { ProjectLiveProvider } from "@/components/ProjectLive";
 import { ProjectShell } from "@/components/ProjectShell";
 
 const STEPS = [
@@ -20,34 +22,59 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const [status, setStatus] = useState<ProjectStatus | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let active = true;
-    async function poll() {
-      try {
-        const s = await getStatus(id);
-        if (!active) return;
-        setStatus(s);
-        if (s.state !== "processed" && s.state !== "failed") {
-          timer.current = setTimeout(poll, 1200);
-        }
-      } catch {
-        if (active) timer.current = setTimeout(poll, 2000);
-      }
+    getStatus(id)
+      .then((s) => {
+        if (active) setStatus(s);
+      })
+      .catch(() => {});
+
+    if (status?.state === "processed") {
+      return () => {
+        active = false;
+      };
     }
-    poll();
+
+    const source = new EventSource(projectEventsUrl(id));
+    source.onmessage = (message) => {
+      const event = parseProjectEvent(message);
+      if (!event || !active) return;
+      if (event.type === "job_updated") {
+        const data = event.data;
+        setStatus({
+          project_id: id,
+          job_id: typeof data.job_id === "string" ? data.job_id : undefined,
+          run_id: typeof data.run_id === "string" ? data.run_id : undefined,
+          state: typeof data.state === "string" ? data.state : "unknown",
+          stage: typeof data.stage === "string" ? data.stage : "Desconocido",
+          error: typeof data.error === "string" ? data.error : null,
+          entity_count: typeof data.entity_count === "number" ? data.entity_count : undefined,
+          detection_count:
+            typeof data.detection_count === "number" ? data.detection_count : undefined,
+        });
+      } else if (event.type === "run_published") {
+        getStatus(id)
+          .then((s) => {
+            if (active) setStatus(s);
+          })
+          .catch(() => {});
+      }
+    };
     return () => {
       active = false;
-      if (timer.current) clearTimeout(timer.current);
+      source.close();
     };
-  }, [id]);
+  }, [id, status?.state]);
 
   if (status?.state === "processed") {
     return (
-      <ProjectShell id={id} name={undefined}>
-        {children}
-      </ProjectShell>
+      <ProjectLiveProvider projectId={id}>
+        <ProjectShell id={id} name={undefined}>
+          {children}
+        </ProjectShell>
+      </ProjectLiveProvider>
     );
   }
 
@@ -74,20 +101,38 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
           : "Leemos las entidades, detectamos elementos y calculamos el presupuesto."}
       </p>
 
-      <div className="card mt-6 p-5">
-        {STEPS.map((step) => {
+      <div className="card rise-in mt-6 p-5">
+        {STEPS.map((step, index) => {
           const done = reached(step.key);
           const isProcessed = step.key === "processed" && status?.state === "processed";
+          const isCurrent = !done && (index === 0 || reached(STEPS[index - 1].key));
           return (
-            <div key={step.key} className="flex items-center gap-3 py-2.5">
-              {failed ? (
-                <CircleAlert size={20} className="text-[var(--warning)]" />
-              ) : done || isProcessed ? (
-                <CheckCircle2 size={20} className="text-[var(--success)]" />
-              ) : (
-                <Loader2 size={20} className="animate-spin text-[var(--primary)]" />
+            <div key={step.key} className="relative flex items-center gap-3 py-3">
+              {index < STEPS.length - 1 && (
+                <span
+                  className={`absolute left-[9.5px] top-[34px] h-[calc(100%-26px)] w-px ${
+                    done ? "bg-[var(--success)]/40" : "bg-[var(--border)]"
+                  }`}
+                />
               )}
-              <span className={done ? "text-[var(--foreground)]" : "text-[var(--muted)]"}>
+              {failed ? (
+                <CircleAlert size={20} className="shrink-0 text-[var(--warning)]" />
+              ) : done || isProcessed ? (
+                <CheckCircle2 size={20} className="shrink-0 text-[var(--success)]" />
+              ) : isCurrent ? (
+                <Loader2 size={20} className="shrink-0 animate-spin text-[var(--primary)]" />
+              ) : (
+                <span className="mx-[3px] h-3.5 w-3.5 shrink-0 rounded-full border-2 border-[var(--border-strong,var(--border))]" />
+              )}
+              <span
+                className={
+                  done
+                    ? "text-[var(--foreground)]"
+                    : isCurrent
+                      ? "font-medium text-[var(--foreground)]"
+                      : "text-[var(--muted)]"
+                }
+              >
                 {step.label}
               </span>
             </div>

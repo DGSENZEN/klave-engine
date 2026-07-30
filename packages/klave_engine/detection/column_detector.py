@@ -1,21 +1,27 @@
 """Column tag detection from text patterns, grid proximity, and marker geometry."""
 
+import numpy as np
 from pydantic import BaseModel, Field
 
 from klave_engine.common.ids import IdGenerator
+from klave_engine.detection.confidence import (
+    MARKER,
+    NEAR_GRID,
+    SEMANTIC_LAYER,
+    model_for,
+)
 from klave_engine.detection.results import (
     Detection,
     DetectionType,
     DetectorOutput,
     layer_matches,
+    make_detection,
 )
 from klave_engine.detection.text_patterns import TextPatternConfig, match_category
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.geometry.bbox import bbox_area, bbox_center
-from klave_engine.geometry.measurements import line_length, polygon_area
+from klave_engine.geometry.measurements import polygon_area
 from klave_engine.geometry.spatial_index import SpatialIndex
-from klave_engine.graph.evidence import EvidencePacket
-from klave_engine.graph.schema import EdgeType, GraphEdge, GraphNode, NodeType
 
 
 def _marker_section(marker: NormalizedEntity) -> tuple[float | None, str]:
@@ -54,12 +60,10 @@ def detect_columns(
     config: ColumnDetectorConfig | None = None,
     text_config: TextPatternConfig | None = None,
     detection_ids: IdGenerator | None = None,
-    edge_ids: IdGenerator | None = None,
 ) -> DetectorOutput:
     config = config or ColumnDetectorConfig()
     text_config = text_config or TextPatternConfig()
     detection_ids = detection_ids or IdGenerator("det")
-    edge_ids = edge_ids or IdGenerator("cedge")
     output = DetectorOutput(detector_name="column_detector")
 
     grid_intersections = [
@@ -73,7 +77,7 @@ def detect_columns(
         [d.properties["point"] for d in grid_intersections], dtype=float
     ) if grid_intersections else np.empty((0, 2))
 
-    model = ConfidenceModel.model_validate(model_for("column_tag").model_dump())
+    model = model_for("column_tag")
 
     for entity in entities:
         if not entity.is_textual or not entity.text:
@@ -85,6 +89,7 @@ def detect_columns(
         source_entities = [entity.entity_id]
         properties: dict = {"has_nearby_grid": False}
         features: dict[str, float] = {}
+        nearest_grid: Detection | None = None
         cx, cy = bbox_center(entity.bbox)
 
         # Grid proximity: vectorized nearest intersection (NumPy broadcast).
@@ -134,69 +139,18 @@ def detect_columns(
 
         confidence = round(model.score(features), 4)
         notes.extend(model.explain(features))
-        detection_id = detection_ids.next()
-        evidence = EvidencePacket(
-            source=entity.source_file,
-            method="column_tag_regex_near_grid",
-            entity_ids=source_entities,
-            bbox=entity.bbox,
-            confidence=confidence,
-            notes=notes,
-        )
-        detection = Detection(
-            detection_id=detection_id,
-            detection_type=DetectionType.column_tag,
-            label=entity.text.strip(),
-            bbox=entity.bbox,
-            source_entities=source_entities,
-            graph_nodes=[detection_id],
-            confidence=confidence,
-            evidence=evidence,
-            properties=properties,
-        )
-        output.detections.append(detection)
-        output.nodes.append(
-            GraphNode(
-                node_id=detection_id,
-                node_type=NodeType.column_tag,
-                label=detection.label,
-                bbox=entity.bbox,
-                source_entities=source_entities,
-                properties=properties,
-                confidence=confidence,
-                evidence=evidence,
+        output.detections.append(
+            make_detection(
+                detection_ids.next(),
+                DetectionType.column_tag,
+                entity.text.strip(),
+                entity.bbox,
+                confidence,
+                source_entities,
+                "column_tag_regex_near_grid",
+                notes,
+                properties,
+                entity.source_file,
             )
         )
-        output.edges.append(
-            GraphEdge(
-                edge_id=edge_ids.next(),
-                edge_type=EdgeType.labels,
-                source_node_id=entity.entity_id,
-                target_node_id=detection_id,
-                confidence=confidence,
-                evidence=evidence,
-            )
-        )
-        if marker_id is not None:
-            output.edges.append(
-                GraphEdge(
-                    edge_id=edge_ids.next(),
-                    edge_type=EdgeType.possible_structural_element,
-                    source_node_id=detection_id,
-                    target_node_id=marker_id,
-                    confidence=confidence,
-                    evidence=evidence,
-                )
-            )
-        if nearest_grid is not None and properties["has_nearby_grid"]:
-            output.edges.append(
-                GraphEdge(
-                    edge_id=edge_ids.next(),
-                    edge_type=EdgeType.belongs_to_grid,
-                    source_node_id=detection_id,
-                    target_node_id=nearest_grid.detection_id,
-                    confidence=confidence,
-                    evidence=evidence,
-                )
-            )
     return output

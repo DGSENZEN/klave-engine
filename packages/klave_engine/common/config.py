@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     converter_executable_path: Path | None = None
     overwrite_converted_files: bool = False
     converter_timeout_seconds: int = 120
+    max_upload_bytes: int = 100 * 1024 * 1024
+    max_concurrent_jobs: int = 2
+    max_queued_jobs: int = 8
 
     log_level: str = "INFO"
     detector_config_path: Path | None = None

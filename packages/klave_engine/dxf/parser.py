@@ -60,9 +60,10 @@ class DxfParser:
     def __init__(self, ids: IdGenerator | None = None) -> None:
         self._ids = ids or IdGenerator("ent")
 
-    def parse_file(self, path: Path) -> ParsedDrawing:
+    def parse_file(self, path: Path, source_file: str | None = None) -> ParsedDrawing:
         if not path.exists():
             raise DxfParseError(f"DXF file does not exist: {path}")
+        source_file = source_file or path.name
         recover_warnings: list[ParseWarning] = []
         try:
             doc = ezdxf.readfile(str(path))
@@ -76,7 +77,7 @@ class DxfParser:
             raise DxfParseError(f"Failed to read DXF file {path}: {exc}") from exc
 
         drawing = ParsedDrawing(
-            source_file=path.name,
+            source_file=source_file,
             layers=[layer.dxf.name for layer in doc.layers],
             blocks=[block.name for block in doc.blocks if not block.name.startswith("*")],
             warnings=recover_warnings,
@@ -84,7 +85,7 @@ class DxfParser:
         )
 
         for entity in doc.modelspace():
-            normalized, warnings = normalize_entity(entity, path.name, self._ids)
+            normalized, warnings = normalize_entity(entity, source_file, self._ids)
             drawing.warnings.extend(warnings)
             if normalized is not None:
                 drawing.entities.append(normalized)
@@ -99,8 +100,15 @@ class DxfParser:
         )
         return drawing
 
-    def parse_files(self, paths: list[Path]) -> list[ParsedDrawing]:
-        return [self.parse_file(path) for path in paths]
+    def parse_files(
+        self, paths: list[Path], source_files: list[str] | None = None
+    ) -> list[ParsedDrawing]:
+        if source_files is not None and len(paths) != len(source_files):
+            raise ValueError("paths and source_files must have the same length")
+        return [
+            self.parse_file(path, source_file=source_files[index] if source_files else None)
+            for index, path in enumerate(paths)
+        ]
 
     def _load_with_recovery(self, path: Path):
         try:

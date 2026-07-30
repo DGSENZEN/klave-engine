@@ -9,23 +9,38 @@ import {
   money,
   money2,
   num,
+  type BoqLine,
   type CostReport,
   type Dimensions,
 } from "@/lib/api";
-import { Card, Metric, SectionTitle, Badge } from "@/components/ui";
+import { Button, Card, Metric, SectionTitle, Badge, Skeleton } from "@/components/ui";
+import { useProjectLive } from "@/components/ProjectLive";
 
 export default function PresupuestoPage() {
   const { id } = useParams<{ id: string }>();
   const [costs, setCosts] = useState<CostReport | null>(null);
   const [dims, setDims] = useState<Dimensions | null>(null);
+  const { latestEvent, sendActivity, connectionEpoch } = useProjectLive();
 
+  // connectionEpoch: a reconnect may have skipped events, so reload everything.
   useEffect(() => {
     getCosts(id).then(setCosts).catch(() => {});
     getDimensions(id).then(setDims).catch(() => {});
-  }, [id]);
+  }, [id, connectionEpoch]);
+
+  useEffect(() => {
+    if (!latestEvent) return;
+    if (latestEvent.type === "costing_updated" || latestEvent.type === "run_published") {
+      getCosts(id).then(setCosts).catch(() => {});
+    }
+    if (latestEvent.type === "run_published") {
+      getDimensions(id).then(setDims).catch(() => {});
+    }
+  }, [id, latestEvent]);
 
   function downloadCsv() {
     if (!costs) return;
+    sendActivity("exporting_budget", "Presupuesto CSV");
     const rows = [
       ["clave", "concepto", "unidad", "cantidad", "p_unitario", "importe", "fase", "confianza"],
       ...costs.boq.lines.map((l) => [
@@ -53,27 +68,35 @@ export default function PresupuestoPage() {
   }
 
   if (!costs) {
-    return <div className="px-8 py-7 text-sm text-[var(--muted)]">Cargando presupuesto…</div>;
+    return (
+      <div className="px-8 py-7">
+        <Skeleton className="mb-6 h-14 w-96" />
+        <div className="mb-6 grid gap-4 sm:grid-cols-3">
+          <Skeleton className="h-[104px]" />
+          <Skeleton className="h-[104px]" />
+          <Skeleton className="h-[104px]" />
+        </div>
+        <Skeleton className="h-80" />
+      </div>
+    );
   }
 
   const avgConf =
     costs.boq.lines.reduce((s, l) => s + l.confidence, 0) / (costs.boq.lines.length || 1);
+  const phases = [...new Set(costs.boq.lines.map((l) => l.phase))];
 
   return (
-    <div className="px-8 py-7">
+    <div className="rise-in px-8 py-7">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Catálogo de conceptos</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Catálogo de conceptos</h1>
           <p className="text-sm text-[var(--muted)]">
             Cantidades deducidas del plano · precios de referencia (MXN)
           </p>
         </div>
-        <button
-          onClick={downloadCsv}
-          className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm font-medium hover:bg-[var(--surface-2)]"
-        >
+        <Button onClick={downloadCsv}>
           <Download size={16} /> CSV
-        </button>
+        </Button>
       </div>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
@@ -99,29 +122,18 @@ export default function PresupuestoPage() {
             </tr>
           </thead>
           <tbody>
-            {costs.boq.lines.map((l) => (
-              <tr key={l.concept_code} className="border-b border-[var(--border)] last:border-0">
-                <td className="px-4 py-3 font-mono text-xs text-[var(--muted)]">
-                  {l.concept_code}
-                </td>
-                <td className="px-4 py-3">
-                  <div>{l.description}</div>
-                  <div className="text-xs text-[var(--muted)]">{l.phase}</div>
-                </td>
-                <td className="px-4 py-3 text-right tabular">
-                  {num(l.quantity)} {l.unit}
-                </td>
-                <td className="px-4 py-3 text-right tabular text-[var(--muted)]">
-                  {money2(l.unit_price)}
-                </td>
-                <td className="px-4 py-3 text-right font-medium tabular">{money2(l.amount)}</td>
-                <td className="px-4 py-3 text-center">
-                  <Badge tone={l.confidence >= 0.7 ? "success" : "warning"}>
-                    {(l.confidence * 100).toFixed(0)}%
-                  </Badge>
-                </td>
-              </tr>
-            ))}
+            {phases.map((phase) => {
+              const lines = costs.boq.lines.filter((l) => l.phase === phase);
+              const subtotal = lines.reduce((s, l) => s + l.amount, 0);
+              return (
+                <PhaseGroup
+                  key={phase}
+                  phase={phase}
+                  lines={lines}
+                  subtotal={subtotal}
+                />
+              );
+            })}
           </tbody>
           <tfoot>
             <tr className="bg-[var(--surface-2)] font-semibold">
@@ -212,6 +224,50 @@ export default function PresupuestoPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+function PhaseGroup({
+  phase,
+  lines,
+  subtotal,
+}: {
+  phase: string;
+  lines: BoqLine[];
+  subtotal: number;
+}) {
+  return (
+    <>
+      <tr className="border-b border-[var(--border)] bg-[var(--surface-2)]/60">
+        <td colSpan={4} className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+          {phase}
+        </td>
+        <td colSpan={2} className="px-4 py-2 text-right text-xs font-semibold tabular text-[var(--muted)]">
+          {money2(subtotal)}
+        </td>
+      </tr>
+      {lines.map((l) => (
+        <tr
+          key={l.concept_code}
+          className="border-b border-[var(--border)] transition-colors last:border-0 hover:bg-[var(--primary-soft)]/30"
+        >
+          <td className="px-4 py-3 font-mono text-xs text-[var(--muted)]">{l.concept_code}</td>
+          <td className="px-4 py-3">{l.description}</td>
+          <td className="px-4 py-3 text-right tabular">
+            {num(l.quantity)} <span className="text-xs text-[var(--muted)]">{l.unit}</span>
+          </td>
+          <td className="px-4 py-3 text-right tabular text-[var(--muted)]">
+            {money2(l.unit_price)}
+          </td>
+          <td className="px-4 py-3 text-right font-medium tabular">{money2(l.amount)}</td>
+          <td className="px-4 py-3 text-center">
+            <Badge dot tone={l.confidence >= 0.7 ? "success" : "warning"}>
+              {(l.confidence * 100).toFixed(0)}%
+            </Badge>
+          </td>
+        </tr>
+      ))}
+    </>
   );
 }
 

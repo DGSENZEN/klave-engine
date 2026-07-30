@@ -12,8 +12,10 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from klave_engine.common.config import Settings
 from klave_engine.common.errors import ConversionError
 from klave_engine.common.logging import get_logger, log_stage
+from klave_engine.conversion.libredwg import convert_dwg_to_dxf, dwg2dxf_available
 from klave_engine.ingestion.manifest import (
     ConvertedFile,
     FileType,
@@ -141,38 +143,85 @@ class DwgToDxfConverter:
         return result
 
 
-def convert_project(
-    manifest: ProjectManifest,
-    converter: DwgToDxfConverter,
-    converted_dir_name: str = "converted",
-) -> list[ConversionResult]:
-    """Convert all DWG source files in a project and update the manifest in memory."""
-    root = manifest.root()
-    output_dir = root / converted_dir_name
-    results: list[ConversionResult] = []
-    already_converted = {c.source_file_id for c in manifest.converted_files}
+def convert_project(manifest: ProjectManifest, settings: Settings) -> list[ConversionResult]:
+    """Ensure every DWG source has a DXF, using whatever converter is available.
 
+    Conversion is non-fatal and sheet-aware: a DWG whose sheet already has a DXF
+    (a sibling file or a DXF source of the same stem) is skipped, so no sheet is
+    converted — or parsed — twice. The genuine "no DXF at all" case is handled by
+    the caller checking ``manifest.dxf_paths()``.
+    """
+    root = manifest.root()
+    converted_dir = root / settings.converted_dir_name
+    oda = DwgToDxfConverter(
+        executable=settings.converter_executable_path,
+        overwrite=settings.overwrite_converted_files,
+        timeout_seconds=settings.converter_timeout_seconds,
+    )
+    existing_stems = {
+        Path(f.path).stem.lower()
+        for f in manifest.source_files
+        if f.file_type == FileType.dxf
+    } | {Path(c.path).stem.lower() for c in manifest.converted_files}
+
+    results: list[ConversionResult] = []
     for source_file in manifest.source_files:
         if source_file.file_type != FileType.dwg:
             continue
-        result = converter.convert_file(root / source_file.path, output_dir)
+        source = root / source_file.path
+        if source.stem.lower() in existing_stems:
+            results.append(
+                ConversionResult(
+                    source_path=str(source),
+                    output_path=str(source.with_suffix(".dxf")),
+                    status=ConversionStatus.skipped_existing,
+                )
+            )
+            continue
+
+        result = _convert_one(source, converted_dir / source_file.file_id, oda, settings)
         results.append(result)
         if result.status in (ConversionStatus.success, ConversionStatus.skipped_existing):
-            if source_file.file_id not in already_converted:
-                manifest.converted_files.append(
-                    ConvertedFile(
-                        source_file_id=source_file.file_id,
-                        path=str(Path(result.output_path).relative_to(root)),
-                        conversion_status="success",
-                    )
+            manifest.converted_files.append(
+                ConvertedFile(
+                    source_file_id=source_file.file_id,
+                    path=str(Path(result.output_path).relative_to(root)),
+                    conversion_status="success",
                 )
+            )
+            existing_stems.add(source.stem.lower())
         else:
             manifest.errors.append(
                 f"Conversion failed for {source_file.path}: {result.error_message}"
             )
 
-    if any(r.status == ConversionStatus.failed for r in results):
-        manifest.processing_status = ProcessingStatus.failed
-    elif manifest.source_files:
+    if manifest.source_files:
         manifest.processing_status = ProcessingStatus.converted
     return results
+
+
+def _convert_one(
+    source: Path, output_dir: Path, oda: DwgToDxfConverter, settings: Settings
+) -> ConversionResult:
+    """Convert one DWG with the configured ODA converter, else local LibreDWG."""
+    if oda.converter_available():
+        return oda.convert_file(source, output_dir)
+    if dwg2dxf_available():
+        target = output_dir / (source.stem + ".dxf")
+        dxf, message = convert_dwg_to_dxf(source, target, settings.converter_timeout_seconds)
+        return ConversionResult(
+            source_path=str(source),
+            output_path=str(target),
+            status=ConversionStatus.success if dxf else ConversionStatus.failed,
+            stderr="" if dxf else message,
+            error_message=None if dxf else message,
+        )
+    return ConversionResult(
+        source_path=str(source),
+        output_path=str(output_dir / (source.stem + ".dxf")),
+        status=ConversionStatus.converter_missing,
+        error_message=(
+            "Sin convertidor disponible: configura KLAVE_CONVERTER_EXECUTABLE_PATH "
+            "o instala dwg2dxf (LibreDWG)."
+        ),
+    )
