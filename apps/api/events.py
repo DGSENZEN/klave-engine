@@ -45,8 +45,8 @@ class Event:
     actor: str | None
     data: dict[str, Any]
 
-    def to_sse(self) -> str:
-        payload = {
+    def to_json(self) -> dict[str, Any]:
+        return {
             "seq": self.seq,
             "ts": self.ts,
             "type": self.type,
@@ -54,7 +54,12 @@ class Event:
             "actor": self.actor,
             "data": self.data,
         }
-        return f"id: {self.seq}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    def to_sse(self) -> str:
+        return (
+            f"id: {self.seq}\n"
+            f"data: {json.dumps(self.to_json(), ensure_ascii=False)}\n\n"
+        )
 
 
 @dataclass

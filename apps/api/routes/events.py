@@ -92,6 +92,10 @@ def _stream_response(
         since = int(last_event_id) if last_event_id else BUS.latest_seq()
     except ValueError:
         since = BUS.latest_seq()
+    # A restarted server counts sequences from zero again; a client resuming
+    # with a stale higher cursor would silently drop every new event until the
+    # counter caught up. Clamp so delivery always resumes from live state.
+    since = min(since, BUS.latest_seq())
     viewer_actor = clean_actor(actor)
     viewer_client_id = clean_client_id(client_id)
     viewer_location_path = clean_location_path(location_path)
@@ -199,6 +203,25 @@ async def project_events_stream(
         location_path,
         location_label,
     )
+
+
+@router.get("/projects/{project_id}/events/history")
+def project_events_history(
+    project_id: str,
+    limit: int = 100,
+    store: ProjectStore = Depends(get_store),
+) -> dict:
+    """Recent project (and global) events from the in-memory buffer.
+
+    The change timeline is event-sourced; without history a client that
+    connects late or reconnects across a gap would never see other users'
+    committed changes. Bounded by the bus buffer — recent activity, not an
+    audit log.
+    """
+    store.get_root(project_id)
+    limit = max(1, min(limit, 200))
+    events = BUS.since(0, project_id)
+    return {"events": [event.to_json() for event in events[-limit:]]}
 
 
 @router.post("/projects/{project_id}/activity", status_code=202)
