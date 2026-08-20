@@ -1,32 +1,103 @@
 @import "tailwindcss";
 
+/*
+ * Klave design tokens.
+ *
+ * Two committed palettes (light + dark) driven by data-theme on <html>,
+ * stamped before first paint by the inline script in app/layout.tsx.
+ * Every color used anywhere in the app must resolve to one of these tokens;
+ * raw hex belongs only in this file.
+ */
+
 :root {
-  --background: #f6f8fb;
+  color-scheme: light;
+
+  --background: #f6f7f9;
   --surface: #ffffff;
-  --surface-2: #eff2f7;
-  --surface-3: #e3e8f0;
-  --sidebar: #fbfcfe;
-  --foreground: #0b1526;
-  --muted: #667487;
-  --border: #e8ecf2;
-  --border-strong: #d3dae4;
-  --primary: #2c58e0;
-  --primary-hover: #2247c4;
-  --primary-soft: #eef3ff;
+  --surface-2: #f0f2f5;
+  --surface-3: #e5e8ee;
+  --sidebar: #fafbfc;
+
+  --foreground: #0d1626;
+  --muted: #61708b;
+  --faint: #8b96a9;
+
+  --border: #e6e9ef;
+  --border-strong: #d0d7e2;
+
+  --primary: #2851d8;
+  --primary-hover: #1f42b8;
+  --primary-soft: #eef2fe;
   --primary-fg: #ffffff;
+
   --accent: #0d9488;
-  --accent-soft: #ecfdf8;
-  --danger: #dc2626;
-  --danger-soft: #fef2f2;
-  --warning: #d97706;
-  --warning-soft: #fffbeb;
-  --success: #16a34a;
-  --success-soft: #f0fdf4;
-  --ring: rgba(44, 88, 224, 0.3);
-  --shadow-xs: 0 1px 2px rgba(11, 21, 38, 0.04);
-  --shadow-sm: 0 1px 2px rgba(11, 21, 38, 0.05), 0 1px 3px rgba(11, 21, 38, 0.06);
-  --shadow-md: 0 2px 6px -1px rgba(11, 21, 38, 0.06), 0 8px 20px -6px rgba(11, 21, 38, 0.12);
-  --shadow-lg: 0 10px 15px -5px rgba(11, 21, 38, 0.09), 0 24px 40px -10px rgba(11, 21, 38, 0.16);
+  --accent-soft: #e6f7f3;
+
+  --danger: #d92d20;
+  --danger-soft: #fef3f2;
+  --warning: #b54708;
+  --warning-soft: #fffaeb;
+  --success: #067647;
+  --success-soft: #ecfdf3;
+
+  --ring: rgba(40, 81, 216, 0.32);
+
+  --shadow-xs: 0 1px 2px rgba(13, 22, 38, 0.04);
+  --shadow-sm: 0 1px 2px rgba(13, 22, 38, 0.05), 0 1px 3px rgba(13, 22, 38, 0.06);
+  --shadow-md: 0 2px 6px -1px rgba(13, 22, 38, 0.06), 0 8px 20px -6px rgba(13, 22, 38, 0.12);
+  --shadow-lg: 0 10px 15px -5px rgba(13, 22, 38, 0.09), 0 24px 40px -10px rgba(13, 22, 38, 0.16);
+
+  /* Canvas (plan viewer) — read from JS at draw time. */
+  --canvas-bg: #ffffff;
+  --canvas-stroke: #cbd5e1;
+
+  --scrollbar-thumb: #cdd5df;
+  --scrollbar-thumb-hover: #9aa4b2;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --background: #0c0f14;
+  --surface: #12161d;
+  --surface-2: #1a202a;
+  --surface-3: #232b38;
+  --sidebar: #0f131a;
+
+  --foreground: #e8ebf0;
+  --muted: #8a95a8;
+  --faint: #667082;
+
+  --border: #202734;
+  --border-strong: #2e3746;
+
+  --primary: #6487fa;
+  --primary-hover: #7a99fb;
+  --primary-soft: #1a2340;
+  --primary-fg: #ffffff;
+
+  --accent: #32c1ae;
+  --accent-soft: #10302c;
+
+  --danger: #f97066;
+  --danger-soft: #2c1719;
+  --warning: #f0a13c;
+  --warning-soft: #2a2013;
+  --success: #47cd89;
+  --success-soft: #142e21;
+
+  --ring: rgba(100, 135, 250, 0.4);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 6px -1px rgba(0, 0, 0, 0.35), 0 8px 20px -6px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 10px 15px -5px rgba(0, 0, 0, 0.4), 0 24px 40px -10px rgba(0, 0, 0, 0.55);
+
+  --canvas-bg: #141922;
+  --canvas-stroke: #3a4557;
+
+  --scrollbar-thumb: #2e3746;
+  --scrollbar-thumb-hover: #43506a;
 }
 
 @theme inline {
@@ -37,13 +108,26 @@
   --color-sidebar: var(--sidebar);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
   --color-primary-fg: var(--primary-fg);
   --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
   --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
   --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
   --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-ring: var(--ring);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -54,10 +138,7 @@ body {
 }
 
 body {
-  background:
-    radial-gradient(1200px 600px at 100% -10%, rgba(44, 88, 224, 0.05), transparent 60%),
-    var(--background);
-  background-attachment: fixed;
+  background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -87,12 +168,12 @@ h3 {
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cdd5df;
+  background: var(--scrollbar-thumb);
   border-radius: 6px;
   border: 2px solid var(--background);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #9aa4b2;
+  background: var(--scrollbar-thumb-hover);
 }
 
 .card {
@@ -165,6 +246,20 @@ h3 {
   animation: toast-in 200ms ease-out both;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .rise-in,
+  .toast-in {
+    animation: none;
+  }
+  .skeleton {
+    animation-duration: 2.8s;
+  }
+  .card-hover,
+  .card-hover:hover {
+    transform: none;
+  }
+}
+
 /* Range inputs (confidence slider) */
 input[type="range"] {
   appearance: none;
@@ -179,10 +274,21 @@ input[type="range"]::-webkit-slider-thumb {
   width: 15px;
   border-radius: 999px;
   background: var(--primary);
-  border: 2.5px solid #fff;
+  border: 2.5px solid var(--surface);
   box-shadow: var(--shadow-sm);
   transition: transform 120ms ease;
 }
 input[type="range"]::-webkit-slider-thumb:hover {
   transform: scale(1.15);
+}
+
+/* Hide number-input spinners; the fields are dense tabular cells. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
