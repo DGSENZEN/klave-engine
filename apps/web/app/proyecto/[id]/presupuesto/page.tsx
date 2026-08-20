@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Download, TriangleAlert } from "lucide-react";
+import { DownloadSimple, Warning } from "@phosphor-icons/react";
 import {
   getDimensions,
   money,
@@ -20,7 +20,9 @@ import {
   Metric,
   PageHeader,
   SectionTitle,
-  Skeleton,
+  SkeletonHeader,
+  SkeletonMetrics,
+  SkeletonTable,
   TableCard,
   Td,
   Th,
@@ -86,13 +88,9 @@ export default function PresupuestoPage() {
   if (!costs) {
     return (
       <div className="px-6 py-7 lg:px-8">
-        <Skeleton className="mb-6 h-14 w-96 max-w-full" />
-        <div className="mb-6 grid gap-4 sm:grid-cols-3">
-          <Skeleton className="h-[104px]" />
-          <Skeleton className="h-[104px]" />
-          <Skeleton className="h-[104px]" />
-        </div>
-        <Skeleton className="h-80" />
+        <SkeletonHeader />
+        <SkeletonMetrics count={3} />
+        <SkeletonTable rows={8} />
       </div>
     );
   }
@@ -108,7 +106,7 @@ export default function PresupuestoPage() {
         sub="Cantidades deducidas del plano · precios de referencia (MXN)"
         actions={
           <Button onClick={downloadCsv}>
-            <Download size={16} /> CSV
+            <DownloadSimple size={16} weight="bold" /> CSV
           </Button>
         }
       />
@@ -222,7 +220,7 @@ export default function PresupuestoPage() {
           <ul className="space-y-1.5 text-sm text-warning">
             {costs.boq.warnings.slice(0, 8).map((w, i) => (
               <li key={i} className="flex items-start gap-2">
-                <TriangleAlert size={15} className="mt-0.5 shrink-0" />
+                <Warning size={15} weight="bold" className="mt-0.5 shrink-0" />
                 {w}
               </li>
             ))}
@@ -261,7 +259,7 @@ function PhaseGroup({
       {lines.map((l) => (
         <tr
           key={l.concept_code}
-          className="border-b border-border transition-colors last:border-0 hover:bg-primary-soft/30"
+          className="border-b border-border transition-colors last:border-0 hover:bg-surface-2/60"
         >
           <Td className="font-mono text-xs text-muted">{l.concept_code}</Td>
           <Td>{l.description}</Td>
@@ -302,7 +300,7 @@ function Line({
     <div className="flex items-center justify-between gap-4">
       <span className={muted ? "text-muted" : ""}>{label}</span>
       <span
-        className={`tabular ${bold ? "font-semibold" : ""} ${accent ? "text-primary" : ""}`}
+        className={`tabular ${bold ? "font-semibold" : ""} ${accent ? "text-accent" : ""}`}
       >
         {value}
       </span>

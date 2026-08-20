@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { SlidersHorizontal, X } from "lucide-react";
+import { SlidersHorizontal, X } from "@phosphor-icons/react";
 import { getGeometry, type DetectionOverlay, type Geometry } from "@/lib/api";
 import {
   PlanoCanvas,

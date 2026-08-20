@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { ShieldCheck, TriangleAlert } from "lucide-react";
+import { ShieldCheck, Warning } from "@phosphor-icons/react";
 import type { RiskFinding } from "@/lib/api";
 import { useRiskReport } from "@/lib/useProjectReport";
 import {
@@ -12,7 +12,9 @@ import {
   EmptyState,
   Metric,
   PageHeader,
-  Skeleton,
+  SkeletonCards,
+  SkeletonHeader,
+  SkeletonMetrics,
   type BadgeTone,
 } from "@/components/ui";
 
@@ -68,16 +70,9 @@ export default function RiesgosPage() {
   if (!risks) {
     return (
       <div className="px-6 py-7 lg:px-8">
-        <Skeleton className="mb-6 h-14 w-80" />
-        <div className="mb-6 grid gap-4 sm:grid-cols-3">
-          <Skeleton className="h-[104px]" />
-          <Skeleton className="h-[104px]" />
-          <Skeleton className="h-[104px]" />
-        </div>
-        <div className="space-y-3">
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
-        </div>
+        <SkeletonHeader />
+        <SkeletonMetrics count={3} />
+        <SkeletonCards count={3} />
       </div>
     );
   }
@@ -112,7 +107,7 @@ export default function RiesgosPage() {
                 key={key}
                 type="button"
                 onClick={() => setFilter(key)}
-                className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                   active
                     ? "bg-primary text-primary-fg"
                     : "border border-border bg-surface text-muted hover:bg-surface-2 hover:text-foreground"
@@ -127,13 +122,13 @@ export default function RiesgosPage() {
 
       {risks.findings.length === 0 ? (
         <EmptyState
-          icon={<ShieldCheck size={22} />}
+          icon={<ShieldCheck size={22} weight="duotone" />}
           title="Sin riesgos detectados"
           hint="El análisis determinista no encontró hallazgos en este procesamiento. Revisa igualmente las advertencias del presupuesto."
         />
       ) : filtered.length === 0 ? (
         <EmptyState
-          icon={<TriangleAlert size={22} />}
+          icon={<Warning size={22} weight="duotone" />}
           title="Sin hallazgos con este filtro"
           hint="Cambia el filtro de severidad para ver el resto de los hallazgos."
         />
@@ -161,7 +156,7 @@ function RiskCard({ finding }: { finding: RiskFinding }) {
         </span>
       </div>
       <p className="text-sm leading-relaxed">{finding.message}</p>
-      <div className="mt-3 rounded-lg bg-primary-soft px-3.5 py-2.5 text-sm text-primary">
+      <div className="mt-3 rounded-lg bg-accent-soft px-3.5 py-2.5 text-sm text-accent">
         <span className="font-medium">Acción recomendada:</span>{" "}
         {finding.recommended_human_action}
       </div>

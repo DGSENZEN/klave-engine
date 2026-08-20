@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  Building2,
-  UploadCloud,
+  Buildings,
+  CloudArrowUp,
   FileText,
   ArrowRight,
-  Loader2,
-} from "lucide-react";
+  CircleNotch,
+} from "@phosphor-icons/react";
 import { ApiError, listProjects, uploadProject, type ProjectSummary } from "@/lib/api";
 import { eventsUrl, getBrowserActor, parseProjectEvent, peekBrowserActor } from "@/lib/collab";
 import { isProfileComplete } from "@/lib/identity";
@@ -19,8 +19,8 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 
 const STATUS_TONE: Record<string, BadgeTone> = {
   processed: "success",
-  running: "primary",
-  queued: "primary",
+  running: "accent",
+  queued: "accent",
   failed: "warning",
 };
 
@@ -119,11 +119,11 @@ export default function Landing() {
     <div className="mx-auto max-w-5xl px-5 py-10 sm:px-6 sm:py-12">
       <header className="rise-in mb-10 flex items-start justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-fg shadow-md">
-            <Building2 size={24} />
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-fg">
+            <Buildings size={22} weight="duotone" />
           </div>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Klave</h1>
+            <h1 className="font-display text-2xl font-semibold tracking-tight">Klave</h1>
             <p className="text-sm text-muted">
               Ingeniería de costos a partir de planos estructurales.
             </p>
@@ -156,10 +156,10 @@ export default function Landing() {
           const f = e.dataTransfer.files?.[0];
           if (f) handleFile(f);
         }}
-        className={`rise-in flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed bg-surface px-6 py-14 text-center shadow-xs transition sm:py-16 ${
+        className={`rise-in flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-dashed bg-surface px-6 py-14 text-center transition-colors sm:py-16 ${
           dragging
-            ? "border-primary bg-primary-soft"
-            : "border-border-strong hover:border-primary hover:bg-primary-soft/40"
+            ? "border-accent bg-accent-soft"
+            : "border-border-strong hover:border-foreground/40 hover:bg-surface-2/60"
         }`}
       >
         <input
@@ -174,14 +174,14 @@ export default function Landing() {
         />
         {uploading ? (
           <>
-            <Loader2 className="animate-spin text-primary" size={34} />
+            <CircleNotch className="animate-spin text-accent" size={34} />
             <p className="font-medium">Subiendo y convirtiendo…</p>
             <p className="text-sm text-muted">Esto puede tardar unos segundos.</p>
           </>
         ) : (
           <>
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-soft">
-              <UploadCloud className="text-primary" size={28} />
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-2">
+              <CloudArrowUp className="text-foreground" size={28} weight="duotone" />
             </div>
             <p className="text-base font-medium">
               Arrastra un plano aquí o haz clic para seleccionar
@@ -204,9 +204,7 @@ export default function Landing() {
       )}
 
       <section className="mt-12">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted">
-          Proyectos recientes
-        </h2>
+        <h2 className="microlabel mb-4">Proyectos recientes</h2>
         {projects === null ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <Skeleton className="h-[76px]" />
@@ -224,8 +222,8 @@ export default function Landing() {
                 href={`/proyecto/${p.project_id}`}
                 className="card card-hover group flex items-center gap-3 p-4"
               >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-soft">
-                  <FileText size={18} className="text-primary" />
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-2">
+                  <FileText size={18} weight="duotone" className="text-foreground" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{p.name}</div>
@@ -239,8 +237,9 @@ export default function Landing() {
                   </div>
                 </div>
                 <ArrowRight
-                  size={18}
-                  className="text-muted transition group-hover:translate-x-0.5 group-hover:text-primary"
+                  size={16}
+                  weight="bold"
+                  className="text-faint transition group-hover:translate-x-0.5 group-hover:text-foreground"
                 />
               </Link>
             ))}

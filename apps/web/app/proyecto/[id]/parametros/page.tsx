@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RotateCcw, Calculator, Loader2 } from "lucide-react";
+import { ArrowCounterClockwise, Calculator, CircleNotch } from "@phosphor-icons/react";
 import {
   ApiError,
   getCostingConfig,
@@ -24,6 +24,7 @@ import {
   PageHeader,
   SectionTitle,
   Skeleton,
+  SkeletonHeader,
   Td,
   Th,
 } from "@/components/ui";
@@ -273,11 +274,21 @@ export default function ParametrosPage() {
   if (!config) {
     return (
       <div className="px-6 py-7 lg:px-8">
-        <Skeleton className="mb-6 h-14 w-96 max-w-full" />
+        <SkeletonHeader />
         <div className="grid gap-4 lg:grid-cols-3">
-          <Skeleton className="h-64" />
-          <Skeleton className="h-64" />
-          <Skeleton className="h-64" />
+          {Array.from({ length: 3 }, (_, card) => (
+            <Card key={card} className="p-5">
+              <Skeleton className="h-4 w-40" />
+              <div className="mt-5 space-y-3">
+                {Array.from({ length: 5 }, (_, row) => (
+                  <div key={row} className="flex items-center justify-between gap-3">
+                    <Skeleton className="h-3.5 w-32" />
+                    <Skeleton className="h-7 w-24" />
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ))}
         </div>
       </div>
     );
@@ -397,7 +408,7 @@ export default function ParametrosPage() {
           </div>
           <div className="flex items-center gap-2">
             <Button onClick={doReset} disabled={busy || !!conflict}>
-              <RotateCcw size={15} /> Restablecer
+              <ArrowCounterClockwise size={15} weight="bold" /> Restablecer
             </Button>
             <Button
               variant="primary"
@@ -405,7 +416,11 @@ export default function ParametrosPage() {
               disabled={busy || !dirty || !!conflict}
               className="px-4"
             >
-              {busy ? <Loader2 size={15} className="animate-spin" /> : <Calculator size={15} />}
+              {busy ? (
+                <CircleNotch size={15} className="animate-spin" />
+              ) : (
+                <Calculator size={15} weight="bold" />
+              )}
               {dirty ? "Recalcular" : "Actualizado"}
             </Button>
           </div>
@@ -461,8 +476,8 @@ function Summary({
 }) {
   return (
     <div>
-      <div className="text-xs uppercase tracking-wide text-muted">{label}</div>
-      <div className={`text-lg font-semibold tabular ${accent ? "text-primary" : ""}`}>
+      <div className="microlabel">{label}</div>
+      <div className={`text-lg font-semibold tabular ${accent ? "text-accent" : ""}`}>
         {value != null ? money(value) : "—"}
         {delta != null && Math.abs(delta) > 0.5 && (
           <span

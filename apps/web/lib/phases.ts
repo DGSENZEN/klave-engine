@@ -1,9 +1,10 @@
 // Stable colors for construction phases, resolved through the chart tokens so
 // both themes stay consistent. Unknown phases fall back by position.
 
+// Estructura (the dominant phase) carries the accent; the rest stay ink tints.
 const KNOWN_PHASE_COLORS: Record<string, string> = {
-  Preliminares: "var(--chart-2)",
-  Cimentación: "var(--chart-3)",
+  Preliminares: "var(--chart-3)",
+  Cimentación: "var(--chart-2)",
   Estructura: "var(--chart-1)",
 };
 

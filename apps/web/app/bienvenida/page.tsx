@@ -2,11 +2,11 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Building2, MonitorSmartphone } from "lucide-react";
+import { ArrowRight, Buildings, Monitor } from "@phosphor-icons/react";
 import { peekBrowserActor } from "@/lib/collab";
 import { completeProfile } from "@/lib/identity";
 import { HowItWorks } from "@/components/HowItWorks";
-import { Card, Input } from "@/components/ui";
+import { buttonClasses, Card, Input } from "@/components/ui";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 /**
@@ -41,8 +41,8 @@ export default function BienvenidaPage() {
       <div className="rise-in">
         <div className="mb-8 flex items-start justify-between gap-4">
           <div className="flex items-center gap-3.5">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-fg shadow-md">
-              <Building2 size={24} />
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-fg">
+              <Buildings size={22} weight="duotone" />
             </div>
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Bienvenido a Klave</h1>
@@ -75,10 +75,10 @@ export default function BienvenidaPage() {
               />
               <button
                 type="submit"
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg shadow-sm transition hover:bg-primary-hover disabled:pointer-events-none disabled:opacity-50"
+                className={buttonClasses("primary")}
                 disabled={touched && !valid}
               >
-                Comenzar <ArrowRight size={16} />
+                Comenzar <ArrowRight size={15} weight="bold" />
               </button>
             </div>
             {touched && !valid && (
@@ -92,7 +92,7 @@ export default function BienvenidaPage() {
         <HowItWorks />
 
         <p className="mt-6 flex items-center gap-2 text-xs text-faint">
-          <MonitorSmartphone size={14} />
+          <Monitor size={14} />
           Modo local: tus planos y presupuestos se procesan y guardan en tu equipo.
         </p>
       </div>

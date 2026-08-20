@@ -4,22 +4,22 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  LayoutDashboard,
-  Map,
+  SquaresFour,
+  MapTrifold,
   Receipt,
   Calculator,
   Coins,
-  CalendarDays,
-  LineChart,
-  TriangleAlert,
-  ChevronLeft,
-  Building2,
-  UserRound,
-  Wifi,
-  WifiOff,
-  Menu,
+  CalendarBlank,
+  ChartLine,
+  Warning,
+  CaretLeft,
+  Buildings,
+  User,
+  WifiHigh,
+  WifiSlash,
+  List,
   X,
-} from "lucide-react";
+} from "@phosphor-icons/react";
 import { useProjectLive } from "@/components/ProjectLive";
 import { LiveOverlay } from "@/components/LiveOverlay";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -33,8 +33,13 @@ function nav(id: string): { group: string; items: Item[] }[] {
     {
       group: "Proyecto",
       items: [
-        { key: "resumen", label: "Resumen", icon: <LayoutDashboard size={18} />, href: b },
-        { key: "plano", label: "Visor del Plano", icon: <Map size={18} />, href: `${b}/plano` },
+        { key: "resumen", label: "Resumen", icon: <SquaresFour size={18} />, href: b },
+        {
+          key: "plano",
+          label: "Visor del Plano",
+          icon: <MapTrifold size={18} />,
+          href: `${b}/plano`,
+        },
       ],
     },
     {
@@ -66,19 +71,19 @@ function nav(id: string): { group: string; items: Item[] }[] {
         {
           key: "programa",
           label: "Programa de Obra",
-          icon: <CalendarDays size={18} />,
+          icon: <CalendarBlank size={18} />,
           href: `${b}/programa`,
         },
         {
           key: "finanzas",
           label: "Flujo Financiero",
-          icon: <LineChart size={18} />,
+          icon: <ChartLine size={18} />,
           href: `${b}/flujo`,
         },
         {
           key: "riesgos",
           label: "Riesgos",
-          icon: <TriangleAlert size={18} />,
+          icon: <Warning size={18} />,
           href: `${b}/riesgos`,
         },
       ],
@@ -119,10 +124,10 @@ export function ProjectShell({
             onClick={() => setDrawerOpen(true)}
             className="p-2"
           >
-            <Menu size={20} />
+            <List size={20} weight="bold" />
           </IconButton>
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-fg">
-            <Building2 size={16} />
+            <Buildings size={16} weight="duotone" />
           </div>
           <span className="truncate text-sm font-semibold" title={name}>
             {name ?? id}
@@ -185,11 +190,11 @@ function SidebarContent({ id, name }: { id: string; name?: string }) {
         href="/"
         className="flex items-center gap-1.5 px-5 pt-4 pb-3 text-xs font-medium text-muted transition hover:text-foreground"
       >
-        <ChevronLeft size={15} /> Proyectos
+        <CaretLeft size={13} weight="bold" /> Proyectos
       </Link>
       <div className="flex items-center gap-2 px-5 pb-4">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-fg shadow-sm">
-          <Building2 size={18} />
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-fg">
+          <Buildings size={18} weight="duotone" />
         </div>
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold" title={name}>
@@ -199,8 +204,8 @@ function SidebarContent({ id, name }: { id: string; name?: string }) {
         </div>
       </div>
       <div className="border-y border-border px-5 py-3">
-        <label className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-2 text-sm shadow-xs transition focus-within:border-primary focus-within:ring-2 focus-within:ring-ring">
-          <UserRound size={16} className="shrink-0 text-muted" />
+        <label className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-2 text-sm transition focus-within:border-border-strong focus-within:ring-2 focus-within:ring-ring">
+          <User size={16} className="shrink-0 text-muted" />
           <input
             value={nameDraft}
             onChange={(e) => setNameDraft(e.target.value)}
@@ -218,7 +223,7 @@ function SidebarContent({ id, name }: { id: string; name?: string }) {
               connected ? "bg-success" : "bg-warning"
             }`}
           />
-          {connected ? <Wifi size={13} /> : <WifiOff size={13} />}
+          {connected ? <WifiHigh size={13} weight="bold" /> : <WifiSlash size={13} weight="bold" />}
           {connected ? "En vivo" : "Reconectando"}
         </div>
         {viewers.length > 0 && (
@@ -281,9 +286,7 @@ function SidebarContent({ id, name }: { id: string; name?: string }) {
       <nav className="flex-1 px-3 pb-4 pt-2">
         {groups.map((g) => (
           <div key={g.group} className="mb-4">
-            <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
-              {g.group}
-            </div>
+            <div className="microlabel px-2 pb-1.5">{g.group}</div>
             {g.items.map((it) => {
               const active = it.href === pathname;
               const itemViewers = otherViewers.filter(
@@ -296,14 +299,14 @@ function SidebarContent({ id, name }: { id: string; name?: string }) {
                 <Link
                   key={it.key}
                   href={it.href}
-                  className={`relative mb-0.5 flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition ${
+                  className={`relative mb-0.5 flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
                     active
-                      ? "bg-primary-soft font-medium text-primary"
-                      : "text-muted hover:bg-surface-2 hover:text-foreground"
+                      ? "bg-surface-2 font-medium text-foreground"
+                      : "text-muted hover:bg-surface-2/70 hover:text-foreground"
                   }`}
                 >
                   {active && (
-                    <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
+                    <span className="absolute left-0 top-1/2 h-4.5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent" />
                   )}
                   {it.icon}
                   <span className="flex-1">{it.label}</span>

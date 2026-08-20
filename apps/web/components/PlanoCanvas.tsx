@@ -1,31 +1,33 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Maximize } from "lucide-react";
+import { CornersOut } from "@phosphor-icons/react";
 import type { DetectionOverlay, Geometry } from "@/lib/api";
 import { cssVar, subscribeTheme } from "@/lib/theme";
 
 // Family-first palette; detection-type keys keep old runs rendering.
+// Deliberately desaturated so overlays read as one harmonized system on both
+// canvas themes; distinct hues remain because families must stay tellable.
 export const FAMILY_COLORS: Record<string, string> = {
-  castillo: "#ea580c",
-  columna: "#dc2626",
-  trabe: "#2563eb",
-  contratrabe: "#4f46e5",
-  zapata: "#b45309",
-  losa: "#059669",
-  muro: "#7c3aed",
-  eje: "#94a3b8",
-  interseccion_ejes: "#64748b",
-  referencia_detalle: "#db2777",
+  castillo: "#c2703d",
+  columna: "#b8504d",
+  trabe: "#4a66c9",
+  contratrabe: "#6f66b8",
+  zapata: "#a07a3a",
+  losa: "#4d9077",
+  muro: "#8a67ad",
+  eje: "#9aa0aa",
+  interseccion_ejes: "#767d88",
+  referencia_detalle: "#b06084",
   // Legacy detection-type fallbacks (runs without taxonomy).
-  grid_line: "#94a3b8",
-  grid_intersection: "#64748b",
-  column_tag: "#dc2626",
-  beam_tag: "#2563eb",
-  footing: "#b45309",
-  slab_region: "#059669",
-  wall: "#7c3aed",
-  detail_reference: "#db2777",
+  grid_line: "#9aa0aa",
+  grid_intersection: "#767d88",
+  column_tag: "#b8504d",
+  beam_tag: "#4a66c9",
+  footing: "#a07a3a",
+  slab_region: "#4d9077",
+  wall: "#8a67ad",
+  detail_reference: "#b06084",
 };
 
 export const FAMILY_LABELS: Record<string, string> = {
@@ -304,7 +306,7 @@ export function PlanoCanvas({
         onClick={fit}
         className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium shadow-sm transition hover:bg-surface-2"
       >
-        <Maximize size={13} /> Ajustar vista
+        <CornersOut size={13} weight="bold" /> Ajustar vista
       </button>
       {tooltip && (
         <div

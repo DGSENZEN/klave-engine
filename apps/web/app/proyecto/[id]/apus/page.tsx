@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { Calculator, ChevronDown } from "lucide-react";
+import { Calculator, CaretDown } from "@phosphor-icons/react";
 import { money2, num, type Apu } from "@/lib/api";
 import { useCostReport } from "@/lib/useProjectReport";
 import {
@@ -12,7 +12,9 @@ import {
   EmptyState,
   Metric,
   PageHeader,
-  Skeleton,
+  SkeletonCards,
+  SkeletonHeader,
+  SkeletonMetrics,
   Td,
   Th,
 } from "@/components/ui";
@@ -49,17 +51,9 @@ export default function ApusPage() {
   if (!costs) {
     return (
       <div className="px-6 py-7 lg:px-8">
-        <Skeleton className="mb-6 h-14 w-80" />
-        <div className="mb-6 grid gap-4 sm:grid-cols-3">
-          <Skeleton className="h-[104px]" />
-          <Skeleton className="h-[104px]" />
-          <Skeleton className="h-[104px]" />
-        </div>
-        <div className="space-y-3">
-          <Skeleton className="h-16" />
-          <Skeleton className="h-16" />
-          <Skeleton className="h-16" />
-        </div>
+        <SkeletonHeader />
+        <SkeletonMetrics count={3} />
+        <SkeletonCards count={4} />
       </div>
     );
   }
@@ -82,7 +76,11 @@ export default function ApusPage() {
       />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
-        <Metric label="Conceptos analizados" value={apus.length} icon={<Calculator size={16} />} />
+        <Metric
+          label="Conceptos analizados"
+          value={apus.length}
+          icon={<Calculator size={16} weight="duotone" />}
+        />
         <Metric
           label="Moneda"
           value={costs.currency}
@@ -97,7 +95,7 @@ export default function ApusPage() {
 
       {apus.length === 0 ? (
         <EmptyState
-          icon={<Calculator size={22} />}
+          icon={<Calculator size={22} weight="duotone" />}
           title="Este procesamiento no incluye APUs"
           hint="Vuelve a procesar el proyecto para generar el análisis de precios unitarios."
         />
@@ -161,9 +159,10 @@ function ApuCard({
           <div className="text-lg font-semibold tabular">{money2(apu.direct_unit_cost)}</div>
           <div className="text-xs text-muted">por {apu.unit}</div>
         </div>
-        <ChevronDown
-          size={18}
-          className={`shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`}
+        <CaretDown
+          size={16}
+          weight="bold"
+          className={`shrink-0 text-faint transition-transform ${open ? "rotate-180" : ""}`}
         />
       </button>
 

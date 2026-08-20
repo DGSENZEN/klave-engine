@@ -3,114 +3,120 @@
 /*
  * Klave design tokens.
  *
- * Two committed palettes (light + dark) driven by data-theme on <html>,
- * stamped before first paint by the inline script in app/layout.tsx.
- * Every color used anywhere in the app must resolve to one of these tokens;
- * raw hex belongs only in this file.
+ * Deliberately near-monochrome: ink neutrals carry the interface, a single
+ * cobalt accent marks interactivity and data, and semantic tones stay
+ * desaturated. Two committed palettes (light + dark) switched by data-theme
+ * on <html>, stamped before first paint by the inline script in layout.tsx.
+ * Raw hex belongs only in this file.
  */
 
 :root {
   color-scheme: light;
 
-  --background: #f6f7f9;
+  --background: #f7f7f8;
   --surface: #ffffff;
-  --surface-2: #f0f2f5;
-  --surface-3: #e5e8ee;
-  --sidebar: #fafbfc;
+  --surface-2: #f2f2f3;
+  --surface-3: #e8e8ea;
+  --sidebar: #fafafa;
 
-  --foreground: #0d1626;
-  --muted: #61708b;
-  --faint: #8b96a9;
+  --foreground: #161618;
+  --muted: #6e6e76;
+  --faint: #a3a3ab;
 
-  --border: #e6e9ef;
-  --border-strong: #d0d7e2;
+  --border: #e6e6e9;
+  --border-strong: #d2d2d7;
 
-  --primary: #2851d8;
-  --primary-hover: #1f42b8;
-  --primary-soft: #eef2fe;
+  /* Ink action color: buttons, brand, emphasis. */
+  --primary: #18181b;
+  --primary-hover: #2c2c30;
+  --primary-soft: #f2f2f3;
   --primary-fg: #ffffff;
 
-  --accent: #0d9488;
-  --accent-soft: #e6f7f3;
+  /* The one accent: interactivity, focus, live data. */
+  --accent: #2b4acb;
+  --accent-hover: #223cae;
+  --accent-soft: #eef1fc;
 
-  --danger: #d92d20;
-  --danger-soft: #fef3f2;
-  --warning: #b54708;
-  --warning-soft: #fffaeb;
-  --success: #067647;
-  --success-soft: #ecfdf3;
+  --danger: #b42318;
+  --danger-soft: #fbf1f0;
+  --warning: #935e0c;
+  --warning-soft: #faf5ea;
+  --success: #1e7048;
+  --success-soft: #eff6f1;
 
-  --ring: rgba(40, 81, 216, 0.32);
+  --ring: rgba(43, 74, 203, 0.35);
 
-  --shadow-xs: 0 1px 2px rgba(13, 22, 38, 0.04);
-  --shadow-sm: 0 1px 2px rgba(13, 22, 38, 0.05), 0 1px 3px rgba(13, 22, 38, 0.06);
-  --shadow-md: 0 2px 6px -1px rgba(13, 22, 38, 0.06), 0 8px 20px -6px rgba(13, 22, 38, 0.12);
-  --shadow-lg: 0 10px 15px -5px rgba(13, 22, 38, 0.09), 0 24px 40px -10px rgba(13, 22, 38, 0.16);
+  --shadow-xs: 0 1px 2px rgba(22, 22, 24, 0.05);
+  --shadow-sm: 0 1px 2px rgba(22, 22, 24, 0.05), 0 1px 3px rgba(22, 22, 24, 0.06);
+  --shadow-md: 0 2px 6px -1px rgba(22, 22, 24, 0.06), 0 8px 20px -6px rgba(22, 22, 24, 0.1);
+  --shadow-lg: 0 10px 15px -5px rgba(22, 22, 24, 0.08), 0 24px 40px -10px rgba(22, 22, 24, 0.14);
 
   /* Canvas (plan viewer) — read from JS at draw time. */
   --canvas-bg: #ffffff;
-  --canvas-stroke: #cbd5e1;
+  --canvas-stroke: #cfcfd6;
 
-  --scrollbar-thumb: #cdd5df;
-  --scrollbar-thumb-hover: #9aa4b2;
+  --scrollbar-thumb: #d6d6db;
+  --scrollbar-thumb-hover: #adadb5;
 
-  /* Data-vis palette (phases, charts). */
-  --chart-1: #2851d8;
-  --chart-2: #0d9488;
-  --chart-3: #d97706;
-  --chart-4: #7c3aed;
-  --chart-5: #64748b;
+  /* Data-vis: accent first, then ink tints. Less color, more hierarchy. */
+  --chart-1: #2b4acb;
+  --chart-2: #52525b;
+  --chart-3: #a6a6af;
+  --chart-4: #23232a;
+  --chart-5: #cfcfd6;
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --background: #0c0f14;
-  --surface: #12161d;
-  --surface-2: #1a202a;
-  --surface-3: #232b38;
-  --sidebar: #0f131a;
+  --background: #0a0a0b;
+  --surface: #131316;
+  --surface-2: #1b1b1f;
+  --surface-3: #242429;
+  --sidebar: #0f0f11;
 
-  --foreground: #e8ebf0;
-  --muted: #8a95a8;
-  --faint: #667082;
+  --foreground: #ededf0;
+  --muted: #8f8f98;
+  --faint: #5e5e67;
 
-  --border: #202734;
-  --border-strong: #2e3746;
+  --border: #232328;
+  --border-strong: #333339;
 
-  --primary: #6487fa;
-  --primary-hover: #7a99fb;
-  --primary-soft: #1a2340;
-  --primary-fg: #ffffff;
+  /* Inverted ink: light action surfaces on dark ground. */
+  --primary: #ededf0;
+  --primary-hover: #ffffff;
+  --primary-soft: #1b1b1f;
+  --primary-fg: #0a0a0b;
 
-  --accent: #32c1ae;
-  --accent-soft: #10302c;
+  --accent: #8296ff;
+  --accent-hover: #9dadff;
+  --accent-soft: #191e33;
 
-  --danger: #f97066;
-  --danger-soft: #2c1719;
-  --warning: #f0a13c;
-  --warning-soft: #2a2013;
-  --success: #47cd89;
-  --success-soft: #142e21;
+  --danger: #e5766c;
+  --danger-soft: #271514;
+  --warning: #d9a13e;
+  --warning-soft: #241c0e;
+  --success: #57b483;
+  --success-soft: #12231a;
 
-  --ring: rgba(100, 135, 250, 0.4);
+  --ring: rgba(130, 150, 255, 0.4);
 
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.25);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 2px 6px -1px rgba(0, 0, 0, 0.35), 0 8px 20px -6px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 10px 15px -5px rgba(0, 0, 0, 0.4), 0 24px 40px -10px rgba(0, 0, 0, 0.55);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 2px 6px -1px rgba(0, 0, 0, 0.4), 0 8px 20px -6px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 10px 15px -5px rgba(0, 0, 0, 0.45), 0 24px 40px -10px rgba(0, 0, 0, 0.6);
 
-  --canvas-bg: #141922;
-  --canvas-stroke: #3a4557;
+  --canvas-bg: #121216;
+  --canvas-stroke: #35353d;
 
-  --scrollbar-thumb: #2e3746;
-  --scrollbar-thumb-hover: #43506a;
+  --scrollbar-thumb: #2c2c33;
+  --scrollbar-thumb-hover: #41414a;
 
-  --chart-1: #6487fa;
-  --chart-2: #32c1ae;
-  --chart-3: #f0a13c;
-  --chart-4: #a78bfa;
-  --chart-5: #8a95a8;
+  --chart-1: #8296ff;
+  --chart-2: #a3a3ac;
+  --chart-3: #5e5e67;
+  --chart-4: #d8d8de;
+  --chart-5: #3a3a42;
 }
 
 @theme inline {
@@ -129,6 +135,7 @@
   --color-primary-soft: var(--primary-soft);
   --color-primary-fg: var(--primary-fg);
   --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
@@ -148,6 +155,7 @@
   --shadow-lg: var(--shadow-lg);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-space-grotesk);
 }
 
 html,
@@ -161,18 +169,20 @@ body {
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  letter-spacing: -0.006em;
+  letter-spacing: -0.004em;
+  font-size: 0.9375rem;
 }
 
 h1,
 h2,
 h3 {
-  letter-spacing: -0.018em;
+  font-family: var(--font-display), var(--font-sans), system-ui, sans-serif;
+  letter-spacing: -0.022em;
 }
 
 ::selection {
-  background: var(--primary-soft);
-  color: var(--primary);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 :focus-visible {
@@ -197,26 +207,34 @@ h3 {
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 12px;
   box-shadow: var(--shadow-xs);
 }
 
 .card-hover {
-  transition: box-shadow 160ms ease, border-color 160ms ease, transform 160ms ease;
+  transition: box-shadow 160ms ease, border-color 160ms ease;
 }
 .card-hover:hover {
   border-color: var(--border-strong);
   box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
 }
 
 .tabular {
   font-variant-numeric: tabular-nums;
 }
 
+/* Micro-label: the uppercase eyebrow used across cards and tables. */
+.microlabel {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 /* Loading shimmer */
 .skeleton {
-  border-radius: 8px;
+  border-radius: 6px;
   background: linear-gradient(
     100deg,
     var(--surface-2) 40%,
@@ -272,32 +290,28 @@ h3 {
   .skeleton {
     animation-duration: 2.8s;
   }
-  .card-hover,
-  .card-hover:hover {
-    transform: none;
-  }
 }
 
 /* Range inputs (confidence slider) */
 input[type="range"] {
   appearance: none;
-  height: 5px;
+  height: 4px;
   border-radius: 999px;
   background: var(--surface-3);
   cursor: pointer;
 }
 input[type="range"]::-webkit-slider-thumb {
   appearance: none;
-  height: 15px;
-  width: 15px;
+  height: 14px;
+  width: 14px;
   border-radius: 999px;
-  background: var(--primary);
+  background: var(--foreground);
   border: 2.5px solid var(--surface);
   box-shadow: var(--shadow-sm);
   transition: transform 120ms ease;
 }
 input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
+  transform: scale(1.12);
 }
 
 /* Hide number-input spinners; the fields are dense tabular cells. */

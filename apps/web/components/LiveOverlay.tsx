@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { History, X, Check } from "lucide-react";
+import { ClockCounterClockwise, X, Check } from "@phosphor-icons/react";
 import { useProjectLive } from "@/components/ProjectLive";
 import { Avatar, IconButton } from "@/components/ui";
 
@@ -28,7 +28,7 @@ export function LiveOverlay() {
           <div className="toast-in overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
             <div className="flex items-center justify-between border-b border-border px-3 py-2">
               <div className="flex items-center gap-2 text-sm font-semibold">
-                <History size={15} className="text-primary" />
+                <ClockCounterClockwise size={15} weight="bold" className="text-accent" />
                 Cambios
                 {timeline.length > 0 && (
                   <span className="tabular text-xs font-normal text-muted">
@@ -80,7 +80,7 @@ export function LiveOverlay() {
               onClick={() => setOpen(true)}
               className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium shadow-sm transition hover:bg-surface-2"
             >
-              <History size={14} className="text-muted" />
+              <ClockCounterClockwise size={14} weight="bold" className="text-muted" />
               Cambios
               {unseen > 0 && (
                 <span className="tabular flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-fg">
@@ -97,7 +97,7 @@ export function LiveOverlay() {
           key={toast.id}
           className="toast-in pointer-events-auto flex w-full items-start gap-3 rounded-xl border border-border bg-surface px-4 py-3 text-sm shadow-lg"
         >
-          <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
+          <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent" />
           <div className="min-w-0 flex-1">{toast.message}</div>
           <IconButton aria-label="Cerrar aviso" onClick={() => dismissToast(toast.id)}>
             <X size={14} />

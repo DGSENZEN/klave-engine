@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { Banknote, CalendarRange, PiggyBank, Wrench } from "lucide-react";
+import { Money, CalendarBlank, PiggyBank, Wrench } from "@phosphor-icons/react";
 import { money, money2, type PeriodCashflow } from "@/lib/api";
 import { useCostReport } from "@/lib/useProjectReport";
 import {
@@ -12,6 +12,9 @@ import {
   PageHeader,
   SectionTitle,
   Skeleton,
+  SkeletonHeader,
+  SkeletonMetrics,
+  SkeletonTable,
   Td,
   Th,
 } from "@/components/ui";
@@ -34,15 +37,21 @@ export default function FlujoPage() {
   if (!costs) {
     return (
       <div className="px-6 py-7 lg:px-8">
-        <Skeleton className="mb-6 h-14 w-80" />
-        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Skeleton className="h-[104px]" />
-          <Skeleton className="h-[104px]" />
-          <Skeleton className="h-[104px]" />
-          <Skeleton className="h-[104px]" />
-        </div>
-        <Skeleton className="mb-6 h-64" />
-        <Skeleton className="h-80" />
+        <SkeletonHeader />
+        <SkeletonMetrics count={4} />
+        <Card className="mb-6 p-5">
+          <Skeleton className="h-4 w-32" />
+          <div className="mt-6 flex h-40 items-end gap-2">
+            {Array.from({ length: 18 }, (_, i) => (
+              <Skeleton
+                key={i}
+                className="flex-1"
+                style={{ height: `${18 + ((i * 23) % 70)}%` }}
+              />
+            ))}
+          </div>
+        </Card>
+        <SkeletonTable rows={6} />
       </div>
     );
   }
@@ -63,32 +72,32 @@ export default function FlujoPage() {
           label="Anticipo"
           value={money(fin.advance_payment)}
           hint={fin.advance_payment_pct != null ? `${fin.advance_payment_pct}% del monto` : undefined}
-          icon={<Banknote size={16} />}
-          accent="primary"
+          icon={<Money size={16} weight="duotone" />}
+          accent="accent"
         />
         <Metric
           label="Retención total"
           value={money(fin.total_retention)}
           hint={fin.retention_pct != null ? `${fin.retention_pct}% por estimación` : undefined}
-          icon={<PiggyBank size={16} />}
+          icon={<PiggyBank size={16} weight="duotone" />}
         />
         <Metric
           label="Periodos"
           value={periods.length}
           hint="estimaciones mensuales"
-          icon={<CalendarRange size={16} />}
+          icon={<CalendarBlank size={16} weight="duotone" />}
         />
         <Metric
           label="O&M anual"
           value={money(fin.annual_operating_cost)}
           hint="operación y mantenimiento"
-          icon={<Wrench size={16} />}
+          icon={<Wrench size={16} weight="duotone" />}
         />
       </div>
 
       {periods.length === 0 ? (
         <EmptyState
-          icon={<CalendarRange size={22} />}
+          icon={<CalendarBlank size={22} weight="duotone" />}
           title="Este procesamiento no incluye flujo por periodos"
           hint="Vuelve a procesar el proyecto para generar el flujo financiero."
         />

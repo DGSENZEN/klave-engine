@@ -3,12 +3,18 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { CheckCircle2, Loader2, CircleAlert, Building2, ArrowLeft } from "lucide-react";
+import {
+  ArrowLeft,
+  Buildings,
+  CheckCircle,
+  CircleNotch,
+  WarningCircle,
+} from "@phosphor-icons/react";
 import { getStatus, type ProjectStatus } from "@/lib/api";
 import { parseProjectEvent, projectEventsUrl } from "@/lib/collab";
 import { ProjectLiveProvider } from "@/components/ProjectLive";
 import { ProjectShell } from "@/components/ProjectShell";
-import { Callout } from "@/components/ui";
+import { buttonClasses, Callout } from "@/components/ui";
 
 const STEPS = [
   { key: "ingested", label: "Ingesta del proyecto" },
@@ -91,7 +97,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         href="/"
         className="mb-8 inline-flex items-center gap-2 text-sm text-muted transition hover:text-foreground"
       >
-        <Building2 size={16} /> Klave
+        <Buildings size={16} weight="duotone" /> Klave
       </Link>
       <h1 className="text-xl font-semibold">
         {failed ? "No se pudo procesar el plano" : "Procesando tu plano…"}
@@ -117,11 +123,11 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
                 />
               )}
               {failed ? (
-                <CircleAlert size={20} className="shrink-0 text-warning" />
+                <WarningCircle size={20} weight="fill" className="shrink-0 text-warning" />
               ) : done || isProcessed ? (
-                <CheckCircle2 size={20} className="shrink-0 text-success" />
+                <CheckCircle size={20} weight="fill" className="shrink-0 text-success" />
               ) : isCurrent ? (
-                <Loader2 size={20} className="shrink-0 animate-spin text-primary" />
+                <CircleNotch size={20} className="shrink-0 animate-spin text-accent" />
               ) : (
                 <span className="mx-[3px] h-3.5 w-3.5 shrink-0 rounded-full border-2 border-border-strong" />
               )}
@@ -157,11 +163,8 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         </div>
       )}
       {failed && (
-        <Link
-          href="/"
-          className="mt-6 inline-flex w-fit items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg transition hover:bg-primary-hover"
-        >
-          <ArrowLeft size={15} /> Volver e intentar de nuevo
+        <Link href="/" className={buttonClasses("primary", "md", "mt-6 w-fit")}>
+          <ArrowLeft size={15} weight="bold" /> Volver e intentar de nuevo
         </Link>
       )}
     </div>

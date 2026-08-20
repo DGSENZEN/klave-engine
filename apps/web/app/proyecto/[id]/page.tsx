@@ -4,15 +4,15 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
-  Map,
+  MapTrifold,
   Receipt,
   Ruler,
-  Layers,
-  Banknote,
-  TrendingUp,
+  Stack,
+  Money,
+  TrendUp,
   ShieldCheck,
-  CalendarDays,
-} from "lucide-react";
+  CalendarBlank,
+} from "@phosphor-icons/react";
 import {
   getViews,
   getDimensions,
@@ -22,7 +22,16 @@ import {
 } from "@/lib/api";
 import { useCostReport } from "@/lib/useProjectReport";
 import { phaseColor } from "@/lib/phases";
-import { Callout, Card, Metric, PageHeader, SectionTitle, Skeleton } from "@/components/ui";
+import {
+  buttonClasses,
+  Callout,
+  Card,
+  Metric,
+  PageHeader,
+  SectionTitle,
+  Skeleton,
+  SkeletonMetrics,
+} from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
 
 export default function Resumen() {
@@ -52,16 +61,10 @@ export default function Resumen() {
         title="Resumen del proyecto"
         actions={
           <>
-            <Link
-              href={`/proyecto/${id}/plano`}
-              className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium shadow-sm transition hover:bg-surface-2"
-            >
-              <Map size={16} /> Ver plano
+            <Link href={`/proyecto/${id}/plano`} className={buttonClasses("secondary")}>
+              <MapTrifold size={16} /> Ver plano
             </Link>
-            <Link
-              href={`/proyecto/${id}/presupuesto`}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-fg transition hover:bg-primary-hover"
-            >
+            <Link href={`/proyecto/${id}/presupuesto`} className={buttonClasses("primary")}>
               <Receipt size={16} /> Presupuesto
             </Link>
           </>
@@ -80,25 +83,25 @@ export default function Resumen() {
             <Metric
               label="Costo directo"
               value={money(costs.integration.direct_cost)}
-              icon={<Banknote size={16} />}
+              icon={<Money size={16} weight="duotone" />}
             />
             <Metric
               label="Precio de venta"
               value={money(costs.integration.sale_price)}
               hint={`factor ${costs.integration.overcost_factor.toFixed(3)}`}
-              icon={<TrendingUp size={16} />}
+              icon={<TrendUp size={16} weight="duotone" />}
             />
             <Metric
               label="Total c/ contingencia"
               value={money(costs.integration.grand_total)}
-              accent="primary"
-              icon={<ShieldCheck size={16} />}
+              accent="accent"
+              icon={<ShieldCheck size={16} weight="duotone" />}
             />
             <Metric
               label="Plazo estimado"
               value={`${costs.schedule.total_duration_days} días`}
               hint={`~${months} meses · ${costs.schedule.phases.length} fases`}
-              icon={<CalendarDays size={16} />}
+              icon={<CalendarBlank size={16} weight="duotone" />}
             />
           </div>
 
@@ -122,7 +125,7 @@ export default function Resumen() {
                 />
                 {views?.is_segmented && (
                   <Row
-                    icon={<Layers size={15} />}
+                    icon={<Stack size={15} />}
                     label="Vistas de planta"
                     value={`${views.views.filter((v) => v.kind === "plan").length} · NPT ${
                       views.npt_levels.length
@@ -160,15 +163,33 @@ export default function Resumen() {
 
       {!costs && !error && (
         <div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Skeleton className="h-[104px]" />
-            <Skeleton className="h-[104px]" />
-            <Skeleton className="h-[104px]" />
-            <Skeleton className="h-[104px]" />
-          </div>
-          <div className="mt-6 grid gap-4 lg:grid-cols-3">
-            <Skeleton className="h-56 lg:col-span-2" />
-            <Skeleton className="h-56" />
+          <SkeletonMetrics count={4} />
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Card className="p-5 lg:col-span-2">
+              <Skeleton className="h-4 w-40" />
+              <div className="mt-5 space-y-4">
+                {Array.from({ length: 3 }, (_, i) => (
+                  <div key={i}>
+                    <div className="mb-2 flex justify-between">
+                      <Skeleton className="h-3.5 w-28" />
+                      <Skeleton className="h-3.5 w-20" />
+                    </div>
+                    <Skeleton className="h-2.5" />
+                  </div>
+                ))}
+              </div>
+            </Card>
+            <Card className="p-5">
+              <Skeleton className="h-4 w-32" />
+              <div className="mt-5 space-y-3">
+                {Array.from({ length: 4 }, (_, i) => (
+                  <div key={i} className="flex justify-between">
+                    <Skeleton className="h-3.5 w-24" />
+                    <Skeleton className="h-3.5 w-16" />
+                  </div>
+                ))}
+              </div>
+            </Card>
           </div>
         </div>
       )}

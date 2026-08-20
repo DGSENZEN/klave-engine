@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { CalendarDays, Layers, ListChecks } from "lucide-react";
+import { CalendarBlank, Stack, ListChecks } from "@phosphor-icons/react";
 import { money, num, type ScheduleActivity } from "@/lib/api";
 import { phaseColor } from "@/lib/phases";
 import { useCostReport } from "@/lib/useProjectReport";
@@ -13,6 +13,8 @@ import {
   PageHeader,
   SectionTitle,
   Skeleton,
+  SkeletonHeader,
+  SkeletonMetrics,
 } from "@/components/ui";
 
 export default function ProgramaPage() {
@@ -33,13 +35,24 @@ export default function ProgramaPage() {
   if (!costs) {
     return (
       <div className="px-6 py-7 lg:px-8">
-        <Skeleton className="mb-6 h-14 w-80" />
-        <div className="mb-6 grid gap-4 sm:grid-cols-3">
-          <Skeleton className="h-[104px]" />
-          <Skeleton className="h-[104px]" />
-          <Skeleton className="h-[104px]" />
-        </div>
-        <Skeleton className="h-96" />
+        <SkeletonHeader />
+        <SkeletonMetrics count={3} />
+        <Card className="p-5">
+          <Skeleton className="h-4 w-40" />
+          <div className="mt-6 space-y-3">
+            {Array.from({ length: 6 }, (_, i) => (
+              <div key={i} className="flex items-center gap-4">
+                <Skeleton className="h-3.5 w-56 shrink-0" />
+                <div className="relative h-5 flex-1">
+                  <Skeleton
+                    className="absolute top-0.5 h-4"
+                    style={{ left: `${(i * 13) % 55}%`, width: `${12 + ((i * 9) % 28)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
       </div>
     );
   }
@@ -67,16 +80,20 @@ export default function ProgramaPage() {
           label="Duración total"
           value={`${totalDays} días`}
           hint={`≈ ${months} ${months === 1 ? "mes" : "meses"} (24 días/mes)`}
-          icon={<CalendarDays size={16} />}
-          accent="primary"
+          icon={<CalendarBlank size={16} weight="duotone" />}
+          accent="accent"
         />
-        <Metric label="Actividades" value={activities.length} icon={<ListChecks size={16} />} />
-        <Metric label="Fases" value={phases.length} icon={<Layers size={16} />} />
+        <Metric
+          label="Actividades"
+          value={activities.length}
+          icon={<ListChecks size={16} weight="duotone" />}
+        />
+        <Metric label="Fases" value={phases.length} icon={<Stack size={16} weight="duotone" />} />
       </div>
 
       {activities.length === 0 ? (
         <EmptyState
-          icon={<CalendarDays size={22} />}
+          icon={<CalendarBlank size={22} weight="duotone" />}
           title="Este procesamiento no incluye programa"
           hint="Vuelve a procesar el proyecto para generar el programa de obra."
         />
@@ -94,7 +111,7 @@ export default function ProgramaPage() {
                 return (
                   <div key={phase} className="mt-4 first:mt-2">
                     <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                      <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                      <span className="microlabel flex items-center gap-2">
                         <span
                           className="h-2.5 w-2.5 rounded-sm"
                           style={{ background: phaseColor(phase, phaseIndex) }}
