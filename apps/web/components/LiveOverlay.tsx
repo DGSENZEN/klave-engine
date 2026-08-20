@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { History, X, Check } from "lucide-react";
 import { useProjectLive } from "@/components/ProjectLive";
+import { Avatar, IconButton } from "@/components/ui";
 
 /** Top-right live layer: a hideable change timeline stacked above transient
  * toasts, so a burst of edits accumulates in the panel instead of piling up
@@ -21,63 +22,49 @@ export function LiveOverlay() {
   };
 
   return (
-    <div className="pointer-events-none fixed right-5 top-5 z-50 flex w-80 flex-col items-end gap-2">
+    <div className="pointer-events-none fixed right-4 top-[68px] z-50 flex w-[calc(100vw-2rem)] max-w-80 flex-col items-end gap-2 lg:right-5 lg:top-5">
       <div className="pointer-events-auto w-full">
         {open ? (
-          <div className="toast-in overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-lg)]">
-            <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
+          <div className="toast-in overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
+            <div className="flex items-center justify-between border-b border-border px-3 py-2">
               <div className="flex items-center gap-2 text-sm font-semibold">
-                <History size={15} className="text-[var(--primary)]" />
+                <History size={15} className="text-primary" />
                 Cambios
                 {timeline.length > 0 && (
-                  <span className="tabular text-xs font-normal text-[var(--muted)]">
+                  <span className="tabular text-xs font-normal text-muted">
                     {timeline.length}
                   </span>
                 )}
               </div>
               <div className="flex items-center gap-1">
                 {timeline.length > 0 && (
-                  <button
-                    onClick={clearTimeline}
-                    className="rounded p-1 text-xs text-[var(--muted)] transition hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]"
-                    title="Limpiar historial"
-                  >
+                  <IconButton aria-label="Limpiar historial" title="Limpiar historial" onClick={clearTimeline}>
                     <Check size={14} />
-                  </button>
+                  </IconButton>
                 )}
-                <button
-                  onClick={close}
-                  aria-label="Ocultar cambios"
-                  className="rounded p-1 text-[var(--muted)] transition hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]"
-                >
+                <IconButton aria-label="Ocultar cambios" onClick={close}>
                   <X size={14} />
-                </button>
+                </IconButton>
               </div>
             </div>
             <div className="max-h-[50vh] overflow-y-auto">
               {timeline.length === 0 ? (
-                <p className="px-3 py-6 text-center text-xs text-[var(--muted)]">
+                <p className="px-3 py-6 text-center text-xs text-muted">
                   Aún no hay cambios en esta sesión.
                 </p>
               ) : (
-                <ul className="divide-y divide-[var(--border)]">
+                <ul className="divide-y divide-border">
                   {timeline.map((entry) => (
                     <li key={entry.id} className="flex gap-2.5 px-3 py-2.5">
-                      <span
-                        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ${
-                          entry.isOwn ? "bg-[var(--primary)]" : "bg-[var(--accent)]"
-                        }`}
-                      >
-                        {initials(entry.actor)}
-                      </span>
+                      <Avatar name={entry.actor} self={entry.isOwn} size="sm" />
                       <div className="min-w-0 flex-1">
                         <div className="text-sm leading-tight">{entry.title}</div>
                         {entry.detail && (
-                          <div className="mt-0.5 truncate text-xs tabular text-[var(--muted)]">
+                          <div className="mt-0.5 truncate text-xs tabular text-muted">
                             {entry.detail}
                           </div>
                         )}
-                        <div className="mt-0.5 text-[11px] text-[var(--muted)]">
+                        <div className="mt-0.5 text-[11px] text-faint">
                           {timeAgo(entry.ts)}
                         </div>
                       </div>
@@ -91,12 +78,12 @@ export function LiveOverlay() {
           <div className="flex justify-end">
             <button
               onClick={() => setOpen(true)}
-              className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium shadow-sm transition hover:bg-[var(--surface-2)]"
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium shadow-sm transition hover:bg-surface-2"
             >
-              <History size={14} className="text-[var(--muted)]" />
+              <History size={14} className="text-muted" />
               Cambios
               {unseen > 0 && (
-                <span className="tabular flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--primary)] px-1 text-[10px] font-semibold text-white">
+                <span className="tabular flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-fg">
                   {unseen}
                 </span>
               )}
@@ -108,30 +95,17 @@ export function LiveOverlay() {
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className="toast-in pointer-events-auto flex w-full items-start gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm shadow-[var(--shadow-lg)]"
+          className="toast-in pointer-events-auto flex w-full items-start gap-3 rounded-xl border border-border bg-surface px-4 py-3 text-sm shadow-lg"
         >
-          <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[var(--primary)]" />
+          <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
           <div className="min-w-0 flex-1">{toast.message}</div>
-          <button
-            onClick={() => dismissToast(toast.id)}
-            aria-label="Cerrar aviso"
-            className="rounded p-0.5 text-[var(--muted)] transition hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]"
-          >
+          <IconButton aria-label="Cerrar aviso" onClick={() => dismissToast(toast.id)}>
             <X size={14} />
-          </button>
+          </IconButton>
         </div>
       ))}
     </div>
   );
-}
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
 }
 
 function timeAgo(ts: string): string {

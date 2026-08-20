@@ -364,7 +364,7 @@ export default function ParametrosPage() {
       </Card>
 
       {/* Sticky live summary */}
-      <div className="fixed bottom-0 left-64 right-0 border-t border-[var(--border)] bg-[var(--surface)]/95 px-8 py-3 shadow-[0_-4px_16px_rgba(16,24,40,0.06)] backdrop-blur">
+      <div className="fixed bottom-0 left-0 right-0 border-t border-[var(--border)] bg-[var(--surface)]/95 px-8 py-3 shadow-[0_-4px_16px_rgba(16,24,40,0.06)] backdrop-blur lg:left-64">
         <div className="flex items-center justify-between gap-6">
           <div className="flex items-center gap-8 text-sm">
             <Summary
