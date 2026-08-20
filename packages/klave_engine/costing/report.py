@@ -59,11 +59,20 @@ def generate_cost_report(
     segmentation: SheetSegmentation | None = None,
     dimensions: DimensionInventory | None = None,
     price_book: dict[str, Resource] | None = None,
+    apu_templates: dict[str, list[tuple[str, float]]] | None = None,
+    rendimientos: dict[str, float] | None = None,
 ) -> CostReport:
     config = config or CostingConfig()
     assumptions, calibration_notes = _calibrate_assumptions(config.assumptions, dimensions)
     catalog = build_default_catalog(assumptions)
-    apus = build_all_apus(catalog, price_book)
+    # Rendimiento overrides come from the workspace catalog; they drive the
+    # schedule durations without touching the detection→quantity rules.
+    if rendimientos:
+        for concept in catalog:
+            override = rendimientos.get(concept.code)
+            if override is not None and override > 0:
+                concept.production_rate_per_day = override
+    apus = build_all_apus(catalog, price_book, templates=apu_templates)
     boq = generate_bill_of_quantities(
         project_id, detections, units, catalog, apus, config.currency,
         segmentation=segmentation, assumptions=assumptions,

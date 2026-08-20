@@ -14,7 +14,8 @@ from klave_engine.common.errors import ConversionError, ProjectManifestError
 from klave_engine.common.io import read_json, write_json, write_text
 from klave_engine.common.logging import configure_logging, get_logger, log_stage
 from klave_engine.conversion.dwg_to_dxf import ConversionResult, convert_project
-from klave_engine.costing.insumos import apply_price_overrides, default_price_book
+from klave_engine.costing.catalog_store import get_catalog_store
+from klave_engine.costing.insumos import apply_price_overrides
 from klave_engine.costing.models import CostingConfig, CostReport
 from klave_engine.costing.recompute import load_overrides
 from klave_engine.costing.report import (
@@ -237,16 +238,21 @@ def run_full_pipeline(
     )
 
     # Reapply any user costing edits so they survive a full reprocess.
+    catalog_store = get_catalog_store(settings.data_dir)
     overrides = load_overrides(control_dir)
     if overrides is not None:
         costing_config = overrides.config
-        price_book = apply_price_overrides(default_price_book(), overrides.insumo_prices)
+        price_book = apply_price_overrides(
+            catalog_store.load_price_book(), overrides.insumo_prices
+        )
     else:
         costing_config = load_costing_config(settings.costing_config_path)
-        price_book = None
+        price_book = catalog_store.load_price_book()
     result.cost_report = generate_cost_report(
         manifest.project_id, result.detections, units, costing_config,
         segmentation, dimensions, price_book=price_book,
+        apu_templates=catalog_store.load_templates(),
+        rendimientos=catalog_store.load_rendimientos(),
     )
     write_json(processed / "cost_report.json", result.cost_report)
     boq_to_csv(result.cost_report, reports / "presupuesto.csv")

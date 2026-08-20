@@ -11,10 +11,12 @@ and are reapplied on the next full pipeline run.
 
 from pathlib import Path
 
+from klave_engine.common.config import get_settings
 from klave_engine.common.errors import ReportGenerationError
 from klave_engine.common.io import read_json, write_json, write_text
 from klave_engine.common.logging import get_logger, log_stage
-from klave_engine.costing.insumos import apply_price_overrides, default_price_book
+from klave_engine.costing.catalog_store import get_catalog_store
+from klave_engine.costing.insumos import apply_price_overrides
 from klave_engine.costing.models import CostingOverrides, CostReport
 from klave_engine.costing.report import (
     boq_to_csv,
@@ -81,8 +83,9 @@ def save_overrides(processed_dir: Path, overrides: CostingOverrides) -> None:
 
 
 def build_cost_report(inputs: CostingInputs, overrides: CostingOverrides) -> CostReport:
-    """Pure costing: inputs + overrides → cost report (no IO)."""
-    price_book = apply_price_overrides(default_price_book(), overrides.insumo_prices)
+    """Costing from persisted inputs: workspace catalog + project overrides."""
+    store = get_catalog_store(get_settings().data_dir)
+    price_book = apply_price_overrides(store.load_price_book(), overrides.insumo_prices)
     return generate_cost_report(
         inputs.project_id,
         inputs.detections,
@@ -91,6 +94,8 @@ def build_cost_report(inputs: CostingInputs, overrides: CostingOverrides) -> Cos
         inputs.segmentation,
         inputs.dimensions,
         price_book=price_book,
+        apu_templates=store.load_templates(),
+        rendimientos=store.load_rendimientos(),
     )
 
 

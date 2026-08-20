@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from klave_engine.common.config import Settings
-from klave_engine.costing.insumos import default_price_book
+from klave_engine.costing.catalog_store import get_catalog_store
 from klave_engine.costing.models import CostingConfig, CostingOverrides
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
 
@@ -56,9 +56,10 @@ def get_costing_config(
     overrides = load_overrides(processed)
     config = overrides.config if overrides else CostingConfig()
     prices = overrides.insumo_prices if overrides else {}
+    catalog_book = get_catalog_store(settings.data_dir).load_price_book()
     insumos = [
         {**resource.model_dump(mode="json"), "unit_cost": prices.get(code, resource.unit_cost)}
-        for code, resource in default_price_book().items()
+        for code, resource in catalog_book.items()
     ]
     return {
         "config": config.model_dump(mode="json"),

@@ -8,6 +8,7 @@ from klave_engine.common.errors import KlaveEngineError
 from klave_engine.common.logging import configure_logging
 
 from apps.api.routes import (
+    catalog,
     detections,
     entities,
     events,
@@ -44,6 +45,7 @@ def create_app() -> FastAPI:
     app.include_router(graph.router)
     app.include_router(detections.router)
     app.include_router(reports.router)
+    app.include_router(catalog.router)
 
     @app.exception_handler(KlaveEngineError)
     async def klave_error_handler(request: Request, exc: KlaveEngineError) -> JSONResponse:

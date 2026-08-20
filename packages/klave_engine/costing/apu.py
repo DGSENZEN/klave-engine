@@ -76,6 +76,11 @@ def build_apu(
 
 
 def build_all_apus(
-    concepts: list[Concept], resources: dict[str, Resource] | None = None
+    concepts: list[Concept],
+    resources: dict[str, Resource] | None = None,
+    templates: dict[str, list[tuple[str, float]]] | None = None,
 ) -> dict[str, UnitPriceAnalysis]:
-    return {concept.code: build_apu(concept, resources=resources) for concept in concepts}
+    return {
+        concept.code: build_apu(concept, resources=resources, templates=templates)
+        for concept in concepts
+    }
