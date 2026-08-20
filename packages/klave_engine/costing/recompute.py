@@ -23,6 +23,7 @@ from klave_engine.costing.report import (
     cost_report_to_markdown,
     generate_cost_report,
 )
+from klave_engine.costing.reviews import ProjectReviews, filter_excluded, load_reviews
 from klave_engine.detection.dimensions import DimensionInventory
 from klave_engine.detection.results import Detection
 from klave_engine.detection.views import SheetSegmentation
@@ -82,13 +83,21 @@ def save_overrides(processed_dir: Path, overrides: CostingOverrides) -> None:
     write_json(processed_dir / OVERRIDES_FILENAME, overrides)
 
 
-def build_cost_report(inputs: CostingInputs, overrides: CostingOverrides) -> CostReport:
-    """Costing from persisted inputs: workspace catalog + project overrides."""
+def build_cost_report(
+    inputs: CostingInputs,
+    overrides: CostingOverrides,
+    reviews: ProjectReviews | None = None,
+) -> CostReport:
+    """Costing from persisted inputs: workspace catalog, project overrides,
+    and human corrections (excluded detections + manual adjustments)."""
     store = get_catalog_store(get_settings().data_dir)
     price_book = apply_price_overrides(store.load_price_book(), overrides.insumo_prices)
+    detections = (
+        filter_excluded(inputs.detections, reviews) if reviews else inputs.detections
+    )
     return generate_cost_report(
         inputs.project_id,
-        inputs.detections,
+        detections,
         inputs.units,
         overrides.config,
         inputs.segmentation,
@@ -96,6 +105,7 @@ def build_cost_report(inputs: CostingInputs, overrides: CostingOverrides) -> Cos
         price_book=price_book,
         apu_templates=store.load_templates(),
         rendimientos=store.load_rendimientos(),
+        adjustments=reviews.adjustments if reviews else None,
     )
 
 
@@ -108,7 +118,7 @@ def recompute_and_persist(
 ) -> CostReport:
     """Recompute costs from an immutable run and persist a derived scenario."""
     inputs = load_costing_inputs(input_dir, project_id)
-    report = build_cost_report(inputs, overrides)
+    report = build_cost_report(inputs, overrides, reviews=load_reviews(control_dir))
 
     write_json(control_dir / COST_REPORT_OVERRIDE_FILENAME, report)
     save_overrides(control_dir, overrides)

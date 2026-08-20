@@ -8,15 +8,21 @@ from klave_engine.common.io import write_text
 from klave_engine.common.logging import get_logger, log_stage
 from klave_engine.costing.apu import build_all_apus
 from klave_engine.costing.boq import generate_bill_of_quantities
-from klave_engine.costing.catalog import build_default_catalog
+from klave_engine.costing.catalog import PHASE_ORDER, build_default_catalog
 from klave_engine.costing.financial import build_financial_plan
 from klave_engine.costing.integration import integrate_costs
 from klave_engine.costing.models import (
+    BillOfQuantities,
+    BoqLine,
+    Concept,
     CostingAssumptions,
     CostingConfig,
     CostReport,
+    QuantityKind,
     Resource,
+    UnitPriceAnalysis,
 )
+from klave_engine.costing.reviews import ManualAdjustment
 from klave_engine.costing.schedule import build_schedule
 from klave_engine.detection.dimensions import DimensionInventory
 from klave_engine.detection.results import Detection
@@ -61,6 +67,7 @@ def generate_cost_report(
     price_book: dict[str, Resource] | None = None,
     apu_templates: dict[str, list[tuple[str, float]]] | None = None,
     rendimientos: dict[str, float] | None = None,
+    adjustments: list[ManualAdjustment] | None = None,
 ) -> CostReport:
     config = config or CostingConfig()
     assumptions, calibration_notes = _calibrate_assumptions(config.assumptions, dimensions)
@@ -78,6 +85,8 @@ def generate_cost_report(
         segmentation=segmentation, assumptions=assumptions,
     )
     boq.assumptions.extend(calibration_notes)
+    if adjustments:
+        _apply_adjustments(boq, catalog, apus, adjustments)
     integration = integrate_costs(boq.direct_cost_total, config.indirects)
     levels = (
         max(len(segmentation.superstructure_views()), 1)
@@ -108,6 +117,80 @@ def generate_cost_report(
         duration_days=schedule.total_duration_days,
     )
     return report
+
+
+def _apply_adjustments(
+    boq: BillOfQuantities,
+    catalog: list[Concept],
+    apus: dict[str, UnitPriceAnalysis],
+    adjustments: list[ManualAdjustment],
+) -> None:
+    """Concept-level human corrections, applied before integration so every
+    downstream figure (indirects, schedule, cashflow) stays consistent."""
+    concepts_by_code = {concept.code: concept for concept in catalog}
+    catalog_order = {concept.code: index for index, concept in enumerate(catalog)}
+    lines_by_code = {line.concept_code: line for line in boq.lines}
+
+    for adjustment in adjustments:
+        concept = concepts_by_code.get(adjustment.concept_code)
+        if concept is None:
+            boq.warnings.append(
+                f"Ajuste manual ignorado: concepto desconocido {adjustment.concept_code}."
+            )
+            continue
+        note = f"Ajuste manual {adjustment.quantity_delta:+,.2f} {concept.unit}"
+        if adjustment.note:
+            note += f": {adjustment.note}"
+        if adjustment.actor:
+            note += f" — {adjustment.actor}"
+
+        line = lines_by_code.get(adjustment.concept_code)
+        if line is None:
+            if adjustment.quantity_delta <= 0:
+                boq.warnings.append(
+                    "Ajuste manual negativo ignorado: el concepto "
+                    f"{adjustment.concept_code} no tiene cantidad detectada."
+                )
+                continue
+            apu = apus[adjustment.concept_code]
+            line = BoqLine(
+                concept_code=concept.code,
+                description=concept.description,
+                unit=concept.unit,
+                quantity=0.0,
+                unit_price=apu.direct_unit_cost,
+                amount=0.0,
+                phase=concept.phase,
+                raw_quantity=0.0,
+                raw_kind=QuantityKind.COUNT,
+                source_detection_count=0,
+                confidence=1.0,
+            )
+            boq.lines.append(line)
+            lines_by_code[concept.code] = line
+
+        new_quantity = line.quantity + adjustment.quantity_delta
+        if new_quantity < 0:
+            boq.warnings.append(
+                f"Ajuste manual en {concept.code} limitado a cantidad cero "
+                f"(pedía {new_quantity:,.2f} {concept.unit})."
+            )
+            new_quantity = 0.0
+        line.quantity = round(new_quantity, 4)
+        line.amount = round(line.quantity * line.unit_price, 2)
+        line.assumptions.append(note)
+
+    boq.lines.sort(
+        key=lambda line: (
+            PHASE_ORDER.index(line.phase) if line.phase in PHASE_ORDER else len(PHASE_ORDER),
+            catalog_order.get(line.concept_code, len(catalog_order)),
+        )
+    )
+    boq.direct_cost_total = round(sum(line.amount for line in boq.lines), 2)
+    totals: dict[str, float] = {}
+    for line in boq.lines:
+        totals[line.phase] = round(totals.get(line.phase, 0.0) + line.amount, 2)
+    boq.totals_by_phase = totals
 
 
 def _money(value: float) -> str:

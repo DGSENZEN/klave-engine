@@ -13,7 +13,17 @@ from klave_engine.common.config import Settings, get_settings
 from klave_engine.common.io import read_json, write_json
 from klave_engine.ingestion.manifest import ProjectManifest, load_manifest
 
-__all__ = ["ProjectStore", "get_settings", "get_store"]
+__all__ = ["ProjectStore", "get_settings", "get_store", "project_recompute_lock"]
+
+# Serializes the read-check-write of a project's costing state so concurrent
+# recomputes (parameter edits, review changes) cannot interleave.
+_RECOMPUTE_LOCKS: dict[str, threading.Lock] = {}
+_RECOMPUTE_LOCKS_GUARD = threading.Lock()
+
+
+def project_recompute_lock(project_id: str) -> threading.Lock:
+    with _RECOMPUTE_LOCKS_GUARD:
+        return _RECOMPUTE_LOCKS.setdefault(project_id, threading.Lock())
 
 REGISTRY_FILENAME = "projects_registry.json"
 

@@ -1,4 +1,3 @@
-import threading
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -8,21 +7,16 @@ from klave_engine.costing.catalog_store import get_catalog_store
 from klave_engine.costing.models import CostingConfig, CostingOverrides
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
 
-from apps.api.dependencies import ProjectStore, get_settings, get_store
+from apps.api.dependencies import (
+    ProjectStore,
+    get_settings,
+    get_store,
+    project_recompute_lock,
+)
 from apps.api.events import BUS, clean_actor, clean_client_id
 from apps.api.jobs import ACTIVE_STATES, JOB_STORE
 
 router = APIRouter(prefix="/projects")
-
-# Serializes the read-check-write of a project's costing overrides so two
-# concurrent recomputes cannot interleave between version check and save.
-_recompute_locks: dict[str, threading.Lock] = {}
-_locks_guard = threading.Lock()
-
-
-def _recompute_lock(project_id: str) -> threading.Lock:
-    with _locks_guard:
-        return _recompute_locks.setdefault(project_id, threading.Lock())
 
 
 @router.get("/{project_id}/quantities")
@@ -110,7 +104,7 @@ def recompute(
         ]["grand_total"]
     except (HTTPException, KeyError, TypeError):
         prev_grand_total = None
-    with _recompute_lock(project_id):
+    with project_recompute_lock(project_id):
         current = load_overrides(control_dir)
         current_version = current.version if current else 0
         if overrides.version != current_version:

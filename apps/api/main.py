@@ -17,6 +17,7 @@ from apps.api.routes import (
     health,
     projects,
     reports,
+    reviews,
 )
 
 
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(graph.router)
     app.include_router(detections.router)
     app.include_router(reports.router)
+    app.include_router(reviews.router)
     app.include_router(catalog.router)
 
     @app.exception_handler(KlaveEngineError)

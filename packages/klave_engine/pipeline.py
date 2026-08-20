@@ -18,6 +18,7 @@ from klave_engine.costing.catalog_store import get_catalog_store
 from klave_engine.costing.insumos import apply_price_overrides
 from klave_engine.costing.models import CostingConfig, CostReport
 from klave_engine.costing.recompute import load_overrides
+from klave_engine.costing.reviews import filter_excluded, load_reviews
 from klave_engine.costing.report import (
     boq_to_csv,
     cost_report_to_markdown,
@@ -248,11 +249,18 @@ def run_full_pipeline(
     else:
         costing_config = load_costing_config(settings.costing_config_path)
         price_book = catalog_store.load_price_book()
+    # Human corrections survive a reprocess: exclusions are keyed by the
+    # deterministic display labels and adjustments are concept-level. The
+    # detections artifact keeps everything; exclusion is a costing-layer act.
+    reviews = load_reviews(control_dir)
     result.cost_report = generate_cost_report(
-        manifest.project_id, result.detections, units, costing_config,
+        manifest.project_id,
+        filter_excluded(result.detections, reviews),
+        units, costing_config,
         segmentation, dimensions, price_book=price_book,
         apu_templates=catalog_store.load_templates(),
         rendimientos=catalog_store.load_rendimientos(),
+        adjustments=reviews.adjustments,
     )
     write_json(processed / "cost_report.json", result.cost_report)
     boq_to_csv(result.cost_report, reports / "presupuesto.csv")
