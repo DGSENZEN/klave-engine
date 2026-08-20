@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { RotateCcw, Calculator, Loader2, CircleAlert } from "lucide-react";
+import { RotateCcw, Calculator, Loader2 } from "lucide-react";
 import {
   ApiError,
   getCostingConfig,
@@ -15,7 +15,18 @@ import {
   type Insumo,
   type ProjectEvent,
 } from "@/lib/api";
-import { Button, Card, SectionTitle, Badge, Skeleton } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Callout,
+  Card,
+  Input,
+  PageHeader,
+  SectionTitle,
+  Skeleton,
+  Td,
+  Th,
+} from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
 import { actorLabel } from "@/lib/collab";
 
@@ -261,8 +272,8 @@ export default function ParametrosPage() {
 
   if (!config) {
     return (
-      <div className="px-8 py-7">
-        <Skeleton className="mb-6 h-14 w-96" />
+      <div className="px-6 py-7 lg:px-8">
+        <Skeleton className="mb-6 h-14 w-96 max-w-full" />
         <div className="grid gap-4 lg:grid-cols-3">
           <Skeleton className="h-64" />
           <Skeleton className="h-64" />
@@ -273,34 +284,30 @@ export default function ParametrosPage() {
   }
 
   return (
-    <div className="rise-in px-8 py-7 pb-28">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold">Parámetros e insumos</h1>
-        <p className="text-sm text-[var(--muted)]">
-          Ajusta supuestos, porcentajes y precios; el presupuesto se recalcula al instante
-          (sin volver a detectar).
-        </p>
-      </div>
+    <div className="rise-in px-6 py-7 pb-32 lg:px-8">
+      <PageHeader
+        title="Parámetros e insumos"
+        sub="Ajusta supuestos, porcentajes y precios; el presupuesto se recalcula al instante (sin volver a detectar)."
+      />
 
       {conflict && (
-        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <div className="flex min-w-0 items-center gap-2">
-            <CircleAlert size={16} className="shrink-0" />
-            <span className="truncate">{conflict}</span>
-          </div>
-          <button
-            onClick={reloadFromServer}
-            disabled={busy}
-            className="shrink-0 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-amber-900 shadow-sm disabled:opacity-50"
+        <div className="mb-4">
+          <Callout
+            tone="warning"
+            action={
+              <Button size="sm" onClick={reloadFromServer} disabled={busy}>
+                Recargar
+              </Button>
+            }
           >
-            Recargar
-          </button>
+            <span className="truncate">{conflict}</span>
+          </Callout>
         </div>
       )}
 
       {error && (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <CircleAlert size={16} /> {error}
+        <div className="mb-4">
+          <Callout tone="danger">{error}</Callout>
         </div>
       )}
 
@@ -321,64 +328,72 @@ export default function ParametrosPage() {
       </div>
 
       <Card className="mt-4 overflow-hidden">
-        <div className="border-b border-[var(--border)] px-5 py-4">
+        <div className="border-b border-border px-5 py-4">
           <SectionTitle sub="Precios de referencia (MXN); edítalos con tus cotizaciones">
             Catálogo de insumos
           </SectionTitle>
         </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-[var(--surface-2)] text-left text-xs uppercase tracking-wide text-[var(--muted)]">
-              <th className="px-5 py-2.5 font-semibold">Insumo</th>
-              <th className="px-3 py-2.5 font-semibold">Tipo</th>
-              <th className="px-3 py-2.5 font-semibold">Unidad</th>
-              <th className="px-5 py-2.5 text-right font-semibold">Costo unitario</th>
-            </tr>
-          </thead>
-          <tbody>
-            {insumos.map((ins) => (
-              <tr key={ins.code} className="border-t border-[var(--border)]">
-                <td className="px-5 py-2.5">
-                  <div>{ins.description}</div>
-                  <div className="font-mono text-xs text-[var(--muted)]">{ins.code}</div>
-                </td>
-                <td className="px-3 py-2.5">
-                  <Badge>{TYPE_LABELS[ins.resource_type] ?? ins.resource_type}</Badge>
-                </td>
-                <td className="px-3 py-2.5 text-[var(--muted)]">{ins.unit}</td>
-                <td className="px-5 py-2.5 text-right">
-                  <input
-                    type="number"
-                    step="any"
-                    value={prices[ins.code] ?? ins.unit_cost}
-                    onChange={(e) =>
-                      setPrice(ins.code, ins.description, Number(e.target.value))
-                    }
-                    className="w-32 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-right tabular focus:border-[var(--primary)] focus:outline-none"
-                  />
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-surface-2">
+                <Th className="px-5">Insumo</Th>
+                <Th className="px-3">Tipo</Th>
+                <Th className="px-3">Unidad</Th>
+                <Th align="right" className="px-5">
+                  Costo unitario
+                </Th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {insumos.map((ins) => (
+                <tr key={ins.code} className="border-t border-border">
+                  <Td className="px-5 py-2.5">
+                    <div>{ins.description}</div>
+                    <div className="font-mono text-xs text-muted">{ins.code}</div>
+                  </Td>
+                  <Td className="px-3 py-2.5">
+                    <Badge>{TYPE_LABELS[ins.resource_type] ?? ins.resource_type}</Badge>
+                  </Td>
+                  <Td className="px-3 py-2.5 text-muted">{ins.unit}</Td>
+                  <Td align="right" className="px-5 py-2.5">
+                    <Input
+                      type="number"
+                      step="any"
+                      value={prices[ins.code] ?? ins.unit_cost}
+                      onChange={(e) =>
+                        setPrice(ins.code, ins.description, Number(e.target.value))
+                      }
+                      className="w-32 px-2 py-1 text-right tabular"
+                    />
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
 
       {/* Sticky live summary */}
-      <div className="fixed bottom-0 left-0 right-0 border-t border-[var(--border)] bg-[var(--surface)]/95 px-8 py-3 shadow-[0_-4px_16px_rgba(16,24,40,0.06)] backdrop-blur lg:left-64">
-        <div className="flex items-center justify-between gap-6">
-          <div className="flex items-center gap-8 text-sm">
+      <div className="fixed bottom-0 left-0 right-0 border-t border-border bg-surface/95 px-4 py-3 backdrop-blur lg:left-64 lg:px-8">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-5 text-sm lg:gap-8">
             <Summary
               label="Costo directo"
               value={report?.boq.direct_cost_total}
               delta={delta?.direct}
             />
-            <Summary label="Precio de venta" value={report?.integration.sale_price} />
-            <Summary
-              label="Total c/ contingencia"
-              value={report?.integration.grand_total}
-              delta={delta?.total}
-              accent
-            />
+            <div className="hidden sm:block">
+              <Summary label="Precio de venta" value={report?.integration.sale_price} />
+            </div>
+            <div className="hidden md:block">
+              <Summary
+                label="Total c/ contingencia"
+                value={report?.integration.grand_total}
+                delta={delta?.total}
+                accent
+              />
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Button onClick={doReset} disabled={busy || !!conflict}>
@@ -418,13 +433,13 @@ function Group({
       <div className="space-y-2.5">
         {entries.map(([key, value]) => (
           <label key={key} className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-[var(--muted)]">{LABELS[key] ?? key}</span>
-            <input
+            <span className="text-muted">{LABELS[key] ?? key}</span>
+            <Input
               type="number"
               step="any"
               value={value}
               onChange={(e) => onChange(group, key, Number(e.target.value))}
-              className="w-28 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-right tabular focus:border-[var(--primary)] focus:outline-none"
+              className="w-28 px-2 py-1 text-right tabular"
             />
           </label>
         ))}
@@ -446,13 +461,13 @@ function Summary({
 }) {
   return (
     <div>
-      <div className="text-xs uppercase tracking-wide text-[var(--muted)]">{label}</div>
-      <div className={`text-lg font-semibold tabular ${accent ? "text-[var(--primary)]" : ""}`}>
+      <div className="text-xs uppercase tracking-wide text-muted">{label}</div>
+      <div className={`text-lg font-semibold tabular ${accent ? "text-primary" : ""}`}>
         {value != null ? money(value) : "—"}
         {delta != null && Math.abs(delta) > 0.5 && (
           <span
             className={`ml-2 text-xs font-medium ${
-              delta > 0 ? "text-[var(--danger)]" : "text-[var(--success)]"
+              delta > 0 ? "text-danger" : "text-success"
             }`}
           >
             {delta > 0 ? "▲" : "▼"} {money(Math.abs(delta))}

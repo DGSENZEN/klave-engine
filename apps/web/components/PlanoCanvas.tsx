@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Maximize } from "lucide-react";
 import type { DetectionOverlay, Geometry } from "@/lib/api";
+import { cssVar, subscribeTheme } from "@/lib/theme";
 
 // Family-first palette; detection-type keys keep old runs rendering.
 export const FAMILY_COLORS: Record<string, string> = {
@@ -126,12 +128,12 @@ export function PlanoCanvas({
     const ctx = canvas.getContext("2d")!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = cssVar("--canvas-bg") || "#ffffff";
     ctx.fillRect(0, 0, w, h);
 
     // Base geometry
     ctx.lineWidth = 0.7;
-    ctx.strokeStyle = "#cbd5e1";
+    ctx.strokeStyle = cssVar("--canvas-stroke") || "#cbd5e1";
     ctx.beginPath();
     for (const s of geometry.shapes) {
       if (!visibleLayers.has(s.layer)) continue;
@@ -200,6 +202,9 @@ export function PlanoCanvas({
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [draw]);
+
+  // The canvas palette lives in CSS tokens; redraw when the theme flips.
+  useEffect(() => subscribeTheme(() => draw()), [draw]);
 
   function hitTest(mx: number, my: number): DetectionOverlay | null {
     const v = viewRef.current;
@@ -297,13 +302,13 @@ export function PlanoCanvas({
       />
       <button
         onClick={fit}
-        className="absolute right-3 top-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium shadow-sm transition hover:bg-[var(--surface-2)]"
+        className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium shadow-sm transition hover:bg-surface-2"
       >
-        Ajustar vista
+        <Maximize size={13} /> Ajustar vista
       </button>
       {tooltip && (
         <div
-          className="pointer-events-none absolute z-10 max-w-xs rounded-md bg-slate-900/95 px-2.5 py-1.5 text-xs text-white shadow-lg"
+          className="pointer-events-none absolute z-10 max-w-xs rounded-md bg-foreground/95 px-2.5 py-1.5 text-xs text-background shadow-lg"
           style={{ left: tooltip.x + 12, top: tooltip.y + 12 }}
         >
           {tooltip.text}

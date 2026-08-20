@@ -9,17 +9,26 @@ import {
   FileText,
   ArrowRight,
   Loader2,
-  CircleAlert,
+  ScanSearch,
+  Receipt,
 } from "lucide-react";
 import { ApiError, listProjects, uploadProject, type ProjectSummary } from "@/lib/api";
 import { eventsUrl, getBrowserActor, parseProjectEvent } from "@/lib/collab";
-import { Badge, Skeleton } from "@/components/ui";
+import { Badge, Callout, Card, Skeleton, type BadgeTone } from "@/components/ui";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
-const STATUS_TONE: Record<string, "success" | "warning" | "primary" | "default"> = {
+const STATUS_TONE: Record<string, BadgeTone> = {
   processed: "success",
   running: "primary",
   queued: "primary",
   failed: "warning",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  processed: "Procesado",
+  running: "Procesando",
+  queued: "En cola",
+  failed: "Con errores",
 };
 
 export default function Landing() {
@@ -80,20 +89,23 @@ export default function Landing() {
     }
   }
 
+  const firstRun = projects !== null && projects.length === 0;
+
   return (
-    <div className="mx-auto max-w-5xl px-6 py-12">
-      <header className="rise-in mb-10 flex items-center gap-3.5">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--primary)] to-[#3730a3] text-white shadow-[var(--shadow-md)]">
-          <Building2 size={24} />
+    <div className="mx-auto max-w-5xl px-5 py-10 sm:px-6 sm:py-12">
+      <header className="rise-in mb-10 flex items-start justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-fg shadow-md">
+            <Building2 size={24} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Klave</h1>
+            <p className="text-sm text-muted">
+              Ingeniería de costos a partir de planos estructurales.
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Klave · Ingeniería de Costos
-          </h1>
-          <p className="text-sm text-[var(--muted)]">
-            Sube un plano estructural y obtén presupuesto, programa y flujo financiero.
-          </p>
-        </div>
+        <ThemeToggle />
       </header>
 
       <label
@@ -108,10 +120,10 @@ export default function Landing() {
           const f = e.dataTransfer.files?.[0];
           if (f) handleFile(f);
         }}
-        className={`rise-in flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed bg-[var(--surface)] px-6 py-16 text-center shadow-[var(--shadow-xs)] transition ${
+        className={`rise-in flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed bg-surface px-6 py-14 text-center shadow-xs transition sm:py-16 ${
           dragging
-            ? "border-[var(--primary)] bg-[var(--primary-soft)]"
-            : "border-[var(--border-strong,var(--border))] hover:border-[var(--primary)] hover:bg-[var(--primary-soft)]/40"
+            ? "border-primary bg-primary-soft"
+            : "border-border-strong hover:border-primary hover:bg-primary-soft/40"
         }`}
       >
         <input
@@ -126,31 +138,54 @@ export default function Landing() {
         />
         {uploading ? (
           <>
-            <Loader2 className="animate-spin text-[var(--primary)]" size={34} />
+            <Loader2 className="animate-spin text-primary" size={34} />
             <p className="font-medium">Subiendo y convirtiendo…</p>
-            <p className="text-sm text-[var(--muted)]">Esto puede tardar unos segundos.</p>
+            <p className="text-sm text-muted">Esto puede tardar unos segundos.</p>
           </>
         ) : (
           <>
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--primary-soft)]">
-              <UploadCloud className="text-[var(--primary)]" size={28} />
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-soft">
+              <UploadCloud className="text-primary" size={28} />
             </div>
             <p className="text-base font-medium">
               Arrastra un plano aquí o haz clic para seleccionar
             </p>
-            <p className="text-sm text-[var(--muted)]">Formatos: DWG, DXF · CPU, sin nube</p>
+            <p className="text-sm text-muted">Formatos: DWG, DXF · procesamiento local</p>
           </>
         )}
       </label>
 
       {error && (
-        <div className="mt-4 flex items-center gap-2 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-          <CircleAlert size={16} /> {error}
+        <div className="mt-4">
+          <Callout tone="danger">{error}</Callout>
         </div>
       )}
 
+      {firstRun && (
+        <section className="rise-in mt-10 grid gap-3 sm:grid-cols-3">
+          <HowStep
+            n={1}
+            icon={<UploadCloud size={18} />}
+            title="Sube tu plano"
+            text="DWG o DXF estructural; la conversión y lectura corren en tu equipo."
+          />
+          <HowStep
+            n={2}
+            icon={<ScanSearch size={18} />}
+            title="Detección con evidencia"
+            text="Ejes, columnas, trabes, zapatas y muros, cada uno con su origen y confianza."
+          />
+          <HowStep
+            n={3}
+            icon={<Receipt size={18} />}
+            title="Presupuesto completo"
+            text="Cantidades, precios unitarios, programa de obra, flujo y riesgos revisables."
+          />
+        </section>
+      )}
+
       <section className="mt-12">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">
+        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted">
           Proyectos recientes
         </h2>
         {projects === null ? (
@@ -159,8 +194,8 @@ export default function Landing() {
             <Skeleton className="h-[76px]" />
           </div>
         ) : projects.length === 0 ? (
-          <p className="text-sm text-[var(--muted)]">
-            Aún no hay proyectos. Sube tu primer plano arriba.
+          <p className="text-sm text-muted">
+            Aún no hay proyectos. Sube tu primer plano arriba para comenzar.
           </p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
@@ -170,20 +205,23 @@ export default function Landing() {
                 href={`/proyecto/${p.project_id}`}
                 className="card card-hover group flex items-center gap-3 p-4"
               >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--primary-soft)]">
-                  <FileText size={18} className="text-[var(--primary)]" />
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-soft">
+                  <FileText size={18} className="text-primary" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{p.name}</div>
-                  <div className="mt-0.5">
+                  <div className="mt-1 flex items-center gap-2">
                     <Badge tone={STATUS_TONE[p.status ?? ""] ?? "default"}>
-                      {p.status ?? "—"}
+                      {STATUS_LABELS[p.status ?? ""] ?? p.status ?? "—"}
                     </Badge>
+                    {p.created_at && (
+                      <span className="text-xs text-faint">{formatDate(p.created_at)}</span>
+                    )}
                   </div>
                 </div>
                 <ArrowRight
                   size={18}
-                  className="text-[var(--muted)] transition group-hover:translate-x-0.5 group-hover:text-[var(--primary)]"
+                  className="text-muted transition group-hover:translate-x-0.5 group-hover:text-primary"
                 />
               </Link>
             ))}
@@ -192,4 +230,37 @@ export default function Landing() {
       </section>
     </div>
   );
+}
+
+function HowStep({
+  n,
+  icon,
+  title,
+  text,
+}: {
+  n: number;
+  icon: React.ReactNode;
+  title: string;
+  text: string;
+}) {
+  return (
+    <Card className="p-4">
+      <div className="mb-2 flex items-center gap-2.5">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-soft text-primary">
+          {icon}
+        </div>
+        <span className="text-xs font-semibold uppercase tracking-wide text-faint">
+          Paso {n}
+        </span>
+      </div>
+      <div className="font-medium">{title}</div>
+      <p className="mt-1 text-sm leading-relaxed text-muted">{text}</p>
+    </Card>
+  );
+}
+
+function formatDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short" }).format(date);
 }

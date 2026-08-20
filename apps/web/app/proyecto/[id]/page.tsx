@@ -3,66 +3,76 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Map, Receipt, Ruler, Layers, Banknote, TrendingUp, ShieldCheck, CalendarDays } from "lucide-react";
 import {
-  getCosts,
+  Map,
+  Receipt,
+  Ruler,
+  Layers,
+  Banknote,
+  TrendingUp,
+  ShieldCheck,
+  CalendarDays,
+} from "lucide-react";
+import {
   getViews,
   getDimensions,
   money,
-  type CostReport,
   type Views,
   type Dimensions,
 } from "@/lib/api";
-import { Card, Metric, SectionTitle, Skeleton } from "@/components/ui";
+import { useCostReport } from "@/lib/useProjectReport";
+import { phaseColor } from "@/lib/phases";
+import { Callout, Card, Metric, PageHeader, SectionTitle, Skeleton } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
 
 export default function Resumen() {
   const { id } = useParams<{ id: string }>();
-  const [costs, setCosts] = useState<CostReport | null>(null);
+  const { costs, error } = useCostReport(id);
   const [views, setViews] = useState<Views | null>(null);
   const [dims, setDims] = useState<Dimensions | null>(null);
   const { latestEvent, connectionEpoch } = useProjectLive();
 
   // connectionEpoch: a reconnect may have skipped events, so reload everything.
   useEffect(() => {
-    getCosts(id).then(setCosts).catch(() => {});
     getViews(id).then(setViews).catch(() => {});
     getDimensions(id).then(setDims).catch(() => {});
   }, [id, connectionEpoch]);
 
   useEffect(() => {
-    if (!latestEvent) return;
-    if (latestEvent.type === "costing_updated") {
-      getCosts(id).then(setCosts).catch(() => {});
-    }
-    if (latestEvent.type === "run_published") {
-      getCosts(id).then(setCosts).catch(() => {});
-      getViews(id).then(setViews).catch(() => {});
-      getDimensions(id).then(setDims).catch(() => {});
-    }
+    if (latestEvent?.type !== "run_published") return;
+    getViews(id).then(setViews).catch(() => {});
+    getDimensions(id).then(setDims).catch(() => {});
   }, [id, latestEvent]);
 
   const months = costs ? Math.round(costs.schedule.total_duration_days / 24) : 0;
 
   return (
-    <div className="px-8 py-7">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Resumen del proyecto</h1>
-        <div className="flex gap-2">
-          <Link
-            href={`/proyecto/${id}/plano`}
-            className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm font-medium hover:bg-[var(--surface-2)]"
-          >
-            <Map size={16} /> Ver plano
-          </Link>
-          <Link
-            href={`/proyecto/${id}/presupuesto`}
-            className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-medium text-white"
-          >
-            <Receipt size={16} /> Presupuesto
-          </Link>
-        </div>
-      </div>
+    <div className="px-6 py-7 lg:px-8">
+      <PageHeader
+        title="Resumen del proyecto"
+        actions={
+          <>
+            <Link
+              href={`/proyecto/${id}/plano`}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium shadow-sm transition hover:bg-surface-2"
+            >
+              <Map size={16} /> Ver plano
+            </Link>
+            <Link
+              href={`/proyecto/${id}/presupuesto`}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-fg transition hover:bg-primary-hover"
+            >
+              <Receipt size={16} /> Presupuesto
+            </Link>
+          </>
+        }
+      />
+
+      {error && (
+        <Callout tone="danger">
+          No se pudo cargar el resumen de costos. Revisa que el servidor esté activo.
+        </Callout>
+      )}
 
       {costs && (
         <div className="rise-in">
@@ -141,14 +151,14 @@ export default function Resumen() {
             </Card>
           </div>
 
-          <p className="mt-6 text-xs text-[var(--muted)]">
+          <p className="mt-6 text-xs text-muted">
             Precios de insumos de referencia (MXN); sustituir por cotizaciones del proyecto.
             Cantidades deduplicadas por vista; revisar conceptos de baja confianza.
           </p>
         </div>
       )}
 
-      {!costs && (
+      {!costs && !error && (
         <div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Skeleton className="h-[104px]" />
@@ -177,7 +187,7 @@ function Row({
 }) {
   return (
     <div className="flex items-center justify-between">
-      <dt className="flex items-center gap-2 text-[var(--muted)]">
+      <dt className="flex items-center gap-2 text-muted">
         {icon}
         {label}
       </dt>
@@ -190,34 +200,29 @@ function PhaseBars({ totals }: { totals: Record<string, number> }) {
   const entries = Object.entries(totals);
   const max = Math.max(...entries.map(([, v]) => v), 1);
   const sum = entries.reduce((acc, [, v]) => acc + v, 0) || 1;
-  const colors: Record<string, string> = {
-    Preliminares: "#0d9488",
-    Cimentación: "#d97706",
-    Estructura: "#1d4ed8",
-  };
   return (
     <div className="space-y-4">
-      {entries.map(([phase, value]) => (
+      {entries.map(([phase, value], index) => (
         <div key={phase}>
           <div className="mb-1.5 flex items-baseline justify-between text-sm">
             <span className="flex items-center gap-2">
               <span
                 className="h-2.5 w-2.5 rounded-sm"
-                style={{ background: colors[phase] ?? "#64748b" }}
+                style={{ background: phaseColor(phase, index) }}
               />
               {phase}
-              <span className="text-xs text-[var(--muted)]">
+              <span className="text-xs text-muted">
                 {((value / sum) * 100).toFixed(0)}%
               </span>
             </span>
             <span className="font-medium tabular">{money(value)}</span>
           </div>
-          <div className="h-2.5 overflow-hidden rounded-full bg-[var(--surface-2)]">
+          <div className="h-2.5 overflow-hidden rounded-full bg-surface-2">
             <div
               className="h-full rounded-full transition-[width] duration-500"
               style={{
                 width: `${(value / max) * 100}%`,
-                background: colors[phase] ?? "#64748b",
+                background: phaseColor(phase, index),
               }}
             />
           </div>
