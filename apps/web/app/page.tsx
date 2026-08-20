@@ -13,6 +13,7 @@ import {
 import { ApiError, listProjects, uploadProject, type ProjectSummary } from "@/lib/api";
 import { eventsUrl, getBrowserActor, parseProjectEvent, peekBrowserActor } from "@/lib/collab";
 import { isProfileComplete } from "@/lib/identity";
+import { fetchAuthStatus } from "@/lib/session";
 import { Avatar, Badge, Callout, Skeleton, type BadgeTone } from "@/components/ui";
 import { HowItWorks } from "@/components/HowItWorks";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -39,6 +40,7 @@ export default function Landing() {
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [actorName, setActorName] = useState("");
+  const [avatarSrc, setAvatarSrc] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // First run goes through /bienvenida to establish the workspace identity.
@@ -53,6 +55,16 @@ export default function Landing() {
     }, 0);
     return () => window.clearTimeout(handle);
   }, [router]);
+
+  useEffect(() => {
+    let active = true;
+    fetchAuthStatus().then((status) => {
+      if (active) setAvatarSrc(status.user?.picture ?? null);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -136,7 +148,7 @@ export default function Landing() {
               title="Editar perfil"
               className="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-3 text-sm font-medium shadow-xs transition hover:bg-surface-2"
             >
-              <Avatar name={actorName} self size="sm" />
+              <Avatar name={actorName} src={avatarSrc} self size="sm" />
               <span className="max-w-32 truncate">{actorName}</span>
             </Link>
           )}
