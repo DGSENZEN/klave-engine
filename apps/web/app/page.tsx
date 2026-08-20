@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  Books,
   Buildings,
   CloudArrowUp,
   FileText,
@@ -14,7 +15,14 @@ import { ApiError, listProjects, uploadProject, type ProjectSummary } from "@/li
 import { eventsUrl, getBrowserActor, parseProjectEvent, peekBrowserActor } from "@/lib/collab";
 import { isProfileComplete } from "@/lib/identity";
 import { fetchAuthStatus } from "@/lib/session";
-import { Avatar, Badge, Callout, Skeleton, type BadgeTone } from "@/components/ui";
+import {
+  Avatar,
+  Badge,
+  buttonClasses,
+  Callout,
+  Skeleton,
+  type BadgeTone,
+} from "@/components/ui";
 import { HowItWorks } from "@/components/HowItWorks";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -142,6 +150,9 @@ export default function Landing() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Link href="/catalogo" className={buttonClasses("secondary", "sm")}>
+            <Books size={14} weight="duotone" /> Catálogo
+          </Link>
           {actorName && (
             <Link
               href="/bienvenida"

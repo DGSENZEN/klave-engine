@@ -80,6 +80,7 @@ export default function ParametrosPage() {
   const [dirty, setDirty] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [catalogChanged, setCatalogChanged] = useState(false);
   const activityTimer = useRef<number | null>(null);
   const { latestEvent, actorName, clientId, sendActivity } = useProjectLive();
 
@@ -118,6 +119,12 @@ export default function ParametrosPage() {
       active = false;
     };
   }, [applyConfigResponse, id]);
+
+  useEffect(() => {
+    if (latestEvent?.type !== "catalog_updated") return;
+    const handle = window.setTimeout(() => setCatalogChanged(true), 0);
+    return () => window.clearTimeout(handle);
+  }, [latestEvent]);
 
   useEffect(() => {
     if (!latestEvent) return;
@@ -319,6 +326,28 @@ export default function ParametrosPage() {
       {error && (
         <div className="mb-4">
           <Callout tone="danger">{error}</Callout>
+        </div>
+      )}
+
+      {catalogChanged && !conflict && (
+        <div className="mb-4">
+          <Callout
+            tone="info"
+            action={
+              <Button
+                size="sm"
+                onClick={() => {
+                  setCatalogChanged(false);
+                  void doRecompute();
+                }}
+                disabled={busy}
+              >
+                Recalcular
+              </Button>
+            }
+          >
+            El catálogo del taller cambió; recalcula para aplicar los nuevos precios.
+          </Callout>
         </div>
       )}
 

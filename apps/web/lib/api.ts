@@ -35,6 +35,26 @@ async function postJSON<T>(
   return res.json() as Promise<T>;
 }
 
+async function putJSON<T>(
+  path: string,
+  body: unknown,
+  headers?: Record<string, string>,
+): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail: unknown;
+    try {
+      detail = (await res.json())?.detail;
+    } catch {}
+    throw new ApiError(res.status, path, detail);
+  }
+  return res.json() as Promise<T>;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, public path: string, public detail?: unknown) {
     super(`API ${status} on ${path}`);
@@ -268,6 +288,10 @@ export const listProjects = () =>
   getJSON<{ projects: ProjectSummary[] }>("/projects").then((r) => r.projects);
 
 export const getStatus = (id: string) => getJSON<ProjectStatus>(`/projects/${id}/status`);
+export const getEventsHistory = (id: string) =>
+  getJSON<{ events: ProjectEvent[] }>(`/projects/${id}/events/history`).then(
+    (r) => r.events,
+  );
 export const getGeometry = (id: string) => getJSON<Geometry>(`/projects/${id}/geometry`);
 export const getCosts = (id: string) => getJSON<CostReport>(`/projects/${id}/costs`);
 export type Insumo = {
@@ -343,6 +367,96 @@ export async function publishPresence(
 }
 
 export const getRisks = (id: string) => getJSON<RiskReport>(`/projects/${id}/risks`);
+
+// ---- Workspace catalog ----
+
+export type CatalogInsumo = {
+  code: string;
+  description: string;
+  unit: string;
+  resource_type: string;
+  unit_cost: number;
+  is_labor_percentage: number;
+  source: string;
+  updated_at: string;
+};
+
+export type CatalogConcept = {
+  code: string;
+  description: string;
+  unit: string;
+  phase: string;
+  production_rate_per_day: number;
+};
+
+export type ApuComponent = { resource_code: string; quantity: number };
+
+export type CatalogState = {
+  insumos: CatalogInsumo[];
+  concepts: CatalogConcept[];
+  apus: Record<string, ApuComponent[]>;
+  phase_order: string[];
+};
+
+export const getCatalog = () => getJSON<CatalogState>("/catalog");
+
+export const updateInsumo = (
+  code: string,
+  patch: Partial<Pick<CatalogInsumo, "description" | "unit" | "unit_cost" | "source">>,
+  actor?: string,
+) =>
+  putJSON<CatalogInsumo>(`/catalog/insumos/${encodeURIComponent(code)}`, patch, {
+    ...(actor ? { "X-Actor": actor } : {}),
+  });
+
+export const createInsumo = (
+  insumo: Pick<
+    CatalogInsumo,
+    "code" | "description" | "unit" | "resource_type" | "unit_cost" | "source"
+  >,
+  actor?: string,
+) =>
+  postJSON<CatalogInsumo>("/catalog/insumos", insumo, {
+    ...(actor ? { "X-Actor": actor } : {}),
+  });
+
+export const updateApu = (conceptCode: string, components: ApuComponent[], actor?: string) =>
+  putJSON<{ concept_code: string }>(
+    `/catalog/apus/${encodeURIComponent(conceptCode)}`,
+    { components },
+    { ...(actor ? { "X-Actor": actor } : {}) },
+  );
+
+export const updateRendimiento = (conceptCode: string, rate: number, actor?: string) =>
+  putJSON<{ concept_code: string }>(
+    `/catalog/rendimientos/${encodeURIComponent(conceptCode)}`,
+    { production_rate_per_day: rate },
+    { ...(actor ? { "X-Actor": actor } : {}) },
+  );
+
+export async function importCatalogPrices(
+  file: File,
+  source: string,
+  actor?: string,
+): Promise<{ updated: number; skipped: string[] }> {
+  const form = new FormData();
+  form.append("file", file);
+  const url = new URL(`${API_BASE}/catalog/import-prices`);
+  if (source) url.searchParams.set("source", source);
+  const res = await fetch(url.toString(), {
+    method: "POST",
+    headers: actor ? { "X-Actor": actor } : undefined,
+    body: form,
+  });
+  if (!res.ok) {
+    let detail: unknown;
+    try {
+      detail = (await res.json())?.detail;
+    } catch {}
+    throw new ApiError(res.status, "/catalog/import-prices", detail);
+  }
+  return res.json();
+}
 
 export const getViews = (id: string) =>
   getJSON<Views>(`/projects/${id}/views`).catch(() => null);

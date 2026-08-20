@@ -22,6 +22,7 @@ import {
   setBrowserActor,
 } from "@/lib/collab";
 import {
+  getEventsHistory,
   money,
   publishActivity,
   publishPresence,
@@ -131,6 +132,22 @@ export function ProjectLiveProvider({
       setConnected(true);
       setConnectionEpoch((epoch) => epoch + 1);
       setViewers(parseHelloPresence(message as MessageEvent));
+      // Rebuild the change timeline from server history on every (re)connect:
+      // an event-sourced timeline with no history would permanently miss other
+      // users' changes made before this tab connected or during a gap, and a
+      // server restart resets sequence numbers, so replacing (not merging) is
+      // the self-healing choice. Live events keep appending via onmessage.
+      void getEventsHistory(projectId)
+        .then((events) => {
+          const entries: ChangeEntry[] = [];
+          for (const event of events) {
+            const entry = changeEntry(event, isOwnEvent(event, actorName, clientId));
+            if (entry) entries.push(entry);
+          }
+          entries.reverse();
+          setTimeline(entries.slice(0, MAX_TIMELINE));
+        })
+        .catch(() => {});
     });
     const pushToast = (id: number, message: string) => {
       // Cap the stack so a burst of edits can't grow a tall wall of toasts —
@@ -276,6 +293,8 @@ function toastMessage(event: ProjectEvent): string | null {
       return `${actor} actualizó el proyecto`;
     case "run_published":
       return "Se publicó un nuevo procesamiento";
+    case "catalog_updated":
+      return `${actor} actualizó el catálogo del taller`;
     default:
       return null;
   }
@@ -304,6 +323,12 @@ function changeEntry(event: ProjectEvent, isOwn: boolean): ChangeEntry | null {
       };
     case "project_updated":
       return { ...base, title: `${actor} actualizó el proyecto` };
+    case "catalog_updated":
+      return {
+        ...base,
+        title: `${actor} actualizó el catálogo del taller`,
+        detail: dataString(event, "detail") || undefined,
+      };
     default:
       return null;
   }

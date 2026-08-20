@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  Books,
   SquaresFour,
   MapTrifold,
   Receipt,
@@ -85,6 +86,17 @@ function nav(id: string): { group: string; items: Item[] }[] {
           label: "Riesgos",
           icon: <Warning size={18} />,
           href: `${b}/riesgos`,
+        },
+      ],
+    },
+    {
+      group: "Taller",
+      items: [
+        {
+          key: "catalogo",
+          label: "Catálogo de precios",
+          icon: <Books size={18} />,
+          href: "/catalogo",
         },
       ],
     },
