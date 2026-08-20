@@ -21,7 +21,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { useProjectLive } from "@/components/ProjectLive";
-import { LiveOverlay } from "@/components/LiveOverlay";
+import { ChangesPanel, ChangesTrigger, LiveToasts } from "@/components/LiveOverlay";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar, IconButton } from "@/components/ui";
 
@@ -102,6 +102,18 @@ export function ProjectShell({
 }) {
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const { timeline } = useProjectLive();
+
+  // Change-history panel: trigger lives in the chrome; "unseen" counts the
+  // entries that arrived since the panel was last closed.
+  const [changesOpen, setChangesOpen] = useState(false);
+  const [seenId, setSeenId] = useState(0);
+  const topId = timeline[0]?.id ?? 0;
+  const unseen = changesOpen ? 0 : timeline.filter((entry) => entry.id > seenId).length;
+  const closeChanges = () => {
+    setSeenId(topId);
+    setChangesOpen(false);
+  };
 
   // Close the mobile drawer after navigating (state adjustment during render).
   const [lastPathname, setLastPathname] = useState(pathname);
@@ -113,7 +125,12 @@ export function ProjectShell({
   return (
     <div className="flex min-h-screen">
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-border bg-sidebar lg:flex">
-        <SidebarContent id={id} name={name} />
+        <SidebarContent
+          id={id}
+          name={name}
+          unseenChanges={unseen}
+          onOpenChanges={() => setChangesOpen(true)}
+        />
       </aside>
 
       {/* Mobile top bar */}
@@ -133,7 +150,14 @@ export function ProjectShell({
             {name ?? id}
           </span>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-1">
+          <ChangesTrigger
+            variant="topbar"
+            unseen={unseen}
+            onClick={() => setChangesOpen(true)}
+          />
+          <ThemeToggle />
+        </div>
       </header>
 
       {/* Mobile drawer */}
@@ -151,18 +175,37 @@ export function ProjectShell({
                 <X size={18} />
               </IconButton>
             </div>
-            <SidebarContent id={id} name={name} />
+            <SidebarContent
+              id={id}
+              name={name}
+              unseenChanges={unseen}
+              onOpenChanges={() => {
+                setDrawerOpen(false);
+                setChangesOpen(true);
+              }}
+            />
           </aside>
         </div>
       )}
 
       <main className="min-w-0 flex-1 overflow-x-hidden pt-14 lg:pt-0">{children}</main>
-      <LiveOverlay />
+      {changesOpen && <ChangesPanel onClose={closeChanges} />}
+      <LiveToasts />
     </div>
   );
 }
 
-function SidebarContent({ id, name }: { id: string; name?: string }) {
+function SidebarContent({
+  id,
+  name,
+  unseenChanges,
+  onOpenChanges,
+}: {
+  id: string;
+  name?: string;
+  unseenChanges: number;
+  onOpenChanges: () => void;
+}) {
   const pathname = usePathname();
   const groups = nav(id);
   const { actorName, setActorName, connected, clientId, viewers, activities } =
@@ -339,8 +382,8 @@ function SidebarContent({ id, name }: { id: string; name?: string }) {
           </div>
         ))}
       </nav>
-      <div className="flex items-center justify-between border-t border-border px-5 py-3">
-        <span className="text-xs text-muted">Apariencia</span>
+      <div className="flex items-center justify-between border-t border-border px-3 py-2.5">
+        <ChangesTrigger variant="sidebar" unseen={unseenChanges} onClick={onOpenChanges} />
         <ThemeToggle />
       </div>
     </>
