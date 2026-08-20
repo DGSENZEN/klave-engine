@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
+  CheckCircle,
   MapTrifold,
   Receipt,
   Ruler,
@@ -16,13 +17,19 @@ import {
 import {
   getViews,
   getDimensions,
+  getProjectReviews,
   money,
+  setVerification,
+  type CostReport,
   type Views,
   type Dimensions,
+  type ProjectReviews,
 } from "@/lib/api";
 import { useCostReport } from "@/lib/useProjectReport";
 import { phaseColor } from "@/lib/phases";
 import {
+  Badge,
+  Button,
   buttonClasses,
   Callout,
   Card,
@@ -39,26 +46,58 @@ export default function Resumen() {
   const { costs, error } = useCostReport(id);
   const [views, setViews] = useState<Views | null>(null);
   const [dims, setDims] = useState<Dimensions | null>(null);
-  const { latestEvent, connectionEpoch } = useProjectLive();
+  const [reviews, setReviews] = useState<ProjectReviews | null>(null);
+  const { latestEvent, connectionEpoch, actorName } = useProjectLive();
 
   // connectionEpoch: a reconnect may have skipped events, so reload everything.
   useEffect(() => {
     getViews(id).then(setViews).catch(() => {});
     getDimensions(id).then(setDims).catch(() => {});
+    getProjectReviews(id).then(setReviews).catch(() => {});
   }, [id, connectionEpoch]);
 
   useEffect(() => {
-    if (latestEvent?.type !== "run_published") return;
-    getViews(id).then(setViews).catch(() => {});
-    getDimensions(id).then(setDims).catch(() => {});
+    if (latestEvent?.type === "run_published") {
+      getViews(id).then(setViews).catch(() => {});
+      getDimensions(id).then(setDims).catch(() => {});
+    }
+    if (latestEvent?.type === "run_published" || latestEvent?.type === "review_updated") {
+      getProjectReviews(id).then(setReviews).catch(() => {});
+    }
   }, [id, latestEvent]);
 
   const months = costs ? Math.round(costs.schedule.total_duration_days / 24) : 0;
+  const verification = reviews?.verification;
+  const verified = Boolean(
+    verification?.units_confirmed_at &&
+      verification?.detections_confirmed_at &&
+      verification?.assumptions_confirmed_at,
+  );
+
+  async function confirmStep(step: "units" | "detections" | "assumptions", value: boolean) {
+    try {
+      setReviews(await setVerification(id, step, value, actorName));
+    } catch {}
+  }
 
   return (
     <div className="px-6 py-7 lg:px-8">
       <PageHeader
-        title="Resumen del proyecto"
+        title={
+          <span className="flex items-center gap-2.5">
+            Resumen del proyecto
+            {reviews &&
+              (verified ? (
+                <Badge tone="success" dot>
+                  Verificado
+                </Badge>
+              ) : (
+                <Badge tone="warning" dot>
+                  Sin verificar
+                </Badge>
+              ))}
+          </span>
+        }
         actions={
           <>
             <Link href={`/proyecto/${id}/plano`} className={buttonClasses("secondary")}>
@@ -75,6 +114,15 @@ export default function Resumen() {
         <Callout tone="danger">
           No se pudo cargar el resumen de costos. Revisa que el servidor esté activo.
         </Callout>
+      )}
+
+      {costs && reviews && !verified && (
+        <VerificationPath
+          id={id}
+          costs={costs}
+          reviews={reviews}
+          onConfirm={confirmStep}
+        />
       )}
 
       {costs && (
@@ -194,6 +242,104 @@ export default function Resumen() {
         </div>
       )}
     </div>
+  );
+}
+
+function VerificationPath({
+  id,
+  costs,
+  reviews,
+  onConfirm,
+}: {
+  id: string;
+  costs: CostReport;
+  reviews: ProjectReviews;
+  onConfirm: (step: "units" | "detections" | "assumptions", value: boolean) => void;
+}) {
+  const v = reviews.verification;
+  const steps = [
+    {
+      key: "units" as const,
+      title: "Unidades del plano",
+      detail: `${costs.drawing_units.unit} · confianza ${Math.round(
+        costs.drawing_units.confidence * 100,
+      )}%. Si no corresponde, corrige el archivo y vuelve a procesar.`,
+      done: Boolean(v.units_confirmed_at),
+      by: v.units_confirmed_by,
+      href: null,
+      linkLabel: null,
+    },
+    {
+      key: "detections" as const,
+      title: "Detecciones revisadas",
+      detail:
+        reviews.summary.confirmed + reviews.summary.excluded > 0
+          ? `${reviews.summary.confirmed} confirmadas · ${reviews.summary.excluded} excluidas. Confirma cuando el plano esté revisado.`
+          : "Recorre el plano: confirma lo correcto y excluye lo que no sea un elemento real.",
+      done: Boolean(v.detections_confirmed_at),
+      by: v.detections_confirmed_by,
+      href: `/proyecto/${id}/plano`,
+      linkLabel: "Ir al plano",
+    },
+    {
+      key: "assumptions" as const,
+      title: "Supuestos de cálculo",
+      detail:
+        "Alturas, secciones y porcentajes que convierten detecciones en cantidades y dinero.",
+      done: Boolean(v.assumptions_confirmed_at),
+      by: v.assumptions_confirmed_by,
+      href: `/proyecto/${id}/parametros`,
+      linkLabel: "Ver parámetros",
+    },
+  ];
+
+  return (
+    <Card className="rise-in mb-6 p-5">
+      <SectionTitle sub="Verifica la lectura del plano antes de confiar en las cifras. Tres pasos, una vez por procesamiento.">
+        Ruta de verificación
+      </SectionTitle>
+      <div className="space-y-1">
+        {steps.map((step, index) => (
+          <div
+            key={step.key}
+            className="flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-surface-2/50"
+          >
+            {step.done ? (
+              <button
+                type="button"
+                title={`Verificado${step.by ? ` por ${step.by}` : ""} — clic para deshacer`}
+                onClick={() => onConfirm(step.key, false)}
+                className="mt-0.5 shrink-0 text-success"
+              >
+                <CheckCircle size={20} weight="fill" />
+              </button>
+            ) : (
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border-strong text-[11px] font-semibold text-muted">
+                {index + 1}
+              </span>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className={`text-sm font-medium ${step.done ? "text-muted line-through" : ""}`}>
+                {step.title}
+              </div>
+              <p className="mt-0.5 text-sm text-muted">{step.detail}</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {step.href && !step.done && (
+                <Link href={step.href} className={buttonClasses("ghost", "sm")}>
+                  {step.linkLabel}
+                </Link>
+              )}
+              {!step.done && (
+                <Button size="sm" onClick={() => onConfirm(step.key, true)}>
+                  Confirmar
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 

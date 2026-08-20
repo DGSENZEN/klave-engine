@@ -55,6 +55,18 @@ async function putJSON<T>(
   return res.json() as Promise<T>;
 }
 
+async function deleteJSON<T>(path: string, headers?: Record<string, string>): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, { method: "DELETE", headers });
+  if (!res.ok) {
+    let detail: unknown;
+    try {
+      detail = (await res.json())?.detail;
+    } catch {}
+    throw new ApiError(res.status, path, detail);
+  }
+  return res.json() as Promise<T>;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, public path: string, public detail?: unknown) {
     super(`API ${status} on ${path}`);
@@ -133,6 +145,10 @@ export type DetectionOverlay = {
   display_label: string;
   /** Spanish evidence sentence composed by the engine. */
   description: string;
+  /** Correction loop: stable key for review calls + current human verdict. */
+  review_key: string;
+  review: "confirmed" | "excluded" | "";
+  review_note: string;
 };
 
 export type BoqLine = {
@@ -367,6 +383,97 @@ export async function publishPresence(
 }
 
 export const getRisks = (id: string) => getJSON<RiskReport>(`/projects/${id}/risks`);
+
+// ---- Correction loop & verification ----
+
+export type ReviewStatus = "confirmed" | "excluded";
+
+export type ManualAdjustment = {
+  adjustment_id: string;
+  concept_code: string;
+  quantity_delta: number;
+  note: string;
+  actor: string;
+  created_at: string;
+};
+
+export type VerificationState = {
+  units_confirmed_at: string | null;
+  units_confirmed_by: string;
+  detections_confirmed_at: string | null;
+  detections_confirmed_by: string;
+  assumptions_confirmed_at: string | null;
+  assumptions_confirmed_by: string;
+};
+
+export type ProjectReviews = {
+  detections: Record<
+    string,
+    { status: ReviewStatus; note: string; actor: string; updated_at: string }
+  >;
+  adjustments: ManualAdjustment[];
+  verification: VerificationState;
+  summary: { confirmed: number; excluded: number; adjustments: number };
+};
+
+function actorClientHeaders(actor?: string, clientId?: string | null) {
+  return {
+    ...(actor ? { "X-Actor": actor } : {}),
+    ...(clientId ? { "X-Client-Id": clientId } : {}),
+  };
+}
+
+export const getProjectReviews = (id: string) =>
+  getJSON<ProjectReviews>(`/projects/${id}/reviews`);
+
+export const setDetectionReview = (
+  id: string,
+  key: string,
+  status: ReviewStatus | "none",
+  note = "",
+  actor?: string,
+  clientId?: string | null,
+) =>
+  putJSON<ProjectReviews>(
+    `/projects/${id}/reviews/detections/${encodeURIComponent(key)}`,
+    { status, note },
+    actorClientHeaders(actor, clientId),
+  );
+
+export const addAdjustment = (
+  id: string,
+  adjustment: { concept_code: string; quantity_delta: number; note: string },
+  actor?: string,
+  clientId?: string | null,
+) =>
+  postJSON<ProjectReviews>(
+    `/projects/${id}/reviews/adjustments`,
+    adjustment,
+    actorClientHeaders(actor, clientId),
+  );
+
+export const removeAdjustment = (
+  id: string,
+  adjustmentId: string,
+  actor?: string,
+  clientId?: string | null,
+) =>
+  deleteJSON<ProjectReviews>(
+    `/projects/${id}/reviews/adjustments/${encodeURIComponent(adjustmentId)}`,
+    actorClientHeaders(actor, clientId),
+  );
+
+export const setVerification = (
+  id: string,
+  step: "units" | "detections" | "assumptions",
+  confirmed: boolean,
+  actor?: string,
+) =>
+  putJSON<ProjectReviews>(
+    `/projects/${id}/reviews/verification`,
+    { step, confirmed },
+    actorClientHeaders(actor),
+  );
 
 // ---- Workspace catalog ----
 

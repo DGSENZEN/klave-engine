@@ -288,13 +288,42 @@ function toastMessage(event: ProjectEvent): string | null {
   const actor = actorLabel(event.actor);
   switch (event.type) {
     case "costing_updated":
-      return `${actor} recalculó los costos`;
+      // A review action publishes its own, more specific event.
+      return dataString(event, "review_action")
+        ? null
+        : `${actor} recalculó los costos`;
     case "project_updated":
       return `${actor} actualizó el proyecto`;
     case "run_published":
       return "Se publicó un nuevo procesamiento";
     case "catalog_updated":
       return `${actor} actualizó el catálogo del taller`;
+    case "review_updated":
+      return reviewMessage(actor, event);
+    default:
+      return null;
+  }
+}
+
+function reviewMessage(actor: string, event: ProjectEvent): string | null {
+  const detail = dataString(event, "detail");
+  switch (dataString(event, "action")) {
+    case "detection_confirmed":
+      return `${actor} confirmó ${detail || "una detección"}`;
+    case "detection_excluded":
+      return `${actor} excluyó ${detail || "una detección"}`;
+    case "detection_none":
+      return `${actor} quitó la revisión de ${detail || "una detección"}`;
+    case "adjustment_added":
+      return `${actor} agregó un ajuste manual (${detail})`;
+    case "adjustment_removed":
+      return `${actor} eliminó un ajuste manual`;
+    case "verification_units":
+      return `${actor} verificó las unidades`;
+    case "verification_detections":
+      return `${actor} verificó las detecciones`;
+    case "verification_assumptions":
+      return `${actor} verificó los supuestos`;
     default:
       return null;
   }
@@ -313,7 +342,22 @@ function changeEntry(event: ProjectEvent, isOwn: boolean): ChangeEntry | null {
         const delta = grand - prev;
         detail += ` · ${delta > 0 ? "▲" : "▼"} ${money(Math.abs(delta))}`;
       }
-      return { ...base, title: `${actor} recalculó los costos`, detail };
+      const viaReview = dataString(event, "review_action");
+      return {
+        ...base,
+        title: viaReview
+          ? `${actor} corrigió el levantamiento`
+          : `${actor} recalculó los costos`,
+        detail,
+      };
+    }
+    case "review_updated": {
+      // Cost-affecting review actions already log via their paired
+      // costing_updated entry; only verification sign-offs land here.
+      if (!dataString(event, "action").startsWith("verification_")) return null;
+      const message = reviewMessage(actor, event);
+      if (!message) return null;
+      return { ...base, title: message };
     }
     case "run_published":
       return {

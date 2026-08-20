@@ -2,8 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { SlidersHorizontal, X } from "@phosphor-icons/react";
-import { getGeometry, type DetectionOverlay, type Geometry } from "@/lib/api";
+import { Check, Prohibit, SlidersHorizontal, X } from "@phosphor-icons/react";
+import {
+  getGeometry,
+  setDetectionReview,
+  type DetectionOverlay,
+  type Geometry,
+  type ReviewStatus,
+} from "@/lib/api";
 import {
   PlanoCanvas,
   FAMILY_COLORS,
@@ -11,7 +17,7 @@ import {
   familyOf,
   detectionTitle,
 } from "@/components/PlanoCanvas";
-import { Badge, IconButton, Skeleton } from "@/components/ui";
+import { Badge, Button, IconButton, Input, Skeleton } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
 
 export default function PlanoPage() {
@@ -22,7 +28,8 @@ export default function PlanoPage() {
   const [minConfidence, setMinConfidence] = useState(0);
   const [selected, setSelected] = useState<DetectionOverlay | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const { latestEvent, connectionEpoch } = useProjectLive();
+  const [showExcluded, setShowExcluded] = useState(true);
+  const { latestEvent, connectionEpoch, actorName, clientId } = useProjectLive();
 
   // connectionEpoch: a reconnect may have skipped events, so reload everything.
   useEffect(() => {
@@ -44,6 +51,39 @@ export default function PlanoPage() {
     });
   }, [id, latestEvent]);
 
+  // A collaborator reviewed something: refresh verdicts, keep the selection.
+  useEffect(() => {
+    if (latestEvent?.type !== "review_updated") return;
+    getGeometry(id).then((g) => {
+      setGeom(g);
+      setSelected((current) =>
+        current ? (g.detections.find((d) => d.id === current.id) ?? null) : null,
+      );
+    });
+  }, [id, latestEvent]);
+
+  async function review(detection: DetectionOverlay, status: ReviewStatus | "none", note = "") {
+    try {
+      await setDetectionReview(id, detection.review_key, status, note, actorName, clientId);
+    } catch {
+      return;
+    }
+    setGeom((current) => {
+      if (!current) return current;
+      const detections = current.detections.map((d) =>
+        d.review_key === detection.review_key
+          ? { ...d, review: status === "none" ? ("" as const) : status, review_note: note }
+          : d,
+      );
+      return { ...current, detections };
+    });
+    setSelected((current) =>
+      current && current.review_key === detection.review_key
+        ? { ...current, review: status === "none" ? "" : status, review_note: note }
+        : current,
+    );
+  }
+
   const families = useMemo(() => {
     if (!geom) return [] as { family: string; count: number }[];
     const counts: Record<string, number> = {};
@@ -53,12 +93,26 @@ export default function PlanoPage() {
       .sort((a, b) => b.count - a.count);
   }, [geom]);
 
+  const canvasGeom = useMemo(() => {
+    if (!geom || showExcluded) return geom;
+    return { ...geom, detections: geom.detections.filter((d) => d.review !== "excluded") };
+  }, [geom, showExcluded]);
+
   const visibleCount = useMemo(() => {
-    if (!geom) return 0;
-    return geom.detections.filter(
+    if (!canvasGeom) return 0;
+    return canvasGeom.detections.filter(
       (d) => visibleFamilies.has(familyOf(d)) && d.confidence >= minConfidence,
     ).length;
-  }, [geom, visibleFamilies, minConfidence]);
+  }, [canvasGeom, visibleFamilies, minConfidence]);
+
+  const reviewCounts = useMemo(() => {
+    const counts = { confirmed: 0, excluded: 0 };
+    for (const d of geom?.detections ?? []) {
+      if (d.review === "confirmed") counts.confirmed += 1;
+      if (d.review === "excluded") counts.excluded += 1;
+    }
+    return counts;
+  }, [geom]);
 
   function toggle(set: Set<string>, key: string, setter: (s: Set<string>) => void) {
     const next = new Set(set);
@@ -91,9 +145,11 @@ export default function PlanoPage() {
       visibleFamilies={visibleFamilies}
       visibleLayers={visibleLayers}
       minConfidence={minConfidence}
+      showExcluded={showExcluded}
       onToggleFamily={(f) => toggle(visibleFamilies, f, setVisibleFamilies)}
       onToggleLayer={(l) => toggle(visibleLayers, l, setVisibleLayers)}
       onMinConfidence={setMinConfidence}
+      onToggleExcluded={() => setShowExcluded((current) => !current)}
     />
   );
 
@@ -103,8 +159,10 @@ export default function PlanoPage() {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight">Visor del plano</h1>
           <p className="truncate text-sm text-muted">
-            {visibleCount.toLocaleString("es-MX")} detecciones visibles · rueda para zoom,
-            arrastra para mover, clic para inspeccionar
+            {visibleCount.toLocaleString("es-MX")} detecciones visibles
+            {reviewCounts.confirmed > 0 && ` · ${reviewCounts.confirmed} confirmadas`}
+            {reviewCounts.excluded > 0 && ` · ${reviewCounts.excluded} excluidas`} · clic
+            para inspeccionar y revisar
           </p>
         </div>
         <button
@@ -142,7 +200,7 @@ export default function PlanoPage() {
 
         <div className="relative min-w-0 flex-1 bg-surface-2">
           <PlanoCanvas
-            geometry={geom}
+            geometry={canvasGeom ?? geom}
             visibleLayers={visibleLayers}
             visibleFamilies={visibleFamilies}
             minConfidence={minConfidence}
@@ -178,23 +236,84 @@ export default function PlanoPage() {
                   {selected.description}
                 </p>
               )}
-              <Badge
-                dot
-                tone={
-                  selected.confidence >= 0.7
-                    ? "success"
-                    : selected.confidence >= 0.45
-                      ? "warning"
-                      : "danger"
-                }
-              >
-                Confianza {(selected.confidence * 100).toFixed(0)}%
-              </Badge>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  dot
+                  tone={
+                    selected.confidence >= 0.7
+                      ? "success"
+                      : selected.confidence >= 0.45
+                        ? "warning"
+                        : "danger"
+                  }
+                >
+                  Confianza {(selected.confidence * 100).toFixed(0)}%
+                </Badge>
+                {selected.review === "confirmed" && (
+                  <Badge tone="success" dot>
+                    Confirmada
+                  </Badge>
+                )}
+                {selected.review === "excluded" && (
+                  <Badge tone="danger" dot>
+                    Excluida del presupuesto
+                  </Badge>
+                )}
+              </div>
+              <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
+                {selected.review !== "confirmed" && (
+                  <Button size="sm" onClick={() => review(selected, "confirmed")}>
+                    <Check size={14} weight="bold" /> Confirmar
+                  </Button>
+                )}
+                {selected.review !== "excluded" && (
+                  <Button size="sm" variant="danger" onClick={() => review(selected, "excluded")}>
+                    <Prohibit size={14} weight="bold" /> Excluir
+                  </Button>
+                )}
+                {selected.review && (
+                  <Button size="sm" variant="ghost" onClick={() => review(selected, "none")}>
+                    Quitar revisión
+                  </Button>
+                )}
+              </div>
+              {selected.review === "excluded" && (
+                <ReviewNote
+                  key={selected.review_key}
+                  initial={selected.review_note}
+                  onCommit={(note) => review(selected, "excluded", note)}
+                />
+              )}
             </div>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+function ReviewNote({
+  initial,
+  onCommit,
+}: {
+  initial: string;
+  onCommit: (note: string) => void;
+}) {
+  const [note, setNote] = useState(initial);
+  return (
+    <Input
+      value={note}
+      onChange={(e) => setNote(e.target.value)}
+      onBlur={() => {
+        if (note.trim() !== initial) onCommit(note.trim());
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
+      placeholder="Motivo de la exclusión (opcional)"
+      maxLength={300}
+      className="mt-2 w-full px-2.5 py-1.5 text-xs"
+    />
   );
 }
 
@@ -204,18 +323,22 @@ function FilterPanel({
   visibleFamilies,
   visibleLayers,
   minConfidence,
+  showExcluded,
   onToggleFamily,
   onToggleLayer,
   onMinConfidence,
+  onToggleExcluded,
 }: {
   geom: Geometry;
   families: { family: string; count: number }[];
   visibleFamilies: Set<string>;
   visibleLayers: Set<string>;
   minConfidence: number;
+  showExcluded: boolean;
   onToggleFamily: (family: string) => void;
   onToggleLayer: (layer: string) => void;
   onMinConfidence: (value: number) => void;
+  onToggleExcluded: () => void;
 }) {
   return (
     <>
@@ -258,6 +381,16 @@ function FilterPanel({
           className="w-full"
         />
       </div>
+
+      <label className="mb-4 flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm transition hover:bg-surface-2">
+        <input
+          type="checkbox"
+          checked={showExcluded}
+          onChange={onToggleExcluded}
+          className="accent-[var(--primary)]"
+        />
+        <span className="flex-1">Mostrar excluidas</span>
+      </label>
 
       <h3 className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-muted">
         Capas ({visibleLayers.size}/{geom.layers.length})

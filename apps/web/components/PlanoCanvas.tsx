@@ -174,12 +174,17 @@ export function PlanoCanvas({
       const ry = Math.min(y1, y2);
       const rw = Math.abs(x2 - x1) || 2;
       const rh = Math.abs(y2 - y1) || 2;
+      // Human verdicts change how the element reads: excluded fades to a
+      // dashed outline, confirmed draws slightly heavier.
+      const excluded = d.review === "excluded";
       if (selected) {
         ctx.fillStyle = `${color}2e`;
         ctx.fillRect(rx - 2, ry - 2, rw + 4, rh + 4);
       }
+      ctx.globalAlpha = excluded ? 0.35 : 1;
+      ctx.setLineDash(excluded ? [5, 4] : []);
       ctx.strokeStyle = color;
-      ctx.lineWidth = selected ? 2.4 : 1.4;
+      ctx.lineWidth = selected ? 2.4 : d.review === "confirmed" ? 1.9 : 1.4;
       ctx.strokeRect(rx, ry, rw, rh);
       if (showLabels || selected) {
         ctx.fillStyle = color;
@@ -188,6 +193,8 @@ export function PlanoCanvas({
           : "10px ui-sans-serif, system-ui";
         ctx.fillText(d.mark || d.display_label || d.label, rx, ry - 3);
       }
+      ctx.globalAlpha = 1;
+      ctx.setLineDash([]);
     }
   }, [geometry, visibleLayers, isVisible, selectedId]);
 

@@ -2,14 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { DownloadSimple, Warning } from "@phosphor-icons/react";
+import { DownloadSimple, PencilSimpleLine, Trash, Warning } from "@phosphor-icons/react";
 import {
+  addAdjustment,
   getDimensions,
+  getProjectReviews,
   money,
   money2,
   num,
+  removeAdjustment,
   type BoqLine,
   type Dimensions,
+  type ProjectReviews,
 } from "@/lib/api";
 import { useCostReport } from "@/lib/useProjectReport";
 import {
@@ -17,6 +21,7 @@ import {
   Button,
   Callout,
   Card,
+  Input,
   Metric,
   PageHeader,
   SectionTitle,
@@ -33,16 +38,23 @@ export default function PresupuestoPage() {
   const { id } = useParams<{ id: string }>();
   const { costs, error } = useCostReport(id);
   const [dims, setDims] = useState<Dimensions | null>(null);
-  const { latestEvent, sendActivity, connectionEpoch } = useProjectLive();
+  const [reviews, setReviews] = useState<ProjectReviews | null>(null);
+  const { latestEvent, sendActivity, connectionEpoch, actorName, clientId } =
+    useProjectLive();
 
   // connectionEpoch: a reconnect may have skipped events, so reload everything.
   useEffect(() => {
     getDimensions(id).then(setDims).catch(() => {});
+    getProjectReviews(id).then(setReviews).catch(() => {});
   }, [id, connectionEpoch]);
 
   useEffect(() => {
-    if (latestEvent?.type !== "run_published") return;
-    getDimensions(id).then(setDims).catch(() => {});
+    if (latestEvent?.type === "run_published") {
+      getDimensions(id).then(setDims).catch(() => {});
+    }
+    if (latestEvent?.type === "run_published" || latestEvent?.type === "review_updated") {
+      getProjectReviews(id).then(setReviews).catch(() => {});
+    }
   }, [id, latestEvent]);
 
   function downloadCsv() {
@@ -212,6 +224,20 @@ export default function PresupuestoPage() {
         </Card>
       </div>
 
+      <Card className="mt-6 p-5">
+        <SectionTitle sub="Cantidad agregada o retirada a mano, con nota y autor; forma parte del presupuesto y sus reportes.">
+          Ajustes manuales
+        </SectionTitle>
+        <AdjustmentsPanel
+          projectId={id}
+          reviews={reviews}
+          concepts={costs.boq.lines}
+          actorName={actorName}
+          clientId={clientId}
+          onChanged={setReviews}
+        />
+      </Card>
+
       {costs.boq.warnings.length > 0 && (
         <Card className="mt-6 p-5">
           <SectionTitle sub="Revisar antes de usar el presupuesto como referencia.">
@@ -280,6 +306,138 @@ function PhaseGroup({
         </tr>
       ))}
     </>
+  );
+}
+
+function AdjustmentsPanel({
+  projectId,
+  reviews,
+  concepts,
+  actorName,
+  clientId,
+  onChanged,
+}: {
+  projectId: string;
+  reviews: ProjectReviews | null;
+  concepts: BoqLine[];
+  actorName: string;
+  clientId: string | null;
+  onChanged: (reviews: ProjectReviews) => void;
+}) {
+  const [conceptCode, setConceptCode] = useState("");
+  const [delta, setDelta] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const adjustments = reviews?.adjustments ?? [];
+  const unitOf = new Map(concepts.map((line) => [line.concept_code, line.unit]));
+
+  async function submit() {
+    const quantity = Number(delta);
+    if (!conceptCode || !quantity) {
+      setFormError("Elige un concepto y una cantidad distinta de cero.");
+      return;
+    }
+    setBusy(true);
+    setFormError(null);
+    try {
+      const updated = await addAdjustment(
+        projectId,
+        { concept_code: conceptCode, quantity_delta: quantity, note: note.trim() },
+        actorName,
+        clientId,
+      );
+      onChanged(updated);
+      setDelta("");
+      setNote("");
+    } catch {
+      setFormError("No se pudo guardar el ajuste.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(adjustmentId: string) {
+    try {
+      onChanged(await removeAdjustment(projectId, adjustmentId, actorName, clientId));
+    } catch {
+      setFormError("No se pudo eliminar el ajuste.");
+    }
+  }
+
+  return (
+    <div>
+      {adjustments.length > 0 && (
+        <ul className="mb-4 divide-y divide-border">
+          {adjustments.map((adjustment) => (
+            <li key={adjustment.adjustment_id} className="flex items-center gap-3 py-2.5">
+              <PencilSimpleLine size={15} className="shrink-0 text-muted" />
+              <div className="min-w-0 flex-1 text-sm">
+                <span className="font-mono text-xs text-muted">
+                  {adjustment.concept_code}
+                </span>{" "}
+                <span className="tabular font-medium">
+                  {adjustment.quantity_delta > 0 ? "+" : ""}
+                  {num(adjustment.quantity_delta)}{" "}
+                  {unitOf.get(adjustment.concept_code) ?? ""}
+                </span>
+                {adjustment.note && <span className="text-muted"> · {adjustment.note}</span>}
+                {adjustment.actor && (
+                  <span className="text-xs text-faint"> — {adjustment.actor}</span>
+                )}
+              </div>
+              <button
+                type="button"
+                aria-label="Eliminar ajuste"
+                onClick={() => remove(adjustment.adjustment_id)}
+                className="rounded-md p-1 text-faint transition-colors hover:bg-danger-soft hover:text-danger"
+              >
+                <Trash size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={conceptCode}
+          onChange={(e) => setConceptCode(e.target.value)}
+          className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
+        >
+          <option value="">Concepto…</option>
+          {concepts.map((line) => (
+            <option key={line.concept_code} value={line.concept_code}>
+              {line.concept_code} · {line.description.slice(0, 48)}
+            </option>
+          ))}
+        </select>
+        <Input
+          type="number"
+          step="any"
+          value={delta}
+          onChange={(e) => setDelta(e.target.value)}
+          placeholder={`± cantidad${conceptCode && unitOf.get(conceptCode) ? ` (${unitOf.get(conceptCode)})` : ""}`}
+          className="w-36 px-2 py-1.5 text-right tabular"
+        />
+        <Input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Nota (qué y por qué)"
+          maxLength={300}
+          className="min-w-52 flex-1 px-2 py-1.5"
+        />
+        <Button size="sm" variant="primary" onClick={submit} disabled={busy}>
+          Agregar ajuste
+        </Button>
+      </div>
+      {formError && <p className="mt-2 text-sm text-danger">{formError}</p>}
+      {adjustments.length === 0 && !formError && (
+        <p className="mt-2 text-xs text-faint">
+          Úsalo cuando el plano tenga elementos que la detección no captó, o cantidades que
+          debas corregir. El ajuste queda documentado en el concepto.
+        </p>
+      )}
+    </div>
   );
 }
 
