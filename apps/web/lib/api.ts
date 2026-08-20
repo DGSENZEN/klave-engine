@@ -128,6 +128,46 @@ export type BoqLine = {
   assumptions: string[];
 };
 
+export type ApuLine = {
+  resource_code: string;
+  description: string;
+  unit: string;
+  quantity: number;
+  unit_cost: number;
+  amount: number;
+  resource_type: string;
+};
+
+export type Apu = {
+  concept_code: string;
+  concept_description: string;
+  unit: string;
+  lines: ApuLine[];
+  /** Direct unit cost broken down by resource type. */
+  breakdown: Record<string, number>;
+  direct_unit_cost: number;
+};
+
+export type PeriodCashflow = {
+  period: number;
+  label: string;
+  direct_spend: number;
+  billing: number;
+  advance_amortization: number;
+  retention: number;
+  net_cashflow: number;
+  accumulated_billing: number;
+  progress_pct: number;
+};
+
+export type OperatingYear = {
+  year: number;
+  operation: number;
+  maintenance: number;
+  total: number;
+  accumulated: number;
+};
+
 export type CostReport = {
   project_id: string;
   currency: string;
@@ -139,6 +179,7 @@ export type CostReport = {
     assumptions: string[];
     warnings: string[];
   };
+  apus?: Apu[];
   integration: {
     direct_cost: number;
     sale_price: number;
@@ -149,10 +190,13 @@ export type CostReport = {
   };
   schedule: { total_duration_days: number; phases: string[]; activities: ScheduleActivity[] };
   financial: {
+    advance_payment_pct?: number;
+    retention_pct?: number;
     advance_payment: number;
     total_retention: number;
     annual_operating_cost: number;
-    periods: unknown[];
+    periods: PeriodCashflow[];
+    operating_projection?: OperatingYear[];
   };
 };
 
@@ -163,10 +207,37 @@ export type ScheduleActivity = {
   quantity: number;
   unit: string;
   rendimiento_per_day: number;
+  crews?: number;
   duration_days: number;
   start_day: number;
   end_day: number;
   direct_cost: number;
+};
+
+export type RiskFinding = {
+  risk_id: string;
+  risk_type: string;
+  severity: "low" | "medium" | "high" | string;
+  message: string;
+  source_entities: string[];
+  related_detections: string[];
+  bbox: [number, number, number, number] | null;
+  evidence: {
+    source: string;
+    method: string;
+    entity_ids: string[];
+    bbox: [number, number, number, number] | null;
+    confidence: number;
+    notes: string[];
+  };
+  recommended_human_action: string;
+};
+
+export type RiskReport = {
+  project_id: string;
+  generated_at: string;
+  findings: RiskFinding[];
+  counts_by_severity: Record<string, number>;
 };
 
 export type Views = {
@@ -270,6 +341,8 @@ export async function publishPresence(
 ): Promise<void> {
   await postJSON(`/projects/${id}/presence`, update, actor ? { "X-Actor": actor } : undefined);
 }
+
+export const getRisks = (id: string) => getJSON<RiskReport>(`/projects/${id}/risks`);
 
 export const getViews = (id: string) =>
   getJSON<Views>(`/projects/${id}/views`).catch(() => null);

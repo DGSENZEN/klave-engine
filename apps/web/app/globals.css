@@ -53,6 +53,13 @@
 
   --scrollbar-thumb: #cdd5df;
   --scrollbar-thumb-hover: #9aa4b2;
+
+  /* Data-vis palette (phases, charts). */
+  --chart-1: #2851d8;
+  --chart-2: #0d9488;
+  --chart-3: #d97706;
+  --chart-4: #7c3aed;
+  --chart-5: #64748b;
 }
 
 [data-theme="dark"] {
@@ -98,6 +105,12 @@
 
   --scrollbar-thumb: #2e3746;
   --scrollbar-thumb-hover: #43506a;
+
+  --chart-1: #6487fa;
+  --chart-2: #32c1ae;
+  --chart-3: #f0a13c;
+  --chart-4: #a78bfa;
+  --chart-5: #8a95a8;
 }
 
 @theme inline {
@@ -124,6 +137,11 @@
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
   --shadow-xs: var(--shadow-xs);
   --shadow-sm: var(--shadow-sm);
   --shadow-md: var(--shadow-md);
