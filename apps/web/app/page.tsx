@@ -9,12 +9,12 @@ import {
   FileText,
   ArrowRight,
   Loader2,
-  ScanSearch,
-  Receipt,
 } from "lucide-react";
 import { ApiError, listProjects, uploadProject, type ProjectSummary } from "@/lib/api";
-import { eventsUrl, getBrowserActor, parseProjectEvent } from "@/lib/collab";
-import { Badge, Callout, Card, Skeleton, type BadgeTone } from "@/components/ui";
+import { eventsUrl, getBrowserActor, parseProjectEvent, peekBrowserActor } from "@/lib/collab";
+import { isProfileComplete } from "@/lib/identity";
+import { Avatar, Badge, Callout, Skeleton, type BadgeTone } from "@/components/ui";
+import { HowItWorks } from "@/components/HowItWorks";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 const STATUS_TONE: Record<string, BadgeTone> = {
@@ -37,7 +37,22 @@ export default function Landing() {
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const [actorName, setActorName] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // First run goes through /bienvenida to establish the workspace identity.
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      if (!isProfileComplete()) {
+        router.replace("/bienvenida");
+        return;
+      }
+      setActorName(peekBrowserActor());
+      setReady(true);
+    }, 0);
+    return () => window.clearTimeout(handle);
+  }, [router]);
 
   useEffect(() => {
     let active = true;
@@ -91,6 +106,15 @@ export default function Landing() {
 
   const firstRun = projects !== null && projects.length === 0;
 
+  if (!ready) {
+    return (
+      <div className="mx-auto max-w-5xl px-5 py-10 sm:px-6 sm:py-12">
+        <Skeleton className="mb-10 h-12 w-64" />
+        <Skeleton className="h-56" />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-5xl px-5 py-10 sm:px-6 sm:py-12">
       <header className="rise-in mb-10 flex items-start justify-between gap-4">
@@ -105,7 +129,19 @@ export default function Landing() {
             </p>
           </div>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          {actorName && (
+            <Link
+              href="/bienvenida"
+              title="Editar perfil"
+              className="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-3 text-sm font-medium shadow-xs transition hover:bg-surface-2"
+            >
+              <Avatar name={actorName} self size="sm" />
+              <span className="max-w-32 truncate">{actorName}</span>
+            </Link>
+          )}
+          <ThemeToggle />
+        </div>
       </header>
 
       <label
@@ -162,25 +198,8 @@ export default function Landing() {
       )}
 
       {firstRun && (
-        <section className="rise-in mt-10 grid gap-3 sm:grid-cols-3">
-          <HowStep
-            n={1}
-            icon={<UploadCloud size={18} />}
-            title="Sube tu plano"
-            text="DWG o DXF estructural; la conversión y lectura corren en tu equipo."
-          />
-          <HowStep
-            n={2}
-            icon={<ScanSearch size={18} />}
-            title="Detección con evidencia"
-            text="Ejes, columnas, trabes, zapatas y muros, cada uno con su origen y confianza."
-          />
-          <HowStep
-            n={3}
-            icon={<Receipt size={18} />}
-            title="Presupuesto completo"
-            text="Cantidades, precios unitarios, programa de obra, flujo y riesgos revisables."
-          />
+        <section className="rise-in mt-10">
+          <HowItWorks />
         </section>
       )}
 
@@ -229,33 +248,6 @@ export default function Landing() {
         )}
       </section>
     </div>
-  );
-}
-
-function HowStep({
-  n,
-  icon,
-  title,
-  text,
-}: {
-  n: number;
-  icon: React.ReactNode;
-  title: string;
-  text: string;
-}) {
-  return (
-    <Card className="p-4">
-      <div className="mb-2 flex items-center gap-2.5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-soft text-primary">
-          {icon}
-        </div>
-        <span className="text-xs font-semibold uppercase tracking-wide text-faint">
-          Paso {n}
-        </span>
-      </div>
-      <div className="font-medium">{title}</div>
-      <p className="mt-1 text-sm leading-relaxed text-muted">{text}</p>
-    </Card>
   );
 }
 

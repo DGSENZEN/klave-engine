@@ -19,6 +19,12 @@ function defaultActor(): string {
   return DEFAULT_NAMES[total % DEFAULT_NAMES.length];
 }
 
+/** Stored display name without creating a default (for onboarding prefill). */
+export function peekBrowserActor(): string {
+  if (typeof window === "undefined") return "";
+  return cleanActor(window.localStorage.getItem(ACTOR_KEY) ?? "");
+}
+
 export function getBrowserActor(): string {
   if (typeof window === "undefined") return "Colaborador";
   const existing = cleanActor(window.localStorage.getItem(ACTOR_KEY) ?? "");
