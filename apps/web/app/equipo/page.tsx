@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft, Check, Prohibit, UsersThree } from "@phosphor-icons/react";
+import { Check, Prohibit, UsersThree } from "@phosphor-icons/react";
 import {
   fetchAuthStatus,
   listWorkspaceUsers,
@@ -23,7 +22,8 @@ import {
   SkeletonCards,
   type BadgeTone,
 } from "@/components/ui";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Pendiente",
@@ -42,6 +42,13 @@ export default function EquipoPage() {
   const [me, setMe] = useState<AuthUser | null>(null);
   const [users, setUsers] = useState<WorkspaceUser[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Authority changes go through a deliberate confirmation, never a misclick.
+  const [confirm, setConfirm] = useState<
+    | { kind: "role"; user: WorkspaceUser; role: "admin" | "member" }
+    | { kind: "disable"; user: WorkspaceUser }
+    | { kind: "reject"; user: WorkspaceUser }
+    | null
+  >(null);
 
   const reload = useCallback(() => {
     listWorkspaceUsers()
@@ -96,17 +103,9 @@ export default function EquipoPage() {
   const rest = users?.filter((u) => u.status !== "pending") ?? [];
 
   return (
-    <div className="mx-auto max-w-3xl px-5 py-8 sm:px-6">
-      <div className="mb-6 flex items-center justify-between">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-muted transition hover:text-foreground"
-        >
-          <ArrowLeft size={13} weight="bold" /> Proyectos
-        </Link>
-        <ThemeToggle />
-      </div>
-
+    <div className="min-h-screen">
+      <WorkspaceHeader active="equipo" />
+      <main className="mx-auto max-w-3xl px-5 py-8 sm:px-6">
       <PageHeader
         title="Equipo del taller"
         sub="Aprueba cuentas nuevas, asigna roles y deshabilita accesos. El acceso a cada proyecto se administra desde su configuración."
@@ -143,7 +142,11 @@ export default function EquipoPage() {
                     <Button size="sm" variant="primary" onClick={() => approve(user)}>
                       <Check size={14} weight="bold" /> Aprobar
                     </Button>
-                    <Button size="sm" variant="danger" onClick={() => toggleDisabled(user)}>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={() => setConfirm({ kind: "reject", user })}
+                    >
                       <Prohibit size={14} weight="bold" /> Rechazar
                     </Button>
                   </UserRow>
@@ -159,23 +162,90 @@ export default function EquipoPage() {
                   <select
                     value={user.role}
                     disabled={user.user_id === me?.user_id}
-                    onChange={(e) => changeRole(user, e.target.value as "admin" | "member")}
+                    onChange={(e) =>
+                      setConfirm({
+                        kind: "role",
+                        user,
+                        role: e.target.value as "admin" | "member",
+                      })
+                    }
                     className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm disabled:opacity-50"
                   >
                     <option value="member">Miembro</option>
                     <option value="admin">Admin</option>
                   </select>
-                  {user.user_id !== me?.user_id && (
-                    <Button size="sm" variant="ghost" onClick={() => toggleDisabled(user)}>
-                      {user.status === "disabled" ? "Habilitar" : "Deshabilitar"}
-                    </Button>
-                  )}
+                  {user.user_id !== me?.user_id &&
+                    (user.status === "disabled" ? (
+                      <Button size="sm" variant="ghost" onClick={() => toggleDisabled(user)}>
+                        Habilitar
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setConfirm({ kind: "disable", user })}
+                      >
+                        Deshabilitar
+                      </Button>
+                    ))}
                 </UserRow>
               ))}
             </ul>
           </Card>
         </>
       )}
+
+      {confirm && (
+        <ConfirmDialog
+          open
+          title={
+            confirm.kind === "role"
+              ? confirm.role === "admin"
+                ? "Otorgar rol de administrador"
+                : "Quitar rol de administrador"
+              : confirm.kind === "disable"
+                ? "Deshabilitar cuenta"
+                : "Rechazar solicitud"
+          }
+          description={
+            confirm.kind === "role" ? (
+              confirm.role === "admin" ? (
+                <>
+                  <span className="font-medium text-foreground">{confirm.user.name}</span>{" "}
+                  podrá aprobar cuentas, ver todos los proyectos y administrar el taller.
+                </>
+              ) : (
+                <>
+                  <span className="font-medium text-foreground">{confirm.user.name}</span>{" "}
+                  dejará de administrar el taller y solo verá los proyectos que se le
+                  compartan.
+                </>
+              )
+            ) : (
+              <>
+                <span className="font-medium text-foreground">{confirm.user.name}</span> (
+                {confirm.user.email}) perderá el acceso al taller hasta que vuelvas a
+                habilitarla.
+              </>
+            )
+          }
+          confirmLabel={
+            confirm.kind === "role"
+              ? "Cambiar rol"
+              : confirm.kind === "disable"
+                ? "Deshabilitar"
+                : "Rechazar"
+          }
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => {
+            const action = confirm;
+            setConfirm(null);
+            if (action.kind === "role") changeRole(action.user, action.role);
+            else toggleDisabled(action.user);
+          }}
+        />
+      )}
+      </main>
     </div>
   );
 }

@@ -1,6 +1,6 @@
+import type React from "react";
 import type {
   ButtonHTMLAttributes,
-  InputHTMLAttributes,
   ReactNode,
   TdHTMLAttributes,
   ThHTMLAttributes,
@@ -186,7 +186,7 @@ export function IconButton({ className = "", ...props }: IconButtonProps) {
 export function Input({
   className = "",
   ...props
-}: InputHTMLAttributes<HTMLInputElement>) {
+}: React.ComponentProps<"input">) {
   return (
     <input
       {...props}

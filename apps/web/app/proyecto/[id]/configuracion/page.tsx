@@ -17,6 +17,7 @@ import {
   grantProjectAccess,
   revokeProjectAccess,
   type ProjectAccess,
+  type ProjectMember,
 } from "@/lib/session";
 import {
   Avatar,
@@ -30,6 +31,7 @@ import {
   SkeletonHeader,
   Skeleton,
 } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const PROJECT_ROLE_LABELS: Record<string, string> = {
   viewer: "Lectura",
@@ -45,7 +47,7 @@ export default function ConfiguracionPage() {
   const [client, setClient] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
   const [protectedMode, setProtectedMode] = useState(false);
 
   useEffect(() => {
@@ -186,17 +188,30 @@ export default function ConfiguracionPage() {
               </>
             )}
           </Button>
-          {confirmRemove ? (
-            <Button variant="danger" onClick={remove}>
-              <Trash size={15} weight="bold" /> Confirmar (archivos permanecen)
-            </Button>
-          ) : (
-            <Button variant="danger" onClick={() => setConfirmRemove(true)}>
-              <Trash size={15} weight="bold" /> Quitar de la lista…
-            </Button>
-          )}
+          <Button variant="danger" onClick={() => setRemoveOpen(true)}>
+            <Trash size={15} weight="bold" /> Quitar de la lista…
+          </Button>
         </div>
       </Card>
+
+      <ConfirmDialog
+        open={removeOpen}
+        title="Quitar proyecto de la lista"
+        description={
+          <>
+            <span className="font-medium text-foreground">{project.project_name}</span>{" "}
+            dejará de aparecer en el taller para todo el equipo. Los archivos y reportes
+            permanecen en el disco.
+          </>
+        }
+        confirmLabel="Quitar de la lista"
+        typeToConfirm={project.project_name}
+        onCancel={() => setRemoveOpen(false)}
+        onConfirm={() => {
+          setRemoveOpen(false);
+          remove();
+        }}
+      />
     </div>
   );
 }
@@ -207,6 +222,7 @@ function AccessCard({ projectId }: { projectId: string }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"viewer" | "editor" | "owner">("editor");
   const [error, setError] = useState<string | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<ProjectMember | null>(null);
 
   const reload = useCallback(() => {
     getProjectAccess(projectId)
@@ -289,7 +305,7 @@ function AccessCard({ projectId }: { projectId: string }) {
                   <Badge tone={member.project_role === "owner" ? "accent" : "default"}>
                     {PROJECT_ROLE_LABELS[member.project_role]}
                   </Badge>
-                  <Button size="sm" variant="ghost" onClick={() => revoke(member.user_id)}>
+                  <Button size="sm" variant="ghost" onClick={() => setRevokeTarget(member)}>
                     Quitar
                   </Button>
                 </li>
@@ -324,6 +340,25 @@ function AccessCard({ projectId }: { projectId: string }) {
               Compartir
             </Button>
           </div>
+          <ConfirmDialog
+            open={revokeTarget !== null}
+            title="Quitar acceso al proyecto"
+            description={
+              revokeTarget ? (
+                <>
+                  <span className="font-medium text-foreground">{revokeTarget.name}</span> (
+                  {revokeTarget.email}) dejará de ver y editar este proyecto.
+                </>
+              ) : null
+            }
+            confirmLabel="Quitar acceso"
+            onCancel={() => setRevokeTarget(null)}
+            onConfirm={() => {
+              const target = revokeTarget;
+              setRevokeTarget(null);
+              if (target) revoke(target.user_id);
+            }}
+          />
         </>
       )}
     </Card>

@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import {
-  ArrowLeft,
   CaretDown,
   Check,
   DownloadSimple,
@@ -39,7 +37,7 @@ import {
   Td,
   Th,
 } from "@/components/ui";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 
 const TYPE_LABELS: Record<string, string> = {
   material: "Material",
@@ -111,17 +109,9 @@ export default function CatalogoPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-5 py-8 sm:px-6">
-      <div className="mb-6 flex items-center justify-between">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-muted transition hover:text-foreground"
-        >
-          <ArrowLeft size={13} weight="bold" /> Proyectos
-        </Link>
-        <ThemeToggle />
-      </div>
-
+    <div className="min-h-screen">
+      <WorkspaceHeader active="catalogo" />
+      <main className="mx-auto max-w-5xl px-5 py-8 sm:px-6">
       <PageHeader
         title="Catálogo del taller"
         sub="Insumos, matrices de precio unitario y rendimientos que usa cada cálculo. Cada precio indica su fuente: sustituye las referencias por tus cotizaciones."
@@ -179,6 +169,7 @@ export default function CatalogoPage() {
           <ApusSection catalog={catalog} onChanged={reload} onError={setError} />
         </>
       )}
+      </main>
     </div>
   );
 }

@@ -7,8 +7,6 @@ import {
   Archive,
   ArrowCounterClockwise,
   ArrowRight,
-  Books,
-  Buildings,
   CircleNotch,
   CloudArrowUp,
   FileText,
@@ -17,7 +15,6 @@ import {
   Plus,
   Stack,
   Trash,
-  UsersThree,
   UserSwitch,
 } from "@phosphor-icons/react";
 import {
@@ -28,14 +25,12 @@ import {
   uploadProject,
   type ProjectSummary,
 } from "@/lib/api";
-import { eventsUrl, getBrowserActor, parseProjectEvent, peekBrowserActor } from "@/lib/collab";
+import { eventsUrl, getBrowserActor, parseProjectEvent } from "@/lib/collab";
 import { isProfileComplete } from "@/lib/identity";
 import { fetchAuthStatus } from "@/lib/session";
 import {
-  Avatar,
   Badge,
   Button,
-  buttonClasses,
   Callout,
   EmptyState,
   Input,
@@ -43,8 +38,9 @@ import {
   type BadgeTone,
 } from "@/components/ui";
 import { KebabMenu, MenuItem } from "@/components/Menu";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { HowItWorks } from "@/components/HowItWorks";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 
 const STATUS_TONE: Record<string, BadgeTone> = {
   processed: "success",
@@ -69,14 +65,12 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [ready, setReady] = useState(false);
-  const [actorName, setActorName] = useState("");
-  const [avatarSrc, setAvatarSrc] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
 
   // The gate: protected workspaces require an active session; open mode only
   // needs the local first-run profile. Both land on /bienvenida otherwise.
-  const [isAdmin, setIsAdmin] = useState(false);
   useEffect(() => {
     let active = true;
     fetchAuthStatus().then((status) => {
@@ -89,15 +83,25 @@ export default function Home() {
         router.replace("/bienvenida");
         return;
       }
-      setAvatarSrc(status.user?.picture ?? null);
-      setIsAdmin(status.user?.role === "admin");
-      setActorName(status.user?.name || peekBrowserActor());
       setReady(true);
     });
     return () => {
       active = false;
     };
   }, [router]);
+
+  // "/" jumps to search from anywhere on the page (never while typing).
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && ("value" in target || target.isContentEditable)) return;
+      event.preventDefault();
+      searchRef.current?.focus();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -205,39 +209,7 @@ export default function Home() {
         </div>
       )}
 
-      <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-4xl items-center justify-between px-5">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-fg">
-              <Buildings size={17} weight="duotone" />
-            </div>
-            <span className="font-display text-[1.05rem] font-semibold tracking-tight">
-              Klave
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            {isAdmin && (
-              <Link href="/equipo" className={buttonClasses("ghost", "sm")}>
-                <UsersThree size={15} weight="duotone" /> Equipo
-              </Link>
-            )}
-            <Link href="/catalogo" className={buttonClasses("ghost", "sm")}>
-              <Books size={15} weight="duotone" /> Catálogo
-            </Link>
-            {actorName && (
-              <Link
-                href="/bienvenida"
-                title="Editar perfil"
-                className="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-3 text-sm font-medium transition-colors hover:bg-surface-2"
-              >
-                <Avatar name={actorName} src={avatarSrc} self size="sm" />
-                <span className="hidden max-w-32 truncate sm:inline">{actorName}</span>
-              </Link>
-            )}
-            <ThemeToggle />
-          </div>
-        </div>
-      </header>
+      <WorkspaceHeader active="proyectos" />
 
       <main className="mx-auto max-w-4xl px-5 pb-16 pt-8">
         <input
@@ -286,9 +258,10 @@ export default function Home() {
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
               />
               <Input
+                ref={searchRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Buscar por nombre o cliente…"
+                placeholder="Buscar por nombre o cliente…  ( / )"
                 className="w-full pl-9"
               />
             </div>
@@ -376,7 +349,7 @@ function ProjectRow({
 }) {
   const [editing, setEditing] = useState<"name" | "client" | null>(null);
   const [draft, setDraft] = useState("");
-  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
 
   async function commitEdit() {
     const field = editing;
@@ -491,21 +464,15 @@ function ProjectRow({
                 </>
               )}
             </MenuItem>
-            {confirmRemove ? (
-              <MenuItem
-                danger
-                onSelect={() => {
-                  remove();
-                  close();
-                }}
-              >
-                <Trash size={15} /> Confirmar (archivos permanecen)
-              </MenuItem>
-            ) : (
-              <MenuItem danger onSelect={() => setConfirmRemove(true)}>
-                <Trash size={15} /> Quitar de la lista…
-              </MenuItem>
-            )}
+            <MenuItem
+              danger
+              onSelect={() => {
+                close();
+                setRemoveOpen(true);
+              }}
+            >
+              <Trash size={15} /> Quitar de la lista…
+            </MenuItem>
           </>
         )}
       </KebabMenu>
@@ -517,16 +484,44 @@ function ProjectRow({
     </>
   );
 
+  const dialog = (
+    <ConfirmDialog
+      open={removeOpen}
+      title="Quitar proyecto de la lista"
+      description={
+        <>
+          <span className="font-medium text-foreground">{project.name}</span> dejará de
+          aparecer en el taller. Los archivos y reportes permanecen en el disco.
+        </>
+      }
+      confirmLabel="Quitar de la lista"
+      typeToConfirm={project.name}
+      onCancel={() => setRemoveOpen(false)}
+      onConfirm={() => {
+        setRemoveOpen(false);
+        remove();
+      }}
+    />
+  );
+
   if (editing) {
-    return <div className="card flex items-center gap-3 p-3.5">{inner}</div>;
+    return (
+      <>
+        <div className="card flex items-center gap-3 p-3.5">{inner}</div>
+        {dialog}
+      </>
+    );
   }
   return (
-    <Link
-      href={`/proyecto/${project.project_id}`}
-      className="card card-hover group flex items-center gap-3 p-3.5"
-    >
-      {inner}
-    </Link>
+    <>
+      <Link
+        href={`/proyecto/${project.project_id}`}
+        className="card card-hover group flex items-center gap-3 p-3.5"
+      >
+        {inner}
+      </Link>
+      {dialog}
+    </>
   );
 }
 

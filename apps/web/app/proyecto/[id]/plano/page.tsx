@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { Check, Prohibit, SlidersHorizontal, X } from "@phosphor-icons/react";
 import {
@@ -63,27 +63,30 @@ export default function PlanoPage() {
     });
   }, [id, latestEvent]);
 
-  async function review(detection: DetectionOverlay, status: ReviewStatus | "none", note = "") {
-    try {
-      await setDetectionReview(id, detection.review_key, status, note, actorName, clientId);
-    } catch {
-      return;
-    }
-    setGeom((current) => {
-      if (!current) return current;
-      const detections = current.detections.map((d) =>
-        d.review_key === detection.review_key
-          ? { ...d, review: status === "none" ? ("" as const) : status, review_note: note }
-          : d,
+  const review = useCallback(
+    async (detection: DetectionOverlay, status: ReviewStatus | "none", note = "") => {
+      try {
+        await setDetectionReview(id, detection.review_key, status, note, actorName, clientId);
+      } catch {
+        return;
+      }
+      setGeom((current) => {
+        if (!current) return current;
+        const detections = current.detections.map((d) =>
+          d.review_key === detection.review_key
+            ? { ...d, review: status === "none" ? ("" as const) : status, review_note: note }
+            : d,
+        );
+        return { ...current, detections };
+      });
+      setSelected((current) =>
+        current && current.review_key === detection.review_key
+          ? { ...current, review: status === "none" ? "" : status, review_note: note }
+          : current,
       );
-      return { ...current, detections };
-    });
-    setSelected((current) =>
-      current && current.review_key === detection.review_key
-        ? { ...current, review: status === "none" ? "" : status, review_note: note }
-        : current,
-    );
-  }
+    },
+    [actorName, clientId, id],
+  );
 
   const families = useMemo(() => {
     if (!geom) return [] as { family: string; count: number }[];
@@ -117,6 +120,44 @@ export default function PlanoPage() {
       (d) => visibleFamilies.has(familyOf(d)) && d.confidence >= minConfidence,
     ).length;
   }, [canvasGeom, visibleFamilies, minConfidence]);
+
+  // The review loop lives on the keyboard: arrows cycle visible detections,
+  // C confirms, X excludes, Q clears, Escape deselects. Repetition should be
+  // muscle memory, not clicking.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target && ("value" in target || target.isContentEditable)) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === "Escape") {
+        setSelected(null);
+        return;
+      }
+      if (!canvasGeom) return;
+      if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+        const visible = canvasGeom.detections.filter(
+          (d) => visibleFamilies.has(familyOf(d)) && d.confidence >= minConfidence,
+        );
+        if (visible.length === 0) return;
+        event.preventDefault();
+        setSelected((current) => {
+          const index = current
+            ? visible.findIndex((d) => d.id === current.id)
+            : -1;
+          const step = event.key === "ArrowRight" ? 1 : -1;
+          return visible[(index + step + visible.length) % visible.length];
+        });
+        return;
+      }
+      if (!selected) return;
+      const key = event.key.toLowerCase();
+      if (key === "c") void review(selected, "confirmed");
+      else if (key === "x") void review(selected, "excluded");
+      else if (key === "q") void review(selected, "none");
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [canvasGeom, minConfidence, review, selected, visibleFamilies]);
 
   const reviewCounts = useMemo(() => {
     const counts = { confirmed: 0, excluded: 0 };
@@ -299,6 +340,9 @@ export default function PlanoPage() {
                   </Button>
                 )}
               </div>
+              <p className="mt-2 text-[11px] text-faint">
+                Teclas: C confirmar · X excluir · Q quitar · ← → siguiente
+              </p>
               {selected.review === "excluded" && (
                 <ReviewNote
                   key={selected.review_key}
