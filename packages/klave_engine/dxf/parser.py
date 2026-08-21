@@ -16,6 +16,15 @@ from klave_engine.dxf.normalizer import normalize_entity
 
 logger = get_logger(__name__)
 
+MAX_CHILDREN_PER_INSERT = 300
+MAX_EXPLODED_PER_FILE = 15_000
+
+
+@dataclass
+class _ExplosionBudget:
+    total: int = 0
+    capped: bool = False
+
 
 def _sanitize_dxf_text(raw: str) -> str:
     """Repair DXF text where string values contain literal newlines.
@@ -84,11 +93,25 @@ class DxfParser:
             insunits=int(doc.header.get("$INSUNITS", 0)) or None,
         )
 
+        explosion = _ExplosionBudget()
         for entity in doc.modelspace():
             normalized, warnings = normalize_entity(entity, source_file, self._ids)
             drawing.warnings.extend(warnings)
             if normalized is not None:
                 drawing.entities.append(normalized)
+            if entity.dxftype() == "INSERT":
+                self._explode_insert(entity, drawing, source_file, explosion, depth=0)
+        if explosion.capped:
+            drawing.warnings.append(
+                ParseWarning(
+                    warning_type="block_explosion_capped",
+                    message=(
+                        "Algunos bloques tienen demasiadas entidades internas; "
+                        f"se conservaron {explosion.total} y se omitió el resto."
+                    ),
+                    source_file=source_file,
+                )
+            )
 
         log_stage(
             logger,
@@ -110,13 +133,80 @@ class DxfParser:
             for index, path in enumerate(paths)
         ]
 
+    def _explode_insert(
+        self,
+        insert: object,
+        drawing: ParsedDrawing,
+        source_file: str,
+        budget: "_ExplosionBudget",
+        depth: int,
+    ) -> None:
+        """Expand a block reference's geometry into normalized entities.
+
+        Real drawings hide meaningful geometry (castillo symbols, column
+        marks, section fills) inside block definitions; without explosion the
+        pipeline only ever sees the INSERT's bounding box. Children keep the
+        block as provenance, adopt the insert's layer when they sit on layer
+        "0" (standard CAD by-block convention), and are budget-capped so a
+        pathological block cannot flood the entity space.
+        """
+        if depth >= 2 or budget.capped:
+            return
+        insert_layer = str(insert.dxf.layer)  # type: ignore[attr-defined]
+        insert_handle = str(insert.dxf.handle)  # type: ignore[attr-defined]
+        block_name = str(insert.dxf.name)  # type: ignore[attr-defined]
+        emitted = 0
+        try:
+            children = list(insert.virtual_entities())  # type: ignore[attr-defined]
+        except Exception:
+            drawing.warnings.append(
+                ParseWarning(
+                    warning_type="block_explosion_failed",
+                    message=f"No se pudo expandir el bloque {block_name}",
+                    entity_type="INSERT",
+                    handle=insert_handle,
+                    layer=insert_layer,
+                    source_file=source_file,
+                )
+            )
+            return
+        for index, child in enumerate(children):
+            if emitted >= MAX_CHILDREN_PER_INSERT or budget.total >= MAX_EXPLODED_PER_FILE:
+                budget.capped = True
+                return
+            if child.dxftype() == "INSERT":
+                self._explode_insert(child, drawing, source_file, budget, depth + 1)
+                continue
+            normalized, _warnings = normalize_entity(child, source_file, self._ids)
+            if normalized is None:
+                continue
+            if normalized.layer == "0":
+                normalized.layer = insert_layer
+            normalized.raw_handle = f"{insert_handle}#{index}"
+            normalized.block_name = block_name
+            normalized.properties["from_block"] = block_name
+            normalized.properties["parent_insert"] = insert_handle
+            normalized.evidence.notes.append(f"Expandido del bloque {block_name}")
+            drawing.entities.append(normalized)
+            emitted += 1
+            budget.total += 1
+
     def _load_with_recovery(self, path: Path):
         try:
             doc, auditor = ezdxf_recover.readfile(str(path))
             method = "recovery mode"
         except (DXFStructureError, UnicodeDecodeError):
             try:
-                raw = path.read_bytes().decode("utf-8", errors="replace")
+                raw_bytes = path.read_bytes()
+                # Mexican office drawings frequently carry cp1252 accents; try
+                # strict UTF-8 first and fall back before replacing bytes.
+                try:
+                    raw = raw_bytes.decode("utf-8")
+                except UnicodeDecodeError:
+                    try:
+                        raw = raw_bytes.decode("cp1252")
+                    except UnicodeDecodeError:
+                        raw = raw_bytes.decode("utf-8", errors="replace")
                 stream = io.BytesIO(_sanitize_dxf_text(raw).encode("utf-8"))
                 doc, auditor = ezdxf_recover.read(stream)
                 method = "sanitized recovery mode (embedded newlines rejoined)"

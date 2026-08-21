@@ -6,6 +6,7 @@ individually (see the CLI) or together via ``run_full_pipeline``.
 """
 
 import json
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -18,12 +19,12 @@ from klave_engine.costing.catalog_store import get_catalog_store
 from klave_engine.costing.insumos import apply_price_overrides
 from klave_engine.costing.models import CostingConfig, CostReport
 from klave_engine.costing.recompute import load_overrides
-from klave_engine.costing.reviews import filter_excluded, load_reviews
 from klave_engine.costing.report import (
     boq_to_csv,
     cost_report_to_markdown,
     generate_cost_report,
 )
+from klave_engine.costing.reviews import filter_excluded, load_reviews
 from klave_engine.detection.dimensions import build_dimension_inventory
 from klave_engine.detection.results import Detection
 from klave_engine.detection.suite import (
@@ -106,11 +107,50 @@ def parse_drawings(
     processed = output_dir or _processed_dir(manifest.root(), settings)
     write_json(processed / "normalized_entities.json", entities)
     write_json(processed / "parse_warnings.json", warnings)
+    write_json(processed / "parse_summary.json", _summarize_parse(drawings))
     write_json(processed / "layer_summary.json", summarize_layers(entities))
     write_json(processed / "block_summary.json", summarize_blocks(entities))
     manifest.processing_status = ProcessingStatus.parsed
     save_manifest(manifest, settings.processed_dir_name)
     return drawings
+
+
+def _summarize_parse(drawings: list[ParsedDrawing]) -> list[dict]:
+    """Per-sheet legibility record: what was read, derived, and dropped."""
+    summary: list[dict] = []
+    for drawing in drawings:
+        entities_by_type = Counter(e.entity_type.value for e in drawing.entities)
+        derived_by_type = Counter(
+            str(e.properties["derived_from"])
+            for e in drawing.entities
+            if e.properties.get("derived_from")
+        )
+        dropped_by_type = Counter(
+            w.entity_type or "desconocido"
+            for w in drawing.warnings
+            if w.warning_type == "unsupported_dxf_entity"
+        )
+        summary.append(
+            {
+                "source_file": drawing.source_file,
+                "entity_count": len(drawing.entities),
+                "entities_by_type": dict(entities_by_type.most_common()),
+                "from_block_count": sum(
+                    1 for e in drawing.entities if e.properties.get("from_block")
+                ),
+                "derived_by_type": dict(derived_by_type.most_common()),
+                "dropped_by_type": dict(dropped_by_type.most_common()),
+                "text_count": sum(1 for e in drawing.entities if e.is_textual),
+                "recovered": any(
+                    w.warning_type == "dxf_recovered" for w in drawing.warnings
+                ),
+                "warning_count": len(drawing.warnings),
+                "insunits": drawing.insunits,
+                "layer_count": len(drawing.layers),
+                "block_count": len(drawing.blocks),
+            }
+        )
+    return summary
 
 
 def _write_summary_markdown(

@@ -224,7 +224,9 @@ def _convert_new_dwgs(root: Path, manifest, settings: Settings) -> list[str]:
     for source in manifest.source_files:
         if source.file_type.value != "dwg" or source.file_id in converted_ids:
             continue
-        dxf_path, message = convert_dwg_to_dxf(root / source.path)
+        dxf_path, message = convert_dwg_to_dxf(
+            root / source.path, timeout_seconds=settings.converter_timeout_seconds
+        )
         if dxf_path is None:
             raise HTTPException(
                 status_code=422,

@@ -19,6 +19,12 @@ SUPPORTED_DXF_TYPES = {
     "POLYLINE",
     "ARC",
     "CIRCLE",
+    "ELLIPSE",
+    "SPLINE",
+    "SOLID",
+    "TRACE",
+    "3DFACE",
+    "LEADER",
     "HATCH",
     "TEXT",
     "MTEXT",
@@ -28,6 +34,44 @@ SUPPORTED_DXF_TYPES = {
 
 # Approximate average glyph width as a fraction of text height.
 TEXT_WIDTH_FACTOR = 0.6
+
+# Curves flatten into at most this many segments; enough for detection and
+# rendering without letting one dense spline dominate the entity budget.
+MAX_FLATTEN_POINTS = 200
+
+
+def _flatten_curve(entity: Any) -> list[Point]:
+    """Approximate a SPLINE/ELLIPSE with line segments sized to the curve."""
+    try:
+        extents = ezdxf_bbox.extents([entity], fast=True)
+        span = (
+            max(extents.extmax.x - extents.extmin.x, extents.extmax.y - extents.extmin.y)
+            if extents.has_data
+            else 1.0
+        )
+        distance = max(span / 200.0, 1e-6)
+        points = [(float(p.x), float(p.y)) for p in entity.flattening(distance)]
+    except Exception:
+        return []
+    if len(points) > MAX_FLATTEN_POINTS:
+        step = len(points) / MAX_FLATTEN_POINTS
+        points = [points[int(i * step)] for i in range(MAX_FLATTEN_POINTS)] + [points[-1]]
+    return points
+
+
+def _corner_points(entity: Any) -> list[Point]:
+    """SOLID/TRACE/3DFACE corners (DXF stores the third pair swapped)."""
+    corners: list[Point] = []
+    for attr in ("vtx0", "vtx1", "vtx3", "vtx2"):
+        if entity.dxf.hasattr(attr):
+            vertex = entity.dxf.get(attr)
+            corners.append((float(vertex.x), float(vertex.y)))
+    # Drop the duplicate closing corner SOLIDs use for triangles.
+    deduped: list[Point] = []
+    for corner in corners:
+        if not deduped or corner != deduped[-1]:
+            deduped.append(corner)
+    return deduped
 
 
 def _exact_bbox(entity: Any) -> BBox | None:
@@ -113,6 +157,41 @@ def normalize_entity(
         ]
         properties["closed"] = bool(entity.is_closed)
         bbox = bbox_from_points(points) if points else None
+    elif dxf_type in ("SPLINE", "ELLIPSE"):
+        # Flattened into a polyline: detectors and the viewer treat curves as
+        # segment chains, so nothing downstream needs a special case.
+        entity_type = EntityType.polyline
+        points = _flatten_curve(entity)
+        if points:
+            closed = bool(getattr(entity, "closed", False))
+            properties["closed"] = closed
+            properties["derived_from"] = dxf_type
+            bbox = bbox_from_points(points)
+            notes.append(f"{dxf_type} aplanado en {len(points)} segmentos")
+        else:
+            bbox = None
+    elif dxf_type in ("SOLID", "TRACE", "3DFACE"):
+        entity_type = EntityType.polyline
+        points = _corner_points(entity)
+        if len(points) >= 3:
+            properties["closed"] = True
+            properties["derived_from"] = dxf_type
+            bbox = bbox_from_points(points)
+            notes.append(f"{dxf_type} normalizado como polígono relleno")
+        else:
+            bbox = None
+    elif dxf_type == "LEADER":
+        entity_type = EntityType.polyline
+        try:
+            points = [(float(v.x), float(v.y)) for v in entity.vertices]
+        except Exception:
+            points = []
+        if points:
+            properties["closed"] = False
+            properties["derived_from"] = dxf_type
+            bbox = bbox_from_points(points)
+        else:
+            bbox = None
     elif dxf_type == "ARC":
         entity_type = EntityType.arc
         properties.update(
