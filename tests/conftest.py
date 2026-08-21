@@ -1,37 +1,20 @@
-"""Shared fixtures: a deterministic demo project, parsed entities, and indexes."""
-
-from pathlib import Path
+"""Shared fixtures: isolated data dir, fresh settings, isolated stores."""
 
 import pytest
-from klave_engine.dxf.parser import DxfParser, ParsedDrawing
-from klave_engine.evals.fixtures import write_demo_project
-from klave_engine.geometry.spatial_index import SpatialIndex
-from klave_engine.ingestion.manifest import ProjectManifest
-from klave_engine.ingestion.project_loader import ingest_project
+
+from klave_engine.common import config as config_module
 
 
-@pytest.fixture(scope="session")
-def demo_project_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    root = tmp_path_factory.mktemp("demo") / "demo_project_001"
-    write_demo_project(root)
-    return root
+@pytest.fixture
+def data_dir(tmp_path, monkeypatch):
+    """Point KLAVE_DATA_DIR at a temp dir and reset cached settings/stores."""
+    directory = tmp_path / "data"
+    directory.mkdir()
+    monkeypatch.setenv("KLAVE_DATA_DIR", str(directory))
+    config_module.get_settings.cache_clear()
 
+    import klave_engine.costing.catalog_store as catalog_store_module
 
-@pytest.fixture(scope="session")
-def demo_manifest(demo_project_root: Path) -> ProjectManifest:
-    return ingest_project(demo_project_root)
-
-
-@pytest.fixture(scope="session")
-def demo_drawing(demo_project_root: Path) -> ParsedDrawing:
-    return DxfParser().parse_file(demo_project_root / "drawings" / "S-101.dxf")
-
-
-@pytest.fixture(scope="session")
-def demo_entities(demo_drawing: ParsedDrawing):
-    return demo_drawing.entities
-
-
-@pytest.fixture(scope="session")
-def demo_index(demo_entities) -> SpatialIndex:
-    return SpatialIndex(demo_entities)
+    catalog_store_module._STORES.clear()
+    yield directory
+    config_module.get_settings.cache_clear()
