@@ -7,6 +7,8 @@ from klave_engine.common.config import get_settings
 from klave_engine.common.errors import KlaveEngineError
 from klave_engine.common.logging import configure_logging
 
+from apps.api.auth.middleware import AccessControlMiddleware
+from apps.api.auth.routes import router as auth_router
 from apps.api.routes import (
     catalog,
     detections,
@@ -26,7 +28,12 @@ def create_app() -> FastAPI:
     configure_logging(settings.log_level)
     app = FastAPI(title="Klave Engine", version="0.2.0")
 
-    # Local-first single workspace: allow the Next.js dev server.
+    # Session-based access control. Added before CORS so CORS wraps it and
+    # 401/403 responses still carry CORS headers the browser can read.
+    app.add_middleware(AccessControlMiddleware)
+
+    # Local-first single workspace: allow the Next.js dev server. Credentials
+    # are required so the HttpOnly session cookie travels with fetch and SSE.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -36,9 +43,11 @@ def create_app() -> FastAPI:
         allow_origin_regex=r"http://localhost:\d+",
         allow_methods=["*"],
         allow_headers=["*"],
+        allow_credentials=True,
     )
 
     app.include_router(health.router)
+    app.include_router(auth_router)
     app.include_router(events.router)
     app.include_router(projects.router)
     app.include_router(entities.router)

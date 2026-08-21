@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     # Drawing units are unknown unless detected or configured.
     assumed_unit: str = "drawing_units"
 
+    # Workspace accounts: a dedicated PostgreSQL instance (docker compose
+    # service `users-db`), deliberately separate from the cost-data platform's
+    # database. The local compose credentials below are not production secrets.
+    users_database_url: str = "postgresql://klave_users:klave@127.0.0.1:5433/klave_users"
+    web_origin: str = "http://localhost:3000"
+    auth_google_id: str | None = None
+    auth_google_secret: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

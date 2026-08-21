@@ -3,7 +3,7 @@ import shutil
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, UploadFile
 from klave_engine.common.config import Settings
 from klave_engine.common.ids import short_uuid, slugify
 from klave_engine.conversion.libredwg import convert_dwg_to_dxf
@@ -11,6 +11,7 @@ from klave_engine.ingestion.manifest import ConvertedFile, save_manifest
 from klave_engine.ingestion.project_loader import ingest_project
 from pydantic import BaseModel
 
+from apps.api.auth.store import UsersDbUnavailable, get_user_store
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
 from apps.api.jobs import JOB_STORE, JobQueueFullError
@@ -104,11 +105,40 @@ async def _save_upload(file: UploadFile, destination: Path, max_bytes: int) -> N
         await file.close()
 
 
+def _state_user(request: Request) -> dict | None:
+    return getattr(request.state, "user", None)
+
+
+def _grant_owner(request: Request, settings: Settings, project_id: str) -> None:
+    """In protected mode the creator becomes the project owner."""
+    user = _state_user(request)
+    if user is None:
+        return
+    try:
+        get_user_store(settings.users_database_url).grant_access(
+            project_id, str(user["user_id"]), "owner", str(user["user_id"])
+        )
+    except UsersDbUnavailable:
+        pass
+
+
 @router.get("")
-def list_projects(store: ProjectStore = Depends(get_store)) -> dict:
-    """Projects with name + status for the landing page."""
+def list_projects(request: Request, store: ProjectStore = Depends(get_store)) -> dict:
+    """Projects with name + status; in protected mode, only those the user
+    can access (admins see everything)."""
+    user = _state_user(request)
+    allowed: set[str] | None = None
+    if user is not None and user["role"] != "admin":
+        try:
+            allowed = get_user_store(
+                store.settings.users_database_url
+            ).project_ids_for_user(str(user["user_id"]))
+        except UsersDbUnavailable:
+            allowed = set()
     projects: list[dict] = []
     for project_id, root in store.list_projects().items():
+        if allowed is not None and project_id not in allowed:
+            continue
         entry: dict[str, object] = {
             "project_id": project_id,
             "root_path": root,
@@ -134,24 +164,26 @@ def list_projects(store: ProjectStore = Depends(get_store)) -> dict:
 
 @router.post("", status_code=201)
 def create_project(
-    request: CreateProjectRequest,
+    body: CreateProjectRequest,
+    request: Request,
     x_actor: Annotated[str | None, Header()] = None,
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    root = Path(request.root_path)
+    root = Path(body.root_path)
     if not root.is_dir():
         raise HTTPException(
             status_code=400,
-            detail={"error_type": "invalid_root_path", "root_path": request.root_path},
+            detail={"error_type": "invalid_root_path", "root_path": body.root_path},
         )
     root = store.managed_root(root)
     manifest = ingest_project(
         root,
-        project_name=request.project_name,
+        project_name=body.project_name,
         processed_dir_name=settings.processed_dir_name,
     )
     store.register(manifest.project_id, root)
+    _grant_owner(request, settings, manifest.project_id)
     BUS.publish(
         "project_created",
         project_id=manifest.project_id,
@@ -224,6 +256,7 @@ def _convert_new_dwgs(root: Path, manifest, settings: Settings) -> list[str]:
 
 @router.post("/upload", status_code=202)
 async def upload_project(
+    request: Request,
     files: list[UploadFile],
     x_actor: Annotated[str | None, Header()] = None,
     store: ProjectStore = Depends(get_store),
@@ -250,6 +283,7 @@ async def upload_project(
         raise
 
     store.register(project_id, root)
+    _grant_owner(request, settings, project_id)
     BUS.publish(
         "project_created",
         project_id=project_id,

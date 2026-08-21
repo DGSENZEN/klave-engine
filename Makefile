@@ -1,4 +1,10 @@
-.PHONY: install test lint typecheck demo-data ingest-demo convert-demo parse-demo process-demo eval-demo api web web-install clean
+.PHONY: install test lint typecheck demo-data ingest-demo convert-demo parse-demo process-demo eval-demo api web web-install clean users-db-up users-db-down
+
+users-db-up:
+	docker compose up -d users-db
+
+users-db-down:
+	docker compose stop users-db
 
 DEMO_PROJECT := data/demo/demo_project_001
 
