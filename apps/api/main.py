@@ -14,6 +14,7 @@ from apps.api.routes import (
     detections,
     entities,
     events,
+    exports,
     geometry,
     graph,
     health,
@@ -57,6 +58,7 @@ def create_app() -> FastAPI:
     app.include_router(detections.router)
     app.include_router(reports.router)
     app.include_router(lectura.router)
+    app.include_router(exports.router)
     app.include_router(reviews.router)
     app.include_router(catalog.router)
 

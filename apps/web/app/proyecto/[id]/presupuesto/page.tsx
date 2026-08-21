@@ -2,9 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { DownloadSimple, PencilSimpleLine, Trash, Warning } from "@phosphor-icons/react";
+import {
+  DownloadSimple,
+  FileXls,
+  PencilSimpleLine,
+  Trash,
+  Warning,
+} from "@phosphor-icons/react";
 import {
   addAdjustment,
+  API_BASE,
   getDimensions,
   getProjectReviews,
   money,
@@ -32,6 +39,7 @@ import {
   Td,
   Th,
 } from "@/components/ui";
+import { ButtonMenu, MenuItem } from "@/components/Menu";
 import { useProjectLive } from "@/components/ProjectLive";
 
 export default function PresupuestoPage() {
@@ -117,9 +125,47 @@ export default function PresupuestoPage() {
         title="Catálogo de conceptos"
         sub="Cantidades deducidas del plano · precios de referencia (MXN)"
         actions={
-          <Button onClick={downloadCsv}>
-            <DownloadSimple size={16} weight="bold" /> CSV
-          </Button>
+          <ButtonMenu label="Exportar" icon={<DownloadSimple size={16} weight="bold" />}>
+            {(close) => (
+              <>
+                <MenuItem
+                  onSelect={() => {
+                    close();
+                    sendActivity("exporting_budget", "Excel Klave");
+                    window.location.href = `${API_BASE}/projects/${id}/export/presupuesto.xlsx`;
+                  }}
+                >
+                  <FileXls size={15} weight="duotone" /> Excel completo (Klave)
+                </MenuItem>
+                <MenuItem
+                  onSelect={() => {
+                    close();
+                    sendActivity("exporting_budget", "Excel OPUS");
+                    window.location.href = `${API_BASE}/projects/${id}/export/presupuesto.xlsx?format=opus`;
+                  }}
+                >
+                  <FileXls size={15} weight="duotone" /> Excel para OPUS
+                </MenuItem>
+                <MenuItem
+                  onSelect={() => {
+                    close();
+                    sendActivity("exporting_budget", "Excel Neodata");
+                    window.location.href = `${API_BASE}/projects/${id}/export/presupuesto.xlsx?format=neodata`;
+                  }}
+                >
+                  <FileXls size={15} weight="duotone" /> Excel para Neodata
+                </MenuItem>
+                <MenuItem
+                  onSelect={() => {
+                    close();
+                    downloadCsv();
+                  }}
+                >
+                  <DownloadSimple size={15} weight="bold" /> CSV simple
+                </MenuItem>
+              </>
+            )}
+          </ButtonMenu>
         }
       />
 
