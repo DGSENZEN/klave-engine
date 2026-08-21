@@ -165,6 +165,7 @@ export type Geometry = {
   )[];
   detections: DetectionOverlay[];
   sheets: SheetInfo[];
+  units: { unit: string; to_meters: number | null } | null;
 };
 
 export type DetectionOverlay = {

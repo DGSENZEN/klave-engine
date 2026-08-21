@@ -6,9 +6,10 @@ so the frontend can draw the plano without shipping the full entity records.
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from klave_engine.common.config import Settings
 from klave_engine.costing.reviews import load_reviews
+from klave_engine.dxf.units import DrawingUnits
 
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 
@@ -132,10 +133,19 @@ def get_geometry(
         {"name": name, "count": count}
         for name, count in sorted(layer_counts.items(), key=lambda kv: (-kv[1], kv[0]))
     ]
+    try:
+        units = DrawingUnits.model_validate(
+            store.read_artifact(project_id, "drawing_units.json")
+        )
+        units_payload = {"unit": units.unit, "to_meters": units.to_meters()}
+    except (HTTPException, ValueError):
+        units_payload = None
+
     return {
         "extent": extent,
         "layers": layers,
         "shapes": shapes,
         "detections": overlay,
         "sheets": sheets,
+        "units": units_payload,
     }

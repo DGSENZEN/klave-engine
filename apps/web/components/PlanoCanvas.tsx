@@ -65,6 +65,10 @@ export function detectionTitle(d: DetectionOverlay): string {
 
 type View = { scale: number; ox: number; oy: number };
 
+export type MeasureMode = "distancia" | "area" | "conteo";
+
+export type MeasureState = { mode: MeasureMode; points: [number, number][] };
+
 export function PlanoCanvas({
   geometry,
   visibleLayers,
@@ -72,6 +76,8 @@ export function PlanoCanvas({
   minConfidence,
   selectedId,
   onSelect,
+  measure,
+  onWorldClick,
 }: {
   geometry: Geometry;
   visibleLayers: Set<string>;
@@ -79,6 +85,9 @@ export function PlanoCanvas({
   minConfidence: number;
   selectedId?: string | null;
   onSelect?: (detection: DetectionOverlay | null) => void;
+  /** Active measurement: clicks add world points instead of selecting. */
+  measure?: MeasureState | null;
+  onWorldClick?: (point: [number, number]) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -196,7 +205,50 @@ export function PlanoCanvas({
       ctx.globalAlpha = 1;
       ctx.setLineDash([]);
     }
-  }, [geometry, visibleLayers, isVisible, selectedId]);
+
+    // Measurement overlay: always on top, in the accent color.
+    if (measure && measure.points.length > 0) {
+      const accent = cssVar("--accent") || "#2b4acb";
+      const screenPoints = measure.points.map(([x, y]) => toScreen(x, y, v));
+      ctx.strokeStyle = accent;
+      ctx.fillStyle = accent;
+      ctx.lineWidth = 1.6;
+      if (measure.mode === "conteo") {
+        ctx.font = "600 10px ui-sans-serif, system-ui";
+        screenPoints.forEach(([sx, sy], index) => {
+          ctx.beginPath();
+          ctx.arc(sx, sy, 8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#ffffff";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(String(index + 1), sx, sy);
+          ctx.fillStyle = accent;
+        });
+        ctx.textAlign = "start";
+        ctx.textBaseline = "alphabetic";
+      } else {
+        ctx.beginPath();
+        screenPoints.forEach(([sx, sy], index) => {
+          if (index === 0) ctx.moveTo(sx, sy);
+          else ctx.lineTo(sx, sy);
+        });
+        if (measure.mode === "area" && screenPoints.length > 2) {
+          ctx.closePath();
+          ctx.save();
+          ctx.globalAlpha = 0.15;
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.stroke();
+        for (const [sx, sy] of screenPoints) {
+          ctx.beginPath();
+          ctx.arc(sx, sy, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+  }, [geometry, visibleLayers, isVisible, selectedId, measure]);
 
   useEffect(() => {
     fit();
@@ -287,11 +339,20 @@ export function PlanoCanvas({
   function onMouseUp(e: React.MouseEvent) {
     const wasDrag = dragRef.current?.moved;
     dragRef.current = null;
-    if (wasDrag || !onSelect) return;
+    if (wasDrag) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    if (measure && onWorldClick) {
+      const v = viewRef.current;
+      if (!v) return;
+      onWorldClick([(mx - v.ox) / v.scale, -(my - v.oy) / v.scale]);
+      return;
+    }
+    if (!onSelect) return;
+    const hit = hitTest(mx, my);
     onSelect(hit && hit.id === selectedId ? null : hit);
   }
 
@@ -307,7 +368,11 @@ export function PlanoCanvas({
           dragRef.current = null;
           setTooltip(null);
         }}
-        className="h-full w-full cursor-grab active:cursor-grabbing"
+        className={
+          measure
+            ? "h-full w-full cursor-crosshair"
+            : "h-full w-full cursor-grab active:cursor-grabbing"
+        }
       />
       <button
         onClick={fit}

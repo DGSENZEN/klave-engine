@@ -2,10 +2,23 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { Check, Prohibit, SlidersHorizontal, X } from "@phosphor-icons/react";
 import {
+  Check,
+  Cursor,
+  Hash,
+  PencilSimpleLine,
+  Polygon,
+  Prohibit,
+  Ruler,
+  SlidersHorizontal,
+  X,
+} from "@phosphor-icons/react";
+import {
+  addAdjustment,
+  getCatalog,
   getGeometry,
   setDetectionReview,
+  type CatalogConcept,
   type DetectionOverlay,
   type Geometry,
   type ReviewStatus,
@@ -16,6 +29,7 @@ import {
   FAMILY_LABELS,
   familyOf,
   detectionTitle,
+  type MeasureMode,
 } from "@/components/PlanoCanvas";
 import { Badge, Button, IconButton, Input, Skeleton } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
@@ -30,6 +44,8 @@ export default function PlanoPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showExcluded, setShowExcluded] = useState(true);
   const [hiddenSheets, setHiddenSheets] = useState<Set<number>>(new Set());
+  const [measureMode, setMeasureMode] = useState<MeasureMode | null>(null);
+  const [measurePoints, setMeasurePoints] = useState<[number, number][]>([]);
   const { latestEvent, connectionEpoch, actorName, clientId } = useProjectLive();
 
   // connectionEpoch: a reconnect may have skipped events, so reload everything.
@@ -130,7 +146,19 @@ export default function PlanoPage() {
       if (target && ("value" in target || target.isContentEditable)) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key === "Escape") {
-        setSelected(null);
+        if (measureMode) {
+          setMeasurePoints([]);
+          setMeasureMode(null);
+        } else {
+          setSelected(null);
+        }
+        return;
+      }
+      if (measureMode) {
+        if (event.key === "Backspace") {
+          event.preventDefault();
+          setMeasurePoints((current) => current.slice(0, -1));
+        }
         return;
       }
       if (!canvasGeom) return;
@@ -157,7 +185,7 @@ export default function PlanoPage() {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [canvasGeom, minConfidence, review, selected, visibleFamilies]);
+  }, [canvasGeom, measureMode, minConfidence, review, selected, visibleFamilies]);
 
   const reviewCounts = useMemo(() => {
     const counts = { confirmed: 0, excluded: 0 };
@@ -262,6 +290,14 @@ export default function PlanoPage() {
         )}
 
         <div className="relative min-w-0 flex-1 bg-surface-2">
+          <MeasureToolbar
+            mode={measureMode}
+            onMode={(mode) => {
+              setMeasureMode(mode);
+              setMeasurePoints([]);
+              if (mode) setSelected(null);
+            }}
+          />
           <PlanoCanvas
             geometry={canvasGeom ?? geom}
             visibleLayers={visibleLayers}
@@ -269,7 +305,23 @@ export default function PlanoPage() {
             minConfidence={minConfidence}
             selectedId={selected?.id ?? null}
             onSelect={setSelected}
+            measure={measureMode ? { mode: measureMode, points: measurePoints } : null}
+            onWorldClick={(point) =>
+              setMeasurePoints((current) => [...current, point])
+            }
           />
+          {measureMode && (
+            <MeasureResult
+              projectId={id}
+              mode={measureMode}
+              points={measurePoints}
+              toMeters={geom.units?.to_meters ?? null}
+              actorName={actorName}
+              clientId={clientId}
+              onUndo={() => setMeasurePoints((current) => current.slice(0, -1))}
+              onClear={() => setMeasurePoints([])}
+            />
+          )}
           {selected && (
             <div className="rise-in absolute bottom-4 left-4 z-10 w-[380px] max-w-[calc(100%-2rem)] rounded-xl border border-border bg-surface p-4 shadow-lg">
               <div className="mb-2 flex items-start justify-between gap-3">
@@ -354,6 +406,202 @@ export default function PlanoPage() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+
+function MeasureToolbar({
+  mode,
+  onMode,
+}: {
+  mode: MeasureMode | null;
+  onMode: (mode: MeasureMode | null) => void;
+}) {
+  const tools: { key: MeasureMode | null; label: string; icon: React.ReactNode }[] = [
+    { key: null, label: "Navegar", icon: <Cursor size={15} /> },
+    { key: "distancia", label: "Distancia", icon: <Ruler size={15} /> },
+    { key: "area", label: "Área", icon: <Polygon size={15} /> },
+    { key: "conteo", label: "Conteo", icon: <Hash size={15} /> },
+  ];
+  return (
+    <div className="absolute left-3 top-3 z-10 flex rounded-lg border border-border bg-surface p-0.5 shadow-sm">
+      {tools.map((tool) => (
+        <button
+          key={tool.label}
+          type="button"
+          title={tool.label}
+          onClick={() => onMode(tool.key)}
+          className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+            mode === tool.key
+              ? "bg-surface-3 text-foreground"
+              : "text-muted hover:text-foreground"
+          }`}
+        >
+          {tool.icon}
+          <span className="hidden lg:inline">{tool.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function measureValue(
+  mode: MeasureMode,
+  points: [number, number][],
+  toMeters: number | null,
+): { value: number; label: string } {
+  if (mode === "conteo") return { value: points.length, label: "elementos" };
+  const scale = toMeters ?? 1;
+  const unit = toMeters != null ? "m" : "u.dib";
+  if (mode === "distancia") {
+    let total = 0;
+    for (let i = 1; i < points.length; i++) {
+      total += Math.hypot(
+        points[i][0] - points[i - 1][0],
+        points[i][1] - points[i - 1][1],
+      );
+    }
+    return { value: total * scale, label: unit };
+  }
+  // Shoelace area of the clicked polygon.
+  let doubled = 0;
+  for (let i = 0; i < points.length; i++) {
+    const [x1, y1] = points[i];
+    const [x2, y2] = points[(i + 1) % points.length];
+    doubled += x1 * y2 - x2 * y1;
+  }
+  return { value: (Math.abs(doubled) / 2) * scale * scale, label: `${unit}²` };
+}
+
+function MeasureResult({
+  projectId,
+  mode,
+  points,
+  toMeters,
+  actorName,
+  clientId,
+  onUndo,
+  onClear,
+}: {
+  projectId: string;
+  mode: MeasureMode;
+  points: [number, number][];
+  toMeters: number | null;
+  actorName: string;
+  clientId: string | null;
+  onUndo: () => void;
+  onClear: () => void;
+}) {
+  const [concepts, setConcepts] = useState<CatalogConcept[] | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [conceptCode, setConceptCode] = useState("");
+  const [qty, setQty] = useState("");
+  const [sent, setSent] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const { value, label } = measureValue(mode, points, toMeters);
+  const ready =
+    (mode === "distancia" && points.length >= 2) ||
+    (mode === "area" && points.length >= 3) ||
+    (mode === "conteo" && points.length >= 1);
+  const display = mode === "conteo" ? String(value) : value.toFixed(2);
+
+  function openForm() {
+    setFormOpen(true);
+    setQty(display);
+    setSent(null);
+    if (concepts === null) {
+      getCatalog()
+        .then((catalog) => setConcepts(catalog.concepts))
+        .catch(() => setConcepts([]));
+    }
+  }
+
+  async function submit() {
+    const quantity = Number(qty);
+    if (!conceptCode || !quantity) {
+      setError("Elige un concepto y una cantidad.");
+      return;
+    }
+    setError(null);
+    try {
+      await addAdjustment(
+        projectId,
+        {
+          concept_code: conceptCode,
+          quantity_delta: quantity,
+          note: `Medido en visor: ${mode} ${display} ${label}`,
+        },
+        actorName,
+        clientId,
+      );
+      setSent(`Ajuste de ${quantity} enviado a ${conceptCode}.`);
+      setFormOpen(false);
+      onClear();
+    } catch {
+      setError("No se pudo crear el ajuste.");
+    }
+  }
+
+  return (
+    <div className="absolute bottom-4 left-1/2 z-10 w-[440px] max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-xl border border-border bg-surface p-3 shadow-lg">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm">
+          <span className="tabular text-lg font-semibold">{display}</span>{" "}
+          <span className="text-muted">{label}</span>
+          {toMeters == null && mode !== "conteo" && (
+            <span
+              className="ml-2 text-xs text-warning"
+              title="Las unidades del plano no se detectaron; el valor está en unidades de dibujo."
+            >
+              sin unidades
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Button size="sm" variant="ghost" onClick={onUndo} disabled={points.length === 0}>
+            Deshacer
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onClear} disabled={points.length === 0}>
+            Limpiar
+          </Button>
+          <Button size="sm" onClick={openForm} disabled={!ready}>
+            <PencilSimpleLine size={14} weight="bold" /> Crear ajuste
+          </Button>
+        </div>
+      </div>
+      <p className="mt-1 text-[11px] text-faint">
+        Clic para agregar puntos · Backspace deshace · Esc sale
+      </p>
+      {sent && <p className="mt-1 text-xs text-success">{sent}</p>}
+      {formOpen && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border pt-2">
+          <select
+            value={conceptCode}
+            onChange={(e) => setConceptCode(e.target.value)}
+            className="min-w-44 flex-1 rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
+          >
+            <option value="">Concepto…</option>
+            {(concepts ?? []).map((concept) => (
+              <option key={concept.code} value={concept.code}>
+                {concept.code} · {concept.description.slice(0, 40)}
+              </option>
+            ))}
+          </select>
+          <Input
+            type="number"
+            step="any"
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            className="w-28 px-2 py-1.5 text-right tabular"
+          />
+          <Button size="sm" variant="primary" onClick={submit}>
+            Agregar
+          </Button>
+        </div>
+      )}
+      {error && <p className="mt-1 text-xs text-danger">{error}</p>}
     </div>
   );
 }
