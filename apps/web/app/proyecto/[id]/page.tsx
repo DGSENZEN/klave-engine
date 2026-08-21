@@ -22,15 +22,18 @@ import {
   getDimensions,
   getProject,
   getProjectReviews,
+  getRunDiff,
   money,
   setVerification,
   type CostReport,
   type ProjectInfo,
+  type RunDiff,
   type Views,
   type Dimensions,
   type ProjectReviews,
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
+import { FAMILY_LABELS } from "@/components/PlanoCanvas";
 import { useCostReport } from "@/lib/useProjectReport";
 import { phaseColor } from "@/lib/phases";
 import {
@@ -54,6 +57,7 @@ export default function Resumen() {
   const [dims, setDims] = useState<Dimensions | null>(null);
   const [reviews, setReviews] = useState<ProjectReviews | null>(null);
   const [project, setProject] = useState<ProjectInfo | null>(null);
+  const [diff, setDiff] = useState<RunDiff | null>(null);
   const { latestEvent, connectionEpoch, actorName } = useProjectLive();
 
   // connectionEpoch: a reconnect may have skipped events, so reload everything.
@@ -62,12 +66,14 @@ export default function Resumen() {
     getDimensions(id).then(setDims).catch(() => {});
     getProjectReviews(id).then(setReviews).catch(() => {});
     getProject(id).then(setProject).catch(() => {});
+    getRunDiff(id).then(setDiff).catch(() => {});
   }, [id, connectionEpoch]);
 
   useEffect(() => {
     if (latestEvent?.type === "run_published") {
       getViews(id).then(setViews).catch(() => {});
       getDimensions(id).then(setDims).catch(() => {});
+      getRunDiff(id).then(setDiff).catch(() => {});
     }
     if (latestEvent?.type === "run_published" || latestEvent?.type === "review_updated") {
       getProjectReviews(id).then(setReviews).catch(() => {});
@@ -114,6 +120,8 @@ export default function Resumen() {
           No se pudo cargar el resumen de costos. Revisa que el servidor esté activo.
         </Callout>
       )}
+
+      {diff?.available && <RunDiffCard diff={diff} />}
 
       {costs && reviews && !verified && (
         <VerificationPath
@@ -313,6 +321,67 @@ function SheetsCard({ id, project }: { id: string; project: ProjectInfo }) {
           </span>
         ))}
       </div>
+    </Card>
+  );
+}
+
+function RunDiffCard({ diff }: { diff: RunDiff }) {
+  const families = Object.entries(diff.families ?? {}).filter(
+    ([, counts]) => counts.prev !== counts.new,
+  );
+  const totalDelta =
+    diff.prev_grand_total != null && diff.new_grand_total != null
+      ? diff.new_grand_total - diff.prev_grand_total
+      : null;
+  const changed =
+    families.length > 0 ||
+    (diff.added_labels?.length ?? 0) > 0 ||
+    (diff.removed_labels?.length ?? 0) > 0 ||
+    (totalDelta != null && Math.abs(totalDelta) > 0.5);
+  if (!changed) return null;
+  return (
+    <Card className="rise-in mb-6 p-5">
+      <SectionTitle sub="Comparado con el procesamiento anterior de este proyecto.">
+        Cambios del último procesamiento
+      </SectionTitle>
+      <div className="flex flex-wrap gap-2">
+        {families.map(([family, counts]) => (
+          <span
+            key={family}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-2/60 px-2.5 py-1.5 text-xs"
+          >
+            {FAMILY_LABELS[family] ?? family}
+            <span className="tabular text-muted">{counts.prev}</span>
+            <span className="text-faint">→</span>
+            <span
+              className={`tabular font-semibold ${
+                counts.new > counts.prev ? "text-success" : "text-danger"
+              }`}
+            >
+              {counts.new}
+            </span>
+          </span>
+        ))}
+        {totalDelta != null && Math.abs(totalDelta) > 0.5 && (
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium ${
+              totalDelta > 0 ? "text-danger" : "text-success"
+            }`}
+          >
+            Total {totalDelta > 0 ? "▲" : "▼"} {money(Math.abs(totalDelta))}
+          </span>
+        )}
+      </div>
+      {((diff.added_labels?.length ?? 0) > 0 || (diff.removed_labels?.length ?? 0) > 0) && (
+        <p className="mt-3 text-xs text-muted">
+          {(diff.added_labels?.length ?? 0) > 0 && (
+            <>Nuevos: {diff.added_labels?.slice(0, 8).join(", ")}. </>
+          )}
+          {(diff.removed_labels?.length ?? 0) > 0 && (
+            <>Ya no aparecen: {diff.removed_labels?.slice(0, 8).join(", ")}.</>
+          )}
+        </p>
+      )}
     </Card>
   );
 }

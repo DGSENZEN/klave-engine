@@ -439,6 +439,19 @@ export async function publishPresence(
 
 export const getRisks = (id: string) => getJSON<RiskReport>(`/projects/${id}/risks`);
 
+export type RunDiff = {
+  available: boolean;
+  families?: Record<string, { prev: number; new: number }>;
+  added_labels?: string[];
+  removed_labels?: string[];
+  prev_detection_count?: number;
+  new_detection_count?: number;
+  prev_grand_total?: number | null;
+  new_grand_total?: number;
+};
+
+export const getRunDiff = (id: string) => getJSON<RunDiff>(`/projects/${id}/diff`);
+
 // ---- Lectura del plano ----
 
 export type LecturaParse = {

@@ -192,6 +192,16 @@ def run_full_pipeline(
     processed = artifact_dir or control_dir
     reports = reports_dir or _reports_dir(project_root)
 
+    # Capture the previous run's story before this run overwrites anything.
+    prev_detections = _previous_artifact(control_dir, "detections.json")
+    prev_report = (
+        _previous_artifact(control_dir, "cost_report_override.json")
+        or _previous_artifact(control_dir, "cost_report.json")
+    )
+    prev_total = None
+    if isinstance(prev_report, dict):
+        prev_total = (prev_report.get("integration") or {}).get("grand_total")
+
     manifest = ingest_project(
         project_root, project_name=project_name, processed_dir_name=settings.processed_dir_name
     )
@@ -303,6 +313,14 @@ def run_full_pipeline(
         adjustments=reviews.adjustments,
     )
     write_json(processed / "cost_report.json", result.cost_report)
+    diff = _run_diff(
+        prev_detections,
+        prev_total,
+        result.detections,
+        result.cost_report.integration.grand_total,
+    )
+    if diff is not None:
+        write_json(processed / "run_diff.json", diff)
     boq_to_csv(result.cost_report, reports / "presupuesto.csv")
     write_text(
         reports / "resumen_costos.md", cost_report_to_markdown(result.cost_report)
@@ -334,6 +352,70 @@ def run_full_pipeline(
         status=manifest.processing_status.value,
     )
     return result
+
+
+def _previous_artifact(control_dir: Path, name: str):
+    """Read an artifact from the currently active run (or the control dir)
+    before this pipeline run replaces it."""
+    pointer = control_dir / "active_run.json"
+    candidates = [control_dir / name]
+    if pointer.exists():
+        try:
+            run_dir = control_dir / str(json.loads(pointer.read_text())["artifact_dir"])
+            if run_dir.resolve().is_relative_to(control_dir.resolve()):
+                candidates.insert(0, run_dir / name)
+        except (KeyError, ValueError, OSError):
+            pass
+    for path in candidates:
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                return None
+    return None
+
+
+def _run_diff(
+    prev_detections: list[dict] | None,
+    prev_total: float | None,
+    new_detections: list[Detection],
+    new_total: float,
+) -> dict | None:
+    """What changed since the last processing: the revision story."""
+    if prev_detections is None:
+        return None
+
+    def family_of(item: dict) -> str:
+        return item.get("family") or item.get("detection_type") or "otro"
+
+    def label_of(item: dict) -> str:
+        return item.get("display_label") or item.get("detection_id") or ""
+
+    prev_families: dict[str, int] = {}
+    for item in prev_detections:
+        prev_families[family_of(item)] = prev_families.get(family_of(item), 0) + 1
+    new_items = [d.model_dump(mode="json") for d in new_detections]
+    new_families: dict[str, int] = {}
+    for item in new_items:
+        new_families[family_of(item)] = new_families.get(family_of(item), 0) + 1
+
+    prev_labels = {label_of(item) for item in prev_detections if label_of(item)}
+    new_labels = {label_of(item) for item in new_items if label_of(item)}
+    return {
+        "families": {
+            family: {
+                "prev": prev_families.get(family, 0),
+                "new": new_families.get(family, 0),
+            }
+            for family in sorted(set(prev_families) | set(new_families))
+        },
+        "added_labels": sorted(new_labels - prev_labels)[:40],
+        "removed_labels": sorted(prev_labels - new_labels)[:40],
+        "prev_detection_count": len(prev_detections),
+        "new_detection_count": len(new_items),
+        "prev_grand_total": prev_total,
+        "new_grand_total": new_total,
+    }
 
 
 def load_processed_artifact(project_root: Path, settings: Settings, name: str):

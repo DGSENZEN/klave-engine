@@ -148,6 +148,16 @@ def recompute(
     return report.model_dump(mode="json")
 
 
+@router.get("/{project_id}/diff")
+def get_run_diff(project_id: str, store: ProjectStore = Depends(get_store)) -> dict:
+    """Changes vs the previous processing; absent on first runs."""
+    try:
+        diff = store.read_artifact(project_id, "run_diff.json")
+    except HTTPException:
+        return {"available": False}
+    return {"available": True, **diff}
+
+
 @router.get("/{project_id}/risks")
 def get_risks(project_id: str, store: ProjectStore = Depends(get_store)) -> dict:
     return store.read_artifact(project_id, "risk_report.json")
