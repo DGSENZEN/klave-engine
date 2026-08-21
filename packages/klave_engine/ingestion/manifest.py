@@ -46,6 +46,8 @@ class ProjectManifest(BaseModel):
     project_id: str
     project_name: str
     root_path: str
+    client: str | None = None
+    archived: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source_files: list[SourceFile] = Field(default_factory=list)
     converted_files: list[ConvertedFile] = Field(default_factory=list)

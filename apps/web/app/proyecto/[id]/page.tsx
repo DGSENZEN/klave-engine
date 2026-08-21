@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useRef } from "react";
 import {
   CheckCircle,
-  MapTrifold,
-  Receipt,
+  CircleNotch,
+  FilePlus,
+  FileText,
   Ruler,
   Stack,
   Money,
@@ -15,16 +17,20 @@ import {
   CalendarBlank,
 } from "@phosphor-icons/react";
 import {
+  addProjectFiles,
   getViews,
   getDimensions,
+  getProject,
   getProjectReviews,
   money,
   setVerification,
   type CostReport,
+  type ProjectInfo,
   type Views,
   type Dimensions,
   type ProjectReviews,
 } from "@/lib/api";
+import { getBrowserActor } from "@/lib/collab";
 import { useCostReport } from "@/lib/useProjectReport";
 import { phaseColor } from "@/lib/phases";
 import {
@@ -47,6 +53,7 @@ export default function Resumen() {
   const [views, setViews] = useState<Views | null>(null);
   const [dims, setDims] = useState<Dimensions | null>(null);
   const [reviews, setReviews] = useState<ProjectReviews | null>(null);
+  const [project, setProject] = useState<ProjectInfo | null>(null);
   const { latestEvent, connectionEpoch, actorName } = useProjectLive();
 
   // connectionEpoch: a reconnect may have skipped events, so reload everything.
@@ -54,6 +61,7 @@ export default function Resumen() {
     getViews(id).then(setViews).catch(() => {});
     getDimensions(id).then(setDims).catch(() => {});
     getProjectReviews(id).then(setReviews).catch(() => {});
+    getProject(id).then(setProject).catch(() => {});
   }, [id, connectionEpoch]);
 
   useEffect(() => {
@@ -98,16 +106,7 @@ export default function Resumen() {
               ))}
           </span>
         }
-        actions={
-          <>
-            <Link href={`/proyecto/${id}/plano`} className={buttonClasses("secondary")}>
-              <MapTrifold size={16} /> Ver plano
-            </Link>
-            <Link href={`/proyecto/${id}/presupuesto`} className={buttonClasses("primary")}>
-              <Receipt size={16} /> Presupuesto
-            </Link>
-          </>
-        }
+        sub={project?.client ? `Cliente: ${project.client}` : undefined}
       />
 
       {error && (
@@ -202,6 +201,8 @@ export default function Resumen() {
             </Card>
           </div>
 
+          {project && <SheetsCard id={id} project={project} />}
+
           <p className="mt-6 text-xs text-muted">
             Precios de insumos de referencia (MXN); sustituir por cotizaciones del proyecto.
             Cantidades deduplicadas por vista; revisar conceptos de baja confianza.
@@ -242,6 +243,69 @@ export default function Resumen() {
         </div>
       )}
     </div>
+  );
+}
+
+function SheetsCard({ id, project }: { id: string; project: ProjectInfo }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onFiles(list: FileList) {
+    const files = [...list].filter((f) => /\.(dwg|dxf)$/i.test(f.name));
+    if (files.length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await addProjectFiles(id, files, getBrowserActor());
+      // The re-enqueued job flips the project gate to the processing screen.
+    } catch {
+      setError("No se pudieron agregar las hojas.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="mt-4 p-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <SectionTitle sub="Todas las hojas se leen como un solo conjunto; agregar hojas vuelve a procesar el proyecto.">
+          Hojas del proyecto ({project.source_files.length})
+        </SectionTitle>
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".dwg,.dxf"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files?.length) onFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        <Button size="sm" onClick={() => inputRef.current?.click()} disabled={busy}>
+          {busy ? (
+            <CircleNotch size={14} className="animate-spin" />
+          ) : (
+            <FilePlus size={14} weight="bold" />
+          )}
+          Agregar hojas
+        </Button>
+      </div>
+      {error && <p className="mb-2 text-sm text-danger">{error}</p>}
+      <div className="flex flex-wrap gap-2">
+        {project.source_files.map((sheet) => (
+          <span
+            key={sheet.file_id}
+            title={sheet.path}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-2/60 px-2.5 py-1.5 text-xs"
+          >
+            <FileText size={13} className="text-muted" />
+            {sheet.sheet_number ?? sheet.path.split("/").pop()}
+            <span className="uppercase text-faint">{sheet.file_type}</span>
+          </span>
+        ))}
+      </div>
+    </Card>
   );
 }
 

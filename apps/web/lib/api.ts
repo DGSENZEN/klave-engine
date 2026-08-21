@@ -55,6 +55,26 @@ async function putJSON<T>(
   return res.json() as Promise<T>;
 }
 
+async function patchJSON<T>(
+  path: string,
+  body: unknown,
+  headers?: Record<string, string>,
+): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail: unknown;
+    try {
+      detail = (await res.json())?.detail;
+    } catch {}
+    throw new ApiError(res.status, path, detail);
+  }
+  return res.json() as Promise<T>;
+}
+
 async function deleteJSON<T>(path: string, headers?: Record<string, string>): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { method: "DELETE", headers });
   if (!res.ok) {
@@ -80,6 +100,9 @@ export type ProjectSummary = {
   name: string;
   status?: string;
   created_at?: string;
+  client?: string | null;
+  archived?: boolean;
+  sheet_count?: number;
 };
 
 export type ProjectStatus = {
@@ -119,15 +142,18 @@ export type PresenceViewer = {
   updated_at: string;
 };
 
+export type SheetInfo = { name: string; sheet_number: string | null; count: number };
+
 export type Geometry = {
   extent: [number, number, number, number];
   layers: { name: string; count: number }[];
   shapes: (
-    | { t: "path"; layer: string; pts: [number, number][]; closed: boolean }
-    | { t: "circle"; layer: string; c: [number, number]; r: number }
-    | { t: "box"; layer: string; bbox: [number, number, number, number] }
+    | { t: "path"; layer: string; pts: [number, number][]; closed: boolean; sheet?: number }
+    | { t: "circle"; layer: string; c: [number, number]; r: number; sheet?: number }
+    | { t: "box"; layer: string; bbox: [number, number, number, number]; sheet?: number }
   )[];
   detections: DetectionOverlay[];
+  sheets: SheetInfo[];
 };
 
 export type DetectionOverlay = {
@@ -149,6 +175,8 @@ export type DetectionOverlay = {
   review_key: string;
   review: "confirmed" | "excluded" | "";
   review_note: string;
+  /** Sheet index into Geometry.sheets; null when unmapped (old runs). */
+  sheet: number | null;
 };
 
 export type BoqLine = {
@@ -303,6 +331,22 @@ export type Dimensions = {
 export const listProjects = () =>
   getJSON<{ projects: ProjectSummary[] }>("/projects").then((r) => r.projects);
 
+export type ProjectInfo = {
+  project_id: string;
+  project_name: string;
+  client: string | null;
+  archived: boolean;
+  processing_status: string;
+  source_files: {
+    file_id: string;
+    path: string;
+    file_type: string;
+    sheet_number: string | null;
+    discipline: string | null;
+  }[];
+};
+
+export const getProject = (id: string) => getJSON<ProjectInfo>(`/projects/${id}`);
 export const getStatus = (id: string) => getJSON<ProjectStatus>(`/projects/${id}/status`);
 export const getEventsHistory = (id: string) =>
   getJSON<{ events: ProjectEvent[] }>(`/projects/${id}/events/history`).then(
@@ -570,13 +614,10 @@ export const getViews = (id: string) =>
 export const getDimensions = (id: string) =>
   getJSON<Dimensions>(`/projects/${id}/dimensions`).catch(() => null);
 
-export async function uploadProject(
-  file: File,
-  actor?: string,
-): Promise<{ project_id: string; warnings: string[] }> {
+async function postFiles<T>(path: string, files: File[], actor?: string): Promise<T> {
   const form = new FormData();
-  form.append("file", file);
-  const res = await fetch(`${API_BASE}/projects/upload`, {
+  for (const file of files) form.append("files", file);
+  const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: actor ? { "X-Actor": actor } : undefined,
     body: form,
@@ -586,10 +627,37 @@ export async function uploadProject(
     try {
       detail = (await res.json())?.detail;
     } catch {}
-    throw new ApiError(res.status, "/projects/upload", detail);
+    throw new ApiError(res.status, path, detail);
   }
-  return res.json();
+  return res.json() as Promise<T>;
 }
+
+export const uploadProject = (files: File[], actor?: string) =>
+  postFiles<{ project_id: string; warnings: string[] }>("/projects/upload", files, actor);
+
+export const addProjectFiles = (id: string, files: File[], actor?: string) =>
+  postFiles<{ project_id: string; sheet_count: number; warnings: string[] }>(
+    `/projects/${id}/files`,
+    files,
+    actor,
+  );
+
+export const patchProject = (
+  id: string,
+  patch: { name?: string; client?: string; archived?: boolean },
+  actor?: string,
+) =>
+  patchJSON<{ project_id: string; name: string; client: string | null; archived: boolean }>(
+    `/projects/${id}`,
+    patch,
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export const removeProject = (id: string, actor?: string) =>
+  deleteJSON<{ project_id: string; removed: boolean }>(
+    `/projects/${id}`,
+    actor ? { "X-Actor": actor } : undefined,
+  );
 
 export const money = (n: number, currency = "MXN") =>
   new Intl.NumberFormat("es-MX", {

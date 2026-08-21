@@ -1,28 +1,47 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  Archive,
+  ArrowCounterClockwise,
+  ArrowRight,
   Books,
   Buildings,
+  CircleNotch,
   CloudArrowUp,
   FileText,
-  ArrowRight,
-  CircleNotch,
+  MagnifyingGlass,
+  PencilSimple,
+  Plus,
+  Stack,
+  Trash,
+  UserSwitch,
 } from "@phosphor-icons/react";
-import { ApiError, listProjects, uploadProject, type ProjectSummary } from "@/lib/api";
+import {
+  ApiError,
+  listProjects,
+  patchProject,
+  removeProject,
+  uploadProject,
+  type ProjectSummary,
+} from "@/lib/api";
 import { eventsUrl, getBrowserActor, parseProjectEvent, peekBrowserActor } from "@/lib/collab";
 import { isProfileComplete } from "@/lib/identity";
 import { fetchAuthStatus } from "@/lib/session";
 import {
   Avatar,
   Badge,
+  Button,
   buttonClasses,
   Callout,
+  EmptyState,
+  Input,
   Skeleton,
   type BadgeTone,
 } from "@/components/ui";
+import { KebabMenu, MenuItem } from "@/components/Menu";
 import { HowItWorks } from "@/components/HowItWorks";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -40,16 +59,19 @@ const STATUS_LABELS: Record<string, string> = {
   failed: "Con errores",
 };
 
-export default function Landing() {
+export default function Home() {
   const router = useRouter();
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
-  const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
   const [ready, setReady] = useState(false);
   const [actorName, setActorName] = useState("");
   const [avatarSrc, setAvatarSrc] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dragDepth = useRef(0);
 
   // First run goes through /bienvenida to establish the workspace identity.
   useEffect(() => {
@@ -76,7 +98,7 @@ export default function Landing() {
 
   useEffect(() => {
     let active = true;
-    function refreshProjects() {
+    function refresh() {
       listProjects()
         .then((items) => {
           if (active) setProjects(items);
@@ -85,17 +107,18 @@ export default function Landing() {
           if (active) setProjects([]);
         });
     }
-    refreshProjects();
+    refresh();
     const source = new EventSource(eventsUrl());
     source.onmessage = (message) => {
       const event = parseProjectEvent(message);
       if (
         event?.type === "project_created" ||
         event?.type === "project_updated" ||
+        event?.type === "project_removed" ||
         event?.type === "job_updated" ||
         event?.type === "run_published"
       ) {
-        refreshProjects();
+        refresh();
       }
     };
     return () => {
@@ -104,15 +127,16 @@ export default function Landing() {
     };
   }, []);
 
-  async function handleFile(file: File) {
-    setError(null);
-    if (!/\.(dwg|dxf)$/i.test(file.name)) {
-      setError("Formato no soportado. Sube un archivo .dwg o .dxf.");
+  async function handleFiles(list: FileList | File[]) {
+    const files = [...list].filter((f) => /\.(dwg|dxf)$/i.test(f.name));
+    if (files.length === 0) {
+      setError("Formato no soportado. Sube archivos .dwg o .dxf.");
       return;
     }
+    setError(null);
     setUploading(true);
     try {
-      const { project_id } = await uploadProject(file, getBrowserActor());
+      const { project_id } = await uploadProject(files, getBrowserActor());
       router.push(`/proyecto/${project_id}`);
     } catch (e) {
       const detail =
@@ -124,11 +148,23 @@ export default function Landing() {
     }
   }
 
-  const firstRun = projects !== null && projects.length === 0;
+  const filtered = useMemo(() => {
+    if (!projects) return null;
+    const q = query.trim().toLowerCase();
+    return projects.filter((p) => {
+      if (Boolean(p.archived) !== showArchived) return false;
+      if (!q) return true;
+      return (
+        p.name.toLowerCase().includes(q) || (p.client ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [projects, query, showArchived]);
+
+  const archivedCount = projects?.filter((p) => p.archived).length ?? 0;
 
   if (!ready) {
     return (
-      <div className="mx-auto max-w-5xl px-5 py-10 sm:px-6 sm:py-12">
+      <div className="mx-auto max-w-4xl px-5 py-10">
         <Skeleton className="mb-10 h-12 w-64" />
         <Skeleton className="h-56" />
       </div>
@@ -136,140 +172,353 @@ export default function Landing() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-5 py-10 sm:px-6 sm:py-12">
-      <header className="rise-in mb-10 flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-fg">
-            <Buildings size={22} weight="duotone" />
-          </div>
-          <div>
-            <h1 className="font-display text-2xl font-semibold tracking-tight">Klave</h1>
-            <p className="text-sm text-muted">
-              Ingeniería de costos a partir de planos estructurales.
-            </p>
+    <div
+      className="min-h-screen"
+      onDragEnter={(e) => {
+        e.preventDefault();
+        dragDepth.current += 1;
+        setDragging(true);
+      }}
+      onDragOver={(e) => e.preventDefault()}
+      onDragLeave={() => {
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragging(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        dragDepth.current = 0;
+        setDragging(false);
+        if (e.dataTransfer.files?.length) handleFiles(e.dataTransfer.files);
+      }}
+    >
+      {/* Drop overlay: the whole home accepts planos. */}
+      {dragging && (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/85 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-accent bg-surface px-14 py-12">
+            <CloudArrowUp size={40} weight="duotone" className="text-accent" />
+            <p className="text-lg font-medium">Suelta tus planos DWG/DXF</p>
+            <p className="text-sm text-muted">Varias hojas crean un solo proyecto</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href="/catalogo" className={buttonClasses("secondary", "sm")}>
-            <Books size={14} weight="duotone" /> Catálogo
-          </Link>
-          {actorName && (
-            <Link
-              href="/bienvenida"
-              title="Editar perfil"
-              className="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-3 text-sm font-medium shadow-xs transition hover:bg-surface-2"
-            >
-              <Avatar name={actorName} src={avatarSrc} self size="sm" />
-              <span className="max-w-32 truncate">{actorName}</span>
+      )}
+
+      <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
+        <div className="mx-auto flex h-14 max-w-4xl items-center justify-between px-5">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-fg">
+              <Buildings size={17} weight="duotone" />
+            </div>
+            <span className="font-display text-[1.05rem] font-semibold tracking-tight">
+              Klave
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href="/catalogo" className={buttonClasses("ghost", "sm")}>
+              <Books size={15} weight="duotone" /> Catálogo
             </Link>
-          )}
-          <ThemeToggle />
+            {actorName && (
+              <Link
+                href="/bienvenida"
+                title="Editar perfil"
+                className="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-3 text-sm font-medium transition-colors hover:bg-surface-2"
+              >
+                <Avatar name={actorName} src={avatarSrc} self size="sm" />
+                <span className="hidden max-w-32 truncate sm:inline">{actorName}</span>
+              </Link>
+            )}
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 
-      <label
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragging(false);
-          const f = e.dataTransfer.files?.[0];
-          if (f) handleFile(f);
-        }}
-        className={`rise-in flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-dashed bg-surface px-6 py-14 text-center transition-colors sm:py-16 ${
-          dragging
-            ? "border-accent bg-accent-soft"
-            : "border-border-strong hover:border-foreground/40 hover:bg-surface-2/60"
-        }`}
-      >
+      <main className="mx-auto max-w-4xl px-5 pb-16 pt-8">
         <input
           ref={inputRef}
           type="file"
           accept=".dwg,.dxf"
+          multiple
           className="hidden"
           onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) handleFile(f);
+            if (e.target.files?.length) handleFiles(e.target.files);
+            e.target.value = "";
           }}
         />
-        {uploading ? (
-          <>
-            <CircleNotch className="animate-spin text-accent" size={34} />
-            <p className="font-medium">Subiendo y convirtiendo…</p>
-            <p className="text-sm text-muted">Esto puede tardar unos segundos.</p>
-          </>
-        ) : (
-          <>
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-2">
-              <CloudArrowUp className="text-foreground" size={28} weight="duotone" />
-            </div>
-            <p className="text-base font-medium">
-              Arrastra un plano aquí o haz clic para seleccionar
+
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-[1.4rem] font-semibold leading-tight">Proyectos</h1>
+            <p className="mt-0.5 text-sm text-muted">
+              Sube un plano o arrastra varias hojas a esta ventana.
             </p>
-            <p className="text-sm text-muted">Formatos: DWG, DXF · procesamiento local</p>
-          </>
-        )}
-      </label>
-
-      {error && (
-        <div className="mt-4">
-          <Callout tone="danger">{error}</Callout>
+          </div>
+          <Button variant="primary" onClick={() => inputRef.current?.click()} disabled={uploading}>
+            {uploading ? (
+              <>
+                <CircleNotch size={16} className="animate-spin" /> Subiendo…
+              </>
+            ) : (
+              <>
+                <Plus size={16} weight="bold" /> Nuevo proyecto
+              </>
+            )}
+          </Button>
         </div>
-      )}
 
-      {firstRun && (
-        <section className="rise-in mt-10">
-          <HowItWorks />
-        </section>
-      )}
+        {error && (
+          <div className="mb-4">
+            <Callout tone="danger">{error}</Callout>
+          </div>
+        )}
 
-      <section className="mt-12">
-        <h2 className="microlabel mb-4">Proyectos recientes</h2>
+        {projects !== null && projects.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="relative min-w-56 flex-1">
+              <MagnifyingGlass
+                size={15}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
+              />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar por nombre o cliente…"
+                className="w-full pl-9"
+              />
+            </div>
+            <div className="flex rounded-lg border border-border bg-surface p-0.5">
+              {([false, true] as const).map((archived) => (
+                <button
+                  key={String(archived)}
+                  type="button"
+                  onClick={() => setShowArchived(archived)}
+                  className={`rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors ${
+                    showArchived === archived
+                      ? "bg-surface-3 text-foreground"
+                      : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  {archived ? `Archivados${archivedCount ? ` (${archivedCount})` : ""}` : "Activos"}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {projects === null ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Skeleton className="h-[76px]" />
-            <Skeleton className="h-[76px]" />
+          <div className="space-y-2">
+            {Array.from({ length: 3 }, (_, i) => (
+              <div key={i} className="card flex items-center gap-3 p-4">
+                <Skeleton className="h-9 w-9 rounded-lg" />
+                <div className="flex-1">
+                  <Skeleton className="h-4 w-48" />
+                  <Skeleton className="mt-2 h-3 w-32" />
+                </div>
+                <Skeleton className="h-6 w-20" />
+              </div>
+            ))}
           </div>
         ) : projects.length === 0 ? (
-          <p className="text-sm text-muted">
-            Aún no hay proyectos. Sube tu primer plano arriba para comenzar.
+          <div className="rise-in">
+            <EmptyState
+              icon={<CloudArrowUp size={22} weight="duotone" />}
+              title="Sube tu primer plano"
+              hint="Arrastra archivos DWG/DXF a esta ventana o usa el botón para elegirlos. Varias hojas se procesan como un solo proyecto."
+              action={
+                <Button variant="primary" onClick={() => inputRef.current?.click()}>
+                  <Plus size={16} weight="bold" /> Nuevo proyecto
+                </Button>
+              }
+            />
+            <div className="mt-10">
+              <HowItWorks />
+            </div>
+          </div>
+        ) : filtered && filtered.length === 0 ? (
+          <p className="py-10 text-center text-sm text-muted">
+            {showArchived
+              ? "No hay proyectos archivados que coincidan."
+              : "Ningún proyecto coincide con la búsqueda."}
           </p>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {projects.map((p) => (
-              <Link
-                key={p.project_id}
-                href={`/proyecto/${p.project_id}`}
-                className="card card-hover group flex items-center gap-3 p-4"
-              >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-2">
-                  <FileText size={18} weight="duotone" className="text-foreground" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium">{p.name}</div>
-                  <div className="mt-1 flex items-center gap-2">
-                    <Badge tone={STATUS_TONE[p.status ?? ""] ?? "default"}>
-                      {STATUS_LABELS[p.status ?? ""] ?? p.status ?? "—"}
-                    </Badge>
-                    {p.created_at && (
-                      <span className="text-xs text-faint">{formatDate(p.created_at)}</span>
-                    )}
-                  </div>
-                </div>
-                <ArrowRight
-                  size={16}
-                  weight="bold"
-                  className="text-faint transition group-hover:translate-x-0.5 group-hover:text-foreground"
-                />
-              </Link>
+          <div className="space-y-2">
+            {filtered?.map((project) => (
+              <ProjectRow
+                key={project.project_id}
+                project={project}
+                onChanged={() =>
+                  listProjects().then(setProjects).catch(() => {})
+                }
+                onError={setError}
+              />
             ))}
           </div>
         )}
-      </section>
+      </main>
     </div>
+  );
+}
+
+function ProjectRow({
+  project,
+  onChanged,
+  onError,
+}: {
+  project: ProjectSummary;
+  onChanged: () => void;
+  onError: (message: string) => void;
+}) {
+  const [editing, setEditing] = useState<"name" | "client" | null>(null);
+  const [draft, setDraft] = useState("");
+  const [confirmRemove, setConfirmRemove] = useState(false);
+
+  async function commitEdit() {
+    const field = editing;
+    setEditing(null);
+    const value = draft.trim();
+    if (!field) return;
+    if (field === "name" && !value) return;
+    try {
+      await patchProject(project.project_id, { [field]: value }, getBrowserActor());
+      onChanged();
+    } catch {
+      onError("No se pudo guardar el cambio.");
+    }
+  }
+
+  async function toggleArchived() {
+    try {
+      await patchProject(
+        project.project_id,
+        { archived: !project.archived },
+        getBrowserActor(),
+      );
+      onChanged();
+    } catch {
+      onError("No se pudo archivar el proyecto.");
+    }
+  }
+
+  async function remove() {
+    try {
+      await removeProject(project.project_id, getBrowserActor());
+      onChanged();
+    } catch {
+      onError("No se pudo quitar el proyecto.");
+    }
+  }
+
+  const inner = (
+    <>
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-2">
+        <FileText size={17} weight="duotone" className="text-foreground" />
+      </div>
+      <div className="min-w-0 flex-1">
+        {editing ? (
+          <Input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+              if (e.key === "Escape") setEditing(null);
+            }}
+            onClick={(e) => e.preventDefault()}
+            placeholder={editing === "client" ? "Cliente" : "Nombre del proyecto"}
+            className="w-full max-w-sm px-2 py-1 text-sm"
+          />
+        ) : (
+          <>
+            <div className="truncate font-medium">{project.name}</div>
+            <div className="mt-0.5 flex items-center gap-2 text-xs text-muted">
+              {project.client && <span className="truncate">{project.client}</span>}
+              {project.client && <span className="text-faint">·</span>}
+              {(project.sheet_count ?? 0) > 1 && (
+                <span className="inline-flex items-center gap-1">
+                  <Stack size={12} /> {project.sheet_count} hojas
+                </span>
+              )}
+              {(project.sheet_count ?? 0) > 1 && <span className="text-faint">·</span>}
+              {project.created_at && <span>{formatDate(project.created_at)}</span>}
+            </div>
+          </>
+        )}
+      </div>
+      <Badge tone={STATUS_TONE[project.status ?? ""] ?? "default"}>
+        {STATUS_LABELS[project.status ?? ""] ?? project.status ?? "—"}
+      </Badge>
+      <KebabMenu label={`Opciones de ${project.name}`}>
+        {(close) => (
+          <>
+            <MenuItem
+              onSelect={() => {
+                setDraft(project.name);
+                setEditing("name");
+                close();
+              }}
+            >
+              <PencilSimple size={15} /> Renombrar
+            </MenuItem>
+            <MenuItem
+              onSelect={() => {
+                setDraft(project.client ?? "");
+                setEditing("client");
+                close();
+              }}
+            >
+              <UserSwitch size={15} /> Cliente…
+            </MenuItem>
+            <MenuItem
+              onSelect={() => {
+                toggleArchived();
+                close();
+              }}
+            >
+              {project.archived ? (
+                <>
+                  <ArrowCounterClockwise size={15} /> Restaurar
+                </>
+              ) : (
+                <>
+                  <Archive size={15} /> Archivar
+                </>
+              )}
+            </MenuItem>
+            {confirmRemove ? (
+              <MenuItem
+                danger
+                onSelect={() => {
+                  remove();
+                  close();
+                }}
+              >
+                <Trash size={15} /> Confirmar (archivos permanecen)
+              </MenuItem>
+            ) : (
+              <MenuItem danger onSelect={() => setConfirmRemove(true)}>
+                <Trash size={15} /> Quitar de la lista…
+              </MenuItem>
+            )}
+          </>
+        )}
+      </KebabMenu>
+      <ArrowRight
+        size={15}
+        weight="bold"
+        className="text-faint transition group-hover:translate-x-0.5 group-hover:text-foreground"
+      />
+    </>
+  );
+
+  if (editing) {
+    return <div className="card flex items-center gap-3 p-3.5">{inner}</div>;
+  }
+  return (
+    <Link
+      href={`/proyecto/${project.project_id}`}
+      className="card card-hover group flex items-center gap-3 p-3.5"
+    >
+      {inner}
+    </Link>
   );
 }
 

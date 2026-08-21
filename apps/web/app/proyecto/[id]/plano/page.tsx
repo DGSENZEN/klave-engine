@@ -29,6 +29,7 @@ export default function PlanoPage() {
   const [selected, setSelected] = useState<DetectionOverlay | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showExcluded, setShowExcluded] = useState(true);
+  const [hiddenSheets, setHiddenSheets] = useState<Set<number>>(new Set());
   const { latestEvent, connectionEpoch, actorName, clientId } = useProjectLive();
 
   // connectionEpoch: a reconnect may have skipped events, so reload everything.
@@ -94,9 +95,21 @@ export default function PlanoPage() {
   }, [geom]);
 
   const canvasGeom = useMemo(() => {
-    if (!geom || showExcluded) return geom;
-    return { ...geom, detections: geom.detections.filter((d) => d.review !== "excluded") };
-  }, [geom, showExcluded]);
+    if (!geom) return geom;
+    let detections = geom.detections;
+    let shapes = geom.shapes;
+    if (!showExcluded) {
+      detections = detections.filter((d) => d.review !== "excluded");
+    }
+    if (hiddenSheets.size > 0) {
+      shapes = shapes.filter((s) => s.sheet == null || !hiddenSheets.has(s.sheet));
+      detections = detections.filter(
+        (d) => d.sheet == null || !hiddenSheets.has(d.sheet),
+      );
+    }
+    if (detections === geom.detections && shapes === geom.shapes) return geom;
+    return { ...geom, detections, shapes };
+  }, [geom, showExcluded, hiddenSheets]);
 
   const visibleCount = useMemo(() => {
     if (!canvasGeom) return 0;
@@ -146,10 +159,19 @@ export default function PlanoPage() {
       visibleLayers={visibleLayers}
       minConfidence={minConfidence}
       showExcluded={showExcluded}
+      hiddenSheets={hiddenSheets}
       onToggleFamily={(f) => toggle(visibleFamilies, f, setVisibleFamilies)}
       onToggleLayer={(l) => toggle(visibleLayers, l, setVisibleLayers)}
       onMinConfidence={setMinConfidence}
       onToggleExcluded={() => setShowExcluded((current) => !current)}
+      onToggleSheet={(index) =>
+        setHiddenSheets((current) => {
+          const next = new Set(current);
+          if (next.has(index)) next.delete(index);
+          else next.add(index);
+          return next;
+        })
+      }
     />
   );
 
@@ -324,10 +346,12 @@ function FilterPanel({
   visibleLayers,
   minConfidence,
   showExcluded,
+  hiddenSheets,
   onToggleFamily,
   onToggleLayer,
   onMinConfidence,
   onToggleExcluded,
+  onToggleSheet,
 }: {
   geom: Geometry;
   families: { family: string; count: number }[];
@@ -335,13 +359,42 @@ function FilterPanel({
   visibleLayers: Set<string>;
   minConfidence: number;
   showExcluded: boolean;
+  hiddenSheets: Set<number>;
   onToggleFamily: (family: string) => void;
   onToggleLayer: (layer: string) => void;
   onMinConfidence: (value: number) => void;
   onToggleExcluded: () => void;
+  onToggleSheet: (index: number) => void;
 }) {
   return (
     <>
+      {(geom.sheets?.length ?? 0) > 1 && (
+        <>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+            Hojas ({geom.sheets.length - hiddenSheets.size}/{geom.sheets.length})
+          </h3>
+          <div className="mb-4 space-y-1">
+            {geom.sheets.map((sheet, index) => (
+              <label
+                key={index}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm transition hover:bg-surface-2"
+              >
+                <input
+                  type="checkbox"
+                  checked={!hiddenSheets.has(index)}
+                  onChange={() => onToggleSheet(index)}
+                  className="accent-[var(--primary)]"
+                />
+                <span className="flex-1 truncate" title={sheet.name}>
+                  {sheet.sheet_number ?? sheet.name}
+                </span>
+                <span className="tabular text-xs text-muted">{sheet.count}</span>
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+
       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
         Elementos detectados
       </h3>

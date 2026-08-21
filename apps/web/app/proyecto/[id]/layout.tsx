@@ -38,12 +38,8 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       })
       .catch(() => {});
 
-    if (status?.state === "processed") {
-      return () => {
-        active = false;
-      };
-    }
-
+    // Stay subscribed even when processed: adding sheets re-enqueues the
+    // project and the gate must flip back to the processing timeline.
     const source = new EventSource(projectEventsUrl(id));
     source.onmessage = (message) => {
       const event = parseProjectEvent(message);

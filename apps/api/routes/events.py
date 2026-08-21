@@ -41,7 +41,7 @@ ALLOWED_ACTIVITY_ACTIONS = frozenset(
 # The unscoped stream backs the landing page's project list; it carries
 # project lifecycle only, never per-user presence or activity detail.
 GLOBAL_STREAM_EVENT_TYPES = frozenset(
-    {"project_created", "project_updated", "job_updated", "run_published"}
+    {"project_created", "project_updated", "project_removed", "job_updated", "run_published"}
 )
 
 

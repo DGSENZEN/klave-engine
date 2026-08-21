@@ -109,12 +109,19 @@ def list_projects(store: ProjectStore = Depends(get_store)) -> dict:
     """Projects with name + status for the landing page."""
     projects: list[dict] = []
     for project_id, root in store.list_projects().items():
-        entry = {"project_id": project_id, "root_path": root, "name": project_id}
+        entry: dict[str, object] = {
+            "project_id": project_id,
+            "root_path": root,
+            "name": project_id,
+        }
         try:
             manifest = store.get_manifest(project_id)
             entry["name"] = manifest.project_name
             entry["status"] = manifest.processing_status.value
             entry["created_at"] = manifest.created_at.isoformat()
+            entry["client"] = manifest.client
+            entry["archived"] = manifest.archived
+            entry["sheet_count"] = len(manifest.source_files)
         except Exception:
             entry["status"] = "unknown"
         job = JOB_STORE.get(project_id, Path(root), store.settings)
@@ -154,45 +161,53 @@ def create_project(
     return manifest.model_dump(mode="json")
 
 
-@router.post("/upload", status_code=202)
-async def upload_project(
-    file: UploadFile,
-    x_actor: Annotated[str | None, Header()] = None,
-    store: ProjectStore = Depends(get_store),
-    settings: Settings = Depends(get_settings),
-) -> dict:
-    """Accept a DWG/DXF upload, convert if needed, and process in the background."""
-    filename, suffix = _validated_upload_name(file.filename or "plano.dxf")
+async def _save_sheet_uploads(
+    files: list[UploadFile],
+    drawings: Path,
+    max_bytes: int,
+    start_index: int,
+) -> list[Path]:
+    """Validate and stream every sheet to path-safe deterministic names that
+    keep the original stem, so sheet-number inference still works."""
+    if not files:
+        raise HTTPException(
+            status_code=400,
+            detail={"error_type": "no_files", "message": "Sube al menos un archivo."},
+        )
+    saved: list[Path] = []
+    for offset, file in enumerate(files):
+        filename, suffix = _validated_upload_name(file.filename or "plano.dxf")
+        stem = slugify(Path(filename).stem)[:40] or "plano"
+        destination = drawings / f"{start_index + offset:02d}-{stem}{suffix}"
+        await _save_upload(file, destination, max_bytes)
+        saved.append(destination)
+    return saved
 
-    project_id = f"{slugify(Path(filename).stem)[:32] or 'plano'}_{short_uuid('p')[2:]}"
-    root = (settings.data_dir / "uploads" / project_id).resolve()
-    drawings = root / "drawings"
-    drawings.mkdir(parents=True, exist_ok=True)
-    # Do not place client-controlled names on disk. The original name remains
-    # display metadata only; storage names are deterministic and path-safe.
-    saved = drawings / f"source{suffix}"
-    await _save_upload(file, saved, settings.max_upload_bytes)
 
-    manifest = ingest_project(
-        root,
-        project_name=Path(filename).stem,
-        project_id=project_id,
-        processed_dir_name=settings.processed_dir_name,
-    )
-
+def _convert_new_dwgs(root: Path, manifest, settings: Settings) -> list[str]:
+    """Convert DWG sources that lack a successful conversion. Raises 422 (and
+    leaves the caller to clean up) when any conversion fails."""
     warnings: list[str] = []
-    if suffix == ".dwg":
-        dxf_path, message = convert_dwg_to_dxf(saved)
+    converted_ids = {c.source_file_id for c in manifest.converted_files}
+    for source in manifest.source_files:
+        if source.file_type.value != "dwg" or source.file_id in converted_ids:
+            continue
+        dxf_path, message = convert_dwg_to_dxf(root / source.path)
         if dxf_path is None:
-            shutil.rmtree(root)
             raise HTTPException(
                 status_code=422,
-                detail={"error_type": "conversion_failed", "message": message},
+                detail={
+                    "error_type": "conversion_failed",
+                    "file": Path(source.path).name,
+                    "message": message,
+                },
             )
-        source = next(
-            source for source in manifest.source_files if source.path == "drawings/source.dwg"
+        converted = (
+            root
+            / settings.converted_dir_name
+            / source.file_id
+            / f"{Path(source.path).stem}.dxf"
         )
-        converted = root / settings.converted_dir_name / source.file_id / "source.dxf"
         converted.parent.mkdir(parents=True, exist_ok=True)
         dxf_path.replace(converted)
         manifest.converted_files.append(
@@ -201,8 +216,38 @@ async def upload_project(
                 path=str(converted.relative_to(root)),
             )
         )
-        save_manifest(manifest, settings.processed_dir_name)
         warnings.append(message)
+    if warnings:
+        save_manifest(manifest, settings.processed_dir_name)
+    return warnings
+
+
+@router.post("/upload", status_code=202)
+async def upload_project(
+    files: list[UploadFile],
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Accept one or more DWG/DXF sheets as a new project and process them."""
+    first_name, _ = _validated_upload_name(files[0].filename or "plano.dxf")
+    project_id = f"{slugify(Path(first_name).stem)[:32] or 'plano'}_{short_uuid('p')[2:]}"
+    root = (settings.data_dir / "uploads" / project_id).resolve()
+    drawings = root / "drawings"
+    drawings.mkdir(parents=True, exist_ok=True)
+
+    try:
+        await _save_sheet_uploads(files, drawings, settings.max_upload_bytes, 1)
+        manifest = ingest_project(
+            root,
+            project_name=Path(first_name).stem,
+            project_id=project_id,
+            processed_dir_name=settings.processed_dir_name,
+        )
+        warnings = _convert_new_dwgs(root, manifest, settings)
+    except HTTPException:
+        shutil.rmtree(root, ignore_errors=True)
+        raise
 
     store.register(project_id, root)
     BUS.publish(
@@ -313,3 +358,121 @@ def process_project(
         state=job.state,
         stage=job.stage,
     )
+
+
+class ProjectPatch(BaseModel):
+    name: str | None = None
+    client: str | None = None
+    archived: bool | None = None
+
+
+@router.post("/{project_id}/files", status_code=202)
+async def add_project_files(
+    project_id: str,
+    files: list[UploadFile],
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Add sheets to an existing project and reprocess it as one drawing set."""
+    root = store.get_root(project_id)
+    drawings = root / "drawings"
+    drawings.mkdir(parents=True, exist_ok=True)
+    existing = len(
+        [p for p in drawings.iterdir() if p.suffix.lower() in ALLOWED_SUFFIXES]
+    )
+    saved = await _save_sheet_uploads(
+        files, drawings, settings.max_upload_bytes, existing + 1
+    )
+    try:
+        manifest = ingest_project(
+            root, project_id=project_id, processed_dir_name=settings.processed_dir_name
+        )
+        warnings = _convert_new_dwgs(root, manifest, settings)
+    except HTTPException:
+        for path in saved:
+            path.unlink(missing_ok=True)
+        ingest_project(
+            root, project_id=project_id, processed_dir_name=settings.processed_dir_name
+        )
+        raise
+    BUS.publish(
+        "project_updated",
+        project_id=project_id,
+        actor=clean_actor(x_actor),
+        data={"action": "sheets_added", "sheet_count": len(manifest.source_files)},
+    )
+    try:
+        job, _ = JOB_STORE.enqueue(project_id, root, settings)
+    except JobQueueFullError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={"error_type": "processing_queue_full", "project_id": project_id},
+            headers={"Retry-After": "30"},
+        ) from exc
+    return {
+        "project_id": project_id,
+        "sheet_count": len(manifest.source_files),
+        "job_id": job.job_id,
+        "state": job.state,
+        "warnings": warnings,
+    }
+
+
+@router.patch("/{project_id}")
+def patch_project(
+    project_id: str,
+    body: ProjectPatch,
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Organization metadata: rename, client, archive. Never touches drawings."""
+    manifest = store.get_manifest(project_id)
+    if body.name is not None:
+        name = " ".join(body.name.split())[:80]
+        if not name:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_type": "invalid_name",
+                    "message": "El nombre no puede quedar vacío.",
+                },
+            )
+        manifest.project_name = name
+    if body.client is not None:
+        manifest.client = " ".join(body.client.split())[:80] or None
+    if body.archived is not None:
+        manifest.archived = body.archived
+    save_manifest(manifest, settings.processed_dir_name)
+    BUS.publish(
+        "project_updated",
+        project_id=project_id,
+        actor=clean_actor(x_actor),
+        data={"action": "organized", "name": manifest.project_name},
+    )
+    return {
+        "project_id": project_id,
+        "name": manifest.project_name,
+        "client": manifest.client,
+        "archived": manifest.archived,
+    }
+
+
+@router.delete("/{project_id}")
+def remove_project(
+    project_id: str,
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+) -> dict:
+    """Remove the project from the workspace list. Files stay on disk; this is
+    deliberately not a destructive delete."""
+    store.get_root(project_id)  # 404 for unknown ids
+    store.unregister(project_id)
+    BUS.publish(
+        "project_removed",
+        project_id=project_id,
+        actor=clean_actor(x_actor),
+        data={},
+    )
+    return {"project_id": project_id, "removed": True}

@@ -56,13 +56,15 @@ def find_drawing_files(project_root: Path) -> list[Path]:
     return sorted(candidates, key=lambda path: str(path.relative_to(project_root)).casefold())
 
 
-def _existing_project_id(project_root: Path, processed_dir_name: str) -> str | None:
-    """Keep the ID stable when an existing local project is re-ingested."""
+def _existing_manifest(
+    project_root: Path, processed_dir_name: str
+) -> ProjectManifest | None:
+    """Keep identity and organization metadata stable across re-ingests."""
     path = manifest_path(project_root, processed_dir_name)
     if not path.exists():
         return None
     try:
-        return load_manifest(project_root, processed_dir_name).project_id
+        return load_manifest(project_root, processed_dir_name)
     except ProjectManifestError:
         return None
 
@@ -79,16 +81,24 @@ def ingest_project(
         raise ProjectManifestError(f"Project root does not exist: {project_root}")
 
     drawing_files = find_drawing_files(project_root)
-    project_id = project_id or _existing_project_id(project_root, processed_dir_name)
+    existing = _existing_manifest(project_root, processed_dir_name)
+    project_id = project_id or (existing.project_id if existing else None)
     if project_id is None:
         stem = slugify(project_root.name)[:40] or "project"
         project_id = f"{stem}_{short_uuid('p')[2:]}"
     manifest = ProjectManifest(
         project_id=project_id,
-        project_name=project_name or project_root.name,
+        project_name=project_name
+        or (existing.project_name if existing else None)
+        or project_root.name,
         root_path=str(project_root),
         processing_status=ProcessingStatus.ingested,
     )
+    if existing is not None:
+        # Organization metadata is user-owned; a re-scan must not reset it.
+        manifest.client = existing.client
+        manifest.archived = existing.archived
+        manifest.created_at = existing.created_at
 
     for index, path in enumerate(drawing_files, start=1):
         sheet_number = infer_sheet_number(path.name)

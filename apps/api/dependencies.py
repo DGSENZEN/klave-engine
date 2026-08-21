@@ -49,6 +49,13 @@ class ProjectStore:
             registry[project_id] = str(root_path)
             write_json(self.registry_path, registry)
 
+    def unregister(self, project_id: str) -> None:
+        """Remove a project from the registry; its files stay on disk."""
+        with _REGISTRY_LOCK:
+            registry = self._registry()
+            if registry.pop(project_id, None) is not None:
+                write_json(self.registry_path, registry)
+
     def managed_root(self, root_path: Path) -> Path:
         """Resolve a project path and ensure it remains inside managed data.
 
