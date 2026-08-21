@@ -13,20 +13,17 @@ npm run dev
 The app expects the FastAPI backend on `http://localhost:8000`; override with
 `NEXT_PUBLIC_API_URL`.
 
-## Sign-in
+## Sign-in and accounts
 
-`/bienvenida` establishes the workspace identity. Two paths:
-
-- **Nombre local** — always available; the display name feeds change
-  attribution and presence.
-- **Google** — enabled when `AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET` are set
-  (see `.env.example`). The OAuth code flow runs server-side in
-  `app/api/auth/*` and stores an HMAC-signed, HTTP-only session cookie; no
-  database is required. Set `AUTH_SECRET` outside development.
-
-Sign-in currently gates the web identity only: the local FastAPI backend on
-this branch has no server-side authentication (hosted OIDC lives with the
-cost-data platform).
+Authentication lives in the FastAPI backend against a dedicated users
+PostgreSQL (`make users-db-up`). The workspace starts in **open mode** (local
+name-only identity); creating the first account from `/bienvenida` bootstraps
+an active admin and flips it to **protected mode**: sessions required, new
+registrations wait for admin approval in `/equipo`, and each project enforces
+lectura/edición/propietario roles managed from its Configuración screen.
+Google sign-in activates when `KLAVE_AUTH_GOOGLE_ID`/`KLAVE_AUTH_GOOGLE_SECRET`
+are set for the API (redirect URI `http://localhost:8000/auth/google/callback`).
+Resetting the users database volume returns the workspace to open mode.
 
 ## Structure
 
