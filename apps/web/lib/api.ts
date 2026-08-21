@@ -438,6 +438,47 @@ export async function publishPresence(
 
 export const getRisks = (id: string) => getJSON<RiskReport>(`/projects/${id}/risks`);
 
+// ---- Lectura del plano ----
+
+export type LecturaParse = {
+  entity_count: number;
+  entities_by_type: Record<string, number>;
+  from_block_count: number;
+  derived_by_type: Record<string, number>;
+  dropped_by_type: Record<string, number>;
+  text_count: number;
+  recovered: boolean;
+  warning_count: number;
+  insunits: number | null;
+  layer_count: number;
+  block_count: number;
+};
+
+export type LecturaSheet = {
+  name: string;
+  sheet_number: string | null;
+  discipline: string | null;
+  file_type: string;
+  conversion: { status: string; message: string; duration_seconds?: number } | null;
+  parse: LecturaParse | null;
+};
+
+export type Lectura = {
+  project_id: string;
+  project_name: string;
+  sheets: LecturaSheet[];
+  units: { unit: string; source: string; confidence: number; source_label: string } | null;
+  layers: { layer: string; entity_count: number; entity_types: Record<string, number> }[];
+  layer_total: number;
+  blocks: { block_name: string; insert_count: number }[];
+  warning_groups: { type: string; label: string; count: number; samples: string[] }[];
+  detection_total: number;
+  detections_by_family: Record<string, number>;
+  entity_type_labels: Record<string, string>;
+};
+
+export const getLectura = (id: string) => getJSON<Lectura>(`/projects/${id}/lectura`);
+
 // ---- Correction loop & verification ----
 
 export type ReviewStatus = "confirmed" | "excluded";

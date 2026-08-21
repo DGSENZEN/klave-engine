@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Books,
+  FileMagnifyingGlass,
   GearSix,
   SquaresFour,
   MapTrifold,
@@ -41,6 +42,12 @@ function nav(id: string): { group: string; items: Item[] }[] {
           label: "Visor del Plano",
           icon: <MapTrifold size={18} />,
           href: `${b}/plano`,
+        },
+        {
+          key: "lectura",
+          label: "Lectura del Plano",
+          icon: <FileMagnifyingGlass size={18} />,
+          href: `${b}/lectura`,
         },
         {
           key: "configuracion",

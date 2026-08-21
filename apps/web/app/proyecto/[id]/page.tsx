@@ -161,7 +161,15 @@ export default function Resumen() {
             </Card>
 
             <Card className="p-5">
-              <SectionTitle>Lectura del plano</SectionTitle>
+              <div className="flex items-start justify-between gap-3">
+                <SectionTitle>Lectura del plano</SectionTitle>
+                <Link
+                  href={`/proyecto/${id}/lectura`}
+                  className="shrink-0 text-xs font-medium text-accent hover:underline"
+                >
+                  Ver lectura completa
+                </Link>
+              </div>
               <dl className="space-y-3 text-sm">
                 <Row
                   icon={<Ruler size={15} />}

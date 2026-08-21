@@ -451,5 +451,6 @@ function projectLocationLabel(projectId: string, pathname: string): string {
   if (pathname === `${base}/flujo`) return "Flujo Financiero";
   if (pathname === `${base}/riesgos`) return "Riesgos";
   if (pathname === `${base}/configuracion`) return "Configuración";
+  if (pathname === `${base}/lectura`) return "Lectura del Plano";
   return "Proyecto";
 }
