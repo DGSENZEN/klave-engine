@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Books,
+  GearSix,
   SquaresFour,
   MapTrifold,
   Receipt,
@@ -40,6 +41,12 @@ function nav(id: string): { group: string; items: Item[] }[] {
           label: "Visor del Plano",
           icon: <MapTrifold size={18} />,
           href: `${b}/plano`,
+        },
+        {
+          key: "configuracion",
+          label: "Configuración",
+          icon: <GearSix size={18} />,
+          href: `${b}/configuracion`,
         },
       ],
     },

@@ -17,6 +17,7 @@ import {
   Plus,
   Stack,
   Trash,
+  UsersThree,
   UserSwitch,
 } from "@phosphor-icons/react";
 import {
@@ -73,28 +74,30 @@ export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
 
-  // First run goes through /bienvenida to establish the workspace identity.
-  useEffect(() => {
-    const handle = window.setTimeout(() => {
-      if (!isProfileComplete()) {
-        router.replace("/bienvenida");
-        return;
-      }
-      setActorName(peekBrowserActor());
-      setReady(true);
-    }, 0);
-    return () => window.clearTimeout(handle);
-  }, [router]);
-
+  // The gate: protected workspaces require an active session; open mode only
+  // needs the local first-run profile. Both land on /bienvenida otherwise.
+  const [isAdmin, setIsAdmin] = useState(false);
   useEffect(() => {
     let active = true;
     fetchAuthStatus().then((status) => {
-      if (active) setAvatarSrc(status.user?.picture ?? null);
+      if (!active) return;
+      if (status.mode === "protected" && (!status.user || status.user.status !== "active")) {
+        router.replace("/bienvenida");
+        return;
+      }
+      if (status.mode !== "protected" && !isProfileComplete()) {
+        router.replace("/bienvenida");
+        return;
+      }
+      setAvatarSrc(status.user?.picture ?? null);
+      setIsAdmin(status.user?.role === "admin");
+      setActorName(status.user?.name || peekBrowserActor());
+      setReady(true);
     });
     return () => {
       active = false;
     };
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     let active = true;
@@ -108,7 +111,7 @@ export default function Home() {
         });
     }
     refresh();
-    const source = new EventSource(eventsUrl());
+    const source = new EventSource(eventsUrl(), { withCredentials: true });
     source.onmessage = (message) => {
       const event = parseProjectEvent(message);
       if (
@@ -213,6 +216,11 @@ export default function Home() {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {isAdmin && (
+              <Link href="/equipo" className={buttonClasses("ghost", "sm")}>
+                <UsersThree size={15} weight="duotone" /> Equipo
+              </Link>
+            )}
             <Link href="/catalogo" className={buttonClasses("ghost", "sm")}>
               <Books size={15} weight="duotone" /> Catálogo
             </Link>

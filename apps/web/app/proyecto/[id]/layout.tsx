@@ -40,7 +40,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
 
     // Stay subscribed even when processed: adding sheets re-enqueues the
     // project and the gate must flip back to the processing timeline.
-    const source = new EventSource(projectEventsUrl(id));
+    const source = new EventSource(projectEventsUrl(id), { withCredentials: true });
     source.onmessage = (message) => {
       const event = parseProjectEvent(message);
       if (!event || !active) return;

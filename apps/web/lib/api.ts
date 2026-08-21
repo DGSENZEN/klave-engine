@@ -4,7 +4,10 @@ export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:8000";
 
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+  const res = await fetch(`${API_BASE}${path}`, {
+    cache: "no-store",
+    credentials: "include",
+  });
   if (!res.ok) {
     let detail: unknown = undefined;
     try {
@@ -22,6 +25,7 @@ async function postJSON<T>(
 ): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
@@ -42,6 +46,7 @@ async function putJSON<T>(
 ): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "PUT",
+    credentials: "include",
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
@@ -62,6 +67,7 @@ async function patchJSON<T>(
 ): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "PATCH",
+    credentials: "include",
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
@@ -76,7 +82,11 @@ async function patchJSON<T>(
 }
 
 async function deleteJSON<T>(path: string, headers?: Record<string, string>): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { method: "DELETE", headers });
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers,
+  });
   if (!res.ok) {
     let detail: unknown;
     try {
@@ -596,6 +606,7 @@ export async function importCatalogPrices(
   if (source) url.searchParams.set("source", source);
   const res = await fetch(url.toString(), {
     method: "POST",
+    credentials: "include",
     headers: actor ? { "X-Actor": actor } : undefined,
     body: form,
   });
@@ -619,6 +630,7 @@ async function postFiles<T>(path: string, files: File[], actor?: string): Promis
   for (const file of files) form.append("files", file);
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
+    credentials: "include",
     headers: actor ? { "X-Actor": actor } : undefined,
     body: form,
   });
