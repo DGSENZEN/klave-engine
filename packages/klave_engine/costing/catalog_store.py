@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS insumos (
     unit_cost REAL NOT NULL,
     is_labor_percentage INTEGER NOT NULL DEFAULT 0,
     source TEXT NOT NULL DEFAULT '',
+    source_type TEXT NOT NULL DEFAULT 'referencia',
+    region TEXT NOT NULL DEFAULT 'MX-CMX',
+    vigencia TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS apu_components (
@@ -48,11 +51,90 @@ CREATE TABLE IF NOT EXISTS concept_settings (
     concept_code TEXT PRIMARY KEY,
     production_rate_per_day REAL
 );
+CREATE TABLE IF NOT EXISTS concepts (
+    code TEXT PRIMARY KEY,
+    description TEXT NOT NULL,
+    unit TEXT NOT NULL,
+    phase TEXT NOT NULL,
+    production_rate_per_day REAL NOT NULL,
+    rule_key TEXT,
+    sequence_order INTEGER NOT NULL DEFAULT 100,
+    active INTEGER NOT NULL DEFAULT 1
+);
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
 """
+
+SEED_VIGENCIA = "2026-08"
+
+# Reference basket beyond the original seven-concept core: standard Mexican
+# obra-negra practice values, all explicitly labeled reference data — a
+# runnable baseline to replace with quotations, never a market claim.
+EXTRA_RESOURCES: list[tuple[str, str, str, float, str]] = [
+    ("MAT-CEM", "Cemento gris CPC 30R", "TON", 3350.0, "material"),
+    ("MAT-ARENA", "Arena de mina", "M3", 420.0, "material"),
+    ("MAT-GRAVA", "Grava triturada 3/4\"", "M3", 460.0, "material"),
+    ("MAT-AGUA", "Agua para obra", "M3", 35.0, "material"),
+    ("MAT-CONC150", "Concreto hecho en obra f'c=150 kg/cm²", "M3", 2100.0, "material"),
+    ("MAT-MALLA", "Malla electrosoldada 6x6-10/10", "M2", 85.0, "material"),
+    ("MAT-ALAMBRE", "Alambre recocido", "KG", 38.0, "material"),
+    ("MAT-CLAVO", "Clavo para cimbra", "KG", 42.0, "material"),
+    ("MAT-MADERA", "Madera de pino 3a para obra", "PT", 28.0, "material"),
+    ("MAT-TEPETATE", "Tepetate para relleno", "M3", 260.0, "material"),
+    ("MO-OF-ALB", "Oficial albañil", "JOR", 1050.0, "mano_de_obra"),
+    ("MO-AYUD", "Ayudante general", "JOR", 700.0, "mano_de_obra"),
+    ("EQ-BAILARINA", "Compactador tipo bailarina", "JOR", 650.0, "equipo"),
+    ("EQ-CAMION", "Camión de volteo 7 m³ (viaje)", "VJE", 950.0, "equipo"),
+]
+
+# Manual concepts: priced through their APU, quantified only by documented
+# adjustments or viewer measurements — the estimator's own takeoff.
+EXTRA_CONCEPTS: list[tuple[str, str, str, str, float, int, list[tuple[str, float]]]] = [
+    (
+        "CIM-003", "Plantilla de concreto f'c=100 kg/cm², 5 cm", "M2",
+        "Cimentación", 80.0, 30,
+        [("MAT-CONC150", 0.055), ("MO-CUAD-ALB", 0.060), ("EQ-HERRAMIENTA", 1.0)],
+    ),
+    (
+        "CIM-004", "Relleno compactado con tepetate en capas de 20 cm", "M3",
+        "Cimentación", 25.0, 40,
+        [
+            ("MAT-TEPETATE", 1.25), ("MAT-AGUA", 0.15), ("MO-AYUD", 0.35),
+            ("EQ-BAILARINA", 0.12), ("EQ-HERRAMIENTA", 1.0),
+        ],
+    ),
+    (
+        "CIM-005", "Acarreo de material producto de excavación fuera de obra", "M3",
+        "Cimentación", 40.0, 50,
+        [("MO-AYUD", 0.12), ("EQ-CAMION", 0.14), ("EQ-HERRAMIENTA", 1.0)],
+    ),
+    (
+        "EST-005", "Cadena o dala de concreto armado 15x20 cm", "M",
+        "Estructura", 18.0, 40,
+        [
+            ("MAT-CONC150", 0.033), ("MAT-ACERO", 0.0045), ("MAT-CIMBRA", 0.42),
+            ("MO-CUAD-ALB", 0.12), ("MO-CUAD-FIE", 0.08), ("EQ-HERRAMIENTA", 1.0),
+        ],
+    ),
+    (
+        "EST-006", "Castillo ahogado en block con armex 15x15", "M",
+        "Estructura", 22.0, 50,
+        [
+            ("MAT-CONC150", 0.023), ("MAT-ACERO", 0.0035),
+            ("MO-CUAD-ALB", 0.10), ("EQ-HERRAMIENTA", 1.0),
+        ],
+    ),
+    (
+        "EST-007", "Firme de concreto de 8 cm f'c=150 con malla", "M2",
+        "Estructura", 45.0, 60,
+        [
+            ("MAT-CONC150", 0.085), ("MAT-MALLA", 1.05),
+            ("MO-CUAD-ALB", 0.09), ("EQ-HERRAMIENTA", 1.0),
+        ],
+    ),
+]
 
 
 def _now() -> str:
@@ -67,6 +149,23 @@ class CatalogStore:
         self.db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with _LOCK, self._connect() as conn:
+            # Existing v1 databases predate the provenance columns; ALTER
+            # before executing the full schema so both paths converge.
+            existing = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='insumos'"
+            ).fetchone()
+            if existing is not None:
+                columns = {
+                    row["name"]
+                    for row in conn.execute("PRAGMA table_info(insumos)").fetchall()
+                }
+                for column, definition in (
+                    ("source_type", "TEXT NOT NULL DEFAULT 'referencia'"),
+                    ("region", "TEXT NOT NULL DEFAULT 'MX-CMX'"),
+                    ("vigencia", "TEXT NOT NULL DEFAULT ''"),
+                ):
+                    if column not in columns:
+                        conn.execute(f"ALTER TABLE insumos ADD COLUMN {column} {definition}")
             conn.executescript(_SCHEMA)
             seeded = conn.execute(
                 "SELECT value FROM meta WHERE key = 'seeded'"
@@ -75,6 +174,15 @@ class CatalogStore:
                 self._seed(conn)
                 conn.execute(
                     "INSERT INTO meta (key, value) VALUES ('seeded', ?)", (_now(),)
+                )
+            version_row = conn.execute(
+                "SELECT value FROM meta WHERE key = 'schema_version'"
+            ).fetchone()
+            if version_row is None or int(version_row["value"]) < 2:
+                self._migrate_v2(conn)
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '2') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '2'"
                 )
 
     def _connect(self) -> sqlite3.Connection:
@@ -115,6 +223,62 @@ class CatalogStore:
             )
         log_stage(logger, "catalog_seeded", db_path=str(self.db_path))
 
+    def _migrate_v2(self, conn: sqlite3.Connection) -> None:
+        """Concepts become data and the reference basket widens.
+
+        Idempotent and edit-preserving: everything inserts OR IGNOREs, and
+        user-set rendimientos in concept_settings migrate into the concepts
+        table the first time.
+        """
+        rendimientos = {
+            row["concept_code"]: row["production_rate_per_day"]
+            for row in conn.execute(
+                "SELECT concept_code, production_rate_per_day FROM concept_settings"
+            ).fetchall()
+            if row["production_rate_per_day"] is not None
+        }
+        for index, concept in enumerate(build_default_catalog(CostingAssumptions())):
+            conn.execute(
+                "INSERT OR IGNORE INTO concepts (code, description, unit, phase, "
+                "production_rate_per_day, rule_key, sequence_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    concept.code,
+                    concept.description,
+                    concept.unit,
+                    concept.phase,
+                    rendimientos.get(concept.code, concept.production_rate_per_day),
+                    concept.code,
+                    index * 10,
+                ),
+            )
+        for code, description, unit, unit_cost, resource_type in EXTRA_RESOURCES:
+            conn.execute(
+                "INSERT OR IGNORE INTO insumos (code, description, unit, resource_type, "
+                "unit_cost, is_labor_percentage, source, source_type, region, vigencia, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, 'referencia', 'MX-CMX', ?, ?)",
+                (code, description, unit, resource_type, unit_cost, SEED_SOURCE,
+                 SEED_VIGENCIA, _now()),
+            )
+        for code, description, unit, phase, rate, order, components in EXTRA_CONCEPTS:
+            conn.execute(
+                "INSERT OR IGNORE INTO concepts (code, description, unit, phase, "
+                "production_rate_per_day, rule_key, sequence_order) "
+                "VALUES (?, ?, ?, ?, ?, NULL, ?)",
+                (code, description, unit, phase, rate, 100 + order),
+            )
+            for resource_code, quantity in components:
+                conn.execute(
+                    "INSERT OR IGNORE INTO apu_components "
+                    "(concept_code, resource_code, quantity) VALUES (?, ?, ?)",
+                    (code, resource_code, quantity),
+                )
+        conn.execute(
+            "UPDATE insumos SET vigencia = ? WHERE vigencia = '' AND source = ?",
+            (SEED_VIGENCIA, SEED_SOURCE),
+        )
+        log_stage(logger, "catalog_migrated_v2", db_path=str(self.db_path))
+
     # ---------------------------------------------------------------- reads
 
     def load_price_book(self) -> dict[str, Resource]:
@@ -145,16 +309,100 @@ class CatalogStore:
             )
         return templates
 
+    def load_concepts(self, include_inactive: bool = False) -> list[dict]:
+        """Concepts ordered for the catalog: phase groups keep built-in order
+        first, then manual concepts by their sequence."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM concepts"
+                + ("" if include_inactive else " WHERE active = 1")
+                + " ORDER BY sequence_order, code"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def create_concept(
+        self,
+        *,
+        code: str,
+        description: str,
+        unit: str,
+        phase: str,
+        production_rate_per_day: float,
+        components: list[tuple[str, float]],
+    ) -> dict:
+        """A manual concept needs its APU from birth: a concept without a
+        matrix cannot be priced, and unpriced never means zero."""
+        if production_rate_per_day <= 0:
+            raise ValueError("El rendimiento debe ser positivo.")
+        if not components:
+            raise ValueError("Un concepto necesita al menos un recurso en su APU.")
+        book = self.load_price_book()
+        for resource_code, quantity in components:
+            if resource_code not in book:
+                raise ValueError(f"Unknown resource {resource_code}.")
+            if quantity <= 0:
+                raise ValueError(f"Quantity for {resource_code} must be positive.")
+        with _LOCK, self._connect() as conn:
+            existing = conn.execute(
+                "SELECT 1 FROM concepts WHERE code = ?", (code,)
+            ).fetchone()
+            if existing is not None:
+                raise ValueError(f"El concepto {code} ya existe.")
+            conn.execute(
+                "INSERT INTO concepts (code, description, unit, phase, "
+                "production_rate_per_day, rule_key) VALUES (?, ?, ?, ?, ?, NULL)",
+                (code, description, unit, phase, production_rate_per_day),
+            )
+            for resource_code, quantity in components:
+                conn.execute(
+                    "INSERT INTO apu_components (concept_code, resource_code, quantity) "
+                    "VALUES (?, ?, ?)",
+                    (code, resource_code, quantity),
+                )
+            row = conn.execute("SELECT * FROM concepts WHERE code = ?", (code,)).fetchone()
+        return dict(row)
+
+    def update_concept(
+        self,
+        code: str,
+        *,
+        description: str | None = None,
+        unit: str | None = None,
+        phase: str | None = None,
+        production_rate_per_day: float | None = None,
+        active: bool | None = None,
+    ) -> dict:
+        if production_rate_per_day is not None and production_rate_per_day <= 0:
+            raise ValueError("El rendimiento debe ser positivo.")
+        with _LOCK, self._connect() as conn:
+            existing = conn.execute(
+                "SELECT * FROM concepts WHERE code = ?", (code,)
+            ).fetchone()
+            if existing is None:
+                raise ValueError(f"El concepto {code} no existe.")
+            conn.execute(
+                "UPDATE concepts SET description = ?, unit = ?, phase = ?, "
+                "production_rate_per_day = ?, active = ? WHERE code = ?",
+                (
+                    description if description is not None else existing["description"],
+                    unit if unit is not None else existing["unit"],
+                    phase if phase is not None else existing["phase"],
+                    production_rate_per_day
+                    if production_rate_per_day is not None
+                    else existing["production_rate_per_day"],
+                    int(active) if active is not None else existing["active"],
+                    code,
+                ),
+            )
+            row = conn.execute("SELECT * FROM concepts WHERE code = ?", (code,)).fetchone()
+        return dict(row)
+
     def load_rendimientos(self) -> dict[str, float]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT concept_code, production_rate_per_day FROM concept_settings"
+                "SELECT code, production_rate_per_day FROM concepts"
             ).fetchall()
-        return {
-            row["concept_code"]: row["production_rate_per_day"]
-            for row in rows
-            if row["production_rate_per_day"] is not None
-        }
+        return {row["code"]: row["production_rate_per_day"] for row in rows}
 
     def list_insumos(self) -> list[dict]:
         with self._connect() as conn:
@@ -172,8 +420,15 @@ class CatalogStore:
         resource_type: str | None = None,
         unit_cost: float | None = None,
         source: str | None = None,
+        source_type: str | None = None,
+        region: str | None = None,
+        vigencia: str | None = None,
     ) -> dict:
         """Update an existing insumo, or create one when all fields are given."""
+        if source_type is not None and source_type not in (
+            "referencia", "cotizacion", "publicacion",
+        ):
+            raise ValueError("Tipo de fuente inválido.")
         with _LOCK, self._connect() as conn:
             existing = conn.execute(
                 "SELECT * FROM insumos WHERE code = ?", (code,)
@@ -187,14 +442,19 @@ class CatalogStore:
                 ResourceType(resource_type)  # validates
                 conn.execute(
                     "INSERT INTO insumos (code, description, unit, resource_type, "
-                    "unit_cost, is_labor_percentage, source, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
-                    (code, description, unit, resource_type, unit_cost, source or "", _now()),
+                    "unit_cost, is_labor_percentage, source, source_type, region, "
+                    "vigencia, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)",
+                    (
+                        code, description, unit, resource_type, unit_cost,
+                        source or "", source_type or "cotizacion",
+                        region or "MX-CMX", vigencia or "", _now(),
+                    ),
                 )
             else:
                 conn.execute(
                     "UPDATE insumos SET description = ?, unit = ?, resource_type = ?, "
-                    "unit_cost = ?, source = ?, updated_at = ? WHERE code = ?",
+                    "unit_cost = ?, source = ?, source_type = ?, region = ?, "
+                    "vigencia = ?, updated_at = ? WHERE code = ?",
                     (
                         description if description is not None else existing["description"],
                         unit if unit is not None else existing["unit"],
@@ -203,6 +463,11 @@ class CatalogStore:
                         else existing["resource_type"],
                         unit_cost if unit_cost is not None else existing["unit_cost"],
                         source if source is not None else existing["source"],
+                        source_type
+                        if source_type is not None
+                        else existing["source_type"],
+                        region if region is not None else existing["region"],
+                        vigencia if vigencia is not None else existing["vigencia"],
                         _now(),
                         code,
                     ),
@@ -239,10 +504,8 @@ class CatalogStore:
             raise ValueError("El rendimiento debe ser positivo.")
         with _LOCK, self._connect() as conn:
             conn.execute(
-                "INSERT INTO concept_settings (concept_code, production_rate_per_day) "
-                "VALUES (?, ?) ON CONFLICT(concept_code) "
-                "DO UPDATE SET production_rate_per_day = excluded.production_rate_per_day",
-                (concept_code, production_rate_per_day),
+                "UPDATE concepts SET production_rate_per_day = ? WHERE code = ?",
+                (production_rate_per_day, concept_code),
             )
 
     def import_prices(
@@ -268,8 +531,8 @@ class CatalogStore:
                     skipped.append(code)
                     continue
                 result = conn.execute(
-                    "UPDATE insumos SET unit_cost = ?, source = ?, updated_at = ? "
-                    "WHERE code = ?",
+                    "UPDATE insumos SET unit_cost = ?, source = ?, "
+                    "source_type = 'cotizacion', updated_at = ? WHERE code = ?",
                     (unit_cost, source, _now(), code),
                 )
                 if result.rowcount:

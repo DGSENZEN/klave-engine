@@ -80,7 +80,11 @@ def build_all_apus(
     resources: dict[str, Resource] | None = None,
     templates: dict[str, list[tuple[str, float]]] | None = None,
 ) -> dict[str, UnitPriceAnalysis]:
+    """APUs for every concept that has a matrix; a concept without one is
+    skipped (it cannot be priced — never silently priced at zero)."""
+    effective = templates or APU_TEMPLATES
     return {
         concept.code: build_apu(concept, resources=resources, templates=templates)
         for concept in concepts
+        if concept.code in effective
     }

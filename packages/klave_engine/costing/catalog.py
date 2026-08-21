@@ -17,6 +17,50 @@ from klave_engine.detection.results import DetectionType
 PHASE_ORDER = ["Preliminares", "Cimentación", "Estructura"]
 
 
+def build_catalog_from_store(
+    rows: list[dict], assumptions: CostingAssumptions
+) -> list[Concept]:
+    """Concepts from the workspace database.
+
+    A row with a ``rule_key`` binds to the built-in detection rule of that
+    key (rule, quantity factor, view scope, and calibrated assumptions come
+    from code); its description, unit, phase, and rendimiento are the user's.
+    A row without one is a manual concept: priced by its APU, quantified only
+    through documented adjustments.
+    """
+    specs = {concept.code: concept for concept in build_default_catalog(assumptions)}
+    catalog: list[Concept] = []
+    for index, row in enumerate(rows):
+        base = specs.get(row.get("rule_key") or "")
+        if base is not None:
+            catalog.append(
+                base.model_copy(
+                    update={
+                        "code": row["code"],
+                        "description": row["description"],
+                        "unit": row["unit"],
+                        "phase": row["phase"],
+                        "production_rate_per_day": row["production_rate_per_day"],
+                        "sequence_order": int(row.get("sequence_order", index)),
+                    }
+                )
+            )
+        else:
+            catalog.append(
+                Concept(
+                    code=row["code"],
+                    description=row["description"],
+                    unit=row["unit"],
+                    phase=row["phase"],
+                    rule=None,
+                    production_rate_per_day=row["production_rate_per_day"],
+                    sequence_order=int(row.get("sequence_order", index)),
+                    assumptions=["Cantidad por levantamiento manual documentado"],
+                )
+            )
+    return catalog
+
+
 def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
     footing_volume = a.footing_depth_m
     return [

@@ -8,7 +8,11 @@ from klave_engine.common.io import write_text
 from klave_engine.common.logging import get_logger, log_stage
 from klave_engine.costing.apu import build_all_apus
 from klave_engine.costing.boq import generate_bill_of_quantities
-from klave_engine.costing.catalog import PHASE_ORDER, build_default_catalog
+from klave_engine.costing.catalog import (
+    PHASE_ORDER,
+    build_catalog_from_store,
+    build_default_catalog,
+)
 from klave_engine.costing.financial import build_financial_plan
 from klave_engine.costing.integration import integrate_costs
 from klave_engine.costing.models import (
@@ -68,10 +72,15 @@ def generate_cost_report(
     apu_templates: dict[str, list[tuple[str, float]]] | None = None,
     rendimientos: dict[str, float] | None = None,
     adjustments: list[ManualAdjustment] | None = None,
+    store_concepts: list[dict] | None = None,
 ) -> CostReport:
     config = config or CostingConfig()
     assumptions, calibration_notes = _calibrate_assumptions(config.assumptions, dimensions)
-    catalog = build_default_catalog(assumptions)
+    catalog = (
+        build_catalog_from_store(store_concepts, assumptions)
+        if store_concepts
+        else build_default_catalog(assumptions)
+    )
     # Rendimiento overrides come from the workspace catalog; they drive the
     # schedule durations without touching the detection→quantity rules.
     if rendimientos:
@@ -152,7 +161,13 @@ def _apply_adjustments(
                     f"{adjustment.concept_code} no tiene cantidad detectada."
                 )
                 continue
-            apu = apus[adjustment.concept_code]
+            apu = apus.get(adjustment.concept_code)
+            if apu is None:
+                boq.warnings.append(
+                    f"Ajuste manual en {adjustment.concept_code} ignorado: el "
+                    "concepto no tiene matriz de APU y no puede tener precio."
+                )
+                continue
             line = BoqLine(
                 concept_code=concept.code,
                 description=concept.description,

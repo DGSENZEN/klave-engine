@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import {
   ApiError,
+  createConcept,
   createInsumo,
   getCatalog,
   importCatalogPrices,
@@ -120,7 +121,7 @@ export default function CatalogoPage() {
             <input
               ref={fileRef}
               type="file"
-              accept=".csv"
+              accept=".csv,.xlsx"
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
@@ -128,8 +129,11 @@ export default function CatalogoPage() {
                 e.target.value = "";
               }}
             />
-            <Button onClick={() => fileRef.current?.click()}>
-              <UploadSimple size={15} weight="bold" /> Importar CSV
+            <Button
+              onClick={() => fileRef.current?.click()}
+              title="CSV o XLSX (exportado de OPUS/Neodata) con columnas clave y precio"
+            >
+              <UploadSimple size={15} weight="bold" /> Importar precios
             </Button>
             <Button onClick={exportCsv} disabled={!catalog}>
               <DownloadSimple size={15} weight="bold" /> Exportar
@@ -189,7 +193,9 @@ function InsumosSection({
 
   async function commitInsumo(
     code: string,
-    patch: Partial<Pick<CatalogInsumo, "description" | "unit_cost" | "source">>,
+    patch: Partial<
+      Pick<CatalogInsumo, "description" | "unit_cost" | "source" | "source_type" | "vigencia">
+    >,
   ) {
     try {
       await updateInsumo(code, patch, getBrowserActor());
@@ -259,9 +265,33 @@ function InsumosSection({
                   <CommitText
                     value={insumo.source}
                     placeholder="p. ej. cotización proveedor"
-                    reference={insumo.source === "Referencia Klave"}
+                    reference={insumo.source_type === "referencia"}
                     onCommit={(value) => commitInsumo(insumo.code, { source: value })}
                   />
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <select
+                      value={insumo.source_type}
+                      onChange={(e) =>
+                        commitInsumo(insumo.code, {
+                          source_type: e.target.value as CatalogInsumo["source_type"],
+                        })
+                      }
+                      className="rounded-md border border-border bg-surface px-1.5 py-0.5 text-[11px] text-muted"
+                    >
+                      <option value="referencia">Referencia</option>
+                      <option value="cotizacion">Cotización</option>
+                      <option value="publicacion">Publicación</option>
+                    </select>
+                    <input
+                      type="month"
+                      value={insumo.vigencia}
+                      onChange={(e) =>
+                        commitInsumo(insumo.code, { vigencia: e.target.value })
+                      }
+                      title="Vigencia del precio"
+                      className="rounded-md border border-border bg-surface px-1.5 py-0.5 text-[11px] text-muted"
+                    />
+                  </div>
                 </Td>
               </tr>
             ))}
@@ -391,11 +421,27 @@ function ApusSection({
     return [...phases.entries()].filter(([, concepts]) => concepts.length > 0);
   }, [catalog]);
 
+  const [creating, setCreating] = useState(false);
   return (
     <div>
-      <SectionTitle sub="Cantidad de cada recurso por unidad de concepto. El costo directo unitario se recalcula con la ecuación %MO para herramienta menor.">
-        Matrices de precio unitario
-      </SectionTitle>
+      <div className="flex items-start justify-between gap-3">
+        <SectionTitle sub="Cantidad de cada recurso por unidad de concepto. El costo directo unitario se recalcula con la ecuación %MO para herramienta menor.">
+          Matrices de precio unitario
+        </SectionTitle>
+        <Button size="sm" onClick={() => setCreating((value) => !value)}>
+          <Plus size={14} weight="bold" /> Agregar concepto
+        </Button>
+      </div>
+      {creating && (
+        <NewConceptCard
+          catalog={catalog}
+          onDone={() => {
+            setCreating(false);
+            onChanged();
+          }}
+          onError={onError}
+        />
+      )}
       {byPhase.map(([phase, concepts]) => (
         <div key={phase} className="mb-6">
           <div className="microlabel mb-2">{phase}</div>
@@ -416,6 +462,134 @@ function ApusSection({
         </div>
       ))}
     </div>
+  );
+}
+
+function NewConceptCard({
+  catalog,
+  onDone,
+  onError,
+}: {
+  catalog: CatalogState;
+  onDone: () => void;
+  onError: (message: string) => void;
+}) {
+  const [code, setCode] = useState("");
+  const [description, setDescription] = useState("");
+  const [unit, setUnit] = useState("");
+  const [phase, setPhase] = useState(catalog.phase_order[0] ?? "Estructura");
+  const [rate, setRate] = useState("");
+  const [resourceCode, setResourceCode] = useState("");
+  const [resourceQty, setResourceQty] = useState("1");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    const production = Number(rate);
+    const quantity = Number(resourceQty);
+    if (!code.trim() || description.trim().length < 3 || !unit.trim() || !(production > 0)) {
+      onError("Completa clave, descripción, unidad y rendimiento positivo.");
+      return;
+    }
+    if (!resourceCode || !(quantity > 0)) {
+      onError("Un concepto nace con al menos un recurso en su APU (sin precio no hay costo).");
+      return;
+    }
+    setBusy(true);
+    try {
+      await createConcept(
+        {
+          code: code.trim().toUpperCase(),
+          description: description.trim(),
+          unit: unit.trim().toUpperCase(),
+          phase,
+          production_rate_per_day: production,
+          components: [{ resource_code: resourceCode, quantity }],
+        },
+        getBrowserActor(),
+      );
+      onDone();
+    } catch (e) {
+      const detail =
+        e instanceof ApiError && e.detail && typeof e.detail === "object"
+          ? (e.detail as { message?: string }).message
+          : null;
+      onError(detail || "No se pudo crear el concepto.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="mb-4 p-4">
+      <p className="mb-3 text-sm text-muted">
+        Concepto manual: su cantidad se captura con ajustes documentados o mediciones del
+        visor; su precio sale de la matriz que definas aquí.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          placeholder="CLAVE"
+          className="w-32 px-2 py-1.5 font-mono text-xs uppercase"
+        />
+        <Input
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Descripción del concepto"
+          className="min-w-56 flex-1 px-2 py-1.5"
+        />
+        <Input
+          value={unit}
+          onChange={(e) => setUnit(e.target.value)}
+          placeholder="UN"
+          className="w-16 px-2 py-1.5 uppercase"
+        />
+        <select
+          value={phase}
+          onChange={(e) => setPhase(e.target.value)}
+          className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
+        >
+          {catalog.phase_order.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <Input
+          type="number"
+          step="any"
+          value={rate}
+          onChange={(e) => setRate(e.target.value)}
+          placeholder="Rend./día"
+          className="w-24 px-2 py-1.5 text-right tabular"
+        />
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted">Primer recurso del APU:</span>
+        <select
+          value={resourceCode}
+          onChange={(e) => setResourceCode(e.target.value)}
+          className="min-w-52 rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
+        >
+          <option value="">Recurso…</option>
+          {catalog.insumos.map((insumo) => (
+            <option key={insumo.code} value={insumo.code}>
+              {insumo.code} · {insumo.description}
+            </option>
+          ))}
+        </select>
+        <Input
+          type="number"
+          step="any"
+          value={resourceQty}
+          onChange={(e) => setResourceQty(e.target.value)}
+          className="w-24 px-2 py-1.5 text-right tabular"
+        />
+        <Button size="sm" variant="primary" onClick={submit} disabled={busy}>
+          Crear concepto
+        </Button>
+      </div>
+    </Card>
   );
 }
 
@@ -544,7 +718,10 @@ function ApuEditor({
       >
         <div className="min-w-0 flex-1">
           <span className="font-mono text-xs text-muted">{concept.code}</span>{" "}
-          <span className="font-medium">{concept.description}</span>
+          <span className="font-medium">{concept.description}</span>{" "}
+          <Badge tone={concept.detection_backed ? "accent" : "default"}>
+            {concept.detection_backed ? "Detección" : "Manual"}
+          </Badge>
         </div>
         <div className="shrink-0 text-right">
           <div className="font-semibold tabular">{money2(preview)}</div>

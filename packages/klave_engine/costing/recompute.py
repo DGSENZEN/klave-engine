@@ -106,6 +106,7 @@ def build_cost_report(
         apu_templates=store.load_templates(),
         rendimientos=store.load_rendimientos(),
         adjustments=reviews.adjustments if reviews else None,
+        store_concepts=store.load_concepts(),
     )
 
 

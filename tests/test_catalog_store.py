@@ -16,13 +16,19 @@ def store(data_dir):
 
 def test_seeds_reference_data_once(store):
     book = store.load_price_book()
-    assert set(book) == set(RESOURCES)
+    # Core seven-concept resources plus the widened v2 reference basket.
+    assert set(RESOURCES) <= set(book)
     assert all(row["source"] == SEED_SOURCE for row in store.list_insumos())
-    assert store.load_templates().keys() == APU_TEMPLATES.keys()
-    # Every concept gets its default rendimiento.
-    concepts = build_default_catalog(CostingAssumptions())
+    assert all(row["source_type"] == "referencia" for row in store.list_insumos())
+    assert set(APU_TEMPLATES) <= set(store.load_templates())
+    # Every built-in concept exists in the concepts table with a rule key;
+    # v2 manual concepts exist without one.
+    concepts = {row["code"]: row for row in store.load_concepts()}
+    for builtin in build_default_catalog(CostingAssumptions()):
+        assert concepts[builtin.code]["rule_key"] == builtin.code
+    assert concepts["CIM-003"]["rule_key"] is None
     rendimientos = store.load_rendimientos()
-    assert {c.code for c in concepts} <= set(rendimientos)
+    assert {c.code for c in build_default_catalog(CostingAssumptions())} <= set(rendimientos)
 
 
 def test_price_update_keeps_structure_and_provenance(store):

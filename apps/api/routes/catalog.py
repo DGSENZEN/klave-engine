@@ -7,13 +7,12 @@ A global ``catalog_updated`` event tells open projects to offer a recompute.
 
 import csv
 import io
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile
 from klave_engine.common.config import Settings
-from klave_engine.costing.catalog import PHASE_ORDER, build_default_catalog
+from klave_engine.costing.catalog import PHASE_ORDER
 from klave_engine.costing.catalog_store import CatalogStore, get_catalog_store
-from klave_engine.costing.models import CostingAssumptions
 from pydantic import BaseModel, Field
 
 from apps.api.dependencies import get_settings
@@ -34,6 +33,26 @@ class InsumoUpdate(BaseModel):
     resource_type: str | None = None
     unit_cost: float | None = Field(default=None, gt=0)
     source: str | None = Field(default=None, max_length=200)
+    source_type: Literal["referencia", "cotizacion", "publicacion"] | None = None
+    region: str | None = Field(default=None, max_length=12)
+    vigencia: str | None = Field(default=None, max_length=7)
+
+
+class ConceptCreate(BaseModel):
+    code: str = Field(min_length=2, max_length=40, pattern=r"^[A-Za-z0-9._-]+$")
+    description: str = Field(min_length=3, max_length=200)
+    unit: str = Field(min_length=1, max_length=12)
+    phase: str = Field(min_length=2, max_length=40)
+    production_rate_per_day: float = Field(gt=0)
+    components: list["ApuComponentInput"] = Field(min_length=1)
+
+
+class ConceptUpdate(BaseModel):
+    description: str | None = Field(default=None, min_length=3, max_length=200)
+    unit: str | None = Field(default=None, min_length=1, max_length=12)
+    phase: str | None = Field(default=None, min_length=2, max_length=40)
+    production_rate_per_day: float | None = Field(default=None, gt=0)
+    active: bool | None = None
 
 
 class InsumoCreate(BaseModel):
@@ -68,22 +87,21 @@ def _publish_catalog_updated(actor: str | None, action: str, detail: str) -> Non
 
 @router.get("")
 def get_catalog_state(catalog: CatalogStore = Depends(get_catalog)) -> dict:
-    concepts = build_default_catalog(CostingAssumptions())
-    rendimientos = catalog.load_rendimientos()
     templates = catalog.load_templates()
     return {
         "insumos": catalog.list_insumos(),
         "concepts": [
             {
-                "code": concept.code,
-                "description": concept.description,
-                "unit": concept.unit,
-                "phase": concept.phase,
-                "production_rate_per_day": rendimientos.get(
-                    concept.code, concept.production_rate_per_day
-                ),
+                "code": row["code"],
+                "description": row["description"],
+                "unit": row["unit"],
+                "phase": row["phase"],
+                "production_rate_per_day": row["production_rate_per_day"],
+                # rule_key marks detection-backed concepts; without one the
+                # concept is manual and quantities come from adjustments.
+                "detection_backed": bool(row.get("rule_key")),
             }
-            for concept in concepts
+            for row in catalog.load_concepts()
         ],
         "apus": {
             code: [
@@ -143,6 +161,9 @@ def update_insumo(
             resource_type=body.resource_type,
             unit_cost=body.unit_cost,
             source=body.source,
+            source_type=body.source_type,
+            region=body.region,
+            vigencia=body.vigencia,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -159,7 +180,7 @@ def update_apu(
     x_actor: Annotated[str | None, Header()] = None,
     catalog: CatalogStore = Depends(get_catalog),
 ) -> dict:
-    known = {concept.code for concept in build_default_catalog(CostingAssumptions())}
+    known = {row["code"] for row in catalog.load_concepts(include_inactive=True)}
     if concept_code not in known:
         raise HTTPException(
             status_code=404,
@@ -185,7 +206,7 @@ def update_rendimiento(
     x_actor: Annotated[str | None, Header()] = None,
     catalog: CatalogStore = Depends(get_catalog),
 ) -> dict:
-    known = {concept.code for concept in build_default_catalog(CostingAssumptions())}
+    known = {row["code"] for row in catalog.load_concepts(include_inactive=True)}
     if concept_code not in known:
         raise HTTPException(
             status_code=404,
@@ -197,6 +218,54 @@ def update_rendimiento(
         "concept_code": concept_code,
         "production_rate_per_day": body.production_rate_per_day,
     }
+
+
+@router.post("/concepts", status_code=201)
+def create_concept(
+    body: ConceptCreate,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    try:
+        row = catalog.create_concept(
+            code=body.code.upper(),
+            description=body.description,
+            unit=body.unit.upper(),
+            phase=body.phase,
+            production_rate_per_day=body.production_rate_per_day,
+            components=[(c.resource_code, c.quantity) for c in body.components],
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error_type": "invalid_concept", "message": str(exc)}
+        ) from exc
+    _publish_catalog_updated(x_actor, "concept_created", body.code.upper())
+    return row
+
+
+@router.put("/concepts/{concept_code}")
+def update_concept(
+    concept_code: str,
+    body: ConceptUpdate,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    try:
+        row = catalog.update_concept(
+            concept_code,
+            description=body.description,
+            unit=body.unit,
+            phase=body.phase,
+            production_rate_per_day=body.production_rate_per_day,
+            active=body.active,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404 if "no existe" in str(exc) else 422,
+            detail={"error_type": "invalid_concept", "message": str(exc)},
+        ) from exc
+    _publish_catalog_updated(x_actor, "concept_updated", concept_code)
+    return row
 
 
 @router.post("/import-prices")
@@ -214,22 +283,29 @@ async def import_prices(
             status_code=413,
             detail={"error_type": "import_too_large", "max_bytes": MAX_IMPORT_BYTES},
         )
-    try:
-        text = raw.decode("utf-8-sig")
-    except UnicodeDecodeError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "error_type": "invalid_encoding",
-                "message": "El CSV debe estar codificado en UTF-8.",
-            },
-        ) from exc
-    delimiter = ";" if text.count(";") > text.count(",") else ","
-    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
-    rows = [
-        {(key or "").strip().lower(): (value or "") for key, value in row.items()}
-        for row in reader
-    ]
+    filename = (file.filename or "").lower()
+    if filename.endswith((".xlsx", ".xlsm")) or raw[:2] == b"PK":
+        rows = _rows_from_xlsx(raw)
+    else:
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            try:
+                text = raw.decode("cp1252")
+            except UnicodeDecodeError as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error_type": "invalid_encoding",
+                        "message": "El archivo debe ser CSV UTF-8/CP1252 o XLSX.",
+                    },
+                ) from exc
+        delimiter = ";" if text.count(";") > text.count(",") else ","
+        reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+        rows = [
+            {(key or "").strip().lower(): (value or "") for key, value in row.items()}
+            for row in reader
+        ]
     if not rows:
         raise HTTPException(
             status_code=422,
@@ -241,3 +317,52 @@ async def import_prices(
     result = catalog.import_prices(rows, source=source.strip() or "Importación CSV")
     _publish_catalog_updated(x_actor, "prices_imported", f"{result['updated']} precios")
     return result
+
+
+# Column aliases across OPUS/Neodata/plain exports: the import maps whichever
+# pair of code+price headers the workbook uses.
+_CODE_HEADERS = ("code", "clave", "código", "codigo", "key")
+_COST_HEADERS = (
+    "unit_cost", "costo_unitario", "costo", "precio", "precio unitario",
+    "p.u.", "pu", "precio_unitario",
+)
+
+
+def _rows_from_xlsx(raw: bytes) -> list[dict[str, str]]:
+    from openpyxl import load_workbook
+
+    try:
+        workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error_type": "invalid_xlsx", "message": "No se pudo leer el XLSX."},
+        ) from exc
+    ws = workbook.active
+    header_row: list[str] | None = None
+    code_index = cost_index = -1
+    rows: list[dict[str, str]] = []
+    for row in ws.iter_rows(values_only=True):
+        values = ["" if v is None else str(v).strip() for v in row]
+        if header_row is None:
+            lowered = [v.lower() for v in values]
+            code_candidates = [i for i, v in enumerate(lowered) if v in _CODE_HEADERS]
+            cost_candidates = [i for i, v in enumerate(lowered) if v in _COST_HEADERS]
+            if code_candidates and cost_candidates:
+                header_row = values
+                code_index, cost_index = code_candidates[0], cost_candidates[0]
+            continue
+        if code_index < len(values) and cost_index < len(values):
+            rows.append({"code": values[code_index], "unit_cost": values[cost_index]})
+    if header_row is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_type": "headers_not_found",
+                "message": (
+                    "No se encontró un encabezado con clave/código y precio; "
+                    "exporta desde OPUS/Neodata con esas columnas."
+                ),
+            },
+        )
+    return rows

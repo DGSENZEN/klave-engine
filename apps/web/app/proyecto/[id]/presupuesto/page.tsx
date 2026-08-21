@@ -12,6 +12,7 @@ import {
 import {
   addAdjustment,
   API_BASE,
+  getCatalog,
   getDimensions,
   getProjectReviews,
   money,
@@ -19,6 +20,7 @@ import {
   num,
   removeAdjustment,
   type BoqLine,
+  type CatalogConcept,
   type Dimensions,
   type ProjectReviews,
 } from "@/lib/api";
@@ -47,6 +49,7 @@ export default function PresupuestoPage() {
   const { costs, error } = useCostReport(id);
   const [dims, setDims] = useState<Dimensions | null>(null);
   const [reviews, setReviews] = useState<ProjectReviews | null>(null);
+  const [concepts, setConcepts] = useState<CatalogConcept[] | null>(null);
   const { latestEvent, sendActivity, connectionEpoch, actorName, clientId } =
     useProjectLive();
 
@@ -54,6 +57,9 @@ export default function PresupuestoPage() {
   useEffect(() => {
     getDimensions(id).then(setDims).catch(() => {});
     getProjectReviews(id).then(setReviews).catch(() => {});
+    getCatalog()
+      .then((catalog) => setConcepts(catalog.concepts))
+      .catch(() => {});
   }, [id, connectionEpoch]);
 
   useEffect(() => {
@@ -277,7 +283,8 @@ export default function PresupuestoPage() {
         <AdjustmentsPanel
           projectId={id}
           reviews={reviews}
-          concepts={costs.boq.lines}
+          boqLines={costs.boq.lines}
+          concepts={concepts}
           actorName={actorName}
           clientId={clientId}
           onChanged={setReviews}
@@ -358,6 +365,7 @@ function PhaseGroup({
 function AdjustmentsPanel({
   projectId,
   reviews,
+  boqLines,
   concepts,
   actorName,
   clientId,
@@ -365,7 +373,10 @@ function AdjustmentsPanel({
 }: {
   projectId: string;
   reviews: ProjectReviews | null;
-  concepts: BoqLine[];
+  boqLines: BoqLine[];
+  /** Full workspace catalog: manual concepts are adjustable even without a
+   * detected quantity — that is exactly what they exist for. */
+  concepts: CatalogConcept[] | null;
   actorName: string;
   clientId: string | null;
   onChanged: (reviews: ProjectReviews) => void;
@@ -376,7 +387,18 @@ function AdjustmentsPanel({
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const adjustments = reviews?.adjustments ?? [];
-  const unitOf = new Map(concepts.map((line) => [line.concept_code, line.unit]));
+  const unitOf = new Map<string, string>([
+    ...boqLines.map((line) => [line.concept_code, line.unit] as [string, string]),
+    ...(concepts ?? []).map(
+      (concept) => [concept.code, concept.unit] as [string, string],
+    ),
+  ]);
+  const selectable =
+    concepts ??
+    boqLines.map((line) => ({
+      code: line.concept_code,
+      description: line.description,
+    }));
 
   async function submit() {
     const quantity = Number(delta);
@@ -451,9 +473,9 @@ function AdjustmentsPanel({
           className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
         >
           <option value="">Concepto…</option>
-          {concepts.map((line) => (
-            <option key={line.concept_code} value={line.concept_code}>
-              {line.concept_code} · {line.description.slice(0, 48)}
+          {selectable.map((concept) => (
+            <option key={concept.code} value={concept.code}>
+              {concept.code} · {concept.description.slice(0, 48)}
             </option>
           ))}
         </select>

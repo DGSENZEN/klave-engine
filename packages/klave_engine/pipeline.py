@@ -311,6 +311,7 @@ def run_full_pipeline(
         apu_templates=catalog_store.load_templates(),
         rendimientos=catalog_store.load_rendimientos(),
         adjustments=reviews.adjustments,
+        store_concepts=catalog_store.load_concepts(),
     )
     write_json(processed / "cost_report.json", result.cost_report)
     diff = _run_diff(

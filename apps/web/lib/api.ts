@@ -595,6 +595,9 @@ export type CatalogInsumo = {
   unit_cost: number;
   is_labor_percentage: number;
   source: string;
+  source_type: "referencia" | "cotizacion" | "publicacion";
+  region: string;
+  vigencia: string;
   updated_at: string;
 };
 
@@ -604,6 +607,7 @@ export type CatalogConcept = {
   unit: string;
   phase: string;
   production_rate_per_day: number;
+  detection_backed: boolean;
 };
 
 export type ApuComponent = { resource_code: string; quantity: number };
@@ -619,7 +623,12 @@ export const getCatalog = () => getJSON<CatalogState>("/catalog");
 
 export const updateInsumo = (
   code: string,
-  patch: Partial<Pick<CatalogInsumo, "description" | "unit" | "unit_cost" | "source">>,
+  patch: Partial<
+    Pick<
+      CatalogInsumo,
+      "description" | "unit" | "unit_cost" | "source" | "source_type" | "vigencia" | "region"
+    >
+  >,
   actor?: string,
 ) =>
   putJSON<CatalogInsumo>(`/catalog/insumos/${encodeURIComponent(code)}`, patch, {
@@ -634,6 +643,21 @@ export const createInsumo = (
   actor?: string,
 ) =>
   postJSON<CatalogInsumo>("/catalog/insumos", insumo, {
+    ...(actor ? { "X-Actor": actor } : {}),
+  });
+
+export const createConcept = (
+  concept: {
+    code: string;
+    description: string;
+    unit: string;
+    phase: string;
+    production_rate_per_day: number;
+    components: ApuComponent[];
+  },
+  actor?: string,
+) =>
+  postJSON<CatalogConcept>("/catalog/concepts", concept, {
     ...(actor ? { "X-Actor": actor } : {}),
   });
 

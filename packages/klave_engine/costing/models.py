@@ -85,7 +85,10 @@ class Concept(BaseModel):
     description: str
     unit: str  # PZA | M | M2 | M3
     phase: str
-    rule: QuantityRule
+    # None marks a manual concept: no detection rule feeds it, so its
+    # quantity comes only from documented manual adjustments — never zero
+    # invented by the system.
+    rule: QuantityRule | None = None
     # Multiplier from the raw measured quantity (count / meters / m²)
     # to the concept unit, e.g. column count × section × height → m³.
     quantity_factor: float = 1.0

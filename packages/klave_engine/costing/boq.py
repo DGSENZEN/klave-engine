@@ -40,6 +40,7 @@ MAX_COLUMN_SECTION_M2 = 1.00  # 1×1 m large column
 def _raw_over(concept: Concept, detections: list[Detection], meters_factor: float) -> float:
     """Count, or summed length/area (converted to metres), over a detection set."""
     rule = concept.rule
+    assert rule is not None  # callers skip manual (rule-less) concepts
     if rule.kind == QuantityKind.COUNT:
         return float(len(detections))
     total = sum(
@@ -53,9 +54,11 @@ def _raw_over(concept: Concept, detections: list[Detection], meters_factor: floa
 
 
 def _contributing(concept: Concept, detections: list[Detection]) -> list[Detection]:
-    if concept.rule.kind == QuantityKind.COUNT:
+    rule = concept.rule
+    assert rule is not None  # callers skip manual (rule-less) concepts
+    if rule.kind == QuantityKind.COUNT:
         return list(detections)
-    prop = concept.rule.source_property or ""
+    prop = rule.source_property or ""
     return [d for d in detections if prop in d.properties]
 
 
@@ -212,6 +215,9 @@ def generate_bill_of_quantities(
         by_type[detection.detection_type].append(detection)
 
     for concept in catalog:
+        if concept.rule is None:
+            # Manual concept: only documented adjustments give it quantity.
+            continue
         matched = by_type.get(concept.rule.detection_type, [])
         if seg is not None:
             matched_plan = [
