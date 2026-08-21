@@ -16,10 +16,12 @@ import { ApiError } from "@/lib/api";
 import { peekBrowserActor } from "@/lib/collab";
 import { completeProfile } from "@/lib/identity";
 import {
+  changePassword,
   fetchAuthStatus,
   googleLoginUrl,
   login,
   logout,
+  logoutAll,
   register,
   type AuthStatus,
   type AuthUser,
@@ -201,7 +203,85 @@ function SessionCard({ user }: { user: AuthUser }) {
           </button>
         </div>
       </form>
+      <SecuritySection />
     </Card>
+  );
+}
+
+function SecuritySection() {
+  const [open, setOpen] = useState(false);
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setMessage(null);
+    try {
+      await changePassword(current, next);
+      setMessage("Contraseña actualizada. Las demás sesiones se cerraron.");
+      setCurrent("");
+      setNext("");
+    } catch (e) {
+      const detail =
+        e instanceof ApiError && e.detail && typeof e.detail === "object"
+          ? (e.detail as { message?: string }).message
+          : null;
+      setError(detail || "No se pudo cambiar la contraseña.");
+    }
+  }
+
+  async function closeEverywhere() {
+    await logoutAll();
+    window.location.reload();
+  }
+
+  return (
+    <div className="mt-4 border-t border-border pt-3">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="text-xs font-medium text-muted transition hover:text-foreground"
+      >
+        {open ? "Ocultar seguridad" : "Seguridad: contraseña y sesiones"}
+      </button>
+      {open && (
+        <div className="mt-3 space-y-3">
+          <form onSubmit={submit} className="flex flex-wrap items-center gap-2">
+            <Input
+              type="password"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+              placeholder="Contraseña actual (vacía si solo usas Google)"
+              className="min-w-56 flex-1 text-sm"
+            />
+            <Input
+              type="password"
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+              placeholder="Nueva contraseña (mín. 8)"
+              minLength={8}
+              required
+              className="w-52 text-sm"
+            />
+            <button type="submit" className={buttonClasses("secondary", "sm")}>
+              Cambiar
+            </button>
+          </form>
+          <button
+            type="button"
+            onClick={closeEverywhere}
+            className={buttonClasses("ghost", "sm")}
+          >
+            Cerrar sesión en todos los dispositivos
+          </button>
+          {message && <p className="text-xs text-success">{message}</p>}
+          {error && <p className="text-xs text-danger">{error}</p>}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -99,35 +99,37 @@ def test_protected_mode_flip_and_middleware(store, data_dir, monkeypatch):
 
     from apps.api.main import create_app
 
-    client = TestClient(create_app())
-    assert client.get("/auth/session").json()["mode"] == "open"
-    assert client.get("/projects").status_code == 200  # open mode passes
+    app = create_app()
+    # One client per identity: TestClient persists cookies per instance.
+    admin_client = TestClient(app)
+    anonymous_client = TestClient(app)
+    pending_client = TestClient(app)
 
-    created = client.post(
+    assert admin_client.get("/auth/session").json()["mode"] == "open"
+    assert anonymous_client.get("/projects").status_code == 200  # open mode passes
+
+    created = admin_client.post(
         "/auth/register",
         json={"email": "jefe@taller.mx", "name": "Jefa", "password": "secreta-123"},
     )
     assert created.status_code == 201
     assert created.json()["role"] == "admin"
-    admin_cookies = created.cookies
 
     # Cache TTL: force the fresh protected state to be visible immediately.
     store_module._STORE._has_users_cache = None
 
-    anonymous = client.get("/projects", cookies={})
-    assert anonymous.status_code == 401
+    assert anonymous_client.get("/projects").status_code == 401
+    assert admin_client.get("/projects").status_code == 200
 
-    assert client.get("/projects", cookies=admin_cookies).status_code == 200
-
-    pending = client.post(
+    pending = pending_client.post(
         "/auth/register",
         json={"email": "nuevo@taller.mx", "name": "Nuevo", "password": "secreta-456"},
     )
     assert pending.json()["status"] == "pending"
-    login = client.post(
+    login = pending_client.post(
         "/auth/login", json={"email": "nuevo@taller.mx", "password": "secreta-456"}
     )
     assert login.status_code == 200
-    blocked = client.get("/projects", cookies=login.cookies)
+    blocked = pending_client.get("/projects")
     assert blocked.status_code == 403
     assert blocked.json()["detail"]["error_type"] == "pending_approval"

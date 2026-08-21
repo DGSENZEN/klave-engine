@@ -266,6 +266,18 @@ class UserStore:
         with self._connect() as conn:
             conn.execute("DELETE FROM sessions WHERE token_hash = %s", (_token_hash(token),))
 
+    def delete_sessions_for_user(self, user_id: str) -> int:
+        with self._connect() as conn:
+            result = conn.execute("DELETE FROM sessions WHERE user_id = %s", (user_id,))
+        return result.rowcount
+
+    def set_password(self, user_id: str, password: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE users SET password_hash = %s WHERE user_id = %s",
+                (hash_password(password), user_id),
+            )
+
     # ----------------------------------------------------- project access
 
     def grant_access(

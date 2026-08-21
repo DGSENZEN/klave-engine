@@ -4,6 +4,9 @@ localhost ports are same-site, so the browser sends them on fetch/SSE.
 """
 
 import secrets
+import threading
+import time
+from collections import deque
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Request
@@ -24,6 +27,34 @@ from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS
 
 router = APIRouter(tags=["auth"])
+
+# Sliding-window rate limit for credential endpoints: 10 attempts per 5
+# minutes per client address. In-memory is right for the single-process
+# workspace API; a shared limiter belongs to the hosted deployment.
+_RATE_WINDOW_SECONDS = 300.0
+_RATE_MAX_ATTEMPTS = 10
+_rate_buckets: dict[str, deque[float]] = {}
+_rate_lock = threading.Lock()
+
+
+def _rate_limit(request: Request, bucket: str) -> None:
+    host = request.client.host if request.client else "?"
+    key = f"{bucket}:{host}"
+    now = time.monotonic()
+    with _rate_lock:
+        attempts = _rate_buckets.setdefault(key, deque())
+        while attempts and now - attempts[0] > _RATE_WINDOW_SECONDS:
+            attempts.popleft()
+        if len(attempts) >= _RATE_MAX_ATTEMPTS:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error_type": "rate_limited",
+                    "message": "Demasiados intentos; espera unos minutos.",
+                },
+                headers={"Retry-After": "60"},
+            )
+        attempts.append(now)
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -134,10 +165,12 @@ def auth_session(
 @router.post("/auth/register", status_code=201)
 def register(
     body: RegisterInput,
+    request: Request,
     response: Response,
     users: UserStore = Depends(get_users),
     settings: Settings = Depends(get_settings),
 ) -> dict:
+    _rate_limit(request, "register")
     try:
         if users.get_by_email(body.email):
             raise HTTPException(
@@ -159,10 +192,12 @@ def register(
 @router.post("/auth/login")
 def login(
     body: LoginInput,
+    request: Request,
     response: Response,
     users: UserStore = Depends(get_users),
     settings: Settings = Depends(get_settings),
 ) -> dict:
+    _rate_limit(request, "login")
     try:
         user = users.get_by_email(body.email)
         if user is None or not verify_password(body.password, user.get("password_hash")):
@@ -206,6 +241,54 @@ def _db_unavailable() -> HTTPException:
             "message": "La base de datos de usuarios no está disponible (make users-db-up).",
         },
     )
+
+
+class PasswordInput(BaseModel):
+    current_password: str = Field(default="", max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+@router.post("/auth/password")
+def change_password(
+    body: PasswordInput,
+    request: Request,
+    users: UserStore = Depends(get_users),
+) -> dict:
+    """Change (or set, for Google-only accounts) the session user's password.
+    All other sessions are revoked afterwards."""
+    _rate_limit(request, "password")
+    try:
+        user = _require_user(request, users)
+        stored = users.get_by_email(user["email"]) or {}
+        existing_hash = stored.get("password_hash")
+        if existing_hash and not verify_password(body.current_password, existing_hash):
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "error_type": "invalid_credentials",
+                    "message": "La contraseña actual no coincide.",
+                },
+            )
+        users.set_password(str(user["user_id"]), body.new_password)
+        users.delete_sessions_for_user(str(user["user_id"]))
+    except UsersDbUnavailable as exc:
+        raise _db_unavailable() from exc
+    return {"ok": True, "sessions_revoked": True}
+
+
+@router.post("/auth/logout-all")
+def logout_all(
+    request: Request,
+    response: Response,
+    users: UserStore = Depends(get_users),
+) -> dict:
+    try:
+        user = _require_user(request, users)
+        revoked = users.delete_sessions_for_user(str(user["user_id"]))
+    except UsersDbUnavailable as exc:
+        raise _db_unavailable() from exc
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return {"ok": True, "sessions_revoked": revoked}
 
 
 # ------------------------------------------------------------------ google

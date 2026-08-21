@@ -70,6 +70,17 @@ export async function logout(): Promise<void> {
   } catch {}
 }
 
+export async function logoutAll(): Promise<void> {
+  try {
+    await authFetch("/auth/logout-all", { method: "POST" });
+  } catch {}
+}
+
+export const changePassword = (currentPassword: string, newPassword: string) =>
+  authFetch("/auth/password", {
+    json: { current_password: currentPassword, new_password: newPassword },
+  });
+
 // ---- Admin confirmation loop ----
 
 export const listWorkspaceUsers = () =>

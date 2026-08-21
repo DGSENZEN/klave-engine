@@ -6,6 +6,14 @@ users-db-up:
 users-db-down:
 	docker compose stop users-db
 
+users-db-backup:
+	@mkdir -p backups
+	docker exec klave-users-db pg_dump -U klave_users klave_users \
+		> backups/users-$$(date +%Y%m%d-%H%M%S).sql
+	@ls -t backups/users-*.sql | head -1
+
+# Restore: docker exec -i klave-users-db psql -U klave_users klave_users < backups/users-<ts>.sql
+
 DEMO_PROJECT := data/demo/demo_project_001
 
 install:
