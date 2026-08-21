@@ -320,6 +320,9 @@ def project_status(
 ) -> dict:
     """Processing status for the upload-progress screen."""
     root = store.get_root(project_id)  # 404 if unknown
+    # Failure must stay useful: if a previous run left readable artifacts,
+    # the client can still open the viewer and the lectura.
+    artifacts_available = (store.artifact_root(project_id) / "normalized_entities.json").exists()
     job = JOB_STORE.get(project_id, root, store.settings)
     if job is not None:
         return {
@@ -331,6 +334,7 @@ def project_status(
             "error": job.error,
             "entity_count": job.entity_count,
             "detection_count": job.detection_count,
+            "artifacts_available": artifacts_available,
         }
     # No active job: fall back to the persisted manifest status.
     try:
@@ -341,9 +345,15 @@ def project_status(
             "state": "processed" if processed else manifest.processing_status.value,
             "stage": "Completado" if processed else manifest.processing_status.value,
             "error": None,
+            "artifacts_available": artifacts_available,
         }
     except Exception:
-        return {"project_id": project_id, "state": "unknown", "stage": "Desconocido"}
+        return {
+            "project_id": project_id,
+            "state": "unknown",
+            "stage": "Desconocido",
+            "artifacts_available": artifacts_available,
+        }
 
 
 @router.get("/{project_id}")

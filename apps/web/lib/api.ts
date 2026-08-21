@@ -124,6 +124,7 @@ export type ProjectStatus = {
   error?: string | null;
   entity_count?: number;
   detection_count?: number;
+  artifacts_available?: boolean;
 };
 
 export type ProjectEvent = {

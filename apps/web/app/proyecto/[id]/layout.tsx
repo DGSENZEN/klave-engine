@@ -71,17 +71,30 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
     };
   }, [id, status?.state]);
 
-  if (status?.state === "processed") {
+  const failed = status?.state === "failed";
+
+  // Failure stays useful: with readable artifacts from a previous (or
+  // partial) run, the full shell opens — viewer, lectura, adjustments —
+  // behind an explicit warning instead of a dead end.
+  if (status?.state === "processed" || (failed && status.artifacts_available)) {
     return (
       <ProjectLiveProvider projectId={id}>
         <ProjectShell id={id} name={undefined}>
+          {failed && (
+            <div className="px-6 pt-5 lg:px-8">
+              <Callout tone="danger">
+                El último procesamiento falló
+                {status?.error ? `: ${status.error}` : "."} Estás viendo los datos del
+                último procesamiento legible; revisa la Lectura del Plano y corrige el
+                archivo.
+              </Callout>
+            </div>
+          )}
           {children}
         </ProjectShell>
       </ProjectLiveProvider>
     );
   }
-
-  const failed = status?.state === "failed";
   const reached = (key: string) => {
     const current = ORDER.indexOf(status?.state ?? "queued");
     return current >= ORDER.indexOf(key);
