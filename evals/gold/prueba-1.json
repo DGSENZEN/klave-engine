@@ -6,7 +6,7 @@
     "Plano Prueba 1.dxf": "13314f9c78fedde370752c3ab91f53f6cd5767a8d3709f52f5060c5ef76bdd90"
   },
   "status": "baseline",
-  "captured_at": "2026-08-22T20:25:20.764143Z",
+  "captured_at": "2026-08-22T23:17:25.908683Z",
   "labels": {
     "grid_line": [
       "EJE-1-01",
@@ -425,6 +425,16 @@
       "ZAP-29"
     ],
     "beam_tag": [
+      "CER-CR-1-01",
+      "CER-CR-1-02",
+      "CER-CR-1-03",
+      "CER-CR-1-04",
+      "CER-CR-1-05",
+      "CER-CR-1-06",
+      "CER-CR-1-07",
+      "CER-CR-1-08",
+      "CER-CR-1-09",
+      "CER-CR-1-10",
       "TRB-T-1-01",
       "TRB-T-1-02",
       "TRB-T-1-03",

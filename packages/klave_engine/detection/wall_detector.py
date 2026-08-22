@@ -44,6 +44,10 @@ class WallDetectorConfig(BaseModel):
     avoid_layer_hints: list[str] = Field(
         default_factory=lambda: ["GRID", "EJE", "AXIS", "COTA", "DIM", "TEXT", "TXT"]
     )
+    # A wall on a concrete-wall layer is cast, not laid: priced in m³, not m².
+    concrete_layer_hints: list[str] = Field(
+        default_factory=lambda: ["CONCRETO", "CONCRETE", "MURO CONC", "MC", "PANTALLA"]
+    )
     prefer_semantic_layers: bool = True
     # Collinear wall pairs merge across gaps up to this (door openings are
     # wider and stay separate; axis breaks and block seams are smaller).
@@ -267,8 +271,53 @@ def detect_walls(
                     "estimated_thickness": round(wall.thickness, 3),
                     "segment_count": segments,
                     "layer": wall.layer,
+                    "wall_kind": (
+                        "concreto" if layer_matches(wall.layer, config.concrete_layer_hints)
+                        else "block"
+                    ),
                 },
                 wall.source_file,
+            )
+        )
+    # Concrete walls are often drawn as their closed outline (a long thin
+    # polyline on the concrete-wall layer) rather than two parallel lines.
+    for entity in entities:
+        if (
+            entity.entity_type != EntityType.polyline or not entity.is_closed
+            or not entity.points or not layer_matches(entity.layer, config.concrete_layer_hints)
+        ):
+            continue
+        if any(entity.entity_id in d.source_entities for d in output.detections):
+            continue
+        w = entity.bbox[2] - entity.bbox[0]
+        h = entity.bbox[3] - entity.bbox[1]
+        length, thickness = max(w, h), min(w, h)
+        if thickness < config.min_thickness or thickness > config.max_thickness:
+            continue
+        if length < config.min_length or length < 3 * thickness:
+            continue
+        counter += 1
+        output.detections.append(
+            make_detection(
+                detection_ids.next(),
+                DetectionType.wall,
+                f"W{counter}",
+                entity.bbox,
+                0.8,
+                [entity.entity_id],
+                "wall_concrete_outline",
+                [
+                    f"Contorno cerrado en capa de muro de concreto {entity.layer}: "
+                    f"{length:.2f} × {thickness:.2f}",
+                ],
+                {
+                    "estimated_length": round(length, 3),
+                    "estimated_thickness": round(thickness, 3),
+                    "segment_count": 1,
+                    "layer": entity.layer,
+                    "wall_kind": "concreto",
+                },
+                entity.source_file,
             )
         )
     return output

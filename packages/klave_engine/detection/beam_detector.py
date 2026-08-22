@@ -21,7 +21,11 @@ class BeamDetectorConfig(BaseModel):
     min_beam_length: float = 50.0
     # Spans above this are axes or borders, not trabes (scaled per unit preset).
     max_beam_length: float = 1e12
-    layer_hints: list[str] = Field(default_factory=lambda: ["BEAM", "GIRD", "TRABE", "VIGA"])
+    layer_hints: list[str] = Field(
+        default_factory=lambda: [
+            "BEAM", "GIRD", "TRABE", "VIGA", "CADENA", "CERRAM", "DALA",
+        ]
+    )
     avoid_layer_hints: list[str] = Field(default_factory=lambda: ["GRID", "EJE", "AXIS"])
 
 

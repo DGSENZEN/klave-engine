@@ -19,6 +19,7 @@ from klave_engine.detection.detail_reference_detector import (
 from klave_engine.detection.footing_detector import FootingDetectorConfig, detect_footings
 from klave_engine.detection.frames import SheetFrame, frame_boxes
 from klave_engine.detection.grid_detector import GridDetectorConfig, detect_grid
+from klave_engine.detection.pile_detector import PileDetectorConfig, detect_piles
 from klave_engine.detection.results import DetectorOutput
 from klave_engine.detection.slab_detector import SlabDetectorConfig, detect_slabs
 from klave_engine.detection.slab_panels import SlabPanelConfig, detect_slab_panels
@@ -41,6 +42,7 @@ class DetectorSuiteConfig(BaseModel):
     beam: BeamDetectorConfig = Field(default_factory=BeamDetectorConfig)
     slab: SlabDetectorConfig = Field(default_factory=SlabDetectorConfig)
     slab_panel: SlabPanelConfig = Field(default_factory=SlabPanelConfig)
+    pile: PileDetectorConfig = Field(default_factory=PileDetectorConfig)
     wall: WallDetectorConfig = Field(default_factory=WallDetectorConfig)
     detail_reference: DetailReferenceDetectorConfig = Field(
         default_factory=DetailReferenceDetectorConfig
@@ -82,6 +84,9 @@ class DetectorSuiteConfig(BaseModel):
         config.slab_panel.label_search_radius = m(30.0)
         config.slab_panel.family_inherit_radius = m(6.0)
         config.slab_panel.pattern_outline_min_area = m(2.0) * m(2.0)
+        config.pile.circle_search_radius = m(1.5)
+        config.pile.min_diameter = m(0.2)
+        config.pile.max_diameter = m(2.5)
         config.wall.min_length = m(1.5)
         config.wall.max_thickness = m(0.45)
         config.wall.min_thickness = m(0.05)
@@ -119,10 +124,11 @@ def run_detectors(
     if panels.detections:
         _prefer_panels(slabs, panels)
     walls = detect_walls(entities, index, config.wall, ids)
+    piles = detect_piles(entities, index, config.pile, ids)
     details = detect_detail_references(
         entities, manifest, config.detail_reference, config.text_patterns, ids
     )
-    return [grid, columns, footings, beams, slabs, panels, walls, details]
+    return [grid, columns, footings, beams, slabs, panels, walls, piles, details]
 
 
 def _prefer_panels(slabs: DetectorOutput, panels: DetectorOutput) -> None:

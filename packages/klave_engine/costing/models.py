@@ -93,6 +93,8 @@ class QuantityRule(BaseModel):
     # area (drawing units²) within plausible bounds, else the default.
     section_property: str | None = None
     default_section_m2: float | None = None
+    # LINEAR_VOLUME for walls: section = thickness (section_property) × this height.
+    section_height_m: float | None = None
 
 
 class Concept(BaseModel):
@@ -225,6 +227,7 @@ class CostingAssumptions(BaseModel):
     column_height_m: float = 3.0
     beam_section_m2: float = 0.1125  # 25x45 cm
     contratrabe_section_m2: float = 0.125  # 25x50 cm
+    dala_section_m2: float = 0.0375  # 15x25 cm (cadena de enrase / cerramiento)
     wall_height_m: float = 2.7
     slab_thickness_m: float = 0.12  # losa maciza without a declared H=
     mat_thickness_m: float = 0.20  # losa de cimentación without a declared H=

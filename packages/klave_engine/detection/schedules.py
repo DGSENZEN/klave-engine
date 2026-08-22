@@ -144,7 +144,8 @@ def family_of_mark(mark: str) -> str:
     return {
         "K": "castillo", "C": "columna", "COL": "columna", "T": "trabe", "TB": "trabe",
         "CT": "contratrabe", "CTA": "contratrabe", "Z": "zapata", "ZC": "zapata",
-        "ZCM": "zapata", "D": "dala",
+        "ZCM": "zapata", "D": "dala", "DL": "dala", "DAL": "dala", "CE": "dala",
+        "CR": "cerramiento", "MC": "muro_concreto", "P": "pilote",
     }.get(head, "elemento")
 
 

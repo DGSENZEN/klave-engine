@@ -24,6 +24,7 @@ class DetectionType(StrEnum):
     slab_region = "slab_region"
     wall = "wall"
     detail_reference = "detail_reference"
+    pile = "pile"  # pilote / pila: a mark with its circle in the cimentación
 
 
 class Detection(BaseModel):

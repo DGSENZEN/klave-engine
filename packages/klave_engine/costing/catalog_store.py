@@ -123,6 +123,7 @@ SEED_VIGENCIA = "2026-08"
 # runnable baseline to replace with quotations, never a market claim.
 SLAB_CONCEPT_CODES = ("EST-012", "EST-013", "CIM-007")
 BEAM_CONCEPT_CODES_V7 = ("CIM-008",)
+FAMILY_CONCEPT_CODES_V9 = ("EST-014", "CIM-010")
 FORMWORK_CONCEPTS_V7: list[tuple[str, str, str, str, float, int, list[tuple[str, float]]]] = [
     (
         "CIM-009", "Cimbra común en contratrabes, acabado no aparente", "M2",
@@ -338,6 +339,18 @@ class CatalogStore:
                 conn.execute(
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '8') "
                     "ON CONFLICT(key) DO UPDATE SET value = '8'"
+                )
+            if version_row is None or int(version_row["value"]) < 9:
+                self._sync_builtin_concepts(conn, FAMILY_CONCEPT_CODES_V9)
+                # EST-005 (dalas) was a manual concept; it now binds to the
+                # dala/cerramiento rule and keeps the taller's description and matrix.
+                conn.execute(
+                    "UPDATE concepts SET rule_key = 'EST-005' WHERE code = 'EST-005' "
+                    "AND rule_key IS NULL"
+                )
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '9') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '9'"
                 )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.

@@ -31,6 +31,9 @@ class TextPatternConfig(BaseModel):
             r"^T-?\d{1,3}[A-Z]?$",  # T-1 … T-11: the plain Mexican trabe mark
             r"^T[LRPS]-?\d{1,2}[A-Z]?$",  # TL-1 trabe de liga, TR/TP/TS variants
             r"^TRABE-?\d{1,2}$",
+            r"^CE-?\d{1,2}[A-Z]?$",  # cadena de enrase / dala (Marina: CE-1 on EST-CADENAS Y DALAS)
+            r"^CR-?\d{1,2}[A-Z]?$",  # cerramiento
+            r"^(DL|DAL)-?\d{1,2}[A-Z]?$",  # dala DL-1 / DAL-1 (a bare D-4 is a dado)
         ]
     )
     detail_reference: list[str] = Field(

@@ -31,6 +31,10 @@ class Family(StrEnum):
     zapata = "zapata"
     losa = "losa"
     muro = "muro"
+    dala = "dala"
+    cerramiento = "cerramiento"
+    muro_concreto = "muro_concreto"
+    pilote = "pilote"
     eje = "eje"
     interseccion_ejes = "interseccion_ejes"
     referencia_detalle = "referencia_detalle"
@@ -50,6 +54,10 @@ FAMILY_INFO: dict[Family, FamilyInfo] = {
     Family.zapata: FamilyInfo("ZAP", "Zapata", "Zapatas"),
     Family.losa: FamilyInfo("LOS", "Losa", "Losas"),
     Family.muro: FamilyInfo("MUR", "Muro", "Muros"),
+    Family.dala: FamilyInfo("DAL", "Dala", "Dalas"),
+    Family.cerramiento: FamilyInfo("CER", "Cerramiento", "Cerramientos"),
+    Family.muro_concreto: FamilyInfo("MCO", "Muro de concreto", "Muros de concreto"),
+    Family.pilote: FamilyInfo("PIL", "Pilote", "Pilotes"),
     Family.eje: FamilyInfo("EJE", "Eje", "Ejes"),
     Family.interseccion_ejes: FamilyInfo("INT", "Intersección de ejes", "Intersecciones"),
     Family.referencia_detalle: FamilyInfo("REF", "Referencia a detalle", "Referencias"),
@@ -71,7 +79,8 @@ _METHOD_PHRASES: dict[str, str] = {
 
 # Detection types whose label is text read from the plano (a real mark).
 _TEXT_MARK_TYPES = frozenset(
-    {DetectionType.column_tag, DetectionType.beam_tag, DetectionType.detail_reference}
+    {DetectionType.column_tag, DetectionType.beam_tag, DetectionType.detail_reference,
+     DetectionType.pile}
 )
 
 _AXIS_ES = {"horizontal": "horizontal", "vertical": "vertical"}
@@ -84,13 +93,25 @@ def classify_family(detection: Detection) -> Family:
     if dtype == DetectionType.column_tag:
         return Family.castillo if mark.startswith("K") else Family.columna
     if dtype == DetectionType.beam_tag:
-        return Family.contratrabe if re.match(r"^CTA?-?\d", mark) else Family.trabe
+        if re.match(r"^CTA?-?\d", mark):
+            return Family.contratrabe
+        if re.match(r"^(CE|DL|DAL)-?\d", mark):
+            return Family.dala
+        if re.match(r"^CR-?\d", mark):
+            return Family.cerramiento
+        return Family.trabe
+    if dtype == DetectionType.pile:
+        return Family.pilote
     if dtype == DetectionType.footing:
         return Family.zapata
     if dtype == DetectionType.slab_region:
         return Family.losa
     if dtype == DetectionType.wall:
-        return Family.muro
+        return (
+            Family.muro_concreto
+            if detection.properties.get("wall_kind") == "concreto"
+            else Family.muro
+        )
     if dtype == DetectionType.grid_line:
         return Family.eje
     if dtype == DetectionType.grid_intersection:

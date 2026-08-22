@@ -141,6 +141,21 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
             sequence_order=1,
         ),
         Concept(
+            code="CIM-010",
+            description="Pilote de concreto colado en sitio (longitud según proyecto)",
+            unit="PZA",
+            phase="Cimentación",
+            rule=QuantityRule(detection_type=DetectionType.pile, kind=QuantityKind.COUNT),
+            quantity_factor=1.0,
+            view_scope=ViewScope.FOUNDATION_ONLY,
+            assumptions=[
+                "Pilotes contados por marca en la planta de cimentación; diámetro del círculo, "
+                "longitud por notas/detalle. Precio por pieza a adoptar del catálogo."
+            ],
+            production_rate_per_day=3.0,
+            sequence_order=0,
+        ),
+        Concept(
             code="CIM-008",
             description="Contratrabes de concreto armado f'c=250 kg/cm²",
             unit="M3",
@@ -201,6 +216,50 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
             ],
             production_rate_per_day=4.0,
             sequence_order=1,
+        ),
+        Concept(
+            code="EST-005",
+            description="Cadena o dala de concreto armado 15x20 cm",
+            unit="M",
+            phase="Estructura",
+            rule=QuantityRule(
+                detection_type=DetectionType.beam_tag,
+                kind=QuantityKind.LENGTH,
+                source_property="estimated_span_length",
+                property_filter={"family": ["dala", "cerramiento"]},
+            ),
+            quantity_factor=1.0,
+            view_scope=ViewScope.SUPERSTRUCTURE_SUM,
+            assumptions=[
+                "Metros de dalas y cerramientos marcados en planta (CE-n, CR-n, DL-n); la "
+                "sección declarada en notas (p. ej. «CADENA DE ENRASE 15x25») manda sobre la "
+                "matriz, revísala"
+            ],
+            production_rate_per_day=6.0,
+            sequence_order=3,
+        ),
+        Concept(
+            code="EST-014",
+            description="Muros de concreto armado f'c=250 kg/cm²",
+            unit="M3",
+            phase="Estructura",
+            rule=QuantityRule(
+                detection_type=DetectionType.wall,
+                kind=QuantityKind.LINEAR_VOLUME,
+                source_property="estimated_length",
+                property_filter={"wall_kind": ["concreto"]},
+                section_property="estimated_thickness",
+                section_height_m=a.wall_height_m,
+                default_section_m2=0.20 * a.wall_height_m,
+            ),
+            quantity_factor=1.0,
+            view_scope=ViewScope.SUPERSTRUCTURE_SUM,
+            assumptions=[
+                f"Longitud × espesor medido × altura {a.wall_height_m:.2f} m en muros de la "
+                "capa de concreto (MC); espesor supuesto 0.20 m si no se mide"
+            ],
+            production_rate_per_day=6.0,
+            sequence_order=3,
         ),
         Concept(
             code="EST-003",
@@ -271,6 +330,7 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
                 detection_type=DetectionType.wall,
                 kind=QuantityKind.LENGTH,
                 source_property="estimated_length",
+                property_filter={"wall_kind": [None, "block"]},
             ),
             quantity_factor=a.wall_height_m,
             view_scope=ViewScope.SUPERSTRUCTURE_SUM,

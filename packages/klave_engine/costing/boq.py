@@ -66,6 +66,13 @@ def _section_m2(detection: Detection, rule: QuantityRule, meters_factor: float) 
             pass
     measured = detection.properties.get(rule.section_property or "")
     if isinstance(measured, (int, float)) and measured > 0:
+        if rule.section_height_m:
+            # A wall: the measured value is its thickness, the section is
+            # thickness × height.
+            thickness = float(measured) * meters_factor
+            if 0.05 <= thickness <= 0.6:
+                return thickness * rule.section_height_m
+            return rule.default_section_m2 or 0.0
         area = float(measured) * meters_factor ** 2
         if MIN_COLUMN_SECTION_M2 <= area <= MAX_COLUMN_SECTION_M2:
             return area
@@ -313,7 +320,14 @@ def generate_bill_of_quantities(
             )
             continue
 
-        apu = apus[concept.code]
+        apu = apus.get(concept.code)
+        if apu is None:
+            boq.warnings.append(
+                f"Concepto {concept.code} ({concept.description[:40]}…): {result.quantity:,.2f} "
+                f"{concept.unit} contados, sin matriz ni precio adoptado — sin costo hasta que "
+                "el catálogo le dé precio."
+            )
+            continue
         contributing = result.dets
         confidence = (
             sum(d.confidence for d in contributing) / len(contributing)

@@ -199,6 +199,27 @@ APU_TEMPLATES: dict[str, list[tuple[str, float]]] = {
         ("EQ-HERRAMIENTA", 1.0),
     ],
     # M3 trabes y contratrabes
+    # M cadena/dala 15x20: 0.033 m³ of concrete per metre, hand-laid cimbra
+    "EST-005": [
+        ("MAT-CONC250", 0.033),
+        ("MAT-ACERO", 0.0045),
+        ("MAT-CIMBRA", 0.42),
+        ("MO-CUAD-ALB", 0.035),
+        ("MO-CUAD-FIE", 0.020),
+        ("MO-CUAD-CARP", 0.030),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+    # M3 muro de concreto armado: two-sided cimbra
+    "EST-014": [
+        ("MAT-CONC250", 1.05),
+        ("MAT-ACERO", 0.090),
+        ("MAT-CIMBRA", 10.00),
+        ("MO-CUAD-ALB", 0.80),
+        ("MO-CUAD-FIE", 0.50),
+        ("MO-CUAD-CARP", 0.90),
+        ("EQ-VIBRADOR", 0.20),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
     # M3 contratrabe: same matrix as a trabe without obra falsa
     "CIM-008": [
         ("MAT-CONC250", 1.05),
