@@ -424,6 +424,86 @@ def _sections_from_detail_geometry(
     return specs
 
 
+_SECTION_LABEL_RE = re.compile(r"^SECCI[OÓ]N\s*(\d+)", re.I)
+_BARE_SECTION_RE = re.compile(r"^(\d{2,3})\s*[xX×]\s*(\d{2,3})$")
+
+
+def _sections_from_section_callouts(
+    texts: list[NormalizedEntity], config: TextPatternConfig, detail_boxes: list[BBox]
+) -> list[ElementSpec]:
+    """Elevation details: the mark titles the drawing at its top-left and the
+    section cuts are called out along it as "SECCIÓN 1" over "30X80". A bare
+    NNxNN with a SECCIÓN label beside it belongs to the nearest title that
+    sits above-left of it in the same detail frame; with several cuts the
+    largest section is kept and the range is said in the note."""
+
+    def box_of(entity: NormalizedEntity) -> int | None:
+        center = bbox_center(entity.bbox)
+        for index, box in enumerate(detail_boxes):
+            if bbox_contains_point(box, center):
+                return index
+        return None
+
+    labels = [
+        (bbox_center(t.bbox), int(m.group(1)))
+        for t in texts
+        if (m := _SECTION_LABEL_RE.match(" ".join((t.text or "").split())))
+    ]
+    marks = []
+    for t in texts:
+        content = (t.text or "").strip()
+        mark = _mark_in_text(content, config)
+        if mark is None or len(content) > 8:
+            continue
+        box = box_of(t)
+        if box is not None:
+            marks.append((mark, bbox_center(t.bbox), box))
+    found: dict[str, list[tuple[int, tuple[int, int]]]] = {}
+    for t in texts:
+        content = " ".join((t.text or "").split())
+        match = _BARE_SECTION_RE.match(content)
+        if match is None:
+            continue
+        box = box_of(t)
+        if box is None:
+            continue
+        cx, cy = bbox_center(t.bbox)
+        height = bbox_height(t.bbox) or 0.1
+        label = min(
+            ((abs(lx - cx) + abs(ly - cy), n) for (lx, ly), n in labels),
+            default=(None, None),
+        )
+        if label[0] is None or label[0] > 8 * height:
+            continue  # a bare NNxNN without a SECCIÓN label is something else
+        best: tuple[float, str] | None = None
+        for mark, (mx, my), mbox in marks:
+            if mbox != box:
+                continue
+            dx, dy = cx - mx, my - cy
+            if not (-1.0 <= dx <= 30.0 and 0.0 <= dy <= 6.0):
+                continue
+            score = dx + 2 * dy
+            if best is None or score < best[0]:
+                best = (score, mark)
+        if best is None:
+            continue
+        found.setdefault(best[1], []).append(
+            (int(label[1]), (int(match.group(1)), int(match.group(2))))
+        )
+    specs: list[ElementSpec] = []
+    for mark, cuts in found.items():
+        cuts.sort()
+        largest = max(cuts, key=lambda c: c[1][0] * c[1][1])[1]
+        listed = ", ".join(f"sección {n} {a}x{b}" for n, (a, b) in cuts)
+        specs.append(
+            ElementSpec(
+                mark=mark, family=family_of_mark(mark), section_cm=largest, source="detalle",
+                source_text=f"{mark} · {listed} (se toma la mayor)"[:120], confidence=0.65,
+            )
+        )
+    return specs
+
+
 def _merge_fields(chosen: ElementSpec, others: list[ElementSpec]) -> ElementSpec:
     """Same-rank specs complete each other: the drawn section plus the
     armado written beside the mark."""
@@ -452,6 +532,8 @@ def build_schedule_inventory(
     specs = table_specs + _parse_annotations(texts, config)
     if unit_to_m and detail_boxes:
         specs += _sections_from_detail_geometry(entities, config, unit_to_m, detail_boxes)
+    if detail_boxes:
+        specs += _sections_from_section_callouts(texts, config, detail_boxes)
     inventory = ScheduleInventory(
         specs=specs,
         tables_found=tables,

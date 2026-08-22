@@ -90,3 +90,24 @@ def test_section_drawn_under_the_mark_in_a_detail_frame():
     assert inventory.by_mark["T1-4"].section_cm == (30, 60)
     assert inventory.by_mark["T1-4"].source == "detalle"
     assert "T1-5" not in inventory.by_mark
+
+
+def test_section_callouts_along_an_elevation_belong_to_its_title():
+    """CTA-16 titles an elevation; 'SECCIÓN 1 / 30X80' and 'SECCIÓN 2 / 30X60'
+    are called out at its far end. The largest section is kept."""
+    texts = [
+        _text("m1", "CTA-16", 2.0, 20.0, 0.12),
+        _text("l1", "SECCIÓN 1", 21.0, 15.0, 0.1),
+        _text("s1", "30X80", 21.0, 14.8, 0.1),
+        _text("l2", "SECCIÓN 2", 23.0, 15.0, 0.1),
+        _text("s2", "30X60", 23.0, 14.8, 0.1),
+        _text("m2", "CTA-3", 2.0, 30.0, 0.12),  # another title, further above
+        _text("s3", "40X40", 35.0, 2.0, 0.1),  # bare, no SECCIÓN label: ignored
+    ]
+    inventory = build_schedule_inventory(
+        texts, TextPatternConfig(), unit_to_m=1.0, detail_boxes=[(0.0, 0.0, 44.0, 29.4)]
+    )
+    spec = inventory.by_mark["CTA-16"]
+    assert spec.section_cm == (30, 80) and spec.source == "detalle"
+    assert "sección 1 30x80, sección 2 30x60" in spec.source_text
+    assert "CTA-3" not in inventory.by_mark
