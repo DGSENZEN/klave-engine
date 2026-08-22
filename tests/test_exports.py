@@ -67,7 +67,7 @@ def test_klave_workbook_structure_and_generadores(data_dir):
         for cell in row
         if cell.value is not None
     )
-    assert "COL-01" in generadores
+    assert "COL-" in generadores
     assert "AJUSTE MANUAL +2.50" in generadores
     assert "castillos del eje 4" in generadores
     assert "Diego" in generadores

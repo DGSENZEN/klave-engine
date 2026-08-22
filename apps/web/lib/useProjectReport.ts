@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getCosts, getRisks, type CostReport, type RiskReport } from "@/lib/api";
+import {
+  getCosts,
+  getProjectReviews,
+  getRisks,
+  type CostReport,
+  type ProjectReviews,
+  type RiskReport,
+} from "@/lib/api";
 import { useProjectLive } from "@/components/ProjectLive";
 
 /**
@@ -90,4 +97,33 @@ export function useRiskReport(id: string): {
   }, [id, latestEvent]);
 
   return { risks, error };
+}
+
+/** Reviews (exclusions, adjustments, verification) with live refresh. */
+export function useProjectReviews(id: string): ProjectReviews | null {
+  const [reviews, setReviews] = useState<ProjectReviews | null>(null);
+  const { latestEvent, connectionEpoch } = useProjectLive();
+
+  useEffect(() => {
+    let active = true;
+    getProjectReviews(id)
+      .then((r) => active && setReviews(r))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [id, connectionEpoch]);
+
+  useEffect(() => {
+    if (latestEvent?.type !== "review_updated" && latestEvent?.type !== "run_published") return;
+    let active = true;
+    getProjectReviews(id)
+      .then((r) => active && setReviews(r))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [id, latestEvent]);
+
+  return reviews;
 }

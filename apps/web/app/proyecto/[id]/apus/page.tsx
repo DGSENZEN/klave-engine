@@ -4,7 +4,9 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { Calculator, CaretDown } from "@phosphor-icons/react";
 import { money2, num, type Apu } from "@/lib/api";
-import { useCostReport } from "@/lib/useProjectReport";
+import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
+import { useProjectLive } from "@/components/ProjectLive";
+import { moneyGate, UnitsGate } from "@/components/MoneyGate";
 import {
   Badge,
   Callout,
@@ -34,6 +36,8 @@ const RESOURCE_COLORS: Record<string, string> = {
 export default function ApusPage() {
   const { id } = useParams<{ id: string }>();
   const { costs, error } = useCostReport(id);
+  const reviews = useProjectReviews(id);
+  const { actorName } = useProjectLive();
   const [open, setOpen] = useState<string | null>(null);
 
   if (error) {
@@ -54,6 +58,15 @@ export default function ApusPage() {
         <SkeletonHeader />
         <SkeletonMetrics count={3} />
         <SkeletonCards count={4} />
+      </div>
+    );
+  }
+
+  if (moneyGate(costs, reviews) === "blocked") {
+    return (
+      <div className="px-6 py-7 lg:px-8">
+        <PageHeader title="Precios unitarios" />
+        <UnitsGate id={id} costs={costs} actorName={actorName} />
       </div>
     );
   }

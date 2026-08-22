@@ -4,7 +4,9 @@ import { useParams } from "next/navigation";
 import { CalendarBlank, Stack, ListChecks } from "@phosphor-icons/react";
 import { money, num, type ScheduleActivity } from "@/lib/api";
 import { phaseColor } from "@/lib/phases";
-import { useCostReport } from "@/lib/useProjectReport";
+import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
+import { useProjectLive } from "@/components/ProjectLive";
+import { moneyGate, UnitsGate } from "@/components/MoneyGate";
 import {
   Callout,
   Card,
@@ -20,6 +22,8 @@ import {
 export default function ProgramaPage() {
   const { id } = useParams<{ id: string }>();
   const { costs, error } = useCostReport(id);
+  const reviews = useProjectReviews(id);
+  const { actorName } = useProjectLive();
 
   if (error) {
     return (
@@ -53,6 +57,15 @@ export default function ProgramaPage() {
             ))}
           </div>
         </Card>
+      </div>
+    );
+  }
+
+  if (moneyGate(costs, reviews) === "blocked") {
+    return (
+      <div className="px-6 py-7 lg:px-8">
+        <PageHeader title="Programa de obra" />
+        <UnitsGate id={id} costs={costs} actorName={actorName} />
       </div>
     );
   }

@@ -201,6 +201,11 @@ def describe(detection: Detection, unit_to_m: float | None = None) -> str:
     return " · ".join(parts)
 
 
+def _label_key(mark: str) -> str:
+    """A mark as it appears in a key: uppercase, no spaces, '/' kept for B/3."""
+    return re.sub(r"[^A-Z0-9/'\-\.]", "", mark.strip().upper().replace(" ", ""))
+
+
 def enrich_detections(
     detections: list[Detection], unit_to_m: float | None = None
 ) -> None:
@@ -221,7 +226,21 @@ def enrich_detections(
     for family, members in by_family.items():
         info = FAMILY_INFO[family]
         members.sort(key=lambda d: (d.mark, tuple(d.bbox)))
-        width = max(2, len(str(len(members))))
-        for ordinal, detection in enumerate(members, start=1):
-            detection.family_label = info.label
-            detection.display_label = f"{info.code}-{ordinal:0{width}d}"
+        # Keys are built from the mark the sheet uses, so a review on
+        # "EJE-B" or "CAS-K-1-07" survives a reprocess that adds or drops
+        # unrelated elements; only unmarked elements are numbered globally.
+        groups: dict[str, list[Detection]] = {}
+        for detection in members:
+            groups.setdefault(_label_key(detection.mark), []).append(detection)
+        unmarked = groups.get("", [])
+        unmarked_width = max(2, len(str(len(unmarked))))
+        for key, group in groups.items():
+            width = max(2, len(str(len(group))))
+            for ordinal, detection in enumerate(group, start=1):
+                detection.family_label = info.label
+                if not key:
+                    detection.display_label = f"{info.code}-{ordinal:0{unmarked_width}d}"
+                elif len(group) == 1:
+                    detection.display_label = f"{info.code}-{key}"
+                else:
+                    detection.display_label = f"{info.code}-{key}-{ordinal:0{width}d}"

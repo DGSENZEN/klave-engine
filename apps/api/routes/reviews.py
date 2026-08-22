@@ -27,6 +27,7 @@ from apps.api.dependencies import (
     project_recompute_lock,
 )
 from apps.api.events import BUS, clean_actor, clean_client_id
+from apps.api.jobs import JOB_STORE, JobQueueFullError
 
 router = APIRouter(prefix="/projects")
 
@@ -45,6 +46,8 @@ class AdjustmentInput(BaseModel):
 class VerificationInput(BaseModel):
     step: Literal["units", "detections", "assumptions"]
     confirmed: bool
+    # Step "units" only: the unit the engineer asserts (m, cm, mm, ft, in).
+    unit: Literal["m", "cm", "mm", "ft", "in"] | None = None
 
 
 def _summary(reviews: ProjectReviews) -> dict:
@@ -236,14 +239,27 @@ def set_verification(
 ) -> dict:
     """Verification sign-offs change no numbers; no recompute needed."""
     actor = clean_actor(x_actor) or ""
-    control_dir = store.get_root(project_id) / settings.processed_dir_name
+    root = store.get_root(project_id)
+    control_dir = root / settings.processed_dir_name
     now = datetime.now(UTC)
+    reprocessing = False
     with project_recompute_lock(project_id):
         reviews = load_reviews(control_dir)
         verification = reviews.verification
         if body.step == "units":
             verification.units_confirmed_at = now if body.confirmed else None
             verification.units_confirmed_by = actor if body.confirmed else ""
+            if body.confirmed and body.unit:
+                try:
+                    current = store.read_artifact(project_id, "drawing_units.json").get("unit")
+                except HTTPException:
+                    current = None
+                verification.units_override = body.unit
+                # A unit the engine did not detect changes every threshold
+                # downstream: the only honest response is to read again.
+                reprocessing = body.unit != current
+            elif not body.confirmed:
+                verification.units_override = None
         elif body.step == "detections":
             verification.detections_confirmed_at = now if body.confirmed else None
             verification.detections_confirmed_by = actor if body.confirmed else ""
@@ -251,10 +267,20 @@ def set_verification(
             verification.assumptions_confirmed_at = now if body.confirmed else None
             verification.assumptions_confirmed_by = actor if body.confirmed else ""
         save_reviews(control_dir, reviews)
+    if reprocessing:
+        try:
+            JOB_STORE.enqueue(project_id, root, settings)
+        except JobQueueFullError:
+            reprocessing = False
     BUS.publish(
         "review_updated",
         project_id=project_id,
         actor=actor,
-        data={"action": f"verification_{body.step}", "confirmed": body.confirmed},
+        data={
+            "action": f"verification_{body.step}",
+            "confirmed": body.confirmed,
+            "unit": body.unit,
+            "reprocessing": reprocessing,
+        },
     )
-    return _reviews_payload(reviews)
+    return {**_reviews_payload(reviews), "reprocessing": reprocessing}

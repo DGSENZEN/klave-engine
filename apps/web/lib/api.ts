@@ -247,7 +247,7 @@ export type OperatingYear = {
 export type CostReport = {
   project_id: string;
   currency: string;
-  drawing_units: { unit: string; source: string; confidence: number };
+  drawing_units: { unit: string; source: string; confidence: number; notes?: string[] };
   boq: {
     direct_cost_total: number;
     totals_by_phase: Record<string, number>;
@@ -551,6 +551,7 @@ export type ManualAdjustment = {
 export type VerificationState = {
   units_confirmed_at: string | null;
   units_confirmed_by: string;
+  units_override: string | null;
   detections_confirmed_at: string | null;
   detections_confirmed_by: string;
   assumptions_confirmed_at: string | null;
@@ -619,11 +620,12 @@ export const setVerification = (
   step: "units" | "detections" | "assumptions",
   confirmed: boolean,
   actor?: string,
+  unit?: "m" | "cm" | "mm" | "ft" | "in",
 ) =>
-  putJSON<ProjectReviews>(
+  putJSON<ProjectReviews & { reprocessing?: boolean }>(
     `/projects/${id}/reviews/verification`,
-    { step, confirmed },
-    actorClientHeaders(actor),
+    { step, confirmed, unit },
+    actor ? { "X-Actor": actor } : undefined,
   );
 
 // ---- Workspace catalog ----

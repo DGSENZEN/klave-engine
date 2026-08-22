@@ -3,7 +3,9 @@
 import { useParams } from "next/navigation";
 import { Money, CalendarBlank, PiggyBank, Wrench } from "@phosphor-icons/react";
 import { money, money2, type PeriodCashflow } from "@/lib/api";
-import { useCostReport } from "@/lib/useProjectReport";
+import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
+import { useProjectLive } from "@/components/ProjectLive";
+import { moneyGate, UnitsGate } from "@/components/MoneyGate";
 import {
   Callout,
   Card,
@@ -22,6 +24,8 @@ import {
 export default function FlujoPage() {
   const { id } = useParams<{ id: string }>();
   const { costs, error } = useCostReport(id);
+  const reviews = useProjectReviews(id);
+  const { actorName } = useProjectLive();
 
   if (error) {
     return (
@@ -52,6 +56,15 @@ export default function FlujoPage() {
           </div>
         </Card>
         <SkeletonTable rows={6} />
+      </div>
+    );
+  }
+
+  if (moneyGate(costs, reviews) === "blocked") {
+    return (
+      <div className="px-6 py-7 lg:px-8">
+        <PageHeader title="Flujo financiero" />
+        <UnitsGate id={id} costs={costs} actorName={actorName} />
       </div>
     );
   }

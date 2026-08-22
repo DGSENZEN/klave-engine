@@ -230,6 +230,15 @@ def run_full_pipeline(
 
     insunits = next((d.insunits for d in drawings if d.insunits), None)
     units = detect_units(insunits, result.entities)
+    confirmed_unit = load_reviews(control_dir).verification.units_override
+    if confirmed_unit:
+        units = DrawingUnits(
+            unit=confirmed_unit,
+            source="confirmed",
+            confidence=1.0,
+            notes=[f"Unidad confirmada por el ingeniero: {confirmed_unit}"]
+            + [f"Detección previa: {units.unit} ({units.source})"],
+        )
     result.units = units
     write_json(processed / "drawing_units.json", units)
     log_stage(

@@ -43,6 +43,7 @@ import {
 } from "@/components/ui";
 import { ButtonMenu, MenuItem } from "@/components/Menu";
 import { useProjectLive } from "@/components/ProjectLive";
+import { moneyGate, UnitsGate } from "@/components/MoneyGate";
 
 export default function PresupuestoPage() {
   const { id } = useParams<{ id: string }>();
@@ -117,6 +118,15 @@ export default function PresupuestoPage() {
         <SkeletonHeader />
         <SkeletonMetrics count={3} />
         <SkeletonTable rows={8} />
+      </div>
+    );
+  }
+
+  if (moneyGate(costs, reviews) === "blocked") {
+    return (
+      <div className="px-6 py-7 lg:px-8">
+        <PageHeader title="Presupuesto" />
+        <UnitsGate id={id} costs={costs} actorName={actorName} />
       </div>
     );
   }

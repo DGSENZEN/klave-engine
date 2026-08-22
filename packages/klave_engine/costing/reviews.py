@@ -44,6 +44,9 @@ class VerificationState(BaseModel):
 
     units_confirmed_at: datetime | None = None
     units_confirmed_by: str = ""
+    # The unit the engineer confirmed the drawing is in; overrides detection
+    # and triggers a reprocess, because every detector threshold scales by it.
+    units_override: str | None = None
     detections_confirmed_at: datetime | None = None
     detections_confirmed_by: str = ""
     assumptions_confirmed_at: datetime | None = None
