@@ -649,6 +649,64 @@ export type Lectura = {
 
 export const getLectura = (id: string) => getJSON<Lectura>(`/projects/${id}/lectura`);
 
+/** What a vision model read from one sheet image — a suggestion with provenance. */
+export type AiElementRead = {
+  mark: string;
+  family: string;
+  section_cm: string | null;
+  rebar: string | null;
+  stirrups: string | null;
+  length_m: number | null;
+  note: string | null;
+  confidence: number;
+};
+export type AiSheetRead = {
+  sheet_code: string | null;
+  title: string | null;
+  level: string | null;
+  scale: string | null;
+  concrete_fc: Record<string, number>;
+  steel_fy: number | null;
+  cover_cm: Record<string, number>;
+  desplante_m: number | null;
+  slab_system: string | null;
+  elements: AiElementRead[];
+  notes: string[];
+  uncertainties: string[];
+};
+export type AiSheetReading = {
+  frame_code: string;
+  frame_title: string;
+  model: string;
+  read: AiSheetRead;
+  input_tokens: number;
+  output_tokens: number;
+};
+export type AiReads = {
+  status: "idle" | "running" | "done" | "failed" | "unavailable";
+  started_at: string | null;
+  finished_at: string | null;
+  run_id: string | null;
+  readings: AiSheetReading[];
+  input_tokens: number;
+  output_tokens: number;
+  error: string | null;
+  notes: string[];
+  available: boolean;
+  running: boolean;
+  model: string;
+};
+
+export const getAiReads = (id: string) => getJSON<AiReads>(`/projects/${id}/ai-reads`);
+export const startAiRead = (id: string, actor?: string) =>
+  postJSON<{ project_id: string; status: string }>(
+    `/projects/${id}/ai-read`,
+    {},
+    actor ? { "X-Actor": actor } : undefined,
+  );
+export const frameRenderUrl = (id: string, code: string) =>
+  `${API_BASE}/projects/${id}/renders/${encodeURIComponent(code)}.png`;
+
 // ---- Correction loop & verification ----
 
 export type ReviewStatus = "confirmed" | "excluded";

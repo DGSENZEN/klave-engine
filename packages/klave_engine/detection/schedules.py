@@ -48,9 +48,9 @@ _HEADER_KEYWORDS = re.compile(
     r"MARCA|CLAVE|TIPO|CASTILLO|COLUMNA|SECC|DIMENS|ARMADO|REFUERZO|VARILLA|ESTRIBO", re.I
 )
 _MIN_SIDE_CM, _MAX_SIDE_CM = 8, 150
-_SOURCE_RANK = {"cuadro": 3, "detalle": 2, "nota": 1}
+_SOURCE_RANK = {"cuadro": 3, "detalle": 2, "nota": 1, "ia": 0}
 
-Source = Literal["cuadro", "detalle", "nota"]
+Source = Literal["cuadro", "detalle", "nota", "ia"]
 
 
 class ElementSpec(BaseModel):
@@ -680,6 +680,44 @@ def build_schedule_inventory(
     return inventory
 
 
+def merge_external_specs(inventory: ScheduleInventory, specs: list[dict]) -> int:
+    """Specs read elsewhere (the AI reading of the sheet images) fill what the
+    rules did not read: a mark without a section or armado takes them, a
+    mark the rules already specified keeps the rules. Returns how many marks
+    were completed."""
+    added = 0
+    for raw in specs:
+        try:
+            spec = ElementSpec.model_validate(raw)
+        except ValueError:
+            continue
+        mark = spec.mark.upper()
+        current = inventory.by_mark.get(mark)
+        if current is None:
+            inventory.by_mark[mark] = spec
+            inventory.specs.append(spec)
+            added += 1
+            continue
+        filled = False
+        if current.section_cm is None and spec.section_cm is not None:
+            current.section_cm = spec.section_cm
+            filled = True
+        if current.rebar is None and spec.rebar:
+            current.rebar = spec.rebar
+            filled = True
+        if current.stirrups is None and spec.stirrups:
+            current.stirrups = spec.stirrups
+            filled = True
+        if filled:
+            current.source_text = f"{current.source_text} + {spec.source_text}"[:120]
+            added += 1
+    if added:
+        inventory.notes.append(
+            f"{added} marcas completadas con la lectura IA de las hojas (por confirmar)."
+        )
+    return added
+
+
 def apply_schedule(
     detections: list[Detection], inventory: ScheduleInventory, meters_factor: float | None
 ) -> int:
@@ -708,7 +746,10 @@ def apply_schedule(
             props["spec_rebar"] = spec.rebar
         if spec.stirrups:
             props["spec_stirrups"] = spec.stirrups
-        origin = {"cuadro": "cuadro del plano", "detalle": "detalle", "nota": "nota"}[spec.source]
+        origin = {
+            "cuadro": "cuadro del plano", "detalle": "detalle", "nota": "nota",
+            "ia": "lectura IA de la imagen de la hoja (por confirmar)",
+        }[spec.source]
         detection.evidence.notes.append(
             f"Sección {a}x{b} cm según {origin}: «{spec.source_text[:60]}»"
         )

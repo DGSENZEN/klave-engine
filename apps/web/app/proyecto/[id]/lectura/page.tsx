@@ -13,13 +13,19 @@ import {
 } from "@phosphor-icons/react";
 import {
   addInventoryMapping,
+  ApiError,
   deleteInventoryMapping,
+  frameRenderUrl,
+  getAiReads,
   getCatalog,
   getCostingConfig,
   getLectura,
   listInventoryMappings,
   num,
   recompute,
+  startAiRead,
+  type AiReads,
+  type AiSheetReading,
   type CatalogConcept,
   type InventoryMapping,
   type Lectura,
@@ -31,6 +37,7 @@ import { FAMILY_LABELS } from "@/components/PlanoCanvas";
 import { useProjectLive } from "@/components/ProjectLive";
 import {
   Badge,
+  Button,
   Callout,
   Card,
   Metric,
@@ -47,6 +54,34 @@ export default function LecturaPage() {
   const [concepts, setConcepts] = useState<CatalogConcept[]>([]);
   const [mappings, setMappings] = useState<InventoryMapping[]>([]);
   const [mappingNotice, setMappingNotice] = useState<string | null>(null);
+  const [aiReads, setAiReads] = useState<AiReads | null>(null);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
+  const reloadAiReads = useCallback(() => {
+    getAiReads(id).then(setAiReads).catch(() => setAiReads(null));
+  }, [id]);
+  useEffect(() => {
+    reloadAiReads();
+  }, [reloadAiReads]);
+  // While a reading runs, poll it; the job lasts a few minutes per project.
+  useEffect(() => {
+    if (!aiReads?.running) return;
+    const handle = window.setInterval(reloadAiReads, 5000);
+    return () => window.clearInterval(handle);
+  }, [aiReads?.running, reloadAiReads]);
+
+  async function readWithAi() {
+    try {
+      await startAiRead(id, getBrowserActor());
+      setAiNotice("Leyendo las hojas con IA… cada hoja toma unos segundos.");
+      reloadAiReads();
+    } catch (e) {
+      const detail =
+        e instanceof ApiError && e.detail && typeof e.detail === "object"
+          ? (e.detail as { message?: string }).message
+          : null;
+      setAiNotice(detail || "No se pudo iniciar la lectura con IA.");
+    }
+  }
   const reloadMappings = useCallback(() => {
     listInventoryMappings().then(setMappings).catch(() => setMappings([]));
   }, []);
@@ -239,6 +274,50 @@ export default function LecturaPage() {
             )}
           </Card>
 
+          <Card className="p-5">
+            <SectionTitle sub="Un modelo de visión lee la imagen de cada hoja — cajetín, cuadros, notas, marcas — y lo que lee entra como sugerencia con procedencia, por debajo de lo que las reglas leyeron; se aplica al reprocesar.">
+              Lectura asistida por IA
+            </SectionTitle>
+            {aiReads && !aiReads.available && (
+              <p className="mb-3 text-sm text-muted">
+                No configurada en este servidor: falta <code>ANTHROPIC_API_KEY</code>. Las
+                imágenes de las hojas sí están disponibles en el visor.
+              </p>
+            )}
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!aiReads?.available || aiReads.running}
+                onClick={readWithAi}
+              >
+                {aiReads?.running ? "Leyendo…" : "Leer hojas con IA"}
+              </Button>
+              {aiReads?.status === "done" && (
+                <span className="text-xs text-muted">
+                  {aiReads.readings.length} hojas leídas · {num(aiReads.input_tokens)} tokens de
+                  entrada · {aiReads.model}
+                </span>
+              )}
+              {aiReads?.status === "failed" && (
+                <span className="text-xs text-warning">Falló: {aiReads.error}</span>
+              )}
+            </div>
+            {aiNotice && <p className="mb-3 text-sm text-muted">{aiNotice}</p>}
+            {aiReads?.notes.map((n, i) => (
+              <p key={i} className="mb-1 text-xs text-muted">
+                {n}
+              </p>
+            ))}
+            {aiReads && aiReads.readings.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {aiReads.readings.map((r) => (
+                  <AiReadingCard key={r.frame_code} reading={r} projectId={id} />
+                ))}
+              </div>
+            )}
+          </Card>
+
           {lectura.inventory && lectura.inventory.sheets.length > 0 && (
             <Card className="p-5">
               <SectionTitle sub="Lo que cada hoja contiene, contado: símbolos por bloque y metros de trazo por capa. Un conteo no es una cantidad hasta que se asigna a un concepto del catálogo.">
@@ -416,6 +495,75 @@ function MappingControl({
         </option>
       ))}
     </select>
+  );
+}
+
+function AiReadingCard({ reading, projectId }: { reading: AiSheetReading; projectId: string }) {
+  const [open, setOpen] = useState(false);
+  const r = reading.read;
+  const fc = Object.entries(r.concrete_fc);
+  return (
+    <div className="rounded-lg border border-border">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full flex-wrap items-center gap-3 px-4 py-2.5 text-left"
+      >
+        <span className="font-mono text-xs text-muted">{reading.frame_code}</span>
+        <span className="min-w-0 flex-1 truncate text-sm">
+          {r.title || reading.frame_title || "(sin título leído)"}
+          {r.level ? ` · ${r.level}` : ""}
+        </span>
+        <span className="text-xs text-muted">
+          {r.elements.length} elementos · {r.uncertainties.length} dudas
+        </span>
+        <a
+          href={frameRenderUrl(projectId, reading.frame_code)}
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          imagen
+        </a>
+      </button>
+      {open && (
+        <div className="space-y-2 border-t border-border px-4 py-3 text-sm">
+          {(fc.length > 0 || r.steel_fy || r.slab_system || r.desplante_m) && (
+            <div className="text-xs text-muted">
+              {fc.map(([k, v]) => `f'c ${k} ${v}`).join(" · ")}
+              {r.steel_fy ? ` · fy ${r.steel_fy}` : ""}
+              {r.slab_system ? ` · losa: ${r.slab_system}` : ""}
+              {r.desplante_m ? ` · desplante ${num(r.desplante_m)} m` : ""}
+            </div>
+          )}
+          {r.elements.length > 0 && (
+            <ul className="space-y-0.5">
+              {r.elements.slice(0, 40).map((e, i) => (
+                <li key={`${e.mark}-${i}`} className="flex items-baseline gap-2">
+                  <span className="font-mono text-xs">{e.mark}</span>
+                  <span className="min-w-0 flex-1 truncate text-xs text-muted">
+                    {e.family}
+                    {e.section_cm ? ` · ${e.section_cm}` : ""}
+                    {e.rebar ? ` · ${e.rebar}` : ""}
+                    {e.stirrups ? ` · ${e.stirrups}` : ""}
+                    {e.length_m ? ` · L ${num(e.length_m)} m` : ""}
+                  </span>
+                  <span className="text-[11px] tabular text-muted">{Math.round(e.confidence * 100)}%</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {r.notes.length > 0 && (
+            <div className="text-xs text-muted">Notas: {r.notes.slice(0, 6).join(" · ")}</div>
+          )}
+          {r.uncertainties.length > 0 && (
+            <div className="text-xs text-warning">Dudas: {r.uncertainties.slice(0, 6).join(" · ")}</div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

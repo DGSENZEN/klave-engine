@@ -12,6 +12,7 @@ from apps.api.auth.invitations import router as invitations_router
 from apps.api.auth.middleware import AccessControlMiddleware, allowed_origins
 from apps.api.auth.recovery import router as recovery_router
 from apps.api.auth.routes import router as auth_router
+from apps.api.routes import ai as ai_routes
 from apps.api.routes import (
     catalog,
     detections,
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(projects.router)
     app.include_router(entities.router)
     app.include_router(geometry.router)
+    app.include_router(ai_routes.router)
     app.include_router(graph.router)
     app.include_router(detections.router)
     app.include_router(reports.router)

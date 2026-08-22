@@ -16,6 +16,7 @@ import {
 import {
   addAdjustment,
   getCatalog,
+  frameRenderUrl,
   getGeometry,
   setDetectionReview,
   type CatalogConcept,
@@ -234,6 +235,7 @@ export default function PlanoPage() {
 
   const filterPanel = (
     <FilterPanel
+      projectId={id}
       geom={geom}
       families={families}
       visibleFamilies={visibleFamilies}
@@ -646,6 +648,7 @@ function ReviewNote({
 }
 
 function FilterPanel({
+  projectId,
   geom,
   families,
   visibleFamilies,
@@ -670,6 +673,7 @@ function FilterPanel({
   onToggleFamily: (family: string) => void;
   onToggleLayer: (layer: string) => void;
   onFocusFrame: (bbox: [number, number, number, number]) => void;
+  projectId: string;
   onMinConfidence: (value: number) => void;
   onToggleExcluded: () => void;
   onToggleSheet: (index: number) => void;
@@ -770,6 +774,18 @@ function FilterPanel({
                 <span className="font-mono text-xs text-muted">{f.code || "—"}</span>
                 <span className="flex-1 truncate">{f.title || "(sin título)"}</span>
                 {f.kind === "plan" && <Badge tone="accent">planta</Badge>}
+                {f.code && (
+                  <a
+                    href={frameRenderUrl(projectId, f.code)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-muted underline"
+                    title="Ver la hoja como imagen"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    img
+                  </a>
+                )}
               </button>
             ))}
           </div>

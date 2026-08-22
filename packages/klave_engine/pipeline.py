@@ -33,7 +33,11 @@ from klave_engine.detection.dimensions import build_dimension_inventory
 from klave_engine.detection.frames import SheetFrame, detect_frames
 from klave_engine.detection.inventory import build_inventory, reads_as_structure
 from klave_engine.detection.results import Detection
-from klave_engine.detection.schedules import apply_schedule, build_schedule_inventory
+from klave_engine.detection.schedules import (
+    apply_schedule,
+    build_schedule_inventory,
+    merge_external_specs,
+)
 from klave_engine.detection.suite import (
     load_detector_config,
     run_detectors,
@@ -54,6 +58,7 @@ from klave_engine.ingestion.manifest import (
     save_manifest,
 )
 from klave_engine.ingestion.project_loader import ingest_project
+from klave_engine.llm.service import ai_element_specs, load_ai_reads
 from klave_engine.risks.report import risk_report_to_markdown
 from klave_engine.risks.rules import RiskReport, generate_risk_report
 from klave_engine.takeoff.quantities import QuantityReport, generate_quantity_report
@@ -334,6 +339,12 @@ def run_full_pipeline(
         unit_to_m=units.to_meters(),
         detail_boxes=[f.bbox for f in frames if f.kind == "excluded"],
     )
+    ai_reads = load_ai_reads(control_dir)
+    if ai_reads.readings:
+        merge_external_specs(schedule, ai_element_specs(ai_reads))
+        for reading in ai_reads.readings:
+            for family, fc in reading.read.concrete_fc.items():
+                schedule.concrete_fc.setdefault(family.lower(), int(fc))
     stamped = apply_schedule(result.detections, schedule, units.to_meters())
     if stamped:
         schedule.notes.append(f"{stamped} detecciones tomaron su sección del plano.")
