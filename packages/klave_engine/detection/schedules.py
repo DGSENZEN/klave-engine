@@ -504,6 +504,95 @@ def _sections_from_section_callouts(
     return specs
 
 
+_COTA_DEPTH_CM = (20, 150)
+_COTA_WIDTH_CM = (12, 60)
+
+
+def _cota_cm(entity: NormalizedEntity, unit_to_m: float) -> float | None:
+    """A dimension's value in centimetres: the displayed number when the
+    sheet scales cotas (dimlfac), else the measured length."""
+    props = entity.properties or {}
+    display = props.get("display_value")
+    dimlfac = props.get("dimlfac")
+    if isinstance(display, (int, float)) and display > 0:
+        if isinstance(dimlfac, (int, float)) and dimlfac > 0:
+            # display = measured × dimlfac; measured is in drawing units.
+            return float(display) / float(dimlfac) * unit_to_m * 100.0
+        return float(display) * unit_to_m * 100.0
+    measurement = props.get("measurement")
+    if isinstance(measurement, (int, float)) and measurement > 0:
+        return float(measurement) * unit_to_m * 100.0
+    return None
+
+
+def _sections_from_detail_cotas(
+    entities: list[NormalizedEntity],
+    config: TextPatternConfig,
+    unit_to_m: float,
+    detail_boxes: list[BBox],
+    widths_by_family: dict[str, int],
+) -> list[ElementSpec]:
+    """The section drawing beside a mark in a detail carries its cotas: a
+    vertical one is the peralte, a horizontal one the width. With only the
+    peralte, the width the sheet's callouts use for that family is taken and
+    said so; with neither, nothing is invented."""
+    dims = [e for e in entities if e.entity_type == EntityType.dimension]
+    if not dims:
+        return []
+    radius = 2.5 / unit_to_m
+    specs: list[ElementSpec] = []
+    for text in entities:
+        if not text.is_textual or not text.text:
+            continue
+        content = text.text.strip()
+        mark = _mark_in_text(content, config)
+        if mark is None or len(content) > 8:
+            continue
+        center = bbox_center(text.bbox)
+        if not any(bbox_contains_point(box, center) for box in detail_boxes):
+            continue
+        depth: tuple[float, float] | None = None
+        width: tuple[float, float] | None = None
+        for dim in dims:
+            dc = bbox_center(dim.bbox)
+            distance = ((dc[0] - center[0]) ** 2 + (dc[1] - center[1]) ** 2) ** 0.5
+            if distance > radius:
+                continue
+            value = _cota_cm(dim, unit_to_m)
+            if value is None:
+                continue
+            vertical = (dim.bbox[3] - dim.bbox[1]) > (dim.bbox[2] - dim.bbox[0])
+            if vertical and _COTA_DEPTH_CM[0] <= value <= _COTA_DEPTH_CM[1]:
+                if depth is None or distance < depth[0]:
+                    depth = (distance, value)
+            elif not vertical and _COTA_WIDTH_CM[0] <= value <= _COTA_WIDTH_CM[1]:
+                if width is None or distance < width[0]:
+                    width = (distance, value)
+        if depth is None:
+            continue
+        family = family_of_mark(mark)
+        if width is not None:
+            section = (round(width[1]), round(depth[1]))
+            note = f"{content} · cotas del detalle {section[0]}x{section[1]}"
+            confidence = 0.7
+        elif family in widths_by_family:
+            section = (widths_by_family[family], round(depth[1]))
+            note = (
+                f"{content} · peralte {section[1]} acotado en el detalle; ancho "
+                f"{section[0]} como las demás secciones de {family} del plano"
+            )
+            confidence = 0.55
+        else:
+            continue
+        specs.append(
+            ElementSpec(
+                mark=mark, family=family, section_cm=section, source="detalle",
+                source_text=note[:120], confidence=confidence,
+            )
+        )
+    return specs
+
+
 def _merge_fields(chosen: ElementSpec, others: list[ElementSpec]) -> ElementSpec:
     """Same-rank specs complete each other: the drawn section plus the
     armado written beside the mark."""
@@ -533,7 +622,15 @@ def build_schedule_inventory(
     if unit_to_m and detail_boxes:
         specs += _sections_from_detail_geometry(entities, config, unit_to_m, detail_boxes)
     if detail_boxes:
-        specs += _sections_from_section_callouts(texts, config, detail_boxes)
+        callouts = _sections_from_section_callouts(texts, config, detail_boxes)
+        specs += callouts
+        if unit_to_m:
+            widths: dict[str, Counter] = {}
+            for spec in callouts:
+                if spec.section_cm:
+                    widths.setdefault(spec.family, Counter())[spec.section_cm[0]] += 1
+            usual = {f: c.most_common(1)[0][0] for f, c in widths.items()}
+            specs += _sections_from_detail_cotas(entities, config, unit_to_m, detail_boxes, usual)
     inventory = ScheduleInventory(
         specs=specs,
         tables_found=tables,

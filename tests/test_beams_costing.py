@@ -111,3 +111,40 @@ def test_section_callouts_along_an_elevation_belong_to_its_title():
     assert spec.section_cm == (30, 80) and spec.source == "detalle"
     assert "sección 1 30x80, sección 2 30x60" in spec.source_text
     assert "CTA-3" not in inventory.by_mark
+
+
+def _dimension(entity_id, x, y, w, h, display_cm):
+    bbox = (x, y, x + w, y + h)
+    return NormalizedEntity(
+        entity_id=entity_id, entity_type=EntityType.dimension, source_file="a.dxf",
+        layer="COTAS1", bbox=bbox, raw_handle=entity_id,
+        properties={"display_value": float(display_cm), "dimlfac": 100.0,
+                    "measurement": display_cm / 100.0},
+        evidence=EvidencePacket(source="a.dxf", method="t", entity_ids=[entity_id], bbox=bbox,
+                                confidence=1.0),
+    )
+
+
+def test_sections_from_the_cotas_of_the_detail_drawing():
+    """A mark in a detail frame with a vertical cota of 80 and a horizontal
+    cota of 30 beside it: section 30x80. With only the peralte, the width
+    comes from the sheet's callouts for that family, and the spec says so."""
+    entities = [
+        _text("m1", "CTA-3", 2.0, 20.0, 0.12),
+        _dimension("d1", 1.0, 18.0, 0.3, 0.8, 80),  # vertical: peralte
+        _dimension("d2", 1.5, 18.6, 0.3, 0.2, 30),  # horizontal: ancho
+        _text("m2", "CTA-7", 10.0, 20.0, 0.12),
+        _dimension("d3", 9.0, 18.0, 0.3, 0.7, 70),  # only the peralte
+        # Elsewhere on the sheet, an elevation callout fixes the family width.
+        _text("m3", "CTA-16", 20.0, 10.0, 0.12),
+        _text("l1", "SECCIÓN 1", 30.0, 6.0, 0.1),
+        _text("s1", "30X60", 30.0, 5.8, 0.1),
+    ]
+    inventory = build_schedule_inventory(
+        entities, TextPatternConfig(), unit_to_m=1.0, detail_boxes=[(0.0, 0.0, 44.0, 29.4)]
+    )
+    assert inventory.by_mark["CTA-3"].section_cm == (30, 80)
+    assert "cotas del detalle" in inventory.by_mark["CTA-3"].source_text
+    seven = inventory.by_mark["CTA-7"]
+    assert seven.section_cm == (30, 70) and seven.confidence == 0.55
+    assert "ancho 30 como las demás" in seven.source_text
