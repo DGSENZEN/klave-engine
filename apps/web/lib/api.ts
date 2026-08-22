@@ -755,9 +755,17 @@ export const getViews = (id: string) =>
 export const getDimensions = (id: string) =>
   getJSON<Dimensions>(`/projects/${id}/dimensions`).catch(() => null);
 
-async function postFiles<T>(path: string, files: File[], actor?: string): Promise<T> {
+async function postFiles<T>(
+  path: string,
+  files: File[],
+  actor?: string,
+  fields?: Record<string, string | undefined>,
+): Promise<T> {
   const form = new FormData();
   for (const file of files) form.append("files", file);
+  for (const [key, value] of Object.entries(fields ?? {})) {
+    if (value) form.append(key, value);
+  }
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     credentials: "include",
@@ -774,8 +782,15 @@ async function postFiles<T>(path: string, files: File[], actor?: string): Promis
   return res.json() as Promise<T>;
 }
 
-export const uploadProject = (files: File[], actor?: string) =>
-  postFiles<{ project_id: string; warnings: string[] }>("/projects/upload", files, actor);
+export const uploadProject = (
+  files: File[],
+  actor?: string,
+  meta?: { project_name?: string; client?: string },
+) =>
+  postFiles<{ project_id: string; warnings: string[] }>("/projects/upload", files, actor, {
+    project_name: meta?.project_name,
+    client: meta?.client,
+  });
 
 export const addProjectFiles = (id: string, files: File[], actor?: string) =>
   postFiles<{ project_id: string; sheet_count: number; warnings: string[] }>(

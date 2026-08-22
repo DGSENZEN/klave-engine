@@ -40,6 +40,7 @@ import { timeAgo } from "@/lib/time";
 import {
   Badge,
   Button,
+  buttonClasses,
   Callout,
   EmptyState,
   Input,
@@ -92,9 +93,15 @@ export default function Home() {
   const [showArchived, setShowArchived] = useState(false);
   const [focus, setFocus] = useState<Focus>("all");
   const [ready, setReady] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
+  const [toasts, setToasts] = useState<{ id: string; text: string; href: string; tone: "success" | "warning" }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
+  const overviewRef = useRef<WorkspaceOverview | null>(null);
+  useEffect(() => {
+    overviewRef.current = overview;
+  }, [overview]);
 
   // The gate: protected workspaces require an active session; open mode only
   // needs the local first-run profile. Both land on /bienvenida otherwise.
@@ -147,6 +154,25 @@ export default function Home() {
     const source = new EventSource(eventsUrl(), { withCredentials: true });
     source.onmessage = (message) => {
       const event = parseProjectEvent(message);
+      if (event?.type === "job_updated") {
+        const data = event.data as { state?: string; error?: string | null };
+        if (data.state === "processed" || data.state === "failed") {
+          const name =
+            overviewRef.current?.projects.find((p) => p.project_id === event.project_id)?.name ??
+            event.project_id ?? "Proyecto";
+          const id = `${event.project_id}-${event.seq}`;
+          setToasts((list) => [
+            ...list.slice(-3),
+            {
+              id,
+              text: data.state === "processed" ? `${name} terminó de procesar` : `${name}: ${data.error || "el procesamiento falló"}`,
+              href: `/proyecto/${event.project_id}`,
+              tone: data.state === "processed" ? "success" : "warning",
+            },
+          ]);
+          window.setTimeout(() => setToasts((list) => list.filter((t) => t.id !== id)), 9000);
+        }
+      }
       if (event && REFRESH_EVENTS.has(event.type)) {
         // Coalesce bursts (a processing run emits several events per second).
         if (timer) window.clearTimeout(timer);
@@ -160,16 +186,24 @@ export default function Home() {
     };
   }, [ready]);
 
-  async function handleFiles(list: FileList | File[]) {
+  function handleFiles(list: FileList | File[]) {
     const files = [...list].filter((f) => /\.(dwg|dxf)$/i.test(f.name));
     if (files.length === 0) {
       setError("Formato no soportado. Sube archivos .dwg o .dxf.");
       return;
     }
     setError(null);
+    setPendingFiles(files);
+  }
+
+  async function createProject(files: File[], name: string, client: string) {
     setUploading(true);
     try {
-      const { project_id } = await uploadProject(files, getBrowserActor());
+      const { project_id } = await uploadProject(files, getBrowserActor(), {
+        project_name: name,
+        client,
+      });
+      setPendingFiles(null);
       router.push(`/proyecto/${project_id}`);
     } catch (e) {
       const detail =
@@ -246,6 +280,39 @@ export default function Home() {
       )}
 
       <WorkspaceHeader active="proyectos" />
+
+      {pendingFiles && (
+        <NewProjectDialog
+          files={pendingFiles}
+          busy={uploading}
+          onCancel={() => setPendingFiles(null)}
+          onCreate={(name, client) => createProject(pendingFiles, name, client)}
+        />
+      )}
+
+      {toasts.length > 0 && (
+        <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+          {toasts.map((toast) => (
+            <Link
+              key={toast.id}
+              href={toast.href}
+              className={`toast-in flex items-center gap-2 rounded-lg border px-3 py-2 text-sm shadow-lg ${
+                toast.tone === "success"
+                  ? "border-success/30 bg-surface text-foreground"
+                  : "border-warning/40 bg-surface text-foreground"
+              }`}
+            >
+              {toast.tone === "success" ? (
+                <SealCheck size={15} weight="bold" className="text-success" />
+              ) : (
+                <Warning size={15} weight="bold" className="text-warning" />
+              )}
+              <span className="max-w-72 truncate">{toast.text}</span>
+              <ArrowRight size={13} weight="bold" className="text-faint" />
+            </Link>
+          ))}
+        </div>
+      )}
 
       <main className="mx-auto max-w-4xl px-5 pb-16 pt-8">
         <input
@@ -745,5 +812,100 @@ function ProjectRow({
       </Link>
       {dialog}
     </>
+  );
+}
+
+
+/* ------------------------------------------------------------ new project -- */
+
+function suggestName(file: File): string {
+  const stem = file.name.replace(/\.(dwg|dxf)$/i, "").replace(/[_\-]+/g, " ").trim();
+  return stem.replace(/\s+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 80);
+}
+
+function NewProjectDialog({
+  files,
+  busy,
+  onCancel,
+  onCreate,
+}: {
+  files: File[];
+  busy: boolean;
+  onCancel: () => void;
+  onCreate: (name: string, client: string) => void;
+}) {
+  const [name, setName] = useState(() => suggestName(files[0]));
+  const [client, setClient] = useState("");
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !busy) onCancel();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [busy, onCancel]);
+
+  const totalMb = files.reduce((sum, f) => sum + f.size, 0) / 1e6;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <button type="button" aria-label="Cancelar" onClick={() => !busy && onCancel()} className="absolute inset-0 bg-foreground/40 backdrop-blur-[2px]" />
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-label="Nuevo proyecto"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (name.trim().length >= 2) onCreate(name.trim(), client.trim());
+        }}
+        className="toast-in relative w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-lg"
+      >
+        <h2 className="text-[0.95rem] font-semibold">Nuevo proyecto</h2>
+        <p className="mb-4 text-sm text-muted">
+          {files.length === 1 ? "1 hoja" : `${files.length} hojas`} · {totalMb.toFixed(1)} MB.
+          Las hojas se procesan juntas como una sola obra.
+        </p>
+        <label className="mb-1 block text-xs font-medium text-muted">Nombre del proyecto</label>
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          autoFocus
+          maxLength={120}
+          required
+          className="mb-3 w-full"
+        />
+        <label className="mb-1 block text-xs font-medium text-muted">Cliente (opcional)</label>
+        <Input
+          value={client}
+          onChange={(e) => setClient(e.target.value)}
+          placeholder="Constructora, dependencia, particular…"
+          maxLength={120}
+          className="mb-3 w-full"
+        />
+        <ul className="mb-4 max-h-32 space-y-1 overflow-y-auto text-xs text-muted">
+          {files.map((file) => (
+            <li key={file.name} className="flex items-center gap-1.5">
+              <FileText size={12} /> <span className="truncate">{file.name}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onCancel} disabled={busy} className={buttonClasses("secondary")}>
+            Cancelar
+          </button>
+          <Button type="submit" variant="primary" disabled={busy || name.trim().length < 2}>
+            {busy ? (
+              <>
+                <CircleNotch size={15} className="animate-spin" /> Subiendo…
+              </>
+            ) : (
+              <>
+                <Plus size={15} weight="bold" /> Crear y procesar
+              </>
+            )}
+          </Button>
+        </div>
+      </form>
+    </div>
   );
 }

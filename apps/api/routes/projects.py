@@ -4,7 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request, UploadFile
 from klave_engine.common.config import Settings
 from klave_engine.common.ids import short_uuid, slugify
 from klave_engine.common.io import read_json
@@ -280,13 +280,17 @@ def _convert_new_dwgs(root: Path, manifest, settings: Settings) -> list[str]:
 async def upload_project(
     request: Request,
     files: list[UploadFile],
+    project_name: Annotated[str | None, Form()] = None,
+    client: Annotated[str | None, Form()] = None,
     x_actor: Annotated[str | None, Header()] = None,
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    """Accept one or more DWG/DXF sheets as a new project and process them."""
+    """Accept one or more DWG/DXF sheets as a new project and process them.
+    The name and client are optional; the first file's stem is the fallback."""
     first_name, _ = _validated_upload_name(files[0].filename or "plano.dxf")
-    project_id = f"{slugify(Path(first_name).stem)[:32] or 'plano'}_{short_uuid('p')[2:]}"
+    name = " ".join((project_name or "").split())[:120] or Path(first_name).stem
+    project_id = f"{slugify(name)[:32] or 'plano'}_{short_uuid('p')[2:]}"
     root = (settings.data_dir / "uploads" / project_id).resolve()
     drawings = root / "drawings"
     drawings.mkdir(parents=True, exist_ok=True)
@@ -295,10 +299,14 @@ async def upload_project(
         await _save_sheet_uploads(files, drawings, settings.max_upload_bytes, 1)
         manifest = ingest_project(
             root,
-            project_name=Path(first_name).stem,
+            project_name=name,
             project_id=project_id,
             processed_dir_name=settings.processed_dir_name,
         )
+        cleaned_client = " ".join((client or "").split())[:120]
+        if cleaned_client:
+            manifest.client = cleaned_client
+            save_manifest(manifest, settings.processed_dir_name)
         warnings = _convert_new_dwgs(root, manifest, settings)
     except HTTPException:
         shutil.rmtree(root, ignore_errors=True)
