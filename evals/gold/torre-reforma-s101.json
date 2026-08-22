@@ -7,7 +7,7 @@
     "03-s-301_azotea.dxf": "44397dfb16f769f5305ed2f8b9cf6e46612e6c0b290901483d2e3233c38e2202"
   },
   "status": "baseline",
-  "captured_at": "2026-08-22T16:50:07.245705Z",
+  "captured_at": "2026-08-22T17:01:39.546476Z",
   "labels": {
     "grid_line": [
       "EJE-01",
@@ -35,31 +35,7 @@
       "INT-09",
       "INT-10",
       "INT-11",
-      "INT-12",
-      "INT-13",
-      "INT-14",
-      "INT-15",
-      "INT-16",
-      "INT-17",
-      "INT-18",
-      "INT-19",
-      "INT-20",
-      "INT-21",
-      "INT-22",
-      "INT-23",
-      "INT-24",
-      "INT-25",
-      "INT-26",
-      "INT-27",
-      "INT-28",
-      "INT-29",
-      "INT-30",
-      "INT-31",
-      "INT-32",
-      "INT-33",
-      "INT-34",
-      "INT-35",
-      "INT-36"
+      "INT-12"
     ],
     "column_tag": [
       "COL-01",
