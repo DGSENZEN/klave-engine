@@ -14,6 +14,7 @@ from klave_engine.costing.catalog import (
     build_default_catalog,
 )
 from klave_engine.costing.financial import build_financial_plan
+from klave_engine.costing.formwork import apply_formwork, compute_formwork
 from klave_engine.costing.integration import integrate_costs
 from klave_engine.costing.models import (
     BillOfQuantities,
@@ -104,6 +105,11 @@ def generate_cost_report(
         SteelAssumptions(wall_height_m=assumptions.wall_height_m),
     )
     apply_steel(boq, catalog, apus, steel)
+    formwork = compute_formwork(
+        boq, detections, schedule_specs, dimensions, assumptions, units.to_meters(),
+        segmentation.total_height() if segmentation is not None else None,
+    )
+    apply_formwork(boq, catalog, apus, formwork)
     if adjustments:
         _apply_adjustments(boq, catalog, apus, adjustments)
     integration = integrate_costs(boq.direct_cost_total, config.indirects)

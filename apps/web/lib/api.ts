@@ -521,6 +521,7 @@ export type LecturaSchedules = {
   by_mark: ElementSpec[];
   by_family: (ElementSpec & { family: string })[];
   tables_found: number;
+  concrete_fc?: Record<string, number>;
   notes: string[];
 };
 

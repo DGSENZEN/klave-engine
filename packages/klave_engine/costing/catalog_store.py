@@ -161,6 +161,36 @@ STEEL_CONCEPTS: list[tuple[str, str, str, str, float, int, list[tuple[str, float
       ("MO-AYUD", 0.004), ("EQ-HERRAMIENTA", 1.0)]),
 ]
 
+# Cimbra: contact formwork priced per m² with reuse (4 usos ≈ 0.25 m² of
+# material per m² of contact) and a carpentry crew rendimiento.
+FORMWORK_CONCEPTS: list[tuple[str, str, str, str, float, int, list[tuple[str, float]]]] = [
+    (
+        "CIM-006", "Cimbra común en zapatas y dados, acabado no aparente", "M2",
+        "Cimentación", 14.0, 32,
+        [("MAT-CIMBRA", 0.25), ("MO-CUAD-CARP", 0.070), ("EQ-HERRAMIENTA", 1.0)],
+    ),
+    (
+        "EST-008", "Cimbra común en castillos y columnas, acabado no aparente", "M2",
+        "Estructura", 12.0, 44,
+        [("MAT-CIMBRA", 0.25), ("MO-CUAD-CARP", 0.085), ("EQ-HERRAMIENTA", 1.0)],
+    ),
+    (
+        "EST-009", "Cimbra común en trabes, acabado no aparente, incluye obra falsa", "M2",
+        "Estructura", 10.0, 45,
+        [("MAT-CIMBRA", 0.30), ("MO-CUAD-CARP", 0.100), ("EQ-HERRAMIENTA", 1.0)],
+    ),
+    (
+        "EST-010", "Cimbra común en dalas y cerramientos", "M2",
+        "Estructura", 14.0, 46,
+        [("MAT-CIMBRA", 0.25), ("MO-CUAD-CARP", 0.070), ("EQ-HERRAMIENTA", 1.0)],
+    ),
+    (
+        "EST-011", "Cimbra de contacto en losa maciza, incluye obra falsa", "M2",
+        "Estructura", 12.0, 47,
+        [("MAT-CIMBRA", 0.30), ("MO-CUAD-CARP", 0.085), ("EQ-HERRAMIENTA", 1.0)],
+    ),
+]
+
 EXTRA_CONCEPTS: list[tuple[str, str, str, str, float, int, list[tuple[str, float]]]] = [
     (
         "CIM-003", "Plantilla de concreto f'c=100 kg/cm², 5 cm", "M2",
@@ -259,6 +289,12 @@ class CatalogStore:
                 conn.execute(
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '3') "
                     "ON CONFLICT(key) DO UPDATE SET value = '3'"
+                )
+            if version_row is None or int(version_row["value"]) < 5:
+                self._seed_concepts(conn, FORMWORK_CONCEPTS, 300)
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '5') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '5'"
                 )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.
@@ -365,6 +401,22 @@ class CatalogStore:
             (SEED_VIGENCIA, SEED_SOURCE),
         )
         log_stage(logger, "catalog_migrated_v2", db_path=str(self.db_path))
+
+    @staticmethod
+    def _seed_concepts(conn: sqlite3.Connection, concepts: list, base_order: int) -> None:
+        for code, description, unit, phase, rate, order, components in concepts:
+            conn.execute(
+                "INSERT OR IGNORE INTO concepts (code, description, unit, phase, "
+                "production_rate_per_day, rule_key, sequence_order) "
+                "VALUES (?, ?, ?, ?, ?, NULL, ?)",
+                (code, description, unit, phase, rate, base_order + order),
+            )
+            for resource_code, quantity in components:
+                conn.execute(
+                    "INSERT OR IGNORE INTO apu_components "
+                    "(concept_code, resource_code, quantity) VALUES (?, ?, ?)",
+                    (code, resource_code, quantity),
+                )
 
     def _migrate_v3(self, conn: sqlite3.Connection) -> None:
         """Acero de refuerzo concepts with their matrices (OR IGNORE: a taller

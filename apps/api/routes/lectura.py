@@ -154,6 +154,7 @@ def get_lectura(project_id: str, store: ProjectStore = Depends(get_store)) -> di
                 )
             ],
             "tables_found": schedules.get("tables_found", 0),
+            "concrete_fc": schedules.get("concrete_fc", {}),
             "notes": schedules.get("notes", []),
         },
         "detection_total": len(detections),

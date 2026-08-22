@@ -63,8 +63,44 @@ class ScheduleInventory(BaseModel):
     specs: list[ElementSpec] = Field(default_factory=list)
     by_mark: dict[str, ElementSpec] = Field(default_factory=dict)
     by_family: dict[str, ElementSpec] = Field(default_factory=dict)
+    # Declared concrete strengths by element family (kg/cm²), from notes
+    # such as "RESISTENCIA EN CASTILLOS ___ F'C=200 Kg/Cm²".
+    concrete_fc: dict[str, int] = Field(default_factory=dict)
     tables_found: int = 0
     notes: list[str] = Field(default_factory=list)
+
+
+_FC_FAMILIES: list[tuple[str, re.Pattern[str]]] = [
+    ("cimentacion", re.compile(r"CIMENTACI|ZAPATA|DADO", re.I)),
+    ("castillo", re.compile(r"CASTILLO", re.I)),
+    ("dala", re.compile(r"CERRAMIENTO|DALA|CADENA", re.I)),
+    ("trabe", re.compile(r"TRABE|VIGA", re.I)),
+    ("losa", re.compile(r"LOSA", re.I)),
+    ("firme", re.compile(r"FIRME", re.I)),
+    ("columna", re.compile(r"COLUMNA", re.I)),
+    ("muro", re.compile(r"MURO", re.I)),
+]
+_FC_RE = re.compile(r"F\s*'?\s*C\s*=?\s*(\d{3})", re.I)
+
+
+def parse_concrete_fc(texts: list[str]) -> dict[str, int]:
+    """Family → f'c from the sheet's notes; the first explicit statement wins
+    per family, and one line may declare several families."""
+    declared: dict[str, int] = {}
+    for text in texts:
+        for line in text.replace("\\P", "\n").splitlines():
+            match = _FC_RE.search(line)
+            if not match:
+                continue
+            value = int(match.group(1))
+            if not 100 <= value <= 600:
+                continue
+            head = line[: match.start()]
+            # "LOSAS DE AZOTEA Y TRABES ... F'C=250" speaks for both families.
+            for family, pattern in _FC_FAMILIES:
+                if pattern.search(head) and family not in declared:
+                    declared[family] = value
+    return declared
 
 
 # ------------------------------------------------------------------ parsing
@@ -286,7 +322,11 @@ def build_schedule_inventory(
     texts = [e for e in entities if e.is_textual and e.text]
     table_specs, tables = _parse_tables(texts, config)
     specs = table_specs + _parse_annotations(texts, config)
-    inventory = ScheduleInventory(specs=specs, tables_found=tables)
+    inventory = ScheduleInventory(
+        specs=specs,
+        tables_found=tables,
+        concrete_fc=parse_concrete_fc([t.text or "" for t in texts]),
+    )
 
     grouped: dict[str, list[ElementSpec]] = {}
     for spec in specs:
@@ -318,6 +358,12 @@ def build_schedule_inventory(
             for f, s in sorted(inventory.by_family.items())
         )
         inventory.notes.append(f"Especificaciones generales: {families}.")
+    if inventory.concrete_fc:
+        inventory.notes.append(
+            "Resistencias declaradas: "
+            + ", ".join(f"{k} f'c={v}" for k, v in inventory.concrete_fc.items())
+            + "."
+        )
     if not inventory.specs:
         inventory.notes.append("El plano no declara secciones ni armados por marca.")
     return inventory
