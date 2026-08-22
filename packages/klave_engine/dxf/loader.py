@@ -93,7 +93,41 @@ def sanitize_dxf_text(raw: str) -> tuple[str, int, int]:
         if skipping:
             continue
         out.extend([code, value])
-    return "\n".join(out) + "\n", rejoined, dropped
+    text = _drop_truncated_polylines("\n".join(out) + "\n")
+    if "\nEOF\n" not in text[-40:]:
+        text = text.rstrip("\n") + "\n  0\nEOF\n"
+    return text, rejoined, dropped
+
+
+def _drop_truncated_polylines(text: str) -> str:
+    """A legacy POLYLINE must end with SEQEND; converters sometimes cut the
+    chain. Such a run cannot be parsed, so it is removed whole."""
+    lines = text.split("\n")
+    out: list[str] = []
+    i = 0
+    while i + 1 < len(lines):
+        if lines[i].strip() == "0" and lines[i + 1].strip() == "POLYLINE":
+            j = i + 2
+            # advance through this record and its VERTEX records
+            record_type = "POLYLINE"
+            while j + 1 < len(lines):
+                if lines[j].strip() == "0":
+                    record_type = lines[j + 1].strip()
+                    if record_type not in ("VERTEX",):
+                        break
+                j += 2
+            if record_type == "SEQEND":
+                out.extend(lines[i:j])
+                i = j
+                continue
+            i = j  # drop POLYLINE + VERTEX run lacking SEQEND
+            continue
+        out.append(lines[i])
+        out.append(lines[i + 1])
+        i += 2
+    if i < len(lines):
+        out.append(lines[i])
+    return "\n".join(out)
 
 
 def _decode(raw_bytes: bytes) -> str:

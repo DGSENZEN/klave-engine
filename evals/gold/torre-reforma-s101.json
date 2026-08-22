@@ -7,7 +7,7 @@
     "03-s-301_azotea.dxf": "44397dfb16f769f5305ed2f8b9cf6e46612e6c0b290901483d2e3233c38e2202"
   },
   "status": "baseline",
-  "captured_at": "2026-08-22T19:19:50.347922Z",
+  "captured_at": "2026-08-22T19:54:12.958368Z",
   "labels": {
     "grid_line": [
       "EJE-1-01",
@@ -54,10 +54,7 @@
       "ZAP-03",
       "ZAP-04",
       "ZAP-05",
-      "ZAP-06",
-      "ZAP-07",
-      "ZAP-08",
-      "ZAP-09"
+      "ZAP-06"
     ],
     "beam_tag": [
       "TRB-B1-01",

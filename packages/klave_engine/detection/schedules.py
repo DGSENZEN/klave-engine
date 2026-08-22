@@ -203,6 +203,10 @@ def _parse_tables(
             index += 1
             continue
         columns = [(bbox_center(cell.bbox)[0], (cell.text or "").upper()) for cell in header]
+        xs = sorted(x for x, _t in columns)
+        gaps = [b - a for a, b in zip(xs, xs[1:], strict=False)]
+        spacing = statistics.median(gaps) if gaps else 1.0
+        max_offset = 0.5 * spacing
         row_height = statistics.median(bbox_height(c.bbox) for c in header) or 1.0
         table_rows = 0
         cursor = index + 1
@@ -216,8 +220,12 @@ def _parse_tables(
             cells: dict[str, str] = {}
             for cell in row:
                 x = bbox_center(cell.bbox)[0]
-                _distance, title = min(columns, key=lambda col: abs(col[0] - x))
+                col_x, title = min(columns, key=lambda col: abs(col[0] - x))
+                if abs(col_x - x) > max_offset:
+                    continue  # not under a header column: not this table
                 cells[title] = ((cells.get(title, "") + " " + (cell.text or "")).strip())
+            if not cells:
+                break
             mark = None
             for title, value in cells.items():
                 if re.search(r"MARCA|CLAVE|TIPO|CASTILLO|COLUMNA|TRABE", title):

@@ -29,6 +29,7 @@ from klave_engine.costing.report import (
 from klave_engine.costing.reviews import filter_excluded, load_reviews
 from klave_engine.detection.dimension_links import link_dimensions
 from klave_engine.detection.dimensions import build_dimension_inventory
+from klave_engine.detection.frames import detect_frames
 from klave_engine.detection.results import Detection
 from klave_engine.detection.schedules import apply_schedule, build_schedule_inventory
 from klave_engine.detection.suite import (
@@ -253,7 +254,11 @@ def run_full_pipeline(
     )
 
     detector_config = load_detector_config(settings.detector_config_path, units)
-    detector_outputs = run_detectors(result.entities, index, manifest, detector_config)
+    frames = detect_frames(result.entities)
+    write_json(processed / "frames.json", frames)
+    detector_outputs = run_detectors(
+        result.entities, index, manifest, detector_config, frames=frames
+    )
     for output in detector_outputs:
         result.warnings.extend(output.warnings)
         result.detections.extend(output.detections)
@@ -297,7 +302,7 @@ def run_full_pipeline(
     )
     write_json(processed / "risk_report.json", result.risk_report)
 
-    segmentation = segment_views(result.entities, result.detections)
+    segmentation = segment_views(result.entities, result.detections, frames)
     write_json(processed / "views.json", segmentation)
     log_stage(
         logger,

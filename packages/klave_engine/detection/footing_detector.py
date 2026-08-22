@@ -28,8 +28,22 @@ class FootingDetectorConfig(BaseModel):
     min_rectangularity: float = 0.75
     high_rectangularity: float = 0.9
     layer_hints: list[str] = Field(
-        default_factory=lambda: ["FOOT", "FOUND", "FDN", "ZAPATA", "CIM", "DADO", "PILOT"]
+        default_factory=lambda: ["FOOT", "FOUND", "FDN", "ZAPATA", "ZAP", "CIM", "DADO"]
     )
+    # Closed rectangles on these layers are casetones, ceilings, walls, rebar
+    # details, text boxes or frames — never zapatas.
+    avoid_layer_hints: list[str] = Field(
+        default_factory=lambda: ["LOSA", "NERV", "CASET", "PLAF", "ACAB", "TEXT", "COTA", "DIM",
+                                 "EJE", "GRID", "MARCO", "FRAME", "CAJET", "MUEBLE", "PUERTA",
+                                 "MURO", "WALL", "ARMADO"]
+    )
+    # Piles are a different concept (ml of pila/pilote); they are counted and
+    # reported, never priced as zapatas or dados.
+    pile_layer_hints: list[str] = Field(default_factory=lambda: ["PILOT", "PILA"])
+    prefer_semantic_layers: bool = True
+    # The foundation layer only takes authority when it carries real
+    # zapatas; a lone shape on "cimentacion" does not silence the sheet.
+    semantic_authority_min: int = 3
     column_search_radius: float = 50.0
 
 
@@ -51,16 +65,36 @@ def detect_footings(
     ]
 
     model = model_for("footing")
+    closed = [
+        e for e in entities
+        if e.entity_type == EntityType.polyline and e.is_closed and e.points
+        and len(e.points) >= 3 and not layer_matches(e.layer, config.avoid_layer_hints)
+    ]
+    piles = [e for e in closed if layer_matches(e.layer, config.pile_layer_hints)]
+    if piles:
+        output.warnings.append(
+            f"{len(piles)} pilotes/pilas en capa de pilotes no se cuantifican como zapatas "
+            "(concepto de pilas pendiente; revisar en el plano)."
+        )
+    pile_ids = {e.entity_id for e in piles}
+    candidates = [e for e in closed if e.entity_id not in pile_ids]
+    # Authority: with a foundation layer on the sheet, only its shapes count.
+    if config.prefer_semantic_layers:
+        semantic = [e for e in candidates if layer_matches(e.layer, config.layer_hints)]
+        if len(semantic) >= config.semantic_authority_min:
+            dropped = len(candidates) - len(semantic)
+            candidates = semantic
+            if dropped:
+                output.warnings.append(
+                    f"{dropped} contornos cerrados fuera de las capas de cimentación se "
+                    "ignoraron al buscar zapatas."
+                )
     footing_counter = 0
-    for entity in entities:
-        if entity.entity_type != EntityType.polyline or not entity.is_closed:
-            continue
-        if not entity.points or len(entity.points) < 3:
-            continue
-        area = polygon_area(entity.points)
+    for entity in candidates:
+        area = polygon_area(entity.points or [])
         if not (config.min_area <= area <= config.max_area):
             continue
-        rect = rectangularity(entity.points)
+        rect = rectangularity(entity.points or [])
         if rect < config.min_rectangularity:
             output.warnings.append(
                 f"Closed polyline {entity.entity_id} in footing size range but "

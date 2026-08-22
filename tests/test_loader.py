@@ -49,3 +49,15 @@ def test_unreadable_file_raises_with_every_reason(tmp_path):
     with pytest.raises(ValueError) as info:
         load_dxf(bad)
     assert "estricto" in str(info.value) and "saneado" in str(info.value)
+
+
+def test_truncated_polyline_runs_are_dropped():
+    raw = (
+        "  0\nSECTION\n  2\nENTITIES\n"
+        "  0\nPOLYLINE\n  8\n0\n  0\nVERTEX\n 10\n0\n 20\n0\n  0\nVERTEX\n 10\n1\n 20\n0\n"
+        "  0\nLINE\n  8\n0\n 10\n0\n 20\n0\n 11\n1\n 21\n1\n"
+        "  0\nENDSEC\n"
+    )
+    text, _rejoined, _dropped = sanitize_dxf_text(raw)
+    assert "POLYLINE" not in text and "VERTEX" not in text
+    assert "\nLINE\n" in text and text.rstrip().endswith("EOF")

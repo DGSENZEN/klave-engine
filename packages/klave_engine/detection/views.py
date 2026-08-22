@@ -20,9 +20,10 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.results import Detection
 from klave_engine.dxf.entities import NormalizedEntity
-from klave_engine.geometry.bbox import BBox, bbox_center, bbox_union_all
+from klave_engine.geometry.bbox import BBox, bbox_center, bbox_contains_point, bbox_union_all
 
 # Plan-view titles we quantify, mapped to a canonical level key.
 _PLAN_KEYWORDS: list[tuple[str, re.Pattern[str]]] = [
@@ -176,9 +177,75 @@ def _merge_plan_anchors(anchors: list[_TitleAnchor]) -> list[_TitleAnchor]:
     return merged + passthrough
 
 
+def _npt_levels(entities: list[NormalizedEntity]) -> list[float]:
+    return sorted(
+        {
+            float(m.group(1))
+            for e in entities
+            if e.is_textual and e.text
+            for m in [_NPT_RE.search(e.text)]
+            if m
+        }
+    )
+
+
+def _segment_by_frames(
+    entities: list[NormalizedEntity], detections: list[Detection], frames: list[SheetFrame]
+) -> SheetSegmentation | None:
+    """Sheet frames are views: every detection belongs to the frame that
+    contains it (or the nearest frame when it sits on a border)."""
+    usable = [f for f in frames if f.kind in ("plan", "excluded")]
+    if len(usable) < 2 or not any(f.kind == "plan" for f in usable):
+        return None
+    regions: dict[str, ViewRegion] = {}
+    for frame in frames:
+        kind = ViewKind.plan if frame.kind == "plan" else ViewKind.excluded
+        regions[frame.frame_id] = ViewRegion(
+            view_id=frame.frame_id,
+            title=f"{frame.code} · {frame.title}".strip(" ·") or frame.code,
+            kind=kind,
+            level_key=frame.level_key if kind == ViewKind.plan else None,
+            anchor=bbox_center(frame.bbox),
+            bbox=frame.bbox,
+        )
+    assignment: dict[str, str] = {}
+    for detection in detections:
+        center = bbox_center(detection.bbox)
+        holder = next((f for f in frames if bbox_contains_point(f.bbox, center)), None)
+        if holder is None:
+            holder = min(
+                frames,
+                key=lambda f: (bbox_center(f.bbox)[0] - center[0]) ** 2
+                + (bbox_center(f.bbox)[1] - center[1]) ** 2,
+            )
+        region = regions[holder.frame_id]
+        assignment[detection.detection_id] = region.view_id
+        region.detection_ids.append(detection.detection_id)
+        region.detection_counts[detection.detection_type.value] = (
+            region.detection_counts.get(detection.detection_type.value, 0) + 1
+        )
+    plans = [r for r in regions.values() if r.kind == ViewKind.plan]
+    return SheetSegmentation(
+        views=list(regions.values()),
+        assignment=assignment,
+        is_segmented=True,
+        npt_levels=_npt_levels(entities),
+        notes=[
+            f"{len(frames)} marcos de hoja detectados: {len(plans)} plantas, "
+            f"{len(frames) - len(plans)} de detalle/corte/otros."
+        ],
+    )
+
+
 def segment_views(
-    entities: list[NormalizedEntity], detections: list[Detection]
+    entities: list[NormalizedEntity],
+    detections: list[Detection],
+    frames: list[SheetFrame] | None = None,
 ) -> SheetSegmentation:
+    if frames:
+        by_frames = _segment_by_frames(entities, detections, frames)
+        if by_frames is not None:
+            return by_frames
     anchors = _merge_plan_anchors(_collect_anchors(entities))
     plan_anchors = [a for a in anchors if a.kind == ViewKind.plan]
 

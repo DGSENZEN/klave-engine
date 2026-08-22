@@ -17,6 +17,7 @@ from klave_engine.detection.detail_reference_detector import (
     detect_detail_references,
 )
 from klave_engine.detection.footing_detector import FootingDetectorConfig, detect_footings
+from klave_engine.detection.frames import SheetFrame, frame_boxes
 from klave_engine.detection.grid_detector import GridDetectorConfig, detect_grid
 from klave_engine.detection.results import DetectorOutput
 from klave_engine.detection.slab_detector import SlabDetectorConfig, detect_slabs
@@ -95,6 +96,7 @@ def run_detectors(
     index: SpatialIndex,
     manifest: ProjectManifest,
     config: DetectorSuiteConfig,
+    frames: list[SheetFrame] | None = None,
 ) -> list[DetectorOutput]:
     """Run every detector in dependency order (grid → columns → footings …)."""
     ids = IdGenerator("det")
@@ -102,7 +104,7 @@ def run_detectors(
     columns = detect_columns(entities, index, grid, config.column, config.text_patterns, ids)
     footings = detect_footings(entities, index, columns, config.footing, ids)
     beams = detect_beams(entities, index, config.beam, config.text_patterns, ids)
-    slabs = detect_slabs(entities, config.slab, ids)
+    slabs = detect_slabs(entities, config.slab, ids, frame_boxes(frames or []))
     walls = detect_walls(entities, index, config.wall, ids)
     details = detect_detail_references(
         entities, manifest, config.detail_reference, config.text_patterns, ids
