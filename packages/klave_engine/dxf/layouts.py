@@ -134,7 +134,23 @@ def resolve_xrefs(
     warnings: list[ParseWarning] = []
     search_dirs = [dxf_path.parent, dxf_path.parent.parent / "converted"]
     for block in list(doc.blocks):
-        if not block.block_record.is_xref:
+        try:
+            is_xref = bool(block.block_record.is_xref)
+        except AttributeError:
+            # LibreDWG can emit a block record without its BLOCK entity;
+            # nothing to resolve there, and the sheet must still load.
+            warnings.append(
+                ParseWarning(
+                    warning_type="block_record_incomplete",
+                    message=f"Bloque {block.name!r} sin definición completa; se omite como xref",
+                    entity_type="BLOCK",
+                    handle="",
+                    layer="",
+                    source_file=source_file,
+                )
+            )
+            continue
+        if not is_xref:
             continue
         xref_path = str(block.block.dxf.get("xref_path", "") or "")
         stem = Path(xref_path).stem or block.name

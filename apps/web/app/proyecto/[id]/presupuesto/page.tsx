@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   DownloadSimple,
@@ -210,7 +211,15 @@ export default function PresupuestoPage() {
           {phases.map((phase) => {
             const lines = costs.boq.lines.filter((l) => l.phase === phase);
             const subtotal = lines.reduce((s, l) => s + l.amount, 0);
-            return <PhaseGroup key={phase} phase={phase} lines={lines} subtotal={subtotal} />;
+            return (
+              <PhaseGroup
+                key={phase}
+                phase={phase}
+                lines={lines}
+                subtotal={subtotal}
+                projectId={id}
+              />
+            );
           })}
         </tbody>
         <tfoot>
@@ -324,11 +333,14 @@ function PhaseGroup({
   phase,
   lines,
   subtotal,
+  projectId,
 }: {
   phase: string;
   lines: BoqLine[];
   subtotal: number;
+  projectId: string;
 }) {
+  const [openCode, setOpenCode] = useState<string | null>(null);
   return (
     <>
       <tr className="border-b border-border bg-surface-2/60">
@@ -345,44 +357,81 @@ function PhaseGroup({
           {money2(subtotal)}
         </td>
       </tr>
-      {lines.map((l) => (
-        <tr
-          key={l.concept_code}
-          className="border-b border-border transition-colors last:border-0 hover:bg-surface-2/60"
-        >
-          <Td className="font-mono text-xs text-muted">{l.concept_code}</Td>
-          <Td>
-            {l.description}
-            {l.by_view && Object.keys(l.by_view).length > 1 && (
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {Object.entries(l.by_view).map(([title, qty]) => (
-                  <span
-                    key={title}
-                    className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] tabular text-muted"
-                    title={`${title}: ${num(qty)} ${l.unit}`}
-                  >
-                    {title.replace(/^[A-Z]{1,3}-\d{2,4}[A-Z]?\s*·\s*/, "")} {num(qty)}
-                  </span>
-                ))}
-              </div>
+      {lines.map((l) => {
+        const open = openCode === l.concept_code;
+        const levels = l.by_view ? Object.entries(l.by_view) : [];
+        return (
+          <Fragment key={l.concept_code}>
+            <tr
+              className={`border-b border-border transition-colors hover:bg-surface-2/60 ${
+                open ? "bg-surface-2/40" : ""
+              }`}
+              onClick={() => setOpenCode(open ? null : l.concept_code)}
+              title="Ver de dónde sale esta cantidad"
+            >
+              <Td className="font-mono text-xs text-muted">{l.concept_code}</Td>
+              <Td>
+                {l.description}
+                {levels.length > 1 && (
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {levels.map(([title, qty]) => (
+                      <span
+                        key={title}
+                        className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] tabular text-muted"
+                        title={`${title}: ${num(qty)} ${l.unit}`}
+                      >
+                        {title.replace(/^[A-Z]{1,3}-\d{2,4}[A-Z]?\s*·\s*/, "")} {num(qty)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </Td>
+              <Td align="right" className="tabular">
+                {num(l.quantity)} <span className="text-xs text-muted">{l.unit}</span>
+              </Td>
+              <Td align="right" className="tabular text-muted">
+                {money2(l.unit_price)}
+              </Td>
+              <Td align="right" className="font-medium tabular">
+                {money2(l.amount)}
+              </Td>
+              <Td align="center">
+                <Badge dot tone={l.confidence >= 0.7 ? "success" : "warning"}>
+                  {(l.confidence * 100).toFixed(0)}%
+                </Badge>
+              </Td>
+            </tr>
+            {open && (
+              <tr className="border-b border-border bg-surface-2/30">
+                <td colSpan={6} className="px-4 py-3 text-xs text-muted">
+                  <div className="mb-1.5 font-medium text-foreground">
+                    De dónde sale: {l.source_detection_count} elemento
+                    {l.source_detection_count === 1 ? "" : "s"} del plano
+                    {l.source_detection_count > 0 && (
+                      <>
+                        {" · "}
+                        <Link
+                          href={`/proyecto/${projectId}/plano?concept=${encodeURIComponent(l.concept_code)}`}
+                          className="underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          verlos en el plano
+                        </Link>
+                      </>
+                    )}
+                  </div>
+                  <ul className="list-disc space-y-0.5 pl-4">
+                    {l.assumptions.map((a, i) => (
+                      <li key={i}>{a}</li>
+                    ))}
+                    {l.assumptions.length === 0 && <li>Sin supuestos adicionales.</li>}
+                  </ul>
+                </td>
+              </tr>
             )}
-          </Td>
-          <Td align="right" className="tabular">
-            {num(l.quantity)} <span className="text-xs text-muted">{l.unit}</span>
-          </Td>
-          <Td align="right" className="tabular text-muted">
-            {money2(l.unit_price)}
-          </Td>
-          <Td align="right" className="font-medium tabular">
-            {money2(l.amount)}
-          </Td>
-          <Td align="center">
-            <Badge dot tone={l.confidence >= 0.7 ? "success" : "warning"}>
-              {(l.confidence * 100).toFixed(0)}%
-            </Badge>
-          </Td>
-        </tr>
-      ))}
+          </Fragment>
+        );
+      })}
     </>
   );
 }
