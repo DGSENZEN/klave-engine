@@ -18,6 +18,8 @@ router = APIRouter(prefix="/projects")
 UNITS_SOURCE_LABELS = {
     "dxf_header": "declaradas en el encabezado del archivo ($INSUNITS)",
     "text_height_heuristic": "inferidas por la altura típica de los textos",
+    "dimensions": "deducidas de las cotas del plano (valor mostrado ÷ longitud medida)",
+    "heuristics": "inferidas por extensión del modelo y alturas de texto",
     "unknown": "no se pudieron determinar; se asume la unidad del dibujo",
     "confirmed": "confirmadas por el ingeniero en la verificación",
 }

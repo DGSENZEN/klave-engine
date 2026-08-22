@@ -7,7 +7,7 @@
     "03-s-301_azotea.dxf": "44397dfb16f769f5305ed2f8b9cf6e46612e6c0b290901483d2e3233c38e2202"
   },
   "status": "baseline",
-  "captured_at": "2026-08-22T18:41:47.453348Z",
+  "captured_at": "2026-08-22T19:19:50.347922Z",
   "labels": {
     "grid_line": [
       "EJE-1-01",
@@ -54,17 +54,15 @@
       "ZAP-03",
       "ZAP-04",
       "ZAP-05",
-      "ZAP-06"
+      "ZAP-06",
+      "ZAP-07",
+      "ZAP-08",
+      "ZAP-09"
     ],
     "beam_tag": [
       "TRB-B1-01",
       "TRB-B1-02",
       "TRB-B1-03"
-    ],
-    "slab_region": [
-      "LOS-01",
-      "LOS-02",
-      "LOS-03"
     ],
     "wall": [
       "MUR-01",
@@ -88,7 +86,6 @@
     "footing": 1.0,
     "grid_intersection": 1.0,
     "grid_line": 1.0,
-    "slab_region": 1.0,
     "wall": 1.0
   },
   "notes": ""

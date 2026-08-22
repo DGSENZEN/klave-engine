@@ -231,7 +231,7 @@ def run_full_pipeline(
     write_json(processed / "spatial_index_summary.json", index.summary())
 
     insunits = next((d.insunits for d in drawings if d.insunits), None)
-    units = detect_units(insunits, result.entities)
+    units = detect_units(insunits, result.entities, index.extent())
     confirmed_unit = load_reviews(control_dir).verification.units_override
     if confirmed_unit:
         units = DrawingUnits(

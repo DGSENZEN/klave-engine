@@ -1,9 +1,11 @@
+
 """Normalize ezdxf entities into NormalizedEntity records.
 
 Every supported entity gets a bbox. Where an exact bbox is impractical (text),
 a conservative approximation is used and noted in the evidence packet.
 """
 
+import re
 from typing import Any
 
 from ezdxf import bbox as ezdxf_bbox
@@ -38,6 +40,43 @@ TEXT_WIDTH_FACTOR = 0.6
 # Curves flatten into at most this many segments; enough for detection and
 # rendering without letting one dense spline dominate the entity budget.
 MAX_FLATTEN_POINTS = 200
+
+
+_DISPLAY_NUMBER = re.compile(r"-?\d+(?:[.,]\d+)?")
+
+
+def _dimension_display_text(entity: Any) -> str | None:
+    override = str(entity.dxf.get("text", "") or "").strip()
+    if override and override != "<>":
+        return override.replace("<>", "").strip() or None
+    try:
+        block = entity.get_geometry_block()
+    except Exception:
+        return None
+    if block is None:
+        return None
+    for child in block:
+        kind = child.dxftype()
+        if kind == "MTEXT":
+            text = child.plain_text()
+        elif kind == "TEXT":
+            text = str(child.dxf.text)
+        else:
+            continue
+        text = " ".join(text.split())
+        if text:
+            return text
+    return None
+
+
+def _parse_display_value(text: str) -> float | None:
+    match = _DISPLAY_NUMBER.search(text.replace("%%C", "").replace("Ø", ""))
+    if not match:
+        return None
+    try:
+        return abs(float(match.group(0).replace(",", ".")))
+    except ValueError:
+        return None
 
 
 def _flatten_curve(entity: Any) -> list[Point]:
@@ -243,6 +282,20 @@ def normalize_entity(
         except Exception:
             measurement = None
         properties["measurement"] = measurement
+        # What the engineer reads: the override text, else the rendered text
+        # of the dimension block; with the style's linear factor (details are
+        # often drawn at another scale and display the real value).
+        display_text = _dimension_display_text(entity)
+        if display_text is not None:
+            properties["display_text"] = display_text
+            value = _parse_display_value(display_text)
+            if value is not None:
+                properties["display_value"] = value
+        try:
+            style = entity.doc.dimstyles.get(entity.dxf.get("dimstyle", "Standard"))
+            properties["dimlfac"] = float(style.dxf.get("dimlfac", 1.0)) if style else 1.0
+        except Exception:
+            properties["dimlfac"] = 1.0
         # Extension-line origins: the two points the dimension actually measures.
         span: list[Point] | None = None
         if entity.dxf.hasattr("defpoint2") and entity.dxf.hasattr("defpoint3"):
