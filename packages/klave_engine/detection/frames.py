@@ -39,6 +39,7 @@ _CONTENT_SECTION_RE = re.compile(
 )
 _CONTENT_PLAN_RE = re.compile(r"PLANTA|LOSA|NIVEL|ESTRUCTURA\s+DE", re.I)
 _CONTACT_RE = re.compile(r"@|\bCEL\b|\bTEL\b|\bwww\.", re.I)
+_NOT_TITLE_BLOCK_RE = re.compile(r"ESPECIF|NOTA|SIMBOLOG|LEYEND|CUADRO|TABLA", re.I)
 # Sheet formats are landscape or portrait paper: A-series is 1.41, common
 # Mexican formats run up to ~2.1. Labels and strips are far outside that.
 _FRAME_ASPECT = (1.15, 2.6)
@@ -213,6 +214,12 @@ def _pick_title(texts: list[NormalizedEntity]) -> str:
         if not _TITLE_RE.search(value) or _SHEET_CODE_RE.match(value.upper()):
             continue
         if _CONTACT_RE.search(value):
+            continue
+        # Text that came out of a notes/specs/legend block is never the title,
+        # nor is a label ("MATERIALES :").
+        if t.block_name and _NOT_TITLE_BLOCK_RE.search(t.block_name):
+            continue
+        if ":" in value:
             continue
         score = _text_height(t) * 10 + min(len(value), 80) / 800
         if score > best_score:

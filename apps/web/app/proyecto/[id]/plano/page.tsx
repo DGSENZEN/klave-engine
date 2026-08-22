@@ -42,6 +42,14 @@ export default function PlanoPage() {
     bbox: [number, number, number, number];
     nonce: number;
   } | null>(null);
+  // Open on the first planta when the drawing is a set of tiled sheets
+  // (render-time adjust: no effect, no extra frame).
+  const [focusedGeom, setFocusedGeom] = useState<Geometry | null>(null);
+  if (geom && geom !== focusedGeom) {
+    setFocusedGeom(geom);
+    const first = geom.frames?.find((f) => f.kind === "plan") ?? geom.frames?.[0];
+    if (first) setFocus((f) => ({ bbox: first.bbox, nonce: (f?.nonce ?? 0) + 1 }));
+  }
   const [visibleFamilies, setVisibleFamilies] = useState<Set<string>>(new Set());
   const [minConfidence, setMinConfidence] = useState(0);
   const [selected, setSelected] = useState<DetectionOverlay | null>(null);

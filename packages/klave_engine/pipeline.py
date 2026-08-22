@@ -42,9 +42,10 @@ from klave_engine.detection.taxonomy import enrich_detections
 from klave_engine.detection.views import segment_views
 from klave_engine.dxf.blocks import summarize_blocks
 from klave_engine.dxf.entities import NormalizedEntity
+from klave_engine.dxf.harmonize import harmonize_units
 from klave_engine.dxf.layers import summarize_layers
 from klave_engine.dxf.parser import DxfParser, ParsedDrawing
-from klave_engine.dxf.units import UNKNOWN_UNIT, DrawingUnits, choose_insunits, detect_units
+from klave_engine.dxf.units import UNKNOWN_UNIT, DrawingUnits
 from klave_engine.geometry.spatial_index import SpatialIndex
 from klave_engine.graph.builder import DrawingGraph, build_drawing_graph
 from klave_engine.ingestion.manifest import (
@@ -228,6 +229,11 @@ def run_full_pipeline(
         save_manifest(manifest, settings.processed_dir_name)
         raise ConversionError("No DXF files are available after conversion")
     drawings = parse_drawings(manifest, settings, output_dir=processed)
+    # Per-sheet units: each file's unit is read on its own and its geometry
+    # scaled into the project's unit before anything measures it.
+    units, file_units = harmonize_units(
+        [(d.source_file, d.insunits, d.entities) for d in drawings]
+    )
     result.entities = [e for d in drawings for e in d.entities]
 
     index = SpatialIndex(result.entities)
@@ -236,13 +242,17 @@ def run_full_pipeline(
     # Twelve sheets in one project: the header unit of the sheets with the
     # most geometry wins (an índice saying inches must not rescale the
     # structural plan), and any disagreement is reported.
-    insunits, unit_notes = choose_insunits(
-        [(Path(d.source_file).name, d.insunits, len(d.entities)) for d in drawings]
+    for note in units.notes:
+        if "se escaló" in note or "se asume" in note:
+            result.warnings.append(note)
+    write_json(
+        processed / "file_units.json",
+        [
+            {"source_file": f.source_file, "unit": f.units.unit, "source": f.units.source,
+             "confidence": f.units.confidence, "scale": f.scale, "entities": f.entity_count}
+            for f in file_units
+        ],
     )
-    units = detect_units(insunits, result.entities, index.extent())
-    if unit_notes:
-        units.notes.extend(unit_notes)
-        result.warnings.extend(unit_notes)
     confirmed_unit = load_reviews(control_dir).verification.units_override
     if confirmed_unit:
         units = DrawingUnits(
