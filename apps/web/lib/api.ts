@@ -174,6 +174,8 @@ export type DetectionOverlay = {
   label: string;
   confidence: number;
   bbox: [number, number, number, number];
+  /** Real outline in drawing units when the element is a region (tableros). */
+  polygon?: [number, number][] | null;
   /** Tag read from the plano (e.g. "K-5"); empty for untagged elements. */
   mark: string;
   /** Canonical family (castillo, columna, trabe, …); empty on old runs. */

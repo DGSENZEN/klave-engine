@@ -111,6 +111,8 @@ def get_geometry(
                 "label": d["label"],
                 "confidence": d["confidence"],
                 "bbox": d["bbox"],
+                # Tableros carry their real outline (L-shapes, voids subtracted).
+                "polygon": (d.get("properties") or {}).get("polygon"),
                 # Taxonomy (empty for runs older than the enrichment step).
                 "mark": d.get("mark", ""),
                 "family": d.get("family", ""),

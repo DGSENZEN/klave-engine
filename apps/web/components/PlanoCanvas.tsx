@@ -186,15 +186,31 @@ export function PlanoCanvas({
       // Human verdicts change how the element reads: excluded fades to a
       // dashed outline, confirmed draws slightly heavier.
       const excluded = d.review === "excluded";
-      if (selected) {
-        ctx.fillStyle = `${color}2e`;
-        ctx.fillRect(rx - 2, ry - 2, rw + 4, rh + 4);
-      }
+      const outline = d.polygon && d.polygon.length >= 3 ? d.polygon : null;
       ctx.globalAlpha = excluded ? 0.35 : 1;
       ctx.setLineDash(excluded ? [5, 4] : []);
       ctx.strokeStyle = color;
       ctx.lineWidth = selected ? 2.4 : d.review === "confirmed" ? 1.9 : 1.4;
-      ctx.strokeRect(rx, ry, rw, rh);
+      if (outline) {
+        // A tablero is drawn as its real outline, lightly filled so the
+        // slab system reads at a glance.
+        ctx.beginPath();
+        outline.forEach(([px, py], i) => {
+          const [sx, sy] = toScreen(px, py, v);
+          if (i === 0) ctx.moveTo(sx, sy);
+          else ctx.lineTo(sx, sy);
+        });
+        ctx.closePath();
+        ctx.fillStyle = `${color}${selected ? "40" : "1a"}`;
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        if (selected) {
+          ctx.fillStyle = `${color}2e`;
+          ctx.fillRect(rx - 2, ry - 2, rw + 4, rh + 4);
+        }
+        ctx.strokeRect(rx, ry, rw, rh);
+      }
       if (showLabels || selected) {
         ctx.fillStyle = color;
         ctx.font = selected
