@@ -228,9 +228,12 @@ def _segment_by_frames(
     assignment: dict[str, str] = {}
     for detection in detections:
         center = bbox_center(detection.bbox)
-        holder = next((f for f in frames if bbox_contains_point(f.bbox, center)), None)
+        # Each file is its own coordinate space: only its frames can hold it.
+        source = detection.evidence.source
+        own = [f for f in frames if not f.source_file or not source or f.source_file == source]
+        holder = next((f for f in own if bbox_contains_point(f.bbox, center)), None)
         if holder is None:
-            holder = next((f for f in frames if _near_frame(f, center)), None)
+            holder = next((f for f in own if _near_frame(f, center)), None)
         region = regions[holder.frame_id] if holder is not None else outside
         assignment[detection.detection_id] = region.view_id
         region.detection_ids.append(detection.detection_id)

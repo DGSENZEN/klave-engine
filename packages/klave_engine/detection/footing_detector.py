@@ -43,7 +43,7 @@ class FootingDetectorConfig(BaseModel):
     prefer_semantic_layers: bool = True
     # The foundation layer only takes authority when it carries real
     # zapatas; a lone shape on "cimentacion" does not silence the sheet.
-    semantic_authority_min: int = 3
+    semantic_authority_min: int = 2
     column_search_radius: float = 50.0
 
 

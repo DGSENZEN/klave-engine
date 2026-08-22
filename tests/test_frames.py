@@ -87,3 +87,27 @@ def test_no_repeated_frames_means_no_frames(tmp_path):
         msp.add_lwpolyline([(60, 0), (80, 0), (80, 10), (60, 10)], close=True)
 
     assert detect_frames(_entities(tmp_path, build)) == []
+
+
+def test_frames_hold_only_their_own_file(tmp_path):
+    """Two files share model-space coordinates; a detection from file B at a
+    point inside file A's frame is not file A's content."""
+    entities = _entities(tmp_path, lambda msp: (
+        _frame(msp, 0, 0, "ES-100", "PLANTA DE CIMENTACIÓN"),
+        _frame(msp, 50, 0, "ES-101", "PLANTA ESTRUCTURAL NIVEL 1"),
+    ))
+    frames = detect_frames(entities)
+    for f in frames:
+        f.source_file = "a.dxf"
+    inside_a = make_detection(
+        "x", DetectionType.slab_region, "S", (5, 5, 6, 6), 0.9, [], "m", [],
+        {"estimated_area": 1.0}, "a.dxf",
+    )
+    from_b = make_detection(
+        "y", DetectionType.slab_region, "S", (5, 5, 6, 6), 0.9, [], "m", [],
+        {"estimated_area": 1.0}, "b.dxf",
+    )
+    seg = segment_views(entities, [inside_a, from_b], frames)
+    assert seg is not None
+    assert seg.assignment["x"] == frames[0].frame_id
+    assert seg.assignment["y"] == "outside_frames"

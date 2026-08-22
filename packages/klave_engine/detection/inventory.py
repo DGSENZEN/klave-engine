@@ -41,7 +41,7 @@ _DISCIPLINE_HINTS: list[tuple[str, re.Pattern[str]]] = [
     ("aire", re.compile(r"AIRE|\bAA\b|DUCTO|CLIMA|HVAC|MINISPLIT|COND", re.I)),
     ("cctv", re.compile(r"CCTV|CAMARA|CÁMARA|SEGURIDAD|SENSOR|ALARMA", re.I)),
     ("canceleria", re.compile(r"CANCEL|VENTANA|PUERTA|ALUM|HERRER", re.I)),
-    ("acabados", re.compile(r"ACABAD|PISO|PLAF|MURO|PINTURA|AZULEJO|LAMBR", re.I)),
+    ("acabados", re.compile(r"ACABAD|\bPISOS?\b|PLAFON|PINTURA|AZULEJO|LAMBR", re.I)),
     ("carpinteria", re.compile(r"CARPINT|MADERA|CLOSET|COCINA", re.I)),
     ("estructural", re.compile(r"EST|TRABE|LOSA|ZAPATA|CASTILL|COLUMN|CIMENT", re.I)),
 ]
@@ -128,7 +128,7 @@ def guess_discipline(text: str) -> str | None:
 # structural detectors stay off them, the levantamiento reads them.
 NON_STRUCTURAL = frozenset(
     {"hidraulica", "sanitaria", "electrica", "gas", "aire", "cctv", "canceleria",
-     "carpinteria"}
+     "carpinteria", "acabados"}
 )
 
 

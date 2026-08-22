@@ -13,6 +13,7 @@ from pathlib import Path
 
 from klave_engine.common.config import Settings, get_settings
 from klave_engine.common.errors import ConversionError, ProjectManifestError
+from klave_engine.common.ids import IdGenerator
 from klave_engine.common.io import read_json, write_json, write_text
 from klave_engine.common.logging import configure_logging, get_logger, log_stage
 from klave_engine.common.version import engine_stamp
@@ -29,7 +30,7 @@ from klave_engine.costing.report import (
 from klave_engine.costing.reviews import filter_excluded, load_reviews
 from klave_engine.detection.dimension_links import link_dimensions
 from klave_engine.detection.dimensions import build_dimension_inventory
-from klave_engine.detection.frames import detect_frames
+from klave_engine.detection.frames import SheetFrame, detect_frames
 from klave_engine.detection.inventory import build_inventory, reads_as_structure
 from klave_engine.detection.results import Detection
 from klave_engine.detection.schedules import apply_schedule, build_schedule_inventory
@@ -263,7 +264,17 @@ def run_full_pipeline(
     )
 
     detector_config = load_detector_config(settings.detector_config_path, units)
-    frames = detect_frames(result.entities)
+    # Every file is its own drawing space: frames (and, below, detectors)
+    # run per file so one sheet's outlines never land inside another's.
+    by_file: dict[str, list[NormalizedEntity]] = {}
+    for entity in result.entities:
+        by_file.setdefault(entity.source_file, []).append(entity)
+    frames: list[SheetFrame] = []
+    for file_entities in by_file.values():
+        found = detect_frames(file_entities)
+        for frame in found:
+            frame.frame_id = f"frame_{len(frames):02d}"
+            frames.append(frame)
     write_json(processed / "frames.json", frames)
     # Levantamiento: symbols and runs per sheet, counted before any price.
     sources_by_id = {src.file_id: src for src in manifest.source_files}
@@ -292,12 +303,19 @@ def run_full_pipeline(
             f"Hoja «{sheet}» leída como levantamiento (instalaciones/acabados): "
             "sin detección estructural."
         )
-    detector_outputs = run_detectors(
-        structural_entities, index, manifest, detector_config, frames=frames
-    )
-    for output in detector_outputs:
-        result.warnings.extend(output.warnings)
-        result.detections.extend(output.detections)
+    detector_ids = IdGenerator("det")
+    structural_files = {e.source_file for e in structural_entities}
+    for source, file_entities in by_file.items():
+        if source not in structural_files:
+            continue
+        file_frames = [f for f in frames if f.source_file == source]
+        detector_outputs = run_detectors(
+            file_entities, SpatialIndex(file_entities), manifest, detector_config,
+            frames=file_frames, ids=detector_ids,
+        )
+        for output in detector_outputs:
+            result.warnings.extend(output.warnings)
+            result.detections.extend(output.detections)
     # What the sheet declares about its marks outranks measured markers and
     # assumptions: stamp sections from cuadros, details, and notes first.
     schedule = build_schedule_inventory(

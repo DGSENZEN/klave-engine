@@ -106,9 +106,10 @@ def run_detectors(
     manifest: ProjectManifest,
     config: DetectorSuiteConfig,
     frames: list[SheetFrame] | None = None,
+    ids: IdGenerator | None = None,
 ) -> list[DetectorOutput]:
     """Run every detector in dependency order (grid → columns → footings …)."""
-    ids = IdGenerator("det")
+    ids = ids or IdGenerator("det")
     grid = detect_grid(entities, index, config.grid, config.text_patterns, ids)
     columns = detect_columns(entities, index, grid, config.column, config.text_patterns, ids)
     footings = detect_footings(entities, index, columns, config.footing, ids)

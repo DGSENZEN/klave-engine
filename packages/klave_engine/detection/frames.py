@@ -58,6 +58,7 @@ _NIVEL_RE = re.compile(r"\bNIVEL\s*[-]?\s*(\d+)|\bN\s*[-+]?\s*(\d+)\b", re.I)
 class SheetFrame(BaseModel):
     frame_id: str
     bbox: BBox
+    source_file: str = ""  # frames of one file never hold another file's content
     code: str = ""
     title: str = ""
     kind: str = "plan"  # plan | excluded | unknown
@@ -179,6 +180,7 @@ def detect_frames(entities: list[NormalizedEntity]) -> list[SheetFrame]:
             SheetFrame(
                 frame_id=f"frame_{len(frames):02d}",
                 bbox=outer.bbox,
+                source_file=outer.source_file,
                 code=(code_text.text or "").strip().upper(),
                 title=title,
                 kind=kind,
