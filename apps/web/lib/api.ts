@@ -895,6 +895,8 @@ export const renameWorkspace = (name: string) =>
 // ---- Reference library, salario real, costo horario ----
 
 export type ReferenceSource = {
+  /** Uploaded by the taller (not a publication). */
+  custom?: boolean;
   key: string;
   name: string;
   publisher: string;
@@ -935,6 +937,33 @@ export const importReferenceSource = (key: string, actor?: string) =>
     {},
     actor ? { "X-Actor": actor } : undefined,
   );
+
+export async function importCustomSource(
+  file: File,
+  name: string,
+  vigencia: string,
+  actor?: string,
+): Promise<{ source_key: string; rows: number; name: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  const url = new URL(`${API_BASE}/catalog/sources/custom`);
+  if (name) url.searchParams.set("name", name);
+  if (vigencia) url.searchParams.set("vigencia", vigencia);
+  const res = await fetch(url.toString(), {
+    method: "POST",
+    credentials: "include",
+    headers: actor ? { "X-Actor": actor } : undefined,
+    body: form,
+  });
+  if (!res.ok) {
+    let detail: unknown;
+    try {
+      detail = (await res.json())?.detail;
+    } catch {}
+    throw new ApiError(res.status, "/catalog/sources/custom", detail);
+  }
+  return res.json();
+}
 
 export const searchReference = (q: string, source?: string) =>
   getJSON<{ rows: ReferenceRow[] }>(

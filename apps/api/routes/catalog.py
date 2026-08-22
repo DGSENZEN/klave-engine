@@ -6,7 +6,9 @@ A global ``catalog_updated`` event tells open projects to offer a recompute.
 """
 
 import csv
+import hashlib
 import io
+from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile
@@ -16,6 +18,11 @@ from klave_engine.costing.catalog_services import apply_equipment, apply_labor, 
 from klave_engine.costing.catalog_store import CatalogStore, get_catalog_store
 from klave_engine.costing.equipment import EquipmentParameters, compute_costo_horario
 from klave_engine.costing.labor import FsrParameters, LaborCategory
+from klave_engine.costing.sources.custom import (
+    CustomCatalogError,
+    parse_concept_workbook,
+    source_key_for,
+)
 from klave_engine.costing.sources.registry import SOURCES, available_sources, sources_dir
 from pydantic import BaseModel, Field
 
@@ -394,14 +401,59 @@ def list_reference_sources(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     """Known publications, whether their file is on this server, and whether
-    they are imported into the library."""
+    they are imported into the library; then the taller's own catálogos."""
     imported = {row["source_key"]: row for row in catalog.list_sources()}
+    known = available_sources(settings.data_dir)
+    known_keys = {spec["key"] for spec in known}
+    own = [
+        {
+            "key": row["source_key"], "name": row["name"], "publisher": row["publisher"],
+            "region": row["region"], "vigencia": row["vigencia"], "kind": row["kind"],
+            "filename": "", "url": "", "available": True, "custom": True, "imported": row,
+        }
+        for key, row in imported.items() if key not in known_keys
+    ]
     return {
-        "sources": [
-            {**spec, "imported": imported.get(spec["key"])}
-            for spec in available_sources(settings.data_dir)
-        ]
+        "sources": [{**spec, "imported": imported.get(spec["key"])} for spec in known] + own
     }
+
+
+@router.post("/sources/custom", status_code=201)
+async def import_custom_source(
+    file: UploadFile,
+    x_actor: Annotated[str | None, Header()] = None,
+    name: str = "",
+    vigencia: str = "",
+    publisher: str = "",
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    """The taller's own catálogo de conceptos (XLSX/CSV with clave,
+    descripción, unidad, precio unitario) as a reference source, labeled as
+    the taller's, never as a publication."""
+    raw = await file.read()
+    if len(raw) > MAX_IMPORT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail={"error_type": "import_too_large", "max_bytes": MAX_IMPORT_BYTES},
+        )
+    title = name.strip() or Path(file.filename or "catalogo").stem[:80]
+    try:
+        rows = parse_concept_workbook(raw, file.filename or "")
+    except CustomCatalogError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error_type": "headers_not_found", "message": str(exc)}
+        ) from exc
+    key = source_key_for(title)
+    count = catalog.import_reference(
+        {
+            "key": key, "name": title, "publisher": publisher.strip() or "Catálogo propio",
+            "region": "MX", "vigencia": vigencia.strip(), "kind": "precios_unitarios", "url": "",
+        },
+        rows,
+        sha256=hashlib.sha256(raw).hexdigest(),
+    )
+    _publish_catalog_updated(x_actor, "reference_imported", f"{title}: {count} renglones")
+    return {"source_key": key, "rows": count, "name": title}
 
 
 @router.post("/sources/{source_key}/import")

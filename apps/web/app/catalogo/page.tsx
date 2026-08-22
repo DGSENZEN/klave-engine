@@ -22,6 +22,7 @@ import {
   getEquipment,
   getLabor,
   importCatalogPrices,
+  importCustomSource,
   importReferenceSource,
   listReferenceSources,
   money2,
@@ -969,6 +970,10 @@ function FuentesSection({
   const [sourceKey, setSourceKey] = useState("");
   const [rows, setRows] = useState<ReferenceRow[] | null>(null);
   const [adopting, setAdopting] = useState<Record<number, string>>({});
+  const [ownFile, setOwnFile] = useState<File | null>(null);
+  const [ownName, setOwnName] = useState("");
+  const [ownVigencia, setOwnVigencia] = useState("");
+  const [ownBusy, setOwnBusy] = useState(false);
 
   const loadSources = useCallback(() => {
     listReferenceSources().then(setSources).catch(() => setSources([]));
@@ -1012,6 +1017,31 @@ function FuentesSection({
     }
   }
 
+  async function importOwn() {
+    if (!ownFile) return;
+    setOwnBusy(true);
+    try {
+      const result = await importCustomSource(
+        ownFile,
+        ownName.trim(),
+        ownVigencia.trim(),
+        getBrowserActor(),
+      );
+      onNotice(`${result.name}: ${result.rows.toLocaleString("es-MX")} conceptos importados como catálogo propio`);
+      setOwnFile(null);
+      setOwnName("");
+      loadSources();
+    } catch (e) {
+      const detail =
+        e instanceof ApiError && e.detail && typeof e.detail === "object"
+          ? (e.detail as { message?: string }).message
+          : null;
+      onError(detail || "No se pudo importar el catálogo.");
+    } finally {
+      setOwnBusy(false);
+    }
+  }
+
   async function adopt(row: ReferenceRow) {
     const code = adopting[row.ref_id];
     if (!code) return;
@@ -1040,7 +1070,9 @@ function FuentesSection({
           sources.map((source) => (
             <li key={source.key} className="flex flex-wrap items-center gap-3 px-5 py-3">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-foreground">
-                {source.kind === "costo_horario" ? (
+                {source.custom ? (
+                  <UploadSimple size={16} weight="duotone" />
+                ) : source.kind === "costo_horario" ? (
                   <Crane size={16} weight="duotone" />
                 ) : (
                   <Books size={16} weight="duotone" />
@@ -1085,6 +1117,40 @@ function FuentesSection({
           ))
         )}
       </ul>
+      <div className="border-t border-border px-5 py-4">
+        <div className="mb-2 text-sm font-medium">Catálogo propio</div>
+        <p className="mb-3 text-xs text-muted">
+          Tu libro de precios en XLSX o CSV (clave, descripción, unidad, precio unitario). Entra a
+          la biblioteca marcado como catálogo propio, nunca como publicación.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="file"
+            accept=".xlsx,.xlsm,.csv"
+            className="text-xs text-muted file:mr-2 file:rounded-md file:border file:border-border file:bg-surface-2 file:px-2 file:py-1 file:text-xs file:text-foreground"
+            onChange={(e) => {
+              const f = e.target.files?.[0] ?? null;
+              setOwnFile(f);
+              if (f && !ownName) setOwnName(f.name.replace(/\.(xlsx|xlsm|csv)$/i, ""));
+            }}
+          />
+          <Input
+            value={ownName}
+            onChange={(e) => setOwnName(e.target.value)}
+            placeholder="Nombre del catálogo"
+            className="w-56"
+          />
+          <Input
+            value={ownVigencia}
+            onChange={(e) => setOwnVigencia(e.target.value)}
+            placeholder="Vigencia (AAAA-MM)"
+            className="w-40"
+          />
+          <Button size="sm" variant="secondary" disabled={!ownFile || ownBusy} onClick={importOwn}>
+            {ownBusy ? "Importando…" : "Importar catálogo"}
+          </Button>
+        </div>
+      </div>
       {imported.length > 0 && (
         <div className="border-t border-border px-5 py-4">
           <div className="flex flex-wrap items-center gap-2">
