@@ -1,0 +1,58 @@
+{
+  "drawing_id": "demo",
+  "source": "data/demo/demo_project_001",
+  "files": {
+    "S-101.dxf": "44397dfb16f769f5305ed2f8b9cf6e46612e6c0b290901483d2e3233c38e2202"
+  },
+  "status": "baseline",
+  "captured_at": "2026-08-22T16:50:07.528913Z",
+  "labels": {
+    "grid_line": [
+      "EJE-01",
+      "EJE-02",
+      "EJE-03",
+      "EJE-04"
+    ],
+    "grid_intersection": [
+      "INT-01",
+      "INT-02",
+      "INT-03",
+      "INT-04"
+    ],
+    "column_tag": [
+      "COL-01",
+      "COL-02",
+      "COL-03"
+    ],
+    "footing": [
+      "ZAP-01",
+      "ZAP-02"
+    ],
+    "beam_tag": [
+      "TRB-01"
+    ],
+    "slab_region": [
+      "LOS-01"
+    ],
+    "wall": [
+      "MUR-01"
+    ],
+    "detail_reference": [
+      "REF-01",
+      "REF-02"
+    ]
+  },
+  "confirmed": [],
+  "excluded": [],
+  "baseline_f1": {
+    "beam_tag": 1.0,
+    "column_tag": 1.0,
+    "detail_reference": 1.0,
+    "footing": 1.0,
+    "grid_intersection": 1.0,
+    "grid_line": 1.0,
+    "slab_region": 1.0,
+    "wall": 1.0
+  },
+  "notes": ""
+}

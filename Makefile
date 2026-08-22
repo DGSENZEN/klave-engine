@@ -1,4 +1,4 @@
-.PHONY: install test lint typecheck demo-data ingest-demo convert-demo parse-demo process-demo eval-demo api web web-install clean users-db-up users-db-down
+.PHONY: install test lint typecheck demo-data ingest-demo convert-demo parse-demo process-demo eval-demo eval-gold gold-capture api web web-install clean users-db-up users-db-down
 
 users-db-up:
 	docker compose up -d users-db
@@ -45,6 +45,14 @@ process-demo:
 
 eval-demo:
 	uv run python -m klave_engine.evals.regression_suite
+
+# Gold set of real drawings (evals/gold/*.json; drawings stay local, matched by hash).
+eval-gold:
+	uv run python -m klave_engine.evals.gold run
+
+# make gold-capture ROOT=data/uploads/<project> ID=<drawing-id>
+gold-capture:
+	uv run python -m klave_engine.evals.gold capture $(ROOT) --id $(ID) --fresh
 
 api:
 	KLAVE_DATA_DIR=data uv run uvicorn apps.api.main:app --reload --port 8000

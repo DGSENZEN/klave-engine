@@ -1,0 +1,120 @@
+{
+  "drawing_id": "torre-reforma-s101",
+  "source": "data/uploads/s-101_cimentacion_ff803fa5",
+  "files": {
+    "01-s-101_cimentacion.dxf": "44397dfb16f769f5305ed2f8b9cf6e46612e6c0b290901483d2e3233c38e2202",
+    "02-s-201_entrepiso.dxf": "44397dfb16f769f5305ed2f8b9cf6e46612e6c0b290901483d2e3233c38e2202",
+    "03-s-301_azotea.dxf": "44397dfb16f769f5305ed2f8b9cf6e46612e6c0b290901483d2e3233c38e2202"
+  },
+  "status": "baseline",
+  "captured_at": "2026-08-22T16:50:07.245705Z",
+  "labels": {
+    "grid_line": [
+      "EJE-01",
+      "EJE-02",
+      "EJE-03",
+      "EJE-04",
+      "EJE-05",
+      "EJE-06",
+      "EJE-07",
+      "EJE-08",
+      "EJE-09",
+      "EJE-10",
+      "EJE-11",
+      "EJE-12"
+    ],
+    "grid_intersection": [
+      "INT-01",
+      "INT-02",
+      "INT-03",
+      "INT-04",
+      "INT-05",
+      "INT-06",
+      "INT-07",
+      "INT-08",
+      "INT-09",
+      "INT-10",
+      "INT-11",
+      "INT-12",
+      "INT-13",
+      "INT-14",
+      "INT-15",
+      "INT-16",
+      "INT-17",
+      "INT-18",
+      "INT-19",
+      "INT-20",
+      "INT-21",
+      "INT-22",
+      "INT-23",
+      "INT-24",
+      "INT-25",
+      "INT-26",
+      "INT-27",
+      "INT-28",
+      "INT-29",
+      "INT-30",
+      "INT-31",
+      "INT-32",
+      "INT-33",
+      "INT-34",
+      "INT-35",
+      "INT-36"
+    ],
+    "column_tag": [
+      "COL-01",
+      "COL-02",
+      "COL-03",
+      "COL-04",
+      "COL-05",
+      "COL-06",
+      "COL-07",
+      "COL-08",
+      "COL-09"
+    ],
+    "footing": [
+      "ZAP-01",
+      "ZAP-02",
+      "ZAP-03",
+      "ZAP-04",
+      "ZAP-05",
+      "ZAP-06"
+    ],
+    "beam_tag": [
+      "TRB-01",
+      "TRB-02",
+      "TRB-03"
+    ],
+    "slab_region": [
+      "LOS-01",
+      "LOS-02",
+      "LOS-03"
+    ],
+    "wall": [
+      "MUR-01",
+      "MUR-02",
+      "MUR-03"
+    ],
+    "detail_reference": [
+      "REF-01",
+      "REF-02",
+      "REF-03",
+      "REF-04",
+      "REF-05",
+      "REF-06"
+    ]
+  },
+  "confirmed": [],
+  "excluded": [],
+  "baseline_f1": {
+    "beam_tag": 1.0,
+    "column_tag": 1.0,
+    "detail_reference": 1.0,
+    "footing": 1.0,
+    "grid_intersection": 1.0,
+    "grid_line": 1.0,
+    "slab_region": 1.0,
+    "wall": 1.0
+  },
+  "notes": ""
+}
