@@ -7,7 +7,10 @@ from klave_engine.common.config import get_settings
 from klave_engine.common.errors import KlaveEngineError
 from klave_engine.common.logging import configure_logging
 
+from apps.api.auth.account import router as account_router
+from apps.api.auth.invitations import router as invitations_router
 from apps.api.auth.middleware import AccessControlMiddleware
+from apps.api.auth.recovery import router as recovery_router
 from apps.api.auth.routes import router as auth_router
 from apps.api.routes import (
     catalog,
@@ -50,6 +53,9 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(auth_router)
+    app.include_router(invitations_router)
+    app.include_router(recovery_router)
+    app.include_router(account_router)
     app.include_router(events.router)
     app.include_router(projects.router)
     app.include_router(entities.router)

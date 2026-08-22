@@ -115,9 +115,9 @@ def _grant_owner(request: Request, settings: Settings, project_id: str) -> None:
     if user is None:
         return
     try:
-        get_user_store(settings.users_database_url).grant_access(
-            project_id, str(user["user_id"]), "owner", str(user["user_id"])
-        )
+        users = get_user_store(settings.users_database_url)
+        users.grant_access(project_id, str(user["user_id"]), "owner", str(user["user_id"]))
+        users.register_project(project_id, str(user["workspace_id"]))
     except UsersDbUnavailable:
         pass
 
@@ -128,16 +128,28 @@ def list_projects(request: Request, store: ProjectStore = Depends(get_store)) ->
     can access (admins see everything)."""
     user = _state_user(request)
     allowed: set[str] | None = None
-    if user is not None and user["role"] != "admin":
+    workspace_of: dict[str, str] | None = None
+    admin_workspace: str | None = None
+    if user is not None:
         try:
-            allowed = get_user_store(
-                store.settings.users_database_url
-            ).project_ids_for_user(str(user["user_id"]))
+            users = get_user_store(store.settings.users_database_url)
+            if user["role"] == "admin":
+                # Admins see every project of their workspace; projects that
+                # predate workspaces belong to the default one.
+                workspace_of = users.project_workspace_map()
+                admin_workspace = str(user["workspace_id"])
+                default_workspace = str(users.default_workspace()["workspace_id"])
+            else:
+                allowed = users.project_ids_for_user(str(user["user_id"]))
         except UsersDbUnavailable:
             allowed = set()
     projects: list[dict] = []
     for project_id, root in store.list_projects().items():
         if allowed is not None and project_id not in allowed:
+            continue
+        if workspace_of is not None and (
+            workspace_of.get(project_id, default_workspace) != admin_workspace
+        ):
             continue
         entry: dict[str, object] = {
             "project_id": project_id,
@@ -508,6 +520,7 @@ def patch_project(
 @router.delete("/{project_id}")
 def remove_project(
     project_id: str,
+    request: Request,
     x_actor: Annotated[str | None, Header()] = None,
     store: ProjectStore = Depends(get_store),
 ) -> dict:
@@ -515,6 +528,15 @@ def remove_project(
     deliberately not a destructive delete."""
     store.get_root(project_id)  # 404 for unknown ids
     store.unregister(project_id)
+    user = _state_user(request)
+    if user is not None:
+        try:
+            get_user_store(store.settings.users_database_url).record_audit(
+                workspace_id=str(user["workspace_id"]), actor=user,
+                action="project_removed", target_type="project", target_id=project_id,
+            )
+        except UsersDbUnavailable:
+            pass
     BUS.publish(
         "project_removed",
         project_id=project_id,

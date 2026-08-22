@@ -8,7 +8,7 @@ import { fetchAuthStatus } from "@/lib/session";
 import { Avatar } from "@/components/ui";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
-type Section = "proyectos" | "catalogo" | "equipo";
+type Section = "proyectos" | "catalogo" | "equipo" | "cuenta";
 
 /** One header pattern for every workspace-level screen: same places, same
  * order, everywhere — navigation should never need re-learning per page. */
@@ -69,8 +69,8 @@ export function WorkspaceHeader({ active }: { active: Section }) {
         <div className="flex shrink-0 items-center gap-2">
           {actorName && (
             <Link
-              href="/bienvenida"
-              title="Perfil y sesión"
+              href="/cuenta"
+              title="Tu cuenta"
               className="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-3 text-sm font-medium transition-colors hover:bg-surface-2"
             >
               <Avatar name={actorName} src={avatarSrc} self size="sm" />

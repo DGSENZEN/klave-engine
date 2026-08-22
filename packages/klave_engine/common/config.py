@@ -36,6 +36,23 @@ class Settings(BaseSettings):
     auth_google_id: str | None = None
     auth_google_secret: str | None = None
 
+    # Workspace identity for this deployment: one taller per deploy; more can
+    # be created from the CLI (apps.api.auth.cli) and share the server.
+    workspace_slug: str = "taller"
+    workspace_name: str = "Taller"
+
+    # Transactional mail. "auto" picks Resend when a key is set, SMTP when a
+    # host is set, and otherwise the local outbox (data/outbox/*.json) — in
+    # which case the UI says no mail is configured and admins hand links over.
+    mail_provider: str = "auto"  # auto | resend | smtp | outbox
+    mail_from: str = "Klave <no-reply@localhost>"
+    resend_api_key: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_starttls: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:

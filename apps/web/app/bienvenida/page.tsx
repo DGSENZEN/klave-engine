@@ -1,36 +1,60 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
-  Buildings,
   GoogleLogo,
   HourglassMedium,
   Monitor,
   ShieldCheck,
   SignOut,
+  UserCircle,
   UsersThree,
 } from "@phosphor-icons/react";
-import { ApiError } from "@/lib/api";
 import { peekBrowserActor } from "@/lib/collab";
 import { completeProfile } from "@/lib/identity";
 import {
-  changePassword,
+  apiMessage,
   fetchAuthStatus,
   googleLoginUrl,
   login,
   logout,
-  logoutAll,
   register,
   type AuthStatus,
   type AuthUser,
 } from "@/lib/session";
+import { AuthFrame } from "@/components/AuthFrame";
 import { HowItWorks } from "@/components/HowItWorks";
 import { Avatar, Badge, buttonClasses, Callout, Card, Input, Skeleton } from "@/components/ui";
-import { ThemeToggle } from "@/components/ThemeToggle";
 
-type UrlNotice = "pending" | "google" | "db" | "disabled" | null;
+type UrlNotice =
+  | "pending"
+  | "google"
+  | "db"
+  | "disabled"
+  | "invite"
+  | "invite_email"
+  | null;
+
+const NOTICES: Record<Exclude<UrlNotice, null>, { tone: "info" | "danger"; text: string }> = {
+  pending: {
+    tone: "info",
+    text: "Tu cuenta fue creada y espera la aprobación de un administrador del taller.",
+  },
+  google: { tone: "danger", text: "No se pudo iniciar sesión con Google. Inténtalo de nuevo." },
+  db: {
+    tone: "danger",
+    text: "La base de datos de usuarios no está disponible. Arráncala con make users-db-up y recarga.",
+  },
+  disabled: { tone: "danger", text: "Tu cuenta está deshabilitada." },
+  invite: { tone: "danger", text: "La invitación ya no es válida; pide una nueva a tu administrador." },
+  invite_email: {
+    tone: "danger",
+    text: "La cuenta de Google no coincide con el correo invitado. Usa esa cuenta o crea la contraseña.",
+  },
+};
 
 export default function BienvenidaPage() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
@@ -42,9 +66,10 @@ export default function BienvenidaPage() {
     const handle = window.setTimeout(() => {
       if (!active) return;
       if (params.get("pending")) setNotice("pending");
-      else if (params.get("error") === "google") setNotice("google");
-      else if (params.get("error") === "db") setNotice("db");
-      else if (params.get("error") === "disabled") setNotice("disabled");
+      else {
+        const error = params.get("error");
+        if (error && error in NOTICES) setNotice(error as UrlNotice);
+      }
     }, 0);
     fetchAuthStatus().then((status) => {
       if (active) setAuth(status);
@@ -55,75 +80,47 @@ export default function BienvenidaPage() {
     };
   }, []);
 
+  const workspaceName = auth?.workspace?.name;
+
   return (
-    <div className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center px-5 py-10 sm:px-6">
-      <div className="rise-in">
-        <div className="mb-8 flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-fg">
-              <Buildings size={22} weight="duotone" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Bienvenido a Klave</h1>
-              <p className="text-sm text-muted">
-                Ingeniería de costos a partir de planos estructurales.
-              </p>
-            </div>
-          </div>
-          <ThemeToggle />
+    <AuthFrame
+      title={workspaceName && auth?.mode === "protected" ? workspaceName : "Bienvenido a Klave"}
+      sub="Ingeniería de costos a partir de planos estructurales."
+      width="lg"
+    >
+      {notice && (
+        <div className="mb-4">
+          <Callout tone={NOTICES[notice].tone}>{NOTICES[notice].text}</Callout>
         </div>
+      )}
+      {notice !== "db" && auth?.mode === "unavailable" && (
+        <div className="mb-4">
+          <Callout tone="danger">{NOTICES.db.text}</Callout>
+        </div>
+      )}
 
-        {notice === "pending" && (
-          <div className="mb-4">
-            <Callout tone="info">
-              Tu cuenta fue creada y espera la aprobación de un administrador del taller.
-            </Callout>
-          </div>
-        )}
-        {notice === "google" && (
-          <div className="mb-4">
-            <Callout tone="danger">
-              No se pudo iniciar sesión con Google. Inténtalo de nuevo.
-            </Callout>
-          </div>
-        )}
-        {notice === "disabled" && (
-          <div className="mb-4">
-            <Callout tone="danger">Tu cuenta está deshabilitada.</Callout>
-          </div>
-        )}
-        {(notice === "db" || auth?.mode === "unavailable") && (
-          <div className="mb-4">
-            <Callout tone="danger">
-              La base de datos de usuarios no está disponible. Arráncala con{" "}
-              <code className="font-mono text-xs">make users-db-up</code> y recarga.
-            </Callout>
-          </div>
-        )}
+      {auth === null ? (
+        <Card className="mb-6 p-6">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="mt-3 h-9" />
+        </Card>
+      ) : auth.user ? (
+        <SessionCard user={auth.user} />
+      ) : auth.mode === "protected" ? (
+        <AuthCard googleEnabled={auth.google_enabled} mailEnabled={auth.mail_enabled} />
+      ) : auth.mode === "open" ? (
+        <OpenModeCards googleEnabled={auth.google_enabled} />
+      ) : null}
 
-        {auth === null ? (
-          <Card className="mb-6 p-6">
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="mt-3 h-9" />
-          </Card>
-        ) : auth.user ? (
-          <SessionCard user={auth.user} />
-        ) : auth.mode === "protected" ? (
-          <AuthCard googleEnabled={auth.google_enabled} />
-        ) : auth.mode === "open" ? (
-          <OpenModeCards googleEnabled={auth.google_enabled} />
-        ) : null}
+      <HowItWorks />
 
-        <HowItWorks />
-
-        {auth?.mode === "open" && (
-          <p className="mt-6 flex items-center gap-2 text-xs text-faint">
-            <Monitor size={14} />
-            Modo local: tus planos y presupuestos se procesan y guardan en tu equipo.
-          </p>
-        )}
-      </div>
-    </div>
+      {auth?.mode === "open" && (
+        <p className="mt-6 flex items-center gap-2 text-xs text-faint">
+          <Monitor size={14} />
+          Modo local: tus planos y presupuestos se procesan y guardan en tu equipo.
+        </p>
+      )}
+    </AuthFrame>
   );
 }
 
@@ -203,107 +200,34 @@ function SessionCard({ user }: { user: AuthUser }) {
           </button>
         </div>
       </form>
-      <SecuritySection />
-    </Card>
-  );
-}
-
-function SecuritySection() {
-  const [open, setOpen] = useState(false);
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setError(null);
-    setMessage(null);
-    try {
-      await changePassword(current, next);
-      setMessage("Contraseña actualizada. Las demás sesiones se cerraron.");
-      setCurrent("");
-      setNext("");
-    } catch (e) {
-      const detail =
-        e instanceof ApiError && e.detail && typeof e.detail === "object"
-          ? (e.detail as { message?: string }).message
-          : null;
-      setError(detail || "No se pudo cambiar la contraseña.");
-    }
-  }
-
-  async function closeEverywhere() {
-    await logoutAll();
-    window.location.reload();
-  }
-
-  return (
-    <div className="mt-4 border-t border-border pt-3">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        className="text-xs font-medium text-muted transition hover:text-foreground"
+      <Link
+        href="/cuenta"
+        className="mt-4 flex items-center gap-2 border-t border-border pt-3 text-xs font-medium text-muted transition hover:text-foreground"
       >
-        {open ? "Ocultar seguridad" : "Seguridad: contraseña y sesiones"}
-      </button>
-      {open && (
-        <div className="mt-3 space-y-3">
-          <form onSubmit={submit} className="flex flex-wrap items-center gap-2">
-            <Input
-              type="password"
-              value={current}
-              onChange={(e) => setCurrent(e.target.value)}
-              placeholder="Contraseña actual (vacía si solo usas Google)"
-              className="min-w-56 flex-1 text-sm"
-            />
-            <Input
-              type="password"
-              value={next}
-              onChange={(e) => setNext(e.target.value)}
-              placeholder="Nueva contraseña (mín. 8)"
-              minLength={8}
-              required
-              className="w-52 text-sm"
-            />
-            <button type="submit" className={buttonClasses("secondary", "sm")}>
-              Cambiar
-            </button>
-          </form>
-          <button
-            type="button"
-            onClick={closeEverywhere}
-            className={buttonClasses("ghost", "sm")}
-          >
-            Cerrar sesión en todos los dispositivos
-          </button>
-          {message && <p className="text-xs text-success">{message}</p>}
-          {error && <p className="text-xs text-danger">{error}</p>}
-        </div>
-      )}
-    </div>
+        <UserCircle size={14} weight="bold" /> Tu cuenta: contraseña, correo y sesiones
+      </Link>
+    </Card>
   );
 }
 
 /* ------------------------------------------------------- protected mode --- */
 
-function AuthCard({ googleEnabled }: { googleEnabled: boolean }) {
+function AuthCard({
+  googleEnabled,
+  mailEnabled,
+}: {
+  googleEnabled: boolean;
+  mailEnabled: boolean;
+}) {
   const router = useRouter();
   const [tab, setTab] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [registered, setRegistered] = useState(false);
-
-  function apiMessage(e: unknown, fallback: string): string {
-    if (e instanceof ApiError && e.detail && typeof e.detail === "object") {
-      const message = (e.detail as { message?: string }).message;
-      if (message) return message;
-    }
-    return fallback;
-  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -311,7 +235,7 @@ function AuthCard({ googleEnabled }: { googleEnabled: boolean }) {
     setError(null);
     try {
       if (tab === "login") {
-        const user = await login(email.trim(), password);
+        const user = await login(email.trim(), password, remember);
         if (user.status === "active") {
           completeProfile(user.name);
           router.replace("/");
@@ -344,6 +268,7 @@ function AuthCard({ googleEnabled }: { googleEnabled: boolean }) {
         <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
           Un administrador del taller debe aprobarla; después podrás entrar con tu correo y
           contraseña.
+          {mailEnabled && " Te enviamos un correo para confirmar tu dirección."}
         </p>
       </Card>
     );
@@ -398,6 +323,7 @@ function AuthCard({ googleEnabled }: { googleEnabled: boolean }) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="correo@taller.mx"
+          autoComplete="email"
           required
           className="w-full"
         />
@@ -406,10 +332,27 @@ function AuthCard({ googleEnabled }: { googleEnabled: boolean }) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder={tab === "register" ? "Contraseña (mínimo 8 caracteres)" : "Contraseña"}
+          autoComplete={tab === "register" ? "new-password" : "current-password"}
           minLength={tab === "register" ? 8 : undefined}
           required
           className="w-full"
         />
+        {tab === "login" && (
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <label className="flex cursor-pointer items-center gap-2 text-muted">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                className="h-4 w-4 accent-accent"
+              />
+              Recordarme 30 días
+            </label>
+            <Link href="/recuperar" className="text-muted hover:text-foreground hover:underline">
+              ¿Olvidaste tu contraseña?
+            </Link>
+          </div>
+        )}
         {error && <p className="text-sm text-danger">{error}</p>}
         <button type="submit" className={buttonClasses("primary", "md", "w-full")} disabled={busy}>
           {tab === "login" ? "Entrar" : "Crear cuenta"} <ArrowRight size={15} weight="bold" />
@@ -417,7 +360,8 @@ function AuthCard({ googleEnabled }: { googleEnabled: boolean }) {
       </form>
       {tab === "register" && (
         <p className="mt-3 text-xs text-muted">
-          Las cuentas nuevas requieren la aprobación de un administrador del taller.
+          Las cuentas nuevas requieren la aprobación de un administrador. Si te invitaron, usa
+          el enlace de la invitación: entras de inmediato.
         </p>
       )}
     </Card>
@@ -463,11 +407,9 @@ function OpenModeCards({ googleEnabled }: { googleEnabled: boolean }) {
       completeProfile(user.name);
       router.replace("/");
     } catch (e) {
-      const message =
-        e instanceof ApiError && e.detail && typeof e.detail === "object"
-          ? (e.detail as { message?: string }).message
-          : null;
-      setError(message || "No se pudo crear la cuenta. ¿Está corriendo la base de datos?");
+      setError(
+        apiMessage(e, "No se pudo crear la cuenta. ¿Está corriendo la base de datos?"),
+      );
       setBusy(false);
     }
   }
@@ -516,8 +458,8 @@ function OpenModeCards({ googleEnabled }: { googleEnabled: boolean }) {
           <div className="flex-1">
             <div className="text-sm font-medium">Activar cuentas del taller</div>
             <p className="text-sm text-muted">
-              Crea la cuenta de administrador para trabajar en equipo con permisos por
-              proyecto.
+              Crea la cuenta de administrador para trabajar en equipo con invitaciones y
+              permisos por proyecto.
             </p>
           </div>
         </button>
@@ -525,8 +467,8 @@ function OpenModeCards({ googleEnabled }: { googleEnabled: boolean }) {
           <form onSubmit={createAdmin} className="mt-4 space-y-3 border-t border-border pt-4">
             <div className="flex items-start gap-2 text-xs text-muted">
               <ShieldCheck size={14} className="mt-0.5 shrink-0 text-accent" />
-              La primera cuenta es administrador y queda activa. Cada registro posterior
-              espera tu aprobación en Equipo.
+              La primera cuenta es administrador y queda activa. Después invitas a tu equipo
+              desde Equipo, o apruebas a quien se registre.
               {googleEnabled && " También podrás entrar con Google."}
             </div>
             <Input

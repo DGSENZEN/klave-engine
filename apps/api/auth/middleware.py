@@ -3,7 +3,7 @@
 In open mode (no accounts) every request passes untouched, preserving the
 original local-first behavior. In protected mode a session cookie is required,
 pending/disabled accounts are refused, and project routes enforce per-project
-roles (viewer < editor < owner; workspace admins pass everything). If the
+roles (viewer < editor < owner; admins pass everything within their workspace). If the
 users database goes down after accounts have been seen, the API fails closed.
 """
 
@@ -87,9 +87,18 @@ class AccessControlMiddleware:
             else:
                 scope.setdefault("state", {})["user"] = user
                 segments = [s for s in path.split("/") if s]
-                if segments and segments[0] == "projects" and user["role"] != "admin":
+                if segments and segments[0] == "projects":
                     required = _required_project_role(segments, method)
-                    if required is not None:
+                    if required is not None and user["role"] == "admin":
+                        # Admins pass every role check, but only inside
+                        # their own workspace.
+                        if store.project_workspace_id(segments[1]) != str(
+                            user["workspace_id"]
+                        ):
+                            denial = _deny(
+                                403, "forbidden_project", "Proyecto de otro taller."
+                            )
+                    elif required is not None:
                         role = store.project_role(segments[1], str(user["user_id"]))
                         if role is None or ROLE_RANK[role] < ROLE_RANK[required]:
                             denial = _deny(
