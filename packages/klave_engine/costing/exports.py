@@ -80,6 +80,7 @@ def build_presupuesto_workbook(
     project_name: str,
     client: str | None,
     fmt: str = "klave",
+    inventory: dict | None = None,
 ) -> bytes:
     if fmt == "opus":
         workbook = _flat_workbook(
@@ -95,6 +96,8 @@ def build_presupuesto_workbook(
         )
     else:
         workbook = _klave_workbook(report, detections, reviews, project_name, client)
+        if inventory and inventory.get("sheets"):
+            _levantamiento(workbook.create_sheet("Levantamiento"), inventory)
     buffer = io.BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
@@ -369,6 +372,45 @@ def _generadores(
             _muted(ws, row, 1, note)
             row += 1
     _autosize(ws, [18, 16, 18, 26, 14, 11])
+
+
+def _levantamiento(ws: Worksheet, inventory: dict) -> None:
+    """Symbols, tags and runs per sheet: the count behind every mapped line
+    and the backlog of what is still unmapped."""
+    _header(ws, 1, ["Hoja", "Disciplina", "Tipo", "Elemento", "Capa", "Cantidad", "Unidad",
+                    "Por planta"])
+    row = 2
+    unit = inventory.get("unit") or "u. dib."
+    for sheet in inventory.get("sheets") or []:
+        label = sheet.get("label") or sheet.get("sheet", "")
+        discipline = sheet.get("discipline") or ""
+        entries: list[list[Any]] = []
+        for block in sheet.get("blocks") or []:
+            entries.append(["Símbolo", block["block_name"], block.get("layer", ""),
+                            block["count"], "PZA", block.get("by_view") or {}])
+        for tag in sheet.get("tags") or []:
+            entries.append(["Etiqueta", tag["tag"], "", tag["count"], "PZA",
+                            tag.get("by_view") or {}])
+        for run in sheet.get("runs") or []:
+            length = run.get("length_m")
+            entries.append(["Trazo", run["layer"], run["layer"],
+                            length if length is not None else run.get("length_du", 0.0),
+                            "M" if length is not None else unit, run.get("by_view") or {}])
+        for kind, element, layer, quantity, qty_unit, by_view in entries:
+            split = "; ".join(f"{title}: {qty:,.2f}" for title, qty in by_view.items())
+            values: list[Any] = [label, discipline, kind, element, layer, quantity, qty_unit, split]
+            for col, value in enumerate(values, start=1):
+                cell = ws.cell(row=row, column=col, value=value)
+                cell.border = _box
+                if col == 6:
+                    cell.number_format = QTY_FORMAT
+            row += 1
+    row += 1
+    for note in inventory.get("notes") or []:
+        _muted(ws, row, 1, note)
+        row += 1
+    _autosize(ws, [34, 14, 10, 34, 24, 12, 8, 48])
+    ws.freeze_panes = "A2"
 
 
 def _programa(ws: Worksheet, report: CostReport) -> None:

@@ -36,6 +36,9 @@ def test_symbols_and_runs_per_sheet(tmp_path):
         msp.add_line((0, 10), (3, 10), dxfattribs={"layer": "COTAS1"})  # annotation
         msp.add_line((0, 11), (0.4, 11), dxfattribs={"layer": "GAS"})  # under 1 m: noise
         msp.add_text("TUBERÍA DE PEAD 19MM", height=0.1).set_placement((1, 12))
+        for i, tag in enumerate(("V-1", "V-1", "V-2", "P-1", "P-1", "P-1", "T-9")):
+            msp.add_text(tag, height=0.1).set_placement((1 + i, 14))
+        msp.add_text("N-3", height=0.1).set_placement((9, 14))  # a level marker, not a tag
 
     entities = _entities(tmp_path, "05 SANITARIO.dxf", build)
     inventory = build_inventory(
@@ -49,6 +52,8 @@ def test_symbols_and_runs_per_sheet(tmp_path):
     ]
     assert [(r.layer, r.length_m, r.segments) for r in sheet.runs] == [("00-SANITARIA", 19.0, 2)]
     assert sheet.specs == ["TUBERÍA DE PEAD 19MM"]
+    # Tags repeated at least twice are element types; T-9 alone is a detail title.
+    assert [(t.tag, t.count) for t in sheet.tags] == [("P-1", 3), ("V-1", 2)]
     assert "no es una cantidad" in inventory.notes[0]
 
 
@@ -96,3 +101,26 @@ def test_structural_detectors_skip_installation_sheets():
     assert guess_discipline("03-09_gas_l_04_-_26_01_15.dwg") == "gas"
     assert guess_discipline("04-08_aa_l_04_-_26_01_15.dwg") == "aire"
     assert not reads_as_structure("01-04_hidraulico_l_04_-_26_01_30.dwg")
+
+
+def test_tags_come_from_block_attributes_too(tmp_path):
+    """Cancelería bubbles carry the tag as an attribute (CANC_ALUM → V-3)."""
+
+    def build(doc):
+        block = doc.blocks.new(name="CANC_ALUM")
+        block.add_circle((0, 0), 0.3)
+        block.add_attdef("TAG", (0, 0), dxfattribs={"height": 0.15})
+        msp = doc.modelspace()
+        for i, tag in enumerate(("V-1", "V-1", "V-3", "P-2")):
+            ref = msp.add_blockref(
+                "CANC_ALUM", (2 + i * 3, 2), dxfattribs={"layer": "NOMENCLATURA"}
+            )
+            ref.add_auto_attribs({"TAG": tag})
+
+    entities = _entities(tmp_path, "12 CANCELERIA.dxf", build)
+    inventory = build_inventory(
+        entities, DrawingUnits(unit="m", source="declared", confidence=1.0), []
+    )
+    sheet = inventory.sheets[0]
+    assert [(b.block_name, b.count) for b in sheet.blocks] == [("CANC_ALUM", 4)]
+    assert [(t.tag, t.count) for t in sheet.tags] == [("V-1", 2), ("P-2", 1), ("V-3", 1)]

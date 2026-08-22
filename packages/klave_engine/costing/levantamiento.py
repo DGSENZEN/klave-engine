@@ -57,7 +57,16 @@ def apply_inventory(
         by_view: dict[str, float] = {}
         sheets_hit: list[str] = []
         for sheet in inventory.get("sheets") or []:
-            if kind == "block":
+            if kind == "tag":
+                for tag in sheet.get("tags") or []:
+                    if str(tag.get("tag", "")).lower() != pattern:
+                        continue
+                    total += float(tag.get("count") or 0)
+                    hits += int(tag.get("count") or 0)
+                    sheets_hit.append(sheet.get("label") or sheet.get("sheet", ""))
+                    for view, n in (tag.get("by_view") or {}).items():
+                        by_view[view] = by_view.get(view, 0.0) + float(n)
+            elif kind == "block":
                 for block in sheet.get("blocks") or []:
                     if str(block.get("block_name", "")).lower() != pattern:
                         continue
@@ -91,7 +100,12 @@ def apply_inventory(
             )
             continue
         quantity = round(total * factor, 4)
-        what = "símbolos" if kind == "block" else ("m" if unit_label else "unidades de dibujo")
+        if kind == "block":
+            what = "símbolos"
+        elif kind == "tag":
+            what = "etiquetas"
+        else:
+            what = "m" if unit_label else "unidades de dibujo"
         note = (
             f"Levantamiento: {total:,.2f} {what} «{mapping.get('pattern')}» en "
             f"{', '.join(sorted(set(s for s in sheets_hit if s))[:3])}"
@@ -109,7 +123,7 @@ def apply_inventory(
                 amount=round(quantity * apu.direct_unit_cost, 2),
                 phase=concept.phase,
                 raw_quantity=round(total, 4),
-                raw_kind=QuantityKind.COUNT if kind == "block" else QuantityKind.LENGTH,
+                raw_kind=QuantityKind.LENGTH if kind == "layer" else QuantityKind.COUNT,
                 source_detection_count=hits,
                 confidence=0.8,
                 assumptions=[note],

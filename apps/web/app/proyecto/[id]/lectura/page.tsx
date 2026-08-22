@@ -55,7 +55,11 @@ export default function LecturaPage() {
     reloadMappings();
   }, [reloadMappings]);
 
-  async function assign(kind: "block" | "layer", pattern: string, conceptCode: string) {
+  async function assign(
+    kind: "block" | "layer" | "tag",
+    pattern: string,
+    conceptCode: string,
+  ) {
     try {
       await addInventoryMapping({ kind, pattern, concept_code: conceptCode }, getBrowserActor());
       reloadMappings();
@@ -366,12 +370,12 @@ function MappingControl({
   onAssign,
   onUnassign,
 }: {
-  kind: "block" | "layer";
+  kind: "block" | "layer" | "tag";
   pattern: string;
   unit: string;
   concepts: CatalogConcept[];
   mappings: InventoryMapping[];
-  onAssign: (kind: "block" | "layer", pattern: string, conceptCode: string) => void;
+  onAssign: (kind: "block" | "layer" | "tag", pattern: string, conceptCode: string) => void;
   onUnassign: (mapping: InventoryMapping) => void;
 }) {
   const current = mappings.find(
@@ -427,11 +431,13 @@ function InventoryCard({
   unit: string | null;
   concepts: CatalogConcept[];
   mappings: InventoryMapping[];
-  onAssign: (kind: "block" | "layer", pattern: string, conceptCode: string) => void;
+  onAssign: (kind: "block" | "layer" | "tag", pattern: string, conceptCode: string) => void;
   onUnassign: (mapping: InventoryMapping) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const symbols = sheet.blocks.reduce((s, b) => s + b.count, 0);
+  const symbols =
+    sheet.blocks.reduce((s, b) => s + b.count, 0) +
+    (sheet.tags ?? []).reduce((s, t) => s + t.count, 0);
   const metres = sheet.runs.reduce((s, r) => s + (r.length_m ?? 0), 0);
   const levels = new Set<string>();
   sheet.blocks.forEach((b) => Object.keys(b.by_view).forEach((k) => levels.add(k)));
@@ -525,6 +531,37 @@ function InventoryCard({
                 </li>
               ))}
             </ul>
+            {(sheet.tags ?? []).length > 0 && (
+              <div className="mt-3">
+                <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+                  Etiquetas repetidas (tipos de elemento)
+                </div>
+                <ul className="space-y-1">
+                  {(sheet.tags ?? []).slice(0, 30).map((t) => (
+                    <li key={t.tag} className="flex items-baseline gap-2">
+                      <span className="tabular font-medium">{t.count}</span>
+                      <span className="min-w-0 flex-1 truncate font-mono text-xs">{t.tag}</span>
+                      {Object.keys(t.by_view).length > 1 && (
+                        <span className="text-[11px] tabular text-muted">
+                          {Object.entries(t.by_view)
+                            .map(([v, n]) => `${short(v)} ${n}`)
+                            .join(" · ")}
+                        </span>
+                      )}
+                      <MappingControl
+                        kind="tag"
+                        pattern={t.tag}
+                        unit="PZA"
+                        concepts={concepts}
+                        mappings={mappings}
+                        onAssign={onAssign}
+                        onUnassign={onUnassign}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {sheet.specs.length > 0 && (
               <div className="mt-3 text-xs text-muted">
                 Especificaciones leídas: {sheet.specs.slice(0, 12).join(" · ")}

@@ -350,6 +350,18 @@ def normalize_entity(
         rotation = float(entity.dxf.rotation)
         insert = (float(entity.dxf.insert.x), float(entity.dxf.insert.y))
         properties["insert"] = insert
+        # Attribute values travel with the insert: a nomenclature bubble's
+        # tag (V-3), an equipment label, a door number.
+        attributes: dict[str, str] = {}
+        for attrib in getattr(entity, "attribs", None) or []:
+            try:
+                attr_text = str(attrib.dxf.text).strip()
+            except AttributeError:
+                continue
+            if attr_text:
+                attributes[str(attrib.dxf.tag)] = attr_text
+        if attributes:
+            properties["attributes"] = attributes
         bbox = _exact_bbox(entity)
         if bbox is None:
             bbox = (insert[0], insert[1], insert[0], insert[1])

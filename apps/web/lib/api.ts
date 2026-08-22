@@ -544,12 +544,15 @@ export type InventoryRun = {
   segments: number;
   by_view: Record<string, number>;
 };
+export type InventoryTag = { tag: string; count: number; by_view: Record<string, number> };
 export type SheetInventory = {
   sheet: string;
   label?: string;
   discipline: string | null;
   blocks: InventoryBlock[];
   runs: InventoryRun[];
+  /** Repeated marks (V-1, P-3…): element types of cancelería, carpintería, plafones. */
+  tags?: InventoryTag[];
   specs: string[];
   notes: string[];
 };
@@ -558,7 +561,7 @@ export type Inventory = { sheets: SheetInventory[]; unit: string | null; notes: 
 /** A symbol or layer of the levantamiento mapped to a concept (workspace-wide). */
 export type InventoryMapping = {
   id: number;
-  kind: "block" | "layer";
+  kind: "block" | "layer" | "tag";
   pattern: string;
   concept_code: string;
   factor: number;
@@ -569,7 +572,7 @@ export const listInventoryMappings = () =>
   getJSON<{ mappings: InventoryMapping[] }>("/catalog/inventory-mappings").then((r) => r.mappings);
 
 export const addInventoryMapping = (
-  body: { kind: "block" | "layer"; pattern: string; concept_code: string; factor?: number },
+  body: { kind: "block" | "layer" | "tag"; pattern: string; concept_code: string; factor?: number },
   actor?: string,
 ) =>
   postJSON<InventoryMapping>(

@@ -30,7 +30,7 @@ _ANNOTATION_BLOCK_RE = re.compile(
 )
 _ANNOTATION_LAYER_RE = re.compile(
     r"COTA|DIM|TEXT|PIE DE PLANO|CAJET|PAPEL|DEFPOINTS|UBICA|EJE|GRID|AXIS|MARCO|FRAME|"
-    r"NOMENCLATURA|SIMBOLOG|LEYENDA|HATCH|ACHUR|^0$",
+    r"SIMBOLOG|LEYENDA|HATCH|ACHUR|^0$",
     re.I,
 )
 _DISCIPLINE_HINTS: list[tuple[str, re.Pattern[str]]] = [
@@ -45,6 +45,14 @@ _DISCIPLINE_HINTS: list[tuple[str, re.Pattern[str]]] = [
     ("carpinteria", re.compile(r"CARPINT|MADERA|CLOSET|COCINA", re.I)),
     ("estructural", re.compile(r"EST|TRABE|LOSA|ZAPATA|CASTILL|COLUMN|CIMENT", re.I)),
 ]
+# Element tags: one or two letters, a dash or nothing, one to three digits,
+# an optional letter — V-1, P-12, VA-3, C2, M-1A. Not NPT levels or axes.
+_TAG_RE = re.compile(r"^[A-Z]{1,2}-?\d{1,3}[A-Z]?$")
+# Tags live on nomenclature/text layers; only cotas, cajetín and axes are not tags.
+_TAG_SKIP_LAYER_RE = re.compile(
+    r"COTA|DIM|PIE DE PLANO|CAJET|PAPEL|DEFPOINTS|UBICA|EJE|GRID|AXIS", re.I
+)
+_NOT_A_TAG_RE = re.compile(r"^(N|NPT|NIV|E|EJE|ES|IS|IH|IE|A|AR)-?\d", re.I)
 _SPEC_RE = re.compile(
     r"(\d+\s*(?:MM|\")|Ø\s*\d+(?:/\d+)?\"?|\d+/\d+\"|PEAD|PVC|CPVC|COBRE|GALV|CAL\.?\s*\d+|"
     r"\d+\s*TON|\d+\s*BTU|\d+\s*W\b)",
@@ -67,12 +75,22 @@ class InventoryRun(BaseModel):
     by_view: dict[str, float] = Field(default_factory=dict)
 
 
+class InventoryTag(BaseModel):
+    """A short mark repeated on the sheet: V-1, P-3, C-2 (cancelería,
+    carpintería, plafones name each element type this way)."""
+
+    tag: str
+    count: int
+    by_view: dict[str, int] = Field(default_factory=dict)
+
+
 class SheetInventory(BaseModel):
     sheet: str  # the parsed file, as entities name it
     label: str = ""  # the sheet as the user uploaded it
     discipline: str | None
     blocks: list[InventoryBlock] = Field(default_factory=list)
     runs: list[InventoryRun] = Field(default_factory=list)
+    tags: list[InventoryTag] = Field(default_factory=list)
     specs: list[str] = Field(default_factory=list)  # "TUBERÍA DE PEAD 19MM", "Ø 1/2""
     notes: list[str] = Field(default_factory=list)
 
@@ -149,6 +167,8 @@ def build_inventory(
     for sheet, sheet_entities in by_sheet.items():
         blocks: dict[tuple[str, str], InventoryBlock] = {}
         runs: dict[str, InventoryRun] = {}
+        tags: dict[str, InventoryTag] = {}
+        attribute_tags: set[str] = set()
         specs: set[str] = set()
         for entity in sheet_entities:
             if entity.entity_type == EntityType.insert and entity.block_name:
@@ -166,6 +186,17 @@ def build_inventory(
                 view = view_of(entity)
                 if view:
                     block.by_view[view] = block.by_view.get(view, 0) + 1
+                # A bubble's attribute is the element tag (CANC_ALUM → "V-3").
+                for value in ((entity.properties or {}).get("attributes") or {}).values():
+                    upper = " ".join(str(value).split()).upper()
+                    if _TAG_RE.match(upper) and not _NOT_A_TAG_RE.match(upper):
+                        tag = tags.get(upper)
+                        if tag is None:
+                            tag = tags[upper] = InventoryTag(tag=upper, count=0)
+                        tag.count += 1
+                        attribute_tags.add(upper)
+                        if view:
+                            tag.by_view[view] = tag.by_view.get(view, 0) + 1
             elif entity.entity_type in (EntityType.line, EntityType.polyline, EntityType.arc):
                 if _ANNOTATION_LAYER_RE.search(entity.layer):
                     continue
@@ -190,6 +221,18 @@ def build_inventory(
                 )
                 if _SPEC_RE.search(content) and 4 <= len(content) <= 80:
                     specs.add(content)
+                upper = content.upper()
+                if (
+                    _TAG_RE.match(upper) and not _NOT_A_TAG_RE.match(upper)
+                    and not _TAG_SKIP_LAYER_RE.search(entity.layer)
+                ):
+                    tag = tags.get(upper)
+                    if tag is None:
+                        tag = tags[upper] = InventoryTag(tag=upper, count=0)
+                    tag.count += 1
+                    view = view_of(entity)
+                    if view:
+                        tag.by_view[view] = tag.by_view.get(view, 0) + 1
 
         kept_runs: list[InventoryRun] = []
         for run in runs.values():
@@ -207,9 +250,15 @@ def build_inventory(
         )
         label = (sheet_names or {}).get(sheet) or sheet.rsplit("/", 1)[-1]
         discipline = guess_discipline(label) or guess_discipline(content_words)
+        # A free text tag seen once is a detail title; a bubble's attribute is
+        # an element even when its type appears once on the sheet.
+        tag_list = sorted(
+            (t for t in tags.values() if t.count >= 2 or t.tag in attribute_tags),
+            key=lambda t: (-t.count, t.tag),
+        )
         entry = SheetInventory(
             sheet=sheet, label=label, discipline=discipline, blocks=block_list, runs=kept_runs,
-            specs=sorted(specs)[:40],
+            tags=tag_list, specs=sorted(specs)[:40],
         )
         if to_m is None:
             entry.notes.append(
@@ -221,9 +270,10 @@ def build_inventory(
     inventory.sheets.sort(key=lambda s: s.sheet)
     total_blocks = sum(b.count for s in inventory.sheets for b in s.blocks)
     total_runs = sum(len(s.runs) for s in inventory.sheets)
+    total_tags = sum(len(s.tags) for s in inventory.sheets)
     inventory.notes.append(
-        f"{total_blocks} símbolos y {total_runs} capas con trazo contados en "
-        f"{len(inventory.sheets)} hoja(s). Un conteo no es una cantidad hasta que se "
-        "asigna a un concepto del catálogo."
+        f"{total_blocks} símbolos, {total_runs} capas con trazo y {total_tags} etiquetas "
+        f"contados en {len(inventory.sheets)} hoja(s). Un conteo no es una cantidad hasta "
+        "que se asigna a un concepto del catálogo."
     )
     return inventory
