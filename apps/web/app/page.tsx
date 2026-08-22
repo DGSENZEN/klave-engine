@@ -7,6 +7,7 @@ import {
   Archive,
   ArrowCounterClockwise,
   ArrowRight,
+  ArrowsClockwise,
   Books,
   CircleNotch,
   CloudArrowUp,
@@ -26,6 +27,7 @@ import {
   getWorkspaceOverview,
   money,
   patchProject,
+  processProject,
   removeProject,
   uploadProject,
   type ProjectOverview,
@@ -78,7 +80,7 @@ const REFRESH_EVENTS = new Set([
   "catalog_updated",
 ]);
 
-type Focus = "all" | "processing" | "failed" | "unverified";
+type Focus = "all" | "processing" | "failed" | "unverified" | "stale";
 
 export default function Home() {
   const router = useRouter();
@@ -189,6 +191,7 @@ export default function Home() {
       if (focus === "processing" && !(p.status === "queued" || p.status === "running")) return false;
       if (focus === "failed" && p.status !== "failed") return false;
       if (focus === "unverified" && !(p.status === "processed" && !p.verified)) return false;
+      if (focus === "stale" && !p.engine_stale) return false;
       if (!q) return true;
       return (
         p.name.toLowerCase().includes(q) || (p.client ?? "").toLowerCase().includes(q)
@@ -433,6 +436,17 @@ function AttentionStrip({
       tone: "default",
     });
   }
+  if (attention.stale_runs > 0) {
+    chips.push({
+      key: "stale",
+      label:
+        attention.stale_runs === 1
+          ? "1 con lectura anterior"
+          : `${attention.stale_runs} con lectura anterior`,
+      icon: <ArrowsClockwise size={14} weight="bold" />,
+      tone: "default",
+    });
+  }
   if (attention.pending_users) {
     chips.push({
       key: "users",
@@ -541,6 +555,15 @@ function ProjectRow({
     }
   }
 
+  async function reprocess() {
+    try {
+      await processProject(project.project_id);
+      onChanged();
+    } catch {
+      onError("No se pudo reprocesar el proyecto.");
+    }
+  }
+
   const processed = project.status === "processed";
   const steps = project.verification;
   const doneSteps = [steps.units, steps.detections, steps.assumptions].filter(Boolean).length;
@@ -596,6 +619,14 @@ function ProjectRow({
                   <span className="truncate text-warning">{project.job_error}</span>
                 </>
               )}
+              {project.engine_stale && (
+                <>
+                  <span className="text-faint">·</span>
+                  <span className="inline-flex items-center gap-1" title="Procesado con una versión anterior del motor">
+                    <ArrowsClockwise size={12} /> lectura anterior
+                  </span>
+                </>
+              )}
             </div>
           </>
         )}
@@ -631,6 +662,14 @@ function ProjectRow({
               }}
             >
               <UserSwitch size={15} /> Cliente…
+            </MenuItem>
+            <MenuItem
+              onSelect={() => {
+                reprocess();
+                close();
+              }}
+            >
+              <ArrowsClockwise size={15} /> Reprocesar
             </MenuItem>
             <MenuItem
               onSelect={() => {

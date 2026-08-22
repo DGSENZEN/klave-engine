@@ -8,6 +8,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from klave_engine.common.config import Settings
 from klave_engine.common.io import read_json
+from klave_engine.common.version import engine_fingerprint
 from klave_engine.costing.catalog_store import get_catalog_store
 from klave_engine.costing.defaults import (
     clear_workspace_defaults,
@@ -81,6 +82,7 @@ def _project_overview(
         "currency": "MXN",
         "last_activity": None,
         "job_error": None,
+        "engine_stale": False,
     }
     control_dir = root / settings.processed_dir_name
     try:
@@ -128,6 +130,13 @@ def _project_overview(
             entry["currency"] = report.get("currency", "MXN")
         except (KeyError, TypeError, ValueError, OSError):
             pass
+    if entry["status"] == "processed":
+        engine_path = store.artifact_root(project_id) / "engine.json"
+        try:
+            stamp = read_json(engine_path) if engine_path.exists() else {}
+        except (ValueError, OSError):
+            stamp = {}
+        entry["engine_stale"] = stamp.get("fingerprint") != engine_fingerprint()
     activity = _latest_mtime(
         [control_dir / REVIEWS_FILENAME, override, control_dir / "active_run.json", report_path]
     )
@@ -184,6 +193,7 @@ def overview(
             "unverified": sum(
                 1 for p in active if p["status"] == "processed" and not p["verified"]
             ),
+            "stale_runs": sum(1 for p in active if p["engine_stale"]),
             "pending_users": pending_users,
             "stale_insumos": stale,
             "stale_threshold_months": STALE_MONTHS,

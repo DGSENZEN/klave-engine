@@ -7,6 +7,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, UploadFile
 from klave_engine.common.config import Settings
 from klave_engine.common.ids import short_uuid, slugify
+from klave_engine.common.io import read_json
+from klave_engine.common.version import engine_fingerprint
 from klave_engine.conversion.libredwg import convert_dwg_to_dxf
 from klave_engine.costing.defaults import apply_workspace_defaults
 from klave_engine.ingestion.manifest import ConvertedFile, save_manifest
@@ -377,7 +379,22 @@ def project_status(
 
 @router.get("/{project_id}")
 def get_project(project_id: str, store: ProjectStore = Depends(get_store)) -> dict:
-    return store.get_manifest(project_id).model_dump(mode="json")
+    payload = store.get_manifest(project_id).model_dump(mode="json")
+    engine_path = store.artifact_root(project_id) / "engine.json"
+    stamp: dict = {}
+    if engine_path.exists():
+        try:
+            stamp = read_json(engine_path)
+        except (ValueError, OSError):
+            stamp = {}
+    payload["engine"] = {
+        "fingerprint": stamp.get("fingerprint"),
+        "processed_at": stamp.get("processed_at"),
+        "current": engine_fingerprint(),
+        "stale": payload.get("processing_status") == "processed"
+        and stamp.get("fingerprint") != engine_fingerprint(),
+    }
+    return payload
 
 
 @router.post("/{project_id}/ingest")

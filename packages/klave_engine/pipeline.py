@@ -8,12 +8,14 @@ individually (see the CLI) or together via ``run_full_pipeline``.
 import json
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 from klave_engine.common.config import Settings, get_settings
 from klave_engine.common.errors import ConversionError, ProjectManifestError
 from klave_engine.common.io import read_json, write_json, write_text
 from klave_engine.common.logging import configure_logging, get_logger, log_stage
+from klave_engine.common.version import engine_stamp
 from klave_engine.conversion.dwg_to_dxf import ConversionResult, convert_project
 from klave_engine.costing.catalog_store import get_catalog_store
 from klave_engine.costing.insumos import apply_price_overrides
@@ -343,6 +345,10 @@ def run_full_pipeline(
         store_concepts=catalog_store.load_concepts(),
     )
     write_json(processed / "cost_report.json", result.cost_report)
+    write_json(
+        processed / "engine.json",
+        {**engine_stamp(), "processed_at": datetime.now(UTC).isoformat()},
+    )
     diff = _run_diff(
         prev_detections,
         prev_total,

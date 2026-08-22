@@ -349,6 +349,12 @@ export type ProjectInfo = {
   client: string | null;
   archived: boolean;
   processing_status: string;
+  engine?: {
+    fingerprint: string | null;
+    processed_at: string | null;
+    current: string;
+    stale: boolean;
+  };
   source_files: {
     file_id: string;
     path: string;
@@ -818,6 +824,7 @@ export type ProjectOverview = ProjectSummary & {
   currency: string;
   last_activity: string | null;
   job_error: string | null;
+  engine_stale: boolean;
 };
 
 export type WorkspaceOverview = {
@@ -826,6 +833,7 @@ export type WorkspaceOverview = {
     processing: number;
     failed: number;
     unverified: number;
+    stale_runs: number;
     pending_users: number | null;
     stale_insumos: number;
     stale_threshold_months: number;
@@ -1006,3 +1014,7 @@ export const putEquipment = (
     { params, description },
     actor ? { "X-Actor": actor } : undefined,
   );
+
+/** Re-run the whole pipeline on the project's current files. */
+export const processProject = (id: string) =>
+  postJSON<{ project_id: string; job_id: string; state: string }>(`/projects/${id}/process`, {});

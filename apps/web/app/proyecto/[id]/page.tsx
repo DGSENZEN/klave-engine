@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useRef } from "react";
 import {
+  ArrowsClockwise,
   CheckCircle,
   CircleNotch,
   FilePlus,
@@ -22,6 +23,7 @@ import {
   getDimensions,
   getProject,
   getProjectReviews,
+  processProject,
   getRunDiff,
   money,
   setVerification,
@@ -49,6 +51,7 @@ import {
   SkeletonMetrics,
 } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
+import { timeAgo } from "@/lib/time";
 import { moneyGate, UnitsGate } from "@/components/MoneyGate";
 
 export default function Resumen() {
@@ -120,6 +123,30 @@ export default function Resumen() {
         <Callout tone="danger">
           No se pudo cargar el resumen de costos. Revisa que el servidor esté activo.
         </Callout>
+      )}
+
+      {project?.engine?.stale && (
+        <div className="mb-6">
+          <Callout
+            tone="info"
+            action={
+              <Button
+                size="sm"
+                onClick={() => {
+                  processProject(id)
+                    .then(() => getProject(id).then(setProject).catch(() => {}))
+                    .catch(() => {});
+                }}
+              >
+                <ArrowsClockwise size={14} weight="bold" /> Reprocesar
+              </Button>
+            }
+          >
+            Este proyecto se leyó con una versión anterior del motor
+            {project.engine.processed_at ? ` (${timeAgo(project.engine.processed_at)})` : ""}.
+            Reprocesa para aplicar las mejoras de lectura; tus revisiones y ajustes se conservan.
+          </Callout>
+        </div>
       )}
 
       {diff?.available && <RunDiffCard diff={diff} />}
