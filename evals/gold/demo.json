@@ -5,31 +5,31 @@
     "S-101.dxf": "44397dfb16f769f5305ed2f8b9cf6e46612e6c0b290901483d2e3233c38e2202"
   },
   "status": "baseline",
-  "captured_at": "2026-08-22T16:50:07.528913Z",
+  "captured_at": "2026-08-22T18:41:31.138707Z",
   "labels": {
     "grid_line": [
-      "EJE-01",
-      "EJE-02",
-      "EJE-03",
-      "EJE-04"
+      "EJE-1",
+      "EJE-2",
+      "EJE-A",
+      "EJE-B"
     ],
     "grid_intersection": [
-      "INT-01",
-      "INT-02",
-      "INT-03",
-      "INT-04"
+      "INT-A/1",
+      "INT-A/2",
+      "INT-B/1",
+      "INT-B/2"
     ],
     "column_tag": [
-      "COL-01",
-      "COL-02",
-      "COL-03"
+      "COL-C1-01",
+      "COL-C1-02",
+      "COL-C2"
     ],
     "footing": [
       "ZAP-01",
       "ZAP-02"
     ],
     "beam_tag": [
-      "TRB-01"
+      "TRB-B1"
     ],
     "slab_region": [
       "LOS-01"
@@ -38,8 +38,8 @@
       "MUR-01"
     ],
     "detail_reference": [
-      "REF-01",
-      "REF-02"
+      "REF-2/S-101",
+      "REF-5/S-501"
     ]
   },
   "confirmed": [],

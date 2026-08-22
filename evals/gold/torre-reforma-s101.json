@@ -7,46 +7,46 @@
     "03-s-301_azotea.dxf": "44397dfb16f769f5305ed2f8b9cf6e46612e6c0b290901483d2e3233c38e2202"
   },
   "status": "baseline",
-  "captured_at": "2026-08-22T18:34:28.962344Z",
+  "captured_at": "2026-08-22T18:41:47.453348Z",
   "labels": {
     "grid_line": [
-      "EJE-01",
-      "EJE-02",
-      "EJE-03",
-      "EJE-04",
-      "EJE-05",
-      "EJE-06",
-      "EJE-07",
-      "EJE-08",
-      "EJE-09",
-      "EJE-10",
-      "EJE-11",
-      "EJE-12"
+      "EJE-1-01",
+      "EJE-1-02",
+      "EJE-1-03",
+      "EJE-2-01",
+      "EJE-2-02",
+      "EJE-2-03",
+      "EJE-A-01",
+      "EJE-A-02",
+      "EJE-A-03",
+      "EJE-B-01",
+      "EJE-B-02",
+      "EJE-B-03"
     ],
     "grid_intersection": [
-      "INT-01",
-      "INT-02",
-      "INT-03",
-      "INT-04",
-      "INT-05",
-      "INT-06",
-      "INT-07",
-      "INT-08",
-      "INT-09",
-      "INT-10",
-      "INT-11",
-      "INT-12"
+      "INT-A/1-01",
+      "INT-A/1-02",
+      "INT-A/1-03",
+      "INT-A/2-01",
+      "INT-A/2-02",
+      "INT-A/2-03",
+      "INT-B/1-01",
+      "INT-B/1-02",
+      "INT-B/1-03",
+      "INT-B/2-01",
+      "INT-B/2-02",
+      "INT-B/2-03"
     ],
     "column_tag": [
-      "COL-01",
-      "COL-02",
-      "COL-03",
-      "COL-04",
-      "COL-05",
-      "COL-06",
-      "COL-07",
-      "COL-08",
-      "COL-09"
+      "COL-C1-01",
+      "COL-C1-02",
+      "COL-C1-03",
+      "COL-C1-04",
+      "COL-C1-05",
+      "COL-C1-06",
+      "COL-C2-01",
+      "COL-C2-02",
+      "COL-C2-03"
     ],
     "footing": [
       "ZAP-01",
@@ -57,9 +57,9 @@
       "ZAP-06"
     ],
     "beam_tag": [
-      "TRB-01",
-      "TRB-02",
-      "TRB-03"
+      "TRB-B1-01",
+      "TRB-B1-02",
+      "TRB-B1-03"
     ],
     "slab_region": [
       "LOS-01",
@@ -71,12 +71,12 @@
       "MUR-02"
     ],
     "detail_reference": [
-      "REF-01",
-      "REF-02",
-      "REF-03",
-      "REF-04",
-      "REF-05",
-      "REF-06"
+      "REF-2/S-101-01",
+      "REF-2/S-101-02",
+      "REF-2/S-101-03",
+      "REF-5/S-501-01",
+      "REF-5/S-501-02",
+      "REF-5/S-501-03"
     ]
   },
   "confirmed": [],
