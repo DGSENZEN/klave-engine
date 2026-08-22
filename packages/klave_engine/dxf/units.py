@@ -42,8 +42,17 @@ class DrawingUnits(BaseModel):
     def known(self) -> bool:
         return self.unit != UNKNOWN_UNIT
 
+    @property
+    def reliable(self) -> bool:
+        """Trusted enough to scale thresholds and money by: declared,
+        confirmed, read from cotas, or heuristics that agree (≥ 70 %). A
+        lone heuristic is shown to the engineer as a suggestion, not used."""
+        return self.known and (
+            self.source in ("dxf_header", "confirmed", "dimensions") or self.confidence >= 0.7
+        )
+
     def to_meters(self) -> float | None:
-        return METERS_FACTOR.get(self.unit)
+        return METERS_FACTOR.get(self.unit) if self.reliable else None
 
 
 def _unit_from_factor(factor_to_m: float) -> str | None:

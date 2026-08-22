@@ -15,12 +15,13 @@ def build_demo_dxf(path: Path) -> Path:
     """Write the S-101 demo sheet. Extent is roughly (0, 0) to (1010, 810)."""
     doc = ezdxf.new("R2018")
     # Pin the fixture to unitless so unit-aware detector presets never apply
-    # (ezdxf defaults new documents to meters).
+    # (ezdxf defaults new documents to meters). Text stays under the height
+    # heuristic's floor, so the extent alone yields only an unreliable guess.
     doc.header["$INSUNITS"] = 0
     msp = doc.modelspace()
 
     def text(value: str, insert: tuple[float, float], layer: str) -> None:
-        msp.add_text(value, dxfattribs={"layer": layer, "height": 5.0}).set_placement(insert)
+        msp.add_text(value, dxfattribs={"layer": layer, "height": 3.0}).set_placement(insert)
 
     # Grid: two horizontal (A at y=200, B at y=600), two vertical (1 at x=200, 2 at x=500).
     msp.add_line((0, 200), (1000, 200), dxfattribs={"layer": "S-GRID"})

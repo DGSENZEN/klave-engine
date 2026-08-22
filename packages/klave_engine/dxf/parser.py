@@ -1,18 +1,14 @@
 """DXF parsing via ezdxf: open files, resolve xrefs, read layouts, normalize model space."""
 
-import io
 from dataclasses import dataclass, field
 from pathlib import Path
-
-import ezdxf
-from ezdxf import recover as ezdxf_recover
-from ezdxf.lldxf.const import DXFStructureError
 
 from klave_engine.common.errors import DxfParseError
 from klave_engine.common.ids import IdGenerator
 from klave_engine.common.logging import get_logger, log_stage
 from klave_engine.dxf.entities import NormalizedEntity, ParseWarning
 from klave_engine.dxf.layouts import LayoutInfo, XrefInfo, read_layouts, resolve_xrefs
+from klave_engine.dxf.loader import NON_GRAPHICAL_TYPES, load_dxf
 from klave_engine.dxf.normalizer import normalize_entity
 
 logger = get_logger(__name__)
@@ -25,33 +21,6 @@ MAX_EXPLODED_PER_FILE = 15_000
 class _ExplosionBudget:
     total: int = 0
     capped: bool = False
-
-
-def _sanitize_dxf_text(raw: str) -> str:
-    """Repair DXF text where string values contain literal newlines.
-
-    ASCII DXF strictly alternates group-code lines and value lines. Some
-    converters (e.g. LibreDWG) write MTEXT values with embedded newlines,
-    which desynchronizes the tag stream. Any line found where a group code
-    is expected but is not an integer is rejoined to the previous value
-    using the MTEXT line break ``\\P``.
-    """
-    out: list[str] = []
-    expecting_code = True
-    for line in raw.splitlines():
-        if expecting_code:
-            try:
-                int(line.strip())
-            except ValueError:
-                if out:
-                    out[-1] += "\\P" + line
-                continue
-            out.append(line)
-            expecting_code = False
-        else:
-            out.append(line)
-            expecting_code = True
-    return "\n".join(out) + "\n"
 
 
 @dataclass
@@ -78,15 +47,26 @@ class DxfParser:
         source_file = source_file or path.name
         recover_warnings: list[ParseWarning] = []
         try:
-            doc = ezdxf.readfile(str(path))
-        except (DXFStructureError, UnicodeDecodeError):
-            # Real-world DXF (especially converter output) is often slightly
-            # malformed; retry with ezdxf's recover loader, then with a
-            # sanitized copy, before giving up.
-            doc, warning = self._load_with_recovery(path)
-            recover_warnings.append(warning)
-        except OSError as exc:
+            loaded = load_dxf(path)
+        except ValueError as exc:
             raise DxfParseError(f"Failed to read DXF file {path}: {exc}") from exc
+        doc = loaded.doc
+        if loaded.method != "strict":
+            detail = f"{loaded.audit_errors} audit errors, {loaded.audit_fixes} fixes applied"
+            if loaded.method == "sanitized":
+                detail += (
+                    f"; {loaded.rejoined_lines} líneas de texto reunidas, "
+                    f"{loaded.dropped_objects} objetos no geométricos retirados de ENTITIES"
+                )
+            recover_warnings.append(
+                ParseWarning(
+                    warning_type="dxf_recovered",
+                    message=(
+                        f"Strict DXF parsing failed; loaded in {loaded.method} mode ({detail})"
+                    ),
+                    source_file=path.name,
+                )
+            )
 
         drawing = ParsedDrawing(
             source_file=source_file,
@@ -104,11 +84,36 @@ class DxfParser:
 
         explosion = _ExplosionBudget()
         for entity in doc.modelspace():
-            normalized, warnings = normalize_entity(entity, source_file, self._ids)
+            kind = entity.dxftype()
+            if kind in NON_GRAPHICAL_TYPES:
+                # A converter filed an OBJECT among the entities; it has no
+                # geometry and must not stop the sheet.
+                drawing.warnings.append(
+                    ParseWarning(
+                        warning_type="non_graphical_in_entities",
+                        message=f"Objeto {kind} sin geometría encontrado entre las entidades",
+                        entity_type=kind,
+                        source_file=source_file,
+                    )
+                )
+                continue
+            try:
+                normalized, warnings = normalize_entity(entity, source_file, self._ids)
+            except Exception as exc:  # one broken entity never costs the sheet
+                drawing.warnings.append(
+                    ParseWarning(
+                        warning_type="entity_unreadable",
+                        message=f"Entidad {kind} ilegible: {type(exc).__name__}: {exc}"[:200],
+                        entity_type=kind,
+                        handle=str(getattr(entity.dxf, "handle", "") or "") or None,
+                        source_file=source_file,
+                    )
+                )
+                continue
             drawing.warnings.extend(warnings)
             if normalized is not None:
                 drawing.entities.append(normalized)
-            if entity.dxftype() == "INSERT":
+            if kind == "INSERT":
                 self._explode_insert(entity, drawing, source_file, explosion, depth=0)
         if explosion.capped:
             drawing.warnings.append(
@@ -186,7 +191,12 @@ class DxfParser:
             if child.dxftype() == "INSERT":
                 self._explode_insert(child, drawing, source_file, budget, depth + 1)
                 continue
-            normalized, _warnings = normalize_entity(child, source_file, self._ids)
+            if child.dxftype() in NON_GRAPHICAL_TYPES:
+                continue
+            try:
+                normalized, _warnings = normalize_entity(child, source_file, self._ids)
+            except Exception:
+                continue
             if normalized is None:
                 continue
             if normalized.layer == "0":
@@ -199,37 +209,3 @@ class DxfParser:
             drawing.entities.append(normalized)
             emitted += 1
             budget.total += 1
-
-    def _load_with_recovery(self, path: Path):
-        try:
-            doc, auditor = ezdxf_recover.readfile(str(path))
-            method = "recovery mode"
-        except (DXFStructureError, UnicodeDecodeError):
-            try:
-                raw_bytes = path.read_bytes()
-                # Mexican office drawings frequently carry cp1252 accents; try
-                # strict UTF-8 first and fall back before replacing bytes.
-                try:
-                    raw = raw_bytes.decode("utf-8")
-                except UnicodeDecodeError:
-                    try:
-                        raw = raw_bytes.decode("cp1252")
-                    except UnicodeDecodeError:
-                        raw = raw_bytes.decode("utf-8", errors="replace")
-                stream = io.BytesIO(_sanitize_dxf_text(raw).encode("utf-8"))
-                doc, auditor = ezdxf_recover.read(stream)
-                method = "sanitized recovery mode (embedded newlines rejoined)"
-            except (DXFStructureError, OSError, UnicodeDecodeError) as exc:
-                raise DxfParseError(f"Failed to read DXF file {path}: {exc}") from exc
-        except OSError as exc:
-            raise DxfParseError(f"Failed to read DXF file {path}: {exc}") from exc
-        warning = ParseWarning(
-            warning_type="dxf_recovered",
-            message=(
-                f"Strict DXF parsing failed; loaded in {method} "
-                f"({len(auditor.errors)} audit errors, "
-                f"{len(auditor.fixes)} fixes applied)"
-            ),
-            source_file=path.name,
-        )
-        return doc, warning

@@ -64,3 +64,15 @@ def test_display_text_is_read_from_override(tmp_path):
     dim = next(e for e in drawing.entities if e.entity_type.value == "dimension")
     assert dim.properties["display_text"] == "2.50" and dim.properties["display_value"] == 2.5
     assert dim.properties["dimlfac"] == 1.0
+
+
+def test_a_lone_guess_is_shown_but_not_used(tmp_path):
+    def build(msp):
+        msp.add_line((0, 0), (1000, 0))
+        msp.add_line((0, 0), (0, 800))
+        for i in range(12):
+            msp.add_text(f"C-{i}", height=3).set_placement((i * 50, 100))  # below the floor
+    drawing, extent, insunits = _drawing(tmp_path, build)
+    units = detect_units(insunits, drawing.entities, extent)
+    assert units.unit == "cm" and units.confidence == 0.55
+    assert not units.reliable and units.to_meters() is None

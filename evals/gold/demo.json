@@ -2,10 +2,10 @@
   "drawing_id": "demo",
   "source": "data/demo/demo_project_001",
   "files": {
-    "S-101.dxf": "44397dfb16f769f5305ed2f8b9cf6e46612e6c0b290901483d2e3233c38e2202"
+    "S-101.dxf": "e3a48b50676508227aee121c278e8ca9ea6e1aa6f2bf14a71e8cd4a276ad574e"
   },
   "status": "baseline",
-  "captured_at": "2026-08-22T18:41:31.138707Z",
+  "captured_at": "2026-08-22T19:26:36.089362Z",
   "labels": {
     "grid_line": [
       "EJE-1",

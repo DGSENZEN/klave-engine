@@ -41,7 +41,7 @@ from klave_engine.dxf.blocks import summarize_blocks
 from klave_engine.dxf.entities import NormalizedEntity
 from klave_engine.dxf.layers import summarize_layers
 from klave_engine.dxf.parser import DxfParser, ParsedDrawing
-from klave_engine.dxf.units import DrawingUnits, detect_units
+from klave_engine.dxf.units import UNKNOWN_UNIT, DrawingUnits, detect_units
 from klave_engine.geometry.spatial_index import SpatialIndex
 from klave_engine.graph.builder import DrawingGraph, build_drawing_graph
 from klave_engine.ingestion.manifest import (
@@ -281,7 +281,9 @@ def run_full_pipeline(
     write_json(processed / "detections.json", result.detections)
 
     result.quantity_report = generate_quantity_report(
-        manifest.project_id, result.detections, assumed_unit=units.unit
+        manifest.project_id,
+        result.detections,
+        assumed_unit=units.unit if units.reliable else UNKNOWN_UNIT,
     )
     write_json(processed / "quantity_report.json", result.quantity_report)
 

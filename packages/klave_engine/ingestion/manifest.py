@@ -39,7 +39,8 @@ class ConvertedFile(BaseModel):
     source_file_id: str
     path: str  # relative to project root
     file_type: FileType = FileType.dxf
-    conversion_status: str = "success"
+    conversion_status: str = "success"  # success | failed
+    error: str | None = None
 
 
 class ProjectManifest(BaseModel):

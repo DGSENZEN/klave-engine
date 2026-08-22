@@ -19,11 +19,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-import ezdxf
-from ezdxf import recover as ezdxf_recover
-from ezdxf.lldxf.const import DXFStructureError
-
 from klave_engine.common.logging import get_logger, log_stage
+from klave_engine.dxf.loader import NON_GRAPHICAL_TYPES, load_dxf
 
 logger = get_logger(__name__)
 
@@ -55,14 +52,8 @@ def dwg2dxf_version() -> str | None:
 
 def _load(path: Path) -> Any | None:
     try:
-        return ezdxf.readfile(str(path))
-    except (DXFStructureError, UnicodeDecodeError):
-        try:
-            doc, _auditor = ezdxf_recover.readfile(str(path))
-            return doc
-        except Exception:
-            return None
-    except OSError:
+        return load_dxf(path).doc
+    except ValueError:
         return None
 
 
@@ -76,7 +67,7 @@ def completeness(path: Path) -> dict[str, int] | None:
     doc = _load(path)
     if doc is None:
         return None
-    modelspace = list(doc.modelspace())
+    modelspace = [e for e in doc.modelspace() if e.dxftype() not in NON_GRAPHICAL_TYPES]
     return {
         "entities": len(modelspace),
         "texts": sum(1 for e in modelspace if e.dxftype() in ("TEXT", "MTEXT")),

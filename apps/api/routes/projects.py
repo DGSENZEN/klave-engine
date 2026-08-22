@@ -237,8 +237,9 @@ async def _save_sheet_uploads(
 
 
 def _convert_new_dwgs(root: Path, manifest, settings: Settings) -> list[str]:
-    """Convert DWG sources that lack a successful conversion. Raises 422 (and
-    leaves the caller to clean up) when any conversion fails."""
+    """Convert DWG sources that lack a successful conversion. A sheet that
+    cannot be converted is recorded as failed with its reason and the rest
+    of the project goes on; the caller decides whether anything is left."""
     warnings: list[str] = []
     converted_ids = {c.source_file_id for c in manifest.converted_files}
     for source in manifest.source_files:
@@ -247,21 +248,23 @@ def _convert_new_dwgs(root: Path, manifest, settings: Settings) -> list[str]:
         dxf_path, message = convert_dwg_to_dxf(
             root / source.path, timeout_seconds=settings.converter_timeout_seconds
         )
-        if dxf_path is None:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "error_type": "conversion_failed",
-                    "file": Path(source.path).name,
-                    "message": message,
-                },
-            )
         converted = (
             root
             / settings.converted_dir_name
             / source.file_id
             / f"{Path(source.path).stem}.dxf"
         )
+        if dxf_path is None:
+            manifest.converted_files.append(
+                ConvertedFile(
+                    source_file_id=source.file_id,
+                    path=str(converted.relative_to(root)),
+                    conversion_status="failed",
+                    error=message,
+                )
+            )
+            warnings.append(f"{Path(source.path).name}: {message}")
+            continue
         converted.parent.mkdir(parents=True, exist_ok=True)
         dxf_path.replace(converted)
         manifest.converted_files.append(
@@ -271,9 +274,24 @@ def _convert_new_dwgs(root: Path, manifest, settings: Settings) -> list[str]:
             )
         )
         warnings.append(message)
-    if warnings:
-        save_manifest(manifest, settings.processed_dir_name)
+    save_manifest(manifest, settings.processed_dir_name)
     return warnings
+
+
+def _require_readable_sheet(manifest, root: Path) -> None:
+    """Reject a project only when not one sheet can be read."""
+    if manifest.dxf_paths():
+        return
+    failures = [c.error for c in manifest.converted_files if c.conversion_status == "failed"]
+    shutil.rmtree(root, ignore_errors=True)
+    raise HTTPException(
+        status_code=422,
+        detail={
+            "error_type": "conversion_failed",
+            "message": "Ninguna hoja se pudo leer. " + (failures[0] or "")[:300],
+            "failures": failures,
+        },
+    )
 
 
 @router.post("/upload", status_code=202)
@@ -308,6 +326,7 @@ async def upload_project(
             manifest.client = cleaned_client
             save_manifest(manifest, settings.processed_dir_name)
         warnings = _convert_new_dwgs(root, manifest, settings)
+        _require_readable_sheet(manifest, root)
     except HTTPException:
         shutil.rmtree(root, ignore_errors=True)
         raise

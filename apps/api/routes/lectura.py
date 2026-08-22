@@ -33,6 +33,8 @@ WARNING_TYPE_LABELS = {
     "xref_missing": "Referencias externas faltantes",
     "xref_embedded": "Referencias externas incorporadas",
     "xref_failed": "Referencias externas que no se pudieron incorporar",
+    "non_graphical_in_entities": "Objetos sin geometría entre las entidades (omitidos)",
+    "entity_unreadable": "Entidades ilegibles omitidas",
 }
 
 ENTITY_TYPE_LABELS = {
