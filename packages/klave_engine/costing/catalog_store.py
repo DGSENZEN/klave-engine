@@ -112,6 +112,13 @@ SEED_VIGENCIA = "2026-08"
 # Reference basket beyond the original seven-concept core: standard Mexican
 # obra-negra practice values, all explicitly labeled reference data — a
 # runnable baseline to replace with quotations, never a market claim.
+SLAB_CONCEPT_CODES = ("EST-012", "EST-013", "CIM-007")
+SLAB_RESOURCES: list[tuple[str, str, str, float, str]] = [
+    ("MAT-VIGUETA", "Vigueta pretensada de 13 cm (referencia)", "M", 98.0, "material"),
+    ("MAT-BOVEDILLA", "Bovedilla de cemento-arena 15×25×56 cm (referencia)", "PZA", 24.0,
+     "material"),
+]
+
 EXTRA_RESOURCES: list[tuple[str, str, str, float, str]] = [
     ("MAT-CEM", "Cemento gris CPC 30R", "TON", 3350.0, "material"),
     ("MAT-ARENA", "Arena de mina", "M3", 420.0, "material"),
@@ -296,6 +303,12 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '5') "
                     "ON CONFLICT(key) DO UPDATE SET value = '5'"
                 )
+            if version_row is None or int(version_row["value"]) < 6:
+                self._migrate_v6(conn)
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '6') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '6'"
+                )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.
                 conn.execute(
@@ -401,6 +414,36 @@ class CatalogStore:
             (SEED_VIGENCIA, SEED_SOURCE),
         )
         log_stage(logger, "catalog_migrated_v2", db_path=str(self.db_path))
+
+    def _migrate_v6(self, conn: sqlite3.Connection) -> None:
+        """Slab systems become their own concepts (vigueta y bovedilla, losa
+        maciza, losa de cimentación) with reference matrices. OR IGNORE: a
+        taller that already defined these codes keeps its own."""
+        for code, description, unit, unit_cost, resource_type in SLAB_RESOURCES:
+            conn.execute(
+                "INSERT OR IGNORE INTO insumos (code, description, unit, resource_type, "
+                "unit_cost, is_labor_percentage, source, source_type, region, vigencia, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, 'referencia', 'MX-CMX', ?, ?)",
+                (code, description, unit, resource_type, unit_cost, SEED_SOURCE,
+                 SEED_VIGENCIA, _now()),
+            )
+        for index, concept in enumerate(build_default_catalog(CostingAssumptions())):
+            if concept.code not in SLAB_CONCEPT_CODES:
+                continue
+            conn.execute(
+                "INSERT OR IGNORE INTO concepts (code, description, unit, phase, "
+                "production_rate_per_day, rule_key, sequence_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (concept.code, concept.description, concept.unit, concept.phase,
+                 concept.production_rate_per_day, concept.code, index * 10),
+            )
+            for resource_code, quantity in APU_TEMPLATES.get(concept.code, []):
+                conn.execute(
+                    "INSERT OR IGNORE INTO apu_components "
+                    "(concept_code, resource_code, quantity) VALUES (?, ?, ?)",
+                    (concept.code, resource_code, quantity),
+                )
+        log_stage(logger, "catalog_migrated_v6", db_path=str(self.db_path))
 
     @staticmethod
     def _seed_concepts(conn: sqlite3.Connection, concepts: list, base_order: int) -> None:

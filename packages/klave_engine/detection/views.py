@@ -189,11 +189,20 @@ def _npt_levels(entities: list[NormalizedEntity]) -> list[float]:
     )
 
 
+def _near_frame(frame: SheetFrame, point: tuple[float, float], margin: float = 0.05) -> bool:
+    """Within a small margin of the frame (a mark drawn on its border)."""
+    x0, y0, x1, y1 = frame.bbox
+    dx, dy = (x1 - x0) * margin, (y1 - y0) * margin
+    return x0 - dx <= point[0] <= x1 + dx and y0 - dy <= point[1] <= y1 + dy
+
+
 def _segment_by_frames(
     entities: list[NormalizedEntity], detections: list[Detection], frames: list[SheetFrame]
 ) -> SheetSegmentation | None:
     """Sheet frames are views: every detection belongs to the frame that
-    contains it (or the nearest frame when it sits on a border)."""
+    contains it (or the nearest frame when it sits on its border). What lies
+    outside every frame — stray xrefs, blocks parked beside the sheets — is
+    no sheet's content and is kept apart, excluded from quantities."""
     usable = [f for f in frames if f.kind in ("plan", "excluded")]
     if len(usable) < 2 or not any(f.kind == "plan" for f in usable):
         return None
@@ -208,22 +217,28 @@ def _segment_by_frames(
             anchor=bbox_center(frame.bbox),
             bbox=frame.bbox,
         )
+    outside = ViewRegion(
+        view_id="outside_frames",
+        title="Fuera de los marcos de hoja",
+        kind=ViewKind.excluded,
+        level_key=None,
+        anchor=bbox_center(frames[0].bbox),
+        bbox=frames[0].bbox,
+    )
     assignment: dict[str, str] = {}
     for detection in detections:
         center = bbox_center(detection.bbox)
         holder = next((f for f in frames if bbox_contains_point(f.bbox, center)), None)
         if holder is None:
-            holder = min(
-                frames,
-                key=lambda f: (bbox_center(f.bbox)[0] - center[0]) ** 2
-                + (bbox_center(f.bbox)[1] - center[1]) ** 2,
-            )
-        region = regions[holder.frame_id]
+            holder = next((f for f in frames if _near_frame(f, center)), None)
+        region = regions[holder.frame_id] if holder is not None else outside
         assignment[detection.detection_id] = region.view_id
         region.detection_ids.append(detection.detection_id)
         region.detection_counts[detection.detection_type.value] = (
             region.detection_counts.get(detection.detection_type.value, 0) + 1
         )
+    if outside.detection_ids:
+        regions[outside.view_id] = outside
     plans = [r for r in regions.values() if r.kind == ViewKind.plan]
     return SheetSegmentation(
         views=list(regions.values()),

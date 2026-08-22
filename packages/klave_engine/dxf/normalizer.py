@@ -136,7 +136,38 @@ def _approximate_text_bbox(insert: Point, text: str, height: float) -> BBox:
     return (insert[0], insert[1], insert[0] + width, insert[1] + height)
 
 
+def _shoelace(points: list[Point]) -> float:
+    return abs(
+        sum(
+            points[i][0] * points[(i + 1) % len(points)][1]
+            - points[(i + 1) % len(points)][0] * points[i][1]
+            for i in range(len(points))
+        )
+    ) / 2.0
+
+
 def _hatch_boundary_points(entity: Any) -> list[Point]:
+    """Outer boundary of a hatch as a vertex ring.
+
+    Polyline paths carry vertices; edge paths (lines, arcs, splines — what
+    AutoCAD writes for most slab and wall hatches) are flattened through
+    ezdxf's path module. With several loops, the largest is the outline.
+    """
+    try:
+        from ezdxf.path import make_path
+
+        full = make_path(entity)
+        extent = full.bbox()
+        tolerance = max(extent.size.x, extent.size.y, 1e-9) * 0.005
+        best: list[Point] = []
+        for sub in full.sub_paths():
+            ring = [(float(v.x), float(v.y)) for v in sub.flattening(tolerance)]
+            if len(ring) >= 3 and _shoelace(ring) > _shoelace(best):
+                best = ring
+        if best:
+            return best
+    except Exception:  # noqa: BLE001 — fall back to raw polyline vertices
+        pass
     points: list[Point] = []
     for path in entity.paths:
         vertices = getattr(path, "vertices", None)

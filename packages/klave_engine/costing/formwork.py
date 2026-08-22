@@ -35,6 +35,7 @@ CODE_LOSA = "EST-011"
 # Concept → element family whose declared f'c applies.
 _FC_FAMILY_BY_CONCEPT = {
     "CIM-002": "cimentacion", "EST-001": "castillo", "EST-002": "trabe", "EST-003": "losa",
+    "EST-012": "losa", "EST-013": "losa", "CIM-007": "cimentacion",
     "EST-005": "dala", "EST-006": "castillo", "EST-007": "firme", "CIM-003": "cimentacion",
 }
 _FC_IN_TEXT = re.compile(r"f\s*'?\s*c\s*=?\s*(\d{3})", re.I)
@@ -186,22 +187,52 @@ def compute_formwork(
             )
         )
 
-    slabs = lines.get("EST-003")
-    if slabs is not None and slabs.raw_quantity > 0:
-        vigueta: str | None = dimensions.vigueta_system if dimensions else None
-        if vigueta:
+    # Losa: contact formwork for reticular and maciza tableros (area of the
+    # panels themselves, not the m³ of the line); vigueta y bovedilla needs
+    # only apuntalamiento, which lives in its matrix.
+    by_id = {d.detection_id: d for d in detections}
+    factor = (meters_factor or 1.0) ** 2
+    slab_area = 0.0
+    slab_sources: list[str] = []
+    slab_notes: list[str] = []
+    vigueta_declared: str | None = dimensions.vigueta_system if dimensions else None
+    for code, label in (("EST-003", "reticular"), ("EST-013", "maciza")):
+        line = lines.get(code)
+        if line is None or line.raw_quantity <= 0:
+            continue
+        if code == "EST-003" and vigueta_declared:
+            # Outline-based slab regions on a sheet whose notes declare the
+            # vigueta system: no contact formwork either.
             report.warnings.append(
-                f"Losa de vigueta y bovedilla {vigueta}: sin cimbra de contacto; "
+                f"Losa de vigueta y bovedilla {vigueta_declared}: sin cimbra de contacto; "
                 "el apuntalamiento va en la matriz de la losa."
             )
-        else:
-            report.lines.append(
-                FormworkLine(
-                    concept_code=CODE_LOSA, quantity=round(slabs.raw_quantity, 2),
-                    source_detections=list(slabs.source_detections),
-                    notes=[f"Área de losa maciza {slabs.raw_quantity:,.1f} m²"],
-                )
+            continue
+        area = sum(
+            float(by_id[i].properties.get("estimated_area", 0.0)) * factor
+            for i in line.source_detections if i in by_id
+        )
+        if area <= 0 and line.unit.upper() == "M2":
+            area = line.raw_quantity  # the line is already the slab area
+        if area <= 0:
+            continue
+        slab_area += area
+        slab_sources.extend(line.source_detections)
+        slab_notes.append(f"losa {label} {area:,.1f} m²")
+    vigueta_line = lines.get("EST-012")
+    if vigueta_line is not None and vigueta_line.raw_quantity > 0:
+        report.warnings.append(
+            f"Losa de vigueta y bovedilla ({vigueta_line.raw_quantity:,.1f} m²): sin cimbra "
+            "de contacto; el apuntalamiento va en la matriz de la losa."
+        )
+    if slab_area > 0:
+        report.lines.append(
+            FormworkLine(
+                concept_code=CODE_LOSA, quantity=round(slab_area, 2),
+                source_detections=slab_sources,
+                notes=["Cimbra de contacto: " + ", ".join(slab_notes)],
             )
+        )
 
     # Declared f'c vs priced f'c.
     declared = (specs or {}).get("concrete_fc") or {}

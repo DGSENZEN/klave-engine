@@ -289,20 +289,33 @@ def compute_steel(
                 + ", ".join(sorted(missing)[:10])
             )
 
-    # --- losa: malla electrosoldada ------------------------------------------
-    slabs = lines.get("EST-003")
-    if slabs is not None and slabs.raw_quantity > 0:
+    # --- losa: malla electrosoldada en la capa de compresión ----------------
+    malla_area = 0.0
+    malla_sources: list[str] = []
+    for code in ("EST-003", "EST-012"):
+        line = lines.get(code)
+        if line is not None and line.raw_quantity > 0:
+            malla_area += line.raw_quantity
+            malla_sources.extend(line.source_detections)
+    if malla_area > 0:
         report.lines.append(
             SteelLine(
                 concept_code=CODE_MALLA,
-                quantity=round(slabs.raw_quantity * a.malla_overlap_factor, 2), unit="M2",
-                source_detections=list(slabs.source_detections),
+                quantity=round(malla_area * a.malla_overlap_factor, 2), unit="M2",
+                source_detections=malla_sources,
                 notes=[
-                    f"Área de losa {slabs.raw_quantity:,.1f} m² × {a.malla_overlap_factor:.2f} "
-                    "de traslapes (capa de compresión)"
+                    f"Área de losa reticular/vigueta {malla_area:,.1f} m² × "
+                    f"{a.malla_overlap_factor:.2f} de traslapes (capa de compresión)"
                 ],
             )
         )
+    for code, label in (("EST-013", "losa maciza"), ("CIM-007", "losa de cimentación")):
+        line = lines.get(code)
+        if line is not None and line.raw_quantity > 0:
+            report.warnings.append(
+                f"{label.capitalize()} ({line.raw_quantity:,.2f} m³): armado por detalle, no "
+                "cuantificado; capturar el acero desde el detalle de la losa."
+            )
     return report
 
 

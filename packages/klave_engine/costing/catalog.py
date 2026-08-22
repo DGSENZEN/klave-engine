@@ -119,6 +119,28 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
             sequence_order=1,
         ),
         Concept(
+            code="CIM-007",
+            description="Losa de cimentación de concreto armado f'c=250 kg/cm²",
+            unit="M3",
+            phase="Cimentación",
+            rule=QuantityRule(
+                detection_type=DetectionType.slab_region,
+                kind=QuantityKind.VOLUME,
+                source_property="estimated_area",
+                property_filter={"family": ["cimentacion"]},
+                thickness_property="thickness_cm",
+                default_thickness_m=a.mat_thickness_m,
+            ),
+            quantity_factor=1.0,
+            view_scope=ViewScope.FOUNDATION_ONLY,
+            assumptions=[
+                f"Área de tableros de losa de cimentación × H= del plano (o "
+                f"{a.mat_thickness_m:.2f} m si no lo declara)"
+            ],
+            production_rate_per_day=12.0,
+            sequence_order=1,
+        ),
+        Concept(
             code="EST-001",
             description="Columnas y castillos de concreto armado f'c=250 kg/cm²",
             unit="M3",
@@ -154,18 +176,62 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
         ),
         Concept(
             code="EST-003",
-            description="Losa de concreto armado (sistema nervado o equivalente)",
+            description="Losa reticular aligerada (nervada) de concreto armado f'c=250 kg/cm², "
+            "incluye casetón",
             unit="M2",
             phase="Estructura",
             rule=QuantityRule(
                 detection_type=DetectionType.slab_region,
                 kind=QuantityKind.AREA,
                 source_property="estimated_area",
+                property_filter={"family": [None, "reticular", "sin_tipo", "losa"]},
             ),
             quantity_factor=1.0,
             view_scope=ViewScope.SUPERSTRUCTURE_SUM,
-            assumptions=["Área medida de regiones de losa detectadas (suma por nivel)"],
+            assumptions=[
+                "Área de tableros reticulares (y de losas sin sistema declarado) por nivel"
+            ],
             production_rate_per_day=35.0,
+            sequence_order=2,
+        ),
+        Concept(
+            code="EST-012",
+            description="Losa de vigueta y bovedilla, incluye capa de compresión de 5 cm "
+            "f'c=250 kg/cm²",
+            unit="M2",
+            phase="Estructura",
+            rule=QuantityRule(
+                detection_type=DetectionType.slab_region,
+                kind=QuantityKind.AREA,
+                source_property="estimated_area",
+                property_filter={"family": ["vigueta_bovedilla"]},
+            ),
+            quantity_factor=1.0,
+            view_scope=ViewScope.SUPERSTRUCTURE_SUM,
+            assumptions=["Área de tableros de vigueta y bovedilla por nivel"],
+            production_rate_per_day=60.0,
+            sequence_order=2,
+        ),
+        Concept(
+            code="EST-013",
+            description="Losa maciza de concreto armado f'c=250 kg/cm²",
+            unit="M3",
+            phase="Estructura",
+            rule=QuantityRule(
+                detection_type=DetectionType.slab_region,
+                kind=QuantityKind.VOLUME,
+                source_property="estimated_area",
+                property_filter={"family": ["maciza"]},
+                thickness_property="thickness_cm",
+                default_thickness_m=a.slab_thickness_m,
+            ),
+            quantity_factor=1.0,
+            view_scope=ViewScope.SUPERSTRUCTURE_SUM,
+            assumptions=[
+                f"Área de tableros macizos × espesor H= del plano (o {a.slab_thickness_m:.2f} m "
+                "si no lo declara)"
+            ],
+            production_rate_per_day=8.0,
             sequence_order=2,
         ),
         Concept(

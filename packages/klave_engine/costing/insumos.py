@@ -140,6 +140,28 @@ RESOURCES: dict[str, Resource] = {
 }
 
 # Quantities of each resource consumed per ONE unit of the concept.
+RESOURCES.update(
+    {
+        r.code: r
+        for r in [
+            Resource(
+                code="MAT-VIGUETA",
+                description="Vigueta pretensada de 13 cm (referencia)",
+                unit="M",
+                unit_cost=98.0,
+                resource_type=ResourceType.material,
+            ),
+            Resource(
+                code="MAT-BOVEDILLA",
+                description="Bovedilla de cemento-arena 15×25×56 cm (referencia)",
+                unit="PZA",
+                unit_cost=24.0,
+                resource_type=ResourceType.material,
+            ),
+        ]
+    }
+)
+
 APU_TEMPLATES: dict[str, list[tuple[str, float]]] = {
     # M2 trazo y nivelación
     "PRE-001": [
@@ -187,7 +209,30 @@ APU_TEMPLATES: dict[str, list[tuple[str, float]]] = {
         ("EQ-VIBRADOR", 0.20),
         ("EQ-HERRAMIENTA", 1.0),
     ],
-    # M2 losa (sistema nervado / maciza equivalente)
+    # M2 losa de vigueta y bovedilla: 1.45 m de vigueta y 7 bovedillas por
+    # m² (separación 70 cm), capa de compresión de 5 cm; la malla va en ACE-005
+    "EST-012": [
+        ("MAT-VIGUETA", 1.45),
+        ("MAT-BOVEDILLA", 7.0),
+        ("MAT-CONC250", 0.065),
+        ("MO-CUAD-ALB", 0.090),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+    # M3 losa maciza: concreto con desperdicio; acero por detalle, cimbra en EST-011
+    "EST-013": [
+        ("MAT-CONC250", 1.05),
+        ("MO-CUAD-ALB", 0.900),
+        ("EQ-VIBRADOR", 0.150),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+    # M3 losa de cimentación: concreto con desperdicio; acero por detalle
+    "CIM-007": [
+        ("MAT-CONC250", 1.05),
+        ("MO-CUAD-ALB", 0.850),
+        ("EQ-VIBRADOR", 0.150),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+    # M2 losa reticular aligerada (nervada)
     "EST-003": [
         ("MAT-CONC250", 0.110),
         ("MAT-ACERO", 0.0085),

@@ -62,6 +62,7 @@ _METHOD_PHRASES: dict[str, str] = {
     "footing_closed_rectangular_polyline": "polilínea rectangular cerrada con proporción de zapata",
     "wall_paired_parallel_lines": "par de líneas paralelas con separación de muro",
     "slab_region_from_hatch": "achurado de losa sobre región cerrada",
+    "slab_panel": "tablero acotado por trabes/muros, tipificado por el patrón y la etiqueta",
     "slab_region_from_large_closed_polyline": "polilínea cerrada con área de losa",
     "grid_line_axis_aligned_long_line": "línea larga alineada a la retícula",
     "grid_intersection_of_grid_lines": "cruce de ejes de trazo",
@@ -128,6 +129,15 @@ def _fmt_area(value_du2: float, unit_to_m: float | None) -> str:
     return f"{value_du2 * unit_to_m * unit_to_m:.1f} m²"
 
 
+_SLAB_FAMILY_ES = {
+    "reticular": "losa reticular aligerada",
+    "vigueta_bovedilla": "losa de vigueta y bovedilla",
+    "maciza": "losa maciza",
+    "cimentacion": "losa de cimentación",
+    "sin_tipo": "losa sin sistema declarado",
+}
+
+
 def _measurement_parts(detection: Detection, unit_to_m: float | None) -> list[str]:
     props = detection.properties
     parts: list[str] = []
@@ -157,6 +167,11 @@ def _measurement_parts(detection: Detection, unit_to_m: float | None) -> list[st
             parts.append(f"área {_fmt_area(area, unit_to_m)} (acotada en el plano)")
         else:
             parts.append(f"área ≈ {_fmt_area(area, unit_to_m)}")
+    family = props.get("family")
+    if isinstance(family, str) and family in _SLAB_FAMILY_ES:
+        thickness = props.get("thickness_cm")
+        suffix = f" H={thickness:g} cm" if isinstance(thickness, (int, float)) else ""
+        parts.append(f"{_SLAB_FAMILY_ES[family]}{suffix}")
     axis = props.get("axis")
     if isinstance(axis, str) and axis in _AXIS_ES:
         grid_length = props.get("length")

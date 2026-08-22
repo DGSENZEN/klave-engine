@@ -20,6 +20,7 @@ from klave_engine.costing.models import (
     Concept,
     CostingAssumptions,
     QuantityKind,
+    QuantityRule,
     UnitPriceAnalysis,
     ViewScope,
 )
@@ -37,12 +38,33 @@ MIN_COLUMN_SECTION_M2 = 0.01  # 10×10 cm castillo
 MAX_COLUMN_SECTION_M2 = 1.00  # 1×1 m large column
 
 
+def rule_matches(rule: QuantityRule, detection: Detection) -> bool:
+    """Whether a detection of the rule's type feeds it (property filter)."""
+    if not rule.property_filter:
+        return True
+    return all(
+        detection.properties.get(key) in allowed
+        for key, allowed in rule.property_filter.items()
+    )
+
+
 def _raw_over(concept: Concept, detections: list[Detection], meters_factor: float) -> float:
-    """Count, or summed length/area (converted to metres), over a detection set."""
+    """Count, or summed length/area/volume (converted to metres), over a detection set."""
     rule = concept.rule
     assert rule is not None  # callers skip manual (rule-less) concepts
     if rule.kind == QuantityKind.COUNT:
         return float(len(detections))
+    if rule.kind == QuantityKind.VOLUME:
+        volume = 0.0
+        for d in detections:
+            if not rule.source_property or rule.source_property not in d.properties:
+                continue
+            declared = d.properties.get(rule.thickness_property or "")
+            thickness_m = (
+                float(declared) / 100.0 if declared else (rule.default_thickness_m or 0.0)
+            )
+            volume += float(d.properties[rule.source_property]) * meters_factor ** 2 * thickness_m
+        return volume
     total = sum(
         float(d.properties[rule.source_property])
         for d in detections
@@ -222,7 +244,10 @@ def generate_bill_of_quantities(
         if concept.rule is None:
             # Manual concept: only documented adjustments give it quantity.
             continue
-        matched = by_type.get(concept.rule.detection_type, [])
+        matched = [
+            d for d in by_type.get(concept.rule.detection_type, [])
+            if rule_matches(concept.rule, d)
+        ]
         if seg is not None:
             matched_plan = [
                 d for d in matched if seg.assignment.get(d.detection_id) in plan_ids

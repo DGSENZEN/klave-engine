@@ -21,6 +21,7 @@ from klave_engine.detection.frames import SheetFrame, frame_boxes
 from klave_engine.detection.grid_detector import GridDetectorConfig, detect_grid
 from klave_engine.detection.results import DetectorOutput
 from klave_engine.detection.slab_detector import SlabDetectorConfig, detect_slabs
+from klave_engine.detection.slab_panels import SlabPanelConfig, detect_slab_panels
 from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.detection.wall_detector import WallDetectorConfig, detect_walls
 from klave_engine.dxf.entities import NormalizedEntity
@@ -39,6 +40,7 @@ class DetectorSuiteConfig(BaseModel):
     footing: FootingDetectorConfig = Field(default_factory=FootingDetectorConfig)
     beam: BeamDetectorConfig = Field(default_factory=BeamDetectorConfig)
     slab: SlabDetectorConfig = Field(default_factory=SlabDetectorConfig)
+    slab_panel: SlabPanelConfig = Field(default_factory=SlabPanelConfig)
     wall: WallDetectorConfig = Field(default_factory=WallDetectorConfig)
     detail_reference: DetailReferenceDetectorConfig = Field(
         default_factory=DetailReferenceDetectorConfig
@@ -73,6 +75,13 @@ class DetectorSuiteConfig(BaseModel):
         config.beam.min_beam_length = m(1.5)
         config.beam.max_beam_length = m(15.0)
         config.slab.min_area = m(4.0) * m(4.0)
+        config.slab_panel.min_area = m(1.0) * m(1.0)
+        config.slab_panel.max_area = m(20.0) * m(20.0)
+        config.slab_panel.min_width = m(0.6)
+        config.slab_panel.edge_tolerance = m(0.03)
+        config.slab_panel.label_search_radius = m(30.0)
+        config.slab_panel.family_inherit_radius = m(6.0)
+        config.slab_panel.pattern_outline_min_area = m(2.0) * m(2.0)
         config.wall.min_length = m(1.5)
         config.wall.max_thickness = m(0.45)
         config.wall.min_thickness = m(0.05)
@@ -105,8 +114,33 @@ def run_detectors(
     footings = detect_footings(entities, index, columns, config.footing, ids)
     beams = detect_beams(entities, index, config.beam, config.text_patterns, ids)
     slabs = detect_slabs(entities, config.slab, ids, frame_boxes(frames or []))
+    panels = detect_slab_panels(entities, config.slab_panel, ids, frame_boxes(frames or []))
+    if panels.detections:
+        _prefer_panels(slabs, panels)
     walls = detect_walls(entities, index, config.wall, ids)
     details = detect_detail_references(
         entities, manifest, config.detail_reference, config.text_patterns, ids
     )
-    return [grid, columns, footings, beams, slabs, walls, details]
+    return [grid, columns, footings, beams, slabs, panels, walls, details]
+
+
+def _prefer_panels(slabs: DetectorOutput, panels: DetectorOutput) -> None:
+    """Where tableros were read from the beam network, the outline-based
+    guesses that overlap them (terrain hatches, wall outlines, the building
+    outline itself) are dropped; elsewhere they stay as the fallback."""
+    boxes = [p.bbox for p in panels.detections]
+
+    def overlaps(bbox: tuple[float, float, float, float]) -> bool:
+        return any(
+            bbox[0] < b[2] and b[0] < bbox[2] and bbox[1] < b[3] and b[1] < bbox[3]
+            for b in boxes
+        )
+
+    kept = [d for d in slabs.detections if not overlaps(d.bbox)]
+    dropped = len(slabs.detections) - len(kept)
+    slabs.detections = kept
+    if dropped:
+        slabs.warnings.append(
+            f"{dropped} regiones de losa por contorno se descartaron: los tableros "
+            "acotados por trabes las reemplazan."
+        )
