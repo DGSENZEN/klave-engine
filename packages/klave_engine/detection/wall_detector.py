@@ -1,4 +1,14 @@
-"""Wall detection from paired long parallel lines."""
+"""Wall detection from paired parallel lines, merged into walls.
+
+A wall on a sheet is two parallel lines a wall-thickness apart. But so are
+a grid axis and its neighbour, a dimension line and its extension, and two
+copies of the same line (from a block and from model space, 0.0 apart). So
+the detector works by authority: lines on grid, dimension, or text layers
+never pair; when the sheet has wall layers (A-WALL, MUROS, TABIQUE) only
+those pair; the gap must be a real thickness; and the fragments that CAD
+draws for one wall — broken at every door, axis and block boundary — are
+merged into one wall per run of collinear pairs.
+"""
 
 from pydantic import BaseModel, Field
 from shapely.geometry import LineString
@@ -12,7 +22,7 @@ from klave_engine.detection.results import (
     make_detection,
 )
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
-from klave_engine.geometry.bbox import bbox_union
+from klave_engine.geometry.bbox import BBox, bbox_union, bbox_union_all
 from klave_engine.geometry.measurements import (
     angles_parallel,
     line_length,
@@ -24,12 +34,38 @@ from klave_engine.geometry.spatial_index import SpatialIndex
 class WallDetectorConfig(BaseModel):
     min_length: float = 100.0
     max_thickness: float = 25.0
+    # Two lines closer than this are the same line drawn twice, not a wall.
+    min_thickness: float = 0.0
     angle_tolerance_deg: float = 2.0
     min_overlap_ratio: float = 0.5
-    layer_hints: list[str] = Field(default_factory=lambda: ["WALL", "MURO"])
+    layer_hints: list[str] = Field(
+        default_factory=lambda: ["WALL", "MURO", "TABIQUE", "TABR", "BLOCK"]
+    )
+    avoid_layer_hints: list[str] = Field(
+        default_factory=lambda: ["GRID", "EJE", "AXIS", "COTA", "DIM", "TEXT", "TXT"]
+    )
+    prefer_semantic_layers: bool = True
+    # Collinear wall pairs merge across gaps up to this (door openings are
+    # wider and stay separate; axis breaks and block seams are smaller).
+    merge_gap: float = 0.0
+    merge_gap_thickness_factor: float = 2.0
 
 
 Segment = tuple[tuple[float, float], tuple[float, float]]
+
+
+class _WallPair(BaseModel):
+    entity_ids: list[str]
+    source_file: str
+    layer: str
+    axis: str  # horizontal | vertical | oblique
+    angle: float
+    coordinate: float  # position across the wall direction (center line)
+    span: tuple[float, float]  # along the wall direction
+    thickness: float
+    length: float
+    bbox: BBox
+    semantic: bool
 
 
 def _projection_overlap(a: Segment, b: Segment) -> float:
@@ -50,6 +86,76 @@ def _projection_overlap(a: Segment, b: Segment) -> float:
     return max(0.0, overlap)
 
 
+def _orientation(angle: float, tolerance: float) -> str:
+    if angles_parallel(angle, 0.0, tolerance):
+        return "horizontal"
+    if angles_parallel(angle, 90.0, tolerance):
+        return "vertical"
+    return "oblique"
+
+
+def _flush_cluster(
+    cluster: list[_WallPair], merged: list[_WallPair], config: WallDetectorConfig
+) -> None:
+    """Split one collinear cluster into runs separated by real openings."""
+    if not cluster:
+        return
+    cluster.sort(key=lambda p: p.span[0])
+    run: list[_WallPair] = [cluster[0]]
+    for pair in cluster[1:]:
+        previous_end = max(p.span[1] for p in run)
+        gap = pair.span[0] - previous_end
+        allowed = max(config.merge_gap, pair.thickness * config.merge_gap_thickness_factor)
+        if gap <= allowed:
+            run.append(pair)
+        else:
+            merged.append(_merge_run(run))
+            run = [pair]
+    merged.append(_merge_run(run))
+    cluster.clear()
+
+
+def _merge_pairs(pairs: list[_WallPair], config: WallDetectorConfig) -> list[_WallPair]:
+    """Collinear, overlapping-or-nearly-touching pairs become one wall."""
+    merged: list[_WallPair] = []
+    groups: dict[tuple[str, str], list[_WallPair]] = {}
+    for pair in pairs:
+        if pair.axis == "oblique":
+            merged.append(pair)
+            continue
+        groups.setdefault((pair.source_file, pair.axis), []).append(pair)
+    for members in groups.values():
+        members.sort(key=lambda p: (p.coordinate, p.span[0]))
+        cluster: list[_WallPair] = []
+        for pair in members:
+            if cluster and abs(pair.coordinate - cluster[-1].coordinate) > max(
+                pair.thickness, cluster[-1].thickness
+            ) * 0.75:
+                _flush_cluster(cluster, merged, config)
+            cluster.append(pair)
+        _flush_cluster(cluster, merged, config)
+    return merged
+
+
+def _merge_run(run: list[_WallPair]) -> _WallPair:
+    if len(run) == 1:
+        return run[0]
+    span = (min(p.span[0] for p in run), max(p.span[1] for p in run))
+    return _WallPair(
+        entity_ids=[eid for p in run for eid in p.entity_ids],
+        source_file=run[0].source_file,
+        layer=run[0].layer,
+        axis=run[0].axis,
+        angle=run[0].angle,
+        coordinate=sum(p.coordinate for p in run) / len(run),
+        span=span,
+        thickness=sum(p.thickness for p in run) / len(run),
+        length=span[1] - span[0],
+        bbox=bbox_union_all([p.bbox for p in run]),
+        semantic=any(p.semantic for p in run),
+    )
+
+
 def detect_walls(
     entities: list[NormalizedEntity],
     index: SpatialIndex,
@@ -68,14 +174,28 @@ def detect_walls(
         if e.entity_type == EntityType.line
         and e.points
         and line_length(e.points[0], e.points[1]) >= config.min_length
+        and not layer_matches(e.layer, config.avoid_layer_hints)
     }
+    # Authority: with wall layers on the sheet, other layers do not pair.
+    if config.prefer_semantic_layers:
+        semantic_ids = {
+            eid for eid, (e, _s, _a) in candidates.items()
+            if layer_matches(e.layer, config.layer_hints)
+        }
+        if semantic_ids:
+            dropped = len(candidates) - len(semantic_ids)
+            candidates = {eid: v for eid, v in candidates.items() if eid in semantic_ids}
+            if dropped:
+                output.warnings.append(
+                    f"{dropped} líneas largas fuera de las capas de muros se ignoraron "
+                    "al buscar muros."
+                )
 
     used: set[str] = set()
-    wall_counter = 0
+    pairs: list[_WallPair] = []
     for first, first_segment, angle_a in candidates.values():
         if first.entity_id in used:
             continue
-        # Only candidate lines within wall thickness of this one, via the index.
         for hit in index.entities_near_entity(first.entity_id, config.max_thickness):
             partner = candidates.get(hit.entity_id)
             if partner is None:
@@ -86,46 +206,69 @@ def detect_walls(
             if not angles_parallel(angle_a, angle_b, config.angle_tolerance_deg):
                 continue
             gap = float(LineString(first_segment).distance(LineString(second_segment)))
-            if gap <= 0 or gap > config.max_thickness:
+            if gap < config.min_thickness or gap <= 0 or gap > config.max_thickness:
                 continue
             overlap = _projection_overlap(first_segment, second_segment)
-            min_len = min(
-                line_length(*first_segment), line_length(*second_segment)
-            )
+            min_len = min(line_length(*first_segment), line_length(*second_segment))
             if min_len == 0 or overlap / min_len < config.min_overlap_ratio:
                 continue
-
-            notes = [
-                f"Parallel line pair with gap {gap:.1f} and overlap {overlap:.1f}",
-            ]
-            # A clean, well-overlapping pair is plausible wall geometry.
-            features: dict[str, float] = {GEOM_PLAUSIBLE: 1.0}
-            if layer_matches(first.layer, config.layer_hints) or layer_matches(
-                second.layer, config.layer_hints
-            ):
-                features[SEMANTIC_LAYER] = 1.0
-
-            confidence = round(model.score(features), 4)
-            notes.extend(model.explain(features))
-            wall_counter += 1
-            source_entities = [first.entity_id, second.entity_id]
-            output.detections.append(
-                make_detection(
-                    detection_ids.next(),
-                    DetectionType.wall,
-                    f"W{wall_counter}",
-                    bbox_union(first.bbox, second.bbox),
-                    confidence,
-                    source_entities,
-                    "wall_paired_parallel_lines",
-                    notes,
-                    {
-                        "estimated_length": round(overlap, 3),
-                        "estimated_thickness": round(gap, 3),
-                    },
-                    first.source_file,
+            axis = _orientation(angle_a, config.angle_tolerance_deg)
+            box = bbox_union(first.bbox, second.bbox)
+            if axis == "horizontal":
+                coordinate, span = (box[1] + box[3]) / 2, (box[0], box[2])
+            elif axis == "vertical":
+                coordinate, span = (box[0] + box[2]) / 2, (box[1], box[3])
+            else:
+                coordinate, span = 0.0, (0.0, overlap)
+            pairs.append(
+                _WallPair(
+                    entity_ids=[first.entity_id, second.entity_id],
+                    source_file=first.source_file,
+                    layer=first.layer,
+                    axis=axis,
+                    angle=angle_a,
+                    coordinate=coordinate,
+                    span=span,
+                    thickness=gap,
+                    length=overlap,
+                    bbox=box,
+                    semantic=layer_matches(first.layer, config.layer_hints)
+                    or layer_matches(second.layer, config.layer_hints),
                 )
             )
-            used.update(source_entities)
+            used.update([first.entity_id, second.entity_id])
             break
+
+    walls = _merge_pairs(pairs, config)
+    for counter, wall in enumerate(walls, start=1):
+        features: dict[str, float] = {GEOM_PLAUSIBLE: 1.0}
+        if wall.semantic:
+            features[SEMANTIC_LAYER] = 1.0
+        confidence = round(model.score(features), 4)
+        segments = len(wall.entity_ids) // 2
+        notes = [
+            f"Parallel line pair with gap {wall.thickness:.3f} and overlap {wall.length:.1f}",
+        ]
+        if segments > 1:
+            notes.append(f"Muro unido a partir de {segments} tramos colineales")
+        notes.extend(model.explain(features))
+        output.detections.append(
+            make_detection(
+                detection_ids.next(),
+                DetectionType.wall,
+                f"W{counter}",
+                wall.bbox,
+                confidence,
+                wall.entity_ids,
+                "wall_paired_parallel_lines",
+                notes,
+                {
+                    "estimated_length": round(wall.length, 3),
+                    "estimated_thickness": round(wall.thickness, 3),
+                    "segment_count": segments,
+                    "layer": wall.layer,
+                },
+                wall.source_file,
+            )
+        )
     return output

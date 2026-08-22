@@ -74,6 +74,8 @@ class DetectorSuiteConfig(BaseModel):
         config.slab.min_area = m(4.0) * m(4.0)
         config.wall.min_length = m(1.5)
         config.wall.max_thickness = m(0.45)
+        config.wall.min_thickness = m(0.05)
+        config.wall.merge_gap = m(0.30)
         config.risk.duplicate_column_distance = m(10.0)
         return config
 

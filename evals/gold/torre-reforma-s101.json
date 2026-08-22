@@ -7,7 +7,7 @@
     "03-s-301_azotea.dxf": "44397dfb16f769f5305ed2f8b9cf6e46612e6c0b290901483d2e3233c38e2202"
   },
   "status": "baseline",
-  "captured_at": "2026-08-22T17:01:39.546476Z",
+  "captured_at": "2026-08-22T18:34:28.962344Z",
   "labels": {
     "grid_line": [
       "EJE-01",
@@ -68,8 +68,7 @@
     ],
     "wall": [
       "MUR-01",
-      "MUR-02",
-      "MUR-03"
+      "MUR-02"
     ],
     "detail_reference": [
       "REF-01",
