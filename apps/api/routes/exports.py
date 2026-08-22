@@ -47,6 +47,10 @@ def export_presupuesto(
         for d in store.read_artifact(project_id, "detections.json")
     ]
     reviews = load_reviews(store.get_root(project_id) / settings.processed_dir_name)
+    try:
+        inventory = store.read_artifact(project_id, "inventory.json")
+    except HTTPException:
+        inventory = None  # runs older than the levantamiento
 
     content = build_presupuesto_workbook(
         report,
@@ -55,6 +59,7 @@ def export_presupuesto(
         project_name=manifest.project_name,
         client=manifest.client,
         fmt=format,
+        inventory=inventory,
     )
     suffix = "" if format == "klave" else f"_{format}"
     filename = f"presupuesto_{slugify(manifest.project_name)[:40]}{suffix}.xlsx"
