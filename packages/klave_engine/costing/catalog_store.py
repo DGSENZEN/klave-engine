@@ -10,8 +10,10 @@ the detector implementations. What the user owns here is the pricing data —
 insumo costs, APU component matrices, and production rates (rendimientos).
 """
 
+import json
 import sqlite3
 import threading
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -60,6 +62,44 @@ CREATE TABLE IF NOT EXISTS concepts (
     rule_key TEXT,
     sequence_order INTEGER NOT NULL DEFAULT 100,
     active INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS price_sources (
+    source_key TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    publisher TEXT NOT NULL DEFAULT '',
+    region TEXT NOT NULL DEFAULT 'MX',
+    vigencia TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'precios_unitarios',
+    url TEXT NOT NULL DEFAULT '',
+    sha256 TEXT,
+    imported_at TEXT NOT NULL,
+    row_count INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS reference_prices (
+    ref_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_key TEXT NOT NULL REFERENCES price_sources(source_key) ON DELETE CASCADE,
+    clave TEXT NOT NULL,
+    description TEXT NOT NULL,
+    unit TEXT NOT NULL,
+    price REAL NOT NULL,
+    group_clave TEXT NOT NULL DEFAULT '',
+    group_description TEXT NOT NULL DEFAULT '',
+    extra TEXT,
+    page INTEGER
+);
+CREATE INDEX IF NOT EXISTS reference_prices_source_clave
+    ON reference_prices (source_key, clave);
+CREATE TABLE IF NOT EXISTS insumo_analysis (
+    code TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    params TEXT NOT NULL,
+    result TEXT,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS workspace_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
@@ -426,7 +466,7 @@ class CatalogStore:
     ) -> dict:
         """Update an existing insumo, or create one when all fields are given."""
         if source_type is not None and source_type not in (
-            "referencia", "cotizacion", "publicacion",
+            "referencia", "cotizacion", "publicacion", "calculado",
         ):
             raise ValueError("Tipo de fuente inválido.")
         with _LOCK, self._connect() as conn:
@@ -543,6 +583,162 @@ class CatalogStore:
             logger, "catalog_prices_imported", updated=updated, skipped=len(skipped)
         )
         return {"updated": updated, "skipped": skipped}
+
+
+    # ------------------------------------------------- reference library
+
+    def list_sources(self) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM price_sources ORDER BY vigencia DESC, name"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def import_reference(
+        self, source: dict, rows: Iterable[dict], *, sha256: str | None = None
+    ) -> int:
+        """Replace a source's rows with a fresh parse. Zero prices are not
+        prices ("por cotización") and are left out."""
+        kept = [
+            r for r in rows
+            if r.get("price") and float(r["price"]) > 0 and r.get("clave") and r.get("unit")
+        ]
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO price_sources (source_key, name, publisher, region, vigencia, "
+                "kind, url, sha256, imported_at, row_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(source_key) DO UPDATE SET name = excluded.name, "
+                "publisher = excluded.publisher, region = excluded.region, "
+                "vigencia = excluded.vigencia, kind = excluded.kind, url = excluded.url, "
+                "sha256 = excluded.sha256, imported_at = excluded.imported_at, "
+                "row_count = excluded.row_count",
+                (
+                    source["key"], source["name"], source.get("publisher", ""),
+                    source.get("region", "MX"), source.get("vigencia", ""),
+                    source.get("kind", "precios_unitarios"), source.get("url", ""),
+                    sha256, _now(), len(kept),
+                ),
+            )
+            conn.execute("DELETE FROM reference_prices WHERE source_key = ?", (source["key"],))
+            conn.executemany(
+                "INSERT INTO reference_prices (source_key, clave, description, unit, price, "
+                "group_clave, group_description, extra, page) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        source["key"], str(r["clave"]), str(r["description"])[:600],
+                        str(r["unit"]), float(r["price"]), str(r.get("group_clave") or ""),
+                        str(r.get("group_description") or "")[:600],
+                        json.dumps(r.get("extra"), ensure_ascii=False) if r.get("extra") else None,
+                        r.get("page"),
+                    )
+                    for r in kept
+                ],
+            )
+        log_stage(logger, "reference_imported", source=source["key"], rows=len(kept))
+        return len(kept)
+
+    def search_reference(
+        self, query: str, *, source_key: str | None = None, limit: int = 50
+    ) -> list[dict]:
+        tokens = [t for t in query.lower().split() if t][:6]
+        where = ["1 = 1"]
+        params: list[object] = []
+        if source_key:
+            where.append("r.source_key = ?")
+            params.append(source_key)
+        for token in tokens:
+            where.append("(lower(r.description) LIKE ? OR lower(r.clave) LIKE ? "
+                         "OR lower(r.group_description) LIKE ?)")
+            like = f"%{token}%"
+            params.extend([like, like, like])
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT r.*, s.name AS source_name, s.vigencia AS source_vigencia, "
+                "s.region AS source_region FROM reference_prices r "
+                "JOIN price_sources s ON s.source_key = r.source_key "
+                f"WHERE {' AND '.join(where)} ORDER BY r.clave LIMIT ?",
+                (*params, max(1, min(limit, 200))),
+            ).fetchall()
+        return [self._reference_row(row) for row in rows]
+
+    @staticmethod
+    def _reference_row(row: sqlite3.Row) -> dict:
+        record = dict(row)
+        extra = record.get("extra")
+        record["extra"] = json.loads(extra) if extra else None
+        return record
+
+    def get_reference(self, ref_id: int) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT r.*, s.name AS source_name, s.vigencia AS source_vigencia, "
+                "s.region AS source_region FROM reference_prices r "
+                "JOIN price_sources s ON s.source_key = r.source_key WHERE r.ref_id = ?",
+                (ref_id,),
+            ).fetchone()
+        return self._reference_row(row) if row else None
+
+    def adopt_reference(self, insumo_code: str, ref_id: int) -> dict:
+        """Price an insumo from a published row, carrying the publication,
+        clave, region and vigencia as provenance."""
+        reference = self.get_reference(ref_id)
+        if reference is None:
+            raise ValueError("la referencia no existe")
+        return self.upsert_insumo(
+            insumo_code,
+            unit_cost=float(reference["price"]),
+            source=f"{reference['source_name']} · {reference['clave']}",
+            source_type="publicacion",
+            region=reference["source_region"],
+            vigencia=reference["source_vigencia"],
+        )
+
+    # ------------------------------------------------- settings + analyses
+
+    def get_setting(self, key: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT value FROM workspace_settings WHERE key = ?", (key,)
+            ).fetchone()
+        return json.loads(row["value"]) if row else None
+
+    def set_setting(self, key: str, value: dict) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO workspace_settings (key, value, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+                "updated_at = excluded.updated_at",
+                (key, json.dumps(value, ensure_ascii=False), _now()),
+            )
+
+    def get_analysis(self, code: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM insumo_analysis WHERE code = ?", (code,)).fetchone()
+        if row is None:
+            return None
+        return {
+            "code": row["code"], "kind": row["kind"], "params": json.loads(row["params"]),
+            "result": json.loads(row["result"]) if row["result"] else None,
+            "updated_at": row["updated_at"],
+        }
+
+    def set_analysis(self, code: str, kind: str, params: dict, result: dict | None) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO insumo_analysis (code, kind, params, result, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) ON CONFLICT(code) DO UPDATE SET kind = excluded.kind, "
+                "params = excluded.params, result = excluded.result, "
+                "updated_at = excluded.updated_at",
+                (code, kind, json.dumps(params, ensure_ascii=False),
+                 json.dumps(result, ensure_ascii=False) if result is not None else None, _now()),
+            )
+
+    def list_analyses(self, kind: str) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT code FROM insumo_analysis WHERE kind = ? ORDER BY code", (kind,)
+            ).fetchall()
+        return [a for a in (self.get_analysis(row["code"]) for row in rows) if a]
 
 
 _STORES: dict[Path, CatalogStore] = {}

@@ -2,20 +2,32 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Books,
   CaretDown,
   Check,
+  Crane,
   DownloadSimple,
+  HardHat,
+  MagnifyingGlass,
   Plus,
   Trash,
   UploadSimple,
 } from "@phosphor-icons/react";
 import {
   ApiError,
+  adoptReference,
   createConcept,
   createInsumo,
   getCatalog,
+  getEquipment,
+  getLabor,
   importCatalogPrices,
+  importReferenceSource,
+  listReferenceSources,
   money2,
+  putEquipment,
+  putLabor,
+  searchReference,
   updateApu,
   updateInsumo,
   updateRendimiento,
@@ -23,6 +35,13 @@ import {
   type CatalogConcept,
   type CatalogInsumo,
   type CatalogState,
+  type EquipmentBreakdown,
+  type EquipmentParameters,
+  type FsrParameters,
+  type LaborCategory,
+  type LaborState,
+  type ReferenceRow,
+  type ReferenceSource,
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
 import {
@@ -169,6 +188,8 @@ export default function CatalogoPage() {
         </>
       ) : (
         <>
+          <FuentesSection catalog={catalog} onChanged={reload} onError={setError} onNotice={setNotice} />
+          <SalarioRealSection onChanged={reload} onError={setError} onNotice={setNotice} />
           <InsumosSection catalog={catalog} onChanged={reload} onError={setError} />
           <ApusSection catalog={catalog} onChanged={reload} onError={setError} />
         </>
@@ -190,6 +211,7 @@ function InsumosSection({
   onError: (message: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const [equipmentCode, setEquipmentCode] = useState<string | null>(null);
 
   async function commitInsumo(
     code: string,
@@ -281,7 +303,18 @@ function InsumosSection({
                       <option value="referencia">Referencia</option>
                       <option value="cotizacion">Cotización</option>
                       <option value="publicacion">Publicación</option>
+                      <option value="calculado">Calculado</option>
                     </select>
+                    {insumo.resource_type === "equipo" && !insumo.is_labor_percentage && (
+                      <button
+                        type="button"
+                        onClick={() => setEquipmentCode(insumo.code)}
+                        className="rounded-md border border-border bg-surface px-1.5 py-0.5 text-[11px] text-muted hover:text-foreground"
+                        title="Costo horario por RLOPSRM"
+                      >
+                        Costo horario
+                      </button>
+                    )}
                     <input
                       type="month"
                       value={insumo.vigencia}
@@ -298,6 +331,17 @@ function InsumosSection({
           </tbody>
         </table>
       </div>
+      {equipmentCode && (
+        <EquipmentDialog
+          insumo={catalog.insumos.find((i) => i.code === equipmentCode)!}
+          onClose={() => setEquipmentCode(null)}
+          onSaved={() => {
+            setEquipmentCode(null);
+            onChanged();
+          }}
+          onError={onError}
+        />
+      )}
     </Card>
   );
 }
@@ -902,5 +946,580 @@ function CommitText({
       className={`w-48 px-2 py-1 text-xs ${reference ? "text-warning" : ""}`}
       title={reference ? "Precio de referencia: sustitúyelo por tu cotización" : undefined}
     />
+  );
+}
+
+
+/* ------------------------------------------------------------- fuentes --- */
+
+function FuentesSection({
+  catalog,
+  onChanged,
+  onError,
+  onNotice,
+}: {
+  catalog: CatalogState;
+  onChanged: () => void;
+  onError: (message: string) => void;
+  onNotice: (message: string) => void;
+}) {
+  const [sources, setSources] = useState<ReferenceSource[] | null>(null);
+  const [importing, setImporting] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [sourceKey, setSourceKey] = useState("");
+  const [rows, setRows] = useState<ReferenceRow[] | null>(null);
+  const [adopting, setAdopting] = useState<Record<number, string>>({});
+
+  const loadSources = useCallback(() => {
+    listReferenceSources().then(setSources).catch(() => setSources([]));
+  }, []);
+
+  useEffect(() => {
+    loadSources();
+  }, [loadSources]);
+
+  useEffect(() => {
+    if (query.trim().length < 2) {
+      const handle = window.setTimeout(() => setRows(null), 0);
+      return () => window.clearTimeout(handle);
+    }
+    let active = true;
+    const handle = window.setTimeout(() => {
+      searchReference(query.trim(), sourceKey || undefined)
+        .then((found) => active && setRows(found))
+        .catch(() => active && setRows([]));
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(handle);
+    };
+  }, [query, sourceKey]);
+
+  async function runImport(source: ReferenceSource) {
+    setImporting(source.key);
+    try {
+      const result = await importReferenceSource(source.key, getBrowserActor());
+      onNotice(`${source.name}: ${result.rows.toLocaleString("es-MX")} renglones importados`);
+      loadSources();
+    } catch (e) {
+      const detail =
+        e instanceof ApiError && e.detail && typeof e.detail === "object"
+          ? (e.detail as { message?: string }).message
+          : null;
+      onError(detail || `No se pudo importar ${source.name}.`);
+    } finally {
+      setImporting(null);
+    }
+  }
+
+  async function adopt(row: ReferenceRow) {
+    const code = adopting[row.ref_id];
+    if (!code) return;
+    try {
+      await adoptReference(code, row.ref_id, getBrowserActor());
+      onNotice(`${code} ahora vale ${money2(row.price)} (${row.source_name}, ${row.clave})`);
+      onChanged();
+    } catch {
+      onError(`No se pudo aplicar la referencia a ${code}.`);
+    }
+  }
+
+  const imported = (sources ?? []).filter((s) => s.imported);
+
+  return (
+    <Card className="mb-8 overflow-hidden">
+      <div className="border-b border-border px-5 py-4">
+        <SectionTitle sub="Publicaciones oficiales con fecha y región. Un precio adoptado de aquí queda marcado como publicación, con clave y vigencia.">
+          Fuentes de referencia
+        </SectionTitle>
+      </div>
+      <ul className="divide-y divide-border">
+        {sources === null ? (
+          <li className="px-5 py-3 text-sm text-muted">Cargando fuentes…</li>
+        ) : (
+          sources.map((source) => (
+            <li key={source.key} className="flex flex-wrap items-center gap-3 px-5 py-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-foreground">
+                {source.kind === "costo_horario" ? (
+                  <Crane size={16} weight="duotone" />
+                ) : (
+                  <Books size={16} weight="duotone" />
+                )}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">{source.name}</div>
+                <div className="truncate text-xs text-muted">
+                  {source.publisher} · {source.region} · vigencia {source.vigencia}
+                </div>
+              </div>
+              {source.imported ? (
+                <Badge tone="success">
+                  {source.imported.row_count.toLocaleString("es-MX")} renglones
+                </Badge>
+              ) : source.available ? (
+                <Badge>Descargada</Badge>
+              ) : (
+                <a
+                  href={source.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-muted underline"
+                  title={`Guárdala como data/sources/${source.filename}`}
+                >
+                  No descargada
+                </a>
+              )}
+              <Button
+                size="sm"
+                variant={source.imported ? "ghost" : "secondary"}
+                disabled={!source.available || importing !== null}
+                onClick={() => runImport(source)}
+              >
+                {importing === source.key
+                  ? "Importando…"
+                  : source.imported
+                    ? "Reimportar"
+                    : "Importar"}
+              </Button>
+            </li>
+          ))
+        )}
+      </ul>
+      {imported.length > 0 && (
+        <div className="border-t border-border px-5 py-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-64 flex-1">
+              <MagnifyingGlass
+                size={15}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
+              />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar en las publicaciones: tabique, concreto f'c=250, retroexcavadora…"
+                className="w-full pl-9"
+              />
+            </div>
+            <select
+              value={sourceKey}
+              onChange={(e) => setSourceKey(e.target.value)}
+              className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
+            >
+              <option value="">Todas las fuentes</option>
+              {imported.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          {rows && (
+            <div className="mt-3 overflow-x-auto">
+              {rows.length === 0 ? (
+                <p className="py-3 text-sm text-muted">Sin resultados.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-muted">
+                      <th className="py-1.5 pr-3 font-medium">Clave</th>
+                      <th className="py-1.5 pr-3 font-medium">Concepto</th>
+                      <th className="py-1.5 pr-3 font-medium">Unidad</th>
+                      <th className="py-1.5 pr-3 text-right font-medium">P.U.</th>
+                      <th className="py-1.5 font-medium">Usar como precio de</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row) => (
+                      <tr key={row.ref_id} className="border-t border-border align-top">
+                        <td className="py-2 pr-3 font-mono text-xs">{row.clave}</td>
+                        <td className="py-2 pr-3">
+                          <div>{row.description}</div>
+                          {row.group_description && (
+                            <div className="text-xs text-faint">{row.group_description}</div>
+                          )}
+                          <div className="text-xs text-faint">
+                            {row.source_name} · {row.source_vigencia}
+                          </div>
+                        </td>
+                        <td className="py-2 pr-3 text-muted">{row.unit}</td>
+                        <td className="py-2 pr-3 text-right tabular">{money2(row.price)}</td>
+                        <td className="py-2">
+                          <div className="flex items-center gap-1.5">
+                            <select
+                              value={adopting[row.ref_id] ?? ""}
+                              onChange={(e) =>
+                                setAdopting((a) => ({ ...a, [row.ref_id]: e.target.value }))
+                              }
+                              className="max-w-48 rounded-md border border-border bg-surface px-1.5 py-1 text-xs"
+                            >
+                              <option value="">insumo…</option>
+                              {catalog.insumos
+                                .filter((i) => !i.is_labor_percentage)
+                                .map((i) => (
+                                  <option key={i.code} value={i.code}>
+                                    {i.code} · {i.unit}
+                                  </option>
+                                ))}
+                            </select>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={!adopting[row.ref_id]}
+                              onClick={() => adopt(row)}
+                            >
+                              Aplicar
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* -------------------------------------------------------- salario real --- */
+
+const FSR_FIELDS: { key: keyof FsrParameters; label: string; step?: string }[] = [
+  { key: "uma", label: "UMA diaria ($)" },
+  { key: "riesgo_trabajo_pct", label: "Riesgo de trabajo (%)", step: "0.001" },
+  { key: "infonavit_pct", label: "INFONAVIT (%)" },
+  { key: "aguinaldo_days", label: "Aguinaldo (días)" },
+  { key: "vacation_days", label: "Vacaciones (días)" },
+  { key: "prima_vacacional_pct", label: "Prima vacacional (%)" },
+  { key: "holidays", label: "Festivos LFT (días)" },
+  { key: "customary_days", label: "Días de costumbre" },
+  { key: "isn_pct", label: "ISN estatal (%)" },
+];
+
+function SalarioRealSection({
+  onChanged,
+  onError,
+  onNotice,
+}: {
+  onChanged: () => void;
+  onError: (message: string) => void;
+  onNotice: (message: string) => void;
+}) {
+  const [state, setState] = useState<LaborState | null>(null);
+  const [params, setParams] = useState<FsrParameters | null>(null);
+  const [categories, setCategories] = useState<LaborCategory[]>([]);
+  const [open, setOpen] = useState(false);
+  const [showParams, setShowParams] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    getLabor()
+      .then((s) => {
+        setState(s);
+        setParams(s.params);
+        setCategories(s.categories.map(({ code, description, salario_nominal }) => ({ code, description, salario_nominal })));
+      })
+      .catch(() => {});
+  }, []);
+
+  async function apply() {
+    if (!params) return;
+    setBusy(true);
+    try {
+      const result = await putLabor(params, categories, getBrowserActor());
+      setState(result);
+      setDirty(false);
+      onNotice(`Salario real aplicado a ${result.categories.length} categorías de mano de obra`);
+      onChanged();
+    } catch (e) {
+      const detail =
+        e instanceof ApiError && e.detail && typeof e.detail === "object"
+          ? (e.detail as { message?: string }).message
+          : null;
+      onError(detail || "No se pudo aplicar el salario real.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const first = state?.categories[0]?.breakdown;
+
+  return (
+    <Card className="mb-8 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-3 px-5 py-4 text-left"
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-foreground">
+          <HardHat size={16} weight="duotone" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium">Salario real (Fsr) — RLOPSRM art. 190–191</div>
+          <div className="text-xs text-muted">
+            {first
+              ? `Fsr ${first.fsr.toFixed(4)} para el peón · Tp ${first.tp} / Tl ${first.tl} · CONASAMI, UMA e IMSS ${params?.year ?? ""}`
+              : "Sn × Fsr con CONASAMI, UMA, IMSS e INFONAVIT vigentes, desglosado por ramo."}
+            {state?.applied_at ? ` · aplicado ${state.applied_at}` : " · sin aplicar"}
+          </div>
+        </div>
+        <CaretDown size={14} className={`text-muted transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && params && (
+        <div className="border-t border-border px-5 py-4">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-muted">
+                <th className="py-1.5 pr-3 font-medium">Categoría</th>
+                <th className="py-1.5 pr-3 text-right font-medium">Sn (día)</th>
+                <th className="py-1.5 pr-3 text-right font-medium">SBC</th>
+                <th className="py-1.5 pr-3 text-right font-medium">Ps</th>
+                <th className="py-1.5 pr-3 text-right font-medium">Fsr</th>
+                <th className="py-1.5 text-right font-medium">Salario real</th>
+              </tr>
+            </thead>
+            <tbody>
+              {categories.map((category, index) => {
+                const breakdown = state?.categories.find((c) => c.code === category.code)?.breakdown;
+                return (
+                  <tr key={category.code} className="border-t border-border">
+                    <td className="py-1.5 pr-3">
+                      <div>{category.description}</div>
+                      <div className="font-mono text-xs text-muted">{category.code}</div>
+                    </td>
+                    <td className="py-1.5 pr-3 text-right">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={category.salario_nominal}
+                        onChange={(e) => {
+                          const value = Number(e.target.value);
+                          setCategories((list) =>
+                            list.map((c, i) => (i === index ? { ...c, salario_nominal: value } : c)),
+                          );
+                          setDirty(true);
+                        }}
+                        className="w-28 px-2 py-1 text-right tabular"
+                      />
+                    </td>
+                    <td className="py-1.5 pr-3 text-right tabular text-muted">
+                      {breakdown ? money2(breakdown.salario_base_cotizacion) : "—"}
+                    </td>
+                    <td className="py-1.5 pr-3 text-right tabular text-muted">
+                      {breakdown ? breakdown.ps.toFixed(4) : "—"}
+                    </td>
+                    <td className="py-1.5 pr-3 text-right tabular">
+                      {breakdown ? breakdown.fsr.toFixed(4) : "—"}
+                    </td>
+                    <td className="py-1.5 text-right tabular font-medium">
+                      {breakdown ? money2(breakdown.salario_real) : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {dirty && (
+            <p className="mt-2 text-xs text-muted">
+              Los valores de SBC, Ps y Fsr se recalculan al aplicar.
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowParams((v) => !v)}
+            className="mt-3 text-xs font-medium text-muted hover:text-foreground"
+          >
+            {showParams ? "Ocultar parámetros" : "Parámetros (UMA, IMSS, LFT, ISN)"}
+          </button>
+          {showParams && (
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              {FSR_FIELDS.map((field) => (
+                <label key={field.key} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="text-muted">{field.label}</span>
+                  <Input
+                    type="number"
+                    step={field.step ?? "any"}
+                    value={Number(params[field.key])}
+                    onChange={(e) => {
+                      setParams({ ...params, [field.key]: Number(e.target.value) });
+                      setDirty(true);
+                    }}
+                    className="w-24 px-2 py-1 text-right tabular"
+                  />
+                </label>
+              ))}
+              <label className="flex items-center gap-2 text-xs text-muted">
+                <input
+                  type="checkbox"
+                  checked={params.isn_in_fsr}
+                  onChange={(e) => {
+                    setParams({ ...params, isn_in_fsr: e.target.checked });
+                    setDirty(true);
+                  }}
+                  className="h-4 w-4 accent-accent"
+                />
+                Incluir ISN en el Fsr (por defecto va en indirectos)
+              </label>
+            </div>
+          )}
+          {first && (
+            <ul className="mt-3 space-y-0.5 text-xs text-faint">
+              {first.notes.map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-4 flex justify-end">
+            <Button variant="primary" onClick={apply} disabled={busy}>
+              {busy ? "Aplicando…" : "Aplicar salario real al catálogo"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* -------------------------------------------------------- costo horario --- */
+
+const EQ_FIELDS: { key: keyof EquipmentParameters; label: string }[] = [
+  { key: "vm", label: "Vm · valor de la máquina ($)" },
+  { key: "vr", label: "Vr · valor de rescate ($)" },
+  { key: "ve", label: "Ve · vida económica (h)" },
+  { key: "hea", label: "Hea · horas efectivas/año" },
+  { key: "i", label: "i · tasa de interés anual" },
+  { key: "s", label: "s · prima de seguros" },
+  { key: "ko", label: "Ko · coef. mantenimiento" },
+  { key: "gh", label: "Gh · combustible (l/h)" },
+  { key: "pc", label: "Pc · precio combustible ($/l)" },
+  { key: "ah", label: "Ah · aceite consumido (l/h)" },
+  { key: "ga", label: "Ga · aceite por cambios (l/h)" },
+  { key: "pa", label: "Pa · precio del aceite ($/l)" },
+  { key: "pn", label: "Pn · valor de llantas ($)" },
+  { key: "vn", label: "Vn · vida de llantas (h)" },
+  { key: "pa_e", label: "Pa · piezas especiales ($)" },
+  { key: "va", label: "Va · vida piezas esp. (h)" },
+  { key: "sr", label: "Sr · salario real operador/turno" },
+  { key: "ht", label: "Ht · horas efectivas/turno" },
+  { key: "other_energy", label: "Otras energías ($/h)" },
+];
+
+const EQ_DEFAULTS: EquipmentParameters = {
+  vm: 1000000, vr: 100000, ve: 10000, hea: 2000, i: 0.12, s: 0.03, ko: 0.8,
+  gh: 0, pc: 25, ah: 0, ga: 0, pa: 90, pn: 0, vn: 0, pa_e: 0, va: 0, sr: 0, ht: 8,
+  other_energy: 0,
+};
+
+function EquipmentDialog({
+  insumo,
+  onClose,
+  onSaved,
+  onError,
+}: {
+  insumo: CatalogInsumo;
+  onClose: () => void;
+  onSaved: () => void;
+  onError: (message: string) => void;
+}) {
+  const [params, setParams] = useState<EquipmentParameters | null>(null);
+  const [breakdown, setBreakdown] = useState<EquipmentBreakdown | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    getEquipment(insumo.code)
+      .then((r) => {
+        setParams(r.params ?? EQ_DEFAULTS);
+        setBreakdown(r.breakdown);
+      })
+      .catch(() => setParams(EQ_DEFAULTS));
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [insumo.code, onClose]);
+
+  const estimate = useMemo(() => {
+    if (!params) return null;
+    const d = (params.vm - params.vr) / params.ve;
+    const base = (params.vm + params.vr) / (2 * params.hea);
+    const fijos = d + base * params.i + base * params.s + params.ko * d;
+    const consumos =
+      params.gh * params.pc +
+      (params.ah + params.ga) * params.pa +
+      (params.vn > 0 ? params.pn / params.vn : 0) +
+      (params.va > 0 ? params.pa_e / params.va : 0) +
+      params.other_energy;
+    return fijos + consumos + params.sr / params.ht;
+  }, [params]);
+
+  async function save() {
+    if (!params) return;
+    setBusy(true);
+    try {
+      const row = await putEquipment(insumo.code, params, undefined, getBrowserActor());
+      setBreakdown(row.breakdown);
+      onSaved();
+    } catch {
+      onError(`No se pudo guardar el costo horario de ${insumo.code}.`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <button type="button" aria-label="Cerrar" onClick={onClose} className="absolute inset-0 bg-foreground/40 backdrop-blur-[2px]" />
+      <div role="dialog" aria-modal="true" className="toast-in relative w-full max-w-2xl rounded-xl border border-border bg-surface p-5 shadow-lg">
+        <h2 className="text-[0.95rem] font-semibold">Costo horario · {insumo.description}</h2>
+        <p className="mb-4 text-xs text-muted">
+          RLOPSRM art. 194–206: cargos fijos + consumos + operación por hora efectiva. El resultado sustituye el costo unitario del insumo y queda marcado como calculado.
+        </p>
+        {params === null ? (
+          <p className="text-sm text-muted">Cargando…</p>
+        ) : (
+          <>
+            <div className="grid max-h-80 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+              {EQ_FIELDS.map((field) => (
+                <label key={field.key} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="text-muted">{field.label}</span>
+                  <Input
+                    type="number"
+                    step="any"
+                    value={params[field.key]}
+                    onChange={(e) => setParams({ ...params, [field.key]: Number(e.target.value) })}
+                    className="w-32 px-2 py-1 text-right tabular"
+                  />
+                </label>
+              ))}
+            </div>
+            <div className="mt-4 flex flex-wrap items-end justify-between gap-3 border-t border-border pt-3">
+              <div>
+                <div className="microlabel">Costo horario estimado</div>
+                <div className="font-display text-xl font-semibold tabular">
+                  {estimate != null ? money2(estimate) : "—"} / hr
+                </div>
+                {breakdown && (
+                  <div className="text-xs text-muted">
+                    Guardado: fijos {money2(breakdown.cargos_fijos)} · consumos {money2(breakdown.consumos)} · operación {money2(breakdown.operacion)}
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={onClose}>
+                  Cancelar
+                </Button>
+                <Button variant="primary" onClick={save} disabled={busy}>
+                  Guardar y aplicar
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

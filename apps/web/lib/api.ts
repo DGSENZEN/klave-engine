@@ -636,7 +636,7 @@ export type CatalogInsumo = {
   unit_cost: number;
   is_labor_percentage: number;
   source: string;
-  source_type: "referencia" | "cotizacion" | "publicacion";
+  source_type: "referencia" | "cotizacion" | "publicacion" | "calculado";
   region: string;
   vigencia: string;
   updated_at: string;
@@ -863,3 +863,144 @@ export const resetWorkspaceDefaults = (actor?: string) =>
 
 export const renameWorkspace = (name: string) =>
   putJSON<{ slug: string; name: string }>("/workspace", { name });
+
+// ---- Reference library, salario real, costo horario ----
+
+export type ReferenceSource = {
+  key: string;
+  name: string;
+  publisher: string;
+  region: string;
+  vigencia: string;
+  kind: "precios_unitarios" | "costo_horario";
+  filename: string;
+  url: string;
+  available: boolean;
+  bytes: number | null;
+  sha256: string | null;
+  fetched_at: string | null;
+  imported: { imported_at: string; row_count: number } | null;
+};
+
+export type ReferenceRow = {
+  ref_id: number;
+  source_key: string;
+  clave: string;
+  description: string;
+  unit: string;
+  price: number;
+  group_clave: string;
+  group_description: string;
+  extra: Record<string, number> | null;
+  page: number | null;
+  source_name: string;
+  source_vigencia: string;
+  source_region: string;
+};
+
+export const listReferenceSources = () =>
+  getJSON<{ sources: ReferenceSource[] }>("/catalog/sources").then((r) => r.sources);
+
+export const importReferenceSource = (key: string, actor?: string) =>
+  postJSON<{ source_key: string; rows: number }>(
+    `/catalog/sources/${encodeURIComponent(key)}/import`,
+    {},
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export const searchReference = (q: string, source?: string) =>
+  getJSON<{ rows: ReferenceRow[] }>(
+    `/catalog/reference?q=${encodeURIComponent(q)}${source ? `&source=${encodeURIComponent(source)}` : ""}`,
+  ).then((r) => r.rows);
+
+export const adoptReference = (code: string, refId: number, actor?: string) =>
+  postJSON<CatalogInsumo>(
+    `/catalog/insumos/${encodeURIComponent(code)}/adopt`,
+    { ref_id: refId },
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export type FsrParameters = {
+  year: number;
+  uma: number;
+  aguinaldo_days: number;
+  vacation_days: number;
+  prima_vacacional_pct: number;
+  sundays: number;
+  holidays: number;
+  customary_days: number;
+  riesgo_trabajo_pct: number;
+  eym_cuota_fija_pct_uma: number;
+  eym_excedente_pct: number;
+  eym_prestaciones_dinero_pct: number;
+  eym_gastos_medicos_pensionados_pct: number;
+  invalidez_vida_pct: number;
+  guarderias_pct: number;
+  retiro_pct: number;
+  infonavit_pct: number;
+  ceyv_bands: [number, number][];
+  isn_pct: number;
+  isn_in_fsr: boolean;
+};
+
+export type FsrBreakdown = {
+  salario_nominal: number;
+  factor_integracion: number;
+  salario_base_cotizacion: number;
+  sbc_in_uma: number;
+  employer_daily: Record<string, number>;
+  employer_daily_total: number;
+  ps: number;
+  tp: number;
+  tl: number;
+  fsr: number;
+  salario_real: number;
+  notes: string[];
+};
+
+export type LaborCategory = { code: string; description: string; salario_nominal: number };
+
+export type LaborState = {
+  params: FsrParameters;
+  categories: (LaborCategory & { breakdown: FsrBreakdown })[];
+  applied_at: string | null;
+};
+
+export const getLabor = () => getJSON<LaborState>("/catalog/labor");
+
+export const putLabor = (params: FsrParameters, categories: LaborCategory[], actor?: string) =>
+  putJSON<LaborState & { applied: unknown[] }>(
+    "/catalog/labor",
+    { params, categories },
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export type EquipmentParameters = {
+  vm: number; vr: number; ve: number; hea: number; i: number; s: number; ko: number;
+  gh: number; pc: number; ah: number; ga: number; pa: number; pn: number; vn: number;
+  pa_e: number; va: number; sr: number; ht: number; other_energy: number;
+};
+
+export type EquipmentBreakdown = {
+  depreciacion: number; inversion: number; seguros: number; mantenimiento: number;
+  cargos_fijos: number; combustible: number; otras_energias: number; lubricantes: number;
+  llantas: number; piezas_especiales: number; consumos: number; operacion: number;
+  costo_horario: number; notes: string[];
+};
+
+export const getEquipment = (code: string) =>
+  getJSON<{ code: string; params: EquipmentParameters | null; breakdown: EquipmentBreakdown | null; saved: boolean }>(
+    `/catalog/equipment/${encodeURIComponent(code)}`,
+  );
+
+export const putEquipment = (
+  code: string,
+  params: EquipmentParameters,
+  description?: string,
+  actor?: string,
+) =>
+  putJSON<CatalogInsumo & { breakdown: EquipmentBreakdown }>(
+    `/catalog/equipment/${encodeURIComponent(code)}`,
+    { params, description },
+    actor ? { "X-Actor": actor } : undefined,
+  );

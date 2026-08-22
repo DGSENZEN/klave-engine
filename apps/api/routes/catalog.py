@@ -12,7 +12,11 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile
 from klave_engine.common.config import Settings
 from klave_engine.costing.catalog import PHASE_ORDER
+from klave_engine.costing.catalog_services import apply_equipment, apply_labor, labor_state
 from klave_engine.costing.catalog_store import CatalogStore, get_catalog_store
+from klave_engine.costing.equipment import EquipmentParameters, compute_costo_horario
+from klave_engine.costing.labor import FsrParameters, LaborCategory
+from klave_engine.costing.sources.registry import SOURCES, available_sources, sources_dir
 from pydantic import BaseModel, Field
 
 from apps.api.dependencies import get_settings
@@ -33,7 +37,7 @@ class InsumoUpdate(BaseModel):
     resource_type: str | None = None
     unit_cost: float | None = Field(default=None, gt=0)
     source: str | None = Field(default=None, max_length=200)
-    source_type: Literal["referencia", "cotizacion", "publicacion"] | None = None
+    source_type: Literal["referencia", "cotizacion", "publicacion", "calculado"] | None = None
     region: str | None = Field(default=None, max_length=12)
     vigencia: str | None = Field(default=None, max_length=7)
 
@@ -366,3 +370,144 @@ def _rows_from_xlsx(raw: bytes) -> list[dict[str, str]]:
             },
         )
     return rows
+
+
+# ------------------------------------------------------------ reference library
+
+class AdoptInput(BaseModel):
+    ref_id: int
+
+
+class LaborInput(BaseModel):
+    params: FsrParameters
+    categories: list[LaborCategory] = Field(min_length=1, max_length=40)
+
+
+class EquipmentInput(BaseModel):
+    description: str | None = Field(default=None, max_length=200)
+    params: EquipmentParameters
+
+
+@router.get("/sources")
+def list_reference_sources(
+    catalog: CatalogStore = Depends(get_catalog),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Known publications, whether their file is on this server, and whether
+    they are imported into the library."""
+    imported = {row["source_key"]: row for row in catalog.list_sources()}
+    return {
+        "sources": [
+            {**spec, "imported": imported.get(spec["key"])}
+            for spec in available_sources(settings.data_dir)
+        ]
+    }
+
+
+@router.post("/sources/{source_key}/import")
+def import_reference_source(
+    source_key: str,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    spec = SOURCES.get(source_key)
+    if spec is None:
+        raise HTTPException(status_code=404, detail={"error_type": "source_not_found"})
+    path = sources_dir(settings.data_dir) / spec.filename
+    if not path.exists():
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_type": "source_file_missing",
+                "message": f"Descarga {spec.filename} en data/sources antes de importar.",
+                "url": spec.url,
+            },
+        )
+    manifest = next(
+        (e for e in available_sources(settings.data_dir) if e["key"] == source_key), {}
+    )
+    count = catalog.import_reference(
+        {
+            "key": spec.key, "name": spec.name, "publisher": spec.publisher,
+            "region": spec.region, "vigencia": spec.vigencia, "kind": spec.kind, "url": spec.url,
+        },
+        spec.parser(path),
+        sha256=manifest.get("sha256"),
+    )
+    _publish_catalog_updated(x_actor, "reference_imported", f"{spec.name}: {count} renglones")
+    return {"source_key": source_key, "rows": count}
+
+
+@router.get("/reference")
+def search_reference(
+    q: str = "",
+    source: str | None = None,
+    limit: int = 50,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    if len(q.strip()) < 2:
+        return {"rows": []}
+    return {"rows": catalog.search_reference(q, source_key=source, limit=limit)}
+
+
+@router.post("/insumos/{code}/adopt")
+def adopt_reference_price(
+    code: str,
+    body: AdoptInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    if code not in catalog.load_price_book():
+        raise HTTPException(status_code=404, detail={"error_type": "insumo_not_found"})
+    try:
+        row = catalog.adopt_reference(code, body.ref_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404, detail={"error_type": "reference_not_found", "message": str(exc)}
+        ) from exc
+    _publish_catalog_updated(x_actor, "insumo_updated", code)
+    return row
+
+
+@router.get("/labor")
+def get_labor(catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    return labor_state(catalog)
+
+
+@router.put("/labor")
+def put_labor(
+    body: LaborInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    applied = apply_labor(catalog, body.params, body.categories)
+    _publish_catalog_updated(x_actor, "labor_applied", f"{len(applied)} categorías")
+    return {"applied": applied, **labor_state(catalog)}
+
+
+@router.get("/equipment/{code}")
+def get_equipment(code: str, catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    analysis = catalog.get_analysis(code)
+    if analysis and analysis["kind"] == "costo_horario":
+        params = EquipmentParameters.model_validate(analysis["params"])
+        return {"code": code, "params": params.model_dump(),
+                "breakdown": compute_costo_horario(params).model_dump(), "saved": True}
+    return {"code": code, "params": None, "breakdown": None, "saved": False}
+
+
+@router.put("/equipment/{code}")
+def put_equipment(
+    code: str,
+    body: EquipmentInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    try:
+        row = apply_equipment(catalog, code, body.description, body.params)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error_type": "invalid_insumo", "message": str(exc)}
+        ) from exc
+    _publish_catalog_updated(x_actor, "insumo_updated", code)
+    return row
