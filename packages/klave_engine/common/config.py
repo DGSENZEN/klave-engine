@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     # database. The local compose credentials below are not production secrets.
     users_database_url: str = "postgresql://klave_users:klave@127.0.0.1:5433/klave_users"
     web_origin: str = "http://localhost:3000"
+    # Hosted deployments: share the session cookie across app/api subdomains
+    # (e.g. ".taller.mx"), or go cross-site with SameSite=None (HTTPS only).
+    cookie_domain: str | None = None
+    cookie_samesite: str = "lax"  # lax | none | strict
+    # Extra browser origins allowed to call the API with credentials.
+    extra_origins: str = ""  # comma-separated
     auth_google_id: str | None = None
     auth_google_secret: str | None = None
 

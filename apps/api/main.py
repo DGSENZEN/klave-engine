@@ -9,7 +9,7 @@ from klave_engine.common.logging import configure_logging
 
 from apps.api.auth.account import router as account_router
 from apps.api.auth.invitations import router as invitations_router
-from apps.api.auth.middleware import AccessControlMiddleware
+from apps.api.auth.middleware import AccessControlMiddleware, allowed_origins
 from apps.api.auth.recovery import router as recovery_router
 from apps.api.auth.routes import router as auth_router
 from apps.api.routes import (
@@ -45,8 +45,9 @@ def create_app() -> FastAPI:
         allow_origins=[
             "http://localhost:3000",
             "http://127.0.0.1:3000",
+            *allowed_origins(),
         ],
-        allow_origin_regex=r"http://localhost:\d+",
+        allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
         allow_methods=["*"],
         allow_headers=["*"],
         allow_credentials=True,

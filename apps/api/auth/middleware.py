@@ -1,6 +1,8 @@
 """Access control: one policy for the whole API surface.
 
-In open mode (no accounts) every request passes untouched, preserving the
+Every mutating request must come from an allowed browser origin (CSRF guard,
+in open and protected mode alike; non-browser clients send no Origin and pass).
+In open mode (no accounts) every request then passes untouched, preserving the
 original local-first behavior. In protected mode a session cookie is required,
 pending/disabled accounts are refused, and project routes enforce per-project
 roles (viewer < editor < owner; admins pass everything within their workspace). If the
@@ -8,8 +10,10 @@ users database goes down after accounts have been seen, the API fails closed.
 """
 
 import json
+import re
 from http.cookies import SimpleCookie
 from typing import Any
+from urllib.parse import urlsplit
 
 from klave_engine.common.config import get_settings
 
@@ -20,6 +24,42 @@ SESSION_COOKIE = "klave_session"
 OPEN_PREFIXES = ("/health", "/auth/", "/docs", "/openapi.json", "/redoc")
 
 _MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
+_LOCAL_ORIGIN = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$")
+
+
+def allowed_origins() -> list[str]:
+    """Browser origins that may call the API with credentials."""
+    settings = get_settings()
+    origins = [settings.web_origin.rstrip("/")]
+    origins += [o.strip().rstrip("/") for o in settings.extra_origins.split(",") if o.strip()]
+    return origins
+
+
+def origin_allowed(origin: str | None) -> bool:
+    if origin is None:
+        return True  # non-browser clients carry no session cookie to forge with
+    origin = origin.rstrip("/")
+    return origin in allowed_origins() or bool(_LOCAL_ORIGIN.match(origin))
+
+
+def _header(scope: dict[str, Any], name: bytes) -> str | None:
+    for key, value in scope.get("headers", []):
+        if key == name:
+            return value.decode("latin-1")
+    return None
+
+
+def _request_origin(scope: dict[str, Any]) -> str | None:
+    """Origin, or the Referer's origin when a browser omitted Origin."""
+    origin = _header(scope, b"origin")
+    if origin:
+        return origin
+    referer = _header(scope, b"referer")
+    if referer:
+        parsed = urlsplit(referer)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}"
+    return None
 
 
 def _cookie_token(scope: dict[str, Any]) -> str | None:
@@ -61,9 +101,19 @@ class AccessControlMiddleware:
             return
         method: str = scope["method"]
         path: str = scope["path"]
-        if method == "OPTIONS" or path == "/" or any(
-            path == p.rstrip("/") or path.startswith(p) for p in OPEN_PREFIXES
-        ):
+        if method == "OPTIONS" or path == "/":
+            await self.app(scope, receive, send)
+            return
+        # CSRF: a browser must come from our own origin to change anything.
+        # This runs before the open-prefix pass so login/register are covered.
+        if method in _MUTATING and not origin_allowed(_request_origin(scope)):
+            status, body = _deny(
+                403, "origin_not_allowed",
+                "Solicitud desde un origen no permitido.",
+            )
+            await _respond(send, status, body)
+            return
+        if any(path == p.rstrip("/") or path.startswith(p) for p in OPEN_PREFIXES):
             await self.app(scope, receive, send)
             return
 
@@ -120,14 +170,18 @@ class AccessControlMiddleware:
             await self.app(scope, receive, send)
             return
         status, body = denial
-        await send(
-            {
-                "type": "http.response.start",
-                "status": status,
-                "headers": [
-                    (b"content-type", b"application/json"),
-                    (b"content-length", str(len(body)).encode()),
-                ],
-            }
-        )
-        await send({"type": "http.response.body", "body": body})
+        await _respond(send, status, body)
+
+
+async def _respond(send: Any, status: int, body: bytes) -> None:
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})

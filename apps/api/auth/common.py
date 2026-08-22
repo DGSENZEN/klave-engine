@@ -135,14 +135,19 @@ def set_session_cookie(
 ) -> None:
     # Without "remember" the cookie is browser-session scoped; the server side
     # still slides its 24 h expiry while the tab stays in use.
+    samesite = settings.cookie_samesite.lower()
+    if samesite not in ("lax", "none", "strict"):
+        samesite = "lax"
+    secure = settings.web_origin.startswith("https") or samesite == "none"
     response.set_cookie(
         SESSION_COOKIE,
         token,
         httponly=True,
-        samesite="lax",
-        secure=settings.web_origin.startswith("https"),
+        samesite=samesite,  # type: ignore[arg-type]
+        secure=secure,
         max_age=60 * 60 * 24 * 30 if remember else None,
         path="/",
+        domain=settings.cookie_domain or None,
     )
 
 
