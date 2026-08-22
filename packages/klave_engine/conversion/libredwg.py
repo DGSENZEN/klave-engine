@@ -4,21 +4,20 @@ The ODA-shaped :class:`DwgToDxfConverter` converts whole directories; for the
 web upload flow we convert a single file with GNU LibreDWG's ``dwg2dxf``.
 Failures are returned, never raised.
 
-Conversion is a retry ladder, because LibreDWG's default output fails on some
-producer quirks while an explicit target version or minimal mode succeeds:
-
-1. default invocation;
-2. ``--as r2000`` (widely readable DXF target);
-3. ``-m`` minimal DXF (geometry-first last resort).
-
-Every produced file is probe-read with ezdxf before being accepted — a
-converter that exits 0 but writes an unreadable DXF is treated as a failed
-attempt, not a success the parser discovers later.
+Conversion is not "first readable wins" but "most complete wins": the
+standard and ``--as r2000`` outputs are both produced (sub-second on real
+drawings), probed with ezdxf, and ranked by what they contain — model-space
+entities, texts, block definitions, layouts. Minimal mode (``-m``) is a last
+resort only: it drops block definitions by design, which is exactly where
+real drawings hide castillos and marks. A converter that exits 0 but writes
+an unreadable DXF is a failed attempt, not a success the parser discovers
+later.
 """
 
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import ezdxf
 from ezdxf import recover as ezdxf_recover
@@ -28,11 +27,11 @@ from klave_engine.common.logging import get_logger, log_stage
 
 logger = get_logger(__name__)
 
-_ATTEMPTS: list[tuple[str, list[str]]] = [
+_CANDIDATES: list[tuple[str, list[str]]] = [
     ("estándar", []),
     ("versión r2000", ["--as", "r2000"]),
-    ("modo mínimo", ["-m"]),
 ]
+_LAST_RESORT: tuple[str, list[str]] = ("modo mínimo", ["-m"])
 
 
 def dwg2dxf_available() -> bool:
@@ -54,19 +53,80 @@ def dwg2dxf_version() -> str | None:
     return first_line[0][:80] if first_line else None
 
 
-def _output_is_readable(path: Path) -> bool:
-    """Cheap probe: the DXF must load strictly or in recovery mode."""
+def _load(path: Path) -> Any | None:
     try:
-        ezdxf.readfile(str(path))
-        return True
+        return ezdxf.readfile(str(path))
     except (DXFStructureError, UnicodeDecodeError):
         try:
-            ezdxf_recover.readfile(str(path))
-            return True
+            doc, _auditor = ezdxf_recover.readfile(str(path))
+            return doc
         except Exception:
-            return False
+            return None
     except OSError:
-        return False
+        return None
+
+
+def _output_is_readable(path: Path) -> bool:
+    """Cheap probe: the DXF must load strictly or in recovery mode."""
+    return _load(path) is not None
+
+
+def completeness(path: Path) -> dict[str, int] | None:
+    """What the DXF contains, for ranking converter attempts."""
+    doc = _load(path)
+    if doc is None:
+        return None
+    modelspace = list(doc.modelspace())
+    return {
+        "entities": len(modelspace),
+        "texts": sum(1 for e in modelspace if e.dxftype() in ("TEXT", "MTEXT")),
+        "blocks": sum(1 for b in doc.blocks if not b.name.startswith("*")),
+        "layouts": len(list(doc.layouts)),
+    }
+
+
+def _rank(counts: dict[str, int]) -> tuple[int, int, int, int]:
+    return counts["entities"], counts["texts"], counts["blocks"], counts["layouts"]
+
+
+def choose_best(candidates: dict[str, dict[str, int]]) -> str | None:
+    """Label of the most complete candidate (stable on ties: first declared)."""
+    if not candidates:
+        return None
+    order = list(candidates)
+    return max(order, key=lambda label: (_rank(candidates[label]), -order.index(label)))
+
+
+def _describe(counts: dict[str, int]) -> str:
+    return (
+        f"{counts['entities']:,} entidades, {counts['texts']:,} textos, "
+        f"{counts['blocks']:,} bloques, {counts['layouts']} presentaciones"
+    )
+
+
+def _run(
+    executable: str, extra_args: list[str], source: Path, output: Path, timeout_seconds: int
+) -> str | None:
+    """Run one attempt; return a failure description or None on success."""
+    output.unlink(missing_ok=True)
+    try:
+        completed = subprocess.run(
+            [executable, *extra_args, "-y", "-o", str(output), str(source)],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return f"tiempo agotado ({timeout_seconds}s)"
+    except OSError as exc:
+        return str(exc)
+    if completed.returncode != 0 or not output.exists() or output.stat().st_size == 0:
+        stderr_tail = (completed.stderr or "").strip().splitlines()
+        return f"código {completed.returncode}" + (
+            f" — {stderr_tail[-1][:160]}" if stderr_tail else ""
+        )
+    return None
 
 
 def convert_dwg_to_dxf(
@@ -82,48 +142,62 @@ def convert_dwg_to_dxf(
     output = output or source.with_suffix(".dxf")
     output.parent.mkdir(parents=True, exist_ok=True)
     failures: list[str] = []
-    for label, extra_args in _ATTEMPTS:
-        output.unlink(missing_ok=True)
-        try:
-            completed = subprocess.run(
-                [executable, *extra_args, "-y", "-o", str(output), str(source)],
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
-            failures.append(f"{label}: tiempo agotado ({timeout_seconds}s)")
+    produced: dict[str, Path] = {}
+    counts: dict[str, dict[str, int]] = {}
+    for index, (label, extra_args) in enumerate(_CANDIDATES):
+        attempt_output = output.with_name(f"{output.stem}.intento{index}.dxf")
+        failure = _run(executable, extra_args, source, attempt_output, timeout_seconds)
+        if failure is not None:
+            failures.append(f"{label}: {failure}")
+            attempt_output.unlink(missing_ok=True)
             continue
-        except OSError as exc:
-            failures.append(f"{label}: {exc}")
-            continue
-        if completed.returncode != 0 or not output.exists() or output.stat().st_size == 0:
-            stderr_tail = (completed.stderr or "").strip().splitlines()
-            failures.append(
-                f"{label}: código {completed.returncode}"
-                + (f" — {stderr_tail[-1][:160]}" if stderr_tail else "")
-            )
-            continue
-        if not _output_is_readable(output):
+        probe = completeness(attempt_output)
+        if probe is None:
             failures.append(f"{label}: produjo un DXF ilegible")
+            attempt_output.unlink(missing_ok=True)
             continue
-        version = dwg2dxf_version()
-        message = "Conversión exitosa (LibreDWG"
-        if version:
-            message += f", {version}"
-        message += f", intento {label})."
+        produced[label] = attempt_output
+        counts[label] = probe
+
+    version = dwg2dxf_version()
+    tool = "LibreDWG" + (f", {version}" if version else "")
+    best = choose_best(counts)
+    if best is not None:
+        output.unlink(missing_ok=True)
+        produced[best].replace(output)
+        for label, path in produced.items():
+            if label != best:
+                path.unlink(missing_ok=True)
+        message = f"Conversión exitosa ({tool}, intento {best}; {_describe(counts[best])})."
+        lesser = [
+            f"{label} habría dado {_describe(c)}"
+            for label, c in counts.items()
+            if label != best and _rank(c) != _rank(counts[best])
+        ]
+        if lesser:
+            message += " Se eligió la salida más completa: " + "; ".join(lesser) + "."
         if failures:
-            message += " Intentos previos fallidos: " + "; ".join(failures) + "."
+            message += " Intentos fallidos: " + "; ".join(failures) + "."
         log_stage(
-            logger,
-            "dwg2dxf_completed",
-            input_path=source,
-            output_path=output,
-            attempt=label,
-            previous_failures=len(failures),
+            logger, "dwg2dxf_completed", input_path=source, output_path=output,
+            attempt=best, previous_failures=len(failures), **counts[best],
         )
         return output, message
 
+    label, extra_args = _LAST_RESORT
+    failure = _run(executable, extra_args, source, output, timeout_seconds)
+    probe = completeness(output) if failure is None else None
+    if failure is None and probe is not None:
+        message = (
+            f"Conversión en {label} ({tool}; {_describe(probe)}). Este modo omite "
+            "definiciones de bloque: revisa la lectura del plano. Intentos previos fallidos: "
+            + "; ".join(failures) + "."
+        )
+        log_stage(
+            logger, "dwg2dxf_completed", input_path=source, output_path=output,
+            attempt=label, previous_failures=len(failures), **probe,
+        )
+        return output, message
+    failures.append(f"{label}: {failure or 'produjo un DXF ilegible'}")
     output.unlink(missing_ok=True)
     return None, "La conversión DWG→DXF falló en todos los intentos: " + "; ".join(failures)

@@ -2,7 +2,6 @@
 
 import ezdxf
 import pytest
-
 from klave_engine.dxf import parser as parser_module
 from klave_engine.dxf.parser import DxfParser
 
@@ -77,3 +76,63 @@ def test_unsupported_types_warn_never_silently_drop(dxf_path):
     assert len(drawing.entities) == 1
     dropped = [w for w in drawing.warnings if w.warning_type == "unsupported_dxf_entity"]
     assert len(dropped) == 1 and dropped[0].entity_type == "POINT"
+
+
+def test_layouts_viewports_and_title_block_are_read(dxf_path):
+    def build(doc):
+        doc.header["$INSUNITS"] = 6  # metres
+        doc.modelspace().add_line((0, 0), (1, 1))
+        block = doc.blocks.new(name="CAJETIN")
+        block.add_attdef("TITULO", (0, 0))
+        layout = doc.layouts.new("Hoja 1")
+        layout.add_viewport(
+            center=(100, 100), size=(200, 150), view_center_point=(50, 25), view_height=30
+        )
+        layout.add_text("PLANTA DE CIMENTACIÓN  ESC 1:200")
+        layout.add_blockref("CAJETIN", (0, 0)).add_auto_attribs({"TITULO": "S-101"})
+
+    drawing = DxfParser().parse_file(dxf_path(build))
+    assert [layout.name for layout in drawing.layouts] == ["Hoja 1"]
+    hoja = drawing.layouts[0]
+    assert len(hoja.viewports) == 1  # the paper itself is not a window
+    viewport = hoja.viewports[0]
+    assert viewport.scale_factor == 0.2
+    assert viewport.scale_label == "≈ 1:200"
+    assert viewport.model_bbox == (30.0, 10.0, 70.0, 40.0)
+    assert hoja.texts == ["PLANTA DE CIMENTACIÓN ESC 1:200"]
+    assert hoja.attributes == {"TITULO": "S-101"}
+    assert drawing.xrefs == []
+
+
+def test_xref_in_project_is_embedded_and_explodes(tmp_path):
+    import ezdxf.xref
+
+    base = ezdxf.new("R2010")
+    base.modelspace().add_line((0, 0), (2, 0))
+    base.modelspace().add_text("K-9", height=0.2)
+    base.saveas(tmp_path / "arquitectura.dxf")
+
+    main = ezdxf.new("R2010")
+    ezdxf.xref.attach(main, block_name="ARQ", filename="arquitectura.dxf", insert=(10, 10))
+    main.saveas(tmp_path / "estructural.dxf")
+
+    drawing = DxfParser().parse_file(tmp_path / "estructural.dxf")
+    assert [(x.name, x.status) for x in drawing.xrefs] == [("ARQ", "embedded")]
+    borrowed = [e for e in drawing.entities if e.properties.get("from_block") == "ARQ"]
+    assert any(e.text == "K-9" for e in borrowed)
+    assert any(w.warning_type == "xref_embedded" for w in drawing.warnings)
+
+
+def test_missing_xref_is_reported_not_hidden(tmp_path):
+    import ezdxf.xref
+
+    main = ezdxf.new("R2010")
+    main.modelspace().add_line((0, 0), (1, 0))
+    ezdxf.xref.attach(main, block_name="TOPO", filename="topografia.dxf")
+    main.saveas(tmp_path / "estructural.dxf")
+
+    drawing = DxfParser().parse_file(tmp_path / "estructural.dxf")
+    assert [(x.name, x.status) for x in drawing.xrefs] == [("TOPO", "missing")]
+    missing = [w for w in drawing.warnings if w.warning_type == "xref_missing"]
+    assert len(missing) == 1 and "súbela como hoja" in missing[0].message
+    assert len(drawing.entities) == 2  # the line and the unresolved insert

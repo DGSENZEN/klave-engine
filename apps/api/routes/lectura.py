@@ -27,6 +27,9 @@ WARNING_TYPE_LABELS = {
     "dxf_recovered": "Archivo leído en modo de recuperación",
     "block_explosion_capped": "Expansión de bloques limitada",
     "block_explosion_failed": "Bloques que no se pudieron expandir",
+    "xref_missing": "Referencias externas faltantes",
+    "xref_embedded": "Referencias externas incorporadas",
+    "xref_failed": "Referencias externas que no se pudieron incorporar",
 }
 
 ENTITY_TYPE_LABELS = {

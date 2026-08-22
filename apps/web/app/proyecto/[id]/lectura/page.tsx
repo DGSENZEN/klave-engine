@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import {
   ArrowsClockwise,
   FileText,
+  Layout,
   Ruler,
   Scan,
   Stack,
@@ -279,6 +280,61 @@ function SheetCard({
               </span>
             )}
           </div>
+          {(parse.layouts?.length ?? 0) > 0 && (
+            <div className="mt-3 space-y-1.5 border-t border-border pt-3">
+              <div className="microlabel">Presentaciones (espacio papel)</div>
+              {parse.layouts!.map((layout) => (
+                <div key={layout.name} className="flex flex-wrap items-center gap-x-2 text-xs text-muted">
+                  <span className="inline-flex items-center gap-1 font-medium text-foreground">
+                    <Layout size={13} weight="duotone" /> {layout.name}
+                  </span>
+                  <span>
+                    {layout.viewports.length === 0
+                      ? "sin ventanas al modelo"
+                      : layout.viewports.length === 1
+                        ? "1 ventana al modelo"
+                        : `${layout.viewports.length} ventanas al modelo`}
+                  </span>
+                  {layout.viewports
+                    .map((v) => v.scale_label)
+                    .filter((label): label is string => Boolean(label))
+                    .filter((label, i, arr) => arr.indexOf(label) === i)
+                    .map((label) => (
+                      <Badge key={label}>{label}</Badge>
+                    ))}
+                  {Object.keys(layout.attributes).length > 0 && (
+                    <span className="truncate">
+                      {Object.entries(layout.attributes)
+                        .slice(0, 3)
+                        .map(([tag, value]) => `${tag}: ${value}`)
+                        .join(" · ")}
+                    </span>
+                  )}
+                  {Object.keys(layout.attributes).length === 0 && layout.texts[0] && (
+                    <span className="truncate">«{layout.texts[0]}»</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {(parse.xrefs?.length ?? 0) > 0 && (
+            <div className="mt-3 space-y-1.5 border-t border-border pt-3">
+              <div className="microlabel">Referencias externas</div>
+              {parse.xrefs!.map((xref) => (
+                <div key={xref.name} className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-mono">{xref.name}</span>
+                  <span className="truncate text-faint">{xref.path}</span>
+                  <Badge tone={xref.status === "embedded" ? "success" : "warning"}>
+                    {xref.status === "embedded"
+                      ? "Incorporada"
+                      : xref.status === "missing"
+                        ? "Falta: súbela como hoja"
+                        : "No se pudo incorporar"}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       ) : (
         <p className="text-sm text-muted">

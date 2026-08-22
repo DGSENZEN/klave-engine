@@ -1,4 +1,4 @@
-"""DXF parsing via ezdxf: open files, extract modelspace, normalize entities."""
+"""DXF parsing via ezdxf: open files, resolve xrefs, read layouts, normalize model space."""
 
 import io
 from dataclasses import dataclass, field
@@ -12,6 +12,7 @@ from klave_engine.common.errors import DxfParseError
 from klave_engine.common.ids import IdGenerator
 from klave_engine.common.logging import get_logger, log_stage
 from klave_engine.dxf.entities import NormalizedEntity, ParseWarning
+from klave_engine.dxf.layouts import LayoutInfo, XrefInfo, read_layouts, resolve_xrefs
 from klave_engine.dxf.normalizer import normalize_entity
 
 logger = get_logger(__name__)
@@ -61,6 +62,8 @@ class ParsedDrawing:
     blocks: list[str] = field(default_factory=list)
     warnings: list[ParseWarning] = field(default_factory=list)
     insunits: int | None = None
+    layouts: list[LayoutInfo] = field(default_factory=list)
+    xrefs: list[XrefInfo] = field(default_factory=list)
 
 
 class DxfParser:
@@ -92,6 +95,12 @@ class DxfParser:
             warnings=recover_warnings,
             insunits=int(doc.header.get("$INSUNITS", 0)) or None,
         )
+
+        # External references first: an embedded xref becomes an ordinary
+        # block, so its content explodes along with everything else below.
+        drawing.xrefs, xref_warnings = resolve_xrefs(doc, path, source_file)
+        drawing.warnings.extend(xref_warnings)
+        drawing.layouts = read_layouts(doc, drawing.insunits)
 
         explosion = _ExplosionBudget()
         for entity in doc.modelspace():

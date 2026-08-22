@@ -467,6 +467,28 @@ export type LecturaParse = {
   insunits: number | null;
   layer_count: number;
   block_count: number;
+  layouts?: LecturaLayout[];
+  xrefs?: LecturaXref[];
+};
+
+export type LecturaViewport = {
+  scale_factor: number;
+  scale_label: string | null;
+  model_bbox: [number, number, number, number];
+};
+
+export type LecturaLayout = {
+  name: string;
+  viewports: LecturaViewport[];
+  texts: string[];
+  attributes: Record<string, string>;
+};
+
+export type LecturaXref = {
+  name: string;
+  path: string;
+  resolved_path: string | null;
+  status: "embedded" | "missing" | "failed";
 };
 
 export type LecturaSheet = {

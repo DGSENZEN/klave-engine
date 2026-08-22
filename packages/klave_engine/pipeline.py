@@ -148,6 +148,8 @@ def _summarize_parse(drawings: list[ParsedDrawing]) -> list[dict]:
                 "insunits": drawing.insunits,
                 "layer_count": len(drawing.layers),
                 "block_count": len(drawing.blocks),
+                "layouts": [layout.model_dump() for layout in drawing.layouts],
+                "xrefs": [xref.model_dump() for xref in drawing.xrefs],
             }
         )
     return summary
