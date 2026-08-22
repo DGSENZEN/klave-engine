@@ -1,7 +1,6 @@
 """Workspace catalog: seeding, edits, imports, and the APU equations."""
 
 import pytest
-
 from klave_engine.costing.apu import build_apu
 from klave_engine.costing.catalog import build_default_catalog
 from klave_engine.costing.catalog_store import SEED_SOURCE, get_catalog_store

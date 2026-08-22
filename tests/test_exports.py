@@ -2,15 +2,14 @@
 
 import io
 
-from openpyxl import load_workbook
-
 from klave_engine.costing.exports import build_presupuesto_workbook
-from klave_engine.costing.recompute import CostingInputs, build_cost_report
 from klave_engine.costing.models import CostingOverrides
+from klave_engine.costing.recompute import CostingInputs, build_cost_report
 from klave_engine.costing.reviews import ManualAdjustment, ProjectReviews
 from klave_engine.detection.results import Detection, DetectionType
 from klave_engine.dxf.units import DrawingUnits
 from klave_engine.graph.evidence import EvidencePacket
+from openpyxl import load_workbook
 
 
 def _detections() -> list[Detection]:

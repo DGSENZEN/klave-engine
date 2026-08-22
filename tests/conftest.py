@@ -1,7 +1,6 @@
 """Shared fixtures: isolated data dir, fresh settings, isolated stores."""
 
 import pytest
-
 from klave_engine.common import config as config_module
 
 
