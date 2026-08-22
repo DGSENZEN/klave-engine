@@ -92,3 +92,7 @@ def test_structural_detectors_skip_installation_sheets():
     assert not reads_as_structure("05 SANITARIO L.04.dwg")
     assert not reads_as_structure("09 GAS L.04.dwg")
     assert not reads_as_structure("12 CANCELERIA L.04.dwg")
+    # Uploaded names are slugified: word boundaries must survive underscores.
+    assert guess_discipline("03-09_gas_l_04_-_26_01_15.dwg") == "gas"
+    assert guess_discipline("04-08_aa_l_04_-_26_01_15.dwg") == "aire"
+    assert not reads_as_structure("01-04_hidraulico_l_04_-_26_01_30.dwg")

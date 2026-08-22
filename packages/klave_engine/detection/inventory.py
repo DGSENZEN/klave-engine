@@ -84,8 +84,12 @@ class Inventory(BaseModel):
 
 
 def guess_discipline(text: str) -> str | None:
+    """Discipline named by a file name or by layer/block words. Uploaded
+    files arrive slugified ("03-09_gas_l_04.dwg"), so separators become
+    spaces before word-boundary hints like GAS or AA are tried."""
+    words = re.sub(r"[_\-./]+", " ", text)
     for key, pattern in _DISCIPLINE_HINTS:
-        if pattern.search(text):
+        if pattern.search(words):
             return key
     return None
 
