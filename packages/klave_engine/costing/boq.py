@@ -117,11 +117,12 @@ def _contributing(concept: Concept, detections: list[Detection]) -> list[Detecti
 
 class _LineResult:
     def __init__(self, quantity: float, raw: float, dets: list[Detection],
-                 notes: list[str]) -> None:
+                 notes: list[str], by_view: dict[str, float] | None = None) -> None:
         self.quantity = quantity
         self.raw = raw
         self.dets = dets
         self.notes = notes
+        self.by_view = by_view or {}
 
 
 def _column_volume(
@@ -182,6 +183,17 @@ def _scoped_result(
     def in_views(dets: list[Detection], view_ids: set[str]) -> list[Detection]:
         return [d for d in dets if assignment.get(d.detection_id) in view_ids]
 
+    titles = {v.view_id: v.title for v in segmentation.plan_views()}
+
+    def per_view(dets: list[Detection]) -> dict[str, float]:
+        """The line's quantity split by planta, in presupuesto order."""
+        split: dict[str, float] = {}
+        for view in segmentation.plan_views():
+            raw = _raw_over(concept, in_views(dets, {view.view_id}), meters_factor)
+            if raw > 0:
+                split[titles[view.view_id]] = round(raw * concept.quantity_factor, 4)
+        return split
+
     scope = concept.view_scope
 
     if scope == ViewScope.COLUMN_VOLUME:
@@ -200,14 +212,15 @@ def _scoped_result(
             else "Sin planta de cimentación identificada; se usan todas las vistas de planta"
         )
         return _LineResult(round(raw * concept.quantity_factor, 6), raw,
-                           _contributing(concept, dets), [note])
+                           _contributing(concept, dets), [note], per_view(dets))
 
     if scope == ViewScope.SUPERSTRUCTURE_SUM:
         dets = in_views(matched_plan, superstructure_ids) or matched_plan
         raw = _raw_over(concept, dets, meters_factor)
         return _LineResult(round(raw * concept.quantity_factor, 6), raw,
                            _contributing(concept, dets),
-                           [f"Suma de plantas de superestructura ({len(dets)} detecciones)"])
+                           [f"Suma de plantas de superestructura ({len(dets)} detecciones)"],
+                           per_view(dets))
 
     if scope == ViewScope.FOOTPRINT_ONCE:
         best_raw = 0.0
@@ -219,11 +232,12 @@ def _scoped_result(
                 best_raw, best_dets = raw, dets
         return _LineResult(round(best_raw * concept.quantity_factor, 6), best_raw,
                            _contributing(concept, best_dets),
-                           ["Huella de la planta más grande (una sola vez)"])
+                           ["Huella de la planta más grande (una sola vez)"],
+                           per_view(best_dets))
 
     raw = _raw_over(concept, matched_plan, meters_factor)
     return _LineResult(round(raw * concept.quantity_factor, 6), raw,
-                       _contributing(concept, matched_plan), [])
+                       _contributing(concept, matched_plan), [], per_view(matched_plan))
 
 
 def generate_bill_of_quantities(
@@ -323,6 +337,7 @@ def generate_bill_of_quantities(
                 assumptions=concept.assumptions + result.notes + (
                     [f"P.U. adoptado de {apu.price_source}"] if apu.price_source else []
                 ),
+                by_view=result.by_view if len(result.by_view) > 1 else {},
             )
         )
 

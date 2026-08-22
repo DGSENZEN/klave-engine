@@ -200,13 +200,14 @@ def _caratula(
 
 
 def _presupuesto(ws: Worksheet, report: CostReport) -> None:
-    _header(ws, 1, ["Clave", "Concepto", "Unidad", "Cantidad", "P.U. (CD)", "Importe", "Confianza"])
+    columns = ["Clave", "Concepto", "Unidad", "Cantidad", "P.U. (CD)", "Importe", "Confianza"]
+    _header(ws, 1, [*columns, "Por nivel"])
     row = 2
     for phase, phase_total in report.boq.totals_by_phase.items():
         phase_cell = ws.cell(row=row, column=1, value=phase.upper())
         phase_cell.font = Font(bold=True, size=9, color=MUTED)
         phase_cell.fill = PatternFill("solid", fgColor=SOFT)
-        for col in range(2, 8):
+        for col in range(2, 9):
             ws.cell(row=row, column=col).fill = PatternFill("solid", fgColor=SOFT)
         total_cell = ws.cell(row=row, column=6, value=phase_total)
         total_cell.number_format = MONEY_FORMAT
@@ -220,6 +221,7 @@ def _presupuesto(ws: Worksheet, report: CostReport) -> None:
                 line.concept_code, line.description, line.unit,
                 line.quantity, line.unit_price, line.amount,
                 f"{line.confidence:.0%}",
+                "; ".join(f"{title}: {qty:,.2f}" for title, qty in line.by_view.items()),
             ]
             for col, value in enumerate(values, start=1):
                 cell = ws.cell(row=row, column=col, value=value)
@@ -246,7 +248,7 @@ def _presupuesto(ws: Worksheet, report: CostReport) -> None:
         amount_cell.number_format = MONEY_FORMAT
         amount_cell.font = font
         row += 1
-    _autosize(ws, [12, 62, 9, 13, 14, 16, 11])
+    _autosize(ws, [12, 62, 9, 13, 14, 16, 11, 48])
     ws.freeze_panes = "A2"
 
 

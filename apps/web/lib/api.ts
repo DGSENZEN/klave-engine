@@ -204,6 +204,8 @@ export type BoqLine = {
   confidence: number;
   source_detection_count: number;
   assumptions: string[];
+  /** Quantity per planta on a segmented sheet (view title → quantity). */
+  by_view?: Record<string, number>;
 };
 
 export type ApuLine = {

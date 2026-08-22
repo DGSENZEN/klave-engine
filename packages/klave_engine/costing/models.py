@@ -129,6 +129,9 @@ class BoqLine(BaseModel):
     source_detections: list[str] = Field(default_factory=list)
     confidence: float
     assumptions: list[str] = Field(default_factory=list)
+    # Quantity per plan view (view title → quantity in the concept unit) on
+    # a segmented sheet; empty on flat sheets and single-view scopes.
+    by_view: dict[str, float] = Field(default_factory=dict)
 
 
 class BillOfQuantities(BaseModel):

@@ -351,7 +351,22 @@ function PhaseGroup({
           className="border-b border-border transition-colors last:border-0 hover:bg-surface-2/60"
         >
           <Td className="font-mono text-xs text-muted">{l.concept_code}</Td>
-          <Td>{l.description}</Td>
+          <Td>
+            {l.description}
+            {l.by_view && Object.keys(l.by_view).length > 1 && (
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {Object.entries(l.by_view).map(([title, qty]) => (
+                  <span
+                    key={title}
+                    className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] tabular text-muted"
+                    title={`${title}: ${num(qty)} ${l.unit}`}
+                  >
+                    {title.replace(/^[A-Z]{1,3}-\d{2,4}[A-Z]?\s*·\s*/, "")} {num(qty)}
+                  </span>
+                ))}
+              </div>
+            )}
+          </Td>
           <Td align="right" className="tabular">
             {num(l.quantity)} <span className="text-xs text-muted">{l.unit}</span>
           </Td>
