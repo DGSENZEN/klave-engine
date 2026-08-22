@@ -99,6 +99,23 @@ def _classify(title: str) -> tuple[str, str | None]:
 
 def detect_frames(entities: list[NormalizedEntity]) -> list[SheetFrame]:
     texts = [e for e in entities if e.is_textual and e.text]
+    # A cajetín drawn as a block keeps its fields as attributes (plano:,
+    # clave:); each value reads as a text standing at the insert.
+    for e in entities:
+        attributes = (e.properties or {}).get("attributes") if e.block_name else None
+        if not isinstance(attributes, dict):
+            continue
+        for value in attributes.values():
+            if isinstance(value, str) and value.strip():
+                texts.append(
+                    e.model_copy(
+                        update={
+                            "entity_type": EntityType.text,
+                            "text": value.strip(),
+                            "properties": {**(e.properties or {}), "height": 0.0},
+                        }
+                    )
+                )
     codes = [e for e in texts if _SHEET_CODE_RE.match((e.text or "").strip().upper())]
     if len(codes) < 2:
         return []
@@ -141,7 +158,13 @@ def detect_frames(entities: list[NormalizedEntity]) -> list[SheetFrame]:
         strip = containing[0].bbox if len(containing) > 1 else outer.bbox
         inside = [t for t in texts if bbox_contains_point(outer.bbox, bbox_center(t.bbox))]
         in_strip = [t for t in inside if bbox_contains_point(strip, bbox_center(t.bbox))]
-        title = _pick_title(in_strip) or _pick_title(inside)
+        # The title lives in the cajetín: the strip, else the right-hand
+        # fifth of the frame. Never the drawing area — a note like "CAMBIO
+        # NIVEL EN LOSA" is not a sheet title.
+        cajetin_zone = [
+            t for t in inside if bbox_center(t.bbox)[0] >= outer.bbox[2] - 0.2 * width
+        ]
+        title = _pick_title(in_strip) or _pick_title(cajetin_zone)
         kind, level_key = _classify(title)
         notes: list[str] = []
         if kind == "plan":
