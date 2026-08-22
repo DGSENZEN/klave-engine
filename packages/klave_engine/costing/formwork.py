@@ -206,14 +206,14 @@ def compute_formwork(
     # Declared f'c vs priced f'c.
     declared = (specs or {}).get("concrete_fc") or {}
     for line in boq.lines:
-        family = _FC_FAMILY_BY_CONCEPT.get(line.concept_code)
-        if family is None or family not in declared:
+        fc_family = _FC_FAMILY_BY_CONCEPT.get(line.concept_code)
+        if fc_family is None or fc_family not in declared:
             continue
         priced = _FC_IN_TEXT.search(line.description)
-        sheet_fc = declared[family]
+        sheet_fc = declared[fc_family]
         if priced and int(priced.group(1)) != sheet_fc:
             note = (
-                f"El plano declara f'c={sheet_fc} para {family}; el concepto costea "
+                f"El plano declara f'c={sheet_fc} para {fc_family}; el concepto costea "
                 f"f'c={priced.group(1)}. Ajusta el concepto o su matriz."
             )
             line.assumptions.append(note)
