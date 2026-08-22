@@ -43,7 +43,7 @@ from klave_engine.dxf.blocks import summarize_blocks
 from klave_engine.dxf.entities import NormalizedEntity
 from klave_engine.dxf.layers import summarize_layers
 from klave_engine.dxf.parser import DxfParser, ParsedDrawing
-from klave_engine.dxf.units import UNKNOWN_UNIT, DrawingUnits, detect_units
+from klave_engine.dxf.units import UNKNOWN_UNIT, DrawingUnits, choose_insunits, detect_units
 from klave_engine.geometry.spatial_index import SpatialIndex
 from klave_engine.graph.builder import DrawingGraph, build_drawing_graph
 from klave_engine.ingestion.manifest import (
@@ -232,8 +232,16 @@ def run_full_pipeline(
     index = SpatialIndex(result.entities)
     write_json(processed / "spatial_index_summary.json", index.summary())
 
-    insunits = next((d.insunits for d in drawings if d.insunits), None)
+    # Twelve sheets in one project: the header unit of the sheets with the
+    # most geometry wins (an índice saying inches must not rescale the
+    # structural plan), and any disagreement is reported.
+    insunits, unit_notes = choose_insunits(
+        [(Path(d.source_file).name, d.insunits, len(d.entities)) for d in drawings]
+    )
     units = detect_units(insunits, result.entities, index.extent())
+    if unit_notes:
+        units.notes.extend(unit_notes)
+        result.warnings.extend(unit_notes)
     confirmed_unit = load_reviews(control_dir).verification.units_override
     if confirmed_unit:
         units = DrawingUnits(

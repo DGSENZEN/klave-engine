@@ -76,3 +76,15 @@ def test_a_lone_guess_is_shown_but_not_used(tmp_path):
     units = detect_units(insunits, drawing.entities, extent)
     assert units.unit == "cm" and units.confidence == 0.55
     assert not units.reliable and units.to_meters() is None
+
+
+def test_header_unit_of_the_sheets_with_most_geometry_wins():
+    from klave_engine.dxf.units import choose_insunits
+
+    chosen, notes = choose_insunits(
+        [("00 INDICE.dxf", 1, 300), ("02 ESTRUCTURAL.dxf", 6, 28_000), ("05 SANITARIO.dxf", 6, 800)]
+    )
+    assert chosen == 6
+    assert notes and "unidades distintas" in notes[0] and "00 INDICE" in notes[0]
+    assert choose_insunits([("a.dxf", None, 10)]) == (None, [])
+    assert choose_insunits([("a.dxf", 4, 10), ("b.dxf", 4, 5)]) == (4, [])

@@ -126,6 +126,36 @@ def _vote_from_text_heights(entities: list[NormalizedEntity]) -> tuple[str, str]
     return None
 
 
+def choose_insunits(
+    declared: list[tuple[str, int | None, int]],
+) -> tuple[int | None, list[str]]:
+    """One header unit for a multi-sheet project: the unit declared by the
+    sheets with the most geometry wins, and disagreement is said out loud.
+    `declared` is (sheet name, $INSUNITS or None, entity count)."""
+    weights: dict[int, int] = {}
+    names: dict[int, list[str]] = {}
+    for name, code, count in declared:
+        if not code:
+            continue
+        weights[code] = weights.get(code, 0) + max(count, 1)
+        names.setdefault(code, []).append(name)
+    if not weights:
+        return None, []
+    chosen = max(weights, key=lambda c: weights[c])
+    notes: list[str] = []
+    if len(weights) > 1:
+        listed = "; ".join(
+            f"{INSUNITS_TO_UNIT.get(code, str(code))}: {', '.join(n[:28] for n in sheets[:3])}"
+            for code, sheets in names.items()
+        )
+        notes.append(
+            "Las hojas declaran unidades distintas en su encabezado ("
+            f"{listed}); se usa la de las hojas con más geometría: "
+            f"{INSUNITS_TO_UNIT.get(chosen, str(chosen))}."
+        )
+    return chosen, notes
+
+
 def detect_units(
     insunits: int | None,
     entities: list[NormalizedEntity],
