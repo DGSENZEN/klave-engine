@@ -351,7 +351,9 @@ def _generadores(
                 cell.font = Font(italic=True, size=9, color=MUTED)
                 row += 1
         if line.by_view:
-            split = "; ".join(f"{title}: {qty:,.2f} {line.unit}" for title, qty in line.by_view.items())
+            split = "; ".join(
+                f"{title}: {qty:,.2f} {line.unit}" for title, qty in line.by_view.items()
+            )
             cell = ws.cell(row=row, column=1, value=f"Por planta: {split}")
             cell.font = Font(italic=True, size=9, color=MUTED)
             row += 1
