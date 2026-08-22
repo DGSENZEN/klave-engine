@@ -25,6 +25,7 @@ from apps.api.routes import (
     projects,
     reports,
     reviews,
+    workspace,
 )
 
 
@@ -67,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(exports.router)
     app.include_router(reviews.router)
     app.include_router(catalog.router)
+    app.include_router(workspace.router)
 
     @app.exception_handler(KlaveEngineError)
     async def klave_error_handler(request: Request, exc: KlaveEngineError) -> JSONResponse:

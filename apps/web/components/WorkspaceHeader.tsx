@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Books, Buildings, FolderOpen, UsersThree } from "@phosphor-icons/react";
+import { Books, Buildings, FolderOpen, GearSix, UsersThree } from "@phosphor-icons/react";
 import { peekBrowserActor } from "@/lib/collab";
 import { fetchAuthStatus } from "@/lib/session";
 import { Avatar } from "@/components/ui";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
-type Section = "proyectos" | "catalogo" | "equipo" | "cuenta";
+type Section = "proyectos" | "catalogo" | "equipo" | "taller" | "cuenta";
 
 /** One header pattern for every workspace-level screen: same places, same
  * order, everywhere — navigation should never need re-learning per page. */
@@ -23,7 +23,7 @@ export function WorkspaceHeader({ active }: { active: Section }) {
       if (!mounted) return;
       setActorName(status.user?.name || peekBrowserActor());
       setAvatarSrc(status.user?.picture ?? null);
-      setIsAdmin(status.user?.role === "admin");
+      setIsAdmin(status.mode === "open" || status.user?.role === "admin");
     });
     return () => {
       mounted = false;
@@ -62,6 +62,12 @@ export function WorkspaceHeader({ active }: { active: Section }) {
               <Link href="/equipo" className={linkClass("equipo")}>
                 <UsersThree size={15} weight="duotone" />
                 <span className="hidden sm:inline">Equipo</span>
+              </Link>
+            )}
+            {isAdmin && (
+              <Link href="/taller" className={linkClass("taller")}>
+                <GearSix size={15} weight="duotone" />
+                <span className="hidden sm:inline">Taller</span>
               </Link>
             )}
           </nav>

@@ -1,5 +1,6 @@
 import re
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
 
@@ -7,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, UploadFi
 from klave_engine.common.config import Settings
 from klave_engine.common.ids import short_uuid, slugify
 from klave_engine.conversion.libredwg import convert_dwg_to_dxf
+from klave_engine.costing.defaults import apply_workspace_defaults
 from klave_engine.ingestion.manifest import ConvertedFile, save_manifest
 from klave_engine.ingestion.project_loader import ingest_project
 from pydantic import BaseModel
@@ -122,34 +124,37 @@ def _grant_owner(request: Request, settings: Settings, project_id: str) -> None:
         pass
 
 
+def visible_project_filter(request: Request, store: ProjectStore) -> Callable[[str], bool]:
+    """Which projects the request may see: everything in open mode, every
+    project of their workspace for admins (projects that predate workspaces
+    belong to the default one), and explicit grants for members."""
+    user = _state_user(request)
+    if user is None:
+        return lambda project_id: True
+    try:
+        users = get_user_store(store.settings.users_database_url)
+        if user["role"] == "admin":
+            workspace_of = users.project_workspace_map()
+            admin_workspace = str(user["workspace_id"])
+            default_workspace = str(users.default_workspace()["workspace_id"])
+            return (
+                lambda project_id: workspace_of.get(project_id, default_workspace)
+                == admin_workspace
+            )
+        allowed = users.project_ids_for_user(str(user["user_id"]))
+    except UsersDbUnavailable:
+        allowed = set()
+    return lambda project_id: project_id in allowed
+
+
 @router.get("")
 def list_projects(request: Request, store: ProjectStore = Depends(get_store)) -> dict:
     """Projects with name + status; in protected mode, only those the user
-    can access (admins see everything)."""
-    user = _state_user(request)
-    allowed: set[str] | None = None
-    workspace_of: dict[str, str] | None = None
-    admin_workspace: str | None = None
-    if user is not None:
-        try:
-            users = get_user_store(store.settings.users_database_url)
-            if user["role"] == "admin":
-                # Admins see every project of their workspace; projects that
-                # predate workspaces belong to the default one.
-                workspace_of = users.project_workspace_map()
-                admin_workspace = str(user["workspace_id"])
-                default_workspace = str(users.default_workspace()["workspace_id"])
-            else:
-                allowed = users.project_ids_for_user(str(user["user_id"]))
-        except UsersDbUnavailable:
-            allowed = set()
+    can access (admins see their workspace)."""
+    keep = visible_project_filter(request, store)
     projects: list[dict] = []
     for project_id, root in store.list_projects().items():
-        if allowed is not None and project_id not in allowed:
-            continue
-        if workspace_of is not None and (
-            workspace_of.get(project_id, default_workspace) != admin_workspace
-        ):
+        if not keep(project_id):
             continue
         entry: dict[str, object] = {
             "project_id": project_id,
@@ -196,6 +201,7 @@ def create_project(
     )
     store.register(manifest.project_id, root)
     _grant_owner(request, settings, manifest.project_id)
+    apply_workspace_defaults(settings.data_dir, root / settings.processed_dir_name)
     BUS.publish(
         "project_created",
         project_id=manifest.project_id,
@@ -298,6 +304,7 @@ async def upload_project(
 
     store.register(project_id, root)
     _grant_owner(request, settings, project_id)
+    apply_workspace_defaults(settings.data_dir, root / settings.processed_dir_name)
     BUS.publish(
         "project_created",
         project_id=project_id,

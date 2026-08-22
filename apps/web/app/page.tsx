@@ -7,27 +7,34 @@ import {
   Archive,
   ArrowCounterClockwise,
   ArrowRight,
+  Books,
   CircleNotch,
   CloudArrowUp,
   FileText,
   MagnifyingGlass,
   PencilSimple,
   Plus,
+  SealCheck,
   Stack,
   Trash,
   UserSwitch,
+  UsersThree,
+  Warning,
 } from "@phosphor-icons/react";
 import {
   ApiError,
-  listProjects,
+  getWorkspaceOverview,
+  money,
   patchProject,
   removeProject,
   uploadProject,
-  type ProjectSummary,
+  type ProjectOverview,
+  type WorkspaceOverview,
 } from "@/lib/api";
 import { eventsUrl, getBrowserActor, parseProjectEvent } from "@/lib/collab";
 import { isProfileComplete } from "@/lib/identity";
 import { fetchAuthStatus } from "@/lib/session";
+import { timeAgo } from "@/lib/time";
 import {
   Badge,
   Button,
@@ -54,16 +61,34 @@ const STATUS_LABELS: Record<string, string> = {
   running: "Procesando",
   queued: "En cola",
   failed: "Con errores",
+  created: "Sin procesar",
 };
+
+/** Events that change what the home shows. */
+const REFRESH_EVENTS = new Set([
+  "project_created",
+  "project_updated",
+  "project_removed",
+  "job_updated",
+  "run_published",
+  "review_updated",
+  "costing_updated",
+  "user_pending",
+  "user_status_changed",
+  "catalog_updated",
+]);
+
+type Focus = "all" | "processing" | "failed" | "unverified";
 
 export default function Home() {
   const router = useRouter();
-  const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
+  const [overview, setOverview] = useState<WorkspaceOverview | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [focus, setFocus] = useState<Focus>("all");
   const [ready, setReady] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -104,35 +129,34 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!ready) return;
     let active = true;
+    let timer: number | null = null;
     function refresh() {
-      listProjects()
-        .then((items) => {
-          if (active) setProjects(items);
+      getWorkspaceOverview()
+        .then((data) => {
+          if (active) setOverview(data);
         })
         .catch(() => {
-          if (active) setProjects([]);
+          if (active) setError("No se pudo cargar el taller. ¿Está activo el servidor?");
         });
     }
     refresh();
     const source = new EventSource(eventsUrl(), { withCredentials: true });
     source.onmessage = (message) => {
       const event = parseProjectEvent(message);
-      if (
-        event?.type === "project_created" ||
-        event?.type === "project_updated" ||
-        event?.type === "project_removed" ||
-        event?.type === "job_updated" ||
-        event?.type === "run_published"
-      ) {
-        refresh();
+      if (event && REFRESH_EVENTS.has(event.type)) {
+        // Coalesce bursts (a processing run emits several events per second).
+        if (timer) window.clearTimeout(timer);
+        timer = window.setTimeout(refresh, 250);
       }
     };
     return () => {
       active = false;
+      if (timer) window.clearTimeout(timer);
       source.close();
     };
-  }, []);
+  }, [ready]);
 
   async function handleFiles(list: FileList | File[]) {
     const files = [...list].filter((f) => /\.(dwg|dxf)$/i.test(f.name));
@@ -155,19 +179,28 @@ export default function Home() {
     }
   }
 
+  const projects = overview?.projects ?? null;
+
   const filtered = useMemo(() => {
     if (!projects) return null;
     const q = query.trim().toLowerCase();
     return projects.filter((p) => {
       if (Boolean(p.archived) !== showArchived) return false;
+      if (focus === "processing" && !(p.status === "queued" || p.status === "running")) return false;
+      if (focus === "failed" && p.status !== "failed") return false;
+      if (focus === "unverified" && !(p.status === "processed" && !p.verified)) return false;
       if (!q) return true;
       return (
         p.name.toLowerCase().includes(q) || (p.client ?? "").toLowerCase().includes(q)
       );
     });
-  }, [projects, query, showArchived]);
+  }, [projects, query, showArchived, focus]);
 
   const archivedCount = projects?.filter((p) => p.archived).length ?? 0;
+
+  function refreshNow() {
+    getWorkspaceOverview().then(setOverview).catch(() => {});
+  }
 
   if (!ready) {
     return (
@@ -226,9 +259,13 @@ export default function Home() {
 
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-[1.4rem] font-semibold leading-tight">Proyectos</h1>
+            <h1 className="text-[1.4rem] font-semibold leading-tight">
+              {overview?.workspace.name && overview.mode === "protected"
+                ? overview.workspace.name
+                : "Proyectos"}
+            </h1>
             <p className="mt-0.5 text-sm text-muted">
-              Sube un plano o arrastra varias hojas a esta ventana.
+              Sube un plano o arrastra varias hojas a esta ventana: un proyecto por obra.
             </p>
           </div>
           <Button variant="primary" onClick={() => inputRef.current?.click()} disabled={uploading}>
@@ -249,6 +286,8 @@ export default function Home() {
             <Callout tone="danger">{error}</Callout>
           </div>
         )}
+
+        {overview && <AttentionStrip overview={overview} focus={focus} onFocus={setFocus} />}
 
         {projects !== null && projects.length > 0 && (
           <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -315,9 +354,23 @@ export default function Home() {
           </div>
         ) : filtered && filtered.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted">
-            {showArchived
-              ? "No hay proyectos archivados que coincidan."
-              : "Ningún proyecto coincide con la búsqueda."}
+            {focus !== "all"
+              ? "Nada pendiente en este filtro."
+              : showArchived
+                ? "No hay proyectos archivados que coincidan."
+                : "Ningún proyecto coincide con la búsqueda."}
+            {focus !== "all" && (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  onClick={() => setFocus("all")}
+                  className="font-medium text-foreground hover:underline"
+                >
+                  Ver todos
+                </button>
+              </>
+            )}
           </p>
         ) : (
           <div className="space-y-2">
@@ -325,9 +378,7 @@ export default function Home() {
               <ProjectRow
                 key={project.project_id}
                 project={project}
-                onChanged={() =>
-                  listProjects().then(setProjects).catch(() => {})
-                }
+                onChanged={refreshNow}
                 onError={setError}
               />
             ))}
@@ -338,12 +389,115 @@ export default function Home() {
   );
 }
 
+/* --------------------------------------------------------------- attention -- */
+
+function AttentionStrip({
+  overview,
+  focus,
+  onFocus,
+}: {
+  overview: WorkspaceOverview;
+  focus: Focus;
+  onFocus: (focus: Focus) => void;
+}) {
+  const { attention } = overview;
+  const chips: {
+    key: Focus | "users" | "catalog";
+    label: string;
+    icon: React.ReactNode;
+    tone: "accent" | "warning" | "default";
+    href?: string;
+  }[] = [];
+  if (attention.processing > 0) {
+    chips.push({
+      key: "processing",
+      label: attention.processing === 1 ? "1 procesando" : `${attention.processing} procesando`,
+      icon: <CircleNotch size={14} className="animate-spin" />,
+      tone: "accent",
+    });
+  }
+  if (attention.failed > 0) {
+    chips.push({
+      key: "failed",
+      label: attention.failed === 1 ? "1 con errores" : `${attention.failed} con errores`,
+      icon: <Warning size={14} weight="bold" />,
+      tone: "warning",
+    });
+  }
+  if (attention.unverified > 0) {
+    chips.push({
+      key: "unverified",
+      label:
+        attention.unverified === 1 ? "1 sin verificar" : `${attention.unverified} sin verificar`,
+      icon: <SealCheck size={14} weight="bold" />,
+      tone: "default",
+    });
+  }
+  if (attention.pending_users) {
+    chips.push({
+      key: "users",
+      label:
+        attention.pending_users === 1
+          ? "1 cuenta por aprobar"
+          : `${attention.pending_users} cuentas por aprobar`,
+      icon: <UsersThree size={14} weight="bold" />,
+      tone: "warning",
+      href: "/equipo",
+    });
+  }
+  if (attention.stale_insumos > 0 && overview.is_admin) {
+    chips.push({
+      key: "catalog",
+      label: `${attention.stale_insumos} precios con más de ${attention.stale_threshold_months} meses`,
+      icon: <Books size={14} weight="bold" />,
+      tone: "default",
+      href: "/catalogo",
+    });
+  }
+  if (chips.length === 0) return null;
+
+  const classes = (tone: "accent" | "warning" | "default", active: boolean) =>
+    `inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors ${
+      active
+        ? "border-foreground bg-foreground text-background"
+        : tone === "accent"
+          ? "border-accent/30 bg-accent-soft text-accent hover:border-accent/60"
+          : tone === "warning"
+            ? "border-warning/30 bg-warning-soft text-warning hover:border-warning/60"
+            : "border-border bg-surface text-foreground hover:bg-surface-2"
+    }`;
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      <span className="microlabel mr-1">Atención</span>
+      {chips.map((chip) =>
+        chip.href ? (
+          <Link key={chip.key} href={chip.href} className={classes(chip.tone, false)}>
+            {chip.icon} {chip.label} <ArrowRight size={12} weight="bold" />
+          </Link>
+        ) : (
+          <button
+            key={chip.key}
+            type="button"
+            onClick={() => onFocus(focus === chip.key ? "all" : (chip.key as Focus))}
+            className={classes(chip.tone, focus === chip.key)}
+          >
+            {chip.icon} {chip.label}
+          </button>
+        ),
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------- row -- */
+
 function ProjectRow({
   project,
   onChanged,
   onError,
 }: {
-  project: ProjectSummary;
+  project: ProjectOverview;
   onChanged: () => void;
   onError: (message: string) => void;
 }) {
@@ -387,6 +541,10 @@ function ProjectRow({
     }
   }
 
+  const processed = project.status === "processed";
+  const steps = project.verification;
+  const doneSteps = [steps.units, steps.detections, steps.assumptions].filter(Boolean).length;
+
   const inner = (
     <>
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-2">
@@ -409,8 +567,20 @@ function ProjectRow({
           />
         ) : (
           <>
-            <div className="truncate font-medium">{project.name}</div>
-            <div className="mt-0.5 flex items-center gap-2 text-xs text-muted">
+            <div className="flex items-center gap-2">
+              <span className="truncate font-medium">{project.name}</span>
+              {processed &&
+                (project.verified ? (
+                  <Badge tone="success">
+                    <SealCheck size={12} weight="bold" /> Verificado
+                  </Badge>
+                ) : (
+                  <span title="Unidades, detecciones y supuestos por confirmar">
+                    <Badge tone="default">{doneSteps}/3 verificado</Badge>
+                  </span>
+                ))}
+            </div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted">
               {project.client && <span className="truncate">{project.client}</span>}
               {project.client && <span className="text-faint">·</span>}
               {(project.sheet_count ?? 0) > 1 && (
@@ -419,11 +589,25 @@ function ProjectRow({
                 </span>
               )}
               {(project.sheet_count ?? 0) > 1 && <span className="text-faint">·</span>}
-              {project.created_at && <span>{formatDate(project.created_at)}</span>}
+              {project.last_activity && <span>{timeAgo(project.last_activity)}</span>}
+              {project.job_error && (
+                <>
+                  <span className="text-faint">·</span>
+                  <span className="truncate text-warning">{project.job_error}</span>
+                </>
+              )}
             </div>
           </>
         )}
       </div>
+      {project.grand_total != null && (
+        <div className="hidden text-right sm:block">
+          <div className="font-display text-sm font-semibold tabular">
+            {money(project.grand_total, project.currency)}
+          </div>
+          <div className="microlabel">total</div>
+        </div>
+      )}
       <Badge tone={STATUS_TONE[project.status ?? ""] ?? "default"}>
         {STATUS_LABELS[project.status ?? ""] ?? project.status ?? "—"}
       </Badge>
@@ -523,10 +707,4 @@ function ProjectRow({
       {dialog}
     </>
   );
-}
-
-function formatDate(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short" }).format(date);
 }

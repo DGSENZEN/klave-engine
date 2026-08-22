@@ -763,3 +763,62 @@ export const money2 = (n: number, currency = "MXN") =>
 
 export const num = (n: number, digits = 2) =>
   new Intl.NumberFormat("es-MX", { maximumFractionDigits: digits }).format(n);
+
+// ---- Workspace (home overview, taller defaults) ----
+
+export type ProjectOverview = ProjectSummary & {
+  verified: boolean;
+  verification: { units: boolean; detections: boolean; assumptions: boolean };
+  excluded_count: number;
+  adjustment_count: number;
+  grand_total: number | null;
+  currency: string;
+  last_activity: string | null;
+  job_error: string | null;
+};
+
+export type WorkspaceOverview = {
+  projects: ProjectOverview[];
+  attention: {
+    processing: number;
+    failed: number;
+    unverified: number;
+    pending_users: number | null;
+    stale_insumos: number;
+    stale_threshold_months: number;
+  };
+  workspace: { slug: string; name: string };
+  mode: "open" | "protected";
+  is_admin: boolean;
+};
+
+export const getWorkspaceOverview = () => getJSON<WorkspaceOverview>("/workspace/overview");
+
+export type WorkspaceDefaults = {
+  config: CostingConfigFull;
+  customized: boolean;
+  updated_by: string | null;
+  updated_at: string | null;
+};
+
+export const getWorkspaceDefaults = () => getJSON<WorkspaceDefaults>("/workspace/defaults");
+
+export const saveWorkspaceDefaults = (config: CostingConfigFull, actor?: string) =>
+  putJSON<WorkspaceDefaults>(
+    "/workspace/defaults",
+    { config },
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export const resetWorkspaceDefaults = (actor?: string) =>
+  fetch(`${API_BASE}/workspace/defaults`, {
+    method: "DELETE",
+    credentials: "include",
+    headers: actor ? { "X-Actor": actor } : undefined,
+  }).then(async (res) => {
+    if (!res.ok) throw new ApiError(res.status, "/workspace/defaults", undefined);
+    return res.json() as Promise<WorkspaceDefaults>;
+  });
+
+export const renameWorkspace = (name: string) =>
+  putJSON<{ slug: string; name: string }>("/workspace", { name });

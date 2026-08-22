@@ -29,31 +29,8 @@ import {
   Th,
 } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
+import { CONFIG_LABELS, ConfigGroup } from "@/components/CostingConfigForm";
 import { actorLabel } from "@/lib/collab";
-
-const LABELS: Record<string, string> = {
-  // assumptions
-  column_section_m2: "Sección de columna (m²)",
-  column_height_m: "Altura de columna (m)",
-  beam_section_m2: "Sección de trabe (m²)",
-  wall_height_m: "Altura de muro (m)",
-  footing_depth_m: "Peralte de zapata (m)",
-  excavation_depth_m: "Prof. excavación (m)",
-  excavation_swell_factor: "Factor abundamiento",
-  // indirects
-  field_indirects_pct: "Indirectos de campo (%)",
-  office_indirects_pct: "Indirectos de oficina (%)",
-  financing_pct: "Financiamiento (%)",
-  profit_pct: "Utilidad (%)",
-  additional_charges_pct: "Cargos adicionales (%)",
-  contingency_pct: "Contingencia (%)",
-  // financial
-  advance_payment_pct: "Anticipo (%)",
-  retention_pct: "Retención (%)",
-  annual_operation_pct: "Operación anual (%)",
-  annual_maintenance_pct: "Mantenimiento anual (%)",
-  operating_horizon_years: "Horizonte O&M (años)",
-};
 
 const TYPE_LABELS: Record<string, string> = {
   material: "Material",
@@ -171,7 +148,7 @@ export default function ParametrosPage() {
     setConfig((c) => (c ? { ...c, [group]: { ...(c[group] as object), [key]: value } } : c));
     setDirty(true);
     setConflict(null);
-    announceEdit(LABELS[key] ?? key);
+    announceEdit(CONFIG_LABELS[key] ?? key);
   }
   function setPrice(code: string, label: string, value: number) {
     setPrices((p) => ({ ...p, [code]: value }));
@@ -352,19 +329,19 @@ export default function ParametrosPage() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Group
+        <ConfigGroup
           title="Supuestos geométricos"
           group="assumptions"
           config={config}
           onChange={setField}
         />
-        <Group
+        <ConfigGroup
           title="Indirectos y sobrecosto"
           group="indirects"
           config={config}
           onChange={setField}
         />
-        <Group title="Financiero" group="financial" config={config} onChange={setField} />
+        <ConfigGroup title="Financiero" group="financial" config={config} onChange={setField} />
       </div>
 
       <Card className="mt-4 overflow-hidden">
@@ -456,39 +433,6 @@ export default function ParametrosPage() {
         </div>
       </div>
     </div>
-  );
-}
-
-function Group({
-  title,
-  group,
-  config,
-  onChange,
-}: {
-  title: string;
-  group: keyof CostingConfigFull;
-  config: CostingConfigFull;
-  onChange: (g: keyof CostingConfigFull, k: string, v: number) => void;
-}) {
-  const entries = Object.entries(config[group] as Record<string, number>);
-  return (
-    <Card className="p-5">
-      <SectionTitle>{title}</SectionTitle>
-      <div className="space-y-2.5">
-        {entries.map(([key, value]) => (
-          <label key={key} className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-muted">{LABELS[key] ?? key}</span>
-            <Input
-              type="number"
-              step="any"
-              value={value}
-              onChange={(e) => onChange(group, key, Number(e.target.value))}
-              className="w-28 px-2 py-1 text-right tabular"
-            />
-          </label>
-        ))}
-      </div>
-    </Card>
   );
 }
 

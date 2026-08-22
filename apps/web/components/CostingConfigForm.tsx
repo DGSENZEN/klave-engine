@@ -1,0 +1,76 @@
+"use client";
+
+import type { CostingConfigFull } from "@/lib/api";
+import { Card, Input, SectionTitle } from "@/components/ui";
+
+/** One vocabulary for costing parameters, shared by the project page and
+ * the taller defaults so the same field reads the same everywhere. */
+export const CONFIG_LABELS: Record<string, string> = {
+  // assumptions
+  column_section_m2: "Sección de columna (m²)",
+  column_height_m: "Altura de columna (m)",
+  beam_section_m2: "Sección de trabe (m²)",
+  wall_height_m: "Altura de muro (m)",
+  footing_depth_m: "Peralte de zapata (m)",
+  excavation_depth_m: "Prof. excavación (m)",
+  excavation_swell_factor: "Factor abundamiento",
+  // indirects
+  field_indirects_pct: "Indirectos de campo (%)",
+  office_indirects_pct: "Indirectos de oficina (%)",
+  financing_pct: "Financiamiento (%)",
+  profit_pct: "Utilidad (%)",
+  additional_charges_pct: "Cargos adicionales (%)",
+  contingency_pct: "Contingencia (%)",
+  // schedule
+  workdays_per_month: "Días hábiles por mes",
+  intra_phase_overlap_pct: "Traslape entre actividades (%)",
+  phase_overlap_pct: "Traslape entre fases (%)",
+  crews_per_activity: "Cuadrillas por actividad",
+  per_level_cycle_days: "Ciclo por nivel (días)",
+  // financial
+  advance_payment_pct: "Anticipo (%)",
+  retention_pct: "Retención (%)",
+  annual_operation_pct: "Operación anual (%)",
+  annual_maintenance_pct: "Mantenimiento anual (%)",
+  operating_horizon_years: "Horizonte O&M (años)",
+};
+
+export const CONFIG_GROUPS: { group: keyof CostingConfigFull; title: string }[] = [
+  { group: "assumptions", title: "Supuestos geométricos" },
+  { group: "indirects", title: "Indirectos y sobrecosto" },
+  { group: "schedule", title: "Programa de obra" },
+  { group: "financial", title: "Financiero" },
+];
+
+export function ConfigGroup({
+  title,
+  group,
+  config,
+  onChange,
+}: {
+  title: string;
+  group: keyof CostingConfigFull;
+  config: CostingConfigFull;
+  onChange: (g: keyof CostingConfigFull, k: string, v: number) => void;
+}) {
+  const entries = Object.entries(config[group] as Record<string, number>);
+  return (
+    <Card className="p-5">
+      <SectionTitle>{title}</SectionTitle>
+      <div className="space-y-2.5">
+        {entries.map(([key, value]) => (
+          <label key={key} className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-muted">{CONFIG_LABELS[key] ?? key}</span>
+            <Input
+              type="number"
+              step="any"
+              value={value}
+              onChange={(e) => onChange(group, key, Number(e.target.value))}
+              className="w-28 px-2 py-1 text-right tabular"
+            />
+          </label>
+        ))}
+      </div>
+    </Card>
+  );
+}

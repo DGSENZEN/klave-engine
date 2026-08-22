@@ -303,6 +303,20 @@ class UserStore:
             ).fetchone()
         return dict(row) if row else None
 
+    def rename_workspace(self, workspace_id: str, name: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "UPDATE workspaces SET name = %s WHERE workspace_id = %s RETURNING *",
+                (name.strip(), workspace_id),
+            ).fetchone()
+        if row is None:
+            raise ValueError("no existe el taller")
+        if self._default_workspace and str(self._default_workspace["workspace_id"]) == str(
+            workspace_id
+        ):
+            self._default_workspace = dict(row)
+        return dict(row)
+
     def list_workspaces(self) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
