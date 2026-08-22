@@ -134,17 +134,29 @@ def _measurement_parts(detection: Detection, unit_to_m: float | None) -> list[st
     section = props.get("section_area_du2")
     if isinstance(section, (int, float)) and section > 0 and unit_to_m is not None:
         side_cm = math.sqrt(section) * unit_to_m * 100
-        source = "medida del marcador" if props.get("section_source") else "medida"
-        parts.append(f"sección ≈ {side_cm:.0f}×{side_cm:.0f} cm ({source})")
+        source_key = str(props.get("section_source") or "")
+        source = {
+            "cuadro": "según cuadro/detalle del plano",
+            "cota": "acotada en el plano",
+        }.get(source_key, "medida del marcador" if source_key else "medida")
+        declared = props.get("section_cm")
+        if isinstance(declared, str) and "x" in declared:
+            parts.append(f"sección {declared.replace('x', '×')} cm ({source})")
+        else:
+            parts.append(f"sección ≈ {side_cm:.0f}×{side_cm:.0f} cm ({source})")
     length = props.get("estimated_length")
     if isinstance(length, (int, float)) and length > 0:
         parts.append(f"longitud ≈ {_fmt_len(length, unit_to_m)}")
     thickness = props.get("estimated_thickness")
     if isinstance(thickness, (int, float)) and thickness > 0:
-        parts.append(f"espesor ≈ {_fmt_len(thickness, unit_to_m)}")
+        acotado = " (acotado)" if props.get("thickness_source") == "cota" else ""
+        parts.append(f"espesor ≈ {_fmt_len(thickness, unit_to_m)}{acotado}")
     area = props.get("estimated_area")
     if isinstance(area, (int, float)) and area > 0:
-        parts.append(f"área ≈ {_fmt_area(area, unit_to_m)}")
+        if props.get("area_source") == "cota":
+            parts.append(f"área {_fmt_area(area, unit_to_m)} (acotada en el plano)")
+        else:
+            parts.append(f"área ≈ {_fmt_area(area, unit_to_m)}")
     axis = props.get("axis")
     if isinstance(axis, str) and axis in _AXIS_ES:
         grid_length = props.get("length")

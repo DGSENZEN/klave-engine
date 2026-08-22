@@ -25,6 +25,7 @@ from klave_engine.costing.report import (
     generate_cost_report,
 )
 from klave_engine.costing.reviews import filter_excluded, load_reviews
+from klave_engine.detection.dimension_links import link_dimensions
 from klave_engine.detection.dimensions import build_dimension_inventory
 from klave_engine.detection.results import Detection
 from klave_engine.detection.schedules import apply_schedule, build_schedule_inventory
@@ -251,6 +252,14 @@ def run_full_pipeline(
     stamped = apply_schedule(result.detections, schedule, units.to_meters())
     if stamped:
         schedule.notes.append(f"{stamped} detecciones tomaron su sección del plano.")
+    # Then the engineer's cotas: footing sizes, wall thickness, and sections
+    # for marks no cuadro covered.
+    links = link_dimensions(result.detections, result.entities, units.to_meters())
+    if links.total:
+        schedule.notes.append(
+            f"Cotas asociadas a elementos: {links.footings} zapatas, "
+            f"{links.columns} columnas/castillos, {links.walls} muros."
+        )
     write_json(processed / "schedules.json", schedule)
     enrich_detections(result.detections, units.to_meters())
 
