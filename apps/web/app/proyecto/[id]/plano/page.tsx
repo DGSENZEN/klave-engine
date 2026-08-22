@@ -38,6 +38,10 @@ export default function PlanoPage() {
   const { id } = useParams<{ id: string }>();
   const [geom, setGeom] = useState<Geometry | null>(null);
   const [visibleLayers, setVisibleLayers] = useState<Set<string>>(new Set());
+  const [focus, setFocus] = useState<{
+    bbox: [number, number, number, number];
+    nonce: number;
+  } | null>(null);
   const [visibleFamilies, setVisibleFamilies] = useState<Set<string>>(new Set());
   const [minConfidence, setMinConfidence] = useState(0);
   const [selected, setSelected] = useState<DetectionOverlay | null>(null);
@@ -231,6 +235,7 @@ export default function PlanoPage() {
       hiddenSheets={hiddenSheets}
       onToggleFamily={(f) => toggle(visibleFamilies, f, setVisibleFamilies)}
       onToggleLayer={(l) => toggle(visibleLayers, l, setVisibleLayers)}
+      onFocusFrame={(bbox) => setFocus((f) => ({ bbox, nonce: (f?.nonce ?? 0) + 1 }))}
       onMinConfidence={setMinConfidence}
       onToggleExcluded={() => setShowExcluded((current) => !current)}
       onToggleSheet={(index) =>
@@ -309,6 +314,7 @@ export default function PlanoPage() {
             onWorldClick={(point) =>
               setMeasurePoints((current) => [...current, point])
             }
+            focus={focus}
           />
           {measureMode && (
             <MeasureResult
@@ -641,6 +647,7 @@ function FilterPanel({
   hiddenSheets,
   onToggleFamily,
   onToggleLayer,
+  onFocusFrame,
   onMinConfidence,
   onToggleExcluded,
   onToggleSheet,
@@ -654,6 +661,7 @@ function FilterPanel({
   hiddenSheets: Set<number>;
   onToggleFamily: (family: string) => void;
   onToggleLayer: (layer: string) => void;
+  onFocusFrame: (bbox: [number, number, number, number]) => void;
   onMinConfidence: (value: number) => void;
   onToggleExcluded: () => void;
   onToggleSheet: (index: number) => void;
@@ -736,6 +744,29 @@ function FilterPanel({
         />
         <span className="flex-1">Mostrar excluidas</span>
       </label>
+
+      {(geom.frames ?? []).length > 0 && (
+        <>
+          <h3 className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-muted">
+            Hojas ({(geom.frames ?? []).length})
+          </h3>
+          <div className="space-y-0.5">
+            {(geom.frames ?? []).map((f, i) => (
+              <button
+                key={`${f.code}-${i}`}
+                type="button"
+                onClick={() => onFocusFrame(f.bbox)}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm transition hover:bg-surface-2"
+                title={f.title || f.code}
+              >
+                <span className="font-mono text-xs text-muted">{f.code || "—"}</span>
+                <span className="flex-1 truncate">{f.title || "(sin título)"}</span>
+                {f.kind === "plan" && <Badge tone="accent">planta</Badge>}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       <h3 className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-muted">
         Capas ({visibleLayers.size}/{geom.layers.length})

@@ -160,9 +160,38 @@ export type Geometry = {
   layers: { name: string; count: number }[];
   shapes: (
     | { t: "path"; layer: string; pts: [number, number][]; closed: boolean; sheet?: number }
+    | { t: "hatch"; layer: string; pts: [number, number][]; sheet?: number }
     | { t: "circle"; layer: string; c: [number, number]; r: number; sheet?: number }
+    | {
+        t: "arc";
+        layer: string;
+        c: [number, number];
+        r: number;
+        a0: number;
+        a1: number;
+        sheet?: number;
+      }
     | { t: "box"; layer: string; bbox: [number, number, number, number]; sheet?: number }
+    | {
+        t: "text";
+        layer: string;
+        p: [number, number];
+        h: number;
+        rot: number;
+        s: string;
+        multi: boolean;
+        sheet?: number;
+      }
+    | { t: "dim"; layer: string; pts: [number, number][]; label: string; sheet?: number }
   )[];
+  /** Sheet frames found on the drawing (plantas and detalles), for navigation. */
+  frames?: {
+    code: string;
+    title: string;
+    kind: string;
+    bbox: [number, number, number, number];
+    source_file: string;
+  }[];
   detections: DetectionOverlay[];
   sheets: SheetInfo[];
   units: { unit: string; to_meters: number | null } | null;

@@ -13,8 +13,8 @@ from klave_engine.dxf.normalizer import normalize_entity
 
 logger = get_logger(__name__)
 
-MAX_CHILDREN_PER_INSERT = 300
-MAX_EXPLODED_PER_FILE = 15_000
+MAX_CHILDREN_PER_INSERT = 20_000
+MAX_EXPLODED_PER_FILE = 400_000
 
 
 @dataclass

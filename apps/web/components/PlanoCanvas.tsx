@@ -88,6 +88,8 @@ export function PlanoCanvas({
   /** Active measurement: clicks add world points instead of selecting. */
   measure?: MeasureState | null;
   onWorldClick?: (point: [number, number]) => void;
+  /** Fit the view to a world bbox whenever `nonce` changes (sheet navigation). */
+  focus?: { bbox: [number, number, number, number]; nonce: number } | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -113,6 +115,26 @@ export function PlanoCanvas({
     };
     force((n) => n + 1);
   }, [minx, miny, maxx, maxy]);
+
+  const fitTo = useCallback((bbox: [number, number, number, number]) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    const spanX = Math.max(bbox[2] - bbox[0], 1e-6);
+    const spanY = Math.max(bbox[3] - bbox[1], 1e-6);
+    const scale = Math.min(w / spanX, h / spanY) * 0.95;
+    viewRef.current = {
+      scale,
+      ox: (w - spanX * scale) / 2 - bbox[0] * scale,
+      oy: (h + spanY * scale) / 2 + bbox[1] * scale,
+    };
+    force((n) => n + 1);
+  }, []);
+
+  useEffect(() => {
+    if (focus) fitTo(focus.bbox);
+  }, [focus, fitTo]);
 
   // World → screen
   const toScreen = (x: number, y: number, v: View): [number, number] => [
@@ -142,12 +164,16 @@ export function PlanoCanvas({
     ctx.fillStyle = cssVar("--canvas-bg") || "#ffffff";
     ctx.fillRect(0, 0, w, h);
 
-    // Base geometry
+    // Base geometry: linework first, then hatches, cotas and texts so the
+    // sheet reads like the sheet — not a skeleton of it.
+    const stroke = cssVar("--canvas-stroke") || "#cbd5e1";
+    const ink = cssVar("--canvas-ink") || cssVar("--foreground") || "#334155";
     ctx.lineWidth = 0.7;
-    ctx.strokeStyle = cssVar("--canvas-stroke") || "#cbd5e1";
+    ctx.strokeStyle = stroke;
     ctx.beginPath();
     for (const s of geometry.shapes) {
       if (!visibleLayers.has(s.layer)) continue;
+      if (s.t === "hatch" || s.t === "text" || s.t === "dim" || s.t === "arc") continue;
       if (s.t === "path") {
         const pts = s.pts;
         for (let i = 0; i < pts.length; i++) {
@@ -163,13 +189,86 @@ export function PlanoCanvas({
         const [cx, cy] = toScreen(s.c[0], s.c[1], v);
         ctx.moveTo(cx + s.r * v.scale, cy);
         ctx.arc(cx, cy, Math.max(s.r * v.scale, 0.5), 0, Math.PI * 2);
-      } else {
+      } else if (s.t === "box") {
         const [x1, y1] = toScreen(s.bbox[0], s.bbox[1], v);
         const [x2, y2] = toScreen(s.bbox[2], s.bbox[3], v);
         ctx.rect(x1, y1, x2 - x1, y2 - y1);
       }
     }
     ctx.stroke();
+
+    // Arcs (DXF angles are counter-clockwise in degrees; the screen Y is flipped).
+    ctx.beginPath();
+    for (const s of geometry.shapes) {
+      if (s.t !== "arc" || !visibleLayers.has(s.layer)) continue;
+      const [cx, cy] = toScreen(s.c[0], s.c[1], v);
+      const r = Math.max(s.r * v.scale, 0.5);
+      const a0 = (-s.a0 * Math.PI) / 180;
+      const a1 = (-s.a1 * Math.PI) / 180;
+      ctx.moveTo(cx + r * Math.cos(a0), cy + r * Math.sin(a0));
+      ctx.arc(cx, cy, r, a0, a1, true);
+    }
+    ctx.stroke();
+
+    // Hatches: the outline with a faint fill.
+    ctx.fillStyle = `${stroke}33`;
+    for (const s of geometry.shapes) {
+      if (s.t !== "hatch" || !visibleLayers.has(s.layer)) continue;
+      ctx.beginPath();
+      s.pts.forEach(([px, py], i) => {
+        const [sx, sy] = toScreen(px, py, v);
+        if (i === 0) ctx.moveTo(sx, sy);
+        else ctx.lineTo(sx, sy);
+      });
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // Cotas: the measured span and its value, once there is room to read it.
+    const cotaColor = cssVar("--canvas-cota") || "#94a3b8";
+    ctx.strokeStyle = cotaColor;
+    ctx.fillStyle = cotaColor;
+    ctx.beginPath();
+    for (const s of geometry.shapes) {
+      if (s.t !== "dim" || !visibleLayers.has(s.layer) || s.pts.length < 2) continue;
+      const [x1, y1] = toScreen(s.pts[0][0], s.pts[0][1], v);
+      const [x2, y2] = toScreen(s.pts[1][0], s.pts[1][1], v);
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    }
+    ctx.stroke();
+    if (v.scale > 12) {
+      ctx.font = "10px ui-sans-serif, system-ui";
+      ctx.textAlign = "center";
+      for (const s of geometry.shapes) {
+        if (s.t !== "dim" || !visibleLayers.has(s.layer) || !s.label || s.pts.length < 2) continue;
+        const [x1, y1] = toScreen(s.pts[0][0], s.pts[0][1], v);
+        const [x2, y2] = toScreen(s.pts[1][0], s.pts[1][1], v);
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        ctx.save();
+        ctx.translate((x1 + x2) / 2, (y1 + y2) / 2);
+        ctx.rotate(Math.abs(angle) > Math.PI / 2 ? angle + Math.PI : angle);
+        ctx.fillText(s.label, 0, -3);
+        ctx.restore();
+      }
+      ctx.textAlign = "start";
+    }
+
+    // Texts: drawn at their real height once it is legible on screen.
+    ctx.fillStyle = ink;
+    for (const s of geometry.shapes) {
+      if (s.t !== "text" || !visibleLayers.has(s.layer)) continue;
+      const px = s.h * v.scale;
+      if (px < 4) continue;
+      const [sx, sy] = toScreen(s.p[0], s.p[1], v);
+      ctx.save();
+      ctx.translate(sx, sy);
+      if (s.rot) ctx.rotate((-s.rot * Math.PI) / 180);
+      ctx.font = `${Math.min(px, 64)}px ui-sans-serif, system-ui`;
+      ctx.fillText(s.s, 0, 0);
+      ctx.restore();
+    }
 
     // Detection overlays
     const showLabels = v.scale > 6;

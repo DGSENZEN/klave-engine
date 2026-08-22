@@ -47,23 +47,46 @@ def _sheet_index(store: ProjectStore, project_id: str) -> tuple[list[dict], dict
 
 
 def _renderable(entity: dict) -> dict | None:
+    """What the engineer sees on the sheet: linework, arcs, hatches, texts and
+    cotas. Each shape keeps its layer so the visor can toggle it."""
     etype = entity["entity_type"]
     bbox = entity["bbox"]
+    props = entity.get("properties") or {}
+    layer = entity["layer"]
     if etype in ("line", "polyline") and entity.get("points"):
-        return {
-            "t": "path",
-            "layer": entity["layer"],
-            "pts": entity["points"],
-            "closed": bool(entity.get("properties", {}).get("closed")),
-        }
+        return {"t": "path", "layer": layer, "pts": entity["points"],
+                "closed": bool(props.get("closed"))}
+    if etype == "hatch":
+        if entity.get("points") and len(entity["points"]) >= 3:
+            return {"t": "hatch", "layer": layer, "pts": entity["points"]}
+        return {"t": "box", "layer": layer, "bbox": bbox}
     if etype == "circle":
-        props = entity.get("properties", {})
-        center = props.get("center")
-        radius = props.get("radius")
+        center, radius = props.get("center"), props.get("radius")
         if center and radius:
-            return {"t": "circle", "layer": entity["layer"], "c": center, "r": radius}
+            return {"t": "circle", "layer": layer, "c": center, "r": radius}
     if etype == "arc":
-        return {"t": "box", "layer": entity["layer"], "bbox": bbox}
+        center, radius = props.get("center"), props.get("radius")
+        if center and radius:
+            return {"t": "arc", "layer": layer, "c": center, "r": radius,
+                    "a0": props.get("start_angle", 0.0), "a1": props.get("end_angle", 360.0)}
+        return {"t": "box", "layer": layer, "bbox": bbox}
+    if etype in ("text", "mtext") and entity.get("text"):
+        insert = props.get("insert") or [bbox[0], bbox[1]]
+        height = props.get("height") or max(bbox[3] - bbox[1], 1e-6)
+        return {"t": "text", "layer": layer, "p": insert, "h": height,
+                "rot": entity.get("rotation") or 0.0,
+                "s": " ".join(str(entity["text"]).split())[:200],
+                "multi": etype == "mtext"}
+    if etype == "dimension":
+        segment = props.get("measured_segment")
+        label = props.get("display_text") or (
+            f"{props['measurement']:.2f}" if props.get("measurement") else ""
+        )
+        if segment and len(segment) == 2:
+            return {"t": "dim", "layer": layer, "pts": segment, "label": label}
+        return {"t": "dim", "layer": layer,
+                "pts": [[bbox[0], (bbox[1] + bbox[3]) / 2], [bbox[2], (bbox[1] + bbox[3]) / 2]],
+                "label": label}
     return None
 
 
@@ -75,6 +98,10 @@ def get_geometry(
 ) -> dict:
     entities = store.read_artifact(project_id, "normalized_entities.json")
     detections = store.read_artifact(project_id, "detections.json")
+    try:
+        frames = store.read_artifact(project_id, "frames.json")
+    except HTTPException:
+        frames = []
     reviews = load_reviews(store.get_root(project_id) / settings.processed_dir_name)
     sheets, sheet_index = _sheet_index(store, project_id)
 
@@ -145,6 +172,14 @@ def get_geometry(
 
     return {
         "extent": extent,
+        # Sheet frames (plantas, detalles) so the visor can jump to a sheet.
+        "frames": [
+            {
+                "code": f.get("code", ""), "title": f.get("title", ""), "kind": f.get("kind", ""),
+                "bbox": f.get("bbox"), "source_file": f.get("source_file", ""),
+            }
+            for f in (frames or []) if f.get("bbox")
+        ],
         "layers": layers,
         "shapes": shapes,
         "detections": overlay,
