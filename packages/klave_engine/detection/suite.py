@@ -70,6 +70,7 @@ class DetectorSuiteConfig(BaseModel):
         config.footing.column_search_radius = m(2.0)
         config.beam.line_search_radius = m(1.0)
         config.beam.min_beam_length = m(1.5)
+        config.beam.max_beam_length = m(15.0)
         config.slab.min_area = m(4.0) * m(4.0)
         config.wall.min_length = m(1.5)
         config.wall.max_thickness = m(0.45)

@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 class TextPatternConfig(BaseModel):
     """Default patterns cover both English and Spanish (Mexican) conventions:
-    C-1/COL-1 columns, K-5 castillos, B1/TB-1 beams, T2-7 trabes,
+    C-1/COL-1 columns, K-5 castillos, B1/TB-1 beams, T-3/T2-7/TL-1 trabes,
     CTA-3 contratrabes, X'/Y' grid axes."""
 
     column_tag: list[str] = Field(
@@ -28,6 +28,9 @@ class TextPatternConfig(BaseModel):
             r"^CTA?-?\d{1,2}[A-Z]?$",
             r"^TE-[A-Z]$",
             r"^V-?\d{1,3}$",
+            r"^T-?\d{1,3}[A-Z]?$",  # T-1 … T-11: the plain Mexican trabe mark
+            r"^T[LRPS]-?\d{1,2}[A-Z]?$",  # TL-1 trabe de liga, TR/TP/TS variants
+            r"^TRABE-?\d{1,2}$",
         ]
     )
     detail_reference: list[str] = Field(

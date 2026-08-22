@@ -6,7 +6,7 @@
     "Plano Prueba 1.dxf": "13314f9c78fedde370752c3ab91f53f6cd5767a8d3709f52f5060c5ef76bdd90"
   },
   "status": "baseline",
-  "captured_at": "2026-08-22T17:01:39.224286Z",
+  "captured_at": "2026-08-22T17:09:08.407735Z",
   "labels": {
     "grid_line": [
       "EJE-01",
@@ -456,6 +456,39 @@
       "ZAP-60",
       "ZAP-61"
     ],
+    "beam_tag": [
+      "TRB-01",
+      "TRB-02",
+      "TRB-03",
+      "TRB-04",
+      "TRB-05",
+      "TRB-06",
+      "TRB-07",
+      "TRB-08",
+      "TRB-09",
+      "TRB-10",
+      "TRB-11",
+      "TRB-12",
+      "TRB-13",
+      "TRB-14",
+      "TRB-15",
+      "TRB-16",
+      "TRB-17",
+      "TRB-18",
+      "TRB-19",
+      "TRB-20",
+      "TRB-21",
+      "TRB-22",
+      "TRB-23",
+      "TRB-24",
+      "TRB-25",
+      "TRB-26",
+      "TRB-27",
+      "TRB-28",
+      "TRB-29",
+      "TRB-30",
+      "TRB-31"
+    ],
     "slab_region": [
       "LOS-01",
       "LOS-02",
@@ -755,6 +788,7 @@
   "confirmed": [],
   "excluded": [],
   "baseline_f1": {
+    "beam_tag": 1.0,
     "column_tag": 1.0,
     "footing": 1.0,
     "grid_intersection": 1.0,
