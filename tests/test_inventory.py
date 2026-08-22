@@ -3,7 +3,11 @@ metres, annotation left out, split per planta when the sheet has frames."""
 
 import ezdxf
 from klave_engine.detection.frames import detect_frames
-from klave_engine.detection.inventory import build_inventory, guess_discipline
+from klave_engine.detection.inventory import (
+    build_inventory,
+    guess_discipline,
+    reads_as_structure,
+)
 from klave_engine.dxf.parser import DxfParser
 from klave_engine.dxf.units import DrawingUnits
 
@@ -79,3 +83,12 @@ def test_runs_split_per_planta_with_frames(tmp_path):
     assert block.count == 3
     assert block.by_view == {"IS-100 · PLANTA BAJA": 1, "IS-200 · PLANTA ALTA": 2}
     assert guess_discipline("09 GAS L.04.dwg") == "gas"
+
+
+def test_structural_detectors_skip_installation_sheets():
+    assert reads_as_structure("02 ESTRUCTURAL L.04.dwg")
+    assert reads_as_structure("Plano Prueba 1.dxf")  # unknown names are structure
+    assert reads_as_structure("01 ARQ L.04.dwg")
+    assert not reads_as_structure("05 SANITARIO L.04.dwg")
+    assert not reads_as_structure("09 GAS L.04.dwg")
+    assert not reads_as_structure("12 CANCELERIA L.04.dwg")

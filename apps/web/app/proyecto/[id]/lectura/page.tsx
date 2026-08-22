@@ -445,7 +445,9 @@ function InventoryCard({
         aria-expanded={open}
         className="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-left"
       >
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">{sheet.sheet}</span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          {sheet.label || sheet.sheet}
+        </span>
         {sheet.discipline && (
           <Badge tone="accent">{DISCIPLINE_LABELS[sheet.discipline] ?? sheet.discipline}</Badge>
         )}

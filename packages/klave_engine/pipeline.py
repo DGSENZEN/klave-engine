@@ -30,7 +30,7 @@ from klave_engine.costing.reviews import filter_excluded, load_reviews
 from klave_engine.detection.dimension_links import link_dimensions
 from klave_engine.detection.dimensions import build_dimension_inventory
 from klave_engine.detection.frames import detect_frames
-from klave_engine.detection.inventory import build_inventory
+from klave_engine.detection.inventory import build_inventory, reads_as_structure
 from klave_engine.detection.results import Detection
 from klave_engine.detection.schedules import apply_schedule, build_schedule_inventory
 from klave_engine.detection.suite import (
@@ -258,10 +258,34 @@ def run_full_pipeline(
     frames = detect_frames(result.entities)
     write_json(processed / "frames.json", frames)
     # Levantamiento: symbols and runs per sheet, counted before any price.
-    inventory = build_inventory(result.entities, units, frames)
+    sources_by_id = {src.file_id: src for src in manifest.source_files}
+    sheet_names = {
+        c.path: Path(sources_by_id[c.source_file_id].path).name
+        for c in manifest.converted_files if c.source_file_id in sources_by_id
+    }
+    sheet_names.update({src.path: Path(src.path).name for src in manifest.source_files})
+    inventory = build_inventory(result.entities, units, frames, sheet_names=sheet_names)
     write_json(processed / "inventory.json", inventory)
+    # Structural detectors read structural and architectural sheets; an
+    # instalaciones sheet is a levantamiento, and its circles and boxes are
+    # salidas and equipment, not zapatas.
+    skipped_sheets = sorted(
+        {
+            sheet_names.get(source, source) for source in {e.source_file for e in result.entities}
+            if not reads_as_structure(sheet_names.get(source, source))
+        }
+    )
+    structural_entities = [
+        e for e in result.entities
+        if reads_as_structure(sheet_names.get(e.source_file, e.source_file))
+    ]
+    for sheet in skipped_sheets:
+        result.warnings.append(
+            f"Hoja «{sheet}» leída como levantamiento (instalaciones/acabados): "
+            "sin detección estructural."
+        )
     detector_outputs = run_detectors(
-        result.entities, index, manifest, detector_config, frames=frames
+        structural_entities, index, manifest, detector_config, frames=frames
     )
     for output in detector_outputs:
         result.warnings.extend(output.warnings)

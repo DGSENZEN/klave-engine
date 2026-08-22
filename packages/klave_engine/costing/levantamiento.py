@@ -63,7 +63,7 @@ def apply_inventory(
                         continue
                     total += float(block.get("count") or 0)
                     hits += int(block.get("count") or 0)
-                    sheets_hit.append(sheet.get("sheet", ""))
+                    sheets_hit.append(sheet.get("label") or sheet.get("sheet", ""))
                     for view, n in (block.get("by_view") or {}).items():
                         by_view[view] = by_view.get(view, 0.0) + float(n)
             else:
@@ -78,7 +78,7 @@ def apply_inventory(
                         continue
                     total += float(run["length_m"])
                     hits += int(run.get("segments") or 0)
-                    sheets_hit.append(sheet.get("sheet", ""))
+                    sheets_hit.append(sheet.get("label") or sheet.get("sheet", ""))
                     for view, n in (run.get("by_view") or {}).items():
                         by_view[view] = by_view.get(view, 0.0) + float(n)
         if total <= 0:

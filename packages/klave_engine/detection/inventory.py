@@ -68,7 +68,8 @@ class InventoryRun(BaseModel):
 
 
 class SheetInventory(BaseModel):
-    sheet: str
+    sheet: str  # the parsed file, as entities name it
+    label: str = ""  # the sheet as the user uploaded it
     discipline: str | None
     blocks: list[InventoryBlock] = Field(default_factory=list)
     runs: list[InventoryRun] = Field(default_factory=list)
@@ -89,6 +90,21 @@ def guess_discipline(text: str) -> str | None:
     return None
 
 
+# Sheets whose content is symbols and runs, never zapatas or trabes: the
+# structural detectors stay off them, the levantamiento reads them.
+NON_STRUCTURAL = frozenset(
+    {"hidraulica", "sanitaria", "electrica", "gas", "aire", "cctv", "canceleria",
+     "carpinteria"}
+)
+
+
+def reads_as_structure(sheet_label: str) -> bool:
+    """Whether the structural detectors should run on a sheet: yes unless its
+    name says it is an installations/finishes sheet. Unknown names count
+    as structure — a bare 'Plano 1.dwg' is the common case."""
+    return guess_discipline(sheet_label) not in NON_STRUCTURAL
+
+
 def _length(entity: NormalizedEntity) -> float:
     pts = entity.points or []
     if len(pts) < 2:
@@ -104,6 +120,7 @@ def build_inventory(
     units: DrawingUnits | None = None,
     frames: list[SheetFrame] | None = None,
     min_run_m: float = 1.0,
+    sheet_names: dict[str, str] | None = None,
 ) -> Inventory:
     to_m = units.to_meters() if units is not None else None
     plan_boxes: list[tuple[str, BBox]] = [
@@ -184,9 +201,10 @@ def build_inventory(
         content_words = " ".join(
             [r.layer for r in kept_runs[:6]] + [b.block_name for b in block_list[:6]]
         )
-        discipline = guess_discipline(sheet) or guess_discipline(content_words)
+        label = (sheet_names or {}).get(sheet) or sheet.rsplit("/", 1)[-1]
+        discipline = guess_discipline(label) or guess_discipline(content_words)
         entry = SheetInventory(
-            sheet=sheet, discipline=discipline, blocks=block_list, runs=kept_runs,
+            sheet=sheet, label=label, discipline=discipline, blocks=block_list, runs=kept_runs,
             specs=sorted(specs)[:40],
         )
         if to_m is None:

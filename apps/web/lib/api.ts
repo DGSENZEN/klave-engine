@@ -546,6 +546,7 @@ export type InventoryRun = {
 };
 export type SheetInventory = {
   sheet: string;
+  label?: string;
   discipline: string | null;
   blocks: InventoryBlock[];
   runs: InventoryRun[];
