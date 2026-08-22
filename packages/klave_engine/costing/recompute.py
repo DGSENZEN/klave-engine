@@ -46,6 +46,7 @@ class CostingInputs:
         segmentation: SheetSegmentation | None,
         dimensions: DimensionInventory | None,
         schedule_specs: dict | None = None,
+        inventory: dict | None = None,
     ) -> None:
         self.project_id = project_id
         self.detections = detections
@@ -53,6 +54,7 @@ class CostingInputs:
         self.segmentation = segmentation
         self.dimensions = dimensions
         self.schedule_specs = schedule_specs
+        self.inventory = inventory
 
 
 def load_costing_inputs(processed_dir: Path, project_id: str) -> CostingInputs:
@@ -73,8 +75,10 @@ def load_costing_inputs(processed_dir: Path, project_id: str) -> CostingInputs:
     )
     specs_path = processed_dir / "schedules.json"
     schedule_specs = read_json(specs_path) if specs_path.exists() else None
+    inventory_path = processed_dir / "inventory.json"
+    inventory = read_json(inventory_path) if inventory_path.exists() else None
     return CostingInputs(
-        project_id, detections, units, segmentation, dimensions, schedule_specs
+        project_id, detections, units, segmentation, dimensions, schedule_specs, inventory
     )
 
 
@@ -115,6 +119,8 @@ def build_cost_report(
         store_concepts=store.load_concepts(),
         concept_prices=store.load_concept_prices(),
         schedule_specs=inputs.schedule_specs,
+        inventory=inputs.inventory,
+        inventory_mappings=store.list_inventory_mappings(),
     )
 
 

@@ -258,7 +258,8 @@ def run_full_pipeline(
     frames = detect_frames(result.entities)
     write_json(processed / "frames.json", frames)
     # Levantamiento: symbols and runs per sheet, counted before any price.
-    write_json(processed / "inventory.json", build_inventory(result.entities, units, frames))
+    inventory = build_inventory(result.entities, units, frames)
+    write_json(processed / "inventory.json", inventory)
     detector_outputs = run_detectors(
         result.entities, index, manifest, detector_config, frames=frames
     )
@@ -359,6 +360,8 @@ def run_full_pipeline(
         adjustments=reviews.adjustments,
         store_concepts=catalog_store.load_concepts(),
         concept_prices=catalog_store.load_concept_prices(),
+        inventory=inventory.model_dump(),
+        inventory_mappings=catalog_store.list_inventory_mappings(),
     )
     write_json(processed / "cost_report.json", result.cost_report)
     write_json(

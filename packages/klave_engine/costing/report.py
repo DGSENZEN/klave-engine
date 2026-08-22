@@ -16,6 +16,7 @@ from klave_engine.costing.catalog import (
 from klave_engine.costing.financial import build_financial_plan
 from klave_engine.costing.formwork import apply_formwork, compute_formwork
 from klave_engine.costing.integration import integrate_costs
+from klave_engine.costing.levantamiento import apply_inventory
 from klave_engine.costing.models import (
     BillOfQuantities,
     BoqLine,
@@ -94,6 +95,8 @@ def generate_cost_report(
     store_concepts: list[dict] | None = None,
     schedule_specs: dict | None = None,
     concept_prices: dict[str, dict] | None = None,
+    inventory: dict | None = None,
+    inventory_mappings: list[dict] | None = None,
 ) -> CostReport:
     config = config or CostingConfig()
     assumptions, calibration_notes = _calibrate_assumptions(config.assumptions, dimensions)
@@ -132,6 +135,8 @@ def generate_cost_report(
         segmentation.total_height() if segmentation is not None else None,
     )
     apply_formwork(boq, catalog, apus, formwork)
+    # Levantamiento: symbols and layers the taller mapped to concepts.
+    apply_inventory(boq, catalog, apus, inventory, inventory_mappings)
     if adjustments:
         _apply_adjustments(boq, catalog, apus, adjustments)
     integration = integrate_costs(boq.direct_cost_total, config.indirects)

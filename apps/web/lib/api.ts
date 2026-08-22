@@ -554,6 +554,35 @@ export type SheetInventory = {
 };
 export type Inventory = { sheets: SheetInventory[]; unit: string | null; notes: string[] };
 
+/** A symbol or layer of the levantamiento mapped to a concept (workspace-wide). */
+export type InventoryMapping = {
+  id: number;
+  kind: "block" | "layer";
+  pattern: string;
+  concept_code: string;
+  factor: number;
+  created_at: string;
+};
+
+export const listInventoryMappings = () =>
+  getJSON<{ mappings: InventoryMapping[] }>("/catalog/inventory-mappings").then((r) => r.mappings);
+
+export const addInventoryMapping = (
+  body: { kind: "block" | "layer"; pattern: string; concept_code: string; factor?: number },
+  actor?: string,
+) =>
+  postJSON<InventoryMapping>(
+    "/catalog/inventory-mappings",
+    body,
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export const deleteInventoryMapping = (id: number, actor?: string) =>
+  deleteJSON<{ deleted: number }>(
+    `/catalog/inventory-mappings/${id}`,
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
 export type Lectura = {
   project_id: string;
   project_name: string;

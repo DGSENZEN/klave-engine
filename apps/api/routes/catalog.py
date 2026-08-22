@@ -562,6 +562,52 @@ def clear_concept_price(
     return row
 
 
+class InventoryMappingInput(BaseModel):
+    kind: Literal["block", "layer"]
+    pattern: str = Field(min_length=1, max_length=200)
+    concept_code: str = Field(min_length=1, max_length=40)
+    factor: float = Field(default=1.0, gt=0)
+
+
+@router.get("/inventory-mappings")
+def list_inventory_mappings(catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    """Symbol/layer → concept rules: how a levantamiento count becomes a quantity."""
+    return {"mappings": catalog.list_inventory_mappings()}
+
+
+@router.post("/inventory-mappings", status_code=201)
+def add_inventory_mapping(
+    body: InventoryMappingInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    try:
+        row = catalog.add_inventory_mapping(
+            kind=body.kind, pattern=body.pattern, concept_code=body.concept_code,
+            factor=body.factor,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error_type": "invalid_mapping", "message": str(exc)}
+        ) from exc
+    _publish_catalog_updated(
+        x_actor, "inventory_mapping", f"{body.pattern} → {body.concept_code}"
+    )
+    return row
+
+
+@router.delete("/inventory-mappings/{mapping_id}")
+def delete_inventory_mapping(
+    mapping_id: int,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    if not catalog.delete_inventory_mapping(mapping_id):
+        raise HTTPException(status_code=404, detail={"error_type": "mapping_not_found"})
+    _publish_catalog_updated(x_actor, "inventory_mapping", f"#{mapping_id} eliminada")
+    return {"deleted": mapping_id}
+
+
 @router.get("/labor")
 def get_labor(catalog: CatalogStore = Depends(get_catalog)) -> dict:
     return labor_state(catalog)

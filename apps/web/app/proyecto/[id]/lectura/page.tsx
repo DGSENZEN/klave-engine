@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   ArrowsClockwise,
@@ -12,12 +12,21 @@ import {
   Warning,
 } from "@phosphor-icons/react";
 import {
+  addInventoryMapping,
+  deleteInventoryMapping,
+  getCatalog,
+  getCostingConfig,
   getLectura,
+  listInventoryMappings,
   num,
+  recompute,
+  type CatalogConcept,
+  type InventoryMapping,
   type Lectura,
   type LecturaSheet,
   type SheetInventory,
 } from "@/lib/api";
+import { getBrowserActor } from "@/lib/collab";
 import { FAMILY_LABELS } from "@/components/PlanoCanvas";
 import { useProjectLive } from "@/components/ProjectLive";
 import {
@@ -35,6 +44,49 @@ import {
 export default function LecturaPage() {
   const { id } = useParams<{ id: string }>();
   const [lectura, setLectura] = useState<Lectura | null>(null);
+  const [concepts, setConcepts] = useState<CatalogConcept[]>([]);
+  const [mappings, setMappings] = useState<InventoryMapping[]>([]);
+  const [mappingNotice, setMappingNotice] = useState<string | null>(null);
+  const reloadMappings = useCallback(() => {
+    listInventoryMappings().then(setMappings).catch(() => setMappings([]));
+  }, []);
+  useEffect(() => {
+    getCatalog().then((c) => setConcepts(c.concepts)).catch(() => setConcepts([]));
+    reloadMappings();
+  }, [reloadMappings]);
+
+  async function assign(kind: "block" | "layer", pattern: string, conceptCode: string) {
+    try {
+      await addInventoryMapping({ kind, pattern, concept_code: conceptCode }, getBrowserActor());
+      reloadMappings();
+      // The presupuesto follows: recompute with the project's current parameters.
+      const cfg = await getCostingConfig(id);
+      await recompute(
+        id,
+        { config: cfg.config, insumo_prices: cfg.insumo_prices, version: cfg.version },
+        getBrowserActor(),
+      );
+      setMappingNotice(`«${pattern}» ahora cuenta como ${conceptCode}; presupuesto actualizado.`);
+    } catch {
+      setMappingNotice(`No se pudo asignar «${pattern}» a ${conceptCode}.`);
+    }
+  }
+
+  async function unassign(mapping: InventoryMapping) {
+    try {
+      await deleteInventoryMapping(mapping.id, getBrowserActor());
+      reloadMappings();
+      const cfg = await getCostingConfig(id);
+      await recompute(
+        id,
+        { config: cfg.config, insumo_prices: cfg.insumo_prices, version: cfg.version },
+        getBrowserActor(),
+      );
+      setMappingNotice(`«${mapping.pattern}» vuelve a ser solo un conteo.`);
+    } catch {
+      setMappingNotice(`No se pudo quitar la asignación de «${mapping.pattern}».`);
+    }
+  }
   const [error, setError] = useState(false);
   const { latestEvent, connectionEpoch } = useProjectLive();
 
@@ -188,9 +240,18 @@ export default function LecturaPage() {
               <SectionTitle sub="Lo que cada hoja contiene, contado: símbolos por bloque y metros de trazo por capa. Un conteo no es una cantidad hasta que se asigna a un concepto del catálogo.">
                 Levantamiento por hoja
               </SectionTitle>
+              {mappingNotice && <p className="mb-3 text-sm text-muted">{mappingNotice}</p>}
               <div className="space-y-4">
                 {lectura.inventory.sheets.map((sheet) => (
-                  <InventoryCard key={sheet.sheet} sheet={sheet} unit={lectura.inventory?.unit ?? null} />
+                  <InventoryCard
+                    key={sheet.sheet}
+                    sheet={sheet}
+                    unit={lectura.inventory?.unit ?? null}
+                    concepts={concepts}
+                    mappings={mappings}
+                    onAssign={assign}
+                    onUnassign={unassign}
+                  />
                 ))}
               </div>
             </Card>
@@ -296,7 +357,79 @@ const DISCIPLINE_LABELS: Record<string, string> = {
   estructural: "Estructural",
 };
 
-function InventoryCard({ sheet, unit }: { sheet: SheetInventory; unit: string | null }) {
+function MappingControl({
+  kind,
+  pattern,
+  unit,
+  concepts,
+  mappings,
+  onAssign,
+  onUnassign,
+}: {
+  kind: "block" | "layer";
+  pattern: string;
+  unit: string;
+  concepts: CatalogConcept[];
+  mappings: InventoryMapping[];
+  onAssign: (kind: "block" | "layer", pattern: string, conceptCode: string) => void;
+  onUnassign: (mapping: InventoryMapping) => void;
+}) {
+  const current = mappings.find(
+    (m) => m.kind === kind && m.pattern.toLowerCase() === pattern.toLowerCase(),
+  );
+  if (current) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px]">
+        <Badge tone="success">→ {current.concept_code}</Badge>
+        <button
+          type="button"
+          className="text-muted underline"
+          onClick={(e) => {
+            e.stopPropagation();
+            onUnassign(current);
+          }}
+        >
+          quitar
+        </button>
+      </span>
+    );
+  }
+  const options = concepts.filter((c) => c.unit.toUpperCase() === unit);
+  return (
+    <select
+      value=""
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => {
+        if (e.target.value) onAssign(kind, pattern, e.target.value);
+      }}
+      className="max-w-44 rounded-md border border-border bg-surface px-1 py-0.5 text-[11px]"
+      title={`Contar «${pattern}» como un concepto (${unit})`}
+    >
+      <option value="">concepto ({unit})…</option>
+      {options.map((c) => (
+        <option key={c.code} value={c.code}>
+          {c.code} · {c.description.slice(0, 38)}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function InventoryCard({
+  sheet,
+  unit,
+  concepts,
+  mappings,
+  onAssign,
+  onUnassign,
+}: {
+  sheet: SheetInventory;
+  unit: string | null;
+  concepts: CatalogConcept[];
+  mappings: InventoryMapping[];
+  onAssign: (kind: "block" | "layer", pattern: string, conceptCode: string) => void;
+  onUnassign: (mapping: InventoryMapping) => void;
+}) {
   const [open, setOpen] = useState(false);
   const symbols = sheet.blocks.reduce((s, b) => s + b.count, 0);
   const metres = sheet.runs.reduce((s, r) => s + (r.length_m ?? 0), 0);
@@ -342,6 +475,15 @@ function InventoryCard({ sheet, unit }: { sheet: SheetInventory; unit: string | 
                         .join(" · ")}
                     </span>
                   )}
+                  <MappingControl
+                    kind="block"
+                    pattern={b.block_name}
+                    unit="PZA"
+                    concepts={concepts}
+                    mappings={mappings}
+                    onAssign={onAssign}
+                    onUnassign={onUnassign}
+                  />
                 </li>
               ))}
             </ul>
@@ -366,6 +508,17 @@ function InventoryCard({ sheet, unit }: { sheet: SheetInventory; unit: string | 
                         .map(([t, n]) => `${short(t)} ${num(n)}`)
                         .join(" · ")}
                     </span>
+                  )}
+                  {r.length_m != null && (
+                    <MappingControl
+                      kind="layer"
+                      pattern={r.layer}
+                      unit="M"
+                      concepts={concepts}
+                      mappings={mappings}
+                      onAssign={onAssign}
+                      onUnassign={onUnassign}
+                    />
                   )}
                 </li>
               ))}

@@ -101,6 +101,15 @@ CREATE TABLE IF NOT EXISTS workspace_settings (
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS inventory_mappings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    pattern TEXT NOT NULL,
+    concept_code TEXT NOT NULL,
+    factor REAL NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    UNIQUE(kind, pattern)
+);
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -948,6 +957,50 @@ class CatalogStore:
             region=reference["source_region"],
             vigencia=reference["source_vigencia"],
         )
+
+    # ------------------------------------------------- levantamiento mappings
+
+    def list_inventory_mappings(self) -> list[dict]:
+        """Symbol/layer → concept rules of the workspace: a block name or a
+        layer name (exact, case-insensitive) feeds a concept at `factor`
+        units per symbol or per metre."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM inventory_mappings ORDER BY kind, pattern"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def add_inventory_mapping(
+        self, *, kind: str, pattern: str, concept_code: str, factor: float = 1.0
+    ) -> dict:
+        if kind not in ("block", "layer"):
+            raise ValueError("kind debe ser block o layer")
+        if not pattern.strip():
+            raise ValueError("El patrón no puede estar vacío.")
+        if factor <= 0:
+            raise ValueError("El factor debe ser positivo.")
+        with _LOCK, self._connect() as conn:
+            if conn.execute(
+                "SELECT 1 FROM concepts WHERE code = ?", (concept_code,)
+            ).fetchone() is None:
+                raise ValueError(f"El concepto {concept_code} no existe.")
+            conn.execute(
+                "INSERT INTO inventory_mappings (kind, pattern, concept_code, factor, created_at) "
+                "VALUES (?, ?, ?, ?, ?) ON CONFLICT(kind, pattern) DO UPDATE SET "
+                "concept_code = excluded.concept_code, factor = excluded.factor, "
+                "created_at = excluded.created_at",
+                (kind, pattern.strip(), concept_code, float(factor), _now()),
+            )
+            row = conn.execute(
+                "SELECT * FROM inventory_mappings WHERE kind = ? AND pattern = ?",
+                (kind, pattern.strip()),
+            ).fetchone()
+        return dict(row)
+
+    def delete_inventory_mapping(self, mapping_id: int) -> bool:
+        with _LOCK, self._connect() as conn:
+            cursor = conn.execute("DELETE FROM inventory_mappings WHERE id = ?", (mapping_id,))
+        return cursor.rowcount > 0
 
     # ------------------------------------------------- settings + analyses
 
