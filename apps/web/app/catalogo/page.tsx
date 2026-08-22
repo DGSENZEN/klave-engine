@@ -1101,18 +1101,22 @@ function FuentesSection({
                   No descargada
                 </a>
               )}
-              <Button
-                size="sm"
-                variant={source.imported ? "ghost" : "secondary"}
-                disabled={!source.available || importing !== null}
-                onClick={() => runImport(source)}
-              >
-                {importing === source.key
-                  ? "Importando…"
-                  : source.imported
-                    ? "Reimportar"
-                    : "Importar"}
-              </Button>
+              {source.custom ? (
+                <span className="text-xs text-muted">Vuelve a subir el archivo para actualizarlo</span>
+              ) : (
+                <Button
+                  size="sm"
+                  variant={source.imported ? "ghost" : "secondary"}
+                  disabled={!source.available || importing !== null}
+                  onClick={() => runImport(source)}
+                >
+                  {importing === source.key
+                    ? "Importando…"
+                    : source.imported
+                      ? "Reimportar"
+                      : "Importar"}
+                </Button>
+              )}
             </li>
           ))
         )}
