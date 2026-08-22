@@ -343,6 +343,18 @@ def _generadores(
                 if col == 5 and isinstance(value, float):
                     cell.number_format = QTY_FORMAT
             row += 1
+        # Provenance that is not a detection: mapped levantamiento counts,
+        # adopted prices, and the per-planta split.
+        for assumption in line.assumptions:
+            if assumption.startswith(("Levantamiento:", "P.U. adoptado")):
+                cell = ws.cell(row=row, column=1, value=assumption)
+                cell.font = Font(italic=True, size=9, color=MUTED)
+                row += 1
+        if line.by_view:
+            split = "; ".join(f"{title}: {qty:,.2f} {line.unit}" for title, qty in line.by_view.items())
+            cell = ws.cell(row=row, column=1, value=f"Por planta: {split}")
+            cell.font = Font(italic=True, size=9, color=MUTED)
+            row += 1
         for adjustment in reviews.adjustments:
             if adjustment.concept_code != line.concept_code:
                 continue
