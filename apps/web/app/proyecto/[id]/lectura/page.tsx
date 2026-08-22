@@ -198,6 +198,47 @@ export default function LecturaPage() {
         </div>
       </div>
 
+      {lectura.schedules && (lectura.schedules.by_mark.length > 0 || lectura.schedules.by_family.length > 0) && (
+        <Card className="mb-6 p-5">
+          <SectionTitle sub="Secciones y armados que el plano declara por marca; mandan sobre el marcador medido y sobre los supuestos.">
+            Especificaciones del plano
+          </SectionTitle>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted">
+                  <th className="py-1.5 pr-3 font-medium">Marca</th>
+                  <th className="py-1.5 pr-3 font-medium">Familia</th>
+                  <th className="py-1.5 pr-3 font-medium">Sección</th>
+                  <th className="py-1.5 pr-3 font-medium">Armado</th>
+                  <th className="py-1.5 pr-3 font-medium">Estribos</th>
+                  <th className="py-1.5 font-medium">Fuente</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...lectura.schedules.by_mark, ...lectura.schedules.by_family].map((spec) => (
+                  <tr key={`${spec.source}-${spec.mark}`} className="border-t border-border">
+                    <td className="py-1.5 pr-3 font-mono text-xs">{spec.mark}</td>
+                    <td className="py-1.5 pr-3 capitalize">{spec.family}</td>
+                    <td className="py-1.5 pr-3 tabular">
+                      {spec.section_cm ? `${spec.section_cm[0]}×${spec.section_cm[1]} cm` : "—"}
+                    </td>
+                    <td className="py-1.5 pr-3 font-mono text-xs">{spec.rebar ?? "—"}</td>
+                    <td className="py-1.5 pr-3 font-mono text-xs">{spec.stirrups ?? "—"}</td>
+                    <td className="py-1.5">
+                      <Badge tone={spec.source === "cuadro" ? "success" : "default"}>
+                        {spec.source === "cuadro" ? "Cuadro" : spec.source === "detalle" ? "Detalle" : "Nota"}
+                      </Badge>
+                      <span className="ml-2 text-xs text-faint">«{spec.source_text.slice(0, 48)}»</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
       {lectura.warning_groups.length > 0 && (
         <Card className="p-5">
           <SectionTitle sub="Nada se omite en silencio: esto es lo que no se pudo leer o se ajustó.">

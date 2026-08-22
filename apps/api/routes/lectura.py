@@ -62,6 +62,7 @@ def get_lectura(project_id: str, store: ProjectStore = Depends(get_store)) -> di
     blocks = _optional(store, project_id, "block_summary.json") or []
     warnings = _optional(store, project_id, "parse_warnings.json") or []
     detections = _optional(store, project_id, "detections.json") or []
+    schedules = _optional(store, project_id, "schedules.json") or {}
 
     conversion_by_source = {c.get("source_path", ""): c for c in conversions}
     summary_by_file = {s.get("source_file", ""): s for s in parse_summary}
@@ -140,6 +141,20 @@ def get_lectura(project_id: str, store: ProjectStore = Depends(get_store)) -> di
         "warning_groups": sorted(
             warning_groups.values(), key=lambda g: -g["count"]
         ),
+        "schedules": {
+            "by_mark": [
+                {"mark": mark, **spec} for mark, spec in sorted(
+                    (schedules.get("by_mark") or {}).items()
+                )
+            ],
+            "by_family": [
+                {"family": family, **spec} for family, spec in sorted(
+                    (schedules.get("by_family") or {}).items()
+                )
+            ],
+            "tables_found": schedules.get("tables_found", 0),
+            "notes": schedules.get("notes", []),
+        },
         "detection_total": len(detections),
         "detections_by_family": dict(family_counts.most_common()),
         "entity_type_labels": ENTITY_TYPE_LABELS,

@@ -84,9 +84,12 @@ def _column_volume(
     """
     height = total_height if total_height else assumptions.column_height_m
     measured = 0
+    declared = 0
     volume = 0.0
     for column in columns:
         section_du2 = column.properties.get("section_area_du2")
+        if section_du2 is not None and column.properties.get("section_source") == "cuadro":
+            declared += 1
         section_m2 = (
             float(section_du2) * meters_factor * meters_factor
             if section_du2 is not None
@@ -103,7 +106,8 @@ def _column_volume(
         f"{len(columns)} columnas (vista de planta más completa) × altura "
         f"{height:.2f} m"
         + (" (de niveles N.P.T.)" if total_height else " (supuesta)"),
-        f"Sección: {measured}/{len(columns)} medidas del marcador, "
+        f"Sección: {declared} declaradas en el plano (cuadro/detalle), "
+        f"{measured - declared} medidas del marcador, "
         f"{len(columns) - measured} supuestas ({assumptions.column_section_m2:.3f} m²)",
     ]
     return _LineResult(round(volume, 6), float(len(columns)), columns, notes)

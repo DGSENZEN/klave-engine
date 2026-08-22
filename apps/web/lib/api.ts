@@ -500,9 +500,28 @@ export type LecturaSheet = {
   parse: LecturaParse | null;
 };
 
+export type ElementSpec = {
+  mark: string;
+  family: string;
+  section_cm: [number, number] | null;
+  rebar: string | null;
+  stirrups: string | null;
+  source: "cuadro" | "detalle" | "nota";
+  source_text: string;
+  confidence: number;
+};
+
+export type LecturaSchedules = {
+  by_mark: ElementSpec[];
+  by_family: (ElementSpec & { family: string })[];
+  tables_found: number;
+  notes: string[];
+};
+
 export type Lectura = {
   project_id: string;
   project_name: string;
+  schedules?: LecturaSchedules;
   sheets: LecturaSheet[];
   units: { unit: string; source: string; confidence: number; source_label: string } | null;
   layers: { layer: string; entity_count: number; entity_types: Record<string, number> }[];

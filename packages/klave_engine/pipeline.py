@@ -27,6 +27,7 @@ from klave_engine.costing.report import (
 from klave_engine.costing.reviews import filter_excluded, load_reviews
 from klave_engine.detection.dimensions import build_dimension_inventory
 from klave_engine.detection.results import Detection
+from klave_engine.detection.schedules import apply_schedule, build_schedule_inventory
 from klave_engine.detection.suite import (
     load_detector_config,
     run_detectors,
@@ -244,6 +245,13 @@ def run_full_pipeline(
     for output in detector_outputs:
         result.warnings.extend(output.warnings)
         result.detections.extend(output.detections)
+    # What the sheet declares about its marks outranks measured markers and
+    # assumptions: stamp sections from cuadros, details, and notes first.
+    schedule = build_schedule_inventory(result.entities, detector_config.text_patterns)
+    stamped = apply_schedule(result.detections, schedule, units.to_meters())
+    if stamped:
+        schedule.notes.append(f"{stamped} detecciones tomaron su sección del plano.")
+    write_json(processed / "schedules.json", schedule)
     enrich_detections(result.detections, units.to_meters())
 
     graph = build_drawing_graph(manifest.project_id, drawings, result.detections)
