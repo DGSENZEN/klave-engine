@@ -78,6 +78,7 @@ export function PlanoCanvas({
   onSelect,
   measure,
   onWorldClick,
+  focus,
 }: {
   geometry: Geometry;
   visibleLayers: Set<string>;
