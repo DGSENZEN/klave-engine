@@ -28,6 +28,7 @@ from klave_engine.costing.models import (
 )
 from klave_engine.costing.reviews import ManualAdjustment
 from klave_engine.costing.schedule import build_schedule
+from klave_engine.costing.steel import SteelAssumptions, apply_steel, compute_steel
 from klave_engine.detection.dimensions import DimensionInventory
 from klave_engine.detection.results import Detection
 from klave_engine.detection.views import SheetSegmentation
@@ -73,6 +74,7 @@ def generate_cost_report(
     rendimientos: dict[str, float] | None = None,
     adjustments: list[ManualAdjustment] | None = None,
     store_concepts: list[dict] | None = None,
+    schedule_specs: dict | None = None,
 ) -> CostReport:
     config = config or CostingConfig()
     assumptions, calibration_notes = _calibrate_assumptions(config.assumptions, dimensions)
@@ -94,6 +96,14 @@ def generate_cost_report(
         segmentation=segmentation, assumptions=assumptions,
     )
     boq.assumptions.extend(calibration_notes)
+    # Acero de refuerzo derives from the counted elements and the sheet's
+    # armados; it runs before human adjustments so they can correct it too.
+    steel = compute_steel(
+        boq, detections, schedule_specs, segmentation, units.to_meters(),
+        assumptions.column_height_m,
+        SteelAssumptions(wall_height_m=assumptions.wall_height_m),
+    )
+    apply_steel(boq, catalog, apus, steel)
     if adjustments:
         _apply_adjustments(boq, catalog, apus, adjustments)
     integration = integrate_costs(boq.direct_cost_total, config.indirects)

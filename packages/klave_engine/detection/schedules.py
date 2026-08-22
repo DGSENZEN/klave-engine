@@ -26,6 +26,7 @@ _SECTION_RE = re.compile(r"(?<![\dxX×])(\d{1,3})\s*[xX×]\s*(\d{1,3})(?![\dxX×
 _BLOCK_RE = re.compile(r"\d{1,3}\s*[xX×]\s*\d{1,3}\s*[xX×]\s*\d{1,3}")
 _REBAR_RE = re.compile(r"(\d{1,2})\s*(?:V|VAR|VARS|VARILLAS)?\s*#\s*(\d)(?!\s*@)", re.I)
 _STIRRUP_RE = re.compile(r"E\s*#?\s*(\d)\s*@\s*(\d{1,3})", re.I)
+_MESH_RE = re.compile(r"(?<![E\d])#\s*(\d)\s*@\s*(\d{1,3})", re.I)
 _MARK_RE = re.compile(r"\b([KCT]|COL|CT|CTA|TB|ZC|ZCM|Z|D)\s*-?\s*(\d{1,2})([A-Z]?)\b")
 
 _FAMILY_KEYWORDS: list[tuple[str, re.Pattern[str]]] = [
@@ -52,6 +53,7 @@ class ElementSpec(BaseModel):
     section_cm: tuple[int, int] | None = None
     rebar: str | None = None  # longitudinal, e.g. "4#3"
     stirrups: str | None = None  # e.g. "#2@20"
+    mesh: str | None = None  # parrilla / malla, e.g. "#4@20" (no E)
     source: Source
     source_text: str
     confidence: float
@@ -78,15 +80,20 @@ def _parse_section(text: str) -> tuple[int, int] | None:
     return None
 
 
-def _parse_rebar(text: str) -> tuple[str | None, str | None]:
+def _parse_rebar(text: str) -> tuple[str | None, str | None, str | None]:
     stirrups = None
     stirrup_match = _STIRRUP_RE.search(text)
     if stirrup_match:
         stirrups = f"#{stirrup_match.group(1)}@{stirrup_match.group(2)}"
         text = text[: stirrup_match.start()] + text[stirrup_match.end():]
+    mesh = None
+    mesh_match = _MESH_RE.search(text)
+    if mesh_match:
+        mesh = f"#{mesh_match.group(1)}@{mesh_match.group(2)}"
+        text = text[: mesh_match.start()] + text[mesh_match.end():]
     rebar_match = _REBAR_RE.search(text)
     rebar = f"{int(rebar_match.group(1))}#{rebar_match.group(2)}" if rebar_match else None
-    return rebar, stirrups
+    return rebar, stirrups, mesh
 
 
 def family_of_mark(mark: str) -> str:
@@ -116,7 +123,9 @@ def _mark_in_text(text: str, config: TextPatternConfig) -> str | None:
     return f"{m.group(1)}-{int(m.group(2))}{m.group(3)}" if m else None
 
 
-def _spec_from_text(text: str) -> tuple[tuple[int, int] | None, str | None, str | None]:
+def _spec_from_text(
+    text: str,
+) -> tuple[tuple[int, int] | None, str | None, str | None, str | None]:
     return _parse_section(text), *_parse_rebar(text)
 
 
@@ -186,16 +195,16 @@ def _parse_tables(
             if mark is None:
                 break
             joined = " ".join(cells.values())
-            section, rebar, stirrups = _spec_from_text(joined)
+            section, rebar, stirrups, mesh = _spec_from_text(joined)
             # A schedule row states a section, or at least bars and stirrups.
-            if section is None and not (rebar and stirrups):
+            if section is None and not (rebar and stirrups) and mesh is None:
                 cursor += 1
                 continue
             table_rows += 1
             specs.append(
                 ElementSpec(
                     mark=mark, family=family_of_mark(mark), section_cm=section,
-                    rebar=rebar, stirrups=stirrups, source="cuadro",
+                    rebar=rebar, stirrups=stirrups, mesh=mesh, source="cuadro",
                     source_text=joined[:120], confidence=0.95,
                 )
             )
@@ -217,8 +226,8 @@ def _parse_annotations(
         content = " ".join((text.text or "").split())
         if not content:
             continue
-        section, rebar, stirrups = _spec_from_text(content)
-        if section is None and rebar is None:
+        section, rebar, stirrups, mesh = _spec_from_text(content)
+        if section is None and rebar is None and mesh is None:
             continue
         mark = _mark_in_text(content, config)
         family = _family_in_text(content)
@@ -226,7 +235,7 @@ def _parse_annotations(
             specs.append(
                 ElementSpec(
                     mark=mark, family=family or family_of_mark(mark), section_cm=section,
-                    rebar=rebar, stirrups=stirrups, source="nota",
+                    rebar=rebar, stirrups=stirrups, mesh=mesh, source="nota",
                     source_text=content[:120], confidence=0.8,
                 )
             )
@@ -234,12 +243,12 @@ def _parse_annotations(
             specs.append(
                 ElementSpec(
                     mark=family.upper(), family=family, section_cm=section, rebar=rebar,
-                    stirrups=stirrups, source="nota", source_text=content[:120],
+                    stirrups=stirrups, mesh=mesh, source="nota", source_text=content[:120],
                     confidence=0.6,
                 )
             )
         else:
-            spec_texts.append((text, section, rebar, stirrups, content))
+            spec_texts.append((text, section, rebar, stirrups, mesh, content))
 
     # Bare marks next to a bare spec: the detail drawing convention.
     for text in texts:
@@ -251,18 +260,18 @@ def _parse_annotations(
         radius = height * 6
         cx, cy = bbox_center(text.bbox)
         best = None
-        for spec_text, section, rebar, stirrups, source_text in spec_texts:
+        for spec_text, section, rebar, stirrups, mesh, source_text in spec_texts:
             # Distance to the annotation's box: a long spec line starts next
             # to the mark even though its centre sits far to the right.
             distance = point_to_bbox_distance((cx, cy), spec_text.bbox)
             if distance <= radius and (best is None or distance < best[0]):
-                best = (distance, section, rebar, stirrups, source_text)
+                best = (distance, section, rebar, stirrups, mesh, source_text)
         if best is not None:
             specs.append(
                 ElementSpec(
                     mark=mark, family=family_of_mark(mark), section_cm=best[1],
-                    rebar=best[2], stirrups=best[3], source="detalle",
-                    source_text=f"{content} · {best[4]}"[:120], confidence=0.75,
+                    rebar=best[2], stirrups=best[3], mesh=best[4], source="detalle",
+                    source_text=f"{content} · {best[5]}"[:120], confidence=0.75,
                 )
             )
     return specs

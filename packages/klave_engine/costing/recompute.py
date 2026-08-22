@@ -45,12 +45,14 @@ class CostingInputs:
         units: DrawingUnits,
         segmentation: SheetSegmentation | None,
         dimensions: DimensionInventory | None,
+        schedule_specs: dict | None = None,
     ) -> None:
         self.project_id = project_id
         self.detections = detections
         self.units = units
         self.segmentation = segmentation
         self.dimensions = dimensions
+        self.schedule_specs = schedule_specs
 
 
 def load_costing_inputs(processed_dir: Path, project_id: str) -> CostingInputs:
@@ -69,7 +71,11 @@ def load_costing_inputs(processed_dir: Path, project_id: str) -> CostingInputs:
     dimensions = (
         DimensionInventory.model_validate(read_json(dims_path)) if dims_path.exists() else None
     )
-    return CostingInputs(project_id, detections, units, segmentation, dimensions)
+    specs_path = processed_dir / "schedules.json"
+    schedule_specs = read_json(specs_path) if specs_path.exists() else None
+    return CostingInputs(
+        project_id, detections, units, segmentation, dimensions, schedule_specs
+    )
 
 
 def load_overrides(processed_dir: Path) -> CostingOverrides | None:
@@ -107,6 +113,7 @@ def build_cost_report(
         rendimientos=store.load_rendimientos(),
         adjustments=reviews.adjustments if reviews else None,
         store_concepts=store.load_concepts(),
+        schedule_specs=inputs.schedule_specs,
     )
 
 

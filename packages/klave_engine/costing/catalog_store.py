@@ -131,6 +131,36 @@ EXTRA_RESOURCES: list[tuple[str, str, str, float, str]] = [
 
 # Manual concepts: priced through their APU, quantified only by documented
 # adjustments or viewer measurements — the estimator's own takeoff.
+# Acero de refuerzo: resources and concepts the steel stage prices. Labor
+# here is a reference rate (replace it by applying salario real).
+STEEL_RESOURCES: list[tuple[str, str, str, float, str]] = [
+    ("MAT-ALAMBRE", "Alambre recocido cal. 18", "KG", 34.0, "material"),
+    ("MAT-MALLA66", "Malla electrosoldada 6x6-10/10", "M2", 62.0, "material"),
+    ("MO-FIERRERO", "Fierrero (oficial)", "JOR", 830.0, "mano_de_obra"),
+]
+STEEL_CONCEPTS: list[tuple[str, str, str, str, float, int, list[tuple[str, float]]]] = [
+    ("ACE-001", "Acero de refuerzo fy=4200 kg/cm² en castillos y columnas, habilitado y armado",
+     "KG", "Estructura", 180.0, 40,
+     [("MAT-ACERO", 0.00104), ("MAT-ALAMBRE", 0.02), ("MO-FIERRERO", 0.0065),
+      ("MO-AYUD", 0.0065), ("EQ-HERRAMIENTA", 1.0)]),
+    ("ACE-002", "Acero de refuerzo fy=4200 kg/cm² en dalas y cerramientos, habilitado y armado",
+     "KG", "Estructura", 200.0, 41,
+     [("MAT-ACERO", 0.00104), ("MAT-ALAMBRE", 0.02), ("MO-FIERRERO", 0.006),
+      ("MO-AYUD", 0.006), ("EQ-HERRAMIENTA", 1.0)]),
+    ("ACE-003", "Acero de refuerzo fy=4200 kg/cm² en zapatas (parrilla), habilitado y armado",
+     "KG", "Cimentación", 220.0, 31,
+     [("MAT-ACERO", 0.00104), ("MAT-ALAMBRE", 0.02), ("MO-FIERRERO", 0.0055),
+      ("MO-AYUD", 0.0055), ("EQ-HERRAMIENTA", 1.0)]),
+    ("ACE-004", "Acero de refuerzo fy=4200 kg/cm² en trabes, habilitado y armado",
+     "KG", "Estructura", 180.0, 42,
+     [("MAT-ACERO", 0.00104), ("MAT-ALAMBRE", 0.02), ("MO-FIERRERO", 0.0065),
+      ("MO-AYUD", 0.0065), ("EQ-HERRAMIENTA", 1.0)]),
+    ("ACE-005", "Malla electrosoldada 6x6-10/10 en capa de compresión de losa, con traslapes",
+     "M2", "Estructura", 250.0, 43,
+     [("MAT-MALLA66", 1.0), ("MAT-ALAMBRE", 0.01), ("MO-FIERRERO", 0.004),
+      ("MO-AYUD", 0.004), ("EQ-HERRAMIENTA", 1.0)]),
+]
+
 EXTRA_CONCEPTS: list[tuple[str, str, str, str, float, int, list[tuple[str, float]]]] = [
     (
         "CIM-003", "Plantilla de concreto f'c=100 kg/cm², 5 cm", "M2",
@@ -223,6 +253,23 @@ class CatalogStore:
                 conn.execute(
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '2') "
                     "ON CONFLICT(key) DO UPDATE SET value = '2'"
+                )
+            if version_row is None or int(version_row["value"]) < 3:
+                self._migrate_v3(conn)
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '3') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '3'"
+                )
+            if version_row is None or int(version_row["value"]) < 4:
+                # v3 seeded acero matrices in kg against the per-tonne insumo.
+                conn.execute(
+                    "UPDATE apu_components SET quantity = quantity / 1000.0 "
+                    "WHERE concept_code LIKE 'ACE-%' AND resource_code = 'MAT-ACERO' "
+                    "AND quantity > 0.5"
+                )
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '4') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '4'"
                 )
 
     def _connect(self) -> sqlite3.Connection:
@@ -318,6 +365,32 @@ class CatalogStore:
             (SEED_VIGENCIA, SEED_SOURCE),
         )
         log_stage(logger, "catalog_migrated_v2", db_path=str(self.db_path))
+
+    def _migrate_v3(self, conn: sqlite3.Connection) -> None:
+        """Acero de refuerzo concepts with their matrices (OR IGNORE: a taller
+        that already defined these codes keeps its own)."""
+        for code, description, unit, unit_cost, resource_type in STEEL_RESOURCES:
+            conn.execute(
+                "INSERT OR IGNORE INTO insumos (code, description, unit, resource_type, "
+                "unit_cost, is_labor_percentage, source, source_type, region, vigencia, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, 'referencia', 'MX-CMX', ?, ?)",
+                (code, description, unit, resource_type, unit_cost, SEED_SOURCE,
+                 SEED_VIGENCIA, _now()),
+            )
+        for code, description, unit, phase, rate, order, components in STEEL_CONCEPTS:
+            conn.execute(
+                "INSERT OR IGNORE INTO concepts (code, description, unit, phase, "
+                "production_rate_per_day, rule_key, sequence_order) "
+                "VALUES (?, ?, ?, ?, ?, NULL, ?)",
+                (code, description, unit, phase, rate, 200 + order),
+            )
+            for resource_code, quantity in components:
+                conn.execute(
+                    "INSERT OR IGNORE INTO apu_components "
+                    "(concept_code, resource_code, quantity) VALUES (?, ?, ?)",
+                    (code, resource_code, quantity),
+                )
+        log_stage(logger, "catalog_migrated_v3", db_path=str(self.db_path))
 
     # ---------------------------------------------------------------- reads
 

@@ -328,6 +328,7 @@ def run_full_pipeline(
         units, costing_config,
         segmentation, dimensions, price_book=price_book,
         apu_templates=catalog_store.load_templates(),
+        schedule_specs=schedule.model_dump(),
         rendimientos=catalog_store.load_rendimientos(),
         adjustments=reviews.adjustments,
         store_concepts=catalog_store.load_concepts(),

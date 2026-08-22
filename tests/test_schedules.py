@@ -39,6 +39,7 @@ def test_detail_annotation_and_family_note(tmp_path):
         msp.add_text("30x40  8#5  E#3@15", height=0.2).set_placement((1.0, -0.4))
         msp.add_text("ARMEX 15X30", height=0.2).set_placement((40, 40))  # a general note
         msp.add_text("DALA 15x30 4#3,E#2@20", height=0.2).set_placement((40, 38))
+        msp.add_text("ZAPATA PARRILLA #4@20 AMBOS SENTIDOS", height=0.2).set_placement((40, 36))
 
     inventory = build_schedule_inventory(_entities(tmp_path, build))
     c1 = inventory.by_mark["C-1"]
@@ -46,6 +47,7 @@ def test_detail_annotation_and_family_note(tmp_path):
     assert c1.rebar == "8#5" and c1.stirrups == "#3@15"
     assert inventory.by_family["castillo"].section_cm == (15, 30)
     assert inventory.by_family["dala"].rebar == "4#3"
+    assert inventory.by_family["zapata"].mesh == "#4@20"
     assert "K-1" not in inventory.by_mark
 
 
