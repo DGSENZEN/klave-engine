@@ -179,7 +179,13 @@ function ApuCard({
         />
       </button>
 
-      {open && (
+      {open && apu.price_source && apu.lines.length === 0 ? (
+        <div className="border-t border-border px-5 py-4 text-sm text-muted">
+          Precio unitario adoptado de <span className="text-foreground">{apu.price_source}</span>:
+          este concepto no se integra por matriz mientras el precio adoptado esté activo
+          (se cambia en el Catálogo).
+        </div>
+      ) : open && (
         <div className="border-t border-border">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

@@ -320,7 +320,9 @@ def generate_bill_of_quantities(
                 source_detection_count=len(contributing),
                 source_detections=[d.detection_id for d in contributing][:200],
                 confidence=round(confidence, 3),
-                assumptions=concept.assumptions + result.notes,
+                assumptions=concept.assumptions + result.notes + (
+                    [f"P.U. adoptado de {apu.price_source}"] if apu.price_source else []
+                ),
             )
         )
 

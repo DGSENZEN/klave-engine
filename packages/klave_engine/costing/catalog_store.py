@@ -324,6 +324,12 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '7') "
                     "ON CONFLICT(key) DO UPDATE SET value = '7'"
                 )
+            if version_row is None or int(version_row["value"]) < 8:
+                self._migrate_v8(conn)
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '8') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '8'"
+                )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.
                 conn.execute(
@@ -444,6 +450,67 @@ class CatalogStore:
             )
         self._sync_builtin_concepts(conn, SLAB_CONCEPT_CODES)
         log_stage(logger, "catalog_migrated_v6", db_path=str(self.db_path))
+
+    @staticmethod
+    def _migrate_v8(conn: sqlite3.Connection) -> None:
+        """A concept may take its precio unitario from a reference row (the
+        taller's catálogo or a publication) instead of its matrix; the row's
+        source, clave and vigencia travel with it."""
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(concepts)").fetchall()}
+        for column, kind in (
+            ("price_override", "REAL"), ("price_source_key", "TEXT"), ("price_source", "TEXT"),
+            ("price_clave", "TEXT"), ("price_vigencia", "TEXT"),
+        ):
+            if column not in existing:
+                conn.execute(f"ALTER TABLE concepts ADD COLUMN {column} {kind}")
+
+    def adopt_concept_reference(self, code: str, ref_id: int) -> dict:
+        """Price a concept from a reference row: its P.U. replaces the matrix
+        until cleared, with the row's provenance on every presupuesto."""
+        reference = self.get_reference(ref_id)
+        if reference is None:
+            raise ValueError("la referencia no existe")
+        with _LOCK, self._connect() as conn:
+            if conn.execute("SELECT 1 FROM concepts WHERE code = ?", (code,)).fetchone() is None:
+                raise ValueError(f"El concepto {code} no existe.")
+            conn.execute(
+                "UPDATE concepts SET price_override = ?, price_source_key = ?, price_source = ?, "
+                "price_clave = ?, price_vigencia = ? WHERE code = ?",
+                (
+                    float(reference["price"]), reference["source_key"], reference["source_name"],
+                    reference["clave"], reference["source_vigencia"], code,
+                ),
+            )
+            row = conn.execute("SELECT * FROM concepts WHERE code = ?", (code,)).fetchone()
+        return dict(row)
+
+    def clear_concept_price(self, code: str) -> dict:
+        with _LOCK, self._connect() as conn:
+            conn.execute(
+                "UPDATE concepts SET price_override = NULL, price_source_key = NULL, "
+                "price_source = NULL, price_clave = NULL, price_vigencia = NULL WHERE code = ?",
+                (code,),
+            )
+            row = conn.execute("SELECT * FROM concepts WHERE code = ?", (code,)).fetchone()
+        if row is None:
+            raise ValueError(f"El concepto {code} no existe.")
+        return dict(row)
+
+    def load_concept_prices(self) -> dict[str, dict]:
+        """Adopted precios unitarios by concept code, with provenance."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT code, price_override, price_source_key, price_source, price_clave, "
+                "price_vigencia FROM concepts WHERE price_override IS NOT NULL AND active = 1"
+            ).fetchall()
+        return {
+            row["code"]: {
+                "price": float(row["price_override"]), "source_key": row["price_source_key"],
+                "source": row["price_source"], "clave": row["price_clave"],
+                "vigencia": row["price_vigencia"],
+            }
+            for row in rows
+        }
 
     @staticmethod
     def _sync_builtin_concepts(conn: sqlite3.Connection, codes: tuple[str, ...]) -> None:

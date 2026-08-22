@@ -113,6 +113,7 @@ def build_cost_report(
         rendimientos=store.load_rendimientos(),
         adjustments=reviews.adjustments if reviews else None,
         store_concepts=store.load_concepts(),
+        concept_prices=store.load_concept_prices(),
         schedule_specs=inputs.schedule_specs,
     )
 

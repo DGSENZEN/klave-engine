@@ -25,6 +25,7 @@ from klave_engine.costing.models import (
     CostReport,
     QuantityKind,
     Resource,
+    ResourceType,
     UnitPriceAnalysis,
 )
 from klave_engine.costing.reviews import ManualAdjustment
@@ -63,6 +64,22 @@ def _calibrate_assumptions(
     return calibrated, notes
 
 
+def adopted_price_apu(concept: Concept, adopted: dict) -> UnitPriceAnalysis:
+    """A concept priced by an adopted reference row: no matrix, the row's
+    P.U. as direct unit cost, and its provenance on the analysis."""
+    vigencia = f" · vigencia {adopted['vigencia']}" if adopted.get("vigencia") else ""
+    return UnitPriceAnalysis(
+        concept_code=concept.code,
+        concept_description=concept.description,
+        unit=concept.unit,
+        lines=[],
+        breakdown={rt.value: 0.0 for rt in ResourceType},
+        direct_unit_cost=round(float(adopted["price"]), 2),
+        price_source=f"{adopted.get('source') or 'referencia'} · {adopted.get('clave') or ''}"
+        f"{vigencia}",
+    )
+
+
 def generate_cost_report(
     project_id: str,
     detections: list[Detection],
@@ -76,6 +93,7 @@ def generate_cost_report(
     adjustments: list[ManualAdjustment] | None = None,
     store_concepts: list[dict] | None = None,
     schedule_specs: dict | None = None,
+    concept_prices: dict[str, dict] | None = None,
 ) -> CostReport:
     config = config or CostingConfig()
     assumptions, calibration_notes = _calibrate_assumptions(config.assumptions, dimensions)
@@ -92,6 +110,10 @@ def generate_cost_report(
             if override is not None and override > 0:
                 concept.production_rate_per_day = override
     apus = build_all_apus(catalog, price_book, templates=apu_templates)
+    for concept in catalog:
+        adopted = (concept_prices or {}).get(concept.code)
+        if adopted:
+            apus[concept.code] = adopted_price_apu(concept, adopted)
     boq = generate_bill_of_quantities(
         project_id, detections, units, catalog, apus, config.currency,
         segmentation=segmentation, assumptions=assumptions,

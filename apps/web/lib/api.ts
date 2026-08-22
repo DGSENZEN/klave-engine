@@ -224,6 +224,8 @@ export type Apu = {
   /** Direct unit cost broken down by resource type. */
   breakdown: Record<string, number>;
   direct_unit_cost: number;
+  /** Set when the P.U. was adopted from a reference row instead of priced from lines. */
+  price_source?: string | null;
 };
 
 export type PeriodCashflow = {
@@ -660,6 +662,11 @@ export type CatalogConcept = {
   phase: string;
   production_rate_per_day: number;
   detection_backed: boolean;
+  /** P.U. adopted from a reference row (catálogo propio or publication); replaces the matrix. */
+  price_override?: number | null;
+  price_source?: string | null;
+  price_clave?: string | null;
+  price_vigencia?: string | null;
 };
 
 export type ApuComponent = { resource_code: string; quantity: number };
@@ -969,6 +976,19 @@ export const searchReference = (q: string, source?: string) =>
   getJSON<{ rows: ReferenceRow[] }>(
     `/catalog/reference?q=${encodeURIComponent(q)}${source ? `&source=${encodeURIComponent(source)}` : ""}`,
   ).then((r) => r.rows);
+
+export const adoptConceptReference = (code: string, refId: number, actor?: string) =>
+  postJSON<CatalogConcept>(
+    `/catalog/concepts/${encodeURIComponent(code)}/adopt`,
+    { ref_id: refId },
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export const clearConceptPrice = (code: string, actor?: string) =>
+  deleteJSON<CatalogConcept>(
+    `/catalog/concepts/${encodeURIComponent(code)}/price`,
+    actor ? { "X-Actor": actor } : undefined,
+  );
 
 export const adoptReference = (code: string, refId: number, actor?: string) =>
   postJSON<CatalogInsumo>(

@@ -15,7 +15,9 @@ import {
 } from "@phosphor-icons/react";
 import {
   ApiError,
+  adoptConceptReference,
   adoptReference,
+  clearConceptPrice,
   createConcept,
   createInsumo,
   getCatalog,
@@ -767,10 +769,21 @@ function ApuEditor({
           <Badge tone={concept.detection_backed ? "accent" : "default"}>
             {concept.detection_backed ? "Detección" : "Manual"}
           </Badge>
+          {concept.price_override != null && (
+            <Badge tone="warning">
+              P.U. de {concept.price_source} · {concept.price_clave}
+              {concept.price_vigencia ? ` · ${concept.price_vigencia}` : ""}
+            </Badge>
+          )}
         </div>
         <div className="shrink-0 text-right">
-          <div className="font-semibold tabular">{money2(preview)}</div>
-          <div className="text-xs text-muted">por {concept.unit}</div>
+          <div className="font-semibold tabular">
+            {money2(concept.price_override != null ? concept.price_override : preview)}
+          </div>
+          <div className="text-xs text-muted">
+            por {concept.unit}
+            {concept.price_override != null ? " · matriz en pausa" : ""}
+          </div>
         </div>
         <CaretDown
           size={15}
@@ -781,6 +794,34 @@ function ApuEditor({
 
       {open && (
         <div className="border-t border-border">
+          {concept.price_override != null && (
+            <div className="flex flex-wrap items-center gap-3 border-b border-border bg-surface-2/60 px-5 py-3 text-sm">
+              <span className="min-w-0 flex-1">
+                Este concepto se costea a <strong>{money2(concept.price_override)}</strong> por{" "}
+                {concept.unit}, tomado de {concept.price_source} · {concept.price_clave}
+                {concept.price_vigencia ? ` · vigencia ${concept.price_vigencia}` : ""}. La matriz
+                de abajo no se usa mientras el precio adoptado esté activo.
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await clearConceptPrice(concept.code, getBrowserActor());
+                    onChanged();
+                  } catch {
+                    onError(`No se pudo quitar el precio adoptado de ${concept.code}.`);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                Volver a la matriz
+              </Button>
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -970,6 +1011,7 @@ function FuentesSection({
   const [sourceKey, setSourceKey] = useState("");
   const [rows, setRows] = useState<ReferenceRow[] | null>(null);
   const [adopting, setAdopting] = useState<Record<number, string>>({});
+  const [adoptingConcept, setAdoptingConcept] = useState<Record<number, string>>({});
   const [ownFile, setOwnFile] = useState<File | null>(null);
   const [ownName, setOwnName] = useState("");
   const [ownVigencia, setOwnVigencia] = useState("");
@@ -1039,6 +1081,20 @@ function FuentesSection({
       onError(detail || "No se pudo importar el catálogo.");
     } finally {
       setOwnBusy(false);
+    }
+  }
+
+  async function adoptForConcept(row: ReferenceRow) {
+    const code = adoptingConcept[row.ref_id];
+    if (!code) return;
+    try {
+      await adoptConceptReference(code, row.ref_id, getBrowserActor());
+      onNotice(
+        `${code} se costea a ${money2(row.price)} por ${row.unit} (${row.source_name}, ${row.clave}); su matriz queda en pausa`,
+      );
+      onChanged();
+    } catch {
+      onError(`No se pudo aplicar la referencia al concepto ${code}.`);
     }
   }
 
@@ -1238,6 +1294,31 @@ function FuentesSection({
                               onClick={() => adopt(row)}
                             >
                               Aplicar
+                            </Button>
+                            <select
+                              value={adoptingConcept[row.ref_id] ?? ""}
+                              onChange={(e) =>
+                                setAdoptingConcept((a) => ({ ...a, [row.ref_id]: e.target.value }))
+                              }
+                              className="max-w-48 rounded-md border border-border bg-surface px-1.5 py-1 text-xs"
+                              title="Usar este precio como P.U. del concepto (sustituye su matriz)"
+                            >
+                              <option value="">concepto…</option>
+                              {catalog.concepts
+                                .filter((c) => c.unit.toUpperCase() === row.unit.toUpperCase())
+                                .map((c) => (
+                                  <option key={c.code} value={c.code}>
+                                    {c.code} · {c.unit}
+                                  </option>
+                                ))}
+                            </select>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={!adoptingConcept[row.ref_id]}
+                              onClick={() => adoptForConcept(row)}
+                            >
+                              P.U.
                             </Button>
                           </div>
                         </td>

@@ -258,6 +258,9 @@ def _apus(ws: Worksheet, report: CostReport) -> None:
         row += 2
         _header(ws, row, ["Recurso", "Descripción", "Unidad", "Cantidad", "Costo", "Importe"])
         row += 1
+        if apu.price_source:
+            _muted(ws, row, 1, f"P.U. adoptado de {apu.price_source} (sin matriz)")
+            row += 1
         for line in apu.lines:
             values: list[Any] = [
                 line.resource_code, line.description, line.unit,

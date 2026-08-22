@@ -52,6 +52,9 @@ class UnitPriceAnalysis(BaseModel):
     lines: list[ApuLine]
     breakdown: dict[str, float]  # by resource type
     direct_unit_cost: float
+    # Set when the P.U. was adopted from a reference row (catálogo propio or
+    # publication) instead of priced from the matrix: "source · clave · vigencia".
+    price_source: str | None = None
 
 
 class QuantityKind(StrEnum):

@@ -111,6 +111,11 @@ def get_catalog_state(catalog: CatalogStore = Depends(get_catalog)) -> dict:
                 # rule_key marks detection-backed concepts; without one the
                 # concept is manual and quantities come from adjustments.
                 "detection_backed": bool(row.get("rule_key")),
+                # A P.U. adopted from a reference row replaces the matrix.
+                "price_override": row.get("price_override"),
+                "price_source": row.get("price_source"),
+                "price_clave": row.get("price_clave"),
+                "price_vigencia": row.get("price_vigencia"),
             }
             for row in catalog.load_concepts()
         ],
@@ -519,6 +524,41 @@ def adopt_reference_price(
             status_code=404, detail={"error_type": "reference_not_found", "message": str(exc)}
         ) from exc
     _publish_catalog_updated(x_actor, "insumo_updated", code)
+    return row
+
+
+@router.post("/concepts/{code}/adopt")
+def adopt_concept_price(
+    code: str,
+    body: AdoptInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    """The concept's P.U. becomes the reference row's price (catálogo propio
+    or publication), replacing its matrix until cleared."""
+    try:
+        row = catalog.adopt_concept_reference(code, body.ref_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404, detail={"error_type": "not_found", "message": str(exc)}
+        ) from exc
+    _publish_catalog_updated(x_actor, "concept_updated", code)
+    return row
+
+
+@router.delete("/concepts/{code}/price")
+def clear_concept_price(
+    code: str,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    try:
+        row = catalog.clear_concept_price(code)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404, detail={"error_type": "concept_not_found", "message": str(exc)}
+        ) from exc
+    _publish_catalog_updated(x_actor, "concept_updated", code)
     return row
 
 

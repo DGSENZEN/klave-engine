@@ -355,6 +355,7 @@ def run_full_pipeline(
         rendimientos=catalog_store.load_rendimientos(),
         adjustments=reviews.adjustments,
         store_concepts=catalog_store.load_concepts(),
+        concept_prices=catalog_store.load_concept_prices(),
     )
     write_json(processed / "cost_report.json", result.cost_report)
     write_json(
