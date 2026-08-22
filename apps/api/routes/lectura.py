@@ -68,6 +68,7 @@ def get_lectura(project_id: str, store: ProjectStore = Depends(get_store)) -> di
     warnings = _optional(store, project_id, "parse_warnings.json") or []
     detections = _optional(store, project_id, "detections.json") or []
     schedules = _optional(store, project_id, "schedules.json") or {}
+    inventory = _optional(store, project_id, "inventory.json")
 
     conversion_by_source = {c.get("source_path", ""): c for c in conversions}
     summary_by_file = {s.get("source_file", ""): s for s in parse_summary}
@@ -128,6 +129,7 @@ def get_lectura(project_id: str, store: ProjectStore = Depends(get_store)) -> di
 
     return {
         "project_id": project_id,
+        "inventory": inventory,
         "project_name": manifest.project_name,
         "sheets": sheets,
         "units": (

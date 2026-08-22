@@ -30,6 +30,7 @@ from klave_engine.costing.reviews import filter_excluded, load_reviews
 from klave_engine.detection.dimension_links import link_dimensions
 from klave_engine.detection.dimensions import build_dimension_inventory
 from klave_engine.detection.frames import detect_frames
+from klave_engine.detection.inventory import build_inventory
 from klave_engine.detection.results import Detection
 from klave_engine.detection.schedules import apply_schedule, build_schedule_inventory
 from klave_engine.detection.suite import (
@@ -256,6 +257,8 @@ def run_full_pipeline(
     detector_config = load_detector_config(settings.detector_config_path, units)
     frames = detect_frames(result.entities)
     write_json(processed / "frames.json", frames)
+    # Levantamiento: symbols and runs per sheet, counted before any price.
+    write_json(processed / "inventory.json", build_inventory(result.entities, units, frames))
     detector_outputs = run_detectors(
         result.entities, index, manifest, detector_config, frames=frames
     )

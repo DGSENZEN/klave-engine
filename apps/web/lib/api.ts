@@ -531,9 +531,34 @@ export type LecturaSchedules = {
   notes: string[];
 };
 
+export type InventoryBlock = {
+  block_name: string;
+  layer: string;
+  count: number;
+  by_view: Record<string, number>;
+};
+export type InventoryRun = {
+  layer: string;
+  length_m: number | null;
+  length_du: number;
+  segments: number;
+  by_view: Record<string, number>;
+};
+export type SheetInventory = {
+  sheet: string;
+  discipline: string | null;
+  blocks: InventoryBlock[];
+  runs: InventoryRun[];
+  specs: string[];
+  notes: string[];
+};
+export type Inventory = { sheets: SheetInventory[]; unit: string | null; notes: string[] };
+
 export type Lectura = {
   project_id: string;
   project_name: string;
+  /** Levantamiento por hoja: símbolos y trazos contados, sin precio. */
+  inventory?: Inventory | null;
   schedules?: LecturaSchedules;
   sheets: LecturaSheet[];
   units: { unit: string; source: string; confidence: number; source_label: string } | null;

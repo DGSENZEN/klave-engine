@@ -11,7 +11,13 @@ import {
   Stack,
   Warning,
 } from "@phosphor-icons/react";
-import { getLectura, num, type Lectura, type LecturaSheet } from "@/lib/api";
+import {
+  getLectura,
+  num,
+  type Lectura,
+  type LecturaSheet,
+  type SheetInventory,
+} from "@/lib/api";
 import { FAMILY_LABELS } from "@/components/PlanoCanvas";
 import { useProjectLive } from "@/components/ProjectLive";
 import {
@@ -177,6 +183,19 @@ export default function LecturaPage() {
             )}
           </Card>
 
+          {lectura.inventory && lectura.inventory.sheets.length > 0 && (
+            <Card className="p-5">
+              <SectionTitle sub="Lo que cada hoja contiene, contado: símbolos por bloque y metros de trazo por capa. Un conteo no es una cantidad hasta que se asigna a un concepto del catálogo.">
+                Levantamiento por hoja
+              </SectionTitle>
+              <div className="space-y-4">
+                {lectura.inventory.sheets.map((sheet) => (
+                  <InventoryCard key={sheet.sheet} sheet={sheet} unit={lectura.inventory?.unit ?? null} />
+                ))}
+              </div>
+            </Card>
+          )}
+
           {lectura.blocks.length > 0 && (
             <Card className="p-5">
               <SectionTitle sub="Definiciones de bloque más usadas; su geometría interna se expande para la detección.">
@@ -259,6 +278,110 @@ export default function LecturaPage() {
             ))}
           </ul>
         </Card>
+      )}
+    </div>
+  );
+}
+
+const DISCIPLINE_LABELS: Record<string, string> = {
+  hidraulica: "Hidráulica",
+  sanitaria: "Sanitaria",
+  electrica: "Eléctrica",
+  gas: "Gas",
+  aire: "Aire acondicionado",
+  cctv: "CCTV / seguridad",
+  canceleria: "Cancelería",
+  acabados: "Acabados",
+  carpinteria: "Carpintería",
+  estructural: "Estructural",
+};
+
+function InventoryCard({ sheet, unit }: { sheet: SheetInventory; unit: string | null }) {
+  const [open, setOpen] = useState(false);
+  const symbols = sheet.blocks.reduce((s, b) => s + b.count, 0);
+  const metres = sheet.runs.reduce((s, r) => s + (r.length_m ?? 0), 0);
+  const levels = new Set<string>();
+  sheet.blocks.forEach((b) => Object.keys(b.by_view).forEach((k) => levels.add(k)));
+  sheet.runs.forEach((r) => Object.keys(r.by_view).forEach((k) => levels.add(k)));
+  const short = (title: string) => title.replace(/^[A-Z]{1,3}-\d{2,4}[A-Z]?\s*·\s*/, "");
+  return (
+    <div className="rounded-lg border border-border">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-left"
+      >
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{sheet.sheet}</span>
+        {sheet.discipline && (
+          <Badge tone="accent">{DISCIPLINE_LABELS[sheet.discipline] ?? sheet.discipline}</Badge>
+        )}
+        <span className="text-xs tabular text-muted">
+          {num(symbols)} símbolos · {unit ? `${num(metres)} m` : "longitud sin unidad"} en{" "}
+          {sheet.runs.length} capas
+        </span>
+      </button>
+      {open && (
+        <div className="grid gap-4 border-t border-border px-4 py-3 text-sm md:grid-cols-2">
+          <div>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+              Símbolos (bloques)
+            </div>
+            {sheet.blocks.length === 0 && <div className="text-xs text-muted">Ninguno.</div>}
+            <ul className="space-y-1">
+              {sheet.blocks.slice(0, 30).map((b) => (
+                <li key={`${b.block_name}|${b.layer}`} className="flex items-baseline gap-2">
+                  <span className="tabular font-medium">{b.count}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {b.block_name} <span className="text-xs text-muted">· {b.layer}</span>
+                  </span>
+                  {Object.keys(b.by_view).length > 1 && (
+                    <span className="text-[11px] tabular text-muted">
+                      {Object.entries(b.by_view)
+                        .map(([t, n]) => `${short(t)} ${n}`)
+                        .join(" · ")}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+              Trazos por capa
+            </div>
+            {sheet.runs.length === 0 && <div className="text-xs text-muted">Ninguno.</div>}
+            <ul className="space-y-1">
+              {sheet.runs.slice(0, 30).map((r) => (
+                <li key={r.layer} className="flex items-baseline gap-2">
+                  <span className="tabular font-medium">
+                    {r.length_m != null ? `${num(r.length_m)} m` : `${num(r.length_du)} u.`}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {r.layer} <span className="text-xs text-muted">· {r.segments} tramos</span>
+                  </span>
+                  {Object.keys(r.by_view).length > 1 && (
+                    <span className="text-[11px] tabular text-muted">
+                      {Object.entries(r.by_view)
+                        .map(([t, n]) => `${short(t)} ${num(n)}`)
+                        .join(" · ")}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {sheet.specs.length > 0 && (
+              <div className="mt-3 text-xs text-muted">
+                Especificaciones leídas: {sheet.specs.slice(0, 12).join(" · ")}
+              </div>
+            )}
+            {levels.size > 0 && (
+              <div className="mt-2 text-[11px] text-faint">
+                Plantas: {[...levels].map(short).join(", ")}
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
