@@ -973,8 +973,8 @@ class CatalogStore:
     def add_inventory_mapping(
         self, *, kind: str, pattern: str, concept_code: str, factor: float = 1.0
     ) -> dict:
-        if kind not in ("block", "layer", "tag"):
-            raise ValueError("kind debe ser block, layer o tag")
+        if kind not in ("block", "layer", "tag", "area"):
+            raise ValueError("kind debe ser block, layer, tag o area")
         if not pattern.strip():
             raise ValueError("El patrón no puede estar vacío.")
         if factor <= 0:

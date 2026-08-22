@@ -35,6 +35,10 @@ def test_symbols_and_runs_per_sheet(tmp_path):
         msp.add_lwpolyline([(0, 2), (4, 2), (4, 5)], dxfattribs={"layer": "00-SANITARIA"})
         msp.add_line((0, 10), (3, 10), dxfattribs={"layer": "COTAS1"})  # annotation
         msp.add_line((0, 11), (0.4, 11), dxfattribs={"layer": "GAS"})  # under 1 m: noise
+        msp.add_lwpolyline([(20, 0), (24, 0), (24, 3), (20, 3)], close=True,
+                           dxfattribs={"layer": "A-PISOS"})  # 12 m² of piso
+        msp.add_lwpolyline([(20, 5), (20.4, 5), (20.4, 5.4), (20, 5.4)], close=True,
+                           dxfattribs={"layer": "A-PISOS"})  # 0.16 m²: noise
         msp.add_text("TUBERÍA DE PEAD 19MM", height=0.1).set_placement((1, 12))
         for i, tag in enumerate(("V-1", "V-1", "V-2", "P-1", "P-1", "P-1", "T-9")):
             msp.add_text(tag, height=0.1).set_placement((1 + i, 14))
@@ -50,7 +54,10 @@ def test_symbols_and_runs_per_sheet(tmp_path):
     assert [(b.block_name, b.layer, b.count) for b in sheet.blocks] == [
         ("SALIDA-SAN", "00-SANITARIA", 3), ("LUMINARIA", "ELEC-LUM", 1),
     ]
-    assert [(r.layer, r.length_m, r.segments) for r in sheet.runs] == [("00-SANITARIA", 19.0, 2)]
+    assert [(r.layer, r.length_m, r.segments) for r in sheet.runs] == [
+        ("00-SANITARIA", 19.0, 2), ("A-PISOS", 15.6, 2),
+    ]
+    assert [(a.layer, a.area_m2, a.count) for a in sheet.areas] == [("A-PISOS", 12.16, 2)]
     assert sheet.specs == ["TUBERÍA DE PEAD 19MM"]
     # Tags repeated at least twice are element types; T-9 alone is a detail title.
     assert [(t.tag, t.count) for t in sheet.tags] == [("P-1", 3), ("V-1", 2)]

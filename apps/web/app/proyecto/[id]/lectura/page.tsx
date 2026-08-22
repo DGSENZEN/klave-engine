@@ -56,7 +56,7 @@ export default function LecturaPage() {
   }, [reloadMappings]);
 
   async function assign(
-    kind: "block" | "layer" | "tag",
+    kind: "block" | "layer" | "tag" | "area",
     pattern: string,
     conceptCode: string,
   ) {
@@ -370,12 +370,12 @@ function MappingControl({
   onAssign,
   onUnassign,
 }: {
-  kind: "block" | "layer" | "tag";
+  kind: "block" | "layer" | "tag" | "area";
   pattern: string;
   unit: string;
   concepts: CatalogConcept[];
   mappings: InventoryMapping[];
-  onAssign: (kind: "block" | "layer" | "tag", pattern: string, conceptCode: string) => void;
+  onAssign: (kind: "block" | "layer" | "tag" | "area", pattern: string, conceptCode: string) => void;
   onUnassign: (mapping: InventoryMapping) => void;
 }) {
   const current = mappings.find(
@@ -431,7 +431,7 @@ function InventoryCard({
   unit: string | null;
   concepts: CatalogConcept[];
   mappings: InventoryMapping[];
-  onAssign: (kind: "block" | "layer" | "tag", pattern: string, conceptCode: string) => void;
+  onAssign: (kind: "block" | "layer" | "tag" | "area", pattern: string, conceptCode: string) => void;
   onUnassign: (mapping: InventoryMapping) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -531,6 +531,43 @@ function InventoryCard({
                 </li>
               ))}
             </ul>
+            {(sheet.areas ?? []).length > 0 && (
+              <div className="mt-3">
+                <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+                  Áreas por capa (contornos cerrados y achurados)
+                </div>
+                <ul className="space-y-1">
+                  {(sheet.areas ?? []).slice(0, 20).map((a) => (
+                    <li key={a.layer} className="flex items-baseline gap-2">
+                      <span className="tabular font-medium">
+                        {a.area_m2 != null ? `${num(a.area_m2)} m²` : `${num(a.area_du2)} u.²`}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {a.layer} <span className="text-xs text-muted">· {a.count} figuras</span>
+                      </span>
+                      {Object.keys(a.by_view).length > 1 && (
+                        <span className="text-[11px] tabular text-muted">
+                          {Object.entries(a.by_view)
+                            .map(([v, n]) => `${short(v)} ${num(n)}`)
+                            .join(" · ")}
+                        </span>
+                      )}
+                      {a.area_m2 != null && (
+                        <MappingControl
+                          kind="area"
+                          pattern={a.layer}
+                          unit="M2"
+                          concepts={concepts}
+                          mappings={mappings}
+                          onAssign={onAssign}
+                          onUnassign={onUnassign}
+                        />
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {(sheet.tags ?? []).length > 0 && (
               <div className="mt-3">
                 <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">

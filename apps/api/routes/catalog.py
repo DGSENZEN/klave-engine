@@ -563,7 +563,7 @@ def clear_concept_price(
 
 
 class InventoryMappingInput(BaseModel):
-    kind: Literal["block", "layer", "tag"]
+    kind: Literal["block", "layer", "tag", "area"]
     pattern: str = Field(min_length=1, max_length=200)
     concept_code: str = Field(min_length=1, max_length=40)
     factor: float = Field(default=1.0, gt=0)

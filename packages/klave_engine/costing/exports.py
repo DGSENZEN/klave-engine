@@ -391,6 +391,11 @@ def _levantamiento(ws: Worksheet, inventory: dict) -> None:
         for tag in sheet.get("tags") or []:
             entries.append(["Etiqueta", tag["tag"], "", tag["count"], "PZA",
                             tag.get("by_view") or {}])
+        for region in sheet.get("areas") or []:
+            area = region.get("area_m2")
+            entries.append(["Área", region["layer"], region["layer"],
+                            area if area is not None else region.get("area_du2", 0.0),
+                            "M2" if area is not None else f"{unit}²", region.get("by_view") or {}])
         for run in sheet.get("runs") or []:
             length = run.get("length_m")
             entries.append(["Trazo", run["layer"], run["layer"],

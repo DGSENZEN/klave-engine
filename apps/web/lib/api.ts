@@ -545,6 +545,13 @@ export type InventoryRun = {
   by_view: Record<string, number>;
 };
 export type InventoryTag = { tag: string; count: number; by_view: Record<string, number> };
+export type InventoryArea = {
+  layer: string;
+  area_m2: number | null;
+  area_du2: number;
+  count: number;
+  by_view: Record<string, number>;
+};
 export type SheetInventory = {
   sheet: string;
   label?: string;
@@ -553,6 +560,8 @@ export type SheetInventory = {
   runs: InventoryRun[];
   /** Repeated marks (V-1, P-3…): element types of cancelería, carpintería, plafones. */
   tags?: InventoryTag[];
+  /** Closed shapes and hatches by layer: pisos, plafones, acabados (m²). */
+  areas?: InventoryArea[];
   specs: string[];
   notes: string[];
 };
@@ -561,7 +570,7 @@ export type Inventory = { sheets: SheetInventory[]; unit: string | null; notes: 
 /** A symbol or layer of the levantamiento mapped to a concept (workspace-wide). */
 export type InventoryMapping = {
   id: number;
-  kind: "block" | "layer" | "tag";
+  kind: "block" | "layer" | "tag" | "area";
   pattern: string;
   concept_code: string;
   factor: number;
@@ -572,7 +581,12 @@ export const listInventoryMappings = () =>
   getJSON<{ mappings: InventoryMapping[] }>("/catalog/inventory-mappings").then((r) => r.mappings);
 
 export const addInventoryMapping = (
-  body: { kind: "block" | "layer" | "tag"; pattern: string; concept_code: string; factor?: number },
+  body: {
+    kind: "block" | "layer" | "tag" | "area";
+    pattern: string;
+    concept_code: string;
+    factor?: number;
+  },
   actor?: string,
 ) =>
   postJSON<InventoryMapping>(

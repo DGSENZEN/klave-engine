@@ -66,6 +66,21 @@ def apply_inventory(
                     sheets_hit.append(sheet.get("label") or sheet.get("sheet", ""))
                     for view, n in (tag.get("by_view") or {}).items():
                         by_view[view] = by_view.get(view, 0.0) + float(n)
+            elif kind == "area":
+                for region in sheet.get("areas") or []:
+                    if str(region.get("layer", "")).lower() != pattern:
+                        continue
+                    if region.get("area_m2") is None:
+                        boq.warnings.append(
+                            f"Levantamiento: la capa «{region.get('layer')}» no tiene área en m² "
+                            "(unidad del dibujo desconocida); no se cuantifica."
+                        )
+                        continue
+                    total += float(region["area_m2"])
+                    hits += int(region.get("count") or 0)
+                    sheets_hit.append(sheet.get("label") or sheet.get("sheet", ""))
+                    for view, n in (region.get("by_view") or {}).items():
+                        by_view[view] = by_view.get(view, 0.0) + float(n)
             elif kind == "block":
                 for block in sheet.get("blocks") or []:
                     if str(block.get("block_name", "")).lower() != pattern:
@@ -104,6 +119,8 @@ def apply_inventory(
             what = "símbolos"
         elif kind == "tag":
             what = "etiquetas"
+        elif kind == "area":
+            what = "m²" if unit_label else "unidades² de dibujo"
         else:
             what = "m" if unit_label else "unidades de dibujo"
         note = (
@@ -123,7 +140,11 @@ def apply_inventory(
                 amount=round(quantity * apu.direct_unit_cost, 2),
                 phase=concept.phase,
                 raw_quantity=round(total, 4),
-                raw_kind=QuantityKind.LENGTH if kind == "layer" else QuantityKind.COUNT,
+                raw_kind=(
+                    QuantityKind.LENGTH if kind == "layer"
+                    else QuantityKind.AREA if kind == "area"
+                    else QuantityKind.COUNT
+                ),
                 source_detection_count=hits,
                 confidence=0.8,
                 assumptions=[note],

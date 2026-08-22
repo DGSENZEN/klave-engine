@@ -84,6 +84,17 @@ class InventoryTag(BaseModel):
     by_view: dict[str, int] = Field(default_factory=dict)
 
 
+class InventoryArea(BaseModel):
+    """Closed shapes and hatches on a layer: pisos, plafones, acabados de
+    muro drawn as regions (m²)."""
+
+    layer: str
+    area_m2: float | None  # None when the drawing unit is unknown
+    area_du2: float
+    count: int
+    by_view: dict[str, float] = Field(default_factory=dict)
+
+
 class SheetInventory(BaseModel):
     sheet: str  # the parsed file, as entities name it
     label: str = ""  # the sheet as the user uploaded it
@@ -91,6 +102,7 @@ class SheetInventory(BaseModel):
     blocks: list[InventoryBlock] = Field(default_factory=list)
     runs: list[InventoryRun] = Field(default_factory=list)
     tags: list[InventoryTag] = Field(default_factory=list)
+    areas: list[InventoryArea] = Field(default_factory=list)
     specs: list[str] = Field(default_factory=list)  # "TUBERÍA DE PEAD 19MM", "Ø 1/2""
     notes: list[str] = Field(default_factory=list)
 
@@ -127,6 +139,18 @@ def reads_as_structure(sheet_label: str) -> bool:
     return guess_discipline(sheet_label) not in NON_STRUCTURAL
 
 
+def _area(entity: NormalizedEntity) -> float:
+    pts = entity.points or []
+    if len(pts) < 3:
+        return 0.0
+    return abs(
+        sum(
+            pts[i][0] * pts[(i + 1) % len(pts)][1] - pts[(i + 1) % len(pts)][0] * pts[i][1]
+            for i in range(len(pts))
+        )
+    ) / 2.0
+
+
 def _length(entity: NormalizedEntity) -> float:
     pts = entity.points or []
     if len(pts) < 2:
@@ -143,6 +167,7 @@ def build_inventory(
     frames: list[SheetFrame] | None = None,
     min_run_m: float = 1.0,
     sheet_names: dict[str, str] | None = None,
+    min_area_m2: float = 0.25,
 ) -> Inventory:
     to_m = units.to_meters() if units is not None else None
     plan_boxes: list[tuple[str, BBox]] = [
@@ -169,6 +194,7 @@ def build_inventory(
         runs: dict[str, InventoryRun] = {}
         tags: dict[str, InventoryTag] = {}
         attribute_tags: set[str] = set()
+        areas: dict[str, InventoryArea] = {}
         specs: set[str] = set()
         for entity in sheet_entities:
             if entity.entity_type == EntityType.insert and entity.block_name:
@@ -200,6 +226,19 @@ def build_inventory(
             elif entity.entity_type in (EntityType.line, EntityType.polyline, EntityType.arc):
                 if _ANNOTATION_LAYER_RE.search(entity.layer):
                     continue
+                if entity.entity_type == EntityType.polyline and entity.is_closed:
+                    region = _area(entity)
+                    if region > 0:
+                        area = areas.get(entity.layer)
+                        if area is None:
+                            area = areas[entity.layer] = InventoryArea(
+                                layer=entity.layer, area_m2=None, area_du2=0.0, count=0
+                            )
+                        area.area_du2 += region
+                        area.count += 1
+                        view = view_of(entity)
+                        if view:
+                            area.by_view[view] = area.by_view.get(view, 0.0) + region
                 length = _length(entity)
                 if length <= 0:
                     continue
@@ -213,6 +252,21 @@ def build_inventory(
                 view = view_of(entity)
                 if view:
                     run.by_view[view] = run.by_view.get(view, 0.0) + length
+            elif entity.entity_type == EntityType.hatch and not _ANNOTATION_LAYER_RE.search(
+                entity.layer
+            ):
+                region = _area(entity)
+                if region > 0:
+                    area = areas.get(entity.layer)
+                    if area is None:
+                        area = areas[entity.layer] = InventoryArea(
+                            layer=entity.layer, area_m2=None, area_du2=0.0, count=0
+                        )
+                    area.area_du2 += region
+                    area.count += 1
+                    view = view_of(entity)
+                    if view:
+                        area.by_view[view] = area.by_view.get(view, 0.0) + region
             elif entity.is_textual and entity.text:
                 # AutoCAD control codes: %%C is Ø, %%D is °, %%P is ±.
                 content = " ".join(
@@ -244,6 +298,16 @@ def build_inventory(
             run.length_du = round(run.length_du, 3)
             kept_runs.append(run)
         kept_runs.sort(key=lambda r: -(r.length_m if r.length_m is not None else r.length_du))
+        kept_areas: list[InventoryArea] = []
+        for area in areas.values():
+            if to_m is not None:
+                area.area_m2 = round(area.area_du2 * to_m * to_m, 2)
+                area.by_view = {k: round(v * to_m * to_m, 2) for k, v in area.by_view.items()}
+                if area.area_m2 < min_area_m2:
+                    continue
+            area.area_du2 = round(area.area_du2, 3)
+            kept_areas.append(area)
+        kept_areas.sort(key=lambda a: -(a.area_m2 if a.area_m2 is not None else a.area_du2))
         block_list = sorted(blocks.values(), key=lambda b: (-b.count, b.block_name))
         content_words = " ".join(
             [r.layer for r in kept_runs[:6]] + [b.block_name for b in block_list[:6]]
@@ -258,7 +322,7 @@ def build_inventory(
         )
         entry = SheetInventory(
             sheet=sheet, label=label, discipline=discipline, blocks=block_list, runs=kept_runs,
-            tags=tag_list, specs=sorted(specs)[:40],
+            tags=tag_list, areas=kept_areas, specs=sorted(specs)[:40],
         )
         if to_m is None:
             entry.notes.append(
