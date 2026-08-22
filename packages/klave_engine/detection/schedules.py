@@ -19,8 +19,14 @@ from pydantic import BaseModel, Field
 
 from klave_engine.detection.results import Detection, DetectionType
 from klave_engine.detection.text_patterns import TextPatternConfig, match_category
-from klave_engine.dxf.entities import NormalizedEntity
-from klave_engine.geometry.bbox import bbox_center, bbox_height, point_to_bbox_distance
+from klave_engine.dxf.entities import EntityType, NormalizedEntity
+from klave_engine.geometry.bbox import (
+    BBox,
+    bbox_center,
+    bbox_contains_point,
+    bbox_height,
+    point_to_bbox_distance,
+)
 
 _SECTION_RE = re.compile(r"(?<![\dxX×])(\d{1,3})\s*[xX×]\s*(\d{1,3})(?![\dxX×])")
 _BLOCK_RE = re.compile(r"\d{1,3}\s*[xX×]\s*\d{1,3}\s*[xX×]\s*\d{1,3}")
@@ -261,6 +267,19 @@ def _parse_tables(
 
 # ------------------------------------------------------------- details/notes
 
+_NOT_A_SECTION = re.compile(r"HUECO|PASO|ABERTURA|HASTA|M[AÁ]X|PERFORACI|PLACA|ANCLA", re.I)
+
+
+def _section_is_the_elements(content: str) -> bool:
+    """A family-level note names the element and then its section ("CADENA DE
+    ENRASE 15x25"); a section preceded by hole/opening words is not one."""
+    match = _SECTION_RE.search(content)
+    if match is None:
+        return False
+    before = content[max(0, match.start() - 40):match.start()]
+    return not _NOT_A_SECTION.search(before)
+
+
 def _parse_annotations(
     texts: list[NormalizedEntity], config: TextPatternConfig
 ) -> list[ElementSpec]:
@@ -284,6 +303,10 @@ def _parse_annotations(
                 )
             )
         elif family is not None:
+            if section is not None and not _section_is_the_elements(content):
+                section = None  # "HUECOS DE HASTA 15X20 … CONTRATRABE": a hole, not a section
+            if section is None and rebar is None and mesh is None:
+                continue
             specs.append(
                 ElementSpec(
                     mark=family.upper(), family=family, section_cm=section, rebar=rebar,
@@ -323,13 +346,112 @@ def _parse_annotations(
 
 # ------------------------------------------------------------------ assembly
 
+# Beam/column section drawings in details: a rectangle of real size (m)
+# with the estribo drawn inside it (a concentric rectangle 1–8 cm in).
+_SECTION_W_M = (0.10, 0.60)
+_SECTION_H_M = (0.12, 1.20)
+_STIRRUP_OFFSET_M = (0.01, 0.08)
+
+
+def _sections_from_detail_geometry(
+    entities: list[NormalizedEntity],
+    config: TextPatternConfig,
+    unit_to_m: float,
+    detail_boxes: list[BBox],
+) -> list[ElementSpec]:
+    """The detail convention without a cuadro: the mark sits right above a
+    section drawn at real size (30×80 cm rectangle with its cotas). Only
+    inside detail frames — a mark in a plan view has castillos beside it."""
+    closed = [
+        e for e in entities
+        if e.entity_type == EntityType.polyline and e.is_closed
+        and len(e.points or []) in (4, 5)
+    ]
+    rects: list[tuple[NormalizedEntity, float, float]] = []
+    for e in closed:
+        w = (e.bbox[2] - e.bbox[0]) * unit_to_m
+        h = (e.bbox[3] - e.bbox[1]) * unit_to_m
+        if not (_SECTION_W_M[0] <= w <= _SECTION_W_M[1]):
+            continue
+        if not (_SECTION_H_M[0] <= h <= _SECTION_H_M[1]):
+            continue
+        if h < 0.9 * w:
+            continue  # sections are drawn deeper than wide (or square)
+        x0, y0, x1, y1 = e.bbox
+        lo, hi = _STIRRUP_OFFSET_M[0] / unit_to_m, _STIRRUP_OFFSET_M[1] / unit_to_m
+        has_stirrup = any(
+            lo <= o.bbox[0] - x0 <= hi and lo <= o.bbox[1] - y0 <= hi
+            and lo <= x1 - o.bbox[2] <= hi and lo <= y1 - o.bbox[3] <= hi
+            for o in closed if o is not e
+        )
+        if has_stirrup:
+            rects.append((e, w, h))
+    if not rects:
+        return []
+    specs: list[ElementSpec] = []
+    for text in entities:
+        if not text.is_textual or not text.text:
+            continue
+        content = text.text.strip()
+        mark = _mark_in_text(content, config)
+        if mark is None or len(content) > 8:
+            continue
+        center = bbox_center(text.bbox)
+        if not any(bbox_contains_point(box, center) for box in detail_boxes):
+            continue
+        height = bbox_height(text.bbox) or 1.0
+        best: tuple[float, float, float] | None = None
+        for rect, w, h in rects:
+            x0, y0, x1, y1 = rect.bbox
+            # The mark is above the section, within its width (±one width),
+            # and at most a few text heights away from its top edge.
+            if not (x0 - (x1 - x0) <= center[0] <= x1 + (x1 - x0)):
+                continue
+            gap = center[1] - y1
+            if gap < -height or gap > 6 * height:
+                continue
+            if best is None or gap < best[0]:
+                best = (gap, w, h)
+        if best is None:
+            continue
+        a, b = round(best[1] * 100), round(best[2] * 100)
+        specs.append(
+            ElementSpec(
+                mark=mark, family=family_of_mark(mark), section_cm=(a, b), source="detalle",
+                source_text=f"{content} · sección dibujada {a}x{b} cm", confidence=0.7,
+            )
+        )
+    return specs
+
+
+def _merge_fields(chosen: ElementSpec, others: list[ElementSpec]) -> ElementSpec:
+    """Same-rank specs complete each other: the drawn section plus the
+    armado written beside the mark."""
+    merged = chosen.model_copy()
+    for other in others:
+        if merged.section_cm is None and other.section_cm is not None:
+            merged.section_cm = other.section_cm
+        if merged.rebar is None and other.rebar is not None:
+            merged.rebar = other.rebar
+        if merged.stirrups is None and other.stirrups is not None:
+            merged.stirrups = other.stirrups
+        if merged.mesh is None and other.mesh is not None:
+            merged.mesh = other.mesh
+    return merged
+
+
 def build_schedule_inventory(
-    entities: list[NormalizedEntity], config: TextPatternConfig | None = None
+    entities: list[NormalizedEntity],
+    config: TextPatternConfig | None = None,
+    unit_to_m: float | None = None,
+    detail_boxes: list[BBox] | None = None,
 ) -> ScheduleInventory:
     config = config or TextPatternConfig()
     texts = [e for e in entities if e.is_textual and e.text]
     table_specs, tables = _parse_tables(texts, config)
     specs = table_specs + _parse_annotations(texts, config)
+    if unit_to_m and detail_boxes:
+        specs += _sections_from_detail_geometry(entities, config, unit_to_m, detail_boxes)
     inventory = ScheduleInventory(
         specs=specs,
         tables_found=tables,
@@ -347,6 +469,7 @@ def build_schedule_inventory(
             (s for s in top if sections and s.section_cm == sections.most_common(1)[0][0]),
             top[0],
         )
+        chosen = _merge_fields(chosen, [s for s in top if s is not chosen])
         if any(s.source != "nota" or s.mark != s.family.upper() for s in candidates):
             inventory.by_mark[mark] = chosen
         else:

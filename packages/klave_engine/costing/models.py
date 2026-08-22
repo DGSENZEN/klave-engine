@@ -59,6 +59,7 @@ class QuantityKind(StrEnum):
     LENGTH = "length"
     AREA = "area"
     VOLUME = "volume"  # area × thickness read from the detection (m³)
+    LINEAR_VOLUME = "linear_volume"  # length × section read from the detection (m³)
 
 
 class ViewScope(StrEnum):
@@ -85,6 +86,10 @@ class QuantityRule(BaseModel):
     property_filter: dict[str, list[str | None]] | None = None
     thickness_property: str | None = None  # in cm, for VOLUME rules
     default_thickness_m: float | None = None  # when the sheet declares none
+    # LINEAR_VOLUME: section from "section_cm" ("30x80") or a measured marker
+    # area (drawing units²) within plausible bounds, else the default.
+    section_property: str | None = None
+    default_section_m2: float | None = None
 
 
 class Concept(BaseModel):
@@ -213,6 +218,7 @@ class CostingAssumptions(BaseModel):
     column_section_m2: float = 0.09  # 30x30 cm
     column_height_m: float = 3.0
     beam_section_m2: float = 0.1125  # 25x45 cm
+    contratrabe_section_m2: float = 0.125  # 25x50 cm
     wall_height_m: float = 2.7
     slab_thickness_m: float = 0.12  # losa maciza without a declared H=
     mat_thickness_m: float = 0.20  # losa de cimentación without a declared H=

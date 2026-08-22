@@ -113,6 +113,14 @@ SEED_VIGENCIA = "2026-08"
 # obra-negra practice values, all explicitly labeled reference data — a
 # runnable baseline to replace with quotations, never a market claim.
 SLAB_CONCEPT_CODES = ("EST-012", "EST-013", "CIM-007")
+BEAM_CONCEPT_CODES_V7 = ("CIM-008",)
+FORMWORK_CONCEPTS_V7: list[tuple[str, str, str, str, float, int, list[tuple[str, float]]]] = [
+    (
+        "CIM-009", "Cimbra común en contratrabes, acabado no aparente", "M2",
+        "Cimentación", 12.0, 33,
+        [("MAT-CIMBRA", 0.25), ("MO-CUAD-CARP", 0.085), ("EQ-HERRAMIENTA", 1.0)],
+    ),
+]
 SLAB_RESOURCES: list[tuple[str, str, str, float, str]] = [
     ("MAT-VIGUETA", "Vigueta pretensada de 13 cm (referencia)", "M", 98.0, "material"),
     ("MAT-BOVEDILLA", "Bovedilla de cemento-arena 15×25×56 cm (referencia)", "PZA", 24.0,
@@ -309,6 +317,13 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '6') "
                     "ON CONFLICT(key) DO UPDATE SET value = '6'"
                 )
+            if version_row is None or int(version_row["value"]) < 7:
+                self._sync_builtin_concepts(conn, BEAM_CONCEPT_CODES_V7)
+                self._seed_concepts(conn, FORMWORK_CONCEPTS_V7, 300)
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '7') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '7'"
+                )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.
                 conn.execute(
@@ -427,8 +442,15 @@ class CatalogStore:
                 (code, description, unit, resource_type, unit_cost, SEED_SOURCE,
                  SEED_VIGENCIA, _now()),
             )
+        self._sync_builtin_concepts(conn, SLAB_CONCEPT_CODES)
+        log_stage(logger, "catalog_migrated_v6", db_path=str(self.db_path))
+
+    @staticmethod
+    def _sync_builtin_concepts(conn: sqlite3.Connection, codes: tuple[str, ...]) -> None:
+        """Built-in (rule-bound) concepts added after v2, with their reference
+        matrices. OR IGNORE: a taller that already defined the code keeps its own."""
         for index, concept in enumerate(build_default_catalog(CostingAssumptions())):
-            if concept.code not in SLAB_CONCEPT_CODES:
+            if concept.code not in codes:
                 continue
             conn.execute(
                 "INSERT OR IGNORE INTO concepts (code, description, unit, phase, "
@@ -443,7 +465,6 @@ class CatalogStore:
                     "(concept_code, resource_code, quantity) VALUES (?, ?, ?)",
                     (concept.code, resource_code, quantity),
                 )
-        log_stage(logger, "catalog_migrated_v6", db_path=str(self.db_path))
 
     @staticmethod
     def _seed_concepts(conn: sqlite3.Connection, concepts: list, base_order: int) -> None:

@@ -141,6 +141,28 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
             sequence_order=1,
         ),
         Concept(
+            code="CIM-008",
+            description="Contratrabes de concreto armado f'c=250 kg/cm²",
+            unit="M3",
+            phase="Cimentación",
+            rule=QuantityRule(
+                detection_type=DetectionType.beam_tag,
+                kind=QuantityKind.LINEAR_VOLUME,
+                source_property="estimated_span_length",
+                property_filter={"family": ["contratrabe"]},
+                section_property="section_area_du2",
+                default_section_m2=a.contratrabe_section_m2,
+            ),
+            quantity_factor=1.0,
+            view_scope=ViewScope.FOUNDATION_ONLY,
+            assumptions=[
+                "Claro de cada contratrabe × su sección: la del detalle/cota del plano, "
+                f"o {a.contratrabe_section_m2:.3f} m² si el plano no la declara"
+            ],
+            production_rate_per_day=4.0,
+            sequence_order=2,
+        ),
+        Concept(
             code="EST-001",
             description="Columnas y castillos de concreto armado f'c=250 kg/cm²",
             unit="M3",
@@ -160,17 +182,23 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
         ),
         Concept(
             code="EST-002",
-            description="Trabes y contratrabes de concreto armado f'c=250 kg/cm²",
+            description="Trabes de concreto armado f'c=250 kg/cm²",
             unit="M3",
             phase="Estructura",
             rule=QuantityRule(
                 detection_type=DetectionType.beam_tag,
-                kind=QuantityKind.LENGTH,
+                kind=QuantityKind.LINEAR_VOLUME,
                 source_property="estimated_span_length",
+                property_filter={"family": [None, "trabe"]},
+                section_property="section_area_du2",
+                default_section_m2=a.beam_section_m2,
             ),
-            quantity_factor=a.beam_section_m2,
+            quantity_factor=1.0,
             view_scope=ViewScope.SUPERSTRUCTURE_SUM,
-            assumptions=[f"Sección promedio de trabe {a.beam_section_m2:.4f} m²"],
+            assumptions=[
+                "Claro de cada trabe × su sección: la del cuadro/detalle/cota del plano, "
+                f"o {a.beam_section_m2:.4f} m² si el plano no la declara"
+            ],
             production_rate_per_day=4.0,
             sequence_order=1,
         ),

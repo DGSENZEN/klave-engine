@@ -250,17 +250,21 @@ def compute_steel(
         )
 
     # --- trabes: only with a stated armado -----------------------------------
-    beams = lines.get("EST-002")
-    if beams is not None and beams.source_detections:
+    beam_sources: list[tuple[str, str]] = []
+    for line_code, family in (("EST-002", "trabe"), ("CIM-008", "contratrabe")):
+        beam_line = lines.get(line_code)
+        if beam_line is not None:
+            beam_sources.extend((det_id, family) for det_id in beam_line.source_detections)
+    if beam_sources:
         total = 0.0
         covered: list[str] = []
         missing: set[str] = set()
-        for det_id in beams.source_detections:
+        for det_id, family in beam_sources:
             det = by_id.get(det_id)
             if det is None:
                 continue
             mark = det.label.strip().upper()
-            spec, _origin = _spec_for(specs, mark, "trabe")
+            spec, _origin = _spec_for(specs, mark, family)
             rebar = parse_rebar(spec.get("rebar")) if spec else None
             section = tuple(spec["section_cm"]) if spec and spec.get("section_cm") else None
             span_du = float(det.properties.get("estimated_span_length") or 0.0)

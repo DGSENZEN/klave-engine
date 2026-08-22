@@ -36,16 +36,40 @@ REVIEW_THRESHOLD = 0.6
 # implausible and the assumed section is used instead.
 MIN_COLUMN_SECTION_M2 = 0.01  # 10×10 cm castillo
 MAX_COLUMN_SECTION_M2 = 1.00  # 1×1 m large column
+MAX_LINEAR_SECTION_M2 = 0.60  # 50×120 cm: beyond this a "section" is another drawing
 
 
 def rule_matches(rule: QuantityRule, detection: Detection) -> bool:
-    """Whether a detection of the rule's type feeds it (property filter)."""
+    """Whether a detection of the rule's type feeds it: the filter reads a
+    property, else a field of the detection (family from the taxonomy)."""
     if not rule.property_filter:
         return True
-    return all(
-        detection.properties.get(key) in allowed
-        for key, allowed in rule.property_filter.items()
-    )
+    for key, allowed in rule.property_filter.items():
+        value = detection.properties.get(key)
+        if value is None:
+            value = getattr(detection, key, None) or None
+        if value not in allowed:
+            return False
+    return True
+
+
+def _section_m2(detection: Detection, rule: QuantityRule, meters_factor: float) -> float:
+    """Section of a linear element: declared on the sheet (cuadro/detalle/
+    cota as "30x80"), else a plausible measured marker, else the default."""
+    declared = detection.properties.get("section_cm")
+    if isinstance(declared, str) and "x" in declared:
+        try:
+            a, b = (float(v) for v in declared.lower().split("x"))
+            if MIN_COLUMN_SECTION_M2 <= a * b / 10_000.0 <= MAX_LINEAR_SECTION_M2:
+                return a * b / 10_000.0
+        except ValueError:
+            pass
+    measured = detection.properties.get(rule.section_property or "")
+    if isinstance(measured, (int, float)) and measured > 0:
+        area = float(measured) * meters_factor ** 2
+        if MIN_COLUMN_SECTION_M2 <= area <= MAX_COLUMN_SECTION_M2:
+            return area
+    return rule.default_section_m2 or 0.0
 
 
 def _raw_over(concept: Concept, detections: list[Detection], meters_factor: float) -> float:
@@ -54,6 +78,13 @@ def _raw_over(concept: Concept, detections: list[Detection], meters_factor: floa
     assert rule is not None  # callers skip manual (rule-less) concepts
     if rule.kind == QuantityKind.COUNT:
         return float(len(detections))
+    if rule.kind == QuantityKind.LINEAR_VOLUME:
+        return sum(
+            float(d.properties[rule.source_property]) * meters_factor
+            * _section_m2(d, rule, meters_factor)
+            for d in detections
+            if rule.source_property and rule.source_property in d.properties
+        )
     if rule.kind == QuantityKind.VOLUME:
         volume = 0.0
         for d in detections:

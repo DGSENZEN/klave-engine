@@ -29,6 +29,7 @@ from klave_engine.detection.results import Detection
 CODE_ZAPATAS = "CIM-006"
 CODE_CASTILLOS = "EST-008"
 CODE_TRABES = "EST-009"
+CODE_CONTRATRABES = "CIM-009"
 CODE_DALAS = "EST-010"
 CODE_LOSA = "EST-011"
 
@@ -36,6 +37,7 @@ CODE_LOSA = "EST-011"
 _FC_FAMILY_BY_CONCEPT = {
     "CIM-002": "cimentacion", "EST-001": "castillo", "EST-002": "trabe", "EST-003": "losa",
     "EST-012": "losa", "EST-013": "losa", "CIM-007": "cimentacion",
+    "CIM-008": "cimentacion",
     "EST-005": "dala", "EST-006": "castillo", "EST-007": "firme", "CIM-003": "cimentacion",
 }
 _FC_IN_TEXT = re.compile(r"f\s*'?\s*c\s*=?\s*(\d{3})", re.I)
@@ -122,8 +124,14 @@ def compute_formwork(
             )
         )
 
-    beams = lines.get("EST-002")
-    if beams is not None and beams.source_detections:
+    contratrabe_h = assumptions.contratrabe_section_m2 / 0.25
+    for line_code, family, concept_code, default in (
+        ("EST-002", "trabe", CODE_TRABES, (beam_b, beam_h)),
+        ("CIM-008", "contratrabe", CODE_CONTRATRABES, (0.25, contratrabe_h)),
+    ):
+        beams = lines.get(line_code)
+        if beams is None or not beams.source_detections:
+            continue
         area = 0.0
         counted = 0
         for det_id in beams.source_detections:
@@ -133,18 +141,16 @@ def compute_formwork(
             span = float(det.properties.get("estimated_span_length") or 0.0) * factor
             if span <= 0:
                 continue
-            (b, h), _origin = _section_m(
-                det.properties, specs, det.label, "trabe", (beam_b, beam_h), factor
-            )
+            (b, h), _origin = _section_m(det.properties, specs, det.label, family, default, factor)
             area += (b + 2 * h) * span
             counted += 1
         if counted:
             report.lines.append(
                 FormworkLine(
-                    concept_code=CODE_TRABES, quantity=round(area, 2),
+                    concept_code=concept_code, quantity=round(area, 2),
                     source_detections=list(beams.source_detections),
-                    notes=[f"(b + 2h) × claro en {counted} trabes; sección del plano o supuesta "
-                           f"{beam_b:.2f}×{beam_h:.2f} m"],
+                    notes=[f"(b + 2h) × claro en {counted} {family}s; sección del plano o "
+                           f"supuesta {default[0]:.2f}×{default[1]:.2f} m"],
                 )
             )
 

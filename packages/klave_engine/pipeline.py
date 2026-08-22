@@ -264,7 +264,12 @@ def run_full_pipeline(
         result.detections.extend(output.detections)
     # What the sheet declares about its marks outranks measured markers and
     # assumptions: stamp sections from cuadros, details, and notes first.
-    schedule = build_schedule_inventory(result.entities, detector_config.text_patterns)
+    schedule = build_schedule_inventory(
+        result.entities,
+        detector_config.text_patterns,
+        unit_to_m=units.to_meters(),
+        detail_boxes=[f.bbox for f in frames if f.kind == "excluded"],
+    )
     stamped = apply_schedule(result.detections, schedule, units.to_meters())
     if stamped:
         schedule.notes.append(f"{stamped} detecciones tomaron su sección del plano.")
