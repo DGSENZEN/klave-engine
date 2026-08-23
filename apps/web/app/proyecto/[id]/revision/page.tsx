@@ -109,6 +109,11 @@ export default function RevisionPage() {
     );
   }, [table, concept, view, onlyDoubts, onlyPending, query, sort]);
 
+  // Long sets render in pages of 500; filters and "seleccionar todo" always
+  // work over the whole filtered set, never just the page.
+  const [shown, setShown] = useState(PAGE_SIZE);
+  const pagedRows = rows.length > shown ? rows.slice(0, shown) : rows;
+
   // Selection only ever holds visible keys: a filter change drops the rest.
   const visibleKeys = useMemo(() => new Set(rows.map((r) => r.key)), [rows]);
   const selectedVisible = useMemo(
@@ -365,7 +370,7 @@ export default function RevisionPage() {
               </td>
             </tr>
           )}
-          {rows.map((r, index) => {
+          {pagedRows.map((r, index) => {
             const on = selected.has(r.key);
             return (
               <tr
@@ -433,12 +438,24 @@ export default function RevisionPage() {
               </tr>
             );
           })}
+          {rows.length > shown && (
+            <tr>
+              <td colSpan={8} className="px-4 py-3 text-center">
+                <Button size="sm" onClick={() => setShown((n) => n + PAGE_SIZE)}>
+                  Mostrar {Math.min(PAGE_SIZE, rows.length - shown).toLocaleString("es-MX")} más
+                  ({(rows.length - shown).toLocaleString("es-MX")} restantes)
+                </Button>
+              </td>
+            </tr>
+          )}
         </tbody>
       </TableCard>
     </div>
   );
 }
 
+
+const PAGE_SIZE = 500;
 
 type SortKey = "doubts" | "label" | "concept" | "view" | "confidence" | "status";
 
