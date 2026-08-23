@@ -16,6 +16,7 @@ export const CONFIG_LABELS: Record<string, string> = {
   excavation_swell_factor: "Factor abundamiento",
   platform_level_m: "Nivel de plataforma (datum del levantamiento)",
   despalme_thickness_m: "Espesor de despalme (m)",
+  area_construida_m2: "Área construida (m², vacío = leída de las losas)",
   // indirects
   field_indirects_pct: "Indirectos de campo (%)",
   office_indirects_pct: "Indirectos de oficina (%)",

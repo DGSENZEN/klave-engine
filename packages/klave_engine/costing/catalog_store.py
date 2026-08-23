@@ -91,6 +91,29 @@ CREATE TABLE IF NOT EXISTS concept_aliases (
     project_id TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS plantillas (
+    key TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    tipologia TEXT NOT NULL DEFAULT '',
+    area_m2 REAL NOT NULL,
+    source_key TEXT NOT NULL DEFAULT '',
+    rows INTEGER NOT NULL DEFAULT 0,
+    actor TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS parametric_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    concept_code TEXT NOT NULL,
+    basis TEXT NOT NULL DEFAULT 'm2_construida',
+    factor REAL NOT NULL,
+    source TEXT NOT NULL DEFAULT '',
+    plantilla_key TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    engine_read INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    UNIQUE(concept_code, basis, plantilla_key)
+);
 CREATE TABLE IF NOT EXISTS reference_prices (
     ref_id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_key TEXT NOT NULL REFERENCES price_sources(source_key) ON DELETE CASCADE,
@@ -598,6 +621,120 @@ class CatalogStore:
             )
             row = conn.execute("SELECT * FROM concepts WHERE code = ?", (code,)).fetchone()
         return dict(row)
+
+    # ------------------------------------------------------ plantillas / paramétricos
+
+    def create_priced_concept(
+        self, *, code: str, description: str, unit: str, phase: str,
+        production_rate_per_day: float, ref_id: int,
+    ) -> dict:
+        """A manual concept priced by an adopted reference row from birth (no
+        matrix): how a past presupuesto's line becomes a concept the taller
+        can use again."""
+        with _LOCK, self._connect() as conn:
+            if conn.execute("SELECT 1 FROM concepts WHERE code = ?", (code,)).fetchone():
+                raise ValueError(f"El concepto {code} ya existe.")
+            conn.execute(
+                "INSERT INTO concepts (code, description, unit, phase, "
+                "production_rate_per_day, rule_key) VALUES (?, ?, ?, ?, ?, NULL)",
+                (code, description, unit, phase, production_rate_per_day),
+            )
+        return self.adopt_concept_reference(code, ref_id)
+
+    def save_plantilla(
+        self, *, key: str, name: str, tipologia: str, area_m2: float, source_key: str,
+        rows: int, actor: str,
+    ) -> dict:
+        with _LOCK, self._connect() as conn:
+            conn.execute(
+                "INSERT INTO plantillas (key, name, tipologia, area_m2, source_key, rows, actor, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET "
+                "name = excluded.name, tipologia = excluded.tipologia, area_m2 = excluded.area_m2, "
+                "source_key = excluded.source_key, rows = excluded.rows, actor = excluded.actor, "
+                "created_at = excluded.created_at",
+                (key, name, tipologia, area_m2, source_key, rows, actor, _now()),
+            )
+            conn.execute("DELETE FROM parametric_rules WHERE plantilla_key = ?", (key,))
+            row = conn.execute("SELECT * FROM plantillas WHERE key = ?", (key,)).fetchone()
+        return dict(row)
+
+    def list_plantillas(self) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM plantillas ORDER BY created_at DESC").fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_plantilla(self, key: str) -> bool:
+        with _LOCK, self._connect() as conn:
+            conn.execute("DELETE FROM parametric_rules WHERE plantilla_key = ?", (key,))
+            removed = conn.execute("DELETE FROM plantillas WHERE key = ?", (key,)).rowcount
+        return bool(removed)
+
+    def add_parametric_rule(
+        self, *, concept_code: str, basis: str, factor: float, source: str = "",
+        plantilla_key: str = "", note: str = "", engine_read: bool = False,
+    ) -> dict:
+        if factor <= 0:
+            raise ValueError("El factor debe ser positivo.")
+        with _LOCK, self._connect() as conn:
+            if conn.execute(
+                "SELECT 1 FROM concepts WHERE code = ?", (concept_code,)
+            ).fetchone() is None:
+                raise ValueError(f"El concepto {concept_code} no existe.")
+            conn.execute(
+                "INSERT INTO parametric_rules (concept_code, basis, factor, source, "
+                "plantilla_key, note, engine_read, active, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?) "
+                "ON CONFLICT(concept_code, basis, plantilla_key) DO UPDATE SET "
+                "factor = excluded.factor, source = excluded.source, note = excluded.note, "
+                "engine_read = excluded.engine_read, active = 1, created_at = excluded.created_at",
+                (concept_code, basis, factor, source, plantilla_key, note, int(engine_read),
+                 _now()),
+            )
+            row = conn.execute(
+                "SELECT * FROM parametric_rules WHERE concept_code = ? AND basis = ? "
+                "AND plantilla_key = ?", (concept_code, basis, plantilla_key),
+            ).fetchone()
+        return dict(row)
+
+    def update_parametric_rule(
+        self, rule_id: int, *, factor: float | None = None, active: bool | None = None,
+        note: str | None = None,
+    ) -> dict:
+        with _LOCK, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM parametric_rules WHERE id = ?", (rule_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("La regla no existe.")
+            conn.execute(
+                "UPDATE parametric_rules SET factor = ?, active = ?, note = ? WHERE id = ?",
+                (
+                    factor if factor is not None and factor > 0 else row["factor"],
+                    int(active) if active is not None else row["active"],
+                    note if note is not None else row["note"],
+                    rule_id,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM parametric_rules WHERE id = ?", (rule_id,)
+            ).fetchone()
+        return dict(row)
+
+    def delete_parametric_rule(self, rule_id: int) -> bool:
+        with _LOCK, self._connect() as conn:
+            removed = conn.execute(
+                "DELETE FROM parametric_rules WHERE id = ?", (rule_id,)
+            ).rowcount
+        return bool(removed)
+
+    def list_parametric_rules(self, include_inactive: bool = False) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM parametric_rules"
+                + ("" if include_inactive else " WHERE active = 1 AND engine_read = 0")
+                + " ORDER BY concept_code, basis"
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     # ------------------------------------------------------------ aliases
 

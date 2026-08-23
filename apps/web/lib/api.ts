@@ -239,6 +239,8 @@ export type BoqLine = {
   engine_quantity?: number | null;
   /** The taller's own clave when the concept has an alias. */
   taller_clave?: string;
+  /** A parametric proposal from the taller's history, not a plan reading. */
+  parametric?: boolean;
 };
 
 export type ApuLine = {
@@ -859,6 +861,103 @@ export const getCroquis = (id: string, conceptCode: string) =>
   );
 
 export const croquisUrl = (item: CroquisItem) => `${API_BASE}${item.url}`;
+
+// ---- Plantillas & paramétricos (the taller's history) ----
+
+export type Plantilla = {
+  key: string;
+  name: string;
+  tipologia: string;
+  area_m2: number;
+  source_key: string;
+  rows: number;
+  actor: string;
+  created_at: string;
+};
+
+export type ParametricRule = {
+  id: number;
+  concept_code: string;
+  basis: string;
+  factor: number;
+  source: string;
+  plantilla_key: string;
+  note: string;
+  engine_read: number;
+  active: number;
+  created_at: string;
+};
+
+export type PlantillaImportResult = {
+  plantilla_key: string;
+  rows: number;
+  priced_rows: number;
+  rules: number;
+  comparison_rules: number;
+  concepts_created: number;
+  problems: string[];
+};
+
+export const getPlantillas = () =>
+  getJSON<{ plantillas: Plantilla[]; rules: ParametricRule[] }>("/catalog/plantillas");
+
+export async function importPlantilla(
+  file: File,
+  meta: { name: string; tipologia: string; area_m2: number },
+  actor?: string,
+) {
+  const body = new FormData();
+  body.append("file", file);
+  const params = new URLSearchParams({
+    name: meta.name,
+    tipologia: meta.tipologia,
+    area_m2: String(meta.area_m2),
+  });
+  const res = await fetch(`${API_BASE}/catalog/plantillas?${params.toString()}`, {
+    method: "POST",
+    body,
+    credentials: "include",
+    headers: actor ? { "X-Actor": actor } : {},
+  });
+  if (!res.ok) {
+    let detail: unknown = null;
+    try {
+      detail = (await res.json()).detail;
+    } catch {
+      detail = null;
+    }
+    throw new ApiError(res.status, "/catalog/plantillas", detail);
+  }
+  return (await res.json()) as PlantillaImportResult;
+}
+
+export const deletePlantilla = (key: string, actor?: string) =>
+  deleteJSON<{ deleted: string }>(
+    `/catalog/plantillas/${encodeURIComponent(key)}`,
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export const addParametricRule = (
+  body: { concept_code: string; basis: string; factor: number; source?: string; note?: string },
+  actor?: string,
+) => postJSON<ParametricRule>("/catalog/parametrics", body, actor ? { "X-Actor": actor } : undefined);
+
+export const updateParametricRule = (
+  id: number,
+  body: { factor?: number; active?: boolean; note?: string },
+  actor?: string,
+) =>
+  putJSON<ParametricRule>(
+    `/catalog/parametrics/${id}`,
+    body,
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export const deleteParametricRule = (id: number, actor?: string) =>
+  deleteJSON<{ deleted: number }>(
+    `/catalog/parametrics/${id}`,
+    actor ? { "X-Actor": actor } : undefined,
+  );
 
 // ---- Concept aliases & matching (the taller's own vocabulary) ----
 

@@ -29,6 +29,7 @@ from klave_engine.costing.models import (
     ResourceType,
     UnitPriceAnalysis,
 )
+from klave_engine.costing.parametrics import apply_parametrics, compute_basis
 from klave_engine.costing.reviews import ManualAdjustment
 from klave_engine.costing.schedule import build_schedule
 from klave_engine.costing.steel import SteelAssumptions, apply_steel, compute_steel
@@ -130,6 +131,7 @@ def generate_cost_report(
     inventory: dict | None = None,
     inventory_mappings: list[dict] | None = None,
     concept_aliases: dict[str, dict] | None = None,
+    parametric_rules: list[dict] | None = None,
 ) -> CostReport:
     config = config or CostingConfig()
     assumptions, calibration_notes = _calibrate_assumptions(config.assumptions, dimensions)
@@ -171,6 +173,13 @@ def generate_cost_report(
     apply_formwork(boq, catalog, apus, formwork)
     # Levantamiento: symbols and layers the taller mapped to concepts.
     apply_inventory(boq, catalog, apus, inventory, inventory_mappings)
+    # Paramétricos: the taller's history proposes what no plan reader produces.
+    if parametric_rules:
+        basis = compute_basis(
+            detections, segmentation, units.to_meters() or 1.0,
+            assumptions.area_construida_m2,
+        )
+        apply_parametrics(boq, catalog, apus, parametric_rules, basis)
     if adjustments:
         _apply_adjustments(boq, catalog, apus, adjustments)
     integration = integrate_costs(boq.direct_cost_total, config.indirects)

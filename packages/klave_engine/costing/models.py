@@ -154,6 +154,9 @@ class BoqLine(BaseModel):
     engine_quantity: float | None = None
     # The taller's clave when the concept has an alias ("" otherwise).
     taller_clave: str = ""
+    # True when the quantity is a parametric proposal from the taller's
+    # history (per m², per planta, per local), not a reading of the plan.
+    parametric: bool = False
 
 
 class BillOfQuantities(BaseModel):
@@ -259,6 +262,8 @@ class CostingAssumptions(BaseModel):
     # a guessed level.
     platform_level_m: float | None = None
     despalme_thickness_m: float = 0.20
+    # Área construida for paramétricos; None = read from the plan's slabs.
+    area_construida_m2: float | None = None
     excavation_swell_factor: float = 1.3
 
 

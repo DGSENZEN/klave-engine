@@ -64,6 +64,7 @@ import {
   Td,
   Th,
 } from "@/components/ui";
+import { PlantillasSection } from "@/components/PlantillasSection";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -234,6 +235,9 @@ export default function CatalogoPage() {
       ) : (
         <>
           <FuentesSection catalog={catalog} onChanged={reload} onError={setError} onNotice={setNotice} />
+          <div className="mb-4">
+            <PlantillasSection onChanged={reload} onError={setError} onNotice={setNotice} />
+          </div>
           <SalarioRealSection onChanged={reload} onError={setError} onNotice={setNotice} />
           <InsumosSection catalog={catalog} onChanged={reload} onError={setError} />
           <ApusSection catalog={catalog} onChanged={reload} onError={setError} />

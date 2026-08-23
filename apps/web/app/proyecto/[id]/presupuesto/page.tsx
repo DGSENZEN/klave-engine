@@ -140,6 +140,7 @@ export default function PresupuestoPage() {
     );
   }
 
+  const parametricCount = costs.boq.lines.filter((l) => l.parametric).length;
   const avgConf =
     costs.boq.lines.reduce((s, l) => s + l.confidence, 0) / (costs.boq.lines.length || 1);
   const phases = [...new Set(costs.boq.lines.map((l) => l.phase))];
@@ -204,6 +205,16 @@ export default function PresupuestoPage() {
       />
 
       <SuggestionsBar projectId={id} actorName={actorName} />
+      {parametricCount > 0 && (
+        <div className="mb-4">
+          <Callout tone="info">
+            {parametricCount} concepto{parametricCount === 1 ? "" : "s"} paramétrico
+            {parametricCount === 1 ? "" : "s"}: cantidades propuestas desde la historia del
+            taller (por m², por planta o por local), no leídas del plano. Revísalos o fíjalos;
+            las reglas viven en Catálogo → Plantillas.
+          </Callout>
+        </div>
+      )}
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Metric label="Costo directo" value={money(costs.boq.direct_cost_total)} />
@@ -418,6 +429,11 @@ function PhaseGroup({
               </Td>
               <Td>
                 {l.description}
+                {l.parametric && (
+                  <span className="ml-1.5 align-middle">
+                    <Badge tone="warning">paramétrico</Badge>
+                  </span>
+                )}
                 {levels.length > 1 && (
                   <div className="mt-1 flex flex-wrap gap-1.5">
                     {levels.map(([title, qty]) => (

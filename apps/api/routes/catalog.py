@@ -16,7 +16,12 @@ from klave_engine.common.config import Settings
 from klave_engine.common.errors import ReportGenerationError
 from klave_engine.costing.apu import build_all_apus
 from klave_engine.costing.catalog import PHASE_ORDER, build_catalog_from_store
-from klave_engine.costing.catalog_services import apply_equipment, apply_labor, labor_state
+from klave_engine.costing.catalog_services import (
+    apply_equipment,
+    apply_labor,
+    import_plantilla,
+    labor_state,
+)
 from klave_engine.costing.catalog_store import CatalogStore, get_catalog_store
 from klave_engine.costing.equipment import EquipmentParameters, compute_costo_horario
 from klave_engine.costing.labor import (
@@ -536,6 +541,131 @@ def import_reference_source(
     )
     _publish_catalog_updated(x_actor, "reference_imported", f"{spec.name}: {count} renglones")
     return {"source_key": source_key, "rows": count}
+
+
+# ------------------------------------------------------------ plantillas & paramétricos
+
+class ParametricRuleInput(BaseModel):
+    concept_code: str = Field(min_length=2, max_length=40)
+    basis: str = Field(default="m2_construida", max_length=60)
+    factor: float = Field(gt=0)
+    source: str = Field(default="", max_length=120)
+    note: str = Field(default="", max_length=300)
+
+
+class ParametricRuleUpdate(BaseModel):
+    factor: float | None = Field(default=None, gt=0)
+    active: bool | None = None
+    note: str | None = Field(default=None, max_length=300)
+
+
+@router.get("/plantillas")
+def list_plantillas(catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    return {
+        "plantillas": catalog.list_plantillas(),
+        "rules": catalog.list_parametric_rules(include_inactive=True),
+    }
+
+
+@router.post("/plantillas", status_code=201)
+async def create_plantilla(
+    file: UploadFile,
+    x_actor: Annotated[str | None, Header()] = None,
+    name: str = "",
+    tipologia: str = "",
+    area_m2: float = 0.0,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    """A past presupuesto (XLSX/CSV with clave, unidad, cantidad, precio) plus
+    that project's m² → a plantilla: per-m² rules and the taller's prices."""
+    raw = await file.read()
+    if len(raw) > MAX_IMPORT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail={"error_type": "import_too_large", "max_bytes": MAX_IMPORT_BYTES},
+        )
+    label = name.strip() or Path(file.filename or "plantilla").stem[:80]
+    try:
+        result = import_plantilla(
+            catalog, raw, file.filename or "", name=label, tipologia=tipologia.strip(),
+            area_m2=area_m2, actor=clean_actor(x_actor) or "",
+        )
+    except CustomCatalogError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error_type": "headers_not_found", "message": str(exc)}
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error_type": "invalid_plantilla", "message": str(exc)}
+        ) from exc
+    _publish_catalog_updated(
+        x_actor, "plantilla_imported",
+        f"{label}: {result['rules']} reglas, {result['concepts_created']} conceptos nuevos",
+    )
+    return result
+
+
+@router.delete("/plantillas/{key}")
+def delete_plantilla(
+    key: str,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    if not catalog.delete_plantilla(key):
+        raise HTTPException(status_code=404, detail={"error_type": "plantilla_not_found"})
+    _publish_catalog_updated(x_actor, "plantilla_deleted", key)
+    return {"deleted": key}
+
+
+@router.post("/parametrics", status_code=201)
+def add_parametric_rule(
+    body: ParametricRuleInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    try:
+        rule = catalog.add_parametric_rule(
+            concept_code=body.concept_code.strip().upper(), basis=body.basis.strip(),
+            factor=body.factor, source=body.source.strip() or "regla del taller",
+            note=body.note.strip(),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error_type": "invalid_rule", "message": str(exc)}
+        ) from exc
+    _publish_catalog_updated(x_actor, "parametric_added", body.concept_code)
+    return rule
+
+
+@router.put("/parametrics/{rule_id}")
+def update_parametric_rule(
+    rule_id: int,
+    body: ParametricRuleUpdate,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    try:
+        rule = catalog.update_parametric_rule(
+            rule_id, factor=body.factor, active=body.active, note=body.note
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404, detail={"error_type": "rule_not_found", "message": str(exc)}
+        ) from exc
+    _publish_catalog_updated(x_actor, "parametric_updated", str(rule_id))
+    return rule
+
+
+@router.delete("/parametrics/{rule_id}")
+def delete_parametric_rule(
+    rule_id: int,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    if not catalog.delete_parametric_rule(rule_id):
+        raise HTTPException(status_code=404, detail={"error_type": "rule_not_found"})
+    _publish_catalog_updated(x_actor, "parametric_deleted", str(rule_id))
+    return {"deleted": rule_id}
 
 
 # ------------------------------------------------------------ aliases & matching
