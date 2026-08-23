@@ -51,3 +51,38 @@ def test_csv_with_price_column_also_reads(tmp_path):
     human_path.write_text("clave;descripción;unidad;cantidad;p.u.\nEST-001;Castillos;m3;40,5;13386.19\n")
     human = read_human_presupuesto(human_path)
     assert human[0].clave == "EST-001" and human[0].quantity == 40.5
+
+
+def test_compare_pairs_by_alias_description_and_flags_units():
+    from klave_engine.evals.compare import HumanLine, compare, render_markdown
+
+    engine = [
+        {"concept_code": "EST-004", "taller_clave": "1-ALB-MUR-004",
+         "description": "Muros de block/concreto, incluye refuerzo y mortero", "unit": "M2",
+         "quantity": 420.0, "amount": 147000.0},
+        {"concept_code": "ACE-001",
+         "description": "Acero de refuerzo fy=4200 en castillos y columnas, habilitado",
+         "unit": "KG", "quantity": 5300.0, "amount": 201400.0},
+        {"concept_code": "CIM-002", "description": "Concreto f'c=250 en zapatas y dados",
+         "unit": "M3", "quantity": 7.5, "amount": 27000.0},
+    ]
+    human = [
+        # The taller's own clave: matched through the alias the engine prints.
+        HumanLine("1-ALB-MUR-004", "MURO DE BLOCK 15 CM", "m²", 400.0, amount=140000.0),
+        # No shared clave; the matcher pairs it by description and unit.
+        HumanLine("ACERO-01", "Acero de refuerzo fy=4200 kg/cm2 habilitado en castillos",
+                  "kg", 5500.0, amount=209000.0),
+        # Same clave but another unit: flagged, never a quantity delta.
+        HumanLine("CIM-002", "Concreto en zapatas", "M2", 7.5),
+        HumanLine("INST-99", "Salidas eléctricas", "SAL", 40.0),
+    ]
+    rows = compare(engine, human)
+    by = {r.clave: r for r in rows}
+    assert by["1-ALB-MUR-004"].matched_by == "clave" and by["1-ALB-MUR-004"].engine == 420.0
+    assert by["ACERO-01"].matched_by.startswith("descripción") and by["ACERO-01"].engine == 5300.0
+    assert by["CIM-002"].unit_mismatch == "M3" and by["CIM-002"].delta_pct is None
+    assert by["INST-99"].engine is None  # only the human has it
+    report = render_markdown(rows)
+    assert "unidad distinta (M3 vs M2)" in report
+    assert "descripción" in report and "solo humano" in report
+    assert "Importe (líneas con monto)" in report

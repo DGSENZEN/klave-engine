@@ -75,8 +75,17 @@ make eval-compare ENGINE=data/uploads/<proyecto> HUMAN=presupuesto_humano.xlsx
 revisiones si existe) o un `cost_report.json`. `HUMAN` es cualquier XLSX/CSV
 con columnas de clave, descripción, unidad y cantidad (una exportación de
 OPUS/Neodata o el generador del taller); el precio es opcional. Los conceptos
-se emparejan por clave. La salida es una tabla Markdown con Δ % por concepto,
-ordenada de la peor diferencia a la mejor, más los conceptos que solo tiene
-el humano o solo el motor y un resumen (mediana de |Δ|, cuántos dentro de
-±10 %, el peor). Nada se oculta: un concepto que el motor no lee aparece como
-"solo humano".
+se emparejan en tres pasadas, cada una etiquetada en la columna
+"Emparejado por":
+
+1. **clave** — la del humano contra la del motor **o la clave del taller**
+   que la línea ya imprime (los aliases trabajan aquí);
+2. **descripción** — para lo que quedó, el mismo matcher del catálogo
+   (unidad obligatoria, ≥ 60 % con el porcentaje visible);
+3. lo demás queda como "solo humano" / "solo motor" — nada se oculta.
+
+Las unidades se normalizan (`m²` = `M2`); si aun así difieren, la fila dice
+"unidad distinta" y **no** se compara la cantidad. La salida es una tabla
+Markdown con Δ % por concepto ordenada de la peor diferencia a la mejor y un
+resumen: mediana de |Δ|, cuántos dentro de ±10 %, el peor, y — si el archivo
+trae importes — el total del motor contra el del humano.

@@ -23,9 +23,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from klave_engine.costing.matching import Candidate, rank, unit_key
 from klave_engine.costing.sources.custom import _find_header, _matches, _norm
 
 QUANTITY_HEADERS = ("cantidad", "cant", "cant.", "quantity", "volumen")
+AMOUNT_HEADERS = ("importe", "monto", "total", "amount")
 
 
 @dataclass
@@ -34,6 +36,7 @@ class HumanLine:
     description: str
     unit: str
     quantity: float
+    amount: float | None = None
 
 
 @dataclass
@@ -43,10 +46,15 @@ class Comparison:
     unit: str
     engine: float | None
     human: float | None
+    engine_amount: float | None = None
+    human_amount: float | None = None
+    # "clave" (exact or taller alias), "descripción NN %" (matcher), or "".
+    matched_by: str = ""
+    unit_mismatch: str = ""  # the engine's unit when it disagrees with the human's
 
     @property
     def delta_pct(self) -> float | None:
-        if self.engine is None or self.human in (None, 0):
+        if self.engine is None or self.human in (None, 0) or self.unit_mismatch:
             return None
         assert self.human is not None
         return (self.engine - self.human) / self.human * 100.0
@@ -114,6 +122,10 @@ def read_human_presupuesto(path: Path) -> list[HumanLine]:
             columns["quantity"] = next(
                 p for p, c in enumerate(cells) if c.strip() and _matches(c, QUANTITY_HEADERS)
             )
+            for position, header_cell in enumerate(cells):
+                if header_cell.strip() and _matches(header_cell, AMOUNT_HEADERS):
+                    columns["amount"] = position
+                    break
             break
     if not {"clave", "quantity"} <= set(columns):
         raise SystemExit(
@@ -137,6 +149,7 @@ def read_human_presupuesto(path: Path) -> list[HumanLine]:
                 description=" ".join(str(cell(row, "description") or "").split())[:80],
                 unit=str(cell(row, "unit") or "").strip().upper(),
                 quantity=quantity,
+                amount=_number(cell(row, "amount")),
             )
         )
     return lines
@@ -157,28 +170,73 @@ def load_engine_lines(source: Path) -> list[dict]:
     return list(report["boq"]["lines"])
 
 
+def _comparison(h: HumanLine, e: dict | None, matched_by: str = "") -> Comparison:
+    unit_mismatch = ""
+    if e is not None and h.unit and unit_key(h.unit) != unit_key(str(e["unit"])):
+        unit_mismatch = str(e["unit"])
+    return Comparison(
+        clave=h.clave,
+        description=h.description or (e["description"][:80] if e else ""),
+        unit=h.unit or (e["unit"] if e else ""),
+        engine=float(e["quantity"]) if e else None,
+        human=h.quantity,
+        engine_amount=float(e.get("amount") or 0.0) or None if e else None,
+        human_amount=h.amount,
+        matched_by=matched_by,
+        unit_mismatch=unit_mismatch,
+    )
+
+
 def compare(engine_lines: list[dict], human: list[HumanLine]) -> list[Comparison]:
-    engine = {line["concept_code"].upper(): line for line in engine_lines}
-    seen: set[str] = set()
+    """Three passes, honestly labeled: the exact clave (theirs or the taller
+    alias the engine already prints), then the description matcher for what
+    is left, then the orphans on both sides."""
+    by_clave: dict[str, dict] = {}
+    for line in engine_lines:
+        by_clave.setdefault(str(line["concept_code"]).upper(), line)
+        taller = str(line.get("taller_clave") or "").upper()
+        if taller:
+            by_clave.setdefault(taller, line)
+
+    matched_engine: set[int] = set()
     out: list[Comparison] = []
+    unmatched_humans: list[HumanLine] = []
     for h in human:
-        e = engine.get(h.clave)
-        seen.add(h.clave)
-        out.append(
-            Comparison(
-                clave=h.clave,
-                description=h.description or (e["description"][:80] if e else ""),
-                unit=h.unit or (e["unit"] if e else ""),
-                engine=float(e["quantity"]) if e else None,
-                human=h.quantity,
-            )
+        e = by_clave.get(h.clave)
+        if e is not None:
+            matched_engine.add(id(e))
+            out.append(_comparison(h, e, matched_by="clave"))
+        else:
+            unmatched_humans.append(h)
+
+    # Second pass: descriptions. A human line without a clave the engine
+    # knows may still be the same concept written the taller's way.
+    remaining = [line for line in engine_lines if id(line) not in matched_engine]
+    candidates = [
+        Candidate(
+            kind="concept", key=str(index), clave=str(line["concept_code"]),
+            description=str(line["description"]), unit=str(line["unit"]), price=None,
         )
-    for code, line in engine.items():
-        if code not in seen:
+        for index, line in enumerate(remaining)
+    ]
+    for h in unmatched_humans:
+        matches = rank(h.description, h.unit, candidates, limit=1) if h.description else []
+        best = matches[0] if matches and matches[0].score >= 0.6 else None
+        if best is not None:
+            line = remaining[int(best.candidate.key)]
+            if id(line) not in matched_engine:
+                matched_engine.add(id(line))
+                out.append(_comparison(h, line, matched_by=f"descripción {best.score:.0%}"))
+                continue
+        out.append(_comparison(h, None))
+
+    for line in engine_lines:
+        if id(line) not in matched_engine:
             out.append(
                 Comparison(
-                    clave=code, description=line["description"][:80], unit=line["unit"],
-                    engine=float(line["quantity"]), human=None,
+                    clave=str(line["concept_code"]), description=line["description"][:80],
+                    unit=str(line["unit"]), engine=float(line["quantity"]), human=None,
+                    engine_amount=float(line.get("amount") or 0.0) or None,
                 )
             )
     return out
@@ -189,27 +247,43 @@ def render_markdown(rows: list[Comparison]) -> str:
     deltas = [abs(r.delta_pct or 0.0) for r in matched]
     within = sum(1 for d in deltas if d <= 10.0)
     lines = [
-        "| Clave | Concepto | Unidad | Motor | Humano | Δ % |",
-        "|---|---|---|---:|---:|---:|",
+        "| Clave | Concepto | Unidad | Motor | Humano | Δ % | Emparejado por |",
+        "|---|---|---|---:|---:|---:|---|",
     ]
     for r in sorted(rows, key=lambda r: (r.delta_pct is None, -abs(r.delta_pct or 0.0))):
         engine = f"{r.engine:,.2f}" if r.engine is not None else "—"
         human = f"{r.human:,.2f}" if r.human is not None else "—"
-        delta = f"{r.delta_pct:+.1f}" if r.delta_pct is not None else (
-            "solo humano" if r.engine is None else "solo motor"
+        if r.unit_mismatch:
+            delta = f"unidad distinta ({r.unit_mismatch} vs {r.unit})"
+        elif r.delta_pct is not None:
+            delta = f"{r.delta_pct:+.1f}"
+        else:
+            delta = "solo humano" if r.engine is None else "solo motor"
+        lines.append(
+            f"| {r.clave} | {r.description} | {r.unit} | {engine} | {human} | {delta} "
+            f"| {r.matched_by or '—'} |"
         )
-        lines.append(f"| {r.clave} | {r.description} | {r.unit} | {engine} | {human} | {delta} |")
     only_human = sum(1 for r in rows if r.engine is None)
     only_engine = sum(1 for r in rows if r.human is None)
+    mismatched_units = sum(1 for r in rows if r.unit_mismatch)
     summary = [
         "",
         f"Conceptos comparados: {len(matched)} · solo en el humano: {only_human} · "
-        f"solo en el motor: {only_engine}",
+        f"solo en el motor: {only_engine}"
+        + (f" · unidades en desacuerdo: {mismatched_units}" if mismatched_units else ""),
     ]
     if deltas:
         summary.append(
             f"Mediana |Δ|: {statistics.median(deltas):.1f} % · dentro de ±10 %: "
             f"{within}/{len(deltas)} · peor: {max(deltas):.1f} %"
+        )
+    engine_total = sum(r.engine_amount or 0.0 for r in rows)
+    human_total = sum(r.human_amount or 0.0 for r in rows)
+    if engine_total and human_total:
+        drift = (engine_total - human_total) / human_total * 100.0
+        summary.append(
+            f"Importe (líneas con monto): motor ${engine_total:,.2f} vs humano "
+            f"${human_total:,.2f} ({drift:+.1f} %)"
         )
     return "\n".join(lines + summary)
 
