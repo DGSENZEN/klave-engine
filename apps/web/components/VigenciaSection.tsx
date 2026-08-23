@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowClockwise, DownloadSimple } from "@phosphor-icons/react";
 import {
-  cotizacionUrl,
+  apiMessage,
+  cotizacionPath,
+  downloadFile,
   getIndices,
   getVigencia,
   money2,
@@ -13,7 +15,7 @@ import {
   type RollForwardResult,
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
-import { Badge, Button, Card, Input, SectionTitle, Td, Th } from "@/components/ui";
+import { Badge, Button, Callout, Card, Input, SectionTitle, Skeleton, Td, Th } from "@/components/ui";
 import { Modal } from "@/components/Modal";
 
 const FRESH = 6;
@@ -58,14 +60,17 @@ export function VigenciaSection({
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<RollForwardResult | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [downloading, setDownloading] = useState<"vencido" | "all" | null>(null);
 
   const reload = useCallback(() => {
-    getVigencia()
-      .then((v) => setCounts(v.counts))
-      .catch(() => {});
-    getIndices()
-      .then((i) => setIndices(i))
-      .catch(() => {});
+    Promise.all([getVigencia(), getIndices()])
+      .then(([v, i]) => {
+        setCounts(v.counts);
+        setIndices(i);
+        setLoadError(false);
+      })
+      .catch(() => setLoadError(true));
   }, []);
 
   useEffect(() => {
@@ -95,6 +100,17 @@ export function VigenciaSection({
       onError("No se pudieron guardar los índices.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function downloadCotizacion(scope: "vencido" | "all") {
+    setDownloading(scope);
+    try {
+      await downloadFile(cotizacionPath(scope), `solicitud_cotizacion_${scope}.xlsx`);
+    } catch (e) {
+      onError(apiMessage(e, "No se pudo generar la solicitud de cotización."));
+    } finally {
+      setDownloading(null);
     }
   }
 
@@ -214,7 +230,22 @@ export function VigenciaSection({
       <SectionTitle sub="Cada precio dice cuántos meses tiene. Pide cotización de los vencidos, importa la respuesta, o tráelos a hoy por el índice que tu taller mantiene (queda marcado como calculado, nunca como cotización).">
         Vigencia de precios
       </SectionTitle>
+      {loadError && (
+        <div className="mb-3">
+          <Callout
+            tone="danger"
+            action={
+              <Button size="sm" onClick={reload}>
+                Reintentar
+              </Button>
+            }
+          >
+            No se pudo leer la vigencia de los precios.
+          </Callout>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
+        {counts === null && !loadError && <Skeleton className="mr-2 h-6 w-64" />}
         {counts && (
           <span className="mr-2 flex items-center gap-1.5 text-sm">
             <Badge tone="success" dot>{counts.vigente} vigentes</Badge>
@@ -222,21 +253,18 @@ export function VigenciaSection({
             <Badge tone="danger" dot>{vencidos} vencidos</Badge>
           </span>
         )}
-        <a
-          href={cotizacionUrl("vencido")}
-          className="inline-flex"
-          aria-disabled={vencidos === 0}
-          onClick={(e) => vencidos === 0 && e.preventDefault()}
+        <Button
+          size="sm"
+          disabled={vencidos === 0 || downloading !== null}
+          onClick={() => downloadCotizacion("vencido")}
         >
-          <Button size="sm" disabled={vencidos === 0}>
-            <DownloadSimple size={14} weight="bold" /> Solicitud de cotización: vencidos ({vencidos})
-          </Button>
-        </a>
-        <a href={cotizacionUrl("all")} className="inline-flex">
-          <Button size="sm">
-            <DownloadSimple size={14} weight="bold" /> Solicitud de cotización: todo el catálogo
-          </Button>
-        </a>
+          <DownloadSimple size={14} weight="bold" />
+          {downloading === "vencido" ? "Generando…" : `Solicitud de cotización: vencidos (${vencidos})`}
+        </Button>
+        <Button size="sm" disabled={downloading !== null} onClick={() => downloadCotizacion("all")}>
+          <DownloadSimple size={14} weight="bold" />
+          {downloading === "all" ? "Generando…" : "Solicitud de cotización: todo el catálogo"}
+        </Button>
         <Button
           size="sm"
           onClick={() => previewRoll("vencido")}

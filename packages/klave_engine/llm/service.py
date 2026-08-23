@@ -11,6 +11,7 @@ Files, all under the project's control dir (they outlive a run):
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -27,10 +28,12 @@ RENDERS_DIRNAME = "renders"
 
 
 class AiReads(BaseModel):
-    status: str = "idle"  # idle | running | done | failed | unavailable
+    status: str = "idle"  # idle | running | done | cancelled | failed | unavailable
     started_at: str | None = None
     finished_at: str | None = None
     run_id: str | None = None  # the detection run whose frames were read
+    # How many frames the job set out to read; readings grow one by one.
+    total_frames: int = 0
     readings: list[SheetReading] = Field(default_factory=list)
     input_tokens: int = 0
     output_tokens: int = 0
@@ -114,24 +117,43 @@ def save_ai_reads(control_dir: Path, reads: AiReads) -> None:
 
 
 def run_ai_reading(
-    artifact_dir: Path, control_dir: Path, reader: Reader, run_id: str | None = None
+    artifact_dir: Path,
+    control_dir: Path,
+    reader: Reader,
+    run_id: str | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> AiReads:
-    """Render and read every frame; persist as the job advances."""
+    """Render and read every frame; persist after each sheet so the page can
+    show progress, and stop between sheets when asked (keeping what was read)."""
     now = datetime.now(UTC).isoformat()
     reads = AiReads(status="running", started_at=now, run_id=run_id)
     save_ai_reads(control_dir, reads)
     try:
         renders = render_all_frames(artifact_dir, control_dir)
+        reads.total_frames = len(renders)
+        save_ai_reads(control_dir, reads)
         if not renders:
             reads.status = "done"
             reads.notes.append(
                 "El dibujo no tiene marcos de hoja; no hay imágenes por hoja que leer."
             )
         else:
-            reads.readings = read_frames(renders, reader)
-            reads.input_tokens = sum(r.input_tokens for r in reads.readings)
-            reads.output_tokens = sum(r.output_tokens for r in reads.readings)
-            reads.status = "done"
+
+            def on_reading(reading: SheetReading) -> None:
+                reads.readings.append(reading)
+                reads.input_tokens += reading.input_tokens
+                reads.output_tokens += reading.output_tokens
+                save_ai_reads(control_dir, reads)
+
+            read_frames(renders, reader, on_reading=on_reading, should_stop=should_stop)
+            cancelled = should_stop is not None and should_stop()
+            partial = len(reads.readings) < len(renders)
+            reads.status = "cancelled" if cancelled and partial else "done"
+            if reads.status == "cancelled":
+                reads.notes.append(
+                    f"Lectura cancelada: {len(reads.readings)} de {len(renders)} hojas leídas "
+                    "se conservan."
+                )
             failed = [
                 r.frame_code for r in reads.readings
                 if any(u.startswith("No se pudo leer") for u in r.read.uncertainties)

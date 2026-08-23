@@ -157,21 +157,28 @@ def frame_prompt(code: str, title: str, kind: str) -> str:
 def read_frames(
     renders: list[tuple[str, str, str, bytes]],
     reader: Reader,
+    on_reading: Callable[[SheetReading], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> list[SheetReading]:
     """Read every (code, title, kind, png) with the reader; a failure on one
-    sheet is recorded as an uncertainty, not a crash of the batch."""
+    sheet is recorded as an uncertainty, not a crash of the batch.
+    ``on_reading`` hears each sheet as it lands (progress); ``should_stop``
+    is asked before each sheet so a cancel keeps what was already read."""
     readings: list[SheetReading] = []
     for code, title, kind, png in renders:
+        if should_stop is not None and should_stop():
+            break
         try:
             read, usage = reader(png, frame_prompt(code, title, kind))
         except Exception as exc:  # noqa: BLE001 — one bad sheet must not sink the batch
             read = SheetRead(uncertainties=[f"No se pudo leer la hoja: {exc}"[:200]])
             usage = {}
-        readings.append(
-            SheetReading(
-                frame_code=code, frame_title=title, read=read,
-                input_tokens=int(usage.get("input_tokens", 0)),
-                output_tokens=int(usage.get("output_tokens", 0)),
-            )
+        reading = SheetReading(
+            frame_code=code, frame_title=title, read=read,
+            input_tokens=int(usage.get("input_tokens", 0)),
+            output_tokens=int(usage.get("output_tokens", 0)),
         )
+        readings.append(reading)
+        if on_reading is not None:
+            on_reading(reading)
     return readings

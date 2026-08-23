@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   ArrowsClockwise,
+  CircleNotch,
   FileText,
   Layout,
   Ruler,
@@ -13,7 +14,8 @@ import {
 } from "@phosphor-icons/react";
 import {
   addInventoryMapping,
-  ApiError,
+  apiMessage,
+  cancelAiRead,
   deleteInventoryMapping,
   frameRenderUrl,
   getAiReads,
@@ -71,18 +73,38 @@ export default function LecturaPage() {
   }, [aiReads?.running, reloadAiReads]);
 
   async function readWithAi() {
+    setAiNotice(null);
     try {
       await startAiRead(id, getBrowserActor());
-      setAiNotice("Leyendo las hojas con IA… cada hoja toma unos segundos.");
       reloadAiReads();
     } catch (e) {
-      const detail =
-        e instanceof ApiError && e.detail && typeof e.detail === "object"
-          ? (e.detail as { message?: string }).message
-          : null;
-      setAiNotice(detail || "No se pudo iniciar la lectura con IA.");
+      setAiNotice(apiMessage(e, "No se pudo iniciar la lectura con IA."));
     }
   }
+
+  async function cancelAi() {
+    setAiNotice(null);
+    try {
+      await cancelAiRead(id);
+      setAiNotice("Se detiene al terminar la hoja en curso; lo leído se conserva.");
+    } catch (e) {
+      setAiNotice(apiMessage(e, "No se pudo cancelar la lectura."));
+    }
+  }
+
+  // What a run will cost in tokens, from the last run's own average per sheet;
+  // before any run, a rule of thumb for a 2,600 px sheet image. Never a price.
+  const frameCount = lectura?.frames?.total ?? 0;
+  const tokensPerSheet =
+    aiReads && aiReads.readings.length > 0 && aiReads.input_tokens > 0
+      ? Math.round(aiReads.input_tokens / aiReads.readings.length)
+      : null;
+  const estimate =
+    frameCount > 0
+      ? tokensPerSheet
+        ? `${frameCount} hojas · ~${num(frameCount * tokensPerSheet)} tokens de entrada (según la última lectura)`
+        : `${frameCount} hojas · del orden de ${num(frameCount * 7000)} tokens de entrada`
+      : null;
   const reloadMappings = useCallback(() => {
     listInventoryMappings().then(setMappings).catch(() => setMappings([]));
   }, []);
@@ -285,8 +307,8 @@ export default function LecturaPage() {
             </SectionTitle>
             {aiReads && !aiReads.available && (
               <p className="mb-3 text-sm text-muted">
-                No configurada en este servidor: falta <code>ANTHROPIC_API_KEY</code>. Las
-                imágenes de las hojas sí están disponibles en el visor.
+                No está activada en este servidor; pide a tu administrador que configure la
+                lectura con IA. Las imágenes de las hojas sí están disponibles en el visor.
               </p>
             )}
             <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -296,18 +318,52 @@ export default function LecturaPage() {
                 disabled={!aiReads?.available || aiReads.running}
                 onClick={readWithAi}
               >
-                {aiReads?.running ? "Leyendo…" : "Leer hojas con IA"}
+                {aiReads?.running ? (
+                  <>
+                    <CircleNotch size={14} className="animate-spin" /> Leyendo…
+                  </>
+                ) : (
+                  "Leer hojas con IA"
+                )}
               </Button>
-              {aiReads?.status === "done" && (
-                <span className="text-xs text-muted">
-                  {aiReads.readings.length} hojas leídas · {num(aiReads.input_tokens)} tokens de
-                  entrada · {aiReads.model}
-                </span>
+              {aiReads?.running && (
+                <Button size="sm" variant="ghost" onClick={cancelAi}>
+                  Cancelar
+                </Button>
               )}
-              {aiReads?.status === "failed" && (
+              {aiReads?.running ? (
+                <span className="text-xs text-muted">
+                  {aiReads.total_frames > 0
+                    ? `Hoja ${Math.min(aiReads.readings.length + 1, aiReads.total_frames)} de ${aiReads.total_frames}`
+                    : "Preparando las imágenes de las hojas…"}
+                  {aiReads.readings.length > 0 && ` · ${num(aiReads.input_tokens)} tokens hasta ahora`}
+                </span>
+              ) : aiReads?.status === "done" || aiReads?.status === "cancelled" ? (
+                <span className="text-xs text-muted">
+                  {aiReads.readings.length}
+                  {aiReads.total_frames > aiReads.readings.length ? ` de ${aiReads.total_frames}` : ""} hojas
+                  leídas · {num(aiReads.input_tokens)} tokens de entrada · {aiReads.model}
+                </span>
+              ) : aiReads?.status === "failed" ? (
                 <span className="text-xs text-warning">Falló: {aiReads.error}</span>
+              ) : (
+                estimate && <span className="text-xs text-muted">{estimate}</span>
               )}
             </div>
+            {aiReads?.running && aiReads.total_frames > 0 && (
+              <div
+                className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-2"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={aiReads.total_frames}
+                aria-valuenow={aiReads.readings.length}
+              >
+                <div
+                  className="h-full rounded-full bg-accent transition-[width]"
+                  style={{ width: `${(100 * aiReads.readings.length) / aiReads.total_frames}%` }}
+                />
+              </div>
+            )}
             {aiNotice && <p className="mb-3 text-sm text-muted">{aiNotice}</p>}
             {aiReads?.notes.map((n, i) => (
               <p key={i} className="mb-1 text-xs text-muted">

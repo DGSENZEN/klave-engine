@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   Check,
@@ -29,6 +30,7 @@ import { FAMILY_COLORS, FAMILY_LABELS, HIDDEN_BY_DEFAULT, PlanoCanvas, detection
 import {
   Badge,
   Button,
+  buttonClasses,
   Callout,
   IconButton,
   Input,
@@ -449,6 +451,24 @@ export default function PlanoPage() {
             }
             focus={focus ?? conceptFit ?? bboxFit}
           />
+          {geom.detections.length === 0 && !measureMode && (
+            <div className="pointer-events-none absolute inset-x-0 top-14 z-10 flex justify-center px-4">
+              <div className="pointer-events-auto max-w-md rounded-xl border border-border bg-surface/95 p-4 text-sm shadow-lg backdrop-blur">
+                <div className="font-medium">El motor no detectó elementos en este plano</div>
+                <p className="mt-1 text-muted">
+                  Se dibuja la geometría tal cual. Suele pasar cuando las capas no siguen una
+                  convención conocida o el archivo es un levantamiento; la lectura dice qué se
+                  reconoció por capa.
+                </p>
+                <Link
+                  href={`/proyecto/${id}/lectura`}
+                  className={`${buttonClasses("secondary", "sm")} mt-3`}
+                >
+                  Ver la lectura del plano
+                </Link>
+              </div>
+            </div>
+          )}
           {measureMode && (
             <MeasureResult
               projectId={id}

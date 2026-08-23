@@ -54,6 +54,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
         allow_credentials=True,
+        # Downloads go through fetch so a failed export is an error in the
+        # page, not a JSON page; the browser needs the filename exposed.
+        expose_headers=["Content-Disposition"],
     )
 
     app.include_router(health.router)

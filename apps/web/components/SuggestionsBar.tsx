@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Sparkle } from "@phosphor-icons/react";
 import { getAllMatches, setAliasesBulk, type ConceptMatch } from "@/lib/api";
-import { Badge, Button, Callout } from "@/components/ui";
+import { Badge, Button, Callout, Skeleton } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
 
 type Suggestion = { concept_code: string; description: string; unit: string; match: ConceptMatch };
@@ -29,11 +29,18 @@ export function SuggestionsBar({
   const [skipped, setSkipped] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
 
   const reload = useCallback(() => {
     getAllMatches(0.8)
-      .then((r) => setItems(r.matches))
-      .catch(() => setItems([]));
+      .then((r) => {
+        setItems(r.matches);
+        setLoadError(false);
+      })
+      .catch(() => {
+        setItems([]);
+        setLoadError(true);
+      });
   }, []);
 
   useEffect(() => {
@@ -47,7 +54,32 @@ export function SuggestionsBar({
   const pending = (items ?? []).filter(
     (s) => !skipped.has(s.concept_code) && conceptCodes.has(s.concept_code),
   );
-  if (!items || pending.length === 0) return null;
+  // Reserve the bar's height while the matches load so the table below does
+  // not jump when suggestions appear.
+  if (!items) {
+    return (
+      <div className="mb-4" aria-busy="true">
+        <Skeleton className="h-11 w-full" />
+      </div>
+    );
+  }
+  if (loadError) {
+    return (
+      <div className="mb-4">
+        <Callout
+          tone="warning"
+          action={
+            <Button size="sm" onClick={reload}>
+              Reintentar
+            </Button>
+          }
+        >
+          No se pudieron buscar coincidencias con tu catálogo.
+        </Callout>
+      </div>
+    );
+  }
+  if (pending.length === 0) return null;
 
   async function adopt(list: Suggestion[]) {
     setBusy(true);

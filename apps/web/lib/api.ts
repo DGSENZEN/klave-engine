@@ -121,6 +121,34 @@ export function apiMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * Download a file the API builds on demand, with the session cookie and a
+ * real error: a failed export used to replace the app with a JSON page.
+ * The filename comes from Content-Disposition, else the fallback.
+ */
+export async function downloadFile(path: string, fallbackName: string): Promise<void> {
+  const res = await fetch(`${API_BASE}${path}`, { credentials: "include", cache: "no-store" });
+  if (!res.ok) {
+    let detail: unknown;
+    try {
+      detail = (await res.json())?.detail;
+    } catch {}
+    throw new ApiError(res.status, path, detail);
+  }
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+  const name = match ? decodeURIComponent(match[1]) : fallbackName;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 // ---- Types (mirror the backend artifacts) ----
 
 export type ProjectSummary = {
@@ -742,10 +770,12 @@ export type AiSheetReading = {
   output_tokens: number;
 };
 export type AiReads = {
-  status: "idle" | "running" | "done" | "failed" | "unavailable";
+  status: "idle" | "running" | "done" | "cancelled" | "failed" | "unavailable";
   started_at: string | null;
   finished_at: string | null;
   run_id: string | null;
+  /** Frames the job set out to read; `readings` grows one by one while it runs. */
+  total_frames: number;
   readings: AiSheetReading[];
   input_tokens: number;
   output_tokens: number;
@@ -757,6 +787,9 @@ export type AiReads = {
 };
 
 export const getAiReads = (id: string) => getJSON<AiReads>(`/projects/${id}/ai-reads`);
+/** Stop after the sheet being read; what was already read stays. */
+export const cancelAiRead = (id: string) =>
+  postJSON<{ project_id: string; status: string }>(`/projects/${id}/ai-read/cancel`, {});
 export const startAiRead = (id: string, actor?: string) =>
   postJSON<{ project_id: string; status: string }>(
     `/projects/${id}/ai-read`,
@@ -937,8 +970,8 @@ export const getVigencia = () =>
     stale_months: number;
   }>("/catalog/vigencia");
 
-export const cotizacionUrl = (status: "vencido" | "revisar" | "all" = "vencido") =>
-  `${API_BASE}/catalog/cotizacion.xlsx?status=${status}`;
+export const cotizacionPath = (status: "vencido" | "revisar" | "all" = "vencido") =>
+  `/catalog/cotizacion.xlsx?status=${status}`;
 
 export type PriceIndices = { source: string; values: Record<string, number> };
 

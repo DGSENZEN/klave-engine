@@ -24,6 +24,7 @@ from apps.api.events import BUS, clean_actor
 router = APIRouter(prefix="/projects")
 _LOCK = threading.Lock()
 _RUNNING: set[str] = set()
+_CANCEL: dict[str, threading.Event] = {}
 
 
 def _control_dir(store: ProjectStore, project_id: str, settings: Settings) -> Path:
@@ -77,8 +78,8 @@ def start_ai_read(
             status_code=409,
             detail={
                 "error_type": "ai_not_configured",
-                "message": "La lectura con IA no está configurada en este servidor: falta "
-                "ANTHROPIC_API_KEY (o un perfil de `ant auth login`).",
+                "message": "La lectura con IA no está activada en este servidor; pide a tu "
+                "administrador que la configure.",
             },
         )
     artifact_dir = store.artifact_root(project_id)
@@ -94,13 +95,15 @@ def start_ai_read(
                 detail={"error_type": "ai_read_running", "message": "Ya hay una lectura en curso."},
             )
         _RUNNING.add(project_id)
+        cancel = _CANCEL[project_id] = threading.Event()
     save_ai_reads(control_dir, AiReads(status="running"))
     actor = clean_actor(x_actor)
 
     def job() -> None:
         try:
             reads = run_ai_reading(
-                artifact_dir, control_dir, anthropic_reader(), run_id=artifact_dir.name
+                artifact_dir, control_dir, anthropic_reader(), run_id=artifact_dir.name,
+                should_stop=cancel.is_set,
             )
             BUS.publish(
                 "ai_read_finished",
@@ -111,6 +114,25 @@ def start_ai_read(
         finally:
             with _LOCK:
                 _RUNNING.discard(project_id)
+                _CANCEL.pop(project_id, None)
 
     threading.Thread(target=job, name=f"ai-read-{project_id}", daemon=True).start()
     return {"project_id": project_id, "status": "running"}
+
+
+@router.post("/{project_id}/ai-read/cancel")
+def cancel_ai_read(
+    project_id: str,
+    store: ProjectStore = Depends(get_store),
+) -> dict:
+    """Stop after the sheet being read; what was already read stays."""
+    store.get_root(project_id)  # 404 for unknown projects
+    with _LOCK:
+        cancel = _CANCEL.get(project_id)
+        if cancel is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"error_type": "ai_read_not_running", "message": "No hay lectura en curso."},
+            )
+        cancel.set()
+    return {"project_id": project_id, "status": "cancelling"}

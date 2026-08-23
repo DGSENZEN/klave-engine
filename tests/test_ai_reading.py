@@ -85,6 +85,26 @@ def test_ai_reading_job_persists_readings_with_provenance(tmp_path):
     assert any("ES-101" in n for n in reads.notes)
     assert load_ai_reads(control).status == "done"
     assert len(seen) == 2 and "planta" in seen[0]
+    assert reads.total_frames == 2
+
+
+def test_ai_reading_persists_each_sheet_and_stops_when_cancelled(tmp_path):
+    _e, _f, artifact, control = _project(tmp_path)
+    progress: list[int] = []
+    stop = {"now": False}
+
+    def fake_reader(png: bytes, prompt: str):
+        # What the page sees mid-job: the sheets read so far, out of the total.
+        progress.append(len(load_ai_reads(control).readings))
+        stop["now"] = True  # cancel after the first sheet
+        return SheetRead(sheet_code="X"), {"input_tokens": 10, "output_tokens": 1}
+
+    reads = run_ai_reading(artifact, control, fake_reader, should_stop=lambda: stop["now"])
+    assert progress == [0]
+    assert reads.status == "cancelled" and len(reads.readings) == 1 and reads.total_frames == 2
+    assert any("cancelada" in n and "1 de 2" in n for n in reads.notes)
+    saved = load_ai_reads(control)
+    assert saved.status == "cancelled" and len(saved.readings) == 1
 
 
 def test_ai_specs_only_fill_what_the_rules_did_not_read():

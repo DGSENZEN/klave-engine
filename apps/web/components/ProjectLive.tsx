@@ -72,6 +72,8 @@ type ProjectLiveValue = {
   toasts: LiveToast[];
   dismissToast: (id: number) => void;
   timeline: ChangeEntry[];
+  /** "loading" until the history arrives, "error" when it could not be read. */
+  timelineState: "loading" | "ready" | "error";
   clearTimeline: () => void;
 };
 
@@ -94,6 +96,7 @@ export function ProjectLiveProvider({
   const [activities, setActivities] = useState<LiveActivity[]>([]);
   const [toasts, setToasts] = useState<LiveToast[]>([]);
   const [timeline, setTimeline] = useState<ChangeEntry[]>([]);
+  const [timelineState, setTimelineState] = useState<"loading" | "ready" | "error">("loading");
   const locationLabel = useMemo(
     () => projectLocationLabel(projectId, pathname),
     [pathname, projectId],
@@ -147,8 +150,9 @@ export function ProjectLiveProvider({
           }
           entries.reverse();
           setTimeline(entries.slice(0, MAX_TIMELINE));
+          setTimelineState("ready");
         })
-        .catch(() => {});
+        .catch(() => setTimelineState("error"));
     });
     const pushToast = (id: number, message: string) => {
       // Cap the stack so a burst of edits can't grow a tall wall of toasts —
@@ -245,6 +249,7 @@ export function ProjectLiveProvider({
       dismissToast: (id) =>
         setToasts((current) => current.filter((toast) => toast.id !== id)),
       timeline,
+      timelineState,
       clearTimeline: () => setTimeline([]),
       setActorName: (next) => setActorNameState(setBrowserActor(next)),
     }),
@@ -257,6 +262,7 @@ export function ProjectLiveProvider({
       latestEvent,
       sendActivity,
       timeline,
+      timelineState,
       toasts,
       viewers,
     ],
@@ -280,6 +286,7 @@ export function useProjectLive(): ProjectLiveValue {
     toasts: [],
     dismissToast: () => {},
     timeline: [],
+    timelineState: "ready",
     clearTimeline: () => {},
     setActorName: () => {},
   };

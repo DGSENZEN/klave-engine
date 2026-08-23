@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   Check,
+  CircleNotch,
   DownloadSimple,
   FileXls,
   PencilSimpleLine,
@@ -15,7 +16,7 @@ import {
 import {
   addAdjustment,
   apiMessage,
-  API_BASE,
+  downloadFile,
   croquisUrl,
   getCatalog,
   getCroquis,
@@ -35,8 +36,10 @@ import { useCostReport } from "@/lib/useProjectReport";
 import {
   Badge,
   Button,
+  buttonClasses,
   Callout,
   Card,
+  EmptyState,
   Input,
   Metric,
   PageHeader,
@@ -62,6 +65,8 @@ export default function PresupuestoPage() {
   const { costs, error } = useCostReport(id);
   const [dims, setDims] = useState<Dimensions | null>(null);
   const [reviews, setReviews] = useState<ProjectReviews | null>(null);
+  const [exporting, setExporting] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [concepts, setConcepts] = useState<CatalogConcept[] | null>(null);
   const { latestEvent, sendActivity, connectionEpoch, actorName, clientId } =
     useProjectLive();
@@ -149,20 +154,41 @@ export default function PresupuestoPage() {
     costs.boq.lines.reduce((s, l) => s + l.confidence, 0) / (costs.boq.lines.length || 1);
   const phases = [...new Set(costs.boq.lines.map((l) => l.phase))];
 
+  async function exportFile(label: string, path: string, fallbackName: string) {
+    sendActivity("exporting_budget", label);
+    setExporting(label);
+    setExportError(null);
+    try {
+      await downloadFile(path, fallbackName);
+    } catch (e) {
+      setExportError(apiMessage(e, `No se pudo generar «${label}».`));
+    } finally {
+      setExporting(null);
+    }
+  }
+
   return (
     <div className="rise-in px-6 py-7 lg:px-8">
       <PageHeader
         title="Presupuesto"
         sub="Cantidades deducidas del plano · precios de referencia (MXN)"
         actions={
-          <ButtonMenu label="Exportar" icon={<DownloadSimple size={16} weight="bold" />}>
+          <ButtonMenu
+            label={exporting ? `Generando ${exporting}…` : "Exportar"}
+            icon={
+              exporting ? (
+                <CircleNotch size={16} className="animate-spin" />
+              ) : (
+                <DownloadSimple size={16} weight="bold" />
+              )
+            }
+          >
             {(close) => (
               <>
                 <MenuItem
                   onSelect={() => {
                     close();
-                    sendActivity("exporting_budget", "Excel Klave");
-                    window.location.href = `${API_BASE}/projects/${id}/export/presupuesto.xlsx`;
+                    void exportFile("Excel Klave", `/projects/${id}/export/presupuesto.xlsx`, "presupuesto.xlsx");
                   }}
                 >
                   <FileXls size={15} weight="duotone" /> Excel completo (Klave)
@@ -170,8 +196,7 @@ export default function PresupuestoPage() {
                 <MenuItem
                   onSelect={() => {
                     close();
-                    sendActivity("exporting_budget", "Excel OPUS");
-                    window.location.href = `${API_BASE}/projects/${id}/export/presupuesto.xlsx?format=opus`;
+                    void exportFile("Excel OPUS", `/projects/${id}/export/presupuesto.xlsx?format=opus`, "presupuesto.xlsx");
                   }}
                 >
                   <FileXls size={15} weight="duotone" /> Excel para OPUS
@@ -179,8 +204,7 @@ export default function PresupuestoPage() {
                 <MenuItem
                   onSelect={() => {
                     close();
-                    sendActivity("exporting_budget", "Excel Neodata");
-                    window.location.href = `${API_BASE}/projects/${id}/export/presupuesto.xlsx?format=neodata`;
+                    void exportFile("Excel Neodata", `/projects/${id}/export/presupuesto.xlsx?format=neodata`, "presupuesto.xlsx");
                   }}
                 >
                   <FileXls size={15} weight="duotone" /> Excel para Neodata
@@ -188,8 +212,7 @@ export default function PresupuestoPage() {
                 <MenuItem
                   onSelect={() => {
                     close();
-                    sendActivity("exporting_budget", "Catálogo de licitación");
-                    window.location.href = `${API_BASE}/projects/${id}/export/presupuesto.xlsx?format=licitacion`;
+                    void exportFile("Catálogo de licitación", `/projects/${id}/export/presupuesto.xlsx?format=licitacion`, "presupuesto.xlsx");
                   }}
                 >
                   <FileXls size={15} weight="duotone" /> Catálogo de licitación (P.U. con letra)
@@ -197,8 +220,7 @@ export default function PresupuestoPage() {
                 <MenuItem
                   onSelect={() => {
                     close();
-                    sendActivity("exporting_budget", "Catálogo de licitación (descripciones largas)");
-                    window.location.href = `${API_BASE}/projects/${id}/export/presupuesto.xlsx?format=licitacion_larga`;
+                    void exportFile("Catálogo de licitación (descripciones largas)", `/projects/${id}/export/presupuesto.xlsx?format=licitacion_larga`, "presupuesto.xlsx");
                   }}
                 >
                   <FileXls size={15} weight="duotone" /> Licitación con descripciones LOPSRM
@@ -206,8 +228,7 @@ export default function PresupuestoPage() {
                 <MenuItem
                   onSelect={() => {
                     close();
-                    sendActivity("exporting_budget", "Explosión de insumos");
-                    window.location.href = `${API_BASE}/projects/${id}/export/explosion.xlsx`;
+                    void exportFile("Explosión de insumos", `/projects/${id}/export/explosion.xlsx`, "explosion_insumos.xlsx");
                   }}
                 >
                   <FileXls size={15} weight="duotone" /> Explosión de insumos
@@ -226,6 +247,20 @@ export default function PresupuestoPage() {
         }
       />
 
+      {exportError && (
+        <div className="mb-4">
+          <Callout
+            tone="danger"
+            action={
+              <Button size="sm" variant="ghost" onClick={() => setExportError(null)}>
+                Cerrar
+              </Button>
+            }
+          >
+            {exportError}
+          </Callout>
+        </div>
+      )}
       <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
       <SuggestionsBar projectId={id} actorName={actorName} conceptCodes={conceptCodes} />
       {parametricCount > 0 && (
@@ -249,7 +284,25 @@ export default function PresupuestoPage() {
         />
       </div>
 
-      <TableCard className="mb-6">
+      {costs.boq.lines.length === 0 && (
+        <div className="mb-6">
+          <EmptyState
+            icon={<FileXls size={22} weight="duotone" />}
+            title="El plano no produjo ningún concepto"
+            hint={
+              costs.boq.warnings[0] ??
+              "No se detectaron elementos estructurales ni de albañilería que el catálogo sepa costear. Revisa la lectura del plano o agrega los conceptos a mano abajo."
+            }
+            action={
+              <Link href={`/proyecto/${id}/lectura`} className={buttonClasses("secondary", "sm")}>
+                Ver la lectura del plano
+              </Link>
+            }
+          />
+        </div>
+      )}
+
+      <TableCard className={`mb-6 ${costs.boq.lines.length === 0 ? "hidden" : ""}`}>
         <thead>
           <tr className="border-b border-border bg-surface-2">
             <Th>Clave</Th>

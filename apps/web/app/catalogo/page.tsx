@@ -64,6 +64,7 @@ import {
   Input,
   PageHeader,
   SectionTitle,
+  Skeleton,
   SkeletonHeader,
   SkeletonTable,
   Td,
@@ -1102,8 +1103,21 @@ function FuentesSection({
   const [ownVigencia, setOwnVigencia] = useState("");
   const [ownBusy, setOwnBusy] = useState(false);
 
+  const [sourcesError, setSourcesError] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState(false);
+  const [searchAttempt, setSearchAttempt] = useState(0);
+
   const loadSources = useCallback(() => {
-    listReferenceSources().then(setSources).catch(() => setSources([]));
+    listReferenceSources()
+      .then((list) => {
+        setSources(list);
+        setSourcesError(false);
+      })
+      .catch(() => {
+        setSources([]);
+        setSourcesError(true);
+      });
   }, []);
 
   useEffect(() => {
@@ -1112,20 +1126,34 @@ function FuentesSection({
 
   useEffect(() => {
     if (query.trim().length < 2) {
-      const handle = window.setTimeout(() => setRows(null), 0);
+      const handle = window.setTimeout(() => {
+        setRows(null);
+        setSearching(false);
+        setSearchError(false);
+      }, 0);
       return () => window.clearTimeout(handle);
     }
     let active = true;
     const handle = window.setTimeout(() => {
+      setSearching(true);
+      setSearchError(false);
       searchReference(query.trim(), sourceKey || undefined)
-        .then((found) => active && setRows(found))
-        .catch(() => active && setRows([]));
+        .then((found) => {
+          if (!active) return;
+          setRows(found);
+        })
+        .catch(() => {
+          if (!active) return;
+          setRows([]);
+          setSearchError(true);
+        })
+        .finally(() => active && setSearching(false));
     }, 250);
     return () => {
       active = false;
       window.clearTimeout(handle);
     };
-  }, [query, sourceKey]);
+  }, [query, sourceKey, searchAttempt]);
 
   async function runImport(source: ReferenceSource) {
     setImporting(source.key);
@@ -1201,7 +1229,24 @@ function FuentesSection({
       </div>
       <ul className="divide-y divide-border">
         {sources === null ? (
-          <li className="px-5 py-3 text-sm text-muted">Cargando fuentes…</li>
+          <li className="space-y-3 px-5 py-3" aria-busy="true">
+            <Skeleton className="h-9" />
+            <Skeleton className="h-9" />
+            <Skeleton className="h-9 w-4/5" />
+          </li>
+        ) : sourcesError ? (
+          <li className="px-5 py-3">
+            <Callout
+              tone="danger"
+              action={
+                <Button size="sm" onClick={loadSources}>
+                  Reintentar
+                </Button>
+              }
+            >
+              No se pudieron cargar las fuentes de referencia.
+            </Callout>
+          </li>
         ) : (
           sources.map((source) => (
             <li key={source.key} className="flex flex-wrap items-center gap-3 px-5 py-3">
@@ -1319,10 +1364,31 @@ function FuentesSection({
               ))}
             </select>
           </div>
+          {searching && rows === null && (
+            <div className="mt-3 space-y-2" aria-busy="true">
+              <Skeleton className="h-10" />
+              <Skeleton className="h-10" />
+              <Skeleton className="h-10 w-3/4" />
+            </div>
+          )}
           {rows && (
-            <div className="mt-3 overflow-x-auto">
-              {rows.length === 0 ? (
-                <p className="py-3 text-sm text-muted">Sin resultados.</p>
+            <div className={`mt-3 overflow-x-auto ${searching ? "opacity-60" : ""}`} aria-busy={searching}>
+              {searchError ? (
+                <Callout
+                  tone="danger"
+                  action={
+                    <Button size="sm" onClick={() => setSearchAttempt((n) => n + 1)}>
+                      Reintentar
+                    </Button>
+                  }
+                >
+                  La búsqueda falló; el servidor no respondió.
+                </Callout>
+              ) : rows.length === 0 ? (
+                <p className="py-3 text-sm text-muted">
+                  Nada en {sourceKey ? "esa fuente" : "las fuentes importadas"} para «{query.trim()}».
+                  {imported.length === 0 && " Importa primero una publicación."}
+                </p>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
@@ -1436,18 +1502,25 @@ function SalarioRealSection({
   const [presetKey, setPresetKey] = useState("");
   const [preview, setPreview] = useState<LaborPreviewRow[] | null>(null);
 
-  useEffect(() => {
+  const [loadError, setLoadError] = useState(false);
+
+  const load = useCallback(() => {
     getLabor()
       .then((s) => {
         setState(s);
         setParams(s.params);
         setCategories(s.categories.map(({ code, description, salario_nominal }) => ({ code, description, salario_nominal })));
+        setLoadError(false);
       })
-      .catch(() => {});
+      .catch(() => setLoadError(true));
     getLaborPresets()
       .then((r) => setPresets(r.presets))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   /** A region fills the form (its ISN, no category below its minimum);
    *  nothing is written until "Aplicar" after the preview. */
@@ -1524,6 +1597,27 @@ function SalarioRealSection({
         </div>
         <CaretDown size={14} className={`text-muted transition ${open ? "rotate-180" : ""}`} />
       </button>
+      {open && loadError && (
+        <div className="border-t border-border px-5 py-4">
+          <Callout
+            tone="danger"
+            action={
+              <Button size="sm" onClick={load}>
+                Reintentar
+              </Button>
+            }
+          >
+            No se pudo cargar el salario real.
+          </Callout>
+        </div>
+      )}
+      {open && !params && !loadError && (
+        <div className="space-y-2 border-t border-border px-5 py-4" aria-busy="true">
+          <Skeleton className="h-8" />
+          <Skeleton className="h-8" />
+          <Skeleton className="h-8 w-3/4" />
+        </div>
+      )}
       {open && params && (
         <div className="border-t border-border px-5 py-4">
           <table className="w-full text-sm">

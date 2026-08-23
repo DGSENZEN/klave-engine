@@ -13,7 +13,7 @@ import {
   type Plantilla,
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
-import { Badge, Button, Card, Input, SectionTitle, Td, Th } from "@/components/ui";
+import { Badge, Button, Callout, Card, Input, SectionTitle, Skeleton, Td, Th } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const BASIS_LABEL: Record<string, string> = {
@@ -51,13 +51,18 @@ export function PlantillasSection({
     { kind: "plantilla"; plantilla: Plantilla } | { kind: "rule"; rule: ParametricRule } | null
   >(null);
 
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+
   const reload = useCallback(() => {
     getPlantillas()
       .then((r) => {
         setPlantillas(r.plantillas);
         setRules(r.rules);
+        setLoaded(true);
+        setLoadError(false);
       })
-      .catch(() => {});
+      .catch(() => setLoadError(true));
   }, []);
 
   useEffect(() => {
@@ -211,6 +216,26 @@ export function PlantillasSection({
           <UploadSimple size={15} weight="bold" /> Importar presupuesto anterior
         </Button>
       </div>
+      {loadError && (
+        <div className="mt-3">
+          <Callout
+            tone="danger"
+            action={
+              <Button size="sm" onClick={reload}>
+                Reintentar
+              </Button>
+            }
+          >
+            No se pudieron cargar las plantillas.
+          </Callout>
+        </div>
+      )}
+      {!loaded && !loadError && (
+        <div className="mt-4 space-y-2" aria-busy="true">
+          <Skeleton className="h-8" />
+          <Skeleton className="h-8 w-2/3" />
+        </div>
+      )}
       {plantillas.length > 0 && (
         <ul className="mt-4 divide-y divide-border">
           {plantillas.map((p) => (
@@ -308,7 +333,7 @@ export function PlantillasSection({
           </div>
         </div>
       )}
-      {plantillas.length === 0 && (
+      {loaded && plantillas.length === 0 && (
         <p className="mt-3 text-xs text-faint">
           Sube el presupuesto de un proyecto terminado con sus m²: cada renglón que el plano no
           lee se vuelve una regla por m² y un concepto con su precio.

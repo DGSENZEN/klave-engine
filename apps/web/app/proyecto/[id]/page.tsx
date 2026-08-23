@@ -62,16 +62,40 @@ export default function Resumen() {
   const [reviews, setReviews] = useState<ProjectReviews | null>(null);
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [diff, setDiff] = useState<RunDiff | null>(null);
+  /** Sections that failed to load, by name; each shows its own error with a retry. */
+  const [failed, setFailed] = useState<Set<"reviews" | "diff">>(() => new Set());
+  const [attempt, setAttempt] = useState(0);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [reprocessing, setReprocessing] = useState(false);
   const { latestEvent, connectionEpoch, actorName } = useProjectLive();
+
+  function markFailed(key: "reviews" | "diff", value: boolean) {
+    setFailed((current) => {
+      const next = new Set(current);
+      if (value) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }
 
   // connectionEpoch: a reconnect may have skipped events, so reload everything.
   useEffect(() => {
     getViews(id).then(setViews).catch(() => {});
     getDimensions(id).then(setDims).catch(() => {});
-    getProjectReviews(id).then(setReviews).catch(() => {});
+    getProjectReviews(id)
+      .then((r) => {
+        setReviews(r);
+        markFailed("reviews", false);
+      })
+      .catch(() => markFailed("reviews", true));
     getProject(id).then(setProject).catch(() => {});
-    getRunDiff(id).then(setDiff).catch(() => {});
-  }, [id, connectionEpoch]);
+    getRunDiff(id)
+      .then((d) => {
+        setDiff(d);
+        markFailed("diff", false);
+      })
+      .catch(() => markFailed("diff", true));
+  }, [id, connectionEpoch, attempt]);
 
   useEffect(() => {
     if (latestEvent?.type === "run_published") {
@@ -93,9 +117,27 @@ export default function Resumen() {
   );
 
   async function confirmStep(step: "units" | "detections" | "assumptions", value: boolean) {
+    setActionError(null);
     try {
       setReviews(await setVerification(id, step, value, actorName));
-    } catch {}
+    } catch {
+      setActionError(
+        value ? "No se pudo marcar el paso como verificado." : "No se pudo deshacer la verificación.",
+      );
+    }
+  }
+
+  async function reprocessNow() {
+    setActionError(null);
+    setReprocessing(true);
+    try {
+      await processProject(id);
+      setProject(await getProject(id));
+    } catch {
+      setActionError("No se pudo encolar el reprocesamiento; inténtalo de nuevo.");
+    } finally {
+      setReprocessing(false);
+    }
   }
 
   return (
@@ -124,21 +166,49 @@ export default function Resumen() {
           No se pudo cargar el resumen de costos. Revisa que el servidor esté activo.
         </Callout>
       )}
+      {actionError && (
+        <div className="mb-6">
+          <Callout
+            tone="danger"
+            action={
+              <Button size="sm" variant="ghost" onClick={() => setActionError(null)}>
+                Cerrar
+              </Button>
+            }
+          >
+            {actionError}
+          </Callout>
+        </div>
+      )}
+      {failed.size > 0 && (
+        <div className="mb-6">
+          <Callout
+            tone="warning"
+            action={
+              <Button size="sm" onClick={() => setAttempt((n) => n + 1)}>
+                Reintentar
+              </Button>
+            }
+          >
+            {failed.has("reviews")
+              ? "No se pudo cargar la ruta de verificación ni las revisiones."
+              : "No se pudieron cargar los cambios del último procesamiento."}
+          </Callout>
+        </div>
+      )}
 
       {project?.engine?.stale && (
         <div className="mb-6">
           <Callout
             tone="info"
             action={
-              <Button
-                size="sm"
-                onClick={() => {
-                  processProject(id)
-                    .then(() => getProject(id).then(setProject).catch(() => {}))
-                    .catch(() => {});
-                }}
-              >
-                <ArrowsClockwise size={14} weight="bold" /> Reprocesar
+              <Button size="sm" onClick={reprocessNow} disabled={reprocessing}>
+                {reprocessing ? (
+                  <CircleNotch size={14} className="animate-spin" />
+                ) : (
+                  <ArrowsClockwise size={14} weight="bold" />
+                )}
+                {reprocessing ? "Encolando…" : "Reprocesar"}
               </Button>
             }
           >

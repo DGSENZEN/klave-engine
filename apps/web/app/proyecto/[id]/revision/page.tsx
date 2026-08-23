@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { CheckCircle, Prohibit, ArrowCounterClockwise, MapTrifold } from "@phosphor-icons/react";
 import {
+  ApiError,
   getRevisionTable,
   setDetectionReviews,
   type RevisionRow,
@@ -13,6 +14,7 @@ import {
 import {
   Badge,
   Button,
+  buttonClasses,
   Callout,
   Input,
   Metric,
@@ -36,7 +38,7 @@ export default function RevisionPage() {
   const { id } = useParams<{ id: string }>();
   const { latestEvent, connectionEpoch, actorName, clientId } = useProjectLive();
   const [table, setTable] = useState<RevisionTable | null>(null);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<"none" | "not_processed" | "failed">("none");
   const [concept, setConcept] = useState("");
   const [view, setView] = useState("");
   const [onlyDoubts, setOnlyDoubts] = useState(false);
@@ -53,9 +55,9 @@ export default function RevisionPage() {
     getRevisionTable(id)
       .then((t) => {
         setTable(t);
-        setError(false);
+        setError("none");
       })
-      .catch(() => setError(true));
+      .catch((e) => setError(e instanceof ApiError && e.status === 404 ? "not_processed" : "failed"));
   }, [id]);
 
   useEffect(() => {
@@ -177,11 +179,26 @@ export default function RevisionPage() {
     }
   }
 
-  if (error) {
+  if (error !== "none") {
     return (
       <div className="p-6">
-        <Callout tone="danger">
-          No hay presupuesto que revisar todavía: procesa el proyecto primero.
+        <Callout
+          tone={error === "not_processed" ? "info" : "danger"}
+          action={
+            error === "not_processed" ? (
+              <Link href={`/proyecto/${id}`} className={buttonClasses("secondary", "sm")}>
+                Ir al resumen
+              </Link>
+            ) : (
+              <Button size="sm" onClick={reload}>
+                Reintentar
+              </Button>
+            )
+          }
+        >
+          {error === "not_processed"
+            ? "No hay presupuesto que revisar todavía: procesa el proyecto primero."
+            : "No se pudo cargar la revisión; el servidor no respondió."}
         </Callout>
       </div>
     );

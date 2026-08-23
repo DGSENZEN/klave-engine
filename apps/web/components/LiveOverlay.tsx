@@ -2,7 +2,7 @@
 
 import { ClockCounterClockwise, X, Check } from "@phosphor-icons/react";
 import { useProjectLive } from "@/components/ProjectLive";
-import { Avatar, IconButton } from "@/components/ui";
+import { Avatar, IconButton, Skeleton } from "@/components/ui";
 
 /*
  * Live-change surfaces. The old implementation floated a "Cambios" pill over
@@ -56,7 +56,7 @@ export function ChangesTrigger({
 }
 
 export function ChangesPanel({ onClose }: { onClose: () => void }) {
-  const { timeline, clearTimeline } = useProjectLive();
+  const { timeline, timelineState, clearTimeline } = useProjectLive();
   return (
     <div className="toast-in fixed right-3 top-16 z-50 w-[calc(100vw-1.5rem)] max-w-80 overflow-hidden rounded-xl border border-border bg-surface shadow-lg lg:bottom-14 lg:left-3 lg:right-auto lg:top-auto">
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
@@ -83,9 +83,18 @@ export function ChangesPanel({ onClose }: { onClose: () => void }) {
         </div>
       </div>
       <div className="max-h-[50vh] overflow-y-auto">
-        {timeline.length === 0 ? (
+        {timeline.length === 0 && timelineState === "loading" ? (
+          <div className="space-y-2 px-3 py-3" aria-busy="true">
+            <Skeleton className="h-8" />
+            <Skeleton className="h-8 w-3/4" />
+          </div>
+        ) : timeline.length === 0 && timelineState === "error" ? (
+          <p className="px-3 py-6 text-center text-xs text-danger">
+            No se pudo leer el historial; los cambios nuevos sí aparecerán aquí.
+          </p>
+        ) : timeline.length === 0 ? (
           <p className="px-3 py-6 text-center text-xs text-muted">
-            Aún no hay cambios en esta sesión.
+            Aún no hay cambios en este proyecto.
           </p>
         ) : (
           <ul className="divide-y divide-border">
