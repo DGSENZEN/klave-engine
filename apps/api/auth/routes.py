@@ -44,6 +44,31 @@ router = APIRouter(tags=["auth"])
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_ISSUERS = ("https://accounts.google.com", "accounts.google.com")
+
+
+def google_claims_problem(claims: dict[str, Any], client_id: str | None) -> str | None:
+    """Why an id_token must not sign anyone in, or None when it may: the
+    token must be issued by Google for this app, still valid, and carry an
+    email Google has verified."""
+    import time
+
+    if claims.get("iss") not in GOOGLE_ISSUERS:
+        return "google"
+    aud = claims.get("aud")
+    audiences = aud if isinstance(aud, list) else [aud]
+    if not client_id or client_id not in audiences:
+        return "google"
+    try:
+        if float(claims.get("exp") or 0) < time.time():
+            return "google"
+    except (TypeError, ValueError):
+        return "google"
+    if not claims.get("sub") or not claims.get("email"):
+        return "google"
+    if claims.get("email_verified") is not True:
+        return "google_unverified"
+    return None
 STATE_COOKIE = "klave_oauth_state"
 INVITE_COOKIE = "klave_oauth_invite"
 
@@ -133,7 +158,10 @@ def register(
         if user["status"] == "active":
             start_session(request, response, users, settings, str(user["user_id"]))
         else:
-            BUS.publish("user_pending", actor=user["name"], data={"email": user["email"]})
+            BUS.publish(
+                "user_pending", data={"user_id": str(user["user_id"])},
+                workspace_id=str(user["workspace_id"]),
+            )
         send_verification(users, settings, user)
     except UsersDbUnavailable as exc:
         raise db_unavailable() from exc
@@ -264,16 +292,18 @@ async def google_callback(
     if not id_token:
         return fail("google")
     # The id_token arrives straight from Google's token endpoint over TLS, so
-    # its claims are trusted without a second signature check.
+    # its signature is not re-checked; its claims still must be ours (iss,
+    # aud, exp) and the email must be one Google itself verified.
     try:
         payload = id_token.split(".")[1]
         claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
     except (ValueError, IndexError):
         return fail("google")
-    sub = claims.get("sub")
-    email = (claims.get("email") or "").lower()
-    if not sub or not email:
-        return fail("google")
+    problem = google_claims_problem(claims, settings.auth_google_id)
+    if problem is not None:
+        return fail(problem)
+    sub = claims["sub"]
+    email = claims["email"].lower()
     name = claims.get("name") or email.split("@")[0]
     picture = claims.get("picture")
     invite_token = request.cookies.get(INVITE_COOKIE)
@@ -281,9 +311,21 @@ async def google_callback(
     try:
         user = users.get_by_google_sub(sub)
         if user is None:
-            user = users.get_by_email(email)
-            if user is not None:
-                users.link_google(str(user["user_id"]), sub, picture)
+            # Linking Google to an account that already exists needs proof of
+            # that account: a live session (the user came from Tu cuenta).
+            # An unauthenticated sign-in with a matching email is not proof.
+            signed_in = session_user(request, users)
+            existing = users.get_by_email(email)
+            if signed_in is not None:
+                users.link_google(str(signed_in["user_id"]), sub, picture)
+                audit(
+                    users, signed_in, "google_linked",
+                    target_type="user", target_id=str(signed_in["user_id"]),
+                    detail={"email": email},
+                )
+                user = users.get_by_google_sub(sub) or signed_in
+            elif existing is not None:
+                return fail("google_link_required")
             elif invite_token:
                 invite = users.get_invitation_by_token(invite_token)
                 if invite is None or invite["state"] != "open":
@@ -305,7 +347,8 @@ async def google_callback(
                 )
                 if user["status"] == "pending":
                     BUS.publish(
-                        "user_pending", actor=user["name"], data={"email": user["email"]}
+                        "user_pending", data={"user_id": str(user["user_id"])},
+                        workspace_id=str(user["workspace_id"]),
                     )
         if user["status"] == "disabled":
             return fail("disabled")
@@ -388,6 +431,7 @@ def set_user_status(
         "user_status_changed",
         actor=admin["name"],
         data={"user_id": user_id, "status": body.status},
+        workspace_id=str(admin["workspace_id"]),
     )
     return {"user_id": user_id, "status": body.status}
 
@@ -524,7 +568,7 @@ def grant_project_access(
         "project_shared",
         project_id=project_id,
         actor=granter["name"],
-        data={"email": target["email"], "role": body.role},
+        data={"name": target["name"], "role": body.role},
     )
     return {"project_id": project_id, "email": target["email"], "role": body.role}
 

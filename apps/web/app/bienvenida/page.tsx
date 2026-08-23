@@ -41,6 +41,8 @@ import {
 type UrlNotice =
   | "pending"
   | "google"
+  | "google_unverified"
+  | "google_link_required"
   | "db"
   | "disabled"
   | "invite"
@@ -53,6 +55,14 @@ const NOTICES: Record<Exclude<UrlNotice, null>, { tone: "info" | "danger"; text:
     text: "Tu cuenta fue creada y espera la aprobación de un administrador del taller.",
   },
   google: { tone: "danger", text: "No se pudo iniciar sesión con Google. Inténtalo de nuevo." },
+  google_unverified: {
+    tone: "danger",
+    text: "Google no ha verificado el correo de esa cuenta; verifica tu correo en Google o entra con contraseña.",
+  },
+  google_link_required: {
+    tone: "info",
+    text: "Ya existe una cuenta con ese correo. Entra con tu contraseña y vincula Google desde Tu cuenta; así nadie puede tomar tu cuenta solo con un correo parecido.",
+  },
   db: {
     tone: "danger",
     text: "La base de datos de usuarios no está disponible; pide a tu administrador que la arranque y recarga.",

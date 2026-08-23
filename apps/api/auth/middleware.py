@@ -85,6 +85,12 @@ def _required_project_role(segments: list[str], method: str) -> str | None:
     return "viewer"
 
 
+def _set_actor_header(scope: dict, name: str) -> None:
+    headers = [(k, v) for k, v in scope.get("headers", []) if k.lower() != b"x-actor"]
+    headers.append((b"x-actor", name.encode("utf-8", "replace")[:120]))
+    scope["headers"] = headers
+
+
 def _deny(status: int, error_type: str, message: str) -> tuple[int, bytes]:
     return status, json.dumps(
         {"detail": {"error_type": error_type, "message": message}}
@@ -136,6 +142,9 @@ class AccessControlMiddleware:
                 denial = _deny(403, "account_disabled", "Tu cuenta está deshabilitada.")
             else:
                 scope.setdefault("state", {})["user"] = user
+                # Attribution is the session's, never the header's: a signed
+                # in user cannot sign a review or a version as someone else.
+                _set_actor_header(scope, str(user["name"]))
                 segments = [s for s in path.split("/") if s]
                 if segments and segments[0] == "projects":
                     required = _required_project_role(segments, method)

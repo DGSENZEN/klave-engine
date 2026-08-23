@@ -11,12 +11,15 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from apps.api.auth.common import get_users
+from apps.api.auth.store import UsersDbUnavailable
 from apps.api.dependencies import ProjectStore, get_store
 from apps.api.events import (
     BUS,
     DISCONNECT_POLL_SECONDS,
     HEARTBEAT_SECONDS,
     PRESENCE,
+    Event,
     clean_actor,
     clean_client_id,
     clean_location_label,
@@ -103,6 +106,33 @@ def _stream_response(
     session_id = uuid4().hex
     tracks_presence = bool(project_id and viewer_actor and viewer_client_id)
 
+    # In protected mode the stream is the viewer's taller only: the user on
+    # the request (set by the auth middleware) and the projects of their
+    # workspace. Open mode (no users yet) sees everything, as before.
+    viewer = getattr(request.state, "user", None)
+    workspace_id = str(viewer["workspace_id"]) if viewer else None
+    project_workspaces: dict[str, str] = {}
+    if workspace_id is not None:
+        try:
+            project_workspaces = get_users().project_workspace_map()
+        except UsersDbUnavailable:
+            project_workspaces = {}
+
+    def drain(cursor: int) -> list[Event]:
+        nonlocal project_workspaces
+        events = BUS.since(cursor, project_id, workspace_id, project_workspaces)
+        if workspace_id is not None and any(
+            e.type == "project_created" and e.project_id not in project_workspaces
+            for e in BUS.since(cursor, project_id)
+        ):
+            # A project born after the stream started: learn its taller.
+            try:
+                project_workspaces = get_users().project_workspace_map()
+            except UsersDbUnavailable:
+                pass
+            events = BUS.since(cursor, project_id, workspace_id, project_workspaces)
+        return events
+
     async def stream() -> AsyncIterator[str]:
         cursor = since
         waiter = BUS.subscribe()
@@ -132,7 +162,8 @@ def _stream_response(
                 # Clear before draining so a publish that races the drain sets
                 # the flag and wakes the next wait instead of being missed.
                 waiter.clear()
-                pending = BUS.since(cursor, project_id)
+                pending = drain(cursor)
+                newest = BUS.latest_seq()
                 for event in pending:
                     cursor = event.seq
                     if event_types is not None and event.type not in event_types:
@@ -142,6 +173,8 @@ def _stream_response(
                 if time.monotonic() - last_beat >= HEARTBEAT_SECONDS:
                     last_beat = time.monotonic()
                     yield ": ping\n\n"
+                # Events hidden from this taller still advance the cursor.
+                cursor = max(cursor, newest)
                 if pending:
                     continue  # more may have arrived; re-drain before blocking
                 # Wake immediately on the next publish; time out to heartbeat
@@ -208,6 +241,7 @@ async def project_events_stream(
 @router.get("/projects/{project_id}/events/history")
 def project_events_history(
     project_id: str,
+    request: Request,
     limit: int = 100,
     store: ProjectStore = Depends(get_store),
 ) -> dict:
@@ -220,7 +254,15 @@ def project_events_history(
     """
     store.get_root(project_id)
     limit = max(1, min(limit, 200))
-    events = BUS.since(0, project_id)
+    viewer = getattr(request.state, "user", None)
+    workspace_id = str(viewer["workspace_id"]) if viewer else None
+    project_workspaces: dict[str, str] = {}
+    if workspace_id is not None:
+        try:
+            project_workspaces = get_users().project_workspace_map()
+        except UsersDbUnavailable:
+            project_workspaces = {}
+    events = BUS.since(0, project_id, workspace_id, project_workspaces)
     return {"events": [event.to_json() for event in events[-limit:]]}
 
 

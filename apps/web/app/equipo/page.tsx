@@ -85,6 +85,7 @@ const AUDIT_LABELS: Record<string, string> = {
   password_changed: "cambió su contraseña",
   email_changed: "cambió su correo",
   google_unlinked: "desvinculó Google",
+  google_linked: "vinculó Google",
   project_access_granted: "compartió un proyecto con",
   project_access_revoked: "quitó acceso a un proyecto",
   project_removed: "quitó un proyecto de la lista",

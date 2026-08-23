@@ -270,5 +270,8 @@ def accept_invitation(
         )
     except UsersDbUnavailable as exc:
         raise db_unavailable() from exc
-    BUS.publish("user_joined", actor=user["name"], data={"email": user["email"]})
+    BUS.publish(
+        "user_joined", data={"user_id": str(user["user_id"])},
+        workspace_id=str(user["workspace_id"]),
+    )
     return public_user(user)

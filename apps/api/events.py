@@ -44,6 +44,9 @@ class Event:
     project_id: str | None
     actor: str | None
     data: dict[str, Any]
+    # The taller the event belongs to; None for events every taller may see
+    # (a project event resolves its workspace through the project instead).
+    workspace_id: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -62,6 +65,13 @@ class Event:
         )
 
 
+def visible_to(event: Event, workspace_id: str, project_workspaces: dict[str, str]) -> bool:
+    """Whether a taller may see this event."""
+    if event.project_id is not None:
+        return project_workspaces.get(event.project_id) == workspace_id
+    return event.workspace_id is None or event.workspace_id == workspace_id
+
+
 @dataclass
 class EventBus:
     _lock: threading.Lock = field(default_factory=threading.Lock)
@@ -78,6 +88,7 @@ class EventBus:
         project_id: str | None = None,
         actor: str | None = None,
         data: dict[str, Any] | None = None,
+        workspace_id: str | None = None,
     ) -> Event:
         with self._lock:
             self._seq += 1
@@ -88,6 +99,7 @@ class EventBus:
                 project_id=project_id,
                 actor=actor,
                 data=data or {},
+                workspace_id=workspace_id,
             )
             self._events.append(event)
             waiters = list(self._waiters.items())
@@ -104,10 +116,21 @@ class EventBus:
         with self._lock:
             return self._seq
 
-    def since(self, seq: int, project_id: str | None = None) -> list[Event]:
-        """Events after ``seq``; project-filtered streams also see global events."""
+    def since(
+        self,
+        seq: int,
+        project_id: str | None = None,
+        workspace_id: str | None = None,
+        project_workspaces: dict[str, str] | None = None,
+    ) -> list[Event]:
+        """Events after ``seq``; project-filtered streams also see global events.
+
+        With a ``workspace_id`` (protected mode) only that taller's events
+        pass: a project event by its project's workspace (``project_workspaces``
+        map, unknown projects hidden), a global event by its own workspace or
+        none at all."""
         with self._lock:
-            return [
+            events = [
                 event
                 for event in self._events
                 if event.seq > seq
@@ -117,6 +140,9 @@ class EventBus:
                     or event.project_id is None
                 )
             ]
+        if workspace_id is None:
+            return events
+        return [e for e in events if visible_to(e, workspace_id, project_workspaces or {})]
 
     def subscribe(self) -> "asyncio.Event":
         """Register a wakeup for the current loop; pair with ``unsubscribe``."""

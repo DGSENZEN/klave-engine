@@ -97,9 +97,22 @@ def _save_index(control_dir: Path, versions: list[VersionSummary]) -> None:
     write_json(_dir(control_dir) / INDEX_FILENAME, versions)
 
 
+def _version_path(control_dir: Path, version_id: str) -> Path | None:
+    """The version's file, only when it lives inside the versions directory."""
+    if not version_id.startswith("ver_"):
+        return None
+    base = _dir(control_dir).resolve()
+    path = (base / f"{version_id}.json").resolve()
+    try:
+        path.relative_to(base)
+    except ValueError:
+        return None
+    return path if path.parent == base else None
+
+
 def load_version(control_dir: Path, version_id: str) -> PresupuestoVersion | None:
-    path = _dir(control_dir) / f"{version_id}.json"
-    if not path.exists() or not version_id.startswith("ver_"):
+    path = _version_path(control_dir, version_id)
+    if path is None or not path.exists():
         return None
     return PresupuestoVersion.model_validate(read_json(path))
 
@@ -189,8 +202,8 @@ def delete_version(control_dir: Path, version_id: str) -> bool:
     kept = [v for v in versions if v.version_id != version_id]
     if len(kept) == len(versions):
         return False
-    path = _dir(control_dir) / f"{version_id}.json"
-    if path.exists():
+    path = _version_path(control_dir, version_id)
+    if path is not None and path.exists():
         path.unlink()
     _save_index(control_dir, kept)
     return True

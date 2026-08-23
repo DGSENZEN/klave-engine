@@ -96,3 +96,15 @@ def test_reprocess_keeps_the_previous_presupuesto_as_an_automatic_version(tmp_pa
     write_json(tmp_path / "active_run.json", {"run_id": "run_2", "artifact_dir": "runs/run_1"})
     assert snapshot_before_reprocess(tmp_path) is not None
     assert len(list_versions(tmp_path)) == 2
+
+
+def test_version_ids_cannot_escape_the_versions_directory(tmp_path):
+    from klave_engine.common.io import write_json
+
+    outside = tmp_path / "ver_outside.json"
+    write_json(outside, {"not": "a version"})
+    assert load_version(tmp_path, "ver_../ver_outside") is None
+    assert load_version(tmp_path, "../ver_outside") is None
+    assert load_version(tmp_path, "ver_a/../../ver_outside") is None
+    assert not delete_version(tmp_path, "ver_../ver_outside")
+    assert outside.exists()
