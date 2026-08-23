@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.exceptions import HTTPException
 from fastapi.responses import RedirectResponse, Response
 from klave_engine.common.config import Settings
+from klave_engine.common.ids import slugify
 from pydantic import BaseModel, EmailStr, Field
 
 from apps.api.auth.common import (
@@ -77,6 +78,10 @@ class RegisterInput(BaseModel):
     email: EmailStr
     name: str = Field(min_length=2, max_length=80)
     password: str = Field(min_length=8, max_length=128)
+    # Founding a new taller: this account becomes its first (admin) member,
+    # active immediately. Absent, the account asks to join the default taller
+    # and waits for an admin's approval.
+    workspace_name: str | None = Field(default=None, min_length=2, max_length=80)
 
 
 class LoginInput(BaseModel):
@@ -154,7 +159,29 @@ def register(
                 status_code=409,
                 detail={"error_type": "email_taken", "message": "Ese correo ya tiene cuenta."},
             )
-        user = users.create_user(email=body.email, name=body.name, password=body.password)
+        workspace_id: str | None = None
+        if body.workspace_name:
+            base = slugify(body.workspace_name)[:40] or "taller"
+            slug = base
+            for _ in range(4):
+                try:
+                    workspace = users.create_workspace(slug, body.workspace_name.strip())
+                    workspace_id = str(workspace["workspace_id"])
+                    break
+                except ValueError:
+                    slug = f"{base}-{secrets.token_hex(2)}"
+            if workspace_id is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error_type": "workspace_slug_taken",
+                        "message": "No se pudo crear el taller; intenta con otro nombre.",
+                    },
+                )
+        user = users.create_user(
+            email=body.email, name=body.name, password=body.password,
+            workspace_id=workspace_id,
+        )
         if user["status"] == "active":
             start_session(request, response, users, settings, str(user["user_id"]))
         else:

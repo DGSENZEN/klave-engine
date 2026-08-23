@@ -244,6 +244,8 @@ function AuthCard({
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
+  const [founding, setFounding] = useState(false);
+  const [workspaceName, setWorkspaceName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [registered, setRegistered] = useState(false);
@@ -262,7 +264,10 @@ function AuthCard({
         }
         window.location.href = "/bienvenida?pending=1";
       } else {
-        const user = await register(email.trim(), name.trim(), password);
+        const user = await register(
+          email.trim(), name.trim(), password,
+          founding ? workspaceName.trim() : undefined,
+        );
         if (user.status === "active") {
           completeProfile(user.name);
           router.replace("/");
@@ -328,14 +333,36 @@ function AuthCard({
 
       <form onSubmit={submit} className="space-y-3">
         {tab === "register" && (
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Nombre y apellido"
-            maxLength={80}
-            required
-            className="w-full"
-          />
+          <>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Nombre y apellido"
+              maxLength={80}
+              required
+              className="w-full"
+            />
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-muted">
+              <Checkbox checked={founding} onChange={(e) => setFounding(e.target.checked)} />
+              Crear un taller nuevo (seré su administrador)
+            </label>
+            {founding ? (
+              <Input
+                value={workspaceName}
+                onChange={(e) => setWorkspaceName(e.target.value)}
+                placeholder="Nombre del taller (p. ej. Constructora GAYA)"
+                minLength={2}
+                maxLength={80}
+                required
+                className="w-full"
+              />
+            ) : (
+              <p className="text-xs text-faint">
+                Sin taller nuevo, tu cuenta pide unirse al taller existente y un administrador
+                la aprueba (o pídele una invitación: entra al instante).
+              </p>
+            )}
+          </>
         )}
         <Input
           type="email"

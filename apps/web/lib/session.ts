@@ -83,8 +83,11 @@ export async function fetchAuthStatus(): Promise<AuthStatus> {
 export const googleLoginUrl = (invite?: string) =>
   `${API_BASE}/auth/google${invite ? `?invite=${encodeURIComponent(invite)}` : ""}`;
 
-export const register = (email: string, name: string, password: string) =>
-  authFetch<AuthUser>("/auth/register", { json: { email, name, password } });
+/** With `workspaceName`, the account founds that taller and is its admin at once. */
+export const register = (email: string, name: string, password: string, workspaceName?: string) =>
+  authFetch<AuthUser>("/auth/register", {
+    json: { email, name, password, workspace_name: workspaceName || undefined },
+  });
 
 export const login = (email: string, password: string, remember = false) =>
   authFetch<AuthUser>("/auth/login", { json: { email, password, remember } });

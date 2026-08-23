@@ -15,6 +15,11 @@ Caddy obtiene y renueva el TLS solo.
 4. Abre `https://app.<dominio>` y crea la primera cuenta: es el
    administrador del taller y quien invita al resto.
 
+Cada taller es su propio espacio: al registrarse, "Crear un taller nuevo"
+funda otro (quien lo crea es su administrador, activo al instante) con su
+propio catálogo; registrarse sin taller pide unirse al existente y espera
+aprobación. Las invitaciones entran directo al taller que invita.
+
 `KLAVE_ENV=production` hace dos cosas: solo los orígenes configurados pueden
 llamar a la API con credenciales (nada de `localhost`), y el arranque
 **falla con un mensaje claro** si la configuración está a medias (origen en
