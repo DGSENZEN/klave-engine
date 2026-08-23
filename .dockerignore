@@ -1,0 +1,12 @@
+.git
+.venv
+node_modules
+data
+reports
+scratchpad
+**/__pycache__
+**/.next
+docs
+evals/gold
+*.md
+!README.md

@@ -1,0 +1,20 @@
+# TLS on both subdomains via Let's Encrypt; Caddy renews on its own.
+{
+	email {$KLAVE_ACME_EMAIL}
+}
+
+app.{$KLAVE_DOMAIN} {
+	encode gzip
+	reverse_proxy web:3000
+}
+
+api.{$KLAVE_DOMAIN} {
+	encode gzip
+	reverse_proxy api:8000 {
+		# SSE: hand events through as they happen.
+		flush_interval -1
+	}
+	request_body {
+		max_size 120MB
+	}
+}

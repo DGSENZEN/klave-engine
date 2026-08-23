@@ -1,0 +1,99 @@
+# Production deployment: one VPS, Caddy terminating TLS on two subdomains.
+#   cp deploy/env.example .env.prod   # fill in domain + secrets
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+# The web image bakes the API URL at build time; changing KLAVE_DOMAIN means
+# rebuilding the web service.
+services:
+  users-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: klave_users
+      POSTGRES_PASSWORD: ${KLAVE_USERS_DB_PASSWORD:?define KLAVE_USERS_DB_PASSWORD}
+      POSTGRES_DB: klave_users
+    volumes:
+      - users-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U klave_users -d klave_users"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      KLAVE_ENV: production
+      KLAVE_DATA_DIR: /data
+      KLAVE_REPORTS_DIR: /data/reports
+      KLAVE_USERS_DATABASE_URL: postgresql://klave_users:${KLAVE_USERS_DB_PASSWORD}@users-db:5432/klave_users
+      KLAVE_WEB_ORIGIN: https://app.${KLAVE_DOMAIN:?define KLAVE_DOMAIN}
+      KLAVE_COOKIE_DOMAIN: .${KLAVE_DOMAIN}
+      KLAVE_COOKIE_SECURE: "true"
+      KLAVE_LOG_LEVEL: ${KLAVE_LOG_LEVEL:-INFO}
+      KLAVE_AUTH_GOOGLE_ID: ${KLAVE_AUTH_GOOGLE_ID:-}
+      KLAVE_AUTH_GOOGLE_SECRET: ${KLAVE_AUTH_GOOGLE_SECRET:-}
+      KLAVE_RESEND_API_KEY: ${KLAVE_RESEND_API_KEY:-}
+      KLAVE_SMTP_HOST: ${KLAVE_SMTP_HOST:-}
+      KLAVE_SMTP_PORT: ${KLAVE_SMTP_PORT:-587}
+      KLAVE_SMTP_USER: ${KLAVE_SMTP_USER:-}
+      KLAVE_SMTP_PASSWORD: ${KLAVE_SMTP_PASSWORD:-}
+      KLAVE_MAIL_FROM: ${KLAVE_MAIL_FROM:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - klave-data:/data
+    depends_on:
+      users-db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: apps/web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://api.${KLAVE_DOMAIN}
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      KLAVE_DOMAIN: ${KLAVE_DOMAIN}
+      KLAVE_ACME_EMAIL: ${KLAVE_ACME_EMAIL:?define KLAVE_ACME_EMAIL}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+      - web
+
+  # Nightly backup of everything irreplaceable: the users database and the
+  # catálogos/uploads under /data. Kept 14 days inside the backups volume;
+  # copy that volume off the machine (rsync/rclone) for real safety.
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/backup.sh", "daemon"]
+    environment:
+      PGPASSWORD: ${KLAVE_USERS_DB_PASSWORD}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - ./deploy/backup.sh:/backup.sh:ro
+      - klave-data:/data:ro
+      - backups:/backups
+    depends_on:
+      users-db:
+        condition: service_healthy
+
+volumes:
+  klave-data:
+  users-db-data:
+  caddy-data:
+  caddy-config:
+  backups:

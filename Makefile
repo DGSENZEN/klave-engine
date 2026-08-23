@@ -1,4 +1,13 @@
-.PHONY: install test lint typecheck demo-data ingest-demo convert-demo parse-demo process-demo eval-demo eval-gold gold-capture api web web-install clean users-db-up users-db-down
+.PHONY: prod-up prod-logs backup-now install test lint typecheck demo-data ingest-demo convert-demo parse-demo process-demo eval-demo eval-gold gold-capture api web web-install clean users-db-up users-db-down
+
+prod-up:
+	docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+
+prod-logs:
+	docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f --tail 100
+
+backup-now:
+	docker compose -f docker-compose.prod.yml --env-file .env.prod exec backup sh /backup.sh once
 
 users-db-up:
 	docker compose up -d users-db
