@@ -8,7 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from klave_engine.common.config import Settings
 from klave_engine.common.ids import slugify
 from klave_engine.costing.croquis import croquis_for_line
-from klave_engine.costing.exports import CroquisProvider, build_presupuesto_workbook
+from klave_engine.costing.exports import (
+    CroquisProvider,
+    build_explosion_workbook,
+    build_presupuesto_workbook,
+)
 from klave_engine.costing.models import BoqLine, CostReport
 from klave_engine.costing.reviews import load_reviews
 from klave_engine.detection.frames import SheetFrame
@@ -58,10 +62,26 @@ def _croquis_provider(
     return provide
 
 
+@router.get("/{project_id}/export/explosion.xlsx")
+def export_explosion(
+    project_id: str,
+    store: ProjectStore = Depends(get_store),
+) -> Response:
+    """Explosión de insumos: what the presupuesto consumes, per resource."""
+    manifest = store.get_manifest(project_id)
+    report = CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
+    filename = f"explosion_insumos_{slugify(manifest.project_name)[:40]}.xlsx"
+    return Response(
+        content=build_explosion_workbook(report),
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/{project_id}/export/presupuesto.xlsx")
 def export_presupuesto(
     project_id: str,
-    format: Literal["klave", "opus", "neodata", "licitacion"] = "klave",
+    format: Literal["klave", "opus", "neodata", "licitacion", "licitacion_larga"] = "klave",
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> Response:

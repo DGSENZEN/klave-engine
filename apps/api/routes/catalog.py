@@ -23,6 +23,7 @@ from klave_engine.costing.catalog_services import (
     labor_state,
 )
 from klave_engine.costing.catalog_store import CatalogStore, get_catalog_store
+from klave_engine.costing.descripciones import long_description
 from klave_engine.costing.equipment import EquipmentParameters, compute_costo_horario
 from klave_engine.costing.exports import build_cotizacion_workbook
 from klave_engine.costing.labor import (
@@ -550,6 +551,30 @@ def import_reference_source(
     )
     _publish_catalog_updated(x_actor, "reference_imported", f"{spec.name}: {count} renglones")
     return {"source_key": source_key, "rows": count}
+
+
+# ------------------------------------------------------------ descripciones LOPSRM
+
+@router.get("/concepts/{code}/descripcion")
+def concept_long_description(code: str, catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    """The LOPSRM-style long description, derived from the concept and its
+    matrix — a proposal to paste into the taller's catálogo, never silent."""
+    concepts = build_catalog_from_store(catalog.load_concepts(), CostingAssumptions())
+    concept = next((c for c in concepts if c.code == code), None)
+    if concept is None:
+        raise HTTPException(status_code=404, detail={"error_type": "concept_not_found"})
+    try:
+        apus = build_all_apus(
+            concepts, catalog.load_price_book(), templates=catalog.load_templates()
+        )
+    except ReportGenerationError:
+        apus = {}
+    return {
+        "concept_code": code,
+        "description": concept.description,
+        "long_description": long_description(concept, apus.get(code)),
+        "generated": True,
+    }
 
 
 # ------------------------------------------------------------ vigencia de precios

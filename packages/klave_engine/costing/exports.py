@@ -25,8 +25,10 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
+from klave_engine.costing.descripciones import long_description
+from klave_engine.costing.explosion import explode
 from klave_engine.costing.letras import pesos_con_letra
-from klave_engine.costing.models import BoqLine, CostReport
+from klave_engine.costing.models import BoqLine, Concept, CostReport
 from klave_engine.costing.reviews import ProjectReviews
 from klave_engine.detection.results import Detection
 
@@ -102,8 +104,10 @@ def build_presupuesto_workbook(
             sheet_title="Presupuesto",
             columns=["Código", "Concepto", "Unidad", "Cantidad", "P.U.", "Monto"],
         )
-    elif fmt == "licitacion":
-        workbook = _licitacion_workbook(report, reviews, project_name, client)
+    elif fmt in ("licitacion", "licitacion_larga"):
+        workbook = _licitacion_workbook(
+            report, reviews, project_name, client, long_descriptions=fmt == "licitacion_larga"
+        )
     else:
         workbook = _klave_workbook(report, detections, reviews, project_name, client)
         if inventory and inventory.get("sheets"):
@@ -119,7 +123,8 @@ IVA_PCT = 16.0
 
 
 def _licitacion_workbook(
-    report: CostReport, reviews: ProjectReviews, project_name: str, client: str | None
+    report: CostReport, reviews: ProjectReviews, project_name: str, client: str | None,
+    long_descriptions: bool = False,
 ) -> Workbook:
     """Catálogo de conceptos for a licitación pública (LOPSRM art. 45 / RLOPSRM
     art. 185): one partida per phase, each concept with its precio unitario
@@ -130,6 +135,7 @@ def _licitacion_workbook(
     ws = workbook.active
     ws.title = "Catálogo de conceptos"
     factor = report.integration.overcost_factor or 1.0
+    apus_by_code = {apu.concept_code: apu for apu in report.apus}
     _title(ws, 1, "CATÁLOGO DE CONCEPTOS Y CANTIDADES DE OBRA", size=14)
     _muted(ws, 2, 1, f"Obra: {project_name}")
     _muted(ws, 3, 1, f"Dependencia / cliente: {client or '—'}")
@@ -169,9 +175,18 @@ def _licitacion_workbook(
             unit_price = round(line.unit_price * factor, 2)
             amount = round(line.quantity * unit_price, 2)
             partida_total += amount
+            description = line.description
+            if long_descriptions:
+                description = long_description(
+                    Concept(
+                        code=line.concept_code, description=line.description, unit=line.unit,
+                        phase=line.phase, production_rate_per_day=1.0,
+                    ),
+                    apus_by_code.get(line.concept_code),
+                )
             values: list[Any] = [
                 f"{partida}.{index:03d}", line.taller_clave or line.concept_code,
-                line.description, line.unit, line.quantity, unit_price,
+                description, line.unit, line.quantity, unit_price,
                 pesos_con_letra(unit_price), amount,
             ]
             for col, value in enumerate(values, start=1):
@@ -262,6 +277,7 @@ def _klave_workbook(
     _presupuesto(workbook.create_sheet("Presupuesto"), report)
     _apus(workbook.create_sheet("APUs"), report)
     _generadores(workbook.create_sheet("Generadores"), report, detections, reviews, croquis)
+    _explosion(workbook.create_sheet("Explosión de insumos"), report)
     _programa(workbook.create_sheet("Programa"), report)
     _flujo(workbook.create_sheet("Flujo"), report)
     return workbook
@@ -617,6 +633,65 @@ def _flujo(ws: Worksheet, report: CostReport) -> None:
         row += 1
     _autosize(ws, [12, 10, 16, 16, 16, 14, 16, 17])
     ws.freeze_panes = "A2"
+
+
+def _explosion(ws: Worksheet, report: CostReport) -> None:
+    """Every resource the presupuesto consumes: quantity, cost, by partida."""
+    explosion = explode(report)
+    _title(ws, 1, "Explosión de insumos", size=13)
+    _muted(
+        ws, 2, 1,
+        "APU × cantidad, sumado por insumo. Lo que hay que comprar, contratar y programar; "
+        "los conceptos con P.U. adoptado sin matriz no se explotan.",
+    )
+    phases = list(report.boq.totals_by_phase.keys())
+    _header(
+        ws, 4,
+        ["Insumo", "Descripción", "Tipo", "Unidad", "Cantidad", "Costo unitario", "Importe",
+         *phases],
+    )
+    row = 5
+    type_label = {"material": "Material", "mano_de_obra": "Mano de obra", "equipo": "Equipo"}
+    for r in explosion.resources:
+        values: list[Any] = [
+            r.code, r.description, type_label.get(r.resource_type, r.resource_type), r.unit,
+            r.quantity, r.unit_cost, r.amount,
+            *[r.by_phase.get(phase, 0.0) or None for phase in phases],
+        ]
+        for col, value in enumerate(values, start=1):
+            cell = ws.cell(row=row, column=col, value=value)
+            cell.border = _box
+            if col == 5 or col > 7:
+                cell.number_format = QTY_FORMAT
+            if col in (6, 7):
+                cell.number_format = MONEY_FORMAT
+        row += 1
+    row += 1
+    for label, value in (
+        ("Materiales", explosion.by_type.get("material", 0.0)),
+        ("Mano de obra", explosion.by_type.get("mano_de_obra", 0.0)),
+        ("Equipo y herramienta", explosion.by_type.get("equipo", 0.0)),
+        ("Total explotado", explosion.total),
+    ):
+        ws.cell(row=row, column=2, value=label).font = Font(bold=True, size=9)
+        cell = ws.cell(row=row, column=7, value=value)
+        cell.number_format = MONEY_FORMAT
+        cell.font = Font(bold=True, size=9)
+        row += 1
+    for note in explosion.notes:
+        _muted(ws, row, 1, note)
+        row += 1
+    for letter, width in {"A": 18, "B": 48, "C": 13, "D": 8, "E": 13, "F": 14, "G": 15}.items():
+        ws.column_dimensions[letter].width = width
+
+
+def build_explosion_workbook(report: CostReport) -> bytes:
+    workbook = Workbook()
+    _explosion(workbook.active, report)
+    workbook.active.title = "Explosión de insumos"
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
 
 
 def build_cotizacion_workbook(ages: list) -> bytes:

@@ -59,7 +59,7 @@ def test_klave_workbook_structure_and_generadores(data_dir):
     )
     workbook = load_workbook(io.BytesIO(content))
     assert workbook.sheetnames == [
-        "Carátula", "Presupuesto", "APUs", "Generadores", "Programa", "Flujo",
+        "Carátula", "Presupuesto", "APUs", "Generadores", "Explosión de insumos", "Programa", "Flujo",
     ]
     generadores = "\n".join(
         str(cell.value)

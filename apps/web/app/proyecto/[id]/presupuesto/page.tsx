@@ -194,6 +194,24 @@ export default function PresupuestoPage() {
                 <MenuItem
                   onSelect={() => {
                     close();
+                    sendActivity("exporting_budget", "Catálogo de licitación (descripciones largas)");
+                    window.location.href = `${API_BASE}/projects/${id}/export/presupuesto.xlsx?format=licitacion_larga`;
+                  }}
+                >
+                  <FileXls size={15} weight="duotone" /> Licitación con descripciones LOPSRM
+                </MenuItem>
+                <MenuItem
+                  onSelect={() => {
+                    close();
+                    sendActivity("exporting_budget", "Explosión de insumos");
+                    window.location.href = `${API_BASE}/projects/${id}/export/explosion.xlsx`;
+                  }}
+                >
+                  <FileXls size={15} weight="duotone" /> Explosión de insumos
+                </MenuItem>
+                <MenuItem
+                  onSelect={() => {
+                    close();
                     downloadCsv();
                   }}
                 >
