@@ -3,6 +3,7 @@ and the direct-cost spend per period (programa de erogaciones)."""
 
 import math
 from collections import defaultdict
+from datetime import date, timedelta
 
 from klave_engine.costing.catalog import PHASE_ORDER
 from klave_engine.costing.models import (
@@ -81,12 +82,43 @@ def build_schedule(
         phase_start += max(1, math.ceil(phase_span * (1.0 - phase_overlap)))
 
     total_duration = max((a.end_day for a in activities), default=0)
-    return WorkSchedule(
+    schedule = WorkSchedule(
         activities=activities,
         total_duration_days=total_duration,
         workdays_per_month=config.workdays_per_month,
         phases=phases_present,
     )
+    _apply_calendar(schedule, config.start_date)
+    return schedule
+
+
+def _calendar_date(start: date, workday: int) -> date:
+    """The calendar date of the Nth working day from the start, on a six-day
+    site week (Sundays off — 24 workdays a month)."""
+    current = start
+    remaining = max(workday, 0)
+    while current.weekday() == 6:  # a start on Sunday begins Monday
+        current += timedelta(days=1)
+    while remaining > 0:
+        current += timedelta(days=1)
+        if current.weekday() != 6:
+            remaining -= 1
+    return current
+
+
+def _apply_calendar(schedule: WorkSchedule, start_date: str | None) -> None:
+    """Working days become calendar dates when the obra has a start date."""
+    if not start_date:
+        return
+    try:
+        start = date.fromisoformat(start_date[:10])
+    except ValueError:
+        return
+    schedule.start_date = start.isoformat()
+    for activity in schedule.activities:
+        activity.start_date = _calendar_date(start, activity.start_day).isoformat()
+        activity.end_date = _calendar_date(start, activity.end_day).isoformat()
+    schedule.end_date = _calendar_date(start, schedule.total_duration_days).isoformat()
 
 
 def _stretch_phase(

@@ -2,7 +2,14 @@
 
 import { useParams } from "next/navigation";
 import { CalendarBlank, Stack, ListChecks } from "@phosphor-icons/react";
-import { money, num, type ScheduleActivity } from "@/lib/api";
+import { useState } from "react";
+import {
+  getCostingConfig,
+  money,
+  num,
+  recompute,
+  type ScheduleActivity,
+} from "@/lib/api";
 import { phaseColor } from "@/lib/phases";
 import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
@@ -12,6 +19,7 @@ import {
   Callout,
   Card,
   EmptyState,
+  Input,
   Metric,
   PageHeader,
   SectionTitle,
@@ -24,7 +32,28 @@ export default function ProgramaPage() {
   const { id } = useParams<{ id: string }>();
   const { costs, error } = useCostReport(id);
   const reviews = useProjectReviews(id);
-  const { actorName } = useProjectLive();
+  const { actorName, clientId } = useProjectLive();
+  const [dateBusy, setDateBusy] = useState(false);
+  const [dateError, setDateError] = useState<string | null>(null);
+
+  async function setStartDate(value: string) {
+    setDateBusy(true);
+    setDateError(null);
+    try {
+      const current = await getCostingConfig(id);
+      current.config.schedule.start_date = value || null;
+      await recompute(
+        id,
+        { config: current.config, insumo_prices: current.insumo_prices, version: current.version },
+        actorName,
+        clientId,
+      );
+    } catch {
+      setDateError("No se pudo guardar la fecha de arranque; inténtalo de nuevo.");
+    } finally {
+      setDateBusy(false);
+    }
+  }
 
   if (error) {
     return (
@@ -100,11 +129,38 @@ export default function ProgramaPage() {
           accent="accent"
         />
         <Metric
-          label="Actividades"
-          value={activities.length}
+          label={costs.schedule.end_date ? "Termina" : "Actividades"}
+          value={
+            costs.schedule.end_date
+              ? formatDate(costs.schedule.end_date)
+              : activities.length
+          }
+          hint={costs.schedule.end_date ? `${activities.length} actividades` : undefined}
           icon={<ListChecks size={16} weight="duotone" />}
         />
         <Metric label="Fases" value={phases.length} icon={<Stack size={16} weight="duotone" />} />
+      </div>
+
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-muted">Fecha de arranque</span>
+          <Input
+            type="date"
+            defaultValue={costs.schedule.start_date ?? ""}
+            onChange={(e) => void setStartDate(e.target.value)}
+            disabled={dateBusy}
+            className="px-2 py-1.5"
+            aria-label="Fecha de arranque de la obra"
+          />
+        </label>
+        <span className="text-xs text-muted">
+          {dateBusy
+            ? "Recalculando el calendario…"
+            : costs.schedule.start_date
+              ? "Semana de seis días (domingos no laborables); los días se vuelven fechas."
+              : "Sin fecha, el programa queda en días laborables relativos."}
+        </span>
+        {dateError && <span className="text-xs text-danger">{dateError}</span>}
       </div>
 
       {activities.length === 0 ? (
@@ -176,6 +232,13 @@ function DayScale({ totalDays }: { totalDays: number }) {
   );
 }
 
+function formatDate(iso: string): string {
+  const date = new Date(`${iso}T12:00:00`);
+  return Number.isNaN(date.getTime())
+    ? iso
+    : date.toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "2-digit" });
+}
+
 function GanttRow({
   activity,
   totalDays,
@@ -195,12 +258,17 @@ function GanttRow({
         </div>
         <div className="text-[11px] tabular text-faint">
           {num(activity.quantity)} {activity.unit} · {activity.duration_days} días
+          {activity.start_date && ` · ${formatDate(activity.start_date)}`}
         </div>
       </div>
       <div className="relative h-6 flex-1 rounded bg-surface-2/60">
         <div
           className="absolute top-1 h-4 rounded-[4px] opacity-90 transition group-hover:opacity-100"
-          title={`${activity.description} · día ${activity.start_day} → ${activity.end_day} · ${money(activity.direct_cost)}`}
+          title={
+            activity.start_date && activity.end_date
+              ? `${activity.description} · ${formatDate(activity.start_date)} → ${formatDate(activity.end_date)} · ${money(activity.direct_cost)}`
+              : `${activity.description} · día ${activity.start_day} → ${activity.end_day} · ${money(activity.direct_cost)}`
+          }
           style={{ left: `${left}%`, width: `${width}%`, background: color }}
         />
       </div>

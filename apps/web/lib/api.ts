@@ -387,7 +387,13 @@ export type CostReport = {
     overcost_factor: number;
     lines: { description: string; percentage: number; amount: number }[];
   };
-  schedule: { total_duration_days: number; phases: string[]; activities: ScheduleActivity[] };
+  schedule: {
+    total_duration_days: number;
+    phases: string[];
+    activities: ScheduleActivity[];
+    start_date?: string | null;
+    end_date?: string | null;
+  };
   financial: {
     advance_payment_pct?: number;
     retention_pct?: number;
@@ -410,6 +416,9 @@ export type ScheduleActivity = {
   duration_days: number;
   start_day: number;
   end_day: number;
+  /** Calendar dates (ISO) when the obra has a start date; null otherwise. */
+  start_date?: string | null;
+  end_date?: string | null;
   direct_cost: number;
 };
 
@@ -509,7 +518,7 @@ export type CostingConfigFull = {
   /** Nullable: a level the engineer has not set yet (platform_level_m). */
   assumptions: Record<string, number | null>;
   indirects: Record<string, number>;
-  schedule: Record<string, number>;
+  schedule: Record<string, number> & { start_date?: string | null };
   financial: Record<string, number>;
 };
 

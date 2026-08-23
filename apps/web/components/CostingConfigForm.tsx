@@ -53,6 +53,8 @@ export const CONFIG_GROUPS: { group: keyof CostingConfigFull; title: string }[] 
   { group: "financial", title: "Financiero" },
 ];
 
+const NON_NUMERIC_KEYS = new Set(["start_date"]);
+
 export function ConfigGroup({
   title,
   group,
@@ -64,7 +66,11 @@ export function ConfigGroup({
   config: CostingConfigFull;
   onChange: (g: keyof CostingConfigFull, k: string, v: number | null) => void;
 }) {
-  const entries = Object.entries(config[group] as Record<string, number | null>);
+  // Non-numeric settings (the obra's start date) have their own control on
+  // the page that owns them; this form is numbers only.
+  const entries = Object.entries(config[group] as Record<string, number | string | null>).filter(
+    ([key, value]) => !NON_NUMERIC_KEYS.has(key) && (typeof value === "number" || value === null),
+  ) as [string, number | null][];
   return (
     <Card className="p-5">
       <SectionTitle>{title}</SectionTitle>

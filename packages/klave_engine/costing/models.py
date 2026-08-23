@@ -210,6 +210,9 @@ class ScheduleActivity(BaseModel):
     duration_days: int
     start_day: int
     end_day: int
+    # Calendar dates when the obra has a start date (ISO), else None.
+    start_date: str | None = None
+    end_date: str | None = None
     direct_cost: float
 
 
@@ -230,6 +233,9 @@ class WorkSchedule(BaseModel):
     total_duration_days: int
     workdays_per_month: int
     phases: list[str]
+    # The obra's start and end on the calendar when a start date is set.
+    start_date: str | None = None
+    end_date: str | None = None
 
 
 class OperatingYear(BaseModel):
@@ -296,6 +302,9 @@ class IndirectsConfig(BaseModel):
 
 
 class ScheduleConfig(BaseModel):
+    # Obra start date (ISO, "2026-09-01"); None keeps the programa in
+    # relative working days. Calendar dates skip Sundays (6-day site week).
+    start_date: str | None = None
     workdays_per_month: int = 24
     # Activities inside a phase follow each other (trades in sequence) with
     # this overlap; phases fast-track onto the previous phase with theirs.
