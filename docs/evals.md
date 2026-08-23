@@ -30,3 +30,23 @@ actual, para que la base nunca quede atrás del parser. Recaptura una entrada
 después de revisar detecciones en el visor; el runner falla si una confirmada
 desaparece, si una entrada `verified` deja de ser perfecta, o si cualquier tipo
 cae por debajo de su F1 base.
+
+
+## Comparar contra un presupuesto humano
+
+La calibración que una firma hace en sus primeros proyectos: el presupuesto
+del motor contra el que hizo su gente, concepto por concepto.
+
+```bash
+make eval-compare ENGINE=data/uploads/<proyecto> HUMAN=presupuesto_humano.xlsx
+```
+
+`ENGINE` es la raíz del proyecto (usa la corrida activa y el recálculo con
+revisiones si existe) o un `cost_report.json`. `HUMAN` es cualquier XLSX/CSV
+con columnas de clave, descripción, unidad y cantidad (una exportación de
+OPUS/Neodata o el generador del taller); el precio es opcional. Los conceptos
+se emparejan por clave. La salida es una tabla Markdown con Δ % por concepto,
+ordenada de la peor diferencia a la mejor, más los conceptos que solo tiene
+el humano o solo el motor y un resumen (mediana de |Δ|, cuántos dentro de
+±10 %, el peor). Nada se oculta: un concepto que el motor no lee aparece como
+"solo humano".

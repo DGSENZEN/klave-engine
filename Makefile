@@ -50,6 +50,10 @@ eval-demo:
 eval-gold:
 	uv run python -m klave_engine.evals.gold run
 
+# make eval-compare ENGINE=data/uploads/<project> HUMAN=presupuesto_humano.xlsx
+eval-compare:
+	uv run python -m klave_engine.evals.compare $(ENGINE) $(HUMAN)
+
 # make gold-capture ROOT=data/uploads/<project> ID=<drawing-id>
 gold-capture:
 	uv run python -m klave_engine.evals.gold capture $(ROOT) --id $(ID) --fresh
