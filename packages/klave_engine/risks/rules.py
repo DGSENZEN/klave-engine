@@ -64,7 +64,12 @@ class RiskEngineConfig(BaseModel):
 
 
 MIN_GRID_LINES = 4
+POOR_GRID_SHARE = 0.8
 MAX_INDIVIDUAL_GRID_FINDINGS = 20
+
+
+def _missing_grid(columns: list[Detection]) -> int:
+    return sum(1 for c in columns if not c.properties.get("has_nearby_grid", False))
 
 
 def _sheet_name(source: str) -> str:
@@ -109,7 +114,7 @@ def generate_risk_report(
                 severity=Severity.high,
                 message=(
                     f"La referencia de detalle {detail.label} está en "
-                    f"{detail.evidence.source}, pero la hoja {sheet} no forma "
+                    f"{_sheet_name(detail.evidence.source)}, pero la hoja {sheet} no forma "
                     "parte del proyecto."
                 ),
                 source_entities=detail.source_entities,
@@ -130,16 +135,26 @@ def generate_risk_report(
     grid_by_file: dict[str, int] = {}
     for line in by_type[DetectionType.grid_line]:
         grid_by_file[line.evidence.source] = grid_by_file.get(line.evidence.source, 0) + 1
-    without_grid = [
-        c for c in by_type[DetectionType.column_tag]
-        if not c.properties.get("has_nearby_grid", False)
-        and c.properties.get("role") != "cuadro"
-        and grid_by_file.get(c.evidence.source, 0) >= MIN_GRID_LINES
+    real_columns = [
+        c for c in by_type[DetectionType.column_tag] if c.properties.get("role") != "cuadro"
     ]
-    poor_grid_files = {
-        c.evidence.source for c in by_type[DetectionType.column_tag]
-        if grid_by_file.get(c.evidence.source, 0) < MIN_GRID_LINES
-    }
+    columns_by_file: dict[str, list[Detection]] = defaultdict(list)
+    for c in real_columns:
+        columns_by_file[c.evidence.source].append(c)
+    # A file is "grid-poor" when it has few axes or when nearly every column
+    # misses one: then the grid reading is the doubt, not 200 columns.
+    poor_grid_files: set[str] = set()
+    for source, cols in columns_by_file.items():
+        missing = sum(1 for c in cols if not c.properties.get("has_nearby_grid", False))
+        if grid_by_file.get(source, 0) < MIN_GRID_LINES or (
+            len(cols) >= 5 and missing / len(cols) >= POOR_GRID_SHARE
+        ):
+            poor_grid_files.add(source)
+    without_grid = [
+        c for c in real_columns
+        if not c.properties.get("has_nearby_grid", False)
+        and c.evidence.source not in poor_grid_files
+    ]
     for source in sorted(poor_grid_files):
         findings.append(
             RiskFinding(
@@ -147,8 +162,10 @@ def generate_risk_report(
                 risk_type="sparse_grid",
                 severity=Severity.low,
                 message=(
-                    f"En {_sheet_name(source)} se leyeron {grid_by_file.get(source, 0)} ejes; "
-                    "la comprobación columna–eje no aplica hasta que la malla se lea completa."
+                    f"En {_sheet_name(source)} se leyeron {grid_by_file.get(source, 0)} ejes y "
+                    f"{_missing_grid(columns_by_file[source])} de {len(columns_by_file[source])} "
+                    "columnas quedan sin eje cercano; la comprobación columna–eje no aplica "
+                    "hasta que la malla se lea completa."
                 ),
                 source_entities=[],
                 related_detections=[],
@@ -212,7 +229,7 @@ def generate_risk_report(
                 risk_type="footing_without_column",
                 severity=Severity.medium,
                 message=(
-                    f"La zapata {footing.label} en {footing.evidence.source} no tiene "
+                    f"La zapata {footing.label} en {_sheet_name(footing.evidence.source)} no tiene "
                     "una columna etiquetada dentro del radio de búsqueda."
                 ),
                 source_entities=footing.source_entities,
