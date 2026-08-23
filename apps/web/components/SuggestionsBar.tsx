@@ -82,7 +82,7 @@ export function SuggestionsBar({
               {open ? "Ocultar" : "Revisar"}
             </Button>
             <Button size="sm" variant="primary" onClick={() => adopt(pending)} disabled={busy}>
-              Adoptar {pending.length}
+              {pending.length === 1 ? "Usar mi clave" : `Usar mis claves (${pending.length})`}
             </Button>
           </span>
         }
@@ -90,8 +90,8 @@ export function SuggestionsBar({
         <span className="inline-flex items-center gap-1.5">
           <Sparkle size={15} weight="fill" />
           {pending.length === 1
-            ? "1 concepto coincide con tu catálogo al 80 % o más. Adoptarlo usa tu clave, tu descripción y tu precio en este y en los próximos proyectos."
-            : `${pending.length} conceptos coinciden con tu catálogo al 80 % o más. Adoptarlos usa tu clave, tu descripción y tu precio en este y en los próximos proyectos.`}
+            ? "1 concepto coincide con tu catálogo al 80 % o más. Usar tu clave pone tu descripción y tu precio en este y en los próximos proyectos."
+            : `${pending.length} conceptos coinciden con tu catálogo al 80 % o más. Usar tus claves pone tu descripción y tu precio en este y en los próximos proyectos.`}
         </span>
       </Callout>
       {error && <p className="mt-2 text-sm text-danger">{error}</p>}
@@ -110,7 +110,7 @@ export function SuggestionsBar({
               </div>
               <Badge tone="success">{(s.match.score * 100).toFixed(0)}%</Badge>
               <Button size="sm" variant="primary" onClick={() => adopt([s])} disabled={busy}>
-                Usar
+                Usar esta clave
               </Button>
               <Button
                 size="sm"

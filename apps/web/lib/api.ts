@@ -108,6 +108,19 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The message the server wrote for people, or the fallback. Every error
+ * the API raises on purpose carries `{error_type, message}`; a network
+ * failure or a 500 carries nothing worth showing.
+ */
+export function apiMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiError && error.detail && typeof error.detail === "object") {
+    const message = (error.detail as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return fallback;
+}
+
 // ---- Types (mirror the backend artifacts) ----
 
 export type ProjectSummary = {
@@ -934,15 +947,35 @@ export const getIndices = () => getJSON<PriceIndices>("/catalog/indices");
 export const putIndices = (body: PriceIndices, actor?: string) =>
   putJSON<PriceIndices>("/catalog/indices", body, actor ? { "X-Actor": actor } : undefined);
 
+export type RollForwardResult = {
+  updated: {
+    code: string;
+    description: string;
+    from: number;
+    to: number;
+    factor: number;
+    vigencia_from: string;
+  }[];
+  skipped: string[];
+  to_month: string;
+  dry_run: boolean;
+};
+
+/** With `dry_run` nothing is written: the result is the preview of what the same call would change. */
 export const rollForwardPrices = (
-  body: { status?: "vencido" | "revisar" | "all"; codes?: string[]; to_month?: string },
+  body: {
+    status?: "vencido" | "revisar" | "all";
+    codes?: string[];
+    to_month?: string;
+    dry_run?: boolean;
+  },
   actor?: string,
 ) =>
-  postJSON<{
-    updated: { code: string; from: number; to: number; factor: number; vigencia_from: string }[];
-    skipped: string[];
-    to_month: string;
-  }>("/catalog/indices/roll-forward", body, actor ? { "X-Actor": actor } : undefined);
+  postJSON<RollForwardResult>(
+    "/catalog/indices/roll-forward",
+    body,
+    actor ? { "X-Actor": actor } : undefined,
+  );
 
 // ---- Plantillas & paramétricos (the taller's history) ----
 
@@ -1669,6 +1702,22 @@ export async function importMatrices(file: File, source: string, actor?: string)
   }
   return (await res.json()) as MatricesImportResult;
 }
+
+export type LaborPreviewRow = {
+  code: string;
+  description: string;
+  salario_nominal: number;
+  fsr: number;
+  from: number | null;
+  to: number;
+};
+
+/** What "Aplicar salario real" would write, next to today's catalog price. Nothing is saved. */
+export const previewLabor = (params: FsrParameters, categories: LaborCategory[]) =>
+  postJSON<{ rows: LaborPreviewRow[]; vigencia: string }>("/catalog/labor/preview", {
+    params,
+    categories,
+  });
 
 export const putLabor = (params: FsrParameters, categories: LaborCategory[], actor?: string) =>
   putJSON<LaborState & { applied: unknown[] }>(

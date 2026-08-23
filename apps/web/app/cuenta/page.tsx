@@ -395,6 +395,7 @@ function AccessCard({
 function SessionsCard() {
   const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmAll, setConfirmAll] = useState(false);
 
   const reload = useCallback(() => {
     listSessions()
@@ -416,6 +417,7 @@ function SessionsCard() {
   }
 
   async function closeOthers() {
+    setConfirmAll(false);
     try {
       await logoutOthers();
       reload();
@@ -428,12 +430,20 @@ function SessionsCard() {
 
   return (
     <Card className="overflow-hidden">
+      <ConfirmDialog
+        open={confirmAll}
+        title={`Cerrar ${others.length === 1 ? "la otra sesión" : `las otras ${others.length} sesiones`}`}
+        description="Esos dispositivos tendrán que volver a iniciar sesión. Esta sesión sigue abierta."
+        confirmLabel="Cerrar sesiones"
+        onConfirm={closeOthers}
+        onCancel={() => setConfirmAll(false)}
+      />
       <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
         <SectionTitle sub="Dónde está abierta tu cuenta. Cierra lo que no reconozcas.">
           Sesiones
         </SectionTitle>
         {others.length > 0 && (
-          <Button size="sm" variant="ghost" onClick={closeOthers}>
+          <Button size="sm" variant="ghost" onClick={() => setConfirmAll(true)}>
             Cerrar las demás
           </Button>
         )}

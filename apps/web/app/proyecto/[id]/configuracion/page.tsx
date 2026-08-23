@@ -85,6 +85,7 @@ export default function ConfiguracionPage() {
           : current,
       );
       setSaved(true);
+      window.setTimeout(() => setSaved(false), 4000);
     } catch {
       setError("No se pudieron guardar los cambios.");
     }
@@ -143,8 +144,17 @@ export default function ConfiguracionPage() {
         </div>
       )}
       {saved && (
-        <div className="mb-4">
-          <Callout tone="info">Cambios guardados.</Callout>
+        <div className="mb-4" role="status">
+          <Callout
+            tone="info"
+            action={
+              <Button size="sm" variant="ghost" onClick={() => setSaved(false)}>
+                Cerrar
+              </Button>
+            }
+          >
+            Nombre y cliente guardados.
+          </Callout>
         </div>
       )}
 

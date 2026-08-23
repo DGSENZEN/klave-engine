@@ -6,12 +6,15 @@ import {
   cotizacionUrl,
   getIndices,
   getVigencia,
+  money2,
   putIndices,
   rollForwardPrices,
   type PriceIndices,
+  type RollForwardResult,
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
-import { Badge, Button, Card, Input, SectionTitle } from "@/components/ui";
+import { Badge, Button, Card, Input, SectionTitle, Td, Th } from "@/components/ui";
+import { Modal } from "@/components/Modal";
 
 const FRESH = 6;
 const STALE = 12;
@@ -54,6 +57,7 @@ export function VigenciaSection({
   const [source, setSource] = useState("");
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<RollForwardResult | null>(null);
 
   const reload = useCallback(() => {
     getVigencia()
@@ -94,18 +98,35 @@ export function VigenciaSection({
     }
   }
 
-  async function roll(status: "vencido" | "revisar") {
+  async function previewRoll(status: "vencido" | "revisar") {
     setBusy(true);
     try {
-      const result = await rollForwardPrices({ status }, getBrowserActor());
+      setPreview(await rollForwardPrices({ status, dry_run: true }, getBrowserActor()));
+    } catch {
+      onError("No se pudo calcular la actualización por índice; captura primero la tabla.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyRoll() {
+    if (!preview) return;
+    setBusy(true);
+    try {
+      // Apply exactly the codes the preview showed, never a fresh selection.
+      const result = await rollForwardPrices(
+        { codes: preview.updated.map((u) => u.code), to_month: preview.to_month },
+        getBrowserActor(),
+      );
       const skipped = result.skipped.length ? ` · ${result.skipped.length} sin índice aplicable` : "";
       onNotice(
-        `${result.updated.length} precios actualizados por índice a ${result.to_month} (marcados como calculado)${skipped}`,
+        `${result.updated.length === 1 ? "1 precio actualizado" : `${result.updated.length} precios actualizados`} por índice a ${result.to_month} (marcado como calculado)${skipped}`,
       );
+      setPreview(null);
       reload();
       onChanged();
     } catch {
-      onError("No se pudieron actualizar los precios por índice; captura primero la tabla.");
+      onError("No se pudieron actualizar los precios por índice.");
     } finally {
       setBusy(false);
     }
@@ -116,6 +137,80 @@ export function VigenciaSection({
   const monthCount = Object.keys(indices?.values ?? {}).length;
   return (
     <Card className="p-5">
+      <Modal
+        open={preview !== null}
+        title="Actualizar precios vencidos por índice"
+        sub={
+          preview
+            ? `${preview.updated.length === 1 ? "1 precio pasa" : `${preview.updated.length} precios pasan`} a ${preview.to_month} con el índice ${indices?.source || "del taller"}; queda marcado como calculado, no como cotización.`
+            : undefined
+        }
+        onClose={() => setPreview(null)}
+        busy={busy}
+        size="lg"
+        footer={
+          <>
+            <Button onClick={() => setPreview(null)} disabled={busy}>
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              onClick={applyRoll}
+              disabled={busy || !preview || preview.updated.length === 0}
+            >
+              {busy
+                ? "Aplicando…"
+                : preview?.updated.length === 1
+                  ? "Aplicar a 1 precio"
+                  : `Aplicar a ${preview?.updated.length ?? 0} precios`}
+            </Button>
+          </>
+        }
+      >
+        {preview && preview.updated.length > 0 && (
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-surface-2">
+                  <Th>Insumo</Th>
+                  <Th>Desde</Th>
+                  <Th align="right">Actual</Th>
+                  <Th align="right">Factor</Th>
+                  <Th align="right">Nuevo</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.updated.map((u) => (
+                  <tr key={u.code} className="border-t border-border">
+                    <Td>
+                      <div>{u.description || u.code}</div>
+                      <div className="font-mono text-xs text-muted">{u.code}</div>
+                    </Td>
+                    <Td className="whitespace-nowrap text-xs text-muted">{u.vigencia_from}</Td>
+                    <Td align="right" className="tabular">{money2(u.from)}</Td>
+                    <Td align="right" className="tabular text-muted">×{u.factor.toFixed(4)}</Td>
+                    <Td align="right" className="tabular font-medium">{money2(u.to)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {preview && preview.updated.length === 0 && (
+          <p className="text-muted">Ningún precio vencido tiene un índice aplicable para su mes.</p>
+        )}
+        {preview && preview.skipped.length > 0 && (
+          <div className="mt-3 text-xs text-muted">
+            <div className="mb-1 font-medium">Sin cambio ({preview.skipped.length})</div>
+            <ul className="space-y-0.5 font-mono">
+              {preview.skipped.slice(0, 20).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+              {preview.skipped.length > 20 && <li>… y {preview.skipped.length - 20} más</li>}
+            </ul>
+          </div>
+        )}
+      </Modal>
       <SectionTitle sub="Cada precio dice cuántos meses tiene. Pide cotización de los vencidos, importa la respuesta, o tráelos a hoy por el índice que tu taller mantiene (queda marcado como calculado, nunca como cotización).">
         Vigencia de precios
       </SectionTitle>
@@ -127,18 +222,27 @@ export function VigenciaSection({
             <Badge tone="danger" dot>{vencidos} vencidos</Badge>
           </span>
         )}
-        <a href={cotizacionUrl("vencido")} className="inline-flex">
+        <a
+          href={cotizacionUrl("vencido")}
+          className="inline-flex"
+          aria-disabled={vencidos === 0}
+          onClick={(e) => vencidos === 0 && e.preventDefault()}
+        >
           <Button size="sm" disabled={vencidos === 0}>
-            <DownloadSimple size={14} weight="bold" /> Solicitar cotización ({vencidos})
+            <DownloadSimple size={14} weight="bold" /> Solicitud de cotización: vencidos ({vencidos})
           </Button>
         </a>
         <a href={cotizacionUrl("all")} className="inline-flex">
           <Button size="sm">
-            <DownloadSimple size={14} weight="bold" /> Solicitud completa
+            <DownloadSimple size={14} weight="bold" /> Solicitud de cotización: todo el catálogo
           </Button>
         </a>
-        <Button size="sm" onClick={() => roll("vencido")} disabled={busy || vencidos === 0 || monthCount === 0}>
-          <ArrowClockwise size={14} weight="bold" /> Actualizar vencidos por índice
+        <Button
+          size="sm"
+          onClick={() => previewRoll("vencido")}
+          disabled={busy || vencidos === 0 || monthCount === 0}
+        >
+          <ArrowClockwise size={14} weight="bold" /> Actualizar vencidos por índice…
         </Button>
         <button
           type="button"

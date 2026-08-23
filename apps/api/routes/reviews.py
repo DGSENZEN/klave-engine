@@ -246,12 +246,16 @@ def add_adjustment(
                 "message": "El ajuste debe ser distinto de cero.",
             },
         )
-    if body.quantity_set is not None and not body.note.strip():
+    if not body.note.strip():
         raise HTTPException(
             status_code=422,
             detail={
                 "error_type": "reason_required",
-                "message": "Fijar una cantidad requiere decir por qué.",
+                "message": (
+                    "Fijar una cantidad requiere decir por qué."
+                    if body.quantity_set is not None
+                    else "Agregar una cantidad a mano requiere decir por qué."
+                ),
             },
         )
     actor = clean_actor(x_actor) or ""

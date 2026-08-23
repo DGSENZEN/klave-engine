@@ -31,6 +31,7 @@ from klave_engine.costing.labor import (
     FsrParameters,
     LaborCategory,
     apply_preset,
+    compute_fsr,
     preset_by_key,
 )
 from klave_engine.costing.matching import Candidate, Match, rank
@@ -588,6 +589,7 @@ class RollForwardInput(BaseModel):
     codes: list[str] = Field(default_factory=list, max_length=2000)
     status: Literal["vencido", "revisar", "all"] | None = None
     to_month: str | None = Field(default=None, max_length=7)
+    dry_run: bool = False
 
 
 @router.get("/vigencia")
@@ -650,7 +652,9 @@ def roll_forward(
     catalog: CatalogStore = Depends(get_catalog),
 ) -> dict:
     """Bring old prices to this month by the taller's index table; each
-    updated insumo becomes 'calculado' with the factor as its provenance."""
+    updated insumo becomes 'calculado' with the factor as its provenance.
+    With ``dry_run`` nothing is written: the response is the preview of
+    exactly what a real call with the same body would change."""
     indices = catalog.load_indices()
     values = indices.get("values") or {}
     if not values:
@@ -679,21 +683,25 @@ def roll_forward(
             skipped.append(f"{age.code}: sin índice para {age.vigencia[:7]}")
             continue
         new_cost = round(age.unit_cost * factor, 2)
-        catalog.upsert_insumo(
-            age.code, unit_cost=new_cost, source_type="calculado",
-            source=(
-                f"{age.source or 'precio anterior'} × índice "
-                f"{indices.get('source') or 'del taller'} "
-                f"{age.vigencia[:7]}→{to_month} (factor {factor:.4f})"
-            )[:200],
-            vigencia=to_month,
-        )
+        if not body.dry_run:
+            catalog.upsert_insumo(
+                age.code, unit_cost=new_cost, source_type="calculado",
+                source=(
+                    f"{age.source or 'precio anterior'} × índice "
+                    f"{indices.get('source') or 'del taller'} "
+                    f"{age.vigencia[:7]}→{to_month} (factor {factor:.4f})"
+                )[:200],
+                vigencia=to_month,
+            )
         updated.append({
-            "code": age.code, "from": age.unit_cost, "to": new_cost, "factor": factor,
-            "vigencia_from": age.vigencia[:7],
+            "code": age.code, "description": age.description, "from": age.unit_cost,
+            "to": new_cost, "factor": factor, "vigencia_from": age.vigencia[:7],
         })
-    _publish_catalog_updated(x_actor, "prices_rolled_forward", f"{len(updated)} insumos")
-    return {"updated": updated, "skipped": skipped, "to_month": to_month}
+    if not body.dry_run:
+        _publish_catalog_updated(x_actor, "prices_rolled_forward", f"{len(updated)} insumos")
+    return {
+        "updated": updated, "skipped": skipped, "to_month": to_month, "dry_run": body.dry_run,
+    }
 
 
 # ------------------------------------------------------------ plantillas & paramétricos
@@ -1170,6 +1178,26 @@ def apply_labor_preset(
     applied = apply_labor(catalog, params, categories)
     _publish_catalog_updated(x_actor, "labor_preset_applied", preset.label)
     return {"preset": preset.model_dump(), "applied": applied, **labor_state(catalog)}
+
+
+@router.post("/labor/preview")
+def preview_labor(body: LaborInput, catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    """What "Aplicar salario real" would write, next to what the catálogo
+    prices each category at today. Nothing is saved."""
+    current = {row["code"]: row for row in catalog.list_insumos()}
+    rows = []
+    for category in body.categories:
+        breakdown = compute_fsr(category.salario_nominal, body.params)
+        before = current.get(category.code)
+        rows.append({
+            "code": category.code,
+            "description": category.description,
+            "salario_nominal": category.salario_nominal,
+            "fsr": breakdown.fsr,
+            "from": before["unit_cost"] if before else None,
+            "to": breakdown.salario_real,
+        })
+    return {"rows": rows, "vigencia": now_month()}
 
 
 @router.put("/labor")

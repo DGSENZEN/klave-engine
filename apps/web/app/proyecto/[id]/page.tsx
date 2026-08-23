@@ -338,7 +338,7 @@ function SheetsCard({ id, project }: { id: string; project: ProjectInfo }) {
           ) : (
             <FilePlus size={14} weight="bold" />
           )}
-          Agregar hojas
+          {busy ? "Procesando…" : "Agregar hojas y reprocesar"}
         </Button>
       </div>
       {error && <p className="mb-2 text-sm text-danger">{error}</p>}
@@ -480,14 +480,12 @@ function VerificationPath({
             className="flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-surface-2/50"
           >
             {step.done ? (
-              <button
-                type="button"
-                title={`Verificado${step.by ? ` por ${step.by}` : ""} — clic para deshacer`}
-                onClick={() => onConfirm(step.key, false)}
+              <span
+                title={`Verificado${step.by ? ` por ${step.by}` : ""}`}
                 className="mt-0.5 shrink-0 text-success"
               >
                 <CheckCircle size={20} weight="fill" />
-              </button>
+              </span>
             ) : (
               <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border-strong text-[11px] font-semibold text-muted">
                 {index + 1}
@@ -497,7 +495,10 @@ function VerificationPath({
               <div className={`text-sm font-medium ${step.done ? "text-muted line-through" : ""}`}>
                 {step.title}
               </div>
-              <p className="mt-0.5 text-sm text-muted">{step.detail}</p>
+              <p className="mt-0.5 text-sm text-muted">
+                {step.done && step.by ? `Verificado por ${step.by}. ` : ""}
+                {step.detail}
+              </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {step.href && !step.done && (
@@ -505,9 +506,13 @@ function VerificationPath({
                   {step.linkLabel}
                 </Link>
               )}
-              {!step.done && (
+              {step.done ? (
+                <Button size="sm" variant="ghost" onClick={() => onConfirm(step.key, false)}>
+                  Deshacer
+                </Button>
+              ) : (
                 <Button size="sm" onClick={() => onConfirm(step.key, true)}>
-                  Confirmar
+                  Marcar como verificado
                 </Button>
               )}
             </div>

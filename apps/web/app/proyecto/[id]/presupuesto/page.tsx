@@ -14,6 +14,7 @@ import {
 } from "@phosphor-icons/react";
 import {
   addAdjustment,
+  apiMessage,
   API_BASE,
   croquisUrl,
   getCatalog,
@@ -353,8 +354,8 @@ export default function PresupuestoPage() {
       {costs.indicators && <IndicatorsCard indicators={costs.indicators} />}
 
       <Card className="mt-6 p-5">
-        <SectionTitle sub="Cantidad agregada o retirada a mano, con nota y autor; forma parte del presupuesto y sus reportes.">
-          Ajustes manuales
+        <SectionTitle sub="Lo que el plano no trae y el presupuesto necesita: un concepto con su cantidad y el motivo, con autor. Para corregir una cantidad leída usa el lápiz de su línea.">
+          Conceptos agregados a mano
         </SectionTitle>
         <AdjustmentsPanel
           projectId={id}
@@ -791,10 +792,16 @@ function AdjustmentsPanel({
       description: line.description,
     }));
 
+  const inBoq = new Set(boqLines.map((line) => line.concept_code));
+
   async function submit() {
     const quantity = Number(delta);
     if (!conceptCode || !quantity) {
       setFormError("Elige un concepto y una cantidad distinta de cero.");
+      return;
+    }
+    if (!note.trim()) {
+      setFormError("Di por qué: el motivo queda en el presupuesto junto a tu nombre.");
       return;
     }
     setBusy(true);
@@ -809,8 +816,8 @@ function AdjustmentsPanel({
       onChanged(updated);
       setDelta("");
       setNote("");
-    } catch {
-      setFormError("No se pudo guardar el ajuste.");
+    } catch (e) {
+      setFormError(apiMessage(e, "No se pudo guardar el concepto."));
     } finally {
       setBusy(false);
     }
@@ -868,6 +875,7 @@ function AdjustmentsPanel({
           {selectable.map((concept) => (
             <option key={concept.code} value={concept.code}>
               {concept.code} · {concept.description.slice(0, 48)}
+              {inBoq.has(concept.code) ? " (ya en el presupuesto)" : ""}
             </option>
           ))}
         </select>
@@ -876,25 +884,33 @@ function AdjustmentsPanel({
           step="any"
           value={delta}
           onChange={(e) => setDelta(e.target.value)}
-          placeholder={`± cantidad${conceptCode && unitOf.get(conceptCode) ? ` (${unitOf.get(conceptCode)})` : ""}`}
+          placeholder={`Cantidad${conceptCode && unitOf.get(conceptCode) ? ` (${unitOf.get(conceptCode)})` : ""}`}
           className="w-36 px-2 py-1.5 text-right tabular"
+          aria-label="Cantidad"
         />
         <Input
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="Nota (qué y por qué)"
+          placeholder="Motivo (obligatorio): qué es y de dónde sale"
           maxLength={300}
           className="min-w-52 flex-1 px-2 py-1.5"
+          aria-label="Motivo"
         />
         <Button size="sm" variant="primary" onClick={submit} disabled={busy}>
-          Agregar ajuste
+          Agregar concepto
         </Button>
       </div>
       {formError && <p className="mt-2 text-sm text-danger">{formError}</p>}
+      {conceptCode && inBoq.has(conceptCode) && !formError && (
+        <p className="mt-2 text-xs text-muted">
+          Este concepto ya tiene cantidad leída; lo que captures se suma. Para sustituirla, usa el
+          lápiz de su línea.
+        </p>
+      )}
       {adjustments.length === 0 && !formError && (
         <p className="mt-2 text-xs text-faint">
-          Úsalo cuando el plano tenga elementos que la detección no captó, o cantidades que
-          debas corregir. El ajuste queda documentado en el concepto.
+          Úsalo cuando el plano tenga elementos que la detección no captó. El concepto queda
+          documentado con tu motivo y tu nombre.
         </p>
       )}
     </div>

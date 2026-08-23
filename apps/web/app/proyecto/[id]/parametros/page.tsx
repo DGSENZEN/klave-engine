@@ -31,6 +31,7 @@ import {
 import { useProjectLive } from "@/components/ProjectLive";
 import { CONFIG_LABELS, ConfigGroup } from "@/components/CostingConfigForm";
 import { actorLabel } from "@/lib/collab";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const TYPE_LABELS: Record<string, string> = {
   material: "Material",
@@ -58,6 +59,7 @@ export default function ParametrosPage() {
   const [conflict, setConflict] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [catalogChanged, setCatalogChanged] = useState(false);
+  const [confirm, setConfirm] = useState<"reset" | "reload" | null>(null);
   const activityTimer = useRef<number | null>(null);
   const { latestEvent, actorName, clientId, sendActivity } = useProjectLive();
 
@@ -298,7 +300,11 @@ export default function ParametrosPage() {
           <Callout
             tone="warning"
             action={
-              <Button size="sm" onClick={reloadFromServer} disabled={busy}>
+              <Button
+                size="sm"
+                onClick={() => (dirty ? setConfirm("reload") : void reloadFromServer())}
+                disabled={busy}
+              >
                 Recargar
               </Button>
             }
@@ -421,7 +427,7 @@ export default function ParametrosPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={doReset} disabled={busy || !!conflict}>
+            <Button onClick={() => setConfirm("reset")} disabled={busy || !!conflict}>
               <ArrowCounterClockwise size={15} weight="bold" /> Restablecer
             </Button>
             <Button
@@ -440,6 +446,28 @@ export default function ParametrosPage() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirm !== null}
+        title={
+          confirm === "reset"
+            ? "Restablecer parámetros e insumos"
+            : "Recargar y descartar tus cambios"
+        }
+        description={
+          confirm === "reset"
+            ? "Este proyecto vuelve a los valores del taller y a los precios del catálogo; se recalcula al instante. Las cantidades fijadas y los ajustes manuales no cambian."
+            : "Tus ediciones sin recalcular se pierden y se cargan los parámetros que guardó tu compañero."
+        }
+        confirmLabel={confirm === "reset" ? "Restablecer" : "Recargar"}
+        onConfirm={() => {
+          const which = confirm;
+          setConfirm(null);
+          if (which === "reset") void doReset();
+          if (which === "reload") void reloadFromServer();
+        }}
+        onCancel={() => setConfirm(null)}
+      />
     </div>
   );
 }

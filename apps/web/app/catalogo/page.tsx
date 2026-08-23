@@ -15,6 +15,7 @@ import {
 } from "@phosphor-icons/react";
 import {
   ApiError,
+  apiMessage,
   adoptConceptReference,
   adoptReference,
   clearConceptPrice,
@@ -24,7 +25,8 @@ import {
   getEquipment,
   getLabor,
   getLaborPresets,
-  applyLaborPreset,
+  previewLabor,
+  type LaborPreviewRow,
   type RegionPreset,
   importCatalogPrices,
   importCustomSource,
@@ -47,9 +49,12 @@ import {
   type FsrParameters,
   type LaborCategory,
   type LaborState,
+  listProjects,
+  type ProjectSummary,
   type ReferenceRow,
   type ReferenceSource,
 } from "@/lib/api";
+import Link from "next/link";
 import { getBrowserActor } from "@/lib/collab";
 import {
   Badge,
@@ -64,6 +69,7 @@ import {
   Td,
   Th,
 } from "@/components/ui";
+import { Modal } from "@/components/Modal";
 import { PlantillasSection } from "@/components/PlantillasSection";
 import { VigenciaChip, VigenciaSection } from "@/components/VigenciaSection";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
@@ -78,8 +84,16 @@ export default function CatalogoPage() {
   const [catalog, setCatalog] = useState<CatalogState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const matricesRef = useRef<HTMLInputElement>(null);
+
+  // The projects this catálogo prices: a change here is theirs to recalculate.
+  useEffect(() => {
+    listProjects()
+      .then((list) => setProjects(list.filter((p) => !p.archived && p.status === "processed")))
+      .catch(() => {});
+  }, []);
 
   const reload = useCallback(() => {
     getCatalog()
@@ -202,7 +216,7 @@ export default function CatalogoPage() {
               <UploadSimple size={15} weight="bold" /> Importar matrices
             </Button>
             <Button onClick={exportCsv} disabled={!catalog}>
-              <DownloadSimple size={15} weight="bold" /> Exportar
+              <DownloadSimple size={15} weight="bold" /> Exportar insumos (CSV)
             </Button>
           </>
         }
@@ -223,7 +237,27 @@ export default function CatalogoPage() {
               </Button>
             }
           >
-            {notice}. Los proyectos abiertos deben recalcular para aplicar los cambios.
+            <span>
+              {notice}.{" "}
+              {projects.length === 0
+                ? "Los proyectos toman los cambios al recalcular."
+                : projects.length === 1
+                  ? "Se aplica al recalcular "
+                  : `Se aplica al recalcular cada proyecto (${projects.length}): `}
+              {projects.slice(0, 4).map((p, i) => (
+                <span key={p.project_id}>
+                  {i > 0 && ", "}
+                  <Link
+                    href={`/proyecto/${encodeURIComponent(p.project_id)}/parametros`}
+                    className="font-medium underline"
+                  >
+                    {p.name}
+                  </Link>
+                </span>
+              ))}
+              {projects.length > 4 && ` y ${projects.length - 4} más`}
+              {projects.length > 0 && "."}
+            </span>
           </Callout>
         </div>
       )}
@@ -1061,8 +1095,8 @@ function FuentesSection({
   const [query, setQuery] = useState("");
   const [sourceKey, setSourceKey] = useState("");
   const [rows, setRows] = useState<ReferenceRow[] | null>(null);
+  /** Per reference row: "insumo:CODE" or "concept:CODE" — one verb, explicit scope. */
   const [adopting, setAdopting] = useState<Record<number, string>>({});
-  const [adoptingConcept, setAdoptingConcept] = useState<Record<number, string>>({});
   const [ownFile, setOwnFile] = useState<File | null>(null);
   const [ownName, setOwnName] = useState("");
   const [ownVigencia, setOwnVigencia] = useState("");
@@ -1135,29 +1169,24 @@ function FuentesSection({
     }
   }
 
-  async function adoptForConcept(row: ReferenceRow) {
-    const code = adoptingConcept[row.ref_id];
+  async function applyReference(row: ReferenceRow) {
+    const target = adopting[row.ref_id] ?? "";
+    const [scope, code] = target.split(":");
     if (!code) return;
     try {
-      await adoptConceptReference(code, row.ref_id, getBrowserActor());
-      onNotice(
-        `${code} se costea a ${money2(row.price)} por ${row.unit} (${row.source_name}, ${row.clave}); su matriz queda en pausa`,
-      );
+      if (scope === "concept") {
+        await adoptConceptReference(code, row.ref_id, getBrowserActor());
+        onNotice(
+          `${code} se costea a ${money2(row.price)} por ${row.unit} (${row.source_name}, ${row.clave}); su matriz queda en pausa`,
+        );
+      } else {
+        await adoptReference(code, row.ref_id, getBrowserActor());
+        onNotice(`${code} ahora vale ${money2(row.price)} (${row.source_name}, ${row.clave})`);
+      }
+      setAdopting((a) => ({ ...a, [row.ref_id]: "" }));
       onChanged();
-    } catch {
-      onError(`No se pudo aplicar la referencia al concepto ${code}.`);
-    }
-  }
-
-  async function adopt(row: ReferenceRow) {
-    const code = adopting[row.ref_id];
-    if (!code) return;
-    try {
-      await adoptReference(code, row.ref_id, getBrowserActor());
-      onNotice(`${code} ahora vale ${money2(row.price)} (${row.source_name}, ${row.clave})`);
-      onChanged();
-    } catch {
-      onError(`No se pudo aplicar la referencia a ${code}.`);
+    } catch (e) {
+      onError(apiMessage(e, `No se pudo usar la referencia en ${code}.`));
     }
   }
 
@@ -1301,8 +1330,8 @@ function FuentesSection({
                       <th className="py-1.5 pr-3 font-medium">Clave</th>
                       <th className="py-1.5 pr-3 font-medium">Concepto</th>
                       <th className="py-1.5 pr-3 font-medium">Unidad</th>
-                      <th className="py-1.5 pr-3 text-right font-medium">P.U.</th>
-                      <th className="py-1.5 font-medium">Usar como precio de</th>
+                      <th className="py-1.5 pr-3 text-right font-medium">Precio</th>
+                      <th className="py-1.5 font-medium">Usar este precio como…</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1327,49 +1356,36 @@ function FuentesSection({
                               onChange={(e) =>
                                 setAdopting((a) => ({ ...a, [row.ref_id]: e.target.value }))
                               }
-                              className="max-w-48 rounded-md border border-border bg-surface px-1.5 py-1 text-xs"
+                              className="max-w-64 rounded-md border border-border bg-surface px-1.5 py-1 text-xs"
+                              aria-label="Dónde usar este precio"
                             >
-                              <option value="">insumo…</option>
-                              {catalog.insumos
-                                .filter((i) => !i.is_labor_percentage)
-                                .map((i) => (
-                                  <option key={i.code} value={i.code}>
-                                    {i.code} · {i.unit}
-                                  </option>
-                                ))}
+                              <option value="">elige insumo o concepto…</option>
+                              <optgroup label="Costo de un insumo (material, mano de obra, equipo)">
+                                {catalog.insumos
+                                  .filter((i) => !i.is_labor_percentage)
+                                  .map((i) => (
+                                    <option key={i.code} value={`insumo:${i.code}`}>
+                                      {i.code} · {i.unit} · {i.description.slice(0, 40)}
+                                    </option>
+                                  ))}
+                              </optgroup>
+                              <optgroup label={`P.U. de un concepto en ${row.unit} (pausa su matriz)`}>
+                                {catalog.concepts
+                                  .filter((c) => c.unit.toUpperCase() === row.unit.toUpperCase())
+                                  .map((c) => (
+                                    <option key={c.code} value={`concept:${c.code}`}>
+                                      {c.code} · {c.description.slice(0, 40)}
+                                    </option>
+                                  ))}
+                              </optgroup>
                             </select>
                             <Button
                               size="sm"
                               variant="secondary"
                               disabled={!adopting[row.ref_id]}
-                              onClick={() => adopt(row)}
+                              onClick={() => applyReference(row)}
                             >
-                              Aplicar
-                            </Button>
-                            <select
-                              value={adoptingConcept[row.ref_id] ?? ""}
-                              onChange={(e) =>
-                                setAdoptingConcept((a) => ({ ...a, [row.ref_id]: e.target.value }))
-                              }
-                              className="max-w-48 rounded-md border border-border bg-surface px-1.5 py-1 text-xs"
-                              title="Usar este precio como P.U. del concepto (sustituye su matriz)"
-                            >
-                              <option value="">concepto…</option>
-                              {catalog.concepts
-                                .filter((c) => c.unit.toUpperCase() === row.unit.toUpperCase())
-                                .map((c) => (
-                                  <option key={c.code} value={c.code}>
-                                    {c.code} · {c.unit}
-                                  </option>
-                                ))}
-                            </select>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              disabled={!adoptingConcept[row.ref_id]}
-                              onClick={() => adoptForConcept(row)}
-                            >
-                              P.U.
+                              Usar este precio
                             </Button>
                           </div>
                         </td>
@@ -1417,6 +1433,8 @@ function SalarioRealSection({
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [presets, setPresets] = useState<RegionPreset[]>([]);
+  const [presetKey, setPresetKey] = useState("");
+  const [preview, setPreview] = useState<LaborPreviewRow[] | null>(null);
 
   useEffect(() => {
     getLabor()
@@ -1431,26 +1449,26 @@ function SalarioRealSection({
       .catch(() => {});
   }, []);
 
-  async function applyPreset(key: string) {
+  /** A region fills the form (its ISN, no category below its minimum);
+   *  nothing is written until "Aplicar" after the preview. */
+  function fillPreset(key: string) {
+    const preset = presets.find((p) => p.key === key);
+    if (!preset || !params) return;
+    setPresetKey(key);
+    setParams({ ...params, isn_pct: preset.isn_pct });
+    setCategories((list) =>
+      list.map((c) => ({ ...c, salario_nominal: Math.max(c.salario_nominal, preset.salario_minimo) })),
+    );
+    setDirty(true);
+  }
+
+  async function openPreview() {
+    if (!params) return;
     setBusy(true);
     try {
-      const result = await applyLaborPreset(key, getBrowserActor());
-      setState(result);
-      setParams(result.params);
-      setCategories(
-        result.categories.map(({ code, description, salario_nominal }) => ({
-          code,
-          description,
-          salario_nominal,
-        })),
-      );
-      setDirty(false);
-      onNotice(
-        `${result.preset.label}: ISN ${result.preset.isn_pct}% y salario mínimo $${result.preset.salario_minimo} aplicados (${result.preset.source})`,
-      );
-      onChanged();
+      setPreview((await previewLabor(params, categories)).rows);
     } catch {
-      onError("No se pudo aplicar el preset regional.");
+      onError("No se pudo calcular el salario real.");
     } finally {
       setBusy(false);
     }
@@ -1463,7 +1481,14 @@ function SalarioRealSection({
       const result = await putLabor(params, categories, getBrowserActor());
       setState(result);
       setDirty(false);
-      onNotice(`Salario real aplicado a ${result.categories.length} categorías de mano de obra`);
+      setPreview(null);
+      const preset = presets.find((p) => p.key === presetKey);
+      onNotice(
+        `Salario real aplicado a ${result.categories.length} categorías de mano de obra${
+          preset ? ` con ISN y salario mínimo de ${preset.label} (${preset.source})` : ""
+        }`,
+      );
+      setPresetKey("");
       onChanged();
     } catch (e) {
       const detail =
@@ -1562,15 +1587,13 @@ function SalarioRealSection({
             <label className="flex items-center gap-2 text-xs text-muted">
               Región / estado
               <select
-                value=""
-                onChange={(e) => {
-                  if (e.target.value) void applyPreset(e.target.value);
-                }}
+                value={presetKey}
+                onChange={(e) => fillPreset(e.target.value)}
                 className="rounded-lg border border-border bg-surface px-2 py-1 text-xs"
-                aria-label="Aplicar preset regional"
+                aria-label="Región para ISN y salario mínimo"
                 disabled={busy || presets.length === 0}
               >
-                <option value="">Aplicar ISN y salario mínimo de…</option>
+                <option value="">Tomar ISN y salario mínimo de…</option>
                 {presets.map((preset) => (
                   <option key={preset.key} value={preset.key}>
                     {preset.label} · ISN {preset.isn_pct}% · SM ${preset.salario_minimo}
@@ -1578,6 +1601,12 @@ function SalarioRealSection({
                 ))}
               </select>
             </label>
+            {presetKey && (
+              <span className="text-xs text-muted">
+                Se aplica al confirmar ·{" "}
+                {presets.find((p) => p.key === presetKey)?.source}
+              </span>
+            )}
             <button
               type="button"
               onClick={() => setShowParams((v) => !v)}
@@ -1625,12 +1654,83 @@ function SalarioRealSection({
             </ul>
           )}
           <div className="mt-4 flex justify-end">
-            <Button variant="primary" onClick={apply} disabled={busy}>
-              {busy ? "Aplicando…" : "Aplicar salario real al catálogo"}
+            <Button variant="primary" onClick={openPreview} disabled={busy}>
+              {busy && !preview ? "Calculando…" : "Aplicar salario real al catálogo…"}
             </Button>
           </div>
         </div>
       )}
+      <Modal
+        open={preview !== null}
+        title="Aplicar salario real al catálogo"
+        sub="Cada categoría de mano de obra queda con este precio (Sn × Fsr), marcado como calculado con su vigencia de este mes. Las matrices que la usan cambian al recalcular."
+        onClose={() => setPreview(null)}
+        busy={busy}
+        size="lg"
+        footer={
+          <>
+            <Button onClick={() => setPreview(null)} disabled={busy}>
+              Cancelar
+            </Button>
+            <Button variant="primary" onClick={apply} disabled={busy}>
+              {busy ? "Aplicando…" : `Aplicar a ${preview?.length ?? 0} categorías`}
+            </Button>
+          </>
+        }
+      >
+        {preview && (
+          <p className="mb-3 text-xs text-muted">
+            {(() => {
+              const changed = preview.filter((r) => r.from == null || Math.abs(r.to - r.from) >= 0.005).length;
+              return changed === 0
+                ? "Ningún precio cambia: las categorías ya están en este salario real (el ISN solo entra al Fsr si lo marcas en parámetros)."
+                : `${changed} de ${preview.length} categorías cambian de precio.`;
+            })()}
+          </p>
+        )}
+        {preview && (
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-surface-2">
+                  <Th>Categoría</Th>
+                  <Th align="right">Sn (día)</Th>
+                  <Th align="right">Fsr</Th>
+                  <Th align="right">En el catálogo</Th>
+                  <Th align="right">Nuevo</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.map((row) => {
+                  const delta = row.from == null ? null : row.to - row.from;
+                  return (
+                    <tr key={row.code} className="border-t border-border">
+                      <Td>
+                        <div>{row.description}</div>
+                        <div className="font-mono text-xs text-muted">{row.code}</div>
+                      </Td>
+                      <Td align="right" className="tabular">{money2(row.salario_nominal)}</Td>
+                      <Td align="right" className="tabular text-muted">{row.fsr.toFixed(4)}</Td>
+                      <Td align="right" className="tabular text-muted">
+                        {row.from == null ? "sin precio" : money2(row.from)}
+                      </Td>
+                      <Td align="right" className="tabular font-medium">
+                        {money2(row.to)}
+                        {delta != null && Math.abs(delta) >= 0.005 && (
+                          <span className={`ml-1.5 text-xs ${delta > 0 ? "text-warning" : "text-success"}`}>
+                            {delta > 0 ? "+" : "−"}
+                            {money2(Math.abs(delta))}
+                          </span>
+                        )}
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
     </Card>
   );
 }

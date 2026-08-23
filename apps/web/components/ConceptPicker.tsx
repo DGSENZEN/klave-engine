@@ -207,7 +207,7 @@ export function ConceptPicker({
                   {m.price != null ? `${money2(m.price)} / ${m.unit}` : "sin precio"}
                 </span>
                 <Button size="sm" variant="primary" onClick={() => choose(m)} disabled={busy}>
-                  <Check size={13} weight="bold" /> Usar
+                  <Check size={13} weight="bold" /> Usar esta clave
                 </Button>
               </div>
             </li>
