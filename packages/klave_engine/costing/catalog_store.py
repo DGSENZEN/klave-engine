@@ -1080,6 +1080,26 @@ class CatalogStore:
             rows = conn.execute("SELECT * FROM insumos ORDER BY code").fetchall()
         return [dict(row) for row in rows]
 
+    def price_vigencias(self) -> dict[str, str]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT code, vigencia FROM insumos").fetchall()
+        return {row["code"]: str(row["vigencia"] or "") for row in rows}
+
+    INDICES_KEY = "price_indices"
+
+    def load_indices(self) -> dict:
+        """The taller's table of monthly index values {YYYY-MM: value} and its source."""
+        return self.get_setting(self.INDICES_KEY) or {"source": "", "values": {}}
+
+    def save_indices(self, source: str, values: dict[str, float]) -> dict:
+        clean = {
+            k[:7]: float(v) for k, v in values.items()
+            if len(k) >= 7 and k[4] == "-" and float(v) > 0
+        }
+        payload = {"source": source[:200], "values": dict(sorted(clean.items()))}
+        self.set_setting(self.INDICES_KEY, payload)
+        return payload
+
     # --------------------------------------------------------------- writes
 
     def upsert_insumo(

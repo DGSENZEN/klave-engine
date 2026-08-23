@@ -11,7 +11,7 @@ import io
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, UploadFile
 from klave_engine.common.config import Settings
 from klave_engine.common.errors import ReportGenerationError
 from klave_engine.costing.apu import build_all_apus
@@ -24,6 +24,7 @@ from klave_engine.costing.catalog_services import (
 )
 from klave_engine.costing.catalog_store import CatalogStore, get_catalog_store
 from klave_engine.costing.equipment import EquipmentParameters, compute_costo_horario
+from klave_engine.costing.exports import build_cotizacion_workbook
 from klave_engine.costing.labor import (
     REGION_PRESETS,
     FsrParameters,
@@ -41,6 +42,13 @@ from klave_engine.costing.sources.custom import (
 )
 from klave_engine.costing.sources.matrices import parse_matrices_workbook
 from klave_engine.costing.sources.registry import SOURCES, available_sources, sources_dir
+from klave_engine.costing.vigencia import (
+    FRESH_MONTHS,
+    STALE_MONTHS,
+    now_month,
+    price_ages,
+    roll_forward_factor,
+)
 from pydantic import BaseModel, Field
 
 from apps.api.dependencies import ProjectStore, get_settings, get_store
@@ -357,7 +365,8 @@ async def import_prices(
 _CODE_HEADERS = ("code", "clave", "código", "codigo", "key")
 _COST_HEADERS = (
     "unit_cost", "costo_unitario", "costo", "precio", "precio unitario",
-    "p.u.", "pu", "precio_unitario",
+    "p.u.", "pu", "precio_unitario", "precio cotizado", "cotización", "cotizacion",
+    "precio cotizado (mxn)",
 )
 
 
@@ -541,6 +550,124 @@ def import_reference_source(
     )
     _publish_catalog_updated(x_actor, "reference_imported", f"{spec.name}: {count} renglones")
     return {"source_key": source_key, "rows": count}
+
+
+# ------------------------------------------------------------ vigencia de precios
+
+class IndicesInput(BaseModel):
+    source: str = Field(default="", max_length=200)
+    values: dict[str, float] = Field(default_factory=dict)
+
+
+class RollForwardInput(BaseModel):
+    codes: list[str] = Field(default_factory=list, max_length=2000)
+    status: Literal["vencido", "revisar", "all"] | None = None
+    to_month: str | None = Field(default=None, max_length=7)
+
+
+@router.get("/vigencia")
+def price_vigencia(catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    ages = price_ages(catalog.list_insumos())
+    counts = {"vigente": 0, "revisar": 0, "vencido": 0}
+    for age in ages:
+        counts[age.status] += 1
+    return {
+        "insumos": [age.__dict__ for age in ages],
+        "counts": counts,
+        "fresh_months": FRESH_MONTHS,
+        "stale_months": STALE_MONTHS,
+    }
+
+
+@router.get("/cotizacion.xlsx")
+def cotizacion_request(
+    status: Literal["vencido", "revisar", "all"] = "vencido",
+    codes: str = "",
+    catalog: CatalogStore = Depends(get_catalog),
+) -> Response:
+    """Solicitud de cotización: the insumos to re-price, with their current
+    price and vigencia, and empty columns for the supplier; the answer
+    imports through Importar precios (column 'Precio cotizado')."""
+    wanted = {c.strip().upper() for c in codes.split(",") if c.strip()}
+    ages = [
+        a for a in price_ages(catalog.list_insumos())
+        if (a.code in wanted if wanted else (status == "all" or a.status == status))
+    ]
+    content = build_cotizacion_workbook(ages)
+    filename = f"solicitud_cotizacion_{now_month()}.xlsx"
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/indices")
+def get_indices(catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    return catalog.load_indices()
+
+
+@router.put("/indices")
+def put_indices(
+    body: IndicesInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    saved = catalog.save_indices(body.source, body.values)
+    _publish_catalog_updated(x_actor, "indices_saved", f"{len(saved['values'])} meses")
+    return saved
+
+
+@router.post("/indices/roll-forward")
+def roll_forward(
+    body: RollForwardInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    """Bring old prices to this month by the taller's index table; each
+    updated insumo becomes 'calculado' with the factor as its provenance."""
+    indices = catalog.load_indices()
+    values = indices.get("values") or {}
+    if not values:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_type": "no_indices", "message": "Captura primero la tabla de índices.",
+            },
+        )
+    to_month = (body.to_month or now_month())[:7]
+    wanted = {c.strip().upper() for c in body.codes if c.strip()}
+    updated: list[dict] = []
+    skipped: list[str] = []
+    for age in price_ages(catalog.list_insumos()):
+        if wanted and age.code not in wanted:
+            continue
+        if not wanted and body.status and body.status != "all" and age.status != body.status:
+            continue
+        if not wanted and not body.status:
+            continue
+        if not age.vigencia:
+            skipped.append(f"{age.code}: sin vigencia, no hay de dónde actualizar")
+            continue
+        factor = roll_forward_factor(values, age.vigencia, to_month)
+        if factor is None:
+            skipped.append(f"{age.code}: sin índice para {age.vigencia[:7]}")
+            continue
+        new_cost = round(age.unit_cost * factor, 2)
+        catalog.upsert_insumo(
+            age.code, unit_cost=new_cost, source_type="calculado",
+            source=(
+                f"{age.source or 'precio anterior'} × índice {indices.get('source') or 'del taller'} "
+                f"{age.vigencia[:7]}→{to_month} (factor {factor:.4f})"
+            )[:200],
+            vigencia=to_month,
+        )
+        updated.append({
+            "code": age.code, "from": age.unit_cost, "to": new_cost, "factor": factor,
+            "vigencia_from": age.vigencia[:7],
+        })
+    _publish_catalog_updated(x_actor, "prices_rolled_forward", f"{len(updated)} insumos")
+    return {"updated": updated, "skipped": skipped, "to_month": to_month}
 
 
 # ------------------------------------------------------------ plantillas & paramétricos

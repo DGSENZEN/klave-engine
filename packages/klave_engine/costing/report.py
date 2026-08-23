@@ -34,6 +34,7 @@ from klave_engine.costing.parametrics import apply_parametrics, compute_basis
 from klave_engine.costing.reviews import ManualAdjustment
 from klave_engine.costing.schedule import build_schedule
 from klave_engine.costing.steel import SteelAssumptions, apply_steel, compute_steel
+from klave_engine.costing.vigencia import freshness
 from klave_engine.detection.dimensions import DimensionInventory
 from klave_engine.detection.results import Detection
 from klave_engine.detection.views import SheetSegmentation
@@ -81,6 +82,33 @@ def adopted_price_apu(concept: Concept, adopted: dict) -> UnitPriceAnalysis:
         price_source=f"{adopted.get('source') or 'referencia'} · {adopted.get('clave') or ''}"
         f"{vigencia}",
     )
+
+
+def _warn_stale_prices(
+    boq: BillOfQuantities, apus: dict[str, UnitPriceAnalysis], vigencias: dict[str, str]
+) -> None:
+    """The insumos this presupuesto actually prices with, older than a year
+    (or undated), named in a warning — the cotización list in one line."""
+    used: set[str] = set()
+    for line in boq.lines:
+        apu = apus.get(line.concept_code)
+        if apu is None:
+            continue
+        for component in apu.lines:
+            used.add(component.resource_code)
+    stale = sorted(code for code in used if freshness(vigencias.get(code, "")) == "vencido")
+    review = sorted(code for code in used if freshness(vigencias.get(code, "")) == "revisar")
+    if stale:
+        boq.warnings.append(
+            f"{len(stale)} insumo(s) con precio de más de 12 meses o sin vigencia en este "
+            f"presupuesto: {', '.join(stale[:8])}{'…' if len(stale) > 8 else ''}. "
+            "Pide cotización (Catálogo → Solicitar cotización) o actualízalos por índice."
+        )
+    if review:
+        boq.assumptions.append(
+            f"{len(review)} insumo(s) con precio de 7–12 meses: {', '.join(review[:8])}"
+            f"{'…' if len(review) > 8 else ''}; conviene revisarlos antes de licitar."
+        )
 
 
 def apply_aliases(
@@ -134,6 +162,7 @@ def generate_cost_report(
     concept_aliases: dict[str, dict] | None = None,
     parametric_rules: list[dict] | None = None,
     plantillas: list[dict] | None = None,
+    price_vigencias: dict[str, str] | None = None,
 ) -> CostReport:
     config = config or CostingConfig()
     assumptions, calibration_notes = _calibrate_assumptions(config.assumptions, dimensions)
@@ -185,6 +214,8 @@ def generate_cost_report(
         _apply_adjustments(boq, catalog, apus, adjustments)
     indicators = compute_indicators(boq, basis.area_construida_m2 or None, plantillas)
     boq.warnings.extend(indicators.notes)
+    if price_vigencias is not None:
+        _warn_stale_prices(boq, apus, price_vigencias)
     integration = integrate_costs(boq.direct_cost_total, config.indirects)
     levels = (
         max(len(segmentation.superstructure_views()), 1)

@@ -617,3 +617,43 @@ def _flujo(ws: Worksheet, report: CostReport) -> None:
         row += 1
     _autosize(ws, [12, 10, 16, 16, 16, 14, 16, 17])
     ws.freeze_panes = "A2"
+
+
+def build_cotizacion_workbook(ages: list) -> bytes:
+    """Solicitud de cotización: one row per insumo with its current price and
+    vigencia, and the supplier's columns empty. Re-imports as cotización."""
+    workbook = Workbook()
+    ws = workbook.active
+    ws.title = "Solicitud de cotización"
+    _title(ws, 1, "SOLICITUD DE COTIZACIÓN DE INSUMOS", size=14)
+    _muted(
+        ws, 2, 1,
+        f"Emitida {datetime.now(UTC):%d/%m/%Y}. Favor de llenar 'Precio cotizado' (MXN, sin IVA), "
+        "'Proveedor' y 'Vigencia'; el archivo se importa tal cual en Klave.",
+    )
+    _header(
+        ws, 4,
+        ["Clave", "Descripción", "Unidad", "Precio actual", "Vigencia actual", "Estado",
+         "Precio cotizado", "Proveedor", "Vigencia", "Observaciones"],
+    )
+    row = 5
+    for age in ages:
+        values: list[Any] = [
+            age.code, age.description, age.unit, age.unit_cost, age.vigencia or "—",
+            age.status, None, None, None, None,
+        ]
+        for col, value in enumerate(values, start=1):
+            cell = ws.cell(row=row, column=col, value=value)
+            cell.border = _box
+            if col == 4:
+                cell.number_format = MONEY_FORMAT
+            if col == 7:
+                cell.number_format = MONEY_FORMAT
+                cell.fill = PatternFill("solid", fgColor="FFF7E6")
+        row += 1
+    for letter, width in {"A": 18, "B": 56, "C": 8, "D": 14, "E": 14, "F": 10, "G": 16,
+                          "H": 24, "I": 12, "J": 30}.items():
+        ws.column_dimensions[letter].width = width
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()

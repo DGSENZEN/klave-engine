@@ -65,6 +65,7 @@ import {
   Th,
 } from "@/components/ui";
 import { PlantillasSection } from "@/components/PlantillasSection";
+import { VigenciaChip, VigenciaSection } from "@/components/VigenciaSection";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -236,6 +237,9 @@ export default function CatalogoPage() {
         <>
           <FuentesSection catalog={catalog} onChanged={reload} onError={setError} onNotice={setNotice} />
           <div className="mb-4">
+            <VigenciaSection onChanged={reload} onError={setError} onNotice={setNotice} />
+          </div>
+          <div className="mb-4">
             <PlantillasSection onChanged={reload} onError={setError} onNotice={setNotice} />
           </div>
           <SalarioRealSection onChanged={reload} onError={setError} onNotice={setNotice} />
@@ -373,6 +377,7 @@ function InsumosSection({
                       title="Vigencia del precio"
                       className="rounded-md border border-border bg-surface px-1.5 py-0.5 text-[11px] text-muted"
                     />
+                    <VigenciaChip vigencia={insumo.vigencia} />
                   </div>
                 </Td>
               </tr>

@@ -890,6 +890,48 @@ export const getCroquis = (id: string, conceptCode: string) =>
 
 export const croquisUrl = (item: CroquisItem) => `${API_BASE}${item.url}`;
 
+// ---- Vigencia de precios, cotización e índices ----
+
+export type PriceAge = {
+  code: string;
+  description: string;
+  unit: string;
+  unit_cost: number;
+  source: string;
+  source_type: string;
+  vigencia: string;
+  months: number | null;
+  status: "vigente" | "revisar" | "vencido";
+};
+
+export const getVigencia = () =>
+  getJSON<{
+    insumos: PriceAge[];
+    counts: Record<"vigente" | "revisar" | "vencido", number>;
+    fresh_months: number;
+    stale_months: number;
+  }>("/catalog/vigencia");
+
+export const cotizacionUrl = (status: "vencido" | "revisar" | "all" = "vencido") =>
+  `${API_BASE}/catalog/cotizacion.xlsx?status=${status}`;
+
+export type PriceIndices = { source: string; values: Record<string, number> };
+
+export const getIndices = () => getJSON<PriceIndices>("/catalog/indices");
+
+export const putIndices = (body: PriceIndices, actor?: string) =>
+  putJSON<PriceIndices>("/catalog/indices", body, actor ? { "X-Actor": actor } : undefined);
+
+export const rollForwardPrices = (
+  body: { status?: "vencido" | "revisar" | "all"; codes?: string[]; to_month?: string },
+  actor?: string,
+) =>
+  postJSON<{
+    updated: { code: string; from: number; to: number; factor: number; vigencia_from: string }[];
+    skipped: string[];
+    to_month: string;
+  }>("/catalog/indices/roll-forward", body, actor ? { "X-Actor": actor } : undefined);
+
 // ---- Plantillas & paramétricos (the taller's history) ----
 
 export type Plantilla = {
