@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ShieldCheck, Warning } from "@phosphor-icons/react";
+import { MapTrifold, ShieldCheck, Warning } from "@phosphor-icons/react";
 import type { RiskFinding } from "@/lib/api";
 import { useRiskReport } from "@/lib/useProjectReport";
 import {
@@ -31,6 +32,7 @@ const SEVERITY_TONES: Record<string, BadgeTone> = {
 };
 
 const RISK_TYPE_LABELS: Record<string, string> = {
+  sparse_grid: "Malla de ejes incompleta",
   unresolved_detail_reference: "Referencia de detalle sin resolver",
   column_tag_without_grid: "Columna sin eje cercano",
   footing_without_column: "Zapata sin columna asociada",
@@ -135,7 +137,7 @@ export default function RiesgosPage() {
       ) : (
         <div className="space-y-3">
           {filtered.map((finding) => (
-            <RiskCard key={finding.risk_id} finding={finding} />
+            <RiskCard key={finding.risk_id} finding={finding} projectId={id} />
           ))}
         </div>
       )}
@@ -143,7 +145,7 @@ export default function RiesgosPage() {
   );
 }
 
-function RiskCard({ finding }: { finding: RiskFinding }) {
+function RiskCard({ finding, projectId }: { finding: RiskFinding; projectId: string }) {
   const relatedCount = finding.related_detections.length + finding.source_entities.length;
   return (
     <Card className="p-5">
@@ -156,6 +158,14 @@ function RiskCard({ finding }: { finding: RiskFinding }) {
         </span>
       </div>
       <p className="text-sm leading-relaxed">{finding.message}</p>
+      {finding.bbox && (
+        <Link
+          href={`/proyecto/${projectId}/plano?bbox=${finding.bbox.map((v) => v.toFixed(2)).join(",")}`}
+          className="mt-1 inline-flex items-center gap-1 text-xs text-accent underline"
+        >
+          <MapTrifold size={12} /> ver en el plano
+        </Link>
+      )}
       <div className="mt-3 rounded-lg bg-accent-soft px-3.5 py-2.5 text-sm text-accent">
         <span className="font-medium">Acción recomendada:</span>{" "}
         {finding.recommended_human_action}

@@ -13,7 +13,16 @@ type Suggestion = { concept_code: string; description: string; unit: string; mat
  * best match in the taller's catálogo scores ≥ 80 %. Review one by one or
  * adopt them all; either way each alias is remembered for every project.
  */
-export function SuggestionsBar({ projectId, actorName }: { projectId: string; actorName: string }) {
+export function SuggestionsBar({
+  projectId,
+  actorName,
+  conceptCodes,
+}: {
+  projectId: string;
+  actorName: string;
+  /** Concept codes with a line in this presupuesto: suggestions for anything else are noise here. */
+  conceptCodes: Set<string>;
+}) {
   const { latestEvent } = useProjectLive();
   const [items, setItems] = useState<Suggestion[] | null>(null);
   const [open, setOpen] = useState(false);
@@ -35,7 +44,9 @@ export function SuggestionsBar({ projectId, actorName }: { projectId: string; ac
     if (latestEvent?.type === "catalog_updated") reload();
   }, [latestEvent, reload]);
 
-  const pending = (items ?? []).filter((s) => !skipped.has(s.concept_code));
+  const pending = (items ?? []).filter(
+    (s) => !skipped.has(s.concept_code) && conceptCodes.has(s.concept_code),
+  );
   if (!items || pending.length === 0) return null;
 
   async function adopt(list: Suggestion[]) {

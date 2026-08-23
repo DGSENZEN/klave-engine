@@ -10,7 +10,7 @@ import {
   setAlias,
   type ConceptMatch,
 } from "@/lib/api";
-import { Badge, Button, Input } from "@/components/ui";
+import { Badge, Button, Input, Skeleton } from "@/components/ui";
 
 /**
  * "El concepto del taller": pick the taller's own clave for one of ours.
@@ -169,7 +169,11 @@ export function ConceptPicker({
       </div>
       {error && <p className="mb-2 text-xs text-danger">{error}</p>}
       {matches === null && query.trim().length < 2 ? (
-        <p className="text-xs text-faint">Buscando coincidencias en tu catálogo…</p>
+        <div className="space-y-2" aria-busy="true">
+          <Skeleton className="h-12" />
+          <Skeleton className="h-12" />
+          <Skeleton className="h-12 w-2/3" />
+        </div>
       ) : list.length === 0 ? (
         <p className="text-xs text-faint">
           {query.trim().length >= 2

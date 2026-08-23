@@ -65,6 +65,15 @@ export default function PlanoPage() {
 
   const searchParams = useSearchParams();
   const conceptParam = searchParams.get("concept") ?? "";
+  const bboxParam = searchParams.get("bbox") ?? "";
+  // ?bbox=x0,y0,x1,y1 — a risk finding or a colleague's pointer: fit there.
+  const bboxFit = useMemo(() => {
+    const parts = bboxParam.split(",").map(Number);
+    if (parts.length !== 4 || parts.some((v) => !Number.isFinite(v))) return null;
+    const [x0, y0, x1, y1] = parts;
+    const pad = Math.max(x1 - x0, y1 - y0, 1) * 2;
+    return { bbox: [x0 - pad, y0 - pad, x1 + pad, y1 + pad] as [number, number, number, number], nonce: -2 };
+  }, [bboxParam]);
   const [fetchedFocus, setConceptFocus] = useState<{ concept: string; ids: Set<string> } | null>(
     null,
   );
@@ -438,7 +447,7 @@ export default function PlanoPage() {
             onWorldClick={(point) =>
               setMeasurePoints((current) => [...current, point])
             }
-            focus={focus ?? conceptFit}
+            focus={focus ?? conceptFit ?? bboxFit}
           />
           {measureMode && (
             <MeasureResult

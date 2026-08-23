@@ -18,8 +18,9 @@ import {
   type VersionDiff,
   type VersionSummary,
 } from "@/lib/api";
-import { Badge, Button, Input, Td, Th } from "@/components/ui";
+import { Badge, Button, Input, Skeleton, Td, Th } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 /**
  * Versions of the presupuesto: save the current state under a name, compare
@@ -48,6 +49,7 @@ export function VersionsPanel({ projectId }: { projectId: string }) {
   const diffStale = diffState !== null && diffState.stamp !== costingStamp;
   const [showSame, setShowSame] = useState(false);
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<VersionSummary | null>(null);
 
   const reload = useCallback(() => {
     getVersions(projectId)
@@ -130,6 +132,21 @@ export function VersionsPanel({ projectId }: { projectId: string }) {
   const list = versions ?? [];
   return (
     <div>
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        title={confirmDelete ? `Eliminar la versión v${confirmDelete.number}` : ""}
+        description={
+          confirmDelete
+            ? `«${confirmDelete.label}» (${money2(confirmDelete.grand_total)}) se borra del historial; el presupuesto actual no cambia.`
+            : null
+        }
+        confirmLabel="Eliminar versión"
+        onConfirm={() => {
+          if (confirmDelete) void remove(confirmDelete.version_id);
+          setConfirmDelete(null);
+        }}
+        onCancel={() => setConfirmDelete(null)}
+      />
       <div className="flex flex-wrap items-center gap-2">
         <Input
           value={label}
@@ -154,7 +171,10 @@ export function VersionsPanel({ projectId }: { projectId: string }) {
       {error && <p className="mt-2 text-sm text-danger">{error}</p>}
 
       {versions === null ? (
-        <p className="mt-3 text-xs text-faint">Cargando versiones…</p>
+        <div className="mt-4 space-y-2" aria-busy="true">
+          <Skeleton className="h-9" />
+          <Skeleton className="h-9 w-3/4" />
+        </div>
       ) : list.length === 0 ? (
         <p className="mt-3 text-xs text-faint">
           Aún no hay versiones. Guarda una antes de entregar o antes de un cambio grande: podrás
@@ -220,7 +240,7 @@ export function VersionsPanel({ projectId }: { projectId: string }) {
                     <button
                       type="button"
                       aria-label={`Eliminar versión ${v.number}`}
-                      onClick={() => remove(v.version_id)}
+                      onClick={() => setConfirmDelete(v)}
                       className="rounded-md p-1 text-faint transition-colors hover:bg-danger-soft hover:text-danger"
                     >
                       <Trash size={14} />
@@ -251,7 +271,10 @@ export function VersionsPanel({ projectId }: { projectId: string }) {
                         <DiffTable diff={diff} showSame={showSame} onToggleSame={setShowSame} />
                       </>
                     ) : (
-                      <p className="text-xs text-faint">Comparando…</p>
+                      <div className="space-y-2" aria-busy="true">
+                        <Skeleton className="h-8" />
+                        <Skeleton className="h-24" />
+                      </div>
                     )}
                   </div>
                 )}

@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
 import { Badge, Button, Card, Input, SectionTitle, Td, Th } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const BASIS_LABEL: Record<string, string> = {
   m2_construida: "por m² construido",
@@ -46,6 +47,9 @@ export function PlantillasSection({
   const [area, setArea] = useState("");
   const [busy, setBusy] = useState(false);
   const [showComparison, setShowComparison] = useState(false);
+  const [confirm, setConfirm] = useState<
+    { kind: "plantilla"; plantilla: Plantilla } | { kind: "rule"; rule: ParametricRule } | null
+  >(null);
 
   const reload = useCallback(() => {
     getPlantillas()
@@ -140,6 +144,30 @@ export function PlantillasSection({
   const comparisonCount = rules.filter((r) => r.engine_read).length;
   return (
     <Card className="p-5">
+      <ConfirmDialog
+        open={confirm !== null}
+        title={
+          confirm?.kind === "plantilla"
+            ? `Eliminar la plantilla «${confirm.plantilla.name}»`
+            : confirm?.kind === "rule"
+              ? `Eliminar la regla de ${confirm.rule.concept_code}`
+              : ""
+        }
+        description={
+          confirm?.kind === "plantilla"
+            ? "Se borran sus reglas paramétricas; los proyectos ya calculados conservan sus líneas hasta recalcular."
+            : confirm?.kind === "rule"
+              ? "La regla deja de proponer cantidades en los próximos cálculos."
+              : null
+        }
+        confirmLabel="Eliminar"
+        onConfirm={() => {
+          if (confirm?.kind === "plantilla") void removePlantilla(confirm.plantilla.key);
+          if (confirm?.kind === "rule") void removeRule(confirm.rule);
+          setConfirm(null);
+        }}
+        onCancel={() => setConfirm(null)}
+      />
       <SectionTitle sub="Un presupuesto terminado y sus m² se vuelven reglas por m²: los conceptos que el plano no lee se proponen en cada proyecto nuevo, marcados como paramétricos.">
         Plantillas y paramétricos
       </SectionTitle>
@@ -197,7 +225,7 @@ export function PlantillasSection({
               <button
                 type="button"
                 aria-label={`Eliminar plantilla ${p.name}`}
-                onClick={() => removePlantilla(p.key)}
+                onClick={() => setConfirm({ kind: "plantilla", plantilla: p })}
                 className="ml-auto rounded-md p-1 text-faint transition-colors hover:bg-danger-soft hover:text-danger"
               >
                 <Trash size={14} />
@@ -267,7 +295,7 @@ export function PlantillasSection({
                       <button
                         type="button"
                         aria-label="Eliminar regla"
-                        onClick={() => removeRule(r)}
+                        onClick={() => setConfirm({ kind: "rule", rule: r })}
                         className="rounded-md p-1 text-faint transition-colors hover:bg-danger-soft hover:text-danger"
                       >
                         <Trash size={14} />

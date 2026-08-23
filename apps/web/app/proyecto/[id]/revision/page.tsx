@@ -67,10 +67,34 @@ export default function RevisionPage() {
     if (type === "review_updated" || type === "run_published") reload();
   }, [latestEvent, reload]);
 
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "doubts", dir: 1 });
+  function sortBy(key: SortKey) {
+    setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 }));
+  }
   const rows = useMemo(() => {
     if (!table) return [];
     const q = query.trim().toLowerCase();
-    return table.rows.filter(
+    const cmp = (a: RevisionRow, b: RevisionRow): number => {
+      switch (sort.key) {
+        case "label":
+          return a.label.localeCompare(b.label, "es");
+        case "concept":
+          return a.concept_code.localeCompare(b.concept_code) || a.label.localeCompare(b.label, "es");
+        case "view":
+          return a.view_title.localeCompare(b.view_title, "es") || a.label.localeCompare(b.label, "es");
+        case "confidence":
+          return a.confidence - b.confidence;
+        case "status":
+          return a.status.localeCompare(b.status) || a.label.localeCompare(b.label, "es");
+        default:
+          return (
+            (b.doubts.length > 0 ? 1 : 0) - (a.doubts.length > 0 ? 1 : 0) ||
+            a.concept_code.localeCompare(b.concept_code) ||
+            a.label.localeCompare(b.label, "es")
+          );
+      }
+    };
+    return [...table.rows].sort((a, b) => cmp(a, b) * sort.dir).filter(
       (r) =>
         (!concept || r.concept_code === concept) &&
         (!view || r.view_id === view) &&
@@ -78,7 +102,7 @@ export default function RevisionPage() {
         (!onlyPending || r.status === "") &&
         (!q || r.label.toLowerCase().includes(q) || r.mark.toLowerCase().includes(q)),
     );
-  }, [table, concept, view, onlyDoubts, onlyPending, query]);
+  }, [table, concept, view, onlyDoubts, onlyPending, query, sort]);
 
   // Selection only ever holds visible keys: a filter change drops the rest.
   const visibleKeys = useMemo(() => new Set(rows.map((r) => r.key)), [rows]);
@@ -180,7 +204,7 @@ export default function RevisionPage() {
         sub="Cada elemento que alimenta una cantidad. Empieza por las dudas; confirma o excluye en lote, con motivo."
       />
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-4">
+      <div className="mb-6 grid gap-4 sm:grid-cols-5">
         <Metric label="Elementos" value={table.total} />
         <Metric
           label="Con dudas"
@@ -188,6 +212,7 @@ export default function RevisionPage() {
           accent={table.with_doubts === 0 ? "success" : undefined}
         />
         <Metric label="Confirmados" value={table.confirmed} accent="success" />
+        <Metric label="Excluidos" value={table.excluded} />
         <Metric label="Sin revisar" value={pending} />
       </div>
 
@@ -306,13 +331,13 @@ export default function RevisionPage() {
                 aria-label="Seleccionar todos los visibles"
               />
             </Th>
-            <Th>Elemento</Th>
-            <Th>Concepto</Th>
-            <Th>Planta</Th>
+            <Th><SortButton label="Elemento" k="label" sort={sort} onSort={sortBy} /></Th>
+            <Th><SortButton label="Concepto" k="concept" sort={sort} onSort={sortBy} /></Th>
+            <Th><SortButton label="Planta" k="view" sort={sort} onSort={sortBy} /></Th>
             <Th>Medida</Th>
-            <Th align="center">Conf.</Th>
-            <Th>Dudas</Th>
-            <Th>Estado</Th>
+            <Th align="center"><SortButton label="Conf." k="confidence" sort={sort} onSort={sortBy} /></Th>
+            <Th><SortButton label="Dudas" k="doubts" sort={sort} onSort={sortBy} /></Th>
+            <Th><SortButton label="Estado" k="status" sort={sort} onSort={sortBy} /></Th>
           </tr>
         </thead>
         <tbody>
@@ -397,5 +422,33 @@ export default function RevisionPage() {
         </tbody>
       </TableCard>
     </div>
+  );
+}
+
+
+type SortKey = "doubts" | "label" | "concept" | "view" | "confidence" | "status";
+
+function SortButton({
+  label,
+  k,
+  sort,
+  onSort,
+}: {
+  label: string;
+  k: SortKey;
+  sort: { key: SortKey; dir: 1 | -1 };
+  onSort: (key: SortKey) => void;
+}) {
+  const active = sort.key === k;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(k)}
+      className={`inline-flex items-center gap-1 uppercase tracking-wide ${active ? "text-foreground" : ""}`}
+      title={`Ordenar por ${label.toLowerCase()}`}
+    >
+      {label}
+      <span className="text-[10px]">{active ? (sort.dir === 1 ? "▲" : "▼") : ""}</span>
+    </button>
   );
 }

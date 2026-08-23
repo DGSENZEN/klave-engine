@@ -40,6 +40,7 @@ import {
   Metric,
   PageHeader,
   SectionTitle,
+  Skeleton,
   SkeletonHeader,
   SkeletonMetrics,
   SkeletonTable,
@@ -142,6 +143,7 @@ export default function PresupuestoPage() {
   }
 
   const parametricCount = costs.boq.lines.filter((l) => l.parametric).length;
+  const conceptCodes = new Set(costs.boq.lines.map((l) => l.concept_code));
   const avgConf =
     costs.boq.lines.reduce((s, l) => s + l.confidence, 0) / (costs.boq.lines.length || 1);
   const phases = [...new Set(costs.boq.lines.map((l) => l.phase))];
@@ -224,7 +226,7 @@ export default function PresupuestoPage() {
       />
 
       <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
-      <SuggestionsBar projectId={id} actorName={actorName} />
+      <SuggestionsBar projectId={id} actorName={actorName} conceptCodes={conceptCodes} />
       {parametricCount > 0 && (
         <div className="mb-4">
           <Callout tone="info">
@@ -616,7 +618,15 @@ function CroquisStrip({ projectId, conceptCode }: { projectId: string; conceptCo
   }, [projectId, conceptCode]);
   if (failed) return null;
   if (items === null) {
-    return <p className="mt-2 text-xs text-faint">Dibujando croquis…</p>;
+    return (
+      <div className="mt-3" aria-busy="true">
+        <div className="mb-1.5 font-medium text-foreground">Croquis del generador</div>
+        <div className="flex gap-3">
+          <Skeleton className="h-36 w-52 rounded-lg" />
+          <Skeleton className="h-36 w-52 rounded-lg" />
+        </div>
+      </div>
+    );
   }
   if (items.length === 0) return null;
   return (
