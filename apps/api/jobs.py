@@ -19,6 +19,7 @@ from klave_engine.common.config import Settings
 from klave_engine.common.ids import short_uuid
 from klave_engine.common.io import read_json, write_json
 from klave_engine.common.logging import get_logger
+from klave_engine.costing.versions import snapshot_before_reprocess
 from klave_engine.ingestion.manifest import ProcessingStatus, load_manifest, save_manifest
 from klave_engine.pipeline import run_full_pipeline
 
@@ -159,6 +160,12 @@ class JobStore:
                 artifact_dir=run_dir,
                 reports_dir=run_dir / "reports",
             )
+            # The presupuesto as it stood becomes an automatic version, so the
+            # engineer can compare this corrida with the last one line by line.
+            try:
+                snapshot_before_reprocess(control_dir, None)
+            except Exception:  # noqa: BLE001 — a failed snapshot must not block the run
+                logger.warning("No se pudo guardar la versión previa de %s", project_id)
             # Publish exactly once, after every artifact/report has been
             # written. Readers resolve this atomically replaced pointer.
             write_json(

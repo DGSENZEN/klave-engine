@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from klave_engine.common.ids import short_uuid
 from klave_engine.common.io import read_json, write_json
 from klave_engine.costing.models import CostingOverrides, CostReport
-from klave_engine.costing.reviews import ProjectReviews
+from klave_engine.costing.reviews import ProjectReviews, load_reviews
 
 VERSIONS_DIRNAME = "versions"
 INDEX_FILENAME = "index.json"
@@ -139,6 +139,49 @@ def save_version(
     versions.append(summary)
     _save_index(control_dir, versions)
     return summary
+
+
+AUTO_LABEL_PREFIX = "Antes de reprocesar"
+
+
+def snapshot_before_reprocess(
+    control_dir: Path, previous_run_id: str | None = None
+) -> VersionSummary | None:
+    """Keep the presupuesto as it stood before a new run replaces it, so the
+    engineer can compare corrida N with N+1 line by line. Saved once per
+    run (a second reprocess without changes does not pile up copies)."""
+    from klave_engine.costing.recompute import load_overrides  # avoids an import cycle
+
+    pointer = control_dir / "active_run.json"
+    if not pointer.exists():
+        return None
+    try:
+        active = read_json(pointer)
+        artifact_dir = control_dir / str(active.get("artifact_dir") or "")
+        override = control_dir / "cost_report_override.json"
+        report_path = override if override.exists() else artifact_dir / "cost_report.json"
+        if not report_path.exists():
+            return None
+        report = CostReport.model_validate(read_json(report_path))
+    except (OSError, ValueError):
+        return None
+    run_id = previous_run_id or str(active.get("run_id") or "") or None
+    if run_id and any(
+        v.run_id == run_id and v.label.startswith(AUTO_LABEL_PREFIX)
+        for v in list_versions(control_dir)
+    ):
+        return None
+    overrides = load_overrides(control_dir) or CostingOverrides()
+    return save_version(
+        control_dir,
+        report,
+        load_reviews(control_dir),
+        overrides,
+        label=f"{AUTO_LABEL_PREFIX} ({datetime.now(UTC):%d/%m %H:%M})",
+        note="Guardada sola al reprocesar: el presupuesto tal como estaba con la corrida anterior.",
+        actor="Klave",
+        run_id=run_id,
+    )
 
 
 def delete_version(control_dir: Path, version_id: str) -> bool:

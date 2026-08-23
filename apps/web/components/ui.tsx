@@ -82,10 +82,12 @@ export function Badge({
   children,
   tone = "default",
   dot,
+  title,
 }: {
   children: ReactNode;
   tone?: BadgeTone;
   dot?: boolean;
+  title?: string;
 }) {
   const tones: Record<BadgeTone, string> = {
     default: "bg-surface-2 text-muted",
@@ -103,6 +105,7 @@ export function Badge({
   };
   return (
     <span
+      title={title}
       className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium ${tones[tone]}`}
     >
       {dot && <span className={`h-1.5 w-1.5 rounded-full ${dots[tone]}`} />}

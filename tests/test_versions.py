@@ -74,3 +74,25 @@ def test_diff_tells_what_moved_and_why_much():
         sum(c.amount_after - c.amount_before for c in diff.lines)
         - (diff.direct_cost_after - diff.direct_cost_before)
     ) < 0.05
+
+
+def test_reprocess_keeps_the_previous_presupuesto_as_an_automatic_version(tmp_path):
+    from klave_engine.common.io import write_json
+    from klave_engine.costing.versions import AUTO_LABEL_PREFIX, snapshot_before_reprocess
+
+    assert snapshot_before_reprocess(tmp_path) is None  # nothing published yet
+    run_dir = tmp_path / "runs" / "run_1"
+    run_dir.mkdir(parents=True)
+    write_json(run_dir / "cost_report.json", _report())
+    write_json(tmp_path / "active_run.json", {"run_id": "run_1", "artifact_dir": "runs/run_1"})
+
+    saved = snapshot_before_reprocess(tmp_path)
+    assert saved is not None and saved.label.startswith(AUTO_LABEL_PREFIX)
+    assert saved.run_id == "run_1" and saved.actor == "Klave" and saved.line_count > 0
+    # The same corrida is not snapshotted twice.
+    assert snapshot_before_reprocess(tmp_path) is None
+    assert len(list_versions(tmp_path)) == 1
+    # A later corrida gets its own snapshot.
+    write_json(tmp_path / "active_run.json", {"run_id": "run_2", "artifact_dir": "runs/run_1"})
+    assert snapshot_before_reprocess(tmp_path) is not None
+    assert len(list_versions(tmp_path)) == 2
