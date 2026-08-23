@@ -796,6 +796,56 @@ export const removeAdjustment = (
     actorClientHeaders(actor, clientId),
   );
 
+// ---- Review at scale ----
+
+export type RevisionRow = {
+  key: string;
+  detection_id: string;
+  label: string;
+  mark: string;
+  family: string;
+  family_label: string;
+  concept_code: string;
+  concept_unit: string;
+  view_id: string | null;
+  view_title: string;
+  sheet: string;
+  measure: string;
+  confidence: number;
+  status: "confirmed" | "excluded" | "";
+  note: string;
+  actor: string;
+  doubts: string[];
+  bbox: [number, number, number, number];
+};
+
+export type RevisionTable = {
+  rows: RevisionRow[];
+  concepts: { code: string; description: string; unit: string; count: number }[];
+  views: { view_id: string; title: string; count: number }[];
+  total: number;
+  with_doubts: number;
+  confirmed: number;
+  excluded: number;
+};
+
+export const getRevisionTable = (id: string) =>
+  getJSON<RevisionTable>(`/projects/${id}/revision`);
+
+export const setDetectionReviews = (
+  id: string,
+  keys: string[],
+  status: ReviewStatus | "none",
+  note = "",
+  actor?: string,
+  clientId?: string | null,
+) =>
+  putJSON<ProjectReviews>(
+    `/projects/${id}/reviews/detections`,
+    { keys, status, note },
+    actorClientHeaders(actor, clientId),
+  );
+
 // ---- Croquis for the generadores ----
 
 export type CroquisItem = { view_id: string; title: string; count: number; url: string };

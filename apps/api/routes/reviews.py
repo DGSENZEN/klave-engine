@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from klave_engine.common.config import Settings
 from klave_engine.common.errors import ReportGenerationError
 from klave_engine.common.ids import short_uuid
-from klave_engine.costing.models import CostingOverrides
+from klave_engine.costing.models import CostingOverrides, CostReport
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
 from klave_engine.costing.reviews import (
     DetectionReview,
@@ -18,6 +18,9 @@ from klave_engine.costing.reviews import (
     load_reviews,
     save_reviews,
 )
+from klave_engine.costing.revision import build_revision_table
+from klave_engine.detection.results import Detection
+from klave_engine.detection.views import SheetSegmentation
 from pydantic import BaseModel, Field
 
 from apps.api.dependencies import (
@@ -44,6 +47,12 @@ class AdjustmentInput(BaseModel):
     # engine's figure. A set needs a reason — the number changes silently
     # otherwise, and silence is what costs trust.
     quantity_set: float | None = Field(default=None, ge=0)
+    note: str = Field(default="", max_length=300)
+
+
+class BulkReviewInput(BaseModel):
+    keys: list[str] = Field(min_length=1, max_length=2000)
+    status: Literal["confirmed", "excluded", "none"]
     note: str = Field(default="", max_length=300)
 
 
@@ -163,6 +172,58 @@ def set_detection_review(
             f"detection_{body.status}", key,
         )
     return _reviews_payload(reviews)
+
+
+@router.put("/{project_id}/reviews/detections")
+def set_detection_reviews(
+    project_id: str,
+    body: BulkReviewInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    x_client_id: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Many elements, one verdict, one recompute: review at scale."""
+    actor = clean_actor(x_actor) or ""
+    control_dir = store.get_root(project_id) / settings.processed_dir_name
+    keys = [k.strip() for k in body.keys if k.strip()][:2000]
+    with project_recompute_lock(project_id):
+        reviews = load_reviews(control_dir)
+        for key in keys:
+            if body.status == "none":
+                reviews.detections.pop(key, None)
+            else:
+                reviews.detections[key] = DetectionReview(
+                    status=body.status, note=body.note.strip(), actor=actor
+                )
+        save_reviews(control_dir, reviews)
+        _recompute_after_review(
+            store, settings, project_id, actor, clean_client_id(x_client_id),
+            f"detections_{body.status}", f"{len(keys)} elementos",
+        )
+    return _reviews_payload(reviews)
+
+
+@router.get("/{project_id}/revision")
+def get_revision_table(
+    project_id: str,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Every element behind the presupuesto as a reviewable row."""
+    control_dir = store.get_root(project_id) / settings.processed_dir_name
+    report = CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
+    detections = [
+        Detection.model_validate(d) for d in store.read_artifact(project_id, "detections.json")
+    ]
+    try:
+        segmentation: SheetSegmentation | None = SheetSegmentation.model_validate(
+            store.read_artifact(project_id, "views.json")
+        )
+    except HTTPException:
+        segmentation = None
+    table = build_revision_table(report, detections, segmentation, load_reviews(control_dir))
+    return table.model_dump(mode="json")
 
 
 @router.post("/{project_id}/reviews/adjustments", status_code=201)
