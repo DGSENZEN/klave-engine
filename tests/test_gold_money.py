@@ -43,7 +43,8 @@ def test_captured_money_passes_against_itself_and_fails_when_quantities_move():
 def test_human_rows_keep_their_own_tolerance_and_missing_concepts_fail():
     fence = MoneyExpectation(
         concepts={
-            "EST-004": QuantityExpectation(quantity=27.0, unit="M2", tolerance_pct=2.0,
+            # 10 m × 2.7 m minus the assumed 18 % of vanos, as a takeoff by hand would say.
+            "EST-004": QuantityExpectation(quantity=22.14, unit="M2", tolerance_pct=2.0,
                                            source="human", note="cuantificado a mano"),
             "XXX-999": QuantityExpectation(quantity=1.0, unit="PZA"),
         },
