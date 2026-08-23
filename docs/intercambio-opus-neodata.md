@@ -14,6 +14,8 @@ exportan. Klave trabaja con esa capa.
 | Excel para OPUS | una hoja plana Clave / Descripción / Unidad / Cantidad / Precio Unitario / Importe, sin celdas combinadas, para el asistente de importación de presupuesto |
 | Excel para Neodata | la misma hoja con los encabezados que Neodata espera (Código / Concepto / Unidad / Cantidad / P.U. / Monto) |
 | Catálogo de licitación | el catálogo de conceptos con partidas, P.U. con número y con letra, importes, subtotal, IVA y total con letra (LOPSRM); el P.U. es el precio de venta (costo directo × factor de sobrecosto) |
+| Licitación con descripciones LOPSRM | el mismo catálogo con la descripción larga generada de cada concepto («Suministro y colocación de …, incluye: …, P.U.O.T.»), derivada de su matriz |
+| Explosión de insumos | cada insumo que consume el presupuesto (APU × cantidad) con su importe y su reparto por partida; también es una hoja del Excel completo |
 | Excel completo (Klave) | carátula, presupuesto, APUs, generadores con croquis, programa y flujo |
 
 ## Desde OPUS / Neodata (importar)
