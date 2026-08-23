@@ -13,6 +13,7 @@ fixture) the flat count/sum computation is used unchanged.
 from collections import defaultdict
 
 from klave_engine.common.logging import get_logger, log_stage
+from klave_engine.costing.earthwork import cut_fill_volumes, describe
 from klave_engine.costing.insumos import REFERENCE_PRICE_DISCLAIMER
 from klave_engine.costing.models import (
     BillOfQuantities,
@@ -85,6 +86,8 @@ def _raw_over(concept: Concept, detections: list[Detection], meters_factor: floa
     assert rule is not None  # callers skip manual (rule-less) concepts
     if rule.kind == QuantityKind.COUNT:
         return float(len(detections))
+    if rule.kind in (QuantityKind.EARTHWORK_CUT, QuantityKind.EARTHWORK_FILL):
+        return 0.0  # computed by _earthwork_result against the platform level
     if rule.kind == QuantityKind.LINEAR_VOLUME:
         return sum(
             float(d.properties[rule.source_property]) * meters_factor
@@ -210,6 +213,34 @@ def _section_note(
             f"columna {assumptions.column_section_m2:.3f} m²)"
         )
     return note
+
+
+def _earthwork_result(
+    concept: Concept,
+    terrains: list[Detection],
+    meters_factor: float,
+    assumptions: CostingAssumptions,
+) -> _LineResult:
+    """Corte or terraplén over every terrain read, against the platform level."""
+    rule = concept.rule
+    assert rule is not None and assumptions.platform_level_m is not None
+    level = assumptions.platform_level_m
+    total = 0.0
+    notes: list[str] = []
+    used: list[Detection] = []
+    for terrain in terrains:
+        volumes = cut_fill_volumes(
+            terrain.properties.get("sample_points") or [],
+            terrain.properties.get("polygon") or [],
+            level,
+            meters_factor,
+        )
+        if volumes is None:
+            continue
+        total += volumes.cut_m3 if rule.kind == QuantityKind.EARTHWORK_CUT else volumes.fill_m3
+        notes.append(describe(volumes, level))
+        used.append(terrain)
+    return _LineResult(round(total, 6), round(total, 6), used, notes)
 
 
 def _scoped_result(
@@ -414,7 +445,19 @@ def generate_bill_of_quantities(
             d for d in by_type.get(concept.rule.detection_type, [])
             if rule_matches(concept.rule, d)
         ]
-        if seg is not None:
+        if concept.rule.kind in (QuantityKind.EARTHWORK_CUT, QuantityKind.EARTHWORK_FILL):
+            if not matched:
+                continue  # no survey on the drawing: nothing to say, the detector said it
+            if assumptions.platform_level_m is None:
+                if not any("nivel de plataforma" in w for w in boq.warnings):
+                    boq.warnings.append(
+                        "Terracerías: el plano trae topografía pero no se ha definido el "
+                        "nivel de plataforma (Parámetros → Nivel de plataforma); corte y "
+                        "terraplén no se calculan contra un nivel supuesto."
+                    )
+                continue
+            result = _earthwork_result(concept, matched, meters_factor, assumptions)
+        elif seg is not None:
             matched_plan = [
                 d for d in matched if seg.assignment.get(d.detection_id) in plan_ids
             ]

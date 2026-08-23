@@ -167,6 +167,48 @@ RESOURCES.update(
         r.code: r
         for r in [
             Resource(
+                code="EQ-MOTOCONFORMADORA",
+                description="Motoconformadora 140 HP, costo horario (referencia SICT)",
+                unit="HORA",
+                unit_cost=1650.0,
+                resource_type=ResourceType.equipment,
+            ),
+            Resource(
+                code="EQ-VIBROCOMPACTADOR",
+                description="Vibrocompactador liso 10 t, costo horario (referencia SICT)",
+                unit="HORA",
+                unit_cost=1100.0,
+                resource_type=ResourceType.equipment,
+            ),
+            Resource(
+                code="EQ-CAMION",
+                description="Camión volteo 14 m³, costo horario (referencia SICT)",
+                unit="HORA",
+                unit_cost=780.0,
+                resource_type=ResourceType.equipment,
+            ),
+            Resource(
+                code="EQ-PIPA",
+                description="Pipa de agua 10 000 L, costo horario (referencia)",
+                unit="HORA",
+                unit_cost=650.0,
+                resource_type=ResourceType.equipment,
+            ),
+            Resource(
+                code="MAT-AGUA",
+                description="Agua para obra",
+                unit="M3",
+                unit_cost=35.0,
+                resource_type=ResourceType.material,
+            ),
+            Resource(
+                code="MAT-TEPETATE",
+                description="Tepetate de banco puesto en obra (referencia)",
+                unit="M3",
+                unit_cost=260.0,
+                resource_type=ResourceType.material,
+            ),
+            Resource(
                 code="MAT-CONC150",
                 description="Concreto hecho en obra f'c=150 kg/cm²",
                 unit="M3",
@@ -377,6 +419,29 @@ APU_TEMPLATES: dict[str, list[tuple[str, float]]] = {
         ("MAT-PISO-CER", 1.05),
         ("MAT-ADHESIVO", 5.0),
         ("MO-CUAD-ALB", 0.095),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+    # M2 despalme 20 cm con motoconformadora, carga y acarreo libre
+    "TER-001": [
+        ("EQ-MOTOCONFORMADORA", 0.004),
+        ("EQ-RETRO", 0.005),
+        ("EQ-CAMION", 0.008),
+        ("MO-PEON", 0.006),
+    ],
+    # M3 corte con retroexcavadora, material B, en banco
+    "TER-002": [
+        ("EQ-RETRO", 0.028),
+        ("MO-PEON", 0.010),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+    # M3 terraplén compactado 90 % Proctor con tepetate de banco
+    "TER-003": [
+        ("MAT-TEPETATE", 1.25),
+        ("MAT-AGUA", 0.12),
+        ("EQ-MOTOCONFORMADORA", 0.012),
+        ("EQ-VIBROCOMPACTADOR", 0.015),
+        ("EQ-PIPA", 0.006),
+        ("MO-PEON", 0.020),
         ("EQ-HERRAMIENTA", 1.0),
     ],
     # M2 firme de concreto f'c=150 de 10 cm, pulido

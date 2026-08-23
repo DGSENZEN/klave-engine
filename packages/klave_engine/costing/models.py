@@ -63,6 +63,10 @@ class QuantityKind(StrEnum):
     AREA = "area"
     VOLUME = "volume"  # area × thickness read from the detection (m³)
     LINEAR_VOLUME = "linear_volume"  # length × section read from the detection (m³)
+    # Terracerías: the terrain's sampled ground against the platform level
+    # the engineer sets (m³ of corte / terraplén over the lot polygon).
+    EARTHWORK_CUT = "earthwork_cut"
+    EARTHWORK_FILL = "earthwork_fill"
 
 
 class ViewScope(StrEnum):
@@ -245,6 +249,11 @@ class CostingAssumptions(BaseModel):
     mat_thickness_m: float = 0.20  # losa de cimentación without a declared H=
     footing_depth_m: float = 0.35
     excavation_depth_m: float = 0.50
+    # Terracerías: the platform (desplante) level in the survey's datum. None
+    # until the engineer sets it — corte/terraplén are never computed against
+    # a guessed level.
+    platform_level_m: float | None = None
+    despalme_thickness_m: float = 0.20
     excavation_swell_factor: float = 1.3
 
 

@@ -144,7 +144,7 @@ export default function ParametrosPage() {
     }, 350);
   }
 
-  function setField(group: keyof CostingConfigFull, key: string, value: number) {
+  function setField(group: keyof CostingConfigFull, key: string, value: number | null) {
     setConfig((c) => (c ? { ...c, [group]: { ...(c[group] as object), [key]: value } } : c));
     setDirty(true);
     setConflict(null);

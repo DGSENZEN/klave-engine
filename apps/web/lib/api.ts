@@ -420,7 +420,8 @@ export type Insumo = {
 
 export type CostingConfigFull = {
   currency: string;
-  assumptions: Record<string, number>;
+  /** Nullable: a level the engineer has not set yet (platform_level_m). */
+  assumptions: Record<string, number | null>;
   indirects: Record<string, number>;
   schedule: Record<string, number>;
   financial: Record<string, number>;

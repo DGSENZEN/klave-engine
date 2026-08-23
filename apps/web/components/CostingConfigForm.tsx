@@ -14,6 +14,8 @@ export const CONFIG_LABELS: Record<string, string> = {
   footing_depth_m: "Peralte de zapata (m)",
   excavation_depth_m: "Prof. excavación (m)",
   excavation_swell_factor: "Factor abundamiento",
+  platform_level_m: "Nivel de plataforma (datum del levantamiento)",
+  despalme_thickness_m: "Espesor de despalme (m)",
   // indirects
   field_indirects_pct: "Indirectos de campo (%)",
   office_indirects_pct: "Indirectos de oficina (%)",
@@ -51,9 +53,9 @@ export function ConfigGroup({
   title: string;
   group: keyof CostingConfigFull;
   config: CostingConfigFull;
-  onChange: (g: keyof CostingConfigFull, k: string, v: number) => void;
+  onChange: (g: keyof CostingConfigFull, k: string, v: number | null) => void;
 }) {
-  const entries = Object.entries(config[group] as Record<string, number>);
+  const entries = Object.entries(config[group] as Record<string, number | null>);
   return (
     <Card className="p-5">
       <SectionTitle>{title}</SectionTitle>
@@ -64,8 +66,11 @@ export function ConfigGroup({
             <Input
               type="number"
               step="any"
-              value={value}
-              onChange={(e) => onChange(group, key, Number(e.target.value))}
+              value={value ?? ""}
+              placeholder={value === null ? "sin definir" : undefined}
+              onChange={(e) =>
+                onChange(group, key, e.target.value === "" ? null : Number(e.target.value))
+              }
               className="w-28 px-2 py-1 text-right tabular"
             />
           </label>

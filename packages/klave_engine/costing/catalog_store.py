@@ -137,6 +137,14 @@ FORMWORK_CONCEPTS_V7: list[tuple[str, str, str, str, float, int, list[tuple[str,
         [("MAT-CIMBRA", 0.25), ("MO-CUAD-CARP", 0.085), ("EQ-HERRAMIENTA", 1.0)],
     ),
 ]
+TERRACERIAS_CONCEPT_CODES = ("TER-001", "TER-002", "TER-003")
+TERRACERIAS_RESOURCES: list[tuple[str, str, str, float, str]] = [
+    ("EQ-MOTOCONFORMADORA", "Motoconformadora 140 HP, costo horario (referencia SICT)", "HORA",
+     1650.0, "equipo"),
+    ("EQ-VIBROCOMPACTADOR", "Vibrocompactador liso 10 t, costo horario (referencia SICT)",
+     "HORA", 1100.0, "equipo"),
+    ("EQ-PIPA", "Pipa de agua 10 000 L, costo horario (referencia)", "HORA", 650.0, "equipo"),
+]
 ACABADOS_CONCEPT_CODES = ("ACA-001", "ACA-002", "ACA-003", "ACA-004", "PIS-001", "PIS-002")
 ACABADOS_RESOURCES: list[tuple[str, str, str, float, str]] = [
     ("MAT-PINTURA", "Pintura vinílica acrílica, cubeta 19 L (referencia)", "L", 78.0,
@@ -385,6 +393,13 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '11') "
                     "ON CONFLICT(key) DO UPDATE SET value = '11'"
                 )
+            if version_row is None or int(version_row["value"]) < 12:
+                self._seed_resources(conn, TERRACERIAS_RESOURCES)
+                self._sync_builtin_concepts(conn, TERRACERIAS_CONCEPT_CODES)
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '12') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '12'"
+                )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.
                 conn.execute(
@@ -505,6 +520,20 @@ class CatalogStore:
             )
         self._sync_builtin_concepts(conn, SLAB_CONCEPT_CODES)
         log_stage(logger, "catalog_migrated_v6", db_path=str(self.db_path))
+
+    @staticmethod
+    def _seed_resources(
+        conn: sqlite3.Connection, resources: list[tuple[str, str, str, float, str]]
+    ) -> None:
+        """Reference insumos, OR IGNORE: a taller's own rows always win."""
+        for code, description, unit, unit_cost, resource_type in resources:
+            conn.execute(
+                "INSERT OR IGNORE INTO insumos (code, description, unit, resource_type, "
+                "unit_cost, is_labor_percentage, source, source_type, region, vigencia, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, 'referencia', 'MX-CMX', ?, ?)",
+                (code, description, unit, resource_type, unit_cost, SEED_SOURCE,
+                 SEED_VIGENCIA, _now()),
+            )
 
     def _migrate_v11(self, conn: sqlite3.Connection) -> None:
         """Albañilería y acabados read from the architecture (aplanado,

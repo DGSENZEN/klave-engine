@@ -24,6 +24,7 @@ from klave_engine.detection.results import DetectorOutput
 from klave_engine.detection.rooms import RoomDetectorConfig, detect_rooms
 from klave_engine.detection.slab_detector import SlabDetectorConfig, detect_slabs
 from klave_engine.detection.slab_panels import SlabPanelConfig, detect_slab_panels
+from klave_engine.detection.terrain import TerrainDetectorConfig, detect_terrain
 from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.detection.wall_detector import WallDetectorConfig, detect_walls
 from klave_engine.dxf.entities import NormalizedEntity
@@ -46,6 +47,7 @@ class DetectorSuiteConfig(BaseModel):
     pile: PileDetectorConfig = Field(default_factory=PileDetectorConfig)
     wall: WallDetectorConfig = Field(default_factory=WallDetectorConfig)
     room: RoomDetectorConfig = Field(default_factory=RoomDetectorConfig)
+    terrain: TerrainDetectorConfig = Field(default_factory=TerrainDetectorConfig)
     detail_reference: DetailReferenceDetectorConfig = Field(
         default_factory=DetailReferenceDetectorConfig
     )
@@ -100,6 +102,7 @@ class DetectorSuiteConfig(BaseModel):
         config.room.label_max_height = m(0.6)
         config.room.max_opening = m(1.3)
         config.room.max_thickness = m(0.45)
+        config.terrain.label_search_radius = m(1.0)
         config.risk.duplicate_column_distance = m(10.0)
         return config
 
@@ -135,10 +138,13 @@ def run_detectors(
     walls = detect_walls(entities, index, config.wall, ids)
     piles = detect_piles(entities, index, config.pile, ids)
     rooms = detect_rooms(entities, config.room, ids, frame_boxes(frames or []))
+    terrain = detect_terrain(entities, config.terrain, ids)
     details = detect_detail_references(
         entities, manifest, config.detail_reference, config.text_patterns, ids
     )
-    return [grid, columns, footings, beams, slabs, panels, walls, piles, rooms, details]
+    return [
+        grid, columns, footings, beams, slabs, panels, walls, piles, rooms, terrain, details,
+    ]
 
 
 def _prefer_panels(slabs: DetectorOutput, panels: DetectorOutput) -> None:

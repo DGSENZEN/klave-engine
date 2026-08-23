@@ -219,12 +219,19 @@ def normalize_entity(
         entity_type = EntityType.polyline
         points = [(float(x), float(y)) for x, y in entity.get_points(format="xy")]
         properties["closed"] = bool(entity.closed)
+        # A contour line carries its level as the polyline's elevation.
+        elevation = float(getattr(entity.dxf, "elevation", 0.0) or 0.0)
+        if elevation:
+            properties["elevation"] = round(elevation, 4)
         bbox = bbox_from_points(points) if points else None
     elif dxf_type == "POLYLINE":
         entity_type = EntityType.polyline
         points = [
             (float(v.dxf.location.x), float(v.dxf.location.y)) for v in entity.vertices
         ]
+        zs = [float(v.dxf.location.z) for v in entity.vertices if v.dxf.location.z]
+        if zs and len(zs) == len(points):
+            properties["elevation"] = round(sum(zs) / len(zs), 4)  # 3D polyline: its level
         properties["closed"] = bool(entity.is_closed)
         bbox = bbox_from_points(points) if points else None
     elif dxf_type in ("SPLINE", "ELLIPSE"):
@@ -236,6 +243,12 @@ def normalize_entity(
             closed = bool(getattr(entity, "closed", False))
             properties["closed"] = closed
             properties["derived_from"] = dxf_type
+            try:
+                zs = [float(cp[2]) for cp in getattr(entity, "control_points", []) if cp[2]]
+                if zs:
+                    properties["elevation"] = round(sum(zs) / len(zs), 4)
+            except (TypeError, IndexError):
+                pass
             bbox = bbox_from_points(points)
             notes.append(f"{dxf_type} aplanado en {len(points)} segmentos")
         else:

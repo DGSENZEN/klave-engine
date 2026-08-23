@@ -14,7 +14,9 @@ from klave_engine.costing.models import (
 )
 from klave_engine.detection.results import DetectionType
 
-PHASE_ORDER = ["Preliminares", "Cimentación", "Estructura", "Albañilería", "Acabados"]
+PHASE_ORDER = [
+    "Preliminares", "Terracerías", "Cimentación", "Estructura", "Albañilería", "Acabados",
+]
 
 
 def build_catalog_from_store(
@@ -341,7 +343,7 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
             production_rate_per_day=14.0,
             sequence_order=3,
         ),
-    ] + _acabados(a)
+    ] + _terracerias(a) + _acabados(a)
 
 
 def _acabados(a: CostingAssumptions) -> list[Concept]:
@@ -466,5 +468,65 @@ def _acabados(a: CostingAssumptions) -> list[Concept]:
             ],
             production_rate_per_day=30.0,
             sequence_order=12,
+        ),
+    ]
+
+
+def _terracerias(a: CostingAssumptions) -> list[Concept]:
+    """Despalme, corte y terraplén from the surveyed ground against the
+    platform level the engineer sets in Parámetros. Without a survey on the
+    drawing there is no terrain and nothing is quantified; without a platform
+    level, despalme is counted and corte/terraplén wait for the level."""
+    platform = (
+        f"Nivel de plataforma {a.platform_level_m:.2f} (datum del levantamiento)"
+        if a.platform_level_m is not None
+        else "Nivel de plataforma por definir en Parámetros"
+    )
+    return [
+        Concept(
+            code="TER-001",
+            description="Despalme de terreno natural con maquinaria, incluye acarreo libre",
+            unit="M2",
+            phase="Terracerías",
+            rule=QuantityRule(
+                detection_type=DetectionType.terrain,
+                kind=QuantityKind.AREA,
+                source_property="estimated_area",
+            ),
+            view_scope=ViewScope.FOOTPRINT_ONCE,
+            assumptions=[
+                f"Espesor de despalme {a.despalme_thickness_m:.2f} m (capa vegetal)",
+                "Área del lote leída del levantamiento topográfico",
+            ],
+            production_rate_per_day=900.0,
+            sequence_order=1,
+        ),
+        Concept(
+            code="TER-002",
+            description="Corte en terreno natural con maquinaria, material tipo B, "
+            "medido en banco",
+            unit="M3",
+            phase="Terracerías",
+            rule=QuantityRule(
+                detection_type=DetectionType.terrain,
+                kind=QuantityKind.EARTHWORK_CUT,
+            ),
+            assumptions=[platform, "Sin abundamiento: el acarreo se cotiza aparte"],
+            production_rate_per_day=350.0,
+            sequence_order=2,
+        ),
+        Concept(
+            code="TER-003",
+            description="Terraplén compactado al 90 % Proctor con material de banco, "
+            "medido compactado",
+            unit="M3",
+            phase="Terracerías",
+            rule=QuantityRule(
+                detection_type=DetectionType.terrain,
+                kind=QuantityKind.EARTHWORK_FILL,
+            ),
+            assumptions=[platform, "Material de banco; el producto de corte no se reutiliza"],
+            production_rate_per_day=250.0,
+            sequence_order=3,
         ),
     ]

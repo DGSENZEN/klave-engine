@@ -26,6 +26,7 @@ class DetectionType(StrEnum):
     detail_reference = "detail_reference"
     pile = "pile"  # pilote / pila: a mark with its circle in the cimentación
     room = "room"  # local: a bounded face of the architectural wall network
+    terrain = "terrain"  # terreno natural: curvas y puntos de nivel of one file
 
 
 class Detection(BaseModel):
