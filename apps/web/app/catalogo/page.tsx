@@ -1513,7 +1513,7 @@ function FuentesSection({
                   target="_blank"
                   rel="noreferrer"
                   className="text-xs text-muted underline"
-                  title={`Guárdala como data/sources/${source.filename}`}
+                  title="El archivo no está en el servidor; pide a tu administrador que descargue la publicación"
                 >
                   No descargada
                 </a>
@@ -1879,8 +1879,8 @@ function SalarioRealSection({
         title="Salario real (Fsr) — RLOPSRM art. 190–191"
         summary={
           (first
-            ? `Fsr ${first.fsr.toFixed(4)} para el peón · Tp ${first.tp} / Tl ${first.tl} · CONASAMI, UMA e IMSS ${params?.year ?? ""}`
-            : "Sn × Fsr con CONASAMI, UMA, IMSS e INFONAVIT vigentes, desglosado por ramo.") +
+            ? `Factor ${first.fsr.toFixed(4)} para el peón · ${first.tp} días pagados / ${first.tl} laborados · CONASAMI, UMA e IMSS ${params?.year ?? ""}`
+            : "Salario nominal × factor de salario real con CONASAMI, UMA, IMSS e INFONAVIT vigentes, desglosado por ramo.") +
           (state?.applied_at
             ? ` · aplicado ${state.applied_at}`
             : " · sin aplicar")
@@ -1914,9 +1914,24 @@ function SalarioRealSection({
                   <th className="py-1.5 pr-3 text-right font-medium">
                     Sn (día)
                   </th>
-                  <th className="py-1.5 pr-3 text-right font-medium">SBC</th>
-                  <th className="py-1.5 pr-3 text-right font-medium">Ps</th>
-                  <th className="py-1.5 pr-3 text-right font-medium">Fsr</th>
+                  <th
+                    className="py-1.5 pr-3 text-right font-medium"
+                    title="Salario base de cotización (IMSS)"
+                  >
+                    SBC
+                  </th>
+                  <th
+                    className="py-1.5 pr-3 text-right font-medium"
+                    title="Prestaciones: cuotas patronales IMSS, INFONAVIT e ISN por día"
+                  >
+                    Ps
+                  </th>
+                  <th
+                    className="py-1.5 pr-3 text-right font-medium"
+                    title="Factor de salario real = Ps · (Tp / Tl) — días pagados entre días laborados"
+                  >
+                    Fsr
+                  </th>
                   <th className="py-1.5 text-right font-medium">
                     Salario real
                   </th>
@@ -1975,7 +1990,7 @@ function SalarioRealSection({
             </table>
             {dirty && (
               <p className="mt-2 text-xs text-muted">
-                Los valores de SBC, Ps y Fsr se recalculan al aplicar.
+                El salario base de cotización, las prestaciones y el factor de salario real se recalculan al aplicar.
               </p>
             )}
             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -2044,7 +2059,7 @@ function SalarioRealSection({
                       setDirty(true);
                     }}
                   />
-                  Incluir ISN en el Fsr (por defecto va en indirectos)
+                  Incluir el impuesto sobre nómina en el factor de salario real (por defecto va en indirectos)
                 </label>
               </div>
             )}

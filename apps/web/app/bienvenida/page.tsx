@@ -55,7 +55,7 @@ const NOTICES: Record<Exclude<UrlNotice, null>, { tone: "info" | "danger"; text:
   google: { tone: "danger", text: "No se pudo iniciar sesión con Google. Inténtalo de nuevo." },
   db: {
     tone: "danger",
-    text: "La base de datos de usuarios no está disponible. Arráncala con make users-db-up y recarga.",
+    text: "La base de datos de usuarios no está disponible; pide a tu administrador que la arranque y recarga.",
   },
   disabled: { tone: "danger", text: "Tu cuenta está deshabilitada." },
   invite: { tone: "danger", text: "La invitación ya no es válida; pide una nueva a tu administrador." },

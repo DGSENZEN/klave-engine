@@ -88,6 +88,8 @@ const AUDIT_LABELS: Record<string, string> = {
   project_access_granted: "compartió un proyecto con",
   project_access_revoked: "quitó acceso a un proyecto",
   project_removed: "quitó un proyecto de la lista",
+  workspace_renamed: "cambió el nombre del taller",
+  workspace_defaults_updated: "actualizó los valores del taller",
 };
 
 type Confirm =
@@ -756,7 +758,7 @@ function ActivityCard() {
             {entries.map((entry) => {
               const email = typeof entry.detail.email === "string" ? entry.detail.email : null;
               const actor = entry.actor_name ?? "Sistema";
-              const verb = AUDIT_LABELS[entry.action] ?? entry.action;
+              const verb = AUDIT_LABELS[entry.action] ?? entry.action.replace(/_/g, " ");
               const transition =
                 typeof entry.detail.from === "string" && typeof entry.detail.to === "string"
                   ? ` (${entry.detail.from} → ${entry.detail.to})`

@@ -607,7 +607,7 @@ function measureValue(
 ): { value: number; label: string } {
   if (mode === "conteo") return { value: points.length, label: "elementos" };
   const scale = toMeters ?? 1;
-  const unit = toMeters != null ? "m" : "u.dib";
+  const unit = toMeters != null ? "m" : "unidades de dibujo";
   if (mode === "distancia") {
     let total = 0;
     for (let i = 1; i < points.length; i++) {

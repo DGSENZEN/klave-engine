@@ -387,7 +387,7 @@ export default function PresupuestoPage() {
                 }
               />
               <Line label="Sistema de losa" value={dims.vigueta_system ?? "—"} />
-              <Line label="Cotas (DIMENSION)" value={`${dims.dimension_count}`} />
+              <Line label="Cotas leídas" value={`${dims.dimension_count}`} />
               {dims.typical_wall_thickness_source && (
                 <p className="pt-1 text-xs text-muted">
                   Espesor de muro · fuente: {dims.typical_wall_thickness_source}

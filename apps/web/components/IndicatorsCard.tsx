@@ -56,8 +56,8 @@ export function IndicatorsCard({ indicators }: { indicators: Partial<Indicators>
                 {i.value == null ? "—" : num(i.value)}
               </span>
               <span className="text-xs text-muted">{i.unit}</span>
-              <Badge tone={TONE[i.status]} dot>
-                {LABEL[i.status]}
+              <Badge tone={TONE[i.status] ?? "default"} dot>
+                {LABEL[i.status] ?? "sin dato"}
               </Badge>
             </div>
             <div className="mt-1 text-[11px] text-faint">
@@ -84,7 +84,7 @@ export function IndicatorsCard({ indicators }: { indicators: Partial<Indicators>
               {s.typical_pct != null && (
                 <span className="tabular text-faint">/ {s.typical_pct}%</span>
               )}
-              <Badge tone={TONE[s.status]}>{LABEL[s.status]}</Badge>
+              <Badge tone={TONE[s.status] ?? "default"}>{LABEL[s.status] ?? "sin dato"}</Badge>
             </span>
           ))}
         </div>
