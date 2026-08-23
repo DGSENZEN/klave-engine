@@ -6,7 +6,7 @@
     "Plano Prueba 1.dxf": "13314f9c78fedde370752c3ab91f53f6cd5767a8d3709f52f5060c5ef76bdd90"
   },
   "status": "baseline",
-  "captured_at": "2026-08-23T02:18:24.109697Z",
+  "captured_at": "2026-08-23T19:14:46.452702Z",
   "labels": {
     "grid_line": [
       "EJE-1-01",
@@ -556,12 +556,7 @@
       "MUR-56",
       "MUR-57",
       "MUR-58",
-      "MUR-59",
-      "MUR-60",
-      "MUR-61",
-      "MUR-62",
-      "MUR-63",
-      "MUR-64"
+      "MUR-59"
     ]
   },
   "confirmed": [],
@@ -634,21 +629,21 @@
         "note": ""
       },
       "EST-004": {
-        "quantity": 449.277,
+        "quantity": 450.447,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
         "note": ""
       },
       "ACA-001": {
-        "quantity": 898.555,
+        "quantity": 900.895,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
         "note": ""
       },
       "ACA-002": {
-        "quantity": 898.555,
+        "quantity": 900.895,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
@@ -662,7 +657,7 @@
         "note": ""
       }
     },
-    "direct_cost": 777450.5,
+    "direct_cost": 778687.87,
     "direct_cost_tolerance_pct": 5.0,
     "unpriced": []
   },

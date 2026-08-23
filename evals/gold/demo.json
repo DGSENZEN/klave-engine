@@ -5,7 +5,7 @@
     "S-101.dxf": "9514b8652784c0c50b363afcd086455d24477e639f4709cb7a34bb03b8f07854"
   },
   "status": "baseline",
-  "captured_at": "2026-08-23T19:09:57.843143Z",
+  "captured_at": "2026-08-23T19:14:42.000213Z",
   "labels": {
     "grid_line": [
       "EJE-1",
@@ -99,21 +99,21 @@
         "note": ""
       },
       "EST-004": {
-        "quantity": 540.0,
+        "quantity": 442.8,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
         "note": ""
       },
       "ACA-001": {
-        "quantity": 1080.0,
+        "quantity": 885.6,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
         "note": ""
       },
       "ACA-002": {
-        "quantity": 1080.0,
+        "quantity": 885.6,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",

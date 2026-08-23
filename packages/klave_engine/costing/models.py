@@ -107,6 +107,9 @@ class QuantityRule(BaseModel):
     # Applied with the story height; for assumed heights fold it into
     # quantity_factor as well.
     sides: float = 1.0
+    # Wall faces lose their doors and windows: measured from the openings the
+    # wall detector bridged when there are any, else the assumed share.
+    opening_deduction: bool = False
 
 
 class Concept(BaseModel):
@@ -259,6 +262,12 @@ class CostingAssumptions(BaseModel):
     contratrabe_section_m2: float = 0.125  # 25x50 cm
     dala_section_m2: float = 0.0375  # 15x25 cm (cadena de enrase / cerramiento)
     wall_height_m: float = 2.7
+    # Vanos: share of a wall face that is door and window when the plano
+    # gives no measured openings (vivienda: 15–25 %); 0 disables the deduction.
+    opening_share_pct: float = 18.0
+    # Height of a measured opening (a door; windows sit within it) used with
+    # the widths the wall detector reads.
+    opening_height_m: float = 2.1
     slab_thickness_m: float = 0.12  # losa maciza without a declared H=
     mat_thickness_m: float = 0.20  # losa de cimentación without a declared H=
     footing_depth_m: float = 0.35

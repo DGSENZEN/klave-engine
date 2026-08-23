@@ -51,10 +51,13 @@ class WallDetectorConfig(BaseModel):
         default_factory=lambda: ["CONCRETO", "CONCRETE", "MURO CONC", "MC", "PANTALLA"]
     )
     prefer_semantic_layers: bool = True
-    # Collinear wall pairs merge across gaps up to this (door openings are
-    # wider and stay separate; axis breaks and block seams are smaller).
+    # Collinear wall pairs merge across gaps up to this (axis breaks and
+    # block seams); wider gaps up to ``opening_gap_max`` are doors and
+    # windows: the wall continues over them and the gap is kept as an
+    # opening on the wall, for the vano deduction.
     merge_gap: float = 0.0
     merge_gap_thickness_factor: float = 2.0
+    opening_gap_max: float = 0.0  # drawing units; 0 keeps the old split behaviour
 
 
 Segment = tuple[tuple[float, float], tuple[float, float]]
@@ -72,6 +75,8 @@ class _WallPair(BaseModel):
     length: float
     bbox: BBox
     semantic: bool
+    # Door/window gaps bridged inside this wall, along the wall (drawing units).
+    openings: list[float] = []
 
 
 def _projection_overlap(a: Segment, b: Segment) -> float:
@@ -108,16 +113,22 @@ def _flush_cluster(
         return
     cluster.sort(key=lambda p: p.span[0])
     run: list[_WallPair] = [cluster[0]]
+    openings: list[float] = []
     for pair in cluster[1:]:
         previous_end = max(p.span[1] for p in run)
         gap = pair.span[0] - previous_end
         allowed = max(config.merge_gap, pair.thickness * config.merge_gap_thickness_factor)
         if gap <= allowed:
             run.append(pair)
+        elif gap <= config.opening_gap_max:
+            # A door or window: the same wall goes on past it.
+            openings.append(gap)
+            run.append(pair)
         else:
-            merged.append(_merge_run(run))
+            merged.append(_merge_run(run, openings))
             run = [pair]
-    merged.append(_merge_run(run))
+            openings = []
+    merged.append(_merge_run(run, openings))
     cluster.clear()
 
 
@@ -143,11 +154,12 @@ def _merge_pairs(pairs: list[_WallPair], config: WallDetectorConfig) -> list[_Wa
     return merged
 
 
-def _merge_run(run: list[_WallPair]) -> _WallPair:
-    if len(run) == 1:
+def _merge_run(run: list[_WallPair], openings: list[float] | None = None) -> _WallPair:
+    if len(run) == 1 and not openings:
         return run[0]
     span = (min(p.span[0] for p in run), max(p.span[1] for p in run))
     return _WallPair(
+        openings=list(openings or []),
         entity_ids=[eid for p in run for eid in p.entity_ids],
         source_file=run[0].source_file,
         layer=run[0].layer,
@@ -257,6 +269,12 @@ def detect_walls(
         ]
         if segments > 1:
             notes.append(f"Muro unido a partir de {segments} tramos colineales")
+        if wall.openings:
+            notes.append(
+                f"{len(wall.openings)} vanos (puerta/ventana) de "
+                + ", ".join(f"{gap:.2f}" for gap in wall.openings)
+                + " a lo largo del muro"
+            )
         notes.extend(model.explain(features))
         output.detections.append(
             make_detection(
@@ -272,6 +290,9 @@ def detect_walls(
                     "estimated_length": round(wall.length, 3),
                     "estimated_thickness": round(wall.thickness, 3),
                     "segment_count": segments,
+                    # Door/window widths bridged along this wall (drawing units).
+                    "openings": [round(gap, 3) for gap in wall.openings],
+                    "opening_length": round(sum(wall.openings), 3),
                     "layer": wall.layer,
                     "wall_kind": (
                         "concreto" if layer_matches(wall.layer, config.concrete_layer_hints)

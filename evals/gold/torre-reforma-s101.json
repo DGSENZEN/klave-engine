@@ -7,7 +7,7 @@
     "03-s-301_azotea.dxf": "44397dfb16f769f5305ed2f8b9cf6e46612e6c0b290901483d2e3233c38e2202"
   },
   "status": "baseline",
-  "captured_at": "2026-08-23T19:09:58.219656Z",
+  "captured_at": "2026-08-23T19:14:46.846642Z",
   "labels": {
     "grid_line": [
       "EJE-1-01",
@@ -137,21 +137,21 @@
         "note": ""
       },
       "EST-004": {
-        "quantity": 16.2,
+        "quantity": 13.284,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
         "note": ""
       },
       "ACA-001": {
-        "quantity": 32.4,
+        "quantity": 26.568,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
         "note": ""
       },
       "ACA-002": {
-        "quantity": 32.4,
+        "quantity": 26.568,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
@@ -165,7 +165,7 @@
         "note": ""
       }
     },
-    "direct_cost": 85896.75,
+    "direct_cost": 82812.81,
     "direct_cost_tolerance_pct": 5.0,
     "unpriced": []
   },

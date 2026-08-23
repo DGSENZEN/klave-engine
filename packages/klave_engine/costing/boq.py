@@ -213,6 +213,48 @@ def _column_volume(
     return result
 
 
+def _deduct_openings(
+    concept: Concept,
+    result: _LineResult,
+    meters_factor: float,
+    assumptions: CostingAssumptions,
+) -> None:
+    """Take the doors and windows off a wall face, and say how.
+
+    Measured: the widths the wall detector bridged, × the opening height, ×
+    the faces the concept covers. Assumed: the share in the assumptions.
+    Either way the line states the deduction; a measured one never exceeds
+    half the face (a wall that is mostly hole is a reading to check)."""
+    rule = concept.rule
+    assert rule is not None
+    sides = rule.sides if rule.sides else 1.0
+    measured_width = sum(
+        float(d.properties.get("opening_length") or 0.0) for d in result.dets
+    ) * meters_factor
+    opening_count = sum(len(d.properties.get("openings") or []) for d in result.dets)
+    before = result.quantity
+    if measured_width > 0:
+        area = measured_width * assumptions.opening_height_m * sides
+        capped = min(area, before * 0.5)
+        result.quantity = round(before - capped, 6)
+        note = (
+            f"Vanos −{capped:,.2f} m²: {opening_count} puertas/ventanas leídas en los muros "
+            f"({measured_width:,.2f} m de ancho × {assumptions.opening_height_m:.2f} m"
+            + (f" × {sides:g} caras" if sides != 1 else "") + ")"
+        )
+        if capped < area:
+            note += " — tope del 50 % de la cara; revisa esos muros"
+        result.notes.append(note)
+        result.supersedes.add("vanos supuestos")
+    elif assumptions.opening_share_pct > 0:
+        share = assumptions.opening_share_pct / 100.0
+        result.quantity = round(before * (1.0 - share), 6)
+        result.notes.append(
+            f"Vanos −{assumptions.opening_share_pct:g} % supuesto (el plano no trae "
+            "puertas ni ventanas leídas; ajústalo en Parámetros)"
+        )
+
+
 def _section_note(
     declared: int, measured: int, assumed: int, assumptions: CostingAssumptions
 ) -> str:
@@ -489,6 +531,9 @@ def generate_bill_of_quantities(
             raw = _raw_over(concept, matched, meters_factor)
             quantity = round(raw * concept.quantity_factor, 6)
             result = _LineResult(quantity, raw, _contributing(concept, matched), [])
+
+        if concept.rule.opening_deduction and result.quantity > 0:
+            _deduct_openings(concept, result, meters_factor, assumptions)
 
         if result.quantity <= 0:
             # A concept whose element type the drawing does not contain at

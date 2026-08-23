@@ -33,7 +33,7 @@ Las matrices de los conceptos de concreto traen acero y cimbra adentro (`EST-001
 `EST-001` es `COUNT × column_section_m2 × column_height_m` en el camino plano (`boq.py:87,468`); `_column_volume` (la única que lee `section_cm`, marcador y `castillo_section_m2`) solo corre dentro de `ViewScope.COLUMN_VOLUME` en hojas segmentadas. En una casa de una planta o en un archivo sin marcos, cada castillo K vale 0.09 m² (3× su concreto) y el cuadro leído se descarta; la nota "si no hay marcador" se imprime igual.
 - **Fix**: usar `_column_volume` también en el camino plano; `supersedes` en ambos; prueba con segmentación `None`.
 
-### A4 — Vanos nunca descontados (y puertas sobre-descontadas) · **P0**
+### A4 — Vanos nunca descontados (y puertas sobre-descontadas) · **P0** · **hecho** (el muro sigue sobre la puerta y guarda el vano; descuento medido ancho × 2.10 m × caras, o `opening_share_pct` supuesto y declarado en la línea; pendiente: vanos desde bloques/cancelería cuando el muro no se dibuja partido)
 Aplanado, pintura y muro son `longitud × altura × caras` (`catalog.py:363-402, 328-345`). Puertas: el detector de muros parte el tramo en cada hueco > 2×espesor (`wall_detector.py:112`) y elimina toda la altura del muro sobre la puerta (incluido el cerramiento). Ventanas: nada. Vanos en vivienda = 15–25 % de la cara.
 - **Fix**: (1) `QuantityRule.opening_deduction_pct` por concepto, editable, escrito en la línea ("vanos −18 % supuesto"); (2) detector de vanos desde bloques de puerta/ventana y cancelería del levantamiento (`inventory` tags V-n/P-n) que reemplace el supuesto con medida; (3) los muros no se cortan en puertas: el hueco queda como vano con altura de dintel.
 

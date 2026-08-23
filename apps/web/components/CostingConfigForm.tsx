@@ -16,6 +16,8 @@ export const CONFIG_LABELS: Record<string, string> = {
   column_height_m: "Altura de entrepiso sin niveles (m)",
   beam_section_m2: "Sección de trabe sin cuadro (m²)",
   wall_height_m: "Altura de muro sin niveles (m)",
+  opening_share_pct: "Vanos supuestos en muros sin puertas/ventanas leídas (%)",
+  opening_height_m: "Altura de vano leído (m)",
   footing_depth_m: "Peralte de zapata (m)",
   excavation_depth_m: "Prof. excavación (m)",
   excavation_swell_factor: "Factor abundamiento",
