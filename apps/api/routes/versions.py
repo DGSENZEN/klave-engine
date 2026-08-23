@@ -31,6 +31,7 @@ from apps.api.dependencies import (
     project_recompute_lock,
 )
 from apps.api.events import BUS, clean_actor, clean_client_id
+from apps.api.tenancy import store_for_project
 
 router = APIRouter(prefix="/projects")
 
@@ -198,6 +199,7 @@ def restore_version(
             report = recompute_and_persist(
                 store.artifact_root(project_id), control_dir, root / "reports", project_id,
                 restored,
+                catalog_store=store_for_project(settings, project_id),
             )
         except ReportGenerationError as exc:
             raise HTTPException(

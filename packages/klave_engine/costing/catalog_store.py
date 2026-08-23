@@ -403,6 +403,8 @@ class CatalogStore:
     process-wide lock serializes writers (usage is low-frequency UI edits)."""
 
     def __init__(self, db_path: Path) -> None:
+        # The taller this store belongs to; None for the legacy shared file.
+        self.workspace_id: str | None = None
         self.db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with _LOCK, self._connect() as conn:
@@ -1636,12 +1638,20 @@ class CatalogStore:
 _STORES: dict[Path, CatalogStore] = {}
 
 
-def get_catalog_store(data_dir: Path) -> CatalogStore:
-    path = (data_dir / CATALOG_DB_FILENAME).resolve()
+def get_catalog_store(data_dir: Path, workspace_id: str | None = None) -> CatalogStore:
+    """One store per taller (``catalogs/<workspace_id>.db``); without a
+    workspace — the open, local-first mode — the single legacy file."""
+    path = (
+        (data_dir / "catalogs" / f"{workspace_id}.db")
+        if workspace_id
+        else (data_dir / CATALOG_DB_FILENAME)
+    ).resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
     with _LOCK:
         store = _STORES.get(path)
     if store is None:
         store = CatalogStore(path)
+        store.workspace_id = workspace_id
         with _LOCK:
             _STORES[path] = store
     return store

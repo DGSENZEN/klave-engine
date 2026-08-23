@@ -15,7 +15,7 @@ from klave_engine.common.config import get_settings
 from klave_engine.common.errors import ReportGenerationError
 from klave_engine.common.io import read_json, write_json, write_text
 from klave_engine.common.logging import get_logger, log_stage
-from klave_engine.costing.catalog_store import get_catalog_store
+from klave_engine.costing.catalog_store import CatalogStore, get_catalog_store
 from klave_engine.costing.insumos import apply_price_overrides
 from klave_engine.costing.models import CostingOverrides, CostReport
 from klave_engine.costing.report import (
@@ -97,10 +97,11 @@ def build_cost_report(
     inputs: CostingInputs,
     overrides: CostingOverrides,
     reviews: ProjectReviews | None = None,
+    store: CatalogStore | None = None,
 ) -> CostReport:
-    """Costing from persisted inputs: workspace catalog, project overrides,
+    """Costing from persisted inputs: the taller's catalog, project overrides,
     and human corrections (excluded detections + manual adjustments)."""
-    store = get_catalog_store(get_settings().data_dir)
+    store = store or get_catalog_store(get_settings().data_dir)
     price_book = apply_price_overrides(store.load_price_book(), overrides.insumo_prices)
     detections = (
         filter_excluded(inputs.detections, reviews) if reviews else inputs.detections
@@ -134,10 +135,13 @@ def recompute_and_persist(
     reports_dir: Path,
     project_id: str,
     overrides: CostingOverrides,
+    catalog_store: CatalogStore | None = None,
 ) -> CostReport:
     """Recompute costs from an immutable run and persist a derived scenario."""
     inputs = load_costing_inputs(input_dir, project_id)
-    report = build_cost_report(inputs, overrides, reviews=load_reviews(control_dir))
+    report = build_cost_report(
+        inputs, overrides, reviews=load_reviews(control_dir), store=catalog_store
+    )
 
     write_json(control_dir / COST_REPORT_OVERRIDE_FILENAME, report)
     save_overrides(control_dir, overrides)

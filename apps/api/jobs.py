@@ -154,11 +154,14 @@ class JobStore:
         run_dir = control_dir / RUNS_DIR_NAME / job.run_id
         try:
             run_dir.mkdir(parents=True, exist_ok=False)
+            from apps.api.tenancy import store_for_project
+
             result = run_full_pipeline(
                 root,
                 settings,
                 artifact_dir=run_dir,
                 reports_dir=run_dir / "reports",
+                catalog_store=store_for_project(settings, project_id),
             )
             # The presupuesto as it stood becomes an automatic version, so the
             # engineer can compare this corrida with the last one line by line.

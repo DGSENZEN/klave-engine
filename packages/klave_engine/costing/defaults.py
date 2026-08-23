@@ -26,6 +26,11 @@ class WorkspaceDefaults(BaseModel):
 
 
 def defaults_path(data_dir: Path) -> Path:
+    """``<data_dir>/taller_defaults.json`` in open mode; per-workspace scopes
+    pass ``data/catalogs/<workspace_id>`` and get ``…<workspace_id>-defaults.json``
+    (a sibling of the taller's catalog file)."""
+    if data_dir.name and data_dir.parent.name == "catalogs":
+        return data_dir.parent / f"{data_dir.name}-defaults.json"
     return data_dir / DEFAULTS_FILENAME
 
 

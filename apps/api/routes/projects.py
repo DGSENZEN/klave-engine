@@ -19,6 +19,7 @@ from apps.api.auth.store import UsersDbUnavailable, get_user_store
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
 from apps.api.jobs import JOB_STORE, JobQueueFullError
+from apps.api.tenancy import defaults_scope, request_workspace_id
 
 router = APIRouter(prefix="/projects")
 
@@ -203,7 +204,10 @@ def create_project(
     )
     store.register(manifest.project_id, root)
     _grant_owner(request, settings, manifest.project_id)
-    apply_workspace_defaults(settings.data_dir, root / settings.processed_dir_name)
+    apply_workspace_defaults(
+        defaults_scope(settings, request_workspace_id(request)),
+        root / settings.processed_dir_name,
+    )
     BUS.publish(
         "project_created",
         project_id=manifest.project_id,
@@ -333,7 +337,10 @@ async def upload_project(
 
     store.register(project_id, root)
     _grant_owner(request, settings, project_id)
-    apply_workspace_defaults(settings.data_dir, root / settings.processed_dir_name)
+    apply_workspace_defaults(
+        defaults_scope(settings, request_workspace_id(request)),
+        root / settings.processed_dir_name,
+    )
     BUS.publish(
         "project_created",
         project_id=project_id,

@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from klave_engine.common.config import Settings
 from klave_engine.common.io import read_json
 from klave_engine.common.version import engine_fingerprint
-from klave_engine.costing.catalog_store import get_catalog_store
 from klave_engine.costing.defaults import (
     clear_workspace_defaults,
     load_workspace_defaults,
@@ -25,6 +24,7 @@ from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
 from apps.api.jobs import JOB_STORE
 from apps.api.routes.projects import visible_project_filter
+from apps.api.tenancy import defaults_scope, request_workspace_id, store_for_request
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 
@@ -178,7 +178,7 @@ def overview(
 
     stale = 0
     try:
-        for row in get_catalog_store(settings.data_dir).list_insumos():
+        for row in store_for_request(settings, request).list_insumos():
             if freshness(row.get("vigencia")) != "vigente":
                 stale += 1
     except Exception:
@@ -210,8 +210,9 @@ class DefaultsInput(BaseModel):
     config: CostingConfig
 
 
-def _defaults_payload(settings: Settings) -> dict:
-    defaults = load_workspace_defaults(settings.data_dir)
+def _defaults_payload(settings: Settings, request: Request | None = None) -> dict:
+    scope = defaults_scope(settings, request_workspace_id(request))
+    defaults = load_workspace_defaults(scope)
     return {
         "config": (defaults.config if defaults else CostingConfig()).model_dump(mode="json"),
         "customized": defaults is not None,
@@ -223,8 +224,8 @@ def _defaults_payload(settings: Settings) -> dict:
 
 
 @router.get("/defaults")
-def get_defaults(settings: Settings = Depends(get_settings)) -> dict:
-    return _defaults_payload(settings)
+def get_defaults(request: Request, settings: Settings = Depends(get_settings)) -> dict:
+    return _defaults_payload(settings, request)
 
 
 @router.put("/defaults")
@@ -236,7 +237,9 @@ def put_defaults(
 ) -> dict:
     user = _require_admin_if_protected(request)
     actor = user["name"] if user else clean_actor(x_actor)
-    save_workspace_defaults(settings.data_dir, body.config, actor)
+    save_workspace_defaults(
+        defaults_scope(settings, request_workspace_id(request)), body.config, actor
+    )
     if user is not None:
         try:
             get_user_store(settings.users_database_url).record_audit(
@@ -245,8 +248,11 @@ def put_defaults(
             )
         except UsersDbUnavailable:
             pass
-    BUS.publish("workspace_defaults_updated", actor=actor, data={})
-    return _defaults_payload(settings)
+    BUS.publish(
+        "workspace_defaults_updated", actor=actor, data={},
+        workspace_id=request_workspace_id(request),
+    )
+    return _defaults_payload(settings, request)
 
 
 @router.delete("/defaults")
@@ -256,13 +262,14 @@ def delete_defaults(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     user = _require_admin_if_protected(request)
-    clear_workspace_defaults(settings.data_dir)
+    clear_workspace_defaults(defaults_scope(settings, request_workspace_id(request)))
     BUS.publish(
         "workspace_defaults_updated",
         actor=user["name"] if user else clean_actor(x_actor),
         data={"reset": True},
+        workspace_id=request_workspace_id(request),
     )
-    return _defaults_payload(settings)
+    return _defaults_payload(settings, request)
 
 
 # ------------------------------------------------------------------- name

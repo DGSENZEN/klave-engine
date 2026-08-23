@@ -11,7 +11,7 @@ import io
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, UploadFile
 from klave_engine.common.config import Settings
 from klave_engine.common.errors import ReportGenerationError
 from klave_engine.costing.apu import build_all_apus
@@ -22,7 +22,7 @@ from klave_engine.costing.catalog_services import (
     import_plantilla,
     labor_state,
 )
-from klave_engine.costing.catalog_store import CatalogStore, UnitMismatch, get_catalog_store
+from klave_engine.costing.catalog_store import CatalogStore, UnitMismatch
 from klave_engine.costing.descripciones import long_description
 from klave_engine.costing.equipment import EquipmentParameters, compute_costo_horario
 from klave_engine.costing.exports import build_cotizacion_workbook
@@ -55,14 +55,16 @@ from pydantic import BaseModel, Field
 
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
+from apps.api.tenancy import store_for_project, store_for_request
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 
 MAX_IMPORT_BYTES = 1_000_000
 
 
-def get_catalog(settings: Settings = Depends(get_settings)) -> CatalogStore:
-    return get_catalog_store(settings.data_dir)
+def get_catalog(request: Request, settings: Settings = Depends(get_settings)) -> CatalogStore:
+    """The signed-in taller's own catálogo; the shared one only in open mode."""
+    return store_for_request(settings, request)
 
 
 class InsumoUpdate(BaseModel):
@@ -115,11 +117,15 @@ class RendimientoUpdate(BaseModel):
     production_rate_per_day: float = Field(gt=0)
 
 
-def _publish_catalog_updated(actor: str | None, action: str, detail: str) -> None:
+def _publish_catalog_updated(
+    actor: str | None, action: str, detail: str, catalog: CatalogStore | None = None
+) -> None:
     BUS.publish(
         "catalog_updated",
         actor=clean_actor(actor),
         data={"action": action, "detail": detail},
+        # The event stays inside the taller whose catálogo changed.
+        workspace_id=getattr(catalog, "workspace_id", None),
     )
 
 
@@ -181,7 +187,7 @@ def create_insumo(
         raise HTTPException(
             status_code=422, detail={"error_type": "invalid_insumo", "message": str(exc)}
         ) from exc
-    _publish_catalog_updated(x_actor, "insumo_created", body.code)
+    _publish_catalog_updated(x_actor, "insumo_created", body.code, catalog=catalog)
     return row
 
 
@@ -212,7 +218,7 @@ def update_insumo(
         raise HTTPException(
             status_code=422, detail={"error_type": "invalid_insumo", "message": str(exc)}
         ) from exc
-    _publish_catalog_updated(x_actor, "insumo_updated", code)
+    _publish_catalog_updated(x_actor, "insumo_updated", code, catalog=catalog)
     return row
 
 
@@ -238,7 +244,7 @@ def update_apu(
         raise HTTPException(
             status_code=422, detail={"error_type": "invalid_apu", "message": str(exc)}
         ) from exc
-    _publish_catalog_updated(x_actor, "apu_updated", concept_code)
+    _publish_catalog_updated(x_actor, "apu_updated", concept_code, catalog=catalog)
     return {"concept_code": concept_code, "components": len(body.components)}
 
 
@@ -256,7 +262,7 @@ def update_rendimiento(
             detail={"error_type": "concept_not_found", "code": concept_code},
         )
     catalog.set_rendimiento(concept_code, body.production_rate_per_day)
-    _publish_catalog_updated(x_actor, "rendimiento_updated", concept_code)
+    _publish_catalog_updated(x_actor, "rendimiento_updated", concept_code, catalog=catalog)
     return {
         "concept_code": concept_code,
         "production_rate_per_day": body.production_rate_per_day,
@@ -282,7 +288,7 @@ def create_concept(
         raise HTTPException(
             status_code=422, detail={"error_type": "invalid_concept", "message": str(exc)}
         ) from exc
-    _publish_catalog_updated(x_actor, "concept_created", body.code.upper())
+    _publish_catalog_updated(x_actor, "concept_created", body.code.upper(), catalog=catalog)
     return row
 
 
@@ -307,7 +313,7 @@ def update_concept(
             status_code=404 if "no existe" in str(exc) else 422,
             detail={"error_type": "invalid_concept", "message": str(exc)},
         ) from exc
-    _publish_catalog_updated(x_actor, "concept_updated", concept_code)
+    _publish_catalog_updated(x_actor, "concept_updated", concept_code, catalog=catalog)
     return row
 
 
@@ -358,7 +364,9 @@ async def import_prices(
             },
         )
     result = catalog.import_prices(rows, source=source.strip() or "Importación CSV")
-    _publish_catalog_updated(x_actor, "prices_imported", f"{result['updated']} precios")
+    _publish_catalog_updated(
+        x_actor, "prices_imported", f"{result['updated']} precios", catalog=catalog
+    )
     return result
 
 
@@ -488,7 +496,9 @@ async def import_custom_source(
         rows,
         sha256=hashlib.sha256(raw).hexdigest(),
     )
-    _publish_catalog_updated(x_actor, "reference_imported", f"{title}: {count} renglones")
+    _publish_catalog_updated(
+        x_actor, "reference_imported", f"{title}: {count} renglones", catalog=catalog
+    )
     return {"source_key": key, "rows": count, "name": title}
 
 
@@ -518,7 +528,7 @@ async def import_matrices(
     _publish_catalog_updated(
         x_actor, "matrices_imported",
         f"{label}: {result['concepts_created']} nuevos, {result['concepts_updated']} actualizados",
-    )
+     catalog=catalog)
     return result
 
 
@@ -553,7 +563,9 @@ def import_reference_source(
         spec.parser(path),
         sha256=manifest.get("sha256"),
     )
-    _publish_catalog_updated(x_actor, "reference_imported", f"{spec.name}: {count} renglones")
+    _publish_catalog_updated(
+        x_actor, "reference_imported", f"{spec.name}: {count} renglones", catalog=catalog
+    )
     return {"source_key": source_key, "rows": count}
 
 
@@ -644,7 +656,9 @@ def put_indices(
     catalog: CatalogStore = Depends(get_catalog),
 ) -> dict:
     saved = catalog.save_indices(body.source, body.values)
-    _publish_catalog_updated(x_actor, "indices_saved", f"{len(saved['values'])} meses")
+    _publish_catalog_updated(
+        x_actor, "indices_saved", f"{len(saved['values'])} meses", catalog=catalog
+    )
     return saved
 
 
@@ -701,7 +715,9 @@ def roll_forward(
             "to": new_cost, "factor": factor, "vigencia_from": age.vigencia[:7],
         })
     if not body.dry_run:
-        _publish_catalog_updated(x_actor, "prices_rolled_forward", f"{len(updated)} insumos")
+        _publish_catalog_updated(
+            x_actor, "prices_rolled_forward", f"{len(updated)} insumos", catalog=catalog
+        )
     return {
         "updated": updated, "skipped": skipped, "to_month": to_month, "dry_run": body.dry_run,
     }
@@ -765,7 +781,7 @@ async def create_plantilla(
     _publish_catalog_updated(
         x_actor, "plantilla_imported",
         f"{label}: {result['rules']} reglas, {result['concepts_created']} conceptos nuevos",
-    )
+     catalog=catalog)
     return result
 
 
@@ -777,7 +793,7 @@ def delete_plantilla(
 ) -> dict:
     if not catalog.delete_plantilla(key):
         raise HTTPException(status_code=404, detail={"error_type": "plantilla_not_found"})
-    _publish_catalog_updated(x_actor, "plantilla_deleted", key)
+    _publish_catalog_updated(x_actor, "plantilla_deleted", key, catalog=catalog)
     return {"deleted": key}
 
 
@@ -797,7 +813,7 @@ def add_parametric_rule(
         raise HTTPException(
             status_code=422, detail={"error_type": "invalid_rule", "message": str(exc)}
         ) from exc
-    _publish_catalog_updated(x_actor, "parametric_added", body.concept_code)
+    _publish_catalog_updated(x_actor, "parametric_added", body.concept_code, catalog=catalog)
     return rule
 
 
@@ -816,7 +832,7 @@ def update_parametric_rule(
         raise HTTPException(
             status_code=404, detail={"error_type": "rule_not_found", "message": str(exc)}
         ) from exc
-    _publish_catalog_updated(x_actor, "parametric_updated", str(rule_id))
+    _publish_catalog_updated(x_actor, "parametric_updated", str(rule_id), catalog=catalog)
     return rule
 
 
@@ -828,7 +844,7 @@ def delete_parametric_rule(
 ) -> dict:
     if not catalog.delete_parametric_rule(rule_id):
         raise HTTPException(status_code=404, detail={"error_type": "rule_not_found"})
-    _publish_catalog_updated(x_actor, "parametric_deleted", str(rule_id))
+    _publish_catalog_updated(x_actor, "parametric_deleted", str(rule_id), catalog=catalog)
     return {"deleted": rule_id}
 
 
@@ -965,6 +981,7 @@ def _recompute_project(
         report = recompute_and_persist(
             store.artifact_root(project_id), control_dir, root / "reports", project_id,
             overrides,
+            catalog_store=store_for_project(settings, project_id),
         )
     except ReportGenerationError:
         return
@@ -1027,7 +1044,9 @@ def set_alias(
 ) -> dict:
     actor = clean_actor(x_actor) or ""
     alias = _set_alias(catalog, body, actor, body.project_id)
-    _publish_catalog_updated(x_actor, "alias_set", f"{body.concept_code} → {alias['clave']}")
+    _publish_catalog_updated(
+        x_actor, "alias_set", f"{body.concept_code} → {alias['clave']}", catalog=catalog
+    )
     _recompute_project(store, settings, body.project_id, actor)
     return alias
 
@@ -1042,7 +1061,9 @@ def set_aliases_bulk(
 ) -> dict:
     actor = clean_actor(x_actor) or ""
     saved = [_set_alias(catalog, item, actor, body.project_id) for item in body.items]
-    _publish_catalog_updated(x_actor, "aliases_set", f"{len(saved)} conceptos del taller")
+    _publish_catalog_updated(
+        x_actor, "aliases_set", f"{len(saved)} conceptos del taller", catalog=catalog
+    )
     _recompute_project(store, settings, body.project_id, actor)
     return {"aliases": saved}
 
@@ -1059,7 +1080,7 @@ def clear_alias(
     if not catalog.clear_concept_alias(code.upper()):
         raise HTTPException(status_code=404, detail={"error_type": "alias_not_found"})
     actor = clean_actor(x_actor) or ""
-    _publish_catalog_updated(x_actor, "alias_cleared", code)
+    _publish_catalog_updated(x_actor, "alias_cleared", code, catalog=catalog)
     _recompute_project(store, settings, project_id, actor)
     return {"cleared": code.upper()}
 
@@ -1094,7 +1115,7 @@ def adopt_reference_price(
         raise HTTPException(
             status_code=404, detail={"error_type": "reference_not_found", "message": str(exc)}
         ) from exc
-    _publish_catalog_updated(x_actor, "insumo_updated", code)
+    _publish_catalog_updated(x_actor, "insumo_updated", code, catalog=catalog)
     return row
 
 
@@ -1116,7 +1137,7 @@ def adopt_concept_price(
         raise HTTPException(
             status_code=404, detail={"error_type": "not_found", "message": str(exc)}
         ) from exc
-    _publish_catalog_updated(x_actor, "concept_updated", code)
+    _publish_catalog_updated(x_actor, "concept_updated", code, catalog=catalog)
     return row
 
 
@@ -1132,7 +1153,7 @@ def clear_concept_price(
         raise HTTPException(
             status_code=404, detail={"error_type": "concept_not_found", "message": str(exc)}
         ) from exc
-    _publish_catalog_updated(x_actor, "concept_updated", code)
+    _publish_catalog_updated(x_actor, "concept_updated", code, catalog=catalog)
     return row
 
 
@@ -1166,7 +1187,7 @@ def add_inventory_mapping(
         ) from exc
     _publish_catalog_updated(
         x_actor, "inventory_mapping", f"{body.pattern} → {body.concept_code}"
-    )
+    , catalog=catalog)
     return row
 
 
@@ -1178,7 +1199,9 @@ def delete_inventory_mapping(
 ) -> dict:
     if not catalog.delete_inventory_mapping(mapping_id):
         raise HTTPException(status_code=404, detail={"error_type": "mapping_not_found"})
-    _publish_catalog_updated(x_actor, "inventory_mapping", f"#{mapping_id} eliminada")
+    _publish_catalog_updated(
+        x_actor, "inventory_mapping", f"#{mapping_id} eliminada", catalog=catalog
+    )
     return {"deleted": mapping_id}
 
 
@@ -1212,7 +1235,7 @@ def apply_labor_preset(
     ]
     params, categories = apply_preset(params, categories, preset)
     applied = apply_labor(catalog, params, categories)
-    _publish_catalog_updated(x_actor, "labor_preset_applied", preset.label)
+    _publish_catalog_updated(x_actor, "labor_preset_applied", preset.label, catalog=catalog)
     return {"preset": preset.model_dump(), "applied": applied, **labor_state(catalog)}
 
 
@@ -1243,7 +1266,9 @@ def put_labor(
     catalog: CatalogStore = Depends(get_catalog),
 ) -> dict:
     applied = apply_labor(catalog, body.params, body.categories)
-    _publish_catalog_updated(x_actor, "labor_applied", f"{len(applied)} categorías")
+    _publish_catalog_updated(
+        x_actor, "labor_applied", f"{len(applied)} categorías", catalog=catalog
+    )
     return {"applied": applied, **labor_state(catalog)}
 
 
@@ -1270,5 +1295,5 @@ def put_equipment(
         raise HTTPException(
             status_code=422, detail={"error_type": "invalid_insumo", "message": str(exc)}
         ) from exc
-    _publish_catalog_updated(x_actor, "insumo_updated", code)
+    _publish_catalog_updated(x_actor, "insumo_updated", code, catalog=catalog)
     return row

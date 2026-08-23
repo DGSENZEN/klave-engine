@@ -31,6 +31,7 @@ from apps.api.dependencies import (
 )
 from apps.api.events import BUS, clean_actor, clean_client_id
 from apps.api.jobs import JOB_STORE, JobQueueFullError
+from apps.api.tenancy import store_for_project
 
 router = APIRouter(prefix="/projects")
 
@@ -109,6 +110,7 @@ def _recompute_after_review(
             root / "reports",
             project_id,
             overrides,
+            catalog_store=store_for_project(settings, project_id),
         )
     except ReportGenerationError:
         return  # Not processed yet: the review is saved and applies later.

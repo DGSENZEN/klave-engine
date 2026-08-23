@@ -18,7 +18,7 @@ from klave_engine.common.io import read_json, write_json, write_text
 from klave_engine.common.logging import configure_logging, get_logger, log_stage
 from klave_engine.common.version import engine_stamp
 from klave_engine.conversion.dwg_to_dxf import ConversionResult, convert_project
-from klave_engine.costing.catalog_store import get_catalog_store
+from klave_engine.costing.catalog_store import CatalogStore, get_catalog_store
 from klave_engine.costing.insumos import apply_price_overrides
 from klave_engine.costing.models import CostingConfig, CostReport
 from klave_engine.costing.recompute import load_overrides
@@ -200,6 +200,7 @@ def run_full_pipeline(
     project_name: str | None = None,
     artifact_dir: Path | None = None,
     reports_dir: Path | None = None,
+    catalog_store: CatalogStore | None = None,
 ) -> PipelineResult:
     settings = settings or get_settings()
     configure_logging(settings.log_level)
@@ -454,7 +455,7 @@ def run_full_pipeline(
     )
 
     # Reapply any user costing edits so they survive a full reprocess.
-    catalog_store = get_catalog_store(settings.data_dir)
+    catalog_store = catalog_store or get_catalog_store(settings.data_dir)
     overrides = load_overrides(control_dir)
     if overrides is not None:
         costing_config = overrides.config

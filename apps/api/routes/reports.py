@@ -3,7 +3,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from klave_engine.common.config import Settings
-from klave_engine.costing.catalog_store import get_catalog_store
 from klave_engine.costing.models import CostingConfig, CostingOverrides
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
 
@@ -15,6 +14,7 @@ from apps.api.dependencies import (
 )
 from apps.api.events import BUS, clean_actor, clean_client_id
 from apps.api.jobs import ACTIVE_STATES, JOB_STORE
+from apps.api.tenancy import store_for_project
 
 router = APIRouter(prefix="/projects")
 
@@ -50,7 +50,7 @@ def get_costing_config(
     overrides = load_overrides(processed)
     config = overrides.config if overrides else CostingConfig()
     prices = overrides.insumo_prices if overrides else {}
-    catalog_book = get_catalog_store(settings.data_dir).load_price_book()
+    catalog_book = store_for_project(settings, project_id).load_price_book()
     insumos = [
         {**resource.model_dump(mode="json"), "unit_cost": prices.get(code, resource.unit_cost)}
         for code, resource in catalog_book.items()
@@ -131,6 +131,7 @@ def recompute(
             root / "reports",
             project_id,
             overrides,
+            catalog_store=store_for_project(settings, project_id),
         )
     BUS.publish(
         "costing_updated",
