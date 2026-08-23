@@ -195,6 +195,14 @@ RESOURCES.update(
                 resource_type=ResourceType.equipment,
             ),
             Resource(
+                code="EQ-PERFORADORA",
+                description="Perforadora rotatoria para pilotes Ø60–120 cm, costo horario "
+                "(referencia SICT)",
+                unit="HORA",
+                unit_cost=2850.0,
+                resource_type=ResourceType.equipment,
+            ),
+            Resource(
                 code="MAT-AGUA",
                 description="Agua para obra",
                 unit="M3",
@@ -351,6 +359,17 @@ APU_TEMPLATES: dict[str, list[tuple[str, float]]] = {
     "CIM-003": [
         ("MAT-CONC150", 0.055),
         ("MO-CUAD-ALB", 0.060),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+    # M pilote colado en sitio Ø60 cm: perforación, armado (≈ 25 kg/m) y
+    # concreto (0.283 m³/m + desperdicio por perforación); la longitud viene
+    # de las notas, el cuadro o la lectura con IA
+    "CIM-011": [
+        ("MAT-CONC250", 0.34),
+        ("MAT-ACERO", 0.025),
+        ("MO-CUAD-ALB", 0.10),
+        ("MO-CUAD-FIE", 0.08),
+        ("EQ-PERFORADORA", 0.25),
         ("EQ-HERRAMIENTA", 1.0),
     ],
     # M3 losa de cimentación: concreto con desperdicio; acero por detalle

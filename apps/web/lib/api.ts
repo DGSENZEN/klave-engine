@@ -291,6 +291,8 @@ export type BoqLine = {
   taller_clave?: string;
   /** A parametric proposal from the taller's history, not a plan reading. */
   parametric?: boolean;
+  /** No matrix nor adopted P.U.: the quantity is real, the amount is unknown (shown as sin precio, never $0). */
+  unpriced?: boolean;
 };
 
 export type ApuLine = {

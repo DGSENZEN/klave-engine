@@ -54,7 +54,7 @@ def test_plantilla_is_its_own_line_from_the_footing_plan_area():
 
 def test_v13_migration_replaces_seed_matrices_but_keeps_edited_ones(tmp_path):
     db = tmp_path / "catalog.db"
-    CatalogStore(db)  # seeds v13 directly
+    CatalogStore(db)  # seeds the current schema directly
     with sqlite3.connect(db) as conn:
         # Pretend the taller still has the v12 seed in EST-001 and an edited CIM-002.
         conn.execute("DELETE FROM apu_components WHERE concept_code IN ('EST-001', 'CIM-002')")
@@ -65,7 +65,7 @@ def test_v13_migration_replaces_seed_matrices_but_keeps_edited_ones(tmp_path):
                ("CIM-002", "MO-CUAD-ALB", 0.40)],
         )
         conn.execute("UPDATE meta SET value = '12' WHERE key = 'schema_version'")
-    CatalogStore(db)  # opening migrates to v13
+    CatalogStore(db)  # opening migrates through v13
     with sqlite3.connect(db) as conn:
         est = {r for (r,) in conn.execute(
             "SELECT resource_code FROM apu_components WHERE concept_code = 'EST-001'"
@@ -76,4 +76,4 @@ def test_v13_migration_replaces_seed_matrices_but_keeps_edited_ones(tmp_path):
         version = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
     assert not est & set(DOUBLE_COUNTED_RESOURCES)          # seed replaced
     assert "MAT-ACERO" in cim and "MAT-CONC250" in cim      # edited matrix untouched
-    assert version[0] == "13"
+    assert int(version[0]) >= 13

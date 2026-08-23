@@ -145,6 +145,7 @@ export default function PresupuestoPage() {
   }
 
   const parametricCount = costs.boq.lines.filter((l) => l.parametric).length;
+  const unpriced = costs.boq.lines.filter((l) => l.unpriced);
   const conceptCodes = new Set(costs.boq.lines.map((l) => l.concept_code));
   const avgConf =
     costs.boq.lines.reduce((s, l) => s + l.confidence, 0) / (costs.boq.lines.length || 1);
@@ -259,6 +260,25 @@ export default function PresupuestoPage() {
       )}
       <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
       <SuggestionsBar projectId={id} actorName={actorName} conceptCodes={conceptCodes} />
+      {unpriced.length > 0 && (
+        <div className="mb-4">
+          <Callout
+            tone="danger"
+            action={
+              <Link href="/catalogo?tab=conceptos" className={buttonClasses("secondary", "sm")}>
+                Dar precio en el catálogo
+              </Link>
+            }
+          >
+            {unpriced.length === 1
+              ? `${unpriced[0].concept_code} tiene cantidad pero no precio: el costo directo no lo incluye.`
+              : `${unpriced.length} conceptos tienen cantidad pero no precio (${unpriced
+                  .slice(0, 4)
+                  .map((l) => l.concept_code)
+                  .join(", ")}${unpriced.length > 4 ? "…" : ""}): el costo directo no los incluye.`}
+          </Callout>
+        </div>
+      )}
       {parametricCount > 0 && (
         <div className="mb-4">
           <Callout tone="info">
@@ -508,6 +528,13 @@ function PhaseGroup({
                     <Badge tone="warning">paramétrico</Badge>
                   </span>
                 )}
+                {l.unpriced && (
+                  <span className="ml-1.5 align-middle">
+                    <Badge tone="danger" dot title="Sin matriz ni precio adoptado: el importe no es cero, es desconocido">
+                      sin precio
+                    </Badge>
+                  </span>
+                )}
                 {levels.length > 1 && (
                   <div className="mt-1 flex flex-wrap gap-1.5">
                     {levels.map(([title, qty]) => (
@@ -550,10 +577,10 @@ function PhaseGroup({
                 }
               </Td>
               <Td align="right" className="tabular text-muted">
-                {money2(l.unit_price)}
+                {l.unpriced ? <span className="text-danger">sin precio</span> : money2(l.unit_price)}
               </Td>
               <Td align="right" className="font-medium tabular">
-                {money2(l.amount)}
+                {l.unpriced ? <span className="text-danger">—</span> : money2(l.amount)}
               </Td>
               <Td align="center">
                 <ConfidenceBadge value={l.confidence} />

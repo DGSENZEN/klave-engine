@@ -60,6 +60,8 @@ class ElementSpec(BaseModel):
     rebar: str | None = None  # longitudinal, e.g. "4#3"
     stirrups: str | None = None  # e.g. "#2@20"
     mesh: str | None = None  # parrilla / malla, e.g. "#4@20" (no E)
+    # Declared length in m (pilotes): from the notes, the cuadro or the AI.
+    length_m: float | None = None
     source: Source
     source_text: str
     confidence: float
@@ -72,6 +74,8 @@ class ScheduleInventory(BaseModel):
     # Declared concrete strengths by element family (kg/cm²), from notes
     # such as "RESISTENCIA EN CASTILLOS ___ F'C=200 Kg/Cm²".
     concrete_fc: dict[str, int] = Field(default_factory=dict)
+    # Pile length declared in the notes ("PILOTES DE 12.00 M DE LONGITUD"), m.
+    pile_length_m: float | None = None
     tables_found: int = 0
     notes: list[str] = Field(default_factory=list)
     # Text entities that are the marks of a cuadro drawn on a planta sheet:
@@ -110,6 +114,35 @@ def parse_concrete_fc(texts: list[str]) -> dict[str, int]:
                 if pattern.search(head) and family not in declared:
                     declared[family] = value
     return declared
+
+
+# A note that states the pile length: "PILOTES DE 12.00 M DE LONGITUD",
+# "LONGITUD DE PILOTE: 12 M", "PILOTE Ø60 L=12.00 M", "PILAS DE 15 M".
+_PILE_LENGTH_RES = (
+    re.compile(
+        r"PIL(?:OTE|A)S?\b[^\n]{0,60}?(?<!\d)(\d{1,2}(?:[.,]\d{1,2})?)\s*(?:M|MTS?|METROS)\b",
+        re.I,
+    ),
+    re.compile(
+        r"LONG(?:ITUD|\.)?\s*(?:DE\s+)?PIL(?:OTE|A)S?[^\d\n]{0,12}(\d{1,2}(?:[.,]\d{1,2})?)(?!\d)",
+        re.I,
+    ),
+)
+
+
+def parse_pile_length(texts: list[str]) -> float | None:
+    """Pile length in m from the sheet's notes; the first plausible one wins
+    (3–60 m). Never a guess: None when nothing is declared."""
+    for text in texts:
+        for line in text.replace("\\P", "\n").splitlines():
+            for pattern in _PILE_LENGTH_RES:
+                match = pattern.search(line)
+                if not match:
+                    continue
+                value = float(match.group(1).replace(",", "."))
+                if 3.0 <= value <= 60.0:
+                    return value
+    return None
 
 
 # ------------------------------------------------------------------ parsing
@@ -664,6 +697,7 @@ def build_schedule_inventory(
         specs=specs,
         tables_found=tables,
         concrete_fc=parse_concrete_fc([t.text or "" for t in texts]),
+        pile_length_m=parse_pile_length([t.text or "" for t in texts]),
         cuadro_mark_entities=inventory_cuadro_marks,
     )
 
@@ -704,6 +738,8 @@ def build_schedule_inventory(
             + ", ".join(f"{k} f'c={v}" for k, v in inventory.concrete_fc.items())
             + "."
         )
+    if inventory.pile_length_m is not None:
+        inventory.notes.append(f"Longitud de pilote declarada: {inventory.pile_length_m:g} m.")
     if not inventory.specs:
         inventory.notes.append("El plano no declara secciones ni armados por marca.")
     return inventory
@@ -736,6 +772,9 @@ def merge_external_specs(inventory: ScheduleInventory, specs: list[dict]) -> int
             filled = True
         if current.stirrups is None and spec.stirrups:
             current.stirrups = spec.stirrups
+            filled = True
+        if current.length_m is None and spec.length_m:
+            current.length_m = spec.length_m
             filled = True
         if filled:
             current.source_text = f"{current.source_text} + {spec.source_text}"[:120]

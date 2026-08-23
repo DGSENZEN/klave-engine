@@ -502,12 +502,13 @@ def generate_bill_of_quantities(
 
         apu = apus.get(concept.code)
         if apu is None:
+            # The quantity is real; the money is unknown, not zero. The line
+            # stays on the presupuesto marked unpriced so nobody misses it.
             boq.warnings.append(
                 f"Concepto {concept.code} ({concept.description[:40]}…): {result.quantity:,.2f} "
                 f"{concept.unit} contados, sin matriz ni precio adoptado — sin costo hasta que "
                 "el catálogo le dé precio."
             )
-            continue
         contributing = result.dets
         confidence = (
             sum(d.confidence for d in contributing) / len(contributing)
@@ -520,8 +521,9 @@ def generate_bill_of_quantities(
                 description=concept.description,
                 unit=concept.unit,
                 quantity=result.quantity,
-                unit_price=apu.direct_unit_cost,
-                amount=round(result.quantity * apu.direct_unit_cost, 2),
+                unit_price=apu.direct_unit_cost if apu else 0.0,
+                amount=round(result.quantity * apu.direct_unit_cost, 2) if apu else 0.0,
+                unpriced=apu is None,
                 phase=concept.phase,
                 raw_quantity=round(result.raw, 3),
                 raw_kind=concept.rule.kind,
@@ -532,7 +534,7 @@ def generate_bill_of_quantities(
                     a for a in concept.assumptions
                     if not any(fragment in a for fragment in result.supersedes)
                 ] + result.notes + (
-                    [f"P.U. adoptado de {apu.price_source}"] if apu.price_source else []
+                    [f"P.U. adoptado de {apu.price_source}"] if apu and apu.price_source else []
                 ),
                 by_view=result.by_view if len(result.by_view) > 1 else {},
                 taller_clave=concept.taller_clave,

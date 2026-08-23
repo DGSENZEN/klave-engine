@@ -154,18 +154,32 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
         ),
         Concept(
             code="CIM-010",
-            description="Pilote de concreto colado en sitio (longitud según proyecto)",
+            description="Pilote de concreto colado en sitio (pieza, longitud según proyecto)",
             unit="PZA",
             phase="Cimentación",
             rule=QuantityRule(detection_type=DetectionType.pile, kind=QuantityKind.COUNT),
             quantity_factor=1.0,
             view_scope=ViewScope.FOUNDATION_ONLY,
             assumptions=[
-                "Pilotes contados por marca en la planta de cimentación; diámetro del círculo, "
-                "longitud por notas/detalle. Precio por pieza a adoptar del catálogo."
+                "Pilotes contados por marca en la planta de cimentación. Sin longitud "
+                "declarada la línea queda sin precio; con longitud se cuantifica en metros "
+                "(CIM-011)."
             ],
             production_rate_per_day=3.0,
             sequence_order=0,
+        ),
+        Concept(
+            code="CIM-011",
+            description="Pilote de concreto colado en sitio Ø60 cm f'c=250 kg/cm², por metro",
+            unit="M",
+            phase="Cimentación",
+            rule=None,
+            production_rate_per_day=24.0,
+            sequence_order=0,
+            assumptions=[
+                "Pilotes contados por marca × longitud declarada (notas, cuadro o lectura con "
+                "IA); sección de referencia Ø60 cm"
+            ],
         ),
         Concept(
             code="CIM-008",

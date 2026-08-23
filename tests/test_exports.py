@@ -103,3 +103,25 @@ def test_apus_workbook_stands_alone(data_dir):
     titles = [c.value for c in ws["A"] if isinstance(c.value, str) and " — " in c.value]
     assert len(titles) == len(report.apus) and titles[0].startswith(report.apus[0].concept_code)
     assert any(c.value == "CD unitario" for row in ws.iter_rows() for c in row)
+
+
+def test_unpriced_lines_say_so_in_every_layout(data_dir):
+    from klave_engine.costing.exports import UNPRICED
+    from klave_engine.costing.models import BoqLine, QuantityKind
+
+    report, reviews = _report(data_dir)
+    report.boq.lines.append(BoqLine(
+        concept_code="CIM-010", description="Pilotes (pieza)", unit="PZA", quantity=4.0,
+        unit_price=0.0, amount=0.0, unpriced=True, phase="Cimentación", raw_quantity=4.0,
+        raw_kind=QuantityKind.COUNT, source_detection_count=4, confidence=0.85,
+    ))
+    report.boq.totals_by_phase.setdefault("Cimentación", 0.0)
+    for fmt in ("klave", "opus", "licitacion"):
+        content = build_presupuesto_workbook(
+            report, _detections(), reviews, "Torre Test", "Cliente SA", fmt=fmt
+        )
+        workbook = load_workbook(io.BytesIO(content))
+        cells = [
+            c.value for ws in workbook.worksheets for row in ws.iter_rows() for c in row
+        ]
+        assert UNPRICED in cells, fmt

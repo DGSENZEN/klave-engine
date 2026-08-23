@@ -32,6 +32,7 @@ from klave_engine.costing.models import (
     UnitPriceAnalysis,
 )
 from klave_engine.costing.parametrics import apply_parametrics, compute_basis
+from klave_engine.costing.piles import apply_piles
 from klave_engine.costing.reviews import ManualAdjustment
 from klave_engine.costing.schedule import build_schedule
 from klave_engine.costing.steel import SteelAssumptions, apply_steel, compute_steel
@@ -233,6 +234,8 @@ def generate_cost_report(
         segmentation=segmentation,
     )
     apply_formwork(boq, catalog, apus, formwork)
+    # Pilotes: the count becomes metres when the plano declares the length.
+    apply_piles(boq, catalog, apus, detections, schedule_specs)
     # Levantamiento: symbols and layers the taller mapped to concepts.
     apply_inventory(boq, catalog, apus, inventory, inventory_mappings)
     # Paramétricos: the taller's history proposes what no plan reader produces.
@@ -261,7 +264,8 @@ def generate_cost_report(
         currency=config.currency,
         drawing_units=units,
         boq=boq,
-        apus=[apus[line.concept_code] for line in boq.lines],
+        # An unpriced line has no analysis to show; the presupuesto says so.
+        apus=[apus[line.concept_code] for line in boq.lines if line.concept_code in apus],
         integration=integration,
         schedule=schedule,
         financial=financial,

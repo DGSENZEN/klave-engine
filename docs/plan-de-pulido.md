@@ -53,7 +53,7 @@ Aplanado, pintura y muro son `longitud × altura × caras` (`catalog.py:363-402,
 `adopt_concept_reference` y `set_concept_alias` (`catalog_store.py:594-616, ~890`) no comparan `reference.unit` con `concept.unit`. Adoptar `$/m` en un concepto `M3` multiplica sin aviso. El matcher sí filtra por unidad; la adopción no.
 - **Fix**: rechazar con 422 `unit_mismatch` salvo `force=true` con nota; mostrar la unidad en el selector.
 
-### A9 — Pilotes contados y tirados · **P0**
+### A9 — Pilotes contados y tirados · **P0** · **hecho** (longitud por notas/cuadro/IA → `CIM-011` en M con matriz; sin longitud, `CIM-010` visible **sin precio** en presupuesto y XLSX; `BoqLine.unpriced`)
 `CIM-010` tiene regla pero no matriz (`insumos.py:271`, `catalog_store.py:891-909`): se cuentan, se advierte y no suman. En una cimentación con pilotes es la partida más grande.
 - **Fix**: leer longitud de pilote (cuadro/nota/IA — `length_m` ya se lee y se descarta), concepto en `M` con matriz de referencia, y mientras no haya longitud, línea sin precio **visible** en el presupuesto (no solo advertencia).
 

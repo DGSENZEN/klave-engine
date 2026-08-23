@@ -205,6 +205,13 @@ TERRACERIAS_RESOURCES: list[tuple[str, str, str, float, str]] = [
     ("EQ-PIPA", "Pipa de agua 10 000 L, costo horario (referencia)", "HORA", 650.0, "equipo"),
 ]
 ACABADOS_CONCEPT_CODES = ("ACA-001", "ACA-002", "ACA-003", "ACA-004", "PIS-001", "PIS-002")
+# v14: pilotes in metres (CIM-011) with the drilling rig, and the plantilla
+# concept (CIM-003) in the built-in catalog.
+PILES_CONCEPT_CODES = ("CIM-011", "CIM-003", "CIM-010")
+PILES_RESOURCES: list[tuple[str, str, str, float, str]] = [
+    ("EQ-PERFORADORA", "Perforadora rotatoria para pilotes Ø60–120 cm, costo horario "
+     "(referencia SICT)", "HORA", 2850.0, "equipo"),
+]
 ACABADOS_RESOURCES: list[tuple[str, str, str, float, str]] = [
     ("MAT-PINTURA", "Pintura vinílica acrílica, cubeta 19 L (referencia)", "L", 78.0,
      "material"),
@@ -501,6 +508,21 @@ class CatalogStore:
                 conn.execute(
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '13') "
                     "ON CONFLICT(key) DO UPDATE SET value = '13'"
+                )
+            if version_row is None or int(version_row["value"]) < 14:
+                self._seed_resources(conn, PILES_RESOURCES)
+                self._sync_builtin_concepts(conn, PILES_CONCEPT_CODES)
+                conn.execute(
+                    "UPDATE concepts SET description = ? WHERE code = 'CIM-010' "
+                    "AND description = ?",
+                    (
+                        "Pilote de concreto colado en sitio (pieza, longitud según proyecto)",
+                        "Pilote de concreto colado en sitio (longitud según proyecto)",
+                    ),
+                )
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '14') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '14'"
                 )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.

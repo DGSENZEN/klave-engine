@@ -37,6 +37,9 @@ MUTED = "6E6E76"
 BORDER_COLOR = "D2D2D7"
 SOFT = "F2F2F3"
 
+# A line with quantity and no price: the cell says so instead of a zero
+# that would hide in a sum.
+UNPRICED = "SIN PRECIO"
 MONEY_FORMAT = '"$"#,##0.00'
 QTY_FORMAT = "#,##0.00"
 
@@ -186,8 +189,10 @@ def _licitacion_workbook(
                 )
             values: list[Any] = [
                 f"{partida}.{index:03d}", line.taller_clave or line.concept_code,
-                description, line.unit, line.quantity, unit_price,
-                pesos_con_letra(unit_price), amount,
+                description, line.unit, line.quantity,
+                UNPRICED if line.unpriced else unit_price,
+                UNPRICED if line.unpriced else pesos_con_letra(unit_price),
+                UNPRICED if line.unpriced else amount,
             ]
             for col, value in enumerate(values, start=1):
                 cell = ws.cell(row=row, column=col, value=value)
@@ -246,8 +251,8 @@ def _flat_workbook(report: CostReport, sheet_title: str, columns: list[str]) -> 
             line.description,
             line.unit,
             line.quantity,
-            line.unit_price,
-            line.amount,
+            UNPRICED if line.unpriced else line.unit_price,
+            UNPRICED if line.unpriced else line.amount,
         ]
         for col, value in enumerate(values, start=1):
             cell = ws.cell(row=row, column=col, value=value)
@@ -352,7 +357,9 @@ def _presupuesto(ws: Worksheet, report: CostReport) -> None:
                 continue
             values: list[Any] = [
                 line.taller_clave or line.concept_code, line.description, line.unit,
-                line.quantity, line.unit_price, line.amount,
+                line.quantity,
+                UNPRICED if line.unpriced else line.unit_price,
+                UNPRICED if line.unpriced else line.amount,
                 f"{line.confidence:.0%}",
                 "; ".join(f"{title}: {qty:,.2f}" for title, qty in line.by_view.items()),
             ]

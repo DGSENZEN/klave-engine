@@ -157,6 +157,9 @@ class BoqLine(BaseModel):
     # True when the quantity is a parametric proposal from the taller's
     # history (per m², per planta, per local), not a reading of the plan.
     parametric: bool = False
+    # True when the concept has no matrix nor adopted P.U.: the quantity is
+    # real, the amount is not zero — it is unknown, and the presupuesto says so.
+    unpriced: bool = False
 
 
 class BillOfQuantities(BaseModel):

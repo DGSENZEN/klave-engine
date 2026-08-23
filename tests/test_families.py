@@ -84,5 +84,8 @@ def test_piles_are_counted_and_left_unpriced_until_the_catalogo_prices_them(tmp_
     boq = generate_bill_of_quantities(
         "t", out.detections, units, catalog, build_all_apus(catalog), assumptions=a
     )
-    assert boq.lines == []  # no matrix, no invented price
+    # No matrix: the count is on the presupuesto, visibly unpriced — never $0 quietly.
+    [line] = boq.lines
+    assert line.unpriced and line.unit_price == 0.0 and line.amount == 0.0 and line.quantity == 3
+    assert boq.direct_cost_total == 0.0
     assert any("CIM-010" in w and "3.00 PZA" in w and "sin costo" in w for w in boq.warnings)

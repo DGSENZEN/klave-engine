@@ -188,7 +188,10 @@ def ai_element_specs(reads: AiReads) -> list[dict]:
                         section = (int(float(parts[0])), int(float(parts[1])))
                 except ValueError:
                     section = None
-            if section is None and not element.rebar and not element.stirrups:
+            if (
+                section is None and not element.rebar and not element.stirrups
+                and not element.length_m
+            ):
                 continue
             specs.append(
                 {
@@ -197,6 +200,7 @@ def ai_element_specs(reads: AiReads) -> list[dict]:
                     "section_cm": section,
                     "rebar": element.rebar,
                     "stirrups": element.stirrups,
+                    "length_m": element.length_m,
                     "mesh": None,
                     "source": "ia",
                     "source_text": (
