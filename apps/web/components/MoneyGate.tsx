@@ -25,6 +25,8 @@ export function moneyGate(
   reviews: ProjectReviews | null,
 ): MoneyGateState {
   if (!costs) return "ok";
+  // The engine's own verdict wins: without a reliable unit it priced nothing.
+  if (costs.boq.units_reliable === false) return "blocked";
   const units = costs.drawing_units;
   const confirmed = Boolean(reviews?.verification.units_confirmed_at);
   if (confirmed) return "ok";

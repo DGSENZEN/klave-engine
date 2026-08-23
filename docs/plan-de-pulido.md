@@ -41,7 +41,7 @@ Aplanado, pintura y muro son `longitud × altura × caras` (`catalog.py:363-402,
 `MAX_COLUMN_SECTION_M2 = 1.00` (`boq.py:38-40`), `max_m2 = 0.25` para castillos (`:181`), lado ≤ 150 cm en cuadros (`schedules.py:50`). Una columna 1.2×1.2 o una zapata 200×200 se vuelve el default sin aviso.
 - **Fix**: subir topes a valores de edificación (columna 2.0 m², zapata 400 cm) y, cuando se rechace, advertencia con el valor leído.
 
-### A6 — Unidades desconocidas → presupuesto completo a factor 1.0 · **P0**
+### A6 — Unidades desconocidas → presupuesto completo a factor 1.0 · **P0** · **hecho** (sin unidad confiable: cantidades en unidades de dibujo, todas las líneas sin precio, SIN UNIDADES en cada hoja del XLSX; umbrales de detección por extensión del dibujo; el demo deja de valer $105 M)
 `boq.py:409-415` advierte y sigue; `suite.py:57-60` deja los umbrales genéricos (centímetros) cuando `to_meters()` es `None` (confianza < 0.7). El demo enviado muestra `PRE-001 = 120,000 m²`. La web sí bloquea el dinero (`MoneyGate`) pero el XLSX no.
 - **Fix**: sin unidades confiables, el motor produce cantidades en "unidades de dibujo" sin precio, el export lleva SIN UNIDADES en cada hoja, y los umbrales caen a un preset por extensión del dibujo.
 

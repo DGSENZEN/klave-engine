@@ -40,6 +40,10 @@ SOFT = "F2F2F3"
 # A line with quantity and no price: the cell says so instead of a zero
 # that would hide in a sum.
 UNPRICED = "SIN PRECIO"
+SIN_UNIDADES = (
+    "SIN UNIDADES — la unidad del plano no es confiable: cantidades en unidades de dibujo, "
+    "sin precio. Confirma la unidad en Klave antes de usar este archivo."
+)
 MONEY_FORMAT = '"$"#,##0.00'
 QTY_FORMAT = "#,##0.00"
 
@@ -149,7 +153,10 @@ def _licitacion_workbook(
         f"(factor {factor:.4f} sobre costo directo)",
     )
     verification = reviews.verification
-    if not (verification.units_confirmed_at and verification.detections_confirmed_at):
+    if not report.boq.units_reliable:
+        cell = ws.cell(row=5, column=1, value=SIN_UNIDADES)
+        cell.font = Font(bold=True, size=9, color="B42318")
+    elif not (verification.units_confirmed_at and verification.detections_confirmed_at):
         cell = ws.cell(
             row=5, column=1,
             value="SIN VERIFICAR — cantidades leídas del plano, pendientes de revisión humana",
@@ -245,6 +252,13 @@ def _flat_workbook(report: CostReport, sheet_title: str, columns: list[str]) -> 
     ws.title = sheet_title
     _header(ws, 1, columns)
     row = 2
+    if not report.boq.units_reliable:
+        # The first data row carries the warning so an import never reads
+        # drawing units as metres in silence.
+        ws.cell(row=row, column=1, value=SIN_UNIDADES).font = Font(
+            bold=True, size=9, color="B42318"
+        )
+        row += 1
     for line in report.boq.lines:
         values: list[Any] = [
             line.taller_clave or line.concept_code,
@@ -312,7 +326,8 @@ def _caratula(
         ("Moneda", report.currency),
         ("Unidades del plano", f"{report.drawing_units.unit} "
          f"({report.drawing_units.confidence:.0%} de confianza)"),
-        ("Verificación", "Verificado (unidades, detecciones y supuestos)"
+        ("Verificación", SIN_UNIDADES if not report.boq.units_reliable
+         else "Verificado (unidades, detecciones y supuestos)"
          if verified else "SIN VERIFICAR — revisar antes de usar"),
         ("", ""),
         ("Costo directo", report.boq.direct_cost_total),
@@ -341,6 +356,11 @@ def _presupuesto(ws: Worksheet, report: CostReport) -> None:
     columns = ["Clave", "Concepto", "Unidad", "Cantidad", "P.U. (CD)", "Importe", "Confianza"]
     _header(ws, 1, [*columns, "Por nivel"])
     row = 2
+    if not report.boq.units_reliable:
+        ws.cell(row=row, column=1, value=SIN_UNIDADES).font = Font(
+            bold=True, size=9, color="B42318"
+        )
+        row += 1
     for phase, phase_total in report.boq.totals_by_phase.items():
         phase_cell = ws.cell(row=row, column=1, value=phase.upper())
         phase_cell.font = Font(bold=True, size=9, color=MUTED)

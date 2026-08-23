@@ -12,7 +12,9 @@ import ezdxf
 
 
 def build_demo_dxf(path: Path) -> Path:
-    """Write the S-101 demo sheet. Extent is roughly (0, 0) to (1010, 810)."""
+    """Write the S-101 demo sheet. Extent is roughly (0, 0) to (1460, 1160):
+    unitless on purpose, but shaped like a 15 × 12 m building in cm so the
+    extent-based thresholds read it the way a real sheet would."""
     doc = ezdxf.new("R2018")
     # Pin the fixture to unitless so unit-aware detector presets never apply
     # (ezdxf defaults new documents to meters). Text stays under the height
@@ -49,8 +51,9 @@ def build_demo_dxf(path: Path) -> Path:
         dxfattribs={"layer": "S-FOOTING"},
     )
 
-    # Duplicate C1 far from any grid intersection (risk fixture).
-    text("C1", (900, 700), "S-COL-TAG")
+    # Duplicate C1 far from any grid intersection and from the first C1
+    # (more than the 10 m the rule tolerates once the extent reads as cm).
+    text("C1", (1450, 1150), "S-COL-TAG")
 
     # Beam B1: 300-unit line with its tag text just above it.
     msp.add_line((550, 400), (850, 400), dxfattribs={"layer": "S-BEAM"})
@@ -114,10 +117,10 @@ DEMO_GOLD: dict = {
         "estimated_slab_area": 120000.0,
         "detail_reference_count": 2,
         "unresolved_detail_reference_count": 1,
-        # Every demo element sits on a semantic layer, so the evidence-fusion
-        # model scores them all ≥0.7; the low-confidence path is covered by a
-        # targeted unit test instead (test_risks.py).
-        "low_confidence_detection_count": 0,
+        # Every demo element sits on a semantic layer; the slab is the one
+        # low-confidence read — 12 m² barely above the 9 m² minimum — which
+        # is exactly what the engine should doubt.
+        "low_confidence_detection_count": 1,
     },
     "expected_risk_types": [
         "unresolved_detail_reference",

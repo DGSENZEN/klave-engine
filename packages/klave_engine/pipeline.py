@@ -279,7 +279,14 @@ def run_full_pipeline(
         confidence=units.confidence,
     )
 
-    detector_config = load_detector_config(settings.detector_config_path, units)
+    detector_config = load_detector_config(
+        settings.detector_config_path, units, extent=index.extent()
+    )
+    if units.to_meters() is None:
+        result.warnings.append(
+            "Unidades del plano no confiables: los umbrales de detección siguen la "
+            "extensión del dibujo y el presupuesto queda sin precio hasta confirmar la unidad."
+        )
     # Every file is its own drawing space: frames (and, below, detectors)
     # run per file so one sheet's outlines never land inside another's.
     by_file: dict[str, list[NormalizedEntity]] = {}

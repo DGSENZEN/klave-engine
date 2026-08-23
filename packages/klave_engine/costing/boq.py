@@ -422,9 +422,11 @@ def generate_bill_of_quantities(
     meters_factor = units.to_meters()
     if meters_factor is None:
         meters_factor = 1.0
+        boq.units_reliable = False
         boq.warnings.append(
-            "Unidades del plano desconocidas: las cantidades asumen metros. "
-            "Verificar la escala antes de usar el presupuesto."
+            "SIN UNIDADES: la unidad del plano no es confiable, las cantidades están en "
+            "unidades de dibujo y ninguna línea tiene precio. Confirma la unidad "
+            "(Resumen → Confirmar unidades) para obtener el presupuesto."
         )
     else:
         boq.assumptions.append(

@@ -171,6 +171,9 @@ class BillOfQuantities(BaseModel):
     totals_by_phase: dict[str, float] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
+    # False when the drawing's unit is not reliable: quantities are in
+    # drawing units, every line is unpriced and the total is not a price.
+    units_reliable: bool = True
 
 
 class IntegrationLine(BaseModel):

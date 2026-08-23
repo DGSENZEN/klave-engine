@@ -246,6 +246,14 @@ def generate_cost_report(
         apply_parametrics(boq, catalog, apus, parametric_rules, basis)
     if adjustments:
         _apply_adjustments(boq, catalog, apus, adjustments)
+    if not boq.units_reliable:
+        # Drawing units are not metres: nothing here may carry a price.
+        for line in boq.lines:
+            line.unpriced = True
+            line.unit_price = 0.0
+            line.amount = 0.0
+        boq.direct_cost_total = 0.0
+        boq.totals_by_phase = {phase: 0.0 for phase in boq.totals_by_phase}
     indicators = compute_indicators(boq, basis.area_construida_m2 or None, plantillas)
     boq.warnings.extend(indicators.notes)
     if price_vigencias is not None:

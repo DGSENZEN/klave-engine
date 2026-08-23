@@ -2,10 +2,10 @@
   "drawing_id": "demo",
   "source": "data/demo/demo_project_001",
   "files": {
-    "S-101.dxf": "e3a48b50676508227aee121c278e8ca9ea6e1aa6f2bf14a71e8cd4a276ad574e"
+    "S-101.dxf": "9514b8652784c0c50b363afcd086455d24477e639f4709cb7a34bb03b8f07854"
   },
   "status": "baseline",
-  "captured_at": "2026-08-22T19:26:36.089362Z",
+  "captured_at": "2026-08-23T19:09:57.843143Z",
   "labels": {
     "grid_line": [
       "EJE-1",
@@ -127,9 +127,20 @@
         "note": ""
       }
     },
-    "direct_cost": 105740707.49,
+    "direct_cost": 0.0,
     "direct_cost_tolerance_pct": 5.0,
-    "unpriced": []
+    "unpriced": [
+      "ACA-001",
+      "ACA-002",
+      "CIM-001",
+      "CIM-002",
+      "CIM-003",
+      "EST-001",
+      "EST-002",
+      "EST-003",
+      "EST-004",
+      "PRE-001"
+    ]
   },
   "notes": ""
 }

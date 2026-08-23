@@ -28,7 +28,8 @@ from klave_engine.detection.terrain import TerrainDetectorConfig, detect_terrain
 from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.detection.wall_detector import WallDetectorConfig, detect_walls
 from klave_engine.dxf.entities import NormalizedEntity
-from klave_engine.dxf.units import DrawingUnits
+from klave_engine.dxf.units import METERS_FACTOR, DrawingUnits, vote_from_extent
+from klave_engine.geometry.bbox import BBox
 from klave_engine.geometry.spatial_index import SpatialIndex
 from klave_engine.ingestion.manifest import ProjectManifest
 from klave_engine.risks.rules import RiskEngineConfig
@@ -54,14 +55,22 @@ class DetectorSuiteConfig(BaseModel):
     risk: RiskEngineConfig = Field(default_factory=RiskEngineConfig)
 
     @classmethod
-    def preset_for_units(cls, units: DrawingUnits) -> "DetectorSuiteConfig":
+    def preset_for_units(
+        cls, units: DrawingUnits, extent: BBox | None = None
+    ) -> "DetectorSuiteConfig":
         """Detector thresholds scaled to real-world units when they are known.
 
         The reference preset is defined in meters (validated against a real
-        structural sheet) and scaled to the drawing unit; unknown units keep
-        the generic defaults.
+        structural sheet) and scaled to the drawing unit. When the unit is
+        not reliable, the model's extent still says what it most likely is
+        (a building is tens of metres across) and the thresholds follow that
+        guess — the money never does; it waits for a confirmed unit.
         """
         factor = units.to_meters()
+        if factor is None and extent is not None:
+            guess = vote_from_extent(extent)
+            if guess is not None:
+                factor = METERS_FACTOR.get(guess[0])
         if factor is None:
             return cls()
 
@@ -80,7 +89,9 @@ class DetectorSuiteConfig(BaseModel):
         config.beam.line_search_radius = m(1.0)
         config.beam.min_beam_length = m(1.5)
         config.beam.max_beam_length = m(15.0)
-        config.slab.min_area = m(4.0) * m(4.0)
+        # A 3×3 m panel is a real slab (a small room); cuadros and notes
+        # are kept out by the avoid layers and the frame-share guard.
+        config.slab.min_area = m(3.0) * m(3.0)
         config.slab_panel.min_area = m(1.0) * m(1.0)
         config.slab_panel.max_area = m(20.0) * m(20.0)
         config.slab_panel.min_width = m(0.6)
@@ -108,12 +119,12 @@ class DetectorSuiteConfig(BaseModel):
 
 
 def load_detector_config(
-    path: Path | None, units: DrawingUnits | None = None
+    path: Path | None, units: DrawingUnits | None = None, extent: BBox | None = None
 ) -> DetectorSuiteConfig:
     if path is not None and path.exists():
         return DetectorSuiteConfig.model_validate(read_json(path))
     if units is not None:
-        return DetectorSuiteConfig.preset_for_units(units)
+        return DetectorSuiteConfig.preset_for_units(units, extent)
     return DetectorSuiteConfig()
 
 

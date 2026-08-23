@@ -90,7 +90,7 @@ def _votes_from_dimensions(entities: list[NormalizedEntity]) -> dict[str, int]:
     return votes
 
 
-def _vote_from_extent(extent: BBox | None) -> tuple[str, str] | None:
+def vote_from_extent(extent: BBox | None) -> tuple[str, str] | None:
     """A building's model extent is tens of metres: 5–500 in m, 500–50 000
     in cm, 50 000–5 000 000 in mm."""
     if extent is None:
@@ -189,7 +189,7 @@ def detect_units(
             )
 
     weak: list[tuple[str, str]] = []
-    for vote in (_vote_from_extent(extent), _vote_from_text_heights(entities)):
+    for vote in (vote_from_extent(extent), _vote_from_text_heights(entities)):
         if vote:
             weak.append(vote)
     if dimension_votes:

@@ -7,7 +7,7 @@
     "03-s-301_azotea.dxf": "44397dfb16f769f5305ed2f8b9cf6e46612e6c0b290901483d2e3233c38e2202"
   },
   "status": "baseline",
-  "captured_at": "2026-08-22T22:03:12.273521Z",
+  "captured_at": "2026-08-23T19:09:58.219656Z",
   "labels": {
     "grid_line": [
       "EJE-1-01",
@@ -61,6 +61,11 @@
       "TRB-B1-02",
       "TRB-B1-03"
     ],
+    "slab_region": [
+      "LOS-01",
+      "LOS-02",
+      "LOS-03"
+    ],
     "wall": [
       "MUR-01",
       "MUR-02",
@@ -84,10 +89,18 @@
     "footing": 1.0,
     "grid_intersection": 1.0,
     "grid_line": 1.0,
+    "slab_region": 1.0,
     "wall": 1.0
   },
   "money": {
     "concepts": {
+      "PRE-001": {
+        "quantity": 36.0,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
       "CIM-001": {
         "quantity": 1.404,
         "unit": "M3",
@@ -112,6 +125,13 @@
       "EST-002": {
         "quantity": 1.012,
         "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "EST-003": {
+        "quantity": 36.0,
+        "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
         "note": ""
@@ -145,7 +165,7 @@
         "note": ""
       }
     },
-    "direct_cost": 57894.15,
+    "direct_cost": 85896.75,
     "direct_cost_tolerance_pct": 5.0,
     "unpriced": []
   },

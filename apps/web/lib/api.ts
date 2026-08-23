@@ -375,6 +375,8 @@ export type CostReport = {
     lines: BoqLine[];
     assumptions: string[];
     warnings: string[];
+    /** False when the drawing unit is not reliable: quantities in drawing units, nothing priced. */
+    units_reliable?: boolean;
   };
   apus?: Apu[];
   integration: {
