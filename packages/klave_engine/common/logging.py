@@ -5,9 +5,20 @@ can be debugged from logs alone.
 """
 
 import logging
+from contextvars import ContextVar
 from typing import Any
 
 _CONFIGURED = False
+
+# The id of the request being served, injected into every log line emitted
+# while handling it — one grep follows one request across the stack.
+request_id_var: ContextVar[str] = ContextVar("klave_request_id", default="-")
+
+
+class _RequestIdFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = request_id_var.get()
+        return True
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -16,8 +27,10 @@ def configure_logging(level: str = "INFO") -> None:
         return
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        format="%(asctime)s %(levelname)s %(name)s rid=%(request_id)s %(message)s",
     )
+    for handler in logging.getLogger().handlers:
+        handler.addFilter(_RequestIdFilter())
     _CONFIGURED = True
 
 

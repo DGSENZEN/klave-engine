@@ -13,6 +13,7 @@ from apps.api.auth.invitations import router as invitations_router
 from apps.api.auth.middleware import AccessControlMiddleware, allowed_origins
 from apps.api.auth.recovery import router as recovery_router
 from apps.api.auth.routes import router as auth_router
+from apps.api.observability import RequestIdMiddleware
 from apps.api.routes import ai as ai_routes
 from apps.api.routes import (
     catalog,
@@ -59,6 +60,9 @@ def create_app() -> FastAPI:
     # Session-based access control. Added before CORS so CORS wraps it and
     # 401/403 responses still carry CORS headers the browser can read.
     app.add_middleware(AccessControlMiddleware)
+    # Outermost: every log line of a request carries its id, every response
+    # echoes it, every request logs its duration.
+    app.add_middleware(RequestIdMiddleware)
 
     # Local-first single workspace: allow the Next.js dev server. Credentials
     # are required so the HttpOnly session cookie travels with fetch and SSE.
