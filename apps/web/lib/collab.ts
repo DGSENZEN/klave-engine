@@ -52,9 +52,6 @@ export function getBrowserClientId(): string {
   return id;
 }
 
-export function actorHeaders(actor: string): HeadersInit {
-  return actor ? { "X-Actor": actor } : {};
-}
 
 export function eventsUrl(): string {
   return `${API_BASE}/events`;

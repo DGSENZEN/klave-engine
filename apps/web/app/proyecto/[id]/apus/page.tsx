@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { Calculator, CaretDown } from "@phosphor-icons/react";
 import { money2, num, type Apu } from "@/lib/api";
+import { RESOURCE_TYPE_LABELS } from "@/lib/format";
 import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
 import { moneyGate, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
@@ -21,11 +22,6 @@ import {
   Th,
 } from "@/components/ui";
 
-const RESOURCE_LABELS: Record<string, string> = {
-  material: "Material",
-  mano_de_obra: "Mano de obra",
-  equipo: "Equipo",
-};
 
 const RESOURCE_COLORS: Record<string, string> = {
   material: "var(--chart-1)",
@@ -102,7 +98,7 @@ export default function ApusPage() {
         />
         <Metric
           label="Componente dominante"
-          value={dominant ? (RESOURCE_LABELS[dominant[0]] ?? dominant[0]) : "—"}
+          value={dominant ? (RESOURCE_TYPE_LABELS[dominant[0]] ?? dominant[0]) : "—"}
           hint={dominant ? `${money2(dominant[1])} en el costo unitario agregado` : undefined}
         />
       </div>
@@ -160,7 +156,7 @@ function ApuCard({
             {breakdown.map(([type, amount]) => (
               <div
                 key={type}
-                title={`${RESOURCE_LABELS[type] ?? type}: ${money2(amount)}`}
+                title={`${RESOURCE_TYPE_LABELS[type] ?? type}: ${money2(amount)}`}
                 style={{
                   width: `${(amount / total) * 100}%`,
                   background: RESOURCE_COLORS[type] ?? "var(--chart-5)",
@@ -211,7 +207,7 @@ function ApuCard({
                       <div className="font-mono text-xs text-muted">{line.resource_code}</div>
                     </Td>
                     <Td>
-                      <Badge>{RESOURCE_LABELS[line.resource_type] ?? line.resource_type}</Badge>
+                      <Badge>{RESOURCE_TYPE_LABELS[line.resource_type] ?? line.resource_type}</Badge>
                     </Td>
                     <Td className="text-muted">{line.unit}</Td>
                     <Td align="right" className="tabular">
@@ -243,7 +239,7 @@ function ApuCard({
                   className="h-2 w-2 rounded-sm"
                   style={{ background: RESOURCE_COLORS[type] ?? "var(--chart-5)" }}
                 />
-                {RESOURCE_LABELS[type] ?? type}
+                {RESOURCE_TYPE_LABELS[type] ?? type}
                 <span className="tabular font-medium text-foreground">{money2(amount)}</span>
                 <span className="tabular">({((amount / total) * 100).toFixed(0)}%)</span>
               </span>

@@ -27,7 +27,16 @@ import {
 } from "@/lib/session";
 import { AuthFrame } from "@/components/AuthFrame";
 import { HowItWorks } from "@/components/HowItWorks";
-import { Avatar, Badge, buttonClasses, Callout, Card, Input, Skeleton } from "@/components/ui";
+import {
+  Avatar,
+  Badge,
+  buttonClasses,
+  Callout,
+  Card,
+  Checkbox,
+  Input,
+  Skeleton,
+} from "@/components/ui";
 
 type UrlNotice =
   | "pending"
@@ -340,11 +349,9 @@ function AuthCard({
         {tab === "login" && (
           <div className="flex items-center justify-between gap-3 text-sm">
             <label className="flex cursor-pointer items-center gap-2 text-muted">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={remember}
                 onChange={(e) => setRemember(e.target.checked)}
-                className="h-4 w-4 accent-accent"
               />
               Recordarme 30 días
             </label>

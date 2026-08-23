@@ -35,17 +35,19 @@ import {
 } from "@/lib/session";
 import { formatDateTime, timeAgo } from "@/lib/time";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Modal } from "@/components/Modal";
 import { KebabMenu, MenuItem } from "@/components/Menu";
 import {
   Avatar,
   Badge,
   Button,
-  buttonClasses,
   Callout,
   Card,
+  Checkbox,
   EmptyState,
   Input,
   PageHeader,
+  Select,
   SkeletonCards,
   type BadgeTone,
 } from "@/components/ui";
@@ -254,17 +256,16 @@ export default function EquipoPage() {
                 <ul className="divide-y divide-border">
                   {rest.map((user) => (
                     <UserRow key={user.user_id} user={user} me={me}>
-                      <select
+                      <Select
                         value={user.role}
                         disabled={user.user_id === me?.user_id}
                         onChange={(e) =>
                           setConfirm({ kind: "role", user, role: e.target.value as "admin" | "member" })
                         }
-                        className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm disabled:opacity-50"
                       >
                         <option value="member">Miembro</option>
                         <option value="admin">Admin</option>
-                      </select>
+                      </Select>
                       {user.user_id !== me?.user_id && (
                         <KebabMenu label={`Acciones para ${user.name}`}>
                           {(close) => (
@@ -530,15 +531,10 @@ function InviteDialog({
     listProjects()
       .then((items) => active && setProjects(items.filter((p) => !p.archived)))
       .catch(() => active && setProjects([]));
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
     return () => {
       active = false;
-      document.removeEventListener("keydown", onKeyDown);
     };
-  }, [onClose]);
+  }, []);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -558,39 +554,49 @@ function InviteDialog({
     }
   }
 
+  const formId = "invitar-al-taller";
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <button type="button" aria-label="Cerrar" onClick={onClose} className="absolute inset-0 bg-foreground/40 backdrop-blur-[2px]" />
-      <div role="dialog" aria-modal="true" aria-label="Invitar al taller" className="toast-in relative w-full max-w-lg rounded-xl border border-border bg-surface p-5 shadow-lg">
-        {result ? (
+    <Modal
+      open
+      busy={busy}
+      onClose={onClose}
+      size="lg"
+      title={result ? (result.delivered ? "Invitación enviada" : "Invitación lista") : "Invitar al taller"}
+      sub={
+        result
+          ? result.delivered
+            ? `Le enviamos el enlace a ${result.email}. También puedes compartirlo tú:`
+            : `Sin correo configurado: comparte este enlace con ${result.email}. Vale siete días.`
+          : `La persona entra de inmediato con su propio enlace; no necesita aprobación.${
+              !mailEnabled ? " Sin correo configurado, el enlace se te mostrará para compartirlo." : ""
+            }`
+      }
+      footer={
+        result ? (
           <>
-            <h2 className="mb-1 text-[0.95rem] font-semibold">
-              {result.delivered ? "Invitación enviada" : "Invitación lista"}
-            </h2>
-            <p className="mb-3 text-sm text-muted">
-              {result.delivered
-                ? `Le enviamos el enlace a ${result.email}. También puedes compartirlo tú:`
-                : `Sin correo configurado: comparte este enlace con ${result.email}. Vale siete días.`}
-            </p>
-            <LinkPanel link={result.link} />
-            <div className="mt-4 flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => { setResult(null); setEmail(""); setGrants({}); }}>
-                Invitar a alguien más
-              </Button>
-              <Button variant="primary" onClick={onClose}>
-                Listo
-              </Button>
-            </div>
+            <Button variant="secondary" onClick={() => { setResult(null); setEmail(""); setGrants({}); }}>
+              Invitar a alguien más
+            </Button>
+            <Button variant="primary" onClick={onClose}>
+              Listo
+            </Button>
           </>
         ) : (
-          <form onSubmit={submit} className="space-y-4">
-            <div>
-              <h2 className="text-[0.95rem] font-semibold">Invitar al taller</h2>
-              <p className="text-sm text-muted">
-                La persona entra de inmediato con su propio enlace; no necesita aprobación.
-                {!mailEnabled && " Sin correo configurado, el enlace se te mostrará para compartirlo."}
-              </p>
-            </div>
+          <>
+            <Button variant="secondary" onClick={onClose} disabled={busy}>
+              Cancelar
+            </Button>
+            <Button type="submit" form={formId} variant="primary" disabled={busy}>
+              <PaperPlaneTilt size={14} weight="bold" /> {busy ? "Invitando…" : "Invitar"}
+            </Button>
+          </>
+        )
+      }
+    >
+        {result ? (
+          <LinkPanel link={result.link} />
+        ) : (
+          <form id={formId} onSubmit={submit} className="space-y-4">
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 type="email"
@@ -601,14 +607,13 @@ function InviteDialog({
                 required
                 className="flex-1"
               />
-              <select
+              <Select
                 value={role}
                 onChange={(e) => setRole(e.target.value as "admin" | "member")}
-                className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
               >
                 <option value="member">Miembro</option>
                 <option value="admin">Administrador</option>
-              </select>
+              </Select>
             </div>
             {role === "admin" && (
               <Callout tone="warning">
@@ -629,8 +634,7 @@ function InviteDialog({
                     return (
                       <li key={project.project_id} className="flex items-center gap-3 px-3 py-2">
                         <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
+                          <Checkbox
                             checked={Boolean(selected)}
                             onChange={(e) =>
                               setGrants((g) => ({
@@ -638,12 +642,11 @@ function InviteDialog({
                                 [project.project_id]: e.target.checked ? "viewer" : undefined,
                               }))
                             }
-                            className="h-4 w-4 accent-accent"
                           />
                           <span className="truncate">{project.name}</span>
                         </label>
                         {selected && (
-                          <select
+                          <Select
                             value={selected}
                             onChange={(e) =>
                               setGrants((g) => ({
@@ -651,12 +654,12 @@ function InviteDialog({
                                 [project.project_id]: e.target.value as ProjectGrant["role"],
                               }))
                             }
-                            className="rounded-md border border-border bg-surface px-1.5 py-1 text-xs"
+                            size="sm"
                           >
                             <option value="viewer">Ver</option>
                             <option value="editor">Editar</option>
                             <option value="owner">Propietario</option>
-                          </select>
+                          </Select>
                         )}
                       </li>
                     );
@@ -665,18 +668,9 @@ function InviteDialog({
               )}
             </div>
             {error && <p className="text-sm text-danger">{error}</p>}
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={onClose} className={buttonClasses("secondary")}>
-                Cancelar
-              </button>
-              <Button type="submit" variant="primary" disabled={busy}>
-                <PaperPlaneTilt size={14} weight="bold" /> Invitar
-              </Button>
-            </div>
           </form>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }
 

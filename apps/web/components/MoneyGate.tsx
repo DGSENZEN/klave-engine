@@ -4,7 +4,13 @@ import { useState } from "react";
 import Link from "next/link";
 import { Ruler, Warning } from "@phosphor-icons/react";
 import { setVerification, type CostReport, type ProjectReviews } from "@/lib/api";
-import { Button, Callout, Card } from "@/components/ui";
+import {
+  Button,
+  Callout,
+  Card,
+  CONFIDENCE_FIRM,
+  Select,
+} from "@/components/ui";
 
 export type MoneyGateState = "ok" | "unverified" | "blocked";
 
@@ -22,7 +28,7 @@ export function moneyGate(
   const units = costs.drawing_units;
   const confirmed = Boolean(reviews?.verification.units_confirmed_at);
   if (confirmed) return "ok";
-  const trustworthy = units.unit !== "drawing_units" && units.confidence >= 0.7;
+  const trustworthy = units.unit !== "drawing_units" && units.confidence >= CONFIDENCE_FIRM;
   return trustworthy ? "unverified" : "blocked";
 }
 
@@ -124,10 +130,9 @@ export function UnitsGate({
         {detected.notes?.[0] ? ` ${detected.notes[0]}` : ""}
       </Callout>
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <select
+        <Select
           value={unit}
           onChange={(e) => setUnit(e.target.value as typeof unit)}
-          className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
           disabled={busy || done !== null}
         >
           {UNITS.map((u) => (
@@ -135,7 +140,7 @@ export function UnitsGate({
               {u.label}
             </option>
           ))}
-        </select>
+        </Select>
         <Button variant="primary" onClick={confirm} disabled={busy || done !== null}>
           {busy ? "Confirmando…" : "Confirmar unidades y calcular"}
         </Button>

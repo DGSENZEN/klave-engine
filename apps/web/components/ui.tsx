@@ -1,11 +1,13 @@
 import type React from "react";
 import type {
   ButtonHTMLAttributes,
+  InputHTMLAttributes,
   ReactNode,
+  SelectHTMLAttributes,
   TdHTMLAttributes,
   ThHTMLAttributes,
 } from "react";
-import { Info, Warning, WarningCircle } from "@phosphor-icons/react";
+import { CaretDown, Info, Warning, WarningCircle } from "@phosphor-icons/react";
 
 export function Card({
   children,
@@ -115,14 +117,6 @@ export function SectionTitle({ children, sub }: { children: ReactNode; sub?: str
       <h2 className="text-[0.95rem] font-semibold">{children}</h2>
       {sub && <p className="mt-0.5 text-sm text-muted">{sub}</p>}
     </div>
-  );
-}
-
-export function Spinner({ className = "" }: { className?: string }) {
-  return (
-    <span
-      className={`inline-block animate-spin rounded-full border-2 border-border border-t-foreground ${className}`}
-    />
   );
 }
 
@@ -339,32 +333,6 @@ export function Callout({
   );
 }
 
-export function ProgressBar({
-  value,
-  tone = "accent",
-  className = "",
-}: {
-  /** 0..1 */
-  value: number;
-  tone?: "accent" | "success" | "warning";
-  className?: string;
-}) {
-  const tones: Record<string, string> = {
-    accent: "bg-accent",
-    success: "bg-success",
-    warning: "bg-warning",
-  };
-  const pct = Math.max(0, Math.min(1, value)) * 100;
-  return (
-    <div className={`h-2 overflow-hidden rounded-full bg-surface-2 ${className}`}>
-      <div
-        className={`h-full rounded-full transition-[width] duration-500 ${tones[tone]}`}
-        style={{ width: `${pct}%` }}
-      />
-    </div>
-  );
-}
-
 export function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";
@@ -459,4 +427,106 @@ export function Td({
   const alignCls =
     align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left";
   return <td {...props} className={`px-4 py-3 ${alignCls} ${className}`} />;
+}
+
+/* ---- Form controls that match <Input>: one look for every select and checkbox. ---- */
+
+export function Select({
+  className = "",
+  size = "md",
+  ...props
+}: Omit<SelectHTMLAttributes<HTMLSelectElement>, "size"> & { size?: "sm" | "md" }) {
+  const pad = size === "sm" ? "px-2 py-1 text-xs" : "px-2.5 py-1.5 text-sm";
+  return (
+    <select
+      className={`rounded-lg border border-border bg-surface text-foreground outline-none transition focus:border-border-strong focus:ring-2 focus:ring-accent/20 disabled:opacity-60 ${pad} ${className}`}
+      {...props}
+    />
+  );
+}
+
+export function Checkbox({
+  label,
+  className = "",
+  ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & { label?: ReactNode }) {
+  const box = (
+    <input
+      type="checkbox"
+      className={`h-4 w-4 shrink-0 rounded border-border accent-accent ${label ? "" : className}`}
+      {...props}
+    />
+  );
+  if (!label) return box;
+  return (
+    <label className={`inline-flex cursor-pointer items-center gap-2 text-sm ${className}`}>
+      {box}
+      <span className="min-w-0">{label}</span>
+    </label>
+  );
+}
+
+/**
+ * One rule for "how sure is the engine": ≥ 0.7 reads as firm, ≥ 0.45 as a
+ * doubt to check, below that as weak. The same thresholds drive the money
+ * gate and the revisión, so the colour means the same thing everywhere.
+ */
+export const CONFIDENCE_FIRM = 0.7;
+export const CONFIDENCE_DOUBT = 0.45;
+
+export function confidenceTone(value: number): BadgeTone {
+  return value >= CONFIDENCE_FIRM ? "success" : value >= CONFIDENCE_DOUBT ? "warning" : "danger";
+}
+
+export function ConfidenceBadge({ value, dot = true }: { value: number; dot?: boolean }) {
+  return (
+    <Badge dot={dot} tone={confidenceTone(value)}>
+      {Math.round(value * 100)}%
+    </Badge>
+  );
+}
+
+/** A section that opens and closes, with the summary line always visible. */
+export function Disclosure({
+  open,
+  onToggle,
+  icon,
+  title,
+  summary,
+  children,
+  className = "",
+}: {
+  open: boolean;
+  onToggle: () => void;
+  icon?: ReactNode;
+  title: ReactNode;
+  summary?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <Card className={`overflow-hidden ${className}`}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        className="flex w-full items-center gap-3 px-5 py-4 text-left"
+      >
+        {icon && (
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-foreground">
+            {icon}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium">{title}</div>
+          {summary && <div className="text-xs text-muted">{summary}</div>}
+        </div>
+        <CaretDown
+          size={14}
+          className={`shrink-0 text-muted transition ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && <div className="border-t border-border px-5 py-4">{children}</div>}
+    </Card>
+  );
 }

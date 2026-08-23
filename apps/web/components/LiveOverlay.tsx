@@ -3,6 +3,7 @@
 import { ClockCounterClockwise, X, Check } from "@phosphor-icons/react";
 import { useProjectLive } from "@/components/ProjectLive";
 import { Avatar, IconButton, Skeleton } from "@/components/ui";
+import { timeAgo } from "@/lib/time";
 
 /*
  * Live-change surfaces. The old implementation floated a "Cambios" pill over
@@ -141,14 +142,3 @@ export function LiveToasts() {
   );
 }
 
-function timeAgo(ts: string): string {
-  const then = new Date(ts).getTime();
-  if (Number.isNaN(then)) return "";
-  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
-  if (secs < 10) return "ahora";
-  if (secs < 60) return `hace ${secs} s`;
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return `hace ${mins} min`;
-  const hours = Math.round(mins / 60);
-  return `hace ${hours} h`;
-}

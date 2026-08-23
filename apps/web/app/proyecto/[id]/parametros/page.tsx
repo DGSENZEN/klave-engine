@@ -31,13 +31,9 @@ import {
 import { useProjectLive } from "@/components/ProjectLive";
 import { CONFIG_LABELS, ConfigGroup } from "@/components/CostingConfigForm";
 import { actorLabel } from "@/lib/collab";
+import { resourceTypeLabel } from "@/lib/format";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
-const TYPE_LABELS: Record<string, string> = {
-  material: "Material",
-  mano_de_obra: "Mano de obra",
-  equipo: "Equipo",
-};
 
 type ConflictDetail = {
   error_type?: string;
@@ -384,7 +380,7 @@ export default function ParametrosPage() {
                     <div className="font-mono text-xs text-muted">{ins.code}</div>
                   </Td>
                   <Td className="px-3 py-2.5">
-                    <Badge>{TYPE_LABELS[ins.resource_type] ?? ins.resource_type}</Badge>
+                    <Badge>{resourceTypeLabel(ins.resource_type)}</Badge>
                   </Td>
                   <Td className="px-3 py-2.5 text-muted">{ins.unit}</Td>
                   <Td align="right" className="px-5 py-2.5">

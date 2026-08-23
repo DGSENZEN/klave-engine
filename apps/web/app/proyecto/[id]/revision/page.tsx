@@ -16,9 +16,12 @@ import {
   Button,
   buttonClasses,
   Callout,
+  Checkbox,
+  ConfidenceBadge,
   Input,
   Metric,
   PageHeader,
+  Select,
   SkeletonHeader,
   SkeletonMetrics,
   SkeletonTable,
@@ -234,10 +237,9 @@ export default function RevisionPage() {
       </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <select
+        <Select
           value={concept}
           onChange={(e) => setConcept(e.target.value)}
-          className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
           aria-label="Concepto"
         >
           <option value="">Todos los conceptos</option>
@@ -246,12 +248,11 @@ export default function RevisionPage() {
               {c.code ? `${c.code} · ${c.description.slice(0, 40)}` : "Sin concepto"} ({c.count})
             </option>
           ))}
-        </select>
+        </Select>
         {table.views.length > 1 && (
-          <select
+          <Select
             value={view}
             onChange={(e) => setView(e.target.value)}
-            className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
             aria-label="Planta"
           >
             <option value="">Todas las plantas</option>
@@ -260,14 +261,14 @@ export default function RevisionPage() {
                 {v.title} ({v.count})
               </option>
             ))}
-          </select>
+          </Select>
         )}
         <label className="flex items-center gap-1.5 text-sm">
-          <input type="checkbox" checked={onlyDoubts} onChange={(e) => setOnlyDoubts(e.target.checked)} />
+          <Checkbox checked={onlyDoubts} onChange={(e) => setOnlyDoubts(e.target.checked)} />
           solo con dudas
         </label>
         <label className="flex items-center gap-1.5 text-sm">
-          <input type="checkbox" checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)} />
+          <Checkbox checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)} />
           sin revisar
         </label>
         <Input
@@ -341,8 +342,7 @@ export default function RevisionPage() {
         <thead>
           <tr className="border-b border-border bg-surface-2">
             <Th>
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={allSelected}
                 onChange={toggleAll}
                 aria-label="Seleccionar todos los visibles"
@@ -376,8 +376,7 @@ export default function RevisionPage() {
                 onClick={(e) => toggle(r, index, e.shiftKey)}
               >
                 <Td>
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={on}
                     onChange={() => undefined}
                     onClick={(e) => {
@@ -400,9 +399,7 @@ export default function RevisionPage() {
                 </Td>
                 <Td className="whitespace-nowrap tabular text-xs">{r.measure || "—"}</Td>
                 <Td align="center">
-                  <Badge dot tone={r.confidence >= 0.7 ? "success" : "warning"}>
-                    {(r.confidence * 100).toFixed(0)}%
-                  </Badge>
+                  <ConfidenceBadge value={r.confidence} />
                 </Td>
                 <Td>
                   <div className="flex flex-wrap gap-1">

@@ -33,17 +33,20 @@ import {
   type ProjectReviews,
 } from "@/lib/api";
 import { useCostReport } from "@/lib/useProjectReport";
+import { downloadCsv } from "@/lib/format";
 import {
   Badge,
   Button,
   buttonClasses,
   Callout,
   Card,
+  ConfidenceBadge,
   EmptyState,
   Input,
   Metric,
   PageHeader,
   SectionTitle,
+  Select,
   Skeleton,
   SkeletonHeader,
   SkeletonMetrics,
@@ -89,14 +92,14 @@ export default function PresupuestoPage() {
     }
   }, [id, latestEvent]);
 
-  function downloadCsv() {
+  function exportCsv() {
     if (!costs) return;
     sendActivity("exporting_budget", "Presupuesto CSV");
-    const rows = [
+    downloadCsv(`presupuesto_${id}.csv`, [
       ["clave", "concepto", "unidad", "cantidad", "p_unitario", "importe", "fase", "confianza"],
       ...costs.boq.lines.map((l) => [
-        l.concept_code,
-        `"${l.description}"`,
+        l.taller_clave || l.concept_code,
+        l.description,
         l.unit,
         l.quantity,
         l.unit_price,
@@ -108,14 +111,7 @@ export default function PresupuestoPage() {
       ["", "COSTO DIRECTO", "", "", "", costs.boq.direct_cost_total],
       ["", "PRECIO DE VENTA", "", "", "", costs.integration.sale_price],
       ["", "TOTAL", "", "", "", costs.integration.grand_total],
-    ];
-    const csv = rows.map((r) => r.join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "presupuesto.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+    ]);
   }
 
   if (error) {
@@ -236,7 +232,7 @@ export default function PresupuestoPage() {
                 <MenuItem
                   onSelect={() => {
                     close();
-                    downloadCsv();
+                    exportCsv();
                   }}
                 >
                   <DownloadSimple size={15} weight="bold" /> CSV simple
@@ -560,9 +556,7 @@ function PhaseGroup({
                 {money2(l.amount)}
               </Td>
               <Td align="center">
-                <Badge dot tone={l.confidence >= 0.7 ? "success" : "warning"}>
-                  {(l.confidence * 100).toFixed(0)}%
-                </Badge>
+                <ConfidenceBadge value={l.confidence} />
               </Td>
             </tr>
             {editing === l.concept_code && (
@@ -919,10 +913,9 @@ function AdjustmentsPanel({
         </ul>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <select
+        <Select
           value={conceptCode}
           onChange={(e) => setConceptCode(e.target.value)}
-          className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
         >
           <option value="">Concepto…</option>
           {selectable.map((concept) => (
@@ -931,7 +924,7 @@ function AdjustmentsPanel({
               {inBoq.has(concept.code) ? " (ya en el presupuesto)" : ""}
             </option>
           ))}
-        </select>
+        </Select>
         <Input
           type="number"
           step="any"

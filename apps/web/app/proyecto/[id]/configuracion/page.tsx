@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Archive, ArrowCounterClockwise, Trash, UsersThree } from "@phosphor-icons/react";
 import {
   ApiError,
+  apiMessage,
   getProject,
   patchProject,
   removeProject,
@@ -28,8 +29,9 @@ import {
   Input,
   PageHeader,
   SectionTitle,
-  SkeletonHeader,
+  Select,
   Skeleton,
+  SkeletonHeader,
 } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
@@ -269,11 +271,7 @@ function AccessCard({ projectId }: { projectId: string }) {
       setEmail("");
       reload();
     } catch (e) {
-      const message =
-        e instanceof ApiError && e.detail && typeof e.detail === "object"
-          ? (e.detail as { message?: string }).message
-          : null;
-      setError(message || "No se pudo compartir el proyecto.");
+      setError(apiMessage(e, "No se pudo compartir el proyecto."));
     }
   }
 
@@ -345,15 +343,14 @@ function AccessCard({ projectId }: { projectId: string }) {
                 </option>
               ))}
             </datalist>
-            <select
+            <Select
               value={role}
               onChange={(e) => setRole(e.target.value as typeof role)}
-              className="rounded-lg border border-border bg-surface px-2 py-2 text-sm"
             >
               <option value="viewer">Lectura</option>
               <option value="editor">Edición</option>
               <option value="owner">Propietario</option>
-            </select>
+            </Select>
             <Button variant="primary" onClick={grant} disabled={!email.trim()}>
               Compartir
             </Button>

@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Trash, UploadSimple } from "@phosphor-icons/react";
 import {
-  ApiError,
+  addParametricRule,
+  apiMessage,
   deleteParametricRule,
   deletePlantilla,
   getPlantillas,
@@ -13,7 +14,18 @@ import {
   type Plantilla,
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
-import { Badge, Button, Callout, Card, Input, SectionTitle, Skeleton, Td, Th } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Callout,
+  Card,
+  Input,
+  SectionTitle,
+  Select,
+  Skeleton,
+  Td,
+  Th,
+} from "@/components/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const BASIS_LABEL: Record<string, string> = {
@@ -50,6 +62,12 @@ export function PlantillasSection({
   const [confirm, setConfirm] = useState<
     { kind: "plantilla"; plantilla: Plantilla } | { kind: "rule"; rule: ParametricRule } | null
   >(null);
+  const [ruleCode, setRuleCode] = useState("");
+  const [ruleBasis, setRuleBasis] = useState("m2_construida");
+  const [ruleLocal, setRuleLocal] = useState("");
+  const [ruleFactor, setRuleFactor] = useState("");
+  const [ruleNote, setRuleNote] = useState("");
+  const [ruleBusy, setRuleBusy] = useState(false);
 
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -94,11 +112,7 @@ export function PlantillasSection({
       reload();
       onChanged();
     } catch (e) {
-      const detail =
-        e instanceof ApiError && e.detail && typeof e.detail === "object"
-          ? (e.detail as { message?: string }).message
-          : null;
-      onError(detail || "No se pudo importar la plantilla.");
+      onError(apiMessage(e, "No se pudo importar la plantilla."));
     } finally {
       setBusy(false);
     }
@@ -132,6 +146,32 @@ export function PlantillasSection({
       onChanged();
     } catch {
       onError("No se pudo actualizar la regla.");
+    }
+  }
+
+  async function addRule() {
+    const factor = Number(ruleFactor);
+    const code = ruleCode.trim().toUpperCase();
+    const basis = ruleBasis === "local" ? `local:${ruleLocal.trim().toLowerCase()}` : ruleBasis;
+    if (!code || !factor || factor <= 0 || (ruleBasis === "local" && !ruleLocal.trim())) {
+      onError("Captura la clave del concepto, la base y un factor mayor que cero.");
+      return;
+    }
+    setRuleBusy(true);
+    try {
+      await addParametricRule(
+        { concept_code: code, basis, factor, source: "capturada a mano", note: ruleNote.trim() },
+        getBrowserActor(),
+      );
+      setRuleCode("");
+      setRuleFactor("");
+      setRuleNote("");
+      reload();
+      onChanged();
+    } catch (e) {
+      onError(apiMessage(e, "No se pudo crear la regla."));
+    } finally {
+      setRuleBusy(false);
     }
   }
 
@@ -330,6 +370,58 @@ export function PlantillasSection({
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+      {loaded && (
+        <div className="mt-4 rounded-lg border border-dashed border-border-strong p-3">
+          <div className="mb-2 text-xs font-medium text-muted">
+            Regla a mano — cuando sabes el rendimiento sin un presupuesto anterior
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={ruleCode}
+              onChange={(e) => setRuleCode(e.target.value)}
+              placeholder="Concepto (p. ej. INS-001)"
+              className="w-44 px-2 py-1.5 font-mono text-xs"
+              aria-label="Clave del concepto"
+            />
+            <Select value={ruleBasis} onChange={(e) => setRuleBasis(e.target.value)} aria-label="Base">
+              <option value="m2_construida">por m² construido</option>
+              <option value="planta">por planta</option>
+              <option value="proyecto">por proyecto</option>
+              <option value="local">por local…</option>
+            </Select>
+            {ruleBasis === "local" && (
+              <Input
+                value={ruleLocal}
+                onChange={(e) => setRuleLocal(e.target.value)}
+                placeholder="baño, cocina…"
+                className="w-36 px-2 py-1.5"
+                aria-label="Nombre del local"
+              />
+            )}
+            <Input
+              type="number"
+              step="any"
+              min={0}
+              value={ruleFactor}
+              onChange={(e) => setRuleFactor(e.target.value)}
+              placeholder="Factor"
+              className="w-28 px-2 py-1.5 text-right tabular"
+              aria-label="Factor"
+            />
+            <Input
+              value={ruleNote}
+              onChange={(e) => setRuleNote(e.target.value)}
+              placeholder="Nota (de dónde sale)"
+              maxLength={300}
+              className="min-w-40 flex-1 px-2 py-1.5"
+              aria-label="Nota de la regla"
+            />
+            <Button size="sm" onClick={addRule} disabled={ruleBusy}>
+              Agregar regla
+            </Button>
           </div>
         </div>
       )}

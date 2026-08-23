@@ -35,16 +35,18 @@ import {
   type SheetInventory,
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
-import { FAMILY_LABELS } from "@/components/PlanoCanvas";
+import { FAMILY_LABELS } from "@/lib/families";
 import { useProjectLive } from "@/components/ProjectLive";
 import {
   Badge,
   Button,
   Callout,
   Card,
+  CONFIDENCE_FIRM,
   Metric,
   PageHeader,
   SectionTitle,
+  Select,
   SkeletonCards,
   SkeletonHeader,
   SkeletonMetrics,
@@ -222,7 +224,7 @@ export default function LecturaPage() {
               : undefined
           }
           icon={<Ruler size={16} weight="duotone" />}
-          accent={lectura.units && lectura.units.confidence >= 0.7 ? "success" : undefined}
+          accent={lectura.units && lectura.units.confidence >= CONFIDENCE_FIRM ? "success" : undefined}
         />
         <Metric
           label={lectura.frames && lectura.frames.total > 0 ? "Hojas" : "Archivos"}
@@ -550,15 +552,16 @@ function MappingControl({
   const wanted = normalizeUnit(unit);
   const options = concepts.filter((c) => normalizeUnit(c.unit) === wanted);
   return (
-    <select
+    <Select
       value=""
       disabled={busy}
       onClick={(e) => e.stopPropagation()}
       onChange={(e) => {
         if (e.target.value) onAssign(kind, pattern, e.target.value);
       }}
-      className="max-w-44 rounded-md border border-border bg-surface px-1 py-0.5 text-[11px]"
+      className="max-w-44"
       title={`Contar «${pattern}» como un concepto (${unit})`}
+      size="sm"
     >
       <option value="">concepto ({unit})…</option>
       {options.map((c) => (
@@ -566,7 +569,7 @@ function MappingControl({
           {c.code} · {c.description.slice(0, 38)}
         </option>
       ))}
-    </select>
+    </Select>
   );
 }
 

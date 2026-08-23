@@ -35,7 +35,7 @@ import {
   type ProjectReviews,
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
-import { FAMILY_LABELS } from "@/components/PlanoCanvas";
+import { FAMILY_LABELS } from "@/lib/families";
 import { useCostReport } from "@/lib/useProjectReport";
 import { phaseColor } from "@/lib/phases";
 import {

@@ -26,15 +26,19 @@ import {
   type Geometry,
   type ReviewStatus,
 } from "@/lib/api";
-import { FAMILY_COLORS, FAMILY_LABELS, HIDDEN_BY_DEFAULT, PlanoCanvas, detectionTitle, familyOf, type MeasureMode } from "@/components/PlanoCanvas";
+import { PlanoCanvas, type MeasureMode } from "@/components/PlanoCanvas";
+import { FAMILY_COLORS, FAMILY_LABELS, HIDDEN_BY_DEFAULT, detectionTitle, familyOf } from "@/lib/families";
 import {
   Badge,
   Button,
   buttonClasses,
   Callout,
+  Checkbox,
+  confidenceTone,
   IconButton,
   Input,
   PageHeader,
+  Select,
   Skeleton,
 } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
@@ -511,16 +515,7 @@ export default function PlanoPage() {
                 </p>
               )}
               <div className="flex flex-wrap items-center gap-2">
-                <Badge
-                  dot
-                  tone={
-                    selected.confidence >= 0.7
-                      ? "success"
-                      : selected.confidence >= 0.45
-                        ? "warning"
-                        : "danger"
-                  }
-                >
+                <Badge dot tone={confidenceTone(selected.confidence)}>
                   Confianza {(selected.confidence * 100).toFixed(0)}%
                 </Badge>
                 {selected.review === "confirmed" && (
@@ -736,10 +731,10 @@ function MeasureResult({
       {sent && <p className="mt-1 text-xs text-success">{sent}</p>}
       {formOpen && (
         <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border pt-2">
-          <select
+          <Select
             value={conceptCode}
             onChange={(e) => setConceptCode(e.target.value)}
-            className="min-w-44 flex-1 rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
+            className="min-w-44 flex-1"
           >
             <option value="">Concepto…</option>
             {(concepts ?? []).map((concept) => (
@@ -747,7 +742,7 @@ function MeasureResult({
                 {concept.code} · {concept.description.slice(0, 40)}
               </option>
             ))}
-          </select>
+          </Select>
           <Input
             type="number"
             step="any"
@@ -834,11 +829,9 @@ function FilterPanel({
                 key={index}
                 className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm transition hover:bg-surface-2"
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={!hiddenSheets.has(index)}
                   onChange={() => onToggleSheet(index)}
-                  className="accent-[var(--primary)]"
                 />
                 <span className="flex-1 truncate" title={sheet.name}>
                   {sheet.sheet_number ?? sheet.name}
@@ -859,11 +852,9 @@ function FilterPanel({
             key={family}
             className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm transition hover:bg-surface-2"
           >
-            <input
-              type="checkbox"
+            <Checkbox
               checked={visibleFamilies.has(family)}
               onChange={() => onToggleFamily(family)}
-              className="accent-[var(--primary)]"
             />
             <span
               className="h-2.5 w-2.5 rounded-sm"
@@ -891,11 +882,9 @@ function FilterPanel({
       </div>
 
       <label className="mb-4 flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm transition hover:bg-surface-2">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={showExcluded}
           onChange={onToggleExcluded}
-          className="accent-[var(--primary)]"
         />
         <span className="flex-1">Mostrar excluidas</span>
       </label>
@@ -944,11 +933,9 @@ function FilterPanel({
             key={l.name}
             className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm transition hover:bg-surface-2"
           >
-            <input
-              type="checkbox"
+            <Checkbox
               checked={visibleLayers.has(l.name)}
               onChange={() => onToggleLayer(l.name)}
-              className="accent-[var(--primary)]"
             />
             <span className="flex-1 truncate" title={l.name}>
               {l.name}

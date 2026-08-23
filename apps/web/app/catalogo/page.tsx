@@ -56,30 +56,29 @@ import {
 } from "@/lib/api";
 import Link from "next/link";
 import { getBrowserActor } from "@/lib/collab";
+import { RESOURCE_TYPE_LABELS, downloadCsv } from "@/lib/format";
 import {
   Badge,
   Button,
   Callout,
   Card,
+  Checkbox,
+  Disclosure,
   Input,
   PageHeader,
   SectionTitle,
+  Select,
   Skeleton,
   SkeletonHeader,
   SkeletonTable,
   Td,
   Th,
 } from "@/components/ui";
+import { AliasesSection } from "@/components/AliasesSection";
 import { Modal } from "@/components/Modal";
 import { PlantillasSection } from "@/components/PlantillasSection";
 import { VigenciaChip, VigenciaSection } from "@/components/VigenciaSection";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
-
-const TYPE_LABELS: Record<string, string> = {
-  material: "Material",
-  mano_de_obra: "Mano de obra",
-  equipo: "Equipo",
-};
 
 export default function CatalogoPage() {
   const [catalog, setCatalog] = useState<CatalogState | null>(null);
@@ -92,7 +91,11 @@ export default function CatalogoPage() {
   // The projects this catálogo prices: a change here is theirs to recalculate.
   useEffect(() => {
     listProjects()
-      .then((list) => setProjects(list.filter((p) => !p.archived && p.status === "processed")))
+      .then((list) =>
+        setProjects(
+          list.filter((p) => !p.archived && p.status === "processed"),
+        ),
+      )
       .catch(() => {});
   }, []);
 
@@ -102,7 +105,11 @@ export default function CatalogoPage() {
         setCatalog(state);
         setError(null);
       })
-      .catch(() => setError("No se pudo cargar el catálogo. Revisa que el servidor esté activo."));
+      .catch(() =>
+        setError(
+          "No se pudo cargar el catálogo. Revisa que el servidor esté activo.",
+        ),
+      );
   }, []);
 
   useEffect(() => {
@@ -122,17 +129,17 @@ export default function CatalogoPage() {
       setNotice(`${result.updated} precios actualizados${skipped}`);
       reload();
     } catch (e) {
-      const detail =
-        e instanceof ApiError && e.detail && typeof e.detail === "object"
-          ? (e.detail as { message?: string }).message
-          : null;
-      setError(detail || "No se pudo importar el CSV.");
+      setError(apiMessage(e, "No se pudo importar el CSV."));
     }
   }
 
   async function onImportMatrices(file: File) {
     try {
-      const result = await importMatrices(file, file.name.replace(/\.[^.]+$/, ""), getBrowserActor());
+      const result = await importMatrices(
+        file,
+        file.name.replace(/\.[^.]+$/, ""),
+        getBrowserActor(),
+      );
       const problems = result.problems.length
         ? ` · ${result.problems.length} avisos: ${result.problems.slice(0, 3).join(" / ")}${result.problems.length > 3 ? "…" : ""}`
         : "";
@@ -142,146 +149,176 @@ export default function CatalogoPage() {
       );
       reload();
     } catch (e) {
-      const detail =
-        e instanceof ApiError && e.detail && typeof e.detail === "object"
-          ? (e.detail as { message?: string }).message
-          : null;
-      setError(detail || "No se pudieron importar las matrices.");
+      setError(apiMessage(e, "No se pudieron importar las matrices."));
     }
   }
 
   function exportCsv() {
     if (!catalog) return;
-    const rows = [
-      ["code", "description", "unit", "resource_type", "unit_cost", "source"],
+    downloadCsv("catalogo_insumos.csv", [
+      [
+        "code",
+        "description",
+        "unit",
+        "resource_type",
+        "unit_cost",
+        "source",
+        "vigencia",
+      ],
       ...catalog.insumos.map((insumo) => [
         insumo.code,
-        `"${insumo.description}"`,
+        insumo.description,
         insumo.unit,
         insumo.resource_type,
         insumo.unit_cost,
-        `"${insumo.source}"`,
+        insumo.source,
+        insumo.vigencia ?? "",
       ]),
-    ];
-    const url = URL.createObjectURL(
-      new Blob([rows.map((row) => row.join(",")).join("\n")], { type: "text/csv" }),
-    );
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "catalogo_insumos.csv";
-    anchor.click();
-    URL.revokeObjectURL(url);
+    ]);
   }
 
   return (
     <div className="min-h-screen">
       <WorkspaceHeader active="catalogo" />
       <main className="mx-auto max-w-5xl px-5 py-8 sm:px-6">
-      <PageHeader
-        title="Catálogo del taller"
-        sub="Insumos, matrices de precio unitario y rendimientos que usa cada cálculo. Cada precio indica su fuente: sustituye las referencias por tus cotizaciones."
-        actions={
-          <>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".csv,.xlsx"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) onImportFile(file);
-                e.target.value = "";
-              }}
-            />
-            <Button
-              onClick={() => fileRef.current?.click()}
-              title="CSV o XLSX (exportado de OPUS/Neodata) con columnas clave y precio"
-            >
-              <UploadSimple size={15} weight="bold" /> Importar precios
-            </Button>
-            <input
-              ref={matricesRef}
-              type="file"
-              accept=".csv,.xlsx"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) onImportMatrices(file);
-                e.target.value = "";
-              }}
-            />
-            <Button
-              onClick={() => matricesRef.current?.click()}
-              title="Catálogo de conceptos con insumos exportado de OPUS/Neodata (XLSX/CSV): conceptos con su matriz"
-            >
-              <UploadSimple size={15} weight="bold" /> Importar matrices
-            </Button>
-            <Button onClick={exportCsv} disabled={!catalog}>
-              <DownloadSimple size={15} weight="bold" /> Exportar insumos (CSV)
-            </Button>
-          </>
-        }
-      />
-
-      {error && (
-        <div className="mb-4">
-          <Callout tone="danger">{error}</Callout>
-        </div>
-      )}
-      {notice && (
-        <div className="mb-4">
-          <Callout
-            tone="info"
-            action={
-              <Button size="sm" variant="ghost" onClick={() => setNotice(null)}>
-                <Check size={14} weight="bold" /> Entendido
+        <PageHeader
+          title="Catálogo del taller"
+          sub="Insumos, matrices de precio unitario y rendimientos que usa cada cálculo. Cada precio indica su fuente: sustituye las referencias por tus cotizaciones."
+          actions={
+            <>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".csv,.xlsx"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onImportFile(file);
+                  e.target.value = "";
+                }}
+              />
+              <Button
+                onClick={() => fileRef.current?.click()}
+                title="CSV o XLSX (exportado de OPUS/Neodata) con columnas clave y precio"
+              >
+                <UploadSimple size={15} weight="bold" /> Importar precios
               </Button>
-            }
-          >
-            <span>
-              {notice}.{" "}
-              {projects.length === 0
-                ? "Los proyectos toman los cambios al recalcular."
-                : projects.length === 1
-                  ? "Se aplica al recalcular "
-                  : `Se aplica al recalcular cada proyecto (${projects.length}): `}
-              {projects.slice(0, 4).map((p, i) => (
-                <span key={p.project_id}>
-                  {i > 0 && ", "}
-                  <Link
-                    href={`/proyecto/${encodeURIComponent(p.project_id)}/parametros`}
-                    className="font-medium underline"
-                  >
-                    {p.name}
-                  </Link>
-                </span>
-              ))}
-              {projects.length > 4 && ` y ${projects.length - 4} más`}
-              {projects.length > 0 && "."}
-            </span>
-          </Callout>
-        </div>
-      )}
+              <input
+                ref={matricesRef}
+                type="file"
+                accept=".csv,.xlsx"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onImportMatrices(file);
+                  e.target.value = "";
+                }}
+              />
+              <Button
+                onClick={() => matricesRef.current?.click()}
+                title="Catálogo de conceptos con insumos exportado de OPUS/Neodata (XLSX/CSV): conceptos con su matriz"
+              >
+                <UploadSimple size={15} weight="bold" /> Importar matrices
+              </Button>
+              <Button onClick={exportCsv} disabled={!catalog}>
+                <DownloadSimple size={15} weight="bold" /> Exportar insumos
+                (CSV)
+              </Button>
+            </>
+          }
+        />
 
-      {!catalog ? (
-        <>
-          <SkeletonHeader />
-          <SkeletonTable rows={8} />
-        </>
-      ) : (
-        <>
-          <FuentesSection catalog={catalog} onChanged={reload} onError={setError} onNotice={setNotice} />
+        {error && (
           <div className="mb-4">
-            <VigenciaSection onChanged={reload} onError={setError} onNotice={setNotice} />
+            <Callout tone="danger">{error}</Callout>
           </div>
+        )}
+        {notice && (
           <div className="mb-4">
-            <PlantillasSection onChanged={reload} onError={setError} onNotice={setNotice} />
+            <Callout
+              tone="info"
+              action={
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setNotice(null)}
+                >
+                  <Check size={14} weight="bold" /> Entendido
+                </Button>
+              }
+            >
+              <span>
+                {notice}.{" "}
+                {projects.length === 0
+                  ? "Los proyectos toman los cambios al recalcular."
+                  : projects.length === 1
+                    ? "Se aplica al recalcular "
+                    : `Se aplica al recalcular cada proyecto (${projects.length}): `}
+                {projects.slice(0, 4).map((p, i) => (
+                  <span key={p.project_id}>
+                    {i > 0 && ", "}
+                    <Link
+                      href={`/proyecto/${encodeURIComponent(p.project_id)}/parametros`}
+                      className="font-medium underline"
+                    >
+                      {p.name}
+                    </Link>
+                  </span>
+                ))}
+                {projects.length > 4 && ` y ${projects.length - 4} más`}
+                {projects.length > 0 && "."}
+              </span>
+            </Callout>
           </div>
-          <SalarioRealSection onChanged={reload} onError={setError} onNotice={setNotice} />
-          <InsumosSection catalog={catalog} onChanged={reload} onError={setError} />
-          <ApusSection catalog={catalog} onChanged={reload} onError={setError} />
-        </>
-      )}
+        )}
+
+        {!catalog ? (
+          <>
+            <SkeletonHeader />
+            <SkeletonTable rows={8} />
+          </>
+        ) : (
+          <>
+            <FuentesSection
+              catalog={catalog}
+              onChanged={reload}
+              onError={setError}
+              onNotice={setNotice}
+            />
+            <div className="mb-4">
+              <VigenciaSection
+                onChanged={reload}
+                onError={setError}
+                onNotice={setNotice}
+              />
+            </div>
+            <div className="mb-4">
+              <AliasesSection onChanged={reload} onError={setError} />
+            </div>
+            <div className="mb-4">
+              <PlantillasSection
+                onChanged={reload}
+                onError={setError}
+                onNotice={setNotice}
+              />
+            </div>
+            <SalarioRealSection
+              onChanged={reload}
+              onError={setError}
+              onNotice={setNotice}
+            />
+            <InsumosSection
+              catalog={catalog}
+              onChanged={reload}
+              onError={setError}
+            />
+            <ApusSection
+              catalog={catalog}
+              onChanged={reload}
+              onError={setError}
+            />
+          </>
+        )}
       </main>
     </div>
   );
@@ -304,7 +341,10 @@ function InsumosSection({
   async function commitInsumo(
     code: string,
     patch: Partial<
-      Pick<CatalogInsumo, "description" | "unit_cost" | "source" | "source_type" | "vigencia">
+      Pick<
+        CatalogInsumo,
+        "description" | "unit_cost" | "source" | "source_type" | "vigencia"
+      >
     >,
   ) {
     try {
@@ -347,13 +387,21 @@ function InsumosSection({
           </thead>
           <tbody>
             {catalog.insumos.map((insumo) => (
-              <tr key={insumo.code} className="border-b border-border last:border-0">
+              <tr
+                key={insumo.code}
+                className="border-b border-border last:border-0"
+              >
                 <Td className="px-5">
                   <div>{insumo.description}</div>
-                  <div className="font-mono text-xs text-muted">{insumo.code}</div>
+                  <div className="font-mono text-xs text-muted">
+                    {insumo.code}
+                  </div>
                 </Td>
                 <Td>
-                  <Badge>{TYPE_LABELS[insumo.resource_type] ?? insumo.resource_type}</Badge>
+                  <Badge>
+                    {RESOURCE_TYPE_LABELS[insumo.resource_type] ??
+                      insumo.resource_type}
+                  </Badge>
                 </Td>
                 <Td className="text-muted">{insumo.unit}</Td>
                 <Td align="right">
@@ -367,7 +415,9 @@ function InsumosSection({
                   ) : (
                     <CommitNumber
                       value={insumo.unit_cost}
-                      onCommit={(value) => commitInsumo(insumo.code, { unit_cost: value })}
+                      onCommit={(value) =>
+                        commitInsumo(insumo.code, { unit_cost: value })
+                      }
                     />
                   )}
                 </Td>
@@ -376,33 +426,38 @@ function InsumosSection({
                     value={insumo.source}
                     placeholder="p. ej. cotización proveedor"
                     reference={insumo.source_type === "referencia"}
-                    onCommit={(value) => commitInsumo(insumo.code, { source: value })}
+                    onCommit={(value) =>
+                      commitInsumo(insumo.code, { source: value })
+                    }
                   />
                   <div className="mt-1 flex items-center gap-1.5">
-                    <select
+                    <Select
                       value={insumo.source_type}
                       onChange={(e) =>
                         commitInsumo(insumo.code, {
-                          source_type: e.target.value as CatalogInsumo["source_type"],
+                          source_type: e.target
+                            .value as CatalogInsumo["source_type"],
                         })
                       }
-                      className="rounded-md border border-border bg-surface px-1.5 py-0.5 text-[11px] text-muted"
+                      className="text-muted"
+                      size="sm"
                     >
                       <option value="referencia">Referencia</option>
                       <option value="cotizacion">Cotización</option>
                       <option value="publicacion">Publicación</option>
                       <option value="calculado">Calculado</option>
-                    </select>
-                    {insumo.resource_type === "equipo" && !insumo.is_labor_percentage && (
-                      <button
-                        type="button"
-                        onClick={() => setEquipmentCode(insumo.code)}
-                        className="rounded-md border border-border bg-surface px-1.5 py-0.5 text-[11px] text-muted hover:text-foreground"
-                        title="Costo horario por RLOPSRM"
-                      >
-                        Costo horario
-                      </button>
-                    )}
+                    </Select>
+                    {insumo.resource_type === "equipo" &&
+                      !insumo.is_labor_percentage && (
+                        <button
+                          type="button"
+                          onClick={() => setEquipmentCode(insumo.code)}
+                          className="rounded-md border border-border bg-surface px-1.5 py-0.5 text-[11px] text-muted hover:text-foreground"
+                          title="Costo horario por RLOPSRM"
+                        >
+                          Costo horario
+                        </button>
+                      )}
                     <input
                       type="month"
                       value={insumo.vigencia}
@@ -501,15 +556,14 @@ function NewInsumoRow({
         placeholder="UN"
         className="w-16 px-2 py-1.5 uppercase"
       />
-      <select
+      <Select
         value={resourceType}
         onChange={(e) => setResourceType(e.target.value)}
-        className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
       >
         <option value="material">Material</option>
         <option value="mano_de_obra">Mano de obra</option>
         <option value="equipo">Equipo</option>
-      </select>
+      </Select>
       <Input
         type="number"
         step="any"
@@ -542,7 +596,9 @@ function ApusSection({
   onChanged: () => void;
   onError: (message: string) => void;
 }) {
-  const [open, setOpen] = useState<string | null>(catalog.concepts[0]?.code ?? null);
+  const [open, setOpen] = useState<string | null>(
+    catalog.concepts[0]?.code ?? null,
+  );
   const byPhase = useMemo(() => {
     const phases = new Map<string, CatalogConcept[]>();
     for (const phase of catalog.phase_order) phases.set(phase, []);
@@ -586,7 +642,9 @@ function ApusSection({
                 components={catalog.apus[concept.code] ?? []}
                 insumos={catalog.insumos}
                 open={open === concept.code}
-                onToggle={() => setOpen(open === concept.code ? null : concept.code)}
+                onToggle={() =>
+                  setOpen(open === concept.code ? null : concept.code)
+                }
                 onChanged={onChanged}
                 onError={onError}
               />
@@ -619,12 +677,19 @@ function NewConceptCard({
   async function submit() {
     const production = Number(rate);
     const quantity = Number(resourceQty);
-    if (!code.trim() || description.trim().length < 3 || !unit.trim() || !(production > 0)) {
+    if (
+      !code.trim() ||
+      description.trim().length < 3 ||
+      !unit.trim() ||
+      !(production > 0)
+    ) {
       onError("Completa clave, descripción, unidad y rendimiento positivo.");
       return;
     }
     if (!resourceCode || !(quantity > 0)) {
-      onError("Un concepto nace con al menos un recurso en su APU (sin precio no hay costo).");
+      onError(
+        "Un concepto nace con al menos un recurso en su APU (sin precio no hay costo).",
+      );
       return;
     }
     setBusy(true);
@@ -642,11 +707,7 @@ function NewConceptCard({
       );
       onDone();
     } catch (e) {
-      const detail =
-        e instanceof ApiError && e.detail && typeof e.detail === "object"
-          ? (e.detail as { message?: string }).message
-          : null;
-      onError(detail || "No se pudo crear el concepto.");
+      onError(apiMessage(e, "No se pudo crear el concepto."));
     } finally {
       setBusy(false);
     }
@@ -655,8 +716,8 @@ function NewConceptCard({
   return (
     <Card className="mb-4 p-4">
       <p className="mb-3 text-sm text-muted">
-        Concepto manual: su cantidad se captura con ajustes documentados o mediciones del
-        visor; su precio sale de la matriz que definas aquí.
+        Concepto manual: su cantidad se captura con ajustes documentados o
+        mediciones del visor; su precio sale de la matriz que definas aquí.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <Input
@@ -677,17 +738,13 @@ function NewConceptCard({
           placeholder="UN"
           className="w-16 px-2 py-1.5 uppercase"
         />
-        <select
-          value={phase}
-          onChange={(e) => setPhase(e.target.value)}
-          className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
-        >
+        <Select value={phase} onChange={(e) => setPhase(e.target.value)}>
           {catalog.phase_order.map((name) => (
             <option key={name} value={name}>
               {name}
             </option>
           ))}
-        </select>
+        </Select>
         <Input
           type="number"
           step="any"
@@ -699,10 +756,10 @@ function NewConceptCard({
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <span className="text-xs text-muted">Primer recurso del APU:</span>
-        <select
+        <Select
           value={resourceCode}
           onChange={(e) => setResourceCode(e.target.value)}
-          className="min-w-52 rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
+          className="min-w-52"
         >
           <option value="">Recurso…</option>
           {catalog.insumos.map((insumo) => (
@@ -710,7 +767,7 @@ function NewConceptCard({
               {insumo.code} · {insumo.description}
             </option>
           ))}
-        </select>
+        </Select>
         <Input
           type="number"
           step="any"
@@ -727,7 +784,10 @@ function NewConceptCard({
 }
 
 /** Mirrors the backend equation: %MO lines cost = fraction × labor subtotal. */
-function directUnitCost(components: ApuComponent[], insumos: CatalogInsumo[]): number {
+function directUnitCost(
+  components: ApuComponent[],
+  insumos: CatalogInsumo[],
+): number {
   const byCode = new Map(insumos.map((insumo) => [insumo.code, insumo]));
   let total = 0;
   let laborSubtotal = 0;
@@ -773,7 +833,8 @@ function ApuEditor({
     [insumos],
   );
   const available = insumos.filter(
-    (insumo) => !draft.some((component) => component.resource_code === insumo.code),
+    (insumo) =>
+      !draft.some((component) => component.resource_code === insumo.code),
   );
 
   // Re-sync local drafts when fresh catalog state arrives (render-time adjust).
@@ -788,7 +849,9 @@ function ApuEditor({
   function setQuantity(resourceCode: string, quantity: number) {
     setDraft((current) =>
       current.map((component) =>
-        component.resource_code === resourceCode ? { ...component, quantity } : component,
+        component.resource_code === resourceCode
+          ? { ...component, quantity }
+          : component,
       ),
     );
     setDirty(true);
@@ -803,14 +866,19 @@ function ApuEditor({
 
   function addComponent(resourceCode: string) {
     if (!resourceCode) return;
-    setDraft((current) => [...current, { resource_code: resourceCode, quantity: 1 }]);
+    setDraft((current) => [
+      ...current,
+      { resource_code: resourceCode, quantity: 1 },
+    ]);
     setDirty(true);
   }
 
   async function save() {
     const invalid = draft.some((component) => !(component.quantity > 0));
     if (invalid || draft.length === 0) {
-      onError("Todas las cantidades deben ser positivas y la matriz no puede quedar vacía.");
+      onError(
+        "Todas las cantidades deben ser positivas y la matriz no puede quedar vacía.",
+      );
       return;
     }
     setBusy(true);
@@ -864,7 +932,9 @@ function ApuEditor({
         </div>
         <div className="shrink-0 text-right">
           <div className="font-semibold tabular">
-            {money2(concept.price_override != null ? concept.price_override : preview)}
+            {money2(
+              concept.price_override != null ? concept.price_override : preview,
+            )}
           </div>
           <div className="text-xs text-muted">
             por {concept.unit}
@@ -883,10 +953,15 @@ function ApuEditor({
           {concept.price_override != null && (
             <div className="flex flex-wrap items-center gap-3 border-b border-border bg-surface-2/60 px-5 py-3 text-sm">
               <span className="min-w-0 flex-1">
-                Este concepto se costea a <strong>{money2(concept.price_override)}</strong> por{" "}
-                {concept.unit}, tomado de {concept.price_source} · {concept.price_clave}
-                {concept.price_vigencia ? ` · vigencia ${concept.price_vigencia}` : ""}. La matriz
-                de abajo no se usa mientras el precio adoptado esté activo.
+                Este concepto se costea a{" "}
+                <strong>{money2(concept.price_override)}</strong> por{" "}
+                {concept.unit}, tomado de {concept.price_source} ·{" "}
+                {concept.price_clave}
+                {concept.price_vigencia
+                  ? ` · vigencia ${concept.price_vigencia}`
+                  : ""}
+                . La matriz de abajo no se usa mientras el precio adoptado esté
+                activo.
               </span>
               <Button
                 size="sm"
@@ -898,7 +973,9 @@ function ApuEditor({
                     await clearConceptPrice(concept.code, getBrowserActor());
                     onChanged();
                   } catch {
-                    onError(`No se pudo quitar el precio adoptado de ${concept.code}.`);
+                    onError(
+                      `No se pudo quitar el precio adoptado de ${concept.code}.`,
+                    );
                   } finally {
                     setBusy(false);
                   }
@@ -927,10 +1004,15 @@ function ApuEditor({
                     ? null
                     : component.quantity * insumo.unit_cost;
                   return (
-                    <tr key={component.resource_code} className="border-b border-border last:border-0">
+                    <tr
+                      key={component.resource_code}
+                      className="border-b border-border last:border-0"
+                    >
                       <Td className="px-5">
                         <div>{insumo.description}</div>
-                        <div className="font-mono text-xs text-muted">{insumo.code}</div>
+                        <div className="font-mono text-xs text-muted">
+                          {insumo.code}
+                        </div>
                       </Td>
                       <Td align="right">
                         <Input
@@ -938,7 +1020,10 @@ function ApuEditor({
                           step="any"
                           value={component.quantity}
                           onChange={(e) =>
-                            setQuantity(component.resource_code, Number(e.target.value))
+                            setQuantity(
+                              component.resource_code,
+                              Number(e.target.value),
+                            )
                           }
                           className="w-24 px-2 py-1 text-right tabular"
                         />
@@ -955,7 +1040,9 @@ function ApuEditor({
                         <button
                           type="button"
                           aria-label={`Quitar ${insumo.code}`}
-                          onClick={() => removeComponent(component.resource_code)}
+                          onClick={() =>
+                            removeComponent(component.resource_code)
+                          }
                           className="rounded-md p-1 text-faint transition-colors hover:bg-danger-soft hover:text-danger"
                         >
                           <Trash size={14} />
@@ -969,10 +1056,10 @@ function ApuEditor({
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3">
             <div className="flex flex-wrap items-center gap-3">
-              <select
+              <Select
                 value=""
                 onChange={(e) => addComponent(e.target.value)}
-                className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-muted"
+                className="text-muted"
               >
                 <option value="">+ Agregar recurso…</option>
                 {available.map((insumo) => (
@@ -980,7 +1067,7 @@ function ApuEditor({
                     {insumo.code} · {insumo.description}
                   </option>
                 ))}
-              </select>
+              </Select>
               <label className="flex items-center gap-2 text-sm text-muted">
                 Rendimiento
                 <Input
@@ -996,9 +1083,17 @@ function ApuEditor({
             </div>
             <div className="flex items-center gap-3">
               <span className="text-sm text-muted">
-                CD unitario: <span className="tabular font-semibold text-foreground">{money2(preview)}</span>
+                CD unitario:{" "}
+                <span className="tabular font-semibold text-foreground">
+                  {money2(preview)}
+                </span>
               </span>
-              <Button size="sm" variant="primary" onClick={save} disabled={!dirty || busy}>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={save}
+                disabled={!dirty || busy}
+              >
                 Guardar matriz
               </Button>
             </div>
@@ -1072,11 +1167,14 @@ function CommitText({
         if (e.key === "Enter") e.currentTarget.blur();
       }}
       className={`w-48 px-2 py-1 text-xs ${reference ? "text-warning" : ""}`}
-      title={reference ? "Precio de referencia: sustitúyelo por tu cotización" : undefined}
+      title={
+        reference
+          ? "Precio de referencia: sustitúyelo por tu cotización"
+          : undefined
+      }
     />
   );
 }
-
 
 /* ------------------------------------------------------------- fuentes --- */
 
@@ -1159,14 +1257,12 @@ function FuentesSection({
     setImporting(source.key);
     try {
       const result = await importReferenceSource(source.key, getBrowserActor());
-      onNotice(`${source.name}: ${result.rows.toLocaleString("es-MX")} renglones importados`);
+      onNotice(
+        `${source.name}: ${result.rows.toLocaleString("es-MX")} renglones importados`,
+      );
       loadSources();
     } catch (e) {
-      const detail =
-        e instanceof ApiError && e.detail && typeof e.detail === "object"
-          ? (e.detail as { message?: string }).message
-          : null;
-      onError(detail || `No se pudo importar ${source.name}.`);
+      onError(apiMessage(e, `No se pudo importar ${source.name}.`));
     } finally {
       setImporting(null);
     }
@@ -1182,16 +1278,14 @@ function FuentesSection({
         ownVigencia.trim(),
         getBrowserActor(),
       );
-      onNotice(`${result.name}: ${result.rows.toLocaleString("es-MX")} conceptos importados como catálogo propio`);
+      onNotice(
+        `${result.name}: ${result.rows.toLocaleString("es-MX")} conceptos importados como catálogo propio`,
+      );
       setOwnFile(null);
       setOwnName("");
       loadSources();
     } catch (e) {
-      const detail =
-        e instanceof ApiError && e.detail && typeof e.detail === "object"
-          ? (e.detail as { message?: string }).message
-          : null;
-      onError(detail || "No se pudo importar el catálogo.");
+      onError(apiMessage(e, "No se pudo importar el catálogo."));
     } finally {
       setOwnBusy(false);
     }
@@ -1209,7 +1303,9 @@ function FuentesSection({
         );
       } else {
         await adoptReference(code, row.ref_id, getBrowserActor());
-        onNotice(`${code} ahora vale ${money2(row.price)} (${row.source_name}, ${row.clave})`);
+        onNotice(
+          `${code} ahora vale ${money2(row.price)} (${row.source_name}, ${row.clave})`,
+        );
       }
       setAdopting((a) => ({ ...a, [row.ref_id]: "" }));
       onChanged();
@@ -1249,7 +1345,10 @@ function FuentesSection({
           </li>
         ) : (
           sources.map((source) => (
-            <li key={source.key} className="flex flex-wrap items-center gap-3 px-5 py-3">
+            <li
+              key={source.key}
+              className="flex flex-wrap items-center gap-3 px-5 py-3"
+            >
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-foreground">
                 {source.custom ? (
                   <UploadSimple size={16} weight="duotone" />
@@ -1260,9 +1359,12 @@ function FuentesSection({
                 )}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{source.name}</div>
+                <div className="truncate text-sm font-medium">
+                  {source.name}
+                </div>
                 <div className="truncate text-xs text-muted">
-                  {source.publisher} · {source.region} · vigencia {source.vigencia}
+                  {source.publisher} · {source.region} · vigencia{" "}
+                  {source.vigencia}
                 </div>
               </div>
               {source.imported ? (
@@ -1283,7 +1385,9 @@ function FuentesSection({
                 </a>
               )}
               {source.custom ? (
-                <span className="text-xs text-muted">Vuelve a subir el archivo para actualizarlo</span>
+                <span className="text-xs text-muted">
+                  Vuelve a subir el archivo para actualizarlo
+                </span>
               ) : (
                 <Button
                   size="sm"
@@ -1305,8 +1409,9 @@ function FuentesSection({
       <div className="border-t border-border px-5 py-4">
         <div className="mb-2 text-sm font-medium">Catálogo propio</div>
         <p className="mb-3 text-xs text-muted">
-          Tu libro de precios en XLSX o CSV (clave, descripción, unidad, precio unitario). Entra a
-          la biblioteca marcado como catálogo propio, nunca como publicación.
+          Tu libro de precios en XLSX o CSV (clave, descripción, unidad, precio
+          unitario). Entra a la biblioteca marcado como catálogo propio, nunca
+          como publicación.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <input
@@ -1316,7 +1421,8 @@ function FuentesSection({
             onChange={(e) => {
               const f = e.target.files?.[0] ?? null;
               setOwnFile(f);
-              if (f && !ownName) setOwnName(f.name.replace(/\.(xlsx|xlsm|csv)$/i, ""));
+              if (f && !ownName)
+                setOwnName(f.name.replace(/\.(xlsx|xlsm|csv)$/i, ""));
             }}
           />
           <Input
@@ -1331,7 +1437,12 @@ function FuentesSection({
             placeholder="Vigencia (AAAA-MM)"
             className="w-40"
           />
-          <Button size="sm" variant="secondary" disabled={!ownFile || ownBusy} onClick={importOwn}>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!ownFile || ownBusy}
+            onClick={importOwn}
+          >
             {ownBusy ? "Importando…" : "Importar catálogo"}
           </Button>
         </div>
@@ -1351,10 +1462,9 @@ function FuentesSection({
                 className="w-full pl-9"
               />
             </div>
-            <select
+            <Select
               value={sourceKey}
               onChange={(e) => setSourceKey(e.target.value)}
-              className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm"
             >
               <option value="">Todas las fuentes</option>
               {imported.map((s) => (
@@ -1362,7 +1472,7 @@ function FuentesSection({
                   {s.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           {searching && rows === null && (
             <div className="mt-3 space-y-2" aria-busy="true">
@@ -1372,12 +1482,18 @@ function FuentesSection({
             </div>
           )}
           {rows && (
-            <div className={`mt-3 overflow-x-auto ${searching ? "opacity-60" : ""}`} aria-busy={searching}>
+            <div
+              className={`mt-3 overflow-x-auto ${searching ? "opacity-60" : ""}`}
+              aria-busy={searching}
+            >
               {searchError ? (
                 <Callout
                   tone="danger"
                   action={
-                    <Button size="sm" onClick={() => setSearchAttempt((n) => n + 1)}>
+                    <Button
+                      size="sm"
+                      onClick={() => setSearchAttempt((n) => n + 1)}
+                    >
                       Reintentar
                     </Button>
                   }
@@ -1386,7 +1502,8 @@ function FuentesSection({
                 </Callout>
               ) : rows.length === 0 ? (
                 <p className="py-3 text-sm text-muted">
-                  Nada en {sourceKey ? "esa fuente" : "las fuentes importadas"} para «{query.trim()}».
+                  Nada en {sourceKey ? "esa fuente" : "las fuentes importadas"}{" "}
+                  para «{query.trim()}».
                   {imported.length === 0 && " Importa primero una publicación."}
                 </p>
               ) : (
@@ -1396,55 +1513,85 @@ function FuentesSection({
                       <th className="py-1.5 pr-3 font-medium">Clave</th>
                       <th className="py-1.5 pr-3 font-medium">Concepto</th>
                       <th className="py-1.5 pr-3 font-medium">Unidad</th>
-                      <th className="py-1.5 pr-3 text-right font-medium">Precio</th>
-                      <th className="py-1.5 font-medium">Usar este precio como…</th>
+                      <th className="py-1.5 pr-3 text-right font-medium">
+                        Precio
+                      </th>
+                      <th className="py-1.5 font-medium">
+                        Usar este precio como…
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((row) => (
-                      <tr key={row.ref_id} className="border-t border-border align-top">
-                        <td className="py-2 pr-3 font-mono text-xs">{row.clave}</td>
+                      <tr
+                        key={row.ref_id}
+                        className="border-t border-border align-top"
+                      >
+                        <td className="py-2 pr-3 font-mono text-xs">
+                          {row.clave}
+                        </td>
                         <td className="py-2 pr-3">
                           <div>{row.description}</div>
                           {row.group_description && (
-                            <div className="text-xs text-faint">{row.group_description}</div>
+                            <div className="text-xs text-faint">
+                              {row.group_description}
+                            </div>
                           )}
                           <div className="text-xs text-faint">
                             {row.source_name} · {row.source_vigencia}
                           </div>
                         </td>
                         <td className="py-2 pr-3 text-muted">{row.unit}</td>
-                        <td className="py-2 pr-3 text-right tabular">{money2(row.price)}</td>
+                        <td className="py-2 pr-3 text-right tabular">
+                          {money2(row.price)}
+                        </td>
                         <td className="py-2">
                           <div className="flex items-center gap-1.5">
-                            <select
+                            <Select
                               value={adopting[row.ref_id] ?? ""}
                               onChange={(e) =>
-                                setAdopting((a) => ({ ...a, [row.ref_id]: e.target.value }))
+                                setAdopting((a) => ({
+                                  ...a,
+                                  [row.ref_id]: e.target.value,
+                                }))
                               }
-                              className="max-w-64 rounded-md border border-border bg-surface px-1.5 py-1 text-xs"
+                              className="max-w-64"
                               aria-label="Dónde usar este precio"
+                              size="sm"
                             >
                               <option value="">elige insumo o concepto…</option>
                               <optgroup label="Costo de un insumo (material, mano de obra, equipo)">
                                 {catalog.insumos
                                   .filter((i) => !i.is_labor_percentage)
                                   .map((i) => (
-                                    <option key={i.code} value={`insumo:${i.code}`}>
-                                      {i.code} · {i.unit} · {i.description.slice(0, 40)}
+                                    <option
+                                      key={i.code}
+                                      value={`insumo:${i.code}`}
+                                    >
+                                      {i.code} · {i.unit} ·{" "}
+                                      {i.description.slice(0, 40)}
                                     </option>
                                   ))}
                               </optgroup>
-                              <optgroup label={`P.U. de un concepto en ${row.unit} (pausa su matriz)`}>
+                              <optgroup
+                                label={`P.U. de un concepto en ${row.unit} (pausa su matriz)`}
+                              >
                                 {catalog.concepts
-                                  .filter((c) => c.unit.toUpperCase() === row.unit.toUpperCase())
+                                  .filter(
+                                    (c) =>
+                                      c.unit.toUpperCase() ===
+                                      row.unit.toUpperCase(),
+                                  )
                                   .map((c) => (
-                                    <option key={c.code} value={`concept:${c.code}`}>
+                                    <option
+                                      key={c.code}
+                                      value={`concept:${c.code}`}
+                                    >
                                       {c.code} · {c.description.slice(0, 40)}
                                     </option>
                                   ))}
                               </optgroup>
-                            </select>
+                            </Select>
                             <Button
                               size="sm"
                               variant="secondary"
@@ -1470,17 +1617,22 @@ function FuentesSection({
 
 /* -------------------------------------------------------- salario real --- */
 
-const FSR_FIELDS: { key: keyof FsrParameters; label: string; step?: string }[] = [
-  { key: "uma", label: "UMA diaria ($)" },
-  { key: "riesgo_trabajo_pct", label: "Riesgo de trabajo (%)", step: "0.001" },
-  { key: "infonavit_pct", label: "INFONAVIT (%)" },
-  { key: "aguinaldo_days", label: "Aguinaldo (días)" },
-  { key: "vacation_days", label: "Vacaciones (días)" },
-  { key: "prima_vacacional_pct", label: "Prima vacacional (%)" },
-  { key: "holidays", label: "Festivos LFT (días)" },
-  { key: "customary_days", label: "Días de costumbre" },
-  { key: "isn_pct", label: "ISN estatal (%)" },
-];
+const FSR_FIELDS: { key: keyof FsrParameters; label: string; step?: string }[] =
+  [
+    { key: "uma", label: "UMA diaria ($)" },
+    {
+      key: "riesgo_trabajo_pct",
+      label: "Riesgo de trabajo (%)",
+      step: "0.001",
+    },
+    { key: "infonavit_pct", label: "INFONAVIT (%)" },
+    { key: "aguinaldo_days", label: "Aguinaldo (días)" },
+    { key: "vacation_days", label: "Vacaciones (días)" },
+    { key: "prima_vacacional_pct", label: "Prima vacacional (%)" },
+    { key: "holidays", label: "Festivos LFT (días)" },
+    { key: "customary_days", label: "Días de costumbre" },
+    { key: "isn_pct", label: "ISN estatal (%)" },
+  ];
 
 function SalarioRealSection({
   onChanged,
@@ -1509,7 +1661,13 @@ function SalarioRealSection({
       .then((s) => {
         setState(s);
         setParams(s.params);
-        setCategories(s.categories.map(({ code, description, salario_nominal }) => ({ code, description, salario_nominal })));
+        setCategories(
+          s.categories.map(({ code, description, salario_nominal }) => ({
+            code,
+            description,
+            salario_nominal,
+          })),
+        );
         setLoadError(false);
       })
       .catch(() => setLoadError(true));
@@ -1530,7 +1688,10 @@ function SalarioRealSection({
     setPresetKey(key);
     setParams({ ...params, isn_pct: preset.isn_pct });
     setCategories((list) =>
-      list.map((c) => ({ ...c, salario_nominal: Math.max(c.salario_nominal, preset.salario_minimo) })),
+      list.map((c) => ({
+        ...c,
+        salario_nominal: Math.max(c.salario_nominal, preset.salario_minimo),
+      })),
     );
     setDirty(true);
   }
@@ -1558,17 +1719,15 @@ function SalarioRealSection({
       const preset = presets.find((p) => p.key === presetKey);
       onNotice(
         `Salario real aplicado a ${result.categories.length} categorías de mano de obra${
-          preset ? ` con ISN y salario mínimo de ${preset.label} (${preset.source})` : ""
+          preset
+            ? ` con ISN y salario mínimo de ${preset.label} (${preset.source})`
+            : ""
         }`,
       );
       setPresetKey("");
       onChanged();
     } catch (e) {
-      const detail =
-        e instanceof ApiError && e.detail && typeof e.detail === "object"
-          ? (e.detail as { message?: string }).message
-          : null;
-      onError(detail || "No se pudo aplicar el salario real.");
+      onError(apiMessage(e, "No se pudo aplicar el salario real."));
     } finally {
       setBusy(false);
     }
@@ -1577,28 +1736,23 @@ function SalarioRealSection({
   const first = state?.categories[0]?.breakdown;
 
   return (
-    <Card className="mb-8 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-3 px-5 py-4 text-left"
+    <>
+      <Disclosure
+        className="mb-8"
+        open={open}
+        onToggle={() => setOpen((v) => !v)}
+        icon={<HardHat size={16} weight="duotone" />}
+        title="Salario real (Fsr) — RLOPSRM art. 190–191"
+        summary={
+          (first
+            ? `Fsr ${first.fsr.toFixed(4)} para el peón · Tp ${first.tp} / Tl ${first.tl} · CONASAMI, UMA e IMSS ${params?.year ?? ""}`
+            : "Sn × Fsr con CONASAMI, UMA, IMSS e INFONAVIT vigentes, desglosado por ramo.") +
+          (state?.applied_at
+            ? ` · aplicado ${state.applied_at}`
+            : " · sin aplicar")
+        }
       >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-foreground">
-          <HardHat size={16} weight="duotone" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium">Salario real (Fsr) — RLOPSRM art. 190–191</div>
-          <div className="text-xs text-muted">
-            {first
-              ? `Fsr ${first.fsr.toFixed(4)} para el peón · Tp ${first.tp} / Tl ${first.tl} · CONASAMI, UMA e IMSS ${params?.year ?? ""}`
-              : "Sn × Fsr con CONASAMI, UMA, IMSS e INFONAVIT vigentes, desglosado por ramo."}
-            {state?.applied_at ? ` · aplicado ${state.applied_at}` : " · sin aplicar"}
-          </div>
-        </div>
-        <CaretDown size={14} className={`text-muted transition ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && loadError && (
-        <div className="border-t border-border px-5 py-4">
+        {loadError && (
           <Callout
             tone="danger"
             action={
@@ -1609,151 +1763,174 @@ function SalarioRealSection({
           >
             No se pudo cargar el salario real.
           </Callout>
-        </div>
-      )}
-      {open && !params && !loadError && (
-        <div className="space-y-2 border-t border-border px-5 py-4" aria-busy="true">
-          <Skeleton className="h-8" />
-          <Skeleton className="h-8" />
-          <Skeleton className="h-8 w-3/4" />
-        </div>
-      )}
-      {open && params && (
-        <div className="border-t border-border px-5 py-4">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-muted">
-                <th className="py-1.5 pr-3 font-medium">Categoría</th>
-                <th className="py-1.5 pr-3 text-right font-medium">Sn (día)</th>
-                <th className="py-1.5 pr-3 text-right font-medium">SBC</th>
-                <th className="py-1.5 pr-3 text-right font-medium">Ps</th>
-                <th className="py-1.5 pr-3 text-right font-medium">Fsr</th>
-                <th className="py-1.5 text-right font-medium">Salario real</th>
-              </tr>
-            </thead>
-            <tbody>
-              {categories.map((category, index) => {
-                const breakdown = state?.categories.find((c) => c.code === category.code)?.breakdown;
-                return (
-                  <tr key={category.code} className="border-t border-border">
-                    <td className="py-1.5 pr-3">
-                      <div>{category.description}</div>
-                      <div className="font-mono text-xs text-muted">{category.code}</div>
-                    </td>
-                    <td className="py-1.5 pr-3 text-right">
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={category.salario_nominal}
-                        onChange={(e) => {
-                          const value = Number(e.target.value);
-                          setCategories((list) =>
-                            list.map((c, i) => (i === index ? { ...c, salario_nominal: value } : c)),
-                          );
-                          setDirty(true);
-                        }}
-                        className="w-28 px-2 py-1 text-right tabular"
-                      />
-                    </td>
-                    <td className="py-1.5 pr-3 text-right tabular text-muted">
-                      {breakdown ? money2(breakdown.salario_base_cotizacion) : "—"}
-                    </td>
-                    <td className="py-1.5 pr-3 text-right tabular text-muted">
-                      {breakdown ? breakdown.ps.toFixed(4) : "—"}
-                    </td>
-                    <td className="py-1.5 pr-3 text-right tabular">
-                      {breakdown ? breakdown.fsr.toFixed(4) : "—"}
-                    </td>
-                    <td className="py-1.5 text-right tabular font-medium">
-                      {breakdown ? money2(breakdown.salario_real) : "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {dirty && (
-            <p className="mt-2 text-xs text-muted">
-              Los valores de SBC, Ps y Fsr se recalculan al aplicar.
-            </p>
-          )}
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2 text-xs text-muted">
-              Región / estado
-              <select
-                value={presetKey}
-                onChange={(e) => fillPreset(e.target.value)}
-                className="rounded-lg border border-border bg-surface px-2 py-1 text-xs"
-                aria-label="Región para ISN y salario mínimo"
-                disabled={busy || presets.length === 0}
-              >
-                <option value="">Tomar ISN y salario mínimo de…</option>
-                {presets.map((preset) => (
-                  <option key={preset.key} value={preset.key}>
-                    {preset.label} · ISN {preset.isn_pct}% · SM ${preset.salario_minimo}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {presetKey && (
-              <span className="text-xs text-muted">
-                Se aplica al confirmar ·{" "}
-                {presets.find((p) => p.key === presetKey)?.source}
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => setShowParams((v) => !v)}
-              className="text-xs font-medium text-muted hover:text-foreground"
-            >
-              {showParams ? "Ocultar parámetros" : "Parámetros (UMA, IMSS, LFT, ISN)"}
-            </button>
+        )}
+        {!params && !loadError && (
+          <div className="space-y-2" aria-busy="true">
+            <Skeleton className="h-8" />
+            <Skeleton className="h-8" />
+            <Skeleton className="h-8 w-3/4" />
           </div>
-          {showParams && (
-            <div className="mt-3 grid gap-2 sm:grid-cols-3">
-              {FSR_FIELDS.map((field) => (
-                <label key={field.key} className="flex items-center justify-between gap-2 text-xs">
-                  <span className="text-muted">{field.label}</span>
-                  <Input
-                    type="number"
-                    step={field.step ?? "any"}
-                    value={Number(params[field.key])}
+        )}
+        {params && (
+          <div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted">
+                  <th className="py-1.5 pr-3 font-medium">Categoría</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">
+                    Sn (día)
+                  </th>
+                  <th className="py-1.5 pr-3 text-right font-medium">SBC</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Ps</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Fsr</th>
+                  <th className="py-1.5 text-right font-medium">
+                    Salario real
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {categories.map((category, index) => {
+                  const breakdown = state?.categories.find(
+                    (c) => c.code === category.code,
+                  )?.breakdown;
+                  return (
+                    <tr key={category.code} className="border-t border-border">
+                      <td className="py-1.5 pr-3">
+                        <div>{category.description}</div>
+                        <div className="font-mono text-xs text-muted">
+                          {category.code}
+                        </div>
+                      </td>
+                      <td className="py-1.5 pr-3 text-right">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={category.salario_nominal}
+                          onChange={(e) => {
+                            const value = Number(e.target.value);
+                            setCategories((list) =>
+                              list.map((c, i) =>
+                                i === index
+                                  ? { ...c, salario_nominal: value }
+                                  : c,
+                              ),
+                            );
+                            setDirty(true);
+                          }}
+                          className="w-28 px-2 py-1 text-right tabular"
+                        />
+                      </td>
+                      <td className="py-1.5 pr-3 text-right tabular text-muted">
+                        {breakdown
+                          ? money2(breakdown.salario_base_cotizacion)
+                          : "—"}
+                      </td>
+                      <td className="py-1.5 pr-3 text-right tabular text-muted">
+                        {breakdown ? breakdown.ps.toFixed(4) : "—"}
+                      </td>
+                      <td className="py-1.5 pr-3 text-right tabular">
+                        {breakdown ? breakdown.fsr.toFixed(4) : "—"}
+                      </td>
+                      <td className="py-1.5 text-right tabular font-medium">
+                        {breakdown ? money2(breakdown.salario_real) : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {dirty && (
+              <p className="mt-2 text-xs text-muted">
+                Los valores de SBC, Ps y Fsr se recalculan al aplicar.
+              </p>
+            )}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-2 text-xs text-muted">
+                Región / estado
+                <Select
+                  value={presetKey}
+                  onChange={(e) => fillPreset(e.target.value)}
+                  aria-label="Región para ISN y salario mínimo"
+                  disabled={busy || presets.length === 0}
+                  size="sm"
+                >
+                  <option value="">Tomar ISN y salario mínimo de…</option>
+                  {presets.map((preset) => (
+                    <option key={preset.key} value={preset.key}>
+                      {preset.label} · ISN {preset.isn_pct}% · SM $
+                      {preset.salario_minimo}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              {presetKey && (
+                <span className="text-xs text-muted">
+                  Se aplica al confirmar ·{" "}
+                  {presets.find((p) => p.key === presetKey)?.source}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowParams((v) => !v)}
+                className="text-xs font-medium text-muted hover:text-foreground"
+              >
+                {showParams
+                  ? "Ocultar parámetros"
+                  : "Parámetros (UMA, IMSS, LFT, ISN)"}
+              </button>
+            </div>
+            {showParams && (
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                {FSR_FIELDS.map((field) => (
+                  <label
+                    key={field.key}
+                    className="flex items-center justify-between gap-2 text-xs"
+                  >
+                    <span className="text-muted">{field.label}</span>
+                    <Input
+                      type="number"
+                      step={field.step ?? "any"}
+                      value={Number(params[field.key])}
+                      onChange={(e) => {
+                        setParams({
+                          ...params,
+                          [field.key]: Number(e.target.value),
+                        });
+                        setDirty(true);
+                      }}
+                      className="w-24 px-2 py-1 text-right tabular"
+                    />
+                  </label>
+                ))}
+                <label className="flex items-center gap-2 text-xs text-muted">
+                  <Checkbox
+                    checked={params.isn_in_fsr}
                     onChange={(e) => {
-                      setParams({ ...params, [field.key]: Number(e.target.value) });
+                      setParams({ ...params, isn_in_fsr: e.target.checked });
                       setDirty(true);
                     }}
-                    className="w-24 px-2 py-1 text-right tabular"
                   />
+                  Incluir ISN en el Fsr (por defecto va en indirectos)
                 </label>
-              ))}
-              <label className="flex items-center gap-2 text-xs text-muted">
-                <input
-                  type="checkbox"
-                  checked={params.isn_in_fsr}
-                  onChange={(e) => {
-                    setParams({ ...params, isn_in_fsr: e.target.checked });
-                    setDirty(true);
-                  }}
-                  className="h-4 w-4 accent-accent"
-                />
-                Incluir ISN en el Fsr (por defecto va en indirectos)
-              </label>
+              </div>
+            )}
+            {first && (
+              <ul className="mt-3 space-y-0.5 text-xs text-faint">
+                {first.notes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            )}
+            <div className="mt-4 flex justify-end">
+              <Button variant="primary" onClick={openPreview} disabled={busy}>
+                {busy && !preview
+                  ? "Calculando…"
+                  : "Aplicar salario real al catálogo…"}
+              </Button>
             </div>
-          )}
-          {first && (
-            <ul className="mt-3 space-y-0.5 text-xs text-faint">
-              {first.notes.map((note) => (
-                <li key={note}>{note}</li>
-              ))}
-            </ul>
-          )}
-          <div className="mt-4 flex justify-end">
-            <Button variant="primary" onClick={openPreview} disabled={busy}>
-              {busy && !preview ? "Calculando…" : "Aplicar salario real al catálogo…"}
-            </Button>
           </div>
-        </div>
-      )}
+        )}
+      </Disclosure>
       <Modal
         open={preview !== null}
         title="Aplicar salario real al catálogo"
@@ -1767,7 +1944,9 @@ function SalarioRealSection({
               Cancelar
             </Button>
             <Button variant="primary" onClick={apply} disabled={busy}>
-              {busy ? "Aplicando…" : `Aplicar a ${preview?.length ?? 0} categorías`}
+              {busy
+                ? "Aplicando…"
+                : `Aplicar a ${preview?.length ?? 0} categorías`}
             </Button>
           </>
         }
@@ -1775,7 +1954,9 @@ function SalarioRealSection({
         {preview && (
           <p className="mb-3 text-xs text-muted">
             {(() => {
-              const changed = preview.filter((r) => r.from == null || Math.abs(r.to - r.from) >= 0.005).length;
+              const changed = preview.filter(
+                (r) => r.from == null || Math.abs(r.to - r.from) >= 0.005,
+              ).length;
               return changed === 0
                 ? "Ningún precio cambia: las categorías ya están en este salario real (el ISN solo entra al Fsr si lo marcas en parámetros)."
                 : `${changed} de ${preview.length} categorías cambian de precio.`;
@@ -1801,17 +1982,25 @@ function SalarioRealSection({
                     <tr key={row.code} className="border-t border-border">
                       <Td>
                         <div>{row.description}</div>
-                        <div className="font-mono text-xs text-muted">{row.code}</div>
+                        <div className="font-mono text-xs text-muted">
+                          {row.code}
+                        </div>
                       </Td>
-                      <Td align="right" className="tabular">{money2(row.salario_nominal)}</Td>
-                      <Td align="right" className="tabular text-muted">{row.fsr.toFixed(4)}</Td>
+                      <Td align="right" className="tabular">
+                        {money2(row.salario_nominal)}
+                      </Td>
+                      <Td align="right" className="tabular text-muted">
+                        {row.fsr.toFixed(4)}
+                      </Td>
                       <Td align="right" className="tabular text-muted">
                         {row.from == null ? "sin precio" : money2(row.from)}
                       </Td>
                       <Td align="right" className="tabular font-medium">
                         {money2(row.to)}
                         {delta != null && Math.abs(delta) >= 0.005 && (
-                          <span className={`ml-1.5 text-xs ${delta > 0 ? "text-warning" : "text-success"}`}>
+                          <span
+                            className={`ml-1.5 text-xs ${delta > 0 ? "text-warning" : "text-success"}`}
+                          >
                             {delta > 0 ? "+" : "−"}
                             {money2(Math.abs(delta))}
                           </span>
@@ -1825,7 +2014,7 @@ function SalarioRealSection({
           </div>
         )}
       </Modal>
-    </Card>
+    </>
   );
 }
 
@@ -1854,8 +2043,24 @@ const EQ_FIELDS: { key: keyof EquipmentParameters; label: string }[] = [
 ];
 
 const EQ_DEFAULTS: EquipmentParameters = {
-  vm: 1000000, vr: 100000, ve: 10000, hea: 2000, i: 0.12, s: 0.03, ko: 0.8,
-  gh: 0, pc: 25, ah: 0, ga: 0, pa: 90, pn: 0, vn: 0, pa_e: 0, va: 0, sr: 0, ht: 8,
+  vm: 1000000,
+  vr: 100000,
+  ve: 10000,
+  hea: 2000,
+  i: 0.12,
+  s: 0.03,
+  ko: 0.8,
+  gh: 0,
+  pc: 25,
+  ah: 0,
+  ga: 0,
+  pa: 90,
+  pn: 0,
+  vn: 0,
+  pa_e: 0,
+  va: 0,
+  sr: 0,
+  ht: 8,
   other_energy: 0,
 };
 
@@ -1881,12 +2086,7 @@ function EquipmentDialog({
         setBreakdown(r.breakdown);
       })
       .catch(() => setParams(EQ_DEFAULTS));
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [insumo.code, onClose]);
+  }, [insumo.code]);
 
   const estimate = useMemo(() => {
     if (!params) return null;
@@ -1906,7 +2106,12 @@ function EquipmentDialog({
     if (!params) return;
     setBusy(true);
     try {
-      const row = await putEquipment(insumo.code, params, undefined, getBrowserActor());
+      const row = await putEquipment(
+        insumo.code,
+        params,
+        undefined,
+        getBrowserActor(),
+      );
       setBreakdown(row.breakdown);
       onSaved();
     } catch {
@@ -1917,55 +2122,73 @@ function EquipmentDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <button type="button" aria-label="Cerrar" onClick={onClose} className="absolute inset-0 bg-foreground/40 backdrop-blur-[2px]" />
-      <div role="dialog" aria-modal="true" className="toast-in relative w-full max-w-2xl rounded-xl border border-border bg-surface p-5 shadow-lg">
-        <h2 className="text-[0.95rem] font-semibold">Costo horario · {insumo.description}</h2>
-        <p className="mb-4 text-xs text-muted">
-          RLOPSRM art. 194–206: cargos fijos + consumos + operación por hora efectiva. El resultado sustituye el costo unitario del insumo y queda marcado como calculado.
-        </p>
-        {params === null ? (
-          <p className="text-sm text-muted">Cargando…</p>
-        ) : (
+    <Modal
+      open
+      size="lg"
+      busy={busy}
+      onClose={onClose}
+      title={`Costo horario · ${insumo.description}`}
+      sub="RLOPSRM art. 194–206: cargos fijos + consumos + operación por hora efectiva. El resultado sustituye el costo unitario del insumo y queda marcado como calculado."
+      footer={
+        params !== null && (
           <>
-            <div className="grid max-h-80 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-              {EQ_FIELDS.map((field) => (
-                <label key={field.key} className="flex items-center justify-between gap-2 text-xs">
-                  <span className="text-muted">{field.label}</span>
-                  <Input
-                    type="number"
-                    step="any"
-                    value={params[field.key]}
-                    onChange={(e) => setParams({ ...params, [field.key]: Number(e.target.value) })}
-                    className="w-32 px-2 py-1 text-right tabular"
-                  />
-                </label>
-              ))}
-            </div>
-            <div className="mt-4 flex flex-wrap items-end justify-between gap-3 border-t border-border pt-3">
-              <div>
-                <div className="microlabel">Costo horario estimado</div>
-                <div className="font-display text-xl font-semibold tabular">
-                  {estimate != null ? money2(estimate) : "—"} / hr
-                </div>
-                {breakdown && (
-                  <div className="text-xs text-muted">
-                    Guardado: fijos {money2(breakdown.cargos_fijos)} · consumos {money2(breakdown.consumos)} · operación {money2(breakdown.operacion)}
-                  </div>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <Button variant="secondary" onClick={onClose}>
-                  Cancelar
-                </Button>
-                <Button variant="primary" onClick={save} disabled={busy}>
-                  Guardar y aplicar
-                </Button>
-              </div>
-            </div>
+            <Button variant="secondary" onClick={onClose} disabled={busy}>
+              Cancelar
+            </Button>
+            <Button variant="primary" onClick={save} disabled={busy}>
+              {busy ? "Guardando…" : "Guardar y aplicar"}
+            </Button>
           </>
-        )}
-      </div>
-    </div>
+        )
+      }
+    >
+      {params === null ? (
+        <div className="grid gap-2 sm:grid-cols-2" aria-busy="true">
+          {Array.from({ length: 6 }, (_, i) => (
+            <Skeleton key={i} className="h-7" />
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {EQ_FIELDS.map((field) => (
+              <label
+                key={field.key}
+                className="flex items-center justify-between gap-2 text-xs"
+              >
+                <span className="text-muted">{field.label}</span>
+                <Input
+                  type="number"
+                  step="any"
+                  value={params[field.key]}
+                  onChange={(e) =>
+                    setParams({
+                      ...params,
+                      [field.key]: Number(e.target.value),
+                    })
+                  }
+                  className="w-32 px-2 py-1 text-right tabular"
+                />
+              </label>
+            ))}
+          </div>
+          <div className="mt-4 flex flex-wrap items-end justify-between gap-3 border-t border-border pt-3">
+            <div>
+              <div className="microlabel">Costo horario estimado</div>
+              <div className="font-display text-xl font-semibold tabular">
+                {estimate != null ? money2(estimate) : "—"} / hr
+              </div>
+              {breakdown && (
+                <div className="text-xs text-muted">
+                  Guardado: fijos {money2(breakdown.cargos_fijos)} · consumos{" "}
+                  {money2(breakdown.consumos)} · operación{" "}
+                  {money2(breakdown.operacion)}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </Modal>
   );
 }

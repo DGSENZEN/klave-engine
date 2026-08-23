@@ -1465,18 +1465,8 @@ export const removeProject = (id: string, actor?: string) =>
     actor ? { "X-Actor": actor } : undefined,
   );
 
-export const money = (n: number, currency = "MXN") =>
-  new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 0,
-  }).format(n);
-
-export const money2 = (n: number, currency = "MXN") =>
-  new Intl.NumberFormat("es-MX", { style: "currency", currency }).format(n);
-
-export const num = (n: number, digits = 2) =>
-  new Intl.NumberFormat("es-MX", { maximumFractionDigits: digits }).format(n);
+// Formatting lives in lib/format.ts; re-exported so existing imports keep working.
+export { money, money2, num } from "./format";
 
 // ---- Workspace (home overview, taller defaults) ----
 

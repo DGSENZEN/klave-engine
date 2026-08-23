@@ -23,7 +23,7 @@ import {
   Warning,
 } from "@phosphor-icons/react";
 import {
-  ApiError,
+  apiMessage,
   getWorkspaceOverview,
   money,
   patchProject,
@@ -40,7 +40,6 @@ import { timeAgo } from "@/lib/time";
 import {
   Badge,
   Button,
-  buttonClasses,
   Callout,
   EmptyState,
   Input,
@@ -49,6 +48,7 @@ import {
 } from "@/components/ui";
 import { KebabMenu, MenuItem } from "@/components/Menu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Modal } from "@/components/Modal";
 import { HowItWorks } from "@/components/HowItWorks";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 
@@ -206,11 +206,7 @@ export default function Home() {
       setPendingFiles(null);
       router.push(`/proyecto/${project_id}`);
     } catch (e) {
-      const detail =
-        e instanceof ApiError && e.detail && typeof e.detail === "object"
-          ? (e.detail as { message?: string }).message
-          : null;
-      setError(detail || "No se pudo subir el archivo. Revisa que el servidor esté activo.");
+      setError(apiMessage(e, "No se pudo subir el archivo. Revisa que el servidor esté activo."));
       setUploading(false);
     }
   }
@@ -841,35 +837,42 @@ function NewProjectDialog({
 }) {
   const [name, setName] = useState(() => suggestName(files[0]));
   const [client, setClient] = useState("");
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !busy) onCancel();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [busy, onCancel]);
-
   const totalMb = files.reduce((sum, f) => sum + f.size, 0) / 1e6;
+  const formId = "nuevo-proyecto";
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <button type="button" aria-label="Cancelar" onClick={() => !busy && onCancel()} className="absolute inset-0 bg-foreground/40 backdrop-blur-[2px]" />
+    <Modal
+      open
+      busy={busy}
+      onClose={onCancel}
+      title="Nuevo proyecto"
+      sub={`${files.length === 1 ? "1 hoja" : `${files.length} hojas`} · ${totalMb.toFixed(1)} MB. Las hojas se procesan juntas como una sola obra.`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onCancel} disabled={busy}>
+            Cancelar
+          </Button>
+          <Button type="submit" form={formId} variant="primary" disabled={busy || name.trim().length < 2}>
+            {busy ? (
+              <>
+                <CircleNotch size={15} className="animate-spin" /> Subiendo…
+              </>
+            ) : (
+              <>
+                <Plus size={15} weight="bold" /> Crear y procesar
+              </>
+            )}
+          </Button>
+        </>
+      }
+    >
       <form
-        role="dialog"
-        aria-modal="true"
-        aria-label="Nuevo proyecto"
+        id={formId}
         onSubmit={(e) => {
           e.preventDefault();
           if (name.trim().length >= 2) onCreate(name.trim(), client.trim());
         }}
-        className="toast-in relative w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-lg"
       >
-        <h2 className="text-[0.95rem] font-semibold">Nuevo proyecto</h2>
-        <p className="mb-4 text-sm text-muted">
-          {files.length === 1 ? "1 hoja" : `${files.length} hojas`} · {totalMb.toFixed(1)} MB.
-          Las hojas se procesan juntas como una sola obra.
-        </p>
         <label className="mb-1 block text-xs font-medium text-muted">Nombre del proyecto</label>
         <Input
           value={name}
@@ -887,30 +890,14 @@ function NewProjectDialog({
           maxLength={120}
           className="mb-3 w-full"
         />
-        <ul className="mb-4 max-h-32 space-y-1 overflow-y-auto text-xs text-muted">
+        <ul className="max-h-32 space-y-1 overflow-y-auto text-xs text-muted">
           {files.map((file) => (
             <li key={file.name} className="flex items-center gap-1.5">
               <FileText size={12} /> <span className="truncate">{file.name}</span>
             </li>
           ))}
         </ul>
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onCancel} disabled={busy} className={buttonClasses("secondary")}>
-            Cancelar
-          </button>
-          <Button type="submit" variant="primary" disabled={busy || name.trim().length < 2}>
-            {busy ? (
-              <>
-                <CircleNotch size={15} className="animate-spin" /> Subiendo…
-              </>
-            ) : (
-              <>
-                <Plus size={15} weight="bold" /> Crear y procesar
-              </>
-            )}
-          </Button>
-        </div>
       </form>
-    </div>
+    </Modal>
   );
 }
