@@ -140,6 +140,11 @@ def _extract_mark(detection: Detection) -> str:
     if detection.detection_type == DetectionType.grid_intersection:
         # Derived location like "B/3"; keep it when both axes had real labels.
         return "" if re.search(r"[HV]\d|\?", detection.label) else detection.label.strip()
+    # Zapatas carry the Z-n mark the detector read beside them, so the cuadro
+    # de zapatas can name their size and armado.
+    mark = detection.properties.get("mark")
+    if isinstance(mark, str) and mark.strip():
+        return mark.strip()
     return ""
 
 

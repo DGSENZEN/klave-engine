@@ -1,5 +1,7 @@
 """Footing detection from closed, roughly rectangular polylines."""
 
+import re
+
 from pydantic import BaseModel, Field
 
 from klave_engine.common.ids import IdGenerator
@@ -17,9 +19,12 @@ from klave_engine.detection.results import (
     make_detection,
 )
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
-from klave_engine.geometry.bbox import bbox_distance
+from klave_engine.geometry.bbox import bbox_center, bbox_distance
 from klave_engine.geometry.measurements import polygon_area, rectangularity
 from klave_engine.geometry.spatial_index import SpatialIndex
+
+# Z-1, ZC-2, ZA-3, ZCM-1: zapata marks as the cuadro de zapatas names them.
+_ZAPATA_MARK_RE = re.compile(r"^Z(?:C|A|CM)?-?\d{1,3}[A-Z]?$")
 
 
 class FootingDetectorConfig(BaseModel):
@@ -27,6 +32,13 @@ class FootingDetectorConfig(BaseModel):
     max_area: float = 50000.0
     min_rectangularity: float = 0.75
     high_rectangularity: float = 0.9
+    # Zapata corrida: a long strip under a wall. Wider than max_area allows
+    # when its short side is a footing's (≤ strip_max_width) and it is at
+    # least strip_min_aspect times longer than wide.
+    strip_max_width: float = 0.0  # drawing units; 0 disables strips
+    strip_min_aspect: float = 4.0
+    # Z-1 / ZC-2 / ZA-3: the zapata's mark, read from the text nearest to it.
+    mark_search_radius: float = 0.0  # drawing units; 0 disables mark linking
     layer_hints: list[str] = Field(
         default_factory=lambda: ["FOOT", "FOUND", "FDN", "ZAPATA", "ZAP", "CIM", "CIMENT", "DADO"]
     )
@@ -91,10 +103,22 @@ def detect_footings(
                     f"{dropped} contornos cerrados fuera de las capas de cimentación se "
                     "ignoraron al buscar zapatas."
                 )
+    mark_texts = [
+        e for e in entities
+        if e.is_textual and e.text and _ZAPATA_MARK_RE.match(e.text.strip().upper())
+    ] if config.mark_search_radius > 0 else []
     footing_counter = 0
     for entity in candidates:
         area = polygon_area(entity.points or [])
-        if not (config.min_area <= area <= config.max_area):
+        width = min(entity.bbox[2] - entity.bbox[0], entity.bbox[3] - entity.bbox[1])
+        length = max(entity.bbox[2] - entity.bbox[0], entity.bbox[3] - entity.bbox[1])
+        strip = (
+            config.strip_max_width > 0
+            and width <= config.strip_max_width
+            and length >= config.strip_min_aspect * max(width, 1e-9)
+            and area >= config.min_area
+        )
+        if not strip and not (config.min_area <= area <= config.max_area):
             continue
         rect = rectangularity(entity.points or [])
         if rect < config.min_rectangularity:
@@ -111,6 +135,32 @@ def detect_footings(
         properties: dict = {"estimated_area": round(area, 3), "rectangularity": round(rect, 3)}
         source_entities = [entity.entity_id]
         features: dict[str, float] = {}
+        if strip:
+            properties["footing_kind"] = "corrida"
+            properties["strip_width"] = round(width, 3)
+            properties["strip_length"] = round(length, 3)
+            notes.append(
+                f"Zapata corrida: {length:.2f} de largo × {width:.2f} de ancho (proporción "
+                f"{length / max(width, 1e-9):.1f})"
+            )
+        if mark_texts:
+            cx, cy = bbox_center(entity.bbox)
+            best: tuple[float, NormalizedEntity] | None = None
+            for text in mark_texts:
+                tx, ty = bbox_center(text.bbox)
+                distance = ((tx - cx) ** 2 + (ty - cy) ** 2) ** 0.5
+                inside = (
+                    entity.bbox[0] <= tx <= entity.bbox[2]
+                    and entity.bbox[1] <= ty <= entity.bbox[3]
+                )
+                if (inside or distance <= config.mark_search_radius) and (
+                    best is None or distance < best[0]
+                ):
+                    best = (distance, text)
+            if best is not None:
+                properties["mark"] = (best[1].text or "").strip().upper()
+                source_entities.append(best[1].entity_id)
+                notes.append(f"Marca {properties['mark']} junto a la zapata")
 
         if layer_matches(entity.layer, config.layer_hints):
             features[SEMANTIC_LAYER] = 1.0

@@ -89,3 +89,51 @@ def test_piles_are_counted_and_left_unpriced_until_the_catalogo_prices_them(tmp_
     assert line.unpriced and line.unit_price == 0.0 and line.amount == 0.0 and line.quantity == 3
     assert boq.direct_cost_total == 0.0
     assert any("CIM-010" in w and "3.00 PZA" in w and "sin costo" in w for w in boq.warnings)
+
+
+def test_strip_footings_and_zapata_marks_are_read():
+    from klave_engine.detection.footing_detector import FootingDetectorConfig, detect_footings
+    from klave_engine.dxf.entities import EntityType, NormalizedEntity
+    from klave_engine.geometry.spatial_index import SpatialIndex
+    from klave_engine.graph.evidence import EvidencePacket
+
+    def poly(eid, x0, y0, x1, y1, layer="EST-CIMENTACION"):
+        pts = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+        return NormalizedEntity(
+            entity_id=eid, entity_type=EntityType.polyline, layer=layer, source_file="a.dxf",
+            points=pts, bbox=(x0, y0, x1, y1), raw_handle=eid,
+            properties={"closed": True},
+            evidence=EvidencePacket(source="a.dxf", method="t", entity_ids=[eid],
+                                    bbox=(x0, y0, x1, y1), confidence=1.0),
+        )
+
+    def text(eid, value, x, y):
+        return NormalizedEntity(
+            entity_id=eid, entity_type=EntityType.text, layer="EST-CIMENTACION",
+            source_file="a.dxf", text=value, bbox=(x, y, x + 0.5, y + 0.2), raw_handle=eid,
+            evidence=EvidencePacket(source="a.dxf", method="t", entity_ids=[eid],
+                                    bbox=(x, y, x + 0.5, y + 0.2), confidence=1.0),
+        )
+
+    entities = [
+        poly("z1", 0, 0, 1.5, 1.5),            # zapata aislada 1.5×1.5
+        poly("zc", 3, 0, 3.6, 18.0),           # corrida 0.6×18 = 10.8 m², aspect 30
+        poly("big", 6, 0, 14, 40),             # 8×40: too wide for a strip, too big for a zapata
+        text("t1", "Z-1", 0.5, 0.6),
+        text("t2", "ZC-2", 3.1, 9.0),
+    ]
+    config = FootingDetectorConfig(
+        min_area=0.3, max_area=30.25, strip_max_width=1.5, strip_min_aspect=4.0,
+        mark_search_radius=1.2, semantic_authority_min=1, column_search_radius=2.0,
+    )
+    out = detect_footings(entities, SpatialIndex(entities), None, config)
+    by_mark = {d.properties.get("mark"): d for d in out.detections}
+    assert set(by_mark) == {"Z-1", "ZC-2"}
+    corrida = by_mark["ZC-2"]
+    assert corrida.properties["footing_kind"] == "corrida"
+    assert abs(corrida.properties["strip_length"] - 18.0) < 1e-6
+    assert abs(corrida.properties["estimated_area"] - 10.8) < 1e-6
+    from klave_engine.detection.taxonomy import enrich_detections
+
+    enrich_detections(out.detections, None)
+    assert by_mark["Z-1"].mark == "Z-1" and "Z-1" in by_mark["Z-1"].display_label

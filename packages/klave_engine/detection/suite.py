@@ -86,6 +86,8 @@ class DetectorSuiteConfig(BaseModel):
         config.footing.min_area = m(0.55) * m(0.55)
         config.footing.max_area = m(5.5) * m(5.5)
         config.footing.column_search_radius = m(2.0)
+        config.footing.strip_max_width = m(1.5)
+        config.footing.mark_search_radius = m(1.2)
         config.beam.line_search_radius = m(1.0)
         config.beam.min_beam_length = m(1.5)
         config.beam.max_beam_length = m(15.0)

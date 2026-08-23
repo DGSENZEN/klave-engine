@@ -69,7 +69,7 @@ Aplanado, pintura y muro son `longitud × altura × caras` (`catalog.py:363-402,
 `rooms.py:212`: una planta `OFICINA 101/102/103` tiene un solo nombre → cero locales, cero acabados.
 - **Fix**: contar nombres distintos normalizando números; aceptar 1 nombre si hay ≥ 3 caras nombradas.
 
-### A13 — Zapatas corridas fuera de `max_area`; cuadro de zapatas ilegible · **P0**
+### A13 — Zapatas corridas fuera de `max_area`; cuadro de zapatas ilegible · **P0** · **hecho** (franjas ≤ 1.5 m de ancho y ≥ 4× de largo son `footing_kind=corrida` con su largo real; marcas Z-n/ZC-n ligadas a la zapata → el cuadro nombra tamaño y armado; topes de cuadro a 400 cm; cimbra/plantilla usan cota > franja > cuadro > lado equivalente)
 `footing_detector.py:93-95` + `suite.py:78` (≤ 5.5 m²); `schedules._parse_section` tope 150 cm. Una zapata corrida 0.6×18 m desaparece; `200x200` no parsea; las zapatas se etiquetan `F1…Fn`, nunca `Z-1`, así que el cuadro no se les puede unir.
 - **Fix**: familia `zapata_corrida` (rectángulo largo en capa de cimentación, m³ = ancho × peralte × largo), marcas `Z-n/ZC-n` ligadas a la zapata más cercana, topes de cuadro 400 cm.
 

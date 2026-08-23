@@ -86,6 +86,17 @@ def _section_m(props: dict, specs: dict | None, mark: str, family: str,
     return default_m, "supuesto"
 
 
+def _zapata_cuadro_m(mark: str, specs: dict | None) -> tuple[float, float] | None:
+    """The zapata's plan size as its cuadro declares it (Z-1 → 150x150)."""
+    if not mark or not specs:
+        return None
+    spec = (specs.get("by_mark") or {}).get(mark.strip().upper())
+    if spec and spec.get("section_cm"):
+        a, b = spec["section_cm"]
+        return a / 100.0, b / 100.0
+    return None
+
+
 def compute_formwork(
     boq: BillOfQuantities,
     detections: list[Detection],
@@ -197,9 +208,15 @@ def compute_formwork(
             if det is None:
                 continue
             props = det.properties
+            cuadro = _zapata_cuadro_m(det.mark or str(props.get("mark") or ""), specs)
             if props.get("dimensioned_width") and props.get("dimensioned_length"):
                 w = float(props["dimensioned_width"]) * factor
                 length = float(props["dimensioned_length"]) * factor
+            elif props.get("strip_width") and props.get("strip_length"):
+                w = float(props["strip_width"]) * factor
+                length = float(props["strip_length"]) * factor
+            elif cuadro is not None:
+                w, length = cuadro
             else:
                 side = math.sqrt(float(props.get("estimated_area") or 0.0)) * factor
                 w = length = side
