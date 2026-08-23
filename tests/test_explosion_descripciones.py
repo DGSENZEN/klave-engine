@@ -48,4 +48,19 @@ def test_long_description_names_the_matrix_materials():
         code="EST-011", description="Cimbra de contacto en losa maciza", unit="M2",
         phase="Estructura", production_rate_per_day=10.0,
     )
-    assert long_description(cimbra, None).startswith("Cimbra y descimbra en")
+    assert long_description(cimbra, None).startswith("Cimbra y descimbra en losa maciza")
+
+
+def test_verbs_do_not_repeat_the_description_and_concreto_armado_is_concrete():
+    trazo = Concept(code="PRE-001", description="Trazo y nivelación del terreno con equipo "
+                    "topográfico", unit="M2", phase="Preliminares", production_rate_per_day=1.0)
+    text = long_description(trazo, None)
+    assert text.startswith("Ejecución de trazo y nivelación del terreno")
+    castillos = Concept(
+        code="EST-001", description="Columnas y castillos de concreto armado f'c=250 kg/cm²",
+        unit="M3", phase="Estructura", production_rate_per_day=1.0,
+    )
+    assert long_description(castillos, None).startswith("Suministro, fabricación y colocación de")
+    acero = Concept(code="ACE-001", description="Acero de refuerzo fy=4200 kg/cm² en castillos",
+                    unit="KG", phase="Estructura", production_rate_per_day=1.0)
+    assert long_description(acero, None).startswith("Suministro, habilitado y colocación de acero")

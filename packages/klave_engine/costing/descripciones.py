@@ -22,7 +22,7 @@ _EXECUTION_VERBS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"acarreo|flete", re.I), "Acarreo de"),
     (re.compile(r"trazo|nivelaci[oó]n", re.I), "Trazo y nivelación de"),
     (re.compile(r"cimbra", re.I), "Cimbra y descimbra en"),
-    (re.compile(r"acero|armado|malla", re.I), "Suministro, habilitado y colocación de"),
+    (re.compile(r"\bacero\b|\bmalla\b|\barmex\b", re.I), "Suministro, habilitado y colocación de"),
     (re.compile(r"muro de concreto", re.I), "Suministro, fabricación y colocación de"),
     (re.compile(r"muros? de block|block|tabique|ladrillo", re.I), "Suministro y construcción de"),
     (re.compile(r"concreto|losa|castillo|columna|trabe|dala|zapata|firme", re.I),
@@ -33,11 +33,30 @@ _EXECUTION_VERBS: list[tuple[re.Pattern[str], str]] = [
 _MATERIAL_STOP = re.compile(r"\((referencia|calculado|cotizaci[oó]n)[^)]*\)", re.I)
 
 
-def _verb(description: str) -> str:
+_SUPPLIED = re.compile(r"^(cimbra|acero|malla|aplanado|pintura|piso|muro|block|tabique)", re.I)
+
+
+_CIMBRA_HEAD = re.compile(
+    r"^cimbra\s*(com[uú]n|de contacto|aparente|acabado aparente)?\s*(en|para|de)?\s*", re.I
+)
+
+
+def _verb_and_base(description: str) -> tuple[str, str]:
+    """The verb for the work and the description it applies to; a
+    description that already names the work ("Trazo y nivelación del
+    terreno", "Cimbra en trabes") is not repeated after the verb."""
+    base = description
     for pattern, verb in _EXECUTION_VERBS:
-        if pattern.search(description):
-            return verb
-    return "Suministro y colocación de"
+        match = pattern.search(description)
+        if match is None:
+            continue
+        if match.start() == 0 and verb.lower().startswith(match.group(0).lower()):
+            if verb.startswith("Cimbra"):
+                return verb, _CIMBRA_HEAD.sub("", description, count=1) or description
+            supplied = _SUPPLIED.match(description) is not None
+            return ("Suministro y colocación de" if supplied else "Ejecución de"), base
+        return verb, base
+    return "Suministro y colocación de", base
 
 
 def _lower_first(text: str) -> str:
@@ -45,8 +64,7 @@ def _lower_first(text: str) -> str:
 
 
 def long_description(concept: Concept, apu: UnitPriceAnalysis | None) -> str:
-    base = concept.description.strip().rstrip(".")
-    verb = _verb(base)
+    verb, base = _verb_and_base(concept.description.strip().rstrip("."))
     parts = [f"{verb} {_lower_first(base)}"]
     includes: list[str] = []
     materials: list[str] = []
