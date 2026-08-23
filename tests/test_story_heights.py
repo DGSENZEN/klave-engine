@@ -33,6 +33,22 @@ def test_story_heights_come_from_consecutive_levels():
     assert heights == {"f0": 2.9, "f1": 3.6, "f2": 3.2, "f3": 3.2}  # top repeats the one below
 
 
+def test_other_disciplines_plantas_never_become_stories():
+    # Marina completo: cancelería details titled "PLANTA …" carry a cota that
+    # reads as a level 5 cm above the real one; the arch planta repeats 4.35.
+    views = _seg() + [
+        ViewRegion(view_id="can", title="CAN-07 · PLANTA CA-09", kind=ViewKind.plan,
+                   level_key="planta", npt_level=8.0, anchor=(0, 0), structural=False),
+        ViewRegion(view_id="arq", title="ARQ-100 · PLANTA BAJA", kind=ViewKind.plan,
+                   level_key="planta_baja", npt_level=4.35, anchor=(0, 0)),
+    ]
+    seg = SheetSegmentation(views=views, assignment={}, is_segmented=True)
+    heights = seg.story_heights()
+    assert heights["f2"] == 3.2 and "can" not in heights  # 7.95 → 11.15, not 7.95 → 8.0
+    assert heights["arq"] == 3.6  # same level as f1, same height
+    assert [v.view_id for v in seg.superstructure_views()] == ["f1", "f2", "f3", "arq"]
+
+
 def _wall(det_id, length, kind="block"):
     det = make_detection(
         det_id, DetectionType.wall, det_id, (0, 0, length, 0.15), 0.9, [], "m", [],

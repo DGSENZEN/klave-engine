@@ -21,6 +21,7 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 from klave_engine.detection.frames import SheetFrame
+from klave_engine.detection.inventory import reads_as_structure
 from klave_engine.detection.results import Detection
 from klave_engine.dxf.entities import NormalizedEntity
 from klave_engine.geometry.bbox import BBox, bbox_center, bbox_contains_point, bbox_union_all
@@ -64,10 +65,17 @@ class ViewRegion(BaseModel):
     kind: ViewKind
     level_key: str | None = None  # cimentacion | planta_baja | azotea | nivel_2 …
     npt_level: float | None = None
+    # False for plantas of non-structural sheets (cancelería, instalaciones…):
+    # they are views for the levantamiento but never levels of the structure.
+    structural: bool = True
     anchor: tuple[float, float]
     bbox: BBox | None = None
     detection_ids: list[str] = Field(default_factory=list)
     detection_counts: dict[str, int] = Field(default_factory=dict)
+
+
+# Declared levels closer than this are the same level on different sheets.
+SAME_LEVEL_M = 0.6
 
 
 class SheetSegmentation(BaseModel):
@@ -80,30 +88,51 @@ class SheetSegmentation(BaseModel):
     def plan_views(self) -> list[ViewRegion]:
         return [v for v in self.views if v.kind == ViewKind.plan]
 
+    def structural_plan_views(self) -> list[ViewRegion]:
+        """The plantas that describe the structure's levels. When no sheet
+        reads as structure (an instalaciones-only project) every planta counts."""
+        structural = [v for v in self.plan_views() if v.structural]
+        return structural or self.plan_views()
+
     def foundation_views(self) -> list[ViewRegion]:
-        return [v for v in self.plan_views() if v.level_key == "cimentacion"]
+        return [v for v in self.structural_plan_views() if v.level_key == "cimentacion"]
 
     def superstructure_views(self) -> list[ViewRegion]:
-        return [v for v in self.plan_views() if v.level_key != "cimentacion"]
+        return [v for v in self.structural_plan_views() if v.level_key != "cimentacion"]
 
     def story_heights(self) -> dict[str, float]:
         """Height of each planta (view_id → m): the distance to the next
         declared level above it; the top planta repeats the one below. Only
-        when at least two plantas declare their level."""
+        when at least two plantas declare their level. Levels closer than
+        ``SAME_LEVEL_M`` are one level drawn on several sheets (the arch
+        planta baja and the structural one), never a story."""
         leveled = sorted(
-            (v for v in self.plan_views() if v.npt_level is not None),
+            (v for v in self.structural_plan_views() if v.npt_level is not None),
             key=lambda v: v.npt_level or 0.0,
         )
         if len(leveled) < 2:
             return {}
-        heights: dict[str, float] = {}
-        for index, view in enumerate(leveled):
-            if index + 1 < len(leveled):
-                delta = (leveled[index + 1].npt_level or 0.0) - (view.npt_level or 0.0)
+        clusters: list[list[ViewRegion]] = []
+        for view in leveled:
+            level = view.npt_level or 0.0
+            if clusters and level - (clusters[-1][0].npt_level or 0.0) < SAME_LEVEL_M:
+                clusters[-1].append(view)
             else:
-                delta = heights[leveled[index - 1].view_id]
+                clusters.append([view])
+        heights: dict[str, float] = {}
+        previous: float | None = None
+        for index, cluster in enumerate(clusters):
+            base = cluster[0].npt_level or 0.0
+            if index + 1 < len(clusters):
+                delta = (clusters[index + 1][0].npt_level or 0.0) - base
+            elif previous is not None:
+                delta = previous
+            else:
+                continue
             if 1.8 <= delta <= 8.0:
-                heights[view.view_id] = round(delta, 3)
+                previous = round(delta, 3)
+                for view in cluster:
+                    heights[view.view_id] = previous
         return heights
 
     def total_height(self) -> float | None:
@@ -275,6 +304,7 @@ def _segment_by_frames(
             kind=kind,
             level_key=frame.level_key if kind == ViewKind.plan else None,
             npt_level=_frame_level(entities, frame) if kind == ViewKind.plan else None,
+            structural=reads_as_structure(frame.source_file) if frame.source_file else True,
             anchor=bbox_center(frame.bbox),
             bbox=frame.bbox,
         )
