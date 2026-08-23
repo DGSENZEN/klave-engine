@@ -120,3 +120,27 @@ def test_castillo_formwork_uses_each_plantas_height_not_the_building():
     line = next(ln for ln in report.lines if ln.concept_code == "EST-008")
     # 15x20 → perimeter 0.70 m; c1 on the 3.6 m planta, c2 on the 3.2 m one.
     assert abs(line.quantity - 0.70 * (3.6 + 3.2)) < 1e-6
+
+
+def test_castillo_steel_uses_each_plantas_height_not_the_building():
+    from klave_engine.costing.models import BillOfQuantities, BoqLine, QuantityKind
+    from klave_engine.costing.steel import SteelAssumptions, compute_steel
+
+    dets = [_column("c1", "K-1"), _column("c2", "K-1")]
+    seg = SheetSegmentation(
+        views=_seg(), is_segmented=True, npt_levels=[1.45, 4.35, 7.95, 11.15],
+        assignment={"c1": "f1", "c2": "f2"},
+    )
+    boq = BillOfQuantities(project_id="t", lines=[BoqLine(
+        concept_code="EST-001", description="Castillos", unit="M3", quantity=0.2, unit_price=1,
+        amount=0.2, phase="Estructura", raw_quantity=2, raw_kind=QuantityKind.COUNT,
+        source_detection_count=2, source_detections=["c1", "c2"], confidence=0.9,
+    )])
+    a = SteelAssumptions()
+    per_planta = compute_steel(boq, dets, None, seg, 1.0, 2.7, a)
+    whole_building = compute_steel(boq, dets, None, None, 1.0, seg.total_height() or 0.0, a)
+    line = next(ln for ln in per_planta.lines if ln.concept_code == "ACE-001")
+    alone = next(ln for ln in whole_building.lines if ln.concept_code == "ACE-001")
+    # Two castillos of 3.6 m and 3.2 m weigh far less than two of 11.15 m.
+    assert line.quantity < 0.7 * alone.quantity
+    assert any("entrepiso" in n for n in line.notes)

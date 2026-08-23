@@ -47,7 +47,7 @@ _FAMILY_KEYWORDS: list[tuple[str, re.Pattern[str]]] = [
 _HEADER_KEYWORDS = re.compile(
     r"MARCA|CLAVE|TIPO|CASTILLO|COLUMNA|SECC|DIMENS|ARMADO|REFUERZO|VARILLA|ESTRIBO", re.I
 )
-_MIN_SIDE_CM, _MAX_SIDE_CM = 8, 150
+_MIN_SIDE_CM, _MAX_SIDE_CM = 8, 400  # up to a 4 m zapata; a castillo starts at 8 cm
 _SOURCE_RANK = {"cuadro": 3, "detalle": 2, "nota": 1, "ia": 0}
 
 Source = Literal["cuadro", "detalle", "nota", "ia"]

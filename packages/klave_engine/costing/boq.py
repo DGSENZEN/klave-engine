@@ -36,7 +36,8 @@ REVIEW_THRESHOLD = 0.6
 # outside this range (e.g. an ID bubble or grid circle) are rejected as
 # implausible and the assumed section is used instead.
 MIN_COLUMN_SECTION_M2 = 0.01  # 10×10 cm castillo
-MAX_COLUMN_SECTION_M2 = 1.00  # 1×1 m large column
+MAX_COLUMN_SECTION_M2 = 2.00  # 1.4×1.4 m: a large building column
+MAX_CASTILLO_SECTION_M2 = 0.25  # 50×50 cm: anything bigger is a column, not a castillo
 MAX_LINEAR_SECTION_M2 = 0.60  # 50×120 cm: beyond this a "section" is another drawing
 
 
@@ -159,6 +160,7 @@ def _column_volume(
     measured = 0
     declared = 0
     volume = 0.0
+    rejected: list[str] = []
     for column in columns:
         is_castillo = column.label.strip().upper().startswith("K")
         default_m2 = (
@@ -178,19 +180,30 @@ def _column_volume(
             section_m2 = float(section_du2) * meters_factor * meters_factor
         # Only trust a measured section within plausible physical bounds;
         # otherwise the marker was an ID bubble / grid circle, not the section.
-        max_m2 = 0.25 if is_castillo else MAX_COLUMN_SECTION_M2
+        max_m2 = MAX_CASTILLO_SECTION_M2 if is_castillo else MAX_COLUMN_SECTION_M2
         if section_m2 is not None and MIN_COLUMN_SECTION_M2 <= section_m2 <= max_m2:
             volume += section_m2 * height
             measured += 1
         else:
+            if section_m2 is not None:
+                # Never silently: the reading is reported next to the value used.
+                rejected.append(
+                    f"{column.label.strip() or '?'} {section_m2 * 10_000:.0f} cm² "
+                    f"(fuera de {MIN_COLUMN_SECTION_M2 * 10_000:.0f}–{max_m2 * 10_000:.0f} cm²)"
+                )
             volume += default_m2 * height
     assumed = len(columns) - measured
     notes = [
-        f"{len(columns)} columnas (vista de planta más completa) × altura "
-        f"{height:.2f} m"
-        + (" (de niveles N.P.T.)" if total_height else " (supuesta)"),
+        f"{len(columns)} columnas y castillos × altura {height:.2f} m"
+        + (" (de niveles N.P.T.)" if total_height else " (supuesta: altura de entrepiso)"),
         _section_note(declared, measured - declared, assumed, assumptions),
     ]
+    if rejected:
+        notes.append(
+            "Secciones leídas fuera de rango, sustituidas por la supuesta: "
+            + ", ".join(sorted(set(rejected))[:6])
+            + (f" y {len(set(rejected)) - 6} más" if len(set(rejected)) > 6 else "")
+        )
     result = _LineResult(round(volume, 6), float(len(columns)), columns, notes)
     result.sections = (declared, measured - declared, assumed)
     if total_height:
@@ -464,9 +477,14 @@ def generate_bill_of_quantities(
             result = _scoped_result(
                 concept, matched_plan, seg, meters_factor, assumptions
             )
+        elif concept.view_scope == ViewScope.COLUMN_VOLUME and matched:
+            # A sheet without frames (one planta, or a file with no title
+            # blocks) still declares sections in its cuadro and markers; the
+            # count × default section × default height shortcut threw that
+            # reading away. One planta: the assumed column height applies.
+            result = _column_volume(matched, meters_factor, assumptions, None)
         else:
             raw = _raw_over(concept, matched, meters_factor)
-            # Columns fold section×height into quantity_factor on a flat sheet.
             quantity = round(raw * concept.quantity_factor, 6)
             result = _LineResult(quantity, raw, _contributing(concept, matched), [])
 

@@ -2,6 +2,7 @@
 
 import csv
 import io
+from collections import Counter
 from pathlib import Path
 
 from klave_engine.common.io import write_text
@@ -36,29 +37,56 @@ from klave_engine.costing.schedule import build_schedule
 from klave_engine.costing.steel import SteelAssumptions, apply_steel, compute_steel
 from klave_engine.costing.vigencia import freshness
 from klave_engine.detection.dimensions import DimensionInventory
-from klave_engine.detection.results import Detection
+from klave_engine.detection.results import Detection, DetectionType
 from klave_engine.detection.views import SheetSegmentation
 from klave_engine.dxf.units import DrawingUnits
 
 logger = get_logger(__name__)
 
 
+def _typical_column_section(detections: list[Detection]) -> tuple[int, int, int] | None:
+    """The section most columns declare (cuadro or marker), for the columns
+    that declare none. Only sections bound to a column mark count — never
+    the most frequent NxM of the whole sheet, which may be a zapata."""
+    counts: Counter[tuple[int, int]] = Counter()
+    for det in detections:
+        if det.detection_type != DetectionType.column_tag:
+            continue
+        if det.label.strip().upper().startswith("K"):
+            continue  # castillos have their own assumption
+        declared = det.properties.get("section_cm")
+        if not isinstance(declared, str) or "x" not in declared:
+            continue
+        try:
+            a, b = (int(float(v)) for v in declared.lower().split("x"))
+        except ValueError:
+            continue
+        counts[(min(a, b), max(a, b))] += 1
+    if not counts:
+        return None
+    (a, b), n = counts.most_common(1)[0]
+    return a, b, n
+
+
 def _calibrate_assumptions(
-    base: CostingAssumptions, dimensions: DimensionInventory | None
+    base: CostingAssumptions,
+    dimensions: DimensionInventory | None,
+    detections: list[Detection] | None = None,
 ) -> tuple[CostingAssumptions, list[str]]:
-    """Override assumed geometry with dimensions measured from the drawing."""
-    if dimensions is None:
-        return base, []
+    """Override assumed geometry with what the drawing declares for the
+    elements themselves; sheet-wide dimension statistics only add notes."""
     calibrated = base.model_copy(deep=True)
     notes: list[str] = []
-    section = dimensions.typical_section_m2
-    if section is not None:
-        a, b = dimensions.typical_section_cm  # type: ignore[misc]
-        calibrated.column_section_m2 = section
+    typical = _typical_column_section(detections or [])
+    if typical is not None and typical[2] >= 2:
+        a, b, n = typical
+        calibrated.column_section_m2 = a * b / 10_000.0
         notes.append(
-            f"Sección de columna/castillo {a}x{b} cm = {section:.4f} m² tomada del "
-            "plano (verificar contra el cuadro de castillos)."
+            f"Sección de columna supuesta {a}x{b} cm = {calibrated.column_section_m2:.4f} m²: "
+            f"la que declaran {n} columnas del plano; aplica a las que no declaran ninguna."
         )
+    if dimensions is None:
+        return calibrated, notes
     if dimensions.typical_wall_thickness_cm is not None:
         notes.append(
             f"Espesor de muro {dimensions.typical_wall_thickness_cm} cm detectado en el plano."
@@ -165,7 +193,9 @@ def generate_cost_report(
     price_vigencias: dict[str, str] | None = None,
 ) -> CostReport:
     config = config or CostingConfig()
-    assumptions, calibration_notes = _calibrate_assumptions(config.assumptions, dimensions)
+    assumptions, calibration_notes = _calibrate_assumptions(
+        config.assumptions, dimensions, detections
+    )
     catalog = (
         build_catalog_from_store(store_concepts, assumptions)
         if store_concepts

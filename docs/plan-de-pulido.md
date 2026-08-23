@@ -25,11 +25,11 @@ La regla del orden: primero lo que hace que los **números mientan**, luego lo q
 Las matrices de los conceptos de concreto traen acero y cimbra adentro (`EST-001`: `MAT-ACERO 0.160 t/m³`, `MAT-CIMBRA 9.00 m²/m³` — `costing/insumos.py:299-300`; `EST-002` `:342-343`; `CIM-002`, `CIM-008`, `EST-003`, `EST-014` igual), y además `apply_steel`/`apply_formwork` agregan `ACE-001…006`, `EST-008…011`, `CIM-006/009` con sus propias matrices (`costing/steel.py:400`, `costing/formwork.py:279`). En Marina, ~32 % del P.U. de `EST-001` ($13,386/m³) es acero y cimbra que `ACE-001` y `EST-008` vuelven a cobrar. Los indicadores no lo ven porque solo miran las líneas ACE/cimbra.
 - **Fix**: migración v13 que retira `MAT-ACERO`, `MAT-CIMBRA`, `MAT-PLANTILLA` de las matrices de concreto (en `insumos.py` y en `catalog.db`), descripciones sin "incluye acero y cimbra", y una prueba que asegure que ningún concepto de concreto lleve acero/cimbra en su matriz cuando existen los conceptos derivados. Recalibrar el invariante del demo.
 
-### A2 — Acero de columnas con la altura total del edificio · **P0**
+### A2 — Acero de columnas con la altura total del edificio · **P0** · **hecho** (altura de entrepiso por planta, como la cimbra)
 `costing/steel.py:161` usa `segmentation.total_height()` para cada columna de cada planta: en 3 niveles, 3× el acero. `formwork.py` ya lo hace bien por planta (arreglado ayer); `steel.py` no.
 - **Fix**: misma lógica que cimbra (`story_heights` por `assignment`), prueba en `test_story_heights.py`.
 
-### A3 — Secciones declaradas ignoradas en hojas sin marcos · **P0**
+### A3 — Secciones declaradas ignoradas en hojas sin marcos · **P0** · **hecho** (`_column_volume` también en el camino plano)
 `EST-001` es `COUNT × column_section_m2 × column_height_m` en el camino plano (`boq.py:87,468`); `_column_volume` (la única que lee `section_cm`, marcador y `castillo_section_m2`) solo corre dentro de `ViewScope.COLUMN_VOLUME` en hojas segmentadas. En una casa de una planta o en un archivo sin marcos, cada castillo K vale 0.09 m² (3× su concreto) y el cuadro leído se descarta; la nota "si no hay marcador" se imprime igual.
 - **Fix**: usar `_column_volume` también en el camino plano; `supersedes` en ambos; prueba con segmentación `None`.
 
@@ -37,7 +37,7 @@ Las matrices de los conceptos de concreto traen acero y cimbra adentro (`EST-001
 Aplanado, pintura y muro son `longitud × altura × caras` (`catalog.py:363-402, 328-345`). Puertas: el detector de muros parte el tramo en cada hueco > 2×espesor (`wall_detector.py:112`) y elimina toda la altura del muro sobre la puerta (incluido el cerramiento). Ventanas: nada. Vanos en vivienda = 15–25 % de la cara.
 - **Fix**: (1) `QuantityRule.opening_deduction_pct` por concepto, editable, escrito en la línea ("vanos −18 % supuesto"); (2) detector de vanos desde bloques de puerta/ventana y cancelería del levantamiento (`inventory` tags V-n/P-n) que reemplace el supuesto con medida; (3) los muros no se cortan en puertas: el hueco queda como vano con altura de dintel.
 
-### A5 — Topes de plausibilidad que sustituyen en silencio · **P0**
+### A5 — Topes de plausibilidad que sustituyen en silencio · **P0** · **hecho** (columna 2.0 m², lado 400 cm; la sección rechazada se escribe en la línea)
 `MAX_COLUMN_SECTION_M2 = 1.00` (`boq.py:38-40`), `max_m2 = 0.25` para castillos (`:181`), lado ≤ 150 cm en cuadros (`schedules.py:50`). Una columna 1.2×1.2 o una zapata 200×200 se vuelve el default sin aviso.
 - **Fix**: subir topes a valores de edificación (columna 2.0 m², zapata 400 cm) y, cuando se rechace, advertencia con el valor leído.
 
@@ -57,7 +57,7 @@ Aplanado, pintura y muro son `longitud × altura × caras` (`catalog.py:363-402,
 `CIM-010` tiene regla pero no matriz (`insumos.py:271`, `catalog_store.py:891-909`): se cuentan, se advierte y no suman. En una cimentación con pilotes es la partida más grande.
 - **Fix**: leer longitud de pilote (cuadro/nota/IA — `length_m` ya se lee y se descarta), concepto en `M` con matriz de referencia, y mientras no haya longitud, línea sin precio **visible** en el presupuesto (no solo advertencia).
 
-### A10 — `_calibrate_assumptions` sobreescribe la sección de columna con el `NxM` más frecuente de todo el texto · **P0**
+### A10 — `_calibrate_assumptions` sobreescribe la sección de columna con el `NxM` más frecuente de todo el texto · **P0** · **hecho** (solo secciones ligadas a marcas de columna, ≥ 2)
 `report.py:54-61`, `dimensions.py:198-202`. En una hoja con cuadro de zapatas el "típico" puede ser 150x150.
 - **Fix**: calibrar solo con secciones ligadas a marcas de columna (ya existe `section_cm` por detección); quitar la calibración global.
 

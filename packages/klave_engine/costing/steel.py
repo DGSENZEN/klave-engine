@@ -158,7 +158,18 @@ def compute_steel(
     by_id = {d.detection_id: d for d in detections}
     lines = {line.concept_code: line for line in boq.lines}
     waste = 1.0 + a.waste_pct / 100.0
-    height = (segmentation.total_height() if segmentation else None) or column_height_m
+    # Each castillo is as tall as ITS planta (entrepiso), never the whole
+    # building: with declared levels the story heights apply per assignment;
+    # without them the assumed column height does. The total height divided
+    # by the number of plantas is the fallback when levels exist but do not
+    # pair up into stories.
+    story_heights = segmentation.story_heights() if segmentation is not None else {}
+    assignment = segmentation.assignment if segmentation is not None else {}
+    height = column_height_m
+    total_height = segmentation.total_height() if segmentation is not None else None
+    if not story_heights and total_height and segmentation is not None:
+        plantas = max(len(segmentation.superstructure_views()), 1)
+        height = total_height / plantas
 
     # --- castillos / columnas -------------------------------------------
     columns = lines.get("EST-001")
@@ -184,11 +195,14 @@ def compute_steel(
                 section = section or d_section
                 assumed_marks.append(mark)
             assert rebar is not None and section is not None
-            long_kg, stir_kg = _linear_element_kg(
-                height, rebar, stirrups, (int(section[0]), int(section[1])), a, anchorage=True
-            )
-            total_long += long_kg * len(members)
-            total_stirrup += stir_kg * len(members)
+            for member in members:
+                own_height = story_heights.get(assignment.get(member.detection_id, ""), height)
+                long_kg, stir_kg = _linear_element_kg(
+                    own_height, rebar, stirrups, (int(section[0]), int(section[1])), a,
+                    anchorage=True,
+                )
+                total_long += long_kg
+                total_stirrup += stir_kg
             notes.append(
                 f"{mark}: {len(members)} pzas × {rebar[0]}#{rebar[1]}"
                 + (f" E#{stirrups[0]}@{stirrups[1] * 100:.0f}" if stirrups else "")
@@ -200,9 +214,13 @@ def compute_steel(
             notes.append(
                 "Armado supuesto (el plano no lo declara): " + ", ".join(assumed_marks[:8])
             )
+        heights_note = (
+            "altura de entrepiso de cada planta (niveles NTC/NPT)" if story_heights
+            else f"altura {height:.2f} m por elemento"
+        )
         notes.insert(
             0,
-            f"Altura {height:.2f} m por elemento + {a.anchorage_m:.2f} m de anclaje; "
+            f"{heights_note[:1].upper()}{heights_note[1:]} + {a.anchorage_m:.2f} m de anclaje; "
             f"desperdicio {a.waste_pct:g} %",
         )
         report.lines.append(
