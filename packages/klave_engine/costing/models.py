@@ -95,6 +95,10 @@ class QuantityRule(BaseModel):
     default_section_m2: float | None = None
     # LINEAR_VOLUME for walls: section = thickness (section_property) × this height.
     section_height_m: float | None = None
+    # The height in quantity_factor / section_height_m is an assumption; when
+    # the plantas declare their levels (NPT/NTC), use each planta's own story
+    # height instead.
+    height_from_levels: bool = False
 
 
 class Concept(BaseModel):
@@ -224,6 +228,7 @@ class CostingAssumptions(BaseModel):
     """Geometric assumptions used to derive volumes from plan detections."""
 
     column_section_m2: float = 0.09  # 30x30 cm
+    castillo_section_m2: float = 0.03  # 15x20 cm (K marks without a cuadro)
     column_height_m: float = 3.0
     beam_section_m2: float = 0.1125  # 25x45 cm
     contratrabe_section_m2: float = 0.125  # 25x50 cm

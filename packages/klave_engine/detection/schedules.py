@@ -74,6 +74,9 @@ class ScheduleInventory(BaseModel):
     concrete_fc: dict[str, int] = Field(default_factory=dict)
     tables_found: int = 0
     notes: list[str] = Field(default_factory=list)
+    # Text entities that are the marks of a cuadro drawn on a planta sheet:
+    # they name a type, they are not an element to count.
+    cuadro_mark_entities: list[str] = Field(default_factory=list)
 
 
 _FC_FAMILIES: list[tuple[str, re.Pattern[str]]] = [
@@ -505,8 +508,9 @@ def _sections_from_section_callouts(
     return specs
 
 
-_COTA_DEPTH_CM = (20, 150)
+_COTA_DEPTH_CM = (12, 150)
 _COTA_WIDTH_CM = (12, 60)
+_ARMADO_TEXT_RE = re.compile(r"\d\s*#\s*\d|#\s*\d\s*@\s*\d", re.I)
 
 
 def _cota_cm(entity: NormalizedEntity, unit_to_m: float) -> float | None:
@@ -532,6 +536,7 @@ def _sections_from_detail_cotas(
     unit_to_m: float,
     detail_boxes: list[BBox],
     widths_by_family: dict[str, int],
+    cuadro_marks: list[str] | None = None,
 ) -> list[ElementSpec]:
     """The section drawing beside a mark in a detail carries its cotas: a
     vertical one is the peralte, a horizontal one the width. With only the
@@ -550,8 +555,22 @@ def _sections_from_detail_cotas(
         if mark is None or len(content) > 8:
             continue
         center = bbox_center(text.bbox)
-        if not any(bbox_contains_point(box, center) for box in detail_boxes):
-            continue
+        in_detail = any(bbox_contains_point(box, center) for box in detail_boxes)
+        if not in_detail:
+            # A cuadro de castillos drawn inside the planta sheet: the mark
+            # sits with its armado text ("4#3", "E#2@15") beside the section.
+            # A plan tag never has that; its neighbours are castillos.
+            armado_radius = 0.8 / unit_to_m
+            has_armado = any(
+                t.is_textual and t.text and _ARMADO_TEXT_RE.search(t.text)
+                and ((bbox_center(t.bbox)[0] - center[0]) ** 2
+                     + (bbox_center(t.bbox)[1] - center[1]) ** 2) ** 0.5 <= armado_radius
+                for t in entities
+            )
+            if not has_armado:
+                continue
+            if cuadro_marks is not None:
+                cuadro_marks.append(text.entity_id)
         depth: tuple[float, float] | None = None
         width: tuple[float, float] | None = None
         for dim in dims:
@@ -569,6 +588,8 @@ def _sections_from_detail_cotas(
             elif not vertical and _COTA_WIDTH_CM[0] <= value <= _COTA_WIDTH_CM[1]:
                 if width is None or distance < width[0]:
                     width = (distance, value)
+        if depth is None and width is not None and not in_detail:
+            depth = width  # a square castillo drawn with one cota
         if depth is None:
             continue
         family = family_of_mark(mark)
@@ -620,10 +641,13 @@ def build_schedule_inventory(
     texts = [e for e in entities if e.is_textual and e.text]
     table_specs, tables = _parse_tables(texts, config)
     specs = table_specs + _parse_annotations(texts, config)
+    inventory_cuadro_marks: list[str] = []
     if unit_to_m and detail_boxes:
         specs += _sections_from_detail_geometry(entities, config, unit_to_m, detail_boxes)
-    if detail_boxes:
-        callouts = _sections_from_section_callouts(texts, config, detail_boxes)
+    if detail_boxes or unit_to_m:
+        callouts = (
+            _sections_from_section_callouts(texts, config, detail_boxes) if detail_boxes else []
+        )
         specs += callouts
         if unit_to_m:
             widths: dict[str, Counter] = {}
@@ -631,11 +655,16 @@ def build_schedule_inventory(
                 if spec.section_cm:
                     widths.setdefault(spec.family, Counter())[spec.section_cm[0]] += 1
             usual = {f: c.most_common(1)[0][0] for f, c in widths.items()}
-            specs += _sections_from_detail_cotas(entities, config, unit_to_m, detail_boxes, usual)
+            cuadro_marks: list[str] = []
+            specs += _sections_from_detail_cotas(
+                entities, config, unit_to_m, detail_boxes or [], usual, cuadro_marks
+            )
+            inventory_cuadro_marks = cuadro_marks
     inventory = ScheduleInventory(
         specs=specs,
         tables_found=tables,
         concrete_fc=parse_concrete_fc([t.text or "" for t in texts]),
+        cuadro_mark_entities=inventory_cuadro_marks,
     )
 
     grouped: dict[str, list[ElementSpec]] = {}
@@ -716,6 +745,27 @@ def merge_external_specs(inventory: ScheduleInventory, specs: list[dict]) -> int
             f"{added} marcas completadas con la lectura IA de las hojas (por confirmar)."
         )
     return added
+
+
+def mark_cuadro_detections(detections: list[Detection], inventory: ScheduleInventory) -> int:
+    """Detections born from a cuadro's mark text are type labels, not
+    elements: they keep their evidence but carry role='cuadro' so no
+    quantity counts them."""
+    cuadro = set(inventory.cuadro_mark_entities)
+    if not cuadro:
+        return 0
+    tagged = 0
+    for detection in detections:
+        if detection.detection_type not in (DetectionType.column_tag, DetectionType.beam_tag):
+            continue
+        if any(entity_id in cuadro for entity_id in detection.source_entities):
+            detection.properties["role"] = "cuadro"
+            detection.evidence.notes.append(
+                "Marca dentro de un cuadro/detalle dibujado en la planta: nombra un tipo, "
+                "no cuenta como elemento."
+            )
+            tagged += 1
+    return tagged
 
 
 def apply_schedule(

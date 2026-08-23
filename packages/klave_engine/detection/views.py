@@ -42,6 +42,12 @@ _EXCLUDE_RE = re.compile(
     re.I,
 )
 _NPT_RE = re.compile(r"N\.?\s*P\.?\s*T\.?\s*\+?\s*(-?\d+\.\d+)", re.I)
+# Any way a sheet writes a level: N.P.T. +3.20, NTC +4.35, NIVEL +7.95, N.I.P. +10.70
+_LEVEL_RE = re.compile(
+    r"\b(?:N\.?\s*P\.?\s*T\.?|N\.?\s*T\.?\s*C\.?|N\.?\s*I\.?\s*P\.?|NIVEL)\s*[:=]?\s*"
+    r"([+-]?\s*\d+(?:[.,]\d+)?)",
+    re.I,
+)
 
 _TITLE_HEIGHT_FACTOR = 2.5  # title text is at least this × median text height
 _MIN_TITLE_HEIGHT = 0.25
@@ -79,6 +85,26 @@ class SheetSegmentation(BaseModel):
 
     def superstructure_views(self) -> list[ViewRegion]:
         return [v for v in self.plan_views() if v.level_key != "cimentacion"]
+
+    def story_heights(self) -> dict[str, float]:
+        """Height of each planta (view_id → m): the distance to the next
+        declared level above it; the top planta repeats the one below. Only
+        when at least two plantas declare their level."""
+        leveled = sorted(
+            (v for v in self.plan_views() if v.npt_level is not None),
+            key=lambda v: v.npt_level or 0.0,
+        )
+        if len(leveled) < 2:
+            return {}
+        heights: dict[str, float] = {}
+        for index, view in enumerate(leveled):
+            if index + 1 < len(leveled):
+                delta = (leveled[index + 1].npt_level or 0.0) - (view.npt_level or 0.0)
+            else:
+                delta = heights[leveled[index - 1].view_id]
+            if 1.8 <= delta <= 8.0:
+                heights[view.view_id] = round(delta, 3)
+        return heights
 
     def total_height(self) -> float | None:
         """Top finished level (max NPT) when at least two distinct levels exist."""
@@ -177,6 +203,40 @@ def _merge_plan_anchors(anchors: list[_TitleAnchor]) -> list[_TitleAnchor]:
     return merged + passthrough
 
 
+def _level_values(texts: list[str]) -> list[float]:
+    values: list[float] = []
+    for text in texts:
+        for m in _LEVEL_RE.finditer(text):
+            try:
+                values.append(float(m.group(1).replace(" ", "").replace(",", ".")))
+            except ValueError:
+                continue
+    return values
+
+
+def _frame_level(entities: list[NormalizedEntity], frame: SheetFrame) -> float | None:
+    """The level a planta declares most often inside its frame (texts and
+    cajetín/level-marker attributes)."""
+    texts: list[str] = []
+    for e in entities:
+        if e.source_file != frame.source_file and frame.source_file:
+            continue
+        if not bbox_contains_point(frame.bbox, bbox_center(e.bbox)):
+            continue
+        if e.is_textual and e.text:
+            texts.append(e.text)
+        attributes = (e.properties or {}).get("attributes")
+        if isinstance(attributes, dict):
+            texts.extend(str(v) for v in attributes.values())
+    values = _level_values(texts)
+    if not values:
+        return None
+    counts: dict[float, int] = {}
+    for v in values:
+        counts[v] = counts.get(v, 0) + 1
+    return max(counts, key=lambda v: (counts[v], -v))
+
+
 def _npt_levels(entities: list[NormalizedEntity]) -> list[float]:
     return sorted(
         {
@@ -214,6 +274,7 @@ def _segment_by_frames(
             title=f"{frame.code} · {frame.title}".strip(" ·") or frame.code,
             kind=kind,
             level_key=frame.level_key if kind == ViewKind.plan else None,
+            npt_level=_frame_level(entities, frame) if kind == ViewKind.plan else None,
             anchor=bbox_center(frame.bbox),
             bbox=frame.bbox,
         )
@@ -243,11 +304,12 @@ def _segment_by_frames(
     if outside.detection_ids:
         regions[outside.view_id] = outside
     plans = [r for r in regions.values() if r.kind == ViewKind.plan]
+    levels = sorted({r.npt_level for r in plans if r.npt_level is not None})
     return SheetSegmentation(
         views=list(regions.values()),
         assignment=assignment,
         is_segmented=True,
-        npt_levels=_npt_levels(entities),
+        npt_levels=levels or _npt_levels(entities),
         notes=[
             f"{len(frames)} marcos de hoja detectados: {len(plans)} plantas, "
             f"{len(frames) - len(plans)} de detalle/corte/otros."

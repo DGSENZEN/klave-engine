@@ -148,28 +148,38 @@ def _column_volume(
     declared = 0
     volume = 0.0
     for column in columns:
-        section_du2 = column.properties.get("section_area_du2")
-        if section_du2 is not None and column.properties.get("section_source") == "cuadro":
-            declared += 1
-        section_m2 = (
-            float(section_du2) * meters_factor * meters_factor
-            if section_du2 is not None
-            else None
+        is_castillo = column.label.strip().upper().startswith("K")
+        default_m2 = (
+            assumptions.castillo_section_m2 if is_castillo else assumptions.column_section_m2
         )
+        section_m2: float | None = None
+        declared_cm = column.properties.get("section_cm")
+        if isinstance(declared_cm, str) and "x" in declared_cm:
+            try:
+                a_cm, b_cm = (float(v) for v in declared_cm.lower().split("x"))
+                section_m2 = a_cm * b_cm / 10_000.0
+                declared += 1
+            except ValueError:
+                section_m2 = None
+        section_du2 = column.properties.get("section_area_du2")
+        if section_m2 is None and section_du2 is not None:
+            section_m2 = float(section_du2) * meters_factor * meters_factor
         # Only trust a measured section within plausible physical bounds;
         # otherwise the marker was an ID bubble / grid circle, not the section.
-        if section_m2 is not None and MIN_COLUMN_SECTION_M2 <= section_m2 <= MAX_COLUMN_SECTION_M2:
+        max_m2 = 0.25 if is_castillo else MAX_COLUMN_SECTION_M2
+        if section_m2 is not None and MIN_COLUMN_SECTION_M2 <= section_m2 <= max_m2:
             volume += section_m2 * height
             measured += 1
         else:
-            volume += assumptions.column_section_m2 * height
+            volume += default_m2 * height
     notes = [
         f"{len(columns)} columnas (vista de planta más completa) × altura "
         f"{height:.2f} m"
         + (" (de niveles N.P.T.)" if total_height else " (supuesta)"),
         f"Sección: {declared} declaradas en el plano (cuadro/detalle), "
         f"{measured - declared} medidas del marcador, "
-        f"{len(columns) - measured} supuestas ({assumptions.column_section_m2:.3f} m²)",
+        f"{len(columns) - measured} supuestas (castillo {assumptions.castillo_section_m2:.3f} m², "
+        f"columna {assumptions.column_section_m2:.3f} m²)",
     ]
     return _LineResult(round(volume, 6), float(len(columns)), columns, notes)
 
@@ -203,10 +213,38 @@ def _scoped_result(
 
     scope = concept.view_scope
 
+    heights = segmentation.story_heights()
+
     if scope == ViewScope.COLUMN_VOLUME:
         by_view: dict[str, list[Detection]] = defaultdict(list)
         for d in matched_plan:
             by_view[assignment[d.detection_id]].append(d)
+        if heights:
+            # Each planta's columns × its own story height (NTC to NTC); the
+            # cimentación planta draws the same columns at their base.
+            total = _LineResult(0.0, 0.0, [], [])
+            split: dict[str, float] = {}
+            for view in segmentation.superstructure_views():
+                columns = by_view.get(view.view_id, [])
+                height = heights.get(view.view_id)
+                if not columns or height is None:
+                    continue
+                part = _column_volume(columns, meters_factor, assumptions, height)
+                total.quantity = round(total.quantity + part.quantity, 6)
+                total.raw += part.raw
+                total.dets.extend(part.dets)
+                split[titles[view.view_id]] = part.quantity
+            if total.dets:
+                total.notes = [
+                    "Columnas y castillos por planta × altura de entrepiso declarada en el "
+                    "plano (niveles NTC/NPT): "
+                    + ", ".join(
+                        f"{titles[v.view_id].split(' · ')[-1][:22]} {heights[v.view_id]:.2f} m"
+                        for v in segmentation.superstructure_views() if v.view_id in heights
+                    )
+                ]
+                total.by_view = split
+                return total
         canonical = max(by_view.values(), key=len, default=[])
         return _column_volume(canonical, meters_factor, assumptions, segmentation.total_height())
 
@@ -223,6 +261,45 @@ def _scoped_result(
 
     if scope == ViewScope.SUPERSTRUCTURE_SUM:
         dets = in_views(matched_plan, superstructure_ids) or matched_plan
+        rule = concept.rule
+        if rule is not None and rule.height_from_levels and heights and dets:
+            # The planta's own story height replaces the assumed height.
+            quantity_sum = 0.0
+            raw_sum = 0.0
+            view_split: dict[str, float] = {}
+            for view in segmentation.superstructure_views():
+                view_dets = in_views(dets, {view.view_id})
+                if not view_dets:
+                    continue
+                height = heights.get(view.view_id)
+                if rule.kind == QuantityKind.LINEAR_VOLUME and rule.section_height_m:
+                    scoped = concept.model_copy(
+                        update={
+                            "rule": rule.model_copy(
+                                update={"section_height_m": height or rule.section_height_m}
+                            )
+                        }
+                    )
+                    view_raw = _raw_over(scoped, view_dets, meters_factor)
+                    view_quantity = view_raw * concept.quantity_factor
+                else:
+                    view_raw = _raw_over(concept, view_dets, meters_factor)
+                    view_quantity = view_raw * (
+                        height if height is not None else concept.quantity_factor
+                    )
+                quantity_sum += view_quantity
+                raw_sum += view_raw
+                view_split[titles[view.view_id]] = round(view_quantity, 4)
+            declared = ", ".join(
+                f"{titles[v.view_id].split(' · ')[-1][:22]} {heights[v.view_id]:.2f} m"
+                for v in segmentation.superstructure_views() if v.view_id in heights
+            )
+            return _LineResult(
+                round(quantity_sum, 6), raw_sum, _contributing(concept, dets),
+                [f"Suma de plantas de superestructura ({len(dets)} detecciones)",
+                 f"Altura de entrepiso por planta declarada en el plano (NTC/NPT): {declared}"],
+                view_split if len(view_split) > 1 else {},
+            )
         raw = _raw_over(concept, dets, meters_factor)
         return _LineResult(round(raw * concept.quantity_factor, 6), raw,
                            _contributing(concept, dets),

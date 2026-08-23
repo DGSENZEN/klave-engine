@@ -124,6 +124,12 @@ SEED_VIGENCIA = "2026-08"
 SLAB_CONCEPT_CODES = ("EST-012", "EST-013", "CIM-007")
 BEAM_CONCEPT_CODES_V7 = ("CIM-008",)
 FAMILY_CONCEPT_CODES_V9 = ("EST-014", "CIM-010")
+SLAB_STEEL_CONCEPTS: list[tuple[str, str, str, str, float, int, list[tuple[str, float]]]] = [
+    ("ACE-006", "Acero de refuerzo fy=4200 kg/cm² en losas macizas y de cimentación (parrillas), "
+     "habilitado y armado", "KG", "Estructura", 200.0, 45,
+     [("MAT-ACERO", 0.00104), ("MAT-ALAMBRE", 0.02), ("MO-FIERRERO", 0.0060),
+      ("MO-AYUD", 0.0060), ("EQ-HERRAMIENTA", 1.0)]),
+]
 FORMWORK_CONCEPTS_V7: list[tuple[str, str, str, str, float, int, list[tuple[str, float]]]] = [
     (
         "CIM-009", "Cimbra común en contratrabes, acabado no aparente", "M2",
@@ -351,6 +357,12 @@ class CatalogStore:
                 conn.execute(
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '9') "
                     "ON CONFLICT(key) DO UPDATE SET value = '9'"
+                )
+            if version_row is None or int(version_row["value"]) < 10:
+                self._seed_concepts(conn, SLAB_STEEL_CONCEPTS, 200)
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '10') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '10'"
                 )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.

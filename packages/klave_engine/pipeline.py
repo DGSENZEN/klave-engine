@@ -36,6 +36,7 @@ from klave_engine.detection.results import Detection
 from klave_engine.detection.schedules import (
     apply_schedule,
     build_schedule_inventory,
+    mark_cuadro_detections,
     merge_external_specs,
 )
 from klave_engine.detection.suite import (
@@ -345,6 +346,11 @@ def run_full_pipeline(
         for reading in ai_reads.readings:
             for family, fc in reading.read.concrete_fc.items():
                 schedule.concrete_fc.setdefault(family.lower(), int(fc))
+    cuadro_tagged = mark_cuadro_detections(result.detections, schedule)
+    if cuadro_tagged:
+        schedule.notes.append(
+            f"{cuadro_tagged} marcas de cuadro dibujado en planta no se cuentan como elementos."
+        )
     stamped = apply_schedule(result.detections, schedule, units.to_meters())
     if stamped:
         schedule.notes.append(f"{stamped} detecciones tomaron su sección del plano.")

@@ -30,6 +30,12 @@ CODE_DALAS = "ACE-002"
 CODE_ZAPATAS = "ACE-003"
 CODE_TRABES = "ACE-004"
 CODE_MALLA = "ACE-005"
+CODE_LOSAS = "ACE-006"
+_SLAB_LAYER_RE = re.compile(
+    r"(?P<layer>L\.?\s*[SI]\.?|LECHO\s+(?:SUP|INF)\w*)?\s*#\s*(?P<bar>\d(?:\.5)?)\s*@\s*(?P<sp>\d{1,3})"
+    r"\s*(?P<both>A\s*/\s*S|A\.?S\.?|AMBOS\s+SENTIDOS)?",
+    re.I,
+)
 
 
 class SteelAssumptions(BaseModel):
@@ -85,6 +91,39 @@ def _spec_for(specs: dict | None, mark: str, family: str) -> tuple[dict | None, 
     if family in by_family:
         return by_family[family], "family"
     return None, "none"
+
+
+def slab_rebar_kg_per_m2(label: str | None) -> tuple[float, str] | None:
+    """Rebar per m² from a slab label: 'LS #4@20 A/S LI #4@20 A/S' is two
+    layers, each both ways; '#4@20 A/S' on a 'DOBLEMENTE ARMADA' slab is two
+    layers too. Returns (kg/m², how it was read) or None when the label
+    carries no armado."""
+    if not label:
+        return None
+    text = " ".join(label.split()).upper()
+    matches = list(_SLAB_LAYER_RE.finditer(text))
+    if not matches:
+        return None
+    total = 0.0
+    parts: list[str] = []
+    explicit_layers = any(m.group("layer") for m in matches)
+    for m in matches:
+        bar = m.group("bar")
+        if bar not in BAR_KG_PER_M:
+            continue
+        spacing_m = int(m.group("sp")) / 100.0
+        if spacing_m <= 0:
+            continue
+        directions = 2 if m.group("both") else 1
+        kg = BAR_KG_PER_M[bar] * (1.0 / spacing_m) * directions
+        total += kg
+        parts.append(f"#{bar}@{m.group('sp')}{' a/s' if directions == 2 else ''}")
+    if total <= 0:
+        return None
+    if not explicit_layers and "DOBLEMENTE" in text:
+        total *= 2
+        parts.append("×2 lechos (doblemente armada)")
+    return round(total, 3), ", ".join(parts)
 
 
 def _linear_element_kg(
@@ -313,13 +352,48 @@ def compute_steel(
                 ],
             )
         )
+    # --- losas macizas y de cimentación: armado por su propia etiqueta ---------
+    factor = (meters_factor or 1.0) ** 2
+    slab_total = 0.0
+    slab_sources: list[str] = []
+    slab_notes: list[str] = []
     for code, label in (("EST-013", "losa maciza"), ("CIM-007", "losa de cimentación")):
         line = lines.get(code)
-        if line is not None and line.raw_quantity > 0:
+        if line is None or line.raw_quantity <= 0:
+            continue
+        read_m2 = 0.0
+        unread_m2 = 0.0
+        for det_id in line.source_detections:
+            det = by_id.get(det_id)
+            if det is None:
+                continue
+            area = float(det.properties.get("estimated_area") or 0.0) * factor
+            parsed = slab_rebar_kg_per_m2(det.properties.get("label"))
+            if parsed is None or area <= 0:
+                unread_m2 += area
+                continue
+            kg_m2, how = parsed
+            slab_total += area * kg_m2
+            read_m2 += area
+            slab_sources.append(det_id)
+            if how not in slab_notes:
+                slab_notes.append(how)
+        if unread_m2 > 0:
             report.warnings.append(
-                f"{label.capitalize()} ({line.raw_quantity:,.2f} m³): armado por detalle, no "
-                "cuantificado; capturar el acero desde el detalle de la losa."
+                f"{label.capitalize()}: {unread_m2:,.1f} m² sin armado en su etiqueta; ese acero "
+                "no se cuantificó (capturarlo del detalle)."
             )
+        if read_m2 > 0:
+            slab_notes.append(f"{label} {read_m2:,.1f} m² con armado leído de la etiqueta")
+    if slab_total > 0:
+        report.lines.append(
+            SteelLine(
+                concept_code=CODE_LOSAS, quantity=round(slab_total * waste, 2), unit="KG",
+                source_detections=slab_sources,
+                notes=["Parrillas por m² según etiqueta de cada tablero: " + "; ".join(slab_notes),
+                       f"Desperdicio {a.waste_pct:g} %"],
+            )
+        )
     return report
 
 
