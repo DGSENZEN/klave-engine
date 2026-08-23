@@ -35,12 +35,15 @@ def test_import_search_and_adopt_carry_provenance(store):
     assert hits[0]["source_vigencia"] == "2026-06"
     assert store.search_reference("tabique", source_key="otra") == []
 
-    adopted = store.adopt_reference("MAT-CEM", hits[0]["ref_id"])
+    # A m² price lands on a m² insumo; the TON cement is refused unless forced.
+    adopted = store.adopt_reference("MAT-BLOCK", hits[0]["ref_id"])
     assert adopted["unit_cost"] == 724.46
     assert adopted["source_type"] == "publicacion" and adopted["vigencia"] == "2026-06"
     assert "GC17EB" in adopted["source"]
+    with pytest.raises(ValueError, match="TON"):
+        store.adopt_reference("MAT-CEM", hits[0]["ref_id"])
     with pytest.raises(ValueError):
-        store.adopt_reference("MAT-CEM", 999_999)
+        store.adopt_reference("MAT-BLOCK", 999_999)
 
     # Re-importing replaces, never duplicates.
     assert store.import_reference(SOURCE, ROWS[:1]) == 1
