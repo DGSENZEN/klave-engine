@@ -17,6 +17,7 @@ from klave_engine.costing.defaults import (
 )
 from klave_engine.costing.models import CostingConfig
 from klave_engine.costing.reviews import REVIEWS_FILENAME, load_reviews
+from klave_engine.costing.vigencia import FRESH_MONTHS, freshness
 from pydantic import BaseModel, Field
 
 from apps.api.auth.store import UsersDbUnavailable, get_user_store
@@ -27,7 +28,7 @@ from apps.api.routes.projects import visible_project_filter
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 
-STALE_MONTHS = 6
+STALE_MONTHS = FRESH_MONTHS  # "más de 6 meses" = the catálogo's revisar + vencido
 
 
 def _state_user(request: Request) -> dict[str, Any] | None:
@@ -175,12 +176,10 @@ def overview(
         except UsersDbUnavailable:
             pass
 
-    today = datetime.now(UTC)
     stale = 0
     try:
         for row in get_catalog_store(settings.data_dir).list_insumos():
-            months = _months_old(row.get("vigencia"), today)
-            if months is None or months >= STALE_MONTHS:
+            if freshness(row.get("vigencia")) != "vigente":
                 stale += 1
     except Exception:
         stale = 0

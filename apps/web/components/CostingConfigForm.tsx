@@ -7,10 +7,15 @@ import { Card, Input, SectionTitle } from "@/components/ui";
  * the taller defaults so the same field reads the same everywhere. */
 export const CONFIG_LABELS: Record<string, string> = {
   // assumptions
-  column_section_m2: "Sección de columna (m²)",
-  column_height_m: "Altura de columna (m)",
-  beam_section_m2: "Sección de trabe (m²)",
-  wall_height_m: "Altura de muro (m)",
+  column_section_m2: "Sección de columna sin cuadro (m²)",
+  castillo_section_m2: "Sección de castillo sin cuadro (m²)",
+  contratrabe_section_m2: "Sección de contratrabe sin cuadro (m²)",
+  dala_section_m2: "Sección de dala sin cuadro (m²)",
+  slab_thickness_m: "Espesor de losa maciza sin etiqueta (m)",
+  mat_thickness_m: "Espesor de losa de cimentación sin etiqueta (m)",
+  column_height_m: "Altura de entrepiso sin niveles (m)",
+  beam_section_m2: "Sección de trabe sin cuadro (m²)",
+  wall_height_m: "Altura de muro sin niveles (m)",
   footing_depth_m: "Peralte de zapata (m)",
   excavation_depth_m: "Prof. excavación (m)",
   excavation_swell_factor: "Factor abundamiento",

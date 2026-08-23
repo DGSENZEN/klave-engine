@@ -18,6 +18,7 @@ export const FAMILY_COLORS: Record<string, string> = {
   muro: "#8a67ad",
   muro_concreto: "#6b4c9a",
   local: "#2a9d8f",
+  cuadro: "#9aa3a8",
   terreno: "#8a6d3b",
   dala: "#c27c2c",
   cerramiento: "#d9a441",
@@ -46,6 +47,7 @@ export const FAMILY_LABELS: Record<string, string> = {
   muro: "Muros",
   muro_concreto: "Muros de concreto",
   local: "Locales",
+  cuadro: "Etiquetas de cuadro",
   terreno: "Terreno",
   dala: "Dalas",
   cerramiento: "Cerramientos",
@@ -67,8 +69,13 @@ export const FAMILY_LABELS: Record<string, string> = {
 
 /** Grouping key for legend + visibility: family when available, else type. */
 export function familyOf(d: DetectionOverlay): string {
+  if (d.role === "cuadro") return "cuadro";
   return d.family || d.type;
 }
+
+/** Families that start hidden in the visor: cuadro labels are text on the
+ * sheet, not elements, and only matter when checking what was read. */
+export const HIDDEN_BY_DEFAULT = new Set(["cuadro"]);
 
 export function detectionTitle(d: DetectionOverlay): string {
   const base = d.family_label || FAMILY_LABELS[d.type] || d.type;

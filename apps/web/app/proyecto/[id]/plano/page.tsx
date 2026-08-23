@@ -25,14 +25,7 @@ import {
   type Geometry,
   type ReviewStatus,
 } from "@/lib/api";
-import {
-  PlanoCanvas,
-  FAMILY_COLORS,
-  FAMILY_LABELS,
-  familyOf,
-  detectionTitle,
-  type MeasureMode,
-} from "@/components/PlanoCanvas";
+import { FAMILY_COLORS, FAMILY_LABELS, HIDDEN_BY_DEFAULT, PlanoCanvas, detectionTitle, familyOf, type MeasureMode } from "@/components/PlanoCanvas";
 import {
   Badge,
   Button,
@@ -91,7 +84,9 @@ export default function PlanoPage() {
         setGeomError(null);
         setGeom(g);
         setVisibleLayers(new Set(g.layers.slice(0, 14).map((l) => l.name)));
-        setVisibleFamilies(new Set(g.detections.map(familyOf)));
+        setVisibleFamilies(
+          new Set(g.detections.map(familyOf).filter((f) => !HIDDEN_BY_DEFAULT.has(f))),
+        );
         setSelected(null);
       })
       .catch(() => {
@@ -108,7 +103,9 @@ export default function PlanoPage() {
       .then((g) => {
         setGeom(g);
         setVisibleLayers(new Set(g.layers.slice(0, 14).map((l) => l.name)));
-        setVisibleFamilies(new Set(g.detections.map(familyOf)));
+        setVisibleFamilies(
+          new Set(g.detections.map(familyOf).filter((f) => !HIDDEN_BY_DEFAULT.has(f))),
+        );
         setSelected(null);
       })
       .catch(() => {});
@@ -145,6 +142,20 @@ export default function PlanoPage() {
     return families.size > 0 ? families : null;
   }, [conceptFocus, geom]);
   const effectiveFamilies = focusFamilies ?? visibleFamilies;
+  // Arriving with ?concept=, the first fit is the elements' extent, not the
+  // whole tiling; a frame click afterwards takes over through `focus`.
+  const conceptFit = useMemo(() => {
+    if (!conceptFocus || !geom || conceptFocus.ids.size === 0) return null;
+    const boxes = geom.detections.filter((d) => conceptFocus.ids.has(d.id)).map((d) => d.bbox);
+    if (boxes.length === 0) return null;
+    const bbox: [number, number, number, number] = [
+      Math.min(...boxes.map((b) => b[0])),
+      Math.min(...boxes.map((b) => b[1])),
+      Math.max(...boxes.map((b) => b[2])),
+      Math.max(...boxes.map((b) => b[3])),
+    ];
+    return { bbox, nonce: -1 };
+  }, [conceptFocus, geom]);
 
   // A collaborator reviewed something: refresh verdicts, keep the selection.
   useEffect(() => {
@@ -427,7 +438,7 @@ export default function PlanoPage() {
             onWorldClick={(point) =>
               setMeasurePoints((current) => [...current, point])
             }
-            focus={focus}
+            focus={focus ?? conceptFit}
           />
           {measureMode && (
             <MeasureResult

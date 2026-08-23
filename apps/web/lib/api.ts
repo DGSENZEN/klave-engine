@@ -214,6 +214,8 @@ export type DetectionOverlay = {
   mark: string;
   /** Canonical family (castillo, columna, trabe, …); empty on old runs. */
   family: string;
+  /** "cuadro" when the tag is a row of a cuadro on the sheet, not an element. */
+  role?: string;
   family_label: string;
   /** Stable system name (e.g. "CAS-05"). */
   display_label: string;
@@ -673,6 +675,8 @@ export const deleteInventoryMapping = (id: number, actor?: string) =>
   );
 
 export type Lectura = {
+  /** Sheet frames tiled in model space (total and plantas); 0 on frameless drawings. */
+  frames?: { total: number; plan: number };
   project_id: string;
   project_name: string;
   /** Levantamiento por hoja: símbolos y trazos contados, sin precio. */

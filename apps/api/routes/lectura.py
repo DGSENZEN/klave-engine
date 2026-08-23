@@ -57,6 +57,19 @@ def _optional(store: ProjectStore, project_id: str, name: str):
         return None
 
 
+def _frames_summary(store: ProjectStore, project_id: str) -> dict:
+    """How many sheet frames the drawing tiles in model space, and how many
+    are plantas: the 'Hojas' a person counts, distinct from the files."""
+    try:
+        frames = store.read_artifact(project_id, "frames.json")
+    except HTTPException:
+        return {"total": 0, "plan": 0}
+    return {
+        "total": len(frames),
+        "plan": sum(1 for f in frames if f.get("kind") == "plan"),
+    }
+
+
 @router.get("/{project_id}/lectura")
 def get_lectura(project_id: str, store: ProjectStore = Depends(get_store)) -> dict:
     manifest = store.get_manifest(project_id)
@@ -131,6 +144,7 @@ def get_lectura(project_id: str, store: ProjectStore = Depends(get_store)) -> di
         "project_id": project_id,
         "inventory": inventory,
         "project_name": manifest.project_name,
+        "frames": _frames_summary(store, project_id),
         "sheets": sheets,
         "units": (
             {

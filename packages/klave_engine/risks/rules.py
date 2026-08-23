@@ -63,6 +63,16 @@ class RiskEngineConfig(BaseModel):
     unknown_layer_min_entities: int = 20
 
 
+MIN_GRID_LINES = 4
+MAX_INDIVIDUAL_GRID_FINDINGS = 20
+
+
+def _sheet_name(source: str) -> str:
+    """The file a person recognises, not the converted path."""
+    name = source.replace("\\", "/").rsplit("/", 1)[-1]
+    return name.rsplit(".", 1)[0] if "." in name else name
+
+
 def generate_risk_report(
     project_id: str,
     manifest: ProjectManifest,
@@ -113,18 +123,73 @@ def generate_risk_report(
             )
         )
 
-    # Rule: column tag with no nearby grid intersection.
-    for column in by_type[DetectionType.column_tag]:
-        if column.properties.get("has_nearby_grid", False):
-            continue
+    # Rule: column tag with no nearby grid intersection. A sheet whose grid
+    # was barely read (fewer than MIN_GRID_LINES axes in that file) would
+    # flag every column: then the grid is the doubt, not the columns — and
+    # past MAX_INDIVIDUAL_GRID_FINDINGS the repeats collapse into one.
+    grid_by_file: dict[str, int] = {}
+    for line in by_type[DetectionType.grid_line]:
+        grid_by_file[line.evidence.source] = grid_by_file.get(line.evidence.source, 0) + 1
+    without_grid = [
+        c for c in by_type[DetectionType.column_tag]
+        if not c.properties.get("has_nearby_grid", False)
+        and c.properties.get("role") != "cuadro"
+        and grid_by_file.get(c.evidence.source, 0) >= MIN_GRID_LINES
+    ]
+    poor_grid_files = {
+        c.evidence.source for c in by_type[DetectionType.column_tag]
+        if grid_by_file.get(c.evidence.source, 0) < MIN_GRID_LINES
+    }
+    for source in sorted(poor_grid_files):
+        findings.append(
+            RiskFinding(
+                risk_id=ids.next(),
+                risk_type="sparse_grid",
+                severity=Severity.low,
+                message=(
+                    f"En {_sheet_name(source)} se leyeron {grid_by_file.get(source, 0)} ejes; "
+                    "la comprobación columna–eje no aplica hasta que la malla se lea completa."
+                ),
+                source_entities=[],
+                related_detections=[],
+                bbox=None,
+                evidence=evidence_for("grid_coverage_check"),
+                recommended_human_action=(
+                    "Revisa que los ejes estén en una capa de ejes (EJE/GRID/AXIS) con sus "
+                    "burbujas; si lo están, confirma las intersecciones en el visor."
+                ),
+            )
+        )
+    if len(without_grid) > MAX_INDIVIDUAL_GRID_FINDINGS:
         findings.append(
             RiskFinding(
                 risk_id=ids.next(),
                 risk_type="column_tag_without_grid",
                 severity=Severity.medium,
                 message=(
-                    f"La columna {column.label} en {column.evidence.source} no tiene "
-                    "una intersección de ejes dentro del radio de búsqueda."
+                    f"{len(without_grid)} columnas o castillos no tienen una intersección de "
+                    f"ejes cerca (p. ej. {', '.join(c.label for c in without_grid[:6])})."
+                ),
+                source_entities=[],
+                related_detections=[c.detection_id for c in without_grid[:200]],
+                bbox=None,
+                evidence=evidence_for("column_grid_proximity_check"),
+                recommended_human_action=(
+                    "Recorre estas columnas en el visor contra los ejes estructurales; si la "
+                    "malla está completa, varias pueden ser etiquetas de detalle."
+                ),
+            )
+        )
+        without_grid = []
+    for column in without_grid:
+        findings.append(
+            RiskFinding(
+                risk_id=ids.next(),
+                risk_type="column_tag_without_grid",
+                severity=Severity.medium,
+                message=(
+                    f"La columna {column.label} en {_sheet_name(column.evidence.source)} no "
+                    "tiene una intersección de ejes dentro del radio de búsqueda."
                 ),
                 source_entities=column.source_entities,
                 related_detections=[column.detection_id],

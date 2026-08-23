@@ -144,6 +144,9 @@ def get_geometry(
                 "mark": d.get("mark", ""),
                 "family": d.get("family", ""),
                 "family_label": d.get("family_label", ""),
+                # Labels that ARE a cuadro (not elements on the planta) get
+                # their own family in the visor, hidden by default.
+                "role": (d.get("properties") or {}).get("role") or "",
                 "display_label": d.get("display_label", ""),
                 "description": d.get("description", ""),
                 # Correction loop: key the client uses for review calls, plus

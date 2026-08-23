@@ -198,8 +198,8 @@ export default function LecturaPage() {
           accent={lectura.units && lectura.units.confidence >= 0.7 ? "success" : undefined}
         />
         <Metric
-          label="Hojas"
-          value={lectura.sheets.length}
+          label={lectura.frames && lectura.frames.total > 0 ? "Hojas" : "Archivos"}
+          value={lectura.frames && lectura.frames.total > 0 ? lectura.frames.total : lectura.sheets.length}
           icon={<FileText size={16} weight="duotone" />}
         />
         <Metric

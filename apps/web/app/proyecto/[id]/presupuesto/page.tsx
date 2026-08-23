@@ -114,7 +114,7 @@ export default function PresupuestoPage() {
   if (error) {
     return (
       <div className="px-6 py-7 lg:px-8">
-        <PageHeader title="Catálogo de conceptos" />
+        <PageHeader title="Presupuesto" />
         <Callout tone="danger">
           No se pudo cargar el presupuesto. Revisa que el servidor esté activo.
         </Callout>
@@ -149,7 +149,7 @@ export default function PresupuestoPage() {
   return (
     <div className="rise-in px-6 py-7 lg:px-8">
       <PageHeader
-        title="Catálogo de conceptos"
+        title="Presupuesto"
         sub="Cantidades deducidas del plano · precios de referencia (MXN)"
         actions={
           <ButtonMenu label="Exportar" icon={<DownloadSimple size={16} weight="bold" />}>
