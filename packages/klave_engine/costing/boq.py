@@ -471,10 +471,15 @@ def generate_bill_of_quantities(
             result = _LineResult(quantity, raw, _contributing(concept, matched), [])
 
         if result.quantity <= 0:
-            boq.warnings.append(
-                f"Concepto {concept.code} ({concept.description[:40]}…) sin "
-                "cantidades: no hubo detecciones aplicables."
-            )
+            # A concept whose element type the drawing does not contain at
+            # all (no locales on a structural set, no terrain without a
+            # survey) simply does not apply; only a concept that HAD
+            # candidates and matched none deserves a warning.
+            if by_type.get(concept.rule.detection_type):
+                boq.warnings.append(
+                    f"Concepto {concept.code} ({concept.description[:40]}…) sin "
+                    "cantidades: no hubo detecciones aplicables."
+                )
             continue
 
         apu = apus.get(concept.code)
