@@ -27,7 +27,7 @@ usuarios).
 |---|---|---|
 | `caddy` | caddy:2 | TLS automático; SSE sin buffering; cuerpo hasta 120 MB |
 | `web` | `apps/web/Dockerfile` | Next.js standalone; `NEXT_PUBLIC_API_URL` se hornea al construir |
-| `api` | `apps/api/Dockerfile` | uvicorn sin `--reload`, `dwg2dxf` (LibreDWG) incluido, healthcheck `/health` |
+| `api` | `apps/api/Dockerfile` | uvicorn sin `--reload`, `dwg2dxf` 0.13.3 (LibreDWG compilado de fuente — Debian no lo empaqueta), healthcheck `/health` |
 | `users-db` | postgres:16 | cuentas, sesiones, permisos; solo en la red interna |
 | `backup` | postgres:16 | respaldo diario ~03:00 UTC al volumen `backups` |
 
@@ -50,6 +50,11 @@ muerto no se lleve todo.
 El ciclo respaldo → restauración está probado: el dump restaura las 47
 tablas/objetos del users-db y el tar restaura los catálogos por taller con
 sus aliases intactos.
+
+Nota: `apps/web/package-lock.json` debe regenerarse dentro de Linux
+(`docker run --rm -v $PWD/apps/web:/w -w /w node:24-alpine npm install
+--package-lock-only`) cuando cambien dependencias, para que incluya los
+opcionales de todas las plataformas y `npm ci` funcione en la imagen.
 
 ## Actualizar
 

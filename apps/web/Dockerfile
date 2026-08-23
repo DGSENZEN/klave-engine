@@ -2,7 +2,7 @@
 # NEXT_PUBLIC_API_URL is baked in at build time: pass it as a build arg
 # (e.g. https://api.taller.mx). Build from the repo root:
 #   docker build -f apps/web/Dockerfile --build-arg NEXT_PUBLIC_API_URL=… apps/web
-FROM node:22-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -12,7 +12,7 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
     NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-FROM node:22-alpine
+FROM node:24-alpine
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
