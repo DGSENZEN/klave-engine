@@ -39,7 +39,11 @@ class ReviewInput(BaseModel):
 
 class AdjustmentInput(BaseModel):
     concept_code: str = Field(min_length=2, max_length=40)
-    quantity_delta: float
+    quantity_delta: float = 0.0
+    # Editing in place: the quantity the engineer asserts, replacing the
+    # engine's figure. A set needs a reason — the number changes silently
+    # otherwise, and silence is what costs trust.
+    quantity_set: float | None = Field(default=None, ge=0)
     note: str = Field(default="", max_length=300)
 
 
@@ -170,12 +174,20 @@ def add_adjustment(
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    if body.quantity_delta == 0:
+    if body.quantity_set is None and body.quantity_delta == 0:
         raise HTTPException(
             status_code=422,
             detail={
                 "error_type": "invalid_adjustment",
                 "message": "El ajuste debe ser distinto de cero.",
+            },
+        )
+    if body.quantity_set is not None and not body.note.strip():
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_type": "reason_required",
+                "message": "Fijar una cantidad requiere decir por qué.",
             },
         )
     actor = clean_actor(x_actor) or ""
@@ -186,7 +198,8 @@ def add_adjustment(
             ManualAdjustment(
                 adjustment_id=short_uuid("adj"),
                 concept_code=body.concept_code.strip().upper(),
-                quantity_delta=body.quantity_delta,
+                quantity_delta=body.quantity_delta if body.quantity_set is None else 0.0,
+                quantity_set=body.quantity_set,
                 note=body.note.strip(),
                 actor=actor,
             )
@@ -194,7 +207,8 @@ def add_adjustment(
         save_reviews(control_dir, reviews)
         _recompute_after_review(
             store, settings, project_id, actor, clean_client_id(x_client_id),
-            "adjustment_added", body.concept_code,
+            "quantity_set" if body.quantity_set is not None else "adjustment_added",
+            body.concept_code,
         )
     return _reviews_payload(reviews)
 

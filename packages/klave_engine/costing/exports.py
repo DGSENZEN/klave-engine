@@ -360,7 +360,12 @@ def _generadores(
         for adjustment in reviews.adjustments:
             if adjustment.concept_code != line.concept_code:
                 continue
-            note = f"AJUSTE MANUAL {adjustment.quantity_delta:+,.2f} {line.unit}"
+            if adjustment.quantity_set is not None:
+                note = f"CANTIDAD FIJADA EN {adjustment.quantity_set:,.2f} {line.unit}"
+                if line.engine_quantity is not None:
+                    note += f" (lectura: {line.engine_quantity:,.2f} {line.unit})"
+            else:
+                note = f"AJUSTE MANUAL {adjustment.quantity_delta:+,.2f} {line.unit}"
             if adjustment.note:
                 note += f" — {adjustment.note}"
             if adjustment.actor:

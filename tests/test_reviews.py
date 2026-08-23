@@ -128,3 +128,30 @@ def test_negative_adjustment_on_missing_concept_is_refused():
     _apply_adjustments(boq, catalog, apus, [_adjustment("EST-003", -5.0)])
     assert all(line.concept_code != "EST-003" for line in boq.lines)
     assert any("negativo ignorado" in w for w in boq.warnings)
+
+
+def test_setting_the_quantity_replaces_it_and_keeps_the_engine_figure():
+    boq, catalog, apus = _boq_with_line(10.0)
+    unit_price = boq.lines[0].unit_price
+    fixed = ManualAdjustment(
+        adjustment_id="adj_s", concept_code="EST-004", quantity_set=7.5,
+        note="el plano muestra 3 muros menos", actor="Ana",
+    )
+    _apply_adjustments(boq, catalog, apus, [fixed])
+    line = boq.lines[0]
+    assert line.quantity == 7.5 and line.engine_quantity == 10.0
+    assert line.amount == pytest.approx(7.5 * unit_price, abs=0.01)
+    assert any("fijada en 7.50" in n and "daba 10.00" in n and "Ana" in n for n in line.assumptions)
+    # A later delta builds on the fixed quantity, and the engine figure stays.
+    _apply_adjustments(boq, catalog, apus, [_adjustment("EST-004", 2.0)])
+    assert boq.lines[0].quantity == 9.5 and boq.lines[0].engine_quantity == 10.0
+
+
+def test_setting_a_quantity_on_an_unread_concept_creates_the_line():
+    boq, catalog, apus = _boq_with_line(10.0)
+    fixed = ManualAdjustment(
+        adjustment_id="adj_s", concept_code="EST-003", quantity_set=40.0, note="losa",
+    )
+    _apply_adjustments(boq, catalog, apus, [fixed])
+    created = next(line for line in boq.lines if line.concept_code == "EST-003")
+    assert created.quantity == 40.0 and created.engine_quantity == 0.0

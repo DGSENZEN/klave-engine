@@ -138,6 +138,9 @@ class BoqLine(BaseModel):
     # Quantity per plan view (view title → quantity in the concept unit) on
     # a segmented sheet; empty on flat sheets and single-view scopes.
     by_view: dict[str, float] = Field(default_factory=dict)
+    # What the engine read before any manual adjustment; None when the line
+    # carries the engine's own figure. A presupuesto never hides an edit.
+    engine_quantity: float | None = None
 
 
 class BillOfQuantities(BaseModel):

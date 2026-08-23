@@ -4,11 +4,13 @@ import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
+  Check,
   DownloadSimple,
   FileXls,
   PencilSimpleLine,
   Trash,
   Warning,
+  X,
 } from "@phosphor-icons/react";
 import {
   addAdjustment,
@@ -218,6 +220,9 @@ export default function PresupuestoPage() {
                 lines={lines}
                 subtotal={subtotal}
                 projectId={id}
+                actorName={actorName}
+                clientId={clientId}
+                onReviews={setReviews}
               />
             );
           })}
@@ -334,13 +339,20 @@ function PhaseGroup({
   lines,
   subtotal,
   projectId,
+  actorName,
+  clientId,
+  onReviews,
 }: {
   phase: string;
   lines: BoqLine[];
   subtotal: number;
   projectId: string;
+  actorName: string;
+  clientId: string | null;
+  onReviews: (reviews: ProjectReviews) => void;
 }) {
   const [openCode, setOpenCode] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   return (
     <>
       <tr className="border-b border-border bg-surface-2/60">
@@ -387,7 +399,42 @@ function PhaseGroup({
                 )}
               </Td>
               <Td align="right" className="tabular">
-                {num(l.quantity)} <span className="text-xs text-muted">{l.unit}</span>
+                {editing === l.concept_code ? (
+                  <QuantityEditor
+                    line={l}
+                    projectId={projectId}
+                    actorName={actorName}
+                    clientId={clientId}
+                    onDone={(reviews) => {
+                      setEditing(null);
+                      if (reviews) onReviews(reviews);
+                    }}
+                  />
+                ) : (
+                  <span className="group/qty inline-flex items-center justify-end gap-1.5">
+                    {l.engine_quantity != null && l.engine_quantity !== l.quantity && (
+                      <span
+                        className="text-xs text-faint line-through"
+                        title="Lo que leyó el motor"
+                      >
+                        {num(l.engine_quantity)}
+                      </span>
+                    )}
+                    {num(l.quantity)} <span className="text-xs text-muted">{l.unit}</span>
+                    <button
+                      type="button"
+                      aria-label={`Editar cantidad de ${l.concept_code}`}
+                      title="Fijar la cantidad a mano (con motivo)"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditing(l.concept_code);
+                      }}
+                      className="rounded-md p-0.5 text-faint opacity-0 transition-opacity hover:text-accent group-hover/qty:opacity-100 focus:opacity-100"
+                    >
+                      <PencilSimpleLine size={13} />
+                    </button>
+                  </span>
+                )}
               </Td>
               <Td align="right" className="tabular text-muted">
                 {money2(l.unit_price)}
@@ -433,6 +480,101 @@ function PhaseGroup({
         );
       })}
     </>
+  );
+}
+
+/** Edit the quantity in place: the new figure replaces the engine's, the
+ * engine's stays visible, and the reason is required — a number that
+ * changes without a why is exactly what a presupuesto cannot carry. */
+function QuantityEditor({
+  line,
+  projectId,
+  actorName,
+  clientId,
+  onDone,
+}: {
+  line: BoqLine;
+  projectId: string;
+  actorName: string;
+  clientId: string | null;
+  onDone: (reviews: ProjectReviews | null) => void;
+}) {
+  const [value, setValue] = useState(String(line.quantity));
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    const quantity = Number(value);
+    if (!Number.isFinite(quantity) || quantity < 0) {
+      setError("Cantidad inválida.");
+      return;
+    }
+    if (!reason.trim()) {
+      setError("Di por qué cambia.");
+      return;
+    }
+    if (quantity === line.quantity) {
+      onDone(null);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      onDone(
+        await addAdjustment(
+          projectId,
+          { concept_code: line.concept_code, quantity_set: quantity, note: reason.trim() },
+          actorName,
+          clientId,
+        ),
+      );
+    } catch {
+      setError("No se pudo guardar.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="flex flex-col items-end gap-1"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onDone(null);
+        if (e.key === "Enter") void save();
+      }}
+    >
+      <div className="flex items-center gap-1">
+        <Input
+          type="number"
+          step="any"
+          min={0}
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          aria-label="Nueva cantidad"
+          className="w-28 px-2 py-1 text-right tabular"
+        />
+        <span className="text-xs text-muted">{line.unit}</span>
+      </div>
+      <Input
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Por qué (obligatorio)"
+        maxLength={300}
+        aria-label="Motivo del cambio"
+        className="w-56 px-2 py-1 text-left"
+      />
+      <div className="flex items-center gap-1">
+        {error && <span className="mr-1 text-xs text-danger">{error}</span>}
+        <Button size="sm" variant="primary" onClick={save} disabled={busy}>
+          <Check size={13} weight="bold" /> Fijar
+        </Button>
+        <Button size="sm" onClick={() => onDone(null)} disabled={busy}>
+          <X size={13} weight="bold" />
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -519,8 +661,9 @@ function AdjustmentsPanel({
                   {adjustment.concept_code}
                 </span>{" "}
                 <span className="tabular font-medium">
-                  {adjustment.quantity_delta > 0 ? "+" : ""}
-                  {num(adjustment.quantity_delta)}{" "}
+                  {adjustment.quantity_set != null
+                    ? `= ${num(adjustment.quantity_set)}`
+                    : `${adjustment.quantity_delta > 0 ? "+" : ""}${num(adjustment.quantity_delta)}`}{" "}
                   {unitOf.get(adjustment.concept_code) ?? ""}
                 </span>
                 {adjustment.note && <span className="text-muted"> · {adjustment.note}</span>}

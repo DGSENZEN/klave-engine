@@ -235,6 +235,8 @@ export type BoqLine = {
   assumptions: string[];
   /** Quantity per planta on a segmented sheet (view title → quantity). */
   by_view?: Record<string, number>;
+  /** What the engine read before any manual edit; null when untouched. */
+  engine_quantity?: number | null;
 };
 
 export type ApuLine = {
@@ -715,6 +717,8 @@ export type ManualAdjustment = {
   adjustment_id: string;
   concept_code: string;
   quantity_delta: number;
+  /** An in-place edit: the quantity replaces the engine's figure. */
+  quantity_set?: number | null;
   note: string;
   actor: string;
   created_at: string;
@@ -766,7 +770,12 @@ export const setDetectionReview = (
 
 export const addAdjustment = (
   id: string,
-  adjustment: { concept_code: string; quantity_delta: number; note: string },
+  adjustment: {
+    concept_code: string;
+    quantity_delta?: number;
+    quantity_set?: number;
+    note: string;
+  },
   actor?: string,
   clientId?: string | null,
 ) =>

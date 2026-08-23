@@ -31,12 +31,25 @@ class DetectionReview(BaseModel):
 
 
 class ManualAdjustment(BaseModel):
+    """One documented human correction to a concept's quantity.
+
+    ``quantity_delta`` adds or removes quantity; ``quantity_set`` replaces the
+    quantity outright (editing in place). Exactly one of them is meaningful —
+    a set ignores the delta — and both keep the engine's figure on the line
+    (``engine_quantity``) so the change is always visible, never silent.
+    """
+
     adjustment_id: str
     concept_code: str
-    quantity_delta: float
+    quantity_delta: float = 0.0
+    quantity_set: float | None = None
     note: str = ""
     actor: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @property
+    def is_set(self) -> bool:
+        return self.quantity_set is not None
 
 
 class VerificationState(BaseModel):

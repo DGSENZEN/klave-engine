@@ -190,15 +190,23 @@ def _apply_adjustments(
                 f"Ajuste manual ignorado: concepto desconocido {adjustment.concept_code}."
             )
             continue
-        note = f"Ajuste manual {adjustment.quantity_delta:+,.2f} {concept.unit}"
+        line = lines_by_code.get(adjustment.concept_code)
+        if adjustment.is_set:
+            previous = line.quantity if line is not None else 0.0
+            note = (
+                f"Cantidad fijada en {adjustment.quantity_set:,.2f} {concept.unit} "
+                f"(la lectura daba {previous:,.2f} {concept.unit})"
+            )
+        else:
+            note = f"Ajuste manual {adjustment.quantity_delta:+,.2f} {concept.unit}"
         if adjustment.note:
             note += f": {adjustment.note}"
         if adjustment.actor:
             note += f" — {adjustment.actor}"
 
-        line = lines_by_code.get(adjustment.concept_code)
         if line is None:
-            if adjustment.quantity_delta <= 0:
+            wants = adjustment.quantity_set if adjustment.is_set else adjustment.quantity_delta
+            if wants is None or wants <= 0:
                 boq.warnings.append(
                     "Ajuste manual negativo ignorado: el concepto "
                     f"{adjustment.concept_code} no tiene cantidad detectada."
@@ -227,7 +235,13 @@ def _apply_adjustments(
             boq.lines.append(line)
             lines_by_code[concept.code] = line
 
-        new_quantity = line.quantity + adjustment.quantity_delta
+        if line.engine_quantity is None:
+            line.engine_quantity = line.quantity
+        new_quantity = (
+            adjustment.quantity_set
+            if adjustment.quantity_set is not None
+            else line.quantity + adjustment.quantity_delta
+        )
         if new_quantity < 0:
             boq.warnings.append(
                 f"Ajuste manual en {concept.code} limitado a cantidad cero "
