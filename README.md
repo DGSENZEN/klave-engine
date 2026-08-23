@@ -109,7 +109,8 @@ packages/klave_engine
   risks/          risk rules + report
   evals/          fixtures, detection/graph/takeoff evals, regression suite
   common/         config, logging, ids, io, errors
-docs/             architecture, data contracts, detection rules, evaluation
+docs/             architecture, data contracts, detection rules, evaluation,
+                  levantamiento, lectura IA, acabados, terracerías, intercambio OPUS/Neodata
 tests/            pytest suite (unit, fixture-based, API contracts)
 ```
 
