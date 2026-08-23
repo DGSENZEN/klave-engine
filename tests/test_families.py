@@ -34,7 +34,7 @@ def _wall(det_id, length, thickness, kind):
 
 
 def test_dalas_concrete_walls_and_block_walls_go_to_their_own_concepts():
-    a = CostingAssumptions()
+    a = CostingAssumptions(opening_share_pct=0)  # families, not vanos
     dets = [
         _beam("t", "T-1", 4.0, section_cm="25x50"),
         _beam("ce", "CE-1", 6.0),  # cadena de enrase: dala
