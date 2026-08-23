@@ -326,7 +326,8 @@ async def import_prices(
 ) -> dict:
     """Bulk price update from a UTF-8 CSV with columns code,unit_cost (or
     clave,costo_unitario). Only existing insumo codes are updated."""
-    raw = await file.read()
+    # Read at most the limit plus one byte: a bigger body never lands in memory.
+    raw = await file.read(MAX_IMPORT_BYTES + 1)
     if len(raw) > MAX_IMPORT_BYTES:
         raise HTTPException(
             status_code=413,
@@ -474,7 +475,8 @@ async def import_custom_source(
     """The taller's own catálogo de conceptos (XLSX/CSV with clave,
     descripción, unidad, precio unitario) as a reference source, labeled as
     the taller's, never as a publication."""
-    raw = await file.read()
+    # Read at most the limit plus one byte: a bigger body never lands in memory.
+    raw = await file.read(MAX_IMPORT_BYTES + 1)
     if len(raw) > MAX_IMPORT_BYTES:
         raise HTTPException(
             status_code=413,
@@ -511,7 +513,8 @@ async def import_matrices(
 ) -> dict:
     """Conceptos con sus matrices from an OPUS/Neodata Excel export (or the
     documented Tipo/Clave/Descripción/Unidad/Cantidad/Costo layout)."""
-    raw = await file.read()
+    # Read at most the limit plus one byte: a bigger body never lands in memory.
+    raw = await file.read(MAX_IMPORT_BYTES + 1)
     if len(raw) > MAX_IMPORT_BYTES:
         raise HTTPException(
             status_code=413,
@@ -758,7 +761,8 @@ async def create_plantilla(
 ) -> dict:
     """A past presupuesto (XLSX/CSV with clave, unidad, cantidad, precio) plus
     that project's m² → a plantilla: per-m² rules and the taller's prices."""
-    raw = await file.read()
+    # Read at most the limit plus one byte: a bigger body never lands in memory.
+    raw = await file.read(MAX_IMPORT_BYTES + 1)
     if len(raw) > MAX_IMPORT_BYTES:
         raise HTTPException(
             status_code=413,

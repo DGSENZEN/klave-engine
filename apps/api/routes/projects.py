@@ -25,6 +25,8 @@ router = APIRouter(prefix="/projects")
 
 ALLOWED_SUFFIXES = {".dwg", ".dxf"}
 UPLOAD_CHUNK_BYTES = 1024 * 1024
+# A residential set is ~16 sheets; 40 leaves room without inviting abuse.
+MAX_FILES_PER_PROJECT = 40
 
 
 class CreateProjectRequest(BaseModel):
@@ -229,6 +231,15 @@ async def _save_sheet_uploads(
         raise HTTPException(
             status_code=400,
             detail={"error_type": "no_files", "message": "Sube al menos un archivo."},
+        )
+    if start_index + len(files) > MAX_FILES_PER_PROJECT:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "error_type": "too_many_files",
+                "message": f"Un proyecto lleva hasta {MAX_FILES_PER_PROJECT} hojas.",
+                "max_files": MAX_FILES_PER_PROJECT,
+            },
         )
     saved: list[Path] = []
     for offset, file in enumerate(files):

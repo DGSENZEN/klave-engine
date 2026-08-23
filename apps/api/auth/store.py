@@ -28,7 +28,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import psycopg
-from klave_engine.common.logging import get_logger, log_stage
+from klave_engine.common.logging import get_logger, log_stage, redact_email
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
@@ -372,7 +372,7 @@ class UserStore:
             ).fetchone()
         self._invalidate_has_users()
         log_stage(
-            logger, "user_created", email=email,
+            logger, "user_created", email=redact_email(email),
             role=row["role"], status=row["status"],  # type: ignore[index]
         )
         return dict(row)  # type: ignore[arg-type]
@@ -671,7 +671,7 @@ class UserStore:
                     _token_hash(token), invited_by, _now() + INVITATION_TTL,
                 ),
             ).fetchone()
-        log_stage(logger, "invitation_created", email=email, role=role)
+        log_stage(logger, "invitation_created", email=redact_email(email), role=role)
         return dict(row), token  # type: ignore[arg-type]
 
     def get_invitation_by_token(self, token: str) -> dict[str, Any] | None:
@@ -800,7 +800,10 @@ class UserStore:
                 (now, row["user_id"], invite["invite_id"]),
             )
         self._invalidate_has_users()
-        log_stage(logger, "invitation_accepted", email=invite["email"], role=invite["role"])
+        log_stage(
+            logger, "invitation_accepted", email=redact_email(invite["email"]),
+            role=invite["role"],
+        )
         return dict(row)
 
     # ----------------------------------------------------- project access

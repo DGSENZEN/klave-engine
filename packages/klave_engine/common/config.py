@@ -9,6 +9,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="KLAVE_", env_file=".env", extra="ignore")
 
+    # "dev" (default): localhost origins are welcome. "production": only the
+    # configured origins may bring credentials, and startup validates the
+    # deployment configuration out loud.
+    env: str = "dev"  # dev | production
+
     data_dir: Path = Path("data")
     converted_dir_name: str = "converted"
     processed_dir_name: str = "processed"
@@ -37,6 +42,9 @@ class Settings(BaseSettings):
     # (e.g. ".taller.mx"), or go cross-site with SameSite=None (HTTPS only).
     cookie_domain: str | None = None
     cookie_samesite: str = "lax"  # lax | none | strict
+    # Explicit override for the session cookie's Secure flag; None derives it
+    # from web_origin (https) or SameSite=None.
+    cookie_secure: bool | None = None
     # Extra browser origins allowed to call the API with credentials.
     extra_origins: str = ""  # comma-separated
     auth_google_id: str | None = None

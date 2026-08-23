@@ -29,3 +29,11 @@ def log_stage(logger: logging.Logger, event: str, **fields: Any) -> None:
     """Log a pipeline stage event with structured key=value fields."""
     parts = " ".join(f"{key}={value}" for key, value in fields.items())
     logger.info("%s %s", event, parts)
+
+
+def redact_email(email: str | None) -> str:
+    """"ana@taller.mx" → "a***@taller.mx": enough to recognise, never to harvest."""
+    if not email or "@" not in email:
+        return "***"
+    local, _, domain = email.partition("@")
+    return f"{local[:1]}***@{domain}"

@@ -32,6 +32,24 @@ from apps.api.routes import croquis as croquis_routes
 from apps.api.routes import versions as version_routes
 
 
+def _validate_production_config(settings) -> None:
+    """KLAVE_ENV=production refuses to boot half-configured: better one clear
+    message at start than a quiet cross-origin hole or a cookie over http."""
+    problems: list[str] = []
+    if settings.web_origin.startswith("http://") and "localhost" in settings.web_origin:
+        problems.append("KLAVE_WEB_ORIGIN sigue apuntando a localhost")
+    if not settings.web_origin.startswith("https://") and settings.cookie_secure is not True:
+        problems.append(
+            "KLAVE_WEB_ORIGIN no es https y KLAVE_COOKIE_SECURE no está forzado a true"
+        )
+    if "127.0.0.1" in settings.users_database_url and "klave@" in settings.users_database_url:
+        problems.append("KLAVE_USERS_DATABASE_URL usa las credenciales locales de desarrollo")
+    if problems:
+        raise RuntimeError(
+            "Configuración de producción incompleta: " + "; ".join(problems)
+        )
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level)
@@ -43,14 +61,16 @@ def create_app() -> FastAPI:
 
     # Local-first single workspace: allow the Next.js dev server. Credentials
     # are required so the HttpOnly session cookie travels with fetch and SSE.
+    dev = settings.env != "production"
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-            *allowed_origins(),
-        ],
-        allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+        allow_origins=(
+            ["http://localhost:3000", "http://127.0.0.1:3000", *allowed_origins()]
+            if dev
+            else allowed_origins()
+        ),
+        # Any localhost port is a developer's browser — never in production.
+        allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+" if dev else None,
         allow_methods=["*"],
         allow_headers=["*"],
         allow_credentials=True,
@@ -58,6 +78,8 @@ def create_app() -> FastAPI:
         # page, not a JSON page; the browser needs the filename exposed.
         expose_headers=["Content-Disposition"],
     )
+    if not dev:
+        _validate_production_config(settings)
 
     app.include_router(health.router)
     app.include_router(auth_router)

@@ -20,7 +20,7 @@ from pathlib import Path
 
 import httpx
 from klave_engine.common.config import Settings
-from klave_engine.common.logging import get_logger, log_stage
+from klave_engine.common.logging import get_logger, log_stage, redact_email
 
 logger = get_logger(__name__)
 
@@ -83,6 +83,9 @@ def render(
     return MailContent(subject=subject, text="\n".join(text_parts), html=html)
 
 
+OUTBOX_TTL_DAYS = 7
+
+
 class Mailer:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -112,13 +115,18 @@ class Mailer:
                 self._send_smtp(to, content)
             else:
                 self._write_outbox(to, content)
-                log_stage(logger, "mail_outboxed", to=to, subject=content.subject)
+                log_stage(logger, "mail_outboxed", to=redact_email(to), subject=content.subject)
                 return MailResult(delivered=False, provider="outbox")
         except Exception as exc:  # provider failures must never 500 the request
-            logger.warning("mail_failed provider=%s to=%s error=%s", provider, to, exc)
+            logger.warning(
+                "mail_failed provider=%s to=%s error=%s", provider, redact_email(to), exc
+            )
             self._write_outbox(to, content, error=str(exc))
             return MailResult(delivered=False, provider=provider, error=str(exc))
-        log_stage(logger, "mail_sent", provider=provider, to=to, subject=content.subject)
+        log_stage(
+            logger, "mail_sent", provider=provider, to=redact_email(to),
+            subject=content.subject,
+        )
         return MailResult(delivered=True, provider=provider)
 
     # ---------------------------------------------------------- providers
@@ -155,8 +163,16 @@ class Mailer:
             smtp.send_message(message)
 
     def _write_outbox(self, to: str, content: MailContent, error: str | None = None) -> Path:
+        """The letters nobody could deliver, for the operator to hand over.
+
+        They carry live links (recovery, verification), so the copies are
+        kept lean and short-lived: text only (no second copy in HTML),
+        owner-only permissions, and anything older than the outbox TTL is
+        swept on each write — the tokens inside expire sooner anyway."""
         outbox = self.settings.data_dir / "outbox"
         outbox.mkdir(parents=True, exist_ok=True)
+        outbox.chmod(0o700)
+        self._sweep_expired(outbox)
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
         path = outbox / f"{stamp}_{uuid.uuid4().hex[:8]}.json"
         path.write_text(
@@ -165,7 +181,6 @@ class Mailer:
                     "to": to,
                     "subject": content.subject,
                     "text": content.text,
-                    "html": content.html,
                     "error": error,
                     "created_at": datetime.now(UTC).isoformat(),
                 },
@@ -174,7 +189,18 @@ class Mailer:
             ),
             encoding="utf-8",
         )
+        path.chmod(0o600)
         return path
+
+    @staticmethod
+    def _sweep_expired(outbox: Path) -> None:
+        cutoff = datetime.now(UTC).timestamp() - OUTBOX_TTL_DAYS * 86400
+        for old in outbox.glob("*.json"):
+            try:
+                if old.stat().st_mtime < cutoff:
+                    old.unlink()
+            except OSError:
+                continue
 
 
 def get_mailer(settings: Settings) -> Mailer:

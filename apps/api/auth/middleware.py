@@ -39,7 +39,10 @@ def origin_allowed(origin: str | None) -> bool:
     if origin is None:
         return True  # non-browser clients carry no session cookie to forge with
     origin = origin.rstrip("/")
-    return origin in allowed_origins() or bool(_LOCAL_ORIGIN.match(origin))
+    if origin in allowed_origins():
+        return True
+    # Any localhost port is a developer's browser — in dev only.
+    return get_settings().env != "production" and bool(_LOCAL_ORIGIN.match(origin))
 
 
 def _header(scope: dict[str, Any], name: bytes) -> str | None:

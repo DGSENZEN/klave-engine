@@ -138,7 +138,11 @@ def set_session_cookie(
     samesite = settings.cookie_samesite.lower()
     if samesite not in ("lax", "none", "strict"):
         samesite = "lax"
-    secure = settings.web_origin.startswith("https") or samesite == "none"
+    secure = (
+        settings.cookie_secure
+        if settings.cookie_secure is not None
+        else settings.web_origin.startswith("https") or samesite == "none"
+    )
     response.set_cookie(
         SESSION_COOKIE,
         token,
