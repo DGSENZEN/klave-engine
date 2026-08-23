@@ -73,7 +73,7 @@ def _wall(det_id, length):
 
 
 def test_acabados_follow_rooms_and_both_faces_of_walls():
-    a = CostingAssumptions()
+    a = CostingAssumptions(opening_share_pct=0)  # faces and heights; vanos have their own test
     dets = [
         _room("r1", 16.0, "interior"), _room("r2", 9.0, "exterior"),
         _room("r3", 12.0, "interior"), _room("r4", 5.0, "sin_nombre"),
