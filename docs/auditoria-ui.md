@@ -26,9 +26,11 @@ Fecha: 2026-08-23. Fuentes: inventario control por control de todas las páginas
 | Sugerencias de alias para conceptos que no están en el presupuesto | **hecho** |
 | Revisión sin orden por columna ni métrica de excluidos | **hecho** |
 
-Pendientes de esta lista: `Restablecer` en parámetros sin confirmación; `Recargar` en conflicto descarta ediciones sin avisar; el preset regional muta al seleccionar; "Actualizar vencidos por índice" y "Aplicar salario real" reescriben precios sin vista previa; cuenta: cerrar sesiones sin confirmar; `Cambios guardados.` que nunca se va; callout de catálogo "deben recalcular" sin enlace.
+Todos **hechos** después: `Restablecer` y `Recargar` con ediciones confirman; el preset regional llena el formulario y se aplica al confirmar; "Actualizar vencidos por índice" y "Aplicar salario real" muestran exactamente qué cambia antes de escribir (`dry_run` y `/labor/preview`); cerrar las demás sesiones confirma; "Cambios guardados" se cierra solo; el callout del catálogo enlaza a los proyectos que deben recalcular.
 
 ## 2. Lo que se repite (y qué hacemos con cada repetición)
+
+Estado: todas las decisiones de esta tabla están en `main` (commits `e531abe`, `b29903d`).
 
 | Acción | Dónde aparece | Decisión |
 |---|---|---|
@@ -44,6 +46,8 @@ Pendientes de esta lista: `Restablecer` en parámetros sin confirmación; `Recar
 | Abrir/cerrar secciones | ocho implementaciones distintas | Un primitivo `Disclosure` en `ui.tsx` (con `aria-expanded`). |
 
 ## 3. Lo que carga sin avisar (esqueletos y estados)
+
+Estado: toda la tabla está **hecha** (`3046a91`): esqueletos con la forma del contenido, errores visibles con reintentar, vacíos que dicen qué hacer, lectura con IA con progreso por hoja y cancelar, descargas con estado.
 
 Regla: toda sección que hace su propia petición tiene sus cuatro estados — cargando (esqueleto con la forma del contenido, nunca texto "Cargando…"), vacío (qué hacer), error (qué pasó y cómo reintentar), y, donde aplica, "lectura anterior / sin procesar".
 
@@ -61,7 +65,7 @@ Regla: toda sección que hace su propia petición tiene sus cuatro estados — c
 
 ## 4. Lo que sobra o estorba (podar y enfocar)
 
-Decisiones de diseño, no de código:
+Decisiones de diseño, no de código. Estado: 1–8 **hechos** (`9763f1a`, `f00013b`, `83098ba`).
 
 1. **Navegación del proyecto**: once entradas es demasiado para tres tareas (leer, revisar, entregar). Se agrupan en tres: *Leer* (Resumen, Lectura, Visor), *Revisar* (Revisión, Riesgos), *Entregar* (Presupuesto, Precios unitarios, Programa y flujo, Parámetros). Riesgos no se fusiona en Revisión todavía: son dudas del plano, no verdictos, pero comparten el salto al visor. Configuración baja al final como ajustes del proyecto.
 2. **Catálogo** (1,777 líneas en una página): tabs — *Insumos*, *Conceptos y matrices*, *Fuentes e importación*, *Plantillas y paramétricos*, *Salario real y vigencia*. Sin buscador no se puede operar un catálogo de 2,700 filas: buscador y filtro por tipo en insumos y conceptos.
@@ -72,7 +76,7 @@ Decisiones de diseño, no de código:
 7. **Duplicados de utilidades**: `timeAgo` ×2, etiquetas de tipo de recurso ×3, extracción de mensaje de `ApiError` ×10, diálogo modal ×4, Escape ×6, regex de título de planta ×4, CSV ×2, selectores sin primitivo (~15), checkboxes en cuatro estilos, badge de confianza con cinco reglas. Se consolidan en `lib/families.ts`, `lib/format.ts`, `ui.tsx` (`Select`, `Checkbox`, `ConfidenceBadge`, `Disclosure`, `Modal`).
 8. **Identificadores crudos** visibles: tipos de entidad DXF, `mano_de_obra`, `session_created`, `ANTHROPIC_API_KEY`, `make users-db-up`, `data/sources/…`, `Sn/SBC/Ps/Fsr/Tp/Tl`, indicador sin estado → texto vacío. Cada uno recibe etiqueta o se convierte en "pide a tu administrador…".
 
-## 5. Orden de ejecución
+## 5. Orden de ejecución (completado el 2026-08-23)
 
 1. Consistencia de verbos y confirmaciones (sección 2 y pendientes de 1).
 2. Estados por sección (sección 3).
