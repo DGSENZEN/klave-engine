@@ -6,7 +6,7 @@
     "Plano Prueba 1.dxf": "13314f9c78fedde370752c3ab91f53f6cd5767a8d3709f52f5060c5ef76bdd90"
   },
   "status": "baseline",
-  "captured_at": "2026-08-22T23:17:25.908683Z",
+  "captured_at": "2026-08-23T02:18:24.109697Z",
   "labels": {
     "grid_line": [
       "EJE-1-01",
@@ -495,12 +495,7 @@
       "LOS-25",
       "LOS-26",
       "LOS-27",
-      "LOS-28",
-      "LOS-29",
-      "LOS-30",
-      "LOS-31",
-      "LOS-32",
-      "LOS-33"
+      "LOS-28"
     ],
     "wall": [
       "MUR-01",

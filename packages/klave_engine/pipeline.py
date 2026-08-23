@@ -332,6 +332,26 @@ def run_full_pipeline(
         for output in detector_outputs:
             result.warnings.extend(output.warnings)
             result.detections.extend(output.detections)
+    # Where the sheet draws tableros, a large closed polyline is a notes box
+    # or a detail, never a slab: the tablero reading is the authority.
+    panel_files = {
+        d.evidence.source for d in result.detections if d.evidence.method == "slab_panel"
+    }
+    if panel_files:
+        kept = [
+            d for d in result.detections
+            if not (
+                d.evidence.method == "slab_region_from_large_closed_polyline"
+                and d.evidence.source in panel_files
+            )
+        ]
+        dropped = len(result.detections) - len(kept)
+        if dropped:
+            result.detections = kept
+            log_stage(
+                logger, "legacy_slab_outlines_dropped", dropped=dropped,
+                files=sorted(panel_files),
+            )
     # What the sheet declares about its marks outranks measured markers and
     # assumptions: stamp sections from cuadros, details, and notes first.
     schedule = build_schedule_inventory(

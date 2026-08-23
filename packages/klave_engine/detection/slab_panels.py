@@ -46,6 +46,10 @@ _FAMILY_TEXT: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 
+# A face whose void boxes cover this share of it is an opening, not a slab.
+VOID_DOMINATED_SHARE = 0.7
+
+
 class SlabPanelConfig(BaseModel):
     boundary_layer_hints: list[str] = Field(
         default_factory=lambda: [
@@ -435,6 +439,9 @@ def detect_slab_panels(
                 if polygon.geom_type != "Polygon":
                     polygon = max(polygon.geoms, key=lambda g: g.area)
                 subtracted = before - polygon.area
+                if before > 0 and subtracted >= VOID_DOMINATED_SHARE * before:
+                    voids += 1
+                    continue  # the tablero IS the opening (an X-crossed box)
 
         # A stray leader on a slab layer is not a pattern: one hatch or
         # three lines make a system.

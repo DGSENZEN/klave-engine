@@ -124,12 +124,21 @@ def _contributing(concept: Concept, detections: list[Detection]) -> list[Detecti
 
 class _LineResult:
     def __init__(self, quantity: float, raw: float, dets: list[Detection],
-                 notes: list[str], by_view: dict[str, float] | None = None) -> None:
+                 notes: list[str], by_view: dict[str, float] | None = None,
+                 supersedes: set[str] | None = None) -> None:
         self.quantity = quantity
         self.raw = raw
         self.dets = dets
         self.notes = notes
         self.by_view = by_view or {}
+        # Fragments of the concept's fallback assumptions that this result
+        # made moot ("si no hay niveles N.P.T." when the levels were read).
+        self.supersedes: set[str] = supersedes or set()
+        self.sections = (0, 0, 0)  # declared, measured, assumed (columns only)
+
+
+FALLBACK_HEIGHT = "si no hay niveles"
+FALLBACK_SECTION = "si no hay marcador"
 
 
 def _column_volume(
@@ -172,16 +181,35 @@ def _column_volume(
             measured += 1
         else:
             volume += default_m2 * height
+    assumed = len(columns) - measured
     notes = [
         f"{len(columns)} columnas (vista de planta más completa) × altura "
         f"{height:.2f} m"
         + (" (de niveles N.P.T.)" if total_height else " (supuesta)"),
-        f"Sección: {declared} declaradas en el plano (cuadro/detalle), "
-        f"{measured - declared} medidas del marcador, "
-        f"{len(columns) - measured} supuestas (castillo {assumptions.castillo_section_m2:.3f} m², "
-        f"columna {assumptions.column_section_m2:.3f} m²)",
+        _section_note(declared, measured - declared, assumed, assumptions),
     ]
-    return _LineResult(round(volume, 6), float(len(columns)), columns, notes)
+    result = _LineResult(round(volume, 6), float(len(columns)), columns, notes)
+    result.sections = (declared, measured - declared, assumed)
+    if total_height:
+        result.supersedes.add(FALLBACK_HEIGHT)
+    if assumed == 0:
+        result.supersedes.add(FALLBACK_SECTION)
+    return result
+
+
+def _section_note(
+    declared: int, measured: int, assumed: int, assumptions: CostingAssumptions
+) -> str:
+    note = (
+        f"Sección: {declared} declaradas en el plano (cuadro/detalle), "
+        f"{measured} medidas del marcador"
+    )
+    if assumed:
+        note += (
+            f", {assumed} supuestas (castillo {assumptions.castillo_section_m2:.3f} m², "
+            f"columna {assumptions.column_section_m2:.3f} m²)"
+        )
+    return note
 
 
 def _scoped_result(
@@ -224,6 +252,7 @@ def _scoped_result(
             # cimentación planta draws the same columns at their base.
             total = _LineResult(0.0, 0.0, [], [])
             split: dict[str, float] = {}
+            n_declared = n_measured = n_assumed = 0
             for view in segmentation.superstructure_views():
                 columns = by_view.get(view.view_id, [])
                 height = heights.get(view.view_id)
@@ -234,6 +263,9 @@ def _scoped_result(
                 total.raw += part.raw
                 total.dets.extend(part.dets)
                 split[titles[view.view_id]] = part.quantity
+                n_declared += part.sections[0]
+                n_measured += part.sections[1]
+                n_assumed += part.sections[2]
             if total.dets:
                 total.notes = [
                     "Columnas y castillos por planta × altura de entrepiso declarada en el "
@@ -241,9 +273,13 @@ def _scoped_result(
                     + ", ".join(
                         f"{titles[v.view_id].split(' · ')[-1][:22]} {heights[v.view_id]:.2f} m"
                         for v in segmentation.superstructure_views() if v.view_id in heights
-                    )
+                    ),
+                    _section_note(n_declared, n_measured, n_assumed, assumptions),
                 ]
                 total.by_view = split
+                total.supersedes.add(FALLBACK_HEIGHT)
+                if n_assumed == 0:
+                    total.supersedes.add(FALLBACK_SECTION)
                 return total
         canonical = max(by_view.values(), key=len, default=[])
         return _column_volume(canonical, meters_factor, assumptions, segmentation.total_height())
@@ -299,6 +335,7 @@ def _scoped_result(
                 [f"Suma de plantas de superestructura ({len(dets)} detecciones)",
                  f"Altura de entrepiso por planta declarada en el plano (NTC/NPT): {declared}"],
                 view_split if len(view_split) > 1 else {},
+                supersedes={FALLBACK_HEIGHT},
             )
         raw = _raw_over(concept, dets, meters_factor)
         return _LineResult(round(raw * concept.quantity_factor, 6), raw,
@@ -425,7 +462,10 @@ def generate_bill_of_quantities(
                 source_detection_count=len(contributing),
                 source_detections=[d.detection_id for d in contributing][:200],
                 confidence=round(confidence, 3),
-                assumptions=concept.assumptions + result.notes + (
+                assumptions=[
+                    a for a in concept.assumptions
+                    if not any(fragment in a for fragment in result.supersedes)
+                ] + result.notes + (
                     [f"P.U. adoptado de {apu.price_source}"] if apu.price_source else []
                 ),
                 by_view=result.by_view if len(result.by_view) > 1 else {},
