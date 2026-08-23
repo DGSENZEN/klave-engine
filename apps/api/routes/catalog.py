@@ -657,7 +657,8 @@ def roll_forward(
         catalog.upsert_insumo(
             age.code, unit_cost=new_cost, source_type="calculado",
             source=(
-                f"{age.source or 'precio anterior'} × índice {indices.get('source') or 'del taller'} "
+                f"{age.source or 'precio anterior'} × índice "
+                f"{indices.get('source') or 'del taller'} "
                 f"{age.vigencia[:7]}→{to_month} (factor {factor:.4f})"
             )[:200],
             vigencia=to_month,
