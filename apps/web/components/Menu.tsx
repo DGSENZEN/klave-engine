@@ -59,10 +59,13 @@ export function KebabMenu({
 export function ButtonMenu({
   label,
   icon,
+  width = "w-60",
   children,
 }: {
   label: string;
   icon?: ReactNode;
+  /** Tailwind width of the dropdown; wider menus can carry a hint per item. */
+  width?: string;
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -97,7 +100,7 @@ export function ButtonMenu({
         <CaretDown size={13} weight="bold" className={open ? "rotate-180" : ""} />
       </button>
       {open && (
-        <div className="toast-in absolute right-0 top-full z-40 mt-1 w-60 overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg">
+        <div className={`toast-in absolute right-0 top-full z-40 mt-1 ${width} overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg`}>
           {children(() => setOpen(false))}
         </div>
       )}
@@ -108,12 +111,33 @@ export function ButtonMenu({
 export function MenuItem({
   onSelect,
   danger,
+  hint,
   children,
 }: {
   onSelect: () => void;
   danger?: boolean;
+  /** One line under the label: what the action expects or does. */
+  hint?: ReactNode;
   children: ReactNode;
 }) {
+  if (hint) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onSelect();
+        }}
+        className={`flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm transition-colors ${
+          danger ? "text-danger hover:bg-danger-soft" : "hover:bg-surface-2"
+        }`}
+      >
+        <span className="flex items-center gap-2">{children}</span>
+        <span className="text-xs font-normal text-muted">{hint}</span>
+      </button>
+    );
+  }
   return (
     <button
       type="button"

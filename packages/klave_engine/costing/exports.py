@@ -685,6 +685,16 @@ def _explosion(ws: Worksheet, report: CostReport) -> None:
         ws.column_dimensions[letter].width = width
 
 
+def build_apus_workbook(report: CostReport) -> bytes:
+    """Every APU as it prints in the presupuesto workbook, on its own."""
+    workbook = Workbook()
+    _apus(workbook.active, report)
+    workbook.active.title = "APUs"
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
 def build_explosion_workbook(report: CostReport) -> bytes:
     workbook = Workbook()
     _explosion(workbook.active, report)

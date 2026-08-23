@@ -71,20 +71,39 @@ import {
   Skeleton,
   SkeletonHeader,
   SkeletonTable,
+  Tabs,
   Td,
   Th,
 } from "@/components/ui";
 import { AliasesSection } from "@/components/AliasesSection";
+import { ButtonMenu, MenuItem } from "@/components/Menu";
 import { Modal } from "@/components/Modal";
 import { PlantillasSection } from "@/components/PlantillasSection";
 import { VigenciaChip, VigenciaSection } from "@/components/VigenciaSection";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
+
+type CatalogTab = "insumos" | "conceptos" | "fuentes" | "plantillas" | "salario";
+const TABS: CatalogTab[] = ["insumos", "conceptos", "fuentes", "plantillas", "salario"];
 
 export default function CatalogoPage() {
   const [catalog, setCatalog] = useState<CatalogState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  // The tab lives in ?tab= so a link can open a section; read after mount
+  // (static route, no Suspense) and mirrored with replaceState on change.
+  const [tab, setTabState] = useState<CatalogTab>("insumos");
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const param = new URLSearchParams(window.location.search).get("tab");
+      if (TABS.includes(param as CatalogTab)) setTabState(param as CatalogTab);
+    }, 0);
+    return () => window.clearTimeout(handle);
+  }, []);
+  const setTab = useCallback((next: CatalogTab) => {
+    setTabState(next);
+    window.history.replaceState(null, "", next === "insumos" ? "/catalogo" : `/catalogo?tab=${next}`);
+  }, []);
   const fileRef = useRef<HTMLInputElement>(null);
   const matricesRef = useRef<HTMLInputElement>(null);
 
@@ -197,12 +216,6 @@ export default function CatalogoPage() {
                   e.target.value = "";
                 }}
               />
-              <Button
-                onClick={() => fileRef.current?.click()}
-                title="CSV o XLSX (exportado de OPUS/Neodata) con columnas clave y precio"
-              >
-                <UploadSimple size={15} weight="bold" /> Importar precios
-              </Button>
               <input
                 ref={matricesRef}
                 type="file"
@@ -214,15 +227,63 @@ export default function CatalogoPage() {
                   e.target.value = "";
                 }}
               />
-              <Button
-                onClick={() => matricesRef.current?.click()}
-                title="Catálogo de conceptos con insumos exportado de OPUS/Neodata (XLSX/CSV): conceptos con su matriz"
+              <ButtonMenu
+                label="Importar…"
+                icon={<UploadSimple size={15} weight="bold" />}
+                width="w-80"
               >
-                <UploadSimple size={15} weight="bold" /> Importar matrices
-              </Button>
+                {(close) => (
+                  <>
+                    <MenuItem
+                      onSelect={() => {
+                        close();
+                        fileRef.current?.click();
+                      }}
+                      hint="CSV o XLSX con columnas clave y precio; actualiza el costo de insumos que ya existen."
+                    >
+                      Precios de insumos
+                    </MenuItem>
+                    <MenuItem
+                      onSelect={() => {
+                        close();
+                        matricesRef.current?.click();
+                      }}
+                      hint="Catálogo de conceptos con insumos exportado de OPUS o Neodata (XLSX/CSV): crea conceptos con su matriz."
+                    >
+                      Matrices de OPUS / Neodata
+                    </MenuItem>
+                    <MenuItem
+                      onSelect={() => {
+                        close();
+                        setTab("fuentes");
+                      }}
+                      hint="Tu libro de precios (clave, descripción, unidad, precio). Entra a la biblioteca de referencia como catálogo propio."
+                    >
+                      Catálogo propio
+                    </MenuItem>
+                    <MenuItem
+                      onSelect={() => {
+                        close();
+                        setTab("fuentes");
+                      }}
+                      hint="Tabuladores oficiales (CDMX, SICT) descargados en el servidor; se importan con su vigencia."
+                    >
+                      Publicación oficial
+                    </MenuItem>
+                    <MenuItem
+                      onSelect={() => {
+                        close();
+                        setTab("plantillas");
+                      }}
+                      hint="Un presupuesto terminado con sus m²: se vuelve reglas por m² y conceptos con precio."
+                    >
+                      Presupuesto anterior (plantilla)
+                    </MenuItem>
+                  </>
+                )}
+              </ButtonMenu>
               <Button onClick={exportCsv} disabled={!catalog}>
-                <DownloadSimple size={15} weight="bold" /> Exportar insumos
-                (CSV)
+                <DownloadSimple size={15} weight="bold" /> Exportar insumos (CSV)
               </Button>
             </>
           }
@@ -272,51 +333,46 @@ export default function CatalogoPage() {
           </div>
         )}
 
+        <Tabs
+          className="mb-5"
+          value={tab}
+          onChange={setTab}
+          items={[
+            { key: "insumos", label: "Insumos", count: catalog?.insumos.length },
+            { key: "conceptos", label: "Conceptos y matrices", count: catalog?.concepts.length },
+            { key: "fuentes", label: "Fuentes de referencia" },
+            { key: "plantillas", label: "Plantillas y paramétricos" },
+            { key: "salario", label: "Salario real y vigencia" },
+          ]}
+        />
+
         {!catalog ? (
           <>
             <SkeletonHeader />
             <SkeletonTable rows={8} />
           </>
-        ) : (
+        ) : tab === "insumos" ? (
+          <InsumosSection catalog={catalog} onChanged={reload} onError={setError} />
+        ) : tab === "conceptos" ? (
           <>
-            <FuentesSection
-              catalog={catalog}
-              onChanged={reload}
-              onError={setError}
-              onNotice={setNotice}
-            />
-            <div className="mb-4">
-              <VigenciaSection
-                onChanged={reload}
-                onError={setError}
-                onNotice={setNotice}
-              />
-            </div>
-            <div className="mb-4">
+            <ApusSection catalog={catalog} onChanged={reload} onError={setError} />
+            <div className="mt-8">
               <AliasesSection onChanged={reload} onError={setError} />
             </div>
-            <div className="mb-4">
-              <PlantillasSection
-                onChanged={reload}
-                onError={setError}
-                onNotice={setNotice}
-              />
-            </div>
-            <SalarioRealSection
-              onChanged={reload}
-              onError={setError}
-              onNotice={setNotice}
-            />
-            <InsumosSection
-              catalog={catalog}
-              onChanged={reload}
-              onError={setError}
-            />
-            <ApusSection
-              catalog={catalog}
-              onChanged={reload}
-              onError={setError}
-            />
+          </>
+        ) : tab === "fuentes" ? (
+          <FuentesSection
+            catalog={catalog}
+            onChanged={reload}
+            onError={setError}
+            onNotice={setNotice}
+          />
+        ) : tab === "plantillas" ? (
+          <PlantillasSection onChanged={reload} onError={setError} onNotice={setNotice} />
+        ) : (
+          <>
+            <SalarioRealSection onChanged={reload} onError={setError} onNotice={setNotice} />
+            <VigenciaSection onChanged={reload} onError={setError} onNotice={setNotice} />
           </>
         )}
       </main>
@@ -337,6 +393,19 @@ function InsumosSection({
 }) {
   const [adding, setAdding] = useState(false);
   const [equipmentCode, setEquipmentCode] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return catalog.insumos.filter(
+      (insumo) =>
+        (!typeFilter || insumo.resource_type === typeFilter) &&
+        (!q ||
+          insumo.code.toLowerCase().includes(q) ||
+          insumo.description.toLowerCase().includes(q) ||
+          insumo.source.toLowerCase().includes(q)),
+    );
+  }, [catalog.insumos, query, typeFilter]);
 
   async function commitInsumo(
     code: string,
@@ -365,6 +434,32 @@ function InsumosSection({
           <Plus size={14} weight="bold" /> Agregar insumo
         </Button>
       </div>
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3">
+        <div className="relative flex-1">
+          <MagnifyingGlass
+            size={14}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
+          />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Buscar por clave, descripción o fuente…"
+            className="w-full pl-9"
+            aria-label="Buscar insumo"
+          />
+        </div>
+        <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} aria-label="Tipo">
+          <option value="">Todos los tipos</option>
+          <option value="material">Material</option>
+          <option value="mano_de_obra">Mano de obra</option>
+          <option value="equipo">Equipo</option>
+        </Select>
+        <span className="text-xs text-muted">
+          {visible.length === catalog.insumos.length
+            ? `${catalog.insumos.length} insumos`
+            : `${visible.length} de ${catalog.insumos.length}`}
+        </span>
+      </div>
       {adding && (
         <NewInsumoRow
           onDone={() => {
@@ -386,7 +481,14 @@ function InsumosSection({
             </tr>
           </thead>
           <tbody>
-            {catalog.insumos.map((insumo) => (
+            {visible.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-5 py-6 text-center text-sm text-muted">
+                  Ningún insumo coincide con «{query.trim()}».
+                </td>
+              </tr>
+            )}
+            {visible.map((insumo) => (
               <tr
                 key={insumo.code}
                 className="border-b border-border last:border-0"
@@ -596,19 +698,28 @@ function ApusSection({
   onChanged: () => void;
   onError: (message: string) => void;
 }) {
-  const [open, setOpen] = useState<string | null>(
-    catalog.concepts[0]?.code ?? null,
-  );
+  const [open, setOpen] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const byPhase = useMemo(() => {
+    const q = query.trim().toLowerCase();
     const phases = new Map<string, CatalogConcept[]>();
     for (const phase of catalog.phase_order) phases.set(phase, []);
     for (const concept of catalog.concepts) {
+      if (
+        q &&
+        !concept.code.toLowerCase().includes(q) &&
+        !concept.description.toLowerCase().includes(q) &&
+        !(concept.price_clave ?? "").toLowerCase().includes(q)
+      ) {
+        continue;
+      }
       const list = phases.get(concept.phase);
       if (list) list.push(concept);
       else phases.set(concept.phase, [concept]);
     }
     return [...phases.entries()].filter(([, concepts]) => concepts.length > 0);
-  }, [catalog]);
+  }, [catalog, query]);
+  const shown = byPhase.reduce((sum, [, concepts]) => sum + concepts.length, 0);
 
   const [creating, setCreating] = useState(false);
   return (
@@ -630,6 +741,29 @@ function ApusSection({
           }}
           onError={onError}
         />
+      )}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative flex-1">
+          <MagnifyingGlass
+            size={14}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
+          />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Buscar concepto por clave, descripción o clave de referencia…"
+            className="w-full pl-9"
+            aria-label="Buscar concepto"
+          />
+        </div>
+        <span className="text-xs text-muted">
+          {shown === catalog.concepts.length ? `${shown} conceptos` : `${shown} de ${catalog.concepts.length}`}
+        </span>
+      </div>
+      {shown === 0 && (
+        <p className="py-6 text-center text-sm text-muted">
+          Ningún concepto coincide con «{query.trim()}».
+        </p>
       )}
       {byPhase.map(([phase, concepts]) => (
         <div key={phase} className="mb-6">

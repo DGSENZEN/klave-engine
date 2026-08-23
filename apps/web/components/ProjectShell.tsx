@@ -9,7 +9,6 @@ import {
   Calculator,
   CalendarBlank,
   CaretLeft,
-  ChartLine,
   Coins,
   FileMagnifyingGlass,
   GearSix,
@@ -31,76 +30,39 @@ import { Avatar, IconButton } from "@/components/ui";
 
 type Item = { key: string; label: string; icon: ReactNode; href: string };
 
+/**
+ * Three jobs, in the order they happen: read the plano, review what was
+ * read, deliver the numbers. Settings sit apart, as settings do.
+ */
 function nav(id: string): { group: string; items: Item[] }[] {
   const b = `/proyecto/${id}`;
   return [
     {
-      group: "Proyecto",
+      group: "Leer",
       items: [
         { key: "resumen", label: "Resumen", icon: <SquaresFour size={18} />, href: b },
         {
-          key: "plano",
-          label: "Visor del Plano",
-          icon: <MapTrifold size={18} />,
-          href: `${b}/plano`,
-        },
-        {
           key: "lectura",
-          label: "Lectura del Plano",
+          label: "Lectura del plano",
           icon: <FileMagnifyingGlass size={18} />,
           href: `${b}/lectura`,
         },
+        {
+          key: "plano",
+          label: "Visor del plano",
+          icon: <MapTrifold size={18} />,
+          href: `${b}/plano`,
+        },
+      ],
+    },
+    {
+      group: "Revisar",
+      items: [
         {
           key: "revision",
           label: "Revisión",
           icon: <ListChecks size={18} />,
           href: `${b}/revision`,
-        },
-        {
-          key: "configuracion",
-          label: "Configuración",
-          icon: <GearSix size={18} />,
-          href: `${b}/configuracion`,
-        },
-      ],
-    },
-    {
-      group: "Ingeniería de Costos",
-      items: [
-        {
-          key: "presupuesto",
-          label: "Presupuesto",
-          icon: <Receipt size={18} />,
-          href: `${b}/presupuesto`,
-        },
-        {
-          key: "apu",
-          label: "Precios Unitarios",
-          icon: <Calculator size={18} />,
-          href: `${b}/apus`,
-        },
-        {
-          key: "parametros",
-          label: "Parámetros e Insumos",
-          icon: <Coins size={18} />,
-          href: `${b}/parametros`,
-        },
-      ],
-    },
-    {
-      group: "Planeación y Riesgos",
-      items: [
-        {
-          key: "programa",
-          label: "Programa de Obra",
-          icon: <CalendarBlank size={18} />,
-          href: `${b}/programa`,
-        },
-        {
-          key: "finanzas",
-          label: "Flujo Financiero",
-          icon: <ChartLine size={18} />,
-          href: `${b}/flujo`,
         },
         {
           key: "riesgos",
@@ -111,11 +73,46 @@ function nav(id: string): { group: string; items: Item[] }[] {
       ],
     },
     {
-      group: "Taller",
+      group: "Entregar",
       items: [
         {
+          key: "presupuesto",
+          label: "Presupuesto",
+          icon: <Receipt size={18} />,
+          href: `${b}/presupuesto`,
+        },
+        {
+          key: "apu",
+          label: "Precios unitarios",
+          icon: <Calculator size={18} />,
+          href: `${b}/apus`,
+        },
+        {
+          key: "programa",
+          label: "Programa y flujo",
+          icon: <CalendarBlank size={18} />,
+          href: `${b}/programa`,
+        },
+        {
+          key: "parametros",
+          label: "Parámetros e insumos",
+          icon: <Coins size={18} />,
+          href: `${b}/parametros`,
+        },
+      ],
+    },
+    {
+      group: "Ajustes",
+      items: [
+        {
+          key: "configuracion",
+          label: "Configuración del proyecto",
+          icon: <GearSix size={18} />,
+          href: `${b}/configuracion`,
+        },
+        {
           key: "catalogo",
-          label: "Catálogo de precios",
+          label: "Catálogo del taller",
           icon: <Books size={18} />,
           href: "/catalogo",
         },
@@ -364,7 +361,9 @@ function SidebarContent({
           <div key={g.group} className="mb-4">
             <div className="microlabel px-2 pb-1.5">{g.group}</div>
             {g.items.map((it) => {
-              const active = it.href === pathname;
+              const active =
+                it.href === pathname ||
+                (it.key === "programa" && pathname === it.href.replace(/\/programa$/, "/flujo"));
               const itemViewers = otherViewers.filter(
                 (viewer) => viewer.location_path === it.href,
               );

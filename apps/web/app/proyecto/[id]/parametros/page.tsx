@@ -29,7 +29,7 @@ import {
   Th,
 } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
-import { CONFIG_LABELS, ConfigGroup } from "@/components/CostingConfigForm";
+import { CONFIG_GROUPS, CONFIG_LABELS, ConfigGroup } from "@/components/CostingConfigForm";
 import { actorLabel } from "@/lib/collab";
 import { resourceTypeLabel } from "@/lib/format";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -338,20 +338,10 @@ export default function ParametrosPage() {
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <ConfigGroup
-          title="Supuestos geométricos"
-          group="assumptions"
-          config={config}
-          onChange={setField}
-        />
-        <ConfigGroup
-          title="Indirectos y sobrecosto"
-          group="indirects"
-          config={config}
-          onChange={setField}
-        />
-        <ConfigGroup title="Financiero" group="financial" config={config} onChange={setField} />
+      <div className="grid gap-4 lg:grid-cols-2">
+        {CONFIG_GROUPS.map(({ group, title }) => (
+          <ConfigGroup key={group} title={title} group={group} config={config} onChange={setField} />
+        ))}
       </div>
 
       <Card className="mt-4 overflow-hidden">

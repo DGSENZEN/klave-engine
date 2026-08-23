@@ -530,3 +530,45 @@ export function Disclosure({
     </Card>
   );
 }
+
+/** Horizontal tabs for one page with several working areas. */
+export function Tabs<K extends string>({
+  value,
+  onChange,
+  items,
+  className = "",
+}: {
+  value: K;
+  onChange: (key: K) => void;
+  items: { key: K; label: ReactNode; count?: number }[];
+  className?: string;
+}) {
+  return (
+    <div role="tablist" className={`flex gap-1 overflow-x-auto border-b border-border ${className}`}>
+      {items.map((item) => {
+        const active = item.key === value;
+        return (
+          <button
+            key={item.key}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(item.key)}
+            className={`-mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm transition-colors ${
+              active
+                ? "border-foreground font-medium text-foreground"
+                : "border-transparent text-muted hover:text-foreground"
+            }`}
+          >
+            {item.label}
+            {item.count != null && (
+              <span className="tabular rounded-full bg-surface-2 px-1.5 text-[11px] text-muted">
+                {item.count.toLocaleString("es-MX")}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

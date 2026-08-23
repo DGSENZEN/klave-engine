@@ -10,6 +10,7 @@ from klave_engine.common.ids import slugify
 from klave_engine.costing.croquis import croquis_for_line
 from klave_engine.costing.exports import (
     CroquisProvider,
+    build_apus_workbook,
     build_explosion_workbook,
     build_presupuesto_workbook,
 )
@@ -73,6 +74,22 @@ def export_explosion(
     filename = f"explosion_insumos_{slugify(manifest.project_name)[:40]}.xlsx"
     return Response(
         content=build_explosion_workbook(report),
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/{project_id}/export/apus.xlsx")
+def export_apus(
+    project_id: str,
+    store: ProjectStore = Depends(get_store),
+) -> Response:
+    """Análisis de precios unitarios: one block per concept with its matrix."""
+    manifest = store.get_manifest(project_id)
+    report = CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
+    filename = f"apus_{slugify(manifest.project_name)[:40]}.xlsx"
+    return Response(
+        content=build_apus_workbook(report),
         media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

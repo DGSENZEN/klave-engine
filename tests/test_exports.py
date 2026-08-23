@@ -91,3 +91,15 @@ def test_flat_layouts_are_import_friendly(data_dir):
         assert ws.cell(row=1, column=1).value == first_header
         assert ws.max_row - 1 == len(report.boq.lines)
         assert ws.cell(row=2, column=6).value is not None  # importe populated
+
+
+def test_apus_workbook_stands_alone(data_dir):
+    from klave_engine.costing.exports import build_apus_workbook
+
+    report, _reviews = _report(data_dir)
+    workbook = load_workbook(io.BytesIO(build_apus_workbook(report)))
+    assert workbook.sheetnames == ["APUs"]
+    ws = workbook["APUs"]
+    titles = [c.value for c in ws["A"] if isinstance(c.value, str) and " — " in c.value]
+    assert len(titles) == len(report.apus) and titles[0].startswith(report.apus[0].concept_code)
+    assert any(c.value == "CD unitario" for row in ws.iter_rows() for c in row)

@@ -6,6 +6,7 @@ import { money, num, type ScheduleActivity } from "@/lib/api";
 import { phaseColor } from "@/lib/phases";
 import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
+import { ProgramaFlujoTabs } from "@/components/ProgramaFlujoTabs";
 import { moneyGate, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
 import {
   Callout,
@@ -84,9 +85,10 @@ export default function ProgramaPage() {
   return (
     <div className="rise-in px-6 py-7 lg:px-8">
       <PageHeader
-        title="Programa de obra"
+        title="Programa y flujo"
         sub="Secuencia de actividades derivada de las cantidades y rendimientos; duraciones en días laborables."
       />
+      <ProgramaFlujoTabs id={id} />
       <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">

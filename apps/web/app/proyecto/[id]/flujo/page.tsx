@@ -5,6 +5,7 @@ import { Money, CalendarBlank, PiggyBank, Wrench } from "@phosphor-icons/react";
 import { money, money2, type PeriodCashflow } from "@/lib/api";
 import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
+import { ProgramaFlujoTabs } from "@/components/ProgramaFlujoTabs";
 import { moneyGate, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
 import {
   Callout,
@@ -76,9 +77,10 @@ export default function FlujoPage() {
   return (
     <div className="rise-in px-6 py-7 lg:px-8">
       <PageHeader
-        title="Flujo financiero"
+        title="Programa y flujo"
         sub="Estimaciones por periodo a precio de venta: anticipo, amortización, retenciones y flujo neto."
       />
+      <ProgramaFlujoTabs id={id} />
       <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

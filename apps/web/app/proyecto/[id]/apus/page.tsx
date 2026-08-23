@@ -1,20 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { Calculator, CaretDown } from "@phosphor-icons/react";
-import { money2, num, type Apu } from "@/lib/api";
+import { Calculator, CaretDown, CircleNotch, DownloadSimple, MagnifyingGlass } from "@phosphor-icons/react";
+import { apiMessage, downloadFile, money2, num, type Apu } from "@/lib/api";
 import { RESOURCE_TYPE_LABELS } from "@/lib/format";
 import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
 import { moneyGate, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
 import {
   Badge,
+  Button,
   Callout,
   Card,
   EmptyState,
+  Input,
   Metric,
   PageHeader,
+  Select,
   SkeletonCards,
   SkeletonHeader,
   SkeletonMetrics,
@@ -33,8 +36,45 @@ export default function ApusPage() {
   const { id } = useParams<{ id: string }>();
   const { costs, error } = useCostReport(id);
   const reviews = useProjectReviews(id);
-  const { actorName } = useProjectLive();
+  const { actorName, sendActivity } = useProjectLive();
   const [open, setOpen] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const allApus = useMemo(() => costs?.apus ?? [], [costs]);
+  const apus = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return allApus.filter((apu) => {
+      if (typeFilter) {
+        const top = Object.entries(apu.breakdown).sort((a, b) => b[1] - a[1])[0];
+        if (!top || top[0] !== typeFilter) return false;
+      }
+      if (!q) return true;
+      return (
+        apu.concept_code.toLowerCase().includes(q) ||
+        apu.concept_description.toLowerCase().includes(q) ||
+        apu.lines.some(
+          (line) =>
+            line.resource_code.toLowerCase().includes(q) ||
+            line.description.toLowerCase().includes(q),
+        )
+      );
+    });
+  }, [allApus, query, typeFilter]);
+
+  async function exportApus() {
+    sendActivity("exporting_budget", "APUs");
+    setExporting(true);
+    setExportError(null);
+    try {
+      await downloadFile(`/projects/${id}/export/apus.xlsx`, "apus.xlsx");
+    } catch (e) {
+      setExportError(apiMessage(e, "No se pudo generar el Excel de precios unitarios."));
+    } finally {
+      setExporting(false);
+    }
+  }
 
   if (error) {
     return (
@@ -67,10 +107,9 @@ export default function ApusPage() {
     );
   }
 
-  const apus = costs.apus ?? [];
-  const openCode = open ?? apus[0]?.concept_code ?? null;
+  const openCode = open;
   const resourceTotals: Record<string, number> = {};
-  for (const apu of apus) {
+  for (const apu of allApus) {
     for (const [type, amount] of Object.entries(apu.breakdown)) {
       resourceTotals[type] = (resourceTotals[type] ?? 0) + amount;
     }
@@ -82,19 +121,43 @@ export default function ApusPage() {
       <PageHeader
         title="Precios unitarios"
         sub="Análisis de precio unitario (APU) por concepto: recursos, rendimientos e importes por unidad de obra."
+        actions={
+          <Button onClick={exportApus} disabled={exporting || allApus.length === 0}>
+            {exporting ? (
+              <CircleNotch size={15} className="animate-spin" />
+            ) : (
+              <DownloadSimple size={15} weight="bold" />
+            )}
+            {exporting ? "Generando…" : "Exportar APUs (Excel)"}
+          </Button>
+        }
       />
+      {exportError && (
+        <div className="mb-4">
+          <Callout
+            tone="danger"
+            action={
+              <Button size="sm" variant="ghost" onClick={() => setExportError(null)}>
+                Cerrar
+              </Button>
+            }
+          >
+            {exportError}
+          </Callout>
+        </div>
+      )}
       <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Metric
           label="Conceptos analizados"
-          value={apus.length}
+          value={allApus.length}
           icon={<Calculator size={16} weight="duotone" />}
         />
         <Metric
-          label="Moneda"
-          value={costs.currency}
-          hint="Costo directo por unidad, sin indirectos"
+          label="P.U. adoptados de referencia"
+          value={allApus.filter((apu) => apu.price_source).length}
+          hint="Sin matriz: el precio viene de una publicación o del catálogo del taller"
         />
         <Metric
           label="Componente dominante"
@@ -103,12 +166,43 @@ export default function ApusPage() {
         />
       </div>
 
-      {apus.length === 0 ? (
+      {allApus.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <div className="relative flex-1">
+            <MagnifyingGlass
+              size={14}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
+            />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar concepto o insumo…"
+              className="w-full pl-9"
+              aria-label="Buscar APU"
+            />
+          </div>
+          <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} aria-label="Componente dominante">
+            <option value="">Cualquier componente</option>
+            <option value="material">Domina material</option>
+            <option value="mano_de_obra">Domina mano de obra</option>
+            <option value="equipo">Domina equipo</option>
+          </Select>
+          <span className="text-xs text-muted">
+            {apus.length === allApus.length ? `${apus.length} APUs` : `${apus.length} de ${allApus.length}`}
+          </span>
+        </div>
+      )}
+
+      {allApus.length === 0 ? (
         <EmptyState
           icon={<Calculator size={22} weight="duotone" />}
           title="Este procesamiento no incluye APUs"
           hint="Vuelve a procesar el proyecto para generar el análisis de precios unitarios."
         />
+      ) : apus.length === 0 ? (
+        <p className="py-6 text-center text-sm text-muted">
+          Ningún APU coincide con «{query.trim()}».
+        </p>
       ) : (
         <div className="space-y-3">
           {apus.map((apu) => (
