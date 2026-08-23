@@ -233,10 +233,15 @@ def _deduct_openings(
     ) * meters_factor
     opening_count = sum(len(d.properties.get("openings") or []) for d in result.dets)
     before = result.quantity
+
+    def scale_views(ratio: float) -> None:
+        result.by_view = {title: round(qty * ratio, 4) for title, qty in result.by_view.items()}
+
     if measured_width > 0:
         area = measured_width * assumptions.opening_height_m * sides
         capped = min(area, before * 0.5)
         result.quantity = round(before - capped, 6)
+        scale_views(result.quantity / before if before else 1.0)
         note = (
             f"Vanos −{capped:,.2f} m²: {opening_count} puertas/ventanas leídas en los muros "
             f"({measured_width:,.2f} m de ancho × {assumptions.opening_height_m:.2f} m"
@@ -249,6 +254,7 @@ def _deduct_openings(
     elif assumptions.opening_share_pct > 0:
         share = assumptions.opening_share_pct / 100.0
         result.quantity = round(before * (1.0 - share), 6)
+        scale_views(1.0 - share)
         result.notes.append(
             f"Vanos −{assumptions.opening_share_pct:g} % supuesto (el plano no trae "
             "puertas ni ventanas leídas; ajústalo en Parámetros)"

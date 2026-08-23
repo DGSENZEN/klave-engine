@@ -68,7 +68,7 @@ def _column(det_id, mark="K-1"):
 
 
 def test_walls_and_columns_use_each_plantas_own_height():
-    a = CostingAssumptions()
+    a = CostingAssumptions(opening_share_pct=0)  # heights only; vanos have their own test
     dets = [
         _wall("w1", 10.0), _wall("w2", 20.0), _wall("w3", 5.0, "concreto"),
         _column("c0", "K-1"), _column("c1", "K-1"), _column("c2", "K-2"),
