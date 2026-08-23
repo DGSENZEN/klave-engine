@@ -622,12 +622,16 @@ function ProjectRow({
     }
   }
 
+  const [reprocessing, setReprocessing] = useState(false);
   async function reprocess() {
+    setReprocessing(true);
     try {
       await processProject(project.project_id);
       onChanged();
     } catch {
       onError("No se pudo reprocesar el proyecto.");
+    } finally {
+      setReprocessing(false);
     }
   }
 
@@ -736,7 +740,8 @@ function ProjectRow({
                 close();
               }}
             >
-              <ArrowsClockwise size={15} /> Reprocesar
+              <ArrowsClockwise size={15} className={reprocessing ? "animate-spin" : ""} />{" "}
+              {reprocessing ? "Encolando…" : "Reprocesar"}
             </MenuItem>
             <MenuItem
               onSelect={() => {

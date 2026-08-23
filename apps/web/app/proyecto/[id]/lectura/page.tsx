@@ -54,6 +54,7 @@ export default function LecturaPage() {
   const [concepts, setConcepts] = useState<CatalogConcept[]>([]);
   const [mappings, setMappings] = useState<InventoryMapping[]>([]);
   const [mappingNotice, setMappingNotice] = useState<string | null>(null);
+  const [mappingBusy, setMappingBusy] = useState<string | null>(null);
   const [aiReads, setAiReads] = useState<AiReads | null>(null);
   const [aiNotice, setAiNotice] = useState<string | null>(null);
   const reloadAiReads = useCallback(() => {
@@ -95,6 +96,8 @@ export default function LecturaPage() {
     pattern: string,
     conceptCode: string,
   ) {
+    setMappingBusy(pattern);
+    setMappingNotice(`Asignando «${pattern}» a ${conceptCode} y recalculando…`);
     try {
       await addInventoryMapping({ kind, pattern, concept_code: conceptCode }, getBrowserActor());
       reloadMappings();
@@ -108,6 +111,8 @@ export default function LecturaPage() {
       setMappingNotice(`«${pattern}» ahora cuenta como ${conceptCode}; presupuesto actualizado.`);
     } catch {
       setMappingNotice(`No se pudo asignar «${pattern}» a ${conceptCode}.`);
+    } finally {
+      setMappingBusy(null);
     }
   }
 
@@ -334,6 +339,7 @@ export default function LecturaPage() {
                     mappings={mappings}
                     onAssign={assign}
                     onUnassign={unassign}
+                    busy={mappingBusy !== null}
                   />
                 ))}
               </div>
@@ -440,6 +446,12 @@ const DISCIPLINE_LABELS: Record<string, string> = {
   estructural: "Estructural",
 };
 
+/** M2, m², "m2 " and "Pza." are the same unit to a person. */
+function normalizeUnit(unit: string): string {
+  return unit.trim().toUpperCase().replace("²", "2").replace("³", "3").replace(/\.$/, "")
+    .replace(/^PIEZA$/, "PZA").replace(/^ML$/, "M");
+}
+
 function MappingControl({
   kind,
   pattern,
@@ -448,11 +460,13 @@ function MappingControl({
   mappings,
   onAssign,
   onUnassign,
+  busy = false,
 }: {
   kind: "block" | "layer" | "tag" | "area";
   pattern: string;
   unit: string;
   concepts: CatalogConcept[];
+  busy?: boolean;
   mappings: InventoryMapping[];
   onAssign: (kind: "block" | "layer" | "tag" | "area", pattern: string, conceptCode: string) => void;
   onUnassign: (mapping: InventoryMapping) => void;
@@ -477,10 +491,12 @@ function MappingControl({
       </span>
     );
   }
-  const options = concepts.filter((c) => c.unit.toUpperCase() === unit);
+  const wanted = normalizeUnit(unit);
+  const options = concepts.filter((c) => normalizeUnit(c.unit) === wanted);
   return (
     <select
       value=""
+      disabled={busy}
       onClick={(e) => e.stopPropagation()}
       onChange={(e) => {
         if (e.target.value) onAssign(kind, pattern, e.target.value);
@@ -574,11 +590,14 @@ function InventoryCard({
   mappings,
   onAssign,
   onUnassign,
+  busy = false,
 }: {
   sheet: SheetInventory;
   unit: string | null;
   concepts: CatalogConcept[];
   mappings: InventoryMapping[];
+  /** A mapping is being saved and the presupuesto recomputed: selects wait. */
+  busy?: boolean;
   onAssign: (kind: "block" | "layer" | "tag" | "area", pattern: string, conceptCode: string) => void;
   onUnassign: (mapping: InventoryMapping) => void;
 }) {
@@ -632,6 +651,7 @@ function InventoryCard({
                     </span>
                   )}
                   <MappingControl
+              busy={busy}
                     kind="block"
                     pattern={b.block_name}
                     unit="PZA"
@@ -667,6 +687,7 @@ function InventoryCard({
                   )}
                   {r.length_m != null && (
                     <MappingControl
+              busy={busy}
                       kind="layer"
                       pattern={r.layer}
                       unit="M"
@@ -702,6 +723,7 @@ function InventoryCard({
                       )}
                       {a.area_m2 != null && (
                         <MappingControl
+              busy={busy}
                           kind="area"
                           pattern={a.layer}
                           unit="M2"
@@ -734,6 +756,7 @@ function InventoryCard({
                         </span>
                       )}
                       <MappingControl
+              busy={busy}
                         kind="tag"
                         pattern={t.tag}
                         unit="PZA"
