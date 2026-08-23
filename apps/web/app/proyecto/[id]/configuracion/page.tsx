@@ -26,6 +26,7 @@ import {
   Button,
   Callout,
   Card,
+  Checkbox,
   Input,
   PageHeader,
   SectionTitle,
@@ -50,6 +51,7 @@ export default function ConfiguracionPage() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
+  const [purgeFiles, setPurgeFiles] = useState(false);
   const [protectedMode, setProtectedMode] = useState(false);
 
   useEffect(() => {
@@ -109,7 +111,7 @@ export default function ConfiguracionPage() {
 
   async function remove() {
     try {
-      await removeProject(id, getBrowserActor());
+      await removeProject(id, getBrowserActor(), purgeFiles);
       router.replace("/");
     } catch {
       setError("No se pudo quitar el proyecto.");
@@ -193,7 +195,7 @@ export default function ConfiguracionPage() {
       {protectedMode && <AccessCard projectId={id} />}
 
       <Card className="p-5">
-        <SectionTitle sub="Archivar lo oculta de la lista activa; quitarlo lo saca de la lista sin borrar archivos del disco.">
+        <SectionTitle sub="Archivar lo oculta de la lista activa; quitarlo lo saca de la lista, y puede además borrar sus archivos del disco.">
           Acciones
         </SectionTitle>
         <div className="flex flex-wrap items-center gap-2">
@@ -216,17 +218,29 @@ export default function ConfiguracionPage() {
 
       <ConfirmDialog
         open={removeOpen}
-        title="Quitar proyecto de la lista"
+        title={purgeFiles ? "Borrar proyecto y sus archivos" : "Quitar proyecto de la lista"}
         description={
           <>
             <span className="font-medium text-foreground">{project.project_name}</span>{" "}
-            dejará de aparecer en el taller para todo el equipo. Los archivos y reportes
-            permanecen en el disco.
+            dejará de aparecer en el taller para todo el equipo.{" "}
+            {purgeFiles
+              ? "Se borran del disco los planos, las corridas, las revisiones y las versiones. No hay vuelta atrás (salvo el respaldo del servidor)."
+              : "Los archivos y reportes permanecen en el disco."}
+            <label className="mt-3 flex items-center gap-2 text-sm text-foreground">
+              <Checkbox
+                checked={purgeFiles}
+                onChange={(e) => setPurgeFiles(e.target.checked)}
+              />
+              Borrar también los archivos del disco
+            </label>
           </>
         }
-        confirmLabel="Quitar de la lista"
+        confirmLabel={purgeFiles ? "Borrar todo" : "Quitar de la lista"}
         typeToConfirm={project.project_name}
-        onCancel={() => setRemoveOpen(false)}
+        onCancel={() => {
+          setRemoveOpen(false);
+          setPurgeFiles(false);
+        }}
         onConfirm={() => {
           setRemoveOpen(false);
           remove();

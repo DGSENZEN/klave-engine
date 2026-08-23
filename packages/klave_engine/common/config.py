@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     max_concurrent_jobs: int = 2
     max_queued_jobs: int = 8
 
+    # Retention: runs (with their reports and croquis) a project keeps after
+    # each reprocess; the active run always survives. Versions are never pruned.
+    keep_runs: int = 3
+    keep_jobs: int = 10
+
     log_level: str = "INFO"
     detector_config_path: Path | None = None
     costing_config_path: Path | None = None

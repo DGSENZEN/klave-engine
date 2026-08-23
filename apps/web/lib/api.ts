@@ -1491,9 +1491,10 @@ export const patchProject = (
     actor ? { "X-Actor": actor } : undefined,
   );
 
-export const removeProject = (id: string, actor?: string) =>
-  deleteJSON<{ project_id: string; removed: boolean }>(
-    `/projects/${id}`,
+/** With `purge`, the drawings, runs, reviews and versions on disk go too. */
+export const removeProject = (id: string, actor?: string, purge = false) =>
+  deleteJSON<{ project_id: string; removed: boolean; purged: boolean }>(
+    `/projects/${id}${purge ? "?purge=true" : ""}`,
     actor ? { "X-Actor": actor } : undefined,
   );
 

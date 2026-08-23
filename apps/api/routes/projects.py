@@ -590,19 +590,30 @@ def patch_project(
 def remove_project(
     project_id: str,
     request: Request,
+    purge: bool = False,
     x_actor: Annotated[str | None, Header()] = None,
     store: ProjectStore = Depends(get_store),
 ) -> dict:
-    """Remove the project from the workspace list. Files stay on disk; this is
-    deliberately not a destructive delete."""
-    store.get_root(project_id)  # 404 for unknown ids
+    """Remove the project from the workspace list. With ``purge`` the files
+    on disk go too — drawings, runs, reviews, versions, everything; without
+    it they stay for a manual rescue."""
+    root = store.get_root(project_id)  # 404 for unknown ids
     store.unregister(project_id)
+    purged = False
+    if purge:
+        resolved = root.resolve()
+        # Only ever delete a directory that lives under the uploads tree.
+        uploads = (store.settings.data_dir / "uploads").resolve()
+        if resolved != uploads and uploads in resolved.parents:
+            shutil.rmtree(resolved, ignore_errors=True)
+            purged = True
     user = _state_user(request)
     if user is not None:
         try:
             get_user_store(store.settings.users_database_url).record_audit(
                 workspace_id=str(user["workspace_id"]), actor=user,
                 action="project_removed", target_type="project", target_id=project_id,
+                detail={"purged": purge},
             )
         except UsersDbUnavailable:
             pass
@@ -612,4 +623,4 @@ def remove_project(
         actor=clean_actor(x_actor),
         data={},
     )
-    return {"project_id": project_id, "removed": True}
+    return {"project_id": project_id, "removed": True, "purged": purged}

@@ -24,6 +24,7 @@ from klave_engine.ingestion.manifest import ProcessingStatus, load_manifest, sav
 from klave_engine.pipeline import run_full_pipeline
 
 from apps.api.events import BUS
+from apps.api.retention import prune_project_storage
 
 logger = get_logger(__name__)
 
@@ -184,6 +185,13 @@ class JobStore:
             # derived report is no longer evidence-compatible with this run.
             (control_dir / "cost_report_override.json").unlink(missing_ok=True)
             BUS.publish("run_published", project_id=project_id, data={"run_id": job.run_id})
+            # The project just gained a run; old ones beyond the retention go.
+            try:
+                prune_project_storage(
+                    control_dir, keep_runs=settings.keep_runs, keep_jobs=settings.keep_jobs
+                )
+            except Exception:  # noqa: BLE001 — cleanup must never fail a publish
+                logger.warning("No se pudo depurar el almacenamiento de %s", project_id)
             self._update(
                 project_id,
                 root,
