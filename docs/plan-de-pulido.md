@@ -45,7 +45,7 @@ Aplanado, pintura y muro son `longitud × altura × caras` (`catalog.py:363-402,
 `boq.py:409-415` advierte y sigue; `suite.py:57-60` deja los umbrales genéricos (centímetros) cuando `to_meters()` es `None` (confianza < 0.7). El demo enviado muestra `PRE-001 = 120,000 m²`. La web sí bloquea el dinero (`MoneyGate`) pero el XLSX no.
 - **Fix**: sin unidades confiables, el motor produce cantidades en "unidades de dibujo" sin precio, el export lleva SIN UNIDADES en cada hoja, y los umbrales caen a un preset por extensión del dibujo.
 
-### A7 — `"MC"` reclasifica muros de block como concreto · **P0**
+### A7 — `"MC"` reclasifica muros de block como concreto · **P0** · **hecho** (`layer_matches` por tokens: ≤ 3 letras = token completo, ≥ 4 = inicio de token; prueba con capas trampa)
 `wall_detector.py:48-50` usa subcadenas; cualquier capa con `MC` (p. ej. `A-MCOBILIARIO`) manda el muro a `EST-014` en m³.
 - **Fix**: hints como palabras completas (`\bMC\b`, `MURO CONC`), y una prueba con capas trampa. Revisar `"PILA"` (`footing_detector.py:42`), `"BORDE"` (`slab_detector.py:27`), `"ARQ"` (`rooms.py:62`).
 

@@ -24,8 +24,10 @@ class SlabDetectorConfig(BaseModel):
     min_area: float = 10000.0
     layer_hints: list[str] = Field(default_factory=lambda: ["SLAB", "DECK", "LOSA"])
     avoid_layer_hints: list[str] = Field(
-        default_factory=lambda: ["MARCO", "FRAME", "CAJET", "TEXT", "COTA", "DIM", "EJE", "GRID",
-                                 "TITLE", "BORDE", "BORDER"]
+        default_factory=lambda: [
+            "MARCO", "FRAME", "CAJET", "TEXT", "COTA", "DIM", "DIMENSION", "EJE", "EJES",
+            "GRID", "TITLE", "BORDE", "BORDER",
+        ]
     )
     # An area this many× the minimum counts as strong "large area" evidence.
     large_area_factor: float = 3.0

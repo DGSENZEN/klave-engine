@@ -28,14 +28,16 @@ class FootingDetectorConfig(BaseModel):
     min_rectangularity: float = 0.75
     high_rectangularity: float = 0.9
     layer_hints: list[str] = Field(
-        default_factory=lambda: ["FOOT", "FOUND", "FDN", "ZAPATA", "ZAP", "CIM", "DADO"]
+        default_factory=lambda: ["FOOT", "FOUND", "FDN", "ZAPATA", "ZAP", "CIM", "CIMENT", "DADO"]
     )
     # Closed rectangles on these layers are casetones, ceilings, walls, rebar
     # details, text boxes or frames — never zapatas.
     avoid_layer_hints: list[str] = Field(
-        default_factory=lambda: ["LOSA", "NERV", "CASET", "PLAF", "ACAB", "TEXT", "COTA", "DIM",
-                                 "EJE", "GRID", "MARCO", "FRAME", "CAJET", "MUEBLE", "PUERTA",
-                                 "MURO", "WALL", "ARMADO"]
+        default_factory=lambda: [
+            "LOSA", "NERV", "CASET", "PLAF", "ACAB", "TEXT", "COTA", "DIM", "DIMENSION",
+            "EJE", "EJES", "GRID", "MARCO", "FRAME", "CAJET", "MUEBLE", "PUERTA",
+            "MURO", "WALL", "ARMADO",
+        ]
     )
     # Piles are a different concept (ml of pila/pilote); they are counted and
     # reported, never priced as zapatas or dados.

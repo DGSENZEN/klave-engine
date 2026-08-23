@@ -59,10 +59,12 @@ _STRUCTURAL_TEXT_RE = re.compile(
 
 class RoomDetectorConfig(BaseModel):
     wall_layer_hints: list[str] = Field(
-        default_factory=lambda: ["WALL", "MURO", "TABIQUE", "TABR", "BLOCK", "ARQ"]
+        default_factory=lambda: ["WALL", "MURO", "TABIQUE", "TABR", "BLOCK", "ARQ", "ARQUITEC"]
     )
     avoid_layer_hints: list[str] = Field(
-        default_factory=lambda: ["GRID", "EJE", "AXIS", "COTA", "DIM", "TEXT", "TXT", "HATCH"]
+        default_factory=lambda: [
+            "GRID", "EJE", "EJES", "AXIS", "COTA", "DIM", "DIMENSION", "TEXT", "TXT", "HATCH",
+        ]
     )
     min_area: float = 1.5  # m²: a closet
     max_area: float = 400.0  # m²: a hall

@@ -60,7 +60,7 @@ class SlabPanelConfig(BaseModel):
     # (losa reticular drawn as an outlined zone), not a casetón.
     pattern_outline_min_area: float = 4.0
     pattern_min_weight: int = 3  # one hatch (3) or three pattern lines
-    grid_layer_hints: list[str] = Field(default_factory=lambda: ["EJE", "GRID", "AXIS"])
+    grid_layer_hints: list[str] = Field(default_factory=lambda: ["EJE", "EJES", "GRID", "AXIS"])
     slab_layer_hints: list[str] = Field(default_factory=lambda: ["LOSA", "SLAB"])
     # Short hints apply on slab layers (EST-LOSA VIG Y BOV); the full words
     # identify a slab pattern layer on their own (E-VIGUETAS, CASETONES).

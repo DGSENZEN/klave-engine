@@ -6,6 +6,7 @@ detections in one place (``graph.builder``), so detectors never build graph
 nodes/edges themselves.
 """
 
+import re
 from enum import StrEnum
 from typing import Any
 
@@ -86,6 +87,31 @@ def make_detection(
     )
 
 
+_TOKEN_SPLIT = re.compile(r"[^A-Z0-9]+")
+
+
+def _tokens(text: str) -> list[str]:
+    return [t for t in _TOKEN_SPLIT.split(text.upper()) if t]
+
+
 def layer_matches(layer: str, hints: list[str]) -> bool:
-    upper = layer.upper()
-    return any(hint.upper() in upper for hint in hints)
+    """Whether a layer name carries one of the hints, by tokens, never by
+    raw substring: ``MC`` is the token ``MC`` (``E-MC-01``), not the start of
+    ``MCOBILIARIO``. A hint of four letters or more may be the beginning of
+    a token (``MURO`` → ``MUROS``); a shorter one must be the whole token.
+    Multi-word hints (``MURO CONC``) match consecutive tokens."""
+    layer_tokens = _tokens(layer)
+    if not layer_tokens:
+        return False
+    for hint in hints:
+        parts = _tokens(hint)
+        if not parts or len(parts) > len(layer_tokens):
+            continue
+        for start in range(len(layer_tokens) - len(parts) + 1):
+            if all(
+                layer_tokens[start + i] == part
+                or (len(part) >= 4 and layer_tokens[start + i].startswith(part))
+                for i, part in enumerate(parts)
+            ):
+                return True
+    return False

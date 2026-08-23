@@ -26,7 +26,7 @@ class BeamDetectorConfig(BaseModel):
             "BEAM", "GIRD", "TRABE", "VIGA", "CADENA", "CERRAM", "DALA",
         ]
     )
-    avoid_layer_hints: list[str] = Field(default_factory=lambda: ["GRID", "EJE", "AXIS"])
+    avoid_layer_hints: list[str] = Field(default_factory=lambda: ["GRID", "EJE", "EJES", "AXIS"])
 
 
 def detect_beams(

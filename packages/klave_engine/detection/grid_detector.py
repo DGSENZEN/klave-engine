@@ -51,7 +51,7 @@ class GridDetectorConfig(BaseModel):
     min_relative_length: float = 0.5
     angle_tolerance_deg: float = 2.0
     label_search_radius_factor: float = 0.05  # fraction of drawing extent diagonal
-    layer_hints: list[str] = Field(default_factory=lambda: ["GRID", "EJE", "AXIS"])
+    layer_hints: list[str] = Field(default_factory=lambda: ["GRID", "EJE", "EJES", "AXIS"])
     # When the sheet has a grid layer, lines elsewhere need a bubble to count.
     prefer_semantic_layers: bool = True
     # Fragments within this perpendicular distance (× extent) share an axis.

@@ -49,7 +49,7 @@ class ColumnDetectorConfig(BaseModel):
     geometry_search_radius: float = 20.0
     max_marker_area: float = 10000.0
     layer_hints: list[str] = Field(
-        default_factory=lambda: ["COL", "COLUMN", "COLUMNA", "CASTILLO", "DADO"]
+        default_factory=lambda: ["COL", "COLS", "COLUMN", "COLUMNA", "CASTILLO", "DADO"]
     )
 
 

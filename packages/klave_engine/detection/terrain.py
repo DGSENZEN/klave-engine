@@ -40,7 +40,7 @@ class TerrainDetectorConfig(BaseModel):
         default_factory=lambda: ["LOTE", "LINDERO", "PREDIO", "TERRENO", "PROPIEDAD", "POLIGONO"]
     )
     avoid_layer_hints: list[str] = Field(
-        default_factory=lambda: ["COTA", "DIM", "TEXT", "TXT", "EJE", "GRID"]
+        default_factory=lambda: ["COTA", "DIM", "DIMENSION", "TEXT", "TXT", "EJE", "EJES", "GRID"]
     )
     # A contour's level text sits this close to the line (drawing units).
     label_search_radius: float = 1.0

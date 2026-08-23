@@ -42,7 +42,9 @@ class WallDetectorConfig(BaseModel):
         default_factory=lambda: ["WALL", "MURO", "TABIQUE", "TABR", "BLOCK"]
     )
     avoid_layer_hints: list[str] = Field(
-        default_factory=lambda: ["GRID", "EJE", "AXIS", "COTA", "DIM", "TEXT", "TXT"]
+        default_factory=lambda: [
+            "GRID", "EJE", "EJES", "AXIS", "COTA", "DIM", "DIMENSION", "TEXT", "TXT",
+        ]
     )
     # A wall on a concrete-wall layer is cast, not laid: priced in m³, not m².
     concrete_layer_hints: list[str] = Field(
