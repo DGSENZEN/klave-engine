@@ -33,6 +33,9 @@ CODE_TRABES = "EST-009"
 CODE_CONTRATRABES = "CIM-009"
 CODE_DALAS = "EST-010"
 CODE_LOSA = "EST-011"
+CODE_PLANTILLA = "CIM-003"
+# Plantilla extends past the footing on every side (10 cm is the usual).
+PLANTILLA_MARGIN_M = 0.10
 
 # Concept → element family whose declared f'c applies.
 _FC_FAMILY_BY_CONCEPT = {
@@ -188,6 +191,7 @@ def compute_formwork(
     footings = lines.get("CIM-002")
     if footings is not None and footings.source_detections:
         area = 0.0
+        plantilla = 0.0
         for det_id in footings.source_detections:
             det = by_id.get(det_id)
             if det is None:
@@ -200,6 +204,7 @@ def compute_formwork(
                 side = math.sqrt(float(props.get("estimated_area") or 0.0)) * factor
                 w = length = side
             area += 2 * (w + length) * assumptions.footing_depth_m
+            plantilla += (w + 2 * PLANTILLA_MARGIN_M) * (length + 2 * PLANTILLA_MARGIN_M)
         report.lines.append(
             FormworkLine(
                 concept_code=CODE_ZAPATAS, quantity=round(area, 2),
@@ -208,6 +213,19 @@ def compute_formwork(
                        f"{len(footings.source_detections)} zapatas"],
             )
         )
+        # Plantilla is its own concept (CIM-003), never inside the concrete
+        # matrix: the plan area of each footing plus the margin all around.
+        if plantilla > 0:
+            report.lines.append(
+                FormworkLine(
+                    concept_code=CODE_PLANTILLA, quantity=round(plantilla, 2),
+                    source_detections=list(footings.source_detections),
+                    notes=[
+                        f"Área en planta de {len(footings.source_detections)} zapatas con "
+                        f"{PLANTILLA_MARGIN_M * 100:.0f} cm de margen por lado"
+                    ],
+                )
+            )
 
     # Losa: contact formwork for reticular and maciza tableros (area of the
     # panels themselves, not the m³ of the line); vigueta y bovedilla needs
@@ -286,8 +304,9 @@ def apply_formwork(
         concept = concepts.get(item.concept_code)
         apu = apus.get(item.concept_code)
         if concept is None or apu is None:
+            what = "Plantilla" if item.concept_code == CODE_PLANTILLA else "Cimbra"
             boq.warnings.append(
-                f"Cimbra calculada ({item.quantity:,.0f} m²) pero el catálogo no tiene el "
+                f"{what} calculada ({item.quantity:,.0f} m²) pero el catálogo no tiene el "
                 f"concepto {item.concept_code} con matriz."
             )
             continue

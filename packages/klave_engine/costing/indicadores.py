@@ -117,6 +117,22 @@ def compute_indicators(
         direct / area if area and direct > 0 else None,
         f"${direct:,.0f} / {area:,.0f} m² construidos" if area else "sin área construida",
     )
+    # The $/m² band is for a complete house. A presupuesto that only has
+    # obra negra (structural drawings alone) sits below it by construction;
+    # say so instead of flagging it as cheap.
+    structural_phases = {"PRELIMINARES", "TERRACERIAS", "CIMENTACION", "ESTRUCTURA"}
+    finishing_cost = sum(
+        amount for phase, amount in boq.totals_by_phase.items()
+        if _norm_phase(phase) not in structural_phases
+    )
+    if direct > 0 and finishing_cost / direct < 0.10:
+        cost_indicator = out.indicators[-1]
+        if cost_indicator.status == "bajo":
+            cost_indicator.status = "sin_referencia"
+            cost_indicator.detail += (
+                " · solo obra negra (sin albañilería, acabados ni instalaciones): el rango "
+                "típico es de obra completa"
+            )
     for indicator in out.indicators:
         if indicator.status in ("alto", "bajo"):
             out.notes.append(

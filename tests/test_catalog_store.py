@@ -24,8 +24,9 @@ def test_seeds_reference_data_once(store):
     # v2 manual concepts exist without one.
     concepts = {row["code"]: row for row in store.load_concepts()}
     for builtin in build_default_catalog(CostingAssumptions()):
-        assert concepts[builtin.code]["rule_key"] == builtin.code
-    assert concepts["CIM-003"]["rule_key"] is None
+        expected = builtin.code if builtin.rule is not None else None
+        assert concepts[builtin.code]["rule_key"] == expected
+    assert concepts["CIM-003"]["rule_key"] is None  # plantilla: derived, not detected
     rendimientos = store.load_rendimientos()
     assert {c.code for c in build_default_catalog(CostingAssumptions())} <= set(rendimientos)
 

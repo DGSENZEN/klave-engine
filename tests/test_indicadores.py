@@ -62,3 +62,19 @@ def test_missing_partidas_come_from_the_plantilla_shares():
     assert any("Partidas que tu plantilla tiene" in n for n in out.notes)
     estructura = next(s for s in out.phase_shares if s.phase == "Estructura")
     assert estructura.typical_pct is not None and estructura.status in ("ok", "alto")
+
+
+def test_obra_negra_alone_is_not_called_cheap():
+    # 2.2 M over 600 m² = 3,700 $/m²: below the whole-house band, but this
+    # presupuesto has no albañilería, acabados nor instalaciones.
+    out = compute_indicators(_boq(), area_construida_m2=600.0)
+    cost = {i.key: i for i in out.indicators}["costo_directo_por_m2"]
+    assert cost.status == "sin_referencia" and "obra negra" in cost.detail
+    assert not any("costo directo" in n for n in out.notes)
+    # With acabados in the mix the band applies again.
+    boq = _boq()
+    boq.lines.append(_line("ACA-001", "M2", 1000.0, 400.0, "Acabados"))
+    boq.direct_cost_total = round(sum(ln.amount for ln in boq.lines), 2)
+    boq.totals_by_phase["Acabados"] = 400000.0
+    out = compute_indicators(boq, area_construida_m2=600.0)
+    assert {i.key: i for i in out.indicators}["costo_directo_por_m2"].status == "bajo"

@@ -281,38 +281,29 @@ APU_TEMPLATES: dict[str, list[tuple[str, float]]] = {
         ("EQ-RETRO", 0.090),
         ("EQ-HERRAMIENTA", 1.0),
     ],
-    # M3 concreto en zapatas y dados
+    # M3 concreto en zapatas y dados — solo el concreto y su colado: el
+    # acero va en ACE-003, la cimbra en CIM-006 y la plantilla en CIM-003,
+    # cada uno con su propia cantidad leída del plano.
     "CIM-002": [
         ("MAT-CONC250", 1.05),
-        ("MAT-ACERO", 0.075),
-        ("MAT-CIMBRA", 1.20),
-        ("MAT-PLANTILLA", 0.080),
         ("MO-CUAD-ALB", 0.45),
-        ("MO-CUAD-FIE", 0.35),
         ("EQ-VIBRADOR", 0.12),
         ("EQ-REVOLVEDORA", 0.08),
         ("EQ-HERRAMIENTA", 1.0),
     ],
-    # M3 columnas y castillos
+    # M3 columnas y castillos — concreto y colado; acero en ACE-001, cimbra en EST-008
     "EST-001": [
         ("MAT-CONC250", 1.05),
-        ("MAT-ACERO", 0.160),
-        ("MAT-CIMBRA", 9.00),
         ("MO-CUAD-ALB", 0.90),
-        ("MO-CUAD-FIE", 0.70),
-        ("MO-CUAD-CARP", 0.80),
         ("EQ-VIBRADOR", 0.25),
         ("EQ-HERRAMIENTA", 1.0),
     ],
     # M3 trabes y contratrabes
-    # M cadena/dala 15x20: 0.033 m³ of concrete per metre, hand-laid cimbra
+    # M cadena/dala 15x20: 0.033 m³ of concrete per metre; acero en ACE-002,
+    # cimbra en EST-010
     "EST-005": [
         ("MAT-CONC250", 0.033),
-        ("MAT-ACERO", 0.0045),
-        ("MAT-CIMBRA", 0.42),
         ("MO-CUAD-ALB", 0.035),
-        ("MO-CUAD-FIE", 0.020),
-        ("MO-CUAD-CARP", 0.030),
         ("EQ-HERRAMIENTA", 1.0),
     ],
     # M3 muro de concreto armado: two-sided cimbra
@@ -326,24 +317,17 @@ APU_TEMPLATES: dict[str, list[tuple[str, float]]] = {
         ("EQ-VIBRADOR", 0.20),
         ("EQ-HERRAMIENTA", 1.0),
     ],
-    # M3 contratrabe: same matrix as a trabe without obra falsa
+    # M3 contratrabe — concreto y colado; acero en ACE-004, cimbra en CIM-009
     "CIM-008": [
         ("MAT-CONC250", 1.05),
-        ("MAT-ACERO", 0.120),
-        ("MAT-CIMBRA", 5.00),
         ("MO-CUAD-ALB", 0.70),
-        ("MO-CUAD-FIE", 0.55),
-        ("MO-CUAD-CARP", 0.50),
         ("EQ-VIBRADOR", 0.20),
         ("EQ-HERRAMIENTA", 1.0),
     ],
+    # M3 trabes — concreto y colado; acero en ACE-004, cimbra en EST-009
     "EST-002": [
         ("MAT-CONC250", 1.05),
-        ("MAT-ACERO", 0.140),
-        ("MAT-CIMBRA", 6.50),
         ("MO-CUAD-ALB", 0.75),
-        ("MO-CUAD-FIE", 0.60),
-        ("MO-CUAD-CARP", 0.65),
         ("EQ-VIBRADOR", 0.20),
         ("EQ-HERRAMIENTA", 1.0),
     ],
@@ -363,6 +347,12 @@ APU_TEMPLATES: dict[str, list[tuple[str, float]]] = {
         ("EQ-VIBRADOR", 0.150),
         ("EQ-HERRAMIENTA", 1.0),
     ],
+    # M2 plantilla de concreto pobre de 5 cm bajo zapatas
+    "CIM-003": [
+        ("MAT-CONC150", 0.055),
+        ("MO-CUAD-ALB", 0.060),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
     # M3 losa de cimentación: concreto con desperdicio; acero por detalle
     "CIM-007": [
         ("MAT-CONC250", 1.05),
@@ -370,13 +360,14 @@ APU_TEMPLATES: dict[str, list[tuple[str, float]]] = {
         ("EQ-VIBRADOR", 0.150),
         ("EQ-HERRAMIENTA", 1.0),
     ],
-    # M2 losa reticular aligerada (nervada)
+    # M2 losa reticular aligerada (nervada): concreto y el acero de las
+    # nervaduras (≈ 6.5 kg/m²); la malla de la capa de compresión va en
+    # ACE-005 y la cimbra de contacto en EST-011
     "EST-003": [
         ("MAT-CONC250", 0.110),
-        ("MAT-ACERO", 0.0085),
-        ("MAT-CIMBRA", 1.05),
+        ("MAT-ACERO", 0.0065),
         ("MO-CUAD-ALB", 0.120),
-        ("MO-CUAD-CARP", 0.100),
+        ("MO-CUAD-FIE", 0.040),
         ("EQ-VIBRADOR", 0.020),
         ("EQ-HERRAMIENTA", 1.0),
     ],

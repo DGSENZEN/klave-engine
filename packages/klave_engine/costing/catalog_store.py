@@ -285,6 +285,43 @@ FORMWORK_CONCEPTS: list[tuple[str, str, str, str, float, int, list[tuple[str, fl
     ),
 ]
 
+# Resources that the derived lines (ACE-*, cimbra, CIM-003) already price.
+DOUBLE_COUNTED_RESOURCES = ("MAT-ACERO", "MAT-CIMBRA", "MAT-PLANTILLA")
+
+# The concrete matrices as v12 seeded them, with acero/cimbra/plantilla inside.
+CONCRETE_MATRICES_V12: dict[str, list[tuple[str, float]]] = {
+    "CIM-002": [
+        ("MAT-CONC250", 1.05), ("MAT-ACERO", 0.075), ("MAT-CIMBRA", 1.20),
+        ("MAT-PLANTILLA", 0.080), ("MO-CUAD-ALB", 0.45), ("MO-CUAD-FIE", 0.35),
+        ("EQ-VIBRADOR", 0.12), ("EQ-REVOLVEDORA", 0.08), ("EQ-HERRAMIENTA", 1.0),
+    ],
+    "EST-001": [
+        ("MAT-CONC250", 1.05), ("MAT-ACERO", 0.160), ("MAT-CIMBRA", 9.00),
+        ("MO-CUAD-ALB", 0.90), ("MO-CUAD-FIE", 0.70), ("MO-CUAD-CARP", 0.80),
+        ("EQ-VIBRADOR", 0.25), ("EQ-HERRAMIENTA", 1.0),
+    ],
+    "EST-005": [
+        ("MAT-CONC250", 0.033), ("MAT-ACERO", 0.0045), ("MAT-CIMBRA", 0.42),
+        ("MO-CUAD-ALB", 0.035), ("MO-CUAD-FIE", 0.020), ("MO-CUAD-CARP", 0.030),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+    "CIM-008": [
+        ("MAT-CONC250", 1.05), ("MAT-ACERO", 0.120), ("MAT-CIMBRA", 5.00),
+        ("MO-CUAD-ALB", 0.70), ("MO-CUAD-FIE", 0.55), ("MO-CUAD-CARP", 0.50),
+        ("EQ-VIBRADOR", 0.20), ("EQ-HERRAMIENTA", 1.0),
+    ],
+    "EST-002": [
+        ("MAT-CONC250", 1.05), ("MAT-ACERO", 0.140), ("MAT-CIMBRA", 6.50),
+        ("MO-CUAD-ALB", 0.75), ("MO-CUAD-FIE", 0.60), ("MO-CUAD-CARP", 0.65),
+        ("EQ-VIBRADOR", 0.20), ("EQ-HERRAMIENTA", 1.0),
+    ],
+    "EST-003": [
+        ("MAT-CONC250", 0.110), ("MAT-ACERO", 0.0085), ("MAT-CIMBRA", 1.05),
+        ("MO-CUAD-ALB", 0.120), ("MO-CUAD-CARP", 0.100), ("EQ-VIBRADOR", 0.020),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+}
+
 EXTRA_CONCEPTS: list[tuple[str, str, str, str, float, int, list[tuple[str, float]]]] = [
     (
         "CIM-003", "Plantilla de concreto f'c=100 kg/cm², 5 cm", "M2",
@@ -440,6 +477,12 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '12') "
                     "ON CONFLICT(key) DO UPDATE SET value = '12'"
                 )
+            if version_row is None or int(version_row["value"]) < 13:
+                self._migrate_v13(conn)
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '13') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '13'"
+                )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.
                 conn.execute(
@@ -515,7 +558,7 @@ class CatalogStore:
                     concept.unit,
                     concept.phase,
                     rendimientos.get(concept.code, concept.production_rate_per_day),
-                    concept.code,
+                    concept.code if concept.rule is not None else None,
                     index * 10,
                 ),
             )
@@ -574,6 +617,43 @@ class CatalogStore:
                 (code, description, unit, resource_type, unit_cost, SEED_SOURCE,
                  SEED_VIGENCIA, _now()),
             )
+
+    def _migrate_v13(self, conn: sqlite3.Connection) -> None:
+        """Acero, cimbra y plantilla were priced twice: inside the concrete
+        matrices and again as their own derived lines (ACE-*, cimbra, CIM-003).
+        A matrix that still equals the v12 seed is replaced by the concrete-only
+        one; a matrix the taller edited is left alone and reported."""
+        kept: list[str] = []
+        for code, old_components in CONCRETE_MATRICES_V12.items():
+            rows = conn.execute(
+                "SELECT resource_code, quantity FROM apu_components WHERE concept_code = ?",
+                (code,),
+            ).fetchall()
+            current = {row["resource_code"]: round(float(row["quantity"]), 6) for row in rows}
+            if not current:
+                continue
+            if current != {r: round(q, 6) for r, q in old_components}:
+                if any(r in DOUBLE_COUNTED_RESOURCES for r in current):
+                    kept.append(code)
+                continue
+            conn.execute("DELETE FROM apu_components WHERE concept_code = ?", (code,))
+            for resource_code, quantity in APU_TEMPLATES[code]:
+                conn.execute(
+                    "INSERT INTO apu_components (concept_code, resource_code, quantity) "
+                    "VALUES (?, ?, ?)",
+                    (code, resource_code, quantity),
+                )
+        conn.execute(
+            "UPDATE concepts SET description = ? WHERE code = 'CIM-002' AND description = ?",
+            (
+                "Concreto f'c=250 kg/cm² en zapatas y dados",
+                "Concreto f'c=250 kg/cm² en zapatas y dados, incluye acero, cimbra y plantilla",
+            ),
+        )
+        log_stage(
+            logger, "catalog_migrated_v13", db_path=str(self.db_path),
+            kept_with_steel_or_cimbra=",".join(kept),
+        )
 
     def _migrate_v11(self, conn: sqlite3.Connection) -> None:
         """Albañilería y acabados read from the architecture (aplanado,
@@ -899,7 +979,8 @@ class CatalogStore:
                 "production_rate_per_day, rule_key, sequence_order) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (concept.code, concept.description, concept.unit, concept.phase,
-                 concept.production_rate_per_day, concept.code, index * 10),
+                 concept.production_rate_per_day,
+                 concept.code if concept.rule is not None else None, index * 10),
             )
             for resource_code, quantity in APU_TEMPLATES.get(concept.code, []):
                 conn.execute(

@@ -103,10 +103,7 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
         ),
         Concept(
             code="CIM-002",
-            description=(
-                "Concreto f'c=250 kg/cm² en zapatas y dados, incluye acero, "
-                "cimbra y plantilla"
-            ),
+            description="Concreto f'c=250 kg/cm² en zapatas y dados",
             unit="M3",
             phase="Cimentación",
             rule=QuantityRule(
@@ -141,6 +138,19 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
             ],
             production_rate_per_day=12.0,
             sequence_order=1,
+        ),
+        Concept(
+            code="CIM-003",
+            description="Plantilla de concreto f'c=100 kg/cm², 5 cm",
+            unit="M2",
+            phase="Cimentación",
+            rule=None,
+            production_rate_per_day=80.0,
+            sequence_order=0,
+            assumptions=[
+                "Área en planta de las zapatas leídas más 10 cm de margen por lado "
+                "(calculada junto con la cimbra)"
+            ],
         ),
         Concept(
             code="CIM-010",

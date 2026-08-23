@@ -21,7 +21,7 @@ La regla del orden: primero lo que hace que los **números mientan**, luego lo q
 
 ## A. Números que mienten (motor y costeo)
 
-### A1 — Acero y cimbra cobrados dos veces · **P0**
+### A1 — Acero y cimbra cobrados dos veces · **P0** · **hecho** (migración v13; Marina estructural $5.31M → $3.82M de costo directo; plantilla como `CIM-003` derivada del área de zapatas)
 Las matrices de los conceptos de concreto traen acero y cimbra adentro (`EST-001`: `MAT-ACERO 0.160 t/m³`, `MAT-CIMBRA 9.00 m²/m³` — `costing/insumos.py:299-300`; `EST-002` `:342-343`; `CIM-002`, `CIM-008`, `EST-003`, `EST-014` igual), y además `apply_steel`/`apply_formwork` agregan `ACE-001…006`, `EST-008…011`, `CIM-006/009` con sus propias matrices (`costing/steel.py:400`, `costing/formwork.py:279`). En Marina, ~32 % del P.U. de `EST-001` ($13,386/m³) es acero y cimbra que `ACE-001` y `EST-008` vuelven a cobrar. Los indicadores no lo ven porque solo miran las líneas ACE/cimbra.
 - **Fix**: migración v13 que retira `MAT-ACERO`, `MAT-CIMBRA`, `MAT-PLANTILLA` de las matrices de concreto (en `insumos.py` y en `catalog.db`), descripciones sin "incluye acero y cimbra", y una prueba que asegure que ningún concepto de concreto lleve acero/cimbra en su matriz cuando existen los conceptos derivados. Recalibrar el invariante del demo.
 
