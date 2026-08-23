@@ -47,6 +47,7 @@ import {
 import { ButtonMenu, MenuItem } from "@/components/Menu";
 import { useProjectLive } from "@/components/ProjectLive";
 import { moneyGate, UnitsGate } from "@/components/MoneyGate";
+import { VersionsPanel } from "@/components/VersionsPanel";
 
 export default function PresupuestoPage() {
   const { id } = useParams<{ id: string }>();
@@ -315,6 +316,13 @@ export default function PresupuestoPage() {
         />
       </Card>
 
+      <Card className="mt-6 p-5">
+        <SectionTitle sub="Guarda el presupuesto tal como está — con tus revisiones, ajustes y parámetros — para compararlo después y volver a él.">
+          Versiones del presupuesto
+        </SectionTitle>
+        <VersionsPanel projectId={id} />
+      </Card>
+
       {costs.boq.warnings.length > 0 && (
         <Card className="mt-6 p-5">
           <SectionTitle sub="Revisar antes de usar el presupuesto como referencia.">
@@ -399,18 +407,7 @@ function PhaseGroup({
                 )}
               </Td>
               <Td align="right" className="tabular">
-                {editing === l.concept_code ? (
-                  <QuantityEditor
-                    line={l}
-                    projectId={projectId}
-                    actorName={actorName}
-                    clientId={clientId}
-                    onDone={(reviews) => {
-                      setEditing(null);
-                      if (reviews) onReviews(reviews);
-                    }}
-                  />
-                ) : (
+                {
                   <span className="group/qty inline-flex items-center justify-end gap-1.5">
                     {l.engine_quantity != null && l.engine_quantity !== l.quantity && (
                       <span
@@ -434,7 +431,7 @@ function PhaseGroup({
                       <PencilSimpleLine size={13} />
                     </button>
                   </span>
-                )}
+                }
               </Td>
               <Td align="right" className="tabular text-muted">
                 {money2(l.unit_price)}
@@ -448,6 +445,22 @@ function PhaseGroup({
                 </Badge>
               </Td>
             </tr>
+            {editing === l.concept_code && (
+              <tr className="border-b border-border bg-accent-soft/40">
+                <td colSpan={6} className="px-4 py-2.5">
+                  <QuantityEditor
+                    line={l}
+                    projectId={projectId}
+                    actorName={actorName}
+                    clientId={clientId}
+                    onDone={(reviews) => {
+                      setEditing(null);
+                      if (reviews) onReviews(reviews);
+                    }}
+                  />
+                </td>
+              </tr>
+            )}
             {open && (
               <tr className="border-b border-border bg-surface-2/30">
                 <td colSpan={6} className="px-4 py-3 text-xs text-muted">
@@ -499,7 +512,7 @@ function QuantityEditor({
   clientId: string | null;
   onDone: (reviews: ProjectReviews | null) => void;
 }) {
-  const [value, setValue] = useState(String(line.quantity));
+  const [value, setValue] = useState(String(Math.round(line.quantity * 100) / 100));
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -514,7 +527,7 @@ function QuantityEditor({
       setError("Di por qué cambia.");
       return;
     }
-    if (quantity === line.quantity) {
+    if (Math.abs(quantity - line.quantity) < 0.005) {
       onDone(null);
       return;
     }
@@ -537,43 +550,42 @@ function QuantityEditor({
 
   return (
     <div
-      className="flex flex-col items-end gap-1"
+      className="flex flex-wrap items-center gap-2 text-sm"
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         if (e.key === "Escape") onDone(null);
         if (e.key === "Enter") void save();
       }}
     >
-      <div className="flex items-center gap-1">
-        <Input
-          type="number"
-          step="any"
-          min={0}
-          autoFocus
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          aria-label="Nueva cantidad"
-          className="w-28 px-2 py-1 text-right tabular"
-        />
-        <span className="text-xs text-muted">{line.unit}</span>
-      </div>
+      <span className="text-xs text-muted">
+        Fijar {line.concept_code} · leído {num(line.quantity)} {line.unit} →
+      </span>
+      <Input
+        type="number"
+        step="any"
+        min={0}
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        aria-label="Nueva cantidad"
+        className="w-28 px-2 py-1 text-right tabular"
+      />
+      <span className="text-xs text-muted">{line.unit}</span>
       <Input
         value={reason}
         onChange={(e) => setReason(e.target.value)}
         placeholder="Por qué (obligatorio)"
         maxLength={300}
         aria-label="Motivo del cambio"
-        className="w-56 px-2 py-1 text-left"
+        className="min-w-48 flex-1 px-2 py-1"
       />
-      <div className="flex items-center gap-1">
-        {error && <span className="mr-1 text-xs text-danger">{error}</span>}
-        <Button size="sm" variant="primary" onClick={save} disabled={busy}>
-          <Check size={13} weight="bold" /> Fijar
-        </Button>
-        <Button size="sm" onClick={() => onDone(null)} disabled={busy}>
-          <X size={13} weight="bold" />
-        </Button>
-      </div>
+      <Button size="sm" variant="primary" onClick={save} disabled={busy}>
+        <Check size={13} weight="bold" /> Fijar
+      </Button>
+      <Button size="sm" onClick={() => onDone(null)} disabled={busy} aria-label="Cancelar">
+        <X size={13} weight="bold" />
+      </Button>
+      {error && <span className="text-xs text-danger">{error}</span>}
     </div>
   );
 }

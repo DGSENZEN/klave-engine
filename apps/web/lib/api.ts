@@ -796,6 +796,91 @@ export const removeAdjustment = (
     actorClientHeaders(actor, clientId),
   );
 
+// ---- Presupuesto versions ----
+
+export type VersionSummary = {
+  version_id: string;
+  number: number;
+  label: string;
+  note: string;
+  actor: string;
+  created_at: string;
+  run_id: string | null;
+  overrides_version: number;
+  direct_cost: number;
+  grand_total: number;
+  line_count: number;
+  adjustments: number;
+  excluded: number;
+};
+
+export type LineChange = {
+  concept_code: string;
+  description: string;
+  unit: string;
+  status: "added" | "removed" | "changed" | "same";
+  quantity_before: number | null;
+  quantity_after: number | null;
+  unit_price_before: number | null;
+  unit_price_after: number | null;
+  amount_before: number;
+  amount_after: number;
+};
+
+export type VersionDiff = {
+  before_label: string;
+  after_label: string;
+  lines: LineChange[];
+  direct_cost_before: number;
+  direct_cost_after: number;
+  grand_total_before: number;
+  grand_total_after: number;
+  changed: number;
+  added: number;
+  removed: number;
+  notes: string[];
+};
+
+export const getVersions = (id: string) =>
+  getJSON<{ versions: VersionSummary[]; active_run_id: string | null }>(
+    `/projects/${id}/versions`,
+  );
+
+export const saveVersion = (
+  id: string,
+  body: { label: string; note: string },
+  actor?: string,
+  clientId?: string | null,
+) =>
+  postJSON<VersionSummary>(
+    `/projects/${id}/versions`,
+    body,
+    actorClientHeaders(actor, clientId),
+  );
+
+export const getVersionDiff = (id: string, versionId: string, against = "current") =>
+  getJSON<VersionDiff>(
+    `/projects/${id}/versions/${encodeURIComponent(versionId)}/diff?against=${encodeURIComponent(against)}`,
+  );
+
+export const restoreVersion = (
+  id: string,
+  versionId: string,
+  actor?: string,
+  clientId?: string | null,
+) =>
+  postJSON<{ restored: VersionSummary; grand_total: number; same_run: boolean }>(
+    `/projects/${id}/versions/${encodeURIComponent(versionId)}/restore`,
+    {},
+    actorClientHeaders(actor, clientId),
+  );
+
+export const deleteVersion = (id: string, versionId: string, actor?: string) =>
+  deleteJSON<{ deleted: string }>(
+    `/projects/${id}/versions/${encodeURIComponent(versionId)}`,
+    actorClientHeaders(actor),
+  );
+
 export const setVerification = (
   id: string,
   step: "units" | "detections" | "assumptions",

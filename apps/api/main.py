@@ -28,6 +28,7 @@ from apps.api.routes import (
     reviews,
     workspace,
 )
+from apps.api.routes import versions as version_routes
 
 
 def create_app() -> FastAPI:
@@ -70,6 +71,7 @@ def create_app() -> FastAPI:
     app.include_router(lectura.router)
     app.include_router(exports.router)
     app.include_router(reviews.router)
+    app.include_router(version_routes.router)
     app.include_router(catalog.router)
     app.include_router(workspace.router)
 
