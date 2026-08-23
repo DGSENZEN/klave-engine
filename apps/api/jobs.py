@@ -118,11 +118,14 @@ class JobStore:
 
     def enqueue(self, project_id: str, root: Path, settings: Settings) -> tuple[Job, bool]:
         """Schedule a run, or return the already-active run for idempotency."""
-        existing = self.get(project_id, root, settings)
-        if existing is not None and existing.state in ACTIVE_STATES:
-            return existing, False
+        self.get(project_id, root, settings)  # hydrate from disk before deciding
 
         with self._lock:
+            # Decide under the lock: two concurrent enqueues for the same
+            # project must produce one run, not two.
+            current = self._jobs.get(project_id)
+            if current is not None and current.state in ACTIVE_STATES:
+                return current, False
             active_count = sum(job.state in ACTIVE_STATES for job in self._jobs.values())
             capacity = max(1, settings.max_concurrent_jobs) + max(0, settings.max_queued_jobs)
             if active_count >= capacity:
@@ -144,6 +147,20 @@ class JobStore:
         assert self._executor is not None
         self._executor.submit(self._run, job.project_id, root, settings)
         return job, True
+
+    def repair_orphans(self, registry: dict[str, Path], settings: Settings) -> int:
+        """At startup, mark every job a crash left mid-flight as failed, so
+        the home never shows a "Procesando…" that no worker is working on.
+        ``get`` does this lazily per project; this does it for all at once."""
+        repaired = 0
+        for project_id, root in registry.items():
+            job = self.get(project_id, root, settings)
+            if job is not None and job.error and job.stage == "Interrumpido":
+                repaired += 1
+        if repaired:
+            logger.warning("%d trabajos interrumpidos por un reinicio se marcaron fallidos",
+                           repaired)
+        return repaired
 
     def _run(self, project_id: str, root: Path, settings: Settings) -> None:
         job = self._update(

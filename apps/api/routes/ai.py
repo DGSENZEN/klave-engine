@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 from klave_engine.common.config import Settings
 from klave_engine.llm.reader import anthropic_reader, credentials_available
@@ -18,6 +18,7 @@ from klave_engine.llm.service import (
     save_ai_reads,
 )
 
+from apps.api.auth.common import rate_limit
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
 
@@ -66,12 +67,14 @@ def get_ai_reads(
 @router.post("/{project_id}/ai-read", status_code=202)
 def start_ai_read(
     project_id: str,
+    request: Request,
     x_actor: Annotated[str | None, Header()] = None,
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
     """Render every frame and read it with the model, in the background.
     Refuses honestly when no credentials are configured."""
+    rate_limit(request, "ai_read", max_attempts=10, window_seconds=3600.0)
     control_dir = _control_dir(store, project_id, settings)
     if not credentials_available():
         raise HTTPException(

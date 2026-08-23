@@ -4,7 +4,7 @@ layout or in OPUS/Neodata import-friendly layouts."""
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from klave_engine.common.config import Settings
 from klave_engine.common.ids import slugify
 from klave_engine.costing.croquis import croquis_for_line
@@ -20,6 +20,7 @@ from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.results import Detection
 from klave_engine.detection.views import SheetSegmentation
 
+from apps.api.auth.common import rate_limit
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 
 router = APIRouter(prefix="/projects")
@@ -65,10 +66,12 @@ def _croquis_provider(
 
 @router.get("/{project_id}/export/explosion.xlsx")
 def export_explosion(
+    request: Request,
     project_id: str,
     store: ProjectStore = Depends(get_store),
 ) -> Response:
     """Explosión de insumos: what the presupuesto consumes, per resource."""
+    rate_limit(request, "export", max_attempts=60, window_seconds=3600.0)
     manifest = store.get_manifest(project_id)
     report = CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
     filename = f"explosion_insumos_{slugify(manifest.project_name)[:40]}.xlsx"
@@ -81,10 +84,12 @@ def export_explosion(
 
 @router.get("/{project_id}/export/apus.xlsx")
 def export_apus(
+    request: Request,
     project_id: str,
     store: ProjectStore = Depends(get_store),
 ) -> Response:
     """Análisis de precios unitarios: one block per concept with its matrix."""
+    rate_limit(request, "export", max_attempts=60, window_seconds=3600.0)
     manifest = store.get_manifest(project_id)
     report = CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
     filename = f"apus_{slugify(manifest.project_name)[:40]}.xlsx"
@@ -97,11 +102,13 @@ def export_apus(
 
 @router.get("/{project_id}/export/presupuesto.xlsx")
 def export_presupuesto(
+    request: Request,
     project_id: str,
     format: Literal["klave", "opus", "neodata", "licitacion", "licitacion_larga"] = "klave",
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> Response:
+    rate_limit(request, "export", max_attempts=60, window_seconds=3600.0)
     manifest = store.get_manifest(project_id)
     try:
         report = CostReport.model_validate(

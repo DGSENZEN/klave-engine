@@ -42,6 +42,10 @@ class ProjectStore:
             return {}
         return read_json(self.registry_path)
 
+    def roots(self) -> dict[str, Path]:
+        """Every registered project and its root, for startup sweeps."""
+        return {pid: Path(root) for pid, root in self._registry().items()}
+
     def register(self, project_id: str, root_path: Path) -> None:
         root_path = self.managed_root(root_path)
         with _REGISTRY_LOCK:

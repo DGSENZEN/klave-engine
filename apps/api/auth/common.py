@@ -22,15 +22,25 @@ _rate_buckets: dict[str, deque[float]] = {}
 _rate_lock = threading.Lock()
 
 
-def rate_limit(request: Request, bucket: str) -> None:
-    host = request.client.host if request.client else "?"
-    key = f"{bucket}:{host}"
+def rate_limit(
+    request: Request,
+    bucket: str,
+    *,
+    max_attempts: int = _RATE_MAX_ATTEMPTS,
+    window_seconds: float = _RATE_WINDOW_SECONDS,
+) -> None:
+    """Sliding-window limiter per bucket. Keyed by the signed-in user when
+    there is one (one abuser cannot exhaust a shared office IP's budget, and
+    an IP hopper gains nothing), else by client IP."""
+    user = getattr(request.state, "user", None)
+    who = f"u:{user['user_id']}" if user else (request.client.host if request.client else "?")
+    key = f"{bucket}:{who}"
     now = time.monotonic()
     with _rate_lock:
         attempts = _rate_buckets.setdefault(key, deque())
-        while attempts and now - attempts[0] > _RATE_WINDOW_SECONDS:
+        while attempts and now - attempts[0] > window_seconds:
             attempts.popleft()
-        if len(attempts) >= _RATE_MAX_ATTEMPTS:
+        if len(attempts) >= max_attempts:
             raise HTTPException(
                 status_code=429,
                 detail={

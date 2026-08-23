@@ -53,6 +53,7 @@ from klave_engine.costing.vigencia import (
 )
 from pydantic import BaseModel, Field
 
+from apps.api.auth.common import rate_limit
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
 from apps.api.tenancy import store_for_project, store_for_request
@@ -943,11 +944,13 @@ def concept_matches(
 
 @router.get("/matches")
 def all_matches(
+    request: Request,
     source_key: str | None = None,
     min_score: float = 0.5,
     catalog: CatalogStore = Depends(get_catalog),
 ) -> dict:
     """Best candidate per concept without an alias: the bulk review list."""
+    rate_limit(request, "matches", max_attempts=60, window_seconds=300.0)
     aliases = catalog.load_concept_aliases()
     candidates = _candidates(catalog, source_key)
     out = []

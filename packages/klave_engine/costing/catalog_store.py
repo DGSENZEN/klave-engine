@@ -13,7 +13,8 @@ insumo costs, APU component matrices, and production rates (rendimientos).
 import json
 import sqlite3
 import threading
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -538,11 +539,21 @@ class CatalogStore:
                     "ON CONFLICT(key) DO UPDATE SET value = '4'"
                 )
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        """One connection per operation: commit on success, roll back on
+        error, and always close (the bare ``with sqlite3.connect()`` pattern
+        commits but leaks the file handle). WAL lets readers proceed while a
+        write is in flight."""
         conn = sqlite3.connect(self.db_path, timeout=10.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("PRAGMA journal_mode = WAL")
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def _seed(self, conn: sqlite3.Connection) -> None:
         for resource in RESOURCES.values():

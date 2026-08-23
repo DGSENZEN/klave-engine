@@ -1,5 +1,6 @@
 """Klave Engine API. Routes orchestrate; the domain packages do the thinking."""
 
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -80,6 +81,17 @@ def create_app() -> FastAPI:
     )
     if not dev:
         _validate_production_config(settings)
+
+    @app.on_event("startup")
+    def _repair_interrupted_jobs() -> None:
+        # A crash mid-processing must not leave "Procesando…" forever.
+        from apps.api.dependencies import ProjectStore
+        from apps.api.jobs import JOB_STORE
+
+        try:
+            JOB_STORE.repair_orphans(ProjectStore(settings).roots(), settings)
+        except Exception:  # noqa: BLE001 — repair is best-effort at boot
+            pass
 
     app.include_router(health.router)
     app.include_router(auth_router)

@@ -15,6 +15,7 @@ from klave_engine.ingestion.manifest import ConvertedFile, save_manifest
 from klave_engine.ingestion.project_loader import ingest_project
 from pydantic import BaseModel
 
+from apps.api.auth.common import rate_limit
 from apps.api.auth.store import UsersDbUnavailable, get_user_store
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
@@ -321,6 +322,7 @@ async def upload_project(
 ) -> dict:
     """Accept one or more DWG/DXF sheets as a new project and process them.
     The name and client are optional; the first file's stem is the fallback."""
+    rate_limit(request, "upload", max_attempts=20, window_seconds=3600.0)
     first_name, _ = _validated_upload_name(files[0].filename or "plano.dxf")
     name = " ".join((project_name or "").split())[:120] or Path(first_name).stem
     project_id = f"{slugify(name)[:32] or 'plano'}_{short_uuid('p')[2:]}"
@@ -466,9 +468,11 @@ def reingest_project(
 @router.post("/{project_id}/process", status_code=202)
 def process_project(
     project_id: str,
+    request: Request,
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> ProcessAcceptedResponse:
+    rate_limit(request, "process", max_attempts=30, window_seconds=3600.0)
     root = store.get_root(project_id)
     try:
         job, _ = JOB_STORE.enqueue(project_id, root, settings)
@@ -496,12 +500,14 @@ class ProjectPatch(BaseModel):
 @router.post("/{project_id}/files", status_code=202)
 async def add_project_files(
     project_id: str,
+    request: Request,
     files: list[UploadFile],
     x_actor: Annotated[str | None, Header()] = None,
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
     """Add sheets to an existing project and reprocess it as one drawing set."""
+    rate_limit(request, "upload", max_attempts=20, window_seconds=3600.0)
     root = store.get_root(project_id)
     drawings = root / "drawings"
     drawings.mkdir(parents=True, exist_ok=True)
