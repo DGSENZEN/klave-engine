@@ -25,6 +25,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
+from klave_engine.costing.letras import pesos_con_letra
 from klave_engine.costing.models import BoqLine, CostReport
 from klave_engine.costing.reviews import ProjectReviews
 from klave_engine.detection.results import Detection
@@ -101,6 +102,8 @@ def build_presupuesto_workbook(
             sheet_title="Presupuesto",
             columns=["Código", "Concepto", "Unidad", "Cantidad", "P.U.", "Monto"],
         )
+    elif fmt == "licitacion":
+        workbook = _licitacion_workbook(report, reviews, project_name, client)
     else:
         workbook = _klave_workbook(report, detections, reviews, project_name, client)
         if inventory and inventory.get("sheets"):
@@ -111,6 +114,108 @@ def build_presupuesto_workbook(
 
 
 # ------------------------------------------------------------------ flat ---
+
+IVA_PCT = 16.0
+
+
+def _licitacion_workbook(
+    report: CostReport, reviews: ProjectReviews, project_name: str, client: str | None
+) -> Workbook:
+    """Catálogo de conceptos for a licitación pública (LOPSRM art. 45 / RLOPSRM
+    art. 185): one partida per phase, each concept with its precio unitario
+    con número y con letra, importe, subtotal, IVA and total con letra. The
+    P.U. is the precio de venta (costo directo × factor de sobrecosto), the
+    one a contractor signs — never the bare costo directo."""
+    workbook = Workbook()
+    ws = workbook.active
+    ws.title = "Catálogo de conceptos"
+    factor = report.integration.overcost_factor or 1.0
+    _title(ws, 1, "CATÁLOGO DE CONCEPTOS Y CANTIDADES DE OBRA", size=14)
+    _muted(ws, 2, 1, f"Obra: {project_name}")
+    _muted(ws, 3, 1, f"Dependencia / cliente: {client or '—'}")
+    _muted(
+        ws, 4, 1,
+        f"Fecha: {datetime.now(UTC):%d/%m/%Y} · Moneda: {report.currency} · "
+        f"Precios unitarios con indirectos, financiamiento, utilidad y cargos adicionales "
+        f"(factor {factor:.4f} sobre costo directo)",
+    )
+    verification = reviews.verification
+    if not (verification.units_confirmed_at and verification.detections_confirmed_at):
+        cell = ws.cell(
+            row=5, column=1,
+            value="SIN VERIFICAR — cantidades leídas del plano, pendientes de revisión humana",
+        )
+        cell.font = Font(bold=True, size=9, color="B54708")
+    columns = [
+        "Partida", "Clave", "Concepto", "Unidad", "Cantidad",
+        "P.U. con número", "P.U. con letra", "Importe",
+    ]
+    _header(ws, 7, columns)
+    row = 8
+    subtotal = 0.0
+    for number, (phase, _phase_total) in enumerate(report.boq.totals_by_phase.items(), 1):
+        partida = f"{number:02d}"
+        phase_cell = ws.cell(row=row, column=1, value=partida)
+        phase_cell.font = Font(bold=True, size=9)
+        name_cell = ws.cell(row=row, column=3, value=phase.upper())
+        name_cell.font = Font(bold=True, size=9)
+        for col in range(1, 9):
+            ws.cell(row=row, column=col).fill = PatternFill("solid", fgColor=SOFT)
+        row += 1
+        partida_total = 0.0
+        for index, line in enumerate(
+            (ln for ln in report.boq.lines if ln.phase == phase), 1
+        ):
+            unit_price = round(line.unit_price * factor, 2)
+            amount = round(line.quantity * unit_price, 2)
+            partida_total += amount
+            values: list[Any] = [
+                f"{partida}.{index:03d}", line.concept_code, line.description, line.unit,
+                line.quantity, unit_price, pesos_con_letra(unit_price), amount,
+            ]
+            for col, value in enumerate(values, start=1):
+                cell = ws.cell(row=row, column=col, value=value)
+                cell.border = _box
+                if col == 5:
+                    cell.number_format = QTY_FORMAT
+                if col in (6, 8):
+                    cell.number_format = MONEY_FORMAT
+                if col in (3, 7):
+                    cell.alignment = Alignment(wrap_text=True, vertical="top")
+            row += 1
+        total_cell = ws.cell(row=row, column=3, value=f"Subtotal partida {partida}")
+        total_cell.font = Font(italic=True, size=9, color=MUTED)
+        amount_cell = ws.cell(row=row, column=8, value=round(partida_total, 2))
+        amount_cell.number_format = MONEY_FORMAT
+        amount_cell.font = Font(italic=True, size=9, color=MUTED)
+        subtotal += partida_total
+        row += 2
+    iva = round(subtotal * IVA_PCT / 100, 2)
+    total = round(subtotal + iva, 2)
+    for label, value in (
+        ("SUBTOTAL", round(subtotal, 2)),
+        (f"I.V.A. {IVA_PCT:.0f} %", iva),
+        ("TOTAL", total),
+    ):
+        label_cell = ws.cell(row=row, column=3, value=label)
+        label_cell.font = Font(bold=True, size=10)
+        value_cell = ws.cell(row=row, column=8, value=value)
+        value_cell.number_format = MONEY_FORMAT
+        value_cell.font = Font(bold=True, size=10)
+        row += 1
+    letra = ws.cell(row=row, column=3, value=f"Importe total con letra: {pesos_con_letra(total)}")
+    letra.font = Font(bold=True, size=9)
+    row += 2
+    _muted(
+        ws, row, 1,
+        "Las cantidades provienen de la lectura del plano y de las correcciones documentadas "
+        "(hoja Generadores del Excel completo); los precios son los del catálogo del taller.",
+    )
+    widths = {"A": 9, "B": 11, "C": 58, "D": 8, "E": 12, "F": 15, "G": 52, "H": 16}
+    for letter, width in widths.items():
+        ws.column_dimensions[letter].width = width
+    return workbook
+
 
 def _flat_workbook(report: CostReport, sheet_title: str, columns: list[str]) -> Workbook:
     """One row per concept, no merges: made for import wizards."""

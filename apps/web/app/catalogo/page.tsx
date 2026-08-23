@@ -23,8 +23,12 @@ import {
   getCatalog,
   getEquipment,
   getLabor,
+  getLaborPresets,
+  applyLaborPreset,
+  type RegionPreset,
   importCatalogPrices,
   importCustomSource,
+  importMatrices,
   importReferenceSource,
   listReferenceSources,
   money2,
@@ -73,6 +77,7 @@ export default function CatalogoPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const matricesRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(() => {
     getCatalog()
@@ -105,6 +110,26 @@ export default function CatalogoPage() {
           ? (e.detail as { message?: string }).message
           : null;
       setError(detail || "No se pudo importar el CSV.");
+    }
+  }
+
+  async function onImportMatrices(file: File) {
+    try {
+      const result = await importMatrices(file, file.name.replace(/\.[^.]+$/, ""), getBrowserActor());
+      const problems = result.problems.length
+        ? ` · ${result.problems.length} avisos: ${result.problems.slice(0, 3).join(" / ")}${result.problems.length > 3 ? "…" : ""}`
+        : "";
+      setNotice(
+        `Matrices importadas de ${result.source}: ${result.concepts_created} conceptos nuevos, ` +
+          `${result.concepts_updated} actualizados, ${result.insumos_upserted} insumos (cotización)${problems}`,
+      );
+      reload();
+    } catch (e) {
+      const detail =
+        e instanceof ApiError && e.detail && typeof e.detail === "object"
+          ? (e.detail as { message?: string }).message
+          : null;
+      setError(detail || "No se pudieron importar las matrices.");
     }
   }
 
@@ -156,6 +181,23 @@ export default function CatalogoPage() {
               title="CSV o XLSX (exportado de OPUS/Neodata) con columnas clave y precio"
             >
               <UploadSimple size={15} weight="bold" /> Importar precios
+            </Button>
+            <input
+              ref={matricesRef}
+              type="file"
+              accept=".csv,.xlsx"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) onImportMatrices(file);
+                e.target.value = "";
+              }}
+            />
+            <Button
+              onClick={() => matricesRef.current?.click()}
+              title="Catálogo de conceptos con insumos exportado de OPUS/Neodata (XLSX/CSV): conceptos con su matriz"
+            >
+              <UploadSimple size={15} weight="bold" /> Importar matrices
             </Button>
             <Button onClick={exportCsv} disabled={!catalog}>
               <DownloadSimple size={15} weight="bold" /> Exportar
@@ -1365,6 +1407,7 @@ function SalarioRealSection({
   const [showParams, setShowParams] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [presets, setPresets] = useState<RegionPreset[]>([]);
 
   useEffect(() => {
     getLabor()
@@ -1374,7 +1417,35 @@ function SalarioRealSection({
         setCategories(s.categories.map(({ code, description, salario_nominal }) => ({ code, description, salario_nominal })));
       })
       .catch(() => {});
+    getLaborPresets()
+      .then((r) => setPresets(r.presets))
+      .catch(() => {});
   }, []);
+
+  async function applyPreset(key: string) {
+    setBusy(true);
+    try {
+      const result = await applyLaborPreset(key, getBrowserActor());
+      setState(result);
+      setParams(result.params);
+      setCategories(
+        result.categories.map(({ code, description, salario_nominal }) => ({
+          code,
+          description,
+          salario_nominal,
+        })),
+      );
+      setDirty(false);
+      onNotice(
+        `${result.preset.label}: ISN ${result.preset.isn_pct}% y salario mínimo $${result.preset.salario_minimo} aplicados (${result.preset.source})`,
+      );
+      onChanged();
+    } catch {
+      onError("No se pudo aplicar el preset regional.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function apply() {
     if (!params) return;
@@ -1478,13 +1549,34 @@ function SalarioRealSection({
               Los valores de SBC, Ps y Fsr se recalculan al aplicar.
             </p>
           )}
-          <button
-            type="button"
-            onClick={() => setShowParams((v) => !v)}
-            className="mt-3 text-xs font-medium text-muted hover:text-foreground"
-          >
-            {showParams ? "Ocultar parámetros" : "Parámetros (UMA, IMSS, LFT, ISN)"}
-          </button>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-xs text-muted">
+              Región / estado
+              <select
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) void applyPreset(e.target.value);
+                }}
+                className="rounded-lg border border-border bg-surface px-2 py-1 text-xs"
+                aria-label="Aplicar preset regional"
+                disabled={busy || presets.length === 0}
+              >
+                <option value="">Aplicar ISN y salario mínimo de…</option>
+                {presets.map((preset) => (
+                  <option key={preset.key} value={preset.key}>
+                    {preset.label} · ISN {preset.isn_pct}% · SM ${preset.salario_minimo}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowParams((v) => !v)}
+              className="text-xs font-medium text-muted hover:text-foreground"
+            >
+              {showParams ? "Ocultar parámetros" : "Parámetros (UMA, IMSS, LFT, ISN)"}
+            </button>
+          </div>
           {showParams && (
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
               {FSR_FIELDS.map((field) => (

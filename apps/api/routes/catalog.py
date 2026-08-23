@@ -17,12 +17,19 @@ from klave_engine.costing.catalog import PHASE_ORDER
 from klave_engine.costing.catalog_services import apply_equipment, apply_labor, labor_state
 from klave_engine.costing.catalog_store import CatalogStore, get_catalog_store
 from klave_engine.costing.equipment import EquipmentParameters, compute_costo_horario
-from klave_engine.costing.labor import FsrParameters, LaborCategory
+from klave_engine.costing.labor import (
+    REGION_PRESETS,
+    FsrParameters,
+    LaborCategory,
+    apply_preset,
+    preset_by_key,
+)
 from klave_engine.costing.sources.custom import (
     CustomCatalogError,
     parse_concept_workbook,
     source_key_for,
 )
+from klave_engine.costing.sources.matrices import parse_matrices_workbook
 from klave_engine.costing.sources.registry import SOURCES, available_sources, sources_dir
 from pydantic import BaseModel, Field
 
@@ -461,6 +468,36 @@ async def import_custom_source(
     return {"source_key": key, "rows": count, "name": title}
 
 
+@router.post("/import-matrices", status_code=201)
+async def import_matrices(
+    file: UploadFile,
+    x_actor: Annotated[str | None, Header()] = None,
+    source: str = "",
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    """Conceptos con sus matrices from an OPUS/Neodata Excel export (or the
+    documented Tipo/Clave/Descripción/Unidad/Cantidad/Costo layout)."""
+    raw = await file.read()
+    if len(raw) > MAX_IMPORT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail={"error_type": "import_too_large", "max_bytes": MAX_IMPORT_BYTES},
+        )
+    label = source.strip() or Path(file.filename or "matrices").stem[:80]
+    try:
+        parse = parse_matrices_workbook(raw, file.filename or "")
+    except CustomCatalogError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error_type": "headers_not_found", "message": str(exc)}
+        ) from exc
+    result = catalog.import_matrices(parse, label)
+    _publish_catalog_updated(
+        x_actor, "matrices_imported",
+        f"{label}: {result['concepts_created']} nuevos, {result['concepts_updated']} actualizados",
+    )
+    return result
+
+
 @router.post("/sources/{source_key}/import")
 def import_reference_source(
     source_key: str,
@@ -611,6 +648,35 @@ def delete_inventory_mapping(
 @router.get("/labor")
 def get_labor(catalog: CatalogStore = Depends(get_catalog)) -> dict:
     return labor_state(catalog)
+
+
+@router.get("/labor/presets")
+def get_labor_presets() -> dict:
+    """Regional presets: minimum-wage zone and ISN per state, with sources."""
+    return {"presets": [p.model_dump() for p in REGION_PRESETS]}
+
+
+@router.post("/labor/presets/{key}")
+def apply_labor_preset(
+    key: str,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    """Apply a state's ISN and minimum wage to the saved parameters and
+    categories, and reprice labor."""
+    preset = preset_by_key(key)
+    if preset is None:
+        raise HTTPException(status_code=404, detail={"error_type": "preset_not_found"})
+    state = labor_state(catalog)
+    params = FsrParameters.model_validate(state["params"])
+    categories = [
+        LaborCategory.model_validate({k: v for k, v in c.items() if k != "breakdown"})
+        for c in state["categories"]
+    ]
+    params, categories = apply_preset(params, categories, preset)
+    applied = apply_labor(catalog, params, categories)
+    _publish_catalog_updated(x_actor, "labor_preset_applied", preset.label)
+    return {"preset": preset.model_dump(), "applied": applied, **labor_state(catalog)}
 
 
 @router.put("/labor")

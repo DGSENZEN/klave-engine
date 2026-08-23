@@ -144,6 +144,72 @@ class LaborCategory(BaseModel):
     salario_nominal: float
 
 
+class RegionPreset(BaseModel):
+    """What changes from one state to another in the salario real: the
+    minimum wage zone (general / frontera norte) and the impuesto sobre
+    nóminas. Rates are the published ones at the start of the year; the
+    source is named so a taller checks its own state's law before bidding."""
+
+    key: str
+    label: str
+    salario_minimo: float
+    isn_pct: float
+    zone: str  # general | frontera
+    source: str
+
+
+# ISN rates per state law (Ley de Hacienda / Código Fiscal estatal) as
+# published for 2026; CDMX raised its rate to 4 % in 2025. Verify yearly.
+REGION_PRESETS: list[RegionPreset] = [
+    RegionPreset(key="cdmx", label="Ciudad de México", salario_minimo=SALARIO_MINIMO_GENERAL,
+                 isn_pct=4.0, zone="general", source="Código Fiscal CDMX art. 158 (2025)"),
+    RegionPreset(key="edomex", label="Estado de México", salario_minimo=SALARIO_MINIMO_GENERAL,
+                 isn_pct=3.0, zone="general", source="Código Financiero Edomex art. 56"),
+    RegionPreset(key="jalisco", label="Jalisco", salario_minimo=SALARIO_MINIMO_GENERAL,
+                 isn_pct=3.0, zone="general", source="Ley de Hacienda de Jalisco art. 39"),
+    RegionPreset(key="nuevo_leon", label="Nuevo León", salario_minimo=SALARIO_MINIMO_GENERAL,
+                 isn_pct=3.0, zone="general", source="Ley de Hacienda de N.L. art. 154"),
+    RegionPreset(key="queretaro", label="Querétaro", salario_minimo=SALARIO_MINIMO_GENERAL,
+                 isn_pct=3.0, zone="general", source="Ley de Hacienda de Querétaro art. 75"),
+    RegionPreset(key="guanajuato", label="Guanajuato", salario_minimo=SALARIO_MINIMO_GENERAL,
+                 isn_pct=3.0, zone="general", source="Ley de Hacienda de Guanajuato art. 4"),
+    RegionPreset(key="puebla", label="Puebla", salario_minimo=SALARIO_MINIMO_GENERAL,
+                 isn_pct=3.0, zone="general", source="Ley de Hacienda de Puebla art. 13"),
+    RegionPreset(key="yucatan", label="Yucatán", salario_minimo=SALARIO_MINIMO_GENERAL,
+                 isn_pct=3.0, zone="general", source="Ley General de Hacienda de Yucatán art. 24"),
+    RegionPreset(key="quintana_roo", label="Quintana Roo", salario_minimo=SALARIO_MINIMO_GENERAL,
+                 isn_pct=4.0, zone="general", source="Ley de Hacienda de Q. Roo art. 44"),
+    RegionPreset(key="sinaloa", label="Sinaloa", salario_minimo=SALARIO_MINIMO_GENERAL,
+                 isn_pct=3.0, zone="general", source="Ley de Hacienda de Sinaloa art. 17"),
+    RegionPreset(key="baja_california", label="Baja California (frontera norte)",
+                 salario_minimo=SALARIO_MINIMO_FRONTERA, isn_pct=3.0, zone="frontera",
+                 source="Ley de Hacienda de B.C. art. 151-13; ZLFN CONASAMI"),
+    RegionPreset(key="chihuahua_frontera", label="Chihuahua (municipios fronterizos)",
+                 salario_minimo=SALARIO_MINIMO_FRONTERA, isn_pct=3.0, zone="frontera",
+                 source="Código Fiscal de Chihuahua art. 167; ZLFN CONASAMI"),
+    RegionPreset(key="tamaulipas_frontera", label="Tamaulipas (municipios fronterizos)",
+                 salario_minimo=SALARIO_MINIMO_FRONTERA, isn_pct=3.0, zone="frontera",
+                 source="Ley de Hacienda de Tamaulipas art. 48; ZLFN CONASAMI"),
+]
+
+
+def preset_by_key(key: str) -> RegionPreset | None:
+    return next((p for p in REGION_PRESETS if p.key == key), None)
+
+
+def apply_preset(
+    params: FsrParameters, categories: list[LaborCategory], preset: RegionPreset
+) -> tuple[FsrParameters, list[LaborCategory]]:
+    """The ISN of the state, and no category below its minimum wage."""
+    updated = params.model_copy(update={"isn_pct": preset.isn_pct})
+    floor = preset.salario_minimo
+    lifted = [
+        c.model_copy(update={"salario_nominal": max(c.salario_nominal, floor)})
+        for c in categories
+    ]
+    return updated, lifted
+
+
 DEFAULT_CATEGORIES: list[LaborCategory] = [
     LaborCategory(code="MO-PEON", description="Peón", salario_nominal=SALARIO_MINIMO_GENERAL),
     LaborCategory(code="MO-AYUD", description="Ayudante general", salario_nominal=360.0),

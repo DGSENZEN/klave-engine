@@ -181,6 +181,15 @@ export default function PresupuestoPage() {
                 <MenuItem
                   onSelect={() => {
                     close();
+                    sendActivity("exporting_budget", "Catálogo de licitación");
+                    window.location.href = `${API_BASE}/projects/${id}/export/presupuesto.xlsx?format=licitacion`;
+                  }}
+                >
+                  <FileXls size={15} weight="duotone" /> Catálogo de licitación (P.U. con letra)
+                </MenuItem>
+                <MenuItem
+                  onSelect={() => {
+                    close();
                     downloadCsv();
                   }}
                 >

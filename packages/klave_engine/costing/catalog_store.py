@@ -949,6 +949,60 @@ class CatalogStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def import_matrices(self, parse: object, source: str) -> dict:
+        """Concepts with their matrices from an OPUS/Neodata export: insumos
+        are upserted as cotización of `source` (a % insumo maps to the
+        EQ-HERRAMIENTA fraction), existing concepts keep their rule and take
+        the imported description, unit and matrix; new ones are manual."""
+        from klave_engine.costing.sources.matrices import MatricesParse
+
+        assert isinstance(parse, MatricesParse)
+        vigencia = _now()[:7]
+        upserted = 0
+        for insumo in parse.insumos.values():
+            if insumo.is_labor_percentage:
+                continue
+            self.upsert_insumo(
+                insumo.code, description=insumo.description, unit=insumo.unit,
+                resource_type=insumo.resource_type, unit_cost=insumo.unit_cost,
+                source=source, source_type="cotizacion", region="MX", vigencia=vigencia,
+            )
+            upserted += 1
+        created = updated = 0
+        problems = list(parse.problems)
+        existing_codes = {c["code"] for c in self.load_concepts(include_inactive=True)}
+        for concept in parse.concepts:
+            components: list[tuple[str, float]] = []
+            for code, quantity in concept.components:
+                resource = parse.insumos.get(code)
+                if resource is not None and resource.is_labor_percentage:
+                    fraction = quantity / 100 if quantity > 1 else quantity
+                    components.append(("EQ-HERRAMIENTA", fraction))
+                else:
+                    components.append((code, quantity))
+            rate = concept.production_rate_per_day or 10.0
+            try:
+                if concept.code in existing_codes:
+                    self.update_concept(
+                        concept.code, description=concept.description, unit=concept.unit,
+                        phase=concept.phase, production_rate_per_day=rate,
+                    )
+                    self.set_apu_components(concept.code, components)
+                    updated += 1
+                else:
+                    self.create_concept(
+                        code=concept.code, description=concept.description, unit=concept.unit,
+                        phase=concept.phase, production_rate_per_day=rate,
+                        components=components,
+                    )
+                    created += 1
+            except ValueError as exc:
+                problems.append(f"{concept.code}: {exc}")
+        return {
+            "concepts_created": created, "concepts_updated": updated,
+            "insumos_upserted": upserted, "problems": problems, "source": source,
+        }
+
     def import_reference(
         self, source: dict, rows: Iterable[dict], *, sha256: str | None = None
     ) -> int:

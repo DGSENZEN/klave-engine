@@ -61,7 +61,7 @@ def _croquis_provider(
 @router.get("/{project_id}/export/presupuesto.xlsx")
 def export_presupuesto(
     project_id: str,
-    format: Literal["klave", "opus", "neodata"] = "klave",
+    format: Literal["klave", "opus", "neodata", "licitacion"] = "klave",
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> Response:

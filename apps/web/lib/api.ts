@@ -1362,6 +1362,57 @@ export type LaborState = {
 
 export const getLabor = () => getJSON<LaborState>("/catalog/labor");
 
+export type RegionPreset = {
+  key: string;
+  label: string;
+  salario_minimo: number;
+  isn_pct: number;
+  zone: "general" | "frontera";
+  source: string;
+};
+
+export const getLaborPresets = () =>
+  getJSON<{ presets: RegionPreset[] }>("/catalog/labor/presets");
+
+export const applyLaborPreset = (key: string, actor?: string) =>
+  postJSON<LaborState & { preset: RegionPreset }>(
+    `/catalog/labor/presets/${encodeURIComponent(key)}`,
+    {},
+    actor ? { "X-Actor": actor } : {},
+  );
+
+export type MatricesImportResult = {
+  concepts_created: number;
+  concepts_updated: number;
+  insumos_upserted: number;
+  problems: string[];
+  source: string;
+};
+
+export async function importMatrices(file: File, source: string, actor?: string) {
+  const body = new FormData();
+  body.append("file", file);
+  const res = await fetch(
+    `${API_BASE}/catalog/import-matrices?source=${encodeURIComponent(source)}`,
+    {
+      method: "POST",
+      body,
+      credentials: "include",
+      headers: actor ? { "X-Actor": actor } : {},
+    },
+  );
+  if (!res.ok) {
+    let detail: unknown = null;
+    try {
+      detail = (await res.json()).detail;
+    } catch {
+      detail = null;
+    }
+    throw new ApiError(res.status, "/catalog/import-matrices", detail);
+  }
+  return (await res.json()) as MatricesImportResult;
+}
+
 export const putLabor = (params: FsrParameters, categories: LaborCategory[], actor?: string) =>
   putJSON<LaborState & { applied: unknown[] }>(
     "/catalog/labor",
