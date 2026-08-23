@@ -35,6 +35,7 @@ class Family(StrEnum):
     cerramiento = "cerramiento"
     muro_concreto = "muro_concreto"
     pilote = "pilote"
+    local = "local"
     eje = "eje"
     interseccion_ejes = "interseccion_ejes"
     referencia_detalle = "referencia_detalle"
@@ -57,6 +58,7 @@ FAMILY_INFO: dict[Family, FamilyInfo] = {
     Family.dala: FamilyInfo("DAL", "Dala", "Dalas"),
     Family.cerramiento: FamilyInfo("CER", "Cerramiento", "Cerramientos"),
     Family.muro_concreto: FamilyInfo("MCO", "Muro de concreto", "Muros de concreto"),
+    Family.local: FamilyInfo("LOC", "Local", "Locales"),
     Family.pilote: FamilyInfo("PIL", "Pilote", "Pilotes"),
     Family.eje: FamilyInfo("EJE", "Eje", "Ejes"),
     Family.interseccion_ejes: FamilyInfo("INT", "Intersección de ejes", "Intersecciones"),
@@ -102,6 +104,8 @@ def classify_family(detection: Detection) -> Family:
         return Family.trabe
     if dtype == DetectionType.pile:
         return Family.pilote
+    if dtype == DetectionType.room:
+        return Family.local
     if dtype == DetectionType.footing:
         return Family.zapata
     if dtype == DetectionType.slab_region:

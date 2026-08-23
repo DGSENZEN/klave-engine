@@ -14,7 +14,7 @@ from klave_engine.costing.models import (
 )
 from klave_engine.detection.results import DetectionType
 
-PHASE_ORDER = ["Preliminares", "Cimentación", "Estructura"]
+PHASE_ORDER = ["Preliminares", "Cimentación", "Estructura", "Albañilería", "Acabados"]
 
 
 def build_catalog_from_store(
@@ -340,5 +340,131 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
             assumptions=[f"Altura promedio de muro {a.wall_height_m:.2f} m"],
             production_rate_per_day=14.0,
             sequence_order=3,
+        ),
+    ] + _acabados(a)
+
+
+def _acabados(a: CostingAssumptions) -> list[Concept]:
+    """Albañilería y acabados read from the architecture: the walls' two
+    faces (aplanado, pintura) and the locales (piso, plafón). Exterior
+    locales (patio, terraza, cochera) get a firme and no plafón; a local the
+    plan does not name is listed for review and feeds no concept — a
+    quantity is never guessed from an unnamed face."""
+    interior: dict[str, list[str | None]] = {"room_kind": ["interior"]}
+    named: dict[str, list[str | None]] = {"room_kind": ["interior", "exterior"]}
+    return [
+        Concept(
+            code="ACA-001",
+            description="Aplanado de mezcla cemento-arena 1:4 en muros, acabado fino, "
+            "ambas caras",
+            unit="M2",
+            phase="Albañilería",
+            rule=QuantityRule(
+                detection_type=DetectionType.wall,
+                kind=QuantityKind.LENGTH,
+                source_property="estimated_length",
+                property_filter={"wall_kind": [None, "block"]},
+                height_from_levels=True,
+                sides=2.0,
+            ),
+            quantity_factor=a.wall_height_m * 2.0,
+            view_scope=ViewScope.SUPERSTRUCTURE_SUM,
+            assumptions=[
+                f"Altura promedio de muro {a.wall_height_m:.2f} m (si no hay niveles N.P.T.)",
+                "Dos caras por muro; vanos no descontados (el plano no los acota)",
+            ],
+            production_rate_per_day=18.0,
+            sequence_order=10,
+        ),
+        Concept(
+            code="ACA-002",
+            description="Pintura vinílica en muros a dos manos sobre aplanado, ambas caras",
+            unit="M2",
+            phase="Acabados",
+            rule=QuantityRule(
+                detection_type=DetectionType.wall,
+                kind=QuantityKind.LENGTH,
+                source_property="estimated_length",
+                property_filter={"wall_kind": [None, "block"]},
+                height_from_levels=True,
+                sides=2.0,
+            ),
+            quantity_factor=a.wall_height_m * 2.0,
+            view_scope=ViewScope.SUPERSTRUCTURE_SUM,
+            assumptions=[
+                f"Altura promedio de muro {a.wall_height_m:.2f} m (si no hay niveles N.P.T.)",
+                "Dos caras por muro; vanos no descontados",
+            ],
+            production_rate_per_day=40.0,
+            sequence_order=30,
+        ),
+        Concept(
+            code="ACA-003",
+            description="Plafón de yeso en losa, acabado fino",
+            unit="M2",
+            phase="Acabados",
+            rule=QuantityRule(
+                detection_type=DetectionType.room,
+                kind=QuantityKind.AREA,
+                source_property="estimated_area",
+                property_filter=interior,
+            ),
+            view_scope=ViewScope.SUPERSTRUCTURE_SUM,
+            assumptions=["Área de locales interiores leída de la planta de arquitectura"],
+            production_rate_per_day=25.0,
+            sequence_order=20,
+        ),
+        Concept(
+            code="ACA-004",
+            description="Pintura vinílica en plafones a dos manos",
+            unit="M2",
+            phase="Acabados",
+            rule=QuantityRule(
+                detection_type=DetectionType.room,
+                kind=QuantityKind.AREA,
+                source_property="estimated_area",
+                property_filter=interior,
+            ),
+            view_scope=ViewScope.SUPERSTRUCTURE_SUM,
+            assumptions=["Área de locales interiores leída de la planta de arquitectura"],
+            production_rate_per_day=45.0,
+            sequence_order=31,
+        ),
+        Concept(
+            code="PIS-001",
+            description="Piso de loseta cerámica 60×60 cm asentado con adhesivo, junteado",
+            unit="M2",
+            phase="Acabados",
+            rule=QuantityRule(
+                detection_type=DetectionType.room,
+                kind=QuantityKind.AREA,
+                source_property="estimated_area",
+                property_filter=interior,
+            ),
+            view_scope=ViewScope.SUPERSTRUCTURE_SUM,
+            assumptions=[
+                "Área de locales interiores; el tipo de piso por local viene del catálogo "
+                "de acabados, no del plano estructural"
+            ],
+            production_rate_per_day=16.0,
+            sequence_order=25,
+        ),
+        Concept(
+            code="PIS-002",
+            description="Firme de concreto f'c=150 kg/cm² de 10 cm, acabado pulido",
+            unit="M2",
+            phase="Albañilería",
+            rule=QuantityRule(
+                detection_type=DetectionType.room,
+                kind=QuantityKind.AREA,
+                source_property="estimated_area",
+                property_filter=named,
+            ),
+            view_scope=ViewScope.FOOTPRINT_ONCE,
+            assumptions=[
+                "Planta baja una sola vez: locales interiores y exteriores nombrados en el plano"
+            ],
+            production_rate_per_day=30.0,
+            sequence_order=12,
         ),
     ]

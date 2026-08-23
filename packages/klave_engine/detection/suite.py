@@ -21,6 +21,7 @@ from klave_engine.detection.frames import SheetFrame, frame_boxes
 from klave_engine.detection.grid_detector import GridDetectorConfig, detect_grid
 from klave_engine.detection.pile_detector import PileDetectorConfig, detect_piles
 from klave_engine.detection.results import DetectorOutput
+from klave_engine.detection.rooms import RoomDetectorConfig, detect_rooms
 from klave_engine.detection.slab_detector import SlabDetectorConfig, detect_slabs
 from klave_engine.detection.slab_panels import SlabPanelConfig, detect_slab_panels
 from klave_engine.detection.text_patterns import TextPatternConfig
@@ -44,6 +45,7 @@ class DetectorSuiteConfig(BaseModel):
     slab_panel: SlabPanelConfig = Field(default_factory=SlabPanelConfig)
     pile: PileDetectorConfig = Field(default_factory=PileDetectorConfig)
     wall: WallDetectorConfig = Field(default_factory=WallDetectorConfig)
+    room: RoomDetectorConfig = Field(default_factory=RoomDetectorConfig)
     detail_reference: DetailReferenceDetectorConfig = Field(
         default_factory=DetailReferenceDetectorConfig
     )
@@ -91,6 +93,13 @@ class DetectorSuiteConfig(BaseModel):
         config.wall.max_thickness = m(0.45)
         config.wall.min_thickness = m(0.05)
         config.wall.merge_gap = m(0.30)
+        config.room.min_area = m(1.0) * m(1.5)
+        config.room.max_area = m(20.0) * m(20.0)
+        config.room.min_width = m(0.7)
+        config.room.unnamed_note_area = m(2.0) * m(2.0)
+        config.room.label_max_height = m(0.6)
+        config.room.max_opening = m(1.3)
+        config.room.max_thickness = m(0.45)
         config.risk.duplicate_column_distance = m(10.0)
         return config
 
@@ -125,10 +134,11 @@ def run_detectors(
         _prefer_panels(slabs, panels)
     walls = detect_walls(entities, index, config.wall, ids)
     piles = detect_piles(entities, index, config.pile, ids)
+    rooms = detect_rooms(entities, config.room, ids, frame_boxes(frames or []))
     details = detect_detail_references(
         entities, manifest, config.detail_reference, config.text_patterns, ids
     )
-    return [grid, columns, footings, beams, slabs, panels, walls, piles, details]
+    return [grid, columns, footings, beams, slabs, panels, walls, piles, rooms, details]
 
 
 def _prefer_panels(slabs: DetectorOutput, panels: DetectorOutput) -> None:

@@ -162,6 +162,70 @@ RESOURCES.update(
     }
 )
 
+RESOURCES.update(
+    {
+        r.code: r
+        for r in [
+            Resource(
+                code="MAT-CONC150",
+                description="Concreto hecho en obra f'c=150 kg/cm²",
+                unit="M3",
+                unit_cost=2100.0,
+                resource_type=ResourceType.material,
+            ),
+            Resource(
+                code="MAT-PINTURA",
+                description="Pintura vinílica acrílica, cubeta 19 L (referencia)",
+                unit="L",
+                unit_cost=78.0,
+                resource_type=ResourceType.material,
+            ),
+            Resource(
+                code="MAT-SELLADOR",
+                description="Sellador vinílico 5×1 (referencia)",
+                unit="L",
+                unit_cost=32.0,
+                resource_type=ResourceType.material,
+            ),
+            Resource(
+                code="MAT-PISO-CER",
+                description="Loseta cerámica 60×60 cm tráfico residencial (referencia)",
+                unit="M2",
+                unit_cost=185.0,
+                resource_type=ResourceType.material,
+            ),
+            Resource(
+                code="MAT-ADHESIVO",
+                description="Adhesivo para loseta base cemento, saco 20 kg (referencia)",
+                unit="KG",
+                unit_cost=9.5,
+                resource_type=ResourceType.material,
+            ),
+            Resource(
+                code="MAT-YESO",
+                description="Yeso para construcción, saco 40 kg (referencia)",
+                unit="KG",
+                unit_cost=4.2,
+                resource_type=ResourceType.material,
+            ),
+            Resource(
+                code="MO-PINTOR",
+                description="Pintor (cuadrilla pintor + ayudante, salario real)",
+                unit="JOR",
+                unit_cost=1180.0,
+                resource_type=ResourceType.labor,
+            ),
+            Resource(
+                code="MO-YESERO",
+                description="Yesero (cuadrilla yesero + ayudante, salario real)",
+                unit="JOR",
+                unit_cost=1260.0,
+                resource_type=ResourceType.labor,
+            ),
+        ]
+    }
+)
+
 APU_TEMPLATES: dict[str, list[tuple[str, float]]] = {
     # M2 trazo y nivelación
     "PRE-001": [
@@ -280,6 +344,46 @@ APU_TEMPLATES: dict[str, list[tuple[str, float]]] = {
         ("MAT-MORTERO", 0.020),
         ("MAT-ACERO", 0.0035),
         ("MO-CUAD-ALB", 0.150),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+    # M2 aplanado fino 1:4, 2 cm, per face (the rule already counts both faces)
+    "ACA-001": [
+        ("MAT-MORTERO", 0.024),
+        ("MO-CUAD-ALB", 0.080),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+    # M2 pintura vinílica dos manos sobre aplanado
+    "ACA-002": [
+        ("MAT-SELLADOR", 0.10),
+        ("MAT-PINTURA", 0.18),
+        ("MO-PINTOR", 0.025),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+    # M2 plafón de yeso 1.5 cm
+    "ACA-003": [
+        ("MAT-YESO", 12.0),
+        ("MO-YESERO", 0.055),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+    # M2 pintura en plafones
+    "ACA-004": [
+        ("MAT-SELLADOR", 0.10),
+        ("MAT-PINTURA", 0.20),
+        ("MO-PINTOR", 0.030),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+    # M2 loseta cerámica con adhesivo y junteo (5 % desperdicio)
+    "PIS-001": [
+        ("MAT-PISO-CER", 1.05),
+        ("MAT-ADHESIVO", 5.0),
+        ("MO-CUAD-ALB", 0.095),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+    # M2 firme de concreto f'c=150 de 10 cm, pulido
+    "PIS-002": [
+        ("MAT-CONC150", 0.105),
+        ("MO-CUAD-ALB", 0.060),
+        ("MO-PEON", 0.040),
         ("EQ-HERRAMIENTA", 1.0),
     ],
 }

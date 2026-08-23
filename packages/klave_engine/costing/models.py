@@ -99,6 +99,10 @@ class QuantityRule(BaseModel):
     # the plantas declare their levels (NPT/NTC), use each planta's own story
     # height instead.
     height_from_levels: bool = False
+    # Faces of a wall the concept covers (aplanado and pintura: both sides).
+    # Applied with the story height; for assumed heights fold it into
+    # quantity_factor as well.
+    sides: float = 1.0
 
 
 class Concept(BaseModel):

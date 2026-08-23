@@ -137,6 +137,21 @@ FORMWORK_CONCEPTS_V7: list[tuple[str, str, str, str, float, int, list[tuple[str,
         [("MAT-CIMBRA", 0.25), ("MO-CUAD-CARP", 0.085), ("EQ-HERRAMIENTA", 1.0)],
     ),
 ]
+ACABADOS_CONCEPT_CODES = ("ACA-001", "ACA-002", "ACA-003", "ACA-004", "PIS-001", "PIS-002")
+ACABADOS_RESOURCES: list[tuple[str, str, str, float, str]] = [
+    ("MAT-PINTURA", "Pintura vinílica acrílica, cubeta 19 L (referencia)", "L", 78.0,
+     "material"),
+    ("MAT-SELLADOR", "Sellador vinílico 5×1 (referencia)", "L", 32.0, "material"),
+    ("MAT-PISO-CER", "Loseta cerámica 60×60 cm tráfico residencial (referencia)", "M2",
+     185.0, "material"),
+    ("MAT-ADHESIVO", "Adhesivo para loseta base cemento, saco 20 kg (referencia)", "KG",
+     9.5, "material"),
+    ("MAT-YESO", "Yeso para construcción, saco 40 kg (referencia)", "KG", 4.2, "material"),
+    ("MO-PINTOR", "Pintor (cuadrilla pintor + ayudante, salario real)", "JOR", 1180.0,
+     "mano_de_obra"),
+    ("MO-YESERO", "Yesero (cuadrilla yesero + ayudante, salario real)", "JOR", 1260.0,
+     "mano_de_obra"),
+]
 SLAB_RESOURCES: list[tuple[str, str, str, float, str]] = [
     ("MAT-VIGUETA", "Vigueta pretensada de 13 cm (referencia)", "M", 98.0, "material"),
     ("MAT-BOVEDILLA", "Bovedilla de cemento-arena 15×25×56 cm (referencia)", "PZA", 24.0,
@@ -364,6 +379,12 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '10') "
                     "ON CONFLICT(key) DO UPDATE SET value = '10'"
                 )
+            if version_row is None or int(version_row["value"]) < 11:
+                self._migrate_v11(conn)
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '11') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '11'"
+                )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.
                 conn.execute(
@@ -484,6 +505,21 @@ class CatalogStore:
             )
         self._sync_builtin_concepts(conn, SLAB_CONCEPT_CODES)
         log_stage(logger, "catalog_migrated_v6", db_path=str(self.db_path))
+
+    def _migrate_v11(self, conn: sqlite3.Connection) -> None:
+        """Albañilería y acabados read from the architecture (aplanado,
+        pintura, plafón, piso, firme) with reference matrices. OR IGNORE: a
+        taller that already defined these codes keeps its own."""
+        for code, description, unit, unit_cost, resource_type in ACABADOS_RESOURCES:
+            conn.execute(
+                "INSERT OR IGNORE INTO insumos (code, description, unit, resource_type, "
+                "unit_cost, is_labor_percentage, source, source_type, region, vigencia, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, 'referencia', 'MX-CMX', ?, ?)",
+                (code, description, unit, resource_type, unit_cost, SEED_SOURCE,
+                 SEED_VIGENCIA, _now()),
+            )
+        self._sync_builtin_concepts(conn, ACABADOS_CONCEPT_CODES)
+        log_stage(logger, "catalog_migrated_v11", db_path=str(self.db_path))
 
     @staticmethod
     def _migrate_v8(conn: sqlite3.Connection) -> None:

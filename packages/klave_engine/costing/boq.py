@@ -321,7 +321,7 @@ def _scoped_result(
                 else:
                     view_raw = _raw_over(concept, view_dets, meters_factor)
                     view_quantity = view_raw * (
-                        height if height is not None else concept.quantity_factor
+                        height * rule.sides if height is not None else concept.quantity_factor
                     )
                 quantity_sum += view_quantity
                 raw_sum += view_raw

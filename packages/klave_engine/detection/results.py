@@ -25,6 +25,7 @@ class DetectionType(StrEnum):
     wall = "wall"
     detail_reference = "detail_reference"
     pile = "pile"  # pilote / pila: a mark with its circle in the cimentación
+    room = "room"  # local: a bounded face of the architectural wall network
 
 
 class Detection(BaseModel):
