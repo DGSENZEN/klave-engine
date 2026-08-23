@@ -121,6 +121,7 @@ def build_cost_report(
         schedule_specs=inputs.schedule_specs,
         inventory=inputs.inventory,
         inventory_mappings=store.list_inventory_mappings(),
+        concept_aliases=store.load_concept_aliases(),
     )
 
 

@@ -237,6 +237,8 @@ export type BoqLine = {
   by_view?: Record<string, number>;
   /** What the engine read before any manual edit; null when untouched. */
   engine_quantity?: number | null;
+  /** The taller's own clave when the concept has an alias. */
+  taller_clave?: string;
 };
 
 export type ApuLine = {
@@ -857,6 +859,80 @@ export const getCroquis = (id: string, conceptCode: string) =>
   );
 
 export const croquisUrl = (item: CroquisItem) => `${API_BASE}${item.url}`;
+
+// ---- Concept aliases & matching (the taller's own vocabulary) ----
+
+export type ConceptMatch = {
+  kind: "reference" | "concept";
+  key: string;
+  ref_id: number | null;
+  target_code: string | null;
+  clave: string;
+  description: string;
+  unit: string;
+  price: number | null;
+  source: string;
+  vigencia: string;
+  score: number;
+  reasons: string[];
+};
+
+export type ConceptAlias = {
+  concept_code: string;
+  kind: "reference" | "concept";
+  ref_id: number | null;
+  target_code: string | null;
+  clave: string;
+  description: string;
+  unit: string;
+  price: number | null;
+  source: string;
+  vigencia: string;
+  actor: string;
+  note: string;
+  project_id: string;
+  created_at: string;
+};
+
+export const getConceptMatches = (code: string, sourceKey?: string) =>
+  getJSON<{ concept_code: string; matches: ConceptMatch[] }>(
+    `/catalog/concepts/${encodeURIComponent(code)}/matches${sourceKey ? `?source_key=${encodeURIComponent(sourceKey)}` : ""}`,
+  );
+
+export const getAllMatches = (minScore = 0.8) =>
+  getJSON<{
+    matches: { concept_code: string; description: string; unit: string; match: ConceptMatch }[];
+    aliases: number;
+    candidates: number;
+  }>(`/catalog/matches?min_score=${minScore}`);
+
+export const getAliases = () =>
+  getJSON<{ aliases: Record<string, ConceptAlias> }>("/catalog/aliases");
+
+export type AliasInput = {
+  concept_code: string;
+  kind: "reference" | "concept";
+  ref_id?: number | null;
+  target_code?: string | null;
+  note?: string;
+  project_id?: string;
+};
+
+export const setAlias = (body: AliasInput, actor?: string) =>
+  postJSON<ConceptAlias>("/catalog/aliases", body, actor ? { "X-Actor": actor } : undefined);
+
+export const setAliasesBulk = (items: AliasInput[], projectId: string, actor?: string) =>
+  postJSON<{ aliases: ConceptAlias[] }>(
+    "/catalog/aliases/bulk",
+    { items, project_id: projectId },
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export const clearAlias = (code: string, projectId: string, actor?: string) =>
+  deleteJSON<{ cleared: string }>(
+    `/catalog/aliases/${encodeURIComponent(code)}?project_id=${encodeURIComponent(projectId)}`,
+    actor ? { "X-Actor": actor } : undefined,
+  );
 
 // ---- Presupuesto versions ----
 

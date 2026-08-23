@@ -459,6 +459,7 @@ def run_full_pipeline(
         concept_prices=catalog_store.load_concept_prices(),
         inventory=inventory.model_dump(),
         inventory_mappings=catalog_store.list_inventory_mappings(),
+        concept_aliases=catalog_store.load_concept_aliases(),
     )
     write_json(processed / "cost_report.json", result.cost_report)
     write_json(

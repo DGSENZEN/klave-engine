@@ -81,6 +81,38 @@ def adopted_price_apu(concept: Concept, adopted: dict) -> UnitPriceAnalysis:
     )
 
 
+def apply_aliases(
+    catalog: list[Concept], apus: dict[str, UnitPriceAnalysis], aliases: dict[str, dict]
+) -> None:
+    """The taller's concept in place of ours: its clave and description on
+    the line, and — for an alias to a workspace concept — its matrix as the
+    price (a reference alias already adopted the row's P.U.)."""
+    for concept in catalog:
+        alias = aliases.get(concept.code)
+        if not alias:
+            continue
+        concept.taller_clave = str(alias.get("clave") or "")
+        if alias.get("description"):
+            concept.description = str(alias["description"])
+        if alias.get("kind") == "concept" and alias.get("target_code") in apus:
+            source = apus[str(alias["target_code"])]
+            apus[concept.code] = source.model_copy(
+                update={
+                    "concept_code": concept.code,
+                    "concept_description": concept.description,
+                    "price_source": (
+                        f"matriz del taller {alias['target_code']}"
+                        + (f" · {source.price_source}" if source.price_source else "")
+                    ),
+                }
+            )
+        apu = apus.get(concept.code)
+        if apu is not None and apu.concept_description != concept.description:
+            apus[concept.code] = apu.model_copy(
+                update={"concept_description": concept.description}
+            )
+
+
 def generate_cost_report(
     project_id: str,
     detections: list[Detection],
@@ -97,6 +129,7 @@ def generate_cost_report(
     concept_prices: dict[str, dict] | None = None,
     inventory: dict | None = None,
     inventory_mappings: list[dict] | None = None,
+    concept_aliases: dict[str, dict] | None = None,
 ) -> CostReport:
     config = config or CostingConfig()
     assumptions, calibration_notes = _calibrate_assumptions(config.assumptions, dimensions)
@@ -117,6 +150,7 @@ def generate_cost_report(
         adopted = (concept_prices or {}).get(concept.code)
         if adopted:
             apus[concept.code] = adopted_price_apu(concept, adopted)
+    apply_aliases(catalog, apus, concept_aliases or {})
     boq = generate_bill_of_quantities(
         project_id, detections, units, catalog, apus, config.currency,
         segmentation=segmentation, assumptions=assumptions,

@@ -512,6 +512,7 @@ def generate_bill_of_quantities(
                     [f"P.U. adoptado de {apu.price_source}"] if apu.price_source else []
                 ),
                 by_view=result.by_view if len(result.by_view) > 1 else {},
+                taller_clave=concept.taller_clave,
             )
         )
 

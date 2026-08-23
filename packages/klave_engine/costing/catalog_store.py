@@ -75,6 +75,22 @@ CREATE TABLE IF NOT EXISTS price_sources (
     imported_at TEXT NOT NULL,
     row_count INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS concept_aliases (
+    concept_code TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    ref_id INTEGER,
+    target_code TEXT,
+    clave TEXT NOT NULL,
+    description TEXT NOT NULL,
+    unit TEXT NOT NULL DEFAULT '',
+    price REAL,
+    source TEXT NOT NULL DEFAULT '',
+    vigencia TEXT NOT NULL DEFAULT '',
+    actor TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    project_id TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS reference_prices (
     ref_id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_key TEXT NOT NULL REFERENCES price_sources(source_key) ON DELETE CASCADE,
@@ -582,6 +598,111 @@ class CatalogStore:
             )
             row = conn.execute("SELECT * FROM concepts WHERE code = ?", (code,)).fetchone()
         return dict(row)
+
+    # ------------------------------------------------------------ aliases
+
+    def set_concept_alias(
+        self,
+        code: str,
+        *,
+        kind: str,
+        ref_id: int | None = None,
+        target_code: str | None = None,
+        actor: str = "",
+        note: str = "",
+        project_id: str = "",
+    ) -> dict:
+        """The taller's own concept for one of ours: a reference row (their
+        catálogo: clave, description and P.U. adopted) or a workspace concept
+        (their matrix prices it). Workspace-wide, remembered with who and where."""
+        if kind == "reference":
+            if ref_id is None:
+                raise ValueError("Falta la referencia.")
+            reference = self.get_reference(ref_id)
+            if reference is None:
+                raise ValueError("la referencia no existe")
+            self.adopt_concept_reference(code, ref_id)
+            row = {
+                "kind": "reference", "ref_id": ref_id, "target_code": None,
+                "clave": reference["clave"], "description": reference["description"],
+                "unit": reference["unit"], "price": float(reference["price"]),
+                "source": reference["source_name"], "vigencia": reference["source_vigencia"] or "",
+            }
+        elif kind == "concept":
+            if not target_code or target_code == code:
+                raise ValueError("Falta el concepto del taller.")
+            with self._connect() as conn:
+                target = conn.execute(
+                    "SELECT * FROM concepts WHERE code = ? AND active = 1", (target_code,)
+                ).fetchone()
+            if target is None:
+                raise ValueError(f"El concepto {target_code} no existe.")
+            self.clear_concept_price(code)
+            row = {
+                "kind": "concept", "ref_id": None, "target_code": target_code,
+                "clave": target_code, "description": target["description"],
+                "unit": target["unit"], "price": None, "source": "matriz del taller",
+                "vigencia": "",
+            }
+        else:
+            raise ValueError("Tipo de alias inválido.")
+        with _LOCK, self._connect() as conn:
+            if conn.execute("SELECT 1 FROM concepts WHERE code = ?", (code,)).fetchone() is None:
+                raise ValueError(f"El concepto {code} no existe.")
+            conn.execute(
+                "INSERT INTO concept_aliases (concept_code, kind, ref_id, target_code, clave, "
+                "description, unit, price, source, vigencia, actor, note, project_id, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(concept_code) DO UPDATE SET kind = excluded.kind, "
+                "ref_id = excluded.ref_id, target_code = excluded.target_code, "
+                "clave = excluded.clave, description = excluded.description, "
+                "unit = excluded.unit, price = excluded.price, source = excluded.source, "
+                "vigencia = excluded.vigencia, actor = excluded.actor, note = excluded.note, "
+                "project_id = excluded.project_id, created_at = excluded.created_at",
+                (
+                    code, row["kind"], row["ref_id"], row["target_code"], row["clave"],
+                    row["description"], row["unit"], row["price"], row["source"],
+                    row["vigencia"], actor, note, project_id, _now(),
+                ),
+            )
+            saved = conn.execute(
+                "SELECT * FROM concept_aliases WHERE concept_code = ?", (code,)
+            ).fetchone()
+        return dict(saved)
+
+    def clear_concept_alias(self, code: str) -> bool:
+        with _LOCK, self._connect() as conn:
+            removed = conn.execute(
+                "DELETE FROM concept_aliases WHERE concept_code = ?", (code,)
+            ).rowcount
+        if removed:
+            self.clear_concept_price(code)
+        return bool(removed)
+
+    def load_concept_aliases(self) -> dict[str, dict]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM concept_aliases").fetchall()
+        return {row["concept_code"]: dict(row) for row in rows}
+
+    def list_reference_rows(self, source_keys: list[str] | None = None) -> list[dict]:
+        """Every row of the given sources (or of all), for matching."""
+        with self._connect() as conn:
+            if source_keys:
+                marks = ",".join("?" for _ in source_keys)
+                rows = conn.execute(
+                    "SELECT r.*, s.name AS source_name, s.vigencia AS source_vigencia, "
+                    "s.region AS source_region FROM reference_prices r "
+                    "JOIN price_sources s ON s.source_key = r.source_key "
+                    f"WHERE r.source_key IN ({marks})",
+                    tuple(source_keys),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT r.*, s.name AS source_name, s.vigencia AS source_vigencia, "
+                    "s.region AS source_region FROM reference_prices r "
+                    "JOIN price_sources s ON s.source_key = r.source_key"
+                ).fetchall()
+        return [self._reference_row(row) for row in rows]
 
     def clear_concept_price(self, code: str) -> dict:
         with _LOCK, self._connect() as conn:

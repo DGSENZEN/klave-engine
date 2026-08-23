@@ -51,6 +51,8 @@ import { ButtonMenu, MenuItem } from "@/components/Menu";
 import { useProjectLive } from "@/components/ProjectLive";
 import { moneyGate, UnitsGate } from "@/components/MoneyGate";
 import { VersionsPanel } from "@/components/VersionsPanel";
+import { ConceptPicker } from "@/components/ConceptPicker";
+import { SuggestionsBar } from "@/components/SuggestionsBar";
 
 export default function PresupuestoPage() {
   const { id } = useParams<{ id: string }>();
@@ -200,6 +202,8 @@ export default function PresupuestoPage() {
           </ButtonMenu>
         }
       />
+
+      <SuggestionsBar projectId={id} actorName={actorName} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Metric label="Costo directo" value={money(costs.boq.direct_cost_total)} />
@@ -373,6 +377,7 @@ function PhaseGroup({
 }) {
   const [openCode, setOpenCode] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [picking, setPicking] = useState<string | null>(null);
   return (
     <>
       <tr className="border-b border-border bg-surface-2/60">
@@ -401,7 +406,16 @@ function PhaseGroup({
               onClick={() => setOpenCode(open ? null : l.concept_code)}
               title="Ver de dónde sale esta cantidad"
             >
-              <Td className="font-mono text-xs text-muted">{l.concept_code}</Td>
+              <Td className="font-mono text-xs text-muted">
+                {l.taller_clave ? (
+                  <span title={`Concepto del taller (Klave ${l.concept_code})`}>
+                    {l.taller_clave}
+                    <span className="block text-[10px] text-faint">{l.concept_code}</span>
+                  </span>
+                ) : (
+                  l.concept_code
+                )}
+              </Td>
               <Td>
                 {l.description}
                 {levels.length > 1 && (
@@ -476,6 +490,39 @@ function PhaseGroup({
             {open && (
               <tr className="border-b border-border bg-surface-2/30">
                 <td colSpan={6} className="px-4 py-3 text-xs text-muted">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-foreground">
+                      Concepto del taller:{" "}
+                      {l.taller_clave ? (
+                        <span className="font-mono">{l.taller_clave}</span>
+                      ) : (
+                        <span className="text-muted">ninguno (clave Klave {l.concept_code})</span>
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      className="text-xs underline"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPicking(picking === l.concept_code ? null : l.concept_code);
+                      }}
+                    >
+                      {picking === l.concept_code ? "cerrar" : l.taller_clave ? "cambiar" : "elegir de mi catálogo"}
+                    </button>
+                  </div>
+                  {picking === l.concept_code && (
+                    <div className="mb-3" onClick={(e) => e.stopPropagation()}>
+                      <ConceptPicker
+                        conceptCode={l.concept_code}
+                        conceptDescription={l.description}
+                        unit={l.unit}
+                        currentClave={l.taller_clave ?? ""}
+                        projectId={projectId}
+                        actorName={actorName}
+                        onDone={() => setPicking(null)}
+                      />
+                    </div>
+                  )}
                   <div className="mb-1.5 font-medium text-foreground">
                     De dónde sale: {l.source_detection_count} elemento
                     {l.source_detection_count === 1 ? "" : "s"} del plano

@@ -127,6 +127,9 @@ class Concept(BaseModel):
     production_rate_per_day: float
     # Order within a phase for sequencing trades (lower runs first).
     sequence_order: int = 0
+    # The taller's own clave for this concept (alias), shown on every
+    # deliverable so OPUS/Neodata and the client see their vocabulary.
+    taller_clave: str = ""
 
 
 class BoqLine(BaseModel):
@@ -149,6 +152,8 @@ class BoqLine(BaseModel):
     # What the engine read before any manual adjustment; None when the line
     # carries the engine's own figure. A presupuesto never hides an edit.
     engine_quantity: float | None = None
+    # The taller's clave when the concept has an alias ("" otherwise).
+    taller_clave: str = ""
 
 
 class BillOfQuantities(BaseModel):

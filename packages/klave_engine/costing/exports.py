@@ -170,8 +170,9 @@ def _licitacion_workbook(
             amount = round(line.quantity * unit_price, 2)
             partida_total += amount
             values: list[Any] = [
-                f"{partida}.{index:03d}", line.concept_code, line.description, line.unit,
-                line.quantity, unit_price, pesos_con_letra(unit_price), amount,
+                f"{partida}.{index:03d}", line.taller_clave or line.concept_code,
+                line.description, line.unit, line.quantity, unit_price,
+                pesos_con_letra(unit_price), amount,
             ]
             for col, value in enumerate(values, start=1):
                 cell = ws.cell(row=row, column=col, value=value)
@@ -226,7 +227,7 @@ def _flat_workbook(report: CostReport, sheet_title: str, columns: list[str]) -> 
     row = 2
     for line in report.boq.lines:
         values: list[Any] = [
-            line.concept_code,
+            line.taller_clave or line.concept_code,
             line.description,
             line.unit,
             line.quantity,
@@ -334,7 +335,7 @@ def _presupuesto(ws: Worksheet, report: CostReport) -> None:
             if line.phase != phase:
                 continue
             values: list[Any] = [
-                line.concept_code, line.description, line.unit,
+                line.taller_clave or line.concept_code, line.description, line.unit,
                 line.quantity, line.unit_price, line.amount,
                 f"{line.confidence:.0%}",
                 "; ".join(f"{title}: {qty:,.2f}" for title, qty in line.by_view.items()),

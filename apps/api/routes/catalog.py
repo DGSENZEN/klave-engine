@@ -13,7 +13,9 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile
 from klave_engine.common.config import Settings
-from klave_engine.costing.catalog import PHASE_ORDER
+from klave_engine.common.errors import ReportGenerationError
+from klave_engine.costing.apu import build_all_apus
+from klave_engine.costing.catalog import PHASE_ORDER, build_catalog_from_store
 from klave_engine.costing.catalog_services import apply_equipment, apply_labor, labor_state
 from klave_engine.costing.catalog_store import CatalogStore, get_catalog_store
 from klave_engine.costing.equipment import EquipmentParameters, compute_costo_horario
@@ -24,6 +26,9 @@ from klave_engine.costing.labor import (
     apply_preset,
     preset_by_key,
 )
+from klave_engine.costing.matching import Candidate, Match, rank
+from klave_engine.costing.models import CostingAssumptions, CostingOverrides
+from klave_engine.costing.recompute import load_overrides, recompute_and_persist
 from klave_engine.costing.sources.custom import (
     CustomCatalogError,
     parse_concept_workbook,
@@ -33,7 +38,7 @@ from klave_engine.costing.sources.matrices import parse_matrices_workbook
 from klave_engine.costing.sources.registry import SOURCES, available_sources, sources_dir
 from pydantic import BaseModel, Field
 
-from apps.api.dependencies import get_settings
+from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
@@ -531,6 +536,211 @@ def import_reference_source(
     )
     _publish_catalog_updated(x_actor, "reference_imported", f"{spec.name}: {count} renglones")
     return {"source_key": source_key, "rows": count}
+
+
+# ------------------------------------------------------------ aliases & matching
+
+class AliasInput(BaseModel):
+    concept_code: str = Field(min_length=2, max_length=40)
+    kind: Literal["reference", "concept"]
+    ref_id: int | None = None
+    target_code: str | None = Field(default=None, max_length=40)
+    note: str = Field(default="", max_length=300)
+    project_id: str = Field(default="", max_length=80)
+
+
+class BulkAliasInput(BaseModel):
+    items: list[AliasInput] = Field(min_length=1, max_length=500)
+    project_id: str = Field(default="", max_length=80)
+
+
+def _candidates(catalog: CatalogStore, source_key: str | None) -> list[Candidate]:
+    """Reference rows of the taller's own sources (or the one asked for) and
+    the workspace's manual concepts priced by their matrices."""
+    sources = catalog.list_sources()
+    if source_key:
+        keys = [source_key]
+    else:
+        keys = [s["source_key"] for s in sources if s.get("publisher") == "Catálogo propio"]
+    candidates: list[Candidate] = []
+    if keys or source_key is None:
+        rows = catalog.list_reference_rows(keys) if keys else []
+        for row in rows:
+            candidates.append(
+                Candidate(
+                    kind="reference", key=str(row["ref_id"]), clave=row["clave"],
+                    description=row["description"], unit=row["unit"],
+                    price=float(row["price"]), source=row.get("source_name") or "",
+                    vigencia=row.get("source_vigencia") or "",
+                    phase=row.get("group_description") or "",
+                )
+            )
+    if source_key is None:
+        concepts = build_catalog_from_store(catalog.load_concepts(), CostingAssumptions())
+        try:
+            apus = build_all_apus(
+                concepts, catalog.load_price_book(), templates=catalog.load_templates()
+            )
+        except ReportGenerationError:
+            apus = {}
+        for concept in concepts:
+            if concept.rule is not None:
+                continue  # only the taller's own (manual/imported) concepts are targets
+            apu = apus.get(concept.code)
+            candidates.append(
+                Candidate(
+                    kind="concept", key=concept.code, clave=concept.code,
+                    description=concept.description, unit=concept.unit,
+                    price=apu.direct_unit_cost if apu else None, source="matriz del taller",
+                    phase=concept.phase,
+                )
+            )
+    return candidates
+
+
+def _match_payload(match: Match) -> dict:
+    c = match.candidate
+    return {
+        "kind": c.kind, "key": c.key, "ref_id": int(c.key) if c.kind == "reference" else None,
+        "target_code": c.key if c.kind == "concept" else None, "clave": c.clave,
+        "description": c.description, "unit": c.unit, "price": c.price, "source": c.source,
+        "vigencia": c.vigencia, "score": match.score, "reasons": match.reasons,
+    }
+
+
+@router.get("/concepts/{code}/matches")
+def concept_matches(
+    code: str,
+    source_key: str | None = None,
+    limit: int = 8,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    row = next((c for c in catalog.load_concepts() if c["code"] == code), None)
+    if row is None:
+        raise HTTPException(status_code=404, detail={"error_type": "concept_not_found"})
+    matches = rank(
+        row["description"], row["unit"], _candidates(catalog, source_key),
+        phase=row["phase"], limit=max(1, min(limit, 30)),
+    )
+    return {"concept_code": code, "matches": [_match_payload(m) for m in matches]}
+
+
+@router.get("/matches")
+def all_matches(
+    source_key: str | None = None,
+    min_score: float = 0.5,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    """Best candidate per concept without an alias: the bulk review list."""
+    aliases = catalog.load_concept_aliases()
+    candidates = _candidates(catalog, source_key)
+    out = []
+    for row in catalog.load_concepts():
+        if row["code"] in aliases or not row.get("rule_key"):
+            continue
+        best = rank(row["description"], row["unit"], candidates, phase=row["phase"], limit=1)
+        if best and best[0].score >= min_score:
+            out.append({
+                "concept_code": row["code"], "description": row["description"],
+                "unit": row["unit"], "match": _match_payload(best[0]),
+            })
+    out.sort(key=lambda item: -item["match"]["score"])
+    return {"matches": out, "aliases": len(aliases), "candidates": len(candidates)}
+
+
+@router.get("/aliases")
+def list_aliases(catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    return {"aliases": catalog.load_concept_aliases()}
+
+
+def _recompute_project(
+    store: ProjectStore, settings: Settings, project_id: str, actor: str
+) -> None:
+    """Aliases are workspace-wide; the project that asked sees its numbers move now."""
+    if not project_id:
+        return
+    try:
+        root = store.get_root(project_id)
+    except HTTPException:
+        return
+    control_dir = root / settings.processed_dir_name
+    overrides = load_overrides(control_dir) or CostingOverrides()
+    try:
+        report = recompute_and_persist(
+            store.artifact_root(project_id), control_dir, root / "reports", project_id,
+            overrides,
+        )
+    except ReportGenerationError:
+        return
+    BUS.publish(
+        "costing_updated",
+        project_id=project_id,
+        actor=actor,
+        data={
+            "version": overrides.version, "direct_cost": report.boq.direct_cost_total,
+            "grand_total": report.integration.grand_total, "review_action": "alias",
+        },
+    )
+
+
+def _set_alias(catalog: CatalogStore, item: AliasInput, actor: str, project_id: str) -> dict:
+    try:
+        return catalog.set_concept_alias(
+            item.concept_code.strip().upper(), kind=item.kind, ref_id=item.ref_id,
+            target_code=(item.target_code or "").strip().upper() or None, actor=actor,
+            note=item.note.strip(), project_id=project_id or item.project_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error_type": "invalid_alias", "message": str(exc)}
+        ) from exc
+
+
+@router.post("/aliases", status_code=201)
+def set_alias(
+    body: AliasInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    actor = clean_actor(x_actor) or ""
+    alias = _set_alias(catalog, body, actor, body.project_id)
+    _publish_catalog_updated(x_actor, "alias_set", f"{body.concept_code} → {alias['clave']}")
+    _recompute_project(store, settings, body.project_id, actor)
+    return alias
+
+
+@router.post("/aliases/bulk", status_code=201)
+def set_aliases_bulk(
+    body: BulkAliasInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    actor = clean_actor(x_actor) or ""
+    saved = [_set_alias(catalog, item, actor, body.project_id) for item in body.items]
+    _publish_catalog_updated(x_actor, "aliases_set", f"{len(saved)} conceptos del taller")
+    _recompute_project(store, settings, body.project_id, actor)
+    return {"aliases": saved}
+
+
+@router.delete("/aliases/{code}")
+def clear_alias(
+    code: str,
+    project_id: str = "",
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    if not catalog.clear_concept_alias(code.upper()):
+        raise HTTPException(status_code=404, detail={"error_type": "alias_not_found"})
+    actor = clean_actor(x_actor) or ""
+    _publish_catalog_updated(x_actor, "alias_cleared", code)
+    _recompute_project(store, settings, project_id, actor)
+    return {"cleared": code.upper()}
 
 
 @router.get("/reference")
