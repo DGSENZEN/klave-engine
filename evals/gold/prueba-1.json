@@ -580,7 +580,7 @@
         "note": ""
       },
       "CIM-001": {
-        "quantity": 6.947,
+        "quantity": 5.343,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
@@ -655,9 +655,23 @@
         "tolerance_pct": 10.0,
         "source": "engine",
         "note": ""
+      },
+      "CIM-004": {
+        "quantity": 1.002,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "CIM-005": {
+        "quantity": 6.947,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
       }
     },
-    "direct_cost": 687407.28,
+    "direct_cost": 689042.75,
     "direct_cost_tolerance_pct": 5.0,
     "unpriced": []
   },

@@ -14,6 +14,7 @@ from klave_engine.costing.catalog import (
     build_catalog_from_store,
     build_default_catalog,
 )
+from klave_engine.costing.cimentacion import apply_cimentacion_earthmoving
 from klave_engine.costing.financial import build_financial_plan
 from klave_engine.costing.formwork import apply_formwork, compute_formwork
 from klave_engine.costing.indicadores import compute_indicators
@@ -236,6 +237,8 @@ def generate_cost_report(
     apply_formwork(boq, catalog, apus, formwork)
     # Pilotes: the count becomes metres when the plano declares the length.
     apply_piles(boq, catalog, apus, detections, schedule_specs)
+    # Relleno y acarreo: derived from the excavation and the buried concrete.
+    apply_cimentacion_earthmoving(boq, catalog, apus, assumptions)
     # Levantamiento: symbols and layers the taller mapped to concepts.
     apply_inventory(boq, catalog, apus, inventory, inventory_mappings)
     # Paramétricos: the taller's history proposes what no plan reader produces.

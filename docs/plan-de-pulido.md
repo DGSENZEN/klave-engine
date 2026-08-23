@@ -124,7 +124,7 @@ Aplanado, pintura y muro son `longitud × altura × caras` (`catalog.py:363-402,
 | Geometría curva (ARC/CIRCLE) | sin `points` → invisible para polígonos | P1 | aplanar arcos/círculos a polilíneas en el normalizador |
 | Paper space / viewports | nunca cuantificado | P1 | aplicar `scale_factor` del viewport o rechazar con aviso claro |
 | Varias disciplinas en un archivo | gating por nombre de archivo | P1 | gating por hoja (marco) además de por archivo |
-| `CIM-003/004/005` (plantilla, relleno, acarreo) | huérfanos | P1 | derivar de zapatas (plantilla = área), excavación − cimentación (relleno), excavación × abundamiento (acarreo) |
+| `CIM-003/004/005` (plantilla, relleno, acarreo) | **hecho** (plantilla = área de zapatas + margen; relleno = excavación banco − enterrado; acarreo = banco × abundamiento; excavación ya sin abundamiento — parte de A14) | P1 | derivar de zapatas (plantilla = área), excavación − cimentación (relleno), excavación × abundamiento (acarreo) |
 
 ---
 

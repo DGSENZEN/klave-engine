@@ -195,6 +195,13 @@ RESOURCES.update(
                 resource_type=ResourceType.equipment,
             ),
             Resource(
+                code="EQ-BAILARINA",
+                description="Compactador tipo bailarina",
+                unit="JOR",
+                unit_cost=650.0,
+                resource_type=ResourceType.equipment,
+            ),
+            Resource(
                 code="EQ-PERFORADORA",
                 description="Perforadora rotatoria para pilotes Ø60–120 cm, costo horario "
                 "(referencia SICT)",
@@ -353,6 +360,20 @@ APU_TEMPLATES: dict[str, list[tuple[str, float]]] = {
         ("MAT-CONC250", 1.05),
         ("MO-CUAD-ALB", 0.900),
         ("EQ-VIBRADOR", 0.150),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+    # M3 relleno compactado con tepetate (material de banco con abundamiento)
+    "CIM-004": [
+        ("MAT-TEPETATE", 1.25),
+        ("MAT-AGUA", 0.15),
+        ("MO-PEON", 0.35),
+        ("EQ-BAILARINA", 0.12),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
+    # M3 acarreo del producto de excavación fuera de obra
+    "CIM-005": [
+        ("MO-PEON", 0.12),
+        ("EQ-CAMION", 0.14),
         ("EQ-HERRAMIENTA", 1.0),
     ],
     # M2 plantilla de concreto pobre de 5 cm bajo zapatas

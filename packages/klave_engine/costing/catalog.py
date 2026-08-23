@@ -92,11 +92,11 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
                 kind=QuantityKind.AREA,
                 source_property="estimated_area",
             ),
-            quantity_factor=a.excavation_depth_m * a.excavation_swell_factor,
+            quantity_factor=a.excavation_depth_m,
             view_scope=ViewScope.FOUNDATION_ONLY,
             assumptions=[
-                f"Profundidad de excavación {a.excavation_depth_m:.2f} m",
-                f"Factor de abundamiento {a.excavation_swell_factor:.2f}",
+                f"Profundidad de excavación {a.excavation_depth_m:.2f} m, medida en banco "
+                "(el abundamiento va en el acarreo, no en la excavación)",
             ],
             production_rate_per_day=18.0,
             sequence_order=0,
@@ -150,6 +150,32 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
             assumptions=[
                 "Área en planta de las zapatas leídas más 10 cm de margen por lado "
                 "(calculada junto con la cimbra)"
+            ],
+        ),
+        Concept(
+            code="CIM-004",
+            description="Relleno compactado con tepetate en capas de 20 cm",
+            unit="M3",
+            phase="Cimentación",
+            rule=None,
+            production_rate_per_day=25.0,
+            sequence_order=1,
+            assumptions=[
+                "Excavación en banco menos el volumen enterrado leído (concreto de "
+                "cimentación y plantilla); derivado, editable con un ajuste"
+            ],
+        ),
+        Concept(
+            code="CIM-005",
+            description="Acarreo de material producto de excavación fuera de obra",
+            unit="M3",
+            phase="Cimentación",
+            rule=None,
+            production_rate_per_day=40.0,
+            sequence_order=2,
+            assumptions=[
+                "Excavación en banco × factor de abundamiento (el material suelto "
+                "ocupa más camión que banco); el relleno usa tepetate de banco"
             ],
         ),
         Concept(
