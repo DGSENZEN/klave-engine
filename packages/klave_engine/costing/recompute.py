@@ -123,6 +123,7 @@ def build_cost_report(
         inventory_mappings=store.list_inventory_mappings(),
         concept_aliases=store.load_concept_aliases(),
         parametric_rules=store.list_parametric_rules(),
+        plantillas=store.list_plantillas(),
     )
 
 

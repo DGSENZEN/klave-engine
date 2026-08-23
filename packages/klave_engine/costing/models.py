@@ -331,3 +331,5 @@ class CostReport(BaseModel):
     schedule: WorkSchedule
     financial: FinancialPlan
     warnings: list[str] = Field(default_factory=list)
+    # Sanity ratios and partida shares vs the taller's plantilla (indicadores.py).
+    indicators: dict = Field(default_factory=dict)

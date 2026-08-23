@@ -52,6 +52,7 @@ import { useProjectLive } from "@/components/ProjectLive";
 import { moneyGate, UnitsGate } from "@/components/MoneyGate";
 import { VersionsPanel } from "@/components/VersionsPanel";
 import { ConceptPicker } from "@/components/ConceptPicker";
+import { IndicatorsCard } from "@/components/IndicatorsCard";
 import { SuggestionsBar } from "@/components/SuggestionsBar";
 
 export default function PresupuestoPage() {
@@ -327,6 +328,8 @@ export default function PresupuestoPage() {
           )}
         </Card>
       </div>
+
+      {costs.indicators && <IndicatorsCard indicators={costs.indicators} />}
 
       <Card className="mt-6 p-5">
         <SectionTitle sub="Cantidad agregada o retirada a mano, con nota y autor; forma parte del presupuesto y sus reportes.">

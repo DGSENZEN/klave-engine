@@ -15,6 +15,7 @@ from klave_engine.costing.catalog import (
 )
 from klave_engine.costing.financial import build_financial_plan
 from klave_engine.costing.formwork import apply_formwork, compute_formwork
+from klave_engine.costing.indicadores import compute_indicators
 from klave_engine.costing.integration import integrate_costs
 from klave_engine.costing.levantamiento import apply_inventory
 from klave_engine.costing.models import (
@@ -132,6 +133,7 @@ def generate_cost_report(
     inventory_mappings: list[dict] | None = None,
     concept_aliases: dict[str, dict] | None = None,
     parametric_rules: list[dict] | None = None,
+    plantillas: list[dict] | None = None,
 ) -> CostReport:
     config = config or CostingConfig()
     assumptions, calibration_notes = _calibrate_assumptions(config.assumptions, dimensions)
@@ -174,14 +176,15 @@ def generate_cost_report(
     # Levantamiento: symbols and layers the taller mapped to concepts.
     apply_inventory(boq, catalog, apus, inventory, inventory_mappings)
     # Paramétricos: the taller's history proposes what no plan reader produces.
+    basis = compute_basis(
+        detections, segmentation, units.to_meters() or 1.0, assumptions.area_construida_m2
+    )
     if parametric_rules:
-        basis = compute_basis(
-            detections, segmentation, units.to_meters() or 1.0,
-            assumptions.area_construida_m2,
-        )
         apply_parametrics(boq, catalog, apus, parametric_rules, basis)
     if adjustments:
         _apply_adjustments(boq, catalog, apus, adjustments)
+    indicators = compute_indicators(boq, basis.area_construida_m2 or None, plantillas)
+    boq.warnings.extend(indicators.notes)
     integration = integrate_costs(boq.direct_cost_total, config.indirects)
     levels = (
         max(len(segmentation.superstructure_views()), 1)
@@ -201,6 +204,7 @@ def generate_cost_report(
         schedule=schedule,
         financial=financial,
         warnings=list(boq.warnings),
+        indicators=indicators.model_dump(),
     )
     log_stage(
         logger,

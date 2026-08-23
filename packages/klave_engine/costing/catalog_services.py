@@ -111,6 +111,7 @@ def import_plantilla(
     from the plan keep a comparison-only rule (never a proposed line)."""
     import hashlib
 
+    from klave_engine.costing.indicadores import phase_shares_from_rows
     from klave_engine.costing.matching import Candidate, rank
     from klave_engine.costing.sources.custom import source_key_for
     from klave_engine.costing.sources.presupuesto import parse_presupuesto_file
@@ -137,7 +138,7 @@ def import_plantilla(
     )
     store.save_plantilla(
         key=key, name=name, tipologia=tipologia, area_m2=area_m2, source_key=source_key,
-        rows=len(rows), actor=actor,
+        rows=len(rows), actor=actor, phase_shares=phase_shares_from_rows(rows),
     )
     references = {r["clave"].upper(): r for r in store.list_reference_rows([source_key])}
     aliases = store.load_concept_aliases()

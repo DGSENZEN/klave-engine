@@ -54,3 +54,23 @@ desactivar) en Catálogo → Plantillas; una regla escrita a mano
   proponen nada y lo dicen en las advertencias.
 - Los paramétricos por local necesitan una planta de arquitectura con locales
   nombrados (ver `docs/acabados.md`).
+
+## Indicadores de sanidad y completitud
+
+Al calcular, el presupuesto trae `indicators` (`costing/indicadores.py`):
+
+| Indicador | Rango típico (casa habitación) |
+|---|---|
+| kg de acero por m³ de concreto | 80–160 kg/m³ |
+| m² de cimbra por m³ de concreto | 4–12 m²/m³ |
+| m³ de concreto por m² construido | 0.25–0.55 m³/m² |
+| costo directo por m² construido | $7 000–22 000 $/m² |
+
+Fuera de rango es una **señal** (aparece en Advertencias y en la tarjeta
+"Indicadores de sanidad"), nunca una corrección. Además, la participación de
+cada partida en el costo directo se compara contra la plantilla del taller
+(la primera con participaciones guardadas): una partida que la plantilla
+tiene con ≥ 2 % y este presupuesto no, se lista como **faltante** —
+"Partidas que tu plantilla tiene y este presupuesto no: INSTALACIONES (11 %)".
+Ese es el error más caro de un presupuesto (la omisión), atrapado antes de
+entregar.

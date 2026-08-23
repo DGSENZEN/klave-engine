@@ -285,9 +285,37 @@ export type OperatingYear = {
   accumulated: number;
 };
 
+export type Indicator = {
+  key: string;
+  label: string;
+  value: number | null;
+  unit: string;
+  low: number | null;
+  high: number | null;
+  status: "ok" | "alto" | "bajo" | "sin_dato";
+  detail: string;
+};
+
+export type PhaseShare = {
+  phase: string;
+  share_pct: number;
+  typical_pct: number | null;
+  status: "ok" | "alto" | "bajo" | "falta" | "sin_referencia";
+};
+
+export type Indicators = {
+  indicators: Indicator[];
+  phase_shares: PhaseShare[];
+  missing_phases: string[];
+  reference: string;
+  notes: string[];
+};
+
 export type CostReport = {
   project_id: string;
   currency: string;
+  /** Sanity ratios and partida shares (empty object on older runs). */
+  indicators?: Partial<Indicators>;
   drawing_units: { unit: string; source: string; confidence: number; notes?: string[] };
   boq: {
     direct_cost_total: number;

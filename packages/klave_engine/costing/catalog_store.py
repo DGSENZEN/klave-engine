@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS plantillas (
     source_key TEXT NOT NULL DEFAULT '',
     rows INTEGER NOT NULL DEFAULT 0,
     actor TEXT NOT NULL DEFAULT '',
+    phase_shares TEXT,
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS parametric_rules (
@@ -643,16 +644,22 @@ class CatalogStore:
 
     def save_plantilla(
         self, *, key: str, name: str, tipologia: str, area_m2: float, source_key: str,
-        rows: int, actor: str,
+        rows: int, actor: str, phase_shares: dict | None = None,
     ) -> dict:
         with _LOCK, self._connect() as conn:
+            try:
+                conn.execute("ALTER TABLE plantillas ADD COLUMN phase_shares TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already there
             conn.execute(
                 "INSERT INTO plantillas (key, name, tipologia, area_m2, source_key, rows, actor, "
-                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET "
+                "phase_shares, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET "
                 "name = excluded.name, tipologia = excluded.tipologia, area_m2 = excluded.area_m2, "
                 "source_key = excluded.source_key, rows = excluded.rows, actor = excluded.actor, "
-                "created_at = excluded.created_at",
-                (key, name, tipologia, area_m2, source_key, rows, actor, _now()),
+                "phase_shares = excluded.phase_shares, created_at = excluded.created_at",
+                (key, name, tipologia, area_m2, source_key, rows, actor,
+                 json.dumps(phase_shares or {}), _now()),
             )
             conn.execute("DELETE FROM parametric_rules WHERE plantilla_key = ?", (key,))
             row = conn.execute("SELECT * FROM plantillas WHERE key = ?", (key,)).fetchone()
@@ -660,8 +667,19 @@ class CatalogStore:
 
     def list_plantillas(self) -> list[dict]:
         with self._connect() as conn:
-            rows = conn.execute("SELECT * FROM plantillas ORDER BY created_at DESC").fetchall()
-        return [dict(r) for r in rows]
+            try:
+                rows = conn.execute(
+                    "SELECT * FROM plantillas ORDER BY created_at DESC"
+                ).fetchall()
+            except sqlite3.OperationalError:
+                return []
+        out = []
+        for r in rows:
+            record = dict(r)
+            shares = record.get("phase_shares")
+            record["phase_shares"] = json.loads(shares) if shares else {}
+            out.append(record)
+        return out
 
     def delete_plantilla(self, key: str) -> bool:
         with _LOCK, self._connect() as conn:
