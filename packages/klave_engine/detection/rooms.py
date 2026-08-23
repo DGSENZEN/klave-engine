@@ -46,6 +46,7 @@ INTERIOR_RE = re.compile(
     re.IGNORECASE,
 )
 MIN_INTERIOR_NAMES = 2
+MIN_LABELS_ONE_NAME = 3  # OFICINA 101/102/103: one name, three locales
 _AREA_TEXT_RE = re.compile(r"^\s*[\d.,]+\s*M2?\s*$", re.IGNORECASE)
 # Texts that belong to structural details, cuadros and sections: a face
 # holding one of these is a detail box, never a local.
@@ -206,12 +207,19 @@ def detect_rooms(
     # structural sheets too; an architectural planta names several
     # different interior locales.
     interior_names: set[str] = set()
+    labels_found = 0
     for t in texts:
         words = (t.text or "").split()
         match = INTERIOR_RE.search(t.text or "") if 0 < len(words) <= 3 else None
         if match is not None:  # a room label is the name itself, not a note naming it
             interior_names.add(match.group(0).upper())
-    if len(interior_names) < MIN_INTERIOR_NAMES:
+            labels_found += 1
+    # A commercial planta may name every local the same way (OFICINA 101,
+    # 102, 103…): one name repeated on three or more labels is a planta of
+    # locales too, not a stray word.
+    if len(interior_names) < MIN_INTERIOR_NAMES and not (
+        len(interior_names) == 1 and labels_found >= MIN_LABELS_ONE_NAME
+    ):
         output.warnings.append(
             "Locales: la hoja no nombra locales interiores (recámara, baño, cocina…); "
             "no se leyeron locales ni acabados de ella."

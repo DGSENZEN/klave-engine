@@ -144,3 +144,33 @@ def test_castillo_steel_uses_each_plantas_height_not_the_building():
     # Two castillos of 3.6 m and 3.2 m weigh far less than two of 11.15 m.
     assert line.quantity < 0.7 * alone.quantity
     assert any("entrepiso" in n for n in line.notes)
+
+
+def test_walls_on_the_azotea_are_pretiles_not_another_story():
+    a = CostingAssumptions(opening_share_pct=0)
+    dets = [_wall("w1", 10.0), _wall("w3", 20.0), _wall("w3c", 4.0, "concreto")]
+    seg = SheetSegmentation(
+        views=_seg(), is_segmented=True, npt_levels=[1.45, 4.35, 7.95, 11.15],
+        assignment={"w1": "f1", "w3": "f3", "w3c": "f3"},
+    )
+    catalog = [c for c in build_default_catalog(a) if c.code in {"EST-004", "EST-014", "ACA-001"}]
+    units = DrawingUnits(unit="m", source="declared", confidence=1.0)
+    boq = generate_bill_of_quantities(
+        "t", dets, units, catalog, build_all_apus(catalog), segmentation=seg, assumptions=a
+    )
+    lines = {line.concept_code: line for line in boq.lines}
+    # Planta baja wall at 3.6 m; the 20 m of wall on the azotea is a 0.9 m pretil.
+    assert abs(lines["EST-004"].quantity - (10.0 * 3.6 + 20.0 * 0.9)) < 1e-6
+    assert any("Pretiles" in n and "0.90 m" in n for n in lines["EST-004"].assumptions)
+    assert abs(lines["ACA-001"].quantity - 2 * (10.0 * 3.6 + 20.0 * 0.9)) < 1e-6
+    assert abs(lines["EST-014"].quantity - 4.0 * 0.15 * 0.9) < 1e-6
+    # Without declared levels the same split applies with the assumed heights.
+    flat = SheetSegmentation(
+        views=[v.model_copy(update={"npt_level": None}) for v in _seg()], is_segmented=True,
+        assignment={"w1": "f1", "w3": "f3", "w3c": "f3"},
+    )
+    boq = generate_bill_of_quantities(
+        "t", dets, units, catalog, build_all_apus(catalog), segmentation=flat, assumptions=a
+    )
+    line = {ln.concept_code: ln for ln in boq.lines}["EST-004"]
+    assert abs(line.quantity - (10.0 * a.wall_height_m + 20.0 * 0.9)) < 1e-6

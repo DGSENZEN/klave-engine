@@ -629,21 +629,21 @@
         "note": ""
       },
       "EST-004": {
-        "quantity": 450.447,
+        "quantity": 364.137,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
         "note": ""
       },
       "ACA-001": {
-        "quantity": 900.895,
+        "quantity": 728.275,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
         "note": ""
       },
       "ACA-002": {
-        "quantity": 900.895,
+        "quantity": 728.275,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
@@ -657,7 +657,7 @@
         "note": ""
       }
     },
-    "direct_cost": 778687.87,
+    "direct_cost": 687407.28,
     "direct_cost_tolerance_pct": 5.0,
     "unpriced": []
   },

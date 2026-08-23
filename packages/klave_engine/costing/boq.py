@@ -395,11 +395,16 @@ def _scoped_result(
             quantity_sum = 0.0
             raw_sum = 0.0
             view_split: dict[str, float] = {}
+            parapet_views: list[str] = []
             for view in segmentation.superstructure_views():
                 view_dets = in_views(dets, {view.view_id})
                 if not view_dets:
                     continue
                 height = heights.get(view.view_id)
+                if view.level_key == "azotea" and rule.roof_walls_are_parapets:
+                    # A wall on the azotea is a pretil, not another story.
+                    height = assumptions.parapet_height_m
+                    parapet_views.append(titles[view.view_id].split(" · ")[-1][:22])
                 if rule.kind == QuantityKind.LINEAR_VOLUME and rule.section_height_m:
                     scoped = concept.model_copy(
                         update={
@@ -420,15 +425,44 @@ def _scoped_result(
                 view_split[titles[view.view_id]] = round(view_quantity, 4)
             declared = ", ".join(
                 f"{titles[v.view_id].split(' · ')[-1][:22]} {heights[v.view_id]:.2f} m"
-                for v in segmentation.superstructure_views() if v.view_id in heights
+                for v in segmentation.superstructure_views()
+                if v.view_id in heights and v.level_key != "azotea"
             )
+            notes = [
+                f"Suma de plantas de superestructura ({len(dets)} detecciones)",
+                f"Altura de entrepiso por planta declarada en el plano (NTC/NPT): {declared}",
+            ]
+            if parapet_views:
+                notes.append(
+                    f"Pretiles en {', '.join(parapet_views)}: altura "
+                    f"{assumptions.parapet_height_m:.2f} m (muros de azotea)"
+                )
             return _LineResult(
-                round(quantity_sum, 6), raw_sum, _contributing(concept, dets),
-                [f"Suma de plantas de superestructura ({len(dets)} detecciones)",
-                 f"Altura de entrepiso por planta declarada en el plano (NTC/NPT): {declared}"],
+                round(quantity_sum, 6), raw_sum, _contributing(concept, dets), notes,
                 view_split if len(view_split) > 1 else {},
                 supersedes={FALLBACK_HEIGHT},
             )
+        roof_ids = {
+            v.view_id for v in segmentation.superstructure_views() if v.level_key == "azotea"
+        }
+        if rule is not None and rule.roof_walls_are_parapets and roof_ids:
+            roof_dets = in_views(dets, roof_ids)
+            if roof_dets:
+                floor_dets = [d for d in dets if d not in roof_dets]
+                floor_raw = _raw_over(concept, floor_dets, meters_factor)
+                roof_raw = _raw_over(concept, roof_dets, meters_factor)
+                # quantity_factor folds the assumed wall height (and faces);
+                # the pretil takes its own height with the same faces.
+                sides = rule.sides if rule.sides else 1.0
+                roof_quantity = roof_raw * assumptions.parapet_height_m * sides
+                quantity = floor_raw * concept.quantity_factor + roof_quantity
+                return _LineResult(
+                    round(quantity, 6), floor_raw + roof_raw, _contributing(concept, dets),
+                    [f"Suma de plantas de superestructura ({len(dets)} detecciones)",
+                     f"Pretiles de azotea ({len(roof_dets)} muros): altura "
+                     f"{assumptions.parapet_height_m:.2f} m"],
+                    per_view(dets),
+                )
         raw = _raw_over(concept, dets, meters_factor)
         return _LineResult(round(raw * concept.quantity_factor, 6), raw,
                            _contributing(concept, dets),

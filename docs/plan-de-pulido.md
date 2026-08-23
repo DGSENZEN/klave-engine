@@ -61,11 +61,11 @@ Aplanado, pintura y muro son `longitud × altura × caras` (`catalog.py:363-402,
 `report.py:54-61`, `dimensions.py:198-202`. En una hoja con cuadro de zapatas el "típico" puede ser 150x150.
 - **Fix**: calibrar solo con secciones ligadas a marcas de columna (ya existe `section_cm` por detección); quitar la calibración global.
 
-### A11 — Pretiles y muretes de azotea a 2.7 m · **P0**
+### A11 — Pretiles y muretes de azotea a 2.7 m · **P0** · **hecho** (`parapet_height_m` 0.90 editable; muros de la planta de azotea marcados `on_roof` y costeados como pretil con o sin niveles)
 `catalog.py:340`: un muro en la planta de azotea se cobra con `wall_height_m`. Un pretil de 0.9 m vale 3×.
 - **Fix**: altura por planta ya existe; para la planta de azotea usar `parapet_height_m` (0.9 default, editable) y etiquetar `wall_kind = pretil` cuando el muro vive en la azotea.
 
-### A12 — Locales omitidos si no hay 2 nombres interiores distintos · **P0 en comercial**
+### A12 — Locales omitidos si no hay 2 nombres interiores distintos · **P0 en comercial** · **hecho** (un nombre repetido en ≥ 3 etiquetas — OFICINA 101/102/103 — basta)
 `rooms.py:212`: una planta `OFICINA 101/102/103` tiene un solo nombre → cero locales, cero acabados.
 - **Fix**: contar nombres distintos normalizando números; aceptar 1 nombre si hay ≥ 3 caras nombradas.
 

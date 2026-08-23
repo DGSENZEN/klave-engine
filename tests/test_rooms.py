@@ -134,3 +134,26 @@ def test_doors_do_not_keep_a_room_from_closing(tmp_path):
     assert len(out.detections) == 1
     assert out.detections[0].properties["label"] == "COCINA"
     assert abs(out.detections[0].properties["estimated_area"] - 3.85 * 3.85) < 0.2
+
+
+def test_a_commercial_planta_with_one_repeated_name_reads_its_locales(tmp_path):
+    doc = ezdxf.new("R2010")
+    doc.header["$INSUNITS"] = 6
+    msp = doc.modelspace()
+    # Three offices in a row, all called OFICINA with a number.
+    for a, b in [((0, 0), (12, 0)), ((0, 4), (12, 4)), ((0, 0), (0, 4)), ((4, 0), (4, 4)),
+                 ((8, 0), (8, 4)), ((12, 0), (12, 4))]:
+        _double_wall(msp, a, b)
+    for index, x in enumerate((2, 6, 10), start=101):
+        msp.add_text(f"OFICINA {index}", height=0.2).set_placement((x, 2))
+    path = tmp_path / "oficinas.dxf"
+    doc.saveas(path)
+    entities = DxfParser().parse_file(path).entities
+    out = detect_rooms(entities, RoomDetectorConfig(min_area=1.5, max_area=400, min_width=0.7))
+    assert len(out.detections) == 3
+    assert all("OFICINA" in d.properties["label"].upper() for d in out.detections)
+    assert all(d.properties["room_kind"] == "interior" for d in out.detections)
+    # Two offices alone are still a stray word, not a planta of locales.
+    two = [e for e in entities if not (e.is_textual and e.text and "103" in e.text)]
+    out = detect_rooms(two, RoomDetectorConfig(min_area=1.5, max_area=400, min_width=0.7))
+    assert out.detections == []

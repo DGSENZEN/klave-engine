@@ -110,6 +110,8 @@ class QuantityRule(BaseModel):
     # Wall faces lose their doors and windows: measured from the openings the
     # wall detector bridged when there are any, else the assumed share.
     opening_deduction: bool = False
+    # A wall on the azotea planta is a pretil: costed at parapet_height_m.
+    roof_walls_are_parapets: bool = False
 
 
 class Concept(BaseModel):
@@ -268,6 +270,8 @@ class CostingAssumptions(BaseModel):
     # Height of a measured opening (a door; windows sit within it) used with
     # the widths the wall detector reads.
     opening_height_m: float = 2.1
+    # Pretil: the height of a wall drawn on the azotea planta.
+    parapet_height_m: float = 0.9
     slab_thickness_m: float = 0.12  # losa maciza without a declared H=
     mat_thickness_m: float = 0.20  # losa de cimentación without a declared H=
     footing_depth_m: float = 0.35

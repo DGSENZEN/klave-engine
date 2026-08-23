@@ -32,7 +32,7 @@ from klave_engine.detection.dimension_links import link_dimensions
 from klave_engine.detection.dimensions import build_dimension_inventory
 from klave_engine.detection.frames import SheetFrame, detect_frames
 from klave_engine.detection.inventory import build_inventory, reads_as_structure
-from klave_engine.detection.results import Detection
+from klave_engine.detection.results import Detection, DetectionType
 from klave_engine.detection.schedules import (
     apply_schedule,
     build_schedule_inventory,
@@ -417,6 +417,21 @@ def run_full_pipeline(
 
     segmentation = segment_views(result.entities, result.detections, frames)
     write_json(processed / "views.json", segmentation)
+    # A wall drawn on the azotea planta is a pretil: knee-high, not a story.
+    roof_views = {
+        v.view_id for v in segmentation.plan_views() if v.level_key == "azotea"
+    }
+    if roof_views:
+        tagged = 0
+        for detection in result.detections:
+            if (
+                detection.detection_type == DetectionType.wall
+                and segmentation.assignment.get(detection.detection_id) in roof_views
+            ):
+                detection.properties["on_roof"] = True  # a pretil: costed knee-high
+                tagged += 1
+        if tagged:
+            write_json(processed / "detections.json", result.detections)
     log_stage(
         logger,
         "views_segmented",
