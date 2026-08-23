@@ -98,3 +98,25 @@ def test_slab_rebar_from_the_label():
     kg2, how2 = slab_rebar_kg_per_m2("LOSA MACIZA DOBLEMENTE ARMADA #3@15 A/S")
     assert abs(kg2 - 0.560 * (100 / 15) * 2 * 2) < 1e-2 and "×2 lechos" in how2
     assert slab_rebar_kg_per_m2("LOSA MACIZA H=12") is None
+
+
+def test_castillo_formwork_uses_each_plantas_height_not_the_building():
+    from klave_engine.costing.formwork import compute_formwork
+    from klave_engine.costing.models import BillOfQuantities, BoqLine, QuantityKind
+
+    dets = [_column("c1", "K-1"), _column("c2", "K-1")]
+    seg = SheetSegmentation(
+        views=_seg(), is_segmented=True, npt_levels=[1.45, 4.35, 7.95, 11.15],
+        assignment={"c1": "f1", "c2": "f2"},
+    )
+    boq = BillOfQuantities(project_id="t", lines=[BoqLine(
+        concept_code="EST-001", description="Castillos", unit="M3", quantity=0.2, unit_price=1,
+        amount=0.2, phase="Estructura", raw_quantity=2, raw_kind=QuantityKind.COUNT,
+        source_detection_count=2, source_detections=["c1", "c2"], confidence=0.9,
+    )])
+    report = compute_formwork(
+        boq, dets, None, None, CostingAssumptions(), 1.0, seg.total_height(), segmentation=seg
+    )
+    line = next(ln for ln in report.lines if ln.concept_code == "EST-008")
+    # 15x20 → perimeter 0.70 m; c1 on the 3.6 m planta, c2 on the 3.2 m one.
+    assert abs(line.quantity - 0.70 * (3.6 + 3.2)) < 1e-6

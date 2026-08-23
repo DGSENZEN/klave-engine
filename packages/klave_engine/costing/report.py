@@ -200,6 +200,7 @@ def generate_cost_report(
     formwork = compute_formwork(
         boq, detections, schedule_specs, dimensions, assumptions, units.to_meters(),
         segmentation.total_height() if segmentation is not None else None,
+        segmentation=segmentation,
     )
     apply_formwork(boq, catalog, apus, formwork)
     # Levantamiento: symbols and layers the taller mapped to concepts.

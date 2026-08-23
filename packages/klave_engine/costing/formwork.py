@@ -25,6 +25,7 @@ from klave_engine.costing.models import (
 )
 from klave_engine.detection.dimensions import DimensionInventory
 from klave_engine.detection.results import Detection
+from klave_engine.detection.views import SheetSegmentation
 
 CODE_ZAPATAS = "CIM-006"
 CODE_CASTILLOS = "EST-008"
@@ -90,12 +91,22 @@ def compute_formwork(
     assumptions: CostingAssumptions,
     meters_factor: float | None,
     total_height_m: float | None,
+    segmentation: SheetSegmentation | None = None,
 ) -> FormworkReport:
     report = FormworkReport()
     factor = meters_factor or 1.0
     by_id = {d.detection_id: d for d in detections}
     lines = {line.concept_code: line for line in boq.lines}
-    height = total_height_m or assumptions.column_height_m
+    # Castillos are counted per planta; each one is formed over ITS story
+    # height, never the whole building's. Without declared levels the
+    # assumed story height applies (the total height would multiply every
+    # castillo by every floor).
+    story_heights = segmentation.story_heights() if segmentation is not None else {}
+    assignment = segmentation.assignment if segmentation is not None else {}
+    height = assumptions.column_height_m
+    if not story_heights and total_height_m and segmentation is not None:
+        plantas = max(len(segmentation.superstructure_views()), 1)
+        height = total_height_m / plantas
     col_side = math.sqrt(assumptions.column_section_m2)
     beam_b, beam_h = 0.25, assumptions.beam_section_m2 / 0.25
 
@@ -111,13 +122,18 @@ def compute_formwork(
             default = _CASTILLO_DEFAULT_M if family == "castillo" else (col_side, col_side)
             (a, b), origin = _section_m(det.properties, specs, det.label, family, default, factor)
             origins[origin] = origins.get(origin, 0) + 1
-            area += 2 * (a + b) * height
+            own_height = story_heights.get(assignment.get(det_id, ""), height)
+            area += 2 * (a + b) * own_height
+        heights_note = (
+            "altura de entrepiso de cada planta (niveles NTC/NPT)" if story_heights
+            else f"{height:.2f} m por castillo"
+        )
         report.lines.append(
             FormworkLine(
                 concept_code=CODE_CASTILLOS, quantity=round(area, 2),
                 source_detections=list(columns.source_detections),
                 notes=[
-                    f"Perímetro de sección × {height:.2f} m en {len(columns.source_detections)} "
+                    f"Perímetro de sección × {heights_note} en {len(columns.source_detections)} "
                     "castillos/columnas",
                     "Sección por: " + ", ".join(f"{k} {v}" for k, v in origins.items()),
                 ],
