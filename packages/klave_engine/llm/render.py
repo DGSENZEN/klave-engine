@@ -26,6 +26,78 @@ _FONT_CANDIDATES = (
 
 
 @dataclass
+class Highlight:
+    """A shape to draw over the render: a polygon (≥3 points) or a bbox."""
+
+    points: list[tuple[float, float]]
+    color: tuple[int, int, int] = (220, 38, 38)
+    label: str = ""
+
+
+@dataclass
+class RegionTransform:
+    x0: float
+    y0: float
+    scale: float
+    width: int
+    height: int
+
+    def px(self, p: tuple[float, float]) -> tuple[float, float]:
+        return ((p[0] - self.x0) * self.scale, self.height - (p[1] - self.y0) * self.scale)
+
+
+def region_transform(bbox: BBox, long_side_px: int, margin: float = 0.02) -> RegionTransform:
+    """The drawing→pixel mapping `render_region` uses for a bbox, so an
+    overlay can be drawn on a cached render without re-rendering it."""
+    x0, y0, x1, y1 = bbox
+    dx, dy = max(x1 - x0, 1e-9), max(y1 - y0, 1e-9)
+    x0, x1 = x0 - dx * margin, x1 + dx * margin
+    y0, y1 = y0 - dy * margin, y1 + dy * margin
+    dx, dy = x1 - x0, y1 - y0
+    scale = long_side_px / max(dx, dy)
+    return RegionTransform(
+        x0=x0, y0=y0, scale=scale, width=max(int(dx * scale), 16), height=max(int(dy * scale), 16)
+    )
+
+
+def draw_highlights(
+    image: Image.Image, transform: RegionTransform, highlights: list[Highlight]
+) -> None:
+    """Translucent fill + strong outline per shape; tiny shapes get a marker
+    so a 15 cm castillo is still findable on a 40 m sheet."""
+    if not highlights:
+        return
+    overlay = Image.new("RGBA", image.size, (255, 255, 255, 0))
+    draw = ImageDraw.Draw(overlay)
+    marker = max(int(min(image.size) * 0.012), 6)
+    for h in highlights:
+        pts = [transform.px(p) for p in h.points]
+        if not pts:
+            continue
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        w, hgt = max(xs) - min(xs), max(ys) - min(ys)
+        fill = (*h.color, 70)
+        if len(pts) >= 3 and max(w, hgt) >= marker:
+            draw.polygon(pts, fill=fill, outline=(*h.color, 255), width=3)
+        elif max(w, hgt) >= marker:
+            draw.rectangle(
+                (min(xs), min(ys), max(xs), max(ys)), fill=fill, outline=(*h.color, 255), width=3
+            )
+        else:
+            cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+            draw.ellipse(
+                (cx - marker, cy - marker, cx + marker, cy + marker),
+                fill=fill, outline=(*h.color, 255), width=3,
+            )
+        if h.label:
+            draw.text(
+                (min(xs), min(ys) - 2), h.label, fill=(*h.color, 255), font=_font(marker + 4),
+                anchor="lb",
+            )
+    image.paste(Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB"))
+
+
+@dataclass
 class RenderedSheet:
     png: bytes
     width: int
@@ -52,20 +124,16 @@ def render_region(
     long_side_px: int = 2600,
     margin: float = 0.02,
     min_text_px: float = 5.0,
+    highlights: list[Highlight] | None = None,
 ) -> RenderedSheet:
     """Draw every entity whose bbox intersects `bbox` into a PNG."""
-    x0, y0, x1, y1 = bbox
-    dx, dy = max(x1 - x0, 1e-9), max(y1 - y0, 1e-9)
-    x0, x1 = x0 - dx * margin, x1 + dx * margin
-    y0, y1 = y0 - dy * margin, y1 + dy * margin
-    dx, dy = x1 - x0, y1 - y0
-    scale = long_side_px / max(dx, dy)
-    width, height = max(int(dx * scale), 16), max(int(dy * scale), 16)
+    transform = region_transform(bbox, long_side_px, margin)
+    x0, y0, scale = transform.x0, transform.y0, transform.scale
+    width, height = transform.width, transform.height
+    x1, y1 = x0 + width / scale, y0 + height / scale
     image = Image.new("RGB", (width, height), "white")
     draw = ImageDraw.Draw(image)
-
-    def px(p: tuple[float, float]) -> tuple[float, float]:
-        return ((p[0] - x0) * scale, height - (p[1] - y0) * scale)
+    px = transform.px
 
     def visible(e: NormalizedEntity) -> bool:
         b = e.bbox
@@ -138,6 +206,8 @@ def render_region(
             ox = -rotated.width / 2 + (tw / 2) * math.cos(rad)
             oy = -rotated.height / 2 - (tw / 2) * math.sin(rad)
             image.paste(rotated, (int(x + ox), int(y + oy)), rotated)
+    if highlights:
+        draw_highlights(image, transform, highlights)
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)
     return RenderedSheet(

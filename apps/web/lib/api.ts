@@ -796,6 +796,17 @@ export const removeAdjustment = (
     actorClientHeaders(actor, clientId),
   );
 
+// ---- Croquis for the generadores ----
+
+export type CroquisItem = { view_id: string; title: string; count: number; url: string };
+
+export const getCroquis = (id: string, conceptCode: string) =>
+  getJSON<{ concept_code: string; croquis: CroquisItem[] }>(
+    `/projects/${id}/croquis/${encodeURIComponent(conceptCode)}`,
+  );
+
+export const croquisUrl = (item: CroquisItem) => `${API_BASE}${item.url}`;
+
 // ---- Presupuesto versions ----
 
 export type VersionSummary = {

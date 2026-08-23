@@ -140,6 +140,15 @@ class ProjectStore:
         active = self._active_run_dir(control_dir, "reports_dir")
         return active or root / "reports"
 
+    def active_run_id(self, project_id: str) -> str | None:
+        pointer = self.get_root(project_id) / self.settings.processed_dir_name / "active_run.json"
+        if not pointer.exists():
+            return None
+        try:
+            return str(read_json(pointer).get("run_id") or "") or None
+        except (OSError, ValueError, AttributeError):
+            return None
+
     @staticmethod
     def _active_run_dir(control_dir: Path, field: str) -> Path | None:
         pointer = control_dir / "active_run.json"

@@ -14,15 +14,18 @@ Builds XLSX workbooks from the persisted artifacts:
 """
 
 import io
+from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XlsxImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from klave_engine.costing.models import CostReport
+from klave_engine.costing.models import BoqLine, CostReport
 from klave_engine.costing.reviews import ProjectReviews
 from klave_engine.detection.results import Detection
 
@@ -73,6 +76,9 @@ def _muted(ws: Worksheet, row: int, col: int, text: str) -> None:
     cell.font = Font(size=9, color=MUTED)
 
 
+CroquisProvider = Callable[[BoqLine], list[tuple[str, Path]]]
+
+
 def build_presupuesto_workbook(
     report: CostReport,
     detections: list[Detection],
@@ -81,6 +87,7 @@ def build_presupuesto_workbook(
     client: str | None,
     fmt: str = "klave",
     inventory: dict | None = None,
+    croquis: CroquisProvider | None = None,
 ) -> bytes:
     if fmt == "opus":
         workbook = _flat_workbook(
@@ -142,12 +149,13 @@ def _klave_workbook(
     reviews: ProjectReviews,
     project_name: str,
     client: str | None,
+    croquis: CroquisProvider | None = None,
 ) -> Workbook:
     workbook = Workbook()
     _caratula(workbook.active, report, reviews, project_name, client)
     _presupuesto(workbook.create_sheet("Presupuesto"), report)
     _apus(workbook.create_sheet("APUs"), report)
-    _generadores(workbook.create_sheet("Generadores"), report, detections, reviews)
+    _generadores(workbook.create_sheet("Generadores"), report, detections, reviews, croquis)
     _programa(workbook.create_sheet("Programa"), report)
     _flujo(workbook.create_sheet("Flujo"), report)
     return workbook
@@ -288,13 +296,35 @@ def _apus(ws: Worksheet, report: CostReport) -> None:
     _autosize(ws, [16, 52, 9, 12, 13, 15])
 
 
+CROQUIS_WIDTH_PX = 520
+ROW_PX = 20
+
+
+def _croquis_rows(ws: Worksheet, row: int, items: list[tuple[str, Path]]) -> int:
+    """Each croquis below its concept, captioned with its planta."""
+    for title, path in items:
+        try:
+            image = XlsxImage(str(path))
+        except OSError:
+            continue
+        ratio = CROQUIS_WIDTH_PX / max(image.width, 1)
+        image.width, image.height = CROQUIS_WIDTH_PX, int(image.height * ratio)
+        _muted(ws, row, 1, f"Croquis · {title}")
+        row += 1
+        ws.add_image(image, f"A{row}")
+        row += int(image.height / ROW_PX) + 2
+    return row
+
+
 def _generadores(
     ws: Worksheet,
     report: CostReport,
     detections: list[Detection],
     reviews: ProjectReviews,
+    croquis: CroquisProvider | None = None,
 ) -> None:
-    """The evidence backup sheet: where every quantity comes from."""
+    """The evidence backup sheet: where every quantity comes from — and,
+    with a croquis provider, where on the planta it sits."""
     by_id = {d.detection_id: d for d in detections}
     row = 1
     _title(ws, row, "Números generadores", size=13)
@@ -373,6 +403,8 @@ def _generadores(
             cell = ws.cell(row=row, column=1, value=note)
             cell.font = Font(italic=True, size=9, color="B54708")
             row += 1
+        if croquis is not None and line.source_detections:
+            row = _croquis_rows(ws, row, croquis(line))
         row += 1
     excluded_summary = [
         (key, review)

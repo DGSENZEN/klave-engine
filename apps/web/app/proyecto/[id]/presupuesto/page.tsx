@@ -15,7 +15,9 @@ import {
 import {
   addAdjustment,
   API_BASE,
+  croquisUrl,
   getCatalog,
+  getCroquis,
   getDimensions,
   getProjectReviews,
   money,
@@ -24,6 +26,7 @@ import {
   removeAdjustment,
   type BoqLine,
   type CatalogConcept,
+  type CroquisItem,
   type Dimensions,
   type ProjectReviews,
 } from "@/lib/api";
@@ -486,6 +489,9 @@ function PhaseGroup({
                     ))}
                     {l.assumptions.length === 0 && <li>Sin supuestos adicionales.</li>}
                   </ul>
+                  {l.source_detection_count > 0 && (
+                    <CroquisStrip projectId={projectId} conceptCode={l.concept_code} />
+                  )}
                 </td>
               </tr>
             )}
@@ -493,6 +499,59 @@ function PhaseGroup({
         );
       })}
     </>
+  );
+}
+
+/** The croquis of the generador: each planta with the concept's elements
+ * marked on it, rendered by the API from the sheet and cached per run. */
+function CroquisStrip({ projectId, conceptCode }: { projectId: string; conceptCode: string }) {
+  const [items, setItems] = useState<CroquisItem[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    getCroquis(projectId, conceptCode)
+      .then((r) => {
+        if (active) setItems(r.croquis);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId, conceptCode]);
+  if (failed) return null;
+  if (items === null) {
+    return <p className="mt-2 text-xs text-faint">Dibujando croquis…</p>;
+  }
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-3">
+      <div className="mb-1.5 font-medium text-foreground">Croquis del generador</div>
+      <div className="flex flex-wrap gap-3">
+        {items.map((item) => (
+          <a
+            key={item.view_id}
+            href={croquisUrl(item)}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="block rounded-lg border border-border bg-surface p-1.5 transition-colors hover:border-accent"
+            title={`${item.title} · ${item.count} elemento${item.count === 1 ? "" : "s"} · abrir en grande`}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={croquisUrl(item)}
+              alt={`Croquis ${item.title}`}
+              className="h-36 w-auto max-w-64 rounded object-contain"
+            />
+            <div className="mt-1 max-w-64 truncate text-[11px] text-muted">
+              {item.title.replace(/^[A-Z]{1,3}-\d{2,4}[A-Z]?\s*·\s*/, "")} · {item.count}
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
   );
 }
 

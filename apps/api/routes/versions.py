@@ -7,7 +7,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException
 from klave_engine.common.config import Settings
 from klave_engine.common.errors import ReportGenerationError
-from klave_engine.common.io import read_json
 from klave_engine.costing.models import CostingOverrides, CostReport
 from klave_engine.costing.recompute import (
     load_overrides,
@@ -45,16 +44,6 @@ def _current_report(store: ProjectStore, project_id: str) -> CostReport:
     return CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
 
 
-def _active_run_id(store: ProjectStore, settings: Settings, project_id: str) -> str | None:
-    pointer = store.get_root(project_id) / settings.processed_dir_name / "active_run.json"
-    if not pointer.exists():
-        return None
-    try:
-        return str(read_json(pointer).get("run_id") or "") or None
-    except (OSError, ValueError, AttributeError):
-        return None
-
-
 def _not_found(version_id: str) -> HTTPException:
     return HTTPException(
         status_code=404,
@@ -72,7 +61,7 @@ def get_versions(
     versions = list_versions(control_dir)
     return {
         "versions": [v.model_dump(mode="json") for v in versions],
-        "active_run_id": _active_run_id(store, settings, project_id),
+        "active_run_id": store.active_run_id(project_id),
     }
 
 
@@ -97,7 +86,7 @@ def create_version(
             label=body.label,
             note=body.note,
             actor=actor,
-            run_id=_active_run_id(store, settings, project_id),
+            run_id=store.active_run_id(project_id),
         )
     BUS.publish(
         "version_saved",
@@ -155,7 +144,7 @@ def get_version_diff(
     diff: VersionDiff = diff_reports(
         version.report, after, before_label=before_label, after_label=after_label
     )
-    active = _active_run_id(store, settings, project_id)
+    active = store.active_run_id(project_id)
     saved_on = version.summary.run_id
     if against == "current" and saved_on and active and saved_on != active:
         diff.notes.append(
@@ -198,7 +187,7 @@ def restore_version(
                 label=f"Antes de restaurar v{version.summary.number}",
                 note="Guardada automáticamente al restaurar.",
                 actor=actor,
-                run_id=_active_run_id(store, settings, project_id),
+                run_id=store.active_run_id(project_id),
             )
         restored = version.overrides.model_copy(
             update={"version": current_overrides.version + 1, "updated_by": actor or None}
@@ -243,7 +232,7 @@ def restore_version(
         "restored": version.summary.model_dump(mode="json"),
         "direct_cost": report.boq.direct_cost_total,
         "grand_total": report.integration.grand_total,
-        "same_run": version.summary.run_id == _active_run_id(store, settings, project_id),
+        "same_run": version.summary.run_id == store.active_run_id(project_id),
     }
 
 
