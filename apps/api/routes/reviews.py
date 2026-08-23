@@ -54,6 +54,8 @@ class BulkReviewInput(BaseModel):
     keys: list[str] = Field(min_length=1, max_length=2000)
     status: Literal["confirmed", "excluded", "none"]
     note: str = Field(default="", max_length=300)
+    # Batched clients send several calls and recompute once, on the last.
+    recompute: bool = True
 
 
 class VerificationInput(BaseModel):
@@ -197,10 +199,11 @@ def set_detection_reviews(
                     status=body.status, note=body.note.strip(), actor=actor
                 )
         save_reviews(control_dir, reviews)
-        _recompute_after_review(
-            store, settings, project_id, actor, clean_client_id(x_client_id),
-            f"detections_{body.status}", f"{len(keys)} elementos",
-        )
+        if body.recompute:
+            _recompute_after_review(
+                store, settings, project_id, actor, clean_client_id(x_client_id),
+                f"detections_{body.status}", f"{len(keys)} elementos",
+            )
     return _reviews_payload(reviews)
 
 

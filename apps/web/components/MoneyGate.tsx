@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Ruler, Warning } from "@phosphor-icons/react";
 import { setVerification, type CostReport, type ProjectReviews } from "@/lib/api";
 import { Button, Callout, Card } from "@/components/ui";
@@ -23,6 +24,38 @@ export function moneyGate(
   if (confirmed) return "ok";
   const trustworthy = units.unit !== "drawing_units" && units.confidence >= 0.7;
   return trustworthy ? "unverified" : "blocked";
+}
+
+/** Money is shown, but nobody has signed off the reading yet: say so on
+ * every money page, with the way to clear it. */
+export function UnverifiedBanner({
+  id,
+  costs,
+  reviews,
+}: {
+  id: string;
+  costs: CostReport | null;
+  reviews: ProjectReviews | null;
+}) {
+  if (moneyGate(costs, reviews) !== "unverified") return null;
+  const units = costs?.drawing_units;
+  return (
+    <div className="mb-4">
+      <Callout
+        tone="warning"
+        action={
+          <Link href={`/proyecto/${id}`} className="inline-flex">
+            <Button size="sm">Ruta de verificación</Button>
+          </Link>
+        }
+      >
+        <span className="font-medium">Sin verificar.</span> Importes calculados con unidades
+        leídas del archivo ({units?.unit} · {Math.round((units?.confidence ?? 0) * 100)} %)
+        que nadie ha confirmado; el Excel sale marcado SIN VERIFICAR hasta que se confirmen
+        unidades y detecciones.
+      </Callout>
+    </div>
+  );
 }
 
 const UNITS: { value: "m" | "cm" | "mm" | "ft" | "in"; label: string }[] = [

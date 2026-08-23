@@ -126,14 +126,22 @@ export default function RevisionPage() {
     setBusy(true);
     setActionError(null);
     try {
-      await setDetectionReviews(
-        id,
-        selectedVisible,
-        status,
-        status === "excluded" ? reason.trim() : "",
-        actorName,
-        clientId,
-      );
+      // The API takes up to 2,000 keys per call; send batches and let only
+      // the last one recompute the presupuesto.
+      const BATCH = 500;
+      for (let start = 0; start < selectedVisible.length; start += BATCH) {
+        const batch = selectedVisible.slice(start, start + BATCH);
+        const last = start + BATCH >= selectedVisible.length;
+        await setDetectionReviews(
+          id,
+          batch,
+          status,
+          status === "excluded" ? reason.trim() : "",
+          actorName,
+          clientId,
+          last,
+        );
+      }
       setSelected(new Set());
       setExcluding(false);
       setReason("");

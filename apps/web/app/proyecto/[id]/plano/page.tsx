@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   Check,
   Cursor,
@@ -17,6 +17,7 @@ import {
   addAdjustment,
   getCatalog,
   frameRenderUrl,
+  getCosts,
   getGeometry,
   setDetectionReview,
   type CatalogConcept,
@@ -32,7 +33,15 @@ import {
   detectionTitle,
   type MeasureMode,
 } from "@/components/PlanoCanvas";
-import { Badge, Button, IconButton, Input, Skeleton } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Callout,
+  IconButton,
+  Input,
+  PageHeader,
+  Skeleton,
+} from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
 
 export default function PlanoPage() {
@@ -61,25 +70,81 @@ export default function PlanoPage() {
   const [measurePoints, setMeasurePoints] = useState<[number, number][]>([]);
   const { latestEvent, connectionEpoch, actorName, clientId } = useProjectLive();
 
+  const searchParams = useSearchParams();
+  const conceptParam = searchParams.get("concept") ?? "";
+  const [fetchedFocus, setConceptFocus] = useState<{ concept: string; ids: Set<string> } | null>(
+    null,
+  );
+  // The focus is only what the URL asks for: clearing ?concept= clears it
+  // without a state write.
+  const conceptFocus =
+    conceptParam && fetchedFocus?.concept === conceptParam ? fetchedFocus : null;
+  const [geomError, setGeomError] = useState<string | null>(null);
+  const router = useRouter();
+
   // connectionEpoch: a reconnect may have skipped events, so reload everything.
   useEffect(() => {
-    getGeometry(id).then((g) => {
-      setGeom(g);
-      setVisibleLayers(new Set(g.layers.slice(0, 14).map((l) => l.name)));
-      setVisibleFamilies(new Set(g.detections.map(familyOf)));
-      setSelected(null);
-    });
+    let active = true;
+    getGeometry(id)
+      .then((g) => {
+        if (!active) return;
+        setGeomError(null);
+        setGeom(g);
+        setVisibleLayers(new Set(g.layers.slice(0, 14).map((l) => l.name)));
+        setVisibleFamilies(new Set(g.detections.map(familyOf)));
+        setSelected(null);
+      })
+      .catch(() => {
+        if (active) setGeomError("No se pudo cargar la geometría del plano.");
+      });
+    return () => {
+      active = false;
+    };
   }, [id, connectionEpoch]);
 
   useEffect(() => {
     if (latestEvent?.type !== "run_published") return;
-    getGeometry(id).then((g) => {
-      setGeom(g);
-      setVisibleLayers(new Set(g.layers.slice(0, 14).map((l) => l.name)));
-      setVisibleFamilies(new Set(g.detections.map(familyOf)));
-      setSelected(null);
-    });
+    getGeometry(id)
+      .then((g) => {
+        setGeom(g);
+        setVisibleLayers(new Set(g.layers.slice(0, 14).map((l) => l.name)));
+        setVisibleFamilies(new Set(g.detections.map(familyOf)));
+        setSelected(null);
+      })
+      .catch(() => {});
   }, [id, latestEvent]);
+
+  // ?concept=EST-004 — arriving from a presupuesto line: show only the
+  // elements that produce that quantity, every family they belong to visible.
+  useEffect(() => {
+    if (!conceptParam) return;
+    let active = true;
+    getCosts(id)
+      .then((costs) => {
+        if (!active) return;
+        const line = costs.boq.lines.find((l) => l.concept_code === conceptParam);
+        const ids = new Set<string>(line?.source_detections ?? []);
+        setConceptFocus({ concept: conceptParam, ids });
+      })
+      .catch(() => {
+        if (active) setConceptFocus({ concept: conceptParam, ids: new Set() });
+      });
+    return () => {
+      active = false;
+    };
+  }, [id, conceptParam]);
+
+  // While a concept is focused, its elements' families are the visible ones
+  // (derived at render time, so the user's own family toggles come back
+  // untouched when the focus is cleared).
+  const focusFamilies = useMemo(() => {
+    if (!conceptFocus || !geom || conceptFocus.ids.size === 0) return null;
+    const families = new Set(
+      geom.detections.filter((d) => conceptFocus.ids.has(d.id)).map(familyOf),
+    );
+    return families.size > 0 ? families : null;
+  }, [conceptFocus, geom]);
+  const effectiveFamilies = focusFamilies ?? visibleFamilies;
 
   // A collaborator reviewed something: refresh verdicts, keep the selection.
   useEffect(() => {
@@ -130,6 +195,9 @@ export default function PlanoPage() {
     if (!geom) return geom;
     let detections = geom.detections;
     let shapes = geom.shapes;
+    if (conceptFocus && conceptFocus.ids.size > 0) {
+      detections = detections.filter((d) => conceptFocus.ids.has(d.id));
+    }
     if (!showExcluded) {
       detections = detections.filter((d) => d.review !== "excluded");
     }
@@ -141,14 +209,14 @@ export default function PlanoPage() {
     }
     if (detections === geom.detections && shapes === geom.shapes) return geom;
     return { ...geom, detections, shapes };
-  }, [geom, showExcluded, hiddenSheets]);
+  }, [geom, showExcluded, hiddenSheets, conceptFocus]);
 
   const visibleCount = useMemo(() => {
     if (!canvasGeom) return 0;
     return canvasGeom.detections.filter(
-      (d) => visibleFamilies.has(familyOf(d)) && d.confidence >= minConfidence,
+      (d) => effectiveFamilies.has(familyOf(d)) && d.confidence >= minConfidence,
     ).length;
-  }, [canvasGeom, visibleFamilies, minConfidence]);
+  }, [canvasGeom, effectiveFamilies, minConfidence]);
 
   // The review loop lives on the keyboard: arrows cycle visible detections,
   // C confirms, X excludes, Q clears, Escape deselects. Repetition should be
@@ -177,7 +245,7 @@ export default function PlanoPage() {
       if (!canvasGeom) return;
       if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
         const visible = canvasGeom.detections.filter(
-          (d) => visibleFamilies.has(familyOf(d)) && d.confidence >= minConfidence,
+          (d) => effectiveFamilies.has(familyOf(d)) && d.confidence >= minConfidence,
         );
         if (visible.length === 0) return;
         event.preventDefault();
@@ -198,7 +266,7 @@ export default function PlanoPage() {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [canvasGeom, measureMode, minConfidence, review, selected, visibleFamilies]);
+  }, [canvasGeom, measureMode, minConfidence, review, selected, effectiveFamilies]);
 
   const reviewCounts = useMemo(() => {
     const counts = { confirmed: 0, excluded: 0 };
@@ -217,6 +285,24 @@ export default function PlanoPage() {
       next.add(key);
     }
     setter(next);
+  }
+
+  if (geomError) {
+    return (
+      <div className="px-6 py-7 lg:px-8">
+        <PageHeader title="Visor del plano" />
+        <Callout
+          tone="danger"
+          action={
+            <Button size="sm" onClick={() => window.location.reload()}>
+              Reintentar
+            </Button>
+          }
+        >
+          {geomError} Si el proyecto acaba de procesarse, espera unos segundos y reintenta.
+        </Callout>
+      </div>
+    );
   }
 
   if (!geom) {
@@ -238,7 +324,7 @@ export default function PlanoPage() {
       projectId={id}
       geom={geom}
       families={families}
-      visibleFamilies={visibleFamilies}
+      visibleFamilies={effectiveFamilies}
       visibleLayers={visibleLayers}
       minConfidence={minConfidence}
       showExcluded={showExcluded}
@@ -265,6 +351,23 @@ export default function PlanoPage() {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight">Visor del plano</h1>
           <p className="truncate text-sm text-muted">
+            {conceptFocus && (
+              <span className="mr-2 inline-flex items-center gap-2">
+                <Badge tone="accent" dot>
+                  {conceptFocus.ids.size > 0
+                    ? `${conceptFocus.ids.size} elementos de ${conceptFocus.concept}`
+                    : `${conceptFocus.concept}: sin elementos en esta corrida`}
+                </Badge>
+                <button
+                  type="button"
+                  className="text-xs underline"
+                  onClick={() => router.replace(`/proyecto/${id}/plano`)}
+                >
+                  ver todo
+                </button>
+                ·
+              </span>
+            )}
             {visibleCount.toLocaleString("es-MX")} detecciones visibles
             {reviewCounts.confirmed > 0 && ` · ${reviewCounts.confirmed} confirmadas`}
             {reviewCounts.excluded > 0 && ` · ${reviewCounts.excluded} excluidas`} · clic
@@ -316,7 +419,7 @@ export default function PlanoPage() {
           <PlanoCanvas
             geometry={canvasGeom ?? geom}
             visibleLayers={visibleLayers}
-            visibleFamilies={visibleFamilies}
+            visibleFamilies={effectiveFamilies}
             minConfidence={minConfidence}
             selectedId={selected?.id ?? null}
             onSelect={setSelected}

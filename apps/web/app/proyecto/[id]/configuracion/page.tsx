@@ -113,6 +113,14 @@ export default function ConfiguracionPage() {
     }
   }
 
+  if (!project && error) {
+    return (
+      <div className="px-6 py-7 lg:px-8">
+        <PageHeader title="Configuración del proyecto" />
+        <Callout tone="danger">{error}</Callout>
+      </div>
+    );
+  }
   if (!project) {
     return (
       <div className="px-6 py-7 lg:px-8">

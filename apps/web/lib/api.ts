@@ -3,6 +3,11 @@
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:8000";
 
+/** True when a production build is talking to localhost: the deployment
+ * forgot NEXT_PUBLIC_API_URL, and every page would otherwise blame the server. */
+export const API_MISCONFIGURED =
+  process.env.NODE_ENV === "production" && !process.env.NEXT_PUBLIC_API_URL;
+
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     cache: "no-store",
@@ -232,6 +237,8 @@ export type BoqLine = {
   phase: string;
   confidence: number;
   source_detection_count: number;
+  /** Ids of the elements behind the quantity (capped at 200 by the engine). */
+  source_detections?: string[];
   assumptions: string[];
   /** Quantity per planta on a segmented sheet (view title → quantity). */
   by_view?: Record<string, number>;
@@ -872,10 +879,11 @@ export const setDetectionReviews = (
   note = "",
   actor?: string,
   clientId?: string | null,
+  recompute = true,
 ) =>
   putJSON<ProjectReviews>(
     `/projects/${id}/reviews/detections`,
-    { keys, status, note },
+    { keys, status, note, recompute },
     actorClientHeaders(actor, clientId),
   );
 

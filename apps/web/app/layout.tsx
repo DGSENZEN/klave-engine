@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { ApiBaseWarning } from "@/components/ApiBaseWarning";
 import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
@@ -37,7 +38,10 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body className="min-h-full">{children}</body>
+      <body className="min-h-full">
+        <ApiBaseWarning />
+        {children}
+      </body>
     </html>
   );
 }

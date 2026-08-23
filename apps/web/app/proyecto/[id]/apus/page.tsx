@@ -6,7 +6,7 @@ import { Calculator, CaretDown } from "@phosphor-icons/react";
 import { money2, num, type Apu } from "@/lib/api";
 import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
-import { moneyGate, UnitsGate } from "@/components/MoneyGate";
+import { moneyGate, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
 import {
   Badge,
   Callout,
@@ -87,6 +87,7 @@ export default function ApusPage() {
         title="Precios unitarios"
         sub="Análisis de precio unitario (APU) por concepto: recursos, rendimientos e importes por unidad de obra."
       />
+      <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Metric

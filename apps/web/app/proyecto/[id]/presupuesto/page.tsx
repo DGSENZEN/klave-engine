@@ -49,7 +49,7 @@ import {
 } from "@/components/ui";
 import { ButtonMenu, MenuItem } from "@/components/Menu";
 import { useProjectLive } from "@/components/ProjectLive";
-import { moneyGate, UnitsGate } from "@/components/MoneyGate";
+import { moneyGate, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
 import { VersionsPanel } from "@/components/VersionsPanel";
 import { ConceptPicker } from "@/components/ConceptPicker";
 import { IndicatorsCard } from "@/components/IndicatorsCard";
@@ -223,6 +223,7 @@ export default function PresupuestoPage() {
         }
       />
 
+      <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
       <SuggestionsBar projectId={id} actorName={actorName} />
       {parametricCount > 0 && (
         <div className="mb-4">

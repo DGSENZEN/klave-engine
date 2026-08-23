@@ -5,7 +5,7 @@ import { Money, CalendarBlank, PiggyBank, Wrench } from "@phosphor-icons/react";
 import { money, money2, type PeriodCashflow } from "@/lib/api";
 import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
-import { moneyGate, UnitsGate } from "@/components/MoneyGate";
+import { moneyGate, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
 import {
   Callout,
   Card,
@@ -79,6 +79,7 @@ export default function FlujoPage() {
         title="Flujo financiero"
         sub="Estimaciones por periodo a precio de venta: anticipo, amortización, retenciones y flujo neto."
       />
+      <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric

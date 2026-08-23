@@ -10,11 +10,17 @@ import {
   CircleNotch,
   WarningCircle,
 } from "@phosphor-icons/react";
-import { getStatus, type ProjectStatus } from "@/lib/api";
+import {
+  ApiError,
+  getProject,
+  getStatus,
+  processProject,
+  type ProjectStatus,
+} from "@/lib/api";
 import { parseProjectEvent, projectEventsUrl } from "@/lib/collab";
 import { ProjectLiveProvider } from "@/components/ProjectLive";
 import { ProjectShell } from "@/components/ProjectShell";
-import { buttonClasses, Callout } from "@/components/ui";
+import { Button, Callout, Skeleton, SkeletonHeader, buttonClasses } from "@/components/ui";
 
 const STEPS = [
   { key: "ingested", label: "Ingesta del proyecto" },
@@ -29,12 +35,32 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const [status, setStatus] = useState<ProjectStatus | null>(null);
+  const [name, setName] = useState<string | undefined>(undefined);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [starting, setStarting] = useState(false);
 
   useEffect(() => {
     let active = true;
     getStatus(id)
       .then((s) => {
-        if (active) setStatus(s);
+        if (active) {
+          setStatus(s);
+          setLoadError(null);
+        }
+      })
+      .catch((e: unknown) => {
+        if (!active) return;
+        const notFound = e instanceof ApiError && e.status === 404;
+        setLoadError(
+          notFound
+            ? "Este proyecto no existe o no tienes acceso a él."
+            : "No se pudo consultar el estado del proyecto. ¿Está activo el servidor?",
+        );
+      });
+    getProject(id)
+      .then((p) => {
+        if (active) setName(p.project_name || undefined);
       })
       .catch(() => {});
 
@@ -69,9 +95,23 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       active = false;
       source.close();
     };
-  }, [id, status?.state]);
+  }, [id, attempt]);
 
   const failed = status?.state === "failed";
+  const notStarted =
+    status !== null && !ORDER.includes(status.state) && status.state !== "failed";
+
+  async function startProcessing() {
+    setStarting(true);
+    try {
+      await processProject(id);
+      setAttempt((n) => n + 1);
+    } catch {
+      setLoadError("No se pudo iniciar el procesamiento.");
+    } finally {
+      setStarting(false);
+    }
+  }
 
   // Failure stays useful: with readable artifacts from a previous (or
   // partial) run, the full shell opens — viewer, lectura, adjustments —
@@ -79,7 +119,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   if (status?.state === "processed" || (failed && status.artifacts_available)) {
     return (
       <ProjectLiveProvider projectId={id}>
-        <ProjectShell id={id} name={undefined}>
+        <ProjectShell id={id} name={name}>
           {failed && (
             <div className="px-6 pt-5 lg:px-8">
               <Callout tone="danger">
@@ -99,6 +139,61 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
     const current = ORDER.indexOf(status?.state ?? "queued");
     return current >= ORDER.indexOf(key);
   };
+
+  if (loadError) {
+    return (
+      <div className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6">
+        <Link href="/" className="mb-8 inline-flex items-center gap-2 text-sm text-muted">
+          <Buildings size={16} weight="duotone" /> Klave
+        </Link>
+        <h1 className="text-xl font-semibold">No se pudo abrir el proyecto</h1>
+        <p className="mt-1 text-sm text-muted">{loadError}</p>
+        <div className="mt-5 flex gap-2">
+          <Button variant="primary" onClick={() => setAttempt((n) => n + 1)}>
+            Reintentar
+          </Button>
+          <Link href="/" className="inline-flex">
+            <Button>Volver a proyectos</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === null) {
+    return (
+      <div className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6">
+        <SkeletonHeader />
+        <Skeleton className="h-48" />
+      </div>
+    );
+  }
+
+  if (notStarted || (failed && !status.artifacts_available)) {
+    return (
+      <div className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6">
+        <Link href="/" className="mb-8 inline-flex items-center gap-2 text-sm text-muted">
+          <Buildings size={16} weight="duotone" /> Klave
+        </Link>
+        <h1 className="text-xl font-semibold">
+          {failed ? "No se pudo procesar el plano" : "Este proyecto aún no se procesa"}
+        </h1>
+        <p className="mt-1 text-sm text-muted">
+          {failed
+            ? `El último intento falló${status.error ? `: ${status.error}` : "."} Revisa el archivo en Lectura del Plano cuando termine, o inténtalo de nuevo.`
+            : "Los archivos están subidos. Al procesar leemos las entidades, detectamos elementos y calculamos el presupuesto."}
+        </p>
+        <div className="mt-5 flex gap-2">
+          <Button variant="primary" onClick={startProcessing} disabled={starting}>
+            {starting ? "Iniciando…" : failed ? "Intentar de nuevo" : "Procesar ahora"}
+          </Button>
+          <Link href="/" className="inline-flex">
+            <Button>Volver a proyectos</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6">

@@ -255,6 +255,14 @@ export default function ParametrosPage() {
     };
   }, [report, baseline]);
 
+  if (!config && error) {
+    return (
+      <div className="px-6 py-7 lg:px-8">
+        <PageHeader title="Parámetros e insumos" />
+        <Callout tone="danger">{error}</Callout>
+      </div>
+    );
+  }
   if (!config) {
     return (
       <div className="px-6 py-7 lg:px-8">

@@ -6,7 +6,7 @@ import { money, num, type ScheduleActivity } from "@/lib/api";
 import { phaseColor } from "@/lib/phases";
 import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
-import { moneyGate, UnitsGate } from "@/components/MoneyGate";
+import { moneyGate, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
 import {
   Callout,
   Card,
@@ -87,6 +87,7 @@ export default function ProgramaPage() {
         title="Programa de obra"
         sub="Secuencia de actividades derivada de las cantidades y rendimientos; duraciones en días laborables."
       />
+      <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Metric
