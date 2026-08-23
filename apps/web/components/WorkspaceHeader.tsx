@@ -8,7 +8,7 @@ import { fetchAuthStatus } from "@/lib/session";
 import { Avatar } from "@/components/ui";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
-type Section = "proyectos" | "catalogo" | "equipo" | "taller" | "cuenta";
+type Section = "proyectos" | "catalogo" | "equipo" | "taller" | "cuenta" | null;
 
 /** One header pattern for every workspace-level screen: same places, same
  * order, everywhere — navigation should never need re-learning per page. */

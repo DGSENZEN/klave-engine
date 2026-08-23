@@ -11,7 +11,7 @@ from pathlib import Path
 import ezdxf
 
 
-def build_demo_dxf(path: Path) -> Path:
+def build_demo_dxf(path: Path, insunits: int = 0) -> Path:
     """Write the S-101 demo sheet. Extent is roughly (0, 0) to (1460, 1160):
     unitless on purpose, but shaped like a 15 × 12 m building in cm so the
     extent-based thresholds read it the way a real sheet would."""
@@ -19,7 +19,7 @@ def build_demo_dxf(path: Path) -> Path:
     # Pin the fixture to unitless so unit-aware detector presets never apply
     # (ezdxf defaults new documents to meters). Text stays under the height
     # heuristic's floor, so the extent alone yields only an unreliable guess.
-    doc.header["$INSUNITS"] = 0
+    doc.header["$INSUNITS"] = insunits
     msp = doc.modelspace()
 
     def text(value: str, insert: tuple[float, float], layer: str) -> None:
@@ -79,9 +79,14 @@ def build_demo_dxf(path: Path) -> Path:
     return path
 
 
-def write_demo_project(project_root: Path) -> list[Path]:
-    """Create the full demo project folder with its drawings."""
-    return [build_demo_dxf(project_root / "drawings" / "S-101.dxf")]
+def write_demo_project(project_root: Path, *, declare_units: bool = False) -> list[Path]:
+    """Create the full demo project folder with its drawings.
+
+    The eval fixture stays unitless on purpose (it exercises the unknown-unit
+    path); the sample obra a new firm explores declares centimetres so it
+    shows a priced presupuesto."""
+    insunits = 5 if declare_units else 0  # 5 = centimetres
+    return [build_demo_dxf(project_root / "drawings" / "S-101.dxf", insunits=insunits)]
 
 
 # Gold labels for the demo fixture. Detection labels are matched as multisets.

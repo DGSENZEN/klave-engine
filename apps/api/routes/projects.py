@@ -310,6 +310,45 @@ def _require_readable_sheet(manifest, root: Path) -> None:
     )
 
 
+@router.post("/demo", status_code=202)
+def create_demo_project(
+    request: Request,
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """A small synthetic obra, created and processed on the spot, so a firm
+    sees a finished presupuesto — with its evidence and its warnings —
+    before uploading anything of its own. Idempotent per workspace."""
+    rate_limit(request, "process", max_attempts=30, window_seconds=3600.0)
+    from klave_engine.evals.fixtures import write_demo_project
+
+    suffix = (request_workspace_id(request) or "local")[:8]
+    project_id = f"obra_de_ejemplo_{suffix}"
+    root = store.settings.data_dir / "uploads" / project_id
+    fresh = not root.exists()
+    if fresh:
+        write_demo_project(root, declare_units=True)
+    manifest = ingest_project(
+        root,
+        project_name="Obra de ejemplo (sintética)",
+        project_id=project_id,
+        processed_dir_name=settings.processed_dir_name,
+    )
+    store.register(manifest.project_id, root)
+    _grant_owner(request, settings, manifest.project_id)
+    if fresh:
+        apply_workspace_defaults(
+            defaults_scope(settings, request_workspace_id(request)),
+            root / settings.processed_dir_name,
+        )
+        BUS.publish(
+            "project_created", project_id=manifest.project_id, actor=clean_actor(x_actor)
+        )
+    job, _ = JOB_STORE.enqueue(manifest.project_id, root, settings)
+    return {"project_id": manifest.project_id, "job_id": job.job_id, "fresh": fresh}
+
+
 @router.post("/upload", status_code=202)
 async def upload_project(
     request: Request,

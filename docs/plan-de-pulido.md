@@ -153,7 +153,7 @@ Aplanado, pintura y muro son `longitud × altura × caras` (`catalog.py:363-402,
 - **Consistencia**: cuatro órdenes de fases y colores por posición; dinero con 0 o 2 decimales según la página; confianza con cinco presentaciones; dos `timeAgo`; borrados sin confirmación (versiones, plantillas, reglas, ajustes, mapeos) mientras restaurar sí confirma.
 - **Capacidades del API sin UI**: diff entre dos versiones, crear regla paramétrica a mano, lista/revocación de alias, descripción LOPSRM (ni siquiera tiene cliente), roll-forward por códigos/mes, croquis por planta, exports de APUs/programa/flujo/revisión/riesgos.
 
-### D3 — Onboarding · **P1**
+### D3 — Onboarding · **P1** · **hecho en lo esencial** (obra de ejemplo procesada al instante desde la pantalla vacía; regla de ingestión antes de subir; `/glosario` enlazado; `docs/primeros-pasos.md`)
 - Sin datos de muestra: una firma no ve un presupuesto terminado sin subir un DWG y esperar.
 - El catálogo y el taller nunca se presentan; los no-admin no descubren `/taller`.
 - Identidad aleatoria ("Carla") cuando `localStorage` falla; `cuenta` redirige fuera en modo abierto.

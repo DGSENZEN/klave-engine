@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { CloudArrowUp, Scan, Receipt } from "@phosphor-icons/react";
 import { Card } from "@/components/ui";
 
@@ -36,6 +38,13 @@ export function HowItWorks() {
           <p className="mt-1 text-sm leading-relaxed text-muted">{step.text}</p>
         </Card>
       ))}
+      <p className="text-xs text-faint sm:col-span-3">
+        ¿Un término no te suena (Fsr, P.U., explosión de insumos)? Está en el{" "}
+        <Link href="/glosario" className="underline">
+          glosario
+        </Link>
+        .
+      </p>
     </div>
   );
 }

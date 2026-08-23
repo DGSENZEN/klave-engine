@@ -203,7 +203,7 @@ export default function CatalogoPage() {
       <main className="mx-auto max-w-5xl px-5 py-8 sm:px-6">
         <PageHeader
           title="Catálogo del taller"
-          sub="Insumos, matrices de precio unitario y rendimientos que usa cada cálculo. Cada precio indica su fuente: sustituye las referencias por tus cotizaciones."
+          sub="Insumos, matrices de precio unitario y rendimientos que usa cada cálculo. Cada precio indica su fuente: sustituye las referencias por tus cotizaciones. Los términos viven en el glosario (/glosario)."
           actions={
             <>
               <input

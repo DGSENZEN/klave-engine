@@ -472,6 +472,14 @@ export type Dimensions = {
 
 // ---- Calls ----
 
+/** Create (or reopen) the synthetic sample obra and process it. */
+export const createDemoProject = (actor?: string) =>
+  postJSON<{ project_id: string; job_id: string; fresh: boolean }>(
+    "/projects/demo",
+    {},
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
 export const listProjects = () =>
   getJSON<{ projects: ProjectSummary[] }>("/projects").then((r) => r.projects);
 

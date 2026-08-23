@@ -28,6 +28,7 @@ import {
   money,
   patchProject,
   processProject,
+  createDemoProject,
   removeProject,
   uploadProject,
   type ProjectOverview,
@@ -94,6 +95,7 @@ export default function Home() {
   const [focus, setFocus] = useState<Focus>("all");
   const [ready, setReady] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
+  const [demoBusy, setDemoBusy] = useState(false);
   const [toasts, setToasts] = useState<{ id: string; text: string; href: string; tone: "success" | "warning" }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -123,6 +125,18 @@ export default function Home() {
       active = false;
     };
   }, [router]);
+
+  async function openDemo() {
+    setDemoBusy(true);
+    setError(null);
+    try {
+      const result = await createDemoProject(getBrowserActor());
+      router.push(`/proyecto/${encodeURIComponent(result.project_id)}`);
+    } catch {
+      setError("No se pudo preparar la obra de ejemplo.");
+      setDemoBusy(false);
+    }
+  }
 
   // "/" jumps to search from anywhere on the page (never while typing).
   useEffect(() => {
@@ -407,11 +421,16 @@ export default function Home() {
             <EmptyState
               icon={<CloudArrowUp size={22} weight="duotone" />}
               title="Sube tu primer plano"
-              hint="Arrastra archivos DWG/DXF a esta ventana o usa el botón para elegirlos. Varias hojas se procesan como un solo proyecto."
+              hint="Arrastra archivos a esta ventana o usa el botón. DXF abre siempre; DWG se convierte con LibreDWG (si una hoja no abre, exporta a DXF desde AutoCAD). Varias hojas se procesan como una sola obra."
               action={
-                <Button variant="primary" onClick={() => inputRef.current?.click()}>
-                  <Plus size={16} weight="bold" /> Nuevo proyecto
-                </Button>
+                <span className="flex flex-wrap items-center justify-center gap-2">
+                  <Button variant="primary" onClick={() => inputRef.current?.click()}>
+                    <Plus size={16} weight="bold" /> Nuevo proyecto
+                  </Button>
+                  <Button onClick={openDemo} disabled={demoBusy}>
+                    {demoBusy ? "Preparando…" : "Explorar una obra de ejemplo"}
+                  </Button>
+                </span>
               }
             />
             <div className="mt-10">
