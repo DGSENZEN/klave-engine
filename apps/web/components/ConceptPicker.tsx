@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import { Check, MagnifyingGlass, X } from "@phosphor-icons/react";
 import {
+  apiMessage,
   clearAlias,
   getConceptMatches,
   money2,
   searchReference,
   setAlias,
+  unitMismatch,
   type ConceptMatch,
 } from "@/lib/api";
 import { Badge, Button, Input, Skeleton } from "@/components/ui";
@@ -41,6 +43,8 @@ export function ConceptPicker({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** A match the server refused for its unit; the engineer may force it with a reason. */
+  const [pendingForce, setPendingForce] = useState<ConceptMatch | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -92,7 +96,11 @@ export function ConceptPicker({
     };
   }, [query, unit]);
 
-  async function choose(match: ConceptMatch) {
+  async function choose(match: ConceptMatch, force = false) {
+    if (force && !note.trim()) {
+      setError("Para usar una clave en otra unidad, escribe en la nota por qué corresponde.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -104,12 +112,19 @@ export function ConceptPicker({
           target_code: match.target_code,
           note: note.trim(),
           project_id: projectId,
+          force,
         },
         actorName,
       );
       onDone();
-    } catch {
-      setError("No se pudo guardar el concepto del taller.");
+    } catch (e) {
+      const mismatch = unitMismatch(e);
+      if (mismatch) {
+        setPendingForce(match);
+        setError(mismatch.message);
+      } else {
+        setError(apiMessage(e, "No se pudo guardar el concepto del taller."));
+      }
       setBusy(false);
     }
   }
@@ -167,7 +182,21 @@ export function ConceptPicker({
           aria-label="Nota del alias"
         />
       </div>
-      {error && <p className="mb-2 text-xs text-danger">{error}</p>}
+      {error && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-danger">
+          <span>{error}</span>
+          {pendingForce && (
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => choose(pendingForce, true)}
+              disabled={busy}
+            >
+              Usar de todos modos ({pendingForce.unit} → {unit})
+            </Button>
+          )}
+        </div>
+      )}
       {matches === null && query.trim().length < 2 ? (
         <div className="space-y-2" aria-busy="true">
           <Skeleton className="h-12" />

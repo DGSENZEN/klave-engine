@@ -1163,7 +1163,26 @@ export type AliasInput = {
   target_code?: string | null;
   note?: string;
   project_id?: string;
+  /** Adopt across units on purpose; the server demands a note saying why. */
+  force?: boolean;
 };
+
+/** The 422 the API raises when a price's unit is not the concept's. */
+export type UnitMismatchDetail = {
+  error_type: "unit_mismatch";
+  message: string;
+  code: string;
+  unit: string;
+  reference_unit: string;
+};
+
+export function unitMismatch(error: unknown): UnitMismatchDetail | null {
+  if (error instanceof ApiError && error.status === 422 && error.detail && typeof error.detail === "object") {
+    const detail = error.detail as { error_type?: string };
+    if (detail.error_type === "unit_mismatch") return error.detail as UnitMismatchDetail;
+  }
+  return null;
+}
 
 export const setAlias = (body: AliasInput, actor?: string) =>
   postJSON<ConceptAlias>("/catalog/aliases", body, actor ? { "X-Actor": actor } : undefined);
@@ -1607,10 +1626,15 @@ export const searchReference = (q: string, source?: string) =>
     `/catalog/reference?q=${encodeURIComponent(q)}${source ? `&source=${encodeURIComponent(source)}` : ""}`,
   ).then((r) => r.rows);
 
-export const adoptConceptReference = (code: string, refId: number, actor?: string) =>
+export const adoptConceptReference = (
+  code: string,
+  refId: number,
+  actor?: string,
+  options?: { force?: boolean; note?: string },
+) =>
   postJSON<CatalogConcept>(
     `/catalog/concepts/${encodeURIComponent(code)}/adopt`,
-    { ref_id: refId },
+    { ref_id: refId, ...options },
     actor ? { "X-Actor": actor } : undefined,
   );
 
@@ -1620,10 +1644,15 @@ export const clearConceptPrice = (code: string, actor?: string) =>
     actor ? { "X-Actor": actor } : undefined,
   );
 
-export const adoptReference = (code: string, refId: number, actor?: string) =>
+export const adoptReference = (
+  code: string,
+  refId: number,
+  actor?: string,
+  options?: { force?: boolean; note?: string },
+) =>
   postJSON<CatalogInsumo>(
     `/catalog/insumos/${encodeURIComponent(code)}/adopt`,
-    { ref_id: refId },
+    { ref_id: refId, ...options },
     actor ? { "X-Actor": actor } : undefined,
   );
 

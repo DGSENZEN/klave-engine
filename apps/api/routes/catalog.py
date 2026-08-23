@@ -22,7 +22,7 @@ from klave_engine.costing.catalog_services import (
     import_plantilla,
     labor_state,
 )
-from klave_engine.costing.catalog_store import CatalogStore, get_catalog_store
+from klave_engine.costing.catalog_store import CatalogStore, UnitMismatch, get_catalog_store
 from klave_engine.costing.descripciones import long_description
 from klave_engine.costing.equipment import EquipmentParameters, compute_costo_horario
 from klave_engine.costing.exports import build_cotizacion_workbook
@@ -416,6 +416,9 @@ def _rows_from_xlsx(raw: bytes) -> list[dict[str, str]]:
 
 class AdoptInput(BaseModel):
     ref_id: int
+    # Adopt a price in another unit on purpose; the note must say why.
+    force: bool = False
+    note: str = Field(default="", max_length=300)
 
 
 class LaborInput(BaseModel):
@@ -838,6 +841,8 @@ class AliasInput(BaseModel):
     target_code: str | None = Field(default=None, max_length=40)
     note: str = Field(default="", max_length=300)
     project_id: str = Field(default="", max_length=80)
+    # Adopt across units on purpose; the note must say why.
+    force: bool = False
 
 
 class BulkAliasInput(BaseModel):
@@ -974,13 +979,38 @@ def _recompute_project(
     )
 
 
+def _forced_without_reason(force: bool, note: str) -> None:
+    if force and not note.strip():
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_type": "reason_required",
+                "message": "Forzar una unidad distinta requiere decir por qué.",
+            },
+        )
+
+
+def _unit_mismatch(exc: UnitMismatch) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={
+            "error_type": "unit_mismatch", "message": str(exc), "code": exc.code,
+            "unit": exc.own_unit, "reference_unit": exc.other_unit,
+        },
+    )
+
+
 def _set_alias(catalog: CatalogStore, item: AliasInput, actor: str, project_id: str) -> dict:
+    _forced_without_reason(item.force, item.note)
     try:
         return catalog.set_concept_alias(
             item.concept_code.strip().upper(), kind=item.kind, ref_id=item.ref_id,
             target_code=(item.target_code or "").strip().upper() or None, actor=actor,
             note=item.note.strip(), project_id=project_id or item.project_id,
+            force=item.force,
         )
+    except UnitMismatch as exc:
+        raise _unit_mismatch(exc) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=422, detail={"error_type": "invalid_alias", "message": str(exc)}
@@ -1055,8 +1085,11 @@ def adopt_reference_price(
 ) -> dict:
     if code not in catalog.load_price_book():
         raise HTTPException(status_code=404, detail={"error_type": "insumo_not_found"})
+    _forced_without_reason(body.force, body.note)
     try:
-        row = catalog.adopt_reference(code, body.ref_id)
+        row = catalog.adopt_reference(code, body.ref_id, force=body.force)
+    except UnitMismatch as exc:
+        raise _unit_mismatch(exc) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=404, detail={"error_type": "reference_not_found", "message": str(exc)}
@@ -1074,8 +1107,11 @@ def adopt_concept_price(
 ) -> dict:
     """The concept's P.U. becomes the reference row's price (catálogo propio
     or publication), replacing its matrix until cleared."""
+    _forced_without_reason(body.force, body.note)
     try:
-        row = catalog.adopt_concept_reference(code, body.ref_id)
+        row = catalog.adopt_concept_reference(code, body.ref_id, force=body.force)
+    except UnitMismatch as exc:
+        raise _unit_mismatch(exc) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=404, detail={"error_type": "not_found", "message": str(exc)}

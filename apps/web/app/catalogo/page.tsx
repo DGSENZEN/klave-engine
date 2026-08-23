@@ -16,6 +16,7 @@ import {
 import {
   ApiError,
   apiMessage,
+  unitMismatch,
   adoptConceptReference,
   adoptReference,
   clearConceptPrice,
@@ -1444,7 +1445,12 @@ function FuentesSection({
       setAdopting((a) => ({ ...a, [row.ref_id]: "" }));
       onChanged();
     } catch (e) {
-      onError(apiMessage(e, `No se pudo usar la referencia en ${code}.`));
+      const mismatch = unitMismatch(e);
+      onError(
+        mismatch
+          ? `${mismatch.message} (elige un insumo o concepto en ${mismatch.reference_unit}, o adopta desde el presupuesto con una nota).`
+          : apiMessage(e, `No se pudo usar la referencia en ${code}.`),
+      );
     }
   }
 

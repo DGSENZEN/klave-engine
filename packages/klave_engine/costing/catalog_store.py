@@ -20,6 +20,7 @@ from pathlib import Path
 from klave_engine.common.logging import get_logger, log_stage
 from klave_engine.costing.catalog import build_default_catalog
 from klave_engine.costing.insumos import APU_TEMPLATES, RESOURCES
+from klave_engine.costing.matching import unit_key
 from klave_engine.costing.models import CostingAssumptions, Resource, ResourceType
 
 logger = get_logger(__name__)
@@ -28,6 +29,24 @@ CATALOG_DB_FILENAME = "catalog.db"
 SEED_SOURCE = "Referencia Klave"
 
 _LOCK = threading.Lock()
+
+
+class UnitMismatch(ValueError):
+    """A price in one unit offered for something measured in another."""
+
+    def __init__(self, code: str, own_unit: str, other_unit: str) -> None:
+        self.code, self.own_unit, self.other_unit = code, own_unit, other_unit
+        super().__init__(
+            f"{code} se mide en {own_unit} y la referencia está en {other_unit}; "
+            "un precio por unidad distinta multiplica mal. Elige una referencia en "
+            f"{own_unit} o fuerza la adopción explicando por qué."
+        )
+
+
+def _check_units(code: str, own_unit: str, other_unit: str, force: bool) -> None:
+    if force or unit_key(own_unit) == unit_key(other_unit):
+        return
+    raise UnitMismatch(code, own_unit, other_unit)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS insumos (
@@ -683,15 +702,21 @@ class CatalogStore:
             if column not in existing:
                 conn.execute(f"ALTER TABLE concepts ADD COLUMN {column} {kind}")
 
-    def adopt_concept_reference(self, code: str, ref_id: int) -> dict:
+    def adopt_concept_reference(self, code: str, ref_id: int, *, force: bool = False) -> dict:
         """Price a concept from a reference row: its P.U. replaces the matrix
-        until cleared, with the row's provenance on every presupuesto."""
+        until cleared, with the row's provenance on every presupuesto. The
+        row's unit must be the concept's ($/m never prices an M3) unless the
+        engineer forces it knowingly."""
         reference = self.get_reference(ref_id)
         if reference is None:
             raise ValueError("la referencia no existe")
         with _LOCK, self._connect() as conn:
-            if conn.execute("SELECT 1 FROM concepts WHERE code = ?", (code,)).fetchone() is None:
+            concept = conn.execute(
+                "SELECT unit FROM concepts WHERE code = ?", (code,)
+            ).fetchone()
+            if concept is None:
                 raise ValueError(f"El concepto {code} no existe.")
+            _check_units(code, str(concept["unit"]), str(reference["unit"]), force)
             conn.execute(
                 "UPDATE concepts SET price_override = ?, price_source_key = ?, price_source = ?, "
                 "price_clave = ?, price_vigencia = ? WHERE code = ?",
@@ -846,17 +871,19 @@ class CatalogStore:
         actor: str = "",
         note: str = "",
         project_id: str = "",
+        force: bool = False,
     ) -> dict:
         """The taller's own concept for one of ours: a reference row (their
         catálogo: clave, description and P.U. adopted) or a workspace concept
-        (their matrix prices it). Workspace-wide, remembered with who and where."""
+        (their matrix prices it). Workspace-wide, remembered with who and where.
+        Units must agree unless ``force`` (with a note saying why)."""
         if kind == "reference":
             if ref_id is None:
                 raise ValueError("Falta la referencia.")
             reference = self.get_reference(ref_id)
             if reference is None:
                 raise ValueError("la referencia no existe")
-            self.adopt_concept_reference(code, ref_id)
+            self.adopt_concept_reference(code, ref_id, force=force)
             row = {
                 "kind": "reference", "ref_id": ref_id, "target_code": None,
                 "clave": reference["clave"], "description": reference["description"],
@@ -872,6 +899,11 @@ class CatalogStore:
                 ).fetchone()
             if target is None:
                 raise ValueError(f"El concepto {target_code} no existe.")
+            with self._connect() as conn:
+                own = conn.execute("SELECT unit FROM concepts WHERE code = ?", (code,)).fetchone()
+            if own is None:
+                raise ValueError(f"El concepto {code} no existe.")
+            _check_units(code, str(own["unit"]), str(target["unit"]), force)
             self.clear_concept_price(code)
             row = {
                 "kind": "concept", "ref_id": None, "target_code": target_code,
@@ -1464,12 +1496,20 @@ class CatalogStore:
             ).fetchone()
         return self._reference_row(row) if row else None
 
-    def adopt_reference(self, insumo_code: str, ref_id: int) -> dict:
+    def adopt_reference(self, insumo_code: str, ref_id: int, *, force: bool = False) -> dict:
         """Price an insumo from a published row, carrying the publication,
-        clave, region and vigencia as provenance."""
+        clave, region and vigencia as provenance. The row's unit must be the
+        insumo's unless forced knowingly."""
         reference = self.get_reference(ref_id)
         if reference is None:
             raise ValueError("la referencia no existe")
+        with self._connect() as conn:
+            insumo = conn.execute(
+                "SELECT unit FROM insumos WHERE code = ?", (insumo_code,)
+            ).fetchone()
+        if insumo is None:
+            raise ValueError(f"El insumo {insumo_code} no existe.")
+        _check_units(insumo_code, str(insumo["unit"]), str(reference["unit"]), force)
         return self.upsert_insumo(
             insumo_code,
             unit_cost=float(reference["price"]),

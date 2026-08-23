@@ -49,7 +49,7 @@ Aplanado, pintura y muro son `longitud × altura × caras` (`catalog.py:363-402,
 `wall_detector.py:48-50` usa subcadenas; cualquier capa con `MC` (p. ej. `A-MCOBILIARIO`) manda el muro a `EST-014` en m³.
 - **Fix**: hints como palabras completas (`\bMC\b`, `MURO CONC`), y una prueba con capas trampa. Revisar `"PILA"` (`footing_detector.py:42`), `"BORDE"` (`slab_detector.py:27`), `"ARQ"` (`rooms.py:62`).
 
-### A8 — Alias / P.U. adoptado sin validar la unidad · **P0**
+### A8 — Alias / P.U. adoptado sin validar la unidad · **P0** · **hecho** (422 `unit_mismatch` en alias, P.U. e insumo; `force` solo con nota; el selector ofrece "Usar de todos modos" con la razón)
 `adopt_concept_reference` y `set_concept_alias` (`catalog_store.py:594-616, ~890`) no comparan `reference.unit` con `concept.unit`. Adoptar `$/m` en un concepto `M3` multiplica sin aviso. El matcher sí filtra por unidad; la adopción no.
 - **Fix**: rechazar con 422 `unit_mismatch` salvo `force=true` con nota; mostrar la unidad en el selector.
 

@@ -77,3 +77,34 @@ def test_concept_alias_prices_with_the_taller_matrix(store):
     assert apu.price_source and "matriz del taller ALB-010" in apu.price_source
     with pytest.raises(ValueError):
         store.set_concept_alias("EST-004", kind="concept", target_code="NOPE")
+
+
+def test_a_price_in_another_unit_is_refused_unless_forced(store):
+    from klave_engine.costing.catalog_store import UnitMismatch
+
+    store.import_reference(
+        {"key": "propio", "name": "Catálogo propio", "publisher": "Catálogo propio",
+         "region": "MX", "vigencia": "2026-01", "kind": "precios_unitarios", "url": ""},
+        [{"clave": "MUR-ML", "description": "Muro de block por metro lineal",
+          "unit": "M", "price": 1500.0, "group_clave": "", "group_description": ""},
+         {"clave": "MUR-M2", "description": "Muro de block por metro cuadrado",
+          "unit": "m²", "price": 612.5, "group_clave": "", "group_description": ""}],
+    )
+    by_clave = {r["clave"]: r for r in store.search_reference("muro", source_key="propio")}
+    with pytest.raises(UnitMismatch) as excinfo:
+        store.set_concept_alias("EST-004", kind="reference", ref_id=by_clave["MUR-ML"]["ref_id"])
+    assert excinfo.value.own_unit == "M2" and excinfo.value.other_unit == "M"
+    assert "multiplica mal" in str(excinfo.value)
+    with pytest.raises(UnitMismatch):
+        store.adopt_concept_reference("EST-004", by_clave["MUR-ML"]["ref_id"])
+    with pytest.raises(UnitMismatch):
+        store.adopt_reference("MAT-BLOCK", by_clave["MUR-ML"]["ref_id"])  # MAT-BLOCK is M2
+    # m² and M2 are the same unit; a forced adoption goes through.
+    assert store.set_concept_alias(
+        "EST-004", kind="reference", ref_id=by_clave["MUR-M2"]["ref_id"]
+    )["price"] == 612.5
+    forced = store.set_concept_alias(
+        "EST-004", kind="reference", ref_id=by_clave["MUR-ML"]["ref_id"], force=True,
+        note="el taller cotiza por ml de muro de 2.5 m",
+    )
+    assert forced["price"] == 1500.0 and forced["unit"] == "M"
