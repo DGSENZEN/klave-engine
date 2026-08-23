@@ -26,8 +26,13 @@ from pydantic import BaseModel, Field
 
 from klave_engine.common.config import Settings, get_settings
 from klave_engine.common.io import read_json, write_json, write_text
+from klave_engine.costing.models import CostingConfig, CostReport
+from klave_engine.costing.report import generate_cost_report
 from klave_engine.costing.reviews import load_reviews
+from klave_engine.detection.dimensions import DimensionInventory
 from klave_engine.detection.results import Detection
+from klave_engine.detection.views import SheetSegmentation
+from klave_engine.dxf.units import DrawingUnits
 from klave_engine.pipeline import run_full_pipeline
 
 GOLD_DIR = Path("evals/gold")
@@ -45,6 +50,39 @@ class TypeScore(BaseModel):
     passed: bool
 
 
+class QuantityExpectation(BaseModel):
+    """What one concept should measure on this drawing. ``engine`` rows are
+    the current engine's own figure (a regression fence); ``human`` rows are
+    a takeoff someone did by hand (the truth), with its own tolerance."""
+
+    quantity: float
+    unit: str
+    tolerance_pct: float = 10.0
+    source: Literal["engine", "human"] = "engine"
+    note: str = ""
+
+
+class MoneyExpectation(BaseModel):
+    """Quantities and the direct cost at the engine's reference prices, so a
+    change in a rule, a matrix or a seed price shows up as money."""
+
+    concepts: dict[str, QuantityExpectation] = Field(default_factory=dict)
+    direct_cost: float | None = None
+    direct_cost_tolerance_pct: float = 5.0
+    unpriced: list[str] = Field(default_factory=list)
+
+
+class MoneyScore(BaseModel):
+    concept_code: str
+    unit: str
+    expected: float
+    actual: float | None
+    deviation_pct: float | None
+    tolerance_pct: float
+    source: str
+    passed: bool
+
+
 class GoldEntry(BaseModel):
     drawing_id: str
     source: str
@@ -55,6 +93,7 @@ class GoldEntry(BaseModel):
     confirmed: list[str] = Field(default_factory=list)
     excluded: list[str] = Field(default_factory=list)
     baseline_f1: dict[str, float] = Field(default_factory=dict)
+    money: MoneyExpectation | None = None
     notes: str = ""
 
 
@@ -66,6 +105,11 @@ class EntryResult(BaseModel):
     scores: list[TypeScore] = Field(default_factory=list)
     confirmed_missing: list[str] = Field(default_factory=list)
     excluded_present: list[str] = Field(default_factory=list)
+    money_scores: list[MoneyScore] = Field(default_factory=list)
+    direct_cost_expected: float | None = None
+    direct_cost_actual: float | None = None
+    direct_cost_passed: bool | None = None
+    concepts_unexpected: list[str] = Field(default_factory=list)
     passed: bool
     message: str = ""
 
@@ -136,14 +180,95 @@ def _score(
 
 # ------------------------------------------------------------------ capture
 
-def _fresh_detections(project_root: Path, settings: Settings) -> list[Detection]:
-    """Run the current engine on a scratch copy of the drawings."""
+def _engine_money(scratch: Path, settings: Settings, detections: list[Detection]) -> CostReport:
+    """The presupuesto the pure engine produces for a run: default catalog,
+    reference prices, default assumptions — no taller catálogo, no reviews —
+    so two runs of the same engine on the same drawing agree to the cent."""
+    processed = scratch / settings.processed_dir_name
+
+    def optional(name: str) -> dict | None:
+        path = processed / name
+        return read_json(path) if path.exists() else None
+
+    units_raw = optional("drawing_units.json") or {}
+    units = DrawingUnits.model_validate(units_raw) if units_raw else DrawingUnits(
+        unit="drawing_units", source="unknown", confidence=0.0
+    )
+    views = optional("views.json")
+    dims = optional("dimensions.json")
+    return generate_cost_report(
+        scratch.name,
+        detections,
+        units,
+        CostingConfig(),
+        SheetSegmentation.model_validate(views) if views else None,
+        DimensionInventory.model_validate(dims) if dims else None,
+        schedule_specs=optional("schedules.json"),
+    )
+
+
+def _fresh_run(project_root: Path, settings: Settings) -> tuple[list[Detection], CostReport]:
+    """Run the current engine on a scratch copy of the drawings: the
+    detections and the pure-engine presupuesto."""
     scratch = Path(tempfile.mkdtemp(prefix="klave_gold_")) / project_root.name
     try:
         shutil.copytree(project_root / "drawings", scratch / "drawings")
-        return run_full_pipeline(scratch, settings).detections
+        detections = run_full_pipeline(scratch, settings).detections
+        return detections, _engine_money(scratch, settings, detections)
     finally:
         shutil.rmtree(scratch.parent, ignore_errors=True)
+
+
+def money_from_report(report: CostReport) -> MoneyExpectation:
+    """Capture every line's quantity and the direct cost as the fence."""
+    concepts = {
+        line.concept_code: QuantityExpectation(
+            quantity=round(line.quantity, 3), unit=line.unit, source="engine",
+        )
+        for line in report.boq.lines
+    }
+    return MoneyExpectation(
+        concepts=concepts,
+        direct_cost=round(report.boq.direct_cost_total, 2),
+        unpriced=sorted(line.concept_code for line in report.boq.lines if line.unpriced),
+    )
+
+
+def score_money(
+    expected: MoneyExpectation, report: CostReport
+) -> tuple[list[MoneyScore], bool | None, list[str]]:
+    """Per-concept deviation against tolerance, the direct-cost verdict, and
+    the concepts the engine now produces that the gold never saw."""
+    actual = {line.concept_code: line for line in report.boq.lines}
+    scores: list[MoneyScore] = []
+    for code, want in sorted(expected.concepts.items()):
+        line = actual.get(code)
+        if line is None:
+            scores.append(MoneyScore(
+                concept_code=code, unit=want.unit, expected=want.quantity, actual=None,
+                deviation_pct=None, tolerance_pct=want.tolerance_pct, source=want.source,
+                passed=False,
+            ))
+            continue
+        if want.quantity == 0:
+            deviation = 0.0 if line.quantity == 0 else 100.0
+        else:
+            deviation = abs(line.quantity - want.quantity) / abs(want.quantity) * 100.0
+        scores.append(MoneyScore(
+            concept_code=code, unit=want.unit, expected=want.quantity,
+            actual=round(line.quantity, 3), deviation_pct=round(deviation, 2),
+            tolerance_pct=want.tolerance_pct, source=want.source,
+            passed=deviation <= want.tolerance_pct and line.unit.upper() == want.unit.upper(),
+        ))
+    cost_passed: bool | None = None
+    if expected.direct_cost is not None:
+        if expected.direct_cost == 0:
+            cost_passed = report.boq.direct_cost_total == 0
+        else:
+            drift = abs(report.boq.direct_cost_total - expected.direct_cost)
+            cost_passed = drift / expected.direct_cost * 100.0 <= expected.direct_cost_tolerance_pct
+    unexpected = sorted(code for code in actual if code not in expected.concepts)
+    return scores, cost_passed, unexpected
 
 
 def capture(
@@ -158,11 +283,12 @@ def capture(
     project's stored artifact, so a baseline never lags behind the parser."""
     settings = settings or get_settings()
     project_root = Path(project_root)
-    detections = (
-        _fresh_detections(project_root, settings)
-        if fresh
-        else _active_detections(project_root, settings)
-    )
+    money: MoneyExpectation | None = None
+    if fresh:
+        detections, report = _fresh_run(project_root, settings)
+        money = money_from_report(report)
+    else:
+        detections = _active_detections(project_root, settings)
     reviews = load_reviews(project_root / settings.processed_dir_name)
     excluded = sorted(k for k, r in reviews.detections.items() if r.status == "excluded")
     confirmed = sorted(k for k, r in reviews.detections.items() if r.status == "confirmed")
@@ -196,7 +322,35 @@ def capture(
         confirmed=confirmed,
         excluded=excluded,
         baseline_f1=baseline,
+        money=money,
     )
+
+
+def capture_money(
+    gold_dir: Path = GOLD_DIR, only: str | None = None, settings: Settings | None = None
+) -> list[Path]:
+    """Fresh engine run per entry; its quantities and direct cost become the
+    entry's money fence. Human rows already in the entry are kept: only the
+    engine's own rows are refreshed."""
+    settings = settings or get_settings()
+    saved: list[Path] = []
+    for entry in load_entries(gold_dir):
+        if only is not None and entry.drawing_id != only:
+            continue
+        source = Path(entry.source)
+        if not (source / "drawings").is_dir():
+            continue
+        _detections, report = _fresh_run(source, settings)
+        fresh = money_from_report(report)
+        if entry.money is not None:
+            for code, want in entry.money.concepts.items():
+                if want.source == "human":
+                    fresh.concepts[code] = want
+            if entry.money.direct_cost_tolerance_pct != 5.0:
+                fresh.direct_cost_tolerance_pct = entry.money.direct_cost_tolerance_pct
+        entry.money = fresh
+        saved.append(save_entry(entry, gold_dir))
+    return saved
 
 
 def save_entry(entry: GoldEntry, gold_dir: Path = GOLD_DIR) -> Path:
@@ -229,6 +383,7 @@ def evaluate_entry(entry: GoldEntry, settings: Settings | None = None) -> EntryR
         shutil.copytree(source / "drawings", scratch / "drawings")
         result = run_full_pipeline(scratch, settings)
         predicted = result.detections
+        report = _engine_money(scratch, settings, predicted) if entry.money else None
     finally:
         shutil.rmtree(scratch.parent, ignore_errors=True)
 
@@ -240,6 +395,17 @@ def evaluate_entry(entry: GoldEntry, settings: Settings | None = None) -> EntryR
         passed = all(s.f1 == 1.0 for s in scores) and not confirmed_missing
     else:
         passed = all(s.passed for s in scores) and not confirmed_missing
+    money_scores: list[MoneyScore] = []
+    cost_passed: bool | None = None
+    unexpected: list[str] = []
+    cost_actual: float | None = None
+    if entry.money is not None and report is not None:
+        money_scores, cost_passed, unexpected = score_money(entry.money, report)
+        cost_actual = round(report.boq.direct_cost_total, 2)
+        passed = (
+            passed and all(m.passed for m in money_scores)
+            and cost_passed is not False and not unexpected
+        )
     message = "" if matches else "El plano cambió desde la captura; recaptura el gold."
     return EntryResult(
         drawing_id=entry.drawing_id,
@@ -249,6 +415,11 @@ def evaluate_entry(entry: GoldEntry, settings: Settings | None = None) -> EntryR
         scores=scores,
         confirmed_missing=confirmed_missing,
         excluded_present=excluded_present,
+        money_scores=money_scores,
+        direct_cost_expected=entry.money.direct_cost if entry.money else None,
+        direct_cost_actual=cost_actual,
+        direct_cost_passed=cost_passed,
+        concepts_unexpected=unexpected,
         passed=passed,
         message=message,
     )
@@ -304,6 +475,25 @@ def render_markdown(summary: dict) -> str:
         if entry["excluded_present"]:
             lines += ["", "Excluidas que el motor sigue produciendo: "
                       + ", ".join(entry["excluded_present"])]
+        if entry.get("money_scores"):
+            lines += ["", "### Cantidades y dinero", "",
+                      "| Concepto | Unidad | Esperado | Motor | Desv. % | Tol. % | Fuente | OK |",
+                      "|---|---|---|---|---|---|---|---|"]
+            for m in entry["money_scores"]:
+                actual = "—" if m["actual"] is None else f"{m['actual']:g}"
+                dev = "—" if m["deviation_pct"] is None else f"{m['deviation_pct']:g}"
+                ok = "sí" if m["passed"] else "NO"
+                lines.append(
+                    f"| {m['concept_code']} | {m['unit']} | {m['expected']:g} | {actual} | {dev} "
+                    f"| {m['tolerance_pct']:g} | {m['source']} | {ok} |"
+                )
+            if entry.get("direct_cost_expected") is not None:
+                verdict = "sí" if entry.get("direct_cost_passed") else "NO"
+                lines += ["", f"Costo directo: esperado ${entry['direct_cost_expected']:,.2f}, "
+                          f"motor ${entry.get('direct_cost_actual') or 0:,.2f} — OK: {verdict}"]
+            if entry.get("concepts_unexpected"):
+                lines += ["", "Conceptos nuevos que el gold no conoce: "
+                          + ", ".join(entry["concepts_unexpected"])]
         lines.append("")
     return "\n".join(lines) + "\n"
 
@@ -319,6 +509,11 @@ def main(argv: list[str] | None = None) -> int:
         "--fresh", action="store_true",
         help="label from a current-engine run instead of the stored artifact",
     )
+    money = sub.add_parser(
+        "money", help="capture the engine's quantities and direct cost into existing entries"
+    )
+    money.add_argument("--gold", default=str(GOLD_DIR))
+    money.add_argument("--only")
     runner = sub.add_parser("run", help="evaluate the engine against the gold set")
     runner.add_argument("--gold", default=str(GOLD_DIR))
     runner.add_argument("--only")
@@ -329,6 +524,10 @@ def main(argv: list[str] | None = None) -> int:
         path = save_entry(entry, Path(args.gold))
         counts = {k: len(v) for k, v in entry.labels.items()}
         print(f"{entry.drawing_id}: {entry.status} — {counts} → {path}")
+        return 0
+    if args.command == "money":
+        for path in capture_money(Path(args.gold), only=args.only):
+            print(f"money → {path}")
         return 0
     summary = run(Path(args.gold), only=args.only)
     print(render_markdown(summary))

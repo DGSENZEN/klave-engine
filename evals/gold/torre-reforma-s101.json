@@ -86,5 +86,68 @@
     "grid_line": 1.0,
     "wall": 1.0
   },
+  "money": {
+    "concepts": {
+      "CIM-001": {
+        "quantity": 1.404,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "CIM-002": {
+        "quantity": 0.756,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "EST-001": {
+        "quantity": 7.29,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "EST-002": {
+        "quantity": 1.012,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "EST-004": {
+        "quantity": 16.2,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "ACA-001": {
+        "quantity": 32.4,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "ACA-002": {
+        "quantity": 32.4,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "CIM-003": {
+        "quantity": 3.84,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      }
+    },
+    "direct_cost": 57894.15,
+    "direct_cost_tolerance_pct": 5.0,
+    "unpriced": []
+  },
   "notes": ""
 }

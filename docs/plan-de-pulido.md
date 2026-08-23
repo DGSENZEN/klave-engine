@@ -184,7 +184,7 @@ Aplanado, pintura y muro son `longitud × altura × caras` (`catalog.py:363-402,
 
 | # | Hallazgo | Fix |
 |---|---|---|
-| F1 **P0** | Ninguna prueba compara cantidad, precio ni total: A1–A13 pasan `eval-gold` y `eval-demo` | **eval de dinero**: por proyecto gold, tabla esperada de `concept_code → cantidad ± tolerancia` y `direct_cost`, capturada con `--fresh` y editada a mano donde haya verdad |
+| F1 **P0** · **hecho** | Ninguna prueba compara cantidad, precio ni total: A1–A13 pasan `eval-gold` y `eval-demo` | **eval de dinero**: por proyecto gold, tabla esperada de `concept_code → cantidad ± tolerancia` y `direct_cost`, capturada con `--fresh` y editada a mano donde haya verdad |
 | F2 P1 | El gold set son 3 dibujos, todos `baseline` (confirmed/excluded vacíos): solo prueba que el motor no cambió; dos apuntan a rutas locales | promover Marina y PRUEBA-1 a `partial` con las revisiones humanas; fixtures portables (copiar DXF mínimos a `evals/fixtures`) |
 | F3 P1 | `compare.py` empareja solo por clave exacta; contra un OPUS real todo cae en "solo humano" | usar alias + matcher para emparejar; normalizar unidades; comparar importes y totales por partida |
 | F4 P1 | Sin pruebas HTTP para `catalog.py` (40 rutas), `reviews.py`, `versions.py`, `croquis.py`, `exports.py`, `events.py`, `jobs.py`; módulos del motor sin prueba (`risks/rules.py`, `dxf/normalizer.py`, `schedule.py`, `financial.py`, `integration.py`…) | contratos HTTP con `TestClient` por módulo; pruebas de normalizador con DXF sintéticos |

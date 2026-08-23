@@ -32,6 +32,36 @@ desaparece, si una entrada `verified` deja de ser perfecta, o si cualquier tipo
 cae por debajo de su F1 base.
 
 
+## Dinero en el gold set
+
+Detectar bien no basta: un cambio en una regla, una matriz o un precio
+semilla debe verse como cantidad y como pesos. Cada entrada del gold puede
+llevar `money`:
+
+```json
+"money": {
+  "concepts": {"EST-004": {"quantity": 449.277, "unit": "M2", "tolerance_pct": 10, "source": "engine"}},
+  "direct_cost": 777450.5,
+  "direct_cost_tolerance_pct": 5,
+  "unpriced": []
+}
+```
+
+- `make eval-gold` (`gold run`) vuelve a correr el motor puro sobre el
+  plano — catálogo por defecto, precios de referencia, supuestos por
+  defecto, sin revisiones ni catálogo del taller — y compara concepto por
+  concepto (desviación contra `tolerance_pct`), el costo directo contra su
+  tolerancia, y falla si aparece un concepto que el gold no conocía.
+- `uv run python -m klave_engine.evals.gold money [--only id]` captura la
+  cerca actual del motor (`source: engine`) en las entradas existentes sin
+  tocar etiquetas ni revisiones.
+- Donde haya verdad, edita a mano: `"source": "human"` con la cantidad del
+  levantamiento y su tolerancia; `money` conserva esas filas al recapturar.
+
+La cerca del motor no es verdad: es lo que el motor decía cuando se capturó,
+para que ningún cambio mueva dinero sin que alguien lo vea y lo acepte
+(recaptura a propósito, con el commit que explica por qué).
+
 ## Comparar contra un presupuesto humano
 
 La calibración que una firma hace en sus primeros proyectos: el presupuesto

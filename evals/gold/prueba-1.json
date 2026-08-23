@@ -575,5 +575,96 @@
     "slab_region": 1.0,
     "wall": 1.0
   },
+  "money": {
+    "concepts": {
+      "PRE-001": {
+        "quantity": 128.987,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "CIM-001": {
+        "quantity": 6.947,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "CIM-002": {
+        "quantity": 3.74,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "EST-001": {
+        "quantity": 17.436,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "EST-002": {
+        "quantity": 11.731,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "EST-005": {
+        "quantity": 25.301,
+        "unit": "M",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "EST-003": {
+        "quantity": 34.291,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "EST-012": {
+        "quantity": 194.446,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "EST-004": {
+        "quantity": 449.277,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "ACA-001": {
+        "quantity": 898.555,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "ACA-002": {
+        "quantity": 898.555,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "CIM-003": {
+        "quantity": 12.03,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      }
+    },
+    "direct_cost": 777450.5,
+    "direct_cost_tolerance_pct": 5.0,
+    "unpriced": []
+  },
   "notes": ""
 }

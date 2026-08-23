@@ -54,5 +54,82 @@
     "slab_region": 1.0,
     "wall": 1.0
   },
+  "money": {
+    "concepts": {
+      "PRE-001": {
+        "quantity": 120000.0,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "CIM-001": {
+        "quantity": 4680.0,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "CIM-002": {
+        "quantity": 2520.0,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "EST-001": {
+        "quantity": 0.81,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "EST-002": {
+        "quantity": 33.75,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "EST-003": {
+        "quantity": 120000.0,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "EST-004": {
+        "quantity": 540.0,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "ACA-001": {
+        "quantity": 1080.0,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "ACA-002": {
+        "quantity": 1080.0,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "CIM-003": {
+        "quantity": 7248.08,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      }
+    },
+    "direct_cost": 105740707.49,
+    "direct_cost_tolerance_pct": 5.0,
+    "unpriced": []
+  },
   "notes": ""
 }
