@@ -109,7 +109,7 @@ Aplanado, pintura y muro son `longitud × altura × caras` (`catalog.py:363-402,
 
 | Elemento | Estado | Prioridad | Camino |
 |---|---|---|---|
-| Escaleras y rampas | solo *vacío* de losa: hoy restan y nada suma | **P0** | `DetectionType.stair` desde `ESCALERA` + huellas (líneas paralelas equidistantes) → losa inclinada m² + escalones; concepto EST-015 |
+| Escaleras y rampas | **hecho** (`DetectionType.stair`: texto ESCALERA/RAMPA sobre su patrón de huellas → ancho, paso, tramo; EST-015 en M2 de losa inclinada × 1.15 con matriz completa; el texto solo, advierte) | **P0** | `DetectionType.stair` desde `ESCALERA` + huellas (líneas paralelas equidistantes) → losa inclinada m² + escalones; concepto EST-015 |
 | Vanos (puertas, ventanas, cancelería) | no existe | **P0** | ver A4 |
 | Zapatas corridas / mampostería | rechazadas por área | **P0** | ver A13 |
 | Pretiles / parapetos | cobrados como muro completo | **P0** | ver A11 |

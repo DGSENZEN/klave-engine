@@ -419,6 +419,18 @@ APU_TEMPLATES: dict[str, list[tuple[str, float]]] = {
         ("MO-CUAD-ALB", 0.150),
         ("EQ-HERRAMIENTA", 1.0),
     ],
+    # M2 rampa de escalera (losa inclinada 12 cm + escalones): concreto,
+    # acero (≈ 14 kg/m²) y cimbra con obra falsa — sin conceptos derivados
+    # propios, la matriz lo trae todo, como el muro de concreto
+    "EST-015": [
+        ("MAT-CONC250", 0.17),
+        ("MAT-ACERO", 0.014),
+        ("MAT-CIMBRA", 1.30),
+        ("MO-CUAD-ALB", 0.65),
+        ("MO-CUAD-FIE", 0.35),
+        ("MO-CUAD-CARP", 0.55),
+        ("EQ-HERRAMIENTA", 1.0),
+    ],
     # M2 aplanado fino 1:4, 2 cm, per face (the rule already counts both faces)
     "ACA-001": [
         ("MAT-MORTERO", 0.024),

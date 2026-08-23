@@ -35,6 +35,7 @@ class Family(StrEnum):
     cerramiento = "cerramiento"
     muro_concreto = "muro_concreto"
     pilote = "pilote"
+    escalera = "escalera"
     local = "local"
     terreno = "terreno"
     eje = "eje"
@@ -59,6 +60,7 @@ FAMILY_INFO: dict[Family, FamilyInfo] = {
     Family.dala: FamilyInfo("DAL", "Dala", "Dalas"),
     Family.cerramiento: FamilyInfo("CER", "Cerramiento", "Cerramientos"),
     Family.muro_concreto: FamilyInfo("MCO", "Muro de concreto", "Muros de concreto"),
+    Family.escalera: FamilyInfo("ESC", "Escalera", "Escaleras"),
     Family.local: FamilyInfo("LOC", "Local", "Locales"),
     Family.terreno: FamilyInfo("TER", "Terreno", "Terreno"),
     Family.pilote: FamilyInfo("PIL", "Pilote", "Pilotes"),
@@ -72,6 +74,7 @@ _METHOD_PHRASES: dict[str, str] = {
     "column_tag_regex_near_grid": "etiqueta de texto validada contra la retícula de ejes",
     "beam_tag_regex_near_linework": "etiqueta de texto sobre línea de trabe",
     "footing_closed_rectangular_polyline": "polilínea rectangular cerrada con proporción de zapata",
+    "stair_treads_near_text": "patrón de huellas junto al texto ESCALERA/RAMPA",
     "wall_paired_parallel_lines": "par de líneas paralelas con separación de muro",
     "slab_region_from_hatch": "achurado de losa sobre región cerrada",
     "slab_panel": "tablero acotado por trabes/muros, tipificado por el patrón y la etiqueta",
@@ -106,6 +109,8 @@ def classify_family(detection: Detection) -> Family:
         return Family.trabe
     if dtype == DetectionType.pile:
         return Family.pilote
+    if dtype == DetectionType.stair:
+        return Family.escalera
     if dtype == DetectionType.room:
         return Family.local
     if dtype == DetectionType.terrain:

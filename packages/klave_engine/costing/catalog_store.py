@@ -527,6 +527,12 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '14') "
                     "ON CONFLICT(key) DO UPDATE SET value = '14'"
                 )
+            if version_row is None or int(version_row["value"]) < 15:
+                self._sync_builtin_concepts(conn, ("EST-015",))
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '15') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '15'"
+                )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.
                 conn.execute(

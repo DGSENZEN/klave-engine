@@ -377,6 +377,32 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
             sequence_order=2,
         ),
         Concept(
+            code="EST-015",
+            description=(
+                "Rampa de escalera de concreto armado f'c=250 kg/cm², incluye escalones, "
+                "acero y cimbra"
+            ),
+            unit="M2",
+            phase="Estructura",
+            rule=QuantityRule(
+                detection_type=DetectionType.stair,
+                kind=QuantityKind.AREA,
+                source_property="estimated_area",
+            ),
+            # Plan area → inclined area: the slope factor for a story of
+            # h=column_height over the measured run is applied per detection
+            # in the stair result; the factor here covers the huella/peralte
+            # development of the steps themselves.
+            quantity_factor=1.15,
+            view_scope=ViewScope.SUPERSTRUCTURE_SUM,
+            assumptions=[
+                "Área en planta de las huellas leídas × 1.15 de desarrollo por "
+                "escalones; losa inclinada con acero y cimbra en la matriz"
+            ],
+            production_rate_per_day=6.0,
+            sequence_order=3,
+        ),
+        Concept(
             code="EST-004",
             description="Muros de block/concreto, incluye refuerzo y mortero",
             unit="M2",
