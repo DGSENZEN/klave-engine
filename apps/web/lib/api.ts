@@ -834,6 +834,45 @@ export const startAiRead = (id: string, actor?: string, onlyFailed = false) =>
 export const frameRenderUrl = (id: string, code: string) =>
   `${API_BASE}/projects/${id}/renders/${encodeURIComponent(code)}.png`;
 
+// ---- Diagnóstico: hallazgos ranked by consequence ----
+
+/** Three actionable tiers. A deliberate engine choice is not an alarm at
+ * all — it lives in `criterios`, the assumptions register. */
+export type Severity = "bloqueante" | "dinero" | "revisar";
+
+export type Hallazgo = {
+  id: string;
+  severity: Severity;
+  title: string;
+  detail: string;
+  action: string;
+  /** Route to act on it: bare = project subroute, "/x" = workspace, "" = resumen. */
+  target: string | null;
+  /** Pesos already counted that depend on this finding. */
+  monto_afectado: number | null;
+  /** How to confirm the finding against the drawing itself. */
+  verificar: string;
+  /** The last responsible moment: after this, fixing it costs money. */
+  momento: "entregar" | "cotizar" | "contratar" | "sin_urgencia";
+  /** What is at stake when the money is honestly unknowable ("23.00 PZA"). */
+  exposicion: string | null;
+  concept_code: string | null;
+};
+
+export type Diagnostico = {
+  hallazgos: Hallazgo[];
+  /** Deliberate engine choices — recorded, not alarmed. */
+  criterios: string[];
+  by_severity: Partial<Record<Severity, number>>;
+  monto_en_duda: number;
+  conceptos_sin_precio: number;
+  entregable: boolean;
+  resumen: string;
+};
+
+export const getDiagnostico = (id: string) =>
+  getJSON<Diagnostico>(`/projects/${id}/diagnostico`);
+
 // ---- Correction loop & verification ----
 
 export type ReviewStatus = "confirmed" | "excluded";

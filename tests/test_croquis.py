@@ -109,3 +109,27 @@ def test_frameless_drawing_renders_from_entities(tmp_path):
     )
     out = croquis_for_line(artifact, control, line, {"w1": det}, None, [], run_id="run_a")
     assert len(out) == 1 and out[0].title == "Plano completo" and out[0].path.exists()
+
+
+def test_the_croquis_provider_actually_reaches_the_workbook():
+    """It did not: build_presupuesto_workbook accepted a provider and dropped
+    it, so every Generadores sheet shipped without the evidence images that
+    make a quantity checkable."""
+    from klave_engine.costing.exports import build_presupuesto_workbook
+    from klave_engine.costing.reviews import ProjectReviews
+
+    from tests.test_hallazgos import _line, _report
+
+    asked: list[str] = []
+
+    def provider(line):
+        asked.append(line.concept_code)
+        return []
+
+    report = _report([_line("EST-002")])
+    report.boq.lines[0].source_detections = ["det_1"]
+    build_presupuesto_workbook(
+        report, [], ProjectReviews(), project_name="Obra", client=None,
+        croquis=provider,
+    )
+    assert asked == ["EST-002"]

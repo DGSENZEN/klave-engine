@@ -14,6 +14,7 @@ from klave_engine.costing.exports import (
     build_explosion_workbook,
     build_presupuesto_workbook,
 )
+from klave_engine.costing.hallazgos import diagnose
 from klave_engine.costing.models import BoqLine, CostReport
 from klave_engine.costing.reviews import load_reviews
 from klave_engine.detection.frames import SheetFrame
@@ -64,6 +65,45 @@ def _croquis_provider(
     return provide
 
 
+def _blocking_findings(store: ProjectStore, project_id: str, settings: Settings) -> list[str]:
+    """Findings that make this deliverable wrong, not merely incomplete.
+
+    A red banner beside a working download button gets clicked through — the
+    browser-warning literature measures that at 70% — so a blocking finding
+    stops the export instead of decorating it. The way past is a written
+    reason, and the reason is stamped into the workbook."""
+    try:
+        report = CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
+    except HTTPException:
+        return []
+    control_dir = store.get_root(project_id) / settings.processed_dir_name
+    diagnostico = diagnose(report, reviews=load_reviews(control_dir))
+    return [h.title for h in diagnostico.hallazgos if h.severity == "bloqueante"]
+
+
+def _guard_export(
+    store: ProjectStore, project_id: str, settings: Settings, motivo: str
+) -> str:
+    """Refuse a deliverable that would be wrong, unless the engineer says why."""
+    blocking = _blocking_findings(store, project_id, settings)
+    if blocking and not motivo.strip():
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_type": "export_blocked",
+                "message": (
+                    "Este presupuesto tiene "
+                    + (f"{len(blocking)} hallazgos bloqueantes"
+                       if len(blocking) > 1 else "un hallazgo bloqueante")
+                    + ": entregarlo así estaría mal. Resuélvelo, o escribe por qué "
+                    "lo entregas de todos modos (queda escrito en el Excel)."
+                ),
+                "bloqueantes": blocking,
+            },
+        )
+    return motivo.strip()[:300]
+
+
 def _mark_exported(store: ProjectStore, project_id: str) -> None:
     """A tiny marker so onboarding can tell a delivery has happened."""
     try:
@@ -82,10 +122,13 @@ def _mark_exported(store: ProjectStore, project_id: str) -> None:
 def export_explosion(
     request: Request,
     project_id: str,
+    motivo: str = "",
     store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
 ) -> Response:
     """Explosión de insumos: what the presupuesto consumes, per resource."""
     rate_limit(request, "export", max_attempts=60, window_seconds=3600.0)
+    _guard_export(store, project_id, settings, motivo)
     manifest = store.get_manifest(project_id)
     _mark_exported(store, project_id)
     report = CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
@@ -101,10 +144,13 @@ def export_explosion(
 def export_apus(
     request: Request,
     project_id: str,
+    motivo: str = "",
     store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
 ) -> Response:
     """Análisis de precios unitarios: one block per concept with its matrix."""
     rate_limit(request, "export", max_attempts=60, window_seconds=3600.0)
+    _guard_export(store, project_id, settings, motivo)
     manifest = store.get_manifest(project_id)
     _mark_exported(store, project_id)
     report = CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
@@ -121,10 +167,12 @@ def export_presupuesto(
     request: Request,
     project_id: str,
     format: Literal["klave", "opus", "neodata", "licitacion", "licitacion_larga"] = "klave",
+    motivo: str = "",
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> Response:
     rate_limit(request, "export", max_attempts=60, window_seconds=3600.0)
+    reason = _guard_export(store, project_id, settings, motivo)
     manifest = store.get_manifest(project_id)
     _mark_exported(store, project_id)
     try:
@@ -164,6 +212,7 @@ def export_presupuesto(
             if format == "klave"
             else None
         ),
+        override_reason=reason,
     )
     suffix = "" if format == "klave" else f"_{format}"
     filename = f"presupuesto_{slugify(manifest.project_name)[:40]}{suffix}.xlsx"

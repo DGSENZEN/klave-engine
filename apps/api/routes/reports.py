@@ -3,8 +3,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from klave_engine.common.config import Settings
-from klave_engine.costing.models import CostingConfig, CostingOverrides
+from klave_engine.costing.hallazgos import diagnose
+from klave_engine.costing.models import CostingConfig, CostingOverrides, CostReport
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
+from klave_engine.costing.reviews import load_reviews
+from klave_engine.detection.frames import SheetFrame
+from klave_engine.detection.results import Detection
+from klave_engine.llm.coverage import coverage_flags
+from klave_engine.llm.service import load_ai_reads
 
 from apps.api.dependencies import (
     ProjectStore,
@@ -27,6 +33,42 @@ def get_quantities(project_id: str, store: ProjectStore = Depends(get_store)) ->
 @router.get("/{project_id}/costs")
 def get_costs(project_id: str, store: ProjectStore = Depends(get_store)) -> dict:
     return store.read_artifact(project_id, "cost_report.json")
+
+
+@router.get("/{project_id}/diagnostico")
+def get_diagnostico(
+    project_id: str,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """What is wrong with this presupuesto, ranked by consequence.
+
+    Computed on demand rather than persisted: it is a reading of the current
+    report, reviews and AI coverage, and it must never go stale behind them."""
+    report = CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
+    control_dir = store.get_root(project_id) / settings.processed_dir_name
+    reviews = load_reviews(control_dir)
+    cobertura: list[dict] = []
+    try:
+        reads = load_ai_reads(control_dir)
+        if reads.readings:
+            detections = [
+                Detection.model_validate(d)
+                for d in store.read_artifact(project_id, "detections.json")
+            ]
+            frames = [
+                SheetFrame.model_validate(f)
+                for f in store.read_artifact(project_id, "frames.json")
+            ]
+            cobertura = [
+                f.model_dump()
+                for f in coverage_flags(
+                    [r.model_dump() for r in reads.readings], detections, frames
+                )
+            ]
+    except HTTPException:
+        cobertura = []  # older run without those artifacts: no coverage to add
+    return diagnose(report, reviews=reviews, cobertura=cobertura).model_dump()
 
 
 @router.get("/{project_id}/views")

@@ -15,12 +15,14 @@ import {
 } from "@phosphor-icons/react";
 import {
   addAdjustment,
+  ApiError,
   apiMessage,
   downloadFile,
   croquisUrl,
   getCatalog,
   getCroquis,
   getDimensions,
+  getDiagnostico,
   getProjectReviews,
   money,
   money2,
@@ -30,6 +32,7 @@ import {
   type CatalogConcept,
   type CroquisItem,
   type Dimensions,
+  type Diagnostico as DiagnosticoType,
   type ProjectReviews,
 } from "@/lib/api";
 import { useCostReport } from "@/lib/useProjectReport";
@@ -61,6 +64,7 @@ import { moneyGate, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
 import { VersionsPanel } from "@/components/VersionsPanel";
 import { ConceptPicker } from "@/components/ConceptPicker";
 import { IndicatorsCard } from "@/components/IndicatorsCard";
+import { DiagnosticoPanel, ExportBlockedDialog } from "@/components/Diagnostico";
 import { SuggestionsBar } from "@/components/SuggestionsBar";
 
 export default function PresupuestoPage() {
@@ -71,6 +75,13 @@ export default function PresupuestoPage() {
   const [exporting, setExporting] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [concepts, setConcepts] = useState<CatalogConcept[] | null>(null);
+  const [diagnostico, setDiagnostico] = useState<DiagnosticoType | null>(null);
+  const [blocked, setBlocked] = useState<{
+    label: string;
+    path: string;
+    fallbackName: string;
+    detail: { message?: string; bloqueantes?: string[] };
+  } | null>(null);
   const { latestEvent, sendActivity, connectionEpoch, actorName, clientId } =
     useProjectLive();
 
@@ -78,6 +89,7 @@ export default function PresupuestoPage() {
   useEffect(() => {
     getDimensions(id).then(setDims).catch(() => {});
     getProjectReviews(id).then(setReviews).catch(() => {});
+    getDiagnostico(id).then(setDiagnostico).catch(() => setDiagnostico(null));
     getCatalog()
       .then((catalog) => setConcepts(catalog.concepts))
       .catch(() => {});
@@ -89,6 +101,13 @@ export default function PresupuestoPage() {
     }
     if (latestEvent?.type === "run_published" || latestEvent?.type === "review_updated") {
       getProjectReviews(id).then(setReviews).catch(() => {});
+    }
+    if (
+      latestEvent?.type === "run_published" ||
+      latestEvent?.type === "review_updated" ||
+      latestEvent?.type === "costing_updated"
+    ) {
+      getDiagnostico(id).then(setDiagnostico).catch(() => {});
     }
   }, [id, latestEvent]);
 
@@ -145,19 +164,37 @@ export default function PresupuestoPage() {
   }
 
   const parametricCount = costs.boq.lines.filter((l) => l.parametric).length;
-  const unpriced = costs.boq.lines.filter((l) => l.unpriced);
   const conceptCodes = new Set(costs.boq.lines.map((l) => l.concept_code));
   const avgConf =
     costs.boq.lines.reduce((s, l) => s + l.confidence, 0) / (costs.boq.lines.length || 1);
   const phases = [...new Set(costs.boq.lines.map((l) => l.phase))];
 
-  async function exportFile(label: string, path: string, fallbackName: string) {
+  async function exportFile(
+    label: string,
+    path: string,
+    fallbackName: string,
+    motivo?: string,
+  ) {
     sendActivity("exporting_budget", label);
     setExporting(label);
     setExportError(null);
     try {
-      await downloadFile(path, fallbackName);
+      const url = motivo
+        ? `${path}${path.includes("?") ? "&" : "?"}motivo=${encodeURIComponent(motivo)}`
+        : path;
+      await downloadFile(url, fallbackName);
     } catch (e) {
+      // A blocking finding stops the file instead of decorating it: the way
+      // past is a written reason, which then travels inside the workbook.
+      if (
+        e instanceof ApiError &&
+        e.status === 409 &&
+        (e.detail as { error_type?: string } | undefined)?.error_type === "export_blocked"
+      ) {
+        const detail = e.detail as { message?: string; bloqueantes?: string[] };
+        setBlocked({ label, path, fallbackName, detail });
+        return;
+      }
       setExportError(apiMessage(e, `No se pudo generar «${label}».`));
     } finally {
       setExporting(null);
@@ -259,26 +296,21 @@ export default function PresupuestoPage() {
         </div>
       )}
       <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
-      <SuggestionsBar projectId={id} actorName={actorName} conceptCodes={conceptCodes} />
-      {unpriced.length > 0 && (
-        <div className="mb-4">
-          <Callout
-            tone="danger"
-            action={
-              <Link href="/catalogo?tab=conceptos" className={buttonClasses("secondary", "sm")}>
-                Dar precio en el catálogo
-              </Link>
-            }
-          >
-            {unpriced.length === 1
-              ? `${unpriced[0].concept_code} tiene cantidad pero no precio: el costo directo no lo incluye.`
-              : `${unpriced.length} conceptos tienen cantidad pero no precio (${unpriced
-                  .slice(0, 4)
-                  .map((l) => l.concept_code)
-                  .join(", ")}${unpriced.length > 4 ? "…" : ""}): el costo directo no los incluye.`}
-          </Callout>
-        </div>
+      {blocked && (
+        <ExportBlockedDialog
+          label={blocked.label}
+          message={blocked.detail.message ?? ""}
+          bloqueantes={blocked.detail.bloqueantes ?? []}
+          onCancel={() => setBlocked(null)}
+          onConfirm={(motivo) => {
+            const pending = blocked;
+            setBlocked(null);
+            void exportFile(pending.label, pending.path, pending.fallbackName, motivo);
+          }}
+        />
       )}
+      {diagnostico && <DiagnosticoPanel diagnostico={diagnostico} projectId={id} />}
+      <SuggestionsBar projectId={id} actorName={actorName} conceptCodes={conceptCodes} />
       {parametricCount > 0 && (
         <div className="mb-4">
           <Callout tone="info">

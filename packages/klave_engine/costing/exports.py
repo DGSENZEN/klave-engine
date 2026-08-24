@@ -98,6 +98,7 @@ def build_presupuesto_workbook(
     fmt: str = "klave",
     inventory: dict | None = None,
     croquis: CroquisProvider | None = None,
+    override_reason: str = "",
 ) -> bytes:
     if fmt == "opus":
         workbook = _flat_workbook(
@@ -116,7 +117,11 @@ def build_presupuesto_workbook(
             report, reviews, project_name, client, long_descriptions=fmt == "licitacion_larga"
         )
     else:
-        workbook = _klave_workbook(report, detections, reviews, project_name, client)
+        workbook = _klave_workbook(
+            report, detections, reviews, project_name, client,
+            croquis=croquis,
+            override_reason=override_reason,
+        )
         if inventory and inventory.get("sheets"):
             _levantamiento(workbook.create_sheet("Levantamiento"), inventory)
     buffer = io.BytesIO()
@@ -290,9 +295,10 @@ def _klave_workbook(
     project_name: str,
     client: str | None,
     croquis: CroquisProvider | None = None,
+    override_reason: str = "",
 ) -> Workbook:
     workbook = Workbook()
-    _caratula(workbook.active, report, reviews, project_name, client)
+    _caratula(workbook.active, report, reviews, project_name, client, override_reason)
     _presupuesto(workbook.create_sheet("Presupuesto"), report)
     _apus(workbook.create_sheet("APUs"), report)
     _generadores(workbook.create_sheet("Generadores"), report, detections, reviews, croquis)
@@ -308,6 +314,7 @@ def _caratula(
     reviews: ProjectReviews,
     project_name: str,
     client: str | None,
+    override_reason: str = "",
 ) -> None:
     ws.title = "Carátula"
     _title(ws, 1, "Presupuesto de obra — Klave", size=16)
@@ -336,6 +343,13 @@ def _caratula(
         ("Total con contingencia", report.integration.grand_total),
         ("Plazo estimado", f"{report.schedule.total_duration_days} días hábiles"),
     ]
+    if override_reason:
+        # Exported over a blocking finding: whoever receives this file learns
+        # that from the file, not from whoever sent it.
+        rows.extend([
+            ("", ""),
+            ("ENTREGADO CON HALLAZGO BLOQUEANTE", override_reason),
+        ])
     for offset, (label, value) in enumerate(rows, start=4):
         label_cell = ws.cell(row=offset, column=1, value=label)
         label_cell.font = Font(bold=True, size=10, color=MUTED)
