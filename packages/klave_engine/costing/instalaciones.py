@@ -1,0 +1,344 @@
+"""Instalaciones: lo que el levantamiento ya lee y el presupuesto no cobra.
+
+Un juego de planos de edificación trae hojas de hidráulica, sanitaria, gas y
+aire acondicionado, y el levantamiento ya las recorre: sabe que la capa
+``P-04IH-CPIP`` de la hoja de hidráulica tiene 149.41 m de desarrollo, que
+``00-SANITARIA`` tiene 128.27 m y 16 bloques ``DESCSAN1``. Esa lectura hoy
+muere ahí, porque no hay concepto al cual mandarla — y las instalaciones son
+entre el 15 y el 25 % del costo de un edificio. El presupuesto salía sin
+ellas y nadie lo decía.
+
+Este módulo cierra el hueco por sus dos extremos:
+
+* **Los conceptos existen** — hidráulica, sanitaria, gas, aire, eléctrica —
+  pero **sin matriz**. El motor puede sostener la cantidad, porque la midió
+  del plano; no puede sostener el precio, porque nadie se lo dio. Entran como
+  cantidad real marcada «sin precio» hasta que el taller adopte una de su
+  catálogo o de una publicación. Cero sería peor que nada: se suma.
+
+* **Los mapeos se proponen, no se aplican.** Una capa llamada ``00-SANITARIA``
+  en una hoja que el levantamiento ya clasificó como sanitaria es casi
+  seguramente tubería sanitaria — casi. La propuesta viene con la razón, con
+  la hoja de la que salió y con la cantidad que produciría, y alguien la
+  confirma. Aplicarla sola convertiría una convención de dibujo en dinero sin
+  que nadie mirara.
+
+El filtro de disciplina es lo que hace utilizable a la biblioteca. En la hoja
+de aire acondicionado conviven ``AireDucto`` (que sí es ducto) con ``MUROS2``,
+``COLUMNA`` y ``PLAFONES``, que son el fondo arquitectónico del dibujo. Sin
+disciplina habría que adivinar; con ella, sólo se proponen capas cuyo nombre
+además dice de qué son.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+
+from klave_engine.costing.models import Concept
+
+# Las partidas como se llaman en un presupuesto mexicano, no como se llaman
+# en el árbol de capas de un DWG.
+FASE_HIDRAULICA = "Instalación hidráulica"
+FASE_SANITARIA = "Instalación sanitaria"
+FASE_ELECTRICA = "Instalación eléctrica"
+FASE_GAS = "Instalación de gas"
+FASE_AIRE = "Aire acondicionado"
+
+# code, description, unit, phase, rendimiento/día, orden
+_CONCEPTOS: tuple[tuple[str, str, str, str, float, int], ...] = (
+    # --- Hidráulica -------------------------------------------------------
+    ("HID-001", "Salida hidráulica de agua fría en muro, incluye conexiones y pruebas",
+     "SAL", FASE_HIDRAULICA, 6.0, 10),
+    ("HID-002", "Salida hidráulica de agua caliente en muro, incluye conexiones y pruebas",
+     "SAL", FASE_HIDRAULICA, 5.0, 20),
+    ("HID-003", "Tubería de agua fría, incluye conexiones, soportería y prueba hidrostática",
+     "M", FASE_HIDRAULICA, 30.0, 30),
+    ("HID-004", "Tubería de agua caliente con aislamiento, incluye conexiones y prueba",
+     "M", FASE_HIDRAULICA, 25.0, 40),
+    ("HID-005", "Tubería de retorno de agua caliente, incluye conexiones y prueba",
+     "M", FASE_HIDRAULICA, 25.0, 50),
+    # --- Sanitaria --------------------------------------------------------
+    ("SAN-001", "Salida sanitaria de descarga, incluye conexiones y pruebas",
+     "SAL", FASE_SANITARIA, 6.0, 10),
+    ("SAN-002", "Tubería sanitaria de albañal, incluye conexiones y soportería",
+     "M", FASE_SANITARIA, 28.0, 20),
+    ("SAN-003", "Bajada de aguas pluviales, incluye abrazaderas y conexiones",
+     "M", FASE_SANITARIA, 30.0, 30),
+    ("SAN-004", "Registro sanitario de tabique con tapa de concreto",
+     "PZA", FASE_SANITARIA, 1.5, 40),
+    # --- Gas --------------------------------------------------------------
+    ("GAS-001", "Tubería de gas, incluye conexiones y prueba de hermeticidad",
+     "M", FASE_GAS, 22.0, 10),
+    # --- Aire acondicionado ----------------------------------------------
+    ("AIR-001", "Ducto de lámina galvanizada con aislamiento y soportería, "
+     "por metro de desarrollo", "M", FASE_AIRE, 12.0, 10),
+    ("AIR-002", "Ducto flexible aislado, incluye collarines y soportería",
+     "M", FASE_AIRE, 30.0, 20),
+    ("AIR-003", "Tubería de cobre para refrigerante con aislamiento, en pares",
+     "M", FASE_AIRE, 20.0, 30),
+    ("AIR-004", "Rejilla o difusor de suministro/retorno, incluye marco y compuerta",
+     "PZA", FASE_AIRE, 8.0, 40),
+    # --- Eléctrica --------------------------------------------------------
+    ("ELE-001", "Salida eléctrica para contacto, incluye caja, chalupa y cableado",
+     "SAL", FASE_ELECTRICA, 8.0, 10),
+    ("ELE-002", "Salida eléctrica para centro de luz o apagador, incluye caja y cableado",
+     "SAL", FASE_ELECTRICA, 8.0, 20),
+    ("ELE-003", "Canalización con tubo conduit, incluye accesorios y soportería",
+     "M", FASE_ELECTRICA, 35.0, 30),
+    ("ELE-004", "Alimentador con cable de cobre THW, incluye identificación y conexión",
+     "M", FASE_ELECTRICA, 40.0, 40),
+)
+
+# Un concepto de instalaciones sale del catálogo **sin matriz**: la cantidad
+# la sostiene el plano, el precio no lo sostiene nadie todavía.
+SIN_MATRIZ: list[tuple[str, float]] = []
+
+CONCEPTOS_STORE: list[tuple[str, str, str, str, float, int, list[tuple[str, float]]]] = [
+    (code, desc, unit, phase, rate, order, SIN_MATRIZ)
+    for code, desc, unit, phase, rate, order in _CONCEPTOS
+]
+
+CODIGOS: tuple[str, ...] = tuple(c[0] for c in _CONCEPTOS)
+
+_SIN_PRECIO = (
+    "Sin matriz: el plano sostiene la cantidad, no el precio. "
+    "Adopta un P.U. de tu catálogo o de una publicación."
+)
+
+
+def conceptos_de_instalaciones() -> list[Concept]:
+    """Los conceptos para el catálogo por omisión, sin regla y sin matriz."""
+    return [
+        Concept(
+            code=code,
+            description=description,
+            unit=unit,
+            phase=phase,
+            rule=None,
+            production_rate_per_day=rate,
+            sequence_order=400 + order,
+            assumptions=[
+                "Cantidad por levantamiento: capas y bloques que alguien asignó "
+                "a este concepto",
+                _SIN_PRECIO,
+            ],
+        )
+        for code, description, unit, phase, rate, order in _CONCEPTOS
+    ]
+
+
+# --------------------------------------------------------- biblioteca ------
+
+
+@dataclass(frozen=True)
+class ReglaSugerida:
+    """Un nombre de capa o de bloque que casi siempre es cierto concepto.
+
+    ``disciplinas`` acota dónde vale la regla: la disciplina la puso el
+    levantamiento al clasificar la hoja, y sin ese filtro «flexible» en una
+    hoja de aire acondicionado y «flexible» en cualquier otra cosa se verían
+    igual."""
+
+    kind: str  # "run" (metros de capa) | "block" (piezas) | "area"
+    patron: str  # regex, sin distinguir mayúsculas
+    concepto: str
+    razon: str
+    disciplinas: tuple[str, ...] = ()
+    factor: float = 1.0
+
+
+# Convenciones que se repiten en planos mexicanos de instalaciones. Cada una
+# se propone; ninguna se aplica sola.
+SUGERENCIAS: tuple[ReglaSugerida, ...] = (
+    # --- Hidráulica: C/H/R PIP = cold / hot / return pipe -----------------
+    ReglaSugerida(
+        kind="run", patron=r"(^|[-_ ])C\s*PIP|AGUA[ _-]?FRIA|\bA\.?F\.?\b",
+        concepto="HID-003", disciplinas=("hidraulica",),
+        razon="Capa de tubería de agua fría en la hoja de hidráulica; el desarrollo "
+              "dibujado son los metros de tubería.",
+    ),
+    ReglaSugerida(
+        kind="run", patron=r"(^|[-_ ])H\s*PIP|AGUA[ _-]?CALIENTE|\bA\.?C\.?\b",
+        concepto="HID-004", disciplinas=("hidraulica",),
+        razon="Capa de tubería de agua caliente en la hoja de hidráulica.",
+    ),
+    ReglaSugerida(
+        # "RETORNO" a secas es demasiado ancho: en una hoja de hidráulica con
+        # alberca, "SEB - Retorno Filtrado" es el retorno de filtración, no el
+        # de agua caliente. Se pide que el nombre diga de qué retorno habla.
+        kind="run", patron=r"(^|[-_ ])R\s*PIP|RETORNO[ _-]*(A\.?C\.?|AGUA|CALIENTE)",
+        concepto="HID-005", disciplinas=("hidraulica",),
+        razon="Capa de retorno de agua caliente en la hoja de hidráulica.",
+    ),
+    # --- Sanitaria --------------------------------------------------------
+    ReglaSugerida(
+        kind="run", patron=r"SANITARI",
+        concepto="SAN-002", disciplinas=("sanitaria",),
+        razon="Capa de albañal sanitario; el desarrollo dibujado son los metros "
+              "de tubería.",
+    ),
+    ReglaSugerida(
+        kind="run", patron=r"PLUVIAL|B\.?A\.?P\.?",
+        concepto="SAN-003", disciplinas=("sanitaria",),
+        razon="Capa de bajadas de aguas pluviales en la hoja de sanitaria.",
+    ),
+    ReglaSugerida(
+        kind="block", patron=r"^DESCSAN|^DESC[ _-]?SAN|DESCARGA",
+        concepto="SAN-001", disciplinas=("sanitaria",),
+        razon="Bloque de descarga sanitaria: cada inserción es una salida.",
+    ),
+    ReglaSugerida(
+        kind="block", patron=r"^REG(ISTRO)?([ _-]|$)|^RS[ _-]?\d",
+        concepto="SAN-004", disciplinas=("sanitaria",),
+        razon="Bloque de registro sanitario: cada inserción es una pieza.",
+    ),
+    # --- Gas --------------------------------------------------------------
+    ReglaSugerida(
+        kind="run", patron=r"^GAS([ _-]|$)|TUB.*GAS",
+        concepto="GAS-001", disciplinas=("gas",),
+        razon="Capa de tubería de gas; el desarrollo dibujado son sus metros.",
+    ),
+    # --- Aire acondicionado ----------------------------------------------
+    ReglaSugerida(
+        kind="run", patron=r"DUCTO|DUCT\b",
+        concepto="AIR-001", disciplinas=("aire",),
+        razon="Capa de ducto de lámina. Ojo: el precio real depende de la sección "
+              "(las medidas están en las notas de la hoja); esto mide desarrollo.",
+    ),
+    ReglaSugerida(
+        kind="run", patron=r"FLEXIBLE",
+        concepto="AIR-002", disciplinas=("aire",),
+        razon="Capa de ducto flexible en la hoja de aire acondicionado.",
+    ),
+    ReglaSugerida(
+        kind="run", patron=r"TUBO[ _-]?CU|COBRE|REFRIGERANT",
+        concepto="AIR-003", disciplinas=("aire",),
+        razon="Capa de tubería de cobre para refrigerante.",
+    ),
+    ReglaSugerida(
+        kind="block", patron=r"^REJ|DIFUSOR|^DL\d|^RI\b|^RR\b",
+        concepto="AIR-004", disciplinas=("aire",),
+        razon="Bloque de rejilla o difusor: cada inserción es una pieza.",
+    ),
+    # --- Eléctrica --------------------------------------------------------
+    ReglaSugerida(
+        kind="block", patron=r"CONTACTO|^C[ _-]?DOBLE|TOMACORR",
+        concepto="ELE-001", disciplinas=("electrica",),
+        razon="Bloque de contacto: cada inserción es una salida.",
+    ),
+    ReglaSugerida(
+        kind="block", patron=r"APAGADOR|CENTRO[ _-]?LUZ|LUMINARI|^LAMP",
+        concepto="ELE-002", disciplinas=("electrica",),
+        razon="Bloque de apagador, centro de luz o luminaria: cada inserción es "
+              "una salida.",
+    ),
+    ReglaSugerida(
+        kind="run", patron=r"CONDUIT|CANALIZ|^E[ _-]?TUB",
+        concepto="ELE-003", disciplinas=("electrica",),
+        razon="Capa de canalización eléctrica; el desarrollo dibujado son sus metros.",
+    ),
+)
+
+
+@dataclass
+class Sugerencia:
+    """Un mapeo propuesto, con la cuenta que produciría y de dónde salió."""
+
+    kind: str  # el "kind" que espera inventory_mappings: layer | block
+    patron: str  # el nombre exacto de la capa o del bloque, no la regex
+    concepto: str
+    unidad: str
+    cantidad: float
+    razon: str
+    disciplina: str = ""
+    hojas: list[str] = field(default_factory=list)
+
+
+def _normaliza(texto: str) -> str:
+    return re.sub(r"\s+", " ", (texto or "").strip())
+
+
+def sugerir_mapeos(
+    inventory: dict | None,
+    existentes: list[dict] | None = None,
+    codigos_catalogo: set[str] | None = None,
+) -> list[Sugerencia]:
+    """Capas y bloques del levantamiento que la biblioteca reconoce.
+
+    Devuelve propuestas ordenadas por cantidad — lo más grande primero, que es
+    lo que más dinero mueve. Nunca incluye algo que ya esté asignado: una
+    asignación del taller manda sobre la biblioteca, siempre."""
+    if not inventory:
+        return []
+    ya = {
+        (str(m.get("kind") or ""), _normaliza(str(m.get("pattern") or "")).lower())
+        for m in (existentes or [])
+    }
+    unidades = {code: unit for code, _d, unit, _f, _r, _o in _CONCEPTOS}
+    encontrado: dict[tuple[str, str, str], Sugerencia] = {}
+
+    for sheet in inventory.get("sheets") or []:
+        disciplina = str(sheet.get("discipline") or "").lower()
+        etiqueta = str(sheet.get("label") or sheet.get("sheet") or "")
+        for regla in SUGERENCIAS:
+            if regla.disciplinas and disciplina not in regla.disciplinas:
+                continue
+            if codigos_catalogo is not None and regla.concepto not in codigos_catalogo:
+                continue  # el taller borró ese concepto de su catálogo
+            patron = re.compile(regla.patron, re.I)
+            if regla.kind == "run":
+                for run in sheet.get("runs") or []:
+                    nombre = _normaliza(str(run.get("layer") or ""))
+                    cantidad = float(run.get("length_m") or 0.0)
+                    if not nombre or cantidad <= 0 or not patron.search(nombre):
+                        continue
+                    _acumula(
+                        encontrado, "layer", nombre, regla, cantidad * regla.factor,
+                        unidades, disciplina, etiqueta,
+                    )
+            elif regla.kind == "block":
+                for bloque in sheet.get("blocks") or []:
+                    nombre = _normaliza(str(bloque.get("block_name") or ""))
+                    cantidad = float(bloque.get("count") or 0.0)
+                    if not nombre or cantidad <= 0 or not patron.search(nombre):
+                        continue
+                    _acumula(
+                        encontrado, "block", nombre, regla, cantidad * regla.factor,
+                        unidades, disciplina, etiqueta,
+                    )
+
+    salida = [s for key, s in encontrado.items() if (key[0], key[1].lower()) not in ya]
+    salida.sort(key=lambda s: (-s.cantidad, s.concepto))
+    return salida
+
+
+def _acumula(
+    destino: dict[tuple[str, str, str], Sugerencia],
+    kind: str,
+    nombre: str,
+    regla: ReglaSugerida,
+    cantidad: float,
+    unidades: dict[str, str],
+    disciplina: str,
+    hoja: str,
+) -> None:
+    """El mismo nombre en varias hojas es un solo mapeo: así lo guarda la
+    tabla de asignaciones, y así hay que proponerlo."""
+    clave = (kind, nombre, regla.concepto)
+    actual = destino.get(clave)
+    if actual is None:
+        destino[clave] = Sugerencia(
+            kind=kind,
+            patron=nombre,
+            concepto=regla.concepto,
+            unidad=unidades.get(regla.concepto, ""),
+            cantidad=round(cantidad, 2),
+            razon=regla.razon,
+            disciplina=disciplina,
+            hojas=[hoja] if hoja else [],
+        )
+        return
+    actual.cantidad = round(actual.cantidad + cantidad, 2)
+    if hoja and hoja not in actual.hojas:
+        actual.hojas.append(hoja)

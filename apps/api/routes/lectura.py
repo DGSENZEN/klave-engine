@@ -9,9 +9,12 @@ failure stays useful.
 
 from collections import Counter
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from klave_engine.common.config import Settings
+from klave_engine.costing.instalaciones import sugerir_mapeos
 
-from apps.api.dependencies import ProjectStore, get_store
+from apps.api.dependencies import ProjectStore, get_settings, get_store
+from apps.api.tenancy import store_for_project
 
 router = APIRouter(prefix="/projects")
 
@@ -70,8 +73,44 @@ def _frames_summary(store: ProjectStore, project_id: str) -> dict:
     }
 
 
+def _mapeos_sugeridos(
+    inventory: dict | None, settings: Settings, project_id: str
+) -> list[dict]:
+    """Capas y bloques de instalaciones que la biblioteca reconoce.
+
+    Son propuestas: traen la cantidad que producirían y la razón por la que
+    se proponen, y nadie las aplica hasta que alguien las confirma. Una capa
+    ya asignada no vuelve a proponerse — la asignación del taller manda."""
+    if not inventory:
+        return []
+    try:
+        catalog = store_for_project(settings, project_id)
+        existentes = catalog.list_inventory_mappings()
+        codigos = {row["code"] for row in catalog.load_concepts()}
+    except Exception:  # noqa: BLE001 — sin catálogo, se propone sin filtrar
+        existentes, codigos = [], None
+    return [
+        {
+            "kind": s.kind,
+            "pattern": s.patron,
+            "concept_code": s.concepto,
+            "unit": s.unidad,
+            "quantity": s.cantidad,
+            "reason": s.razon,
+            "discipline": s.disciplina,
+            "sheets": s.hojas,
+        }
+        for s in sugerir_mapeos(inventory, existentes, codigos)
+    ]
+
+
 @router.get("/{project_id}/lectura")
-def get_lectura(project_id: str, store: ProjectStore = Depends(get_store)) -> dict:
+def get_lectura(
+    project_id: str,
+    request: Request,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
     manifest = store.get_manifest(project_id)
     parse_summary = _optional(store, project_id, "parse_summary.json") or []
     conversions = _optional(store, project_id, "conversion_results.json") or []
@@ -143,6 +182,7 @@ def get_lectura(project_id: str, store: ProjectStore = Depends(get_store)) -> di
     return {
         "project_id": project_id,
         "inventory": inventory,
+        "mapeos_sugeridos": _mapeos_sugeridos(inventory, settings, project_id),
         "project_name": manifest.project_name,
         "frames": _frames_summary(store, project_id),
         "sheets": sheets,

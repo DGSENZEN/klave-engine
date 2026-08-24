@@ -5,6 +5,7 @@ quantity (count, meters, m²) becomes the concept unit, with the geometric
 assumptions made explicit.
 """
 
+from klave_engine.costing.instalaciones import conceptos_de_instalaciones
 from klave_engine.costing.models import (
     Concept,
     CostingAssumptions,
@@ -422,7 +423,7 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
             production_rate_per_day=14.0,
             sequence_order=3,
         ),
-    ] + _terracerias(a) + _acabados(a)
+    ] + _terracerias(a) + _acabados(a) + conceptos_de_instalaciones()
 
 
 def _acabados(a: CostingAssumptions) -> list[Concept]:

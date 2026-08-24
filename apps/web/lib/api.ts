@@ -798,6 +798,9 @@ export type Lectura = {
   project_name: string;
   /** Levantamiento por hoja: símbolos y trazos contados, sin precio. */
   inventory?: Inventory | null;
+  /** Capas y bloques de instalaciones que la biblioteca reconoce. Propuestas:
+   *  traen la cantidad que producirían y por qué, y nadie las aplica solo. */
+  mapeos_sugeridos?: MapeoSugerido[];
   schedules?: LecturaSchedules;
   sheets: LecturaSheet[];
   units: { unit: string; source: string; confidence: number; source_label: string } | null;
@@ -808,6 +811,18 @@ export type Lectura = {
   detection_total: number;
   detections_by_family: Record<string, number>;
   entity_type_labels: Record<string, string>;
+};
+
+export type MapeoSugerido = {
+  kind: "block" | "layer";
+  /** El nombre exacto de la capa o del bloque, no un patrón. */
+  pattern: string;
+  concept_code: string;
+  unit: string;
+  quantity: number;
+  reason: string;
+  discipline: string;
+  sheets: string[];
 };
 
 export const getLectura = (id: string) => getJSON<Lectura>(`/projects/${id}/lectura`);

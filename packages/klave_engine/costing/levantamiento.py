@@ -107,14 +107,18 @@ def apply_inventory(
                         by_view[view] = by_view.get(view, 0.0) + float(n)
         if total <= 0:
             continue
+        # Sin matriz la línea entra igual, marcada «sin precio». La cantidad la
+        # sostiene el plano; el precio no lo sostiene nadie todavía, y tirar la
+        # cantidad por eso borra del presupuesto algo que sí está en la obra —
+        # que es como se pierden partidas enteras de instalaciones.
         apu = apus.get(code)
         if apu is None:
             boq.warnings.append(
                 f"Levantamiento: {code} ({concept.description[:40]}…) no tiene matriz ni precio "
-                f"adoptado; {total:,.2f} de «{mapping.get('pattern')}» quedan sin costo."
+                f"adoptado; {total:,.2f} de «{mapping.get('pattern')}» entran sin costo."
             )
-            continue
         quantity = round(total * factor, 4)
+        precio = apu.direct_unit_cost if apu else 0.0
         if kind == "block":
             what = "símbolos"
         elif kind == "tag":
@@ -136,8 +140,9 @@ def apply_inventory(
                 description=concept.description,
                 unit=concept.unit,
                 quantity=quantity,
-                unit_price=apu.direct_unit_cost,
-                amount=round(quantity * apu.direct_unit_cost, 2),
+                unit_price=precio,
+                amount=round(quantity * precio, 2),
+                unpriced=apu is None,
                 phase=concept.phase,
                 raw_quantity=round(total, 4),
                 raw_kind=(

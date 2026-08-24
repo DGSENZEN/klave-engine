@@ -34,11 +34,13 @@ import {
   type InventoryMapping,
   type Lectura,
   type LecturaSheet,
+  type MapeoSugerido,
   type SheetInventory,
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
 import { FAMILY_LABELS } from "@/lib/families";
 import { useProjectLive } from "@/components/ProjectLive";
+import { MapeosSugeridos } from "@/components/MapeosSugeridos";
 import {
   Badge,
   Button,
@@ -137,6 +139,38 @@ export default function LecturaPage() {
       setMappingNotice(`«${pattern}» ahora cuenta como ${conceptCode}; presupuesto actualizado.`);
     } catch {
       setMappingNotice(`No se pudo asignar «${pattern}» a ${conceptCode}.`);
+    } finally {
+      setMappingBusy(null);
+    }
+  }
+
+  /** Varias propuestas de golpe: una asignación por renglón palomeado, y un
+   *  solo recálculo al final — no quince. */
+  async function assignMany(elegidas: MapeoSugerido[]) {
+    if (!elegidas.length) return;
+    setMappingBusy("sugeridas");
+    setMappingNotice(`Asignando ${elegidas.length} y recalculando el presupuesto…`);
+    try {
+      for (const s of elegidas) {
+        await addInventoryMapping(
+          { kind: s.kind, pattern: s.pattern, concept_code: s.concept_code },
+          getBrowserActor(),
+        );
+      }
+      reloadMappings();
+      const cfg = await getCostingConfig(id);
+      await recompute(
+        id,
+        { config: cfg.config, insumo_prices: cfg.insumo_prices, version: cfg.version },
+        getBrowserActor(),
+      );
+      const l = await getLectura(id);
+      setLectura(l);
+      setMappingNotice(
+        `${elegidas.length} ${elegidas.length === 1 ? "asignación aplicada" : "asignaciones aplicadas"}; presupuesto actualizado.`,
+      );
+    } catch {
+      setMappingNotice("No se pudieron aplicar todas las asignaciones; revisa cuáles quedaron.");
     } finally {
       setMappingBusy(null);
     }
@@ -420,6 +454,12 @@ export default function LecturaPage() {
               </div>
             )}
           </Card>
+
+          <MapeosSugeridos
+            sugerencias={lectura.mapeos_sugeridos ?? []}
+            busy={mappingBusy !== null}
+            onAssign={assignMany}
+          />
 
           {lectura.inventory && lectura.inventory.sheets.length > 0 && (
             <Card className="p-5">
