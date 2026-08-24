@@ -27,6 +27,8 @@ export type AuthStatus = {
   google_enabled: boolean;
   /** Whether a mail provider is configured; otherwise links are handed over by admins. */
   mail_enabled: boolean;
+  /** "open": anyone founds or asks to join; "invite_only": only invitation links. */
+  registration?: "open" | "invite_only";
 };
 
 export type WorkspaceUser = AuthUser & { created_at: string; approved_at: string | null };

@@ -16,6 +16,7 @@ from apps.api.auth.common import (
     users_dependency,
 )
 from apps.api.auth.middleware import SESSION_COOKIE
+from apps.api.auth.passwords import password_problem
 from apps.api.auth.store import UsersDbUnavailable, UserStore, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -76,6 +77,11 @@ def change_password(
                     "error_type": "invalid_credentials",
                     "message": "La contraseña actual no coincide.",
                 },
+            )
+        problem = password_problem(body.new_password, str(user.get("email") or ""))
+        if problem:
+            raise HTTPException(
+                status_code=422, detail={"error_type": "weak_password", "message": problem}
             )
         users.set_password(str(user["user_id"]), body.new_password)
         revoked = users.delete_sessions_for_user(

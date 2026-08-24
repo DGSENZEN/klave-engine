@@ -215,7 +215,8 @@ def test_recovery_by_admin_link(app):
     assert done.status_code == 200
     assert fresh.get("/projects").status_code == 200  # signed in after reset
     assert member.get("/projects").status_code == 401  # old session revoked
-    assert fresh.post(f"/auth/reset/{token}", json={"password": "x" * 12}).status_code == 410
+    spent = fresh.post(f"/auth/reset/{token}", json={"password": "otra-clave-larga-7"})
+    assert spent.status_code == 410  # the link only works once
     login = TestClient(app).post(
         "/auth/login", json={"email": "ana@taller.mx", "password": "nueva-clave-456"}
     )
@@ -354,3 +355,13 @@ def test_workspace_scoping_and_cli_bootstrap(app, capsys):
     cross = admin.put(f"/auth/users/{jefe['user_id']}/role", json={"role": "member"})
     assert cross.status_code == 404
     assert cli_main(["create-workspace", "otro", "Duplicado"]) == 1
+
+
+def test_weak_passwords_are_refused_with_the_reason():
+    from apps.api.auth.passwords import password_problem
+
+    assert password_problem("corta1234") is not None  # 9 chars
+    assert "más usadas" in (password_problem("1234567890") or "")
+    assert "repetidos" in (password_problem("aaaaaaaaaaaa") or "")
+    assert "correo" in (password_problem("ana.lopez-2026", "ana.lopez@taller.mx") or "")
+    assert password_problem("mole-poblano-42", "ana@taller.mx") is None

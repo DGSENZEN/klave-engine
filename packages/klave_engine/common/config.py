@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     extra_origins: str = ""  # comma-separated
     # Lectura con IA: anthropic | gemini | auto (auto prefers whichever has
     # credentials, Claude first); ai_model overrides the provider's default.
+    # Account creation: "open" (anyone founds or asks to join) or
+    # "invite_only" (only invitation links create accounts).
+    registration: str = "open"
+
     ai_provider: str = "auto"
     ai_model: str | None = None
 

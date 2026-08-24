@@ -126,7 +126,11 @@ export default function BienvenidaPage() {
       ) : auth.user ? (
         <SessionCard user={auth.user} />
       ) : auth.mode === "protected" ? (
-        <AuthCard googleEnabled={auth.google_enabled} mailEnabled={auth.mail_enabled} />
+        <AuthCard
+          googleEnabled={auth.google_enabled}
+          mailEnabled={auth.mail_enabled}
+          inviteOnly={auth.registration === "invite_only"}
+        />
       ) : auth.mode === "open" ? (
         <OpenModeCards googleEnabled={auth.google_enabled} />
       ) : null}
@@ -234,9 +238,11 @@ function SessionCard({ user }: { user: AuthUser }) {
 function AuthCard({
   googleEnabled,
   mailEnabled,
+  inviteOnly = false,
 }: {
   googleEnabled: boolean;
   mailEnabled: boolean;
+  inviteOnly?: boolean;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<"login" | "register">("login");
@@ -300,8 +306,14 @@ function AuthCard({
 
   return (
     <Card className="mb-6 p-6">
+      {inviteOnly && (
+        <p className="mb-4 rounded-lg bg-surface-2/60 px-3 py-2 text-sm text-muted">
+          Este servidor es solo por invitación: pide tu enlace a un administrador del
+          taller y entrarás al instante.
+        </p>
+      )}
       <div className="mb-5 flex rounded-lg border border-border bg-surface-2/60 p-0.5">
-        {(["login", "register"] as const).map((key) => (
+        {(inviteOnly ? (["login"] as const) : (["login", "register"] as const)).map((key) => (
           <button
             key={key}
             type="button"
@@ -377,9 +389,9 @@ function AuthCard({
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder={tab === "register" ? "Contraseña (mínimo 8 caracteres)" : "Contraseña"}
+          placeholder={tab === "register" ? "Contraseña (mínimo 10 caracteres)" : "Contraseña"}
           autoComplete={tab === "register" ? "new-password" : "current-password"}
-          minLength={tab === "register" ? 8 : undefined}
+          minLength={tab === "register" ? 10 : undefined}
           required
           className="w-full"
         />

@@ -25,6 +25,7 @@ from apps.api.auth.common import (
     users_dependency,
     web_link,
 )
+from apps.api.auth.passwords import password_problem
 from apps.api.auth.store import (
     ADMIN_RECOVERY_TTL,
     RESET_TTL,
@@ -132,6 +133,11 @@ def reset_password(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     rate_limit(request, "reset")
+    problem = password_problem(body.password)
+    if problem:
+        raise HTTPException(
+            status_code=422, detail={"error_type": "weak_password", "message": problem}
+        )
     try:
         row = users.consume_token(token, "reset")
         if row is None:

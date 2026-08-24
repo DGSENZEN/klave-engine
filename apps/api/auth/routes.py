@@ -30,6 +30,7 @@ from apps.api.auth.common import (
     users_dependency,
     web_link,
 )
+from apps.api.auth.passwords import password_problem
 from apps.api.auth.recovery import send_verification
 from apps.api.auth.store import (
     PROJECT_ROLES,
@@ -134,6 +135,7 @@ def auth_session(
             "workspace": None,
             "google_enabled": google_enabled,
             "mail_enabled": mail_enabled,
+            "registration": settings.registration,
         }
     return {
         "mode": "protected" if protected else "open",
@@ -141,6 +143,7 @@ def auth_session(
         "workspace": workspace,
         "google_enabled": google_enabled,
         "mail_enabled": mail_enabled,
+        "registration": settings.registration,
     }
 
 
@@ -153,6 +156,20 @@ def register(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     rate_limit(request, "register")
+    if settings.registration == "invite_only":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error_type": "registration_closed",
+                "message": "Este servidor es solo por invitación; pide una a un "
+                "administrador del taller.",
+            },
+        )
+    problem = password_problem(body.password, body.email)
+    if problem:
+        raise HTTPException(
+            status_code=422, detail={"error_type": "weak_password", "message": problem}
+        )
     try:
         if users.get_by_email(body.email):
             raise HTTPException(
@@ -353,6 +370,8 @@ async def google_callback(
                 user = users.get_by_google_sub(sub) or signed_in
             elif existing is not None:
                 return fail("google_link_required")
+            elif settings.registration == "invite_only" and not invite_token:
+                return fail("invite")
             elif invite_token:
                 invite = users.get_invitation_by_token(invite_token)
                 if invite is None or invite["state"] != "open":

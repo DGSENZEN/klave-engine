@@ -63,6 +63,23 @@ router = APIRouter(prefix="/catalog", tags=["catalog"])
 MAX_IMPORT_BYTES = 1_000_000
 
 
+def require_catalog_admin(request: Request) -> None:
+    """Structural catálogo changes — imports, deletions, repricing sweeps,
+    labor/equipment engines — are the administrator's. Daily estimator work
+    (a price from a cotización, an alias, a mapping, a factor) stays open to
+    every active member: it is their own taller's catálogo. Open mode (no
+    accounts) keeps the local-first freedom."""
+    user = getattr(request.state, "user", None)
+    if user is not None and user.get("role") != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error_type": "admin_required",
+                "message": "Esta operación del catálogo requiere un administrador del taller.",
+            },
+        )
+
+
 def get_catalog(request: Request, settings: Settings = Depends(get_settings)) -> CatalogStore:
     """The signed-in taller's own catálogo; the shared one only in open mode."""
     return store_for_request(settings, request)
@@ -320,6 +337,7 @@ def update_concept(
 
 @router.post("/import-prices")
 async def import_prices(
+    request: Request,
     file: UploadFile,
     x_actor: Annotated[str | None, Header()] = None,
     source: str = "Importación CSV",
@@ -327,6 +345,7 @@ async def import_prices(
 ) -> dict:
     """Bulk price update from a UTF-8 CSV with columns code,unit_cost (or
     clave,costo_unitario). Only existing insumo codes are updated."""
+    require_catalog_admin(request)
     # Read at most the limit plus one byte: a bigger body never lands in memory.
     raw = await file.read(MAX_IMPORT_BYTES + 1)
     if len(raw) > MAX_IMPORT_BYTES:
@@ -466,6 +485,7 @@ def list_reference_sources(
 
 @router.post("/sources/custom", status_code=201)
 async def import_custom_source(
+    request: Request,
     file: UploadFile,
     x_actor: Annotated[str | None, Header()] = None,
     name: str = "",
@@ -476,6 +496,7 @@ async def import_custom_source(
     """The taller's own catálogo de conceptos (XLSX/CSV with clave,
     descripción, unidad, precio unitario) as a reference source, labeled as
     the taller's, never as a publication."""
+    require_catalog_admin(request)
     # Read at most the limit plus one byte: a bigger body never lands in memory.
     raw = await file.read(MAX_IMPORT_BYTES + 1)
     if len(raw) > MAX_IMPORT_BYTES:
@@ -507,6 +528,7 @@ async def import_custom_source(
 
 @router.post("/import-matrices", status_code=201)
 async def import_matrices(
+    request: Request,
     file: UploadFile,
     x_actor: Annotated[str | None, Header()] = None,
     source: str = "",
@@ -514,6 +536,7 @@ async def import_matrices(
 ) -> dict:
     """Conceptos con sus matrices from an OPUS/Neodata Excel export (or the
     documented Tipo/Clave/Descripción/Unidad/Cantidad/Costo layout)."""
+    require_catalog_admin(request)
     # Read at most the limit plus one byte: a bigger body never lands in memory.
     raw = await file.read(MAX_IMPORT_BYTES + 1)
     if len(raw) > MAX_IMPORT_BYTES:
@@ -538,11 +561,13 @@ async def import_matrices(
 
 @router.post("/sources/{source_key}/import")
 def import_reference_source(
+    request: Request,
     source_key: str,
     x_actor: Annotated[str | None, Header()] = None,
     catalog: CatalogStore = Depends(get_catalog),
     settings: Settings = Depends(get_settings),
 ) -> dict:
+    require_catalog_admin(request)
     spec = SOURCES.get(source_key)
     if spec is None:
         raise HTTPException(status_code=404, detail={"error_type": "source_not_found"})
@@ -655,10 +680,12 @@ def get_indices(catalog: CatalogStore = Depends(get_catalog)) -> dict:
 
 @router.put("/indices")
 def put_indices(
+    request: Request,
     body: IndicesInput,
     x_actor: Annotated[str | None, Header()] = None,
     catalog: CatalogStore = Depends(get_catalog),
 ) -> dict:
+    require_catalog_admin(request)
     saved = catalog.save_indices(body.source, body.values)
     _publish_catalog_updated(
         x_actor, "indices_saved", f"{len(saved['values'])} meses", catalog=catalog
@@ -668,6 +695,7 @@ def put_indices(
 
 @router.post("/indices/roll-forward")
 def roll_forward(
+    request: Request,
     body: RollForwardInput,
     x_actor: Annotated[str | None, Header()] = None,
     catalog: CatalogStore = Depends(get_catalog),
@@ -676,6 +704,7 @@ def roll_forward(
     updated insumo becomes 'calculado' with the factor as its provenance.
     With ``dry_run`` nothing is written: the response is the preview of
     exactly what a real call with the same body would change."""
+    require_catalog_admin(request)
     indices = catalog.load_indices()
     values = indices.get("values") or {}
     if not values:
@@ -753,6 +782,7 @@ def list_plantillas(catalog: CatalogStore = Depends(get_catalog)) -> dict:
 
 @router.post("/plantillas", status_code=201)
 async def create_plantilla(
+    request: Request,
     file: UploadFile,
     x_actor: Annotated[str | None, Header()] = None,
     name: str = "",
@@ -762,6 +792,7 @@ async def create_plantilla(
 ) -> dict:
     """A past presupuesto (XLSX/CSV with clave, unidad, cantidad, precio) plus
     that project's m² → a plantilla: per-m² rules and the taller's prices."""
+    require_catalog_admin(request)
     # Read at most the limit plus one byte: a bigger body never lands in memory.
     raw = await file.read(MAX_IMPORT_BYTES + 1)
     if len(raw) > MAX_IMPORT_BYTES:
@@ -792,10 +823,12 @@ async def create_plantilla(
 
 @router.delete("/plantillas/{key}")
 def delete_plantilla(
+    request: Request,
     key: str,
     x_actor: Annotated[str | None, Header()] = None,
     catalog: CatalogStore = Depends(get_catalog),
 ) -> dict:
+    require_catalog_admin(request)
     if not catalog.delete_plantilla(key):
         raise HTTPException(status_code=404, detail={"error_type": "plantilla_not_found"})
     _publish_catalog_updated(x_actor, "plantilla_deleted", key, catalog=catalog)
@@ -843,10 +876,12 @@ def update_parametric_rule(
 
 @router.delete("/parametrics/{rule_id}")
 def delete_parametric_rule(
+    request: Request,
     rule_id: int,
     x_actor: Annotated[str | None, Header()] = None,
     catalog: CatalogStore = Depends(get_catalog),
 ) -> dict:
+    require_catalog_admin(request)
     if not catalog.delete_parametric_rule(rule_id):
         raise HTTPException(status_code=404, detail={"error_type": "rule_not_found"})
     _publish_catalog_updated(x_actor, "parametric_deleted", str(rule_id), catalog=catalog)
@@ -1225,12 +1260,14 @@ def get_labor_presets() -> dict:
 
 @router.post("/labor/presets/{key}")
 def apply_labor_preset(
+    request: Request,
     key: str,
     x_actor: Annotated[str | None, Header()] = None,
     catalog: CatalogStore = Depends(get_catalog),
 ) -> dict:
     """Apply a state's ISN and minimum wage to the saved parameters and
     categories, and reprice labor."""
+    require_catalog_admin(request)
     preset = preset_by_key(key)
     if preset is None:
         raise HTTPException(status_code=404, detail={"error_type": "preset_not_found"})
@@ -1268,10 +1305,12 @@ def preview_labor(body: LaborInput, catalog: CatalogStore = Depends(get_catalog)
 
 @router.put("/labor")
 def put_labor(
+    request: Request,
     body: LaborInput,
     x_actor: Annotated[str | None, Header()] = None,
     catalog: CatalogStore = Depends(get_catalog),
 ) -> dict:
+    require_catalog_admin(request)
     applied = apply_labor(catalog, body.params, body.categories)
     _publish_catalog_updated(
         x_actor, "labor_applied", f"{len(applied)} categorías", catalog=catalog
@@ -1291,11 +1330,13 @@ def get_equipment(code: str, catalog: CatalogStore = Depends(get_catalog)) -> di
 
 @router.put("/equipment/{code}")
 def put_equipment(
+    request: Request,
     code: str,
     body: EquipmentInput,
     x_actor: Annotated[str | None, Header()] = None,
     catalog: CatalogStore = Depends(get_catalog),
 ) -> dict:
+    require_catalog_admin(request)
     try:
         row = apply_equipment(catalog, code, body.description, body.params)
     except ValueError as exc:
