@@ -374,6 +374,7 @@ export default function Home() {
           <OnboardingChecklist
             overview={overview}
             onExploreSample={openDemo}
+            onUpload={() => inputRef.current?.click()}
             sampleBusy={demoBusy}
           />
         )}

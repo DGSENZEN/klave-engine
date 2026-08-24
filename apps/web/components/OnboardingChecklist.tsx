@@ -25,10 +25,12 @@ type Step = {
 export function OnboardingChecklist({
   overview,
   onExploreSample,
+  onUpload,
   sampleBusy,
 }: {
   overview: WorkspaceOverview;
   onExploreSample: () => void;
+  onUpload: () => void;
   sampleBusy: boolean;
 }) {
   const [dismissed, setDismissed] = useState(
@@ -36,6 +38,13 @@ export function OnboardingChecklist({
   );
   const onboarding = overview.onboarding;
   if (!onboarding || dismissed) return null;
+
+  // Deep-link to the place the step actually happens: the freshest processed
+  // project (overview arrives sorted by last activity).
+  const processed = overview.projects.find((p) => p.status === "processed");
+  const unverified = overview.projects.find(
+    (p) => p.status === "processed" && !p.verified,
+  );
 
   const steps: Step[] = [
     {
@@ -50,7 +59,7 @@ export function OnboardingChecklist({
       key: "first",
       title: "Sube tu primer plano",
       why: "DXF abre siempre; DWG se convierte con LibreDWG. Todas las hojas de una obra juntas: se leen como un solo conjunto.",
-      href: "/",
+      href: "",
       linkLabel: "Subir un plano",
       done: onboarding.first_project,
     },
@@ -58,8 +67,10 @@ export function OnboardingChecklist({
       key: "verify",
       title: "Verifica una lectura",
       why: "Unidades, detecciones y supuestos: tres pasos en el Resumen. Hasta entonces, todo sale sellado SIN VERIFICAR — a propósito.",
-      href: "",
-      linkLabel: "Cómo funciona la verificación",
+      href: unverified
+        ? `/proyecto/${encodeURIComponent(unverified.project_id)}`
+        : "/como-funciona",
+      linkLabel: unverified ? "Ir a verificar" : "Cómo funciona la verificación",
       done: onboarding.any_verified,
     },
     {
@@ -74,8 +85,10 @@ export function OnboardingChecklist({
       key: "deliver",
       title: "Entrega tu primer Excel",
       why: "Presupuesto → Exportar: Klave con generadores, layouts para OPUS/Neodata, catálogo de licitación con P.U. con letra.",
-      href: "",
-      linkLabel: "Ver la guía de entrega",
+      href: processed
+        ? `/proyecto/${encodeURIComponent(processed.project_id)}`
+        : "/como-funciona",
+      linkLabel: processed ? "Ir al presupuesto" : "Ver la guía de entrega",
       done: onboarding.any_exported,
     },
   ];
@@ -121,19 +134,15 @@ export function OnboardingChecklist({
             </div>
             {!step.done && (
               <span className="shrink-0">
-                {step.key === "sample" ? (
+                {step.key === "sample" || step.key === "first" ? (
                   <button
                     type="button"
-                    onClick={onExploreSample}
-                    disabled={sampleBusy}
+                    onClick={step.key === "sample" ? onExploreSample : onUpload}
+                    disabled={step.key === "sample" && sampleBusy}
                     className={buttonClasses("secondary", "sm")}
                   >
                     {step.linkLabel}
                   </button>
-                ) : step.key === "verify" || step.key === "deliver" ? (
-                  <Link href="/como-funciona" className={buttonClasses("ghost", "sm")}>
-                    {step.linkLabel}
-                  </Link>
                 ) : (
                   <Link href={step.href} className={buttonClasses("ghost", "sm")}>
                     {step.linkLabel}
