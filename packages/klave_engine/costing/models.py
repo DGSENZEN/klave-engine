@@ -15,6 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from klave_engine.costing.plantilla import CargoCampo
 from klave_engine.detection.results import DetectionType
 from klave_engine.dxf.units import DrawingUnits
 
@@ -363,6 +364,11 @@ class CostingConfig(BaseModel):
     assumptions: CostingAssumptions = Field(default_factory=CostingAssumptions)
     indirects: IndirectsConfig = Field(default_factory=IndirectsConfig)
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
+    # Personal técnico, administrativo y de servicio de campo: el único de los
+    # cinco programas del art. 45-A que no sale del presupuesto, porque es
+    # costo indirecto y no vive en ninguna matriz. Vacío = programa vacío, y
+    # el programa lo dice en vez de fingir que no hacía falta.
+    plantilla_campo: list[CargoCampo] = Field(default_factory=list)
     financial: FinancialConfig = Field(default_factory=FinancialConfig)
 
 
@@ -396,3 +402,9 @@ class CostReport(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     # Sanity ratios and partida shares vs the taller's plantilla (indicadores.py).
     indicators: dict = Field(default_factory=dict)
+    # La plantilla de campo con la que se armó el programa de personal, y el
+    # importe de indirectos de campo contra el que tiene que cuadrar. Viajan
+    # con el reporte para que el Excel se genere de lo guardado y no de la
+    # configuración de hoy.
+    plantilla_campo: list[CargoCampo] = Field(default_factory=list)
+    indirectos_campo: float = 0.0

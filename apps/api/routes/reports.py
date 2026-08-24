@@ -1,3 +1,4 @@
+import math
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -5,6 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from klave_engine.common.config import Settings
 from klave_engine.costing.hallazgos import diagnose
 from klave_engine.costing.models import CostingConfig, CostingOverrides, CostReport
+from klave_engine.costing.plantilla import build_personal_tecnico, plantilla_sugerida
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
 from klave_engine.costing.reviews import load_reviews
 from klave_engine.detection.frames import SheetFrame
@@ -109,6 +111,50 @@ def get_costing_config(
             if overrides and overrides.updated_at
             else None
         ),
+    }
+
+
+@router.get("/{project_id}/personal-tecnico")
+def get_personal_tecnico(
+    project_id: str,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """El programa del art. 45-A-XI-d: lo capturado, y lo que el motor propone.
+
+    Los otros tres programas salen de la explosión de insumos; éste no puede,
+    porque el personal de campo es costo indirecto y no vive en ninguna
+    matriz. Lo que sí se puede proponer son los puestos que una obra de esta
+    duración y estos frentes necesita — no sus sueldos."""
+    report = store.read_artifact(project_id, "cost_report.json")
+    schedule = report.get("schedule") or {}
+    period_days = int(schedule.get("workdays_per_month") or 24)
+    duration = int(schedule.get("total_duration_days") or 0)
+    periods = max(1, math.ceil(duration / period_days)) if duration else 0
+    processed = store.get_root(project_id) / settings.processed_dir_name
+    overrides = load_overrides(processed)
+    config = overrides.config if overrides else CostingConfig()
+    indirectos_campo = float(report.get("indirectos_campo") or 0.0)
+    programa = build_personal_tecnico(
+        config.plantilla_campo,
+        periods,
+        period_days,
+        {24: "mes", 12: "quincena", 6: "semana"}.get(period_days, "periodo"),
+        indirectos_campo,
+    )
+    return {
+        "programa": programa.model_dump(mode="json"),
+        "plantilla": [c.model_dump(mode="json") for c in config.plantilla_campo],
+        "sugerida": [
+            c.model_dump(mode="json")
+            for c in plantilla_sugerida(
+                duration / period_days if period_days else 1.0,
+                config.schedule.frentes,
+            )
+        ],
+        "periodos": periods,
+        "indirectos_campo": indirectos_campo,
+        "version": overrides.version if overrides else 0,
     }
 
 

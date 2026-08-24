@@ -309,6 +309,12 @@ def generate_cost_report(
         financial=financial,
         warnings=list(boq.warnings),
         indicators=indicators.model_dump(),
+        # El programa de personal (art. 45-A-XI-d) y el número contra el que
+        # tiene que cuadrar, guardados con el reporte.
+        plantilla_campo=list(config.plantilla_campo),
+        indirectos_campo=round(
+            boq.direct_cost_total * config.indirects.field_indirects_pct / 100.0, 2
+        ),
     )
     log_stage(
         logger,

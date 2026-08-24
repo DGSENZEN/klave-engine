@@ -26,9 +26,12 @@ Two honesty notes carried into the output:
   horas efectivas for a machine — as well as pesos, because that is what the
   formats ask for. (c) carries volumes in unidades convencionales.
 * (d) personal técnico y administrativo is **indirect** cost: it is not in
-  the explosión at all, so it cannot be derived from it. Rather than invent
-  a curve, this module returns it empty with a note saying where it must
-  come from. Inventing that program would be inventing money.
+  the explosión at all, so it cannot be derived from it. It comes instead
+  from the plantilla de campo the taller captures (``plantilla.py``), put on
+  the same calendar, and reconciled against the indirectos de campo the
+  integration declares. With no plantilla captured it stays empty and says
+  so — an empty programa is a disqualified proposal, and the licitante
+  should learn that here rather than at the apertura.
 """
 
 from __future__ import annotations
@@ -38,6 +41,7 @@ from dataclasses import dataclass, field
 
 from klave_engine.costing.explosion import explode
 from klave_engine.costing.models import CostReport, ResourceType
+from klave_engine.costing.plantilla import TIPO_LABEL, build_personal_tecnico
 
 # The four rubros of art. 45-A-XI, in the order the article lists them.
 RUBROS = ("mano_de_obra", "maquinaria", "materiales", "personal_tecnico")
@@ -66,6 +70,9 @@ class ProgramaRow:
     # Physical quantity per period (jornadas, horas, m³…) and pesos per period.
     by_period: list[float] = field(default_factory=list)
     amount_by_period: list[float] = field(default_factory=list)
+    # El renglón tiene cantidad real pero no importe: un puesto cuyo sueldo
+    # nadie capturó. Sale diciéndolo, no en cero — cero se lee como gratis.
+    sin_importe: bool = False
 
 
 @dataclass
@@ -114,6 +121,15 @@ def build_programas(
         else 0
     )
     explosion = explode(report)
+    # (d) no sale de la explosión: sale de la plantilla capturada, sobre este
+    # mismo calendario, y se reconcilia contra los indirectos de campo.
+    personal = build_personal_tecnico(
+        report.plantilla_campo,
+        periods,
+        period_days,
+        period_label,
+        report.indirectos_campo,
+    )
 
     # How much of each concept runs in each period, as a share of its total:
     # the calendar the resources ride on.
@@ -158,14 +174,28 @@ def build_programas(
         for entry in rows:
             for index, value in enumerate(entry.amount_by_period):
                 totals[index] += value
+        # El orden de la plantilla es el del formato (técnico, administrativo,
+        # servicio), no el del importe: se reemplaza entero más abajo.
         notes: list[str] = []
-        if rubro == "personal_tecnico" and not rows:
-            notes.append(
-                "El personal técnico, administrativo y de servicio es costo indirecto: "
-                "no aparece en la explosión de insumos, así que este programa no se "
-                "puede derivar del presupuesto. Captúralo desde tu plantilla de "
-                "indirectos — el motor no lo inventa."
-            )
+        if rubro == "personal_tecnico":
+            rows = [
+                ProgramaRow(
+                    code=TIPO_LABEL.get(r.tipo, r.tipo),
+                    description=r.puesto + (f" — {r.razon}" if r.razon else ""),
+                    unit=r.unidad,
+                    quantity=r.cantidad,
+                    amount=r.importe,
+                    by_period=r.por_periodo,
+                    amount_by_period=r.importe_por_periodo,
+                    sin_importe=r.sin_sueldo,
+                )
+                for r in personal.renglones
+            ]
+            totals = [0.0] * periods
+            for entry in rows:
+                for index, value in enumerate(entry.amount_by_period):
+                    totals[index] += value
+            notes.extend(personal.notas)
         if rubro == "maquinaria" and rows:
             notes.append(
                 "Cantidades en horas efectivas de trabajo; identifica tipo y "

@@ -531,6 +531,20 @@ export type Insumo = {
   is_labor_percentage: boolean;
 };
 
+/** Un puesto de la plantilla de campo, con su participación en el calendario. */
+export type CargoCampo = {
+  puesto: string;
+  tipo: "tecnico" | "administrativo" | "servicio";
+  cantidad: number;
+  /** Sueldo nominal mensual. 0 = no capturado: el renglón sale sin importe. */
+  salario_mensual: number;
+  fsr: number;
+  desde_periodo: number;
+  hasta_periodo: number | null;
+  dedicacion_pct: number;
+  razon: string;
+};
+
 export type CostingConfigFull = {
   currency: string;
   /** Nullable: a level the engineer has not set yet (platform_level_m). */
@@ -538,7 +552,38 @@ export type CostingConfigFull = {
   indirects: Record<string, number>;
   schedule: Record<string, number> & { start_date?: string | null };
   financial: Record<string, number>;
+  plantilla_campo: CargoCampo[];
 };
+
+export type RenglonPlantilla = {
+  puesto: string;
+  tipo: CargoCampo["tipo"];
+  unidad: string;
+  cantidad: number;
+  importe: number;
+  sin_sueldo: boolean;
+  por_periodo: number[];
+  importe_por_periodo: number[];
+  razon: string;
+};
+
+export type PersonalTecnico = {
+  programa: {
+    renglones: RenglonPlantilla[];
+    total: number;
+    total_por_periodo: number[];
+    cargos_sin_sueldo: number;
+    notas: string[];
+  };
+  plantilla: CargoCampo[];
+  sugerida: CargoCampo[];
+  periodos: number;
+  indirectos_campo: number;
+  version: number;
+};
+
+export const getPersonalTecnico = (id: string) =>
+  getJSON<PersonalTecnico>(`/projects/${id}/personal-tecnico`);
 
 export type CostingConfigResponse = {
   config: CostingConfigFull;

@@ -4,6 +4,7 @@ programa's own calendar, so they cannot contradict either."""
 from klave_engine.costing.apu import build_all_apus
 from klave_engine.costing.catalog import build_default_catalog
 from klave_engine.costing.models import CostingAssumptions
+from klave_engine.costing.plantilla import CargoCampo
 from klave_engine.costing.programas import RUBROS, build_programas
 from klave_engine.costing.report import generate_cost_report
 from klave_engine.detection.results import DetectionType, make_detection
@@ -54,15 +55,37 @@ def test_labour_and_machinery_keep_their_own_units():
         assert any("horas efectivas" in n for n in maquinaria.notes)
 
 
-def test_technical_staff_is_indirect_so_it_is_left_empty_and_says_why():
-    """Deriving it from the explosión would be inventing money: the personal
-    técnico is not a direct cost and is not in the matrices."""
+def test_technical_staff_says_it_is_missing_instead_of_coming_out_blank():
+    """Sin plantilla capturada el programa sigue vacío — no se deriva de la
+    explosión porque no está ahí — pero deja de salir en silencio: una
+    propuesta a la que le falta uno de los cinco programas se desecha."""
     programas = build_programas(_report())
     personal = programas.get("personal_tecnico")
     assert personal is not None
     assert personal.rows == []
+    assert any("45-A-XI-d" in n for n in personal.notes)
     assert any("costo indirecto" in n for n in personal.notes)
-    assert any("no lo inventa" in n for n in personal.notes)
+
+
+def test_technical_staff_comes_from_the_captured_plantilla():
+    """Cuando hay plantilla, el programa se llena sobre el mismo calendario que
+    los otros tres."""
+    report = _report()
+    report.plantilla_campo = [
+        CargoCampo(puesto="Superintendente", salario_mensual=45000.0),
+        CargoCampo(puesto="Velador", tipo="servicio", salario_mensual=9000.0),
+    ]
+    personal = build_programas(report).get("personal_tecnico")
+    assert personal is not None
+    assert [r.description.split(" — ")[0] for r in personal.rows] == [
+        "Superintendente", "Velador",
+    ]
+    assert personal.total > 0
+    # Técnico antes que servicio: el orden del formato, no el del importe.
+    assert personal.rows[0].code == "Técnico"
+    assert personal.rows[1].code == "Servicio"
+    for row in personal.rows:
+        assert abs(sum(row.amount_by_period) - row.amount) < 1.0
 
 
 def test_the_period_is_a_parameter_because_the_convocante_sets_it():
@@ -99,3 +122,15 @@ def test_an_obra_without_a_schedule_does_not_pretend_to_have_one():
     programas = build_programas(empty)
     assert programas.periods == 0
     assert all(p.rows == [] or all(r.by_period == [] for r in p.rows) for p in programas.programas)
+
+
+def test_a_post_with_no_captured_salary_never_exports_as_zero():
+    """Cero en la columna del importe se lee como «sale gratis». Un puesto sin
+    sueldo capturado tiene cantidad y no tiene importe, y eso es lo que dice."""
+    report = _report()
+    report.plantilla_campo = [CargoCampo(puesto="Velador", tipo="servicio")]
+    personal = build_programas(report).get("personal_tecnico")
+    assert personal is not None
+    velador = personal.rows[0]
+    assert velador.quantity > 0  # su participación sí se cuenta
+    assert velador.sin_importe is True

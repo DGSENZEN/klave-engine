@@ -226,6 +226,10 @@ export default function ParametrosPage() {
             indirects: {},
             schedule: {},
             financial: {},
+            // La plantilla de campo no es un parámetro afinado: son puestos y
+            // sueldos que alguien capturó. Restablecer los parámetros no los
+            // borra.
+            plantilla_campo: config?.plantilla_campo ?? [],
           },
           insumo_prices: {},
           version,

@@ -719,11 +719,21 @@ def _programas_erogaciones(workbook: Workbook, report: CostReport) -> None:
         }[programa.rubro]
         ws = workbook.create_sheet(title)
         _title(ws, 1, programa.label, size=12)
-        _header(ws, 3, ["Clave", "Insumo", "Unidad", "Cantidad", "Importe", *period_headers])
+        # (d) no lista insumos: lista puestos. El encabezado lo dice, porque
+        # "Clave / Insumo" sobre una plantilla de personal se lee mal.
+        primeras = (
+            ["Tipo", "Puesto", "Unidad", "Personal", "Importe"]
+            if programa.rubro == "personal_tecnico"
+            else ["Clave", "Insumo", "Unidad", "Cantidad", "Importe"]
+        )
+        _header(ws, 3, [*primeras, *period_headers])
         row = 4
         for entry in programa.rows:
             values: list[Any] = [
-                entry.code, entry.description, entry.unit, entry.quantity, entry.amount,
+                entry.code, entry.description, entry.unit, entry.quantity,
+                # Un puesto sin sueldo capturado tiene cantidad y no tiene
+                # importe. En cero se leería como que sale gratis.
+                "sin sueldo capturado" if entry.sin_importe else entry.amount,
                 *entry.by_period,
             ]
             for col, value in enumerate(values, start=1):
@@ -731,7 +741,7 @@ def _programas_erogaciones(workbook: Workbook, report: CostReport) -> None:
                 cell.border = _box
                 if col == 4 or col > 5:
                     cell.number_format = QTY_FORMAT
-                if col == 5:
+                if col == 5 and not entry.sin_importe:
                     cell.number_format = MONEY_FORMAT
             row += 1
         if programa.rows:

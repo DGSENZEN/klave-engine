@@ -28,12 +28,15 @@ def integrate_costs(direct_cost: float, config: IndirectsConfig) -> CostIntegrat
         )
         return amount
 
-    indirects_pct = config.field_indirects_pct + config.office_indirects_pct
+    # Campo y oficina central van en renglones separados porque se revisan por
+    # separado: el de campo es el que tiene que cuadrar contra la plantilla de
+    # personal del programa del art. 45-A-XI-d.
+    add("CI-C", "Costos indirectos de campo", direct_cost, config.field_indirects_pct)
     add(
-        "CI",
-        "Costos indirectos (oficina central y de campo)",
+        "CI-O",
+        "Costos indirectos de oficina central",
         direct_cost,
-        indirects_pct,
+        config.office_indirects_pct,
     )
     add("FI", "Costo de financiamiento", accumulated, config.financing_pct)
     add("UT", "Utilidad", accumulated, config.profit_pct)

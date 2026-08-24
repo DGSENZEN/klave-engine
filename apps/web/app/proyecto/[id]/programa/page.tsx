@@ -15,6 +15,7 @@ import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
 import { ProgramaFlujoTabs } from "@/components/ProgramaFlujoTabs";
 import { moneyGate, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
+import { PlantillaCampo } from "@/components/PlantillaCampo";
 import {
   Callout,
   Card,
@@ -220,6 +221,12 @@ export default function ProgramaPage() {
           </div>
         </Card>
       )}
+
+      {/* El quinto programa del art. 45-A: el único que no sale del
+          presupuesto, porque el personal de campo es costo indirecto. */}
+      <div className="mt-6">
+        <PlantillaCampo id={id} />
+      </div>
     </div>
   );
 }
