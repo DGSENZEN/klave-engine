@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { ApiBaseWarning } from "@/components/ApiBaseWarning";
+import { CopilotFab } from "@/components/CopilotFab";
 import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
@@ -41,6 +42,8 @@ export default function RootLayout({
       <body className="min-h-full">
         <ApiBaseWarning />
         {children}
+        {/* Siempre a la mano, en cualquier pantalla de trabajo. */}
+        <CopilotFab />
       </body>
     </html>
   );
