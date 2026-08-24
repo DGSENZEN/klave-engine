@@ -101,6 +101,7 @@ export default function ProgramaPage() {
   }
 
   const activities = costs.schedule.activities ?? [];
+  const criticalCount = activities.filter((a) => a.critical).length;
   const totalDays = Math.max(
     costs.schedule.total_duration_days,
     ...activities.map((a) => a.end_day),
@@ -115,16 +116,18 @@ export default function ProgramaPage() {
     <div className="rise-in px-6 py-7 lg:px-8">
       <PageHeader
         title="Programa y flujo"
-        sub="Secuencia de actividades derivada de las cantidades y rendimientos; duraciones en días laborables."
+        sub="Red de actividades derivada de las cantidades y del rendimiento de cada matriz; holguras y ruta crítica conforme al RLOPSRM art. 224."
       />
       <ProgramaFlujoTabs id={id} />
       <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Metric
-          label="Duración total"
-          value={`${totalDays} días`}
-          hint={`≈ ${months} ${months === 1 ? "mes" : "meses"} (24 días/mes)`}
+          label="Plazo contractual"
+          value={`${costs.schedule.calendar_days ?? totalDays} días naturales`}
+          hint={`${totalDays} días hábiles en semana de seis días · ≈ ${months} ${
+            months === 1 ? "mes" : "meses"
+          }. El contrato se cuenta en naturales (LOPSRM art. 31 fr. V).`}
           icon={<CalendarBlank size={16} weight="duotone" />}
           accent="accent"
         />
@@ -138,7 +141,17 @@ export default function ProgramaPage() {
           hint={costs.schedule.end_date ? `${activities.length} actividades` : undefined}
           icon={<ListChecks size={16} weight="duotone" />}
         />
-        <Metric label="Fases" value={phases.length} icon={<Stack size={16} weight="duotone" />} />
+        <Metric
+          label="En ruta crítica"
+          value={`${criticalCount} de ${activities.length}`}
+          hint={
+            criticalCount >= activities.length * 0.8
+              ? "Casi todo es crítico: con una cuadrilla por actividad y un solo frente, el programa es una cadena sin holgura. Sube cuadrillas o abre frentes para ganar margen."
+              : `${activities.length - criticalCount} actividades tienen holgura`
+          }
+          icon={<Stack size={16} weight="duotone" />}
+          accent={criticalCount >= activities.length * 0.8 ? "danger" : undefined}
+        />
       </div>
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -250,20 +263,49 @@ function GanttRow({
 }) {
   const left = (activity.start_day / totalDays) * 100;
   const width = Math.max(((activity.end_day - activity.start_day) / totalDays) * 100, 0.8);
+  // Holgura drawn as the bar's shadow: how far this activity could slide
+  // before it pushes the obra's end. RLOPSRM art. 224 asks for it, and it is
+  // the difference between a bar chart and a programa you can defend.
+  const float = activity.total_float_days ?? 0;
+  const floatWidth = (float / totalDays) * 100;
   return (
     <div className="group flex items-center gap-0 py-1">
       <div className="w-[240px] shrink-0 pr-4">
-        <div className="truncate text-sm" title={activity.description}>
-          {activity.description}
+        <div className="flex items-center gap-1.5">
+          <span className="truncate text-sm" title={activity.description}>
+            {activity.description}
+          </span>
+          {activity.critical && (
+            <span
+              className="shrink-0 rounded bg-danger-soft px-1 text-[10px] font-semibold text-danger"
+              title="En la ruta crítica: retrasarla retrasa toda la obra"
+            >
+              CRÍTICA
+            </span>
+          )}
         </div>
         <div className="text-[11px] tabular text-faint">
           {num(activity.quantity)} {activity.unit} · {activity.duration_days} días
+          {float > 0 && ` · ${float} d de holgura`}
           {activity.start_date && ` · ${formatDate(activity.start_date)}`}
         </div>
       </div>
       <div className="relative h-6 flex-1 rounded bg-surface-2/60">
+        {float > 0 && (
+          <div
+            className="absolute top-[9px] h-1 rounded-full opacity-45"
+            title={`Holgura total ${float} días: puede recorrerse ese tanto sin mover la fecha final`}
+            style={{
+              left: `${left + width}%`,
+              width: `${Math.max(floatWidth, 0.4)}%`,
+              background: color,
+            }}
+          />
+        )}
         <div
-          className="absolute top-1 h-4 rounded-[4px] opacity-90 transition group-hover:opacity-100"
+          className={`absolute top-1 h-4 rounded-[4px] opacity-90 transition group-hover:opacity-100 ${
+            activity.critical ? "ring-1 ring-danger/60" : ""
+          }`}
           title={
             activity.start_date && activity.end_date
               ? `${activity.description} · ${formatDate(activity.start_date)} → ${formatDate(activity.end_date)} · ${money(activity.direct_cost)}`

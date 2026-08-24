@@ -393,6 +393,8 @@ export type CostReport = {
     activities: ScheduleActivity[];
     start_date?: string | null;
     end_date?: string | null;
+    /** Días naturales corridos — the unit the contract counts in. */
+    calendar_days?: number;
   };
   financial: {
     advance_payment_pct?: number;
@@ -412,10 +414,18 @@ export type ScheduleActivity = {
   quantity: number;
   unit: string;
   rendimiento_per_day: number;
+  /** "matriz" when the rate came from the APU that priced the concept (so the
+   * programa and the money cannot disagree), "catálogo" when it fell back. */
+  rendimiento_source?: string;
   crews?: number;
   duration_days: number;
   start_day: number;
   end_day: number;
+  /** The network, per RLOPSRM art. 224. */
+  predecessors?: { predecessor: string; kind: "FS" | "SS"; lag_days: number }[];
+  total_float_days?: number;
+  free_float_days?: number;
+  critical?: boolean;
   /** Calendar dates (ISO) when the obra has a start date; null otherwise. */
   start_date?: string | null;
   end_date?: string | null;

@@ -165,8 +165,14 @@ export default function PresupuestoPage() {
 
   const parametricCount = costs.boq.lines.filter((l) => l.parametric).length;
   const conceptCodes = new Set(costs.boq.lines.map((l) => l.concept_code));
-  const avgConf =
-    costs.boq.lines.reduce((s, l) => s + l.confidence, 0) / (costs.boq.lines.length || 1);
+  // Money-weighted, not an average of scores: what fraction of the total
+  // rests on readings the engine is confident about.
+  const firmShare =
+    costs.boq.direct_cost_total > 0
+      ? costs.boq.lines
+          .filter((l) => l.confidence >= 0.7)
+          .reduce((sum, l) => sum + l.amount, 0) / costs.boq.direct_cost_total
+      : 0;
   const phases = [...new Set(costs.boq.lines.map((l) => l.phase))];
 
   async function exportFile(
@@ -326,9 +332,10 @@ export default function PresupuestoPage() {
         <Metric label="Costo directo" value={money(costs.boq.direct_cost_total)} />
         <Metric label="Conceptos" value={costs.boq.lines.length} />
         <Metric
-          label="Confianza promedio"
-          value={`${(avgConf * 100).toFixed(0)}%`}
-          accent={avgConf >= 0.7 ? "success" : undefined}
+          label="Importe en lecturas firmes"
+          value={`${(firmShare * 100).toFixed(0)}%`}
+          hint="Del costo directo, la parte que descansa en detecciones de confianza alta (≥ 70 %). Pesa el dinero, no cuenta elementos: un promedio simple deja que cien tornillos seguros tapen una trabe dudosa."
+          accent={firmShare >= 0.8 ? "success" : undefined}
         />
       </div>
 
