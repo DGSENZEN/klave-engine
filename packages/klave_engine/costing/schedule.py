@@ -117,7 +117,11 @@ def build_schedule(
     be compressed below one cycle per building level.
     """
     concepts = {c.code: c for c in catalog}
-    crews = max(config.crews_per_activity, 1)
+    # Cuadrillas por actividad y frentes se multiplican: tres frentes con una
+    # cuadrilla cada uno rinden lo mismo que tres cuadrillas en un frente,
+    # mientras haya obra donde ponerlas.
+    frentes = max(config.frentes, 1)
+    crews = max(config.crews_per_activity, 1) * frentes
     intra_overlap = config.intra_phase_overlap_pct / 100.0
     phase_overlap = config.phase_overlap_pct / 100.0
 
@@ -204,7 +208,7 @@ def build_schedule(
                     unit=line.unit,
                     rendimiento_per_day=round(rate_per_crew, 4),
                     rendimiento_source=source,
-                    crews=crews,
+                    crews=crews,  # ya multiplicado por los frentes
                     duration_days=duration,
                     start_day=cursor,
                     end_day=cursor + duration,

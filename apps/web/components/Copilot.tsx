@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, usePathname } from "next/navigation";
 import {
   ArrowUp,
-  BookOpen,
+  CaretDown,
   CheckCircle,
   CircleNotch,
   Lightning,
@@ -23,20 +23,20 @@ import {
   type Diagnostico,
 } from "@/lib/api";
 import { AccionDeKlave } from "@/components/Diagnostico";
-import { buttonClasses } from "@/components/ui";
 
 /**
- * El copiloto de Klave: una herramienta del taller, no una ventana de chat.
+ * El copiloto: un panel que acompaña el trabajo, no una ventana que lo tapa.
  *
- * La diferencia está en qué aparece primero. Un chat abre con un campo vacío
- * y espera; esto abre con **el estado de la obra y lo que puede resolver hoy**,
- * porque eso es lo que el ingeniero vino a hacer. Preguntar es la segunda
- * opción, no la principal.
+ * Tres decisiones de forma, y las tres salen de para qué sirve:
  *
- * Lo demás sigue las mismas reglas que el resto de la aplicación: cada
- * respuesta trae las fuentes que la sostienen; cuando el servidor no puede
- * respaldarla lo dice en vez de sonar igual de seguro; y nada se aplica sin
- * que alguien vea antes qué cambia.
+ * · **Chico y anclado.** Vive sobre su botón, en una esquina, sin oscurecer la
+ *   pantalla. Quien pregunta por el presupuesto necesita seguir viendo el
+ *   presupuesto; un cajón de pantalla completa obliga a cerrarlo para mirar
+ *   aquello de lo que se está hablando.
+ * · **Abre con lo que puede resolver.** Un chat abre con un cuadro en blanco y
+ *   espera. Esto abre con el estado de la obra y las acciones que cierran sus
+ *   hallazgos; preguntar es la segunda opción.
+ * · **Denso, no ruidoso.** Una línea por acción, la explicación al desplegarla.
  */
 
 type Turno = {
@@ -50,47 +50,39 @@ type Turno = {
 };
 
 /** Preguntas que dependen de dónde está parado el usuario: las genéricas
- * sirven para llenar un hueco, las de la pantalla sirven para trabajar. */
+ * llenan un hueco, las de la pantalla sirven para trabajar. */
 function sugerencias(pathname: string, hayProyecto: boolean): string[] {
   if (pathname.includes("/programa")) {
     return [
-      "¿Por qué casi todo mi programa es ruta crítica?",
-      "¿El plazo va en días naturales o hábiles?",
-      "¿Qué programas debo entregar en una licitación?",
+      "¿Por qué casi todo es ruta crítica?",
+      "¿Días naturales o hábiles?",
+      "¿Qué programas pide una licitación?",
     ];
   }
   if (pathname.includes("/presupuesto") || pathname.includes("/apus")) {
     return [
-      "¿Por qué no puedo entregar este presupuesto?",
-      "¿Por qué hay conceptos «sin precio» en vez de en cero?",
+      "¿Por qué no puedo entregarlo?",
+      "¿Por qué hay conceptos «sin precio»?",
       "¿Cómo adopto un precio de mi catálogo?",
     ];
   }
   if (pathname.includes("/revision") || pathname.includes("/lectura")) {
     return [
-      "¿Qué significa el sello SIN VERIFICAR?",
-      "¿Qué puede y qué no puede hacer la lectura con IA?",
-      "¿Por qué me propone revisar solo un lote?",
+      "¿Qué significa SIN VERIFICAR?",
+      "¿Qué puede y qué no la lectura con IA?",
+      "¿Por qué revisar solo un lote?",
     ];
   }
   if (pathname.includes("/flujo") || pathname.includes("/parametros")) {
     return [
       "¿Cuánto anticipo puedo pedir?",
       "¿Cómo se amortiza el anticipo?",
-      "¿Cada cuándo se estiman los trabajos?",
+      "¿Cada cuándo se estima?",
     ];
   }
   return hayProyecto
-    ? [
-        "¿Por qué no puedo entregar este presupuesto?",
-        "¿Qué me falta para cerrar esta obra?",
-        "¿Cuánto anticipo puedo pedir?",
-      ]
-    : [
-        "¿Qué programas necesito para entregar una licitación?",
-        "¿Cuánto anticipo puedo pedir?",
-        "¿El plazo va en días naturales o hábiles?",
-      ];
+    ? ["¿Por qué no puedo entregarlo?", "¿Qué me falta para cerrar esta obra?"]
+    : ["¿Qué programas pide una licitación?", "¿Cuánto anticipo puedo pedir?"];
 }
 
 export function Copilot({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -103,8 +95,8 @@ export function Copilot({ open, onClose }: { open: boolean; onClose: () => void 
   const [disponible, setDisponible] = useState<boolean | null>(null);
   const [acciones, setAcciones] = useState<CopilotAccion[]>([]);
   const [diagnostico, setDiagnostico] = useState<Diagnostico | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const finalRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const cargarObra = useCallback(() => {
     if (!projectId) return;
@@ -130,13 +122,25 @@ export function Copilot({ open, onClose }: { open: boolean; onClose: () => void 
     }
   }, [turnos, pensando]);
 
+  // Cerrar con Escape o al hacer clic fuera — sin oscurecer nada: el panel
+  // acompaña el trabajo, no lo interrumpe.
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
+    function onDown(e: PointerEvent) {
+      const destino = e.target as Node;
+      if (panelRef.current?.contains(destino)) return;
+      if ((destino as HTMLElement).closest?.("[data-copiloto-boton]")) return;
+      onClose();
+    }
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onDown);
+    };
   }, [open, onClose]);
 
   async function preguntar(pregunta: string) {
@@ -177,221 +181,213 @@ export function Copilot({ open, onClose }: { open: boolean; onClose: () => void 
   const pendientes = acciones.filter((a) => !a.aplicable);
 
   return (
-    <>
-      <div
-        className="fixed inset-0 z-40 bg-background/50 backdrop-blur-[2px]"
-        onClick={onClose}
-        aria-hidden
-      />
-      <aside
-        className="fixed right-0 top-0 z-50 flex h-full w-full max-w-lg flex-col border-l border-border bg-surface shadow-2xl"
-        role="dialog"
-        aria-label="Copiloto de Klave"
-      >
-        <header className="flex items-start gap-2 border-b border-border px-4 py-3">
-          <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
-            <Sparkle size={16} weight="duotone" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium">Klave</div>
-            <p className="text-xs leading-snug text-muted">
-              {diagnostico?.resumen ??
-                (projectId
-                  ? "Cargando el estado de esta obra…"
-                  : "Normativa de obra y cómo funciona la aplicación.")}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Cerrar"
-            className="shrink-0 rounded-md p-1.5 text-faint transition-colors hover:bg-surface-2 hover:text-foreground"
-          >
-            <X size={16} />
-          </button>
-        </header>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          {disponible === false && (
-            <p className="mb-3 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
-              Preguntar necesita credenciales de IA en el servidor. Sin ellas no responde
-              — no inventa. Lo que Klave puede <em>hacer</em> aquí abajo no usa IA y sigue
-              funcionando.
+    <aside
+      ref={panelRef}
+      className="fixed bottom-20 right-5 z-[60] flex max-h-[min(70vh,32rem)] w-[min(23rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+      role="dialog"
+      aria-label="Copiloto de Klave"
+    >
+      <header className="flex items-center gap-2 border-b border-border px-3 py-2">
+        <Sparkle size={15} weight="duotone" className="shrink-0 text-accent" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-medium leading-tight">Klave</div>
+          {diagnostico?.resumen && (
+            <p className="truncate text-[11px] leading-tight text-muted" title={diagnostico.resumen}>
+              {diagnostico.resumen}
             </p>
           )}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Cerrar"
+          className="shrink-0 rounded-md p-1 text-faint transition-colors hover:bg-surface-2 hover:text-foreground"
+        >
+          <X size={14} />
+        </button>
+      </header>
 
-          {/* Lo primero es lo que puede resolver, no un campo en blanco. */}
-          {projectId && (
-            <section className="mb-5">
-              <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
-                <Lightning size={13} weight="fill" className="text-accent" />
-                Lo que puedo hacer por esta obra
-              </h3>
-              {aplicables.length === 0 && pendientes.length === 0 ? (
-                <p className="flex items-start gap-2 text-sm text-muted">
-                  <CheckCircle size={15} weight="fill" className="mt-0.5 shrink-0 text-success" />
-                  Nada pendiente que yo pueda resolver solo. Si algo te falta, pregúntame
-                  abajo.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {aplicables.map((accion) => (
-                    <div
-                      key={`${accion.tipo}-${accion.hallazgo_id}`}
-                      className="rounded-lg border border-border bg-surface-2/40 p-3"
-                    >
-                      <div className="text-sm font-medium">{accion.titulo}</div>
-                      <AccionDeKlave
-                        accion={accion}
-                        projectId={projectId}
-                        onApplied={cargarObra}
-                      />
-                    </div>
-                  ))}
-                  {pendientes.map((accion) => (
-                    <div
-                      key={`${accion.tipo}-${accion.hallazgo_id}`}
-                      className="rounded-lg border border-border/70 p-3"
-                    >
-                      <div className="text-sm font-medium">{accion.titulo}</div>
-                      <p className="mt-0.5 text-sm text-muted">
-                        <span className="font-medium text-foreground">Necesito un dato: </span>
-                        {accion.requiere}
-                      </p>
-                    </div>
-                  ))}
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2.5">
+        {disponible === false && (
+          <p className="mb-2 rounded-lg bg-warning-soft px-2.5 py-1.5 text-[12px] leading-snug text-warning">
+            Preguntar necesita credenciales de IA. Las acciones de abajo no usan IA y
+            siguen funcionando.
+          </p>
+        )}
+
+        {projectId && (aplicables.length > 0 || pendientes.length > 0) && (
+          <section className="mb-3">
+            <h3 className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
+              <Lightning size={11} weight="fill" className="text-accent" />
+              Puedo hacer
+            </h3>
+            <div className="space-y-1.5">
+              {aplicables.map((accion) => (
+                <AccionCompacta
+                  key={`${accion.tipo}-${accion.hallazgo_id}`}
+                  accion={accion}
+                  projectId={projectId}
+                  onApplied={cargarObra}
+                />
+              ))}
+              {pendientes.map((accion) => (
+                <details
+                  key={`${accion.tipo}-${accion.hallazgo_id}`}
+                  className="rounded-lg border border-border/70 px-2.5 py-1.5"
+                >
+                  <summary className="cursor-pointer list-none text-[13px] leading-snug text-muted marker:hidden">
+                    {accion.titulo}{" "}
+                    <span className="text-[11px] text-faint">· necesito un dato</span>
+                  </summary>
+                  <p className="mt-1 text-[12px] leading-snug text-muted">{accion.requiere}</p>
+                </details>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {projectId && aplicables.length === 0 && pendientes.length === 0 && turnos.length === 0 && (
+          <p className="mb-3 flex items-start gap-1.5 text-[13px] leading-snug text-muted">
+            <CheckCircle size={14} weight="fill" className="mt-px shrink-0 text-success" />
+            Nada que yo pueda resolver solo por ahora.
+          </p>
+        )}
+
+        {turnos.length === 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {sugerencias(pathname, Boolean(projectId)).map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => void preguntar(s)}
+                className="rounded-full border border-border px-2.5 py-1 text-[12px] leading-tight text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="space-y-2.5">
+          {turnos.map((turno, i) => (
+            <div key={i} className="border-t border-border/50 pt-2 first:border-t-0 first:pt-0">
+              <p className="text-[11px] font-medium text-faint">{turno.pregunta}</p>
+              {turno.error && (
+                <p className="mt-1 text-[13px] text-danger">{turno.error}</p>
+              )}
+              {turno.texto && (
+                <div className="mt-1">
+                  {turno.fundamentada === false && (
+                    <p className="mb-1 flex items-start gap-1 text-[11px] leading-snug text-warning">
+                      <Warning size={11} weight="bold" className="mt-0.5 shrink-0" />
+                      Sin buen respaldo en mis fuentes: tómalo como pista.
+                    </p>
+                  )}
+                  <p className="whitespace-pre-wrap text-[13px] leading-relaxed">
+                    {turno.texto}
+                  </p>
+                  {turno.aviso && (
+                    <p className="mt-1.5 rounded-md bg-surface-2/70 px-2 py-1 text-[11px] leading-snug text-muted">
+                      {turno.aviso}
+                    </p>
+                  )}
+                  {turno.citas && turno.citas.length > 0 && <Fuentes citas={turno.citas} />}
                 </div>
               )}
-            </section>
+            </div>
+          ))}
+          {pensando && (
+            <p className="flex items-center gap-1.5 text-[13px] text-muted">
+              <CircleNotch size={13} className="animate-spin" /> Buscando…
+            </p>
           )}
-
-          {turnos.length === 0 && (
-            <section>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
-                O pregúntame
-              </h3>
-              <div className="flex flex-col items-start gap-1.5">
-                {sugerencias(pathname, Boolean(projectId)).map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => void preguntar(s)}
-                    className="rounded-lg border border-border px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-surface-2"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-2.5 text-xs text-faint">
-                Respondo con la normativa que tengo cargada y con la documentación de
-                Klave, citando de dónde sale cada cosa. Lo que no puedo respaldar, te lo
-                digo en lugar de inventarlo.
-              </p>
-            </section>
-          )}
-
-          <div className="space-y-4">
-            {turnos.map((turno, i) => (
-              <div key={i} className="border-t border-border/60 pt-3 first:border-t-0">
-                <p className="text-xs font-medium uppercase tracking-wide text-faint">
-                  {turno.pregunta}
-                </p>
-                {turno.error && <p className="mt-2 text-sm text-danger">{turno.error}</p>}
-                {turno.texto && (
-                  <div className="mt-1.5">
-                    {turno.fundamentada === false && (
-                      <p className="mb-1.5 flex items-start gap-1.5 text-xs text-warning">
-                        <Warning size={13} weight="bold" className="mt-0.5 shrink-0" />
-                        Esto no quedó bien respaldado por mis fuentes: tómalo como una
-                        pista, no como una respuesta.
-                      </p>
-                    )}
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                      {turno.texto}
-                    </p>
-                    {turno.conContexto && (
-                      <p className="mt-1 text-xs text-faint">
-                        Respondido con los hallazgos actuales de esta obra.
-                      </p>
-                    )}
-                    {turno.aviso && (
-                      <p className="mt-2 rounded-lg bg-surface-2/70 px-2.5 py-1.5 text-xs text-muted">
-                        {turno.aviso}
-                      </p>
-                    )}
-                    {turno.citas && turno.citas.length > 0 && (
-                      <Fuentes citas={turno.citas} />
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-            {pensando && (
-              <p className="flex items-center gap-2 text-sm text-muted">
-                <CircleNotch size={14} className="animate-spin" /> Buscando en la
-                normativa…
-              </p>
-            )}
-          </div>
-          <div ref={finalRef} />
         </div>
+        <div ref={finalRef} />
+      </div>
 
-        <form
-          className="border-t border-border p-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void preguntar(texto);
-          }}
-        >
-          <div className="flex items-end gap-2">
-            <textarea
-              ref={inputRef}
-              value={texto}
-              onChange={(e) => setTexto(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void preguntar(texto);
-                }
-              }}
-              rows={2}
-              maxLength={500}
-              placeholder="Pregunta sobre la obra, la normativa o la app…"
-              className="max-h-32 min-h-[42px] flex-1 resize-y rounded-lg border border-border bg-surface px-3 py-2 text-sm"
-            />
-            <button
-              type="submit"
-              disabled={pensando || !texto.trim()}
-              className={`${buttonClasses("primary", "sm")} h-[42px] shrink-0`}
-              aria-label="Preguntar"
-            >
-              <ArrowUp size={15} weight="bold" />
-            </button>
-          </div>
-        </form>
-      </aside>
-    </>
+      <form
+        className="border-t border-border p-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void preguntar(texto);
+        }}
+      >
+        <div className="flex items-center gap-1.5">
+          <input
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            maxLength={500}
+            placeholder="Pregunta algo…"
+            className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[13px]"
+          />
+          <button
+            type="submit"
+            disabled={pensando || !texto.trim()}
+            aria-label="Preguntar"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-fg transition disabled:opacity-40"
+          >
+            <ArrowUp size={14} weight="bold" />
+          </button>
+        </div>
+      </form>
+    </aside>
+  );
+}
+
+/** Una acción por renglón; el detalle y la vista previa al desplegar. */
+function AccionCompacta({
+  accion,
+  projectId,
+  onApplied,
+}: {
+  accion: CopilotAccion;
+  projectId: string;
+  onApplied: () => void;
+}) {
+  const [abierto, setAbierto] = useState(false);
+  return (
+    <div className="rounded-lg border border-accent/30 bg-accent-soft/40">
+      <button
+        type="button"
+        onClick={() => setAbierto((v) => !v)}
+        aria-expanded={abierto}
+        className="flex w-full items-start gap-1.5 px-2.5 py-1.5 text-left"
+      >
+        <Lightning size={12} weight="fill" className="mt-1 shrink-0 text-accent" />
+        <span className="min-w-0 flex-1 text-[13px] font-medium leading-snug">
+          {accion.titulo}
+        </span>
+        <CaretDown
+          size={12}
+          weight="bold"
+          className={`mt-1 shrink-0 text-faint ${abierto ? "rotate-180" : ""}`}
+        />
+      </button>
+      {abierto && (
+        <div className="px-2.5 pb-2">
+          <AccionDeKlave accion={accion} projectId={projectId} onApplied={onApplied} />
+        </div>
+      )}
+    </div>
   );
 }
 
 function Fuentes({ citas }: { citas: CopilotCita[] }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="mt-2">
+    <div className="mt-1.5">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-foreground"
+        className="text-[11px] text-muted hover:text-foreground"
         aria-expanded={open}
       >
-        <BookOpen size={13} />
-        {open ? "Ocultar fuentes" : `Fuentes (${citas.length})`}
+        {open ? "Ocultar fuentes" : `${citas.length} fuente${citas.length === 1 ? "" : "s"}`}
       </button>
       {open && (
-        <ul className="mt-1.5 space-y-1">
+        <ul className="mt-1 space-y-0.5">
           {citas.map((c) => (
-            <li key={`${c.fuente}-${c.titulo}`} className="text-xs">
-              <span className="text-foreground">{c.titulo}</span>{" "}
+            <li key={`${c.fuente}-${c.titulo}`} className="text-[11px] leading-snug">
               {c.url ? (
                 <a
                   href={c.url}
@@ -404,7 +400,6 @@ function Fuentes({ citas }: { citas: CopilotCita[] }) {
               ) : (
                 <span className="text-muted">{c.fuente}</span>
               )}
-              {c.vigencia && <span className="text-faint"> · {c.vigencia}</span>}
             </li>
           ))}
         </ul>

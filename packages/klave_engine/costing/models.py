@@ -341,6 +341,11 @@ class ScheduleConfig(BaseModel):
     intra_phase_overlap_pct: float = 50.0
     phase_overlap_pct: float = 15.0
     crews_per_activity: int = 1
+    # Frentes de trabajo: cuántas partes de la obra avanzan a la vez con
+    # cuadrillas propias. Es el otro modo de acortar el plazo, y el que un
+    # residente usa de verdad — dos frentes no hacen a la cuadrilla más
+    # rápida, ponen dos cuadrillas donde había una.
+    frentes: int = 1
     # Multi-level structures cannot be compressed below one cycle per level.
     per_level_cycle_days: int = 15
 

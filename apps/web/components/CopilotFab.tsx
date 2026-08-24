@@ -62,6 +62,7 @@ export function CopilotFab() {
       {!open && (
       <button
         type="button"
+        data-copiloto-boton
         onClick={() => setOpen(true)}
         aria-label={
           pendientes > 0

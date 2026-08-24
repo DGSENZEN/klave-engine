@@ -37,6 +37,7 @@ export const CONFIG_LABELS: Record<string, string> = {
   intra_phase_overlap_pct: "Traslape entre actividades (%)",
   phase_overlap_pct: "Traslape entre fases (%)",
   crews_per_activity: "Cuadrillas por actividad",
+  frentes: "Frentes de trabajo",
   per_level_cycle_days: "Ciclo por nivel (días)",
   // financial
   advance_payment_pct: "Anticipo (%)",

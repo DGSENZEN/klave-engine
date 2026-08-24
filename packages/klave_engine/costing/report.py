@@ -185,8 +185,9 @@ def _declare_schedule_basis(
     boq.assumptions.append(
         f"Programa de obra: duraciones de {from_matrix} de {len(schedule.activities)} "
         "actividades derivadas del rendimiento de su propia matriz (RLOPSRM art. 190), "
-        f"con {config.crews_per_activity} cuadrilla(s) por actividad y un solo frente "
-        f"de trabajo. Plazo {schedule.total_duration_days} días hábiles = "
+        f"con {config.crews_per_activity} cuadrilla(s) por actividad y "
+        f"{config.frentes} frente(s) de trabajo. "
+        f"Plazo {schedule.total_duration_days} días hábiles = "
         f"{schedule.calendar_days} días naturales, en semana de seis días."
     )
 
