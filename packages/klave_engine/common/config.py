@@ -60,6 +60,9 @@ class Settings(BaseSettings):
 
     ai_provider: str = "auto"
     ai_model: str | None = None
+    # Tope mensual de gasto estimado en IA por taller, en USD. 0 = sin tope.
+    # Es un freno, no un aviso: al llegar, la siguiente llamada se rechaza.
+    ai_budget_usd: float = 0.0
 
     auth_google_id: str | None = None
     auth_google_secret: str | None = None

@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from apps.api.auth.common import rate_limit
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
+from apps.api.gasto import registrar_uso, revisar_presupuesto, workspace_de
 from apps.api.routes.catalog import get_catalog
 from apps.api.tenancy import store_for_project
 
@@ -248,6 +249,8 @@ def ask(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     rate_limit(request, "copilot", max_attempts=60, window_seconds=3600.0)
+    workspace = workspace_de(request, settings)
+    revisar_presupuesto(settings, workspace)
     if not credentials_available(settings.ai_provider):
         raise HTTPException(
             status_code=409,
@@ -260,11 +263,22 @@ def ask(
     contexto = (
         _contexto(store, settings, body.project_id) if body.project_id else None
     )
+    modelo = active_model(settings.ai_provider, settings.ai_model) or ""
+    medido: dict[str, int] = {"entrada": 0, "salida": 0}
+
+    def preguntar_midiendo(system: str, prompt: str) -> str:
+        # Sin cuenta de tokens del proveedor, se estima por caracteres: una
+        # estimación rotulada vale más que un renglón en blanco en la bitácora.
+        texto = configured_asker(settings.ai_provider, settings.ai_model)(system, prompt)
+        medido["entrada"] += len(system) + len(prompt)
+        medido["salida"] += len(texto)
+        return texto
+
     try:
         respuesta = responder(
             body.pregunta,
             DOCS_DIR,
-            configured_asker(settings.ai_provider, settings.ai_model),
+            preguntar_midiendo,
             contexto=contexto,
         )
     except Exception as exc:  # noqa: BLE001 — a busy provider is news, not a crash
@@ -283,6 +297,19 @@ def ask(
                 + f" ({detalle[:160]})",
             },
         ) from exc
+    if medido["entrada"]:
+        # ~4 caracteres por token es la regla de dedo habitual; la bitácora
+        # guarda de dónde salió el número para que nadie lo lea como exacto.
+        registrar_uso(
+            settings,
+            workspace,
+            project_id=body.project_id or "",
+            modelo=modelo,
+            proveedor=settings.ai_provider,
+            tipo="copiloto",
+            tokens_entrada=medido["entrada"] // 4,
+            tokens_salida=medido["salida"] // 4,
+        )
     return {
         "texto": respuesta.texto,
         "citas": [c.__dict__ for c in respuesta.citas],

@@ -1,14 +1,17 @@
 """Klave Engine API. Routes orchestrate; the domain packages do the thinking."""
 
+import traceback
+from datetime import UTC, datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from klave_engine.common.bitacora import ErrorRegistrado, anotar_error, redactar
 from klave_engine.common.config import get_settings
 from klave_engine.common.errors import KlaveEngineError
-from klave_engine.common.logging import configure_logging
+from klave_engine.common.logging import configure_logging, get_logger, request_id_var
 
 from apps.api.auth.account import router as account_router
 from apps.api.auth.invitations import router as invitations_router
@@ -59,6 +62,9 @@ def _validate_production_config(settings) -> None:
         raise RuntimeError(
             "Configuración de producción incompleta: " + "; ".join(problems)
         )
+
+
+logger = get_logger("klave.error")
 
 
 def create_app() -> FastAPI:
@@ -133,6 +139,41 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=400,
             content={"error_type": type(exc).__name__, "message": str(exc)},
+        )
+
+    @app.exception_handler(Exception)
+    async def registrar_lo_que_se_rompio(request: Request, exc: Exception) -> JSONResponse:
+        """Lo que nadie previó queda anotado antes de contestar.
+
+        Sin esto, un DWG que tumba al parser a las once de la noche se sabe
+        cuando el taller escribe un correo — si lo escribe. La traza se queda
+        en la máquina del taller: sus planos son de sus clientes."""
+        anotar_error(
+            settings.data_dir,
+            ErrorRegistrado(
+                ts=datetime.now(UTC).isoformat(),
+                request_id=request_id_var.get() or "",
+                ruta=request.url.path,
+                metodo=request.method,
+                tipo=type(exc).__name__,
+                mensaje=redactar(str(exc)),
+                traza=redactar("".join(traceback.format_tb(exc.__traceback__)[-4:]), 2400),
+                workspace=str(
+                    (getattr(request.state, "user", None) or {}).get("workspace_id") or ""
+                ),
+            ),
+        )
+        logger.exception("sin manejar en %s %s", request.method, request.url.path)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error_type": "error_interno",
+                "message": (
+                    "Algo se rompió de nuestro lado y quedó registrado. Si se repite, "
+                    "pásale a tu administrador el identificador de esta petición."
+                ),
+                "request_id": request_id_var.get() or "",
+            },
         )
 
     return app

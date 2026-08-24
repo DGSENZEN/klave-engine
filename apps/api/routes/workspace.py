@@ -6,6 +6,11 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from klave_engine.common.bitacora import (
+    errores_recientes,
+    ruta_de_bitacora,
+    uso_del_periodo,
+)
 from klave_engine.common.config import Settings
 from klave_engine.common.io import read_json
 from klave_engine.common.version import engine_fingerprint
@@ -17,6 +22,7 @@ from klave_engine.costing.defaults import (
 from klave_engine.costing.models import CostingConfig
 from klave_engine.costing.reviews import REVIEWS_FILENAME, load_reviews
 from klave_engine.costing.vigencia import FRESH_MONTHS, freshness
+from klave_engine.llm.tarifas import consumo_del_mes
 from pydantic import BaseModel, Field
 
 from apps.api.auth.store import UsersDbUnavailable, get_user_store
@@ -213,6 +219,82 @@ def overview(
         or {"slug": settings.workspace_slug, "name": settings.workspace_name},
         "mode": "protected" if user is not None else "open",
         "is_admin": user is None or user["role"] == "admin",
+    }
+
+
+@router.get("/gasto-ia")
+def gasto_ia(request: Request, settings: Settings = Depends(get_settings)) -> dict:
+    """Lo que este taller lleva gastado en IA este mes, y su tope.
+
+    Cifras estimadas con tarifas declaradas por el operador, no cargos reales;
+    la interfaz lo dice con esas palabras."""
+    _require_admin_if_protected(request)
+    workspace = request_workspace_id(request) or settings.workspace_slug
+    tope = settings.ai_budget_usd or None
+    consumo = consumo_del_mes(settings.data_dir, workspace, tope_usd=tope)
+    filas = uso_del_periodo(
+        settings.data_dir,
+        datetime.now(UTC).date().replace(day=1),
+        datetime.now(UTC).date(),
+        workspace=workspace,
+    )
+    por_proyecto: dict[str, dict[str, float]] = {}
+    for fila in filas:
+        clave = str(fila.get("project_id") or "—")
+        acumulado = por_proyecto.setdefault(clave, {"llamadas": 0, "usd": 0.0})
+        acumulado["llamadas"] += 1
+        acumulado["usd"] = round(
+            acumulado["usd"] + float(fila.get("costo_estimado_usd") or 0.0), 4
+        )
+    por_tipo: dict[str, float] = {}
+    for fila in filas:
+        tipo = str(fila.get("tipo") or "—")
+        por_tipo[tipo] = round(
+            por_tipo.get(tipo, 0.0) + float(fila.get("costo_estimado_usd") or 0.0), 4
+        )
+    return {
+        "llamadas": consumo.llamadas,
+        "tokens_entrada": consumo.tokens_entrada,
+        "tokens_salida": consumo.tokens_salida,
+        "costo_estimado_usd": consumo.costo_estimado_usd,
+        "tope_usd": consumo.tope_usd,
+        "porcentaje": consumo.porcentaje,
+        "excedido": consumo.excedido,
+        "sin_tarifar": consumo.sin_tarifar,
+        "por_proyecto": [
+            {"project_id": k, **v}
+            for k, v in sorted(por_proyecto.items(), key=lambda kv: -kv[1]["usd"])
+        ][:12],
+        "por_tipo": por_tipo,
+    }
+
+
+@router.get("/errores")
+def errores(request: Request, settings: Settings = Depends(get_settings)) -> dict:
+    """Lo que se rompió en los últimos días, agrupado por dónde y de qué tipo.
+
+    Se queda en la máquina del taller: sus planos son de sus clientes."""
+    _require_admin_if_protected(request)
+    filas = errores_recientes(settings.data_dir, dias=7)
+    grupos: dict[tuple[str, str], dict] = {}
+    for fila in filas:
+        clave = (str(fila.get("ruta") or ""), str(fila.get("tipo") or ""))
+        grupo = grupos.setdefault(
+            clave,
+            {
+                "ruta": clave[0],
+                "tipo": clave[1],
+                "veces": 0,
+                "ultimo": fila.get("ts"),
+                "mensaje": fila.get("mensaje"),
+                "request_id": fila.get("request_id"),
+            },
+        )
+        grupo["veces"] += 1
+    return {
+        "total": len(filas),
+        "grupos": sorted(grupos.values(), key=lambda g: -g["veces"])[:20],
+        "donde": ruta_de_bitacora(settings.data_dir),
     }
 
 

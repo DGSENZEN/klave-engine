@@ -849,6 +849,39 @@ export const aiEvidenceUrl = (id: string, code: string, mark: string) =>
 export const frameRenderUrl = (id: string, code: string) =>
   `${API_BASE}/projects/${id}/renders/${encodeURIComponent(code)}.png`;
 
+// ---- Bitácora del taller: gasto de IA y lo que se rompió ----
+
+export type GastoIA = {
+  llamadas: number;
+  tokens_entrada: number;
+  tokens_salida: number;
+  /** Estimado con tarifas declaradas por el operador, nunca un cargo real. */
+  costo_estimado_usd: number;
+  tope_usd: number | null;
+  porcentaje: number | null;
+  excedido: boolean;
+  /** Llamadas cuyo modelo no tiene tarifa declarada: cuestan «no sé», no cero. */
+  sin_tarifar: number;
+  por_proyecto: { project_id: string; llamadas: number; usd: number }[];
+  por_tipo: Record<string, number>;
+};
+
+export type ErroresRecientes = {
+  total: number;
+  grupos: {
+    ruta: string;
+    tipo: string;
+    veces: number;
+    ultimo: string;
+    mensaje: string;
+    request_id: string;
+  }[];
+  donde: Record<string, string>;
+};
+
+export const getGastoIA = () => getJSON<GastoIA>(`/workspace/gasto-ia`);
+export const getErrores = () => getJSON<ErroresRecientes>(`/workspace/errores`);
+
 // ---- Copiloto: respuestas con fuente, o ninguna ----
 
 export type CopilotCita = {

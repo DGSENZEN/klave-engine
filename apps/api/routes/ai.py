@@ -27,6 +27,7 @@ from klave_engine.llm.service import (
 from apps.api.auth.common import rate_limit
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
+from apps.api.gasto import registrar_uso, revisar_presupuesto, workspace_de
 
 router = APIRouter(prefix="/projects")
 _LOCK = threading.Lock()
@@ -164,6 +165,8 @@ def start_ai_read(
     ``only_failed=true`` resumes: the sheets already read are kept as they
     are and only the failures are asked for again."""
     rate_limit(request, "ai_read", max_attempts=10, window_seconds=3600.0)
+    workspace = workspace_de(request, settings)
+    revisar_presupuesto(settings, workspace)
     control_dir = _control_dir(store, project_id, settings)
     if not credentials_available(settings.ai_provider):
         raise HTTPException(
@@ -202,6 +205,20 @@ def start_ai_read(
                 model=active_model(settings.ai_provider, settings.ai_model) or "",
                 only_failed=only_failed,
             )
+            # Lo que costó, hoja por hoja, en la bitácora del taller.
+            for lectura in reads.readings:
+                if lectura.input_tokens or lectura.output_tokens:
+                    registrar_uso(
+                        settings,
+                        workspace,
+                        project_id=project_id,
+                        modelo=lectura.model,
+                        proveedor=settings.ai_provider,
+                        tipo="lectura_hoja",
+                        tokens_entrada=lectura.input_tokens,
+                        tokens_salida=lectura.output_tokens,
+                        actor=actor or "",
+                    )
             BUS.publish(
                 "ai_read_finished",
                 project_id,

@@ -26,6 +26,7 @@ import {
   SectionTitle,
   SkeletonCards,
 } from "@/components/ui";
+import { ErroresCard, GastoIACard } from "@/components/BitacoraCards";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 
 export default function TallerPage() {
@@ -124,6 +125,10 @@ export default function TallerPage() {
         ) : (
           <div className="space-y-4">
             <NameCard auth={auth} />
+            <div className="grid gap-4 md:grid-cols-2">
+              <GastoIACard />
+              <ErroresCard />
+            </div>
             <Card className="flex flex-wrap items-center justify-between gap-3 p-5">
               <div className="flex items-center gap-3">
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-surface-2 text-foreground">
