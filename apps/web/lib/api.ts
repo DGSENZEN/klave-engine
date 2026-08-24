@@ -841,6 +841,11 @@ export const startAiRead = (id: string, actor?: string, onlyFailed = false) =>
     {},
     actor ? { "X-Actor": actor } : undefined,
   );
+/** The crop of the sheet where a mark is written — what makes an AI reading
+ * checkable against the drawing instead of merely plausible. */
+export const aiEvidenceUrl = (id: string, code: string, mark: string) =>
+  `${API_BASE}/projects/${id}/ai-reads/${encodeURIComponent(code)}/${encodeURIComponent(mark)}.png`;
+
 export const frameRenderUrl = (id: string, code: string) =>
   `${API_BASE}/projects/${id}/renders/${encodeURIComponent(code)}.png`;
 

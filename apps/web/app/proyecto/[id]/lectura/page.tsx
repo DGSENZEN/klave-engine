@@ -18,6 +18,7 @@ import {
   cancelAiRead,
   deleteInventoryMapping,
   frameRenderUrl,
+  aiEvidenceUrl,
   getAiReads,
   getCatalog,
   getCostingConfig,
@@ -26,6 +27,7 @@ import {
   num,
   recompute,
   startAiRead,
+  type AiElementRead,
   type AiReads,
   type AiSheetReading,
   type CatalogConcept,
@@ -654,17 +656,12 @@ function AiReadingCard({ reading, projectId }: { reading: AiSheetReading; projec
           {r.elements.length > 0 && (
             <ul className="space-y-0.5">
               {r.elements.slice(0, 40).map((e, i) => (
-                <li key={`${e.mark}-${i}`} className="flex items-baseline gap-2">
-                  <span className="font-mono text-xs">{e.mark}</span>
-                  <span className="min-w-0 flex-1 truncate text-xs text-muted">
-                    {e.family}
-                    {e.section_cm ? ` · ${e.section_cm}` : ""}
-                    {e.rebar ? ` · ${e.rebar}` : ""}
-                    {e.stirrups ? ` · ${e.stirrups}` : ""}
-                    {e.length_m ? ` · L ${num(e.length_m)} m` : ""}
-                  </span>
-                  <span className="text-[11px] tabular text-muted">{Math.round(e.confidence * 100)}%</span>
-                </li>
+                <ElementoLeido
+                  key={`${e.mark}-${i}`}
+                  element={e}
+                  projectId={projectId}
+                  frameCode={reading.frame_code}
+                />
               ))}
             </ul>
           )}
@@ -677,6 +674,87 @@ function AiReadingCard({ reading, projectId }: { reading: AiSheetReading; projec
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * One thing the model says it read, and the picture that settles it.
+ *
+ * Deliberately not a rationale. Explanations raise acceptance of a machine's
+ * answer whether or not it is right (Bansal et al., CHI 2021), and empty ones
+ * work nearly as well as real ones (Eiband et al., CHI 2019). What helps is
+ * making the check cheap — so the row opens onto the crop of the sheet where
+ * that mark is written, and the engineer decides by looking at the drawing.
+ */
+function ElementoLeido({
+  element,
+  projectId,
+  frameCode,
+}: {
+  element: AiElementRead;
+  projectId: string;
+  frameCode: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const claims = [element.section_cm, element.rebar, element.stirrups].filter(Boolean);
+  return (
+    <li className="border-t border-border/40 py-1 first:border-t-0">
+      <div className="flex items-baseline gap-2">
+        <span className="font-mono text-xs">{element.mark}</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-muted">
+          {element.family}
+          {element.section_cm ? ` · ${element.section_cm}` : ""}
+          {element.rebar ? ` · ${element.rebar}` : ""}
+          {element.stirrups ? ` · ${element.stirrups}` : ""}
+          {element.length_m ? ` · L ${num(element.length_m)} m` : ""}
+        </span>
+        {element.confidence < 0.7 && (
+          <span
+            className="shrink-0 text-[11px] text-warning"
+            title="El modelo lo marcó como dudoso: revísalo contra la hoja"
+          >
+            no está seguro
+          </span>
+        )}
+        {element.mark && !failed && (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="shrink-0 text-[11px] text-accent hover:underline"
+            aria-expanded={open}
+          >
+            {open ? "ocultar" : "ver en la hoja"}
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="mt-1.5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={aiEvidenceUrl(projectId, frameCode, element.mark)}
+            alt={`Recorte de la hoja ${frameCode} donde aparece ${element.mark}`}
+            className="max-h-72 w-auto rounded-lg border border-border bg-white"
+            onError={() => {
+              setFailed(true);
+              setOpen(false);
+            }}
+          />
+          <p className="mt-1 text-[11px] text-faint">
+            Lo que dice el plano en ese punto manda.{" "}
+            {claims.length > 0
+              ? `La IA leyó ${claims.join(" · ")} — compruébalo aquí.`
+              : "Compara contra lo que la IA propuso."}
+          </p>
+        </div>
+      )}
+      {failed && (
+        <p className="mt-0.5 text-[11px] text-faint">
+          «{element.mark}» no aparece escrito en esta hoja: la lectura no se puede
+          comprobar contra el dibujo.
+        </p>
+      )}
+    </li>
   );
 }
 

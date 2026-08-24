@@ -6,12 +6,14 @@ import threading
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from klave_engine.common.config import Settings
 from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.results import Detection
+from klave_engine.dxf.entities import NormalizedEntity
 from klave_engine.llm.coverage import coverage_flags
+from klave_engine.llm.evidencia import crop_from_frame_render, find_mark_region
 from klave_engine.llm.reader import active_model, configured_reader, credentials_available
 from klave_engine.llm.service import (
     AiReads,
@@ -52,6 +54,62 @@ def frame_render(
     if path is None:
         raise HTTPException(status_code=404, detail={"error_type": "frame_not_found"})
     return FileResponse(path, media_type="image/png")
+
+
+@router.get("/{project_id}/ai-reads/{code}/{mark}.png")
+def ai_read_evidence(
+    project_id: str,
+    code: str,
+    mark: str,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """The crop of the sheet where this mark is written.
+
+    This is what makes an AI reading checkable instead of merely plausible:
+    the engineer confirms against the drawing's own ink, not against the
+    model's account of itself."""
+    if not code.replace("-", "").replace("_", "").isalnum():
+        raise HTTPException(status_code=404, detail={"error_type": "frame_not_found"})
+    if len(mark) > 40:
+        raise HTTPException(status_code=404, detail={"error_type": "mark_not_found"})
+    artifact_dir = store.artifact_root(project_id)
+    control_dir = _control_dir(store, project_id, settings)
+    frames = [SheetFrame.model_validate(f) for f in store.read_artifact(project_id, "frames.json")]
+    frame = next((f for f in frames if f.code == code), None)
+    if frame is None:
+        raise HTTPException(status_code=404, detail={"error_type": "frame_not_found"})
+
+    # What the reading claimed about this mark, so the crop can be chosen where
+    # the mark and those values appear together.
+    reads = load_ai_reads(control_dir)
+    corroborating: list[str] = []
+    for reading in reads.readings:
+        if reading.frame_code != code:
+            continue
+        for element in reading.read.elements:
+            if element.mark.strip().upper() == mark.strip().upper():
+                corroborating = [
+                    v for v in (element.section_cm, element.rebar, element.stirrups) if v
+                ]
+    entities = [
+        NormalizedEntity.model_validate(e)
+        for e in store.read_artifact(project_id, "normalized_entities.json")
+    ]
+    region = find_mark_region(entities, frame, mark, corroborating)
+    if region is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error_type": "mark_not_found",
+                "message": f"«{mark}» no aparece escrito en la hoja {code}.",
+            },
+        )
+    render = render_frame_png(artifact_dir, control_dir, code)
+    png = crop_from_frame_render(render, frame, region) if render else None
+    if png is None:
+        raise HTTPException(status_code=404, detail={"error_type": "render_unavailable"})
+    return Response(content=png, media_type="image/png")
 
 
 @router.get("/{project_id}/ai-reads")
