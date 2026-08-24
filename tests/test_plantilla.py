@@ -5,6 +5,7 @@ vale cero, y la suma tiene que cuadrar contra los indirectos de campo."""
 from klave_engine.costing.plantilla import (
     CargoCampo,
     build_personal_tecnico,
+    desajuste_de_indirectos,
     plantilla_sugerida,
 )
 
@@ -147,3 +148,20 @@ def test_la_sugerida_de_una_obra_corta_no_carga_puestos_de_una_larga():
     puestos = {c.puesto for c in cargos}
     assert "Ingeniero de costos y estimaciones" not in puestos
     assert "Superintendente de obra" in puestos
+
+
+def test_no_hay_desajuste_dentro_de_la_tolerancia():
+    assert desajuste_de_indirectos(105_000.0, 100_000.0, 0) is None
+
+
+def test_el_desajuste_se_reporta_con_signo():
+    arriba = desajuste_de_indirectos(200_000.0, 100_000.0, 0)
+    abajo = desajuste_de_indirectos(50_000.0, 100_000.0, 0)
+    assert arriba is not None and arriba > 0
+    assert abajo is not None and abajo < 0
+
+
+def test_una_suma_incompleta_no_levanta_la_alarma():
+    """Comparar contra un total al que le faltan sueldos produce una alarma
+    falsa, y las falsas son las que enseñan a ignorar la lista."""
+    assert desajuste_de_indirectos(200_000.0, 100_000.0, cargos_sin_sueldo=1) is None

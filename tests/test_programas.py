@@ -134,3 +134,36 @@ def test_a_post_with_no_captured_salary_never_exports_as_zero():
     velador = personal.rows[0]
     assert velador.quantity > 0  # su participación sí se cuenta
     assert velador.sin_importe is True
+
+
+def test_a_plantilla_that_does_not_fit_the_indirects_becomes_a_finding():
+    """El personal de campo se paga con o sin formato de por medio: si los
+    indirectos no alcanzan, la obra pierde dinero — en pública y en privada."""
+    from klave_engine.costing.models import CostingConfig, IndirectsConfig
+    from klave_engine.costing.report import generate_cost_report
+    from klave_engine.detection.results import DetectionType, make_detection
+    from klave_engine.dxf.units import DrawingUnits
+
+    dets = [
+        make_detection(
+            f"z{i}", DetectionType.footing, f"Z-{i}", (0, 0, 1, 1), 0.9, [], "m", [],
+            {"estimated_area": 4.0},
+        )
+        for i in range(6)
+    ]
+    config = CostingConfig(
+        indirects=IndirectsConfig(field_indirects_pct=1.0),
+        plantilla_campo=[
+            CargoCampo(puesto="Superintendente", salario_mensual=60000.0),
+        ],
+    )
+    report = generate_cost_report(
+        "p", dets, DrawingUnits(unit="m", source="declared", confidence=1.0), config=config
+    )
+    assert any("plantilla de personal de campo suma" in w for w in report.warnings)
+
+
+def test_without_a_plantilla_nothing_is_warned():
+    """Un presupuesto de obra privada no lleva plantilla capturada; volverlo
+    hallazgo sería una alarma en cada proyecto."""
+    assert not any("plantilla de personal" in w for w in _report().warnings)

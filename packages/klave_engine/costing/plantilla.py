@@ -174,6 +174,21 @@ class ProgramaPersonal(BaseModel):
     notas: list[str] = Field(default_factory=list)
 
 
+def desajuste_de_indirectos(
+    total_plantilla: float, indirectos_campo: float, cargos_sin_sueldo: int
+) -> float | None:
+    """Cuánto se pasa (o le falta) la plantilla frente a los indirectos de
+    campo, en por ciento. None cuando no hay nada que comparar todavía.
+
+    Con un solo sueldo sin capturar la suma está incompleta, y comparar una
+    suma incompleta produce una alarma falsa. Una alarma falsa gasta la
+    atención que hace falta para la verdadera, así que no se levanta."""
+    if cargos_sin_sueldo or indirectos_campo <= 0 or total_plantilla <= 0:
+        return None
+    diferencia = (total_plantilla - indirectos_campo) / indirectos_campo * 100.0
+    return diferencia if abs(diferencia) > TOLERANCIA_PCT else None
+
+
 def build_personal_tecnico(
     cargos: list[CargoCampo],
     periods: int,
@@ -245,12 +260,13 @@ def build_personal_tecnico(
             "de abajo está incompleto en esa medida — no es que ese personal salga gratis."
         )
     if indirectos_campo > 0 and total > 0 and not sin_sueldo:
-        diferencia = (total - indirectos_campo) / indirectos_campo * 100.0
-        if abs(diferencia) <= TOLERANCIA_PCT:
+        diferencia = desajuste_de_indirectos(total, indirectos_campo, sin_sueldo)
+        if diferencia is None:
+            cerca = (total - indirectos_campo) / indirectos_campo * 100.0
             notas.append(
                 f"Congruente con la integración: la plantilla suma "
                 f"${total:,.2f} y los indirectos de campo del presupuesto son "
-                f"${indirectos_campo:,.2f} ({diferencia:+.1f} %)."
+                f"${indirectos_campo:,.2f} ({cerca:+.1f} %)."
             )
         else:
             direccion = "más" if diferencia > 0 else "menos"

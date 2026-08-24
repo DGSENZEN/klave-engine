@@ -172,6 +172,21 @@ _RULES: list[Rule] = [
         verificar="Busca el armado en el cuadro o el detalle de esos elementos.",
     ),
     Rule(
+        pattern=r"La plantilla de personal de campo suma",
+        severity="dinero",
+        action=(
+            "Ajusta el porcentaje de indirectos de campo, o la plantilla, "
+            "para que uno pague a la otra."
+        ),
+        target="programa",
+        momento="cotizar",
+        verificar=(
+            "Compara el total de la plantilla contra los indirectos de campo: "
+            "ese personal se paga con o sin formato de por medio, y en obra "
+            "pública además se revisa (RLOPSRM art. 64-A-I)."
+        ),
+    ),
+    Rule(
         pattern=r"nivel de plataforma",
         severity="revisar",
         action="Define el nivel de plataforma en Parámetros para calcular corte y terraplén.",

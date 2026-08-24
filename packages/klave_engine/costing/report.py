@@ -2,6 +2,7 @@
 
 import csv
 import io
+import math
 from collections import Counter
 from pathlib import Path
 
@@ -37,6 +38,10 @@ from klave_engine.costing.models import (
 )
 from klave_engine.costing.parametrics import apply_parametrics, compute_basis
 from klave_engine.costing.piles import apply_piles
+from klave_engine.costing.plantilla import (
+    build_personal_tecnico,
+    desajuste_de_indirectos,
+)
 from klave_engine.costing.reviews import ManualAdjustment
 from klave_engine.costing.schedule import build_schedule
 from klave_engine.costing.steel import SteelAssumptions, apply_steel, compute_steel
@@ -286,6 +291,9 @@ def generate_cost_report(
     if price_vigencias is not None:
         _warn_stale_prices(boq, apus, price_vigencias)
     integration = integrate_costs(boq.direct_cost_total, config.indirects)
+    indirectos_campo = round(
+        boq.direct_cost_total * config.indirects.field_indirects_pct / 100.0, 2
+    )
     levels = (
         max(len(segmentation.superstructure_views()), 1)
         if segmentation is not None and segmentation.is_segmented
@@ -296,6 +304,7 @@ def generate_cost_report(
     schedule = build_schedule(boq, catalog, config.schedule, levels=levels, apus=apus)
     financial = build_financial_plan(schedule, integration, config.financial, config.currency)
     _declare_schedule_basis(boq, schedule, config.schedule)
+    _warn_plantilla_vs_indirectos(boq, config, schedule, indirectos_campo)
 
     report = CostReport(
         project_id=project_id,
@@ -312,9 +321,7 @@ def generate_cost_report(
         # El programa de personal (art. 45-A-XI-d) y el número contra el que
         # tiene que cuadrar, guardados con el reporte.
         plantilla_campo=list(config.plantilla_campo),
-        indirectos_campo=round(
-            boq.direct_cost_total * config.indirects.field_indirects_pct / 100.0, 2
-        ),
+        indirectos_campo=indirectos_campo,
     )
     log_stage(
         logger,
@@ -326,6 +333,47 @@ def generate_cost_report(
         duration_days=schedule.total_duration_days,
     )
     return report
+
+
+def _warn_plantilla_vs_indirectos(
+    boq: BillOfQuantities,
+    config: CostingConfig,
+    schedule: WorkSchedule,
+    indirectos_campo: float,
+) -> None:
+    """El personal que el taller planea tener contra el dinero que los
+    indirectos le destinan.
+
+    No se avisa cuando falta la plantilla: un presupuesto de obra privada no
+    la necesita, y convertir eso en hallazgo sería una alarma en cada
+    proyecto. Se avisa cuando la plantilla existe, está completa y no cabe en
+    los indirectos — ahí el problema es real en obra pública y privada por
+    igual, porque ese personal se paga con o sin formato de por medio."""
+    if not config.plantilla_campo:
+        return
+    period_days = schedule.workdays_per_month or 24
+    periods = (
+        max(1, math.ceil(schedule.total_duration_days / period_days))
+        if schedule.total_duration_days
+        else 0
+    )
+    if not periods:
+        return
+    programa = build_personal_tecnico(
+        config.plantilla_campo, periods, period_days, "mes", indirectos_campo
+    )
+    desajuste = desajuste_de_indirectos(
+        programa.total, indirectos_campo, programa.cargos_sin_sueldo
+    )
+    if desajuste is None:
+        return
+    direccion = "no alcanzan para pagarla" if desajuste > 0 else "sobran frente a ella"
+    boq.warnings.append(
+        f"La plantilla de personal de campo suma ${programa.total:,.2f} en "
+        f"{periods} meses y los indirectos de campo del presupuesto "
+        f"(${indirectos_campo:,.2f}, {config.indirects.field_indirects_pct:g} % del "
+        f"costo directo) {direccion}: {abs(desajuste):.0f} % de diferencia."
+    )
 
 
 def _apply_adjustments(
