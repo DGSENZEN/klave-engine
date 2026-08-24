@@ -9,7 +9,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 from klave_engine.common.config import Settings
-from klave_engine.llm.reader import anthropic_reader, credentials_available
+from klave_engine.llm.reader import active_model, configured_reader, credentials_available
 from klave_engine.llm.service import (
     AiReads,
     load_ai_reads,
@@ -58,9 +58,9 @@ def get_ai_reads(
 ) -> dict:
     reads = load_ai_reads(_control_dir(store, project_id, settings))
     payload = reads.model_dump()
-    payload["available"] = credentials_available()
+    payload["available"] = credentials_available(settings.ai_provider)
     payload["running"] = project_id in _RUNNING
-    payload["model"] = "claude-opus-5"
+    payload["model"] = active_model(settings.ai_provider, settings.ai_model) or ""
     return payload
 
 
@@ -76,7 +76,7 @@ def start_ai_read(
     Refuses honestly when no credentials are configured."""
     rate_limit(request, "ai_read", max_attempts=10, window_seconds=3600.0)
     control_dir = _control_dir(store, project_id, settings)
-    if not credentials_available():
+    if not credentials_available(settings.ai_provider):
         raise HTTPException(
             status_code=409,
             detail={
@@ -105,7 +105,9 @@ def start_ai_read(
     def job() -> None:
         try:
             reads = run_ai_reading(
-                artifact_dir, control_dir, anthropic_reader(), run_id=artifact_dir.name,
+                artifact_dir, control_dir,
+                configured_reader(settings.ai_provider, settings.ai_model),
+                run_id=artifact_dir.name,
                 should_stop=cancel.is_set,
             )
             BUS.publish(

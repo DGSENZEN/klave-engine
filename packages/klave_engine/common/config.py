@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     cookie_secure: bool | None = None
     # Extra browser origins allowed to call the API with credentials.
     extra_origins: str = ""  # comma-separated
+    # Lectura con IA: anthropic | gemini | auto (auto prefers whichever has
+    # credentials, Claude first); ai_model overrides the provider's default.
+    ai_provider: str = "auto"
+    ai_model: str | None = None
+
     auth_google_id: str | None = None
     auth_google_secret: str | None = None
 

@@ -4,8 +4,18 @@ Las reglas leen geometría. Hay cosas que solo se leen *viendo* la hoja: el
 cuadro de castillos dibujado, las notas de materiales, el nivel en el cajetín,
 una marca al lado de su sección. Para eso el motor **renderiza cada marco de
 hoja a una imagen** (`renders/<código>.png`, también visible en el visor como
-«img») y, si el servidor tiene `ANTHROPIC_API_KEY`, un modelo de visión
-(`claude-opus-5`) lee la imagen y devuelve una lectura estructurada:
+«img») y, si el servidor tiene credenciales de IA, un modelo de visión lee
+la imagen y devuelve una lectura estructurada.
+
+Dos proveedores con el mismo contrato, elegidos con `KLAVE_AI_PROVIDER`:
+
+- **Claude** (`ANTHROPIC_API_KEY`): modelo por defecto `claude-opus-5`.
+- **Gemini** (`GEMINI_API_KEY` o `GOOGLE_API_KEY`): por defecto
+  `gemini-2.5-pro`.
+- `auto` (por defecto) usa el que tenga credenciales, Claude primero. Una
+  elección explícita sin credenciales se reporta como *no configurada* —
+  nunca cae en silencio al otro proveedor. `KLAVE_AI_MODEL` sobreescribe el
+  modelo. La lectura devuelve:
 
 - cajetín: clave, título, nivel, escala;
 - notas: f'c por familia, fy, recubrimientos, desplante, sistema de losa;

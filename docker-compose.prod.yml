@@ -42,6 +42,9 @@ services:
       KLAVE_SMTP_PASSWORD: ${KLAVE_SMTP_PASSWORD:-}
       KLAVE_MAIL_FROM: ${KLAVE_MAIL_FROM:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      KLAVE_AI_PROVIDER: ${KLAVE_AI_PROVIDER:-auto}
+      KLAVE_AI_MODEL: ${KLAVE_AI_MODEL:-}
     volumes:
       - klave-data:/data
     depends_on:

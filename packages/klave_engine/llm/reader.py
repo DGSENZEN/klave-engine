@@ -9,9 +9,12 @@ the rule-based reading, shown to the engineer to confirm, and ranks below
 a cuadro, a detalle or a nota the rules read themselves. It never prices
 anything and never becomes a quantity on its own.
 
-Runs only when the Anthropic SDK can resolve credentials
-(ANTHROPIC_API_KEY or an `ant auth login` profile); otherwise the feature
-reports itself as not configured rather than failing.
+Two providers, one contract: Claude (ANTHROPIC_API_KEY or an `ant auth
+login` profile) and Gemini (GEMINI_API_KEY / GOOGLE_API_KEY). The provider
+is chosen with KLAVE_AI_PROVIDER (anthropic | gemini | auto — auto prefers
+whichever has credentials, Claude first) and the model can be overridden
+with KLAVE_AI_MODEL. Without credentials the feature reports itself as not
+configured rather than failing.
 """
 
 from __future__ import annotations
@@ -22,7 +25,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-MODEL = "claude-opus-5"
+ANTHROPIC_MODEL = "claude-opus-5"
+GEMINI_MODEL = "gemini-2.5-pro"
+MODEL = ANTHROPIC_MODEL  # backwards-compatible alias
 
 SYSTEM_PROMPT = """Eres un ingeniero de costos mexicano leyendo una hoja de un plano de \
 construcción (imagen renderizada desde el DWG). Lee únicamente lo que está escrito o \
@@ -89,8 +94,7 @@ class SheetReading(BaseModel):
 Reader = Callable[[bytes, str], tuple[SheetRead, dict[str, int]]]
 
 
-def credentials_available() -> bool:
-    """Whether the SDK can find credentials without a network call."""
+def _anthropic_credentials() -> bool:
     import os
 
     if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
@@ -99,8 +103,95 @@ def credentials_available() -> bool:
     return os.path.isdir(profile_dir) and any(os.scandir(profile_dir))
 
 
-def anthropic_reader(client: Any | None = None) -> Reader:
-    """The production reader: one vision request per sheet image, structured
+def _gemini_credentials() -> bool:
+    import os
+
+    return bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+
+
+def resolve_provider(provider: str | None = None) -> str | None:
+    """The provider that will serve readings, or None when none can.
+
+    An explicit choice is honored only if its credentials exist (a wrong
+    KLAVE_AI_PROVIDER must say "not configured", not fall back silently to
+    another vendor the operator did not choose)."""
+    choice = (provider or "auto").strip().lower()
+    if choice == "anthropic":
+        return "anthropic" if _anthropic_credentials() else None
+    if choice == "gemini":
+        return "gemini" if _gemini_credentials() else None
+    if _anthropic_credentials():
+        return "anthropic"
+    if _gemini_credentials():
+        return "gemini"
+    return None
+
+
+def credentials_available(provider: str | None = None) -> bool:
+    """Whether some provider can serve readings without a network call."""
+    return resolve_provider(provider) is not None
+
+
+def active_model(provider: str | None = None, model: str | None = None) -> str | None:
+    resolved = resolve_provider(provider)
+    if resolved is None:
+        return None
+    if model:
+        return model
+    return ANTHROPIC_MODEL if resolved == "anthropic" else GEMINI_MODEL
+
+
+def configured_reader(provider: str | None = None, model: str | None = None) -> Reader:
+    """The reader for the configured provider; raises when none is set up."""
+    resolved = resolve_provider(provider)
+    if resolved == "anthropic":
+        return anthropic_reader(model=model or ANTHROPIC_MODEL)
+    if resolved == "gemini":
+        return gemini_reader(model=model or GEMINI_MODEL)
+    raise RuntimeError("La lectura con IA no está configurada (sin credenciales).")
+
+
+def gemini_reader(client: Any | None = None, model: str = GEMINI_MODEL) -> Reader:
+    """The Gemini reader: same contract, structured output via response_schema."""
+    from google import genai
+    from google.genai import types
+
+    sdk = client or genai.Client()
+
+    def read(png: bytes, prompt: str) -> tuple[SheetRead, dict[str, int]]:
+        response = sdk.models.generate_content(
+            model=model,
+            contents=[
+                types.Part.from_bytes(data=png, mime_type="image/png"),
+                prompt,
+            ],
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                response_mime_type="application/json",
+                response_schema=SheetRead,
+            ),
+        )
+        parsed = response.parsed
+        if parsed is None:
+            # Some responses come back as raw JSON text instead of parsed.
+            text = getattr(response, "text", None)
+            if not text:
+                raise ValueError("el modelo no devolvió una lectura estructurada")
+            parsed = SheetRead.model_validate_json(text)
+        if not isinstance(parsed, SheetRead):
+            parsed = SheetRead.model_validate(parsed)
+        meta = getattr(response, "usage_metadata", None)
+        usage = {
+            "input_tokens": int(getattr(meta, "prompt_token_count", 0) or 0),
+            "output_tokens": int(getattr(meta, "candidates_token_count", 0) or 0),
+        }
+        return parsed, usage
+
+    return read
+
+
+def anthropic_reader(client: Any | None = None, model: str = ANTHROPIC_MODEL) -> Reader:
+    """The Claude reader: one vision request per sheet image, structured
     output validated against SheetRead."""
     import anthropic
 
@@ -108,7 +199,7 @@ def anthropic_reader(client: Any | None = None) -> Reader:
 
     def read(png: bytes, prompt: str) -> tuple[SheetRead, dict[str, int]]:
         response = sdk.messages.parse(
-            model=MODEL,
+            model=model,
             max_tokens=16000,
             system=SYSTEM_PROMPT,
             thinking={"type": "adaptive"},
