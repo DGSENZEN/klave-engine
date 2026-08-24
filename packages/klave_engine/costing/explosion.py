@@ -53,7 +53,10 @@ def explode(report: CostReport) -> Explosion:
                     code=component.resource_code, description=component.description,
                     unit=component.unit, resource_type=str(component.resource_type),
                     unit_cost=component.unit_cost,
-                    is_percentage=bool(getattr(component, "is_labor_percentage", False)),
+                    # A percentage insumo (herramienta menor = %MO) rides on the
+                    # matrix's labour; the flag lives on the Resource, not on the
+                    # APU line, so it is read from the unit the line carries.
+                    is_percentage=component.unit.strip().startswith("%"),
                 )
             quantity = component.quantity * line.quantity
             amount = component.amount * line.quantity

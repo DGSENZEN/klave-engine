@@ -11,6 +11,7 @@ quotes. Every quantity carries its assumptions and detection provenance.
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -199,6 +200,15 @@ class CostIntegration(BaseModel):
     overcost_factor: float  # precio de venta / costo directo
 
 
+class ScheduleLink(BaseModel):
+    """One precedence relation, as RLOPSRM art. 224 requires the network to
+    state it: which activity comes before, of what kind, with what lag."""
+
+    predecessor: str  # concept_code of the activity that comes before
+    kind: Literal["FS", "SS"] = "SS"  # fin-a-inicio | inicio-a-inicio
+    lag_days: int = 0
+
+
 class ScheduleActivity(BaseModel):
     concept_code: str
     description: str
@@ -206,10 +216,22 @@ class ScheduleActivity(BaseModel):
     quantity: float
     unit: str
     rendimiento_per_day: float  # quantitative performance indicator by work type
+    # Where that rendimiento came from: "matriz" (derived from the APU's own
+    # crew-days, so the programa and the money cannot disagree) or "catálogo"
+    # (the concept's stored rate, used when the matrix has no crew line).
+    rendimiento_source: str = "catálogo"
     crews: int
     duration_days: int
     start_day: int
     end_day: int
+    # The network, per art. 224: precedences, the late dates they imply, and
+    # the float that falls out of them.
+    predecessors: list[ScheduleLink] = Field(default_factory=list)
+    late_start_day: int = 0
+    late_finish_day: int = 0
+    total_float_days: int = 0
+    free_float_days: int = 0
+    critical: bool = False
     # Calendar dates when the obra has a start date (ISO), else None.
     start_date: str | None = None
     end_date: str | None = None
@@ -236,6 +258,14 @@ class WorkSchedule(BaseModel):
     # The obra's start and end on the calendar when a start date is set.
     start_date: str | None = None
     end_date: str | None = None
+    # Días naturales corridos, which is the unit the contract speaks (LOPSRM
+    # art. 31 fr. V): the working days above run on a six-day site week, so
+    # reporting them as the contractual plazo understates it by about a fifth.
+    calendar_days: int = 0
+
+    @property
+    def critical_path(self) -> list[str]:
+        return [a.concept_code for a in self.activities if a.critical]
 
 
 class OperatingYear(BaseModel):

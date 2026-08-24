@@ -30,7 +30,9 @@ from klave_engine.costing.models import (
     QuantityKind,
     Resource,
     ResourceType,
+    ScheduleConfig,
     UnitPriceAnalysis,
+    WorkSchedule,
 )
 from klave_engine.costing.parametrics import apply_parametrics, compute_basis
 from klave_engine.costing.piles import apply_piles
@@ -173,6 +175,22 @@ def apply_aliases(
             )
 
 
+def _declare_schedule_basis(
+    boq: BillOfQuantities, schedule: WorkSchedule, config: ScheduleConfig
+) -> None:
+    """Say what the programa assumed, in the register that defends it later."""
+    if not schedule.activities:
+        return
+    from_matrix = sum(1 for a in schedule.activities if a.rendimiento_source == "matriz")
+    boq.assumptions.append(
+        f"Programa de obra: duraciones de {from_matrix} de {len(schedule.activities)} "
+        "actividades derivadas del rendimiento de su propia matriz (RLOPSRM art. 190), "
+        f"con {config.crews_per_activity} cuadrilla(s) por actividad y un solo frente "
+        f"de trabajo. Plazo {schedule.total_duration_days} días hábiles = "
+        f"{schedule.calendar_days} días naturales, en semana de seis días."
+    )
+
+
 def generate_cost_report(
     project_id: str,
     detections: list[Detection],
@@ -267,8 +285,11 @@ def generate_cost_report(
         if segmentation is not None and segmentation.is_segmented
         else 1
     )
-    schedule = build_schedule(boq, catalog, config.schedule, levels=levels)
+    # The programa reads its rendimientos from the same matrices that priced
+    # the obra, so the two cannot contradict each other (RLOPSRM 64-A-I-c).
+    schedule = build_schedule(boq, catalog, config.schedule, levels=levels, apus=apus)
     financial = build_financial_plan(schedule, integration, config.financial, config.currency)
+    _declare_schedule_basis(boq, schedule, config.schedule)
 
     report = CostReport(
         project_id=project_id,

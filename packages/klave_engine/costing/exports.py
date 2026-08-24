@@ -14,6 +14,7 @@ Builds XLSX workbooks from the persisted artifacts:
 """
 
 import io
+import math
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,7 +30,9 @@ from klave_engine.costing.descripciones import long_description
 from klave_engine.costing.explosion import explode
 from klave_engine.costing.letras import pesos_con_letra
 from klave_engine.costing.models import BoqLine, Concept, CostReport
+from klave_engine.costing.programas import build_programas
 from klave_engine.costing.reviews import ProjectReviews
+from klave_engine.costing.schedule import quantity_by_period
 from klave_engine.detection.results import Detection
 
 INK = "18181B"
@@ -304,6 +307,7 @@ def _klave_workbook(
     _generadores(workbook.create_sheet("Generadores"), report, detections, reviews, croquis)
     _explosion(workbook.create_sheet("Explosión de insumos"), report)
     _programa(workbook.create_sheet("Programa"), report)
+    _programas_erogaciones(workbook, report)
     _flujo(workbook.create_sheet("Flujo"), report)
     return workbook
 
@@ -632,26 +636,118 @@ def _levantamiento(ws: Worksheet, inventory: dict) -> None:
     ws.freeze_panes = "A2"
 
 
+# A drawn bar, not a number to read: the deliverable is a diagrama de barras
+# (RLOPSRM art. 45-A-X), so the periods a concept occupies are shaded.
+_BAR = PatternFill("solid", fgColor="2B4ACB")
+_BAR_CRITICAL = PatternFill("solid", fgColor="B42318")
+
+
 def _programa(ws: Worksheet, report: CostReport) -> None:
-    _header(ws, 1, ["Clave", "Actividad", "Fase", "Cantidad", "Unidad",
-                    "Rendimiento/día", "Días", "Inicio", "Término"])
+    """Programa de ejecución: the bar chart the convocante asks for, with the
+    network behind it (duración, holguras, ruta crítica — art. 224)."""
+    schedule = report.schedule
+    periods = math.ceil(
+        schedule.total_duration_days / max(schedule.workdays_per_month, 1)
+    ) if schedule.total_duration_days else 0
+    period_headers = [f"Mes {i + 1}" for i in range(periods)]
+    _header(ws, 1, [
+        "Clave", "Concepto", "Partida", "Cantidad", "Unidad", "Rendimiento/día",
+        "Fuente", "Cuadrilla-días", "Inicio", "Término", "Holgura total",
+        "Holgura libre", "Ruta crítica", *period_headers,
+    ])
     row = 2
-    for activity in report.schedule.activities:
+    quantities = quantity_by_period(schedule)
+    for activity in schedule.activities:
         values: list[Any] = [
             activity.concept_code, activity.description, activity.phase,
             activity.quantity, activity.unit, activity.rendimiento_per_day,
-            activity.duration_days, activity.start_day, activity.end_day,
+            activity.rendimiento_source, activity.duration_days,
+            activity.start_date or activity.start_day,
+            activity.end_date or activity.end_day,
+            activity.total_float_days, activity.free_float_days,
+            "SÍ" if activity.critical else "",
         ]
         for col, value in enumerate(values, start=1):
             cell = ws.cell(row=row, column=col, value=value)
             cell.border = _box
             if col == 4:
                 cell.number_format = QTY_FORMAT
+            if col == 13 and activity.critical:
+                cell.font = Font(bold=True, color="B42318")
+        # The bar: the quantity this concept executes in each period, shaded.
+        per_period = quantities.get(activity.concept_code, [])
+        for index in range(periods):
+            cell = ws.cell(row=row, column=14 + index)
+            cell.border = _box
+            value = per_period[index] if index < len(per_period) else 0.0
+            if value > 0:
+                cell.value = round(value, 2)
+                cell.number_format = QTY_FORMAT
+                cell.fill = _BAR_CRITICAL if activity.critical else _BAR
+                cell.font = Font(color="FFFFFF", size=9)
         row += 1
-    ws.cell(row=row + 1, column=2, value="Duración total (días hábiles)").font = Font(bold=True)
-    ws.cell(row=row + 1, column=7, value=report.schedule.total_duration_days).font = Font(bold=True)
-    _autosize(ws, [12, 52, 14, 12, 9, 15, 8, 8, 9])
-    ws.freeze_panes = "A2"
+    row += 1
+    ws.cell(row=row, column=2, value="Plazo (días hábiles)").font = Font(bold=True)
+    ws.cell(row=row, column=8, value=schedule.total_duration_days).font = Font(bold=True)
+    ws.cell(row=row + 1, column=2, value="Plazo contractual (días naturales)").font = Font(
+        bold=True
+    )
+    ws.cell(row=row + 1, column=8, value=schedule.calendar_days).font = Font(bold=True)
+    _muted(
+        ws, row + 3, 1,
+        "Duraciones derivadas del rendimiento de cada matriz (RLOPSRM art. 190). "
+        "Red de actividades con holguras y ruta crítica conforme al art. 224. "
+        "El plazo contractual se cuenta en días naturales (LOPSRM art. 31 fr. V).",
+    )
+    _autosize(ws, [12, 46, 14, 12, 9, 14, 10, 13, 12, 12, 12, 12, 12] + [10] * periods)
+    ws.freeze_panes = "B2"
+
+
+def _programas_erogaciones(workbook: Workbook, report: CostReport) -> None:
+    """The four calendarised programs of RLOPSRM art. 45-A-XI, each on its own
+    sheet, in its own unit and in pesos."""
+    programas = build_programas(report)
+    period_headers = [
+        f"{programas.period_label.capitalize()} {i + 1}" for i in range(programas.periods)
+    ]
+    for programa in programas.programas:
+        title = {
+            "mano_de_obra": "Prog. mano de obra",
+            "maquinaria": "Prog. maquinaria",
+            "materiales": "Prog. materiales",
+            "personal_tecnico": "Prog. personal técnico",
+        }[programa.rubro]
+        ws = workbook.create_sheet(title)
+        _title(ws, 1, programa.label, size=12)
+        _header(ws, 3, ["Clave", "Insumo", "Unidad", "Cantidad", "Importe", *period_headers])
+        row = 4
+        for entry in programa.rows:
+            values: list[Any] = [
+                entry.code, entry.description, entry.unit, entry.quantity, entry.amount,
+                *entry.by_period,
+            ]
+            for col, value in enumerate(values, start=1):
+                cell = ws.cell(row=row, column=col, value=value)
+                cell.border = _box
+                if col == 4 or col > 5:
+                    cell.number_format = QTY_FORMAT
+                if col == 5:
+                    cell.number_format = MONEY_FORMAT
+            row += 1
+        if programa.rows:
+            ws.cell(row=row, column=2, value="TOTAL (importe)").font = Font(bold=True)
+            total_cell = ws.cell(row=row, column=5, value=programa.total)
+            total_cell.font = Font(bold=True)
+            total_cell.number_format = MONEY_FORMAT
+            for index, value in enumerate(programa.total_by_period):
+                cell = ws.cell(row=row, column=6 + index, value=value)
+                cell.font = Font(bold=True)
+                cell.number_format = MONEY_FORMAT
+            row += 1
+        for note in programa.notes:
+            row += 1
+            _muted(ws, row, 1, note)
+        _autosize(ws, [14, 46, 10, 14, 16] + [14] * programas.periods)
 
 
 def _flujo(ws: Worksheet, report: CostReport) -> None:

@@ -58,9 +58,12 @@ def test_klave_workbook_structure_and_generadores(data_dir):
         report, _detections(), reviews, "Torre Test", "Cliente SA", fmt="klave"
     )
     workbook = load_workbook(io.BytesIO(content))
+    # The four calendarised programs of RLOPSRM art. 45-A-XI travel with the
+    # presupuesto: a propuesta that omits them is discarded.
     assert workbook.sheetnames == [
         "Carátula", "Presupuesto", "APUs", "Generadores", "Explosión de insumos", "Programa",
-        "Flujo",
+        "Prog. mano de obra", "Prog. maquinaria", "Prog. materiales",
+        "Prog. personal técnico", "Flujo",
     ]
     generadores = "\n".join(
         str(cell.value)
