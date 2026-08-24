@@ -372,6 +372,38 @@ export default function LecturaPage() {
                 {n}
               </p>
             ))}
+            {aiReads && (aiReads.cobertura ?? []).some((f) => f.kind === "faltante") && (
+              <div className="mb-3">
+                <Callout tone="warning">
+                  <span className="font-medium">Cobertura: posibles elementos no detectados.</span>{" "}
+                  El conteo de la IA no cuantifica nada — señala dónde mirar.
+                  <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
+                    {(aiReads.cobertura ?? [])
+                      .filter((f) => f.kind === "faltante")
+                      .map((f) => (
+                        <li key={`${f.frame_code}-${f.family}`}>
+                          En <span className="font-mono text-xs">{f.frame_code}</span> la IA
+                          cuenta {f.ai_count} × {FAMILY_LABELS[f.family] ?? f.family}; el motor
+                          detectó {f.engine_count}. Revisa la hoja y, si falta algo, agrégalo
+                          en Revisión como elemento omitido.
+                        </li>
+                      ))}
+                  </ul>
+                </Callout>
+              </div>
+            )}
+            {aiReads && (aiReads.cobertura ?? []).some((f) => f.kind === "sobrante") && (
+              <p className="mb-3 text-xs text-muted">
+                Conteos donde el motor ve más que la IA (normalmente inofensivo):{" "}
+                {(aiReads.cobertura ?? [])
+                  .filter((f) => f.kind === "sobrante")
+                  .map(
+                    (f) =>
+                      `${f.frame_code}: ${f.engine_count} vs ${f.ai_count} ${FAMILY_LABELS[f.family] ?? f.family}`,
+                  )
+                  .join(" · ")}
+              </p>
+            )}
             {aiReads && aiReads.readings.length > 0 && (
               <div className="mt-3 space-y-2">
                 {aiReads.readings.map((r) => (

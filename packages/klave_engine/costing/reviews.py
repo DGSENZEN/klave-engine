@@ -52,6 +52,31 @@ class ManualAdjustment(BaseModel):
         return self.quantity_set is not None
 
 
+class OmittedElement(BaseModel):
+    """An element the engine missed, recorded by the engineer.
+
+    The inverse of an exclusion: it becomes a synthetic detection with
+    perito provenance (``costing.omitted``) and flows into the presupuesto
+    like any reading — visible in the generador as "levantamiento manual",
+    never blended silently into the engine's counts. Measured magnitudes
+    are captured in meters (the engineer's language) and converted to
+    drawing units at recompute time, so confirming units later re-derives
+    them correctly.
+    """
+
+    element_id: str
+    family: str  # taxonomy family the engineer names: castillo, trabe, zapata…
+    mark: str = ""  # the label as drawn ("K-7"); ties into schedule specs
+    count: int = Field(default=1, ge=1, le=500)
+    length_m: float | None = Field(default=None, gt=0)  # linear families
+    area_m2: float | None = Field(default=None, gt=0)  # area families
+    section_cm: str = ""  # "15x40" when declared on the sheet
+    sheet: str = ""  # source file or sheet code, for provenance
+    note: str = ""
+    actor: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class VerificationState(BaseModel):
     """The verification path: explicit human sign-off per step."""
 
@@ -69,6 +94,7 @@ class VerificationState(BaseModel):
 class ProjectReviews(BaseModel):
     detections: dict[str, DetectionReview] = Field(default_factory=dict)
     adjustments: list[ManualAdjustment] = Field(default_factory=list)
+    omitted: list[OmittedElement] = Field(default_factory=list)
     verification: VerificationState = Field(default_factory=VerificationState)
 
 

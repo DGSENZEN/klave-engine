@@ -9,6 +9,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 from klave_engine.common.config import Settings
+from klave_engine.detection.frames import SheetFrame
+from klave_engine.detection.results import Detection
+from klave_engine.llm.coverage import coverage_flags
 from klave_engine.llm.reader import active_model, configured_reader, credentials_available
 from klave_engine.llm.service import (
     AiReads,
@@ -61,7 +64,27 @@ def get_ai_reads(
     payload["available"] = credentials_available(settings.ai_provider)
     payload["running"] = project_id in _RUNNING
     payload["model"] = active_model(settings.ai_provider, settings.ai_model) or ""
+    payload["cobertura"] = _cobertura(store, project_id, payload.get("readings") or [])
     return payload
+
+
+def _cobertura(store: ProjectStore, project_id: str, readings: list[dict]) -> list[dict]:
+    """The coverage audit against the active run's detections; an absent or
+    older artifact simply yields no flags."""
+    if not readings:
+        return []
+    try:
+        detections = [
+            Detection.model_validate(d)
+            for d in store.read_artifact(project_id, "detections.json")
+        ]
+        frames = [
+            SheetFrame.model_validate(f)
+            for f in store.read_artifact(project_id, "frames.json")
+        ]
+    except HTTPException:
+        return []
+    return [f.model_dump() for f in coverage_flags(readings, detections, frames)]
 
 
 @router.post("/{project_id}/ai-read", status_code=202)

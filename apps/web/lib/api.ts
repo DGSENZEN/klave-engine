@@ -779,8 +779,18 @@ export type AiSheetRead = {
   desplante_m: number | null;
   slab_system: string | null;
   elements: AiElementRead[];
+  conteo?: { family: string; drawn_count: number; note?: string | null }[];
   notes: string[];
   uncertainties: string[];
+};
+
+/** One coverage-audit discrepancy: the model counts N, the engine detected M. */
+export type CoverageFlag = {
+  frame_code: string;
+  family: string;
+  ai_count: number;
+  engine_count: number;
+  kind: "faltante" | "sobrante";
 };
 export type AiSheetReading = {
   frame_code: string;
@@ -805,6 +815,7 @@ export type AiReads = {
   available: boolean;
   running: boolean;
   model: string;
+  cobertura: CoverageFlag[];
 };
 
 export const getAiReads = (id: string) => getJSON<AiReads>(`/projects/${id}/ai-reads`);
@@ -845,14 +856,29 @@ export type VerificationState = {
   assumptions_confirmed_by: string;
 };
 
+export type OmittedElement = {
+  element_id: string;
+  family: string;
+  mark: string;
+  count: number;
+  length_m?: number | null;
+  area_m2?: number | null;
+  section_cm: string;
+  sheet: string;
+  note: string;
+  actor: string;
+  created_at: string;
+};
+
 export type ProjectReviews = {
   detections: Record<
     string,
     { status: ReviewStatus; note: string; actor: string; updated_at: string }
   >;
   adjustments: ManualAdjustment[];
+  omitted: OmittedElement[];
   verification: VerificationState;
-  summary: { confirmed: number; excluded: number; adjustments: number };
+  summary: { confirmed: number; excluded: number; adjustments: number; omitted: number };
 };
 
 function actorClientHeaders(actor?: string, clientId?: string | null) {
@@ -893,6 +919,38 @@ export const addAdjustment = (
   postJSON<ProjectReviews>(
     `/projects/${id}/reviews/adjustments`,
     adjustment,
+    actorClientHeaders(actor, clientId),
+  );
+
+export const addOmittedElement = (
+  id: string,
+  element: {
+    family: string;
+    mark?: string;
+    count?: number;
+    length_m?: number;
+    area_m2?: number;
+    section_cm?: string;
+    sheet?: string;
+    note?: string;
+  },
+  actor?: string,
+  clientId?: string | null,
+) =>
+  postJSON<ProjectReviews>(
+    `/projects/${id}/reviews/omitted`,
+    element,
+    actorClientHeaders(actor, clientId),
+  );
+
+export const removeOmittedElement = (
+  id: string,
+  elementId: string,
+  actor?: string,
+  clientId?: string | null,
+) =>
+  deleteJSON<ProjectReviews>(
+    `/projects/${id}/reviews/omitted/${encodeURIComponent(elementId)}`,
     actorClientHeaders(actor, clientId),
   );
 

@@ -555,12 +555,37 @@ def generate_bill_of_quantities(
                 continue
             result = _earthwork_result(concept, matched, meters_factor, assumptions)
         elif seg is not None:
+            # The engineer's levantamiento manual has no place on the sheet —
+            # no bbox, no view assignment — so it bypasses the view scoping
+            # that would silently drop it, and adds on top of the scoped
+            # result with its own note.
+            manual = [d for d in matched if d.evidence.method == "levantamiento_manual"]
+            manual_ids = {d.detection_id for d in manual}
             matched_plan = [
-                d for d in matched if seg.assignment.get(d.detection_id) in plan_ids
+                d for d in matched
+                if d.detection_id not in manual_ids
+                and seg.assignment.get(d.detection_id) in plan_ids
             ]
             result = _scoped_result(
                 concept, matched_plan, seg, meters_factor, assumptions
             )
+            if manual:
+                if concept.view_scope == ViewScope.COLUMN_VOLUME:
+                    extra = _column_volume(manual, meters_factor, assumptions, None)
+                else:
+                    raw = _raw_over(concept, manual, meters_factor)
+                    extra = _LineResult(
+                        round(raw * concept.quantity_factor, 6), raw,
+                        _contributing(concept, manual), [],
+                    )
+                if extra.quantity > 0:
+                    result.quantity = round(result.quantity + extra.quantity, 6)
+                    result.raw += extra.raw
+                    result.dets = result.dets + extra.dets
+                    result.notes = list(result.notes) + [
+                        f"Incluye {len(extra.dets)} elemento(s) del levantamiento "
+                        "manual del ingeniero (omitidos por el motor)."
+                    ]
         elif concept.view_scope == ViewScope.COLUMN_VOLUME and matched:
             # A sheet without frames (one planta, or a file with no title
             # blocks) still declares sections in its cuadro and markers; the

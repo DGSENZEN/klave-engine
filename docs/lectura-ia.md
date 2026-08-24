@@ -23,6 +23,24 @@ Dos proveedores con el mismo contrato, elegidos con `KLAVE_AI_PROVIDER`:
   una confianza por elemento y el texto de donde lo leyó;
 - dudas: lo ilegible.
 
+## Cobertura: el motor descubriendo lo que se le fue
+
+En cada hoja de planta, el modelo además **cuenta** cuántas instancias de
+cada familia discreta están dibujadas (castillos, columnas, trabes, zapatas,
+pilotes, escaleras…). Ese conteo se compara con lo que los detectores de
+reglas encontraron en el mismo marco, y una discrepancia **no cambia ninguna
+cantidad**: marca la hoja — «en E-02 la IA cuenta 6 castillos; el motor
+detectó 4 — revisa esa hoja». Los faltantes silenciosos se vuelven tareas de
+revisión visibles en *Lectura*. Las familias continuas (muros, losas) no se
+comparan: no tienen un conteo natural de instancias.
+
+Cuando la revisión confirma que algo falta, se registra en **Revisión →
+Elementos omitidos por el motor**: entra al presupuesto como *levantamiento
+manual* con el nombre del ingeniero y su nota (familia, marca, cantidad,
+longitud o área en metros, sección si está declarada). El generador lo dice
+tal cual — «Incluye N elemento(s) del levantamiento manual del ingeniero» —
+y la nota le sirve al equipo de Klave como reporte de la falla de detección.
+
 ## Qué hace con lo leído — y qué no
 
 - Todo queda en `ai_reads.json` con procedencia (hoja, modelo, tokens) y se

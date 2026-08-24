@@ -29,6 +29,7 @@ import {
   Td,
   Th,
 } from "@/components/ui";
+import { OmittedSection } from "@/components/OmittedSection";
 import { useProjectLive } from "@/components/ProjectLive";
 
 /**
@@ -450,6 +451,13 @@ export default function RevisionPage() {
           )}
         </tbody>
       </TableCard>
+
+      <OmittedSection
+        projectId={id}
+        actorName={actorName}
+        clientId={clientId}
+        reloadKey={latestEvent?.seq}
+      />
     </div>
   );
 }

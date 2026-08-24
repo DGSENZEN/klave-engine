@@ -10,10 +10,12 @@ from klave_engine.common.config import Settings
 from klave_engine.common.errors import ReportGenerationError
 from klave_engine.common.ids import short_uuid
 from klave_engine.costing.models import CostingOverrides, CostReport
+from klave_engine.costing.omitted import AREA_FAMILIES, FAMILY_TYPES, LINEAR_FAMILIES
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
 from klave_engine.costing.reviews import (
     DetectionReview,
     ManualAdjustment,
+    OmittedElement,
     ProjectReviews,
     load_reviews,
     save_reviews,
@@ -59,6 +61,19 @@ class BulkReviewInput(BaseModel):
     recompute: bool = True
 
 
+class OmittedInput(BaseModel):
+    """An element the engine missed, as the engineer records it."""
+
+    family: str = Field(min_length=2, max_length=30)
+    mark: str = Field(default="", max_length=40)
+    count: int = Field(default=1, ge=1, le=500)
+    length_m: float | None = Field(default=None, gt=0, le=10_000)
+    area_m2: float | None = Field(default=None, gt=0, le=100_000)
+    section_cm: str = Field(default="", max_length=20)
+    sheet: str = Field(default="", max_length=120)
+    note: str = Field(default="", max_length=300)
+
+
 class VerificationInput(BaseModel):
     step: Literal["units", "detections", "assumptions"]
     confirmed: bool
@@ -73,6 +88,7 @@ def _summary(reviews: ProjectReviews) -> dict:
         "confirmed": confirmed,
         "excluded": excluded,
         "adjustments": len(reviews.adjustments),
+        "omitted": len(reviews.omitted),
     }
 
 
@@ -279,6 +295,97 @@ def add_adjustment(
             store, settings, project_id, actor, clean_client_id(x_client_id),
             "quantity_set" if body.quantity_set is not None else "adjustment_added",
             body.concept_code,
+        )
+    return _reviews_payload(reviews)
+
+
+@router.post("/{project_id}/reviews/omitted")
+def add_omitted(
+    project_id: str,
+    body: OmittedInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    x_client_id: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Record an element the engine missed. It joins the presupuesto as a
+    synthetic detection with perito provenance — and it is also a recall
+    report: the gap it names is the engine's homework."""
+    family = body.family.strip().lower()
+    if family not in FAMILY_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_type": "unknown_family",
+                "message": "Familia desconocida. Usa: " + ", ".join(sorted(FAMILY_TYPES)),
+            },
+        )
+    if family in LINEAR_FAMILIES and body.length_m is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_type": "measure_required",
+                "message": "Esta familia es lineal: indica la longitud total en metros.",
+            },
+        )
+    if family in AREA_FAMILIES and body.area_m2 is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_type": "measure_required",
+                "message": "Esta familia es de área: indica el área total en m².",
+            },
+        )
+    actor = clean_actor(x_actor) or ""
+    control_dir = store.get_root(project_id) / settings.processed_dir_name
+    with project_recompute_lock(project_id):
+        reviews = load_reviews(control_dir)
+        reviews.omitted.append(
+            OmittedElement(
+                element_id=short_uuid("om"),
+                family=family,
+                mark=body.mark.strip().upper(),
+                count=body.count,
+                length_m=body.length_m,
+                area_m2=body.area_m2,
+                section_cm=body.section_cm.strip(),
+                sheet=body.sheet.strip(),
+                note=body.note.strip(),
+                actor=actor,
+            )
+        )
+        save_reviews(control_dir, reviews)
+        _recompute_after_review(
+            store, settings, project_id, actor, clean_client_id(x_client_id),
+            "omitted_added", f"{family} {body.mark}".strip(),
+        )
+    return _reviews_payload(reviews)
+
+
+@router.delete("/{project_id}/reviews/omitted/{element_id}")
+def delete_omitted(
+    project_id: str,
+    element_id: str,
+    x_actor: Annotated[str | None, Header()] = None,
+    x_client_id: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    actor = clean_actor(x_actor) or ""
+    control_dir = store.get_root(project_id) / settings.processed_dir_name
+    with project_recompute_lock(project_id):
+        reviews = load_reviews(control_dir)
+        before = len(reviews.omitted)
+        reviews.omitted = [o for o in reviews.omitted if o.element_id != element_id]
+        if len(reviews.omitted) == before:
+            raise HTTPException(
+                status_code=404,
+                detail={"error_type": "omitted_not_found", "id": element_id},
+            )
+        save_reviews(control_dir, reviews)
+        _recompute_after_review(
+            store, settings, project_id, actor, clean_client_id(x_client_id),
+            "omitted_removed", element_id,
         )
     return _reviews_payload(reviews)
 

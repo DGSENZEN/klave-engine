@@ -18,6 +18,7 @@ from klave_engine.common.logging import get_logger, log_stage
 from klave_engine.costing.catalog_store import CatalogStore, get_catalog_store
 from klave_engine.costing.insumos import apply_price_overrides
 from klave_engine.costing.models import CostingOverrides, CostReport
+from klave_engine.costing.omitted import synthetic_detections
 from klave_engine.costing.report import (
     boq_to_csv,
     cost_report_to_markdown,
@@ -106,6 +107,12 @@ def build_cost_report(
     detections = (
         filter_excluded(inputs.detections, reviews) if reviews else inputs.detections
     )
+    if reviews and reviews.omitted:
+        # Elements the engineer recorded as missed join the reading with
+        # perito provenance; converted with the current unit factor each time.
+        detections = detections + synthetic_detections(
+            reviews.omitted, inputs.units.to_meters()
+        )
     return generate_cost_report(
         inputs.project_id,
         detections,

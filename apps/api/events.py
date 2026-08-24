@@ -268,6 +268,13 @@ def clean_actor(value: str | None) -> str | None:
     """Normalize a client-provided display name (header) for event attribution."""
     if value is None:
         return None
+    try:
+        # Browsers send UTF-8 bytes in headers; Starlette decodes them as
+        # latin-1, turning "Gaytán" into "GaytÃ¡n". Reversing that roundtrip
+        # repairs it; genuine latin-1 text fails the utf-8 decode and stays.
+        value = value.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        pass
     cleaned = " ".join(value.split())[:ACTOR_MAX_CHARS]
     return cleaned or None
 

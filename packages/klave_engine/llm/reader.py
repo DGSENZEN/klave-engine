@@ -52,6 +52,27 @@ class ElementRead(BaseModel):
     confidence: float = Field(ge=0, le=1)
 
 
+class FamilyCount(BaseModel):
+    """How many instances of a family are DRAWN on the sheet.
+
+    This is the coverage audit: the model's count is compared against the
+    rule detectors' count per sheet, and a disagreement flags the sheet for
+    the engineer to look at. The count never becomes a quantity — it only
+    points at what the engine may have missed.
+    """
+
+    family: str = Field(
+        description="castillo | columna | trabe | contratrabe | dala | cerramiento | "
+        "zapata | pilote | escalera"
+    )
+    drawn_count: int = Field(
+        ge=0,
+        description="instancias DIBUJADAS en la planta (símbolos o marcas repetidas); "
+        "los renglones de un cuadro y las viñetas de detalle NO cuentan",
+    )
+    note: str | None = Field(default=None, description="dónde se concentran, si ayuda")
+
+
 class SheetRead(BaseModel):
     """What the model read from one sheet image."""
 
@@ -72,6 +93,11 @@ class SheetRead(BaseModel):
         default=None, description="sistema de losa declarado: vigueta y bovedilla 12-5, reticular…"
     )
     elements: list[ElementRead] = Field(default_factory=list)
+    conteo: list[FamilyCount] = Field(
+        default_factory=list,
+        description="conteo por familia de instancias dibujadas en la planta; vacío "
+        "en hojas de puros detalles/cuadros",
+    )
     notes: list[str] = Field(default_factory=list, description="notas generales relevantes")
     uncertainties: list[str] = Field(
         default_factory=list, description="lo ilegible o dudoso en la imagen"
@@ -237,11 +263,18 @@ def anthropic_reader(client: Any | None = None, model: str = ANTHROPIC_MODEL) ->
 
 
 def frame_prompt(code: str, title: str, kind: str) -> str:
-    what = (
-        "una planta estructural: lee el cajetín, el nivel, las notas y las marcas de elementos"
-        if kind == "plan"
-        else "una hoja de detalles/notas/cuadros: lee cada marca con su sección y armado"
-    )
+    if kind == "plan":
+        what = (
+            "una planta estructural: lee el cajetín, el nivel, las notas y las marcas de "
+            "elementos. Además llena conteo: cuenta por familia cuántas instancias están "
+            "DIBUJADAS en la planta (cada símbolo o marca repetida es una instancia; los "
+            "renglones de un cuadro y las viñetas de detalle NO cuentan)"
+        )
+    else:
+        what = (
+            "una hoja de detalles/notas/cuadros: lee cada marca con su sección y armado; "
+            "deja conteo vacío (aquí no hay instancias en planta)"
+        )
     return (
         f"Hoja {code} «{title}». Es {what}. Devuelve la lectura estructurada; deja vacío lo "
         "que no esté escrito en la imagen y anota en uncertainties lo que no se distinga."
