@@ -159,12 +159,13 @@ def gemini_reader(client: Any | None = None, model: str = GEMINI_MODEL) -> Reade
     sdk = client or genai.Client()
 
     def read(png: bytes, prompt: str) -> tuple[SheetRead, dict[str, int]]:
+        contents: list[str | types.Part] = [
+            types.Part.from_bytes(data=png, mime_type="image/png"),
+            prompt,
+        ]
         response = sdk.models.generate_content(
             model=model,
-            contents=[
-                types.Part.from_bytes(data=png, mime_type="image/png"),
-                prompt,
-            ],
+            contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
                 response_mime_type="application/json",
