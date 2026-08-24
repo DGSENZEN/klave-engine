@@ -1,0 +1,60 @@
+{
+  "drawing_id": "marina_lote_04_estructural_d1cd5ec8",
+  "contado_por": "",
+  "contado_en": "",
+  "nota": "Cuenta sobre el plano, hoja por hoja. Agrega familias que el motor no haya detectado: las que faltan por completo son las que más importan.",
+  "conteos": [
+    {
+      "familia": "castillo",
+      "dibujados": 0
+    },
+    {
+      "familia": "cerramiento",
+      "dibujados": 0
+    },
+    {
+      "familia": "columna",
+      "dibujados": 0
+    },
+    {
+      "familia": "contratrabe",
+      "dibujados": 0
+    },
+    {
+      "familia": "dala",
+      "dibujados": 0
+    },
+    {
+      "familia": "eje",
+      "dibujados": 0
+    },
+    {
+      "familia": "interseccion_ejes",
+      "dibujados": 0
+    },
+    {
+      "familia": "losa",
+      "dibujados": 0
+    },
+    {
+      "familia": "muro",
+      "dibujados": 0
+    },
+    {
+      "familia": "muro_concreto",
+      "dibujados": 0
+    },
+    {
+      "familia": "pilote",
+      "dibujados": 0
+    },
+    {
+      "familia": "trabe",
+      "dibujados": 0
+    },
+    {
+      "familia": "zapata",
+      "dibujados": 0
+    }
+  ]
+}
