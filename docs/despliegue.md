@@ -7,7 +7,7 @@ Caddy obtiene y renueva el TLS solo.
 ## Primera vez
 
 1. Apunta los DNS `app.<dominio>` y `api.<dominio>` a la IP de la VPS.
-2. `cp deploy/env.example .env.prod` y llena `KLAVE_DOMAIN`,
+2. `cp .env.example .env.prod` y llena `KLAVE_DOMAIN`,
    `KLAVE_ACME_EMAIL` y `KLAVE_USERS_DB_PASSWORD` (largo y aleatorio).
    Correo (Resend o SMTP) y Google son opcionales: sin correo, los enlaces
    de invitación/recuperación se muestran al administrador para copiarlos.

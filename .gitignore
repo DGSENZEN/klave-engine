@@ -35,3 +35,6 @@ apps/web/.env.local
 
 # Local isolated development worktrees
 .worktrees/
+
+# Runtime data: taller catalogs, uploads, outbox — never in the repo
+data/

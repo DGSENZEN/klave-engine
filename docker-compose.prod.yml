@@ -1,5 +1,5 @@
 # Production deployment: one VPS, Caddy terminating TLS on two subdomains.
-#   cp deploy/env.example .env.prod   # fill in domain + secrets
+#   cp .env.example .env.prod         # fill in the production section
 #   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 # The web image bakes the API URL at build time; changing KLAVE_DOMAIN means
 # rebuilding the web service.

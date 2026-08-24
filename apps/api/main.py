@@ -1,6 +1,8 @@
 """Klave Engine API. Routes orchestrate; the domain packages do the thinking."""
 
+from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -32,6 +34,12 @@ from apps.api.routes import (
 )
 from apps.api.routes import croquis as croquis_routes
 from apps.api.routes import versions as version_routes
+
+# The repo-root .env is THE config file: pydantic-settings reads its KLAVE_*
+# entries itself, but provider keys (GEMINI_API_KEY, ANTHROPIC_API_KEY) are
+# read from os.environ at request time, so load it there too. Real env vars
+# win over the file; a missing file is fine (Docker passes env directly).
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
 def _validate_production_config(settings) -> None:
