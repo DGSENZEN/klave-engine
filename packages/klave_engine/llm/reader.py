@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
@@ -159,10 +159,12 @@ def gemini_reader(client: Any | None = None, model: str = GEMINI_MODEL) -> Reade
     sdk = client or genai.Client()
 
     def read(png: bytes, prompt: str) -> tuple[SheetRead, dict[str, int]]:
-        contents: list[str | types.Part] = [
-            types.Part.from_bytes(data=png, mime_type="image/png"),
-            prompt,
-        ]
+        # The SDK's contents union is wider than what we build; mypy's list
+        # invariance rejects the narrower element type, so cast once here.
+        contents = cast(
+            "Any",
+            [types.Part.from_bytes(data=png, mime_type="image/png"), prompt],
+        )
         response = sdk.models.generate_content(
             model=model,
             contents=contents,
