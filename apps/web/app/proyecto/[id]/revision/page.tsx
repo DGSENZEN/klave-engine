@@ -29,6 +29,7 @@ import {
   Td,
   Th,
 } from "@/components/ui";
+import { isDoubtful, LoteDeRevision } from "@/components/LoteDeRevision";
 import { OmittedSection } from "@/components/OmittedSection";
 import { useProjectLive } from "@/components/ProjectLive";
 
@@ -46,6 +47,7 @@ export default function RevisionPage() {
   const [concept, setConcept] = useState("");
   const [view, setView] = useState("");
   const [onlyDoubts, setOnlyDoubts] = useState(false);
+  const [lote, setLote] = useState(false);
   const [onlyPending, setOnlyPending] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -72,6 +74,12 @@ export default function RevisionPage() {
     const type = latestEvent?.type ?? "";
     if (type === "review_updated" || type === "run_published") reload();
   }, [latestEvent, reload]);
+
+  function clearFilters() {
+    setOnlyDoubts(false);
+    setOnlyPending(false);
+    setLote(false);
+  }
 
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "doubts", dir: 1 });
   function sortBy(key: SortKey) {
@@ -105,10 +113,11 @@ export default function RevisionPage() {
         (!concept || r.concept_code === concept) &&
         (!view || r.view_id === view) &&
         (!onlyDoubts || r.doubts.length > 0) &&
+        (!lote || (r.status === "" && isDoubtful(r))) &&
         (!onlyPending || r.status === "") &&
         (!q || r.label.toLowerCase().includes(q) || r.mark.toLowerCase().includes(q)),
     );
-  }, [table, concept, view, onlyDoubts, onlyPending, query, sort]);
+  }, [table, concept, view, onlyDoubts, onlyPending, lote, query, sort]);
 
   // Long sets render in pages of 500; filters and "seleccionar todo" always
   // work over the whole filtered set, never just the page.
@@ -230,17 +239,56 @@ export default function RevisionPage() {
         sub="Cada elemento que alimenta una cantidad. Empieza por las dudas; confirma o excluye en lote, con motivo."
       />
 
+      {/* The overview is the filter, not a caption above it: clicking a figure
+          takes you to exactly the rows it counts (Shneiderman 1996). */}
       <div className="mb-6 grid gap-4 sm:grid-cols-5">
-        <Metric label="Elementos" value={table.total} />
-        <Metric
-          label="Con dudas"
-          value={table.with_doubts}
-          accent={table.with_doubts === 0 ? "success" : undefined}
-        />
-        <Metric label="Confirmados" value={table.confirmed} accent="success" />
-        <Metric label="Excluidos" value={table.excluded} />
-        <Metric label="Sin revisar" value={pending} />
+        {(
+          [
+            {
+              label: "Elementos", value: table.total, accent: undefined,
+              active: !onlyDoubts && !onlyPending && !lote,
+              on: () => clearFilters(),
+            },
+            {
+              label: "Con dudas", value: table.with_doubts,
+              accent: table.with_doubts === 0 ? "success" : undefined,
+              active: onlyDoubts,
+              on: () => { clearFilters(); setOnlyDoubts(true); },
+            },
+            { label: "Confirmados", value: table.confirmed, accent: "success", active: false },
+            { label: "Excluidos", value: table.excluded, accent: undefined, active: false },
+            {
+              label: "Sin revisar", value: pending, accent: undefined, active: onlyPending,
+              on: () => { clearFilters(); setOnlyPending(true); },
+            },
+          ] as { label: string; value: number; accent?: "accent" | "danger" | "success" | "primary"; active: boolean;
+                 on?: () => void }[]
+        ).map((card) =>
+          card.on ? (
+            <button
+              key={card.label}
+              type="button"
+              onClick={card.on}
+              className={`rounded-xl text-left transition ${
+                card.active ? "ring-2 ring-accent" : "hover:brightness-105"
+              }`}
+              aria-pressed={card.active}
+              title={`Ver solo: ${card.label.toLowerCase()}`}
+            >
+              <Metric label={card.label} value={card.value} accent={card.accent} />
+            </button>
+          ) : (
+            <Metric key={card.label} label={card.label} value={card.value} accent={card.accent} />
+          ),
+        )}
       </div>
+
+      <LoteDeRevision
+        rows={table.rows}
+        active={lote}
+        onFocus={() => setLote(true)}
+        onShowAll={() => setLote(false)}
+      />
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Select
