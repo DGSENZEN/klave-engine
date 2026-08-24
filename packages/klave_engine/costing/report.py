@@ -15,6 +15,7 @@ from klave_engine.costing.catalog import (
     build_default_catalog,
 )
 from klave_engine.costing.cimentacion import apply_cimentacion_earthmoving
+from klave_engine.costing.derivadas import aplicar_derivadas
 from klave_engine.costing.financial import build_financial_plan
 from klave_engine.costing.formwork import apply_formwork, compute_formwork
 from klave_engine.costing.indicadores import compute_indicators
@@ -260,6 +261,10 @@ def generate_cost_report(
     apply_cimentacion_earthmoving(boq, catalog, apus, assumptions)
     # Levantamiento: symbols and layers the taller mapped to concepts.
     apply_inventory(boq, catalog, apus, inventory, inventory_mappings)
+    # Derivadas: lo que se sigue de una cantidad ya medida (aplanado sobre
+    # muro, pintura sobre aplanado). Antes de los paramétricos: una deducción
+    # aritmética sobre una medición gana a una apuesta desde la historia.
+    aplicar_derivadas(boq, catalog, apus)
     # Paramétricos: the taller's history proposes what no plan reader produces.
     basis = compute_basis(
         detections, segmentation, units.to_meters() or 1.0, assumptions.area_construida_m2
