@@ -23,6 +23,10 @@ from klave_engine.detection.fixture_detector import (
 from klave_engine.detection.footing_detector import FootingDetectorConfig, detect_footings
 from klave_engine.detection.frames import SheetFrame, frame_boxes
 from klave_engine.detection.grid_detector import GridDetectorConfig, detect_grid
+from klave_engine.detection.opening_detector import (
+    OpeningDetectorConfig,
+    detect_openings,
+)
 from klave_engine.detection.pile_detector import PileDetectorConfig, detect_piles
 from klave_engine.detection.results import DetectorOutput
 from klave_engine.detection.rooms import RoomDetectorConfig, detect_rooms
@@ -58,6 +62,9 @@ class DetectorSuiteConfig(BaseModel):
     # eléctrica, gas y aire, que hasta ahora sólo se contaban.
     fixture: FixtureDetectorConfig = Field(default_factory=FixtureDetectorConfig)
     run: RunDetectorConfig = Field(default_factory=RunDetectorConfig)
+    # Vanos: puertas, ventanas y canceles. Corren con los estructurales
+    # porque necesitan los muros sobre los que se paran.
+    opening: OpeningDetectorConfig = Field(default_factory=OpeningDetectorConfig)
     detail_reference: DetailReferenceDetectorConfig = Field(
         default_factory=DetailReferenceDetectorConfig
     )
@@ -124,6 +131,8 @@ class DetectorSuiteConfig(BaseModel):
         config.room.unnamed_note_area = m(2.0) * m(2.0)
         config.room.label_max_height = m(0.6)
         config.room.max_opening = m(1.3)
+        config.opening.min_width_m = 0.5
+        config.opening.max_width_m = 5.0
         config.room.max_thickness = m(0.45)
         config.terrain.label_search_radius = m(1.0)
         config.risk.duplicate_column_distance = m(10.0)
@@ -162,6 +171,10 @@ def run_detectors(
         return [
             detect_fixtures(entities, config.fixture, ids, meters),
             detect_runs(entities, config.run, ids, meters, frame_boxes(frames or [])),
+            # La cancelería casi siempre viene en su propia hoja, que no es de
+            # estructura. Sin muros no hay a quién descontarle el vano, pero
+            # las piezas se cuentan igual: es su partida.
+            detect_openings(entities, [], config.opening, ids, meters),
         ]
     grid = detect_grid(entities, index, config.grid, config.text_patterns, ids)
     columns = detect_columns(entities, index, grid, config.column, config.text_patterns, ids)
@@ -190,9 +203,13 @@ def run_detectors(
     }
     fixtures = detect_fixtures(entities, config.fixture, ids, meters, claimed)
     runs = detect_runs(entities, config.run, ids, meters, frame_boxes(frames or []))
+    # Vanos al final: leen los muros ya detectados y les devuelven el ancho de
+    # las puertas y ventanas que se paran encima, para que el descuento de
+    # vanos salga de una medición y no de un porcentaje supuesto.
+    openings = detect_openings(entities, walls.detections, config.opening, ids, meters)
     return [
         grid, columns, footings, beams, slabs, panels, walls, piles, rooms, terrain,
-        details, fixtures, runs,
+        details, fixtures, runs, openings,
     ]
 
 

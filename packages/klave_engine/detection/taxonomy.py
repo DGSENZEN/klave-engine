@@ -48,6 +48,7 @@ class Family(StrEnum):
     mueble = "mueble"
     salida = "salida"
     corrida = "corrida"
+    vano = "vano"
 
 
 class FamilyInfo(NamedTuple):
@@ -77,6 +78,7 @@ FAMILY_INFO: dict[Family, FamilyInfo] = {
     Family.mueble: FamilyInfo("MUE", "Mueble o equipo", "Muebles y equipos"),
     Family.salida: FamilyInfo("SAL", "Salida", "Salidas"),
     Family.corrida: FamilyInfo("COR", "Corrida de instalación", "Corridas"),
+    Family.vano: FamilyInfo("VAN", "Vano", "Puertas y ventanas"),
 }
 
 # Human phrasing of each detector method, for descriptions.
@@ -94,6 +96,7 @@ _METHOD_PHRASES: dict[str, str] = {
     "detail_reference_regex_manifest_lookup": "referencia de detalle ligada a hoja del proyecto",
     "block_symbol": "símbolo insertado reconocido por su nombre de bloque y su capa",
     "layer_run": "trazo continuo sobre una capa con nombre de sistema",
+    "opening_symbol": "símbolo de puerta, ventana o cancel sobre el muro",
 }
 
 # Detection types whose label is text read from the plano (a real mark).
@@ -136,6 +139,8 @@ def classify_family(detection: Detection) -> Family:
         return Family.terreno
     if dtype == DetectionType.pipe_run:
         return Family.corrida
+    if dtype == DetectionType.opening:
+        return Family.vano
     if dtype == DetectionType.fixture:
         # Un W.C. y un contacto no se presupuestan igual: el primero es un
         # mueble que se instala, el segundo una salida que se prepara.

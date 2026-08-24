@@ -28,6 +28,7 @@ export const FAMILY_COLORS: Record<string, string> = {
   mueble: "#3f8fa6",
   salida: "#5fa8bf",
   corrida: "#7bb8a0",
+  vano: "#c98a5e",
   // Legacy detection-type fallbacks (runs without taxonomy).
   grid_line: "#9aa0aa",
   grid_intersection: "#767d88",
@@ -39,6 +40,7 @@ export const FAMILY_COLORS: Record<string, string> = {
   detail_reference: "#b06084",
   fixture: "#5fa8bf",
   pipe_run: "#7bb8a0",
+  opening: "#c98a5e",
 };
 
 export const FAMILY_LABELS: Record<string, string> = {
@@ -64,6 +66,7 @@ export const FAMILY_LABELS: Record<string, string> = {
   mueble: "Muebles y equipos",
   salida: "Salidas",
   corrida: "Corridas de instalación",
+  vano: "Puertas y ventanas",
   // Legacy detection-type fallbacks.
   grid_line: "Ejes",
   grid_intersection: "Intersecciones",
@@ -75,6 +78,7 @@ export const FAMILY_LABELS: Record<string, string> = {
   detail_reference: "Referencias",
   fixture: "Muebles y salidas",
   pipe_run: "Corridas de instalación",
+  opening: "Puertas y ventanas",
 };
 
 /** Grouping key for legend + visibility: family when available, else type. */

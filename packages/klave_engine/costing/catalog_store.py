@@ -563,6 +563,20 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '17') "
                     "ON CONFLICT(key) DO UPDATE SET value = '17'"
                 )
+            if version_row is None or int(version_row["value"]) < 18:
+                # Cancelería y carpintería: los vanos que el detector lee del
+                # plano dejan de salir del presupuesto en blanco.
+                self._seed_concepts(conn, INSTALACIONES_CONCEPTS, 400)
+                self._sync_builtin_concepts(conn, INSTALACIONES_CON_REGLA)
+                for code in INSTALACIONES_CON_REGLA:
+                    conn.execute(
+                        "UPDATE concepts SET rule_key = ? WHERE code = ? AND rule_key IS NULL",
+                        (code, code),
+                    )
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '18') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '18'"
+                )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.
                 conn.execute(

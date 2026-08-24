@@ -45,6 +45,9 @@ FASE_SANITARIA = "Instalación sanitaria"
 FASE_ELECTRICA = "Instalación eléctrica"
 FASE_GAS = "Instalación de gas"
 FASE_AIRE = "Aire acondicionado"
+# Los vanos no son instalación, pero salen del mismo sitio: un símbolo
+# sobre el plano que hasta ahora sólo se contaba.
+FASE_CANCELERIA = "Cancelería y carpintería"
 
 # code, description, unit, phase, rendimiento/día, orden
 _CONCEPTOS: tuple[tuple[str, str, str, str, float, int], ...] = (
@@ -89,6 +92,13 @@ _CONCEPTOS: tuple[tuple[str, str, str, str, float, int], ...] = (
      "M", FASE_ELECTRICA, 35.0, 30),
     ("ELE-004", "Alimentador con cable de cobre THW, incluye identificación y conexión",
      "M", FASE_ELECTRICA, 40.0, 40),
+    # --- Cancelería y carpintería (vanos) ---------------------------------
+    ("CAN-001", "Cancelería de aluminio con cristal, según cuadro de vanos, "
+     "incluye herrajes y sellado", "PZA", FASE_CANCELERIA, 3.0, 10),
+    ("CAN-002", "Ventana de aluminio con cristal, según cuadro de vanos, "
+     "incluye herrajes y sellado", "PZA", FASE_CANCELERIA, 4.0, 20),
+    ("CAR-001", "Puerta con marco y herrajes, según cuadro de vanos, "
+     "incluye colocación y ajuste", "PZA", FASE_CANCELERIA, 4.0, 30),
 )
 
 # Un concepto de instalaciones sale del catálogo **sin matriz**: la cantidad
@@ -118,6 +128,12 @@ _MUEBLES_POR_CONCEPTO: dict[str, tuple[str, ...]] = {
     "AIR-004": ("difusor",),
 }
 
+_VANOS_POR_CONCEPTO: dict[str, tuple[str, ...]] = {
+    "CAN-001": ("cancel",),
+    "CAN-002": ("ventana",),
+    "CAR-001": ("puerta",),
+}
+
 _CORRIDAS_POR_CONCEPTO: dict[str, tuple[str, ...]] = {
     "HID-003": ("agua_fria",),
     "HID-004": ("agua_caliente",),
@@ -141,6 +157,13 @@ def _regla(code: str) -> QuantityRule | None:
             kind=QuantityKind.COUNT,
             property_filter={"fixture_family": list(familias)},
         )
+    familias = _VANOS_POR_CONCEPTO.get(code)
+    if familias:
+        return QuantityRule(
+            detection_type=DetectionType.opening,
+            kind=QuantityKind.COUNT,
+            property_filter={"opening_family": list(familias)},
+        )
     familias = _CORRIDAS_POR_CONCEPTO.get(code)
     if familias:
         return QuantityRule(
@@ -161,8 +184,29 @@ _SIN_PRECIO = (
 # Los que el motor sabe leer del plano. El resto del catálogo de
 # instalaciones sigue llenándose por asignación desde el levantamiento.
 CODIGOS_CON_REGLA: tuple[str, ...] = tuple(
-    code for code in CODIGOS if code in _MUEBLES_POR_CONCEPTO or code in _CORRIDAS_POR_CONCEPTO
+    code
+    for code in CODIGOS
+    if code in _MUEBLES_POR_CONCEPTO
+    or code in _CORRIDAS_POR_CONCEPTO
+    or code in _VANOS_POR_CONCEPTO
 )
+
+
+def _origen(code: str) -> str:
+    """De dónde salió la cantidad, dicho en los términos de ese concepto."""
+    if code in _VANOS_POR_CONCEPTO:
+        return (
+            "Cantidad leída del plano: cada puerta, ventana o cancel dibujado, "
+            "contado por pieza (la altura viene del cuadro de vanos)"
+        )
+    if code in _CORRIDAS_POR_CONCEPTO:
+        return (
+            "Cantidad leída del plano: metros de trazo sobre las capas de este "
+            "sistema, por planta"
+        )
+    if code in _MUEBLES_POR_CONCEPTO:
+        return "Cantidad leída del plano: cada símbolo insertado de este tipo, contado"
+    return "Cantidad por levantamiento: capas y bloques que alguien asignó a este concepto"
 
 
 def conceptos_de_instalaciones() -> list[Concept]:
@@ -176,16 +220,7 @@ def conceptos_de_instalaciones() -> list[Concept]:
             rule=_regla(code),
             production_rate_per_day=rate,
             sequence_order=400 + order,
-            assumptions=[
-                (
-                    "Cantidad leída del plano: símbolos y trazos que el motor "
-                    "reconoció en las hojas de instalaciones"
-                    if _regla(code) is not None
-                    else "Cantidad por levantamiento: capas y bloques que alguien "
-                    "asignó a este concepto"
-                ),
-                _SIN_PRECIO,
-            ],
+            assumptions=[_origen(code), _SIN_PRECIO],
         )
         for code, description, unit, phase, rate, order in _CONCEPTOS
     ]

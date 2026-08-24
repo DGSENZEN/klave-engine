@@ -191,3 +191,14 @@ def test_una_cantidad_mapeada_sin_matriz_entra_sin_precio_y_no_se_pierde():
     assert linea.unpriced is True and linea.amount == 0.0
     assert any("128.27 m «00-SANITARIA»" in a for a in linea.assumptions)
     assert any("entran sin costo" in w for w in boq.warnings)
+
+
+def test_cada_concepto_dice_de_donde_salio_su_cantidad_en_sus_propios_terminos():
+    """Un vano no sale de «las hojas de instalaciones»: sale de un símbolo de
+    puerta o ventana. La evidencia tiene que decir la verdad de cada uno."""
+    por_codigo = {c.code: c for c in conceptos_de_instalaciones()}
+    assert "por pieza" in por_codigo["CAN-001"].assumptions[0]
+    assert "cuadro de vanos" in por_codigo["CAN-001"].assumptions[0]
+    assert "metros de trazo" in por_codigo["HID-003"].assumptions[0]
+    assert "símbolo insertado" in por_codigo["SAN-001"].assumptions[0]
+    assert "levantamiento" in por_codigo["HID-002"].assumptions[0]

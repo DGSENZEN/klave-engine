@@ -34,6 +34,8 @@ class DetectionType(StrEnum):
     # trazo continuo de una tubería, un ducto o una canalización sobre su capa.
     fixture = "fixture"
     pipe_run = "pipe_run"
+    # Vano: la puerta, la ventana o el cancel dibujado sobre el muro.
+    opening = "opening"
 
 
 class Detection(BaseModel):
