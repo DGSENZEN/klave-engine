@@ -22,9 +22,11 @@ import {
   WifiHigh,
   WifiSlash,
   X,
+  Sparkle,
 } from "@phosphor-icons/react";
 import { useProjectLive } from "@/components/ProjectLive";
 import { ChangesPanel, ChangesTrigger, LiveToasts } from "@/components/LiveOverlay";
+import { Copilot } from "@/components/Copilot";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar, IconButton } from "@/components/ui";
 
@@ -137,6 +139,7 @@ export function ProjectShell({
   // Change-history panel: trigger lives in the chrome; "unseen" counts the
   // entries that arrived since the panel was last closed.
   const [changesOpen, setChangesOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
   const [seenId, setSeenId] = useState(0);
   const topId = timeline[0]?.id ?? 0;
   const unseen = changesOpen ? 0 : timeline.filter((entry) => entry.id > seenId).length;
@@ -160,10 +163,12 @@ export function ProjectShell({
           name={name}
           unseenChanges={unseen}
           onOpenChanges={() => setChangesOpen(true)}
+          onAskKlave={() => setCopilotOpen(true)}
         />
       </aside>
 
       {/* Mobile top bar */}
+      <Copilot open={copilotOpen} onClose={() => setCopilotOpen(false)} />
       <header className="fixed inset-x-0 top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-sidebar px-3 lg:hidden">
         <div className="flex min-w-0 items-center gap-2">
           <IconButton
@@ -209,6 +214,7 @@ export function ProjectShell({
               id={id}
               name={name}
               unseenChanges={unseen}
+              onAskKlave={() => setCopilotOpen(true)}
               onOpenChanges={() => {
                 setDrawerOpen(false);
                 setChangesOpen(true);
@@ -230,11 +236,13 @@ function SidebarContent({
   name,
   unseenChanges,
   onOpenChanges,
+  onAskKlave,
 }: {
   id: string;
   name?: string;
   unseenChanges: number;
   onOpenChanges: () => void;
+  onAskKlave: () => void;
 }) {
   const pathname = usePathname();
   const groups = nav(id);
@@ -416,7 +424,17 @@ function SidebarContent({
       </nav>
       <div className="flex items-center justify-between border-t border-border px-3 py-2.5">
         <ChangesTrigger variant="sidebar" unseen={unseenChanges} onClick={onOpenChanges} />
-        <ThemeToggle />
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onAskKlave}
+            title="Pregúntale a Klave sobre esta obra o sobre la normativa"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-[13px] font-medium text-muted transition-colors hover:bg-surface-2/70 hover:text-foreground"
+          >
+            <Sparkle size={15} weight="duotone" /> Preguntar
+          </button>
+          <ThemeToggle />
+        </div>
       </div>
     </>
   );

@@ -325,6 +325,61 @@ def anthropic_reader(client: Any | None = None, model: str = ANTHROPIC_MODEL) ->
     return read
 
 
+# A plain text ask: (system, prompt) -> text. The copilot uses this; the
+# sheet reader above uses the vision path.
+Asker = Callable[[str, str], str]
+
+
+def configured_asker(provider: str | None = None, model: str | None = None) -> Asker:
+    """Text completion from whichever provider is configured, same rules as
+    the reader: an explicit choice without credentials never falls back."""
+    resolved = resolve_provider(provider)
+    if resolved == "anthropic":
+        return anthropic_asker(model=model or ANTHROPIC_MODEL)
+    if resolved == "gemini":
+        return gemini_asker(model=model or GEMINI_MODEL)
+    raise RuntimeError("El copiloto no está configurado (sin credenciales de IA).")
+
+
+def gemini_asker(client: Any | None = None, model: str = GEMINI_MODEL) -> Asker:
+    from google import genai
+    from google.genai import types
+
+    sdk = client or genai.Client()
+
+    def ask(system: str, prompt: str) -> str:
+        response = sdk.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(system_instruction=system),
+        )
+        return getattr(response, "text", "") or ""
+
+    return ask
+
+
+def anthropic_asker(client: Any | None = None, model: str = ANTHROPIC_MODEL) -> Asker:
+    import anthropic
+
+    sdk = client or anthropic.Anthropic()
+
+    def ask(system: str, prompt: str) -> str:
+        response = sdk.messages.create(
+            model=model,
+            max_tokens=1200,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        # The SDK's block union is wider than the text blocks we asked for.
+        return "".join(
+            str(getattr(block, "text", ""))
+            for block in response.content
+            if getattr(block, "type", "") == "text"
+        )
+
+    return ask
+
+
 def frame_prompt(code: str, title: str, kind: str) -> str:
     if kind == "plan":
         what = (

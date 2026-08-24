@@ -22,6 +22,7 @@ import {
   getCatalog,
   getCroquis,
   getDimensions,
+  getAcciones,
   getDiagnostico,
   getProjectReviews,
   money,
@@ -30,6 +31,7 @@ import {
   removeAdjustment,
   type BoqLine,
   type CatalogConcept,
+  type CopilotAccion,
   type CroquisItem,
   type Dimensions,
   type Diagnostico as DiagnosticoType,
@@ -76,6 +78,7 @@ export default function PresupuestoPage() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [concepts, setConcepts] = useState<CatalogConcept[] | null>(null);
   const [diagnostico, setDiagnostico] = useState<DiagnosticoType | null>(null);
+  const [acciones, setAcciones] = useState<CopilotAccion[]>([]);
   const [blocked, setBlocked] = useState<{
     label: string;
     path: string;
@@ -90,6 +93,7 @@ export default function PresupuestoPage() {
     getDimensions(id).then(setDims).catch(() => {});
     getProjectReviews(id).then(setReviews).catch(() => {});
     getDiagnostico(id).then(setDiagnostico).catch(() => setDiagnostico(null));
+    getAcciones(id).then((r) => setAcciones(r.acciones)).catch(() => setAcciones([]));
     getCatalog()
       .then((catalog) => setConcepts(catalog.concepts))
       .catch(() => {});
@@ -108,6 +112,7 @@ export default function PresupuestoPage() {
       latestEvent?.type === "costing_updated"
     ) {
       getDiagnostico(id).then(setDiagnostico).catch(() => {});
+      getAcciones(id).then((r) => setAcciones(r.acciones)).catch(() => {});
     }
   }, [id, latestEvent]);
 
@@ -315,7 +320,17 @@ export default function PresupuestoPage() {
           }}
         />
       )}
-      {diagnostico && <DiagnosticoPanel diagnostico={diagnostico} projectId={id} />}
+      {diagnostico && (
+        <DiagnosticoPanel
+          diagnostico={diagnostico}
+          projectId={id}
+          acciones={acciones}
+          onApplied={() => {
+            getDiagnostico(id).then(setDiagnostico).catch(() => {});
+            getAcciones(id).then((r) => setAcciones(r.acciones)).catch(() => {});
+          }}
+        />
+      )}
       <SuggestionsBar projectId={id} actorName={actorName} conceptCodes={conceptCodes} />
       {parametricCount > 0 && (
         <div className="mb-4">

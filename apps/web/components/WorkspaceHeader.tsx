@@ -9,11 +9,13 @@ import {
   FolderOpen,
   GearSix,
   Question,
+  Sparkle,
   UsersThree,
 } from "@phosphor-icons/react";
 import { peekBrowserActor } from "@/lib/collab";
 import { fetchAuthStatus } from "@/lib/session";
 import { Avatar } from "@/components/ui";
+import { Copilot } from "@/components/Copilot";
 import { KebabMenu, MenuItem } from "@/components/Menu";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -26,6 +28,7 @@ export function WorkspaceHeader({ active }: { active: Section }) {
   const [actorName, setActorName] = useState("");
   const [avatarSrc, setAvatarSrc] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -83,6 +86,16 @@ export function WorkspaceHeader({ active }: { active: Section }) {
           </nav>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setCopilotOpen(true)}
+            title="Pregúntale a Klave (normativa, la app, y esta obra)"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-muted transition-colors hover:bg-surface-2/70 hover:text-foreground"
+          >
+            <Sparkle size={15} weight="duotone" />
+            <span className="hidden sm:inline">Preguntar</span>
+          </button>
+          <Copilot open={copilotOpen} onClose={() => setCopilotOpen(false)} />
           <KebabMenu label="Ayuda" icon={<Question size={17} weight="duotone" />}>
             {(close) => (
               <>

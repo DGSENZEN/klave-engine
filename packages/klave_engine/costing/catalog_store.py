@@ -743,6 +743,27 @@ class CatalogStore:
             if column not in existing:
                 conn.execute(f"ALTER TABLE concepts ADD COLUMN {column} {kind}")
 
+    def check_concept_reference(self, code: str, ref_id: int) -> str:
+        """Por qué esta adopción no procedería, o "" si procede.
+
+        Existe para que quien vaya a aplicar varias adopciones pueda
+        comprobarlas todas antes de tocar la primera: dejar un presupuesto a
+        medio arreglar es peor que no haberlo tocado."""
+        reference = self.get_reference(ref_id)
+        if reference is None:
+            return "la referencia no existe."
+        with self._connect() as conn:
+            concept = conn.execute(
+                "SELECT unit FROM concepts WHERE code = ?", (code,)
+            ).fetchone()
+        if concept is None:
+            return f"el concepto {code} no existe."
+        try:
+            _check_units(code, str(concept["unit"]), str(reference["unit"]), False)
+        except UnitMismatch as exc:
+            return str(exc)
+        return ""
+
     def adopt_concept_reference(self, code: str, ref_id: int, *, force: bool = False) -> dict:
         """Price a concept from a reference row: its P.U. replaces the matrix
         until cleared, with the row's provenance on every presupuesto. The

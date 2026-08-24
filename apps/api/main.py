@@ -19,6 +19,7 @@ from apps.api.observability import RequestIdMiddleware
 from apps.api.routes import ai as ai_routes
 from apps.api.routes import (
     catalog,
+    copilot,
     detections,
     entities,
     events,
@@ -125,6 +126,7 @@ def create_app() -> FastAPI:
     app.include_router(croquis_routes.router)
     app.include_router(catalog.router)
     app.include_router(workspace.router)
+    app.include_router(copilot.router)
 
     @app.exception_handler(KlaveEngineError)
     async def klave_error_handler(request: Request, exc: KlaveEngineError) -> JSONResponse:

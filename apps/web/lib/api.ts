@@ -849,6 +849,75 @@ export const aiEvidenceUrl = (id: string, code: string, mark: string) =>
 export const frameRenderUrl = (id: string, code: string) =>
   `${API_BASE}/projects/${id}/renders/${encodeURIComponent(code)}.png`;
 
+// ---- Copiloto: respuestas con fuente, o ninguna ----
+
+export type CopilotCita = {
+  titulo: string;
+  fuente: string;
+  url?: string;
+  vigencia?: string;
+  tipo?: string;
+};
+
+export type CopilotRespuesta = {
+  texto: string;
+  citas: CopilotCita[];
+  /** False when the server could not back the answer with its own material. */
+  fundamentada: boolean;
+  aviso: string;
+  con_contexto: boolean;
+};
+
+export type CopilotCambio = {
+  concepto: string;
+  de: string;
+  a: string;
+  monto_actual: number | null;
+};
+
+export type CopilotAccion = {
+  tipo: string;
+  titulo: string;
+  descripcion: string;
+  endpoint: string;
+  vista_previa: CopilotCambio[];
+  /** What is still missing before it can run (a price, a decision). */
+  requiere: string;
+  reversible: string;
+  hallazgo_id: string;
+  /** False when it needs something only the engineer can supply. */
+  aplicable: boolean;
+};
+
+export const getAcciones = (projectId: string) =>
+  getJSON<{ acciones: CopilotAccion[] }>(`/copilot/acciones/${projectId}`);
+
+export const aplicarAccion = (
+  projectId: string,
+  tipo: string,
+  hallazgoId: string,
+  actor?: string,
+) =>
+  postJSON<{
+    aplicadas: string[];
+    total_antes: number | null;
+    total_despues: number;
+    accion: string;
+  }>(
+    `/copilot/aplicar`,
+    { project_id: projectId, tipo, hallazgo_id: hallazgoId },
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export const copilotStatus = () =>
+  getJSON<{ available: boolean; model: string }>(`/copilot/status`);
+
+export const askCopilot = (pregunta: string, projectId?: string) =>
+  postJSON<CopilotRespuesta>(`/copilot/ask`, {
+    pregunta,
+    project_id: projectId ?? null,
+  });
+
 // ---- Diagnóstico: hallazgos ranked by consequence ----
 
 /** Three actionable tiers. A deliberate engine choice is not an alarm at

@@ -6,12 +6,22 @@ import {
   ArrowRight,
   CaretDown,
   CheckCircle,
+  CircleNotch,
   Info,
   Prohibit,
+  Sparkle,
   Warning,
   WarningCircle,
 } from "@phosphor-icons/react";
-import type { Diagnostico, Hallazgo, Severity } from "@/lib/api";
+import {
+  apiMessage,
+  aplicarAccion,
+  type CopilotAccion,
+  type Diagnostico,
+  type Hallazgo,
+  type Severity,
+} from "@/lib/api";
+import { getBrowserActor } from "@/lib/collab";
 import { Card, buttonClasses } from "@/components/ui";
 
 /**
@@ -93,7 +103,17 @@ function href(target: string | null, projectId: string): string | null {
   return target ? `/proyecto/${projectId}/${target}` : `/proyecto/${projectId}`;
 }
 
-function HallazgoRow({ hallazgo, projectId }: { hallazgo: Hallazgo; projectId: string }) {
+function HallazgoRow({
+  hallazgo,
+  projectId,
+  accion,
+  onApplied,
+}: {
+  hallazgo: Hallazgo;
+  projectId: string;
+  accion?: CopilotAccion;
+  onApplied?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const tier = TIERS[hallazgo.severity];
   const link = href(hallazgo.target, projectId);
@@ -151,6 +171,9 @@ function HallazgoRow({ hallazgo, projectId }: { hallazgo: Hallazgo; projectId: s
               {hallazgo.action}
             </p>
           )}
+          {accion && (
+            <AccionDeKlave accion={accion} projectId={projectId} onApplied={onApplied} />
+          )}
         </div>
         {link && (
           <Link href={link} className={`${buttonClasses("ghost", "sm")} shrink-0`}>
@@ -162,13 +185,136 @@ function HallazgoRow({ hallazgo, projectId }: { hallazgo: Hallazgo; projectId: s
   );
 }
 
+
+/**
+ * Lo que Klave puede hacer con este hallazgo, y qué cambiaría si lo hace.
+ *
+ * El cambio se ve antes de aceptarlo, con su procedencia: la evidencia sobre
+ * decisiones asistidas por máquina dice que un valor ya puesto ancla a quien
+ * decide, así que aquí no se pone nada hasta que alguien lo acepta. Y cuando
+ * el motor no puede saber el dato — cuánto cuesta un concepto sin fuente — no
+ * hay botón, hay una frase diciendo qué falta.
+ */
+function AccionDeKlave({
+  accion,
+  projectId,
+  onApplied,
+}: {
+  accion: CopilotAccion;
+  projectId: string;
+  onApplied?: () => void;
+}) {
+  const [abierto, setAbierto] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [hecho, setHecho] = useState<{ antes: number | null; despues: number } | null>(null);
+
+  if (hecho) {
+    return (
+      <p className="mt-1.5 flex items-center gap-1.5 text-sm text-success">
+        <CheckCircle size={14} weight="fill" className="shrink-0" />
+        Hecho. El total pasó de {hecho.antes != null ? money(hecho.antes) : "—"} a{" "}
+        {money(hecho.despues)}.
+      </p>
+    );
+  }
+
+  if (!accion.aplicable) {
+    return (
+      <p className="mt-1.5 text-sm text-muted">
+        <span className="font-medium text-foreground">Klave no puede hacerlo solo: </span>
+        {accion.requiere}
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-1.5">
+      <button
+        type="button"
+        onClick={() => setAbierto((v) => !v)}
+        aria-expanded={abierto}
+        className={buttonClasses("secondary", "sm")}
+      >
+        <Sparkle size={14} weight="duotone" /> Que Klave lo haga
+      </button>
+      {abierto && (
+        <div className="mt-2 rounded-lg border border-border bg-surface-2/50 p-3">
+          <p className="text-sm text-muted">{accion.descripcion}</p>
+          {accion.vista_previa.length > 0 && (
+            <ul className="mt-2 space-y-1">
+              {accion.vista_previa.map((c) => (
+                <li key={c.concepto} className="flex flex-wrap items-baseline gap-1.5 text-sm">
+                  <span className="font-mono text-xs">{c.concepto}</span>
+                  <span className="text-muted line-through">{c.de}</span>
+                  <span aria-hidden className="text-faint">→</span>
+                  <span className="font-medium">{c.a}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {accion.reversible && (
+            <p className="mt-2 text-xs text-faint">{accion.reversible}</p>
+          )}
+          {error && <p className="mt-2 text-sm text-danger">{error}</p>}
+          <div className="mt-2.5 flex gap-2">
+            <button
+              type="button"
+              disabled={aplicando}
+              className={buttonClasses("primary", "sm")}
+              onClick={async () => {
+                setAplicando(true);
+                setError(null);
+                try {
+                  const r = await aplicarAccion(
+                    projectId,
+                    accion.tipo,
+                    accion.hallazgo_id,
+                    getBrowserActor(),
+                  );
+                  setHecho({ antes: r.total_antes, despues: r.total_despues });
+                  onApplied?.();
+                } catch (e) {
+                  setError(apiMessage(e, "No se pudo aplicar."));
+                } finally {
+                  setAplicando(false);
+                }
+              }}
+            >
+              {aplicando ? (
+                <>
+                  <CircleNotch size={14} className="animate-spin" /> Aplicando…
+                </>
+              ) : (
+                "Aplicar y recalcular"
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAbierto(false)}
+              className={buttonClasses("ghost", "sm")}
+            >
+              Ahora no
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** The full panel: the honest headline, then every finding by consequence. */
 export function DiagnosticoPanel({
   diagnostico,
   projectId,
+  acciones = [],
+  onApplied,
 }: {
   diagnostico: Diagnostico;
   projectId: string;
+  /** What Klave can do about each finding, derived from the same diagnosis. */
+  acciones?: CopilotAccion[];
+  onApplied?: () => void;
 }) {
   const groups = ORDER.map((severity) => ({
     severity,
@@ -213,6 +359,8 @@ export function DiagnosticoPanel({
             severity={severity}
             items={items}
             projectId={projectId}
+            acciones={acciones}
+            onApplied={onApplied}
             // Only the tiers that change what you may deliver open by default;
             // the rest stay one click away so the page keeps its shape.
             defaultOpen={severity === "bloqueante" || severity === "dinero"}
@@ -229,11 +377,15 @@ function TierGroup({
   items,
   projectId,
   defaultOpen,
+  acciones,
+  onApplied,
 }: {
   severity: Severity;
   items: Hallazgo[];
   projectId: string;
   defaultOpen: boolean;
+  acciones: CopilotAccion[];
+  onApplied?: () => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const tier = TIERS[severity];
@@ -258,7 +410,13 @@ function TierGroup({
       {open && (
         <ul>
           {items.map((h) => (
-            <HallazgoRow key={h.id} hallazgo={h} projectId={projectId} />
+            <HallazgoRow
+              key={h.id}
+              hallazgo={h}
+              projectId={projectId}
+              accion={acciones.find((a) => a.hallazgo_id === h.id)}
+              onApplied={onApplied}
+            />
           ))}
         </ul>
       )}
