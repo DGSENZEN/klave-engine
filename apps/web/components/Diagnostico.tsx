@@ -195,7 +195,7 @@ function HallazgoRow({
  * el motor no puede saber el dato — cuánto cuesta un concepto sin fuente — no
  * hay botón, hay una frase diciendo qué falta.
  */
-function AccionDeKlave({
+export function AccionDeKlave({
   accion,
   projectId,
   onApplied,

@@ -1,23 +1,42 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
-import { ArrowUp, BookOpen, CircleNotch, Sparkle, Warning, X } from "@phosphor-icons/react";
-import { apiMessage, askCopilot, copilotStatus, type CopilotCita } from "@/lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useParams, usePathname } from "next/navigation";
+import {
+  ArrowUp,
+  BookOpen,
+  CheckCircle,
+  CircleNotch,
+  Lightning,
+  Sparkle,
+  Warning,
+  X,
+} from "@phosphor-icons/react";
+import {
+  apiMessage,
+  askCopilot,
+  copilotStatus,
+  getAcciones,
+  getDiagnostico,
+  type CopilotAccion,
+  type CopilotCita,
+  type Diagnostico,
+} from "@/lib/api";
+import { AccionDeKlave } from "@/components/Diagnostico";
 import { buttonClasses } from "@/components/ui";
 
 /**
- * Pregúntale a Klave: la normativa, la aplicación, y este proyecto.
+ * El copiloto de Klave: una herramienta del taller, no una ventana de chat.
  *
- * Dos decisiones que lo separan de un chat cualquiera:
+ * La diferencia está en qué aparece primero. Un chat abre con un campo vacío
+ * y espera; esto abre con **el estado de la obra y lo que puede resolver hoy**,
+ * porque eso es lo que el ingeniero vino a hacer. Preguntar es la segunda
+ * opción, no la principal.
  *
- * · Cada respuesta llega con las fuentes que la sustentan, y cuando el
- *   servidor no puede respaldarla lo dice en la propia burbuja en vez de
- *   sonar igual de segura. Un copiloto de costos que inventa un artículo le
- *   cuesta a alguien una licitación.
- * · Sabe en qué proyecto estás. Las preguntas sobre la obra abierta se
- *   responden con sus hallazgos de este momento, no con lo que se dijo antes
- *   en la conversación.
+ * Lo demás sigue las mismas reglas que el resto de la aplicación: cada
+ * respuesta trae las fuentes que la sostienen; cuando el servidor no puede
+ * respaldarla lo dice en vez de sonar igual de seguro; y nada se aplica sin
+ * que alguien vea antes qué cambia.
  */
 
 type Turno = {
@@ -30,33 +49,85 @@ type Turno = {
   error?: string;
 };
 
-const SUGERENCIAS = [
-  "¿Qué programas necesito para entregar una licitación?",
-  "¿Por qué mi presupuesto no se puede entregar?",
-  "¿Cuánto anticipo puedo pedir?",
-  "¿El plazo va en días naturales o hábiles?",
-];
+/** Preguntas que dependen de dónde está parado el usuario: las genéricas
+ * sirven para llenar un hueco, las de la pantalla sirven para trabajar. */
+function sugerencias(pathname: string, hayProyecto: boolean): string[] {
+  if (pathname.includes("/programa")) {
+    return [
+      "¿Por qué casi todo mi programa es ruta crítica?",
+      "¿El plazo va en días naturales o hábiles?",
+      "¿Qué programas debo entregar en una licitación?",
+    ];
+  }
+  if (pathname.includes("/presupuesto") || pathname.includes("/apus")) {
+    return [
+      "¿Por qué no puedo entregar este presupuesto?",
+      "¿Por qué hay conceptos «sin precio» en vez de en cero?",
+      "¿Cómo adopto un precio de mi catálogo?",
+    ];
+  }
+  if (pathname.includes("/revision") || pathname.includes("/lectura")) {
+    return [
+      "¿Qué significa el sello SIN VERIFICAR?",
+      "¿Qué puede y qué no puede hacer la lectura con IA?",
+      "¿Por qué me propone revisar solo un lote?",
+    ];
+  }
+  if (pathname.includes("/flujo") || pathname.includes("/parametros")) {
+    return [
+      "¿Cuánto anticipo puedo pedir?",
+      "¿Cómo se amortiza el anticipo?",
+      "¿Cada cuándo se estiman los trabajos?",
+    ];
+  }
+  return hayProyecto
+    ? [
+        "¿Por qué no puedo entregar este presupuesto?",
+        "¿Qué me falta para cerrar esta obra?",
+        "¿Cuánto anticipo puedo pedir?",
+      ]
+    : [
+        "¿Qué programas necesito para entregar una licitación?",
+        "¿Cuánto anticipo puedo pedir?",
+        "¿El plazo va en días naturales o hábiles?",
+      ];
+}
 
 export function Copilot({ open, onClose }: { open: boolean; onClose: () => void }) {
   const params = useParams<{ id?: string }>();
+  const pathname = usePathname() ?? "";
   const projectId = typeof params?.id === "string" ? params.id : undefined;
   const [turnos, setTurnos] = useState<Turno[]>([]);
   const [texto, setTexto] = useState("");
   const [pensando, setPensando] = useState(false);
   const [disponible, setDisponible] = useState<boolean | null>(null);
+  const [acciones, setAcciones] = useState<CopilotAccion[]>([]);
+  const [diagnostico, setDiagnostico] = useState<Diagnostico | null>(null);
   const finalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const cargarObra = useCallback(() => {
+    if (!projectId) return;
+    getAcciones(projectId)
+      .then((r) => setAcciones(r.acciones))
+      .catch(() => setAcciones([]));
+    getDiagnostico(projectId)
+      .then(setDiagnostico)
+      .catch(() => setDiagnostico(null));
+  }, [projectId]);
 
   useEffect(() => {
     if (!open) return;
     copilotStatus()
       .then((s) => setDisponible(s.available))
       .catch(() => setDisponible(false));
-    inputRef.current?.focus();
-  }, [open]);
+    cargarObra();
+  }, [open, cargarObra]);
 
   useEffect(() => {
-    finalRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (turnos.length > 0 || pensando) {
+      finalRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
   }, [turnos, pensando]);
 
   useEffect(() => {
@@ -102,6 +173,9 @@ export function Copilot({ open, onClose }: { open: boolean; onClose: () => void 
 
   if (!open) return null;
 
+  const aplicables = acciones.filter((a) => a.aplicable);
+  const pendientes = acciones.filter((a) => !a.aplicable);
+
   return (
     <>
       <div
@@ -114,20 +188,24 @@ export function Copilot({ open, onClose }: { open: boolean; onClose: () => void 
         role="dialog"
         aria-label="Copiloto de Klave"
       >
-        <header className="flex items-center gap-2 border-b border-border px-4 py-3">
-          <Sparkle size={17} weight="duotone" className="text-accent" />
+        <header className="flex items-start gap-2 border-b border-border px-4 py-3">
+          <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
+            <Sparkle size={16} weight="duotone" />
+          </span>
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium">Pregúntale a Klave</div>
-            <p className="text-xs text-muted">
-              Normativa de obra, cómo funciona la app, y esta obra
-              {projectId ? " en particular" : ""}.
+            <div className="text-sm font-medium">Klave</div>
+            <p className="text-xs leading-snug text-muted">
+              {diagnostico?.resumen ??
+                (projectId
+                  ? "Cargando el estado de esta obra…"
+                  : "Normativa de obra y cómo funciona la aplicación.")}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Cerrar"
-            className="rounded-md p-1.5 text-faint transition-colors hover:bg-surface-2 hover:text-foreground"
+            className="shrink-0 rounded-md p-1.5 text-faint transition-colors hover:bg-surface-2 hover:text-foreground"
           >
             <X size={16} />
           </button>
@@ -136,43 +214,91 @@ export function Copilot({ open, onClose }: { open: boolean; onClose: () => void 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           {disponible === false && (
             <p className="mb-3 rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning">
-              El copiloto necesita credenciales de IA en el servidor. Sin ellas no
-              responde — no inventa.
+              Preguntar necesita credenciales de IA en el servidor. Sin ellas no responde
+              — no inventa. Lo que Klave puede <em>hacer</em> aquí abajo no usa IA y sigue
+              funcionando.
             </p>
           )}
+
+          {/* Lo primero es lo que puede resolver, no un campo en blanco. */}
+          {projectId && (
+            <section className="mb-5">
+              <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+                <Lightning size={13} weight="fill" className="text-accent" />
+                Lo que puedo hacer por esta obra
+              </h3>
+              {aplicables.length === 0 && pendientes.length === 0 ? (
+                <p className="flex items-start gap-2 text-sm text-muted">
+                  <CheckCircle size={15} weight="fill" className="mt-0.5 shrink-0 text-success" />
+                  Nada pendiente que yo pueda resolver solo. Si algo te falta, pregúntame
+                  abajo.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {aplicables.map((accion) => (
+                    <div
+                      key={`${accion.tipo}-${accion.hallazgo_id}`}
+                      className="rounded-lg border border-border bg-surface-2/40 p-3"
+                    >
+                      <div className="text-sm font-medium">{accion.titulo}</div>
+                      <AccionDeKlave
+                        accion={accion}
+                        projectId={projectId}
+                        onApplied={cargarObra}
+                      />
+                    </div>
+                  ))}
+                  {pendientes.map((accion) => (
+                    <div
+                      key={`${accion.tipo}-${accion.hallazgo_id}`}
+                      className="rounded-lg border border-border/70 p-3"
+                    >
+                      <div className="text-sm font-medium">{accion.titulo}</div>
+                      <p className="mt-0.5 text-sm text-muted">
+                        <span className="font-medium text-foreground">Necesito un dato: </span>
+                        {accion.requiere}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
           {turnos.length === 0 && (
-            <div>
-              <p className="text-sm text-muted">
-                Respondo con la normativa que tengo cargada y con la documentación de
-                Klave, citando de dónde sale cada cosa. Lo que no puedo respaldar, te lo
-                digo en lugar de inventarlo.
-              </p>
-              <div className="mt-3 flex flex-col items-start gap-1.5">
-                {SUGERENCIAS.map((s) => (
+            <section>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                O pregúntame
+              </h3>
+              <div className="flex flex-col items-start gap-1.5">
+                {sugerencias(pathname, Boolean(projectId)).map((s) => (
                   <button
                     key={s}
                     type="button"
                     onClick={() => void preguntar(s)}
-                    className="text-left text-sm text-accent hover:underline"
+                    className="rounded-lg border border-border px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-surface-2"
                   >
                     {s}
                   </button>
                 ))}
               </div>
-            </div>
+              <p className="mt-2.5 text-xs text-faint">
+                Respondo con la normativa que tengo cargada y con la documentación de
+                Klave, citando de dónde sale cada cosa. Lo que no puedo respaldar, te lo
+                digo en lugar de inventarlo.
+              </p>
+            </section>
           )}
 
           <div className="space-y-4">
             {turnos.map((turno, i) => (
-              <div key={i}>
-                <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm bg-surface-3 px-3 py-2 text-sm">
+              <div key={i} className="border-t border-border/60 pt-3 first:border-t-0">
+                <p className="text-xs font-medium uppercase tracking-wide text-faint">
                   {turno.pregunta}
                 </p>
-                {turno.error && (
-                  <p className="mt-2 text-sm text-danger">{turno.error}</p>
-                )}
+                {turno.error && <p className="mt-2 text-sm text-danger">{turno.error}</p>}
                 {turno.texto && (
-                  <div className="mt-2">
+                  <div className="mt-1.5">
                     {turno.fundamentada === false && (
                       <p className="mb-1.5 flex items-start gap-1.5 text-xs text-warning">
                         <Warning size={13} weight="bold" className="mt-0.5 shrink-0" />
@@ -230,7 +356,7 @@ export function Copilot({ open, onClose }: { open: boolean; onClose: () => void 
               }}
               rows={2}
               maxLength={500}
-              placeholder="¿Qué necesitas saber?"
+              placeholder="Pregunta sobre la obra, la normativa o la app…"
               className="max-h-32 min-h-[42px] flex-1 resize-y rounded-lg border border-border bg-surface px-3 py-2 text-sm"
             />
             <button
