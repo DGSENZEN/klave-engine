@@ -2,10 +2,19 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Books, Buildings, FolderOpen, GearSix, UsersThree } from "@phosphor-icons/react";
+import { useRouter } from "next/navigation";
+import {
+  Books,
+  Buildings,
+  FolderOpen,
+  GearSix,
+  Question,
+  UsersThree,
+} from "@phosphor-icons/react";
 import { peekBrowserActor } from "@/lib/collab";
 import { fetchAuthStatus } from "@/lib/session";
 import { Avatar } from "@/components/ui";
+import { KebabMenu, MenuItem } from "@/components/Menu";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 type Section = "proyectos" | "catalogo" | "equipo" | "taller" | "cuenta" | null;
@@ -13,6 +22,7 @@ type Section = "proyectos" | "catalogo" | "equipo" | "taller" | "cuenta" | null;
 /** One header pattern for every workspace-level screen: same places, same
  * order, everywhere — navigation should never need re-learning per page. */
 export function WorkspaceHeader({ active }: { active: Section }) {
+  const router = useRouter();
   const [actorName, setActorName] = useState("");
   const [avatarSrc, setAvatarSrc] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -73,6 +83,30 @@ export function WorkspaceHeader({ active }: { active: Section }) {
           </nav>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <KebabMenu label="Ayuda" icon={<Question size={17} weight="duotone" />}>
+            {(close) => (
+              <>
+                <MenuItem
+                  onSelect={() => {
+                    close();
+                    router.push("/como-funciona");
+                  }}
+                  hint="Las reglas que la app no rompe"
+                >
+                  Cómo funciona
+                </MenuItem>
+                <MenuItem
+                  onSelect={() => {
+                    close();
+                    router.push("/glosario");
+                  }}
+                  hint="Fsr, P.U., explosión de insumos…"
+                >
+                  Glosario
+                </MenuItem>
+              </>
+            )}
+          </KebabMenu>
           {actorName && (
             <Link
               href="/cuenta"

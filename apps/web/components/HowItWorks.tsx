@@ -39,7 +39,10 @@ export function HowItWorks() {
         </Card>
       ))}
       <p className="text-xs text-faint sm:col-span-3">
-        ¿Un término no te suena (Fsr, P.U., explosión de insumos)? Está en el{" "}
+        <Link href="/como-funciona" className="underline">
+          Por qué la app trabaja así
+        </Link>
+        {" · "}¿Un término no te suena (Fsr, P.U., explosión de insumos)? Está en el{" "}
         <Link href="/glosario" className="underline">
           glosario
         </Link>

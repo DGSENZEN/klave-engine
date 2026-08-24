@@ -64,6 +64,20 @@ def _croquis_provider(
     return provide
 
 
+def _mark_exported(store: ProjectStore, project_id: str) -> None:
+    """A tiny marker so onboarding can tell a delivery has happened."""
+    try:
+        from datetime import UTC, datetime
+
+        from klave_engine.common.io import write_json
+
+        control = store.get_root(project_id) / store.settings.processed_dir_name
+        control.mkdir(parents=True, exist_ok=True)
+        write_json(control / "last_export.json", {"at": datetime.now(UTC).isoformat()})
+    except Exception:  # noqa: BLE001 — a marker must never fail an export
+        pass
+
+
 @router.get("/{project_id}/export/explosion.xlsx")
 def export_explosion(
     request: Request,
@@ -73,6 +87,7 @@ def export_explosion(
     """Explosión de insumos: what the presupuesto consumes, per resource."""
     rate_limit(request, "export", max_attempts=60, window_seconds=3600.0)
     manifest = store.get_manifest(project_id)
+    _mark_exported(store, project_id)
     report = CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
     filename = f"explosion_insumos_{slugify(manifest.project_name)[:40]}.xlsx"
     return Response(
@@ -91,6 +106,7 @@ def export_apus(
     """Análisis de precios unitarios: one block per concept with its matrix."""
     rate_limit(request, "export", max_attempts=60, window_seconds=3600.0)
     manifest = store.get_manifest(project_id)
+    _mark_exported(store, project_id)
     report = CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
     filename = f"apus_{slugify(manifest.project_name)[:40]}.xlsx"
     return Response(
@@ -110,6 +126,7 @@ def export_presupuesto(
 ) -> Response:
     rate_limit(request, "export", max_attempts=60, window_seconds=3600.0)
     manifest = store.get_manifest(project_id)
+    _mark_exported(store, project_id)
     try:
         report = CostReport.model_validate(
             store.read_artifact(project_id, "cost_report.json")

@@ -51,6 +51,7 @@ import { KebabMenu, MenuItem } from "@/components/Menu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
 import { HowItWorks } from "@/components/HowItWorks";
+import { OnboardingChecklist } from "@/components/OnboardingChecklist";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 
 const STATUS_TONE: Record<string, BadgeTone> = {
@@ -368,6 +369,14 @@ export default function Home() {
         )}
 
         {overview && <AttentionStrip overview={overview} focus={focus} onFocus={setFocus} />}
+
+        {overview && projects !== null && projects.length > 0 && (
+          <OnboardingChecklist
+            overview={overview}
+            onExploreSample={openDemo}
+            sampleBusy={demoBusy}
+          />
+        )}
 
         {projects !== null && projects.length > 0 && (
           <div className="mb-4 flex flex-wrap items-center gap-2">

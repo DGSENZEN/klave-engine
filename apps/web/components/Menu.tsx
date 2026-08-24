@@ -7,9 +7,12 @@ import { buttonClasses } from "@/components/ui";
 /** Minimal kebab menu: closes on outside click and Escape. */
 export function KebabMenu({
   label,
+  icon,
   children,
 }: {
   label: string;
+  /** Trigger icon; defaults to the vertical dots. */
+  icon?: ReactNode;
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -44,7 +47,7 @@ export function KebabMenu({
         }}
         className="rounded-md p-1.5 text-faint transition-colors hover:bg-surface-2 hover:text-foreground"
       >
-        <DotsThreeVertical size={18} weight="bold" />
+        {icon ?? <DotsThreeVertical size={18} weight="bold" />}
       </button>
       {open && (
         <div className="toast-in absolute right-0 top-full z-40 mt-1 w-52 overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg">

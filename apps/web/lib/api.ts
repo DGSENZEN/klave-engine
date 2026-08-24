@@ -1521,10 +1521,20 @@ export type ProjectOverview = ProjectSummary & {
   last_activity: string | null;
   job_error: string | null;
   engine_stale: boolean;
+  exported: boolean;
+};
+
+export type OnboardingState = {
+  sample_explored: boolean;
+  first_project: boolean;
+  any_verified: boolean;
+  aliases: number;
+  any_exported: boolean;
 };
 
 export type WorkspaceOverview = {
   projects: ProjectOverview[];
+  onboarding?: OnboardingState;
   attention: {
     processing: number;
     failed: number;

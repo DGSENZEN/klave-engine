@@ -76,6 +76,7 @@ def _project_overview(
         "sheet_count": 0,
         "created_at": None,
         "verified": False,
+        "exported": (root / settings.processed_dir_name / "last_export.json").exists(),
         "verification": {"units": False, "detections": False, "assumptions": False},
         "excluded_count": 0,
         "adjustment_count": 0,
@@ -184,8 +185,19 @@ def overview(
     except Exception:
         stale = 0
 
+    catalog_store = store_for_request(settings, request)
+    onboarding = {
+        "sample_explored": any(p["project_id"].startswith("obra_de_ejemplo") for p in projects),
+        "first_project": any(
+            not p["project_id"].startswith("obra_de_ejemplo") for p in projects
+        ),
+        "any_verified": any(p["verified"] for p in projects),
+        "aliases": len(catalog_store.load_concept_aliases()),
+        "any_exported": any(p.get("exported") for p in projects),
+    }
     return {
         "projects": projects,
+        "onboarding": onboarding,
         "attention": {
             "processing": sum(1 for p in active if p["status"] in ("queued", "running")),
             "failed": sum(1 for p in active if p["status"] == "failed"),
