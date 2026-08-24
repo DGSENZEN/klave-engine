@@ -41,6 +41,13 @@ class Family(StrEnum):
     eje = "eje"
     interseccion_ejes = "interseccion_ejes"
     referencia_detalle = "referencia_detalle"
+    # Instalaciones: el mueble o la salida como pieza, y la red como
+    # metros de un sistema. Una familia por disciplina sería demasiado
+    # gruesa para presupuestar y demasiado fina para leer de un vistazo;
+    # la disciplina va en las propiedades de cada detección.
+    mueble = "mueble"
+    salida = "salida"
+    corrida = "corrida"
 
 
 class FamilyInfo(NamedTuple):
@@ -67,6 +74,9 @@ FAMILY_INFO: dict[Family, FamilyInfo] = {
     Family.eje: FamilyInfo("EJE", "Eje", "Ejes"),
     Family.interseccion_ejes: FamilyInfo("INT", "Intersección de ejes", "Intersecciones"),
     Family.referencia_detalle: FamilyInfo("REF", "Referencia a detalle", "Referencias"),
+    Family.mueble: FamilyInfo("MUE", "Mueble o equipo", "Muebles y equipos"),
+    Family.salida: FamilyInfo("SAL", "Salida", "Salidas"),
+    Family.corrida: FamilyInfo("COR", "Corrida de instalación", "Corridas"),
 }
 
 # Human phrasing of each detector method, for descriptions.
@@ -82,12 +92,21 @@ _METHOD_PHRASES: dict[str, str] = {
     "grid_line_axis_aligned_long_line": "línea larga alineada a la retícula",
     "grid_intersection_of_grid_lines": "cruce de ejes de trazo",
     "detail_reference_regex_manifest_lookup": "referencia de detalle ligada a hoja del proyecto",
+    "block_symbol": "símbolo insertado reconocido por su nombre de bloque y su capa",
+    "layer_run": "trazo continuo sobre una capa con nombre de sistema",
 }
 
 # Detection types whose label is text read from the plano (a real mark).
 _TEXT_MARK_TYPES = frozenset(
     {DetectionType.column_tag, DetectionType.beam_tag, DetectionType.detail_reference,
      DetectionType.pile}
+)
+
+# Piezas de la red, no muebles: lo que se prepara antes de que llegue el
+# mueble, o lo que forma parte de la instalación misma.
+_SALIDAS = frozenset(
+    {"salida_sanitaria", "contacto", "apagador", "luminaria", "salida_especial",
+     "coladera", "bajada", "valvula", "registro", "difusor", "compuerta"}
 )
 
 _AXIS_ES = {"horizontal": "horizontal", "vertical": "vertical"}
@@ -115,6 +134,16 @@ def classify_family(detection: Detection) -> Family:
         return Family.local
     if dtype == DetectionType.terrain:
         return Family.terreno
+    if dtype == DetectionType.pipe_run:
+        return Family.corrida
+    if dtype == DetectionType.fixture:
+        # Un W.C. y un contacto no se presupuestan igual: el primero es un
+        # mueble que se instala, el segundo una salida que se prepara.
+        return (
+            Family.salida
+            if detection.properties.get("fixture_family") in _SALIDAS
+            else Family.mueble
+        )
     if dtype == DetectionType.footing:
         return Family.zapata
     if dtype == DetectionType.slab_region:

@@ -21,6 +21,9 @@ from pathlib import Path
 from klave_engine.common.logging import get_logger, log_stage
 from klave_engine.costing.catalog import build_default_catalog
 from klave_engine.costing.instalaciones import (
+    CODIGOS_CON_REGLA as INSTALACIONES_CON_REGLA,
+)
+from klave_engine.costing.instalaciones import (
     CONCEPTOS_STORE as INSTALACIONES_CONCEPTS,
 )
 from klave_engine.costing.insumos import APU_TEMPLATES, RESOURCES
@@ -544,6 +547,21 @@ class CatalogStore:
                 conn.execute(
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '16') "
                     "ON CONFLICT(key) DO UPDATE SET value = '16'"
+                )
+            if version_row is None or int(version_row["value"]) < 17:
+                # Los conceptos de instalaciones dejaron de ser manuales: los
+                # detectores de muebles y corridas los cuantifican solos.
+                # Sólo se atan los que el motor sabe leer; el resto sigue
+                # llenándose por asignación del levantamiento.
+                self._sync_builtin_concepts(conn, INSTALACIONES_CON_REGLA)
+                for code in INSTALACIONES_CON_REGLA:
+                    conn.execute(
+                        "UPDATE concepts SET rule_key = ? WHERE code = ? AND rule_key IS NULL",
+                        (code, code),
+                    )
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '17') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '17'"
                 )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.

@@ -292,12 +292,30 @@ def _segment_by_frames(
     contains it (or the nearest frame when it sits on its border). What lies
     outside every frame — stray xrefs, blocks parked beside the sheets — is
     no sheet's content and is kept apart, excluded from quantities."""
-    usable = [f for f in frames if f.kind in ("plan", "excluded")]
-    if len(usable) < 2 or not any(f.kind == "plan" for f in usable):
+    def es_planta(frame: SheetFrame) -> bool:
+        """Un marco cuenta como planta si su cajetín lo dice, o si está en una
+        hoja de instalaciones y nada dijo que fuera otra cosa.
+
+        En los planos de instalaciones el cajetín rara vez repite «PLANTA»: la
+        clave de la hoja (HID-01, SAN-04, IAA-03) ya dice de qué es, y dentro
+        del marco está la planta de esa instalación. Tratarlo como excluido
+        afirma que es un detalle o un cuadro, y entonces sus salidas y sus
+        metros desaparecen del presupuesto sin que nadie lo note. Un marco que
+        SÍ dice «DETALLE» o «CORTE» sigue excluido, aquí y en cualquier hoja."""
+        if frame.kind == "plan":
+            return True
+        return (
+            frame.kind == "unknown"
+            and bool(frame.source_file)
+            and not reads_as_structure(frame.source_file)
+        )
+
+    usable = [f for f in frames if f.kind in ("plan", "excluded") or es_planta(f)]
+    if len(usable) < 2 or not any(es_planta(f) for f in usable):
         return None
     regions: dict[str, ViewRegion] = {}
     for frame in frames:
-        kind = ViewKind.plan if frame.kind == "plan" else ViewKind.excluded
+        kind = ViewKind.plan if es_planta(frame) else ViewKind.excluded
         regions[frame.frame_id] = ViewRegion(
             view_id=frame.frame_id,
             title=f"{frame.code} · {frame.title}".strip(" ·") or frame.code,

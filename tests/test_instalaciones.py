@@ -4,6 +4,7 @@ está asignado ni lo que no es de su disciplina."""
 from klave_engine.costing.catalog import build_default_catalog
 from klave_engine.costing.instalaciones import (
     CODIGOS,
+    CODIGOS_CON_REGLA,
     conceptos_de_instalaciones,
     sugerir_mapeos,
 )
@@ -127,15 +128,28 @@ def test_sin_levantamiento_no_hay_nada_que_proponer():
     assert sugerir_mapeos({}) == []
 
 
-def test_los_conceptos_entran_al_catalogo_sin_regla_y_sin_matriz():
+def test_los_conceptos_entran_al_catalogo_sin_matriz():
     """El plano sostiene la cantidad; el precio no lo sostiene nadie todavía,
-    y por eso el concepto no trae matriz."""
+    y por eso ningún concepto de instalaciones trae matriz."""
     conceptos = conceptos_de_instalaciones()
     assert {c.code for c in conceptos} == set(CODIGOS)
-    assert all(c.rule is None for c in conceptos)
     assert all(
         any("Adopta un P.U." in a for a in c.assumptions) for c in conceptos
     )
+
+
+def test_los_que_el_motor_sabe_leer_traen_regla_y_los_demas_no():
+    """Un concepto con regla se cuantifica solo del plano; uno sin regla espera
+    una asignación del levantamiento. La diferencia se dice en la línea."""
+    por_codigo = {c.code: c for c in conceptos_de_instalaciones()}
+    assert set(CODIGOS_CON_REGLA) <= set(por_codigo)
+    for code in CODIGOS_CON_REGLA:
+        assert por_codigo[code].rule is not None
+        assert any("leída del plano" in a for a in por_codigo[code].assumptions)
+    # HID-002 (agua caliente por mueble) es decisión de proyecto, no algo que
+    # se derive del mueble: se queda sin regla a propósito.
+    assert "HID-002" not in CODIGOS_CON_REGLA
+    assert por_codigo["HID-002"].rule is None
 
 
 def test_el_catalogo_por_omision_ya_los_incluye():

@@ -29,6 +29,11 @@ class DetectionType(StrEnum):
     room = "room"  # local: a bounded face of the architectural wall network
     terrain = "terrain"  # terreno natural: curvas y puntos de nivel of one file
     stair = "stair"  # escalera/rampa: the ESCALERA text on its tread pattern
+    # Instalaciones. Un mueble o salida es un bloque insertado en una capa de
+    # su disciplina (un W.C., un contacto, un difusor); una corrida es el
+    # trazo continuo de una tubería, un ducto o una canalización sobre su capa.
+    fixture = "fixture"
+    pipe_run = "pipe_run"
 
 
 class Detection(BaseModel):

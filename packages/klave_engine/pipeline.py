@@ -309,33 +309,29 @@ def run_full_pipeline(
     sheet_names.update({src.path: Path(src.path).name for src in manifest.source_files})
     inventory = build_inventory(result.entities, units, frames, sheet_names=sheet_names)
     write_json(processed / "inventory.json", inventory)
-    # Structural detectors read structural and architectural sheets; an
-    # instalaciones sheet is a levantamiento, and its circles and boxes are
-    # salidas and equipment, not zapatas.
+    # Cada hoja se lee con los detectores que le tocan. Los estructurales sólo
+    # en hojas de estructura y arquitectura: en una de instalaciones sus
+    # círculos y cajas son salidas y equipos, no zapatas. Los de instalaciones
+    # corren en todas, porque un plano arquitectónico también trae contactos y
+    # salidas — y ahí el filtro de capa y de bloque es el que decide.
     skipped_sheets = sorted(
         {
             sheet_names.get(source, source) for source in {e.source_file for e in result.entities}
             if not reads_as_structure(sheet_names.get(source, source))
         }
     )
-    structural_entities = [
-        e for e in result.entities
-        if reads_as_structure(sheet_names.get(e.source_file, e.source_file))
-    ]
     for sheet in skipped_sheets:
         result.warnings.append(
-            f"Hoja «{sheet}» leída como levantamiento (instalaciones/acabados): "
-            "sin detección estructural."
+            f"Hoja «{sheet}» leída como instalaciones: se detectan sus muebles, "
+            "salidas y corridas, no elementos estructurales."
         )
     detector_ids = IdGenerator("det")
-    structural_files = {e.source_file for e in structural_entities}
     for source, file_entities in by_file.items():
-        if source not in structural_files:
-            continue
         file_frames = [f for f in frames if f.source_file == source]
         detector_outputs = run_detectors(
             file_entities, SpatialIndex(file_entities), manifest, detector_config,
-            frames=file_frames, ids=detector_ids,
+            frames=file_frames, ids=detector_ids, units=units,
+            structural=reads_as_structure(sheet_names.get(source, source)),
         )
         for output in detector_outputs:
             result.warnings.extend(output.warnings)

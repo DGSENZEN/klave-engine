@@ -31,18 +31,31 @@ def apply_inventory(
     apus: dict[str, UnitPriceAnalysis],
     inventory: dict | None,
     mappings: list[dict] | None,
+    detectados: set[tuple[str, str]] | None = None,
 ) -> int:
     """Add (or extend) presupuesto lines from mapped symbols and layers.
-    Returns how many mappings produced a quantity."""
+    Returns how many mappings produced a quantity.
+
+    ``detectados`` son las capas y bloques que los detectores ya contaron como
+    elementos. Una asignación sobre una de ellas se salta: el mismo metro
+    medido dos veces no es más metro, es un presupuesto inflado."""
     if not inventory or not mappings:
         return 0
     concepts = {concept.code: concept for concept in catalog}
     lines = {line.concept_code: line for line in boq.lines}
+    ya_medido = detectados or set()
     applied = 0
     unit_label = inventory.get("unit")
     for mapping in mappings:
         kind = mapping.get("kind")
         pattern = str(mapping.get("pattern") or "").strip().lower()
+        if (str(kind), pattern) in ya_medido:
+            boq.warnings.append(
+                f"Levantamiento: «{mapping.get('pattern')}» ya la mide el motor como "
+                "elemento detectado, con su evidencia y su vista; la asignación manual "
+                "se omite para no contarla dos veces. Quítala si prefieres el conteo."
+            )
+            continue
         code = str(mapping.get("concept_code") or "")
         factor = float(mapping.get("factor") or 1.0)
         concept = concepts.get(code)

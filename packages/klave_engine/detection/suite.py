@@ -16,12 +16,17 @@ from klave_engine.detection.detail_reference_detector import (
     DetailReferenceDetectorConfig,
     detect_detail_references,
 )
+from klave_engine.detection.fixture_detector import (
+    FixtureDetectorConfig,
+    detect_fixtures,
+)
 from klave_engine.detection.footing_detector import FootingDetectorConfig, detect_footings
 from klave_engine.detection.frames import SheetFrame, frame_boxes
 from klave_engine.detection.grid_detector import GridDetectorConfig, detect_grid
 from klave_engine.detection.pile_detector import PileDetectorConfig, detect_piles
 from klave_engine.detection.results import DetectorOutput
 from klave_engine.detection.rooms import RoomDetectorConfig, detect_rooms
+from klave_engine.detection.run_detector import RunDetectorConfig, detect_runs
 from klave_engine.detection.slab_detector import SlabDetectorConfig, detect_slabs
 from klave_engine.detection.slab_panels import SlabPanelConfig, detect_slab_panels
 from klave_engine.detection.terrain import TerrainDetectorConfig, detect_terrain
@@ -49,6 +54,10 @@ class DetectorSuiteConfig(BaseModel):
     wall: WallDetectorConfig = Field(default_factory=WallDetectorConfig)
     room: RoomDetectorConfig = Field(default_factory=RoomDetectorConfig)
     terrain: TerrainDetectorConfig = Field(default_factory=TerrainDetectorConfig)
+    # Instalaciones: los símbolos y los trazos de hidráulica, sanitaria,
+    # eléctrica, gas y aire, que hasta ahora sólo se contaban.
+    fixture: FixtureDetectorConfig = Field(default_factory=FixtureDetectorConfig)
+    run: RunDetectorConfig = Field(default_factory=RunDetectorConfig)
     detail_reference: DetailReferenceDetectorConfig = Field(
         default_factory=DetailReferenceDetectorConfig
     )
@@ -138,9 +147,22 @@ def run_detectors(
     config: DetectorSuiteConfig,
     frames: list[SheetFrame] | None = None,
     ids: IdGenerator | None = None,
+    units: DrawingUnits | None = None,
+    structural: bool = True,
 ) -> list[DetectorOutput]:
-    """Run every detector in dependency order (grid → columns → footings …)."""
+    """Run every detector in dependency order (grid → columns → footings …).
+
+    ``structural=False`` for a sheet of instalaciones or acabados: sus círculos
+    y cajas son salidas y equipos, no zapatas, y los detectores estructurales
+    leerían obra donde no la hay. Los de instalaciones sí corren en las dos —
+    un plano arquitectónico también trae contactos y salidas."""
     ids = ids or IdGenerator("det")
+    meters = units.to_meters() if units is not None else None
+    if not structural:
+        return [
+            detect_fixtures(entities, config.fixture, ids, meters),
+            detect_runs(entities, config.run, ids, meters, frame_boxes(frames or [])),
+        ]
     grid = detect_grid(entities, index, config.grid, config.text_patterns, ids)
     columns = detect_columns(entities, index, grid, config.column, config.text_patterns, ids)
     footings = detect_footings(entities, index, columns, config.footing, ids)
@@ -156,8 +178,21 @@ def run_detectors(
     details = detect_detail_references(
         entities, manifest, config.detail_reference, config.text_patterns, ids
     )
+    # Instalaciones, al final: un bloque que ya se llevó un detector
+    # estructural no puede ser además un mueble, así que se les pasa lo ya
+    # reclamado. Sin unidades confiables las corridas no se emiten — unos
+    # metros que en realidad son milímetros costarían mil veces de más.
+    claimed = {
+        entity_id
+        for output in (grid, columns, footings, beams, slabs, panels, walls, piles, rooms)
+        for detection in output.detections
+        for entity_id in detection.source_entities
+    }
+    fixtures = detect_fixtures(entities, config.fixture, ids, meters, claimed)
+    runs = detect_runs(entities, config.run, ids, meters, frame_boxes(frames or []))
     return [
-        grid, columns, footings, beams, slabs, panels, walls, piles, rooms, terrain, details,
+        grid, columns, footings, beams, slabs, panels, walls, piles, rooms, terrain,
+        details, fixtures, runs,
     ]
 
 

@@ -20,6 +20,7 @@ from klave_engine.costing.derivadas import aplicar_derivadas
 from klave_engine.costing.financial import build_financial_plan
 from klave_engine.costing.formwork import apply_formwork, compute_formwork
 from klave_engine.costing.indicadores import compute_indicators
+from klave_engine.costing.instalaciones import ya_detectado
 from klave_engine.costing.integration import integrate_costs
 from klave_engine.costing.levantamiento import apply_inventory
 from klave_engine.costing.models import (
@@ -264,8 +265,11 @@ def generate_cost_report(
     apply_piles(boq, catalog, apus, detections, schedule_specs)
     # Relleno y acarreo: derived from the excavation and the buried concrete.
     apply_cimentacion_earthmoving(boq, catalog, apus, assumptions)
-    # Levantamiento: symbols and layers the taller mapped to concepts.
-    apply_inventory(boq, catalog, apus, inventory, inventory_mappings)
+    # Levantamiento: symbols and layers the taller mapped to concepts. Lo que
+    # los detectores ya midieron no se vuelve a sumar por asignación.
+    apply_inventory(
+        boq, catalog, apus, inventory, inventory_mappings, ya_detectado(detections)
+    )
     # Derivadas: lo que se sigue de una cantidad ya medida (aplanado sobre
     # muro, pintura sobre aplanado). Antes de los paramétricos: una deducción
     # aritmética sobre una medición gana a una apuesta desde la historia.

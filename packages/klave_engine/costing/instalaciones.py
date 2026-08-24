@@ -35,7 +35,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from klave_engine.costing.models import Concept
+from klave_engine.costing.models import Concept, QuantityKind, QuantityRule
+from klave_engine.detection.results import DetectionType
 
 # Las partidas como se llaman en un presupuesto mexicano, no como se llaman
 # en el árbol de capas de un DWG.
@@ -101,9 +102,66 @@ CONCEPTOS_STORE: list[tuple[str, str, str, str, float, int, list[tuple[str, floa
 
 CODIGOS: tuple[str, ...] = tuple(c[0] for c in _CONCEPTOS)
 
+# Qué detección alimenta a qué concepto. Los muebles y salidas se cuentan por
+# pieza; las corridas se miden por metro de su sistema. Nada de esto se
+# adivina: la familia la puso el detector al reconocer el nombre del bloque o
+# de la capa, y aquí sólo se dice a qué concepto corresponde.
+_MUEBLES_POR_CONCEPTO: dict[str, tuple[str, ...]] = {
+    # Cada mueble lleva su salida de agua fría; la de agua caliente es una
+    # decisión de proyecto que se lee de la red, no del mueble, y por eso
+    # HID-002 no se cuantifica sola.
+    "HID-001": ("wc", "lavabo", "regadera", "fregadero", "mingitorio", "tina", "lavadero"),
+    "SAN-001": ("salida_sanitaria", "coladera"),
+    "SAN-004": ("registro",),
+    "ELE-001": ("contacto",),
+    "ELE-002": ("apagador", "luminaria"),
+    "AIR-004": ("difusor",),
+}
+
+_CORRIDAS_POR_CONCEPTO: dict[str, tuple[str, ...]] = {
+    "HID-003": ("agua_fria",),
+    "HID-004": ("agua_caliente",),
+    "HID-005": ("retorno",),
+    "SAN-002": ("sanitaria",),
+    "SAN-003": ("pluvial",),
+    "GAS-001": ("gas",),
+    "AIR-001": ("ducto",),
+    "AIR-002": ("ducto_flexible",),
+    "AIR-003": ("refrigerante",),
+    "ELE-003": ("conduit",),
+}
+
+
+def _regla(code: str) -> QuantityRule | None:
+    """La regla de cantidad del concepto, o None si sólo se llena a mano."""
+    familias = _MUEBLES_POR_CONCEPTO.get(code)
+    if familias:
+        return QuantityRule(
+            detection_type=DetectionType.fixture,
+            kind=QuantityKind.COUNT,
+            property_filter={"fixture_family": list(familias)},
+        )
+    familias = _CORRIDAS_POR_CONCEPTO.get(code)
+    if familias:
+        return QuantityRule(
+            detection_type=DetectionType.pipe_run,
+            kind=QuantityKind.LENGTH,
+            source_property="estimated_length",
+            property_filter={"run_family": list(familias)},
+        )
+    return None
+
+
 _SIN_PRECIO = (
     "Sin matriz: el plano sostiene la cantidad, no el precio. "
     "Adopta un P.U. de tu catálogo o de una publicación."
+)
+
+
+# Los que el motor sabe leer del plano. El resto del catálogo de
+# instalaciones sigue llenándose por asignación desde el levantamiento.
+CODIGOS_CON_REGLA: tuple[str, ...] = tuple(
+    code for code in CODIGOS if code in _MUEBLES_POR_CONCEPTO or code in _CORRIDAS_POR_CONCEPTO
 )
 
 
@@ -115,12 +173,17 @@ def conceptos_de_instalaciones() -> list[Concept]:
             description=description,
             unit=unit,
             phase=phase,
-            rule=None,
+            rule=_regla(code),
             production_rate_per_day=rate,
             sequence_order=400 + order,
             assumptions=[
-                "Cantidad por levantamiento: capas y bloques que alguien asignó "
-                "a este concepto",
+                (
+                    "Cantidad leída del plano: símbolos y trazos que el motor "
+                    "reconoció en las hojas de instalaciones"
+                    if _regla(code) is not None
+                    else "Cantidad por levantamiento: capas y bloques que alguien "
+                    "asignó a este concepto"
+                ),
                 _SIN_PRECIO,
             ],
         )
@@ -255,6 +318,23 @@ class Sugerencia:
     hojas: list[str] = field(default_factory=list)
 
 
+def ya_detectado(detections: list) -> set[tuple[str, str]]:
+    """Las capas y bloques que los detectores ya contaron, como (kind, nombre).
+
+    Una corrida que el motor midió y una asignación del taller sobre la misma
+    capa son el mismo metro contado dos veces. El detector manda: midió del
+    archivo, con evidencia y con vista. La asignación se salta y se dice."""
+    claves: set[tuple[str, str]] = set()
+    for d in detections:
+        props = getattr(d, "properties", None) or {}
+        tipo = str(getattr(d, "detection_type", ""))
+        if tipo.endswith("pipe_run") and props.get("layer"):
+            claves.add(("layer", _normaliza(str(props["layer"])).lower()))
+        elif tipo.endswith("fixture") and props.get("block_name"):
+            claves.add(("block", _normaliza(str(props["block_name"])).lower()))
+    return claves
+
+
 def _normaliza(texto: str) -> str:
     return re.sub(r"\s+", " ", (texto or "").strip())
 
@@ -263,18 +343,20 @@ def sugerir_mapeos(
     inventory: dict | None,
     existentes: list[dict] | None = None,
     codigos_catalogo: set[str] | None = None,
+    detectados: set[tuple[str, str]] | None = None,
 ) -> list[Sugerencia]:
     """Capas y bloques del levantamiento que la biblioteca reconoce.
 
     Devuelve propuestas ordenadas por cantidad — lo más grande primero, que es
-    lo que más dinero mueve. Nunca incluye algo que ya esté asignado: una
-    asignación del taller manda sobre la biblioteca, siempre."""
+    lo que más dinero mueve. No incluye lo que ya está asignado (la asignación
+    del taller manda sobre la biblioteca) ni lo que los detectores ya contaron
+    (proponerlo sería invitar a contar el mismo metro dos veces)."""
     if not inventory:
         return []
     ya = {
         (str(m.get("kind") or ""), _normaliza(str(m.get("pattern") or "")).lower())
         for m in (existentes or [])
-    }
+    } | (detectados or set())
     unidades = {code: unit for code, _d, unit, _f, _r, _o in _CONCEPTOS}
     encontrado: dict[tuple[str, str, str], Sugerencia] = {}
 
