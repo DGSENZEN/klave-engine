@@ -44,19 +44,38 @@ def test_an_explicit_choice_never_falls_back(monkeypatch):
 
 def test_gemini_reader_parses_the_structured_response(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+    from klave_engine.llm.reader import _FamilyValue, _GeminiSheetRead
 
     class FakeUsage:
         prompt_token_count = 1234
         candidates_token_count = 88
 
     class FakeResponse:
-        parsed = SheetRead(sheet_code="ES-100", title="PLANTA BAJA")
+        # The wire model: the Gemini Developer API rejects dict fields
+        # (additionalProperties), so fc/cover travel as keyed lists.
+        parsed = _GeminiSheetRead(
+            sheet_code="ES-100",
+            title="PLANTA BAJA",
+            concrete_fc=[_FamilyValue(family="losa", value=250)],
+        )
         usage_metadata = FakeUsage()
 
     class FakeModels:
         def generate_content(self, *, model, contents, config):
             assert model == GEMINI_MODEL
-            assert config.response_schema is SheetRead
+            assert config.response_schema is _GeminiSheetRead
+            def keys_of(node):
+                if isinstance(node, dict):
+                    yield from node
+                    for child in node.values():
+                        yield from keys_of(child)
+                elif isinstance(node, list):
+                    for child in node:
+                        yield from keys_of(child)
+
+            assert "additionalProperties" not in set(
+                keys_of(_GeminiSheetRead.model_json_schema())
+            )
             return FakeResponse()
 
     class FakeClient:
@@ -64,5 +83,7 @@ def test_gemini_reader_parses_the_structured_response(monkeypatch):
 
     read = gemini_reader(client=FakeClient())
     parsed, usage = read(b"\x89PNG fake", "Hoja ES-100")
+    assert isinstance(parsed, SheetRead)
     assert parsed.sheet_code == "ES-100"
+    assert parsed.concrete_fc == {"losa": 250}
     assert usage == {"input_tokens": 1234, "output_tokens": 88}

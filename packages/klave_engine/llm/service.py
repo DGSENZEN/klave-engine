@@ -20,7 +20,13 @@ from pydantic import BaseModel, Field
 from klave_engine.common.io import read_json, write_json
 from klave_engine.detection.frames import SheetFrame
 from klave_engine.dxf.entities import NormalizedEntity
-from klave_engine.llm.reader import Reader, SheetReading, read_frames
+from klave_engine.llm.reader import (
+    MODEL,
+    Reader,
+    SheetReading,
+    failed_reading,
+    read_frames,
+)
 from klave_engine.llm.render import render_region
 
 AI_READS_FILENAME = "ai_reads.json"
@@ -116,26 +122,58 @@ def save_ai_reads(control_dir: Path, reads: AiReads) -> None:
     write_json(control_dir / AI_READS_FILENAME, reads)
 
 
+def failed_codes(reads: AiReads) -> list[str]:
+    """The frames whose reading is a recorded failure — exactly what a retry
+    should ask for again, leaving every sheet already read alone."""
+    return [r.frame_code for r in reads.readings if failed_reading(r)]
+
+
 def run_ai_reading(
     artifact_dir: Path,
     control_dir: Path,
     reader: Reader,
     run_id: str | None = None,
     should_stop: Callable[[], bool] | None = None,
+    model: str = MODEL,
+    only_failed: bool = False,
+    max_attempts: int = 3,
 ) -> AiReads:
     """Render and read every frame; persist after each sheet so the page can
-    show progress, and stop between sheets when asked (keeping what was read)."""
+    show progress, and stop between sheets when asked (keeping what was read).
+
+    ``only_failed`` resumes instead of restarting: the sheets already read
+    keep their readings and their token cost, and just the failures are asked
+    for again. A saturated provider is retried without paying twice for the
+    work it already did."""
     now = datetime.now(UTC).isoformat()
-    reads = AiReads(status="running", started_at=now, run_id=run_id)
+    kept: list[SheetReading] = []
+    if only_failed:
+        previous = load_ai_reads(control_dir)
+        kept = [r for r in previous.readings if not failed_reading(r)]
+    reads = AiReads(
+        status="running",
+        started_at=now,
+        run_id=run_id,
+        readings=list(kept),
+        input_tokens=sum(r.input_tokens for r in kept),
+        output_tokens=sum(r.output_tokens for r in kept),
+    )
     save_ai_reads(control_dir, reads)
     try:
         renders = render_all_frames(artifact_dir, control_dir)
         reads.total_frames = len(renders)
+        already = {r.frame_code for r in kept}
+        pending = [r for r in renders if r[0] not in already]
         save_ai_reads(control_dir, reads)
         if not renders:
             reads.status = "done"
             reads.notes.append(
                 "El dibujo no tiene marcos de hoja; no hay imágenes por hoja que leer."
+            )
+        elif only_failed and not pending:
+            reads.status = "done"
+            reads.notes.append(
+                "Todas las hojas ya tienen lectura; no había nada que reintentar."
             )
         else:
 
@@ -145,7 +183,13 @@ def run_ai_reading(
                 reads.output_tokens += reading.output_tokens
                 save_ai_reads(control_dir, reads)
 
-            read_frames(renders, reader, on_reading=on_reading, should_stop=should_stop)
+            read_frames(
+                pending, reader, on_reading=on_reading, should_stop=should_stop,
+                model=model, max_attempts=max_attempts,
+            )
+            # Readings arrive in retry order; the page reads better in sheet order.
+            position = {code: index for index, (code, *_rest) in enumerate(renders)}
+            reads.readings.sort(key=lambda r: position.get(r.frame_code, len(renders)))
             cancelled = should_stop is not None and should_stop()
             partial = len(reads.readings) < len(renders)
             reads.status = "cancelled" if cancelled and partial else "done"
@@ -154,12 +198,18 @@ def run_ai_reading(
                     f"Lectura cancelada: {len(reads.readings)} de {len(renders)} hojas leídas "
                     "se conservan."
                 )
-            failed = [
-                r.frame_code for r in reads.readings
-                if any(u.startswith("No se pudo leer") for u in r.read.uncertainties)
-            ]
+            if only_failed:
+                reads.notes.append(
+                    f"Reintento de {len(pending)} hoja(s) sin lectura; las "
+                    f"{len(kept)} ya leídas se conservaron sin volver a consultarlas."
+                )
+            failed = failed_codes(reads)
             if failed:
-                reads.notes.append(f"Hojas sin lectura: {', '.join(failed[:8])}.")
+                reads.notes.append(
+                    f"Hojas sin lectura ({len(failed)}): {', '.join(failed[:8])}"
+                    + ("…" if len(failed) > 8 else "")
+                    + ". Puedes reintentar solo esas."
+                )
             reads.notes.append(
                 "Lo leído por la IA es una sugerencia con procedencia; se aplica por debajo "
                 "de cuadros, detalles y notas leídos por reglas, y solo al reprocesar."

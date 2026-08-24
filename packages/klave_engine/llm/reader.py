@@ -20,6 +20,7 @@ configured rather than failing.
 from __future__ import annotations
 
 import base64
+import time
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -28,6 +29,27 @@ from pydantic import BaseModel, Field
 ANTHROPIC_MODEL = "claude-opus-5"
 GEMINI_MODEL = "gemini-2.5-pro"
 MODEL = ANTHROPIC_MODEL  # backwards-compatible alias
+
+# How a failed sheet reads in its own uncertainties: the marker that lets a
+# later run find exactly which sheets are worth asking for again.
+FAILED_PREFIX = "No se pudo leer la hoja"
+RETRY_BASE_SECONDS = 2.0
+RETRY_FACTOR = 3.0
+
+# Provider errors that mean "busy, ask again", not "wrong, stop asking".
+_TRANSIENT_MARKERS = (
+    "503", "429", "unavailable", "resource_exhausted", "resource exhausted",
+    "overloaded", "high demand", "rate limit", "too many requests", "quota",
+    "timeout", "timed out", "deadline", "temporarily", "internal error",
+    "connection reset", "connection aborted",
+)
+
+
+def is_transient(error: BaseException | str) -> bool:
+    """Whether asking again could plausibly work. An unknown model, a bad key
+    or a rejected schema never improves by repetition — those fail once."""
+    return any(marker in str(error).lower() for marker in _TRANSIENT_MARKERS)
+
 
 SYSTEM_PROMPT = """Eres un ingeniero de costos mexicano leyendo una hoja de un plano de \
 construcción (imagen renderizada desde el DWG). Lee únicamente lo que está escrito o \
@@ -120,6 +142,11 @@ class SheetReading(BaseModel):
 Reader = Callable[[bytes, str], tuple[SheetRead, dict[str, int]]]
 
 
+def failed_reading(reading: SheetReading) -> bool:
+    """Whether this sheet's reading is a recorded failure, not a reading."""
+    return any(u.startswith(FAILED_PREFIX) for u in reading.read.uncertainties)
+
+
 def _anthropic_credentials() -> bool:
     import os
 
@@ -177,6 +204,42 @@ def configured_reader(provider: str | None = None, model: str | None = None) -> 
     raise RuntimeError("La lectura con IA no está configurada (sin credenciales).")
 
 
+class _FamilyValue(BaseModel):
+    family: str
+    value: float
+
+
+class _GeminiSheetRead(BaseModel):
+    """SheetRead's wire shape for the Gemini Developer API, which rejects
+    open-ended dict fields in a response schema. The two dicts travel as
+    keyed lists here and convert back on arrival."""
+
+    sheet_code: str | None = None
+    title: str | None = None
+    level: str | None = None
+    scale: str | None = None
+    concrete_fc: list[_FamilyValue] = Field(
+        default_factory=list,
+        description="f'c en kg/cm² por familia: family cimentacion|losa|castillo|…, value 250",
+    )
+    steel_fy: int | None = None
+    cover_cm: list[_FamilyValue] = Field(
+        default_factory=list, description="recubrimientos en cm por familia"
+    )
+    desplante_m: float | None = None
+    slab_system: str | None = None
+    elements: list[ElementRead] = Field(default_factory=list)
+    conteo: list[FamilyCount] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    uncertainties: list[str] = Field(default_factory=list)
+
+    def to_sheet_read(self) -> SheetRead:
+        data = self.model_dump()
+        data["concrete_fc"] = {e.family: int(e.value) for e in self.concrete_fc if e.family}
+        data["cover_cm"] = {e.family: e.value for e in self.cover_cm if e.family}
+        return SheetRead.model_validate(data)
+
+
 def gemini_reader(client: Any | None = None, model: str = GEMINI_MODEL) -> Reader:
     """The Gemini reader: same contract, structured output via response_schema."""
     from google import genai
@@ -197,7 +260,7 @@ def gemini_reader(client: Any | None = None, model: str = GEMINI_MODEL) -> Reade
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
                 response_mime_type="application/json",
-                response_schema=SheetRead,
+                response_schema=_GeminiSheetRead,
             ),
         )
         parsed = response.parsed
@@ -206,15 +269,15 @@ def gemini_reader(client: Any | None = None, model: str = GEMINI_MODEL) -> Reade
             text = getattr(response, "text", None)
             if not text:
                 raise ValueError("el modelo no devolvió una lectura estructurada")
-            parsed = SheetRead.model_validate_json(text)
-        if not isinstance(parsed, SheetRead):
-            parsed = SheetRead.model_validate(parsed)
+            parsed = _GeminiSheetRead.model_validate_json(text)
+        if not isinstance(parsed, _GeminiSheetRead):
+            parsed = _GeminiSheetRead.model_validate(parsed)
         meta = getattr(response, "usage_metadata", None)
         usage = {
             "input_tokens": int(getattr(meta, "prompt_token_count", 0) or 0),
             "output_tokens": int(getattr(meta, "candidates_token_count", 0) or 0),
         }
-        return parsed, usage
+        return parsed.to_sheet_read(), usage
 
     return read
 
@@ -286,22 +349,45 @@ def read_frames(
     reader: Reader,
     on_reading: Callable[[SheetReading], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    model: str = MODEL,
+    max_attempts: int = 3,
+    sleep: Callable[[float], None] = time.sleep,
+    cooldown_seconds: float = 5.0,
 ) -> list[SheetReading]:
     """Read every (code, title, kind, png) with the reader; a failure on one
     sheet is recorded as an uncertainty, not a crash of the batch.
     ``on_reading`` hears each sheet as it lands (progress); ``should_stop``
-    is asked before each sheet so a cancel keeps what was already read."""
+    is asked before each sheet so a cancel keeps what was already read.
+
+    A *transient* provider error (busy, rate-limited) is retried with growing
+    pauses, and after a sheet exhausts its attempts the batch waits once more
+    before the next one — asking a saturated model faster only makes it worse.
+    A permanent error (unknown model, bad key, rejected schema) fails at the
+    first try: repeating it wastes the quota that the other sheets need."""
     readings: list[SheetReading] = []
     for code, title, kind, png in renders:
         if should_stop is not None and should_stop():
             break
-        try:
-            read, usage = reader(png, frame_prompt(code, title, kind))
-        except Exception as exc:  # noqa: BLE001 — one bad sheet must not sink the batch
-            read = SheetRead(uncertainties=[f"No se pudo leer la hoja: {exc}"[:200]])
+        prompt = frame_prompt(code, title, kind)
+        read: SheetRead | None = None
+        usage: dict[str, int] = {}
+        last_error: BaseException | None = None
+        for attempt in range(1, max(1, max_attempts) + 1):
+            try:
+                read, usage = reader(png, prompt)
+                break
+            except Exception as exc:  # noqa: BLE001 — one bad sheet must not sink the batch
+                last_error = exc
+                if attempt >= max_attempts or not is_transient(exc):
+                    break
+                sleep(min(RETRY_BASE_SECONDS * RETRY_FACTOR ** (attempt - 1), 30.0))
+        if read is None:
+            read = SheetRead(uncertainties=[f"{FAILED_PREFIX}: {last_error}"[:200]])
             usage = {}
+            if last_error is not None and is_transient(last_error):
+                sleep(cooldown_seconds)
         reading = SheetReading(
-            frame_code=code, frame_title=title, read=read,
+            frame_code=code, frame_title=title, model=model, read=read,
             input_tokens=int(usage.get("input_tokens", 0)),
             output_tokens=int(usage.get("output_tokens", 0)),
         )

@@ -15,6 +15,7 @@ from klave_engine.llm.coverage import coverage_flags
 from klave_engine.llm.reader import active_model, configured_reader, credentials_available
 from klave_engine.llm.service import (
     AiReads,
+    failed_codes,
     load_ai_reads,
     render_frame_png,
     run_ai_reading,
@@ -65,6 +66,9 @@ def get_ai_reads(
     payload["running"] = project_id in _RUNNING
     payload["model"] = active_model(settings.ai_provider, settings.ai_model) or ""
     payload["cobertura"] = _cobertura(store, project_id, payload.get("readings") or [])
+    # Which sheets a retry would ask for again: the page offers exactly those,
+    # so a saturated provider never costs the sheets that did come back.
+    payload["failed"] = failed_codes(reads)
     return payload
 
 
@@ -91,12 +95,16 @@ def _cobertura(store: ProjectStore, project_id: str, readings: list[dict]) -> li
 def start_ai_read(
     project_id: str,
     request: Request,
+    only_failed: bool = False,
     x_actor: Annotated[str | None, Header()] = None,
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
     """Render every frame and read it with the model, in the background.
-    Refuses honestly when no credentials are configured."""
+    Refuses honestly when no credentials are configured.
+
+    ``only_failed=true`` resumes: the sheets already read are kept as they
+    are and only the failures are asked for again."""
     rate_limit(request, "ai_read", max_attempts=10, window_seconds=3600.0)
     control_dir = _control_dir(store, project_id, settings)
     if not credentials_available(settings.ai_provider):
@@ -122,7 +130,8 @@ def start_ai_read(
             )
         _RUNNING.add(project_id)
         cancel = _CANCEL[project_id] = threading.Event()
-    save_ai_reads(control_dir, AiReads(status="running"))
+    if not only_failed:
+        save_ai_reads(control_dir, AiReads(status="running"))
     actor = clean_actor(x_actor)
 
     def job() -> None:
@@ -132,12 +141,18 @@ def start_ai_read(
                 configured_reader(settings.ai_provider, settings.ai_model),
                 run_id=artifact_dir.name,
                 should_stop=cancel.is_set,
+                model=active_model(settings.ai_provider, settings.ai_model) or "",
+                only_failed=only_failed,
             )
             BUS.publish(
                 "ai_read_finished",
                 project_id,
                 actor=actor,
-                data={"status": reads.status, "readings": len(reads.readings)},
+                data={
+                    "status": reads.status,
+                    "readings": len(reads.readings),
+                    "failed": len(failed_codes(reads)),
+                },
             )
         finally:
             with _LOCK:

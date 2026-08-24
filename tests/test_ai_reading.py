@@ -15,6 +15,7 @@ from klave_engine.llm.render import render_region
 from klave_engine.llm.service import (
     AiReads,
     ai_element_specs,
+    failed_codes,
     load_ai_reads,
     run_ai_reading,
 )
@@ -76,7 +77,8 @@ def test_ai_reading_job_persists_readings_with_provenance(tmp_path):
             {"input_tokens": 1500, "output_tokens": 300},
         )
 
-    reads = run_ai_reading(artifact, control, fake_reader, run_id="run_x")
+    # max_attempts=1: this test is about provenance, not the retry policy.
+    reads = run_ai_reading(artifact, control, fake_reader, run_id="run_x", max_attempts=1)
     assert reads.status == "done" and len(reads.readings) == 2
     assert (control / "renders" / "ES-100.png").exists()
     assert reads.input_tokens == 1500 and reads.run_id == "run_x"
@@ -84,7 +86,7 @@ def test_ai_reading_job_persists_readings_with_provenance(tmp_path):
     assert failed.read.uncertainties and "rate limited" in failed.read.uncertainties[0]
     assert any("ES-101" in n for n in reads.notes)
     assert load_ai_reads(control).status == "done"
-    assert len(seen) == 2 and "planta" in seen[0]
+    assert len(seen) == 2 and "planta" in seen[0]  # one call per sheet, no retries
     assert reads.total_frames == 2
 
 
@@ -133,3 +135,94 @@ def test_ai_specs_only_fill_what_the_rules_did_not_read():
     assert inventory.by_mark["K-1"].rebar == "4#3"  # the IA filled the missing armado
     assert inventory.by_mark["K-2"].section_cm == (20, 25)
     assert inventory.by_mark["K-2"].source == "ia"
+
+
+# ---------------------------------------------- retries and resume
+
+
+def _flaky_reader(fail_codes: set[str], calls: list[str], error: str):
+    """A reader that fails for the named sheets and reads the rest."""
+
+    def read(png: bytes, prompt: str):
+        code = prompt.split(" ")[1]
+        calls.append(code)
+        if code in fail_codes:
+            raise RuntimeError(error)
+        return SheetRead(sheet_code=code, title="OK"), {"input_tokens": 10, "output_tokens": 5}
+
+    return read
+
+
+def test_transient_errors_retry_with_backoff_permanent_ones_do_not():
+    slept: list[float] = []
+    calls: list[str] = []
+    renders = [("ES-100", "PLANTA", "plan", b"png")]
+
+    read_frames(
+        renders, _flaky_reader({"ES-100"}, calls, "503 UNAVAILABLE: high demand"),
+        max_attempts=3, sleep=slept.append, cooldown_seconds=7.0,
+    )
+    # Three tries, two backoffs between them, then one cool-down for the batch.
+    assert len(calls) == 3
+    assert slept == [2.0, 6.0, 7.0]
+
+    slept.clear()
+    calls.clear()
+    read_frames(
+        renders, _flaky_reader({"ES-100"}, calls, "404 NOT_FOUND: model missing"),
+        max_attempts=3, sleep=slept.append,
+    )
+    assert len(calls) == 1  # a wrong model never gets better by asking again
+    assert slept == []
+
+
+def test_a_sheet_that_recovers_on_the_second_try_is_a_normal_reading():
+    attempts = {"n": 0}
+
+    def read(png: bytes, prompt: str):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise RuntimeError("429 rate limit")
+        return SheetRead(sheet_code="ES-100"), {"input_tokens": 3, "output_tokens": 2}
+
+    readings = read_frames(
+        [("ES-100", "PLANTA", "plan", b"png")], read, max_attempts=2, sleep=lambda _s: None
+    )
+    assert readings[0].read.uncertainties == []
+    assert readings[0].input_tokens == 3
+
+
+def test_retry_reads_only_the_failed_sheets_and_keeps_the_rest(tmp_path):
+    _e, _f, artifact, control = _project(tmp_path)
+    calls: list[str] = []
+
+    run_ai_reading(
+        artifact, control, _flaky_reader({"ES-101"}, calls, "503 high demand"),
+        max_attempts=1,
+    )
+    first = load_ai_reads(control)
+    assert failed_codes(first) == ["ES-101"]
+    assert first.input_tokens == 10  # only the sheet that answered
+    assert calls == ["ES-100", "ES-101"]
+
+    calls.clear()
+    run_ai_reading(artifact, control, _flaky_reader(set(), calls, ""), only_failed=True)
+    resumed = load_ai_reads(control)
+    assert calls == ["ES-101"]  # the sheet already read is never asked again
+    assert failed_codes(resumed) == []
+    assert [r.frame_code for r in resumed.readings] == ["ES-100", "ES-101"]  # sheet order
+    assert resumed.input_tokens == 20  # 10 kept + 10 new, never double-counted
+    assert resumed.status == "done"
+    assert any("se conservaron sin volver a consultarlas" in n for n in resumed.notes)
+
+
+def test_retry_with_nothing_failed_says_so_and_calls_nobody(tmp_path):
+    _e, _f, artifact, control = _project(tmp_path)
+    calls: list[str] = []
+    run_ai_reading(artifact, control, _flaky_reader(set(), calls, ""))
+    calls.clear()
+    run_ai_reading(artifact, control, _flaky_reader(set(), calls, ""), only_failed=True)
+    reads = load_ai_reads(control)
+    assert calls == []
+    assert len(reads.readings) == 2
+    assert any("no había nada que reintentar" in n for n in reads.notes)

@@ -74,10 +74,10 @@ export default function LecturaPage() {
     return () => window.clearInterval(handle);
   }, [aiReads?.running, reloadAiReads]);
 
-  async function readWithAi() {
+  async function readWithAi(onlyFailed = false) {
     setAiNotice(null);
     try {
-      await startAiRead(id, getBrowserActor());
+      await startAiRead(id, getBrowserActor(), onlyFailed);
       reloadAiReads();
     } catch (e) {
       setAiNotice(apiMessage(e, "No se pudo iniciar la lectura con IA."));
@@ -318,7 +318,7 @@ export default function LecturaPage() {
                 size="sm"
                 variant="secondary"
                 disabled={!aiReads?.available || aiReads.running}
-                onClick={readWithAi}
+                onClick={() => readWithAi(false)}
               >
                 {aiReads?.running ? (
                   <>
@@ -328,6 +328,12 @@ export default function LecturaPage() {
                   "Leer hojas con IA"
                 )}
               </Button>
+              {!aiReads?.running && (aiReads?.failed?.length ?? 0) > 0 && (
+                <Button size="sm" variant="primary" onClick={() => readWithAi(true)}>
+                  <ArrowsClockwise size={14} /> Reintentar {aiReads?.failed.length} hoja
+                  {aiReads?.failed.length === 1 ? "" : "s"} sin lectura
+                </Button>
+              )}
               {aiReads?.running && (
                 <Button size="sm" variant="ghost" onClick={cancelAi}>
                   Cancelar

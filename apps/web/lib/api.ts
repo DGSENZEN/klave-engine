@@ -816,15 +816,18 @@ export type AiReads = {
   running: boolean;
   model: string;
   cobertura: CoverageFlag[];
+  /** Sheets whose reading failed: a retry asks only for these. */
+  failed: string[];
 };
 
 export const getAiReads = (id: string) => getJSON<AiReads>(`/projects/${id}/ai-reads`);
 /** Stop after the sheet being read; what was already read stays. */
 export const cancelAiRead = (id: string) =>
   postJSON<{ project_id: string; status: string }>(`/projects/${id}/ai-read/cancel`, {});
-export const startAiRead = (id: string, actor?: string) =>
+/** `onlyFailed` resumes: sheets already read are kept, only failures re-asked. */
+export const startAiRead = (id: string, actor?: string, onlyFailed = false) =>
   postJSON<{ project_id: string; status: string }>(
-    `/projects/${id}/ai-read`,
+    `/projects/${id}/ai-read${onlyFailed ? "?only_failed=true" : ""}`,
     {},
     actor ? { "X-Actor": actor } : undefined,
   );
