@@ -12,6 +12,7 @@ Un reprocesamiento del dibujo no debe borrarlos.
 """
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -19,6 +20,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Response, UploadF
 from klave_engine.common.config import Settings
 from klave_engine.common.ids import slugify
 from klave_engine.common.io import write_json
+from klave_engine.costing.bitacora import BitacoraError, NotaBitacora, asentar
+from klave_engine.costing.bitacora import estado as estado_bitacora
 from klave_engine.costing.catalog import build_catalog_from_store
 from klave_engine.costing.convenios import (
     Convenio,
@@ -60,6 +63,7 @@ CATALOGO = "catalogo_convocante.json"
 ESTIMACIONES = "estimaciones.json"
 CONVENIOS = "convenios.json"
 AJUSTES = "ajustes.json"
+BITACORA = "bitacora.json"
 FINIQUITO = "finiquito.json"
 
 
@@ -659,3 +663,65 @@ def preparar_ajuste(
         renglones=list(contratado.values()),
     )
     return {"solicitud": sol.model_dump(mode="json"), "resumen": _resumen_ajuste(sol)}
+
+
+# --- Bitácora ----------------------------------------------------------------
+#
+# Sin PUT y sin DELETE, y no es un olvido. Una bitácora que se puede corregir
+# no prueba nada, porque cualquier cosa que dijera pudo haberse escrito después.
+# Sólo se agrega al final; una nota mal asentada se aclara con otra que la
+# referencia, y las dos se quedan.
+
+
+class NotaInput(BaseModel):
+    nota: NotaBitacora
+
+
+@router.get("/{project_id}/bitacora")
+def leer_bitacora(
+    project_id: str,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Las notas de corrido, con lo que le falta a la bitácora para servir de prueba."""
+    datos = _leer(store, settings, project_id, BITACORA) or []
+    st = estado_bitacora([NotaBitacora.model_validate(d) for d in datos])
+    return {
+        "notas": [n.model_dump(mode="json") for n in st.notas],
+        "estado": {
+            "abierta": st.abierta,
+            "cerrada": st.cerrada,
+            "siguiente_numero": st.siguiente_numero,
+            "por_parte": st.por_parte,
+            "avisos": st.avisos,
+        },
+    }
+
+
+@router.post("/{project_id}/bitacora", status_code=201)
+def asentar_nota(
+    project_id: str,
+    body: NotaInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Asienta una nota al final, o se niega diciendo por qué."""
+    datos = _leer(store, settings, project_id, BITACORA) or []
+    notas = [NotaBitacora.model_validate(d) for d in datos]
+    try:
+        # La hora de asentado la pone el servidor: si la pusiera el navegador,
+        # bastaría con mover el reloj de la máquina para fechar una nota ayer.
+        nueva = body.nota.model_copy(
+            update={"asentada_en": datetime.now(UTC).isoformat(timespec="seconds")}
+        )
+        notas = asentar(notas, nueva)
+    except BitacoraError as err:
+        raise HTTPException(
+            status_code=409,
+            detail={"error_type": "bitacora_rechaza", "message": str(err)},
+        ) from err
+
+    _guardar(store, settings, project_id, BITACORA, [n.model_dump(mode="json") for n in notas])
+    BUS.publish("nota_bitacora", project_id, clean_actor(x_actor))
+    return {"nota": notas[-1].model_dump(mode="json")}

@@ -1209,6 +1209,45 @@ export const borrarAjuste = (id: string, numero: number, actor?: string) =>
     actor ? { "X-Actor": actor } : {},
   );
 
+/**
+ * Bitácora de obra (RLOPSRM art. 123–125). No hay `editarNota` ni `borrarNota`
+ * y no es un olvido: una bitácora que se puede corregir no prueba nada. Una
+ * nota mal asentada se aclara con otra que la referencia, y las dos se quedan.
+ */
+export type NotaBitacora = {
+  numero: number;
+  fecha: string;
+  tipo: "apertura" | "ordinaria" | "extraordinaria" | "cierre";
+  parte: "contratante" | "contratista" | "supervision";
+  autor: string;
+  cargo: string;
+  texto: string;
+  /** La nota que ésta aclara. La aclarada se queda. */
+  referencia: number | null;
+  /** La pone el servidor al asentar, no el navegador. */
+  asentada_en: string;
+};
+
+export type EstadoBitacora = {
+  abierta: boolean;
+  cerrada: boolean;
+  siguiente_numero: number;
+  por_parte: Record<string, number>;
+  avisos: string[];
+};
+
+export const getBitacora = (id: string) =>
+  getJSON<{ notas: NotaBitacora[]; estado: EstadoBitacora }>(
+    `/projects/${id}/bitacora`,
+  );
+
+export const asentarNota = (id: string, nota: NotaBitacora, actor?: string) =>
+  postJSON<{ nota: NotaBitacora }>(
+    `/projects/${id}/bitacora`,
+    { nota },
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
 export type SaldoFiniquito = {
   concepto: string;
   importe: number;

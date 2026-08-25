@@ -296,3 +296,59 @@ def test_guardar_un_ajuste_con_indice_devuelve_su_factor(client, data_dir):
     assert resumen["factor"] == 1.12
     assert resumen["importe_ajuste"] == 36_000.0
     assert client.get(f"/projects/{pid}/ajustes").json()["ajustes"][0]["resumen"]["factor"] == 1.12
+
+
+NOTA_APERTURA = {
+    "numero": 1, "fecha": "2026-01-15", "tipo": "apertura", "parte": "contratante",
+    "autor": "Ing. Diego Gaytán", "cargo": "Residente de obra",
+    "texto": "Se abre la bitácora del contrato OP-2026-014.",
+    "referencia": None, "asentada_en": "",
+}
+
+
+def test_la_bitacora_no_expone_manera_de_editar_ni_de_borrar(client, data_dir):
+    """La ausencia es la garantía: si se pudiera corregir, no probaría nada."""
+    pid = _proyecto(data_dir)
+    rutas = {
+        (r.path, m)
+        for r in client.app.routes
+        for m in getattr(r, "methods", set())
+        if "bitacora" in getattr(r, "path", "")
+    }
+    metodos = {m for _, m in rutas}
+    assert metodos <= {"GET", "POST", "HEAD"}
+    assert "PUT" not in metodos and "DELETE" not in metodos and "PATCH" not in metodos
+
+
+def test_asentar_pone_la_hora_del_servidor_no_la_del_navegador(client, data_dir):
+    """Si la pusiera el cliente, bastaría mover el reloj para fechar una nota ayer."""
+    pid = _proyecto(data_dir)
+    mentira = dict(NOTA_APERTURA, asentada_en="1999-01-01T00:00:00+00:00")
+    r = client.post(f"/projects/{pid}/bitacora", json={"nota": mentira})
+    assert r.status_code == 201, r.text
+    assert not r.json()["nota"]["asentada_en"].startswith("1999")
+
+
+def test_una_nota_repetida_se_rechaza_con_su_razon(client, data_dir):
+    pid = _proyecto(data_dir)
+    client.post(f"/projects/{pid}/bitacora", json={"nota": NOTA_APERTURA})
+    r = client.post(f"/projects/{pid}/bitacora", json={"nota": NOTA_APERTURA})
+    assert r.status_code == 409
+    assert r.json()["detail"]["error_type"] == "bitacora_rechaza"
+    assert "no se reescribe" in r.json()["detail"]["message"]
+
+
+def test_la_bitacora_se_lee_de_corrido_con_su_estado(client, data_dir):
+    pid = _proyecto(data_dir)
+    client.post(f"/projects/{pid}/bitacora", json={"nota": NOTA_APERTURA})
+    client.post(f"/projects/{pid}/bitacora", json={"nota": dict(
+        NOTA_APERTURA, numero=2, tipo="ordinaria", parte="contratista",
+        autor="Ing. Ana Ruiz", cargo="Superintendente",
+        texto="Se solicita definición de niveles en el eje 4.",
+    )})
+    cuerpo = client.get(f"/projects/{pid}/bitacora").json()
+    assert [n["numero"] for n in cuerpo["notas"]] == [1, 2]
+    assert cuerpo["estado"]["abierta"] is True
+    assert cuerpo["estado"]["cerrada"] is False
+    assert cuerpo["estado"]["siguiente_numero"] == 3
+    assert cuerpo["estado"]["por_parte"] == {"contratante": 1, "contratista": 1}

@@ -17,6 +17,7 @@ import {
   List,
   ListChecks,
   MapTrifold,
+  Notebook,
   NotePencil,
   Receipt,
   Scales,
@@ -129,6 +130,12 @@ function nav(id: string): { group: string; items: Item[] }[] {
           label: "Convenios",
           icon: <NotePencil size={18} />,
           href: `${b}/convenios`,
+        },
+        {
+          key: "bitacora",
+          label: "Bitácora",
+          icon: <Notebook size={18} />,
+          href: `${b}/bitacora`,
         },
         {
           key: "ajuste-costos",
