@@ -11,6 +11,8 @@ from klave_engine.detection.taxonomy import classify_family
 from klave_engine.detection.views import SheetSegmentation, ViewKind, ViewRegion
 from klave_engine.dxf.units import DrawingUnits
 
+from tests.precios import LIBRO
+
 
 def _seg():
     views = [
@@ -80,7 +82,7 @@ def test_walls_and_columns_use_each_plantas_own_height():
     catalog = [c for c in build_default_catalog(a) if c.code in {"EST-004", "EST-014", "EST-001"}]
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
     boq = generate_bill_of_quantities(
-        "t", dets, units, catalog, build_all_apus(catalog), segmentation=seg, assumptions=a
+        "t", dets, units, catalog, build_all_apus(catalog, LIBRO), segmentation=seg, assumptions=a
     )
     lines = {line.concept_code: line for line in boq.lines}
     assert abs(lines["EST-004"].quantity - (10.0 * 3.6 + 20.0 * 3.2)) < 1e-6
@@ -156,7 +158,7 @@ def test_walls_on_the_azotea_are_pretiles_not_another_story():
     catalog = [c for c in build_default_catalog(a) if c.code in {"EST-004", "EST-014", "ACA-001"}]
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
     boq = generate_bill_of_quantities(
-        "t", dets, units, catalog, build_all_apus(catalog), segmentation=seg, assumptions=a
+        "t", dets, units, catalog, build_all_apus(catalog, LIBRO), segmentation=seg, assumptions=a
     )
     lines = {line.concept_code: line for line in boq.lines}
     # Planta baja wall at 3.6 m; the 20 m of wall on the azotea is a 0.9 m pretil.
@@ -170,7 +172,7 @@ def test_walls_on_the_azotea_are_pretiles_not_another_story():
         assignment={"w1": "f1", "w3": "f3", "w3c": "f3"},
     )
     boq = generate_bill_of_quantities(
-        "t", dets, units, catalog, build_all_apus(catalog), segmentation=flat, assumptions=a
+        "t", dets, units, catalog, build_all_apus(catalog, LIBRO), segmentation=flat, assumptions=a
     )
     line = {ln.concept_code: ln for ln in boq.lines}["EST-004"]
     assert abs(line.quantity - (10.0 * a.wall_height_m + 20.0 * 0.9)) < 1e-6

@@ -14,6 +14,8 @@ from klave_engine.dxf.units import DrawingUnits
 from klave_engine.geometry.spatial_index import SpatialIndex
 from klave_engine.graph.evidence import EvidencePacket
 
+from tests.precios import LIBRO
+
 
 def _line(eid, p0, p1, layer="A-ESCALERA"):
     bbox = (min(p0[0], p1[0]), min(p0[1], p1[1]), max(p0[0], p1[0]), max(p0[1], p1[1]))
@@ -76,7 +78,7 @@ def test_stairs_are_priced_as_inclined_slab():
     catalog = [c for c in build_default_catalog(a) if c.code == "EST-015"]
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
     boq = generate_bill_of_quantities(
-        "t", out.detections, units, catalog, build_all_apus(catalog), assumptions=a
+        "t", out.detections, units, catalog, build_all_apus(catalog, LIBRO), assumptions=a
     )
     [line] = boq.lines
     assert line.concept_code == "EST-015" and line.unit == "M2"

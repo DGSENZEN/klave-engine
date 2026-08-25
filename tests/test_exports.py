@@ -2,6 +2,7 @@
 
 import io
 
+from klave_engine.costing.catalog_store import get_catalog_store
 from klave_engine.costing.exports import build_presupuesto_workbook
 from klave_engine.costing.models import CostingOverrides
 from klave_engine.costing.recompute import CostingInputs, build_cost_report
@@ -10,6 +11,8 @@ from klave_engine.detection.results import Detection, DetectionType
 from klave_engine.dxf.units import DrawingUnits
 from klave_engine.graph.evidence import EvidencePacket
 from openpyxl import load_workbook
+
+from tests.precios import sembrar
 
 
 def _detections() -> list[Detection]:
@@ -31,6 +34,10 @@ def _detections() -> list[Detection]:
 
 
 def _report(data_dir):
+    # El taller pone lo que le cuestan sus insumos; el producto ya no los
+    # trae con precio. Sin esto los APUs salen vacíos y la exportación
+    # tendría razón en quejarse.
+    sembrar(get_catalog_store(data_dir))
     inputs = CostingInputs(
         project_id="p",
         detections=_detections(),

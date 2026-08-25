@@ -11,6 +11,8 @@ from klave_engine.detection.terrain import TerrainDetectorConfig, detect_terrain
 from klave_engine.dxf.parser import DxfParser
 from klave_engine.dxf.units import DrawingUnits
 
+from tests.precios import LIBRO
+
 
 def _survey(tmp_path, with_lot=True):
     doc = ezdxf.new("R2010")
@@ -72,7 +74,7 @@ def test_terracerias_lines_need_a_platform_level(tmp_path):
     a = CostingAssumptions()
     catalog = [c for c in build_default_catalog(a) if c.code in codes]
     boq = generate_bill_of_quantities(
-        "t", terrain, units, catalog, build_all_apus(catalog), assumptions=a
+        "t", terrain, units, catalog, build_all_apus(catalog, LIBRO), assumptions=a
     )
     lines = {line.concept_code: line for line in boq.lines}
     assert abs(lines["TER-001"].quantity - 800.0) < 1e-6
@@ -82,7 +84,7 @@ def test_terracerias_lines_need_a_platform_level(tmp_path):
     a = CostingAssumptions(platform_level_m=101.0)
     catalog = [c for c in build_default_catalog(a) if c.code in codes]
     boq = generate_bill_of_quantities(
-        "t", terrain, units, catalog, build_all_apus(catalog), assumptions=a
+        "t", terrain, units, catalog, build_all_apus(catalog, LIBRO), assumptions=a
     )
     lines = {line.concept_code: line for line in boq.lines}
     # Sparse contours (two vertices each) interpolate coarsely: both sides of

@@ -7,6 +7,8 @@ from klave_engine.detection.results import DetectionType, make_detection
 from klave_engine.detection.taxonomy import classify_family
 from klave_engine.dxf.units import DrawingUnits
 
+from tests.precios import LIBRO
+
 
 def _wall(det_id, length):
     det = make_detection(
@@ -23,14 +25,12 @@ def test_stale_prices_used_by_the_presupuesto_are_named():
                  "MAT-VIGUETA": "2023-01"}  # vigueta is not used by a wall-only presupuesto
     report = generate_cost_report(
         "p", [_wall("w1", 10.0)], units, CostingConfig(), None, None,
-        price_vigencias=vigencias,
-    )
+        price_vigencias=vigencias, price_book=LIBRO)
     stale = [w for w in report.boq.warnings if "más de 12 meses" in w]
     assert len(stale) == 1
     assert "MAT-BLOCK" in stale[0] and "MAT-MORTERO" in stale[0]
     assert "MAT-VIGUETA" not in stale[0] and "MO-CUAD-ALB" not in stale[0]
     fresh = generate_cost_report(
         "p", [_wall("w1", 10.0)], units, CostingConfig(), None, None,
-        price_vigencias={code: "2026-08" for code in RESOURCES},
-    )
+        price_vigencias={code: "2026-08" for code in RESOURCES}, price_book=LIBRO)
     assert not any("más de 12 meses" in w for w in fresh.boq.warnings)

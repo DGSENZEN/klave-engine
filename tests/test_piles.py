@@ -6,6 +6,8 @@ from klave_engine.detection.results import DetectionType, make_detection
 from klave_engine.detection.schedules import parse_pile_length
 from klave_engine.dxf.units import DrawingUnits
 
+from tests.precios import LIBRO
+
 
 def _pile(det_id, mark):
     return make_detection(
@@ -25,8 +27,7 @@ def test_pile_length_is_read_from_the_notes():
 def _report(dets, specs):
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
     return generate_cost_report(
-        "p", dets, units, CostingConfig(), None, None, schedule_specs=specs
-    )
+        "p", dets, units, CostingConfig(), None, None, schedule_specs=specs, price_book=LIBRO)
 
 
 def test_without_a_length_the_count_stays_visible_and_unpriced():

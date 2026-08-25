@@ -12,6 +12,8 @@ from klave_engine.detection.views import SheetSegmentation, ViewKind, ViewRegion
 from klave_engine.dxf.parser import DxfParser
 from klave_engine.dxf.units import DrawingUnits
 
+from tests.precios import LIBRO
+
 
 def _double_wall(msp, a, b, t=0.15, layer="A-WALL"):
     """Two parallel lines a wall apart, like an architectural planta."""
@@ -93,7 +95,7 @@ def test_acabados_follow_rooms_and_both_faces_of_walls():
     catalog = [c for c in build_default_catalog(a) if c.code in codes]
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
     boq = generate_bill_of_quantities(
-        "t", dets, units, catalog, build_all_apus(catalog), segmentation=seg, assumptions=a
+        "t", dets, units, catalog, build_all_apus(catalog, LIBRO), segmentation=seg, assumptions=a
     )
     lines = {line.concept_code: line for line in boq.lines}
     # Both stories are 2.9 m (the top repeats the one below).

@@ -22,6 +22,8 @@ from klave_engine.costing.schedule import (
     rendimiento_from_apu,
 )
 
+from tests.precios import LIBRO
+
 
 def _apu(code: str, *lines: tuple[str, str, float, ResourceType]) -> UnitPriceAnalysis:
     return UnitPriceAnalysis(
@@ -199,7 +201,7 @@ def test_the_default_catalog_now_agrees_with_its_own_matrices():
     stored rate that contradicted the matrix pricing them."""
     assumptions = CostingAssumptions()
     catalog = build_default_catalog(assumptions)
-    apus = build_all_apus(catalog)
+    apus = build_all_apus(catalog, LIBRO)
     boq = _boq(*[(c.code, 10.0) for c in catalog if c.code in apus], phase="Cimentación")
     for line in boq.lines:  # keep each line in its concept's real phase
         line.phase = next(c.phase for c in catalog if c.code == line.concept_code)

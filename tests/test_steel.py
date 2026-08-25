@@ -22,6 +22,8 @@ from klave_engine.costing.steel import (
 )
 from klave_engine.detection.results import DetectionType, make_detection
 
+from tests.precios import sembrar
+
 
 def _line(code, quantity, raw, ids, unit="M3", phase="Estructura"):
     return BoqLine(
@@ -104,6 +106,7 @@ def test_trabes_without_armado_are_reported_not_invented():
 
 def test_apply_steel_prices_lines_from_the_catalog(data_dir):
     store = get_catalog_store(data_dir)
+    sembrar(store)
     catalog = build_catalog_from_store(store.load_concepts(), CostingAssumptions())
     apus = build_all_apus(catalog, store.load_price_book(), templates=store.load_templates())
     assert "ACE-001" in apus and apus["ACE-001"].direct_unit_cost > 20  # $/kg

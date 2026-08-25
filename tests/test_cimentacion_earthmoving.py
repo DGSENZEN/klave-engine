@@ -7,6 +7,8 @@ from klave_engine.detection.results import DetectionType, make_detection
 from klave_engine.detection.taxonomy import classify_family
 from klave_engine.dxf.units import DrawingUnits
 
+from tests.precios import LIBRO
+
 
 def _footing(det_id, x):
     det = make_detection(
@@ -22,8 +24,7 @@ def test_excavation_is_banco_and_fill_haul_follow():
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
     report = generate_cost_report(
         "p", [_footing("z1", 0.0), _footing("z2", 5.0)], units,
-        CostingConfig(assumptions=a), None, None,
-    )
+        CostingConfig(assumptions=a), None, None, price_book=LIBRO)
     lines = {ln.concept_code: ln for ln in report.boq.lines}
     excavation = lines["CIM-001"]
     # 8 m² × 0.50 m of depth, in banco — no swell here.

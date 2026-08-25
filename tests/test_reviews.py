@@ -20,6 +20,8 @@ from klave_engine.costing.reviews import (
 from klave_engine.detection.results import Detection, DetectionType
 from klave_engine.graph.evidence import EvidencePacket
 
+from tests.precios import LIBRO
+
 
 def _detection(detection_id: str, display_label: str = "") -> Detection:
     return Detection(
@@ -52,7 +54,7 @@ def test_filter_excluded_by_stable_key():
 
 def _boq_with_line(quantity: float = 10.0) -> tuple[BillOfQuantities, list, dict]:
     catalog = build_default_catalog(CostingAssumptions())
-    apus = build_all_apus(catalog)
+    apus = build_all_apus(catalog, LIBRO)
     concept = next(c for c in catalog if c.code == "EST-004")
     line = BoqLine(
         concept_code=concept.code,

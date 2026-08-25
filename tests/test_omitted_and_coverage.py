@@ -15,6 +15,8 @@ from klave_engine.graph.evidence import EvidencePacket
 from klave_engine.llm.coverage import coverage_flags
 from klave_engine.llm.reader import SheetRead
 
+from tests.precios import LIBRO
+
 
 def _omitted(family: str, **kwargs) -> OmittedElement:
     return OmittedElement(element_id="om_x1", family=family, **kwargs)
@@ -47,7 +49,7 @@ def test_omitted_trabe_prices_like_a_detected_one():
     catalog = [c for c in build_default_catalog(assumptions) if c.code == "EST-002"]
     boq = generate_bill_of_quantities(
         "t", dets, DrawingUnits(unit="m", source="declared", confidence=1.0),
-        catalog, build_all_apus(catalog), assumptions=assumptions,
+        catalog, build_all_apus(catalog, LIBRO), assumptions=assumptions,
     )
     line = next(line for line in boq.lines if line.concept_code == "EST-002")
     assert abs(line.quantity - 12.0 * 0.24) < 1e-6
@@ -111,7 +113,7 @@ def test_omitted_survives_view_scoping_on_segmented_sheets():
     catalog = [c for c in build_default_catalog(assumptions) if c.code == "EST-002"]
     boq = generate_bill_of_quantities(
         "t", [drawn] + synthetic, DrawingUnits(unit="m", source="declared", confidence=1.0),
-        catalog, build_all_apus(catalog), segmentation=seg, assumptions=assumptions,
+        catalog, build_all_apus(catalog, LIBRO), segmentation=seg, assumptions=assumptions,
     )
     line = next(line for line in boq.lines if line.concept_code == "EST-002")
     # 4 m drawn + 12 m manual, all at 30x80.

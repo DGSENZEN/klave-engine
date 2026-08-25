@@ -14,6 +14,8 @@ from klave_engine.detection.taxonomy import classify_family
 from klave_engine.dxf.units import DrawingUnits
 from openpyxl import load_workbook
 
+from tests.precios import LIBRO
+
 
 def _wall(det_id, length):
     det = make_detection(
@@ -26,7 +28,9 @@ def _wall(det_id, length):
 
 def test_unknown_units_mean_no_price_anywhere():
     units = DrawingUnits(unit="drawing_units", source="unknown", confidence=0.0)
-    report = generate_cost_report("p", [_wall("w1", 1000.0)], units, CostingConfig(), None, None)
+    report = generate_cost_report("p", [_wall("w1", 1000.0)], units, CostingConfig(), None, None,
+        price_book=LIBRO,
+    )
     assert not report.boq.units_reliable
     assert report.boq.lines and all(ln.unpriced and ln.amount == 0.0 for ln in report.boq.lines)
     assert report.boq.direct_cost_total == 0.0 and report.integration.grand_total == 0.0
@@ -42,7 +46,9 @@ def test_unknown_units_mean_no_price_anywhere():
 
 def test_a_lone_heuristic_is_not_enough_to_price():
     units = DrawingUnits(unit="cm", source="text_height_heuristic", confidence=0.5)
-    report = generate_cost_report("p", [_wall("w1", 1000.0)], units, CostingConfig(), None, None)
+    report = generate_cost_report("p", [_wall("w1", 1000.0)], units, CostingConfig(), None, None,
+        price_book=LIBRO,
+    )
     assert not report.boq.units_reliable and report.boq.direct_cost_total == 0.0
 
 

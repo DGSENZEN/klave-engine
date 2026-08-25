@@ -31,6 +31,15 @@ def build_apu(
         if resource.is_labor_percentage:
             percentage_entries.append((resource, quantity))
             continue
+        if resource.unit_cost <= 0:
+            # Un insumo sin precio no vale cero: vale lo que nadie ha dicho
+            # todavía. Sumarlo como cero daría un P.U. más barato que la obra
+            # y con cara de estar completo, que es la peor forma de estar mal.
+            # El concepto se queda sin matriz y el presupuesto lo dice.
+            raise ReportGenerationError(
+                f"{concept.code}: el insumo {resource.code} ({resource.description[:40]}) "
+                "no tiene precio; carga tu lista de insumos o adopta un P.U. publicado."
+            )
         lines.append(
             ApuLine(
                 resource_code=resource.code,
@@ -83,8 +92,15 @@ def build_all_apus(
     """APUs for every concept that has a matrix; a concept without one is
     skipped (it cannot be priced — never silently priced at zero)."""
     effective = templates or APU_TEMPLATES
-    return {
-        concept.code: build_apu(concept, resources=resources, templates=templates)
-        for concept in concepts
-        if concept.code in effective
-    }
+    salida: dict[str, UnitPriceAnalysis] = {}
+    for concept in concepts:
+        if concept.code not in effective:
+            continue
+        try:
+            salida[concept.code] = build_apu(concept, resources=resources, templates=templates)
+        except ReportGenerationError:
+            # Le falta el precio de algún insumo: el concepto queda sin
+            # matriz, que es exactamente lo que ya sabe manejar el
+            # presupuesto — cantidad real, «sin precio», y nunca un cero.
+            continue
+    return salida

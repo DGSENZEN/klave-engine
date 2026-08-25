@@ -42,6 +42,7 @@ from klave_engine.costing.sources.custom import (
     parse_concept_workbook,
     source_key_for,
 )
+from klave_engine.costing.sources.destajos import parse_destajos_workbook
 from klave_engine.costing.sources.matrices import parse_matrices_workbook
 from klave_engine.costing.sources.registry import SOURCES, available_sources, sources_dir
 from klave_engine.costing.vigencia import (
@@ -557,6 +558,43 @@ def delete_source(
         catalog=catalog,
     )
     return removed
+
+
+@router.post("/import-destajos", status_code=201)
+async def import_destajos(
+    request: Request,
+    file: UploadFile,
+    x_actor: Annotated[str | None, Header()] = None,
+    source: str = "",
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    """Un catálogo de destajos por bloques: sus matrices y sus cuadrillas.
+
+    Es la forma en que se escribe un catálogo de destajo mexicano —una matriz
+    por bloque, con sus insumos debajo— y trae lo que ninguna publicación
+    oficial da suelto: el costo real de cada cuadrilla, armado de categorías
+    con su jornal. Los materiales vienen en cero y así se guardan: un destajo
+    paga la mano de obra y la obra pone el material."""
+    require_catalog_admin(request)
+    raw = await file.read(MAX_IMPORT_BYTES + 1)
+    if len(raw) > MAX_IMPORT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail={"error_type": "import_too_large", "max_bytes": MAX_IMPORT_BYTES},
+        )
+    try:
+        parse = parse_destajos_workbook(raw, file.filename or "")
+    except CustomCatalogError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error_type": "matrices_not_found", "message": str(exc)}
+        ) from exc
+    title = source.strip() or Path(file.filename or "destajos").stem[:80]
+    result = catalog.import_matrices(parse, title)
+    _publish_catalog_updated(
+        x_actor, "matrices_imported",
+        f"{title}: {result.get('concepts_created', 0)} matrices", catalog=catalog,
+    )
+    return result
 
 
 @router.post("/import-matrices", status_code=201)

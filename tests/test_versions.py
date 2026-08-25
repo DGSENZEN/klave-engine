@@ -15,6 +15,8 @@ from klave_engine.detection.results import DetectionType, make_detection
 from klave_engine.detection.taxonomy import classify_family
 from klave_engine.dxf.units import DrawingUnits
 
+from tests.precios import LIBRO
+
 
 def _wall(det_id, length):
     det = make_detection(
@@ -29,8 +31,7 @@ def _report(adjustments=None):
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
     return generate_cost_report(
         "p", [_wall("w1", 10.0), _wall("w2", 5.0)], units, CostingConfig(), None, None,
-        adjustments=adjustments,
-    )
+        adjustments=adjustments, price_book=LIBRO)
 
 
 def test_versions_are_saved_listed_and_loaded_with_their_decisions(tmp_path):

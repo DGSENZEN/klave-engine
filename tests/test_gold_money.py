@@ -13,6 +13,8 @@ from klave_engine.evals.gold import (
     score_money,
 )
 
+from tests.precios import LIBRO
+
 
 def _wall(det_id, length):
     det = make_detection(
@@ -25,7 +27,9 @@ def _wall(det_id, length):
 
 def _report(length):
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
-    return generate_cost_report("p", [_wall("w1", length)], units, CostingConfig(), None, None)
+    return generate_cost_report("p", [_wall("w1", length)], units, CostingConfig(), None, None,
+        price_book=LIBRO,
+    )
 
 
 def test_captured_money_passes_against_itself_and_fails_when_quantities_move():

@@ -8,6 +8,8 @@ from klave_engine.detection.results import DetectionType, make_detection
 from klave_engine.detection.views import SheetSegmentation, ViewKind, ViewRegion
 from klave_engine.dxf.units import DrawingUnits
 
+from tests.precios import LIBRO
+
 
 def _slab(det_id, area, family="reticular"):
     return make_detection(
@@ -34,7 +36,7 @@ def test_quantities_split_by_planta():
     catalog = [c for c in build_default_catalog(assumptions) if c.code in {"EST-003", "CIM-007"}]
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
     boq = generate_bill_of_quantities(
-        "t", dets, units, catalog, build_all_apus(catalog), segmentation=seg,
+        "t", dets, units, catalog, build_all_apus(catalog, LIBRO), segmentation=seg,
         assumptions=assumptions,
     )
     lines = {line.concept_code: line for line in boq.lines}

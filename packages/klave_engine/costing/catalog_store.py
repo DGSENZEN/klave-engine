@@ -206,10 +206,10 @@ FORMWORK_CONCEPTS_V7: list[tuple[str, str, str, str, float, int, list[tuple[str,
 TERRACERIAS_CONCEPT_CODES = ("TER-001", "TER-002", "TER-003")
 TERRACERIAS_RESOURCES: list[tuple[str, str, str, float, str]] = [
     ("EQ-MOTOCONFORMADORA", "Motoconformadora 140 HP, costo horario (referencia SICT)", "HORA",
-     1650.0, "equipo"),
+     0.0, "equipo"),
     ("EQ-VIBROCOMPACTADOR", "Vibrocompactador liso 10 t, costo horario (referencia SICT)",
-     "HORA", 1100.0, "equipo"),
-    ("EQ-PIPA", "Pipa de agua 10 000 L, costo horario (referencia)", "HORA", 650.0, "equipo"),
+     "HORA", 0.0, "equipo"),
+    ("EQ-PIPA", "Pipa de agua 10 000 L, costo horario (referencia)", "HORA", 0.0, "equipo"),
 ]
 ACABADOS_CONCEPT_CODES = ("ACA-001", "ACA-002", "ACA-003", "ACA-004", "PIS-001", "PIS-002")
 # v14: pilotes in metres (CIM-011) with the drilling rig, and the plantilla
@@ -217,43 +217,43 @@ ACABADOS_CONCEPT_CODES = ("ACA-001", "ACA-002", "ACA-003", "ACA-004", "PIS-001",
 PILES_CONCEPT_CODES = ("CIM-011", "CIM-003", "CIM-010")
 PILES_RESOURCES: list[tuple[str, str, str, float, str]] = [
     ("EQ-PERFORADORA", "Perforadora rotatoria para pilotes Ø60–120 cm, costo horario "
-     "(referencia SICT)", "HORA", 2850.0, "equipo"),
+     "(referencia SICT)", "HORA", 0.0, "equipo"),
 ]
 ACABADOS_RESOURCES: list[tuple[str, str, str, float, str]] = [
-    ("MAT-PINTURA", "Pintura vinílica acrílica, cubeta 19 L (referencia)", "L", 78.0,
+    ("MAT-PINTURA", "Pintura vinílica acrílica, cubeta 19 L (referencia)", "L", 0.0,
      "material"),
-    ("MAT-SELLADOR", "Sellador vinílico 5×1 (referencia)", "L", 32.0, "material"),
+    ("MAT-SELLADOR", "Sellador vinílico 5×1 (referencia)", "L", 0.0, "material"),
     ("MAT-PISO-CER", "Loseta cerámica 60×60 cm tráfico residencial (referencia)", "M2",
-     185.0, "material"),
+     0.0, "material"),
     ("MAT-ADHESIVO", "Adhesivo para loseta base cemento, saco 20 kg (referencia)", "KG",
-     9.5, "material"),
-    ("MAT-YESO", "Yeso para construcción, saco 40 kg (referencia)", "KG", 4.2, "material"),
-    ("MO-PINTOR", "Pintor (cuadrilla pintor + ayudante, salario real)", "JOR", 1180.0,
+     0.0, "material"),
+    ("MAT-YESO", "Yeso para construcción, saco 40 kg (referencia)", "KG", 0.0, "material"),
+    ("MO-PINTOR", "Pintor (cuadrilla pintor + ayudante, salario real)", "JOR", 0.0,
      "mano_de_obra"),
-    ("MO-YESERO", "Yesero (cuadrilla yesero + ayudante, salario real)", "JOR", 1260.0,
+    ("MO-YESERO", "Yesero (cuadrilla yesero + ayudante, salario real)", "JOR", 0.0,
      "mano_de_obra"),
 ]
 SLAB_RESOURCES: list[tuple[str, str, str, float, str]] = [
-    ("MAT-VIGUETA", "Vigueta pretensada de 13 cm (referencia)", "M", 98.0, "material"),
-    ("MAT-BOVEDILLA", "Bovedilla de cemento-arena 15×25×56 cm (referencia)", "PZA", 24.0,
+    ("MAT-VIGUETA", "Vigueta pretensada de 13 cm (referencia)", "M", 0.0, "material"),
+    ("MAT-BOVEDILLA", "Bovedilla de cemento-arena 15×25×56 cm (referencia)", "PZA", 0.0,
      "material"),
 ]
 
 EXTRA_RESOURCES: list[tuple[str, str, str, float, str]] = [
-    ("MAT-CEM", "Cemento gris CPC 30R", "TON", 3350.0, "material"),
-    ("MAT-ARENA", "Arena de mina", "M3", 420.0, "material"),
-    ("MAT-GRAVA", "Grava triturada 3/4\"", "M3", 460.0, "material"),
-    ("MAT-AGUA", "Agua para obra", "M3", 35.0, "material"),
-    ("MAT-CONC150", "Concreto hecho en obra f'c=150 kg/cm²", "M3", 2100.0, "material"),
-    ("MAT-MALLA", "Malla electrosoldada 6x6-10/10", "M2", 85.0, "material"),
-    ("MAT-ALAMBRE", "Alambre recocido", "KG", 38.0, "material"),
-    ("MAT-CLAVO", "Clavo para cimbra", "KG", 42.0, "material"),
-    ("MAT-MADERA", "Madera de pino 3a para obra", "PT", 28.0, "material"),
-    ("MAT-TEPETATE", "Tepetate para relleno", "M3", 260.0, "material"),
-    ("MO-OF-ALB", "Oficial albañil", "JOR", 1050.0, "mano_de_obra"),
-    ("MO-AYUD", "Ayudante general", "JOR", 700.0, "mano_de_obra"),
-    ("EQ-BAILARINA", "Compactador tipo bailarina", "JOR", 650.0, "equipo"),
-    ("EQ-CAMION", "Camión de volteo 7 m³ (viaje)", "VJE", 950.0, "equipo"),
+    ("MAT-CEM", "Cemento gris CPC 30R", "TON", 0.0, "material"),
+    ("MAT-ARENA", "Arena de mina", "M3", 0.0, "material"),
+    ("MAT-GRAVA", "Grava triturada 3/4\"", "M3", 0.0, "material"),
+    ("MAT-AGUA", "Agua para obra", "M3", 0.0, "material"),
+    ("MAT-CONC150", "Concreto hecho en obra f'c=150 kg/cm²", "M3", 0.0, "material"),
+    ("MAT-MALLA", "Malla electrosoldada 6x6-10/10", "M2", 0.0, "material"),
+    ("MAT-ALAMBRE", "Alambre recocido", "KG", 0.0, "material"),
+    ("MAT-CLAVO", "Clavo para cimbra", "KG", 0.0, "material"),
+    ("MAT-MADERA", "Madera de pino 3a para obra", "PT", 0.0, "material"),
+    ("MAT-TEPETATE", "Tepetate para relleno", "M3", 0.0, "material"),
+    ("MO-OF-ALB", "Oficial albañil", "JOR", 0.0, "mano_de_obra"),
+    ("MO-AYUD", "Ayudante general", "JOR", 0.0, "mano_de_obra"),
+    ("EQ-BAILARINA", "Compactador tipo bailarina", "JOR", 0.0, "equipo"),
+    ("EQ-CAMION", "Camión de volteo 7 m³ (viaje)", "VJE", 0.0, "equipo"),
 ]
 
 # Manual concepts: priced through their APU, quantified only by documented
@@ -261,9 +261,9 @@ EXTRA_RESOURCES: list[tuple[str, str, str, float, str]] = [
 # Acero de refuerzo: resources and concepts the steel stage prices. Labor
 # here is a reference rate (replace it by applying salario real).
 STEEL_RESOURCES: list[tuple[str, str, str, float, str]] = [
-    ("MAT-ALAMBRE", "Alambre recocido cal. 18", "KG", 34.0, "material"),
-    ("MAT-MALLA66", "Malla electrosoldada 6x6-10/10", "M2", 62.0, "material"),
-    ("MO-FIERRERO", "Fierrero (oficial)", "JOR", 830.0, "mano_de_obra"),
+    ("MAT-ALAMBRE", "Alambre recocido cal. 18", "KG", 0.0, "material"),
+    ("MAT-MALLA66", "Malla electrosoldada 6x6-10/10", "M2", 0.0, "material"),
+    ("MO-FIERRERO", "Fierrero (oficial)", "JOR", 0.0, "mano_de_obra"),
 ]
 STEEL_CONCEPTS: list[tuple[str, str, str, str, float, int, list[tuple[str, float]]]] = [
     ("ACE-001", "Acero de refuerzo fy=4200 kg/cm² en castillos y columnas, habilitado y armado",
@@ -1538,14 +1538,24 @@ class CatalogStore:
         problems = list(parse.problems)
         existing_codes = {c["code"] for c in self.load_concepts(include_inactive=True)}
         for concept in parse.concepts:
-            components: list[tuple[str, float]] = []
+            # Una matriz puede traer varios cargos porcentuales distintos
+            # —herramienta menor 3 % y andamios 3 %— y todos se cobran sobre
+            # la mano de obra. Al colapsarlos en EQ-HERRAMIENTA se suman: dos
+            # cargos del 3 % son 6 % de la mano de obra, no 3 % dos veces
+            # (que además choca con la clave única de la matriz).
+            acumulado: dict[str, float] = {}
+            orden: list[str] = []
             for code, quantity in concept.components:
                 resource = parse.insumos.get(code)
                 if resource is not None and resource.is_labor_percentage:
-                    fraction = quantity / 100 if quantity > 1 else quantity
-                    components.append(("EQ-HERRAMIENTA", fraction))
+                    clave = "EQ-HERRAMIENTA"
+                    valor = quantity / 100 if quantity > 1 else quantity
                 else:
-                    components.append((code, quantity))
+                    clave, valor = code, quantity
+                if clave not in acumulado:
+                    orden.append(clave)
+                acumulado[clave] = round(acumulado.get(clave, 0.0) + valor, 8)
+            components: list[tuple[str, float]] = [(c, acumulado[c]) for c in orden]
             rate = concept.production_rate_per_day or 10.0
             try:
                 if concept.code in existing_codes:

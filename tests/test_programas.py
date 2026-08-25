@@ -10,6 +10,8 @@ from klave_engine.costing.report import generate_cost_report
 from klave_engine.detection.results import DetectionType, make_detection
 from klave_engine.dxf.units import DrawingUnits
 
+from tests.precios import LIBRO
+
 
 def _report():
     dets = [
@@ -20,8 +22,7 @@ def _report():
         for i in range(6)
     ]
     return generate_cost_report(
-        "p", dets, DrawingUnits(unit="m", source="declared", confidence=1.0),
-    )
+        "p", dets, DrawingUnits(unit="m", source="declared", confidence=1.0), price_book=LIBRO)
 
 
 def test_the_four_programs_of_article_45_are_produced():
@@ -115,10 +116,9 @@ def test_herramienta_menor_has_no_calendar_of_its_own():
 def test_an_obra_without_a_schedule_does_not_pretend_to_have_one():
     assumptions = CostingAssumptions()
     catalog = build_default_catalog(assumptions)
-    build_all_apus(catalog)
+    build_all_apus(catalog, LIBRO)
     empty = generate_cost_report(
-        "p", [], DrawingUnits(unit="m", source="declared", confidence=1.0)
-    )
+        "p", [], DrawingUnits(unit="m", source="declared", confidence=1.0), price_book=LIBRO)
     programas = build_programas(empty)
     assert programas.periods == 0
     assert all(p.rows == [] or all(r.by_period == [] for r in p.rows) for p in programas.programas)
@@ -158,8 +158,9 @@ def test_a_plantilla_that_does_not_fit_the_indirects_becomes_a_finding():
         ],
     )
     report = generate_cost_report(
-        "p", dets, DrawingUnits(unit="m", source="declared", confidence=1.0), config=config
-    )
+        "p", dets, DrawingUnits(unit="m", source="declared", confidence=1.0), config=config,
+            price_book=LIBRO,
+        )
     assert any("plantilla de personal de campo suma" in w for w in report.warnings)
 
 

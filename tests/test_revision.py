@@ -10,6 +10,8 @@ from klave_engine.detection.taxonomy import classify_family
 from klave_engine.detection.views import SheetSegmentation, ViewKind, ViewRegion
 from klave_engine.dxf.units import DrawingUnits
 
+from tests.precios import LIBRO
+
 
 def _wall(det_id, length, conf=0.9, label=""):
     det = make_detection(
@@ -41,7 +43,8 @@ def test_rows_cover_money_elements_with_doubts_first_and_verdicts():
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
     report = generate_cost_report(
         "p", [d for d in dets if d.display_label != "MUR-03"], units, CostingConfig(), seg, None,
-    )
+            price_book=LIBRO,
+        )
     table = build_revision_table(report, dets, seg, reviews)
     keys = [r.key for r in table.rows]
     assert "g1" not in keys  # grid lines carry no money

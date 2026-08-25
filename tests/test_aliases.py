@@ -11,6 +11,8 @@ from klave_engine.detection.results import DetectionType, make_detection
 from klave_engine.detection.taxonomy import classify_family
 from klave_engine.dxf.units import DrawingUnits
 
+from tests.precios import sembrar
+
 
 @pytest.fixture
 def store(data_dir):
@@ -62,6 +64,7 @@ def test_reference_alias_takes_the_row_clave_description_and_price(store):
 
 
 def test_concept_alias_prices_with_the_taller_matrix(store):
+    sembrar(store)
     store.create_concept(
         code="ALB-010", description="Muro de block del taller", unit="M2", phase="Albañilería",
         production_rate_per_day=12.0, components=[("MAT-BLOCK", 12.5), ("MO-CUAD-ALB", 0.12)],

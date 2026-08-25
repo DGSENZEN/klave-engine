@@ -11,6 +11,8 @@ from klave_engine.detection.slab_panels import SlabPanelConfig, detect_slab_pane
 from klave_engine.dxf.parser import DxfParser
 from klave_engine.dxf.units import DrawingUnits
 
+from tests.precios import LIBRO
+
 
 def _beam(msp, x0, y0, x1, y1, width=0.3):
     """A trabe drawn as two parallel lines."""
@@ -92,7 +94,7 @@ def test_slab_systems_split_into_their_own_concepts(tmp_path):
                {"EST-003", "EST-012", "EST-013", "CIM-007"}]
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
     boq = generate_bill_of_quantities(
-        "t", out.detections, units, catalog, build_all_apus(catalog), assumptions=assumptions
+        "t", out.detections, units, catalog, build_all_apus(catalog, LIBRO), assumptions=assumptions
     )
     lines = {line.concept_code: line for line in boq.lines}
     assert abs(lines["EST-003"].quantity - 5.7 * 4.7) < 0.05  # reticular m²

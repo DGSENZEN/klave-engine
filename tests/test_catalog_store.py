@@ -7,6 +7,8 @@ from klave_engine.costing.catalog_store import SEED_SOURCE, get_catalog_store
 from klave_engine.costing.insumos import APU_TEMPLATES, RESOURCES
 from klave_engine.costing.models import CostingAssumptions
 
+from tests.precios import sembrar
+
 
 @pytest.fixture
 def store(data_dir):
@@ -83,6 +85,7 @@ def test_import_prices_updates_only_existing(store):
 
 def test_labor_percentage_equation(store):
     """%MO lines cost = fraction × labor subtotal — the herramienta equation."""
+    sembrar(store)
     store.set_apu_components(
         "PRE-001",
         [("MO-PEON", 1.0), ("EQ-HERRAMIENTA", 1.0)],

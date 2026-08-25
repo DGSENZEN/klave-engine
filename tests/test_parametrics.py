@@ -21,6 +21,8 @@ from klave_engine.detection.views import SheetSegmentation, ViewKind, ViewRegion
 from klave_engine.dxf.units import DrawingUnits
 from openpyxl import Workbook
 
+from tests.precios import LIBRO
+
 
 @pytest.fixture
 def store(data_dir):
@@ -75,7 +77,7 @@ def test_basis_reads_built_area_from_superstructure_slabs_and_locales():
 def test_rules_propose_lines_only_where_the_plan_read_nothing():
     a = CostingAssumptions()
     catalog = build_default_catalog(a)
-    apus = build_all_apus(catalog)
+    apus = build_all_apus(catalog, LIBRO)
     boq = BillOfQuantities(project_id="p")
     # EST-004 already read from the plan: a rule for it must not override it.
     from klave_engine.costing.models import BoqLine, QuantityKind

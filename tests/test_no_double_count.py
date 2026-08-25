@@ -16,6 +16,8 @@ from klave_engine.detection.results import DetectionType, make_detection
 from klave_engine.detection.taxonomy import classify_family
 from klave_engine.dxf.units import DrawingUnits
 
+from tests.precios import LIBRO
+
 # Concrete concepts whose acero/cimbra/plantilla the engine derives on its own.
 DERIVED_FOR = ("CIM-002", "EST-001", "EST-002", "EST-005", "CIM-008")
 
@@ -41,7 +43,8 @@ def test_plantilla_is_its_own_line_from_the_footing_plan_area():
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
     report = generate_cost_report(
         "p", [_footing("z1", 0.0), _footing("z2", 5.0)], units, CostingConfig(), None, None,
-    )
+            price_book=LIBRO,
+        )
     lines = {ln.concept_code: ln for ln in report.boq.lines}
     assert "CIM-002" in lines
     plantilla = lines[CODE_PLANTILLA]

@@ -11,6 +11,8 @@ from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.dxf.entities import EntityType, EvidencePacket, NormalizedEntity
 from klave_engine.dxf.units import DrawingUnits
 
+from tests.precios import LIBRO
+
 
 def _beam(det_id, mark, family, span, **props):
     det = make_detection(
@@ -31,7 +33,7 @@ def test_trabes_use_declared_sections_and_contratrabes_go_to_cimentacion():
     catalog = [c for c in build_default_catalog(assumptions) if c.code in {"EST-002", "CIM-008"}]
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
     boq = generate_bill_of_quantities(
-        "t", dets, units, catalog, build_all_apus(catalog), assumptions=assumptions
+        "t", dets, units, catalog, build_all_apus(catalog, LIBRO), assumptions=assumptions
     )
     lines = {line.concept_code: line for line in boq.lines}
     expected_trabes = 4.0 * 0.24 + 5.0 * assumptions.beam_section_m2

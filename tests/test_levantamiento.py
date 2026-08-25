@@ -8,6 +8,8 @@ from klave_engine.costing.catalog_store import get_catalog_store
 from klave_engine.costing.levantamiento import apply_inventory
 from klave_engine.costing.models import BillOfQuantities, CostingAssumptions
 
+from tests.precios import LIBRO
+
 INVENTORY = {
     "unit": "m",
     "sheets": [
@@ -53,7 +55,7 @@ def test_mapping_rules_are_stored_and_unique_per_pattern(store):
 def test_mapped_counts_become_lines_with_provenance():
     assumptions = CostingAssumptions()
     catalog = build_default_catalog(assumptions)
-    apus = build_all_apus(catalog)
+    apus = build_all_apus(catalog, LIBRO)
     boq = BillOfQuantities(project_id="p")
     mappings = [
         # 16 descargas × 1 → PRE-001 (any priced concept serves the test)

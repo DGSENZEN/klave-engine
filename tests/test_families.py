@@ -14,6 +14,8 @@ from klave_engine.dxf.parser import DxfParser
 from klave_engine.dxf.units import DrawingUnits
 from klave_engine.geometry.spatial_index import SpatialIndex
 
+from tests.precios import LIBRO
+
 
 def _beam(det_id, mark, span, **props):
     det = make_detection(
@@ -48,7 +50,7 @@ def test_dalas_concrete_walls_and_block_walls_go_to_their_own_concepts():
                {"EST-002", "EST-005", "EST-004", "EST-014"}]
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
     boq = generate_bill_of_quantities(
-        "t", dets, units, catalog, build_all_apus(catalog), assumptions=a
+        "t", dets, units, catalog, build_all_apus(catalog, LIBRO), assumptions=a
     )
     lines = {line.concept_code: line for line in boq.lines}
     assert abs(lines["EST-002"].quantity - 4.0 * 0.125) < 1e-6
@@ -82,7 +84,7 @@ def test_piles_are_counted_and_left_unpriced_until_the_catalogo_prices_them(tmp_
     catalog = [c for c in build_default_catalog(a) if c.code == "CIM-010"]
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
     boq = generate_bill_of_quantities(
-        "t", out.detections, units, catalog, build_all_apus(catalog), assumptions=a
+        "t", out.detections, units, catalog, build_all_apus(catalog, LIBRO), assumptions=a
     )
     # No matrix: the count is on the presupuesto, visibly unpriced — never $0 quietly.
     [line] = boq.lines

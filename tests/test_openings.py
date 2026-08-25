@@ -13,6 +13,8 @@ from klave_engine.dxf.units import DrawingUnits
 from klave_engine.geometry.spatial_index import SpatialIndex
 from klave_engine.graph.evidence import EvidencePacket
 
+from tests.precios import LIBRO
+
 
 def _line(eid, p0, p1, layer="A-MURO"):
     bbox = (min(p0[0], p1[0]), min(p0[1], p1[1]), max(p0[0], p1[0]), max(p0[1], p1[1]))
@@ -59,7 +61,7 @@ def _lines(dets, a):
     catalog = [c for c in build_default_catalog(a) if c.code in {"EST-004", "ACA-001"}]
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
     boq = generate_bill_of_quantities(
-        "t", dets, units, catalog, build_all_apus(catalog), assumptions=a
+        "t", dets, units, catalog, build_all_apus(catalog, LIBRO), assumptions=a
     )
     return {ln.concept_code: ln for ln in boq.lines}
 

@@ -10,6 +10,8 @@ from klave_engine.detection.results import DetectionType, make_detection
 from klave_engine.detection.taxonomy import classify_family
 from klave_engine.dxf.units import DrawingUnits
 
+from tests.precios import LIBRO
+
 
 def _wall(det_id, length):
     det = make_detection(
@@ -22,7 +24,9 @@ def _wall(det_id, length):
 
 def test_explosion_totals_every_resource_with_its_origins():
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
-    report = generate_cost_report("p", [_wall("w1", 10.0)], units, CostingConfig(), None, None)
+    report = generate_cost_report("p", [_wall("w1", 10.0)], units, CostingConfig(), None, None,
+        price_book=LIBRO,
+    )
     wall = next(ln for ln in report.boq.lines if ln.concept_code == "EST-004")
     explosion = explode(report)
     block = next(r for r in explosion.resources if r.code == "MAT-BLOCK")
@@ -38,7 +42,9 @@ def test_long_description_names_the_matrix_materials():
     catalog = build_default_catalog(CostingAssumptions())
     concept = next(c for c in catalog if c.code == "EST-004")
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
-    report = generate_cost_report("p", [_wall("w1", 10.0)], units, CostingConfig(), None, None)
+    report = generate_cost_report("p", [_wall("w1", 10.0)], units, CostingConfig(), None, None,
+        price_book=LIBRO,
+    )
     apu = next(a for a in report.apus if a.concept_code == "EST-004")
     text = long_description(concept, apu)
     assert text.startswith("Suministro y construcción de muros de block")

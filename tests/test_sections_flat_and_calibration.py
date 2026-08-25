@@ -12,6 +12,8 @@ from klave_engine.detection.results import DetectionType, make_detection
 from klave_engine.detection.taxonomy import classify_family
 from klave_engine.dxf.units import DrawingUnits
 
+from tests.precios import LIBRO
+
 
 def _column(det_id, mark, section=None):
     props = {"section_cm": section} if section else {}
@@ -27,7 +29,7 @@ def _boq(dets, a=None):
     catalog = [c for c in build_default_catalog(a) if c.code == "EST-001"]
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
     return generate_bill_of_quantities(
-        "t", dets, units, catalog, build_all_apus(catalog), segmentation=None, assumptions=a
+        "t", dets, units, catalog, build_all_apus(catalog, LIBRO), segmentation=None, assumptions=a
     )
 
 
