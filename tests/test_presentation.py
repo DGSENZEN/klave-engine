@@ -114,3 +114,53 @@ def test_reasons_say_why_when_confidence_is_below_firm():
     reasons = money_basis_from_boq(boq, units).reasons
 
     assert any("Unidad leída como" in r for r in reasons)
+
+
+def test_the_report_carries_its_own_basis():
+    """The verdict travels with the run, so a surface never has to re-derive it."""
+    from klave_engine.costing.models import CostingConfig
+    from klave_engine.costing.report import generate_cost_report
+    from klave_engine.detection.results import DetectionType, make_detection
+    from klave_engine.detection.taxonomy import classify_family
+
+    from tests.precios import LIBRO
+
+    wall = make_detection(
+        "w1", DetectionType.wall, "w1", (0, 0, 10.0, 0.15), 0.9, [], "m", [],
+        {"estimated_length": 10.0, "estimated_thickness": 0.15, "wall_kind": "block"},
+    )
+    wall.family = classify_family(wall).value
+    units = DrawingUnits(unit="m", source="dxf_header", confidence=0.9)
+
+    report = generate_cost_report(
+        "p", [wall], units, CostingConfig(), None, None, price_book=LIBRO
+    )
+
+    assert report.money_basis is not None
+    assert report.money_basis.units_reliable is True
+    assert report.money_basis.unit == "m"
+    assert sum(report.money_basis.confidence_bands.values()) == pytest.approx(100.0, abs=0.2)
+
+
+def test_an_unreadable_drawing_produces_a_basis_that_blocks():
+    from klave_engine.costing.models import CostingConfig
+    from klave_engine.costing.report import generate_cost_report
+    from klave_engine.detection.results import DetectionType, make_detection
+    from klave_engine.detection.taxonomy import classify_family
+
+    from tests.precios import LIBRO
+
+    wall = make_detection(
+        "w1", DetectionType.wall, "w1", (0, 0, 10.0, 0.15), 0.9, [], "u", [],
+        {"estimated_length": 10.0, "estimated_thickness": 0.15, "wall_kind": "block"},
+    )
+    wall.family = classify_family(wall).value
+    unknown = DrawingUnits(unit="drawing_units", source="unknown", confidence=0.0)
+
+    report = generate_cost_report(
+        "p", [wall], unknown, CostingConfig(), None, None, price_book=LIBRO
+    )
+
+    assert resolve_money_state(report.money_basis, UNCONFIRMED) == "blocked"
+    assert resolve_money_state(report.money_basis, CONFIRMED) == "blocked"
+    assert report.money_basis.reasons  # it says why, not just no

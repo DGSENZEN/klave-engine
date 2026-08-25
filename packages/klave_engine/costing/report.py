@@ -43,6 +43,7 @@ from klave_engine.costing.plantilla import (
     build_personal_tecnico,
     desajuste_de_indirectos,
 )
+from klave_engine.costing.presentation import money_basis_from_boq
 from klave_engine.costing.reviews import ManualAdjustment
 from klave_engine.costing.schedule import build_schedule
 from klave_engine.costing.steel import SteelAssumptions, apply_steel, compute_steel
@@ -365,6 +366,7 @@ def generate_cost_report(
         # tiene que cuadrar, guardados con el reporte.
         plantilla_campo=list(config.plantilla_campo),
         indirectos_campo=indirectos_campo,
+        money_basis=money_basis_from_boq(boq, units),
     )
     log_stage(
         logger,

@@ -427,3 +427,8 @@ class CostReport(BaseModel):
     # configuración de hoy.
     plantilla_campo: list[CargoCampo] = Field(default_factory=list)
     indirectos_campo: float = 0.0
+    # What the engine read about the drawing's scale, frozen with this run.
+    # Joined with the reviews' sign-off by costing.presentation at read time;
+    # None on runs written before the verdict existed, which resolve to
+    # "blocked" rather than being trusted.
+    money_basis: MoneyBasis | None = None
