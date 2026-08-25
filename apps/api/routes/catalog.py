@@ -56,6 +56,7 @@ from pydantic import BaseModel, Field
 from apps.api.auth.common import rate_limit
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
+from apps.api.routes.projects import visible_project_filter
 from apps.api.tenancy import store_for_project, store_for_request
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
@@ -1003,25 +1004,71 @@ def concept_matches(
     }
 
 
+def _specs_de_los_proyectos(
+    request: Request, store: ProjectStore
+) -> dict[str, list[str]]:
+    """Material y diámetro que los planos del taller declararon, por concepto.
+
+    Una tubería de agua fría sin diámetro no la cotiza nadie, y el diámetro no
+    vive en el catálogo: vive en el proyecto que se midió. Aquí se recogen los
+    que ya se leyeron, para buscarle precio a lo que el taller construye de
+    verdad y no a un concepto abstracto."""
+    keep = visible_project_filter(request, store)
+    por_concepto: dict[str, set[str]] = {}
+    for project_id in store.list_projects():
+        if not keep(project_id):
+            continue
+        try:
+            report = store.read_artifact(project_id, "cost_report.json")
+        except Exception:  # noqa: BLE001 — un proyecto sin reporte no aporta nada
+            continue
+        for line in (report.get("boq") or {}).get("lines") or []:
+            code = line.get("concept_code")
+            descripcion = (line.get("description") or "").strip()
+            if code and descripcion:
+                por_concepto.setdefault(code, set()).add(descripcion)
+    return {code: sorted(v) for code, v in por_concepto.items()}
+
+
 @router.get("/matches")
 def all_matches(
     request: Request,
     source_key: str | None = None,
     min_score: float = 0.5,
     catalog: CatalogStore = Depends(get_catalog),
+    store: ProjectStore = Depends(get_store),
 ) -> dict:
-    """Best candidate per concept without an alias: the bulk review list."""
+    """Best candidate per concept without an alias: the bulk review list.
+
+    Cuando los planos del taller ya declararon el material y el diámetro de un
+    concepto, se busca con ellos: es la diferencia entre buscarle precio a
+    «tubería de agua fría» —que no lo tiene— y a «tubería de agua fría de
+    cobre de 25 mm (1")», que sí."""
     rate_limit(request, "matches", max_attempts=60, window_seconds=300.0)
     aliases = catalog.load_concept_aliases()
     candidates = _candidates(catalog, source_key)
+    try:
+        medidas = _specs_de_los_proyectos(request, store)
+    except Exception:  # noqa: BLE001 — sin proyectos legibles se busca sin ellas
+        medidas = {}
     out = []
     for row in catalog.load_concepts():
         if row["code"] in aliases or not row.get("rule_key"):
             continue
-        best = rank(row["description"], row["unit"], candidates, phase=row["phase"], limit=1)
-        if best and best[0].score >= min_score:
+        # Una descripción por cada forma en que el taller la construye: dos
+        # diámetros son dos precios, y ofrecer uno solo esconde al otro. Pero
+        # si algún proyecto ya dijo la medida, la versión pelona del catálogo
+        # sobra — es la misma pregunta con menos información.
+        leidas = medidas.get(row["code"]) or []
+        con_medida = [v for v in leidas if v.strip() != row["description"].strip()]
+        variantes = con_medida or leidas or [row["description"]]
+        for variante in variantes:
+            best = rank(variante, row["unit"], candidates, phase=row["phase"], limit=1)
+            if not best or best[0].score < min_score:
+                continue
             out.append({
-                "concept_code": row["code"], "description": row["description"],
+                "concept_code": row["code"], "description": variante,
+                "leido_del_plano": variante != row["description"],
                 "unit": row["unit"], "match": _match_payload(best[0]),
             })
     out.sort(key=lambda item: -item["match"]["score"])
