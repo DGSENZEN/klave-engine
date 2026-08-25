@@ -129,15 +129,21 @@ def test_plantilla_import_maps_rows_and_creates_rules(store):
         store, raw, "lote02.xlsx", name="Lote 02", tipologia="casa habitación",
         area_m2=320.0, actor="Ana",
     )
-    assert result["concepts_created"] == 2 and result["rules"] == 2
-    assert result["comparison_rules"] == 1  # PRE-001 is read by the engine
+    # Dos renglones caen sobre conceptos que el motor ya lee del plano — el
+    # trazo y la salida eléctrica para contacto — así que se vuelven reglas de
+    # comparación y no propuestas: no hace falta estimar por m² lo que se
+    # cuenta del dibujo. Sólo la salida hidráulica de cobre, que no coincide
+    # con ningún concepto, entra como concepto nuevo con su precio.
+    assert result["concepts_created"] == 1 and result["rules"] == 1
+    assert result["comparison_rules"] == 2
     assert any("SIN-PRECIO" in p for p in result["problems"])
     rules = {r["concept_code"]: r for r in store.list_parametric_rules()}
     assert "PRE-001" not in rules  # comparison-only rules do not propose lines
-    assert abs(rules["INS-ELE-01"]["factor"] - 48 / 320) < 1e-9
-    assert rules["INS-ELE-01"]["source"].startswith("Lote 02")
+    assert "ELE-001" not in rules  # idem: el motor cuenta los contactos
+    assert abs(rules["INS-HID-02"]["factor"] - 12 / 320) < 1e-9
+    assert rules["INS-HID-02"]["source"].startswith("Lote 02")
     prices = store.load_concept_prices()
-    assert prices["INS-ELE-01"]["price"] == 950.0
+    assert prices["INS-HID-02"]["price"] == 1480.0
     # A new project of 215 m² read from its slabs proposes 32.25 salidas.
     dets = [_slab("s1", 120.0), _slab("s2", 95.0)]
     units = DrawingUnits(unit="m", source="declared", confidence=1.0)
@@ -147,6 +153,6 @@ def test_plantilla_import_maps_rows_and_creates_rules(store):
         store_concepts=store.load_concepts(), concept_prices=store.load_concept_prices(),
         parametric_rules=store.list_parametric_rules(),
     )
-    line = next(ln for ln in report.boq.lines if ln.concept_code == "INS-ELE-01")
-    assert line.parametric and abs(line.quantity - 48 / 320 * 215) < 1e-6
-    assert line.unit_price == 950.0 and line.phase == "INSTALACIONES"
+    line = next(ln for ln in report.boq.lines if ln.concept_code == "INS-HID-02")
+    assert line.parametric and abs(line.quantity - 12 / 320 * 215) < 1e-6
+    assert line.unit_price == 1480.0 and line.phase == "INSTALACIONES"

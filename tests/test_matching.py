@@ -1,7 +1,14 @@
 """Ranking the taller's catálogo against an engine concept: units gate, words
 score, specs decide, and every score says why."""
 
-from klave_engine.costing.matching import Candidate, rank, score, unit_key
+from klave_engine.costing.matching import (
+    Candidate,
+    partida_de,
+    rank,
+    score,
+    split_alcance,
+    unit_key,
+)
 
 
 def _c(clave, description, unit, price=100.0, kind="reference"):
@@ -62,3 +69,75 @@ def test_head_noun_negatives_and_thickness():
     firme8 = score("Firme de concreto f'c=150 de 10 cm, acabado pulido", "M2",
                    _c("F8", "Firme de 8 cm de espesor de concreto f'c=150 pulido", "M2"))
     assert firme10 and firme8 and firme10.score > firme8.score + 0.2
+
+
+# ------------------------------------------- normalización del catálogo ----
+
+
+def test_el_alcance_no_pesa_como_la_identidad():
+    """Un renglón mexicano se escribe «<concepto>, incluye: <alcances>». Lo de
+    antes dice qué es; lo de después, hasta dónde llega el precio. Mezclarlos
+    hace que «cople, etiqueta verde» pesen tanto como «tubo conduit»."""
+    identidad, alcance = split_alcance(
+        'tubo conduit galvanizado de 13 mm, incluye: cople, etiqueta verde'
+    )
+    assert identidad == "tubo conduit galvanizado de 13 mm"
+    assert alcance == "cople, etiqueta verde"
+    # Sin cláusula, todo es identidad.
+    assert split_alcance("Muro de block") == ("Muro de block", "")
+
+
+def test_el_verbo_con_el_que_abre_un_renglon_no_lo_identifica():
+    """«Suministro y colocación de tubo conduit» y «Canalización con tubo
+    conduit» son el mismo concepto y no comparten el verbo."""
+    publicado = _c("EL01", "Suministro y colocación de tubo conduit galvanizado de 13 mm", "M")
+    m = score("Canalización con tubo conduit, incluye accesorios", "M", publicado,
+              "Instalación eléctrica")
+    assert m is not None and m.score > 0.4
+
+
+def test_ramaleo_y_tuberia_son_la_misma_familia():
+    """El sinónimo tiene que valer también para la familia y la cabeza, no
+    sólo para las palabras sueltas: cuando sólo valía para las palabras, un
+    «ramaleo a base de tubería» se llevaba el castigo de ser otra cosa y
+    desaparecía de los candidatos."""
+    m = score(
+        "Tubería de agua caliente con aislamiento", "M",
+        _c("R1", "RAMALEO A BASE DE TUBERIA DE POLIPROPILENO DE 13 MM", "M"),
+        "Instalación hidráulica",
+    )
+    assert m is not None
+    assert not any("no un(a)" in r for r in m.reasons)
+
+
+def test_la_partida_del_renglon_es_lo_que_dice_no_donde_lo_archivaron():
+    """Un taller archiva «ramaleo de tubería» bajo ALB porque ranurar el muro
+    es trabajo de albañil, y eso no lo vuelve albañilería cuando se le busca
+    precio a una tubería."""
+    assert partida_de("1-ALB-LIM-075", "RAMALEO A BASE DE TUBERIA DE POLIPROPILENO") == (
+        "hidraulica"
+    )
+    # Sin nada que lo diga, el prefijo sí sugiere.
+    assert partida_de("1-ALB-GEN-001", "Renglón sin señas") == "albanileria"
+    assert partida_de("SIN-CLAVE", "Renglón sin señas") == ""
+
+
+def test_una_partida_distinta_descarta_el_renglon():
+    """«Alimentación eléctrica … protegida con tubo» ganaba sobre una tubería
+    de gas por compartir la palabra tubo."""
+    m = score(
+        "Tubería de gas, incluye conexiones y prueba de hermeticidad", "M",
+        _c("E9", "ALIMENTACION ELECTRICA DE CENTRO DE CARGA PROTEGIDA CON TUBO", "M"),
+        "Instalación de gas",
+    )
+    assert m is None or any("otra partida" in r for r in m.reasons)
+
+
+def test_un_preparativo_no_es_la_cosa_que_prepara():
+    """Una «ranura para alojar tubería» no es tubería."""
+    m = score(
+        "Tubería de agua fría, incluye conexiones", "M",
+        _c("R9", 'RANURA PARA ALOJAR TUBERÍA HASTA DE 3/4" EN MURO', "M"),
+        "Instalación hidráulica",
+    )
+    assert m is None or any("no un(a) tuberia" in r for r in m.reasons)

@@ -301,3 +301,86 @@ def test_en_hoja_estructural_un_marco_sin_titulo_no_se_asume_planta():
     vistas = {v.view_id: v for v in segment_views([], [], frames).views}
     assert vistas["f0"].kind == ViewKind.plan
     assert vistas["f2"].kind == ViewKind.excluded
+
+
+# ------------------------------------------ diámetro leído del plano -------
+
+
+def _spec(tmp_path, name, build):
+    salida = detect_runs(_entities(tmp_path, name, build), None, IdGenerator("d"), 1.0, [])
+    return {d.properties["run_family"]: d.properties["spec"] for d in salida.detections}
+
+
+def test_el_diametro_se_lee_del_rotulo_pegado_al_trazo(tmp_path):
+    """«Tubería de agua fría» no se puede cotizar contra ninguna publicación:
+    nadie publica precio de una tubería sin diámetro."""
+    def build(doc):
+        msp = doc.modelspace()
+        msp.add_line((0, 0), (12, 0), dxfattribs={"layer": "P-04IH-CPIP"})
+        msp.add_text('AF-1/2"%%C', dxfattribs={"layer": "TEXTOS", "height": 0.2}).set_placement(
+            (6, 0.5)
+        )
+    assert _spec(tmp_path, "d.dxf", build)["agua_fria"] == 'AF-1/2"Ø'
+
+
+def test_un_rotulo_lejos_del_trazo_no_es_de_esta_corrida(tmp_path):
+    def build(doc):
+        msp = doc.modelspace()
+        msp.add_line((0, 0), (12, 0), dxfattribs={"layer": "GAS"})
+        msp.add_text('19 MM', dxfattribs={"layer": "TEXTOS", "height": 0.2}).set_placement(
+            (6, 40)
+        )
+    assert _spec(tmp_path, "l.dxf", build)["gas"] == ""
+
+
+def test_el_rotulo_que_nombra_otro_sistema_no_es_de_esta_corrida(tmp_path):
+    """Agua fría, caliente y retorno corren paralelas dentro del mismo muro,
+    así que un rótulo cae a un metro de las tres. Lo que las distingue es lo
+    que el rótulo dice, no dónde está."""
+    def build(doc):
+        msp = doc.modelspace()
+        msp.add_line((0, 0), (12, 0), dxfattribs={"layer": "P-04IH-CPIP"})
+        msp.add_line((0, 0.1), (12, 0.1), dxfattribs={"layer": "P-04IH-HPIP"})
+        msp.add_text('AF-1/2"%%C', dxfattribs={"layer": "T", "height": 0.2}).set_placement(
+            (6, 0.4)
+        )
+    specs = _spec(tmp_path, "s.dxf", build)
+    assert specs["agua_fria"] == 'AF-1/2"Ø'
+    assert specs["agua_caliente"] == ""
+
+
+def test_un_rotulo_de_varias_tuberias_se_reparte(tmp_path):
+    """«AF-1/2"Ø AC-1/2"Ø RAC-1/2"Ø» es un rótulo para tres tuberías que van
+    juntas por el muro: cada corrida se lleva su pedazo."""
+    def build(doc):
+        msp = doc.modelspace()
+        for layer, y in (("P-04IH-CPIP", 0.0), ("P-04IH-HPIP", 0.1), ("P-04IH-RPIP", 0.2)):
+            msp.add_line((0, y), (12, y), dxfattribs={"layer": layer})
+        msp.add_text('AF-1/2"%%C AC-3/4"%%C RAC-1/2"%%C',
+                     dxfattribs={"layer": "T", "height": 0.2}).set_placement((6, 0.5))
+    specs = _spec(tmp_path, "m.dxf", build)
+    assert specs["agua_fria"] == 'AF-1/2"Ø'
+    assert specs["agua_caliente"] == 'AC-3/4"Ø'
+    assert specs["retorno"] == 'RAC-1/2"Ø'
+
+
+def test_un_diametro_imposible_para_ese_sistema_no_es_su_rotulo(tmp_path):
+    """Una línea de refrigerante de 12 pulgadas no existe: ese rótulo es del
+    ducto que corre al lado."""
+    def build(doc):
+        msp = doc.modelspace()
+        msp.add_line((0, 0), (12, 0), dxfattribs={"layer": "AireDucto"})
+        msp.add_line((0, 0.1), (12, 0.1), dxfattribs={"layer": "AireTuboCu"})
+        msp.add_text('12"', dxfattribs={"layer": "T", "height": 0.2}).set_placement((6, 0.4))
+    specs = _spec(tmp_path, "a.dxf", build)
+    assert specs["ducto"] == '12"'
+    assert specs["refrigerante"] == ""
+
+
+def test_sin_rotulo_la_corrida_dice_que_le_falta_el_diametro(tmp_path):
+    def build(doc):
+        doc.modelspace().add_line((0, 0), (12, 0), dxfattribs={"layer": "00-SANITARIA"})
+    salida = detect_runs(_entities(tmp_path, "n.dxf", build), None, IdGenerator("d"), 1.0, [])
+    notas = " ".join(salida.detections[0].evidence.notes)
+    assert "sin rótulo de diámetro" in notas
+    assert "el precio no se puede fijar solo" in notas
