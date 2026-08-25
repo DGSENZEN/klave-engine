@@ -19,8 +19,23 @@ from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile
 from klave_engine.common.config import Settings
 from klave_engine.common.io import write_json
 from klave_engine.costing.catalog import build_catalog_from_store
+from klave_engine.costing.convenios import (
+    Convenio,
+    catalogo_vigente,
+    desde_estimacion,
+)
+from klave_engine.costing.convenios import (
+    estado as estado_contrato,
+)
 from klave_engine.costing.convocante import atar_catalogo, avisos_de_cantidad
-from klave_engine.costing.estimaciones import Estimacion, calcular, siguiente
+from klave_engine.costing.estimaciones import (
+    Estimacion,
+    RenglonEstimado,
+    calcular,
+    siguiente,
+)
+from klave_engine.costing.finiquito import Finiquito
+from klave_engine.costing.finiquito import calcular as calcular_finiquito
 from klave_engine.costing.models import BillOfQuantities, CostingAssumptions
 from klave_engine.costing.sources.custom import CustomCatalogError
 from klave_engine.costing.sources.presupuesto import parse_presupuesto_file
@@ -35,6 +50,8 @@ router = APIRouter(prefix="/projects", tags=["obra"])
 MAX_IMPORT_BYTES = 8 * 1024 * 1024
 CATALOGO = "catalogo_convocante.json"
 ESTIMACIONES = "estimaciones.json"
+CONVENIOS = "convenios.json"
+FINIQUITO = "finiquito.json"
 
 
 def _control_dir(store: ProjectStore, settings: Settings, project_id: str) -> Path:
@@ -220,4 +237,246 @@ def crear_siguiente(
         )
     ultima = Estimacion.model_validate(datos[-1])
     nueva = siguiente(ultima, ultima.numero + 1, inicio, fin)
+
+    # Un convenio firmado cambió lo contratado. Sin esto la estimación seguiría
+    # marcando como excedido algo que ya se convino, y el aviso que sí importa
+    # se perdería entre los que ya no.
+    convs = _convenios(store, settings, project_id)
+    if convs:
+        vigente = catalogo_vigente(
+            {r.clave: r.quantity_contract for r in nueva.renglones}, convs
+        )
+        claves = {r.clave for r in nueva.renglones}
+        renglones = [
+            r.model_copy(update={"quantity_contract": vigente[r.clave]})
+            for r in nueva.renglones
+        ]
+        # Un convenio puede traer conceptos que no estaban en el catálogo.
+        for conv in sorted(convs, key=lambda c: c.numero):
+            for extra in conv.renglones:
+                if extra.clave in claves:
+                    continue
+                claves.add(extra.clave)
+                renglones.append(
+                    RenglonEstimado(
+                        clave=extra.clave, description=extra.description, unit=extra.unit,
+                        unit_price=extra.unit_price, quantity_contract=extra.quantity,
+                        quantity_period=0.0, quantity_previous=0.0,
+                    )
+                )
+        # El catálogo de la convocante es el contrato, pero no todos los
+        # proyectos lo cargaron. Sin ese respaldo manda lo que se capturó a
+        # mano: tomar cero de un catálogo ausente dejaría el monto del contrato
+        # por los suelos y la amortización del anticipo saldría mal, callada.
+        monto = _monto_contrato(store, settings, project_id) or nueva.monto_contrato
+        nueva = nueva.model_copy(
+            update={
+                "renglones": renglones,
+                "monto_contrato": estado_contrato(convs, monto, 0).monto_vigente,
+            }
+        )
     return {"estimacion": nueva.model_dump(mode="json"), "resumen": vars(calcular(nueva))}
+
+
+# --- Convenios modificatorios ------------------------------------------------
+#
+# Un convenio cambia el contrato, así que a partir de aquí «lo contratado» deja
+# de ser lo que se firmó al principio. Las estimaciones tienen que leer el
+# catálogo vigente o van a seguir marcando como excedido algo que ya se convino.
+
+
+class ConvenioInput(BaseModel):
+    convenio: Convenio
+
+
+def _convenios(store: ProjectStore, settings: Settings, project_id: str) -> list[Convenio]:
+    datos = _leer(store, settings, project_id, CONVENIOS) or []
+    return [Convenio.model_validate(d) for d in datos]
+
+
+def _monto_contrato(store: ProjectStore, settings: Settings, project_id: str) -> float:
+    """El monto original del contrato, del catálogo de la convocante."""
+    datos = _leer(store, settings, project_id, CATALOGO)
+    if not datos:
+        return 0.0
+    return round(
+        sum(
+            float(r.get("quantity") or 0) * float(r.get("unit_price") or 0)
+            for r in datos.get("renglones", [])
+        ),
+        2,
+    )
+
+
+@router.get("/{project_id}/convenios")
+def listar_convenios(
+    project_id: str,
+    plazo_dias: int = 0,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Los convenios firmados y qué tan cerca están del techo del art. 59."""
+    convs = _convenios(store, settings, project_id)
+    monto = _monto_contrato(store, settings, project_id)
+    crudas = _leer(store, settings, project_id, ESTIMACIONES) or []
+    capturado = float(crudas[-1].get("monto_contrato") or 0) if crudas else None
+    st = estado_contrato(convs, monto, plazo_dias, capturado or None)
+    return {
+        "convenios": [c.model_dump(mode="json") for c in convs],
+        "estado": {
+            "monto_original": st.monto_original,
+            "monto_convenido": st.monto_convenido,
+            "monto_vigente": st.monto_vigente,
+            "monto_pct": st.monto_pct,
+            "plazo_original_dias": st.plazo_original_dias,
+            "dias_convenidos": st.dias_convenidos,
+            "plazo_vigente_dias": st.plazo_vigente_dias,
+            "plazo_pct": st.plazo_pct,
+            "rebasa_techo": st.rebasa_techo,
+            "techo_pct": 25.0,
+            "avisos": st.avisos,
+        },
+    }
+
+
+@router.put("/{project_id}/convenios/{numero}")
+def guardar_convenio(
+    project_id: str,
+    numero: int,
+    body: ConvenioInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    conv = body.convenio.model_copy(update={"numero": numero})
+    datos = _leer(store, settings, project_id, CONVENIOS) or []
+    datos = [d for d in datos if int(d.get("numero", 0)) != numero]
+    datos.append(conv.model_dump(mode="json"))
+    datos.sort(key=lambda d: int(d.get("numero", 0)))
+    _guardar(store, settings, project_id, CONVENIOS, datos)
+    BUS.publish("convenio_guardado", project_id, clean_actor(x_actor))
+    return {"convenio": conv.model_dump(mode="json")}
+
+
+@router.delete("/{project_id}/convenios/{numero}", status_code=204)
+def borrar_convenio(
+    project_id: str,
+    numero: int,
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    datos = _leer(store, settings, project_id, CONVENIOS) or []
+    quedan = [d for d in datos if int(d.get("numero", 0)) != numero]
+    if len(quedan) == len(datos):
+        raise HTTPException(status_code=404, detail="No existe ese convenio.")
+    _guardar(store, settings, project_id, CONVENIOS, quedan)
+    BUS.publish("convenio_guardado", project_id, clean_actor(x_actor))
+
+
+@router.post("/{project_id}/convenios/desde-estimacion/{numero}")
+def borrador_de_convenio(
+    project_id: str,
+    numero: int,
+    fecha: str,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """El borrador que resuelve lo que una estimación no pudo cobrar.
+
+    No se guarda: sale a la pantalla para que alguien le escriba el motivo. La
+    ley pide causa justificada y el motor sabe que se excedió, no por qué."""
+    datos = _leer(store, settings, project_id, ESTIMACIONES) or []
+    cruda = next((d for d in datos if int(d.get("numero", 0)) == numero), None)
+    if cruda is None:
+        raise HTTPException(status_code=404, detail="No existe esa estimación.")
+    est = Estimacion.model_validate(cruda)
+    convs = _convenios(store, settings, project_id)
+    borrador = desde_estimacion(est, numero=max((c.numero for c in convs), default=0) + 1,
+                               fecha=fecha)
+    if not borrador.renglones:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_type": "sin_excedentes",
+                "message": "Esa estimación no rebasa ninguna cantidad del catálogo, "
+                           "así que no necesita convenio.",
+            },
+        )
+    return {"convenio": borrador.model_dump(mode="json")}
+
+
+# --- Finiquito ---------------------------------------------------------------
+
+
+class FiniquitoInput(BaseModel):
+    finiquito: Finiquito
+
+
+@router.get("/{project_id}/finiquito")
+def leer_finiquito(
+    project_id: str,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """El finiquito guardado, o uno precargado con lo que ya sabe la aplicación.
+
+    Precargar no es inventar: lo ejecutado, lo pagado y lo retenido salen de las
+    estimaciones que ya se capturaron. Lo que el motor no puede saber —los días
+    de atraso, el porcentaje de pena que fija el contrato— nace en cero y a la
+    vista."""
+    guardado = _leer(store, settings, project_id, FINIQUITO)
+    if guardado:
+        fin = Finiquito.model_validate(guardado)
+        return {
+            "finiquito": fin.model_dump(mode="json"),
+            "resumen": calcular_finiquito(fin).payload(),
+            "guardado": True,
+        }
+
+    crudas = _leer(store, settings, project_id, ESTIMACIONES) or []
+    estimaciones = [Estimacion.model_validate(d) for d in crudas]
+    resumenes = [calcular(e) for e in estimaciones]
+    convs = _convenios(store, settings, project_id)
+    # La base del anticipo tiene que ser la misma que produjo las
+    # amortizaciones, o el remanente sale de una resta entre dos contratos
+    # distintos y el finiquito acusa de algo que no pasó.
+    ultima_monto = estimaciones[-1].monto_contrato if estimaciones else 0.0
+    monto = ultima_monto or _monto_contrato(store, settings, project_id)
+    monto_vigente = estado_contrato(convs, monto, 0).monto_vigente
+
+    ultima = estimaciones[-1] if estimaciones else None
+    fin = Finiquito(
+        fecha="",
+        monto_contrato=monto_vigente,
+        ejecutado=round(sum(r.importe for r in resumenes), 2),
+        pagado=round(sum(r.liquido for r in resumenes), 2),
+        anticipo_otorgado=round(
+            monto_vigente * (ultima.anticipo_pct if ultima else 0.0) / 100.0, 2
+        ),
+        anticipo_amortizado=round(sum(r.amortizacion for r in resumenes), 2),
+        retenciones_aplicadas=round(sum(r.retencion for r in resumenes), 2),
+    )
+    return {
+        "finiquito": fin.model_dump(mode="json"),
+        "resumen": calcular_finiquito(fin).payload(),
+        "guardado": False,
+    }
+
+
+@router.put("/{project_id}/finiquito")
+def guardar_finiquito(
+    project_id: str,
+    body: FiniquitoInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    fin = body.finiquito
+    _guardar(store, settings, project_id, FINIQUITO, fin.model_dump(mode="json"))
+    BUS.publish("finiquito_guardado", project_id, clean_actor(x_actor))
+    return {
+        "finiquito": fin.model_dump(mode="json"),
+        "resumen": calcular_finiquito(fin).payload(),
+        "guardado": True,
+    }

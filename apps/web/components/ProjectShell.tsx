@@ -11,10 +11,12 @@ import {
   CaretLeft,
   Coins,
   FileMagnifyingGlass,
+  Flag,
   GearSix,
   List,
   ListChecks,
   MapTrifold,
+  NotePencil,
   Receipt,
   Scales,
   SquaresFour,
@@ -103,9 +105,10 @@ function nav(id: string): { group: string; items: Item[] }[] {
       ],
     },
     {
-      // Ganar la obra y cobrarla son dos fases distintas de la misma obra, y
-      // la segunda no existía en la aplicación: el catálogo que manda en una
-      // licitación y las estimaciones que se cobran cada mes.
+      // Ganar la obra, cobrarla, modificarla y cerrarla: la vida entera del
+      // contrato, en el orden en que ocurre. El convenio va después de las
+      // estimaciones porque nace de ellas —una cantidad rebasada— y el
+      // finiquito al final porque no hay nada después.
       group: "Contrato",
       items: [
         {
@@ -119,6 +122,18 @@ function nav(id: string): { group: string; items: Item[] }[] {
           label: "Estimaciones",
           icon: <Receipt size={18} />,
           href: `${b}/estimaciones`,
+        },
+        {
+          key: "convenios",
+          label: "Convenios",
+          icon: <NotePencil size={18} />,
+          href: `${b}/convenios`,
+        },
+        {
+          key: "finiquito",
+          label: "Finiquito",
+          icon: <Flag size={18} />,
+          href: `${b}/finiquito`,
         },
       ],
     },

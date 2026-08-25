@@ -122,6 +122,8 @@ async function deleteJSON<T>(path: string, headers?: Record<string, string>): Pr
     } catch {}
     throw new ApiError(res.status, path, detail);
   }
+  // Un DELETE bien hecho responde 204 sin cuerpo, y res.json() truena con eso.
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -963,6 +965,125 @@ export const siguienteEstimacion = (id: string, inicio: string, fin: string) =>
   postJSON<EstimacionConResumen>(
     `/projects/${id}/estimaciones/siguiente?inicio=${inicio}&fin=${fin}`,
     {},
+  );
+
+/**
+ * Convenios modificatorios y finiquito: el contrato cuando cambia y cuando
+ * termina.
+ *
+ * El techo del art. 59 de la LOPSRM (25 % del monto o del plazo, en conjunto)
+ * lo calcula la API, no la pantalla: es una regla legal, no una decoración.
+ */
+export type RenglonConvenio = {
+  clave: string;
+  description: string;
+  unit: string;
+  unit_price: number;
+  quantity: number;
+  /** Lo que decía el contrato antes; 0 si el concepto no existía. */
+  quantity_anterior: number;
+};
+
+export type Convenio = {
+  numero: number;
+  fecha: string;
+  tipo: "monto" | "plazo" | "ambos";
+  motivo: string;
+  renglones: RenglonConvenio[];
+  dias_plazo: number;
+};
+
+export type EstadoContrato = {
+  monto_original: number;
+  monto_convenido: number;
+  monto_vigente: number;
+  monto_pct: number;
+  plazo_original_dias: number;
+  dias_convenidos: number;
+  plazo_vigente_dias: number;
+  plazo_pct: number;
+  rebasa_techo: boolean;
+  techo_pct: number;
+  avisos: string[];
+};
+
+export const getConvenios = (id: string, plazoDias = 0) =>
+  getJSON<{ convenios: Convenio[]; estado: EstadoContrato }>(
+    `/projects/${id}/convenios?plazo_dias=${plazoDias}`,
+  );
+
+export const guardarConvenio = (
+  id: string,
+  numero: number,
+  convenio: Convenio,
+  actor?: string,
+) =>
+  putJSON<{ convenio: Convenio }>(
+    `/projects/${id}/convenios/${numero}`,
+    { convenio },
+    actor ? { "X-Actor": actor } : {},
+  );
+
+export const borrarConvenio = (id: string, numero: number, actor?: string) =>
+  deleteJSON<void>(
+    `/projects/${id}/convenios/${numero}`,
+    actor ? { "X-Actor": actor } : {},
+  );
+
+/** El borrador que resuelve lo que una estimación no pudo cobrar. No se guarda. */
+export const borradorConvenio = (id: string, numero: number, fecha: string) =>
+  postJSON<{ convenio: Convenio }>(
+    `/projects/${id}/convenios/desde-estimacion/${numero}?fecha=${fecha}`,
+    {},
+  );
+
+export type SaldoFiniquito = {
+  concepto: string;
+  importe: number;
+  razon: string;
+  a_favor: string;
+};
+
+export type Finiquito = {
+  fecha: string;
+  monto_contrato: number;
+  ejecutado: number;
+  pagado: number;
+  anticipo_otorgado: number;
+  anticipo_amortizado: number;
+  retenciones_aplicadas: number;
+  retencion_sustituida_por_fianza: boolean;
+  dias_atraso: number;
+  pena_pct_diario: number;
+  otros: SaldoFiniquito[];
+};
+
+export type ResumenFiniquito = {
+  fecha: string;
+  ejecutado: number;
+  pagado: number;
+  saldos: SaldoFiniquito[];
+  saldo_final: number;
+  /** "contratista" | "contratante" | "nadie" — lo decide la API, no la pantalla. */
+  a_favor_de: string;
+  avisos: string[];
+};
+
+export type FiniquitoConResumen = {
+  finiquito: Finiquito;
+  resumen: ResumenFiniquito;
+  /** false = precargado de las estimaciones, todavía no lo guarda nadie. */
+  guardado: boolean;
+};
+
+export const getFiniquito = (id: string) =>
+  getJSON<FiniquitoConResumen>(`/projects/${id}/finiquito`);
+
+export const guardarFiniquito = (id: string, finiquito: Finiquito, actor?: string) =>
+  putJSON<FiniquitoConResumen>(
+    `/projects/${id}/finiquito`,
+    { finiquito },
+    actor ? { "X-Actor": actor } : {},
   );
 
 /** What a vision model read from one sheet image — a suggestion with provenance. */
