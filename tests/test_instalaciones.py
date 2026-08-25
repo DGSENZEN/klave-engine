@@ -202,3 +202,57 @@ def test_cada_concepto_dice_de_donde_salio_su_cantidad_en_sus_propios_terminos()
     assert "metros de trazo" in por_codigo["HID-003"].assumptions[0]
     assert "símbolo insertado" in por_codigo["SAN-001"].assumptions[0]
     assert "levantamiento" in por_codigo["HID-002"].assumptions[0]
+
+
+def test_la_linea_carga_el_diametro_que_el_plano_declaro():
+    """«Tubería de agua fría» no la cotiza nadie; «de 102 mm (4")» sí."""
+    from klave_engine.costing.boq import generate_bill_of_quantities
+    from klave_engine.costing.catalog import build_default_catalog
+    from klave_engine.detection.results import DetectionType, make_detection
+    from klave_engine.dxf.units import DrawingUnits
+
+    def _corrida(det_id: str, metros: float, diametro: str) -> object:
+        return make_detection(
+            det_id, DetectionType.pipe_run, "00-SANITARIA", (0, 0, 10, 1), 0.78, [det_id],
+            "layer_run", [], {
+                "run_family": "sanitaria", "discipline": "sanitaria",
+                "estimated_length": metros, "length_m": metros, "diametro": diametro,
+            }, "s.dxf",
+        )
+
+    catalog = [c for c in build_default_catalog(CostingAssumptions()) if c.code == "SAN-002"]
+    units = DrawingUnits(unit="m", source="declared", confidence=1.0)
+    boq = generate_bill_of_quantities(
+        "p", [_corrida("r1", 60.0, '102 mm (4")'), _corrida("r2", 40.0, '102 mm (4")')],
+        units, catalog, {}, "MXN",
+    )
+    linea = next(x for x in boq.lines if x.concept_code == "SAN-002")
+    assert linea.description.endswith('de 102 mm (4")')
+    assert linea.quantity == 100.0
+
+
+def test_dos_diametros_en_una_linea_se_dicen_en_vez_de_fingirse_uno():
+    """Cada diámetro tiene su precio: presupuestarlos juntos es esconder que
+    el renglón vale dos cosas distintas."""
+    from klave_engine.costing.boq import generate_bill_of_quantities
+    from klave_engine.costing.catalog import build_default_catalog
+    from klave_engine.detection.results import DetectionType, make_detection
+    from klave_engine.dxf.units import DrawingUnits
+
+    def _corrida(det_id: str, diametro: str) -> object:
+        return make_detection(
+            det_id, DetectionType.pipe_run, "00-SANITARIA", (0, 0, 10, 1), 0.78, [det_id],
+            "layer_run", [], {
+                "run_family": "sanitaria", "discipline": "sanitaria",
+                "estimated_length": 50.0, "length_m": 50.0, "diametro": diametro,
+            }, "s.dxf",
+        )
+
+    catalog = [c for c in build_default_catalog(CostingAssumptions()) if c.code == "SAN-002"]
+    boq = generate_bill_of_quantities(
+        "p", [_corrida("r1", '102 mm (4")'), _corrida("r2", '51 mm (2")')],
+        DrawingUnits(unit="m", source="declared", confidence=1.0), catalog, {}, "MXN",
+    )
+    linea = next(x for x in boq.lines if x.concept_code == "SAN-002")
+    assert "mm" not in linea.description  # no se elige uno de los dos
+    assert any("2 diámetros distintos" in w for w in boq.warnings)

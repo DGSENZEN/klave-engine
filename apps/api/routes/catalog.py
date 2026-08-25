@@ -34,7 +34,7 @@ from klave_engine.costing.labor import (
     compute_fsr,
     preset_by_key,
 )
-from klave_engine.costing.matching import Candidate, Match, rank
+from klave_engine.costing.matching import Candidate, Match, rank, split_alcance
 from klave_engine.costing.models import CostingAssumptions, CostingOverrides
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
 from klave_engine.costing.sources.custom import (
@@ -974,17 +974,33 @@ def _match_payload(match: Match) -> dict:
 def concept_matches(
     code: str,
     source_key: str | None = None,
+    spec: str | None = None,
     limit: int = 8,
     catalog: CatalogStore = Depends(get_catalog),
 ) -> dict:
+    """Renglones publicados que podrían darle precio a este concepto.
+
+    ``spec`` es el diámetro que el plano declaró para esta línea — «13 mm
+    (1/2")» — y cambia el resultado por completo: «canalización con tubo
+    conduit» encuentra su precio al 46 %, y con su diámetro al 100 %. Nadie
+    publica el precio de un tubo sin decir de cuál."""
     row = next((c for c in catalog.load_concepts() if c["code"] == code), None)
     if row is None:
         raise HTTPException(status_code=404, detail={"error_type": "concept_not_found"})
+    # El diámetro entra en la identidad, antes de cualquier «incluye:»: después
+    # de esa palabra es alcance, y el alcance no identifica nada.
+    identidad, alcance = split_alcance(row["description"])
+    consulta = f"{identidad} de {spec.strip()}" if spec and spec.strip() else identidad
+    if alcance:
+        consulta = f"{consulta}, incluye {alcance}"
     matches = rank(
-        row["description"], row["unit"], _candidates(catalog, source_key),
+        consulta, row["unit"], _candidates(catalog, source_key),
         phase=row["phase"], limit=max(1, min(limit, 30)),
     )
-    return {"concept_code": code, "matches": [_match_payload(m) for m in matches]}
+    return {
+        "concept_code": code, "spec": spec or "",
+        "matches": [_match_payload(m) for m in matches],
+    }
 
 
 @router.get("/matches")

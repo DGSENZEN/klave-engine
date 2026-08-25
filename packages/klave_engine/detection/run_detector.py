@@ -25,7 +25,11 @@ from collections import Counter
 from pydantic import BaseModel
 
 from klave_engine.common.ids import IdGenerator
-from klave_engine.detection.instalaciones_symbols import CorridaRegla, familia_de_capa
+from klave_engine.detection.instalaciones_symbols import (
+    CorridaRegla,
+    familia_de_capa,
+    normaliza_diametro,
+)
 from klave_engine.detection.results import DetectionType, DetectorOutput, make_detection
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.geometry.bbox import BBox, bbox_center, bbox_contains_point
@@ -235,6 +239,7 @@ def detect_runs(
             continue
         familia, disciplina, que_es = regla.familia, regla.disciplina, regla.que_es
         spec = _spec_de(grupo, etiquetas, meters_factor, regla.familia)
+        diametro = normaliza_diametro(spec)
         output.detections.append(
             make_detection(
                 detection_ids.next(),
@@ -252,7 +257,8 @@ def detect_runs(
                     + (f", {spec}" if spec else ""),
                     f"{grupo.segments} segmentos sumados"
                     + (
-                        f"; «{spec}» leído del rótulo más cercano al trazo."
+                        f"; «{spec}» leído del rótulo más cercano al trazo"
+                        + (f", que es {diametro[1]}." if diametro else ".")
                         if spec
                         else "; sin rótulo de diámetro cerca del trazo, así que el "
                         "diámetro queda sin leer y el precio no se puede fijar solo."
@@ -274,6 +280,12 @@ def detect_runs(
                     # publicación, porque nadie publica precio de una tubería
                     # sin diámetro.
                     "spec": spec,
+                    # El diámetro nominal, escrito como lo escriben las
+                    # publicaciones: «13 mm (1/2")». Sin esta forma, un precio
+                    # publicado no se deja encontrar — nadie cotiza "tubería
+                    # de agua fría" a secas.
+                    "diametro_mm": diametro[0] if diametro else None,
+                    "diametro": diametro[1] if diametro else "",
                 },
                 grupo.source_file,
             )

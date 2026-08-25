@@ -622,6 +622,24 @@ def generate_bill_of_quantities(
                 "el catálogo le dé precio."
             )
         contributing = result.dets
+        # El diámetro que el plano declaró va en la descripción de la línea:
+        # «tubería de agua fría» no la cotiza nadie, «tubería de agua fría de
+        # 13 mm (1/2")» sí, porque es como la publican los tabuladores. Sólo
+        # cuando todas las detecciones que alimentan la línea dicen el mismo:
+        # dos diámetros en un renglón son dos conceptos, y el presupuesto no
+        # puede fingir que son uno.
+        diametros = {
+            str(d.properties.get("diametro") or "") for d in contributing
+        } - {""}
+        descripcion = concept.description
+        if len(diametros) == 1:
+            descripcion = f"{descripcion} de {next(iter(diametros))}"
+        elif len(diametros) > 1:
+            boq.warnings.append(
+                f"Concepto {concept.code}: el plano declara {len(diametros)} diámetros "
+                f"distintos ({', '.join(sorted(diametros))}) en la misma línea. Se "
+                "presupuestan juntos y no deberían: cada diámetro tiene su precio."
+            )
         confidence = (
             sum(d.confidence for d in contributing) / len(contributing)
             if contributing
@@ -630,7 +648,7 @@ def generate_bill_of_quantities(
         boq.lines.append(
             BoqLine(
                 concept_code=concept.code,
-                description=concept.description,
+                description=descripcion,
                 unit=concept.unit,
                 quantity=result.quantity,
                 unit_price=apu.direct_unit_cost if apu else 0.0,

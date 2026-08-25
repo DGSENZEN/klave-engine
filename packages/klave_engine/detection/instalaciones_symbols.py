@@ -167,3 +167,68 @@ def familia_de_capa(layer: str) -> CorridaRegla | None:
         if regla.patron.search(layer):
             return regla
     return None
+
+
+# --------------------------------------------------------- diámetros ------
+
+# Los diámetros nominales del comercio, escritos como los escribe el Tabulador
+# CDMX: «N mm (P")». La equivalencia no es una conversión aritmética —media
+# pulgada son 12.7 mm y a esa tubería todo el mundo le dice de 13— sino la
+# tabla de diámetros nominales, que es la que usan las publicaciones y por la
+# tanto la única con la que un precio publicado se deja encontrar.
+NOMINALES: tuple[tuple[int, str], ...] = (
+    (6, '1/4'), (10, '3/8'), (13, '1/2'), (16, '5/8'), (19, '3/4'), (25, '1'),
+    (32, '1 1/4'), (38, '1 1/2'), (51, '2'), (64, '2 1/2'), (76, '3'), (102, '4'),
+    (152, '6'), (203, '8'), (254, '10'), (305, '12'),
+)
+_POR_PULGADA = {pulgadas: mm for mm, pulgadas in NOMINALES}
+# Milímetros que el comercio escribe de más de una forma: 100 y 101 son 4",
+# 50 es 2", 63 es 2 1/2". Se llevan al valor que publica el tabulador.
+_MM_EQUIVALENTE = {50: 51, 63: 64, 100: 102, 101: 102, 150: 152, 200: 203, 250: 254, 300: 305}
+
+_PULGADAS_RE = re.compile(r'(?<![\d/])(\d{1,2})(?:\s+(\d)\s*/\s*(\d))?\s*"|(\d)\s*/\s*(\d)\s*"')
+_MM_RE = re.compile(r'(?<!\d)(\d{2,3})\s*(?:MM\b|Ø)', re.I)
+_O_MM_RE = re.compile(r'Ø\s*(\d{2,3})(?!\s*/)', re.I)
+
+
+def _mm_mas_cercano(mm: float) -> int | None:
+    """El diámetro nominal más cercano, si el valor leído cae razonablemente
+    cerca de uno. Un número que no se parece a ningún diámetro comercial no
+    es un diámetro: es otra cosa que el rótulo traía."""
+    mejor = min(NOMINALES, key=lambda n: abs(n[0] - mm))
+    return mejor[0] if abs(mejor[0] - mm) <= max(2.0, mejor[0] * 0.06) else None
+
+
+def normaliza_diametro(texto: str) -> tuple[int, str] | None:
+    """El diámetro que declara un rótulo, en milímetros nominales y escrito
+    como lo escribe el tabulador: ``(13, '13 mm (1/2")')``.
+
+    None cuando el rótulo no trae diámetro, o trae un número que no se parece
+    a ninguno del comercio."""
+    if not texto:
+        return None
+    limpio = texto.replace("″", '"').replace("''", '"')
+
+    fraccion = _PULGADAS_RE.search(limpio)
+    if fraccion:
+        if fraccion.group(4):  # "1/2"
+            pulgadas = f"{fraccion.group(4)}/{fraccion.group(5)}"
+        elif fraccion.group(2):  # "1 1/2"
+            pulgadas = f"{fraccion.group(1)} {fraccion.group(2)}/{fraccion.group(3)}"
+        else:  # "4"
+            pulgadas = fraccion.group(1)
+        mm = _POR_PULGADA.get(pulgadas)
+        if mm is not None:
+            return mm, f'{mm} mm ({pulgadas}")'
+
+    for patron in (_MM_RE, _O_MM_RE):
+        milimetros = patron.search(limpio)
+        if not milimetros:
+            continue
+        crudo = int(milimetros.group(1))
+        nominal = _MM_EQUIVALENTE.get(crudo) or _mm_mas_cercano(crudo)
+        if nominal is None:
+            continue
+        pulgadas = next((p for mm, p in NOMINALES if mm == nominal), "")
+        return nominal, f'{nominal} mm ({pulgadas}")' if pulgadas else f"{nominal} mm"
+    return None

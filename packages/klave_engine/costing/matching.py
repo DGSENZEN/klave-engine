@@ -23,6 +23,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from klave_engine.costing.sources.cdmx_capitulos import seccion_de
+from klave_engine.detection.instalaciones_symbols import normaliza_diametro
 
 STOPWORDS = frozenset(
     "de del la el los las y o en con por para a al un una incluye incluyendo inc tipo "
@@ -48,8 +49,13 @@ FAMILY_WORDS = (
     # Instalaciones y cancelería: sin estas palabras _head() no encontraba
     # familia en ningún renglón de instalaciones, y la señal de familia —
     # que es la que separa una tubería de una salida — se perdía entera.
-    "tuberia", "tubería", "tubo", "salida", "ducto", "conduit", "canalizacion",
-    "canalización", "ramaleo", "ramal", "albañal", "albanal", "bajada", "registro",
+    # «conduit» y «canalización» NO son familia propia: un conduit es un tubo,
+    # y ponerlos aparte hacía que «canalización con tubo conduit» y «tubo
+    # poliducto» se acusaran de ser cosas distintas. Siguen siendo palabras
+    # que distinguen —ninguna es vacía— y la partida separa lo eléctrico de lo
+    # hidráulico sin necesidad de partir la familia.
+    "tuberia", "tubería", "tubo", "salida", "ducto",
+    "ramaleo", "ramal", "albañal", "albanal", "bajada", "registro",
     "coladera", "valvula", "válvula", "mueble", "lavabo", "regadera", "inodoro",
     "cancel", "canceleria", "cancelería", "ventana", "puerta", "contacto",
     "apagador", "luminaria", "tablero", "rejilla", "difusor", "alimentador",
@@ -92,6 +98,11 @@ _CM_RE = re.compile(r"\b(\d{1,3}(?:[.,]\d)?)\s*(?:cms?\.?|cent[ií]metros?)\b", 
 _NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)?")
 _DIM_RE = re.compile(r"\b(\d{1,3})\s*[x×]\s*(\d{1,3})(?:\s*[x×]\s*(\d{1,3}))?\b", re.IGNORECASE)
 _FC_RE = re.compile(r"f['’]?c\s*=?\s*(\d{2,3})", re.IGNORECASE)
+# Un trozo que puede contener un diámetro, para pasárselo al normalizador.
+_TROZO_DIAMETRO = re.compile(
+    r'\d{1,3}(?:\s+\d\s*/\s*\d)?\s*"|\d\s*/\s*\d\s*"|\d{2,3}\s*mm\b|Ø\s*\d{2,3}',
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -225,6 +236,21 @@ def unit_key(unit: str) -> str:
             "KG.": "KG"}.get(u, u)
 
 
+def _diametros(text: str) -> set[str]:
+    """Los diámetros nominales que declara un texto, en milímetros.
+
+    Va por el normalizador del oficio y no por los números sueltos, porque el
+    plano dice 1/2" y la publicación dice 13 mm (1/2") y son el mismo tubo.
+    Los números sueltos no sirven: tokens() los descarta y «mm» es palabra
+    vacía, así que sin esto el diámetro no llegaba a compararse nunca."""
+    encontrados: set[str] = set()
+    for trozo in _TROZO_DIAMETRO.finditer(text or ""):
+        nominal = normaliza_diametro(trozo.group(0))
+        if nominal is not None:
+            encontrados.add(str(nominal[0]))
+    return encontrados
+
+
 def _specs(text: str) -> dict[str, set[str]]:
     low = normalize(text)
     fc = {m.group(1) for m in _FC_RE.finditer(low)}
@@ -237,7 +263,9 @@ def _specs(text: str) -> dict[str, set[str]]:
     plain -= cm
     for d in dims:
         plain -= set(d.split("x"))
-    return {"fc": fc, "dims": dims, "cm": cm, "numbers": plain}
+    return {
+        "fc": fc, "dims": dims, "cm": cm, "numbers": plain, "diam": _diametros(text)
+    }
 
 
 def _familia_canonica(word: str) -> str:
@@ -371,6 +399,19 @@ def score(
         else:
             value -= 0.2
             reasons.append(f"sección distinta ({', '.join(sorted(sb['dims']))})")
+    if sa["diam"] and sb["diam"]:
+        if sa["diam"] & sb["diam"]:
+            value += 0.14
+            comun = next(iter(sa["diam"] & sb["diam"]))
+            reasons.append(f"diámetro {comun} mm coincide")
+        else:
+            # Un tubo de media pulgada no es uno de cuatro. Pesa como la f'c
+            # porque decide igual de fuerte: es otro concepto, no un matiz.
+            value -= 0.3
+            reasons.append(
+                f"diámetro distinto ({', '.join(sorted(sb['diam']))} mm vs "
+                f"{', '.join(sorted(sa['diam']))} mm)"
+            )
     if sa["cm"] and sb["cm"]:
         if sa["cm"] & sb["cm"]:
             value += 0.06
