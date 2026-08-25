@@ -1,6 +1,7 @@
 """The programa is handed to a client citing RLOPSRM art. 224. These are the
 things that must be true of it before that is defensible."""
 
+import pytest
 from klave_engine.costing.models import CostingConfig, ScheduleLink
 from klave_engine.costing.report import generate_cost_report
 from klave_engine.costing.schedule import _dedupe_links
@@ -47,18 +48,37 @@ def test_no_activity_lists_the_same_predecessor_twice():
         assert len(seen) == len(set(seen)), f"{activity.concept_code} repite {seen}"
 
 
-def test_dedupe_links_keeps_the_larger_lag_on_a_collision():
+@pytest.mark.parametrize(
+    "links",
+    [
+        pytest.param(
+            [
+                ScheduleLink(predecessor="EST-001", kind="SS", lag_days=3),
+                ScheduleLink(predecessor="EST-001", kind="SS", lag_days=7),
+            ],
+            id="smaller-first",
+        ),
+        pytest.param(
+            [
+                ScheduleLink(predecessor="EST-001", kind="SS", lag_days=7),
+                ScheduleLink(predecessor="EST-001", kind="SS", lag_days=3),
+            ],
+            id="larger-first",
+        ),
+    ],
+)
+def test_dedupe_links_keeps_the_larger_lag_on_a_collision(links):
     """Two SS links to the same predecessor are two constraints on one edge;
     both apply at once, so the true bound is their max and the smaller lag
     must not survive. A fixture-based test cannot exercise this: the step
     anchor and the crew tail always compute the same lag from the same
     activity's duration_days when they collide, so only a hand-built pair
-    with genuinely different lags reaches the branch that chooses."""
-    links = [
-        ScheduleLink(predecessor="EST-001", kind="SS", lag_days=3),
-        ScheduleLink(predecessor="EST-001", kind="SS", lag_days=7),
-    ]
+    with genuinely different lags reaches the branch that chooses.
 
+    Both input orders are exercised so that a magnitude-blind "last one
+    wins" implementation — which would satisfy a single fixed order,
+    because the larger happened to be listed last — cannot pass: the
+    larger lag must survive regardless of which one was appended first."""
     result = _dedupe_links(links)
 
     assert result == [ScheduleLink(predecessor="EST-001", kind="SS", lag_days=7)]
