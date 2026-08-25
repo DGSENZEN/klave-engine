@@ -184,3 +184,45 @@ def test_la_seccion_corrobora_sin_meterse_en_la_descripcion():
     )
     assert m is not None
     assert any("la sección lo confirma" in r for r in m.reasons)
+
+
+def test_el_material_encabezando_nombra_lo_mismo_que_el_elemento():
+    """Los catálogos mexicanos usan los dos órdenes: el tabulador encabeza por
+    el material —«concreto hidráulico f'c=250 en columnas»— y el catálogo de
+    un taller por el elemento —«columnas de concreto armado». Es el mismo
+    concepto y el castigo de cabeza distinta lo estaba matando."""
+    m = score(
+        "Columnas y castillos de concreto armado f'c=250 kg/cm²", "M3",
+        _c("FG16CB", "Suministro y colocación de concreto hidráulico f'c=250 kg/cm2 "
+                     "en columnas", "M3"),
+        "Estructura",
+    )
+    assert m is not None
+    assert not any("no un(a)" in r for r in m.reasons)
+    assert any("al revés" in r for r in m.reasons)
+
+
+def test_dos_trabajos_distintos_siguen_siendo_distintos():
+    """La regla del orden vale sólo cuando uno de los dos encabezados es un
+    material. Aplanado y muro son los dos trabajos, se pagan por separado, y
+    «muro con aplanado» sigue sin ser «aplanado en muros»."""
+    m = score(
+        "Aplanado de mezcla cemento-arena 1:4 en muros, acabado fino, ambas caras", "M2",
+        _c("MUR-COV", "Muro de 11 cm de espesor con panel Covintec, aplanado fino de "
+                      "mezcla cemento arena en ambas caras", "M2"),
+    )
+    assert m is not None
+    assert any("es un(a) muro" in r for r in m.reasons)
+    assert not any("al revés" in r for r in m.reasons)
+    assert m.score < 0.45
+
+
+def test_el_orden_invertido_pide_que_los_dos_digan_las_dos_cosas():
+    """«Concreto hidráulico f'c=250» a secas no es la columna: para valer al
+    revés, el renglón tiene que nombrar también el elemento."""
+    m = score(
+        "Columnas y castillos de concreto armado f'c=250", "M3",
+        _c("FE12BB", "Suministro y colocación de concreto hidráulico f'c=250", "M3"),
+        "Estructura",
+    )
+    assert m is None or not any("al revés" in r for r in m.reasons)

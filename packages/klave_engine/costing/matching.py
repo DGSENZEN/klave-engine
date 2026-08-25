@@ -91,6 +91,17 @@ SINONIMOS: dict[str, str] = {
     "alumbrado": "luminaria",
     "preparacion": "salida",
 }
+# De qué está hecha una cosa, frente a qué cosa es. La distinción decide un
+# castigo: «aplanado en muros» y «muro con aplanado» son conceptos distintos
+# —los dos son trabajos y sólo se paga uno—, pero «concreto en columnas» y
+# «columnas de concreto» son el mismo, escrito al revés. Los catálogos
+# mexicanos usan los dos órdenes: el tabulador encabeza por el material y el
+# catálogo de un taller por el elemento.
+MATERIAL_WORDS = frozenset(
+    {"concreto", "acero", "block", "tabique", "ladrillo", "malla", "vigueta",
+     "bovedilla", "mortero", "yeso", "asfalto", "madera"}
+)
+
 # A candidate that is the undoing, removal or mere supply of the thing is
 # not the thing: "demolición de losa" never matches "losa".
 NEGATIVE_WORDS = (
@@ -375,7 +386,20 @@ def score(
         value -= 0.5
         reasons.append("es demolición/retiro/renta, no el concepto")
     if ours.families and theirs.families:
-        if ours.head and theirs.head and ours.head != theirs.head:
+        # Un encabezado de material sobre un cuerpo de elemento nombra lo
+        # mismo que el orden contrario, siempre que los dos digan las dos
+        # cosas: «concreto hidráulico f'c=250 en columnas» es la columna de
+        # concreto del catálogo del taller, publicada al revés.
+        orden_invertido = bool(
+            ours.head and theirs.head and ours.head != theirs.head
+            and {ours.head, theirs.head} & MATERIAL_WORDS
+            and ours.head in theirs.families and theirs.head in ours.families
+        )
+        if orden_invertido:
+            reasons.append(
+                f"el mismo concepto al revés: {theirs.head} en {ours.head}"
+            )
+        elif ours.head and theirs.head and ours.head != theirs.head:
             value -= 0.3
             reasons.append(f"es un(a) {theirs.head}, no un(a) {ours.head}")
         elif ours.families & theirs.families:
@@ -456,7 +480,7 @@ def score(
     # Si algo ya dijo que son cosas distintas, tampoco hay qué corroborar.
     ya_hablaron = bool(
         (ours.families & theirs.families)
-        or (ours.head and theirs.head and ours.head != theirs.head)
+        or (ours.head and theirs.head and ours.head != theirs.head and not orden_invertido)
         or (theirs.negative and not ours.negative)
     )
     if nuestra and suya:

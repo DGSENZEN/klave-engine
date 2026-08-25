@@ -284,3 +284,54 @@ def test_la_linea_carga_el_material_junto_al_diametro():
     )
     linea = next(x for x in boq.lines if x.concept_code == "GAS-001")
     assert 'de PEAD de 19 mm (3/4"), incluye' in linea.description
+
+
+def test_ninguna_familia_detectada_se_queda_sin_concepto():
+    """El motor las encuentra, las dibuja en el visor, y si nadie las recibe se
+    pierden. En Marina eso eran 12 válvulas, 25 compuertas y 4 equipos de aire
+    detectados que no llegaban al presupuesto."""
+    from klave_engine.costing.instalaciones import (
+        _CORRIDAS_POR_CONCEPTO,
+        _MUEBLES_POR_CONCEPTO,
+        _VANOS_POR_CONCEPTO,
+    )
+    from klave_engine.detection.instalaciones_symbols import CORRIDAS, MUEBLES
+
+    recibidas: set[str] = set()
+    for tabla in (_MUEBLES_POR_CONCEPTO, _CORRIDAS_POR_CONCEPTO, _VANOS_POR_CONCEPTO):
+        for familias in tabla.values():
+            recibidas |= set(familias)
+    detectadas = {r.familia for r in MUEBLES} | {r.familia for r in CORRIDAS}
+    # «bajada» se queda fuera a propósito: el símbolo marca dónde la tubería
+    # cambia de nivel y esos metros ya los cobra la corrida.
+    assert detectadas - recibidas == {"bajada"}
+
+
+def test_ningun_concepto_espera_una_familia_que_nadie_detecta():
+    from klave_engine.costing.instalaciones import (
+        _CORRIDAS_POR_CONCEPTO,
+        _MUEBLES_POR_CONCEPTO,
+        _VANOS_POR_CONCEPTO,
+    )
+    from klave_engine.detection.instalaciones_symbols import CORRIDAS, MUEBLES
+
+    detectadas = (
+        {r.familia for r in MUEBLES} | {r.familia for r in CORRIDAS}
+        | {"cancel", "ventana", "puerta"}
+    )
+    for tabla in (_MUEBLES_POR_CONCEPTO, _CORRIDAS_POR_CONCEPTO, _VANOS_POR_CONCEPTO):
+        for code, familias in tabla.items():
+            assert set(familias) <= detectadas, f"{code} espera algo que nadie detecta"
+
+
+def test_el_mueble_se_cobra_aparte_de_su_salida():
+    """Un W.C. cuesta miles y su salida hidráulica cientos: son dos conceptos
+    que se contratan por separado, y los dos salen del mismo símbolo."""
+    from klave_engine.costing.instalaciones import _MUEBLES_POR_CONCEPTO
+
+    assert "wc" in _MUEBLES_POR_CONCEPTO["MUE-001"]
+    assert "wc" in _MUEBLES_POR_CONCEPTO["HID-001"]
+    por_codigo = {c.code: c for c in conceptos_de_instalaciones()}
+    assert por_codigo["MUE-001"].unit == "PZA"
+    assert por_codigo["HID-001"].unit == "SAL"
+    assert por_codigo["MUE-001"].phase != por_codigo["HID-001"].phase

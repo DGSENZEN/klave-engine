@@ -577,6 +577,21 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '18') "
                     "ON CONFLICT(key) DO UPDATE SET value = '18'"
                 )
+            if version_row is None or int(version_row["value"]) < 19:
+                # Muebles, piezas de red que se cuentan por pieza, e
+                # impermeabilización: nueve familias que el motor ya detectaba
+                # y ningún concepto recibía, más el mueble aparte de su salida.
+                self._seed_concepts(conn, INSTALACIONES_CONCEPTS, 400)
+                self._sync_builtin_concepts(conn, INSTALACIONES_CON_REGLA)
+                for code in INSTALACIONES_CON_REGLA:
+                    conn.execute(
+                        "UPDATE concepts SET rule_key = ? WHERE code = ? AND rule_key IS NULL",
+                        (code, code),
+                    )
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '19') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '19'"
+                )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.
                 conn.execute(

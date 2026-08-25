@@ -48,6 +48,10 @@ FASE_AIRE = "Aire acondicionado"
 # Los vanos no son instalación, pero salen del mismo sitio: un símbolo
 # sobre el plano que hasta ahora sólo se contaba.
 FASE_CANCELERIA = "Cancelería y carpintería"
+# Los muebles son su propia partida en un presupuesto mexicano: el W.C.
+# cuesta miles y su salida hidráulica cientos, y se contratan por separado.
+FASE_MUEBLES = "Muebles y accesorios"
+FASE_IMPERMEABILIZACION = "Impermeabilización"
 
 # code, description, unit, phase, rendimiento/día, orden
 _CONCEPTOS: tuple[tuple[str, str, str, str, float, int], ...] = (
@@ -99,6 +103,49 @@ _CONCEPTOS: tuple[tuple[str, str, str, str, float, int], ...] = (
      "incluye herrajes y sellado", "PZA", FASE_CANCELERIA, 4.0, 20),
     ("CAR-001", "Puerta con marco y herrajes, según cuadro de vanos, "
      "incluye colocación y ajuste", "PZA", FASE_CANCELERIA, 4.0, 30),
+    # --- Muebles y equipos --------------------------------------------------
+    # El mueble no es su salida. Detectábamos el W.C. y sólo cobrábamos la
+    # salida hidráulica: el mueble, que cuesta entre mil y veintitantos mil
+    # pesos, se quedaba fuera del presupuesto estando detectado.
+    ("MUE-001", "W.C. de tanque bajo, incluye asiento, conexiones y accesorios",
+     "PZA", FASE_MUEBLES, 4.0, 10),
+    ("MUE-002", "Lavabo con mezcladora, incluye céspol, contras y accesorios",
+     "PZA", FASE_MUEBLES, 5.0, 20),
+    ("MUE-003", "Regadera con mezcladora y brazo, incluye accesorios",
+     "PZA", FASE_MUEBLES, 6.0, 30),
+    ("MUE-004", "Fregadero o tarja con mezcladora, incluye céspol y accesorios",
+     "PZA", FASE_MUEBLES, 5.0, 40),
+    ("MUE-005", "Mingitorio con fluxómetro, incluye conexiones y accesorios",
+     "PZA", FASE_MUEBLES, 4.0, 50),
+    ("MUE-006", "Tina de baño, incluye conexiones y accesorios",
+     "PZA", FASE_MUEBLES, 2.0, 60),
+    ("MUE-007", "Lavadero, incluye conexiones y accesorios",
+     "PZA", FASE_MUEBLES, 4.0, 70),
+    ("MUE-008", "Calentador de agua, incluye conexiones, base y prueba",
+     "PZA", FASE_MUEBLES, 3.0, 80),
+    # --- Piezas de red que se cuentan por pieza ----------------------------
+    ("HID-006", "Válvula, incluye instalación, conexiones y prueba",
+     "PZA", FASE_HIDRAULICA, 8.0, 60),
+    ("HID-007", "Medidor o toma domiciliaria, incluye conexiones y registro",
+     "PZA", FASE_HIDRAULICA, 2.0, 70),
+    ("SAN-005", "Coladera con rejilla, incluye conexión a la red",
+     "PZA", FASE_SANITARIA, 8.0, 50),
+    ("ELE-005", "Tablero o centro de carga, incluye pastillas termomagnéticas "
+     "y conexión", "PZA", FASE_ELECTRICA, 1.5, 50),
+    ("ELE-006", "Salida eléctrica especial para equipo, incluye canalización y "
+     "cableado", "SAL", FASE_ELECTRICA, 5.0, 60),
+    ("AIR-005", "Equipo de aire acondicionado, incluye instalación, base y "
+     "arranque", "PZA", FASE_AIRE, 1.0, 50),
+    ("AIR-006", "Compuerta reguladora de volumen en ducto, incluye marco",
+     "PZA", FASE_AIRE, 6.0, 60),
+    ("GAS-002", "Tanque estacionario de gas, incluye base, conexión y prueba",
+     "PZA", FASE_GAS, 1.0, 20),
+    # --- Impermeabilización ------------------------------------------------
+    # El plano no la dibuja: se sigue del área de azotea o se levanta a mano.
+    # Existe como concepto para que tenga a dónde llegar cuando alguien la
+    # capture, y porque el tabulador publica 54 renglones para ella.
+    ("IMP-001", "Impermeabilización de azotea con manto prefabricado, "
+     "incluye preparación de la superficie", "M2", FASE_IMPERMEABILIZACION, 60.0, 10),
 )
 
 # Un concepto de instalaciones sale del catálogo **sin matriz**: la cantidad
@@ -121,12 +168,35 @@ _MUEBLES_POR_CONCEPTO: dict[str, tuple[str, ...]] = {
     # decisión de proyecto que se lee de la red, no del mueble, y por eso
     # HID-002 no se cuantifica sola.
     "HID-001": ("wc", "lavabo", "regadera", "fregadero", "mingitorio", "tina", "lavadero"),
-    "SAN-001": ("salida_sanitaria", "coladera"),
+    "SAN-001": ("salida_sanitaria",),
     "SAN-004": ("registro",),
     "ELE-001": ("contacto",),
     "ELE-002": ("apagador", "luminaria"),
     "AIR-004": ("difusor",),
+    # El mueble, aparte de su salida: las dos cosas se detectan del mismo
+    # símbolo y las dos se pagan.
+    "MUE-001": ("wc",),
+    "MUE-002": ("lavabo",),
+    "MUE-003": ("regadera",),
+    "MUE-004": ("fregadero",),
+    "MUE-005": ("mingitorio",),
+    "MUE-006": ("tina",),
+    "MUE-007": ("lavadero",),
+    "MUE-008": ("calentador",),
+    "HID-006": ("valvula",),
+    "HID-007": ("medidor",),
+    "SAN-005": ("coladera",),
+    "ELE-005": ("tablero",),
+    "ELE-006": ("salida_especial",),
+    "AIR-005": ("equipo_aa",),
+    "AIR-006": ("compuerta",),
+    "GAS-002": ("tanque_gas",),
 }
+
+# «bajada» se detecta y a propósito no recibe concepto: el símbolo de
+# subida-bajada marca dónde la tubería cambia de nivel, y esos metros ya los
+# cobra la corrida. Darle concepto propio sería cobrar dos veces el mismo
+# tramo. Se queda visible en el visor, que es donde sirve.
 
 _VANOS_POR_CONCEPTO: dict[str, tuple[str, ...]] = {
     "CAN-001": ("cancel",),
