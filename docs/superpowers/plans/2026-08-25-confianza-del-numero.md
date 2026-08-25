@@ -16,7 +16,7 @@
 - **Spanish stays in the product.** All user-facing strings, finding text, warnings and column headers are Mexican Spanish. Code identifiers, docstrings and comments follow the file they live in (this codebase writes English docstrings with Spanish domain nouns).
 - **No invented numbers.** A value the engine cannot derive is rendered as an honest absence (`sin precio`, `sin unidades`, `no se sabe`) — never `0`, never a guess. This applies to new code exactly as it does to existing code.
 - **Confidence threshold is 0.70**, defined today as `CONFIDENCE_FIRM` in `apps/web/components/ui.tsx:477` and as the `>= 0.7` floor in `DrawingUnits.reliable` (`packages/klave_engine/dxf/units.py:51`). Do not change the value in this round; only how it is presented.
-- **Run from the repo root** with the project venv: `.venv/bin/python -m pytest …`, `.venv/bin/ruff check .`, `.venv/bin/mypy packages/klave_engine`. Web checks: `npx --prefix apps/web tsc --noEmit`.
+- **Run from the repo root** with the project venv: `.venv/bin/python -m pytest …`, `.venv/bin/ruff check .`, `.venv/bin/mypy packages/klave_engine`. Web checks: `apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`.
 - **Every task ends green**: `ruff`, `mypy` and the full `pytest` suite pass before the commit.
 
 ---
@@ -724,7 +724,7 @@ In `apps/web/app/page.tsx`, replace the total block (currently `{project.grand_t
 
 - [ ] **Step 5: Verify types and the running app**
 
-Run: `npx --prefix apps/web tsc --noEmit`
+Run: `apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`
 Expected: exit 0, no output
 
 Then start the dev servers and confirm in the browser that the Torre Reforma row reads **sin unidades** instead of `$768,759,055`, and that Marina still shows its total with the SIN VERIFICAR banner.
@@ -778,7 +778,7 @@ Expected: roughly `76% alta · 24% en el límite`, not `100%`.
 
 - [ ] **Step 3: Verify types**
 
-Run: `npx --prefix apps/web tsc --noEmit`
+Run: `apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`
 Expected: exit 0
 
 - [ ] **Step 4: Commit**
@@ -1225,7 +1225,7 @@ Label it `Frentes de trabajo`, help text:
 
 - [ ] **Step 5: Run tests and verify types**
 
-Run: `.venv/bin/python -m pytest tests -q -p no:warnings && npx --prefix apps/web tsc --noEmit`
+Run: `.venv/bin/python -m pytest tests -q -p no:warnings && apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`
 Expected: all green
 
 - [ ] **Step 6: Verify in the running app**
@@ -1848,7 +1848,7 @@ Build `filas` by joining, per sheet, each family the engine detected there with 
 
 - [ ] **Step 3: Verify types**
 
-Run: `npx --prefix apps/web tsc --noEmit`
+Run: `apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`
 Expected: exit 0
 
 - [ ] **Step 4: Verify in the running app**
@@ -1899,7 +1899,7 @@ Under **I. Honestidad**, add:
 
 - [ ] **Step 4: Full verification**
 
-Run: `.venv/bin/python -m pytest tests -q -p no:warnings && .venv/bin/ruff check . && .venv/bin/mypy packages/klave_engine && npx --prefix apps/web tsc --noEmit && make eval-gold && make eval-demo`
+Run: `.venv/bin/python -m pytest tests -q -p no:warnings && .venv/bin/ruff check . && .venv/bin/mypy packages/klave_engine && apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit && make eval-gold && make eval-demo`
 Expected: all green, `test_gold_money` unchanged
 
 - [ ] **Step 5: Commit**
