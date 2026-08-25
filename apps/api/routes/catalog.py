@@ -560,6 +560,31 @@ def delete_source(
     return removed
 
 
+@router.delete("/imports/{source}")
+def undo_import(
+    source: str,
+    request: Request,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    """Deshacer una importación de matrices.
+
+    La primera importación de un taller casi nunca es la buena —una zona que
+    no era, un archivo con claves que no son conceptos presupuestables— y sin
+    esto se quedaba para siempre."""
+    require_catalog_admin(request)
+    try:
+        result = catalog.undo_import(source)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404, detail={"error_type": "import_not_found", "message": str(exc)}
+        ) from exc
+    _publish_catalog_updated(
+        x_actor, "import_undone", f"{source}: {result['removed']} conceptos", catalog=catalog
+    )
+    return result
+
+
 @router.post("/import-destajos", status_code=201)
 async def import_destajos(
     request: Request,

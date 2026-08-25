@@ -19,8 +19,21 @@ def test_seeds_reference_data_once(store):
     book = store.load_price_book()
     # Core seven-concept resources plus the widened v2 reference basket.
     assert set(RESOURCES) <= set(book)
-    assert all(row["source"] == SEED_SOURCE for row in store.list_insumos())
-    assert all(row["source_type"] == "referencia" for row in store.list_insumos())
+    # La semilla trae los insumos que el motor necesita nombrar, y ninguno con
+    # precio: un precio que nadie cotizó no es un precio. Sólo la herramienta
+    # menor conserva su 0.03, que es un porcentaje de la mano de obra y no un
+    # costo.
+    con_precio = [
+        row["code"] for row in store.list_insumos() if float(row["unit_cost"] or 0) > 0
+    ]
+    assert con_precio == ["EQ-HERRAMIENTA"], con_precio
+    assert all(
+        (row["source"] or "") in ("", SEED_SOURCE) for row in store.list_insumos()
+    )
+    # El que se quedó sin precio se quedó también sin fuente: no la tenía.
+    assert all(
+        row["source_type"] in ("", "referencia") for row in store.list_insumos()
+    )
     assert set(APU_TEMPLATES) <= set(store.load_templates())
     # Every built-in concept exists in the concepts table with a rule key;
     # v2 manual concepts exist without one.

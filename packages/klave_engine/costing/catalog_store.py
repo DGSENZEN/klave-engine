@@ -592,6 +592,38 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '19') "
                     "ON CONFLICT(key) DO UPDATE SET value = '19'"
                 )
+            if version_row is None or int(version_row["value"]) < 20:
+                # De qué importación salió cada concepto, para poder deshacerla.
+                columnas = {
+                    row["name"] for row in conn.execute("PRAGMA table_info(concepts)")
+                }
+                if "import_source" not in columnas:
+                    conn.execute(
+                        "ALTER TABLE concepts ADD COLUMN import_source TEXT NOT NULL DEFAULT ''"
+                    )
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '20') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '20'"
+                )
+            if version_row is None or int(version_row["value"]) < 21:
+                # Los precios que sembró Klave los había escrito yo: no salían
+                # de ninguna publicación ni los había cotizado nadie. Se van
+                # también de los catálogos que ya existían, no sólo de la
+                # semilla — dejarlos ahí sería quitarlos de boquilla.
+                #
+                # El insumo se queda con lo que sí es un hecho —su clave, su
+                # descripción, su unidad— y sin precio, que es distinto de
+                # valer cero. El que el taller ya haya cotizado o importado
+                # no se toca: ése tiene dueño.
+                conn.execute(
+                    "UPDATE insumos SET unit_cost = 0, source = '', source_type = '', "
+                    "vigencia = '' WHERE source = ? AND is_labor_percentage = 0",
+                    (SEED_SOURCE,),
+                )
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '21') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '21'"
+                )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.
                 conn.execute(
@@ -863,8 +895,9 @@ class CatalogStore:
                 raise ValueError(f"El concepto {code} ya existe.")
             conn.execute(
                 "INSERT INTO concepts (code, description, unit, phase, "
-                "production_rate_per_day, rule_key) VALUES (?, ?, ?, ?, ?, NULL)",
-                (code, description, unit, phase, production_rate_per_day),
+                "production_rate_per_day, rule_key, import_source) "
+                "VALUES (?, ?, ?, ?, ?, NULL, ?)",
+                (code, description, unit, phase, production_rate_per_day, "plantilla"),
             )
         return self.adopt_concept_reference(code, ref_id)
 
@@ -1240,6 +1273,7 @@ class CatalogStore:
         phase: str,
         production_rate_per_day: float,
         components: list[tuple[str, float]],
+        import_source: str = "",
     ) -> dict:
         """A manual concept needs its APU from birth: a concept without a
         matrix cannot be priced, and unpriced never means zero."""
@@ -1261,8 +1295,9 @@ class CatalogStore:
                 raise ValueError(f"El concepto {code} ya existe.")
             conn.execute(
                 "INSERT INTO concepts (code, description, unit, phase, "
-                "production_rate_per_day, rule_key) VALUES (?, ?, ?, ?, ?, NULL)",
-                (code, description, unit, phase, production_rate_per_day),
+                "production_rate_per_day, rule_key, import_source) "
+                "VALUES (?, ?, ?, ?, ?, NULL, ?)",
+                (code, description, unit, phase, production_rate_per_day, import_source),
             )
             for resource_code, quantity in components:
                 conn.execute(
@@ -1508,6 +1543,34 @@ class CatalogStore:
             conn.execute("DELETE FROM price_sources WHERE source_key = ?", (source_key,))
         return {"source_key": source_key, "name": fuente["name"], "rows": borrados}
 
+    def undo_import(self, source: str) -> dict:
+        """Deshacer una importación de matrices: quita los conceptos que creó.
+
+        Una importación mal hecha —claves de cuadrilla entrando como conceptos
+        presupuestables, una zona que no era— hoy se quedaba para siempre. Sólo
+        se van los que nacieron de esa importación: los conceptos del motor y
+        los que el taller escribió a mano nunca se tocan, y uno con precio
+        adoptado tampoco, porque algún presupuesto lo está citando."""
+        with _LOCK, self._connect() as conn:
+            candidatos = [
+                dict(row) for row in conn.execute(
+                    "SELECT code, price_override FROM concepts "
+                    "WHERE import_source = ? AND active = 1",
+                    (source,),
+                ).fetchall()
+            ]
+            if not candidatos:
+                raise ValueError(f"No hay conceptos importados de «{source}».")
+            con_precio = [c["code"] for c in candidatos if c["price_override"] is not None]
+            quitables = [c["code"] for c in candidatos if c["price_override"] is None]
+            for code in quitables:
+                conn.execute("DELETE FROM apu_components WHERE concept_code = ?", (code,))
+                conn.execute("DELETE FROM concepts WHERE code = ?", (code,))
+        return {
+            "source": source, "removed": len(quitables),
+            "kept_with_price": sorted(con_precio),
+        }
+
     def list_sources(self) -> list[dict]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -1525,9 +1588,27 @@ class CatalogStore:
         assert isinstance(parse, MatricesParse)
         vigencia = _now()[:7]
         upserted = 0
+        previos = {row["code"]: row for row in self.list_insumos()}
+        pisados: list[str] = []
         for insumo in parse.insumos.values():
             if insumo.is_labor_percentage:
                 continue
+            # La misma clave puede venir de dos catálogos con precios
+            # distintos: la cuadrilla «1A» vale $615 en el norte y $540 en el
+            # sur, y las matrices de cada zona la usan esperando la suya. El
+            # último import gana —no hay dónde guardar dos— pero callarlo
+            # dejaría las matrices de la otra zona costeando con el precio
+            # equivocado sin que nadie lo supiera.
+            previo = previos.get(insumo.code)
+            if (
+                previo is not None
+                and (previo.get("source") or "") not in ("", source)
+                and abs(float(previo.get("unit_cost") or 0) - insumo.unit_cost) > 0.01
+            ):
+                pisados.append(
+                    f"{insumo.code}: ${float(previo['unit_cost']):,.2f} de "
+                    f"«{previo['source']}» → ${insumo.unit_cost:,.2f} de «{source}»"
+                )
             self.upsert_insumo(
                 insumo.code, description=insumo.description, unit=insumo.unit,
                 resource_type=insumo.resource_type, unit_cost=insumo.unit_cost,
@@ -1536,6 +1617,13 @@ class CatalogStore:
             upserted += 1
         created = updated = 0
         problems = list(parse.problems)
+        if pisados:
+            problems.append(
+                f"{len(pisados)} insumos cambiaron de precio al venir de otro catálogo "
+                f"({'; '.join(pisados[:4])}"
+                f"{'…' if len(pisados) > 4 else ''}). Las matrices que ya los usaban "
+                "quedan costeando con el precio nuevo."
+            )
         existing_codes = {c["code"] for c in self.load_concepts(include_inactive=True)}
         for concept in parse.concepts:
             # Una matriz puede traer varios cargos porcentuales distintos
@@ -1569,7 +1657,7 @@ class CatalogStore:
                     self.create_concept(
                         code=concept.code, description=concept.description, unit=concept.unit,
                         phase=concept.phase, production_rate_per_day=rate,
-                        components=components,
+                        components=components, import_source=source,
                     )
                     created += 1
             except ValueError as exc:

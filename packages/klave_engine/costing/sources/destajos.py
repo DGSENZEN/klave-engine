@@ -44,6 +44,12 @@ _SECCION = re.compile(
     re.IGNORECASE,
 )
 _PORCENTAJE = re.compile(r"%\s*\)?\s*MO|\(\s*%\s*\)", re.IGNORECASE)
+# La hoja de cuadrillas define mano de obra compuesta, no obra vendible: una
+# cuadrilla es un insumo con su jornal, y su clave —1A, MOCU-003— se repite
+# igual en las tres zonas con precios distintos. Importarlas como conceptos
+# hacía que la última zona pisara a la anterior y que el catálogo del taller
+# se llenara de renglones que nadie puede presupuestar.
+_HOJA_CUADRILLAS = re.compile(r"CUADRILLA", re.IGNORECASE)
 # Una unidad de obra suelta en su celda, cuando la hoja no la rotula.
 _UNIDAD_SUELTA = re.compile(
     r"m2|m3|ml|m|pza|pieza|jor|kg|ton|lote|sal|salida|hr|hora|juego|lt|l",
@@ -165,7 +171,25 @@ def parse_destajos_workbook(raw: bytes, filename: str = "") -> MatricesParse:
     vistos: set[str] = set()
     for hoja in libro.worksheets:
         filas = [list(r) for r in hoja.iter_rows(values_only=True)]
+        es_cuadrilla = bool(_HOJA_CUADRILLAS.search(hoja.title or ""))
         for bloque in _bloques(filas):
+            if es_cuadrilla:
+                # La cuadrilla entra como insumo, con el jornal que suman sus
+                # integrantes. Es lo que las matrices consumen.
+                jornal = round(
+                    sum(cant * costo for _c, _d, _u, cant, costo in bloque.renglones), 2
+                )
+                if jornal <= 0:
+                    continue
+                previo = insumos.get(bloque.clave)
+                if previo is None or previo.unit_cost <= 0:
+                    insumos[bloque.clave] = InsumoRow(
+                        code=bloque.clave,
+                        description=bloque.descripcion or f"Cuadrilla {bloque.clave}",
+                        unit=(bloque.unidad or "JOR").upper(),
+                        unit_cost=jornal, resource_type="mano_de_obra",
+                    )
+                continue
             if bloque.clave in vistos:
                 continue
             vistos.add(bloque.clave)
