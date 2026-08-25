@@ -7,7 +7,9 @@ from datetime import UTC, datetime
 import pytest
 from klave_engine.costing.models import BillOfQuantities, BoqLine, QuantityKind
 from klave_engine.costing.presentation import (
+    LEGACY_REASON,
     MoneyBasis,
+    basis_reasons,
     money_basis_from_boq,
     resolve_money_state,
 )
@@ -49,8 +51,20 @@ def test_every_combination_of_engine_reading_and_human_signoff(given, verificati
 
 
 def test_legacy_run_says_why_it_is_blocked():
-    state = resolve_money_state(None, UNCONFIRMED)
-    assert state == "blocked"
+    assert basis_reasons(None) == [LEGACY_REASON]
+
+
+def test_basis_reasons_is_a_copy_not_the_runs_own_list():
+    """A dated run reports its own reasons — but mutating what basis_reasons
+    hands back must not reach back into the frozen run."""
+    given = MoneyBasis(reasons=["motivo propio de esta corrida"])
+
+    result = basis_reasons(given)
+
+    assert result == given.reasons
+    assert result is not given.reasons
+    result.append("mutación de prueba")
+    assert given.reasons == ["motivo propio de esta corrida"]
 
 
 def test_bands_weigh_money_not_lines():
@@ -72,3 +86,31 @@ def test_bands_weigh_money_not_lines():
     assert bands["en_el_limite"] == pytest.approx(90.0)
     assert bands["alta"] == pytest.approx(10.0)
     assert sum(bands.values()) == pytest.approx(100.0)
+
+
+def test_bands_are_absent_when_nothing_is_priced():
+    """No line carries an amount: the split must not invent a number."""
+    boq = BillOfQuantities(project_id="p")
+    units = DrawingUnits(unit="m", source="dxf_header", confidence=0.9)
+
+    bands = money_basis_from_boq(boq, units).confidence_bands
+
+    assert bands == {}
+
+
+def test_reasons_say_why_when_units_are_not_reliable():
+    boq = BillOfQuantities(project_id="p", units_reliable=False)
+    units = DrawingUnits(unit="drawing_units", source="unknown", confidence=0.0)
+
+    reasons = money_basis_from_boq(boq, units).reasons
+
+    assert any("no es confiable" in r for r in reasons)
+
+
+def test_reasons_say_why_when_confidence_is_below_firm():
+    boq = BillOfQuantities(project_id="p")
+    units = DrawingUnits(unit="cm", source="text_height_heuristic", confidence=0.4)
+
+    reasons = money_basis_from_boq(boq, units).reasons
+
+    assert any("Unidad leída como" in r for r in reasons)
