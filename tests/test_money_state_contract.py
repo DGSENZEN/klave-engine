@@ -96,3 +96,49 @@ def test_endpoint_returns_what_the_authority_says_rather_than_re_deriving(legacy
     payload = legacy_client.get(f"/projects/{PROJECT_ID}/costs").json()
 
     assert payload["money_state"] == resolve_money_state(None, None)
+
+
+def test_get_costs_degrades_to_blocked_instead_of_500_on_a_corrupt_basis(data_dir, monkeypatch):
+    """workspace.py's report-reading block already tolerates a money_basis
+    blob that fails to validate (KeyError/TypeError/ValueError/OSError, all
+    swallowed to a blocked default). get_costs must be just as tolerant:
+    a hand-edited or partially-migrated cost_report.json is exactly the kind
+    of legacy data this feature exists to gate, not 500 on.
+
+    Called directly rather than through a TestClient/app: get_costs never
+    touches the manifest or the registry, so it needs neither — only a
+    registered project root and its cost_report.json on disk.
+    """
+    from apps.api.dependencies import ProjectStore
+    from apps.api.routes.reports import get_costs
+
+    project_id = "corrupt_basis_0001"
+    root = data_dir / "uploads" / project_id
+    processed = root / "processed"
+    processed.mkdir(parents=True)
+    report = {
+        "project_id": project_id,
+        "currency": "MXN",
+        "drawing_units": {
+            "unit": "m", "source": "dxf_header", "confidence": 0.9, "notes": [],
+        },
+        "boq": {"project_id": project_id, "lines": [], "direct_cost_total": 0.0},
+        "apus": [],
+        "integration": {"grand_total": 0.0},
+        "schedule": {"activities": []},
+        "financial": {},
+        # Malformed on purpose — confidence must be a number. This is what a
+        # hand-edited or corrupted artifact looks like on disk.
+        "money_basis": {"confidence": "not-a-number"},
+    }
+    (processed / "cost_report.json").write_text(json.dumps(report), encoding="utf-8")
+
+    monkeypatch.setenv("KLAVE_USERS_DATABASE_URL", "postgresql://nobody@127.0.0.1:1/none")
+    config_module.get_settings.cache_clear()
+    settings = config_module.get_settings()
+    store = ProjectStore(settings)
+    store.register(project_id, root)
+
+    payload = get_costs(project_id, store=store, settings=settings)
+
+    assert payload["money_state"] == "blocked"

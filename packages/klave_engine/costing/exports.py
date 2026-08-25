@@ -240,10 +240,14 @@ def _licitacion_workbook(
         row += 2
     iva = round(subtotal * IVA_PCT / 100, 2)
     total = round(subtotal + iva, 2)
+    # Same rule as the two rows above, reaching its last cell: SUBTOTAL/IVA/
+    # TOTAL are the closing summary of the sheet this banner already warns
+    # about, so they render the absence too rather than the arithmetic.
+    blocked = money_state == "blocked"
     for label, value in (
-        ("SUBTOTAL", round(subtotal, 2)),
-        (f"I.V.A. {IVA_PCT:.0f} %", iva),
-        ("TOTAL", total),
+        ("SUBTOTAL", UNPRICED if blocked else round(subtotal, 2)),
+        (f"I.V.A. {IVA_PCT:.0f} %", UNPRICED if blocked else iva),
+        ("TOTAL", UNPRICED if blocked else total),
     ):
         label_cell = ws.cell(row=row, column=3, value=label)
         label_cell.font = Font(bold=True, size=10)
@@ -251,7 +255,12 @@ def _licitacion_workbook(
         value_cell.number_format = MONEY_FORMAT
         value_cell.font = Font(bold=True, size=10)
         row += 1
-    letra = ws.cell(row=row, column=3, value=f"Importe total con letra: {pesos_con_letra(total)}")
+    # The spelled-out total is the same number in another alphabet — leaving
+    # it would just re-print what the three cells above just withheld.
+    letra_text = (
+        UNPRICED if blocked else f"Importe total con letra: {pesos_con_letra(total)}"
+    )
+    letra = ws.cell(row=row, column=3, value=letra_text)
     letra.font = Font(bold=True, size=9)
     row += 2
     _muted(
@@ -360,7 +369,11 @@ def _caratula(
         ("Costo directo", report.boq.direct_cost_total),
         ("Precio de venta", report.integration.sale_price),
         ("Contingencia", report.integration.contingency),
-        ("Total con contingencia", report.integration.grand_total),
+        # The row this whole task exists for: a total the presupuesto
+        # withholds must not print under its own SIN UNIDADES banner two
+        # rows up.
+        ("Total con contingencia",
+         UNPRICED if money_state == "blocked" else report.integration.grand_total),
         ("Plazo estimado", f"{report.schedule.total_duration_days} días hábiles"),
     ]
     if override_reason:
@@ -432,7 +445,7 @@ def _presupuesto(ws: Worksheet, report: CostReport, money_state: MoneyState) -> 
           for line in report.integration.lines),
         ("Precio de venta", report.integration.sale_price),
         ("Contingencia", report.integration.contingency),
-        ("TOTAL", report.integration.grand_total),
+        ("TOTAL", UNPRICED if money_state == "blocked" else report.integration.grand_total),
     ]
     for label, amount in summary:
         font = Font(bold=label in ("Costo directo", "Precio de venta", "TOTAL"))

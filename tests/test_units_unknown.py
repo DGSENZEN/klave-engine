@@ -4,7 +4,7 @@ thresholds that fit the drawing's extent."""
 
 import io
 
-from klave_engine.costing.exports import SIN_UNIDADES, build_presupuesto_workbook
+from klave_engine.costing.exports import IVA_PCT, SIN_UNIDADES, UNPRICED, build_presupuesto_workbook
 from klave_engine.costing.models import CostingConfig
 from klave_engine.costing.report import generate_cost_report
 from klave_engine.costing.reviews import ProjectReviews
@@ -42,6 +42,59 @@ def test_unknown_units_mean_no_price_anywhere():
             for row in ws.iter_rows() for c in row
         ]
         assert SIN_UNIDADES in cells, fmt
+
+
+def _labeled_value(ws, label: str, label_col: int, value_col: int):
+    """The value beside a summary label, e.g. the amount next to 'TOTAL'.
+
+    Scoped lookups by label+column rather than "is this number anywhere in
+    the workbook", because a workbook has many sheets (Programa, Flujo...)
+    that may legitimately echo a running total elsewhere — checking the
+    exact labeled cell is what actually proves a specific site was gated.
+    """
+    for row in ws.iter_rows():
+        if row[label_col - 1].value == label:
+            return row[value_col - 1].value
+    raise AssertionError(f"no row labeled {label!r} in sheet {ws.title!r}")
+
+
+def test_a_priced_but_unconfirmed_report_shows_no_total_in_the_workbook():
+    """units_reliable=True here — the engine priced this run for real,
+    unlike the fully-unknown-unit case above where grand_total is already
+    zero at the source (so asserting its absence there would hold even with
+    no gate at all). Confidence sits under CONFIDENCE_FIRM (0.3 < 0.7) with
+    no human confirmation, so resolve_money_state still says "blocked" —
+    this is the shape that actually proves the three summary cells stop
+    leaking a real, nonzero total under their own SIN UNIDADES/SIN VERIFICAR
+    banner, in every one of the three functions Task 3 threads money_state
+    through."""
+    units = DrawingUnits(unit="m", source="dxf_header", confidence=0.3)
+    report = generate_cost_report(
+        "p", [_wall("w1", 10.0)], units, CostingConfig(), None, None, price_book=LIBRO,
+    )
+    assert report.boq.units_reliable  # the engine priced it — a real total exists to hide
+    assert report.integration.grand_total > 0
+
+    klave = load_workbook(io.BytesIO(
+        build_presupuesto_workbook(report, [], ProjectReviews(), "Obra", None, fmt="klave")
+    ))
+    assert _labeled_value(klave["Carátula"], "Total con contingencia", 1, 2) == UNPRICED
+    assert _labeled_value(klave["Presupuesto"], "TOTAL", 5, 6) == UNPRICED
+
+    licitacion = load_workbook(io.BytesIO(
+        build_presupuesto_workbook(report, [], ProjectReviews(), "Obra", None, fmt="licitacion")
+    ))
+    ws = licitacion["Catálogo de conceptos"]
+    assert _labeled_value(ws, "SUBTOTAL", 3, 8) == UNPRICED
+    assert _labeled_value(ws, f"I.V.A. {IVA_PCT:.0f} %", 3, 8) == UNPRICED
+    assert _labeled_value(ws, "TOTAL", 3, 8) == UNPRICED
+    # The spelled-out total is the same number in another alphabet: blanking
+    # the digits while this cell still reads "...con letra: Setecientos
+    # ses.." below them would be the fix undoing itself one row down.
+    assert not any(
+        isinstance(c.value, str) and c.value.startswith("Importe total con letra")
+        for row in ws.iter_rows() for c in row
+    )
 
 
 def test_a_lone_heuristic_is_not_enough_to_price():

@@ -46,7 +46,13 @@ def get_costs(
     report = store.read_artifact(project_id, "cost_report.json")
     control_dir = store.get_root(project_id) / settings.processed_dir_name
     raw_basis = report.get("money_basis")
-    basis = MoneyBasis.model_validate(raw_basis) if raw_basis else None
+    try:
+        basis = MoneyBasis.model_validate(raw_basis) if raw_basis else None
+    except (KeyError, TypeError, ValueError, OSError):
+        # A hand-edited or corrupted basis is exactly the kind of legacy data
+        # this feature exists to gate, not 500 on — same tolerance as
+        # workspace.py's report-reading block, which resolves the same way.
+        basis = None
     report["money_state"] = resolve_money_state(basis, load_reviews(control_dir).verification)
     return report
 
