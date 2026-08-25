@@ -232,3 +232,46 @@ def normaliza_diametro(texto: str) -> tuple[int, str] | None:
         pulgadas = next((p for mm, p in NOMINALES if mm == nominal), "")
         return nominal, f'{nominal} mm ({pulgadas}")' if pulgadas else f"{nominal} mm"
     return None
+
+
+# -------------------------------------------------------- materiales ------
+
+# De qué está hecho el tubo, que es la otra mitad de su precio: el metro de
+# cobre cuesta el doble que el de PP-R al mismo diámetro. Las claves son las
+# del oficio como las escriben las publicaciones — 2,343 renglones del
+# catálogo importado declaran uno de estos — y el orden importa: CPVC antes
+# que PVC, fierro fundido antes que galvanizado.
+MATERIALES: tuple[tuple[str, str, re.Pattern[str]], ...] = (
+    ("cpvc", "CPVC", _r(r"\bCPVC\b")),
+    ("pvc", "PVC", _r(r"\bPVC\b")),
+    ("ppr", "PP-R", _r(r"POLIPROPILENO|\bPP\s*-?\s*R\b|TERMOFUSION")),
+    ("pead", "PEAD", _r(r"\bPEAD\b|POLIETILENO")),
+    ("cobre", "cobre", _r(r"\bCOBRE\b|\bCU\b|TUBO\s*CU")),
+    ("fierro_fundido", "fierro fundido", _r(r"(FIERRO|HIERRO)\s+FUNDIDO|\bFO\.?\s*FO\.?\b")),
+    ("galvanizado", "galvanizado", _r(r"GALVANIZAD|\bFO\.?\s*GO\.?\b")),
+    # «Tubo de concreto» es material real de drenajes y redes — y es justo el
+    # que se colaba como precio de agua potable doméstica.
+    ("concreto", "concreto", _r(r"TUBOS?\s+DE\s+CONCRETO|CONCRETO\s+(SIMPLE|REFORZADO|TENSADO)")),
+)
+
+_ETIQUETA_MATERIAL = {clave: etiqueta for clave, etiqueta, _p in MATERIALES}
+
+
+def normaliza_material(texto: str) -> tuple[str, str] | None:
+    """El material que declara un rótulo o una capa: ``("pead", "PEAD")``.
+
+    None cuando no declara ninguno — que es lo normal: un rótulo «AF-1/2"Ø»
+    dice sistema y diámetro, y el material se queda en la simbología o en la
+    memoria del proyecto. No declarar no es un defecto y no se castiga."""
+    for clave, etiqueta, patron in MATERIALES:
+        if patron.search(texto or ""):
+            return clave, etiqueta
+    return None
+
+
+def materiales_declarados(texto: str) -> set[str]:
+    """Todos los materiales que un texto menciona, como claves canónicas.
+
+    Un renglón puede ofrecer dos («fierro galvanizado o cobre»); la
+    comparación trabaja con el conjunto."""
+    return {clave for clave, _e, patron in MATERIALES if patron.search(texto or "")}

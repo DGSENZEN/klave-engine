@@ -29,6 +29,7 @@ from klave_engine.detection.instalaciones_symbols import (
     CorridaRegla,
     familia_de_capa,
     normaliza_diametro,
+    normaliza_material,
 )
 from klave_engine.detection.results import DetectionType, DetectorOutput, make_detection
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
@@ -240,6 +241,9 @@ def detect_runs(
         familia, disciplina, que_es = regla.familia, regla.disciplina, regla.que_es
         spec = _spec_de(grupo, etiquetas, meters_factor, regla.familia)
         diametro = normaliza_diametro(spec)
+        # El material sale del rótulo si lo dice, y si no, del nombre de la
+        # capa: «AireTuboCu» declara cobre aunque ningún texto lo repita.
+        material = normaliza_material(spec) or normaliza_material(layer)
         output.detections.append(
             make_detection(
                 detection_ids.next(),
@@ -258,7 +262,9 @@ def detect_runs(
                     f"{grupo.segments} segmentos sumados"
                     + (
                         f"; «{spec}» leído del rótulo más cercano al trazo"
-                        + (f", que es {diametro[1]}." if diametro else ".")
+                        + (f", que es {diametro[1]}" if diametro else "")
+                        + (f", de {material[1]}" if material else "")
+                        + "."
                         if spec
                         else "; sin rótulo de diámetro cerca del trazo, así que el "
                         "diámetro queda sin leer y el precio no se puede fijar solo."
@@ -286,6 +292,12 @@ def detect_runs(
                     # de agua fría" a secas.
                     "diametro_mm": diametro[0] if diametro else None,
                     "diametro": diametro[1] if diametro else "",
+                    # La otra mitad del precio: el metro de cobre cuesta el
+                    # doble que el de PP-R al mismo diámetro. Vacío cuando ni
+                    # el rótulo ni la capa lo dicen — no declarar es lo normal
+                    # y no se castiga, pero tampoco se inventa.
+                    "material": material[1] if material else "",
+                    "material_clave": material[0] if material else "",
                 },
                 grupo.source_file,
             )

@@ -10,6 +10,7 @@ Without segmentation (a single implicit plan, e.g. simple sheets and the test
 fixture) the flat count/sum computation is used unchanged.
 """
 
+import re
 from collections import defaultdict
 
 from klave_engine.common.logging import get_logger, log_stage
@@ -259,6 +260,19 @@ def _deduct_openings(
             f"Vanos −{assumptions.opening_share_pct:g} % supuesto (el plano no trae "
             "puertas ni ventanas leídas; ajústalo en Parámetros)"
         )
+
+
+def _con_especificacion(descripcion: str, espec: str) -> str:
+    """La especificación entra a la identidad del renglón, nunca al alcance.
+
+    Un renglón se escribe «<concepto>, incluye: <alcances>», y pegar el
+    diámetro al final lo dejaba después del «incluye» — donde el emparejador
+    no identifica nada y el español se rompe: «…prueba de hermeticidad de
+    19 mm»."""
+    corte = re.search(r",?\s*\bincluye\b", descripcion, re.IGNORECASE)
+    if corte:
+        return f"{descripcion[:corte.start()]} {espec}{descripcion[corte.start():]}"
+    return f"{descripcion} {espec}"
 
 
 def _section_note(
@@ -622,24 +636,25 @@ def generate_bill_of_quantities(
                 "el catálogo le dé precio."
             )
         contributing = result.dets
-        # El diámetro que el plano declaró va en la descripción de la línea:
-        # «tubería de agua fría» no la cotiza nadie, «tubería de agua fría de
-        # 13 mm (1/2")» sí, porque es como la publican los tabuladores. Sólo
-        # cuando todas las detecciones que alimentan la línea dicen el mismo:
-        # dos diámetros en un renglón son dos conceptos, y el presupuesto no
-        # puede fingir que son uno.
-        diametros = {
-            str(d.properties.get("diametro") or "") for d in contributing
-        } - {""}
+        # Lo que el plano declaró de esta línea —material y diámetro— va en su
+        # descripción: «tubería de gas» no la cotiza nadie, «tubería de gas de
+        # PEAD de 19 mm (3/4")» sí, porque es como la publican los
+        # tabuladores. Sólo cuando todas las detecciones dicen lo mismo: dos
+        # diámetros o dos materiales en un renglón son dos conceptos, y el
+        # presupuesto no puede fingir que son uno.
         descripcion = concept.description
-        if len(diametros) == 1:
-            descripcion = f"{descripcion} de {next(iter(diametros))}"
-        elif len(diametros) > 1:
-            boq.warnings.append(
-                f"Concepto {concept.code}: el plano declara {len(diametros)} diámetros "
-                f"distintos ({', '.join(sorted(diametros))}) en la misma línea. Se "
-                "presupuestan juntos y no deberían: cada diámetro tiene su precio."
-            )
+        for propiedad, nombre in (("material", "materiales"), ("diametro", "diámetros")):
+            valores = {
+                str(d.properties.get(propiedad) or "") for d in contributing
+            } - {""}
+            if len(valores) == 1:
+                descripcion = _con_especificacion(descripcion, f"de {next(iter(valores))}")
+            elif len(valores) > 1:
+                boq.warnings.append(
+                    f"Concepto {concept.code}: el plano declara {len(valores)} {nombre} "
+                    f"distintos ({', '.join(sorted(valores))}) en la misma línea. Se "
+                    f"presupuestan juntos y no deberían: cada uno tiene su precio."
+                )
         confidence = (
             sum(d.confidence for d in contributing) / len(contributing)
             if contributing

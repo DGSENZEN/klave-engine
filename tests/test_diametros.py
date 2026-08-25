@@ -104,3 +104,44 @@ def test_un_conduit_es_un_tubo_y_no_se_acusan_de_ser_distintos():
     )
     assert m is not None
     assert not any("no un(a)" in r for r in m.reasons)
+
+
+# ------------------------------------------------------- el material -------
+
+
+def test_el_material_declarado_descarta_al_de_otro_material():
+    """El metro de cobre cuesta el doble que el de PP-R al mismo diámetro:
+    materiales distintos son conceptos distintos, no un matiz."""
+    cobre = _c("JL12BF", 'Tubo de cobre flexible, de 19 mm (3/4") de diámetro')
+    m = score('Tubería de gas de PEAD de 19 mm (3/4"), incluye conexiones', "M",
+              cobre, "Instalación de gas")
+    assert m is None or any("material distinto" in r for r in m.reasons)
+
+
+def test_no_declarar_material_no_castiga_a_nadie():
+    """Un rótulo «AF-1/2"Ø» dice sistema y diámetro; el material se queda en
+    la simbología. No declarar es lo normal, no un defecto."""
+    cobre = _c("IB12BD", 'Suministro de tubo de cobre tipo "M" de 13 mm (1/2")')
+    m = score('Tubería de agua caliente de 13 mm (1/2") con aislamiento', "M",
+              cobre, "Instalación hidráulica")
+    assert m is not None
+    assert not any("material distinto" in r for r in m.reasons)
+
+
+def test_el_material_no_suma_cuando_coincide():
+    """«Cobre» ya suma como palabra compartida: un bono aparte contaría lo
+    mismo dos veces, y en los conceptos de concreto —donde la palabra está en
+    todos lados— inflaría todo por igual."""
+    a = score('Tubería de cobre de 13 mm (1/2")', "M",
+              _c("IB1", 'Tubo de cobre tipo "M" de 13 mm (1/2")'), "Instalación hidráulica")
+    assert a is not None
+    assert not any("material" in r for r in a.reasons)
+
+
+def test_el_tubo_de_concreto_de_las_redes_no_es_tuberia_domestica():
+    """El renglón que se colaba como precio de agua potable: «Instalación de
+    tubo de concreto tensado». Si el plano declara cobre, se descarta."""
+    concreto = _c("OD15DO", "Instalación de tubo de concreto tensado previamente")
+    m = score('Tubería de agua fría de cobre de 25 mm (1")', "M",
+              concreto, "Instalación hidráulica")
+    assert m is None or any("material distinto" in r for r in m.reasons)

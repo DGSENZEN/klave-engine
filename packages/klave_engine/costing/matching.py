@@ -23,7 +23,10 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from klave_engine.costing.sources.cdmx_capitulos import seccion_de
-from klave_engine.detection.instalaciones_symbols import normaliza_diametro
+from klave_engine.detection.instalaciones_symbols import (
+    materiales_declarados,
+    normaliza_diametro,
+)
 
 STOPWORDS = frozenset(
     "de del la el los las y o en con por para a al un una incluye incluyendo inc tipo "
@@ -264,7 +267,8 @@ def _specs(text: str) -> dict[str, set[str]]:
     for d in dims:
         plain -= set(d.split("x"))
     return {
-        "fc": fc, "dims": dims, "cm": cm, "numbers": plain, "diam": _diametros(text)
+        "fc": fc, "dims": dims, "cm": cm, "numbers": plain,
+        "diam": _diametros(text), "mat": materiales_declarados(text),
     }
 
 
@@ -399,6 +403,17 @@ def score(
         else:
             value -= 0.2
             reasons.append(f"sección distinta ({', '.join(sorted(sb['dims']))})")
+    if sa["mat"] and sb["mat"] and not (sa["mat"] & sb["mat"]):
+        # El material sólo castiga, nunca premia: «cobre» y «PVC» ya suman
+        # como palabras cuando coinciden. Lo que las palabras no hacían era
+        # descartar — un renglón de cobre puntuaba alto para una tubería de
+        # PEAD por todo lo demás que compartían, y el metro de cobre cuesta
+        # el doble. Materiales distintos son conceptos distintos.
+        value -= 0.3
+        reasons.append(
+            f"material distinto ({', '.join(sorted(sb['mat']))}, no "
+            f"{', '.join(sorted(sa['mat']))})"
+        )
     if sa["diam"] and sb["diam"]:
         if sa["diam"] & sb["diam"]:
             value += 0.14

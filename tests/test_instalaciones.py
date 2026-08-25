@@ -227,7 +227,10 @@ def test_la_linea_carga_el_diametro_que_el_plano_declaro():
         units, catalog, {}, "MXN",
     )
     linea = next(x for x in boq.lines if x.concept_code == "SAN-002")
-    assert linea.description.endswith('de 102 mm (4")')
+    # La especificación entra a la identidad, antes de «incluye»: pegada al
+    # final caía dentro del alcance, donde no identifica nada.
+    assert 'de 102 mm (4"), incluye' in linea.description
+    assert not linea.description.endswith('(4")')
     assert linea.quantity == 100.0
 
 
@@ -256,3 +259,28 @@ def test_dos_diametros_en_una_linea_se_dicen_en_vez_de_fingirse_uno():
     linea = next(x for x in boq.lines if x.concept_code == "SAN-002")
     assert "mm" not in linea.description  # no se elige uno de los dos
     assert any("2 diámetros distintos" in w for w in boq.warnings)
+
+
+def test_la_linea_carga_el_material_junto_al_diametro():
+    """«Tubería de gas» no la cotiza nadie; «de PEAD de 19 mm (3/4")» es como
+    la publican los tabuladores."""
+    from klave_engine.costing.boq import generate_bill_of_quantities
+    from klave_engine.costing.catalog import build_default_catalog
+    from klave_engine.detection.results import DetectionType, make_detection
+    from klave_engine.dxf.units import DrawingUnits
+
+    corrida = make_detection(
+        "g1", DetectionType.pipe_run, "GAS", (0, 0, 10, 1), 0.78, ["g1"],
+        "layer_run", [], {
+            "run_family": "gas", "discipline": "gas",
+            "estimated_length": 44.0, "length_m": 44.0,
+            "diametro": '19 mm (3/4")', "material": "PEAD",
+        }, "g.dxf",
+    )
+    catalog = [c for c in build_default_catalog(CostingAssumptions()) if c.code == "GAS-001"]
+    boq = generate_bill_of_quantities(
+        "p", [corrida], DrawingUnits(unit="m", source="declared", confidence=1.0),
+        catalog, {}, "MXN",
+    )
+    linea = next(x for x in boq.lines if x.concept_code == "GAS-001")
+    assert 'de PEAD de 19 mm (3/4"), incluye' in linea.description
