@@ -199,16 +199,9 @@ def build_schedule(
                         lag_days=max(0, cursor - previous_anchor.start_day),
                     )
                 )
-            # The step anchor and the crew tail are frequently the same
-            # concept, and each branch appends its own link. Two identical
-            # edges are one constraint stated twice: keep the binding lag.
-            deduped: dict[tuple[str, str], ScheduleLink] = {}
-            for link in links:
-                key = (link.predecessor, link.kind)
-                current = deduped.get(key)
-                if current is None or link.lag_days > current.lag_days:
-                    deduped[key] = link
-            links = list(deduped.values())
+            # Same predecessor can reach here via two branches above; see
+            # _dedupe_links for why the collision is resolved by lag size.
+            links = _dedupe_links(links)
             activities.append(
                 ScheduleActivity(
                     concept_code=line.concept_code,
@@ -254,6 +247,24 @@ def build_schedule(
     _compute_float(schedule)
     _apply_calendar(schedule, config.start_date)
     return schedule
+
+
+def _dedupe_links(links: list[ScheduleLink]) -> list[ScheduleLink]:
+    """Collapse links that state the same constraint twice.
+
+    The step anchor and the crew tail are frequently the same concept, and
+    each branch that can propose a link appends its own — so a link is kept
+    per distinct ``(predecessor, kind)``, not per branch. When two links do
+    collide, the larger lag wins: for a start-to-start relation both
+    constraints apply at once, so the true bound is their max and the
+    smaller lag is redundant."""
+    deduped: dict[tuple[str, str], ScheduleLink] = {}
+    for link in links:
+        key = (link.predecessor, link.kind)
+        current = deduped.get(key)
+        if current is None or link.lag_days > current.lag_days:
+            deduped[key] = link
+    return list(deduped.values())
 
 
 def _compute_float(schedule: WorkSchedule) -> None:
