@@ -20,6 +20,7 @@ from klave_engine.copilot.service import responder
 from klave_engine.costing.catalog_store import CatalogStore
 from klave_engine.costing.hallazgos import diagnose
 from klave_engine.costing.models import CostingOverrides, CostReport
+from klave_engine.costing.presentation import resolve_money_state
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
 from klave_engine.costing.reviews import load_reviews
 from klave_engine.llm.reader import (
@@ -195,15 +196,20 @@ def aplicar(
 
     # El presupuesto se recalcula con el catálogo nuevo, como en cualquier
     # cambio de precios hecho a mano.
-    antes = None
-    try:
-        antes = CostReport.model_validate(
-            store.read_artifact(body.project_id, "cost_report.json")
-        ).integration.grand_total
-    except HTTPException:
-        pass
     root = store.get_root(body.project_id)
     control_dir = root / settings.processed_dir_name
+    # Loaded once and reused for both totals below: sign-off does not change
+    # mid-request, so re-deriving it per read would just be the bug again.
+    reviews = load_reviews(control_dir)
+    antes = None
+    try:
+        reporte_antes = CostReport.model_validate(
+            store.read_artifact(body.project_id, "cost_report.json")
+        )
+        estado_antes = resolve_money_state(reporte_antes.money_basis, reviews.verification)
+        antes = None if estado_antes == "blocked" else reporte_antes.integration.grand_total
+    except HTTPException:
+        pass
     overrides = load_overrides(control_dir) or CostingOverrides()
     report = recompute_and_persist(
         store.artifact_root(body.project_id),
@@ -213,6 +219,8 @@ def aplicar(
         overrides,
         catalog_store=store_for_project(settings, body.project_id),
     )
+    state = resolve_money_state(report.money_basis, reviews.verification)
+    total = None if state == "blocked" else report.integration.grand_total
     BUS.publish(
         "costing_updated",
         project_id=body.project_id,
@@ -220,7 +228,7 @@ def aplicar(
         data={
             "version": overrides.version,
             "direct_cost": report.boq.direct_cost_total,
-            "grand_total": report.integration.grand_total,
+            "grand_total": total,
             "prev_grand_total": antes,
             "review_action": f"copilot:{accion.tipo}",
         },
@@ -228,7 +236,7 @@ def aplicar(
     return {
         "aplicadas": aplicadas,
         "total_antes": antes,
-        "total_despues": report.integration.grand_total,
+        "total_despues": total,
         "accion": accion.titulo,
     }
 

@@ -32,6 +32,7 @@ from klave_engine.costing.explosion import explode
 from klave_engine.costing.generadores import calcular as calcular_generador
 from klave_engine.costing.letras import pesos_con_letra
 from klave_engine.costing.models import BoqLine, Concept, CostReport
+from klave_engine.costing.presentation import MoneyState, resolve_money_state
 from klave_engine.costing.programas import build_programas
 from klave_engine.costing.reviews import ProjectReviews
 from klave_engine.costing.schedule import quantity_by_period
@@ -105,25 +106,33 @@ def build_presupuesto_workbook(
     croquis: CroquisProvider | None = None,
     override_reason: str = "",
 ) -> bytes:
+    # One verdict for the whole workbook, resolved once here and threaded to
+    # every sheet that could show a total — not re-derived per sheet from
+    # ``report.boq.units_reliable`` alone, which is the bug this module
+    # exists to stop repeating.
+    state = resolve_money_state(report.money_basis, reviews.verification)
     if fmt == "opus":
         workbook = _flat_workbook(
             report,
             sheet_title="Presupuesto",
             columns=["Clave", "Descripción", "Unidad", "Cantidad", "Precio Unitario", "Importe"],
+            money_state=state,
         )
     elif fmt == "neodata":
         workbook = _flat_workbook(
             report,
             sheet_title="Presupuesto",
             columns=["Código", "Concepto", "Unidad", "Cantidad", "P.U.", "Monto"],
+            money_state=state,
         )
     elif fmt in ("licitacion", "licitacion_larga"):
         workbook = _licitacion_workbook(
-            report, reviews, project_name, client, long_descriptions=fmt == "licitacion_larga"
+            report, reviews, project_name, client, state,
+            long_descriptions=fmt == "licitacion_larga",
         )
     else:
         workbook = _klave_workbook(
-            report, detections, reviews, project_name, client,
+            report, detections, reviews, project_name, client, state,
             croquis=croquis,
             override_reason=override_reason,
         )
@@ -141,6 +150,7 @@ IVA_PCT = 16.0
 
 def _licitacion_workbook(
     report: CostReport, reviews: ProjectReviews, project_name: str, client: str | None,
+    money_state: MoneyState,
     long_descriptions: bool = False,
 ) -> Workbook:
     """Catálogo de conceptos for a licitación pública (LOPSRM art. 45 / RLOPSRM
@@ -163,7 +173,7 @@ def _licitacion_workbook(
         f"(factor {factor:.4f} sobre costo directo)",
     )
     verification = reviews.verification
-    if not report.boq.units_reliable:
+    if money_state == "blocked":
         cell = ws.cell(row=5, column=1, value=SIN_UNIDADES)
         cell.font = Font(bold=True, size=9, color="B42318")
     elif not (verification.units_confirmed_at and verification.detections_confirmed_at):
@@ -255,14 +265,16 @@ def _licitacion_workbook(
     return workbook
 
 
-def _flat_workbook(report: CostReport, sheet_title: str, columns: list[str]) -> Workbook:
+def _flat_workbook(
+    report: CostReport, sheet_title: str, columns: list[str], money_state: MoneyState
+) -> Workbook:
     """One row per concept, no merges: made for import wizards."""
     workbook = Workbook()
     ws = workbook.active
     ws.title = sheet_title
     _header(ws, 1, columns)
     row = 2
-    if not report.boq.units_reliable:
+    if money_state == "blocked":
         # The first data row carries the warning so an import never reads
         # drawing units as metres in silence.
         ws.cell(row=row, column=1, value=SIN_UNIDADES).font = Font(
@@ -299,12 +311,13 @@ def _klave_workbook(
     reviews: ProjectReviews,
     project_name: str,
     client: str | None,
+    money_state: MoneyState,
     croquis: CroquisProvider | None = None,
     override_reason: str = "",
 ) -> Workbook:
     workbook = Workbook()
-    _caratula(workbook.active, report, reviews, project_name, client, override_reason)
-    _presupuesto(workbook.create_sheet("Presupuesto"), report)
+    _caratula(workbook.active, report, reviews, project_name, client, money_state, override_reason)
+    _presupuesto(workbook.create_sheet("Presupuesto"), report, money_state)
     _apus(workbook.create_sheet("APUs"), report)
     _generadores(workbook.create_sheet("Generadores"), report, detections, reviews, croquis)
     _explosion(workbook.create_sheet("Explosión de insumos"), report)
@@ -320,6 +333,7 @@ def _caratula(
     reviews: ProjectReviews,
     project_name: str,
     client: str | None,
+    money_state: MoneyState,
     override_reason: str = "",
 ) -> None:
     ws.title = "Carátula"
@@ -339,7 +353,7 @@ def _caratula(
         ("Moneda", report.currency),
         ("Unidades del plano", f"{report.drawing_units.unit} "
          f"({report.drawing_units.confidence:.0%} de confianza)"),
-        ("Verificación", SIN_UNIDADES if not report.boq.units_reliable
+        ("Verificación", SIN_UNIDADES if money_state == "blocked"
          else "Verificado (unidades, detecciones y supuestos)"
          if verified else "SIN VERIFICAR — revisar antes de usar"),
         ("", ""),
@@ -372,11 +386,11 @@ def _caratula(
     _autosize(ws, [26, 46])
 
 
-def _presupuesto(ws: Worksheet, report: CostReport) -> None:
+def _presupuesto(ws: Worksheet, report: CostReport, money_state: MoneyState) -> None:
     columns = ["Clave", "Concepto", "Unidad", "Cantidad", "P.U. (CD)", "Importe", "Confianza"]
     _header(ws, 1, [*columns, "Por nivel"])
     row = 2
-    if not report.boq.units_reliable:
+    if money_state == "blocked":
         ws.cell(row=row, column=1, value=SIN_UNIDADES).font = Font(
             bold=True, size=9, color="B42318"
         )
