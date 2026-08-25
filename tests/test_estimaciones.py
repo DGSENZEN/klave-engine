@@ -77,7 +77,7 @@ def test_rebasar_el_catalogo_contratado_se_dice_en_vez_de_dejarlo_pasar():
     est = _estimacion(renglones=[_renglon("A", 1000.0, periodo=200.0, previo=900.0)])
     r = calcular(est)
     aviso = " ".join(r.avisos)
-    assert "rebasan la cantidad del catálogo" in aviso
+    assert "rebasa la cantidad del catálogo" in aviso  # un solo concepto
     assert "convenio" in aviso and "art. 132" in aviso
 
 

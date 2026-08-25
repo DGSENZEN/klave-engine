@@ -15,8 +15,9 @@ import json
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, UploadFile
 from klave_engine.common.config import Settings
+from klave_engine.common.ids import slugify
 from klave_engine.common.io import write_json
 from klave_engine.costing.catalog import build_catalog_from_store
 from klave_engine.costing.convenios import (
@@ -34,8 +35,10 @@ from klave_engine.costing.estimaciones import (
     calcular,
     siguiente,
 )
+from klave_engine.costing.exports import build_estimacion_workbook
 from klave_engine.costing.finiquito import Finiquito
 from klave_engine.costing.finiquito import calcular as calcular_finiquito
+from klave_engine.costing.generadores import DIMENSIONES
 from klave_engine.costing.models import BillOfQuantities, CostingAssumptions
 from klave_engine.costing.sources.custom import CustomCatalogError
 from klave_engine.costing.sources.presupuesto import parse_presupuesto_file
@@ -46,6 +49,9 @@ from apps.api.events import BUS, clean_actor
 from apps.api.tenancy import store_for_project
 
 router = APIRouter(prefix="/projects", tags=["obra"])
+# Fuera de /projects a propósito: no es de un proyecto, y ahí
+# GET /projects/{project_id} se la tragaría como si fuera un id.
+medidas = APIRouter(prefix="/medidas", tags=["obra"])
 
 MAX_IMPORT_BYTES = 8 * 1024 * 1024
 CATALOGO = "catalogo_convocante.json"
@@ -480,3 +486,48 @@ def guardar_finiquito(
         "resumen": calcular_finiquito(fin).payload(),
         "guardado": True,
     }
+
+
+# --- Generadores -------------------------------------------------------------
+
+
+@medidas.get("/unidades-generador")
+def unidades_generador() -> dict:
+    """Qué dimensiones multiplica cada unidad.
+
+    La pantalla necesita esta tabla para calcular mientras alguien teclea, y
+    tenerla escrita dos veces es tenerla distinta el día que cambie. La
+    multiplicación puede vivir en cualquier lado; qué se multiplica, no."""
+    return {"unidades": {u: list(dims) for u, dims in DIMENSIONES.items()}}
+
+
+XLSX_MEDIA_TYPE = (
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
+
+@router.get("/{project_id}/estimaciones/{numero}/export.xlsx")
+def exportar_estimacion(
+    project_id: str,
+    numero: int,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """La estimación como se entrega: carátula, conceptos y generadores juntos.
+
+    En un solo archivo a propósito. Una estimación que llega sin su generador se
+    regresa, y mandarlos por separado es la forma más fácil de que uno de los
+    dos se quede en el escritorio."""
+    datos = _leer(store, settings, project_id, ESTIMACIONES) or []
+    cruda = next((d for d in datos if int(d.get("numero", 0)) == numero), None)
+    if cruda is None:
+        raise HTTPException(status_code=404, detail="No existe esa estimación.")
+    est = Estimacion.model_validate(cruda)
+    obra = store.get_manifest(project_id).project_name
+    contenido = build_estimacion_workbook(est, calcular(est), obra)
+    nombre = f"estimacion_{numero}_{slugify(obra)[:40]}.xlsx"
+    return Response(
+        content=contenido,
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
+    )

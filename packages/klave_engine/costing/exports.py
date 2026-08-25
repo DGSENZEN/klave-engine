@@ -27,7 +27,9 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from klave_engine.costing.descripciones import long_description
+from klave_engine.costing.estimaciones import Estimacion, ResumenEstimacion
 from klave_engine.costing.explosion import explode
+from klave_engine.costing.generadores import calcular as calcular_generador
 from klave_engine.costing.letras import pesos_con_letra
 from klave_engine.costing.models import BoqLine, Concept, CostReport
 from klave_engine.costing.programas import build_programas
@@ -886,6 +888,157 @@ def build_cotizacion_workbook(ages: list) -> bytes:
     for letter, width in {"A": 18, "B": 56, "C": 8, "D": 14, "E": 14, "F": 10, "G": 16,
                           "H": 24, "I": 12, "J": 30}.items():
         ws.column_dimensions[letter].width = width
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def build_estimacion_workbook(
+    estimacion: Estimacion, resumen: ResumenEstimacion, obra: str = ""
+) -> bytes:
+    """Una estimación como se entrega: carátula, conceptos y generadores.
+
+    El orden no es decorativo. La carátula va primero porque es lo que se firma;
+    los conceptos después, con lo anterior y lo acumulado a la vista para que se
+    pueda seguir la cuenta de un periodo al siguiente; y los generadores al
+    final, que es el respaldo que se revisa cuando un número no convence.
+
+    Los tres van en la misma hoja y no en tres archivos, porque una estimación
+    que llega sin su generador se regresa, y separarlos es la forma más fácil de
+    que uno de los dos se quede en el escritorio.
+    """
+    workbook = Workbook()
+    ws = workbook.active
+    ws.title = f"Estimación {estimacion.numero}"
+
+    _title(ws, 1, f"ESTIMACIÓN {estimacion.numero}", size=14)
+    _muted(ws, 2, 1, f"{obra} · periodo {resumen.periodo}" if obra else resumen.periodo)
+
+    row = 4
+    _title(ws, row, "Carátula", size=11)
+    row += 1
+    for etiqueta, valor, signo in [
+        ("Ejecutado en el periodo", resumen.importe, 1),
+        (f"Amortización del anticipo ({estimacion.anticipo_pct:g} %)", resumen.amortizacion, -1),
+        (
+            f"Retención del fondo de garantía ({estimacion.retencion_pct:g} %)",
+            resumen.retencion,
+            -1,
+        ),
+        ("Deductivas", resumen.deductivas, -1),
+        ("LÍQUIDO A PAGAR", resumen.liquido, 0),
+    ]:
+        ws.cell(row=row, column=1, value=etiqueta).font = Font(
+            bold=signo == 0, size=10, color=INK
+        )
+        cell = ws.cell(row=row, column=3, value=round(valor * (signo if signo else 1), 2))
+        cell.number_format = MONEY_FORMAT
+        cell.font = Font(bold=signo == 0, size=10)
+        row += 1
+
+    # Cada deductiva con su nombre: un descuento sin razón es el que se reclama.
+    if estimacion.deductivas:
+        row += 1
+        _title(ws, row, "Deductivas aplicadas", size=11)
+        row += 1
+        _header(ws, row, ["Concepto", "Importe", "Razón"])
+        row += 1
+        for d in estimacion.deductivas:
+            ws.cell(row=row, column=1, value=d.concepto).border = _box
+            imp = ws.cell(row=row, column=2, value=round(d.importe, 2))
+            imp.number_format = MONEY_FORMAT
+            imp.border = _box
+            ws.cell(row=row, column=3, value=d.razon or "—").border = _box
+            row += 1
+
+    row += 1
+    _title(ws, row, "Conceptos estimados", size=11)
+    row += 1
+    _header(ws, row, [
+        "Clave", "Concepto", "Unidad", "P.U.", "Contratado",
+        "Anterior", "Este periodo", "Acumulado", "% avance", "Importe",
+    ])
+    row += 1
+    for r in estimacion.renglones:
+        valores: list[Any] = [
+            r.clave, r.description, r.unit, r.unit_price, r.quantity_contract,
+            r.quantity_previous, r.quantity_period, r.quantity_accumulated,
+            round(r.pct_avance / 100.0, 4), r.amount_period,
+        ]
+        for col, value in enumerate(valores, start=1):
+            cell = ws.cell(row=row, column=col, value=value)
+            cell.border = _box
+            if col in (4, 10):
+                cell.number_format = MONEY_FORMAT
+            elif col == 9:
+                cell.number_format = "0.0%"
+        if r.excede_contrato:
+            # Rojo en la celda del acumulado: es la que delata que hace falta
+            # convenio, y quien revisa busca ahí.
+            ws.cell(row=row, column=8).font = Font(size=10, color="B42318", bold=True)
+        row += 1
+
+    row += 2
+    _title(ws, row, "Números generadores", size=11)
+    row += 1
+    _muted(
+        ws, row, 1,
+        "El respaldo de lo medido en obra. Un concepto sin generador se cobra sin "
+        "sustento y la estimación se regresa (RLOPSRM art. 132).",
+    )
+    row += 2
+
+    for r in estimacion.renglones:
+        if r.quantity_period <= 0:
+            continue
+        _title(ws, row, f"{r.clave} — {r.description}", size=10)
+        row += 1
+        if not r.generador:
+            _muted(
+                ws, row, 1,
+                f"Sin generador capturado. Se cobran {r.quantity_period:,.4g} {r.unit}.",
+            )
+            row += 2
+            continue
+
+        g = calcular_generador(r.generador, r.unit, r.quantity_period)
+        _header(ws, row, ["Ubicación", "Veces", "Operación", "Medida", "Nota"])
+        row += 1
+        for calc in g.lineas:
+            ws.cell(row=row, column=1, value=calc.linea.ubicacion or "—").border = _box
+            ws.cell(row=row, column=2, value=calc.linea.veces).border = _box
+            # La fórmula viaja escrita: quien revisa rehace la cuenta, no la cree.
+            ws.cell(row=row, column=3, value=calc.formula or "—").border = _box
+            medida = ws.cell(
+                row=row, column=4,
+                value=calc.medida if calc.medida is not None else f"falta {', '.join(calc.falta)}",
+            )
+            medida.border = _box
+            if calc.medida is None:
+                medida.font = Font(size=10, color="B42318")
+            ws.cell(row=row, column=5, value=calc.linea.nota or "").border = _box
+            row += 1
+
+        total = ws.cell(row=row, column=3, value="Suma del generador")
+        total.font = Font(bold=True, size=10)
+        suma = ws.cell(row=row, column=4, value=g.total)
+        suma.font = Font(bold=True, size=10)
+        row += 1
+        if not g.cuadra:
+            _muted(ws, row, 1, g.avisos[-1] if g.avisos else "")
+            ws.cell(row=row, column=1).font = Font(size=9, color="B42318")
+            row += 1
+        row += 1
+
+    if resumen.avisos:
+        row += 1
+        _title(ws, row, "Avisos", size=11)
+        row += 1
+        for aviso in resumen.avisos:
+            _muted(ws, row, 1, aviso)
+            row += 1
+
+    _autosize(ws, [26, 46, 10, 14, 14, 14, 14, 14, 11, 16])
     buffer = io.BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()

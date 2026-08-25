@@ -180,7 +180,9 @@ def estado(
     if sustanciales:
         nuevos = sum(1 for c in sustanciales for r in c.renglones if r.es_nuevo)
         st.avisos.append(
-            f"{nuevos} conceptos entran por convenio y no estaban en el catálogo original. "
+            f"{nuevos} concepto{'s' if nuevos > 1 else ''} "
+            f"{'entran' if nuevos > 1 else 'entra'} por convenio y no "
+            f"{'estaban' if nuevos > 1 else 'estaba'} en el catálogo original. "
             "El art. 59 también prohíbe las variaciones sustanciales al proyecto: revisa "
             "que sean del mismo trabajo y no de otro."
         )

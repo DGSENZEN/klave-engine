@@ -14,23 +14,28 @@
  * — un avance inventado se paga y luego se descuenta.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Plus, Receipt, TrendUp } from "@phosphor-icons/react";
+import { DownloadSimple, Plus, Receipt, Ruler, TrendUp } from "@phosphor-icons/react";
 import {
+  descargarEstimacion,
   getEstimaciones,
+  getUnidadesGenerador,
   guardarEstimacion,
   money,
   siguienteEstimacion,
   type Estimacion,
   type EstimacionConResumen,
+  type LineaGenerador,
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
+import { GeneradorEditor } from "@/components/GeneradorEditor";
 import {
   Button,
   Callout,
   Card,
   EmptyState,
+  IconButton,
   Input,
   Metric,
   PageHeader,
@@ -204,6 +209,7 @@ export default function EstimacionesPage() {
                   <Th align="right">Deductivas</Th>
                   <Th align="right">Líquido</Th>
                   <Th align="right">Avance</Th>
+                  <Th />
                 </tr>
               </thead>
               <tbody>
@@ -247,6 +253,15 @@ export default function EstimacionesPage() {
                     </Td>
                     <Td align="right" className="tabular-nums text-muted">
                       {resumen.avance_pct.toFixed(2)} %
+                    </Td>
+                    <Td align="right">
+                      <IconButton
+                        onClick={() => void descargarEstimacion(id, resumen.numero)}
+                        title="Descargar la estimación con sus generadores"
+                        aria-label={`Descargar la estimación ${resumen.numero}`}
+                      >
+                        <DownloadSimple size={16} />
+                      </IconButton>
                     </Td>
                   </tr>
                 ))}
@@ -298,12 +313,33 @@ function EditorEstimacion({
   // estimación monta otro editor en vez de reiniciar éste, que es lo que pedía
   // un efecto y lo que React 19 desaconseja.
   const [local, setLocal] = useState<Estimacion>(estimacion);
+  const [abierto, setAbierto] = useState<string | null>(null);
+  const [unidades, setUnidades] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    let vivo = true;
+    getUnidadesGenerador()
+      .then((r) => vivo && setUnidades(r.unidades))
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, []);
 
   function medir(indice: number, cantidad: number) {
     setLocal({
       ...local,
       renglones: local.renglones.map((r, i) =>
         i === indice ? { ...r, quantity_period: cantidad } : r,
+      ),
+    });
+  }
+
+  function generar(indice: number, lineas: LineaGenerador[]) {
+    setLocal({
+      ...local,
+      renglones: local.renglones.map((r, i) =>
+        i === indice ? { ...r, generador: lineas } : r,
       ),
     });
   }
@@ -373,10 +409,24 @@ function EditorEstimacion({
             {local.renglones.map((r, i) => {
               const acumulado = r.quantity_previous + r.quantity_period;
               const excede = r.quantity_contract > 0 && acumulado > r.quantity_contract;
+              const respaldo = r.generador?.length ?? 0;
               return (
-                <tr key={r.clave} className="border-b border-border/60">
+                <Fragment key={r.clave}>
+                <tr className="border-b border-border/60">
                   <Td className="whitespace-nowrap font-mono text-xs">{r.clave}</Td>
-                  <Td className="min-w-[200px]">{r.description}</Td>
+                  <Td className="min-w-[200px]">
+                    {r.description}
+                    <button
+                      type="button"
+                      onClick={() => setAbierto(abierto === r.clave ? null : r.clave)}
+                      className="mt-0.5 flex items-center gap-1 text-[11px] text-muted underline-offset-2 hover:text-foreground hover:underline"
+                    >
+                      <Ruler size={12} />
+                      {respaldo > 0
+                        ? `Generador · ${respaldo} ${respaldo === 1 ? "línea" : "líneas"}`
+                        : "Sin generador"}
+                    </button>
+                  </Td>
                   <Td align="right" className="tabular-nums">{money(r.unit_price)}</Td>
                   <Td align="right" className="tabular-nums text-muted">
                     {r.quantity_contract.toLocaleString("es-MX", { maximumFractionDigits: 2 })}
@@ -410,6 +460,21 @@ function EditorEstimacion({
                     {money(r.quantity_period * r.unit_price)}
                   </Td>
                 </tr>
+                {abierto === r.clave && (
+                  <tr className="border-b border-border/60">
+                    <td colSpan={8} className="px-2 pb-3">
+                      <GeneradorEditor
+                        lineas={r.generador ?? []}
+                        unidad={r.unit}
+                        unidades={unidades}
+                        cantidad={r.quantity_period}
+                        onChange={(lineas) => generar(i, lineas)}
+                        onUsarTotal={(total) => medir(i, total)}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>

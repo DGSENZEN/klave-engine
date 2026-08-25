@@ -28,8 +28,11 @@ def _proyecto(data_dir) -> str:
     pid = "obra-test"
     root = data_dir / "projects" / pid
     (root / "processed").mkdir(parents=True, exist_ok=True)
-    (root / "manifest.json").write_text(
-        json.dumps({"project_id": pid, "project_name": "Obra de prueba", "drawings": []})
+    (root / "processed" / "project_manifest.json").write_text(
+        json.dumps({
+            "project_id": pid, "project_name": "Obra de prueba",
+            "root_path": str(root), "drawings": [],
+        })
     )
     (data_dir / "projects_registry.json").write_text(json.dumps({pid: str(root)}))
     return pid
@@ -192,3 +195,48 @@ def test_sin_catalogo_cargado_el_convenio_no_borra_el_monto_capturado(client, da
     est = client.post(f"/projects/{pid}/estimaciones/siguiente",
                       params={"inicio": "2026-02-01", "fin": "2026-02-28"}).json()
     assert est["estimacion"]["monto_contrato"] == 60_000.0
+
+
+def test_la_tabla_de_unidades_no_vive_bajo_projects(client):
+    """GET /projects/{project_id} se la tragaría como si fuera un id de proyecto."""
+    r = client.get("/medidas/unidades-generador")
+    assert r.status_code == 200, r.text
+    unidades = r.json()["unidades"]
+    assert unidades["m2"] == ["largo", "ancho"]
+    assert unidades["m3"] == ["largo", "ancho", "alto"]
+    assert unidades["pza"] == []
+
+
+def test_la_estimacion_se_exporta_con_su_generador_en_el_mismo_archivo(client, data_dir):
+    """Separarlos es la forma más fácil de que uno se quede en el escritorio."""
+    pid = _proyecto(data_dir)
+    con_generador = json.loads(json.dumps(ESTIMACION_1))
+    con_generador["renglones"][0]["generador"] = [
+        {"ubicacion": "Eje A-3", "veces": 1, "largo": 20.0, "ancho": 5.0,
+         "alto": None, "medida_directa": None, "nota": ""}
+    ]
+    _escribir(data_dir, pid, "estimaciones.json", [con_generador])
+
+    r = client.get(f"/projects/{pid}/estimaciones/1/export.xlsx")
+    assert r.status_code == 200, r.text
+    assert "spreadsheetml" in r.headers["content-type"]
+    assert "estimacion_1" in r.headers["content-disposition"]
+
+    import io
+
+    from openpyxl import load_workbook
+
+    ws = load_workbook(io.BytesIO(r.content)).active
+    texto = "\n".join(
+        str(c.value) for fila in ws.iter_rows() for c in fila if c.value is not None
+    )
+    assert "LÍQUIDO A PAGAR" in texto
+    assert "Números generadores" in texto
+    assert "Eje A-3" in texto
+    # La fórmula viaja escrita: quien revisa rehace la cuenta, no la cree.
+    assert "20 × 5" in texto
+
+
+def test_exportar_una_estimacion_que_no_existe_es_404(client, data_dir):
+    pid = _proyecto(data_dir)
+    assert client.get(f"/projects/{pid}/estimaciones/9/export.xlsx").status_code == 404

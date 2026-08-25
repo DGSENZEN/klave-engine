@@ -911,7 +911,103 @@ export type RenglonEstimado = {
   quantity_contract: number;
   quantity_period: number;
   quantity_previous: number;
+  generador: LineaGenerador[];
 };
+
+/**
+ * Una medición de campo. `medida_directa` es para lo que no se calcula
+ * multiplicando —kilos de una lista de habilitado, piezas contadas—: si viene,
+ * manda sobre las dimensiones.
+ */
+export type LineaGenerador = {
+  ubicacion: string;
+  veces: number;
+  largo: number | null;
+  ancho: number | null;
+  alto: number | null;
+  medida_directa: number | null;
+  nota: string;
+};
+
+/**
+ * Qué dimensiones multiplica cada unidad. Se pide a la API en vez de escribirse
+ * aquí: tener la tabla dos veces es tenerla distinta el día que cambie. La
+ * multiplicación puede vivir en cualquier lado; qué se multiplica, no.
+ */
+/** La estimación como se entrega: carátula, conceptos y generadores en un archivo. */
+export const descargarEstimacion = (id: string, numero: number) =>
+  downloadFile(
+    `/projects/${id}/estimaciones/${numero}/export.xlsx`,
+    `estimacion_${numero}.xlsx`,
+  );
+
+export const getUnidadesGenerador = () =>
+  getJSON<{ unidades: Record<string, string[]> }>("/medidas/unidades-generador");
+
+/** El resultado de una línea, o la razón por la que no se puede calcular. */
+export type LineaCalculada = {
+  medida: number | null;
+  formula: string;
+  falta: string[];
+};
+
+/**
+ * Calcula una línea con la tabla que sirve la API.
+ *
+ * Lo que nunca hace es rellenar con 1.00 la dimensión que falta: un dato
+ * faltante convertido en uno neutro da un número plausible y equivocado, y ése
+ * es peor que un hueco — el hueco se ve, el número se cobra.
+ */
+export function calcularLinea(
+  linea: LineaGenerador,
+  unidad: string,
+  unidades: Record<string, string[]>,
+): LineaCalculada {
+  const veces = Number.isFinite(linea.veces) ? linea.veces : 1;
+  if (linea.medida_directa !== null && linea.medida_directa !== undefined) {
+    return {
+      medida: Math.round(linea.medida_directa * veces * 10000) / 10000,
+      formula: veces !== 1 ? `${veces} × ${linea.medida_directa}` : `${linea.medida_directa}`,
+      falta: [],
+    };
+  }
+  const dims = unidades[unidad.trim().toLowerCase()];
+  if (dims === undefined) return { medida: null, formula: "", falta: ["medida_directa"] };
+  if (dims.length === 0) {
+    return { medida: Math.round(veces * 10000) / 10000, formula: `${veces}`, falta: [] };
+  }
+  const falta = dims.filter(
+    (d) => (linea as unknown as Record<string, number | null>)[d] == null,
+  );
+  if (falta.length > 0) return { medida: null, formula: "", falta };
+
+  let producto = veces;
+  const partes: string[] = [];
+  for (const d of dims) {
+    const v = Number((linea as unknown as Record<string, number>)[d]);
+    producto *= v;
+    partes.push(String(v));
+  }
+  if (veces !== 1) partes.unshift(String(veces));
+  return {
+    medida: Math.round(producto * 10000) / 10000,
+    formula: partes.join(" × "),
+    falta: [],
+  };
+}
+
+/** Debajo de esto la diferencia es redondeo de cinta métrica, no un error. */
+export const TOLERANCIA_GENERADOR = 0.005;
+
+export const lineaGeneradorVacia = (): LineaGenerador => ({
+  ubicacion: "",
+  veces: 1,
+  largo: null,
+  ancho: null,
+  alto: null,
+  medida_directa: null,
+  nota: "",
+});
 
 export type Deductiva = { concepto: string; importe: number; razon: string };
 

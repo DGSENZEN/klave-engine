@@ -37,6 +37,9 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 
+from .generadores import LineaGenerador
+from .generadores import calcular as calcular_generador
+
 
 class RenglonEstimado(BaseModel):
     """Un concepto del catálogo contratado, con lo medido este periodo."""
@@ -48,6 +51,9 @@ class RenglonEstimado(BaseModel):
     # Lo que dice el catálogo firmado: el techo de lo que se puede cobrar sin
     # convenio.
     quantity_contract: float
+    # El respaldo de medición de campo. Vacío mientras nadie lo capture: una
+    # estimación se puede formular sin él, pero se regresa sin él.
+    generador: list[LineaGenerador] = Field(default_factory=list)
     # Lo que se midió en obra este periodo, con su generador detrás.
     quantity_period: float = 0.0
     # Lo acumulado en estimaciones anteriores.
@@ -147,10 +153,13 @@ def calcular(estimacion: Estimacion) -> ResumenEstimacion:
     avisos: list[str] = []
     excedidos = [r for r in estimacion.renglones if r.excede_contrato]
     if excedidos:
+        n = len(excedidos)
         peor = max(excedidos, key=lambda r: r.quantity_accumulated - r.quantity_contract)
         avisos.append(
-            f"{len(excedidos)} conceptos rebasan la cantidad del catálogo contratado; "
-            f"el mayor es {peor.clave}: contratado {peor.quantity_contract:,.2f} "
+            f"{n} concepto{'s' if n > 1 else ''} "
+            f"{'rebasan' if n > 1 else 'rebasa'} la cantidad del catálogo contratado; "
+            f"el {'mayor' if n > 1 else 'renglón'} es {peor.clave}: contratado "
+            f"{peor.quantity_contract:,.2f} "
             f"{peor.unit}, estimado {peor.quantity_accumulated:,.2f}. Rebasar el "
             "catálogo necesita convenio, no una estimación más (RLOPSRM art. 132)."
         )
@@ -171,6 +180,43 @@ def calcular(estimacion: Estimacion) -> ResumenEstimacion:
         avisos.append(
             "Estimación sin renglones medidos. Una estimación se formula sobre lo que "
             "alguien midió en obra, no sobre un porcentaje de avance."
+        )
+
+    # El generador es lo que una contratante revisa antes de autorizar el pago.
+    # Aquí no se corrige nada solo: se dice cuáles no cuadran y por cuánto, y la
+    # cantidad la cambia quien midió.
+    descuadrados = []
+    for r in estimacion.renglones:
+        if not r.generador or r.quantity_period <= 0:
+            continue
+        g = calcular_generador(r.generador, r.unit, r.quantity_period)
+        if not g.cuadra:
+            descuadrados.append((r, g))
+    if descuadrados:
+        r, g = descuadrados[0]
+        detalle = (
+            f"{r.clave} suma {g.total:,.4g} {r.unit} de generador contra "
+            f"{r.quantity_period:,.4g} cobrados"
+            if g.incompletas == 0
+            else f"{r.clave} tiene {g.incompletas} líneas de generador sin calcular"
+        )
+        n = len(descuadrados)
+        avisos.append(
+            f"{n} concepto{'s' if n > 1 else ''} no "
+            f"{'cuadran' if n > 1 else 'cuadra'} con su generador: {detalle}. "
+            "La cantidad sale del generador, no al revés."
+        )
+
+    sin_respaldo = [
+        r for r in estimacion.renglones if r.quantity_period > 0 and not r.generador
+    ]
+    if sin_respaldo:
+        n = len(sin_respaldo)
+        avisos.append(
+            f"{n} de {len(estimacion.renglones)} concepto"
+            f"{'s' if len(estimacion.renglones) > 1 else ''} se "
+            f"{'cobran' if n > 1 else 'cobra'} sin números generadores. Una estimación "
+            "sin respaldo de medición se regresa (RLOPSRM art. 132)."
         )
 
     return ResumenEstimacion(
