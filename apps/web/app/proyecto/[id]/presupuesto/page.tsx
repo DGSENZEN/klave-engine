@@ -62,7 +62,7 @@ import {
 } from "@/components/ui";
 import { ButtonMenu, MenuItem } from "@/components/Menu";
 import { useProjectLive } from "@/components/ProjectLive";
-import { moneyGate, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
+import { moneyState, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
 import { VersionsPanel } from "@/components/VersionsPanel";
 import { ConceptPicker } from "@/components/ConceptPicker";
 import { IndicatorsCard } from "@/components/IndicatorsCard";
@@ -159,7 +159,7 @@ export default function PresupuestoPage() {
     );
   }
 
-  if (moneyGate(costs, reviews) === "blocked") {
+  if (moneyState(costs) === "blocked") {
     return (
       <div className="px-6 py-7 lg:px-8">
         <PageHeader title="Presupuesto" />

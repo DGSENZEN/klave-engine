@@ -388,9 +388,31 @@ export type Indicators = {
   notes: string[];
 };
 
+/**
+ * Whether a total may be shown as money, resolved once on the server by
+ * costing.presentation.resolve_money_state and shipped on every surface
+ * that renders a total. Owned here (not in components/MoneyGate.tsx) so
+ * that lib/ never has to import from components/ to use it.
+ */
+export type MoneyGateState = "ok" | "unverified" | "blocked";
+
+/** What the engine read about the drawing's scale, frozen with the run. */
+export type MoneyBasis = {
+  units_reliable: boolean;
+  unit: string;
+  source: string;
+  confidence: number;
+  reasons: string[];
+  /** Share of direct cost by confidence band, in percent. */
+  confidence_bands: Record<string, number>;
+};
+
 export type CostReport = {
   project_id: string;
   currency: string;
+  /** Resolved server-side; the client renders this, it does not derive it. */
+  money_state?: MoneyGateState;
+  money_basis?: MoneyBasis | null;
   /** Sanity ratios and partida shares (empty object on older runs). */
   indicators?: Partial<Indicators>;
   drawing_units: { unit: string; source: string; confidence: number; notes?: string[] };
@@ -2264,6 +2286,7 @@ export type ProjectOverview = ProjectSummary & {
   excluded_count: number;
   adjustment_count: number;
   grand_total: number | null;
+  money_state?: MoneyGateState;
   currency: string;
   last_activity: string | null;
   job_error: string | null;

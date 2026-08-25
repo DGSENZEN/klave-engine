@@ -7,7 +7,7 @@ import { apiMessage, downloadFile, money2, num, type Apu } from "@/lib/api";
 import { RESOURCE_TYPE_LABELS } from "@/lib/format";
 import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
-import { moneyGate, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
+import { moneyState, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
 import {
   Badge,
   Button,
@@ -98,7 +98,7 @@ export default function ApusPage() {
     );
   }
 
-  if (moneyGate(costs, reviews) === "blocked") {
+  if (moneyState(costs) === "blocked") {
     return (
       <div className="px-6 py-7 lg:px-8">
         <PageHeader title="Precios unitarios" />

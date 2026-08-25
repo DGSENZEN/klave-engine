@@ -6,7 +6,7 @@ import { money, money2, type PeriodCashflow } from "@/lib/api";
 import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
 import { ProgramaFlujoTabs } from "@/components/ProgramaFlujoTabs";
-import { moneyGate, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
+import { moneyState, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
 import {
   Callout,
   Card,
@@ -61,7 +61,7 @@ export default function FlujoPage() {
     );
   }
 
-  if (moneyGate(costs, reviews) === "blocked") {
+  if (moneyState(costs) === "blocked") {
     return (
       <div className="px-6 py-7 lg:px-8">
         <PageHeader title="Flujo financiero" />

@@ -14,7 +14,7 @@ import { phaseColor } from "@/lib/phases";
 import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
 import { ProgramaFlujoTabs } from "@/components/ProgramaFlujoTabs";
-import { moneyGate, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
+import { moneyState, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
 import { PlantillaCampo } from "@/components/PlantillaCampo";
 import {
   Callout,
@@ -92,7 +92,7 @@ export default function ProgramaPage() {
     );
   }
 
-  if (moneyGate(costs, reviews) === "blocked") {
+  if (moneyState(costs) === "blocked") {
     return (
       <div className="px-6 py-7 lg:px-8">
         <PageHeader title="Programa de obra" />

@@ -52,7 +52,7 @@ import {
 } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
 import { timeAgo } from "@/lib/time";
-import { moneyGate, UnitsGate } from "@/components/MoneyGate";
+import { moneyState, UnitsGate } from "@/components/MoneyGate";
 
 export default function Resumen() {
   const { id } = useParams<{ id: string }>();
@@ -230,13 +230,13 @@ export default function Resumen() {
         />
       )}
 
-      {costs && moneyGate(costs, reviews) === "blocked" && (
+      {costs && moneyState(costs) === "blocked" && (
         <div className="mb-6">
           <UnitsGate id={id} costs={costs} actorName={actorName} />
         </div>
       )}
 
-      {costs && moneyGate(costs, reviews) !== "blocked" && (
+      {costs && moneyState(costs) !== "blocked" && (
         <div className="rise-in">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Metric

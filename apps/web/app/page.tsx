@@ -727,13 +727,20 @@ function ProjectRow({
           </>
         )}
       </div>
-      {project.grand_total != null && (
+      {project.money_state === "blocked" ? (
         <div className="hidden text-right sm:block">
-          <div className="font-display text-sm font-semibold tabular">
-            {money(project.grand_total, project.currency)}
-          </div>
-          <div className="microlabel">total</div>
+          <div className="text-sm text-muted">sin unidades</div>
+          <div className="microlabel">confirma la escala</div>
         </div>
+      ) : (
+        project.grand_total != null && (
+          <div className="hidden text-right sm:block">
+            <div className="font-display text-sm font-semibold tabular">
+              {money(project.grand_total, project.currency)}
+            </div>
+            <div className="microlabel">total</div>
+          </div>
+        )
       )}
       <Badge tone={STATUS_TONE[project.status ?? ""] ?? "default"}>
         {STATUS_LABELS[project.status ?? ""] ?? project.status ?? "—"}
