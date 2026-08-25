@@ -68,7 +68,16 @@
 
 **Interfaces:**
 - Consumes: `BillOfQuantities` and `DrawingUnits` (existing), `VerificationState` from `klave_engine.costing.reviews`
-- Produces: `MoneyState = Literal["ok","unverified","blocked"]`; `MoneyBasis` (pydantic model with fields `units_reliable: bool`, `unit: str`, `source: str`, `confidence: float`, `reasons: list[str]`, `confidence_bands: dict[str, float]`); `resolve_money_state(basis: MoneyBasis | None, verification: VerificationState | None) -> MoneyState`; `money_basis_from_boq(boq: BillOfQuantities, units: DrawingUnits) -> MoneyBasis`
+- Produces, **in `models.py`** (pre-flight ruling R1 — see Task 2 Step 3 for why): `MoneyBasis`, a pydantic model with fields `units_reliable: bool`, `unit: str`, `source: str`, `confidence: float`, `reasons: list[str]`, `confidence_bands: dict[str, float]`
+- Produces, **in `presentation.py`**: `MoneyState = Literal["ok","unverified","blocked"]`; `CONFIDENCE_FIRM = 0.7`; `resolve_money_state(basis: MoneyBasis | None, verification: VerificationState | None) -> MoneyState`; `money_basis_from_boq(boq: BillOfQuantities, units: DrawingUnits) -> MoneyBasis`; `basis_reasons(basis: MoneyBasis | None) -> list[str]`
+
+> **Pre-flight ruling R1:** define `MoneyBasis` in `models.py` beside the other
+> domain models, and import it into `presentation.py`. Do **not** define it in
+> `presentation.py` — that module imports `BillOfQuantities` from `models.py`,
+> so defining `MoneyBasis` there and importing it back would be a cycle. The
+> code block in Step 3 below shows `MoneyBasis` inside `presentation.py`;
+> ignore that placement and put the class in `models.py`, keeping every
+> function in `presentation.py` exactly as written.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -289,7 +298,7 @@ Expected: PASS — 11 passed
 - [ ] **Step 5: Verify nothing else moved**
 
 Run: `.venv/bin/python -m pytest tests -q -p no:warnings && .venv/bin/ruff check . && .venv/bin/mypy packages/klave_engine`
-Expected: 451+ passed, `All checks passed!`, `Success: no issues found`
+Expected: 540+ passed (baseline in this worktree is 540), `All checks passed!`, `Success: no issues found`
 
 - [ ] **Step 6: Commit**
 
@@ -373,6 +382,16 @@ Expected: FAIL — `AttributeError: 'CostReport' object has no attribute 'money_
 
 - [ ] **Step 3: Add the field**
 
+> **Pre-flight ruling R1 — `MoneyBasis` lives in `models.py`, not `presentation.py`.**
+> The original plan put the model in `presentation.py`, which imports
+> `BillOfQuantities` from `models.py` — so `models.py` importing it back
+> created a cycle survivable only via a bottom-of-file import plus
+> `model_rebuild()`. `MoneyBasis` is a pydantic domain model like every other
+> one in this file, so it belongs here, and the dependency runs one way:
+> `presentation` → `models`, never back. Task 1 defines `MoneyBasis` in
+> `models.py` and imports it into `presentation.py`; no `model_rebuild()`
+> anywhere.
+
 In `packages/klave_engine/costing/models.py`, inside `class CostReport`, after `indirectos_campo: float = 0.0`:
 
 ```python
@@ -380,16 +399,11 @@ In `packages/klave_engine/costing/models.py`, inside `class CostReport`, after `
     # Joined with the reviews' sign-off by costing.presentation at read time;
     # None on runs written before the verdict existed, which resolve to
     # "blocked" rather than being trusted.
-    money_basis: "MoneyBasis | None" = None
+    money_basis: MoneyBasis | None = None
 ```
 
-At the end of `models.py`, resolve the forward reference (`presentation` imports `models`, so the import must be deferred to avoid a cycle):
-
-```python
-from klave_engine.costing.presentation import MoneyBasis  # noqa: E402
-
-CostReport.model_rebuild()
-```
+`MoneyBasis` is defined earlier in this same file (Task 1), so this is a plain
+forward-free annotation — no quotes, no rebuild.
 
 - [ ] **Step 4: Populate it**
 
@@ -427,7 +441,7 @@ git commit -m "feat(presentacion): el reporte carga su propio veredicto de unida
 ## Task 3: Every server surface asks the authority
 
 **Files:**
-- Modify: `apps/api/routes/workspace.py:129-140` (`_project_entry`)
+- Modify: `apps/api/routes/workspace.py:73-150` (`_project_overview` — note: NOT `_project_entry`)
 - Modify: `apps/api/routes/reports.py:35-38` (`get_costs`)
 - Modify: `apps/api/routes/copilot.py:200-232`
 - Modify: `packages/klave_engine/costing/exports.py:164, 263, 340, 377`
@@ -964,7 +978,15 @@ Expected: FAIL — `EST-008 arranca el día …, después de colar EST-001 el d�
 
 - [ ] **Step 3: State which concept serves which pour, once**
 
-In `packages/klave_engine/costing/catalog_store.py`, at module level:
+> **Pre-flight ruling R2 — `DERIVADO_DE` lives in `models.py`, not
+> `catalog_store.py`.** Task 8 needs the same map inside `schedule.py`. I
+> verified there is no import cycle either way, but pulling the SQLite and
+> migration module into the scheduler for one constant is the wrong layering.
+> `models.py` is already imported by both `catalog_store.py` and `schedule.py`,
+> so the map goes there and both import it from one place.
+
+In `packages/klave_engine/costing/models.py`, at module level (the migration in
+Step 4 imports it from there):
 
 ```python
 # Which derived concept serves which pour, and as what. Task 8's hard edges
@@ -1110,11 +1132,10 @@ Expected: FAIL — `ninguna arista dura: el colado no espera a nada`
 - [ ] **Step 3: Emit FS for the pairs that cannot overlap**
 
 In `packages/klave_engine/costing/schedule.py`, add near the top — inverting the
-map Task 7 already defined, so which-serves-which is stated exactly once:
+map Task 7 defined in `models.py` (pre-flight ruling R2), so which-serves-which
+is stated exactly once:
 
 ```python
-from klave_engine.costing.catalog_store import DERIVADO_DE
-
 # The pairs that genuinely cannot overlap, derived from the same map that
 # orders them. Everything else stays start-to-start with a lag, because
 # traslape between trades is how obra actually runs — flattening that would
@@ -1124,9 +1145,10 @@ for _derived, (_parent, _tipo) in DERIVADO_DE.items():
     HARD_PREDECESSORS[_parent] = (*HARD_PREDECESSORS.get(_parent, ()), _derived)
 ```
 
-If importing `catalog_store` into `schedule` would create a cycle, move
-`DERIVADO_DE` and `_OFFSET_POR_TIPO` into `costing/models.py` instead and import
-from there in both places. Check with `.venv/bin/python -c "import klave_engine.costing.schedule"` after the edit.
+`DERIVADO_DE` comes from the existing `from klave_engine.costing.models import (...)`
+block already at the top of this file — add it to that import list rather than
+writing a new import line. Confirm with
+`.venv/bin/python -c "import klave_engine.costing.schedule"` after the edit.
 
 In the per-line loop, after the existing SS branches and before the dedup block from Task 6, add:
 
