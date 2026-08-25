@@ -907,13 +907,19 @@ class BulkAliasInput(BaseModel):
 
 
 def _candidates(catalog: CatalogStore, source_key: str | None) -> list[Candidate]:
-    """Reference rows of the taller's own sources (or the one asked for) and
-    the workspace's manual concepts priced by their matrices."""
+    """Reference rows of every imported source (or the one asked for) and the
+    workspace's manual concepts priced by their matrices.
+
+    Antes sólo se buscaba en el catálogo propio del taller, así que los
+    tabuladores publicados —5,429 renglones de la CDMX con precio, clave y
+    vigencia— se importaban y nadie los veía. El catálogo propio sigue
+    ganando cuando dice lo mismo, porque son los precios del taller; lo
+    publicado está para lo que el taller todavía no tiene."""
     sources = catalog.list_sources()
     if source_key:
         keys = [source_key]
     else:
-        keys = [s["source_key"] for s in sources if s.get("publisher") == "Catálogo propio"]
+        keys = [s["source_key"] for s in sources]
     candidates: list[Candidate] = []
     if keys or source_key is None:
         rows = catalog.list_reference_rows(keys) if keys else []
@@ -939,11 +945,15 @@ def _candidates(catalog: CatalogStore, source_key: str | None) -> list[Candidate
             if concept.rule is not None:
                 continue  # only the taller's own (manual/imported) concepts are targets
             apu = apus.get(concept.code)
+            if apu is None:
+                # Un concepto sin matriz no puede prestarle un precio a nadie:
+                # ofrecerlo como candidato es ofrecer el mismo hueco otra vez.
+                continue
             candidates.append(
                 Candidate(
                     kind="concept", key=concept.code, clave=concept.code,
                     description=concept.description, unit=concept.unit,
-                    price=apu.direct_unit_cost if apu else None, source="matriz del taller",
+                    price=apu.direct_unit_cost, source="matriz del taller",
                     phase=concept.phase,
                 )
             )
