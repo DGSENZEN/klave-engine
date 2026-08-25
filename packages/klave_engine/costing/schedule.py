@@ -199,6 +199,16 @@ def build_schedule(
                         lag_days=max(0, cursor - previous_anchor.start_day),
                     )
                 )
+            # The step anchor and the crew tail are frequently the same
+            # concept, and each branch appends its own link. Two identical
+            # edges are one constraint stated twice: keep the binding lag.
+            deduped: dict[tuple[str, str], ScheduleLink] = {}
+            for link in links:
+                key = (link.predecessor, link.kind)
+                current = deduped.get(key)
+                if current is None or link.lag_days > current.lag_days:
+                    deduped[key] = link
+            links = list(deduped.values())
             activities.append(
                 ScheduleActivity(
                     concept_code=line.concept_code,
