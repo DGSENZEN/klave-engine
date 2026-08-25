@@ -111,6 +111,15 @@ def adopted_price_apu(concept: Concept, adopted: dict) -> UnitPriceAnalysis:
     """A concept priced by an adopted reference row: no matrix, the row's
     P.U. as direct unit cost, and its provenance on the analysis."""
     vigencia = f" · vigencia {adopted['vigencia']}" if adopted.get("vigencia") else ""
+    # Un catálogo de destajos cobra la mano de obra y nada más: la línea
+    # sanitaria de 4" vale $61.76 de destajo y $315.59 con el tubo. Adoptar
+    # uno sin decirlo deja el presupuesto corto por el material entero, así
+    # que el alcance se escribe junto a la procedencia, donde se lee.
+    alcance = (
+        " · SÓLO MANO DE OBRA, sin materiales"
+        if adopted.get("alcance") == "mano_de_obra"
+        else ""
+    )
     return UnitPriceAnalysis(
         concept_code=concept.code,
         concept_description=concept.description,
@@ -119,7 +128,36 @@ def adopted_price_apu(concept: Concept, adopted: dict) -> UnitPriceAnalysis:
         breakdown={rt.value: 0.0 for rt in ResourceType},
         direct_unit_cost=round(float(adopted["price"]), 2),
         price_source=f"{adopted.get('source') or 'referencia'} · {adopted.get('clave') or ''}"
-        f"{vigencia}",
+        f"{vigencia}{alcance}",
+    )
+
+
+def _warn_solo_mano_de_obra(
+    boq: BillOfQuantities, apus: dict[str, UnitPriceAnalysis]
+) -> None:
+    """Conceptos cuyo P.U. adoptado sólo paga la mano de obra.
+
+    Un catálogo de destajos es un precio real y citable, pero no es el precio
+    del concepto: falta el material. El presupuesto suma esos renglones como
+    si estuvieran completos y por eso hay que decirlo — la diferencia no es
+    un matiz, en una línea sanitaria de 4 pulgadas el tubo es cinco veces la
+    mano de obra."""
+    afectados = [
+        line for line in boq.lines
+        if (apu := apus.get(line.concept_code)) is not None
+        and apu.price_source
+        and "SÓLO MANO DE OBRA" in apu.price_source
+        and line.amount > 0
+    ]
+    if not afectados:
+        return
+    total = round(sum(line.amount for line in afectados), 2)
+    claves = ", ".join(sorted(line.concept_code for line in afectados)[:6])
+    boq.warnings.append(
+        f"{len(afectados)} conceptos por ${total:,.2f} tienen un P.U. de destajo: pagan la "
+        f"mano de obra y no el material ({claves}"
+        f"{'…' if len(afectados) > 6 else ''}). El presupuesto los suma como si estuvieran "
+        "completos; cárgales el material o adopta un precio unitario que lo incluya."
     )
 
 
@@ -294,6 +332,7 @@ def generate_cost_report(
     boq.warnings.extend(indicators.notes)
     if price_vigencias is not None:
         _warn_stale_prices(boq, apus, price_vigencias)
+    _warn_solo_mano_de_obra(boq, apus)
     integration = integrate_costs(boq.direct_cost_total, config.indirects)
     indirectos_campo = round(
         boq.direct_cost_total * config.indirects.field_indirects_pct / 100.0, 2

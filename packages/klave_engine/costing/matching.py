@@ -130,6 +130,11 @@ class Candidate:
     source: str = ""
     vigencia: str = ""
     phase: str = ""
+    # Qué incluye el precio: precios_unitarios (todo), mano_de_obra (destajo,
+    # sin material) o costo_horario. Un destajo adoptado como precio completo
+    # deja el presupuesto corto por el material entero, así que el alcance
+    # viaja con el candidato hasta la pantalla donde alguien decide.
+    alcance: str = "precios_unitarios"
 
 
 @dataclass

@@ -172,6 +172,18 @@ _RULES: list[Rule] = [
         verificar="Busca el armado en el cuadro o el detalle de esos elementos.",
     ),
     Rule(
+        pattern=r"tienen un P\.U\. de destajo",
+        severity="dinero",
+        action="Cárgales el material, o adopta un precio unitario que lo incluya.",
+        target="/catalogo",
+        momento="cotizar",
+        verificar=(
+            "Un catálogo de destajos paga la mano de obra y nada más. En una "
+            "línea sanitaria de 4 pulgadas el tubo cuesta cinco veces el destajo, "
+            "y el presupuesto está sumando sólo el destajo."
+        ),
+    ),
+    Rule(
         pattern=r"La plantilla de personal de campo suma",
         severity="dinero",
         action=(

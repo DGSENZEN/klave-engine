@@ -492,11 +492,17 @@ async def import_custom_source(
     name: str = "",
     vigencia: str = "",
     publisher: str = "",
+    kind: Literal["precios_unitarios", "mano_de_obra", "costo_horario"] = "precios_unitarios",
     catalog: CatalogStore = Depends(get_catalog),
 ) -> dict:
     """The taller's own catálogo de conceptos (XLSX/CSV with clave,
     descripción, unidad, precio unitario) as a reference source, labeled as
-    the taller's, never as a publication."""
+    the taller's, never as a publication.
+
+    ``kind`` dice qué incluye el precio, y no es un detalle: un catálogo de
+    destajos trae sólo la mano de obra —la línea sanitaria de 4" vale $61.76
+    de mano de obra y $315.59 con el tubo— y adoptar uno creyendo que es el
+    precio completo deja el presupuesto corto por el material entero."""
     require_catalog_admin(request)
     # Read at most the limit plus one byte: a bigger body never lands in memory.
     raw = await file.read(MAX_IMPORT_BYTES + 1)
@@ -516,7 +522,7 @@ async def import_custom_source(
     count = catalog.import_reference(
         {
             "key": key, "name": title, "publisher": publisher.strip() or "Catálogo propio",
-            "region": "MX", "vigencia": vigencia.strip(), "kind": "precios_unitarios", "url": "",
+            "region": "MX", "vigencia": vigencia.strip(), "kind": kind, "url": "",
         },
         rows,
         sha256=hashlib.sha256(raw).hexdigest(),
@@ -525,6 +531,32 @@ async def import_custom_source(
         x_actor, "reference_imported", f"{title}: {count} renglones", catalog=catalog
     )
     return {"source_key": key, "rows": count, "name": title}
+
+
+@router.delete("/sources/{source_key}")
+def delete_source(
+    source_key: str,
+    request: Request,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    """Quitar una fuente importada y sus renglones.
+
+    Sin esto, un catálogo importado con el alcance equivocado —un destajo
+    marcado como precio unitario completo— se queda para siempre, compitiendo
+    en el buscador contra el bueno."""
+    require_catalog_admin(request)
+    try:
+        removed = catalog.delete_source(source_key)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409, detail={"error_type": "source_in_use", "message": str(exc)}
+        ) from exc
+    _publish_catalog_updated(
+        x_actor, "reference_removed", f"{removed['name']}: {removed['rows']} renglones",
+        catalog=catalog,
+    )
+    return removed
 
 
 @router.post("/import-matrices", status_code=201)
@@ -917,6 +949,9 @@ def _candidates(catalog: CatalogStore, source_key: str | None) -> list[Candidate
     ganando cuando dice lo mismo, porque son los precios del taller; lo
     publicado está para lo que el taller todavía no tiene."""
     sources = catalog.list_sources()
+    alcance_por_fuente = {
+        s["source_key"]: (s.get("kind") or "precios_unitarios") for s in sources
+    }
     if source_key:
         keys = [source_key]
     else:
@@ -932,6 +967,9 @@ def _candidates(catalog: CatalogStore, source_key: str | None) -> list[Candidate
                     price=float(row["price"]), source=row.get("source_name") or "",
                     vigencia=row.get("source_vigencia") or "",
                     phase=row.get("group_description") or "",
+                    alcance=alcance_por_fuente.get(
+                        row.get("source_key") or "", "precios_unitarios"
+                    ),
                 )
             )
     if source_key is None:
@@ -968,6 +1006,8 @@ def _match_payload(match: Match) -> dict:
         "target_code": c.key if c.kind == "concept" else None, "clave": c.clave,
         "description": c.description, "unit": c.unit, "price": c.price, "source": c.source,
         "vigencia": c.vigencia, "score": match.score, "reasons": match.reasons,
+        "alcance": c.alcance,
+        "solo_mano_de_obra": c.alcance == "mano_de_obra",
     }
 
 

@@ -1108,14 +1108,20 @@ class CatalogStore:
         """Adopted precios unitarios by concept code, with provenance."""
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT code, price_override, price_source_key, price_source, price_clave, "
-                "price_vigencia FROM concepts WHERE price_override IS NOT NULL AND active = 1"
+                "SELECT c.code, c.price_override, c.price_source_key, c.price_source, "
+                "c.price_clave, c.price_vigencia, s.kind AS source_kind FROM concepts c "
+                "LEFT JOIN price_sources s ON s.source_key = c.price_source_key "
+                "WHERE c.price_override IS NOT NULL AND c.active = 1"
             ).fetchall()
         return {
             row["code"]: {
                 "price": float(row["price_override"]), "source_key": row["price_source_key"],
                 "source": row["price_source"], "clave": row["price_clave"],
                 "vigencia": row["price_vigencia"],
+                # Qué incluye ese precio. Un destajo no trae material, y el
+                # presupuesto tiene que decirlo donde se lee, no en la ficha
+                # de la fuente.
+                "alcance": row["source_kind"] or "precios_unitarios",
             }
             for row in rows
         }
@@ -1471,6 +1477,36 @@ class CatalogStore:
 
 
     # ------------------------------------------------- reference library
+
+    def delete_source(self, source_key: str) -> dict:
+        """Quitar una fuente importada y sus renglones.
+
+        Se niega mientras algún concepto tenga adoptado un precio de ella: el
+        presupuesto quedaría citando una procedencia que ya no existe, que es
+        peor que no citar ninguna. Devuelve qué conceptos lo impiden para que
+        se puedan soltar primero."""
+        with _LOCK, self._connect() as conn:
+            fuente = conn.execute(
+                "SELECT * FROM price_sources WHERE source_key = ?", (source_key,)
+            ).fetchone()
+            if fuente is None:
+                raise ValueError(f"La fuente {source_key} no existe.")
+            usada = [
+                row["code"] for row in conn.execute(
+                    "SELECT code FROM concepts WHERE price_source_key = ? AND active = 1",
+                    (source_key,),
+                ).fetchall()
+            ]
+            if usada:
+                raise ValueError(
+                    f"{len(usada)} conceptos tienen precio adoptado de esta fuente "
+                    f"({', '.join(sorted(usada)[:6])}). Suéltalos antes de quitarla."
+                )
+            borrados = conn.execute(
+                "DELETE FROM reference_prices WHERE source_key = ?", (source_key,)
+            ).rowcount
+            conn.execute("DELETE FROM price_sources WHERE source_key = ?", (source_key,))
+        return {"source_key": source_key, "name": fuente["name"], "rows": borrados}
 
     def list_sources(self) -> list[dict]:
         with self._connect() as conn:
