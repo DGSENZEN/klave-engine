@@ -306,9 +306,11 @@ NOTA_APERTURA = {
 }
 
 
-def test_la_bitacora_no_expone_manera_de_editar_ni_de_borrar(client, data_dir):
-    """La ausencia es la garantía: si se pudiera corregir, no probaría nada."""
-    pid = _proyecto(data_dir)
+def test_la_bitacora_no_expone_manera_de_editar_ni_de_borrar(client):
+    """La ausencia es la garantía: si se pudiera corregir, no probaría nada.
+
+    Se revisan las rutas registradas y no una lista escrita a mano, para que un
+    PUT agregado con buena intención tumbe esta prueba."""
     rutas = {
         (r.path, m)
         for r in client.app.routes
