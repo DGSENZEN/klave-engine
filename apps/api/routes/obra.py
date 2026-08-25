@@ -29,6 +29,8 @@ from klave_engine.costing.convenios import (
     estado as estado_contrato,
 )
 from klave_engine.costing.convocante import atar_catalogo, avisos_de_cantidad
+from klave_engine.costing.escalatoria import RenglonAjuste, SolicitudAjuste
+from klave_engine.costing.escalatoria import calcular as calcular_ajuste
 from klave_engine.costing.estimaciones import (
     Estimacion,
     RenglonEstimado,
@@ -57,6 +59,7 @@ MAX_IMPORT_BYTES = 8 * 1024 * 1024
 CATALOGO = "catalogo_convocante.json"
 ESTIMACIONES = "estimaciones.json"
 CONVENIOS = "convenios.json"
+AJUSTES = "ajustes.json"
 FINIQUITO = "finiquito.json"
 
 
@@ -531,3 +534,128 @@ def exportar_estimacion(
         media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
     )
+
+
+# --- Ajuste de costos --------------------------------------------------------
+
+
+class AjusteInput(BaseModel):
+    solicitud: SolicitudAjuste
+
+
+def _resumen_ajuste(sol: SolicitudAjuste) -> dict:
+    r = calcular_ajuste(sol)
+    return {
+        "numero": r.numero,
+        "periodo_base": r.periodo_base,
+        "periodo_ajuste": r.periodo_ajuste,
+        "indice_base": r.indice_base,
+        "indice_ajuste": r.indice_ajuste,
+        "factor": r.factor,
+        "calculable": r.calculable,
+        "importe_pendiente": r.importe_pendiente,
+        "importe_ajustable": r.importe_ajustable,
+        "importe_ajuste": r.importe_ajuste,
+        "avisos": r.avisos,
+    }
+
+
+@router.get("/{project_id}/ajustes")
+def listar_ajustes(
+    project_id: str,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Las solicitudes de ajuste, cada una con su factor o con lo que le falta."""
+    datos = _leer(store, settings, project_id, AJUSTES) or []
+    salida = []
+    for cruda in datos:
+        sol = SolicitudAjuste.model_validate(cruda)
+        salida.append({"solicitud": sol.model_dump(mode="json"), "resumen": _resumen_ajuste(sol)})
+    return {"ajustes": salida}
+
+
+@router.put("/{project_id}/ajustes/{numero}")
+def guardar_ajuste(
+    project_id: str,
+    numero: int,
+    body: AjusteInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    sol = body.solicitud.model_copy(update={"numero": numero})
+    datos = _leer(store, settings, project_id, AJUSTES) or []
+    datos = [d for d in datos if int(d.get("numero", 0)) != numero]
+    datos.append(sol.model_dump(mode="json"))
+    datos.sort(key=lambda d: int(d.get("numero", 0)))
+    _guardar(store, settings, project_id, AJUSTES, datos)
+    BUS.publish("ajuste_guardado", project_id, clean_actor(x_actor))
+    return {"solicitud": sol.model_dump(mode="json"), "resumen": _resumen_ajuste(sol)}
+
+
+@router.delete("/{project_id}/ajustes/{numero}", status_code=204)
+def borrar_ajuste(
+    project_id: str,
+    numero: int,
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    datos = _leer(store, settings, project_id, AJUSTES) or []
+    quedan = [d for d in datos if int(d.get("numero", 0)) != numero]
+    if len(quedan) == len(datos):
+        raise HTTPException(status_code=404, detail="No existe esa solicitud de ajuste.")
+    _guardar(store, settings, project_id, AJUSTES, quedan)
+    BUS.publish("ajuste_guardado", project_id, clean_actor(x_actor))
+
+
+@router.post("/{project_id}/ajustes/preparar")
+def preparar_ajuste(
+    project_id: str,
+    periodo_base: str = "",
+    periodo_ajuste: str = "",
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """La solicitud con lo pendiente ya cargado de lo que la aplicación sabe.
+
+    Lo contratado sale del catálogo vigente —con sus convenios— y lo ejecutado
+    de las estimaciones capturadas. Volver a teclear eso a mano es donde se
+    cuelan las cantidades que no cuadran con lo que ya se cobró.
+
+    El índice no se precarga: ese lo trae quien consulta la publicación."""
+    convs = _convenios(store, settings, project_id)
+    crudas = _leer(store, settings, project_id, ESTIMACIONES) or []
+    estimaciones = [Estimacion.model_validate(d) for d in crudas]
+
+    contratado: dict[str, RenglonAjuste] = {}
+    for est in estimaciones:
+        for r in est.renglones:
+            fila = contratado.get(r.clave)
+            if fila is None:
+                contratado[r.clave] = RenglonAjuste(
+                    clave=r.clave, description=r.description, unit=r.unit,
+                    unit_price=r.unit_price, quantity_contract=r.quantity_contract,
+                    quantity_executed=r.quantity_accumulated,
+                )
+            else:
+                # La última estimación manda: trae el acumulado más reciente.
+                fila.quantity_executed = r.quantity_accumulated
+                fila.quantity_contract = r.quantity_contract
+
+    if convs:
+        vigente = catalogo_vigente(
+            {c: f.quantity_contract for c, f in contratado.items()}, convs
+        )
+        for clave, cantidad in vigente.items():
+            if clave in contratado:
+                contratado[clave].quantity_contract = cantidad
+
+    sol = SolicitudAjuste(
+        numero=len(_leer(store, settings, project_id, AJUSTES) or []) + 1,
+        periodo_base=periodo_base,
+        periodo_ajuste=periodo_ajuste,
+        renglones=list(contratado.values()),
+    )
+    return {"solicitud": sol.model_dump(mode="json"), "resumen": _resumen_ajuste(sol)}

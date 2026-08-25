@@ -1133,6 +1133,82 @@ export const borradorConvenio = (id: string, numero: number, fecha: string) =>
     {},
   );
 
+/**
+ * Ajuste de costos (LOPSRM art. 57–58). Los índices no se precargan ni se
+ * estiman: los trae quien consulta la publicación del INEGI. Sin los dos
+ * valores el factor es null y la pantalla pide el dato en vez de aproximarlo.
+ */
+export type IndicePrecios = {
+  nombre: string;
+  fuente: string;
+  publicacion: string;
+  /** Periodo ISO ("2026-03") → valor publicado. */
+  valores: Record<string, number>;
+};
+
+export type RenglonAjuste = {
+  clave: string;
+  description: string;
+  unit: string;
+  unit_price: number;
+  quantity_contract: number;
+  quantity_executed: number;
+  quantity_programada: number | null;
+};
+
+export type SolicitudAjuste = {
+  numero: number;
+  /** Del acto de presentación y apertura de proposiciones, no de la firma. */
+  periodo_base: string;
+  periodo_ajuste: string;
+  indice: IndicePrecios | null;
+  renglones: RenglonAjuste[];
+  atraso_imputable_al_contratista: boolean;
+};
+
+export type ResumenAjuste = {
+  numero: number;
+  periodo_base: string;
+  periodo_ajuste: string;
+  indice_base: number | null;
+  indice_ajuste: number | null;
+  factor: number | null;
+  calculable: boolean;
+  importe_pendiente: number;
+  importe_ajustable: number;
+  importe_ajuste: number;
+  avisos: string[];
+};
+
+export type AjusteConResumen = { solicitud: SolicitudAjuste; resumen: ResumenAjuste };
+
+export const getAjustes = (id: string) =>
+  getJSON<{ ajustes: AjusteConResumen[] }>(`/projects/${id}/ajustes`);
+
+export const prepararAjuste = (id: string, base = "", ajuste = "") =>
+  postJSON<AjusteConResumen>(
+    `/projects/${id}/ajustes/preparar?periodo_base=${base}&periodo_ajuste=${ajuste}`,
+    {},
+  );
+
+export const guardarAjuste = (
+  id: string,
+  numero: number,
+  solicitud: SolicitudAjuste,
+  actor?: string,
+) =>
+  putJSON<AjusteConResumen>(
+    `/projects/${id}/ajustes/${numero}`,
+    { solicitud },
+    actor ? { "X-Actor": actor } : {},
+  );
+
+export const borrarAjuste = (id: string, numero: number, actor?: string) =>
+  deleteJSON<void>(
+    `/projects/${id}/ajustes/${numero}`,
+    actor ? { "X-Actor": actor } : {},
+  );
+
 export type SaldoFiniquito = {
   concepto: string;
   importe: number;

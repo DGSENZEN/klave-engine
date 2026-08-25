@@ -240,3 +240,59 @@ def test_la_estimacion_se_exporta_con_su_generador_en_el_mismo_archivo(client, d
 def test_exportar_una_estimacion_que_no_existe_es_404(client, data_dir):
     pid = _proyecto(data_dir)
     assert client.get(f"/projects/{pid}/estimaciones/9/export.xlsx").status_code == 404
+
+
+def test_preparar_el_ajuste_carga_lo_pendiente_de_lo_ya_capturado(client, data_dir):
+    """Volver a teclearlo es donde se cuelan cantidades que no cuadran."""
+    pid = _proyecto(data_dir)
+    segunda = json.loads(json.dumps(ESTIMACION_1))
+    segunda["numero"] = 2
+    segunda["renglones"][0]["quantity_previous"] = 100.0
+    segunda["renglones"][0]["quantity_period"] = 40.0
+    _escribir(data_dir, pid, "estimaciones.json", [ESTIMACION_1, segunda])
+
+    sol = client.post(f"/projects/{pid}/ajustes/preparar",
+                      params={"periodo_base": "2026-01", "periodo_ajuste": "2026-07"})
+    assert sol.status_code == 200, sol.text
+    renglon = sol.json()["solicitud"]["renglones"][0]
+    # El acumulado de la última estimación, no el de la primera.
+    assert renglon["quantity_executed"] == 140.0
+    assert renglon["quantity_contract"] == 100.0
+    # Sin índice no hay factor, y lo dice en vez de aproximar.
+    assert sol.json()["resumen"]["factor"] is None
+    assert sol.json()["resumen"]["calculable"] is False
+
+
+def test_el_ajuste_preparado_respeta_el_catalogo_ya_convenido(client, data_dir):
+    pid = _proyecto(data_dir)
+    _escribir(data_dir, pid, "estimaciones.json", [ESTIMACION_1])
+    client.put(f"/projects/{pid}/convenios/1", json={"convenio": {
+        "numero": 1, "fecha": "2026-02-05",
+        "renglones": [{
+            "clave": "OP-001", "description": "Muro", "unit": "m2",
+            "unit_price": 500.0, "quantity": 130.0, "quantity_anterior": 100.0,
+        }],
+    }})
+    sol = client.post(f"/projects/{pid}/ajustes/preparar").json()
+    assert sol["solicitud"]["renglones"][0]["quantity_contract"] == 130.0
+
+
+def test_guardar_un_ajuste_con_indice_devuelve_su_factor(client, data_dir):
+    pid = _proyecto(data_dir)
+    r = client.put(f"/projects/{pid}/ajustes/1", json={"solicitud": {
+        "numero": 1, "periodo_base": "2026-01", "periodo_ajuste": "2026-07",
+        "indice": {
+            "nombre": "INPP construcción", "fuente": "INEGI",
+            "publicacion": "captura de prueba",
+            "valores": {"2026-01": 100.0, "2026-07": 112.0},
+        },
+        "renglones": [{
+            "clave": "OP-001", "description": "Muro", "unit": "m2", "unit_price": 500.0,
+            "quantity_contract": 1000.0, "quantity_executed": 400.0,
+        }],
+    }})
+    assert r.status_code == 200, r.text
+    resumen = r.json()["resumen"]
+    assert resumen["factor"] == 1.12
+    assert resumen["importe_ajuste"] == 36_000.0
+    assert client.get(f"/projects/{pid}/ajustes").json()["ajustes"][0]["resumen"]["factor"] == 1.12

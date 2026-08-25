@@ -8,6 +8,7 @@ import {
   Buildings,
   Calculator,
   CalendarBlank,
+  ChartLineUp,
   CaretLeft,
   Coins,
   FileMagnifyingGlass,
@@ -128,6 +129,12 @@ function nav(id: string): { group: string; items: Item[] }[] {
           label: "Convenios",
           icon: <NotePencil size={18} />,
           href: `${b}/convenios`,
+        },
+        {
+          key: "ajuste-costos",
+          label: "Ajuste de costos",
+          icon: <ChartLineUp size={18} />,
+          href: `${b}/ajuste-costos`,
         },
         {
           key: "finiquito",
