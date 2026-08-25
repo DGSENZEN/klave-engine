@@ -42,7 +42,7 @@
 | `packages/klave_engine/costing/models.py` | `money_basis` field on `CostReport`; `sequence_order` docstring note |
 | `packages/klave_engine/costing/report.py` | Build and attach `MoneyBasis` |
 | `packages/klave_engine/costing/schedule.py` | Dedupe links, FS forward-pass branch, frentes assumption text |
-| `packages/klave_engine/costing/catalog_store.py` | `DERIVADO_DE` map + migration v14 (data only — the catalog is already spaced by 10, so `catalog.py`, `steel.py` and `formwork.py` are untouched) |
+| `packages/klave_engine/costing/catalog_store.py` | `DERIVADO_DE` map + migration v22 (data only — the catalog is already spaced by 10, so `catalog.py`, `steel.py` and `formwork.py` are untouched) |
 | `packages/klave_engine/costing/hallazgos.py` | `HallazgoGrupo`; group by rule id |
 | `packages/klave_engine/costing/exports.py` | Four `units_reliable` checks → resolver |
 | `packages/klave_engine/evals/recall_cli.py` | Read project store first |
@@ -938,7 +938,7 @@ git commit -m "fix(programa): una restriccion enunciada dos veces era dos arista
 > read must be deterministic (`ORDER BY sequence_order, code`).
 
 **Files:**
-- Modify: `packages/klave_engine/costing/catalog_store.py` (migration v14 + the shared map)
+- Modify: `packages/klave_engine/costing/catalog_store.py` (migration v22 + the shared map)
 - Test: `tests/test_schedule_precedence.py` (append)
 
 **Interfaces:**
@@ -1012,12 +1012,12 @@ DERIVADO_DE: dict[str, tuple[str, str]] = {
 _OFFSET_POR_TIPO = {"cimbra": -2, "acero": -1}
 ```
 
-- [ ] **Step 4: Add migration v14**
+- [ ] **Step 4: Add migration v22**
 
 In the same file, following the existing `_migrate_vN` pattern:
 
 ```python
-    def _migrate_v14(self, conn: sqlite3.Connection) -> None:
+    def _migrate_v22(self, conn: sqlite3.Connection) -> None:
         """Put acero and cimbra before the pour they serve.
 
         They sat in blocks appended at the end of their phase — ACE-* at
@@ -1042,7 +1042,7 @@ In the same file, following the existing `_migrate_vN` pattern:
             )
 ```
 
-Register it in the migration chain exactly as v13 is registered, bumping the stored schema version to 14.
+Register it in the migration chain following the `_migrate_v13` pattern (a named method invoked from an inline `if version_row is None or int(version_row["value"]) < N:` block), bumping the stored schema version to **22**. NOTE: the chain already reaches v21 — 14 was taken long ago by a concurrent session. Verify the highest existing version yourself before writing the block.
 
 - [ ] **Step 5: Verify the migration on a copy of the real catalog**
 
