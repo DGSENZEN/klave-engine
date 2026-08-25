@@ -44,6 +44,29 @@ async function postJSON<T>(
   return res.json() as Promise<T>;
 }
 
+/** Subida de archivo. Nunca fija Content-Type: el navegador tiene que poner
+ *  el suyo con el boundary del multipart, y ponerlo a mano lo rompe. */
+async function postForm<T>(
+  path: string,
+  body: FormData,
+  headers?: Record<string, string>,
+): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { ...headers },
+    body,
+  });
+  if (!res.ok) {
+    let detail: unknown;
+    try {
+      detail = (await res.json())?.detail;
+    } catch {}
+    throw new ApiError(res.status, path, detail);
+  }
+  return res.json() as Promise<T>;
+}
+
 async function putJSON<T>(
   path: string,
   body: unknown,
@@ -826,6 +849,121 @@ export type MapeoSugerido = {
 };
 
 export const getLectura = (id: string) => getJSON<Lectura>(`/projects/${id}/lectura`);
+
+/* ------------------------------------------------------------- contrato ---
+ * El catálogo de la convocante y las estimaciones: lo que manda sobre qué se
+ * cotiza, y lo que se cobra cada mes una vez que la obra arrancó.
+ */
+
+export type RenglonConvocante = {
+  clave: string;
+  description: string;
+  unit: string;
+  /** La cantidad que catalogó la convocante: es el contrato. */
+  quantity: number;
+  orden: number;
+  group: string;
+  concept_code: string;
+  match_score: number;
+  match_reasons: string[];
+  /** La que sostiene el plano, cuando el motor sabe medir ese concepto. */
+  quantity_engine: number | null;
+  diferencia_pct: number | null;
+  unit_price: number | null;
+  amount: number | null;
+};
+
+export type CatalogoConvocante = {
+  nombre: string;
+  renglones: RenglonConvocante[];
+  notas: string[];
+  avisos: string[];
+  total: number;
+  sin_precio?: string[];
+  sin_atar?: string[];
+};
+
+export const getCatalogoConvocante = (id: string) =>
+  getJSON<CatalogoConvocante>(`/projects/${id}/catalogo-convocante`);
+
+export async function subirCatalogoConvocante(
+  id: string,
+  file: File,
+  nombre: string,
+  actor?: string,
+): Promise<CatalogoConvocante> {
+  const form = new FormData();
+  form.append("file", file);
+  return postForm<CatalogoConvocante>(
+    `/projects/${id}/catalogo-convocante?nombre=${encodeURIComponent(nombre)}`,
+    form,
+    actor ? { "X-Actor": actor } : {},
+  );
+}
+
+export type RenglonEstimado = {
+  clave: string;
+  description: string;
+  unit: string;
+  unit_price: number;
+  quantity_contract: number;
+  quantity_period: number;
+  quantity_previous: number;
+};
+
+export type Deductiva = { concepto: string; importe: number; razon: string };
+
+export type Estimacion = {
+  numero: number;
+  periodo_inicio: string;
+  periodo_fin: string;
+  renglones: RenglonEstimado[];
+  deductivas: Deductiva[];
+  anticipo_pct: number;
+  retencion_pct: number;
+  amortizado_previo: number;
+  monto_contrato: number;
+  notas: string[];
+};
+
+export type ResumenEstimacion = {
+  numero: number;
+  periodo: string;
+  importe: number;
+  amortizacion: number;
+  retencion: number;
+  deductivas: number;
+  liquido: number;
+  acumulado: number;
+  avance_pct: number;
+  avisos: string[];
+};
+
+export type EstimacionConResumen = {
+  estimacion: Estimacion;
+  resumen: ResumenEstimacion;
+};
+
+export const getEstimaciones = (id: string) =>
+  getJSON<{ estimaciones: EstimacionConResumen[] }>(`/projects/${id}/estimaciones`);
+
+export const guardarEstimacion = (
+  id: string,
+  numero: number,
+  estimacion: Estimacion,
+  actor?: string,
+) =>
+  putJSON<EstimacionConResumen>(
+    `/projects/${id}/estimaciones/${numero}`,
+    { estimacion },
+    actor ? { "X-Actor": actor } : {},
+  );
+
+export const siguienteEstimacion = (id: string, inicio: string, fin: string) =>
+  postJSON<EstimacionConResumen>(
+    `/projects/${id}/estimaciones/siguiente?inicio=${inicio}&fin=${fin}`,
+    {},
+  );
 
 /** What a vision model read from one sheet image — a suggestion with provenance. */
 export type AiElementRead = {
@@ -2063,6 +2201,41 @@ export async function importMatrices(file: File, source: string, actor?: string)
   }
   return (await res.json()) as MatricesImportResult;
 }
+
+/** Un catálogo de destajos por bloques: sus matrices y sus cuadrillas. Es la
+ *  forma en que se escribe un catálogo mexicano de destajo, y trae lo que
+ *  ninguna publicación oficial da suelto: el costo real de cada cuadrilla. */
+export const importDestajos = (file: File, source: string, actor?: string) => {
+  const body = new FormData();
+  body.append("file", file);
+  return postForm<MatricesImportResult>(
+    `/catalog/import-destajos?source=${encodeURIComponent(source)}`,
+    body,
+    actor ? { "X-Actor": actor } : {},
+  );
+};
+
+export type CatalogImport = { source: string; concepts: number; with_price: number };
+
+/** Qué importaciones de matrices se pueden deshacer. */
+export const listImports = () =>
+  getJSON<{ imports: CatalogImport[] }>("/catalog/imports");
+
+/** Deshacer una importación de matrices: quita los conceptos que creó y deja
+ *  los del motor, los escritos a mano y los que ya tengan precio adoptado. */
+export const undoImport = (source: string, actor?: string) =>
+  deleteJSON<{ source: string; removed: number; kept_with_price: string[] }>(
+    `/catalog/imports/${encodeURIComponent(source)}`,
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+/** Quitar una fuente de referencia y sus renglones. Se niega mientras algún
+ *  concepto tenga precio adoptado de ella. */
+export const deleteSource = (sourceKey: string, actor?: string) =>
+  deleteJSON<{ source_key: string; name: string; rows: number }>(
+    `/catalog/sources/${encodeURIComponent(sourceKey)}`,
+    actor ? { "X-Actor": actor } : undefined,
+  );
 
 export type LaborPreviewRow = {
   code: string;

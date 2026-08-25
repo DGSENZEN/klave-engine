@@ -560,6 +560,12 @@ def delete_source(
     return removed
 
 
+@router.get("/imports")
+def list_imports(catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    """Qué importaciones de matrices se pueden deshacer."""
+    return {"imports": catalog.list_imports()}
+
+
 @router.delete("/imports/{source}")
 def undo_import(
     source: str,

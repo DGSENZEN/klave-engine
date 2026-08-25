@@ -31,6 +31,7 @@ import {
   type RegionPreset,
   importCatalogPrices,
   importCustomSource,
+  importDestajos,
   importMatrices,
   importReferenceSource,
   listReferenceSources,
@@ -54,6 +55,9 @@ import {
   type ProjectSummary,
   type ReferenceRow,
   type ReferenceSource,
+  listImports,
+  undoImport,
+  type CatalogImport,
 } from "@/lib/api";
 import Link from "next/link";
 import { getBrowserActor } from "@/lib/collab";
@@ -107,6 +111,7 @@ export default function CatalogoPage() {
   }, []);
   const fileRef = useRef<HTMLInputElement>(null);
   const matricesRef = useRef<HTMLInputElement>(null);
+  const destajosRef = useRef<HTMLInputElement>(null);
 
   // The projects this catálogo prices: a change here is theirs to recalculate.
   useEffect(() => {
@@ -173,6 +178,27 @@ export default function CatalogoPage() {
     }
   }
 
+  async function onImportDestajos(file: File) {
+    try {
+      const result = await importDestajos(
+        file,
+        file.name.replace(/\.[^.]+$/, ""),
+        getBrowserActor(),
+      );
+      const avisos = result.problems.length
+        ? ` · ${result.problems.length} avisos: ${result.problems[0]}`
+        : "";
+      setNotice(
+        `Destajos importados de ${result.source}: ${result.concepts_created} matrices, ` +
+          `${result.insumos_upserted} insumos con su costo de cuadrilla${avisos}`,
+      );
+      reload();
+    } catch (e) {
+      setError(apiMessage(e, "No se pudieron importar los destajos."));
+    }
+  }
+
+
   function exportCsv() {
     if (!catalog) return;
     downloadCsv("catalogo_insumos.csv", [
@@ -228,6 +254,17 @@ export default function CatalogoPage() {
                   e.target.value = "";
                 }}
               />
+              <input
+                ref={destajosRef}
+                type="file"
+                accept=".xlsx"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onImportDestajos(file);
+                  e.target.value = "";
+                }}
+              />
               <ButtonMenu
                 label="Importar…"
                 icon={<UploadSimple size={15} weight="bold" />}
@@ -252,6 +289,15 @@ export default function CatalogoPage() {
                       hint="Catálogo de conceptos con insumos exportado de OPUS o Neodata (XLSX/CSV): crea conceptos con su matriz."
                     >
                       Matrices de OPUS / Neodata
+                    </MenuItem>
+                    <MenuItem
+                      onSelect={() => {
+                        close();
+                        destajosRef.current?.click();
+                      }}
+                      hint="Catálogo de destajos por bloques (XLSX) con sus matrices y sus cuadrillas: trae el costo real de la mano de obra, que ninguna publicación da suelto."
+                    >
+                      Destajos con cuadrillas
                     </MenuItem>
                     <MenuItem
                       onSelect={() => {
@@ -1457,6 +1503,8 @@ function FuentesSection({
   const imported = (sources ?? []).filter((s) => s.imported);
 
   return (
+    <>
+    <Importaciones onError={onError} onNotice={onNotice} onChanged={onChanged} />
     <Card className="mb-8 overflow-hidden">
       <div className="border-b border-border px-5 py-4">
         <SectionTitle sub="Publicaciones oficiales con fecha y región. Un precio adoptado de aquí queda marcado como publicación, con clave y vigencia.">
@@ -1751,6 +1799,108 @@ function FuentesSection({
           )}
         </div>
       )}
+    </Card>
+    </>
+  );
+}
+
+/**
+ * Las importaciones de matrices que se pueden deshacer.
+ *
+ * La primera importación de un taller casi nunca es la buena —una zona que no
+ * era, un archivo cuyas claves no son conceptos presupuestables— y sin esta
+ * lista habría que recordar cómo se llamaba el archivo, que es justo lo que
+ * no se recuerda.
+ */
+function Importaciones({
+  onError,
+  onNotice,
+  onChanged,
+}: {
+  onError: (message: string) => void;
+  onNotice: (message: string) => void;
+  onChanged: () => void;
+}) {
+  const [lista, setLista] = useState<CatalogImport[] | null>(null);
+  const [quitando, setQuitando] = useState<string | null>(null);
+  const [confirmar, setConfirmar] = useState<string | null>(null);
+
+  const leer = useCallback(() => {
+    listImports()
+      .then((r) => setLista(r.imports))
+      .catch(() => setLista([]));
+  }, []);
+
+  useEffect(() => {
+    let vivo = true;
+    listImports()
+      .then((r) => vivo && setLista(r.imports))
+      .catch(() => vivo && setLista([]));
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  async function deshacer(source: string) {
+    setQuitando(source);
+    try {
+      const r = await undoImport(source, getBrowserActor());
+      const conservados = r.kept_with_price.length
+        ? ` · ${r.kept_with_price.length} se conservaron porque tienen precio adoptado`
+        : "";
+      onNotice(`«${source}» deshecha: ${r.removed} conceptos quitados${conservados}`);
+      leer();
+      onChanged();
+    } catch (e) {
+      onError(apiMessage(e, "No se pudo deshacer esa importación."));
+    } finally {
+      setQuitando(null);
+      setConfirmar(null);
+    }
+  }
+
+  if (!lista || lista.length === 0) return null;
+
+  return (
+    <Card className="mb-8 overflow-hidden">
+      <div className="border-b border-border px-5 py-4">
+        <SectionTitle sub="Deshacer quita sólo los conceptos que nacieron de esa importación: los del motor, los escritos a mano y los que ya tengan precio adoptado se quedan.">
+          Importaciones de matrices
+        </SectionTitle>
+      </div>
+      <ul className="divide-y divide-border">
+        {lista.map((imp) => (
+          <li key={imp.source} className="flex flex-wrap items-center gap-3 px-5 py-3">
+            <span className="min-w-0 flex-1">
+              <span className="font-medium">{imp.source}</span>
+              <span className="mt-0.5 block text-xs text-muted">
+                {imp.concepts.toLocaleString("es-MX")} conceptos
+                {imp.with_price > 0 && ` · ${imp.with_price} con precio adoptado`}
+              </span>
+            </span>
+            {confirmar === imp.source ? (
+              <span className="flex items-center gap-2">
+                <span className="text-xs text-danger">
+                  ¿Quitar {imp.concepts - imp.with_price} conceptos?
+                </span>
+                <Button variant="ghost" onClick={() => setConfirmar(null)}>
+                  No
+                </Button>
+                <Button
+                  onClick={() => void deshacer(imp.source)}
+                  disabled={quitando !== null}
+                >
+                  {quitando === imp.source ? "Quitando…" : "Sí, deshacer"}
+                </Button>
+              </span>
+            ) : (
+              <Button variant="ghost" onClick={() => setConfirmar(imp.source)}>
+                Deshacer
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }

@@ -1543,6 +1543,20 @@ class CatalogStore:
             conn.execute("DELETE FROM price_sources WHERE source_key = ?", (source_key,))
         return {"source_key": source_key, "name": fuente["name"], "rows": borrados}
 
+    def list_imports(self) -> list[dict]:
+        """Las importaciones de matrices que se pueden deshacer, con su peso.
+
+        Sin esta lista, deshacer una importación exige recordar cómo se llamó
+        el archivo — y quien importó mal casi nunca lo recuerda."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT import_source AS source, COUNT(*) AS concepts, "
+                "SUM(CASE WHEN price_override IS NOT NULL THEN 1 ELSE 0 END) AS with_price "
+                "FROM concepts WHERE import_source != '' AND active = 1 "
+                "GROUP BY import_source ORDER BY import_source"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def undo_import(self, source: str) -> dict:
         """Deshacer una importación de matrices: quita los conceptos que creó.
 

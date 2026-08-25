@@ -16,6 +16,7 @@ import {
   ListChecks,
   MapTrifold,
   Receipt,
+  Scales,
   SquaresFour,
   User,
   Warning,
@@ -98,6 +99,26 @@ function nav(id: string): { group: string; items: Item[] }[] {
           label: "Parámetros e insumos",
           icon: <Coins size={18} />,
           href: `${b}/parametros`,
+        },
+      ],
+    },
+    {
+      // Ganar la obra y cobrarla son dos fases distintas de la misma obra, y
+      // la segunda no existía en la aplicación: el catálogo que manda en una
+      // licitación y las estimaciones que se cobran cada mes.
+      group: "Contrato",
+      items: [
+        {
+          key: "contrato",
+          label: "Catálogo del contrato",
+          icon: <Scales size={18} />,
+          href: `${b}/contrato`,
+        },
+        {
+          key: "estimaciones",
+          label: "Estimaciones",
+          icon: <Receipt size={18} />,
+          href: `${b}/estimaciones`,
         },
       ],
     },
