@@ -170,14 +170,6 @@ export default function PresupuestoPage() {
 
   const parametricCount = costs.boq.lines.filter((l) => l.parametric).length;
   const conceptCodes = new Set(costs.boq.lines.map((l) => l.concept_code));
-  // Money-weighted, not an average of scores: what fraction of the total
-  // rests on readings the engine is confident about.
-  const firmShare =
-    costs.boq.direct_cost_total > 0
-      ? costs.boq.lines
-          .filter((l) => l.confidence >= 0.7)
-          .reduce((sum, l) => sum + l.amount, 0) / costs.boq.direct_cost_total
-      : 0;
   const phases = [...new Set(costs.boq.lines.map((l) => l.phase))];
 
   async function exportFile(
@@ -348,9 +340,8 @@ export default function PresupuestoPage() {
         <Metric label="Conceptos" value={costs.boq.lines.length} />
         <Metric
           label="Importe en lecturas firmes"
-          value={`${(firmShare * 100).toFixed(0)}%`}
-          hint="Del costo directo, la parte que descansa en detecciones de confianza alta (≥ 70 %). Pesa el dinero, no cuenta elementos: un promedio simple deja que cien tornillos seguros tapen una trabe dudosa."
-          accent={firmShare >= 0.8 ? "success" : undefined}
+          value={<ConfidenceBands bands={costs.money_basis?.confidence_bands} />}
+          hint="Del costo directo, cuánto descansa en lecturas de confianza alta, cuánto queda justo en el umbral de 70 % y cuánto por debajo. Pesa el dinero, no cuenta elementos: un promedio simple deja que cien tornillos seguros tapen una trabe dudosa. Una sola tasa de aprobación escondería que un cuarto del importe está exactamente en la raya."
         />
       </div>
 
@@ -1040,6 +1031,23 @@ function AdjustmentsPanel({
           documentado con tu motivo y tu nombre.
         </p>
       )}
+    </div>
+  );
+}
+
+/** Direct cost split three ways by the confidence behind it, money-weighted
+ * — never a single pass rate. A threshold lets a quarter of the money sit
+ * exactly on the line and still round up into "100 % firme"; showing the
+ * bands is what keeps that quarter visible instead of flattering the read. */
+function ConfidenceBands({ bands }: { bands?: Record<string, number> }) {
+  if (!bands || Object.keys(bands).length === 0) return <span>—</span>;
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="tabular-nums">
+        {bands.alta?.toFixed(0) ?? 0}% alta
+        {bands.en_el_limite ? ` · ${bands.en_el_limite.toFixed(0)}% en el límite` : ""}
+        {bands.media ? ` · ${bands.media.toFixed(0)}% media` : ""}
+      </div>
     </div>
   );
 }
