@@ -946,6 +946,54 @@ git commit -m "fix(programa): una restriccion enunciada dos veces era dos arista
 
 - [ ] **Step 1: Write the failing test**
 
+> **Pre-flight ruling R7 — the fixture must be store-backed, or this test is vacuous.**
+> I verified this empirically before dispatch. Task 6's `_structural_report()` helper calls
+> `generate_cost_report(..., price_book=LIBRO)` with no store, so the catalog is
+> `build_default_catalog` alone — which does **not** contain the derived concepts. The
+> resulting BoQ holds only `EST-001` and `EST-002`, and the engine says so in its own
+> warnings: *"Acero calculado (62 KG) pero el catálogo no tiene el concepto ACE-001 con
+> matriz"*. The invariant loop below would `continue` past every single pair and pass while
+> the bug is fully present.
+>
+> The derived concepts live in the **catalog store**, and they need matrices, not just
+> concept rows. Add this helper and use it — I ran exactly this shape and it reproduces the
+> defect (`EST-008` day 4 vs `EST-001` day 0, inverted):
+>
+> ```python
+> @pytest.fixture
+> def store_report(tmp_path):
+>     """A report built through a real catalog store.
+>
+>     The acero and cimbra concepts this test is about are created by
+>     apply_steel/apply_formwork against the store's catalog and matrices —
+>     build_default_catalog alone has neither, so a store-less fixture produces
+>     a two-line BoQ and an invariant that passes by skipping every pair.
+>     """
+>     from klave_engine.costing.catalog_store import CatalogStore
+>     from tests.precios import sembrar
+>
+>     store = CatalogStore(tmp_path / "catalog.db")
+>     sembrar(store)
+>     detections = _structural_detections()   # extract from Task 6's helper
+>     units = DrawingUnits(unit="m", source="dxf_header", confidence=0.9)
+>     return generate_cost_report(
+>         "p", detections, units, CostingConfig(), None, None,
+>         price_book=store.load_price_book(),
+>         store_concepts=store.load_concepts(),
+>         apu_templates=store.load_templates(),
+>         rendimientos=store.load_rendimientos(),
+>     )
+> ```
+>
+> Refactor Task 6's `_structural_report()` so the detection-building half becomes
+> `_structural_detections()`, shared by both. Do not change Task 6's existing tests'
+> behaviour — they pass today and must keep passing.
+>
+> **The invariant must also assert it saw something.** After the loop, assert that at least
+> one derived/pour pair was actually checked. A `continue`-only pass is the exact failure
+> mode this ruling exists to prevent, and without that assertion the next refactor
+> reintroduces it silently.
+
 Append to `tests/test_schedule_precedence.py`:
 
 ```python
@@ -1091,6 +1139,13 @@ git commit -m "fix(programa): se cimbra y se arma antes de colar, no 213 dias de
 - Produces: `ScheduleLink(kind="FS")` for formwork→pour and steel→pour; every other link stays `"SS"`
 
 - [ ] **Step 1: Write the failing test**
+
+> **Pre-flight ruling R7 applies here too.** Both tests below must use the store-backed
+> `store_report` fixture introduced in Task 7, not `_structural_report()`. Without a store
+> the report contains only `EST-001` and `EST-002`, so there are no formwork or steel
+> activities to build a hard edge to — `test_the_pour_waits_for_its_formwork_to_finish`
+> would fail on its `hard_edges > 0` guard for the wrong reason, and
+> `test_the_critical_path_is_not_the_whole_job` would be measuring a two-activity network.
 
 Append to `tests/test_schedule_precedence.py`:
 
