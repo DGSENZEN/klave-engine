@@ -9,6 +9,7 @@ from klave_engine.costing.matching import (
     split_alcance,
     unit_key,
 )
+from klave_engine.costing.sources.cdmx_capitulos import seccion_de
 
 
 def _c(clave, description, unit, price=100.0, kind="reference"):
@@ -141,3 +142,45 @@ def test_un_preparativo_no_es_la_cosa_que_prepara():
         "Instalación hidráulica",
     )
     assert m is None or any("no un(a) tuberia" in r for r in m.reasons)
+
+
+# ------------------------------------ la nomenclatura del tabulador --------
+
+
+def test_la_seccion_del_tabulador_declara_la_partida():
+    """El Tabulador CDMX organiza sus renglones en secciones de dos letras y
+    la clave de cada uno empieza por la de la suya. Eso lo declara el
+    publicador: no hay heurística de texto que le compita."""
+    assert seccion_de("IB12BB") == (
+        "hidraulica", "Suministro, instalación y pruebas de tubos y conexiones de cobre"
+    )
+    assert seccion_de("KE14BC")[0] == "electrica"
+    assert seccion_de("JQ11AA")[0] == "aire"
+    assert seccion_de("CG17BB")[0] == "canceleria"
+    assert seccion_de("GS20BB")[0] == "impermeabilizacion"
+    assert seccion_de("ZZ99ZZ") is None
+
+
+def test_la_seccion_gana_sobre_lo_que_el_texto_parece_decir():
+    """«Codo de 45°» no dice de qué instalación es; su sección sí."""
+    assert partida_de("IB16HE", "Codo de 45° X 20 mm de diámetro") == "hidraulica"
+    assert partida_de("KE16HE", "Codo de 45° X 20 mm de diámetro") == "electrica"
+
+
+def test_la_seccion_completa_lo_que_el_renglon_telegrafico_calla():
+    """Un renglón sin familia propia hereda la de su encabezado; uno que ya se
+    nombra solo no, porque meterle las palabras del capítulo lo diluye."""
+    telegrafico = _c("IB23BE", 'Ye de 19 mm (3/4") de diámetro', "PZA")
+    m = score("Conexión de cobre para agua fría", "PZA", telegrafico,
+              "Instalación hidráulica")
+    assert m is not None and m.score > 0.2
+
+
+def test_la_seccion_corrobora_sin_meterse_en_la_descripcion():
+    m = score(
+        "Canalización con tubo conduit, incluye accesorios", "M",
+        _c("KE12BB", "Suministro y colocación de tubo conduit galvanizado de 13 mm", "M"),
+        "Instalación eléctrica",
+    )
+    assert m is not None
+    assert any("la sección lo confirma" in r for r in m.reasons)

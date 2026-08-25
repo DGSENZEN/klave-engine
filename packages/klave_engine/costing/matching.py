@@ -22,6 +22,8 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
+from klave_engine.costing.sources.cdmx_capitulos import seccion_de
+
 STOPWORDS = frozenset(
     "de del la el los las y o en con por para a al un una incluye incluyendo inc tipo "
     "segun según hasta desde sobre entre sin su sus se que como mas más cm m kg pza ton "
@@ -31,8 +33,11 @@ STOPWORDS = frozenset(
     # El verbo con el que abre casi todo renglón publicado: dice qué se hace,
     # nunca qué es. "Suministro y colocación de tubo conduit" y "Canalización
     # con tubo conduit" son el mismo concepto y no comparten el verbo.
-    "fabricacion fabricación habilitado tendido montaje instalacion instalación "
-    "aplicado prueba pruebas".split()
+    #
+    # «habilitado» NO va aquí aunque lo parezca: acero habilitado —cortado y
+    # doblado— no es acero suelto, y el oficio cobra distinto por cada uno.
+    "fabricacion fabricación tendido montaje instalacion instalación "
+    "prueba pruebas".split()
 )
 FAMILY_WORDS = (
     "muro", "castillo", "columna", "trabe", "contratrabe", "losa", "zapata", "dala",
@@ -155,8 +160,12 @@ def partida_por_texto(description: str, declared: str = "") -> str:
 
 
 def partida_de(clave: str, description: str = "", declared: str = "") -> str:
-    """La partida canónica de un renglón: primero por lo que dice ser, y sólo
-    si se calla, por el prefijo de su clave.
+    """La partida canónica de un renglón.
+
+    Primero la sección que declara el publicador — el Tabulador CDMX organiza
+    sus renglones en secciones de dos letras y la clave empieza por la de la
+    suya, así que no hay nada que adivinar. Luego lo que el renglón dice ser.
+    Y sólo si las dos se callan, el prefijo del catálogo del taller.
 
     El orden importa y costó descubrirlo: el prefijo dice dónde lo archivó
     alguien, no qué es. Un taller archiva «ramaleo a base de tubería de
@@ -164,6 +173,9 @@ def partida_de(clave: str, description: str = "", declared: str = "") -> str:
     albañil, y eso no lo vuelve albañilería a la hora de buscarle precio a una
     tubería. Cadena vacía cuando no se puede saber, que es distinto de saber
     que no coincide."""
+    seccion = seccion_de(clave)
+    if seccion is not None:
+        return seccion[0]
     por_texto = partida_por_texto(description, declared)
     if por_texto:
         return por_texto
@@ -292,7 +304,16 @@ def score(
     """None when the units cannot agree; else the match with its reasons."""
     if unit_key(unit) != unit_key(candidate.unit):
         return None
+    seccion = seccion_de(candidate.clave)
     ours, theirs = profile(description), profile(candidate.description)
+    # Muchos renglones publicados son telegráficos —«Ye de fierro galvanizado
+    # de 19 mm»— porque su encabezado ya dijo de qué se trata. A ésos el título
+    # de su sección les devuelve lo que el papel daba por entendido. A los que
+    # ya se nombran solos no se les mete dentro: se les cuenta aparte más
+    # abajo, porque fundir el encabezado en la descripción o los diluye o les
+    # repite la palabra clave, y ninguna de las dos cosas es información nueva.
+    if seccion is not None and theirs.head is None:
+        theirs = profile(f"{seccion[1]} {candidate.description}")
     a, b = ours.tokens, theirs.tokens
     if not a or not b:
         return None
@@ -303,6 +324,14 @@ def score(
     value = 0.55 * coverage + 0.25 * jaccard
     if shared:
         reasons.append("palabras en común: " + ", ".join(sorted(shared)[:6]))
+    # El encabezado de la sección corrobora sin diluir: que el capítulo se
+    # llame «tubos conduit» y nuestro concepto hable de conduit es una
+    # confirmación del publicador, no una palabra más en la bolsa.
+    if seccion is not None:
+        del_encabezado = tokens(seccion[1]) & ours.tokens
+        if del_encabezado:
+            value += 0.08 * min(len(del_encabezado) / len(ours.tokens), 1.0)
+            reasons.append("la sección lo confirma: " + ", ".join(sorted(del_encabezado)[:3]))
     # El alcance suma poco a propósito: que los dos digan «incluye acarreos»
     # confirma un poco, y que no lo digan no los vuelve conceptos distintos.
     if ours.alcance and theirs.alcance:
@@ -356,9 +385,14 @@ def score(
             value -= 0.05
     nuestra = partida_de("", description, phase)
     suya = partida_de(candidate.clave, candidate.description, candidate.phase)
-    # El castigo se apoya sólo en lo que el renglón dice ser. Dónde lo archivó
-    # su catálogo puede sugerir, nunca descartar.
-    suya_dicha = partida_por_texto(candidate.description, candidate.phase)
+    # El castigo se apoya en lo que el renglón dice ser o en la sección que lo
+    # publica. Dónde lo archivó el catálogo de un taller puede sugerir, nunca
+    # descartar: ahí «ramaleo de tubería» vive bajo albañilería porque ranurar
+    # el muro es trabajo de albañil.
+    suya_dicha = (
+        seccion[0] if seccion is not None
+        else partida_por_texto(candidate.description, candidate.phase)
+    )
     # La partida es la señal más gruesa que hay, así que sólo habla cuando las
     # finas se callan. Si las familias ya coincidieron, decir además que están
     # en la misma partida no agrega información — la repite más gruesa — y
