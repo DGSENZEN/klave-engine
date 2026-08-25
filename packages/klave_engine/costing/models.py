@@ -183,6 +183,25 @@ class BillOfQuantities(BaseModel):
     units_reliable: bool = True
 
 
+class MoneyBasis(BaseModel):
+    """What the engine read about the drawing's scale, frozen with the run.
+
+    Stable for the life of a run: re-reading the plan is what changes it, and
+    that always produces a new run.
+    """
+
+    units_reliable: bool = True
+    unit: str = ""
+    source: str = ""
+    confidence: float = 0.0
+    # Why, in the words the screens already use.
+    reasons: list[str] = Field(default_factory=list)
+    # Share of the direct cost by confidence band, in percent. Money-weighted
+    # on purpose: a simple average lets a hundred safe screws hide one
+    # doubtful beam.
+    confidence_bands: dict[str, float] = Field(default_factory=dict)
+
+
 class IntegrationLine(BaseModel):
     code: str
     description: str
