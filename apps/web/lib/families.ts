@@ -1,5 +1,35 @@
 import type { DetectionOverlay } from "@/lib/api";
 
+/** The 21 canonical element families a detector can assign. Mirrors
+ * `klave_engine.detection.taxonomy.Family` — keep the two in sync by hand;
+ * nothing generates this list from the Python enum. Used where a human
+ * chooses a family explicitly (e.g. counting a family the engine never
+ * detected), as opposed to FAMILY_LABELS below, which also carries legacy
+ * detection-type keys for rendering old runs. */
+export const FAMILIES: string[] = [
+  "castillo",
+  "columna",
+  "trabe",
+  "contratrabe",
+  "zapata",
+  "losa",
+  "muro",
+  "dala",
+  "cerramiento",
+  "muro_concreto",
+  "pilote",
+  "escalera",
+  "local",
+  "terreno",
+  "eje",
+  "interseccion_ejes",
+  "referencia_detalle",
+  "mueble",
+  "salida",
+  "corrida",
+  "vano",
+];
+
 // Family-first palette; detection-type keys keep old runs rendering.
 // Deliberately desaturated so overlays read as one harmonized system on both
 // canvas themes; distinct hues remain because families must stay tellable.

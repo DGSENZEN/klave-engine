@@ -1,13 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { CheckCircle, Prohibit, ArrowCounterClockwise, MapTrifold } from "@phosphor-icons/react";
+import {
+  CheckCircle,
+  Prohibit,
+  ArrowCounterClockwise,
+  MapTrifold,
+  PlusCircle,
+} from "@phosphor-icons/react";
 import {
   ApiError,
+  getAiReads,
+  getConteos,
   getRevisionTable,
+  putConteos,
   setDetectionReviews,
+  type ConteoHoja,
+  type ConteosDeProyecto,
+  type CoverageFlag,
   type RevisionRow,
   type RevisionTable,
 } from "@/lib/api";
@@ -16,11 +28,13 @@ import {
   Button,
   buttonClasses,
   Callout,
+  Card,
   Checkbox,
   ConfidenceBadge,
   Input,
   Metric,
   PageHeader,
+  SectionTitle,
   Select,
   SkeletonHeader,
   SkeletonMetrics,
@@ -29,6 +43,7 @@ import {
   Td,
   Th,
 } from "@/components/ui";
+import { FAMILIES, FAMILY_LABELS } from "@/lib/families";
 import { isDoubtful, LoteDeRevision } from "@/components/LoteDeRevision";
 import { OmittedSection } from "@/components/OmittedSection";
 import { useProjectLive } from "@/components/ProjectLive";
@@ -506,6 +521,13 @@ export default function RevisionPage() {
         clientId={clientId}
         reloadKey={latestEvent?.seq}
       />
+
+      <ConteoSection
+        projectId={id}
+        detections={table.rows}
+        actorName={actorName}
+        reloadKey={latestEvent?.seq}
+      />
     </div>
   );
 }
@@ -537,5 +559,334 @@ function SortButton({
       {label}
       <span className="text-[10px]">{active ? (sort.dir === 1 ? "▲" : "▼") : ""}</span>
     </button>
+  );
+}
+
+/* ---- Conteos: cuánto hay dibujado, contado por una persona ----
+ *
+ * Every other test in this codebase compares the engine to itself; this is
+ * the one number that compares it to the drawing. Rows join, per hoja, the
+ * families the engine detected there with anything a person already saved.
+ * `dibujados` only ever pre-fills from the AI sheet-read's independent count
+ * (coverage_flags) — never from the engine's own `detectados`, which would
+ * quietly turn this into the engine grading itself. */
+
+// A visible separator; hoja/familia are never decoded back out of this
+// key (see engineInfo/filas below), so it only has to be collision-free
+// in practice, not literally unsplittable.
+const filaKey = (hoja: string, familia: string) => `${hoja}::${familia}`;
+const familyLabel = (familia: string) => FAMILY_LABELS[familia] ?? familia;
+const FAMILIAS_ORDENADAS = [...FAMILIES].sort((a, b) =>
+  familyLabel(a).localeCompare(familyLabel(b), "es"),
+);
+
+// A view's title is "E-02 · Planta baja" when the sheet has a cajetín
+// (views.py: f"{frame.code} · {frame.title}"); this is the physical hoja, a
+// finer grain than `sheet` (the source file, shared by every frame on a
+// multi-sheet DXF). Falls back to `sheet` for plans with no cajetín, where
+// the file is the closest thing to a hoja.
+const SHEET_CODE_RE = /^([A-Z]{1,3}-\d{2,4}[A-Z]?)\s*·\s*/;
+function hojaOf(row: RevisionRow): string {
+  const m = SHEET_CODE_RE.exec(row.view_title);
+  return m ? m[1] : row.sheet;
+}
+
+type Fila = {
+  hoja: string;
+  familia: string;
+  detectados: number;
+  dibujados: number | null; // null: nadie lo ha contado — nunca se guarda como 0.
+  nota: string;
+};
+
+const CONTEOS_VACIOS: ConteosDeProyecto = { contado_por: "", contado_en: "", hojas: [] };
+
+function ConteoSection({
+  projectId,
+  detections,
+  actorName,
+  reloadKey,
+}: {
+  projectId: string;
+  detections: RevisionRow[];
+  actorName: string;
+  reloadKey?: unknown;
+}) {
+  const [conteos, setConteosState] = useState<ConteosDeProyecto | null>(null);
+  const [cobertura, setCobertura] = useState<CoverageFlag[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [nuevaHoja, setNuevaHoja] = useState("");
+  const [nuevaFamilia, setNuevaFamilia] = useState(FAMILIAS_ORDENADAS[0] ?? "");
+  const [nuevaCuenta, setNuevaCuenta] = useState("");
+
+  // A blur-triggered save must build its PUT body from the latest known
+  // state, not from a stale render closure: two fields blurred before the
+  // first PUT resolves would otherwise race, the second undoing the first.
+  // The ref is updated synchronously (state alone lags a render behind).
+  const conteosRef = useRef<ConteosDeProyecto | null>(null);
+  const setConteos = useCallback((next: ConteosDeProyecto) => {
+    conteosRef.current = next;
+    setConteosState(next);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getConteos(projectId)
+      .then((c) => !cancelled && setConteos(c))
+      .catch(() => {
+        if (cancelled) return;
+        // Still render with what the engine detected — but say so: a
+        // silent empty table here would look identical to "nadie ha
+        // contado nada", and someone could re-enter counts that already
+        // exist and just failed to load.
+        setConteos(CONTEOS_VACIOS);
+        setError("No se pudieron cargar los conteos guardados; lo que se ve aquí puede estar incompleto.");
+      });
+    // The AI coverage comparison is only ever a pre-fill hint, never the
+    // primary data: failing to load it just means no suggestions, silently.
+    getAiReads(projectId)
+      .then((r) => !cancelled && setCobertura(r.cobertura ?? []))
+      .catch(() => !cancelled && setCobertura([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, reloadKey, setConteos]);
+
+  // Live engine counts, per hoja + familia — always the current run, never
+  // the possibly-stale snapshot a ConteoHoja happened to save last time.
+  // `pares` carries hoja/familia alongside each key so nothing ever has to
+  // decode one back out of a composite string.
+  const engineInfo = useMemo(() => {
+    const counts = new Map<string, number>();
+    const pares = new Map<string, { hoja: string; familia: string }>();
+    for (const row of detections) {
+      if (!row.family) continue;
+      const hoja = hojaOf(row);
+      const key = filaKey(hoja, row.family);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      if (!pares.has(key)) pares.set(key, { hoja, familia: row.family });
+    }
+    return { counts, pares };
+  }, [detections]);
+
+  const filas = useMemo<Fila[]>(() => {
+    if (!conteos) return [];
+    const saved = new Map(conteos.hojas.map((h) => [filaKey(h.hoja, h.familia), h]));
+    const aiCount = new Map<string, number>();
+    for (const flag of cobertura) {
+      aiCount.set(filaKey(flag.frame_code, flag.family), flag.ai_count);
+    }
+    const pares = new Map(engineInfo.pares);
+    for (const h of conteos.hojas) {
+      pares.set(filaKey(h.hoja, h.familia), { hoja: h.hoja, familia: h.familia });
+    }
+    const out: Fila[] = [];
+    for (const [key, { hoja, familia }] of pares) {
+      const row = saved.get(key);
+      out.push({
+        hoja,
+        familia,
+        detectados: engineInfo.counts.get(key) ?? 0,
+        dibujados: row ? row.dibujados : (aiCount.get(key) ?? null),
+        nota: row?.nota ?? "",
+      });
+    }
+    out.sort(
+      (a, b) =>
+        a.hoja.localeCompare(b.hoja, "es") ||
+        familyLabel(a.familia).localeCompare(familyLabel(b.familia), "es"),
+    );
+    return out;
+  }, [conteos, cobertura, engineInfo]);
+
+  const hojasConocidas = useMemo(
+    () => [...new Set(filas.map((f) => f.hoja))].sort((a, b) => a.localeCompare(b, "es")),
+    [filas],
+  );
+
+  // Convenience default once the sheet list loads; the field stays free
+  // text (not a closed picker) so a plan the engine read nothing from —
+  // no rows, no known hojas — can still be counted by hand.
+  useEffect(() => {
+    if (!nuevaHoja && hojasConocidas.length > 0) setNuevaHoja(hojasConocidas[0]);
+  }, [hojasConocidas, nuevaHoja]);
+
+  async function guardarFila(row: ConteoHoja): Promise<boolean> {
+    const current = conteosRef.current ?? CONTEOS_VACIOS;
+    const resto = current.hojas.filter(
+      (h) => !(h.hoja === row.hoja && h.familia === row.familia),
+    );
+    const next = { ...current, hojas: [...resto, row] };
+    setConteos(next);
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await putConteos(projectId, next, actorName);
+      setConteos(saved);
+      return true;
+    } catch {
+      setError("No se pudo guardar el conteo.");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Saves only a genuine, deliberate entry: a blank blur (never touched)
+  // stays absent rather than becoming an invented zero, and blurring past
+  // an unedited AI pre-fill without changing it does not silently confirm
+  // it — "dibujados" only ever means a person actually counted.
+  function commitDibujados(fila: Fila, raw: string) {
+    const trimmed = raw.trim();
+    if (trimmed === "") return;
+    const value = Number(trimmed);
+    if (!Number.isFinite(value) || value < 0) return;
+    const dibujados = Math.round(value);
+    if (dibujados === fila.dibujados) return;
+    void guardarFila({
+      hoja: fila.hoja,
+      familia: fila.familia,
+      dibujados,
+      detectados: fila.detectados,
+      nota: fila.nota,
+    });
+  }
+
+  const cuentaNueva = Number(nuevaCuenta.trim());
+  const puedeAgregar =
+    nuevaHoja.trim() !== "" &&
+    nuevaFamilia !== "" &&
+    nuevaCuenta.trim() !== "" &&
+    Number.isFinite(cuentaNueva) &&
+    cuentaNueva >= 0;
+
+  async function agregar() {
+    if (!puedeAgregar) return;
+    const hoja = nuevaHoja.trim();
+    const ok = await guardarFila({
+      hoja,
+      familia: nuevaFamilia,
+      dibujados: Math.round(cuentaNueva),
+      detectados: engineInfo.counts.get(filaKey(hoja, nuevaFamilia)) ?? 0,
+      nota: "",
+    });
+    if (ok) setNuevaCuenta("");
+  }
+
+  return (
+    <Card className="mt-6 p-5">
+      <SectionTitle sub="El motor se compara contra sí mismo en todo lo demás. Esto es lo único que dice cuánto de lo dibujado encuentra, y sólo lo puede contestar alguien contando.">
+        Cuántos hay dibujados
+      </SectionTitle>
+
+      {error && (
+        <div className="mb-3">
+          <Callout tone="danger">{error}</Callout>
+        </div>
+      )}
+
+      <TableCard>
+        <thead>
+          <tr className="border-b border-border bg-surface-2">
+            <Th>Hoja</Th>
+            <Th>Familia</Th>
+            <Th align="right">Detectados</Th>
+            <Th align="right">Dibujados</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {conteos === null && (
+            <tr>
+              <td colSpan={4} className="px-4 py-6 text-center text-sm text-muted">
+                Cargando conteos…
+              </td>
+            </tr>
+          )}
+          {conteos !== null && filas.length === 0 && (
+            <tr>
+              <td colSpan={4} className="px-4 py-6 text-center text-sm text-muted">
+                El motor no detectó nada todavía en este proyecto.
+              </td>
+            </tr>
+          )}
+          {filas.map((fila) => (
+            <tr key={filaKey(fila.hoja, fila.familia)} className="border-b border-border">
+              <Td className="text-xs">{fila.hoja}</Td>
+              <Td>{familyLabel(fila.familia)}</Td>
+              <Td align="right" className="tabular text-muted">
+                {fila.detectados}
+              </Td>
+              <Td align="right">
+                <Input
+                  key={`${filaKey(fila.hoja, fila.familia)}:${fila.dibujados ?? "vacio"}`}
+                  type="number"
+                  min={0}
+                  defaultValue={fila.dibujados ?? undefined}
+                  onBlur={(e) => commitDibujados(fila, e.target.value)}
+                  className="w-20 px-2 py-1 text-right tabular"
+                  aria-label={`Dibujados en ${fila.hoja}, ${familyLabel(fila.familia)}`}
+                />
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </TableCard>
+
+      <div className="mt-4 border-t border-border pt-3">
+        <p className="text-sm text-muted">
+          Lo más importante son las familias que no aparecen arriba. Si el plano
+          tiene escaleras y el motor no detectó ninguna, ese renglón lo escribes tú:
+          es el que cuesta más caro descubrir tarde.
+        </p>
+        <div className="mt-2 flex flex-wrap items-end gap-2">
+          <label className="text-sm">
+            <span className="mb-1 block text-xs text-muted">Hoja</span>
+            <Input
+              list={`hojas-conocidas-${projectId}`}
+              value={nuevaHoja}
+              onChange={(e) => setNuevaHoja(e.target.value)}
+              placeholder="E-02"
+              className="w-24 px-2 py-1"
+              aria-label="Hoja"
+            />
+            <datalist id={`hojas-conocidas-${projectId}`}>
+              {hojasConocidas.map((h) => (
+                <option key={h} value={h} />
+              ))}
+            </datalist>
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block text-xs text-muted">Familia</span>
+            <Select value={nuevaFamilia} onChange={(e) => setNuevaFamilia(e.target.value)}>
+              {FAMILIAS_ORDENADAS.map((f) => (
+                <option key={f} value={f}>
+                  {familyLabel(f)}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <label className="text-sm">
+            <span className="mb-1 block text-xs text-muted">Dibujados</span>
+            <Input
+              type="number"
+              min={0}
+              value={nuevaCuenta}
+              onChange={(e) => setNuevaCuenta(e.target.value)}
+              className="w-20 px-2 py-1 text-right tabular"
+              aria-label="Cantidad dibujada"
+            />
+          </label>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={busy || !puedeAgregar}
+            onClick={() => void agregar()}
+          >
+            <PlusCircle size={14} weight="bold" /> Agregar
+          </Button>
+        </div>
+      </div>
+    </Card>
   );
 }

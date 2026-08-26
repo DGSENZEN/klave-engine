@@ -1748,6 +1748,36 @@ export const setDetectionReviews = (
     actorClientHeaders(actor, clientId),
   );
 
+// ---- Conteos: lo que una persona contó sobre el plano ----
+//
+// El motor se compara contra sí mismo en cada otra prueba; esto es lo único
+// que compara contra el plano. No recomputa nada (ver put_conteos en
+// reviews.py) — es evidencia sobre el motor, no un insumo para el costeo.
+
+export type ConteoHoja = {
+  hoja: string;
+  familia: string;
+  dibujados: number;
+  detectados: number;
+  nota: string;
+};
+
+export type ConteosDeProyecto = {
+  contado_por: string;
+  contado_en: string;
+  hojas: ConteoHoja[];
+};
+
+export const getConteos = (id: string) =>
+  getJSON<ConteosDeProyecto>(`/projects/${id}/conteos`);
+
+export const putConteos = (id: string, body: ConteosDeProyecto, actor?: string) =>
+  putJSON<ConteosDeProyecto>(
+    `/projects/${id}/conteos`,
+    body,
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
 // ---- Croquis for the generadores ----
 
 export type CroquisItem = { view_id: string; title: string; count: number; url: string };
