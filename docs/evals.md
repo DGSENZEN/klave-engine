@@ -89,3 +89,22 @@ Las unidades se normalizan (`m²` = `M2`); si aun así difieren, la fila dice
 Markdown con Δ % por concepto ordenada de la peor diferencia a la mejor y un
 resumen: mediana de |Δ|, cuántos dentro de ±10 %, el peor, y — si el archivo
 trae importes — el total del motor contra el del humano.
+
+## El lazo completo
+
+Un gold set compara al motor contra sí mismo. Para que diga algo sobre
+exactitud necesita decisiones humanas, y la forma de tomarlas es usar el
+producto:
+
+1. Revisa un proyecto en la app — confirma y excluye detecciones en
+   *Revisión*. Eso ejercita el lazo de corrección y produce la verdad al
+   mismo tiempo.
+2. `make gold-capture ROOT=data/uploads/<proyecto> ID=<drawing-id>` — la
+   entrada pasa sola de `baseline` a `partial`.
+3. Cuenta lo que falta en *Revisión → Cuántos hay dibujados*, agregando las
+   familias que el motor no detectó.
+4. `uv run python -m klave_engine.evals.recall_cli medir <project_id>`.
+
+Para promover una cantidad a verdad humana, cuantifícala a mano y cambia su
+`source` de `engine` a `human` en `evals/gold/<id>.json`, con una tolerancia
+estrecha y una nota que diga cómo se cuantificó.

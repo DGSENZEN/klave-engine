@@ -11,17 +11,20 @@ pudiera contar lo que se le escapa, no se le escaparía.
 
 ## El procedimiento
 
-```bash
-uv run python -m klave_engine.evals.recall_cli plantilla <project_id>
-```
+Los conteos viven en `<proyecto>/processed/conteos.json` — el mismo
+directorio de control que las revisiones de detecciones — y se llenan desde
+la app: abre el proyecto, entra a *Revisión* y baja a **Cuántos hay
+dibujados**. La tabla trae, por hoja y familia, lo que el motor detectó ahí;
+alguien que ve el plano escribe cuántos hay dibujados en realidad.
 
-Escribe `evals/conteos/<project_id>.json` con las familias que el motor sí
-detectó, todas en cero. Entonces alguien abre el plano y cuenta.
+**Lo importante es agregar las familias que no aparecen en la tabla.** Una
+familia que el motor no detectó *en absoluto* no tiene renglón, y es justo
+la que más caro cuesta descubrir tarde. Si el plano tiene escaleras y el
+motor no detectó ninguna, ese renglón se agrega a mano, con su cuenta.
 
-**Lo importante es agregar las familias que no están en la plantilla.** Una
-familia que el motor no detectó *en absoluto* no aparece en el archivo, y es
-justo la que más caro cuesta descubrir tarde. Si el plano tiene escaleras y
-la plantilla no las menciona, ese renglón lo escribes tú con su cuenta.
+`evals/conteos/<project_id>.json` sigue existiendo como respaldo local, para
+un plano contado antes de que exista un proyecto desplegado; `recall_cli
+medir` solo cae ahí si el proyecto no tiene conteos guardados.
 
 ```bash
 uv run python -m klave_engine.evals.recall_cli medir <project_id>
