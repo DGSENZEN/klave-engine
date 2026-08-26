@@ -2,9 +2,17 @@
 things that must be true of it before that is defensible."""
 
 import pytest
-from klave_engine.costing.models import CostingConfig, ScheduleLink
+from klave_engine.costing.models import (
+    BillOfQuantities,
+    BoqLine,
+    Concept,
+    CostingConfig,
+    QuantityKind,
+    ScheduleConfig,
+    ScheduleLink,
+)
 from klave_engine.costing.report import generate_cost_report
-from klave_engine.costing.schedule import _dedupe_links
+from klave_engine.costing.schedule import _dedupe_links, build_schedule
 from klave_engine.detection.results import DetectionType, make_detection
 from klave_engine.detection.taxonomy import classify_family
 from klave_engine.dxf.units import DrawingUnits
@@ -157,3 +165,100 @@ def test_nothing_is_poured_before_it_is_formed_or_reinforced(store_report):
             f"después de colar {pour} el día {by_code[pour].start_day}"
         )
     assert checked > 0, "ningún par derivado/colado se pudo verificar: la prueba no probó nada"
+
+
+def test_the_pour_waits_for_its_formwork_to_finish(store_report):
+    """Traslape between trades is correct modelling and stays SS. But you
+    cannot pour a column while its formwork is still going up: that pair is
+    finish-to-start, and it is the only kind of edge that creates real float
+    for everything else.
+
+    Built on ``store_report``, not ``_structural_report()`` — R7 again: the
+    hard edges below only exist between concepts that apply_steel/
+    apply_formwork create against a real catalog store, so a store-less
+    fixture has no formwork or steel activities to build one to, and
+    ``hard_edges > 0`` would fail for the wrong reason."""
+    by_code = {a.concept_code: a for a in store_report.schedule.activities}
+
+    hard_edges = 0
+    for pour in by_code.values():
+        for link in pour.predecessors:
+            if link.kind != "FS":
+                continue
+            hard_edges += 1
+            predecessor = by_code[link.predecessor]
+            assert pour.start_day >= predecessor.end_day + link.lag_days
+    assert hard_edges > 0, "ninguna arista dura: el colado no espera a nada"
+
+
+def test_the_critical_path_is_not_the_whole_job():
+    """27 of 30 activities critical is the signature of a chain, not a
+    network: with only SS lags there is nowhere for float to come from.
+
+    Deliberately not built on ``store_report`` — measured empirically before
+    writing this test, not assumed. ``store_report``'s detections (columns
+    and beams only) put every derived concept at its own unique
+    sequence_order, so its 5 activities form a single chain with no fan-out
+    at all (verified: 5/5 critical both before and after Step 3 — a pure
+    chain cannot have float, by construction, regardless of SS vs FS). The
+    real catalog does have genuine parallel steps — e.g. EST-006/EST-012 and
+    EST-007/EST-013 share a sequence_order — but reaching them needs
+    losa/muro detections outside this file's fixtures, and guessing at their
+    property filters risks a fixture that silently tests nothing.
+
+    So this builds the network directly, the same way test_schedule_cpm.py
+    does, with two real DERIVADO_DE triples (columna and zapata) tied at the
+    same three sequence_order steps but on different crews, so the shorter
+    one gets real float. HARD_PREDECESSORS still comes from the production
+    DERIVADO_DE map — these are genuine hard-edge pairs, not invented ones.
+
+    Note for the record: on ``store_report``'s own chain, Step 3 changes
+    dates (EST-002 moves from day 5 to day 6 — it no longer starts before
+    its own formwork finishes) but not the critical count, which stays 5/5
+    either way. A chain has nowhere for float to come from no matter how
+    correct its edges are; that is exactly the point this test is making
+    with a network that has somewhere for it to go."""
+    catalog = [
+        Concept(code="EST-008", description="cimbra columna", unit="M2",
+                phase="Estructura", production_rate_per_day=1.0, sequence_order=1),
+        Concept(code="CIM-006", description="cimbra zapata", unit="M2",
+                phase="Estructura", production_rate_per_day=1.0, sequence_order=1),
+        Concept(code="ACE-001", description="acero columna", unit="KG",
+                phase="Estructura", production_rate_per_day=1.0, sequence_order=2),
+        Concept(code="ACE-003", description="acero zapata", unit="KG",
+                phase="Estructura", production_rate_per_day=1.0, sequence_order=2),
+        Concept(code="EST-001", description="colado columna", unit="M3",
+                phase="Estructura", production_rate_per_day=1.0, sequence_order=3),
+        Concept(code="CIM-002", description="colado zapata", unit="M3",
+                phase="Estructura", production_rate_per_day=1.0, sequence_order=3),
+    ]
+    # Columna: 2 units at every step. Zapata: 10. Same crews would queue them
+    # (crew defaults to the concept's own code with no APU supplied, so they
+    # do not); same sequence_order per step means the shorter one gets float
+    # against the longer one's step_anchor instead of chaining after it.
+    quantities = {
+        "EST-008": 2.0, "CIM-006": 10.0, "ACE-001": 2.0,
+        "ACE-003": 10.0, "EST-001": 2.0, "CIM-002": 10.0,
+    }
+    boq = BillOfQuantities(
+        project_id="p",
+        lines=[
+            BoqLine(
+                concept_code=code, description=code, unit="M3", quantity=qty,
+                unit_price=100.0, amount=qty * 100.0, phase="Estructura",
+                raw_quantity=qty, raw_kind=QuantityKind.VOLUME,
+                source_detection_count=1, confidence=0.9,
+            )
+            for code, qty in quantities.items()
+        ],
+    )
+    schedule = build_schedule(boq, catalog, ScheduleConfig())
+    by_code = {a.concept_code: a for a in schedule.activities}
+
+    # The hard edges are genuinely there (Step 3's own contribution)...
+    assert any(link.kind == "FS" for a in schedule.activities for link in a.predecessors)
+    # ...and the network they sit in still has real float in it.
+    critical = [a for a in schedule.activities if a.critical]
+    assert len(critical) < len(schedule.activities), "todo es ruta crítica: no hay red"
+    assert not by_code["EST-001"].critical, "la cadena corta debería tener holgura"
+    assert by_code["CIM-002"].critical, "la cadena larga debería ser crítica"

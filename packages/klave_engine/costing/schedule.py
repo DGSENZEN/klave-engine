@@ -33,6 +33,7 @@ from datetime import date, timedelta
 
 from klave_engine.costing.catalog import PHASE_ORDER
 from klave_engine.costing.models import (
+    DERIVADO_DE,
     BillOfQuantities,
     Concept,
     ResourceType,
@@ -42,6 +43,14 @@ from klave_engine.costing.models import (
     UnitPriceAnalysis,
     WorkSchedule,
 )
+
+# The pairs that genuinely cannot overlap, derived from the same map that
+# orders them. Everything else stays start-to-start with a lag, because
+# traslape between trades is how obra actually runs — flattening that would
+# replace one wrong model with another.
+HARD_PREDECESSORS: dict[str, tuple[str, ...]] = {}
+for _derived, (_parent, _tipo) in DERIVADO_DE.items():
+    HARD_PREDECESSORS[_parent] = (*HARD_PREDECESSORS.get(_parent, ()), _derived)
 
 # Units that mean "one crew for one journey" in a matrix (art. 190: R is
 # per eight-hour journey) and "one machine for one hour" (art. 194: Rhm is
@@ -198,6 +207,16 @@ def build_schedule(
                         kind="SS",
                         lag_days=max(0, cursor - previous_anchor.start_day),
                     )
+                )
+            for hard_code in HARD_PREDECESSORS.get(line.concept_code, ()):
+                placed = next(
+                    (a for a in activities if a.concept_code == hard_code), None
+                )
+                if placed is None:
+                    continue
+                cursor = max(cursor, placed.end_day)
+                links.append(
+                    ScheduleLink(predecessor=hard_code, kind="FS", lag_days=0)
                 )
             # Same predecessor can reach here via two branches above; see
             # _dedupe_links for why the collision is resolved by lag size.
