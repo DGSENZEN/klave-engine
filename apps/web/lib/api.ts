@@ -1531,8 +1531,26 @@ export type Hallazgo = {
   concept_code: string | null;
 };
 
+/** Findings that differ only in which concept they name, collapsed to one
+ * card with a count — nineteen repeats of the same four lines is not
+ * nineteen warnings, it is one warning and eighteen distractions. */
+export type HallazgoGrupo = {
+  rule_id: string;
+  titulo: string;
+  severity: Severity;
+  momento: Hallazgo["momento"];
+  count: number;
+  miembros: Hallazgo[];
+  monto_afectado: number | null;
+  /** What is at stake across the group when pesos are honestly unknowable. */
+  exposicion_total: string;
+};
+
 export type Diagnostico = {
   hallazgos: Hallazgo[];
+  /** Findings collapsed by rule; the renderer walks these, not `hallazgos` —
+   * two code paths reading the same findings is how they drift apart. */
+  grupos: HallazgoGrupo[];
   /** Deliberate engine choices — recorded, not alarmed. */
   criterios: string[];
   by_severity: Partial<Record<Severity, number>>;
