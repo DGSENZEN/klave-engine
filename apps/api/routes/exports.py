@@ -132,9 +132,10 @@ def export_explosion(
     manifest = store.get_manifest(project_id)
     _mark_exported(store, project_id)
     report = CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
+    reviews = load_reviews(store.get_root(project_id) / settings.processed_dir_name)
     filename = f"explosion_insumos_{slugify(manifest.project_name)[:40]}.xlsx"
     return Response(
-        content=build_explosion_workbook(report),
+        content=build_explosion_workbook(report, reviews),
         media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -154,9 +155,10 @@ def export_apus(
     manifest = store.get_manifest(project_id)
     _mark_exported(store, project_id)
     report = CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
+    reviews = load_reviews(store.get_root(project_id) / settings.processed_dir_name)
     filename = f"apus_{slugify(manifest.project_name)[:40]}.xlsx"
     return Response(
-        content=build_apus_workbook(report),
+        content=build_apus_workbook(report, reviews),
         media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
