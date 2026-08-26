@@ -263,14 +263,44 @@ def build_schedule(
         workdays_per_month=config.workdays_per_month,
         phases=phases_present,
     )
-    schedule.assumptions.append(
-        f"{frentes} frente(s) de trabajo con {max(config.crews_per_activity, 1)} "
-        "cuadrilla(s) por actividad. Es el supuesto que más mueve el plazo y el "
-        "plano no puede decirlo: ajústalo si la obra tendrá más frentes."
-    )
     _compute_float(schedule)
     _apply_calendar(schedule, config.start_date)
+    # Built last, from the now-final schedule, so it can state calendar_days
+    # (only set by _apply_calendar, above) instead of the 0 it defaults to.
+    if schedule.activities:
+        schedule.assumptions.append(_crew_assumption_sentence(schedule, config))
     return schedule
+
+
+def _crew_assumption_sentence(schedule: WorkSchedule, config: ScheduleConfig) -> str:
+    """The one sentence that states the crew assumption behind the plazo.
+
+    Built here, and *only* here. report.py's BoQ-level assumptions register
+    does not write its own version of this fact — it mirrors
+    ``schedule.assumptions`` (see ``_mirror_schedule_assumptions``), and that
+    register in turn reaches the Diagnóstico's criterios (hallazgos.py) and
+    the resumen_costos.md export. Two independently-worded sentences stating
+    the same two config numbers — one on the programa page, one everywhere
+    ``boq.assumptions`` surfaces — is exactly the failure this plan exists to
+    close; the fix is one function, not "keep two texts in sync by hand".
+
+    Uses the clamped values (``max(..., 1)``), the same ones the duration
+    math above actually runs on — not the raw config, which a 0 or negative
+    frentes/crews_per_activity would otherwise let this sentence disagree
+    with the number of activities it is describing.
+    """
+    frentes = max(config.frentes, 1)
+    crews = max(config.crews_per_activity, 1)
+    from_matrix = sum(1 for a in schedule.activities if a.rendimiento_source == "matriz")
+    return (
+        f"Programa de obra: duraciones de {from_matrix} de {len(schedule.activities)} "
+        "actividades derivadas del rendimiento de su propia matriz (RLOPSRM art. 190), "
+        f"con {frentes} frente(s) de trabajo y {crews} cuadrilla(s) por actividad — "
+        "el supuesto que más mueve el plazo, y el plano no puede decirlo: ajústalo si "
+        "la obra tendrá más frentes. "
+        f"Plazo {schedule.total_duration_days} días hábiles = "
+        f"{schedule.calendar_days} días naturales, en semana de seis días."
+    )
 
 
 def _dedupe_links(links: list[ScheduleLink]) -> list[ScheduleLink]:

@@ -288,3 +288,27 @@ def test_the_programa_states_the_crew_assumption_it_is_making():
     stated = " ".join(report.schedule.assumptions)
     assert "frente" in stated.lower()
     assert "cuadrilla" in stated.lower()
+
+
+def test_the_crew_assumption_is_not_restated_differently_in_the_boq():
+    """report.py used to build its own, textually different sentence from
+    the same two config numbers (crews_per_activity, frentes) and append it
+    to boq.assumptions — which is what feeds the Diagnóstico's criterios
+    (hallazgos.py) and the resumen_costos.md export. Both sentences said
+    "frentes" and "cuadrillas", so test_the_programa_states_the_crew_
+    assumption_it_is_making above could not have caught them disagreeing;
+    it only ever looked at report.schedule.assumptions.
+
+    schedule.py now builds that sentence exactly once
+    (_crew_assumption_sentence); report.py's _mirror_schedule_assumptions no
+    longer constructs its own — it copies schedule.assumptions into
+    boq.assumptions verbatim. This asserts that mirror holds: every sentence
+    the programa states about itself must show up, byte-for-byte, in the
+    BoQ's own register too. A reintroduced second sentence — even one that
+    also mentions frentes and cuadrillas — fails this unless it is exactly
+    the same string."""
+    report = _structural_report()
+
+    assert report.schedule.assumptions, "el programa no declaró ningún supuesto"
+    for statement in report.schedule.assumptions:
+        assert statement in report.boq.assumptions
