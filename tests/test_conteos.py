@@ -107,12 +107,18 @@ def test_the_conteos_endpoints_round_trip_over_http(data_dir, monkeypatch):
     project, so if put_conteos tried to recompute, recompute_and_persist
     would either raise or 500 rather than silently succeed — a 200 with the
     saved body back is only possible because it never tries.
+
+    It also asserts the PUT broadcasts — a 200 alone would look identical to
+    a publish that silently no-ops, and a colleague watching the same
+    project over SSE (this app's collaboration model) must see a saved
+    count without reloading, same as every other reviews.py mutation.
     """
     import json as json_module
 
     from fastapi.testclient import TestClient
     from klave_engine.common import config as config_module
 
+    from apps.api.events import BUS
     from apps.api.main import create_app
 
     monkeypatch.setenv("KLAVE_USERS_DATABASE_URL", "postgresql://nobody@127.0.0.1:1/none")
@@ -140,6 +146,7 @@ def test_the_conteos_endpoints_round_trip_over_http(data_dir, monkeypatch):
             },
         ],
     }
+    seq_before = BUS.latest_seq()
     put = client.put(
         f"/projects/{project_id}/conteos",
         json=payload,
@@ -156,6 +163,16 @@ def test_the_conteos_endpoints_round_trip_over_http(data_dir, monkeypatch):
         "hoja": "E-02", "familia": "escalera",
         "dibujados": 2, "detectados": 0, "nota": "",
     }
+
+    # The broadcast itself: same event set_verification uses for its own
+    # "no recompute needed" mutations, actor filled in, and no count in the
+    # payload — a listener must not be able to read dibujados/detectados
+    # off the wire and mistake them for engine output.
+    since = BUS.since(seq_before, project_id=project_id)
+    published = [e for e in since if e.type == "review_updated"]
+    assert len(published) == 1
+    assert published[0].actor == "Diego Gaytán"
+    assert published[0].data == {"action": "conteos_updated"}
 
     again = client.get(f"/projects/{project_id}/conteos")
     assert again.json() == body  # what was saved is exactly what comes back

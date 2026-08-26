@@ -497,9 +497,20 @@ def put_conteos(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     """Counts change no number, so nothing recomputes — they are evidence
-    about the engine, not input to it."""
+    about the engine, not input to it. Still broadcast, same as
+    set_verification's sibling "no recompute" shape: a colleague watching
+    this project over SSE should see a saved count without reloading. The
+    payload carries who counted and that a count happened, never the counts
+    themselves — those are not engine output and must not be readable off
+    the wire as if they were."""
     control_dir = store.get_root(project_id) / settings.processed_dir_name
     with project_recompute_lock(project_id):
         body.contado_por = body.contado_por or clean_actor(x_actor) or ""
         save_conteos(control_dir, body)
+    BUS.publish(
+        "review_updated",
+        project_id=project_id,
+        actor=body.contado_por,
+        data={"action": "conteos_updated"},
+    )
     return body.model_dump()
