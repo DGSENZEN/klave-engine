@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from klave_engine.common.config import Settings
 from klave_engine.common.errors import ReportGenerationError
 from klave_engine.common.ids import short_uuid
+from klave_engine.costing.conteos import ConteosDeProyecto, load_conteos, save_conteos
 from klave_engine.costing.models import CostingOverrides, CostReport
 from klave_engine.costing.omitted import AREA_FAMILIES, FAMILY_TYPES, LINEAR_FAMILIES
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
@@ -475,3 +476,30 @@ def set_verification(
         },
     )
     return {**_reviews_payload(reviews), "reprocessing": reprocessing}
+
+
+@router.get("/{project_id}/conteos")
+def get_conteos(
+    project_id: str,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    control_dir = store.get_root(project_id) / settings.processed_dir_name
+    return load_conteos(control_dir).model_dump()
+
+
+@router.put("/{project_id}/conteos")
+def put_conteos(
+    project_id: str,
+    body: ConteosDeProyecto,
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Counts change no number, so nothing recomputes — they are evidence
+    about the engine, not input to it."""
+    control_dir = store.get_root(project_id) / settings.processed_dir_name
+    with project_recompute_lock(project_id):
+        body.contado_por = body.contado_por or clean_actor(x_actor) or ""
+        save_conteos(control_dir, body)
+    return body.model_dump()

@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 
 from klave_engine.common.config import get_settings
+from klave_engine.costing.conteos import load_conteos
 from klave_engine.costing.models import CostReport
 from klave_engine.detection.results import Detection
 from klave_engine.evals.recall import (
@@ -21,10 +23,27 @@ from klave_engine.evals.recall import (
 )
 
 
+def _project_root(project_id: str) -> Path:
+    return get_settings().data_dir / "uploads" / project_id
+
+
+def _resolver_conteo(project_id: str) -> ConteoDeObra | None:
+    """Los conteos viven primero en el proyecto (``processed/conteos.json``,
+    lo que llena la app); ``evals/conteos/<id>.json`` es el respaldo local
+    para cuando todavía no hay proyecto desplegado."""
+    control_dir = _project_root(project_id) / get_settings().processed_dir_name
+    conteos_de_proyecto = load_conteos(control_dir)
+    if conteos_de_proyecto.hojas:
+        return conteos_de_proyecto.a_conteo_de_obra(project_id)
+    archivo = CONTEOS_DIR / f"{project_id}.json"
+    if archivo.exists():
+        return ConteoDeObra.desde_json(archivo)
+    return None
+
+
 def _artefactos(project_id: str) -> tuple[list[Detection], CostReport | None]:
     settings = get_settings()
-    raiz = settings.data_dir / "uploads" / project_id
-    control = raiz / settings.processed_dir_name
+    control = _project_root(project_id) / settings.processed_dir_name
     activo = control / "active_run.json"
     if not activo.exists():
         raise SystemExit(f"{project_id}: no tiene una corrida publicada.")
@@ -90,27 +109,34 @@ def main(argv: list[str]) -> int:
         return 0
 
     objetivo = argv[2] if len(argv) > 2 else None
-    archivos = sorted(CONTEOS_DIR.glob("*.json"))
     if objetivo:
-        archivos = [a for a in archivos if a.stem == objetivo]
-    if not archivos:
-        print(
-            "No hay conteos que medir. Genera uno con:\n"
-            "  uv run python -m klave_engine.evals.recall_cli plantilla <project_id>"
-        )
-        return 1
+        ids = [objetivo]
+    else:
+        ids = [a.stem for a in sorted(CONTEOS_DIR.glob("*.json"))]
 
     fallo = False
-    for archivo in archivos:
-        conteo = ConteoDeObra.desde_json(archivo)
+    encontrado = False
+    for project_id in ids:
+        conteo = _resolver_conteo(project_id)
+        if conteo is None:
+            print(f"{project_id}: sin conteos guardados todavía.")
+            continue
+        encontrado = True
         if not any(c.dibujados for c in conteo.conteos):
-            print(f"{archivo.name}: sin contar todavía (todos en cero).")
+            print(f"{project_id}: sin contar todavía (todos en cero).")
             continue
         detections, reporte_costos = _artefactos(conteo.drawing_id)
         reporte = medir(conteo, detections, reporte_costos)
         _imprimir(reporte)
         if reporte.recall_ponderado < 0.85:
             fallo = True
+
+    if not encontrado:
+        print(
+            "No hay conteos que medir. Genera uno con:\n"
+            "  uv run python -m klave_engine.evals.recall_cli plantilla <project_id>"
+        )
+        return 1
     return 1 if fallo else 0
 
 
