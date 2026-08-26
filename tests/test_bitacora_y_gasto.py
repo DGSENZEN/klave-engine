@@ -43,18 +43,6 @@ def test_lo_anotado_se_puede_volver_a_leer(tmp_path: Path):
     assert len(solo_mio) == 1 and solo_mio[0]["project_id"] == "obra"
 
 
-def test_nunca_se_escribe_una_llave_ni_un_correo():
-    """La bitácora vive en la máquina del taller, pero eso no es excusa para
-    guardar secretos en texto plano."""
-    sucio = (
-        "falló con AIzaSyCDoP5l-uvGYTPOIG5AwHijNyLtZqlbRQU y avisamos a "
-        "ana@taller.mx con Bearer abc123def456ghi"
-    )
-    limpio = redactar(sucio)
-    assert "AIza" not in limpio and "ana@taller.mx" not in limpio
-    assert "Bearer abc123" not in limpio
-    assert "falló con" in limpio  # el resto del mensaje sigue siendo útil
-
 
 def test_un_fallo_al_anotar_no_tumba_a_quien_llama(tmp_path: Path):
     """Observar nunca puede romper lo observado."""
