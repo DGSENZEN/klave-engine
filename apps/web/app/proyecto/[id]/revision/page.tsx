@@ -571,10 +571,24 @@ function SortButton({
  * (coverage_flags) — never from the engine's own `detectados`, which would
  * quietly turn this into the engine grading itself. */
 
+// conteos.py's per-familia fold has no dedup of its own — every
+// ConteoHoja.dibujados gets summed verbatim across every hoja string, by
+// design (a family legitimately spans several sheets). That means two
+// spellings of the *same* sheet ("e-02" vs "E-02") silently double-counts
+// it. Free-text entry (the "familia que el motor no detectó" control) is
+// the only place a hoja doesn't already come from the engine's own
+// normalized frame code, so case-fold + collapse whitespace there — and
+// everywhere a hoja is compared or keyed — so a variant always resolves to
+// the one existing row instead of a new one.
+function normalizarHoja(raw: string): string {
+  return raw.trim().replace(/\s+/g, " ").toLocaleUpperCase("es");
+}
+
 // A visible separator; hoja/familia are never decoded back out of this
 // key (see engineInfo/filas below), so it only has to be collision-free
-// in practice, not literally unsplittable.
-const filaKey = (hoja: string, familia: string) => `${hoja}::${familia}`;
+// in practice, not literally unsplittable. Keys on the normalized hoja so
+// a variant spelling always joins the same row instead of forking a new one.
+const filaKey = (hoja: string, familia: string) => `${normalizarHoja(hoja)}::${familia}`;
 const familyLabel = (familia: string) => FAMILY_LABELS[familia] ?? familia;
 const FAMILIAS_ORDENADAS = [...FAMILIES].sort((a, b) =>
   familyLabel(a).localeCompare(familyLabel(b), "es"),
@@ -588,7 +602,7 @@ const FAMILIAS_ORDENADAS = [...FAMILIES].sort((a, b) =>
 const SHEET_CODE_RE = /^([A-Z]{1,3}-\d{2,4}[A-Z]?)\s*·\s*/;
 function hojaOf(row: RevisionRow): string {
   const m = SHEET_CODE_RE.exec(row.view_title);
-  return m ? m[1] : row.sheet;
+  return normalizarHoja(m ? m[1] : row.sheet);
 }
 
 type Fila = {
@@ -616,7 +630,12 @@ function ConteoSection({
   const [cobertura, setCobertura] = useState<CoverageFlag[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [nuevaHoja, setNuevaHoja] = useState("");
+  // null: the person hasn't chosen a hoja yet, so the field displays the
+  // first known one as a convenience default (computed at render time
+  // below, not synced in via an effect). Once they've typed anything —
+  // even clearing it back to "" — it's a real string, and the default
+  // never overrides it again (an empty string is not nullish).
+  const [nuevaHoja, setNuevaHoja] = useState<string | null>(null);
   const [nuevaFamilia, setNuevaFamilia] = useState(FAMILIAS_ORDENADAS[0] ?? "");
   const [nuevaCuenta, setNuevaCuenta] = useState("");
 
@@ -679,7 +698,11 @@ function ConteoSection({
     }
     const pares = new Map(engineInfo.pares);
     for (const h of conteos.hojas) {
-      pares.set(filaKey(h.hoja, h.familia), { hoja: h.hoja, familia: h.familia });
+      // Store the normalized form, not whatever happens to be on disk: a
+      // row saved before this fix (or by hand) shows and re-saves in
+      // canonical form from here on, healing itself on the next edit.
+      const hoja = normalizarHoja(h.hoja);
+      pares.set(filaKey(hoja, h.familia), { hoja, familia: h.familia });
     }
     const out: Fila[] = [];
     for (const [key, { hoja, familia }] of pares) {
@@ -705,17 +728,24 @@ function ConteoSection({
     [filas],
   );
 
-  // Convenience default once the sheet list loads; the field stays free
-  // text (not a closed picker) so a plan the engine read nothing from —
-  // no rows, no known hojas — can still be counted by hand.
-  useEffect(() => {
-    if (!nuevaHoja && hojasConocidas.length > 0) setNuevaHoja(hojasConocidas[0]);
-  }, [hojasConocidas, nuevaHoja]);
+  // Convenience default once the sheet list loads, computed at render time
+  // (not synced into state through an effect — nothing here is an external
+  // value to mirror, just a pure function of hojasConocidas/nuevaHoja that
+  // was already available this render). The field stays free text (not a
+  // closed picker) so a plan the engine read nothing from — no rows, no
+  // known hojas — can still be counted by hand.
+  const nuevaHojaEfectiva = nuevaHoja ?? hojasConocidas[0] ?? "";
 
-  async function guardarFila(row: ConteoHoja): Promise<boolean> {
+  async function guardarFila(fila: ConteoHoja): Promise<boolean> {
+    // The single choke point where a row is actually persisted: normalize
+    // here too (not just at the call sites) so this invariant — everything
+    // in conteos.hojas is already canonical — holds no matter what a future
+    // caller passes in, and matching a pre-existing non-normalized row
+    // (saved before this fix, or by hand) still finds it as the same row.
+    const row = { ...fila, hoja: normalizarHoja(fila.hoja) };
     const current = conteosRef.current ?? CONTEOS_VACIOS;
     const resto = current.hojas.filter(
-      (h) => !(h.hoja === row.hoja && h.familia === row.familia),
+      (h) => !(normalizarHoja(h.hoja) === row.hoja && h.familia === row.familia),
     );
     const next = { ...current, hojas: [...resto, row] };
     setConteos(next);
@@ -755,7 +785,7 @@ function ConteoSection({
 
   const cuentaNueva = Number(nuevaCuenta.trim());
   const puedeAgregar =
-    nuevaHoja.trim() !== "" &&
+    nuevaHojaEfectiva.trim() !== "" &&
     nuevaFamilia !== "" &&
     nuevaCuenta.trim() !== "" &&
     Number.isFinite(cuentaNueva) &&
@@ -763,7 +793,7 @@ function ConteoSection({
 
   async function agregar() {
     if (!puedeAgregar) return;
-    const hoja = nuevaHoja.trim();
+    const hoja = normalizarHoja(nuevaHojaEfectiva);
     const ok = await guardarFila({
       hoja,
       familia: nuevaFamilia,
@@ -844,7 +874,7 @@ function ConteoSection({
             <span className="mb-1 block text-xs text-muted">Hoja</span>
             <Input
               list={`hojas-conocidas-${projectId}`}
-              value={nuevaHoja}
+              value={nuevaHojaEfectiva}
               onChange={(e) => setNuevaHoja(e.target.value)}
               placeholder="E-02"
               className="w-24 px-2 py-1"
