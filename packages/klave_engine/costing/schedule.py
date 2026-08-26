@@ -415,15 +415,37 @@ def _stretch_phase(
     phase_end: int,
     target_end: int,
 ) -> None:
-    """Scale a phase's activity timeline to span up to target_end (per-level floor)."""
+    """Scale a phase's activity timeline to span up to target_end (per-level floor).
+
+    Both ends of an activity go through one map of day coordinates, and the
+    duration falls out of them. Scaling ``start_day`` and ``duration_days``
+    independently rounds twice, and ``round(a·s) + round(b·s)`` can exceed
+    ``round((a+b)·s)`` by one — which slid a colado one day into its own
+    cimbra on 2 915 of 17 280 synthetic multi-level schedules. Nothing
+    re-checked it: the FS edge is established while placing the activity
+    (``cursor = max(cursor, placed.end_day)``, some 200 lines above) and
+    ``levels > 1`` is the only path that reaches this function afterwards.
+
+    The map is monotone non-decreasing, so every ordering the network already
+    established survives it: a pour that started no earlier than its
+    formwork's end still does. It also lands the phase exactly on
+    ``target_end`` instead of near it, since the last activity's end is
+    ``day(phase_end)``.
+    """
     span = max(phase_end - phase_start, 1)
     scale = (target_end - phase_start) / span
+
+    def day(value: int) -> int:
+        return phase_start + round((value - phase_start) * scale)
+
     for activity in activities:
         if activity.phase != phase:
             continue
-        activity.start_day = phase_start + round((activity.start_day - phase_start) * scale)
-        activity.duration_days = max(1, round(activity.duration_days * scale))
-        activity.end_day = activity.start_day + activity.duration_days
+        activity.start_day = day(activity.start_day)
+        # scale >= 1 here (target_end > phase_end), so a stretched activity
+        # can never be shorter than one day; the floor is defensive.
+        activity.end_day = max(day(activity.end_day), activity.start_day + 1)
+        activity.duration_days = activity.end_day - activity.start_day
 
 
 def direct_spend_by_period(schedule: WorkSchedule) -> list[float]:

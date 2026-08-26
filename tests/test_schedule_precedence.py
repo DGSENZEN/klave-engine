@@ -278,6 +278,122 @@ def test_the_hard_edge_pins_the_pour_past_what_ss_alone_would_allow():
     )
 
 
+def _estructura_boq(quantities: dict[str, float]) -> BillOfQuantities:
+    return BillOfQuantities(
+        project_id="p",
+        lines=[
+            BoqLine(
+                concept_code=code, description=code, unit="M3", quantity=qty,
+                unit_price=100.0, amount=qty * 100.0, phase="Estructura",
+                raw_quantity=qty, raw_kind=QuantityKind.VOLUME,
+                source_detection_count=1, confidence=0.9,
+            )
+            for code, qty in quantities.items()
+        ],
+    )
+
+
+# The same six-concept Estructura network the hard-edge test above builds by
+# hand: two DERIVADO_DE triples (columna and zapata) sharing three
+# sequence_order steps. Reused because it is the smallest fixture that carries
+# real FS edges, and _stretch_phase only ever runs on "Estructura".
+_ESTRUCTURA = [
+    Concept(code="EST-008", description="cimbra columna", unit="M2",
+            phase="Estructura", production_rate_per_day=1.0, sequence_order=1),
+    Concept(code="CIM-006", description="cimbra zapata", unit="M2",
+            phase="Estructura", production_rate_per_day=1.0, sequence_order=1),
+    Concept(code="ACE-001", description="acero columna", unit="KG",
+            phase="Estructura", production_rate_per_day=1.0, sequence_order=2),
+    Concept(code="ACE-003", description="acero zapata", unit="KG",
+            phase="Estructura", production_rate_per_day=1.0, sequence_order=2),
+    Concept(code="EST-001", description="colado columna", unit="M3",
+            phase="Estructura", production_rate_per_day=1.0, sequence_order=3),
+    Concept(code="CIM-002", description="colado zapata", unit="M3",
+            phase="Estructura", production_rate_per_day=1.0, sequence_order=3),
+]
+
+
+def _fs_violations(schedule):
+    by_code = {a.concept_code: a for a in schedule.activities}
+    return [
+        (a.concept_code, a.start_day, link.predecessor,
+         by_code[link.predecessor].start_day, by_code[link.predecessor].end_day)
+        for a in schedule.activities
+        for link in a.predecessors
+        if link.kind == "FS"
+        and a.start_day < by_code[link.predecessor].end_day + link.lag_days
+    ]
+
+
+def test_the_multi_level_stretch_cannot_pour_a_column_into_its_own_formwork():
+    """``levels > 1`` is a code path no other test in this file reaches — both
+    fixtures run at the default 1 — so ``test_the_pour_waits_for_its_formwork_
+    to_finish`` gave assurance the production path did not have.
+
+    ``_stretch_phase`` used to scale ``start_day`` and ``duration_days``
+    through two separate ``round()`` calls, and ``round(a·s) + round(b·s)``
+    can exceed ``round((a+b)·s)`` by one. Nothing re-checked the FS edge
+    afterwards, so the pour slid one day into its own acero: at levels=3 with
+    these quantities, ACE-001 ran 8→16 and EST-001 started on 15. One day is
+    not the 213 of the original bug, but the invariant is stated as absolute
+    and a colado that begins before its cimbra is finished is exactly what the
+    hard edge exists to prevent.
+
+    Swept rather than spot-checked because which combinations round the wrong
+    way is not something to guess at: over these levels, cycles, overlaps and
+    quantity mixes the pre-fix implementation broke on 2 915 of 17 280
+    schedules, and a single well-chosen case would not have been convincing
+    that the fix is structural rather than lucky."""
+    checked = 0
+    edges = 0
+    broken: list[tuple] = []
+    for quantities in ((2.0, 3.0, 5.0), (5.0, 2.0, 13.0), (7.0, 13.0, 3.0)):
+        boq = _estructura_boq({
+            "EST-008": quantities[0], "CIM-006": quantities[1],
+            "ACE-001": quantities[2], "ACE-003": quantities[0],
+            "EST-001": quantities[1], "CIM-002": quantities[2],
+        })
+        for levels in (2, 3, 4, 5):
+            for cycle in (10, 15, 21, 30):
+                for overlap in (0.0, 30.0, 50.0, 100.0):
+                    schedule = build_schedule(
+                        boq, _ESTRUCTURA,
+                        ScheduleConfig(
+                            per_level_cycle_days=cycle,
+                            intra_phase_overlap_pct=overlap,
+                        ),
+                        levels=levels,
+                    )
+                    checked += 1
+                    edges += sum(
+                        1 for a in schedule.activities
+                        for link in a.predecessors if link.kind == "FS"
+                    )
+                    broken.extend(
+                        (levels, cycle, overlap, *v) for v in _fs_violations(schedule)
+                    )
+
+    assert checked == 192 and edges > 0, "el barrido no probó ninguna arista dura"
+    assert not broken, broken[:5]
+
+
+def test_the_multi_level_stretch_still_reaches_its_per_level_floor():
+    """The invariant above must not be bought by refusing to stretch. A
+    structure phase of N levels cannot be compressed below N cycles, and the
+    stretched phase now lands exactly on that floor rather than near it."""
+    boq = _estructura_boq({code.code: 2.0 for code in _ESTRUCTURA})
+    config = ScheduleConfig(per_level_cycle_days=21, intra_phase_overlap_pct=50.0)
+
+    short = build_schedule(boq, _ESTRUCTURA, config, levels=1)
+    tall = build_schedule(boq, _ESTRUCTURA, config, levels=4)
+
+    assert short.total_duration_days < 4 * 21
+    assert tall.total_duration_days == 4 * 21
+    for activity in tall.activities:
+        assert activity.duration_days >= 1
+        assert activity.end_day == activity.start_day + activity.duration_days
+
+
 def test_the_programa_states_the_crew_assumption_it_is_making():
     """393 working days for a 546 m² house is what one crew per activity
     produces. There is no honest source to derive a crew count from — the

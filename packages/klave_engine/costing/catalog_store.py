@@ -636,6 +636,20 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '22') "
                     "ON CONFLICT(key) DO UPDATE SET value = '22'"
                 )
+            # ⚠ FUERA DE ORDEN — este bloque `< 4` va *después* del `< 22`, así
+            # que es la última escritura de schema_version. Medido: un store
+            # nuevo queda en '4' al primer open (version_row es None, corren
+            # todos los bloques, y éste escribe al final) y sólo llega a '22'
+            # al segundo, cuando el snapshot `version_row` dice 4 y todos los
+            # `< N` de arriba vuelven a correr — son idempotentes.
+            #
+            # Los datos quedan bien en ambos casos y se corrige solo, así que
+            # la cadena NO se reestructura: mover este bloque volvería a
+            # correr v4 sobre stores que ya pasaron por él. Lo que hay que
+            # saber al agregar v23: va *debajo* de este bloque, no encima, o
+            # un store nuevo terminará en '4'. Y nada puede suponer que
+            # schema_version == la última versión justo después de crear el
+            # store; sólo lo es a partir del segundo open.
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.
                 conn.execute(
