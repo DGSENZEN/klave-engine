@@ -191,33 +191,39 @@ def test_the_pour_waits_for_its_formwork_to_finish(store_report):
     assert hard_edges > 0, "ninguna arista dura: el colado no espera a nada"
 
 
-def test_the_critical_path_is_not_the_whole_job():
-    """27 of 30 activities critical is the signature of a chain, not a
-    network: with only SS lags there is nowhere for float to come from.
+def test_the_hard_edge_pins_the_pour_past_what_ss_alone_would_allow():
+    """What Step 3 actually changes: cimbra/acero to their pour used to be
+    SS with a 50% overlap lag, so the pour could start halfway through its
+    own formwork. FS(0) requires the formwork and the steel fully finished
+    first, and that is strictly tighter than the SS lag whenever the
+    predecessor's own duration is long enough for it to matter: for a
+    10-day acero starting day 5, SS-with-50%-overlap allows day 10; FS(0)
+    requires day 15 — acero's own end.
 
-    Deliberately not built on ``store_report`` — measured empirically before
-    writing this test, not assumed. ``store_report``'s detections (columns
-    and beams only) put every derived concept at its own unique
-    sequence_order, so its 5 activities form a single chain with no fan-out
-    at all (verified: 5/5 critical both before and after Step 3 — a pure
-    chain cannot have float, by construction, regardless of SS vs FS). The
-    real catalog does have genuine parallel steps — e.g. EST-006/EST-012 and
-    EST-007/EST-013 share a sequence_order — but reaching them needs
-    losa/muro detections outside this file's fixtures, and guessing at their
-    property filters risks a fixture that silently tests nothing.
+    Built by hand, not through ``store_report`` or any detection, the same
+    way test_schedule_cpm.py does, so that gap can be shown as an exact,
+    deliberate number instead of argued about. Two real DERIVADO_DE triples
+    (columna and zapata) share the same three sequence_order steps on
+    different crews, so the network also carries genuine float from that
+    tie — the point is not the float itself, but that the hard edge still
+    pins CIM-002 to ACE-003's end inside a network that has other structure
+    going on, exactly as the SS edges elsewhere in it are undisturbed.
 
-    So this builds the network directly, the same way test_schedule_cpm.py
-    does, with two real DERIVADO_DE triples (columna and zapata) tied at the
-    same three sequence_order steps but on different crews, so the shorter
-    one gets real float. HARD_PREDECESSORS still comes from the production
-    DERIVADO_DE map — these are genuine hard-edge pairs, not invented ones.
-
-    Note for the record: on ``store_report``'s own chain, Step 3 changes
-    dates (EST-002 moves from day 5 to day 6 — it no longer starts before
-    its own formwork finishes) but not the critical count, which stays 5/5
-    either way. A chain has nowhere for float to come from no matter how
-    correct its edges are; that is exactly the point this test is making
-    with a network that has somewhere for it to go."""
+    This does NOT assert anything about the critical-path share, on
+    purpose — an earlier version of this test did, and was wrong to. Adding
+    an FS edge only ever tightens a cursor (``cursor = max(cursor,
+    predecessor.end_day)``); it cannot turn a single path into a fork, and
+    where a fork already exists (this fixture's tie, or store_report's own
+    fan-out — EST-008 alone feeds three different successors there, SS and
+    FS both), which side of it floats is decided by the tie, not by SS vs
+    FS. Verified directly, both ways: with ``HARD_PREDECESSORS``
+    monkeypatched to ``{}``, this fixture's critical set (CIM-006/ACE-003/
+    CIM-002 critical, EST-008/ACE-001/EST-001 floating) and store_report's
+    (5 of 5 critical) are each byte-identical to the FS-enabled run — only
+    the dates move. Whether the real ~30-activity Marina catalog's critical
+    share drops below 27/30 is Task 13's own checklist item, verified live
+    against the real project, not something this file's fixtures are large
+    enough to demonstrate."""
     catalog = [
         Concept(code="EST-008", description="cimbra columna", unit="M2",
                 phase="Estructura", production_rate_per_day=1.0, sequence_order=1),
@@ -255,10 +261,18 @@ def test_the_critical_path_is_not_the_whole_job():
     schedule = build_schedule(boq, catalog, ScheduleConfig())
     by_code = {a.concept_code: a for a in schedule.activities}
 
-    # The hard edges are genuinely there (Step 3's own contribution)...
-    assert any(link.kind == "FS" for a in schedule.activities for link in a.predecessors)
-    # ...and the network they sit in still has real float in it.
-    critical = [a for a in schedule.activities if a.critical]
-    assert len(critical) < len(schedule.activities), "todo es ruta crítica: no hay red"
-    assert not by_code["EST-001"].critical, "la cadena corta debería tener holgura"
-    assert by_code["CIM-002"].critical, "la cadena larga debería ser crítica"
+    # Step 3's own contribution: the FS edges exist...
+    assert any(link.kind == "FS" for a in schedule.activities for link in a.predecessors), (
+        "ninguna arista dura: el colado no espera a nada"
+    )
+    # ...and they are the binding constraint, not a redundant one. This does
+    # not depend on the assert above having found anything — on purpose, so
+    # it still fails on its own if Step 3's cursor push is ever removed
+    # while some other FS link elsewhere keeps the first assert alive.
+    # CIM-002's SS step-anchor lag off ACE-003 alone allows day 10 (ACE-003
+    # starts day 5, half of its own 10-day duration is 5 more); FS(0) pins
+    # it to ACE-003's own end — day 15 — instead.
+    assert by_code["CIM-002"].start_day >= by_code["ACE-003"].end_day, (
+        f"CIM-002 arranca el día {by_code['CIM-002'].start_day}, antes de que "
+        f"termine su acero (ACE-003) el día {by_code['ACE-003'].end_day}"
+    )
