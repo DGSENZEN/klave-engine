@@ -220,6 +220,29 @@ class CostIntegration(BaseModel):
     overcost_factor: float  # precio de venta / costo directo
 
 
+# Which derived concept serves which pour, and as what. Task 8's hard edges
+# read the same map: one statement of "EST-008 is the formwork for EST-001",
+# used both to order it before the pour and to make the pour wait for it.
+# You form, you reinforce, you pour — so cimbra takes parent - 2 and acero
+# parent - 1, in the gap of nine the catalog already leaves before each parent.
+DERIVADO_DE: dict[str, tuple[str, str]] = {
+    "EST-008": ("EST-001", "cimbra"),
+    "EST-009": ("EST-002", "cimbra"),
+    "EST-010": ("EST-005", "cimbra"),
+    "EST-011": ("EST-013", "cimbra"),
+    "CIM-006": ("CIM-002", "cimbra"),
+    "CIM-009": ("CIM-008", "cimbra"),
+    "ACE-001": ("EST-001", "acero"),
+    "ACE-002": ("EST-005", "acero"),
+    "ACE-003": ("CIM-002", "acero"),
+    "ACE-004": ("EST-002", "acero"),
+    "ACE-005": ("EST-012", "acero"),
+    "ACE-006": ("EST-013", "acero"),
+}
+
+_OFFSET_POR_TIPO = {"cimbra": -2, "acero": -1}
+
+
 class ScheduleLink(BaseModel):
     """One precedence relation, as RLOPSRM art. 224 requires the network to
     state it: which activity comes before, of what kind, with what lag."""

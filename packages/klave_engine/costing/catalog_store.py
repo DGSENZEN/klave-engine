@@ -28,7 +28,13 @@ from klave_engine.costing.instalaciones import (
 )
 from klave_engine.costing.insumos import APU_TEMPLATES, RESOURCES
 from klave_engine.costing.matching import unit_key
-from klave_engine.costing.models import CostingAssumptions, Resource, ResourceType
+from klave_engine.costing.models import (
+    _OFFSET_POR_TIPO,
+    DERIVADO_DE,
+    CostingAssumptions,
+    Resource,
+    ResourceType,
+)
 
 logger = get_logger(__name__)
 
@@ -624,6 +630,12 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '21') "
                     "ON CONFLICT(key) DO UPDATE SET value = '21'"
                 )
+            if version_row is None or int(version_row["value"]) < 22:
+                self._migrate_v22(conn)
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '22') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '22'"
+                )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.
                 conn.execute(
@@ -805,6 +817,30 @@ class CatalogStore:
             logger, "catalog_migrated_v13", db_path=str(self.db_path),
             kept_with_steel_or_cimbra=",".join(kept),
         )
+
+    def _migrate_v22(self, conn: sqlite3.Connection) -> None:
+        """Put acero and cimbra before the pour they serve.
+
+        They sat in blocks appended at the end of their phase — ACE-* at
+        240-245, EST-008..011 at 344-347 — so the programa scheduled the
+        formwork for a column 213 days after that column was poured. The
+        catalog is already spaced by ten, so each derived concept moves into
+        the gap immediately before its parent. Nothing else is reordered.
+
+        Idempotent: the target is computed from the parent's order, which this
+        migration never changes, so re-running writes the same values.
+        """
+        orders = {
+            row["code"]: row["sequence_order"]
+            for row in conn.execute("SELECT code, sequence_order FROM concepts")
+        }
+        for code, (parent, tipo) in DERIVADO_DE.items():
+            if code not in orders or parent not in orders:
+                continue
+            conn.execute(
+                "UPDATE concepts SET sequence_order = ? WHERE code = ?",
+                (orders[parent] + _OFFSET_POR_TIPO[tipo], code),
+            )
 
     def _migrate_v11(self, conn: sqlite3.Connection) -> None:
         """Albañilería y acabados read from the architecture (aplanado,
