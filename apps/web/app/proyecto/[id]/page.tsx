@@ -219,7 +219,13 @@ export default function Resumen() {
         </div>
       )}
 
-      {diff?.available && <RunDiffCard diff={diff} />}
+      {/* Rendered above the gate below, on the blocked project's own page:
+          without the flag it showed the peso delta of the total the gate
+          three lines down is withholding. The family counts stay — those are
+          the reading, and they are the reason to look at this card. */}
+      {diff?.available && (
+        <RunDiffCard diff={diff} blocked={!costs || moneyState(costs) === "blocked"} />
+      )}
 
       {costs && reviews && !verified && (
         <VerificationPath
@@ -429,12 +435,12 @@ function SheetsCard({ id, project }: { id: string; project: ProjectInfo }) {
   );
 }
 
-function RunDiffCard({ diff }: { diff: RunDiff }) {
+function RunDiffCard({ diff, blocked }: { diff: RunDiff; blocked: boolean }) {
   const families = Object.entries(diff.families ?? {}).filter(
     ([, counts]) => counts.prev !== counts.new,
   );
   const totalDelta =
-    diff.prev_grand_total != null && diff.new_grand_total != null
+    !blocked && diff.prev_grand_total != null && diff.new_grand_total != null
       ? diff.new_grand_total - diff.prev_grand_total
       : null;
   const changed =

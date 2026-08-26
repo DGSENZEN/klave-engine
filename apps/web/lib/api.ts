@@ -1489,7 +1489,10 @@ export const aplicarAccion = (
   postJSON<{
     aplicadas: string[];
     total_antes: number | null;
-    total_despues: number;
+    // Null when the verdict withholds money (copilot.py resolves it before
+    // answering). Typed as a bare number, `money(null)` rendered "$0" — an
+    // invented zero, in the one place the gate had already done its job.
+    total_despues: number | null;
     accion: string;
   }>(
     `/copilot/aplicar`,

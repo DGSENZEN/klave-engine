@@ -11,7 +11,7 @@ import {
   type ScheduleActivity,
 } from "@/lib/api";
 import { phaseColor } from "@/lib/phases";
-import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
+import { useCostReport } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
 import { ProgramaFlujoTabs } from "@/components/ProgramaFlujoTabs";
 import { moneyState, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
@@ -32,7 +32,6 @@ import {
 export default function ProgramaPage() {
   const { id } = useParams<{ id: string }>();
   const { costs, error } = useCostReport(id);
-  const reviews = useProjectReviews(id);
   const { actorName, clientId } = useProjectLive();
   const [dateBusy, setDateBusy] = useState(false);
   const [dateError, setDateError] = useState<string | null>(null);
@@ -164,7 +163,7 @@ export default function ProgramaPage() {
         sub="Red de actividades derivada de las cantidades y del rendimiento de cada matriz; holguras y ruta crítica conforme al RLOPSRM art. 224."
       />
       <ProgramaFlujoTabs id={id} />
-      <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
+      <UnverifiedBanner id={id} costs={costs} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Metric

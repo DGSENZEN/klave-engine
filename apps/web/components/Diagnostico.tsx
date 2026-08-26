@@ -223,8 +223,16 @@ function HallazgoCard({
  * Many findings that differ only in which concept they name, as one card
  * with a count. The header states the shared stake; the guidance below it
  * comes from the highest-stake member and renders once; the members
- * themselves stay one click away, named and with their own exposición, so
- * nothing is actually hidden — it is just not printed nineteen times.
+ * themselves stay one click away, named, with their own exposición and with
+ * their own copilot action, so nothing is actually hidden — it is just not
+ * printed nineteen times.
+ *
+ * That last clause used to be false in the way that mattered. The prose is
+ * genuinely shared — one "por qué importa" for nineteen unpriced concepts is
+ * the point of grouping — but an action is not prose: acciones.py emits one
+ * `dar_precio` per finding, addressed to that concept's own code and its own
+ * endpoint. Resolving only `primero`'s left eighteen of nineteen one-click
+ * "Darle precio a SAN-003" buttons with nothing rendering them.
  */
 function HallazgoGrupoCard({
   grupo,
@@ -282,15 +290,32 @@ function HallazgoGrupoCard({
             <CaretDown size={11} weight="bold" className={expanded ? "rotate-180" : ""} />
           </button>
           {expanded && (
-            <ul className="mt-1.5 space-y-1 rounded-lg border border-border/60 bg-surface-2/40 p-2">
-              {grupo.miembros.map((h) => (
-                <li key={h.id} className="flex items-baseline justify-between gap-3 text-sm">
-                  <span className="text-muted">{h.concept_code ?? h.title}</span>
-                  {h.exposicion && (
-                    <span className="tabular text-xs text-faint">{h.exposicion}</span>
-                  )}
-                </li>
-              ))}
+            <ul className="mt-1.5 space-y-2 rounded-lg border border-border/60 bg-surface-2/40 p-2">
+              {grupo.miembros.map((h) => {
+                // Skipped for `primero`: its action is already rendered by the
+                // shared guidance above, and printing it twice is a second
+                // button that does the same thing.
+                const suya = h.id === primero.id
+                  ? undefined
+                  : acciones.find((a) => a.hallazgo_id === h.id);
+                return (
+                  <li key={h.id} className="text-sm">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-muted">{h.concept_code ?? h.title}</span>
+                      {h.exposicion && (
+                        <span className="tabular text-xs text-faint">{h.exposicion}</span>
+                      )}
+                    </div>
+                    {suya && (
+                      <AccionDeKlave
+                        accion={suya}
+                        projectId={projectId}
+                        onApplied={onApplied}
+                      />
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
@@ -326,14 +351,23 @@ export function AccionDeKlave({
   const [abierto, setAbierto] = useState(false);
   const [aplicando, setAplicando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hecho, setHecho] = useState<{ antes: number | null; despues: number } | null>(null);
+  const [hecho, setHecho] = useState<{
+    antes: number | null;
+    despues: number | null;
+  } | null>(null);
 
   if (hecho) {
     return (
       <p className="mt-1.5 flex items-center gap-1.5 text-sm text-success">
         <CheckCircle size={14} weight="fill" className="shrink-0" />
-        Hecho. El total pasó de {hecho.antes != null ? money(hecho.antes) : "—"} a{" "}
-        {money(hecho.despues)}.
+        {hecho.despues == null ? (
+          <>Hecho. El total sigue sin mostrarse hasta que se confirme la unidad del plano.</>
+        ) : (
+          <>
+            Hecho. El total pasó de {hecho.antes != null ? money(hecho.antes) : "—"} a{" "}
+            {money(hecho.despues)}.
+          </>
+        )}
       </p>
     );
   }

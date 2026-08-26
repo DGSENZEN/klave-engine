@@ -7,7 +7,6 @@ import {
   setVerification,
   type CostReport,
   type MoneyGateState,
-  type ProjectReviews,
 } from "@/lib/api";
 import { Button, Callout, Card, Select } from "@/components/ui";
 
@@ -31,11 +30,9 @@ export function moneyState(costs: CostReport | null): MoneyGateState {
 export function UnverifiedBanner({
   id,
   costs,
-  reviews,
 }: {
   id: string;
   costs: CostReport | null;
-  reviews: ProjectReviews | null;
 }) {
   if (moneyState(costs) !== "unverified") return null;
   const units = costs?.drawing_units;

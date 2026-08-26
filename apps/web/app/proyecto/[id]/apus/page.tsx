@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { Calculator, CaretDown, CircleNotch, DownloadSimple, MagnifyingGlass } from "@phosphor-icons/react";
 import { apiMessage, downloadFile, money2, num, type Apu } from "@/lib/api";
 import { RESOURCE_TYPE_LABELS } from "@/lib/format";
-import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
+import { useCostReport } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
 import { moneyState, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
 import {
@@ -35,7 +35,6 @@ const RESOURCE_COLORS: Record<string, string> = {
 export default function ApusPage() {
   const { id } = useParams<{ id: string }>();
   const { costs, error } = useCostReport(id);
-  const reviews = useProjectReviews(id);
   const { actorName, sendActivity } = useProjectLive();
   const [open, setOpen] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -146,7 +145,7 @@ export default function ApusPage() {
           </Callout>
         </div>
       )}
-      <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
+      <UnverifiedBanner id={id} costs={costs} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Metric

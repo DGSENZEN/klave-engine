@@ -7,7 +7,12 @@ from klave_engine.common.config import Settings
 from klave_engine.costing.hallazgos import diagnose
 from klave_engine.costing.models import CostingConfig, CostingOverrides, CostReport
 from klave_engine.costing.plantilla import build_personal_tecnico, plantilla_sugerida
-from klave_engine.costing.presentation import MoneyBasis, resolve_money_state
+from klave_engine.costing.presentation import (
+    MoneyBasis,
+    publishable_stored_total,
+    publishable_total,
+    resolve_money_state,
+)
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
 from klave_engine.costing.reviews import load_reviews
 from klave_engine.detection.frames import SheetFrame
@@ -205,12 +210,15 @@ def recompute(
         )
     actor = clean_actor(x_actor)
     control_dir = root / settings.processed_dir_name
-    # Snapshot the total before recomputing so the broadcast can show the delta.
+    # Snapshot the total before recomputing so the broadcast can show the
+    # delta — through the same authority the presupuesto page obeys, because
+    # ProjectLive renders this payload as "Total $X · ▲ $Y" in the timeline.
+    verification = load_reviews(control_dir).verification
     try:
-        prev_grand_total = store.read_artifact(project_id, "cost_report.json")[
-            "integration"
-        ]["grand_total"]
-    except (HTTPException, KeyError, TypeError):
+        prev_grand_total = publishable_stored_total(
+            store.read_artifact(project_id, "cost_report.json"), verification
+        )
+    except HTTPException:
         prev_grand_total = None
     with project_recompute_lock(project_id):
         current = load_overrides(control_dir)
@@ -249,7 +257,7 @@ def recompute(
             "client_id": clean_client_id(x_client_id),
             "version": overrides.version,
             "direct_cost": report.boq.direct_cost_total,
-            "grand_total": report.integration.grand_total,
+            "grand_total": publishable_total(report, verification),
             "prev_grand_total": prev_grand_total,
             "insumo_overrides": len(overrides.insumo_prices),
         },

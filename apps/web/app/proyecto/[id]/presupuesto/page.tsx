@@ -298,7 +298,7 @@ export default function PresupuestoPage() {
           </Callout>
         </div>
       )}
-      <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
+      <UnverifiedBanner id={id} costs={costs} />
       {blocked && (
         <ExportBlockedDialog
           label={blocked.label}

@@ -15,7 +15,7 @@ them at read time.
 
 from typing import Literal
 
-from klave_engine.costing.models import BillOfQuantities, MoneyBasis
+from klave_engine.costing.models import BillOfQuantities, CostReport, MoneyBasis
 from klave_engine.costing.reviews import VerificationState
 from klave_engine.dxf.units import DrawingUnits
 
@@ -95,3 +95,43 @@ def resolve_money_state(
 def basis_reasons(basis: MoneyBasis | None) -> list[str]:
     """What to tell the reader when money is withheld."""
     return [LEGACY_REASON] if basis is None else list(basis.reasons)
+
+
+def publishable_total(
+    report: CostReport, verification: VerificationState | None
+) -> float | None:
+    """The grand total a surface may broadcast, or ``None`` when it may not.
+
+    The event bus is a money surface like any other: ``ProjectLive`` renders
+    ``Total $X · ▲ $Y`` from a ``costing_updated`` payload straight into the
+    change timeline — on the same project page that shows the gate. Five
+    publishers used to build that payload and only one of them resolved the
+    verdict first, which is worse than none resolving it: the inconsistency
+    reads as deliberate.
+    """
+    if resolve_money_state(report.money_basis, verification) == "blocked":
+        return None
+    return report.integration.grand_total
+
+
+def publishable_stored_total(
+    payload: object, verification: VerificationState | None
+) -> float | None:
+    """Same rule over a ``cost_report.json`` read straight off disk.
+
+    The "before" half of every delta comes from the stored artifact rather
+    than from a model, and a hand-edited or corrupted ``money_basis`` reads
+    as no basis at all — which resolves to blocked, the safe answer — instead
+    of raising in the middle of a broadcast.
+    """
+    if not isinstance(payload, dict):
+        return None
+    try:
+        raw = payload.get("money_basis")
+        basis = MoneyBasis.model_validate(raw) if raw else None
+        if resolve_money_state(basis, verification) == "blocked":
+            return None
+        total = payload["integration"]["grand_total"]
+    except (KeyError, TypeError, ValueError):
+        return None
+    return float(total) if isinstance(total, int | float) else None

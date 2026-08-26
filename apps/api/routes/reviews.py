@@ -12,6 +12,7 @@ from klave_engine.common.ids import short_uuid
 from klave_engine.costing.conteos import ConteosDeProyecto, load_conteos, save_conteos
 from klave_engine.costing.models import CostingOverrides, CostReport
 from klave_engine.costing.omitted import AREA_FAMILIES, FAMILY_TYPES, LINEAR_FAMILIES
+from klave_engine.costing.presentation import publishable_stored_total, publishable_total
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
 from klave_engine.costing.reviews import (
     DetectionReview,
@@ -113,11 +114,14 @@ def _recompute_after_review(
     resulting cost movement."""
     root = store.get_root(project_id)
     control_dir = root / settings.processed_dir_name
+    # The verdict is the same for both ends of the delta: sign-off does not
+    # change mid-request, so it is resolved once from the reviews on disk.
+    verification = load_reviews(control_dir).verification
     try:
-        prev_grand_total = store.read_artifact(project_id, "cost_report.json")[
-            "integration"
-        ]["grand_total"]
-    except (HTTPException, KeyError, TypeError):
+        prev_grand_total = publishable_stored_total(
+            store.read_artifact(project_id, "cost_report.json"), verification
+        )
+    except HTTPException:
         prev_grand_total = None
     overrides = load_overrides(control_dir) or CostingOverrides()
     try:
@@ -150,7 +154,7 @@ def _recompute_after_review(
             "client_id": client_id,
             "version": overrides.version,
             "direct_cost": report.boq.direct_cost_total,
-            "grand_total": report.integration.grand_total,
+            "grand_total": publishable_total(report, verification),
             "prev_grand_total": prev_grand_total,
             "review_action": action,
         },
