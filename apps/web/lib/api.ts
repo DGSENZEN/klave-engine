@@ -442,6 +442,9 @@ export type CostReport = {
     end_date?: string | null;
     /** Días naturales corridos — the unit the contract counts in. */
     calendar_days?: number;
+    /** The crew assumption in words: frentes and cuadrillas per activity,
+     * because nothing in the drawing can say what those should be. */
+    assumptions: string[];
   };
   financial: {
     advance_payment_pct?: number;

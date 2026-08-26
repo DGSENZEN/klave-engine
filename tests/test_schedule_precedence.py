@@ -276,3 +276,15 @@ def test_the_hard_edge_pins_the_pour_past_what_ss_alone_would_allow():
         f"CIM-002 arranca el día {by_code['CIM-002'].start_day}, antes de que "
         f"termine su acero (ACE-003) el día {by_code['ACE-003'].end_day}"
     )
+
+
+def test_the_programa_states_the_crew_assumption_it_is_making():
+    """393 working days for a 546 m² house is what one crew per activity
+    produces. There is no honest source to derive a crew count from — the
+    plantilla de campo is staffing, not cuadrillas — so the assumption is not
+    guessed. It is said out loud, next to the number it produced."""
+    report = _structural_report()
+
+    stated = " ".join(report.schedule.assumptions)
+    assert "frente" in stated.lower()
+    assert "cuadrilla" in stated.lower()

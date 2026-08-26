@@ -305,6 +305,9 @@ class WorkSchedule(BaseModel):
     # art. 31 fr. V): the working days above run on a six-day site week, so
     # reporting them as the contractual plazo understates it by about a fifth.
     calendar_days: int = 0
+    # The crew assumption in words, because it is the single biggest lever on
+    # the plazo and nothing in the drawing can tell us its value.
+    assumptions: list[str] = Field(default_factory=list)
 
     @property
     def critical_path(self) -> list[str]:

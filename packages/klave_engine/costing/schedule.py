@@ -263,6 +263,11 @@ def build_schedule(
         workdays_per_month=config.workdays_per_month,
         phases=phases_present,
     )
+    schedule.assumptions.append(
+        f"{frentes} frente(s) de trabajo con {max(config.crews_per_activity, 1)} "
+        "cuadrilla(s) por actividad. Es el supuesto que más mueve el plazo y el "
+        "plano no puede decirlo: ajústalo si la obra tendrá más frentes."
+    )
     _compute_float(schedule)
     _apply_calendar(schedule, config.start_date)
     return schedule
