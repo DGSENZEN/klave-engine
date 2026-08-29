@@ -9,10 +9,24 @@ aterrice con su gold.
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 
+from klave_engine.detection.disciplines import hidrosanitaria
 from klave_engine.detection.disciplines.vocab import SUITES, DisciplineSuite
 
-REGISTRY: dict[str, DisciplineSuite] = {suite.key: suite for suite in SUITES}
+# Qué suite llenó su hueco ``detect``. Las demás siguen con el cableado por
+# default de suite.py hasta que aterricen con su propio gold.
+_DETECTORS = {
+    "hidraulica": hidrosanitaria.detect,
+    "sanitaria": hidrosanitaria.detect,
+}
+
+SUITES_WIRED: tuple[DisciplineSuite, ...] = tuple(
+    replace(suite, detect=_DETECTORS[suite.key]) if suite.key in _DETECTORS else suite
+    for suite in SUITES
+)
+
+REGISTRY: dict[str, DisciplineSuite] = {suite.key: suite for suite in SUITES_WIRED}
 
 _SEPARATORS = re.compile(r"[_\-./]+")
 
@@ -21,7 +35,7 @@ def route_sheet(sheet_label: str) -> DisciplineSuite:
     """La suite que lee esta hoja. Desconocido = estructura: un «Plano
     1.dwg» pelón es el caso común y merece la lectura completa."""
     words = _SEPARATORS.sub(" ", sheet_label or "")
-    for suite in SUITES:
+    for suite in SUITES_WIRED:
         if suite.name_hint.search(words):
             return suite
     return REGISTRY["estructural"]

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from klave_engine.detection.disciplines.vocab import DisciplineSuite
 from klave_engine.common.ids import IdGenerator
 from klave_engine.common.io import read_json
 from klave_engine.detection.beam_detector import BeamDetectorConfig, detect_beams
@@ -170,6 +171,7 @@ def run_detectors(
     ids: IdGenerator | None = None,
     units: DrawingUnits | None = None,
     structural: bool = True,
+    suite: "DisciplineSuite | None" = None,
 ) -> list[DetectorOutput]:
     """Run every detector in dependency order (grid → columns → footings …).
 
@@ -180,6 +182,10 @@ def run_detectors(
     ids = ids or IdGenerator("det")
     meters = units.to_meters() if units is not None else None
     if not structural:
+        if suite is not None and suite.detect is not None:
+            # La suite de la disciplina llenó su hueco: ella decide qué se
+            # lee en su hoja.
+            return suite.detect(entities, config, ids, meters, frames or [])
         return [
             detect_fixtures(entities, config.fixture, ids, meters),
             detect_runs(entities, config.run, ids, meters, frame_boxes(frames or [])),

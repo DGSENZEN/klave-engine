@@ -389,10 +389,11 @@ def run_full_pipeline(
     detector_ids = IdGenerator("det")
     for source, file_entities in by_file.items():
         file_frames = [f for f in frames if f.source_file == source]
+        ruta_hoja = route_sheet(sheet_names.get(source, source))
         detector_outputs = run_detectors(
             file_entities, SpatialIndex(file_entities), manifest, detector_config,
             frames=file_frames, ids=detector_ids, units=units,
-            structural=reads_as_structure(sheet_names.get(source, source)),
+            structural=ruta_hoja.structural, suite=ruta_hoja,
         )
         for output in detector_outputs:
             result.warnings.extend(output.warnings)

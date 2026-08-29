@@ -62,3 +62,38 @@ def test_el_contenido_vota_su_disciplina(tmp_path):
     doc2.saveas(path2)
     entities2 = DxfParser().parse_file(path2).entities
     assert vote_content(entities2) is None
+
+
+def test_hidrosanitaria_ocupa_el_hueco_detect(tmp_path):
+    """El primer inquilino real del registro: la hoja sanitaria se lee por su
+    suite, y produce exactamente lo que producía el trío por default."""
+    import ezdxf
+    from klave_engine.common.ids import IdGenerator
+    from klave_engine.detection.disciplines import route_sheet
+    from klave_engine.detection.suite import DetectorSuiteConfig, run_detectors
+    from klave_engine.dxf.parser import DxfParser
+    from klave_engine.geometry.spatial_index import SpatialIndex
+    from klave_engine.ingestion.manifest import ProjectManifest
+
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    block = doc.blocks.new(name="DESCSAN1")
+    block.add_line((0, 0), (0.3, 0))
+    msp.add_blockref("DESCSAN1", (5, 5))
+    msp.add_lwpolyline([(0, 0), (12, 0)], dxfattribs={"layer": "00-SANITARIA"})
+    path = tmp_path / "02-05_sanitario.dxf"
+    doc.saveas(path)
+    entities = DxfParser().parse_file(path).entities
+
+    suite = route_sheet("02-05_sanitario.dxf")
+    assert suite.key == "sanitaria" and suite.detect is not None
+
+    manifest = ProjectManifest(project_id="t", project_name="t", root_path=str(tmp_path))
+    config = DetectorSuiteConfig()
+    outputs = run_detectors(
+        entities, SpatialIndex(entities), manifest, config,
+        ids=IdGenerator("d"), units=None, structural=False, suite=suite,
+    )
+    tipos = sorted(d.detection_type.value for o in outputs for d in o.detections)
+    # El trío de siempre: el mueble se detecta; la corrida no (sin unidades).
+    assert "fixture" in tipos
