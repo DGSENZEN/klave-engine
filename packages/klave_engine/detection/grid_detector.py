@@ -61,6 +61,13 @@ class GridDetectorConfig(BaseModel):
     # a bubble gap merges, the gap to the next plan view does not.
     merge_gap_extent_factor: float = 0.02
     merge_gap_length_factor: float = 0.15
+    # Dentro de un marco no hay "siguiente vista" que proteger: el hueco de
+    # burbuja/etiqueta medido en planos reales es ~2 m en un marco de 44
+    # (Marina), así que la tolerancia de marco es más generosa que la de
+    # archivo. Igual el doble trazo del mismo eje (≤ 0.16 m de desfase
+    # medido) contra la colineal de archivo; los ejes reales van a metros.
+    merge_gap_frame_factor: float = 0.06
+    collinear_tolerance_frame_factor: float = 0.005
 
 
 class _Fragment(BaseModel):
@@ -157,12 +164,16 @@ def _nearest_label(
 
 
 def _merge_fragments(
-    fragments: list[_Fragment], extent_dim: float, config: GridDetectorConfig
+    fragments: list[_Fragment],
+    extent_dim: float,
+    config: GridDetectorConfig,
+    gap_extent_factor: float | None = None,
+    collinear_factor: float | None = None,
 ) -> list[_Axis]:
     """Collinear fragments → axes. Clusters by cross-axis coordinate, then
     merges along the axis while gaps stay bubble-sized."""
-    tolerance = extent_dim * config.collinear_tolerance_factor
-    gap_floor = extent_dim * config.merge_gap_extent_factor
+    tolerance = extent_dim * (collinear_factor or config.collinear_tolerance_factor)
+    gap_floor = extent_dim * (gap_extent_factor or config.merge_gap_extent_factor)
     axes: list[_Axis] = []
     ordered = sorted(fragments, key=lambda f: f.coordinate)
     cluster: list[_Fragment] = []
@@ -383,7 +394,13 @@ def detect_grid(
     for (_source, axis_kind, frame_id), members in groups.items():
         local = _local_extent(frame_id)
         extent_dim = bbox_width(local) if axis_kind == "horizontal" else bbox_height(local)
-        merged = _merge_fragments(members, extent_dim, config)
+        merged = _merge_fragments(
+            members, extent_dim, config,
+            gap_extent_factor=config.merge_gap_frame_factor if frame_id is not None else None,
+            collinear_factor=(
+                config.collinear_tolerance_frame_factor if frame_id is not None else None
+            ),
+        )
         for axis in merged:
             if axis.label is None:
                 found = _nearest_label(

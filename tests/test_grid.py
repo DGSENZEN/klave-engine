@@ -122,3 +122,32 @@ def test_ejes_por_marco_en_hoja_mosaicada(tmp_path):
     for det in ejes(con_marcos):
         x0, _, x1, _ = det.bbox
         assert x1 <= 40.5 or x0 >= 59.5
+
+
+def test_dentro_de_un_marco_el_gap_de_burbuja_se_funde():
+    # Marina, medido: los fragmentos reales de un mismo eje dentro de un
+    # marco quedan separados por ~1.9 m (el hueco de la burbuja/etiqueta).
+    # Dentro del marco la tolerancia es de marco (0.06); sin marcos, la de
+    # archivo (0.02) no se toca — el gold la protege.
+    from klave_engine.detection.grid_detector import _Fragment, _merge_fragments
+
+    def frag(x0, x1, y=5.0):
+        return _Fragment(
+            entity_id=f"e{x0}-{y}", source_file="f.dxf", layer="EJES", axis="horizontal",
+            start=(x0, y), end=(x1, y), length=x1 - x0, frame_id="frame_00",
+        )
+
+    config = GridDetectorConfig()
+    # Fragmentos cortos con gap de 1.9 y un doble trazo desfasado 0.15 (los
+    # dos casos medidos en Marina: ni el piso de archivo 0.02×44=0.88 ni la
+    # tolerancia colineal 0.002×44=0.088 los alcanzan).
+    fragments = [frag(2.0, 10.0), frag(11.9, 20.0, y=5.15)]
+    con_factores_de_marco = _merge_fragments(
+        fragments, 44.0, config,
+        gap_extent_factor=config.merge_gap_frame_factor,
+        collinear_factor=config.collinear_tolerance_frame_factor,
+    )
+    sin_factores = _merge_fragments(fragments, 44.0, config)
+    assert len(con_factores_de_marco) == 1
+    assert len(con_factores_de_marco[0].fragments) == 2
+    assert len(sin_factores) == 2  # las tolerancias de archivo no lo funden
