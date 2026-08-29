@@ -20,6 +20,7 @@ from shapely.geometry import LineString
 
 from klave_engine.common.ids import IdGenerator
 from klave_engine.detection.confidence import GRID_LABEL, SEMANTIC_LAYER, model_for
+from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.results import (
     DetectionType,
     DetectorOutput,
@@ -67,6 +68,9 @@ class _Fragment(BaseModel):
     source_file: str
     layer: str
     axis: str  # "horizontal" | "vertical"
+    # The sheet frame this fragment lives in: thresholds, label radius and
+    # merging are measured against the frame, never against a tiled file.
+    frame_id: str | None = None
     start: tuple[float, float]
     end: tuple[float, float]
     length: float
@@ -238,6 +242,7 @@ def detect_grid(
     config: GridDetectorConfig | None = None,
     text_config: TextPatternConfig | None = None,
     detection_ids: IdGenerator | None = None,
+    frames: list[SheetFrame] | None = None,
 ) -> DetectorOutput:
     config = config or GridDetectorConfig()
     text_config = text_config or TextPatternConfig()
@@ -249,7 +254,25 @@ def detect_grid(
         output.warnings.append("Empty drawing: no entities to detect grid lines in")
         return output
 
-    label_radius = bbox_diagonal(extent) * config.label_search_radius_factor
+    # On a file of tiled sheet frames the file extent is the mosaic, not the
+    # sheet: every relative threshold reads against the fragment's own frame.
+    frame_list = list(frames or [])
+
+    def _local_extent(frame_id: str | None) -> BBox:
+        for f in frame_list:
+            if f.frame_id == frame_id:
+                return f.bbox
+        return extent
+
+    def _frame_of(start: tuple[float, float], end: tuple[float, float]) -> str | None:
+        mid = ((start[0] + end[0]) / 2, (start[1] + end[1]) / 2)
+        for f in frame_list:
+            if f.contains(mid):
+                return f.frame_id
+        return None
+
+    def _radius(frame_id: str | None) -> float:
+        return bbox_diagonal(_local_extent(frame_id)) * config.label_search_radius_factor
     grid_label_texts = [
         e
         for e in entities
@@ -264,10 +287,12 @@ def detect_grid(
         start, end = endpoints
         angle = segment_angle_degrees(start, end)
         length = line_length(start, end)
+        frame_id = _frame_of(start, end)
+        local = _local_extent(frame_id)
         if angles_parallel(angle, 0.0, config.angle_tolerance_deg):
-            orientation, extent_dim = "horizontal", bbox_width(extent)
+            orientation, extent_dim = "horizontal", bbox_width(local)
         elif angles_parallel(angle, 90.0, config.angle_tolerance_deg):
-            orientation, extent_dim = "vertical", bbox_height(extent)
+            orientation, extent_dim = "vertical", bbox_height(local)
         else:
             continue
         if extent_dim <= 0 or length < config.min_relative_length * extent_dim:
@@ -281,6 +306,7 @@ def detect_grid(
                 start=start,
                 end=end,
                 length=length,
+                frame_id=frame_id,
             )
         )
 
@@ -288,7 +314,9 @@ def detect_grid(
     # beside an axis cannot borrow the axis's letter.
     claims: dict[str, tuple[float, _Fragment, NormalizedEntity]] = {}
     for fragment in fragments:
-        found = _nearest_label(fragment.start, fragment.end, grid_label_texts, label_radius)
+        found = _nearest_label(
+            fragment.start, fragment.end, grid_label_texts, _radius(fragment.frame_id)
+        )
         if found is None or not found[1].text:
             continue
         distance, text_entity = found
@@ -316,16 +344,20 @@ def detect_grid(
 
     # Merge per sheet and orientation, then label the gaps by sequence.
     axes: list[_Axis] = []
-    groups: dict[tuple[str, str], list[_Fragment]] = {}
+    groups: dict[tuple[str, str, str | None], list[_Fragment]] = {}
     for fragment in fragments:
-        groups.setdefault((fragment.source_file, fragment.axis), []).append(fragment)
-    for (_source, axis_kind), members in groups.items():
-        extent_dim = bbox_width(extent) if axis_kind == "horizontal" else bbox_height(extent)
+        groups.setdefault(
+            (fragment.source_file, fragment.axis, fragment.frame_id), []
+        ).append(fragment)
+    for (_source, axis_kind, frame_id), members in groups.items():
+        local = _local_extent(frame_id)
+        extent_dim = bbox_width(local) if axis_kind == "horizontal" else bbox_height(local)
         merged = _merge_fragments(members, extent_dim, config)
         for axis in merged:
             if axis.label is None:
                 found = _nearest_label(
-                    axis.start, axis.end, grid_label_texts, label_radius, exclude=used_labels
+                    axis.start, axis.end, grid_label_texts, _radius(frame_id),
+                    exclude=used_labels,
                 )
                 if found is not None and found[1].text:
                     axis.label = found[1].text.strip()

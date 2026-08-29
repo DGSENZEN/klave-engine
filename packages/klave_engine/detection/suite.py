@@ -176,7 +176,7 @@ def run_detectors(
             # las piezas se cuentan igual: es su partida.
             detect_openings(entities, [], config.opening, ids, meters),
         ]
-    grid = detect_grid(entities, index, config.grid, config.text_patterns, ids)
+    grid = detect_grid(entities, index, config.grid, config.text_patterns, ids, frames=frames)
     columns = detect_columns(entities, index, grid, config.column, config.text_patterns, ids)
     footings = detect_footings(entities, index, columns, config.footing, ids)
     beams = detect_beams(entities, index, config.beam, config.text_patterns, ids)

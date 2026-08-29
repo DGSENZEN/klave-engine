@@ -71,3 +71,49 @@ def test_without_grid_layer_unlabeled_long_lines_still_count(tmp_path):
     auto = next(d for d in output.detections if d.label == "H1")
     assert auto.properties["label_source"] == "auto"
     assert auto.evidence.notes[0].startswith("No grid label found")  # taxonomy relies on it
+
+
+def test_ejes_por_marco_en_hoja_mosaicada(tmp_path):
+    # Dos marcos de 40×30 mosaicados en model space (como el estructural de
+    # Marina): los ejes miden ~26 m — la mitad del marco, pero una fracción
+    # del extent del archivo. Sin marcos no pasan el umbral; con marcos, sí.
+    from klave_engine.detection.frames import SheetFrame
+
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    for ox in (0.0, 60.0):  # dos plantas lado a lado
+        for i in range(3):
+            x = ox + 5 + i * 12
+            msp.add_line((x, 2), (x, 28), dxfattribs={"layer": "EJES"})
+            msp.add_text(str(i + 1), height=1.0).set_placement((x, -1))
+        for j in range(2):
+            y = 5 + j * 18
+            msp.add_line((ox + 2, y), (ox + 38, y), dxfattribs={"layer": "EJES"})
+            msp.add_text(chr(65 + j), height=1.0).set_placement((ox - 2, y))
+    path = tmp_path / "mosaico.dxf"
+    doc.saveas(path)
+
+    drawing = DxfParser().parse_file(path)
+    index = SpatialIndex(drawing.entities)
+    frames = [
+        SheetFrame(frame_id="frame_00", bbox=(0.0, 0.0, 40.0, 30.0),
+                   source_file=drawing.entities[0].source_file, code="ES-000"),
+        SheetFrame(frame_id="frame_01", bbox=(60.0, 0.0, 100.0, 30.0),
+                   source_file=drawing.entities[0].source_file, code="ES-100"),
+    ]
+    config = GridDetectorConfig()  # el default 0.5 relativo: el caso real
+
+    sin_marcos = detect_grid(drawing.entities, index, config)
+    con_marcos = detect_grid(drawing.entities, index, config, frames=frames)
+
+    def ejes(output):
+        return [d for d in output.detections if d.detection_type.value == "grid_line"]
+
+    # La caracterización del bug: contra el extent del archivo ningún eje
+    # horizontal de 36 m pasa (umbral ~51 m); contra su marco, todos pasan.
+    assert len(ejes(sin_marcos)) < len(ejes(con_marcos))
+    assert len(ejes(con_marcos)) == 10  # (3 verticales + 2 horizontales) × 2 marcos
+    # Los ejes de marcos distintos nunca se funden en uno.
+    for det in ejes(con_marcos):
+        x0, _, x1, _ = det.bbox
+        assert x1 <= 40.5 or x0 >= 59.5
