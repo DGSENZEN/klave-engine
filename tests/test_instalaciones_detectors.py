@@ -384,3 +384,38 @@ def test_sin_rotulo_la_corrida_dice_que_le_falta_el_diametro(tmp_path):
     notas = " ".join(salida.detections[0].evidence.notes)
     assert "sin rótulo de diámetro" in notas
     assert "el precio no se puede fijar solo" in notas
+
+
+def test_la_corrida_se_parte_donde_cambia_el_diametro(tmp_path):
+    """Un albañal va de 2" a 4" a lo largo: son dos conceptos distintos, no
+    una tubería con el diámetro del rótulo más repetido."""
+    def build(doc):
+        msp = doc.modelspace()
+        # 10 m con rótulo de 2" y 20 m con rótulo de 4", en la misma capa.
+        msp.add_line((0, 0), (10, 0), dxfattribs={"layer": "00-SANITARIA"})
+        msp.add_line((10, 0), (30, 0), dxfattribs={"layer": "00-SANITARIA"})
+        msp.add_text('2"', height=0.3).set_placement((5, 0.5))
+        msp.add_text('4"', height=0.3).set_placement((20, 0.5))
+
+    salida = detect_runs(_entities(tmp_path, "d.dxf", build), None, IdGenerator("d"), 1.0, [])
+    tramos = sorted(
+        (d for d in salida.detections),
+        key=lambda d: d.properties.get("length_m", 0.0),
+    )
+    assert len(tramos) == 2
+    corto, largo = tramos
+    assert corto.properties["length_m"] == 10.0 and corto.properties["diametro_mm"] == 51
+    assert largo.properties["length_m"] == 20.0 and largo.properties["diametro_mm"] == 102
+    assert all(t.properties["run_family"] == "sanitaria" for t in tramos)
+    assert any("dos diámetros" in n or "2 diámetros" in n for t in tramos for n in t.evidence.notes)
+
+
+def test_un_solo_diametro_no_parte_nada(tmp_path):
+    def build(doc):
+        msp = doc.modelspace()
+        msp.add_line((0, 0), (30, 0), dxfattribs={"layer": "00-SANITARIA"})
+        msp.add_text('4"', height=0.3).set_placement((15, 0.5))
+
+    salida = detect_runs(_entities(tmp_path, "u1.dxf", build), None, IdGenerator("d"), 1.0, [])
+    assert len(salida.detections) == 1
+    assert salida.detections[0].properties["length_m"] == 30.0

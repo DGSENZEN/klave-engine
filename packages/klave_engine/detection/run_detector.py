@@ -239,6 +239,49 @@ def detect_runs(
             cortas += 1
             continue
         familia, disciplina, que_es = regla.familia, regla.disciplina, regla.que_es
+        tramos = _tramos_por_diametro(grupo, etiquetas, meters_factor, regla.familia)
+        if len(tramos) >= 2:
+            # La red cambia de diámetro a lo largo: cada tramo es un concepto
+            # distinto, con sus propios metros — no una tubería entera con el
+            # diámetro del rótulo más repetido.
+            for spec_t, diametro_t, du_t, segs_t in tramos:
+                metros_t = round(du_t * meters_factor, 2)
+                if metros_t <= 0:
+                    continue
+                material_t = normaliza_material(spec_t) or normaliza_material(layer)
+                output.detections.append(
+                    make_detection(
+                        detection_ids.next(),
+                        DetectionType.pipe_run,
+                        layer,
+                        grupo.bbox,
+                        0.78,
+                        grupo.entities,
+                        "layer_run",
+                        [
+                            f"{metros_t:,.2f} m de {que_es} en «{layer}», tramo de "
+                            f"{diametro_t[1]}",
+                            f"La capa trae {len(tramos)} diámetros rotulados; cada "
+                            "segmento se adjudicó al rótulo legible más cercano y los "
+                            "sin rótulo se sumaron al tramo mayor.",
+                        ],
+                        {
+                            "run_family": familia,
+                            "discipline": disciplina,
+                            "layer": layer,
+                            "estimated_length": round(du_t, 4),
+                            "length_m": metros_t,
+                            "segments": segs_t,
+                            "spec": spec_t,
+                            "diametro_mm": diametro_t[0],
+                            "diametro": diametro_t[1],
+                            "material": material_t[1] if material_t else "",
+                            "material_clave": material_t[0] if material_t else "",
+                        },
+                        grupo.source_file,
+                    )
+                )
+            continue
         spec = _spec_de(grupo, etiquetas, meters_factor, regla.familia)
         diametro = normaliza_diametro(spec)
         # El material sale del rótulo si lo dice, y si no, del nombre de la
@@ -365,6 +408,84 @@ def _spec_de(
     if not cerca:
         return ""
     return _pedazo_de(cerca.most_common(1)[0][0], familia)
+
+
+def _tramos_por_diametro(
+    grupo: "_Acumulado",
+    etiquetas: list[tuple[tuple[float, float], str]],
+    meters_factor: float,
+    familia: str,
+) -> list[tuple[str, tuple[int, str], float, int]]:
+    """Los tramos de una corrida, partidos por diámetro nominal.
+
+    Cada segmento del trazo se adjudica al rótulo legible más cercano dentro
+    del alcance — con los mismos filtros de sistema y plausibilidad que
+    ``_spec_de`` — y los metros se suman por diámetro. Los segmentos sin
+    rótulo cerca se van al tramo con más metros: partirlos sería inventar
+    dónde cambia el diámetro. Con menos de dos diámetros rotulados no hay
+    nada que partir y se regresa vacío (el camino de siempre decide).
+
+    Regresa ``[(spec, (mm, texto), metros_du, segmentos)]``.
+    """
+    if not etiquetas or not grupo.segments_xy:
+        return []
+    alcance = _SPEC_REACH_M / meters_factor if meters_factor else _SPEC_REACH_M
+    legibles: list[tuple[tuple[float, float], str, tuple[int, str]]] = []
+    for (tx, ty), texto in etiquetas:
+        nombrados = _sistemas_nombrados(texto)
+        if nombrados and familia not in nombrados:
+            continue
+        if not nombrados and not _diametro_plausible(texto, familia):
+            continue
+        diametro = normaliza_diametro(_pedazo_de(texto, familia))
+        if diametro is None:
+            continue
+        legibles.append(((tx, ty), texto, diametro))
+    if len({d[0] for _p, _t, d in legibles}) < 2:
+        return []
+
+    largo_por_dia: dict[int, float] = {}
+    segs_por_dia: dict[int, int] = {}
+    texto_por_dia: dict[int, Counter] = {}
+    dia_por_mm: dict[int, tuple[int, str]] = {}
+    sin_rotulo = 0.0
+    sin_rotulo_segs = 0
+    for ax, ay, bx, by in grupo.segments_xy:
+        largo = math.dist((ax, ay), (bx, by))
+        if largo <= 0:
+            continue
+        mx, my = (ax + bx) / 2, (ay + by) / 2
+        mejor: tuple[float, tuple[int, str], str] | None = None
+        for (tx, ty), texto, diametro in legibles:
+            d = _distancia_a_segmento(tx, ty, (ax, ay, bx, by))
+            if d <= alcance and (mejor is None or d < mejor[0]):
+                mejor = (d, diametro, texto)
+        if mejor is None:
+            sin_rotulo += largo
+            sin_rotulo_segs += 1
+            continue
+        mm = mejor[1][0]
+        largo_por_dia[mm] = largo_por_dia.get(mm, 0.0) + largo
+        segs_por_dia[mm] = segs_por_dia.get(mm, 0) + 1
+        texto_por_dia.setdefault(mm, Counter())[_pedazo_de(mejor[2], familia)] += 1
+        dia_por_mm[mm] = mejor[1]
+    if len(largo_por_dia) < 2:
+        return []
+    mayor = max(largo_por_dia, key=lambda mm: largo_por_dia[mm])
+    largo_por_dia[mayor] += sin_rotulo
+    segs_por_dia[mayor] += sin_rotulo_segs
+    # segments_xy guarda a lo más 16 tramos por entidad: lo repartido se
+    # escala para que la suma dé los metros reales del grupo.
+    cubierto = sum(largo_por_dia.values())
+    escala = grupo.length_du / cubierto if cubierto else 1.0
+    return sorted(
+        (
+            (texto_por_dia[mm].most_common(1)[0][0], dia_por_mm[mm],
+             largo_por_dia[mm] * escala, segs_por_dia[mm])
+            for mm in largo_por_dia
+        ),
+        key=lambda tramo: -tramo[2],
+    )
 
 
 def _distancia_a_segmento(

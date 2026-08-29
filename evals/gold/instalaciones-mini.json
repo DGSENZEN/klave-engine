@@ -6,7 +6,7 @@
     "04-08_aa_l_04_-_26_01_15.dxf": "20a0c58a9e57969a37eafca0bcd8ee41258a363881793097e1348f786632c4b1"
   },
   "status": "baseline",
-  "captured_at": "2026-08-29T04:45:54.871314Z",
+  "captured_at": "2026-08-29T05:12:40.433254Z",
   "labels": {
     "fixture": [
       "MUE-01",
@@ -139,7 +139,21 @@
       "COR-17",
       "COR-18",
       "COR-19",
-      "COR-20"
+      "COR-20",
+      "COR-21",
+      "COR-22",
+      "COR-23",
+      "COR-24",
+      "COR-25",
+      "COR-26",
+      "COR-27",
+      "COR-28",
+      "COR-29",
+      "COR-30",
+      "COR-31",
+      "COR-32",
+      "COR-33",
+      "COR-34"
     ],
     "opening": [
       "VAN-01"
@@ -176,7 +190,7 @@
         "note": ""
       },
       "AIR-001": {
-        "quantity": 52.218,
+        "quantity": 52.219,
         "unit": "M",
         "tolerance_pct": 10.0,
         "source": "engine",
