@@ -16,6 +16,8 @@ from collections import defaultdict
 
 from pydantic import BaseModel, Field
 
+from klave_engine.detection.disciplines import route_sheet
+from klave_engine.detection.disciplines.vocab import SUITES
 from klave_engine.detection.instalaciones_symbols import es_trazo_de_simbolo
 from klave_engine.detection.frames import SheetFrame
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
@@ -34,21 +36,8 @@ _ANNOTATION_LAYER_RE = re.compile(
     r"SIMBOLOG|LEYENDA|HATCH|ACHUR|^0$",
     re.I,
 )
-_DISCIPLINE_HINTS: list[tuple[str, re.Pattern[str]]] = [
-    ("hidraulica", re.compile(r"HIDR|AGUA|HPIP|CPIP|H\.?F\.?|H\.?C\.?", re.I)),
-    ("sanitaria", re.compile(r"SANIT|PLUV|DREN|ALBA[ÑN]AL", re.I)),
-    ("electrica", re.compile(r"ELEC|LUMIN|LAMP|CONTACT|APAG|TABLERO", re.I)),
-    ("gas", re.compile(r"\bGAS\b|PEAD", re.I)),
-    ("aire", re.compile(r"AIRE|\bAA\b|DUCTO|CLIMA|HVAC|MINISPLIT|COND", re.I)),
-    ("cctv", re.compile(r"CCTV|CAMARA|CÁMARA|SEGURIDAD|SENSOR|ALARMA", re.I)),
-    ("canceleria", re.compile(r"CANCEL|VENTANA|PUERTA|ALUM|HERRER", re.I)),
-    ("acabados", re.compile(r"ACABAD|\bPISOS?\b|PLAFON|PINTURA|AZULEJO|LAMBR", re.I)),
-    ("carpinteria", re.compile(r"CARPINT|MADERA|CLOSET|COCINA", re.I)),
-    # La subida slugifica y pierde la ñ: «albañilería» llega como "alba iler a".
-    ("albanileria", re.compile(r"ALBA[ÑN]ILER|ALBA\W?ILER", re.I)),
-    ("indice", re.compile(r"\bINDICE\b|ÍNDICE|PORTADA|CAR[ÁA]TULA", re.I)),
-    ("estructural", re.compile(r"EST|TRABE|LOSA|ZAPATA|CASTILL|COLUMN|CIMENT", re.I)),
-]
+# El ruteo por disciplina vive en el registro (detection/disciplines);
+# aquí quedan solo los delegados que el resto del motor ya consumía.
 # Element tags: one or two letters, a dash or nothing, one to three digits,
 # an optional letter — V-1, P-12, VA-3, C2, M-1A. Not NPT levels or axes.
 _TAG_RE = re.compile(r"^[A-Z]{1,2}-?\d{1,3}[A-Z]?$")
@@ -120,27 +109,20 @@ class Inventory(BaseModel):
 def guess_discipline(text: str) -> str | None:
     """Discipline named by a file name or by layer/block words. Uploaded
     files arrive slugified ("03-09_gas_l_04.dwg"), so separators become
-    spaces before word-boundary hints like GAS or AA are tried."""
+    spaces before word-boundary hints like GAS or AA are tried. None cuando
+    ningún vocabulario del registro reconoce el texto."""
     words = re.sub(r"[_\-./]+", " ", text)
-    for key, pattern in _DISCIPLINE_HINTS:
-        if pattern.search(words):
-            return key
+    for suite in SUITES:
+        if suite.name_hint.search(words):
+            return suite.key
     return None
-
-
-# Sheets whose content is symbols and runs, never zapatas or trabes: the
-# structural detectors stay off them, the levantamiento reads them.
-NON_STRUCTURAL = frozenset(
-    {"hidraulica", "sanitaria", "electrica", "gas", "aire", "cctv", "canceleria",
-     "carpinteria", "acabados", "albanileria", "indice"}
-)
 
 
 def reads_as_structure(sheet_label: str) -> bool:
     """Whether the structural detectors should run on a sheet: yes unless its
     name says it is an installations/finishes sheet. Unknown names count
     as structure — a bare 'Plano 1.dwg' is the common case."""
-    return guess_discipline(sheet_label) not in NON_STRUCTURAL
+    return route_sheet(sheet_label).structural
 
 
 def _area(entity: NormalizedEntity) -> float:

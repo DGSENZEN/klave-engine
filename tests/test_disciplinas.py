@@ -15,3 +15,23 @@ def test_albanileria_y_el_indice_no_son_estructura():
     # un nombre desconocido sigue contando como estructura.
     assert reads_as_structure("02-02_estructural_l_04_-_26_01_15.dwg") is True
     assert reads_as_structure("Plano 1.dwg") is True
+
+
+def test_el_registro_reproduce_el_ruteo_de_hoy():
+    from klave_engine.detection.disciplines import REGISTRY, route_sheet
+
+    # La tabla de la casa: nombre → disciplina → ¿detectores estructurales?
+    tabla = [
+        ("02-02_estructural_l_04.dwg", "estructural", True),
+        ("Plano 1.dwg", "estructural", True),          # desconocido = estructura
+        ("02-05_sanitario_l_04.dwg", "sanitaria", False),
+        ("03-09_gas_l_04.dwg", "gas", False),
+        ("03-03_alba_iler_a.dwg", "albanileria", False),
+        ("01-00_indice_l_04.dwg", "indice", False),
+        ("04-08_aa_l_04.dwg", "aire", False),
+    ]
+    for nombre, key, estructural in tabla:
+        suite = route_sheet(nombre)
+        assert suite.key == key, nombre
+        assert suite.structural is estructural, nombre
+    assert "estructural" in REGISTRY and REGISTRY["estructural"].structural
