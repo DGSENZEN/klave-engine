@@ -594,7 +594,7 @@
         "note": ""
       },
       "EST-001": {
-        "quantity": 17.436,
+        "quantity": 12.422,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",

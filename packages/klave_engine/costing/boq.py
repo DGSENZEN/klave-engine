@@ -387,6 +387,33 @@ def _scoped_result(
                 if n_assumed == 0:
                     total.supersedes.add(FALLBACK_SECTION)
                 return total
+        super_views = [
+            v for v in segmentation.superstructure_views() if by_view.get(v.view_id)
+        ]
+        if len(super_views) >= 2:
+            # Sin alturas declaradas, cada planta existe de todos modos: un
+            # castillo de PB y uno de PA son piezas distintas. Se suma cada
+            # planta con la altura supuesta — quedarse con la más poblada
+            # descartaba a las demás.
+            total = _LineResult(0.0, 0.0, [], [])
+            split = {}
+            n_declared = n_measured = n_assumed = 0
+            for view in super_views:
+                part = _column_volume(by_view[view.view_id], meters_factor, assumptions, None)
+                total.quantity = round(total.quantity + part.quantity, 6)
+                total.raw += part.raw
+                total.dets.extend(part.dets)
+                split[titles[view.view_id]] = part.quantity
+                n_declared += part.sections[0]
+                n_measured += part.sections[1]
+                n_assumed += part.sections[2]
+            total.notes = [
+                f"{len(super_views)} plantas sumadas × altura supuesta "
+                f"{assumptions.column_height_m:.2f} m (el plano no declara niveles)",
+                _section_note(n_declared, n_measured, n_assumed, assumptions),
+            ]
+            total.by_view = split
+            return total
         canonical = max(by_view.values(), key=len, default=[])
         return _column_volume(canonical, meters_factor, assumptions, segmentation.total_height())
 
@@ -613,6 +640,16 @@ def generate_bill_of_quantities(
 
         if concept.rule.opening_deduction and result.quantity > 0:
             _deduct_openings(concept, result, meters_factor, assumptions)
+
+        # La nota del renglón no basta cuando el alcance entero se degradó:
+        # cimentación calculada sobre todas las plantas se avisa una vez.
+        if any("Sin planta de cimentación identificada" in n for n in result.notes) and not any(
+            "Sin planta de cimentación" in w for w in boq.warnings
+        ):
+            boq.warnings.append(
+                "Sin planta de cimentación identificada: los conceptos de cimentación "
+                "se calcularon sobre todas las plantas."
+            )
 
         if result.quantity <= 0:
             # A concept whose element type the drawing does not contain at
