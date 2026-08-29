@@ -159,6 +159,19 @@ def familia_de_bloque(block_name: str, layer: str) -> SimboloRegla | None:
     return None
 
 
+def es_trazo_de_simbolo(entity) -> bool:
+    """Linework que salió de reventar un bloque que la tabla reconoce como
+    mueble o salida: la pieza ya se contó por su nombre, así que sus trazos
+    no suman metros, áreas ni pares de muro. Un bloque que la tabla no
+    reconoce (un xref, un contenedor) conserva su geometría contable."""
+    props = getattr(entity, "properties", None) or {}
+    if not props.get("parent_insert"):
+        return False
+    return familia_de_bloque(
+        getattr(entity, "block_name", "") or "", getattr(entity, "layer", "") or ""
+    ) is not None
+
+
 def familia_de_capa(layer: str) -> CorridaRegla | None:
     """La familia de una capa de trazo, o None si no es de instalaciones."""
     if not layer or FONDO.search(layer):

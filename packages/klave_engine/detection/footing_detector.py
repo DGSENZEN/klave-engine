@@ -5,6 +5,7 @@ import re
 from pydantic import BaseModel, Field
 
 from klave_engine.common.ids import IdGenerator
+from klave_engine.detection.instalaciones_symbols import es_trazo_de_simbolo
 from klave_engine.detection.confidence import (
     HIGH_RECT,
     NEAR_COLUMN,
@@ -83,6 +84,7 @@ def detect_footings(
         e for e in entities
         if e.entity_type == EntityType.polyline and e.is_closed and e.points
         and len(e.points) >= 3 and not layer_matches(e.layer, config.avoid_layer_hints)
+        and not es_trazo_de_simbolo(e)
     ]
     piles = [e for e in closed if layer_matches(e.layer, config.pile_layer_hints)]
     if piles:

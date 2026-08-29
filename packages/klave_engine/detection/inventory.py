@@ -16,6 +16,7 @@ from collections import defaultdict
 
 from pydantic import BaseModel, Field
 
+from klave_engine.detection.instalaciones_symbols import es_trazo_de_simbolo
 from klave_engine.detection.frames import SheetFrame
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.dxf.units import DrawingUnits
@@ -229,6 +230,10 @@ def build_inventory(
             elif entity.entity_type in (EntityType.line, EntityType.polyline, EntityType.arc):
                 if _ANNOTATION_LAYER_RE.search(entity.layer):
                     continue
+                # El trazo interno de un mueble ya contado por su bloque no
+                # suma metros ni áreas al levantamiento de la capa.
+                if es_trazo_de_simbolo(entity):
+                    continue
                 if entity.entity_type == EntityType.polyline and entity.is_closed:
                     region = _area(entity)
                     if region > 0:
@@ -258,6 +263,8 @@ def build_inventory(
             elif entity.entity_type == EntityType.hatch and not _ANNOTATION_LAYER_RE.search(
                 entity.layer
             ):
+                if es_trazo_de_simbolo(entity):
+                    continue
                 region = _area(entity)
                 if region > 0:
                     area = areas.get(entity.layer)

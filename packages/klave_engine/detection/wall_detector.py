@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from shapely.geometry import LineString
 
 from klave_engine.common.ids import IdGenerator
+from klave_engine.detection.instalaciones_symbols import es_trazo_de_simbolo
 from klave_engine.detection.confidence import GEOM_PLAUSIBLE, SEMANTIC_LAYER, model_for
 from klave_engine.detection.results import (
     DetectionType,
@@ -193,6 +194,7 @@ def detect_walls(
         and e.points
         and line_length(e.points[0], e.points[1]) >= config.min_length
         and not layer_matches(e.layer, config.avoid_layer_hints)
+        and not es_trazo_de_simbolo(e)
     }
     # Authority: with wall layers on the sheet, other layers do not pair.
     if config.prefer_semantic_layers:

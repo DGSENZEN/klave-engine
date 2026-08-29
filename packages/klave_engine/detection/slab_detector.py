@@ -3,6 +3,7 @@
 from pydantic import BaseModel, Field
 
 from klave_engine.common.ids import IdGenerator
+from klave_engine.detection.instalaciones_symbols import es_trazo_de_simbolo
 from klave_engine.detection.confidence import (
     IS_HATCH,
     LARGE_AREA,
@@ -73,6 +74,8 @@ def detect_slabs(
     skipped_frames = 0
     for entity in entities:
         if layer_matches(entity.layer, config.avoid_layer_hints):
+            continue
+        if es_trazo_de_simbolo(entity):
             continue
         features: dict[str, float] = {}
         if entity.entity_type == EntityType.hatch:
