@@ -91,11 +91,28 @@ class VerificationState(BaseModel):
     assumptions_confirmed_by: str = ""
 
 
+class GateState(BaseModel):
+    """La firma que abre un nodo del tablero: quién y cuándo, nada más.
+
+    El candado es del administrador (o del owner del proyecto): un nodo
+    aprobado se abre para todos; revocarlo lo vuelve a cerrar. La entrada
+    del audit_log lleva la historia; aquí vive solo el estado vigente."""
+
+    approved_at: datetime | None = None
+    approved_by: str = ""
+
+
+# Los nodos del tablero que llevan candado, en su orden.
+GATED_NODES = ("presupuesto", "programa", "contrato")
+
+
 class ProjectReviews(BaseModel):
     detections: dict[str, DetectionReview] = Field(default_factory=dict)
     adjustments: list[ManualAdjustment] = Field(default_factory=list)
     omitted: list[OmittedElement] = Field(default_factory=list)
     verification: VerificationState = Field(default_factory=VerificationState)
+    # Candados del tablero por nodo (presupuesto|programa|contrato).
+    gates: dict[str, GateState] = Field(default_factory=dict)
 
 
 def review_key(detection: Detection) -> str:

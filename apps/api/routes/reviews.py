@@ -5,7 +5,7 @@ always reflects what the human accepted, and broadcasts the change."""
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from klave_engine.common.config import Settings
 from klave_engine.common.errors import ReportGenerationError
 from klave_engine.common.ids import short_uuid
@@ -13,7 +13,9 @@ from klave_engine.costing.models import CostingOverrides, CostReport
 from klave_engine.costing.omitted import AREA_FAMILIES, FAMILY_TYPES, LINEAR_FAMILIES
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
 from klave_engine.costing.reviews import (
+    GATED_NODES,
     DetectionReview,
+    GateState,
     ManualAdjustment,
     OmittedElement,
     ProjectReviews,
@@ -72,6 +74,36 @@ class OmittedInput(BaseModel):
     section_cm: str = Field(default="", max_length=20)
     sheet: str = Field(default="", max_length=120)
     note: str = Field(default="", max_length=300)
+
+
+class GateInput(BaseModel):
+    approved: bool
+
+
+def _require_gate_authority(request: Request, project_id: str, settings: Settings) -> None:
+    """El candado es del administrador del taller o del owner del proyecto.
+
+    En modo abierto (sin cuentas) no hay a quién exigirle firma: pasa, y el
+    X-Actor queda como autor — la misma libertad local-first del resto."""
+    user = getattr(request.state, "user", None)
+    if user is None or user.get("role") == "admin":
+        return
+    try:
+        from apps.api.auth.store import get_user_store
+
+        users = get_user_store(settings.users_database_url)
+        if users.project_role(project_id, str(user["user_id"])) == "owner":
+            return
+    except Exception:  # noqa: BLE001 — sin veredicto de owner, se niega
+        pass
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "error_type": "gate_authority_required",
+            "message": "Abrir o cerrar un nodo requiere al administrador del "
+            "taller o al owner del proyecto.",
+        },
+    )
 
 
 class VerificationInput(BaseModel):
@@ -418,6 +450,65 @@ def delete_adjustment(
             "adjustment_removed", adjustment_id,
         )
     return _reviews_payload(reviews)
+
+
+@router.put("/{project_id}/gates/{node}")
+def set_gate(
+    project_id: str,
+    node: str,
+    body: GateInput,
+    request: Request,
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """La firma que abre (o vuelve a cerrar) un nodo del tablero."""
+    if node not in GATED_NODES:
+        raise HTTPException(
+            status_code=422,
+            detail={"error_type": "unknown_gate", "message": f"Nodo sin candado: {node}"},
+        )
+    _require_gate_authority(request, project_id, settings)
+    actor = clean_actor(x_actor) or ""
+    root = store.get_root(project_id)
+    control_dir = root / settings.processed_dir_name
+    with project_recompute_lock(project_id):
+        reviews = load_reviews(control_dir)
+        if body.approved:
+            reviews.gates[node] = GateState(
+                approved_at=datetime.now(UTC), approved_by=actor
+            )
+        else:
+            reviews.gates.pop(node, None)
+        save_reviews(control_dir, reviews)
+    user = getattr(request.state, "user", None)
+    if user is not None:
+        try:
+            from apps.api.auth.common import audit, get_users
+
+            audit(
+                get_users(settings), user,
+                "gate_approved" if body.approved else "gate_revoked",
+                target_type="project", target_id=project_id,
+                detail={"node": node, "actor": actor},
+            )
+        except Exception:  # noqa: BLE001 — el candado vale aunque el asiento falle
+            pass
+    BUS.publish(
+        "gate_updated",
+        project_id=project_id,
+        actor=actor,
+        data={"node": node, "approved": body.approved, "by": actor},
+    )
+    return {
+        "gates": {
+            key: {
+                "approved_at": state.approved_at.isoformat() if state.approved_at else None,
+                "approved_by": state.approved_by,
+            }
+            for key, state in reviews.gates.items()
+        }
+    }
 
 
 @router.put("/{project_id}/reviews/verification")
