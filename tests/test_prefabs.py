@@ -51,7 +51,6 @@ def test_attdefs_y_anotacion(tmp_path):
 
 def test_el_pipeline_escribe_el_indice_y_la_lectura_lo_sirve(data_dir, tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
-
     from klave_engine.common import config as config_module
     from klave_engine.common.config import get_settings
     from klave_engine.evals.fixtures import write_demo_project

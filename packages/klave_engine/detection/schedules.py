@@ -13,7 +13,8 @@ a typical value.
 import re
 import statistics
 from collections import Counter
-from typing import Callable, Literal
+from collections.abc import Callable
+from typing import Literal
 
 from pydantic import BaseModel, Field
 

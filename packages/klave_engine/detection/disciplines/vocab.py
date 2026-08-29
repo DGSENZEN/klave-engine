@@ -10,8 +10,8 @@ específico va antes que lo general.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 
 def _r(patron: str) -> re.Pattern[str]:

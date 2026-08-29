@@ -48,7 +48,7 @@ def route_sheet(sheet_label: str) -> DisciplineSuite  # unknown → estructural 
 
 - `guess_discipline(text)` ≡ first registry suite whose `name_hint` matches (same order as today's `_DISCIPLINE_HINTS`); `reads_as_structure(label)` ≡ `route_sheet(label).structural`.
 
-- [ ] **Step 1: Failing test** — append to `tests/test_disciplinas.py`:
+- [x] **Step 1: Failing test** — append to `tests/test_disciplinas.py`:
 
 ```python
 from klave_engine.detection.disciplines import REGISTRY, route_sheet
@@ -72,10 +72,10 @@ def test_el_registro_reproduce_el_ruteo_de_hoy():
     assert "estructural" in REGISTRY and REGISTRY["estructural"].structural
 ```
 
-- [ ] **Step 2: Run, expect `ModuleNotFoundError`.**
-- [ ] **Step 3: Implement** — move the hint patterns verbatim into `vocab.py` (one `DisciplineSuite` per current hint entry, `structural=True` only for `estructural` and the unknown default; keep the exact ordering — sanitaria's `ALBA[ÑN]AL` before albanileria etc. as today). `route_sheet` normalizes separators exactly like `guess_discipline` does today, walks the registry in order, falls back to `REGISTRY["estructural"]`. Rewrite `inventory.guess_discipline`/`reads_as_structure` as delegates; delete `_DISCIPLINE_HINTS`/`NON_STRUCTURAL` (grep first: `grep -rn "NON_STRUCTURAL\|_DISCIPLINE_HINTS" packages apps tests` — update any direct consumer).
-- [ ] **Step 4: Fences** — `uv run pytest tests/test_disciplinas.py tests/ -q -k "inventory or levantamiento or frames or vista"` PASS; `make eval-gold` PASS identical.
-- [ ] **Step 5: Commit** — `feat(detección): el registro de disciplinas existe y reproduce el ruteo de hoy (S1a)`.
+- [x] **Step 2: Run, expect `ModuleNotFoundError`.**
+- [x] **Step 3: Implement** — move the hint patterns verbatim into `vocab.py` (one `DisciplineSuite` per current hint entry, `structural=True` only for `estructural` and the unknown default; keep the exact ordering — sanitaria's `ALBA[ÑN]AL` before albanileria etc. as today). `route_sheet` normalizes separators exactly like `guess_discipline` does today, walks the registry in order, falls back to `REGISTRY["estructural"]`. Rewrite `inventory.guess_discipline`/`reads_as_structure` as delegates; delete `_DISCIPLINE_HINTS`/`NON_STRUCTURAL` (grep first: `grep -rn "NON_STRUCTURAL\|_DISCIPLINE_HINTS" packages apps tests` — update any direct consumer).
+- [x] **Step 4: Fences** — `uv run pytest tests/test_disciplinas.py tests/ -q -k "inventory or levantamiento or frames or vista"` PASS; `make eval-gold` PASS identical.
+- [x] **Step 5: Commit** — `feat(detección): el registro de disciplinas existe y reproduce el ruteo de hoy (S1a)`.
 
 ---
 
@@ -91,10 +91,10 @@ Filenames lie; content votes. v1 emits a pipeline warning when the content winne
 **Interfaces:**
 - Produces: `vote_content(entities) -> tuple[str, int] | None` — counts entities whose `layer` (or `block_name`) matches each suite's `layer_hints`/`block_hints` via `layer_matches`; returns the winning `(key, hits)` when the winner has ≥ 20 hits and ≥ 3× the runner-up, else `None`. Seed vocabularies only where we know them from Marina (vocab.py): sanitaria `("SANITARIA", "PLUV")`, gas `("GAS",)`, aire blocks `("COND", "COMPUERTA")`, estructural `("EST", "EJES", "TRABE", "ZAPATA")` — deliberately conservative.
 
-- [ ] **Step 1: Failing test** — build 30 `NormalizedEntity`-bearing lines on layer `00-SANITARIA` (parse a tiny ezdxf file, the house pattern), assert `vote_content(entities) == ("sanitaria", 30)`; assert `None` for mixed content below margin.
-- [ ] **Step 2–3:** run/red, implement (pipeline: when `vote_content` disagrees with `route_sheet(label).key`, warn `«La hoja {sheet} se lee como {ruta} por su nombre; su contenido vota {ganador} ({hits} trazos). Revisa el nombre del archivo.»` — warning only, routing unchanged).
-- [ ] **Step 4: Fences** — tests PASS, gold PASS identical; re-run Marina scratch and **report** how many voting warnings appear (expected: 0–2; if a structural sheet votes elsewhere, investigate before shipping).
-- [ ] **Step 5: Commit** — `feat(detección): el contenido de la hoja vota su disciplina — aviso cuando contradice al nombre (S1b)`.
+- [x] **Step 1: Failing test** — build 30 `NormalizedEntity`-bearing lines on layer `00-SANITARIA` (parse a tiny ezdxf file, the house pattern), assert `vote_content(entities) == ("sanitaria", 30)`; assert `None` for mixed content below margin.
+- [x] **Step 2–3:** run/red, implement (pipeline: when `vote_content` disagrees with `route_sheet(label).key`, warn `«La hoja {sheet} se lee como {ruta} por su nombre; su contenido vota {ganador} ({hits} trazos). Revisa el nombre del archivo.»` — warning only, routing unchanged).
+- [x] **Step 4: Fences** — tests PASS, gold PASS identical; re-run Marina scratch and **report** how many voting warnings appear (expected: 0–2; if a structural sheet votes elsewhere, investigate before shipping).
+- [x] **Step 5: Commit** — `feat(detección): el contenido de la hoja vota su disciplina — aviso cuando contradice al nombre (S1b)`.
 
 ---
 
@@ -130,10 +130,10 @@ def build_prefab_index(
 
 built from `entity_type == insert` entities grouped by `block_name` (top-level AND nested — P1's parser work makes nested inserts visible), classification via `familia_de_bloque(name, layer)` and `parse_block_name` (`dimensions.py:63`), `_ANOTACION` from `opening_detector`/`inventory` (import the existing regex, don't duplicate it). `block_attdefs` comes per file from `parse_summary` — pass `{source_file: {name: tags}}` and union tags per name.
 
-- [ ] **Step 1: Failing test** — reuse the P1 nested-block fixture shape: block `INODORO` (2 instances) + nested `SIMBOLO-WC` inside `BANO-TIPO`; parse, `build_prefab_index`, assert: `INODORO` definition has 2 instances and `familia == "wc"`; `SIMBOLO-WC` exists (nested identity); a `*`-anonymous block never appears.
-- [ ] **Step 2–3:** red, implement, and wire into `run_full_pipeline` writing `processed/prefab_index.json` (drawing-level `block_attdefs` are already on each `ParsedDrawing`).
-- [ ] **Step 4: Fences + Marina probe** — tests PASS, gold PASS (new artifact, no behavior change); on the Marina scratch re-run assert `prefab_index.json` exists and contains `DESCSAN1` with ≥ 1 instance and a non-null classification. Report the index size (definitions / instances).
-- [ ] **Step 5: Commit** — `feat(detección): el índice de prefabricados — cada definición se clasifica una vez y estampa sus instancias (S2a)`.
+- [x] **Step 1: Failing test** — reuse the P1 nested-block fixture shape: block `INODORO` (2 instances) + nested `SIMBOLO-WC` inside `BANO-TIPO`; parse, `build_prefab_index`, assert: `INODORO` definition has 2 instances and `familia == "wc"`; `SIMBOLO-WC` exists (nested identity); a `*`-anonymous block never appears.
+- [x] **Step 2–3:** red, implement, and wire into `run_full_pipeline` writing `processed/prefab_index.json` (drawing-level `block_attdefs` are already on each `ParsedDrawing`).
+- [x] **Step 4: Fences + Marina probe** — tests PASS, gold PASS (new artifact, no behavior change); on the Marina scratch re-run assert `prefab_index.json` exists and contains `DESCSAN1` with ≥ 1 instance and a non-null classification. Report the index size (definitions / instances).
+- [x] **Step 5: Commit** — `feat(detección): el índice de prefabricados — cada definición se clasifica una vez y estampa sus instancias (S2a)`.
 
 ---
 
@@ -144,8 +144,8 @@ built from `entity_type == insert` entities grouped by `block_name` (top-level A
 - Modify: `apps/web/lib/api.ts` (extend the `Lectura` type with `prefabs`)
 - Test: mirror the nearest API test that exercises a `/projects/{id}/…` GET (find with `grep -rln "lectura\|/projects/" tests/test_*api*.py tests/test_auth.py | head`) — assert the field appears and is `[]` when the artifact is missing.
 
-- [ ] **Step 1–4:** failing test → implement → PASS → gold PASS. (No UI rendering here — the tablero/lectura frontend track consumes the field later; the type lands now so the payload is stable.)
-- [ ] **Step 5: Commit** — `feat(api): la lectura sirve el índice de prefabricados (S2b)`.
+- [x] **Step 1–4:** failing test → implement → PASS → gold PASS. (No UI rendering here — the tablero/lectura frontend track consumes the field later; the type lands now so the payload is stable.)
+- [x] **Step 5: Commit** — `feat(api): la lectura sirve el índice de prefabricados (S2b)`.
 
 ---
 
@@ -155,9 +155,9 @@ built from `entity_type == insert` entities grouped by `block_name` (top-level A
 - Modify: `packages/klave_engine/detection/schedules.py:667` (`build_schedule_inventory(..., extra_readers: list[Callable[[list[NormalizedEntity]], list[SectionSpec]]] | None = None)` — read the actual entry model name in `schedules.py` first and use it; append reader outputs to `specs` with the same source rank as `tabla`)
 - Test: `tests/test_schedules.py` if it exists (`ls tests/ | grep -i sched`), else create `tests/test_cuadros_enchufables.py`
 
-- [ ] **Step 1: Failing test** — a fake reader returning one entry for mark `CA-1`; assert it lands in the inventory (`by_mark`) and that with `extra_readers=None` behavior is byte-identical (compare against a no-reader call on the same entities).
-- [ ] **Step 2–4:** red → implement → PASS; gold PASS identical (nothing passes readers yet).
-- [ ] **Step 5: Commit** — `feat(detección): la cadena de cuadros acepta lectores por disciplina (S4)`.
+- [x] **Step 1: Failing test** — a fake reader returning one entry for mark `CA-1`; assert it lands in the inventory (`by_mark`) and that with `extra_readers=None` behavior is byte-identical (compare against a no-reader call on the same entities).
+- [x] **Step 2–4:** red → implement → PASS; gold PASS identical (nothing passes readers yet).
+- [x] **Step 5: Commit** — `feat(detección): la cadena de cuadros acepta lectores por disciplina (S4)`.
 
 ---
 
@@ -170,9 +170,9 @@ Conversion already records per-file `status`/`error_message` (`conversion_result
 - Modify: `apps/api/routes/lectura.py` (expose per-sheet `coverage`)
 - Test: `tests/test_parser.py` or `tests/test_labels_and_units.py` (whichever already asserts on `parse_summary.json` — check both; else extend the pipeline test)
 
-- [ ] **Step 1: Failing test** — a DXF project where one file parses clean (`coverage == "ok"`) and one is a deliberately truncated/garbage `.dxf` (write bytes) → its summary row says `ilegible` with a reason, and the pipeline still completes (one broken sheet never costs the project — existing doctrine).
-- [ ] **Step 2–4:** red → implement → PASS; gold PASS; on Marina scratch report the coverage table (expect: ELECTRICO absent-or-ilegible — it never converted; CARPINTERÍA `parcial` if present with 0 entities).
-- [ ] **Step 5: Commit** — `feat(dxf): cobertura declarada por archivo — ok, parcial o ilegible, con sus razones (S3)`.
+- [x] **Step 1: Failing test** — a DXF project where one file parses clean (`coverage == "ok"`) and one is a deliberately truncated/garbage `.dxf` (write bytes) → its summary row says `ilegible` with a reason, and the pipeline still completes (one broken sheet never costs the project — existing doctrine).
+- [x] **Step 2–4:** red → implement → PASS; gold PASS; on Marina scratch report the coverage table (expect: ELECTRICO absent-or-ilegible — it never converted; CARPINTERÍA `parcial` if present with 0 entities).
+- [x] **Step 5: Commit** — `feat(dxf): cobertura declarada por archivo — ok, parcial o ilegible, con sus razones (S3)`.
 
 ---
 
@@ -184,20 +184,20 @@ A small, fast fixture: two of Marina instalaciones' already-converted DXFs (sani
 - Create: `data/uploads/gold_instalaciones_mini/drawings/` (copy the `.dxf` from `data/uploads/marina_lote_04_instalaciones_596e05ed/converted/02-05_sanitario_*/` and `04-08_aa_*/`)
 - Create (via tool): `evals/gold/instalaciones-mini.json`
 
-- [ ] **Step 1:** copy the two DXFs, `uv run python -c "…run_full_pipeline(Path('data/uploads/gold_instalaciones_mini'))"`.
-- [ ] **Step 2:** inspect `processed/detections.json` by hand — fixtures/runs counts must look sane against memory's Marina facts (subida-bajada/DESCSAN1 symbols, compuertas) before freezing them. Record the numbers in the commit message.
-- [ ] **Step 3:** `uv run python -m klave_engine.evals.gold capture data/uploads/gold_instalaciones_mini --id instalaciones-mini --fresh`
-- [ ] **Step 4:** `make eval-gold` → PASS including the new entry; time it (`time make eval-gold`) — must stay < 30 s total.
-- [ ] **Step 5: Commit** — `test(gold): primer fixture multidisciplina — sanitaria y AA de Marina, congeladas antes de que las suites las muevan (S5)`.
+- [x] **Step 1:** copy the two DXFs, `uv run python -c "…run_full_pipeline(Path('data/uploads/gold_instalaciones_mini'))"`.
+- [x] **Step 2:** inspect `processed/detections.json` by hand — fixtures/runs counts must look sane against memory's Marina facts (subida-bajada/DESCSAN1 symbols, compuertas) before freezing them. Record the numbers in the commit message.
+- [x] **Step 3:** `uv run python -m klave_engine.evals.gold capture data/uploads/gold_instalaciones_mini --id instalaciones-mini --fresh`
+- [x] **Step 4:** `make eval-gold` → PASS including the new entry; time it (`time make eval-gold`) — must stay < 30 s total.
+- [x] **Step 5: Commit** — `test(gold): primer fixture multidisciplina — sanitaria y AA de Marina, congeladas antes de que las suites las muevan (S5)`.
 
 ---
 
 ### Task 8: Cierre — estabilidad de Marina, suite completa, docs
 
-- [ ] **Step 1:** `uv run pytest -q; echo $?` → 0. `make eval-gold` → PASS.
-- [ ] **Step 2:** Marina scratch re-run + the P1 acceptance assertions unchanged (593±2 ejes, ≥175 ancladas, 0 fantasma, sparse 0, col_sin_eje ≤ 2) **plus** the new artifacts present (`prefab_index.json`, coverage table) and the voting-warning count from Task 2 reported.
-- [ ] **Step 3:** append «Espine cerrado» to `docs/auditoria-motor.md` §4 with the measured numbers; tick this plan's checkboxes; note in the multidiscipline spec that S1–S5 v1 landed and what `detect`-slot work moved to the hidrosanitaria plan.
-- [ ] **Step 4:** docs commit; then finishing-a-development-branch (suite on the exact tree, merge menu, cleanup).
+- [x] **Step 1:** `uv run pytest -q; echo $?` → 0. `make eval-gold` → PASS.
+- [x] **Step 2:** Marina scratch re-run + the P1 acceptance assertions unchanged (593±2 ejes, ≥175 ancladas, 0 fantasma, sparse 0, col_sin_eje ≤ 2) **plus** the new artifacts present (`prefab_index.json`, coverage table) and the voting-warning count from Task 2 reported.
+- [x] **Step 3:** append «Espine cerrado» to `docs/auditoria-motor.md` §4 with the measured numbers; tick this plan's checkboxes; note in the multidiscipline spec that S1–S5 v1 landed and what `detect`-slot work moved to the hidrosanitaria plan.
+- [x] **Step 4:** docs commit; then finishing-a-development-branch (suite on the exact tree, merge menu, cleanup).
 
 ---
 

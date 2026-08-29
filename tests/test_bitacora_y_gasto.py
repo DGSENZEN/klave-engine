@@ -11,7 +11,6 @@ from klave_engine.common.bitacora import (
     anotar_error,
     anotar_uso,
     errores_recientes,
-    redactar,
     uso_del_periodo,
 )
 from klave_engine.llm.tarifas import consumo_del_mes, costo_estimado, estimar_lectura, tarifa_de

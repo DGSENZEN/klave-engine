@@ -286,6 +286,37 @@ E5–E9 y el residual, con dos correcciones de esta misma auditoría:
   profundidad avisa y ATTDEF se lee (`block_attdefs`, para el índice de
   prefabricados); la asignación por título tiene tope de distancia.
 
+### Espine multidisciplina cerrado (2026-08-28, rama `motor-espine`)
+
+S1–S5 v1, todo con la conducta de detección **byte-estable** contra P1
+(Marina: 593 ejes, 175 ancladas, 0 fantasma — idéntico):
+
+- **S1** El registro de disciplinas (`detection/disciplines/`) es dueño del
+  ruteo y del vocabulario; `reads_as_structure` es un delegado. El
+  contenido **vota** y avisa cuando contradice al nombre (Marina: 0
+  contradicciones — los nombres del set dicen la verdad). El hueco
+  `detect` lo llena cada suite al aterrizar con su gold.
+- **S2** `prefab_index.json`: cada definición de bloque clasificada una vez
+  (tabla de símbolos + semántica del nombre + ATTDEF), con todas sus
+  instancias. Marina: 124 definiciones, 1,690 instancias; el fixture de
+  instalaciones clasifica `subida-bajada→bajada` y
+  `DESCSAN1→salida_sanitaria`. La Lectura lo sirve (`prefabs`).
+- **S3** Cobertura declarada por archivo: `ok | parcial | ilegible` con
+  razones, incluidos los DWG que no convirtieron (renglón ilegible con el
+  error del convertidor). Marina: **las 12 hojas son «parcial»** — modo de
+  recuperación, xrefs ausentes, anidamiento profundo — la verdad de esos
+  dibujos, dicha una vez por hoja en vez de dispersa en avisos.
+- **S4** `build_schedule_inventory(..., extra_readers=)`: los cuadros por
+  disciplina (cancelería, tablero eléctrico) se enchufan a la cadena de
+  autoridad con rango de cuadro.
+- **S5** Primer gold multidisciplina: `instalaciones-mini` (sanitario + AA
+  de Marina como DXF ya convertidos — el eval completo sigue en ~8 s):
+  109 muebles, 20 corridas, F1 = 1.0; los 25 compuertas y 16 DESCSAN1
+  coinciden con lo que la memoria del proyecto recuerda.
+
+Siguiente en la cola: la suite **hidrosanitaria** (spec §2 del doc
+multidisciplina), primera consumidora real del índice y del hueco `detect`.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)

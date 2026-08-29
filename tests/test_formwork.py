@@ -95,7 +95,7 @@ def test_plantilla_sin_matriz_sale_sin_precio():
     )
     added = apply_formwork(boq, catalog, apus={}, formwork=report)
     assert added == 1
-    line = next(l for l in boq.lines if l.concept_code == "CIM-003")
+    line = next(li for li in boq.lines if li.concept_code == "CIM-003")
     assert line.unpriced is True
     assert line.unit_price == 0.0 and line.amount == 0.0
     assert line.quantity == 12.03
@@ -116,6 +116,6 @@ def test_relleno_resta_la_plantilla_aunque_no_tenga_precio():
     )
     apply_formwork(boq, catalog, apus={}, formwork=report)
     apply_cimentacion_earthmoving(boq, catalog, apus={}, assumptions=a)
-    fill = next(l for l in boq.lines if l.concept_code == "CIM-004")
+    fill = next(li for li in boq.lines if li.concept_code == "CIM-004")
     # 10.0 excavados − 12.0 m² × 0.05 m de plantilla = 9.4 m³
     assert fill.quantity == 9.4

@@ -5,13 +5,13 @@ import re
 from pydantic import BaseModel, Field
 
 from klave_engine.common.ids import IdGenerator
-from klave_engine.detection.instalaciones_symbols import es_trazo_de_simbolo
 from klave_engine.detection.confidence import (
     HIGH_RECT,
     NEAR_COLUMN,
     SEMANTIC_LAYER,
     model_for,
 )
+from klave_engine.detection.instalaciones_symbols import es_trazo_de_simbolo
 from klave_engine.detection.results import (
     Detection,
     DetectionType,

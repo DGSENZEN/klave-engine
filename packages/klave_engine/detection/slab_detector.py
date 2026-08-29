@@ -3,13 +3,13 @@
 from pydantic import BaseModel, Field
 
 from klave_engine.common.ids import IdGenerator
-from klave_engine.detection.instalaciones_symbols import es_trazo_de_simbolo
 from klave_engine.detection.confidence import (
     IS_HATCH,
     LARGE_AREA,
     SEMANTIC_LAYER,
     model_for,
 )
+from klave_engine.detection.instalaciones_symbols import es_trazo_de_simbolo
 from klave_engine.detection.results import (
     DetectionType,
     DetectorOutput,

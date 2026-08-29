@@ -18,8 +18,8 @@ from pydantic import BaseModel, Field
 
 from klave_engine.detection.disciplines import route_sheet
 from klave_engine.detection.disciplines.vocab import SUITES
-from klave_engine.detection.instalaciones_symbols import es_trazo_de_simbolo
 from klave_engine.detection.frames import SheetFrame
+from klave_engine.detection.instalaciones_symbols import es_trazo_de_simbolo
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.dxf.units import DrawingUnits
 from klave_engine.geometry.bbox import BBox, bbox_center, bbox_contains_point
