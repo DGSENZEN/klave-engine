@@ -35,3 +35,30 @@ def test_el_registro_reproduce_el_ruteo_de_hoy():
         assert suite.key == key, nombre
         assert suite.structural is estructural, nombre
     assert "estructural" in REGISTRY and REGISTRY["estructural"].structural
+
+
+def test_el_contenido_vota_su_disciplina(tmp_path):
+    import ezdxf
+    from klave_engine.detection.disciplines import vote_content
+    from klave_engine.dxf.parser import DxfParser
+
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    for i in range(30):
+        msp.add_line((i, 0), (i, 5), dxfattribs={"layer": "00-SANITARIA"})
+    path = tmp_path / "voto.dxf"
+    doc.saveas(path)
+    entities = DxfParser().parse_file(path).entities
+    assert vote_content(entities) == ("sanitaria", 30)
+
+    # Contenido mixto sin ganador claro: nadie vota.
+    doc2 = ezdxf.new("R2010")
+    msp2 = doc2.modelspace()
+    for i in range(10):
+        msp2.add_line((i, 0), (i, 5), dxfattribs={"layer": "00-SANITARIA"})
+    for i in range(9):
+        msp2.add_line((i, 10), (i, 15), dxfattribs={"layer": "GAS"})
+    path2 = tmp_path / "mixto.dxf"
+    doc2.saveas(path2)
+    entities2 = DxfParser().parse_file(path2).entities
+    assert vote_content(entities2) is None

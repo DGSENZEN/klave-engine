@@ -31,6 +31,7 @@ from klave_engine.costing.reviews import filter_excluded, load_reviews
 from klave_engine.detection.dimension_links import link_dimensions
 from klave_engine.detection.dimensions import build_dimension_inventory
 from klave_engine.detection.frames import SheetFrame, detect_frames
+from klave_engine.detection.disciplines import route_sheet, vote_content
 from klave_engine.detection.inventory import build_inventory, reads_as_structure
 from klave_engine.detection.results import Detection, DetectionType
 from klave_engine.detection.schedules import (
@@ -326,6 +327,17 @@ def run_full_pipeline(
             f"Hoja «{sheet}» leída como instalaciones: se detectan sus muebles, "
             "salidas y corridas, no elementos estructurales."
         )
+    # El nombre propone y el contenido vota: cuando contradicen, se avisa.
+    # El reruteo espera a que cada suite tenga su propio gold.
+    for source, file_entities in by_file.items():
+        label = sheet_names.get(source, source)
+        ruta = route_sheet(label)
+        voto = vote_content(file_entities)
+        if voto is not None and voto[0] != ruta.key:
+            result.warnings.append(
+                f"La hoja «{label}» se lee como {ruta.key} por su nombre; su "
+                f"contenido vota {voto[0]} ({voto[1]} trazos). Revisa el nombre del archivo."
+            )
     detector_ids = IdGenerator("det")
     for source, file_entities in by_file.items():
         file_frames = [f for f in frames if f.source_file == source]
