@@ -21,6 +21,7 @@ MAX_EXPLODED_PER_FILE = 400_000
 class _ExplosionBudget:
     total: int = 0
     capped: bool = False
+    nesting_truncated: bool = False
 
 
 @dataclass
@@ -29,6 +30,8 @@ class ParsedDrawing:
     entities: list[NormalizedEntity] = field(default_factory=list)
     layers: list[str] = field(default_factory=list)
     blocks: list[str] = field(default_factory=list)
+    # Definición → tags de sus ATTDEF: el índice de prefabricados los lee.
+    block_attdefs: dict[str, list[str]] = field(default_factory=dict)
     warnings: list[ParseWarning] = field(default_factory=list)
     insunits: int | None = None
     layouts: list[LayoutInfo] = field(default_factory=list)
@@ -75,6 +78,15 @@ class DxfParser:
             warnings=recover_warnings,
             insunits=int(doc.header.get("$INSUNITS", 0)) or None,
         )
+        for block in doc.blocks:
+            if block.name.startswith("*"):
+                continue
+            try:
+                tags = [str(a.dxf.tag) for a in block.query("ATTDEF") if a.dxf.tag]
+            except Exception:
+                continue
+            if tags:
+                drawing.block_attdefs[block.name] = tags
 
         # External references first: an embedded xref becomes an ordinary
         # block, so its content explodes along with everything else below.
@@ -126,6 +138,17 @@ class DxfParser:
                     source_file=source_file,
                 )
             )
+        if explosion.nesting_truncated:
+            drawing.warnings.append(
+                ParseWarning(
+                    warning_type="block_nesting_truncated",
+                    message=(
+                        "Hay bloques anidados a más de dos niveles; la geometría "
+                        "del nivel más profundo no se leyó."
+                    ),
+                    source_file=source_file,
+                )
+            )
 
         log_stage(
             logger,
@@ -164,7 +187,11 @@ class DxfParser:
         "0" (standard CAD by-block convention), and are budget-capped so a
         pathological block cannot flood the entity space.
         """
-        if depth >= 2 or budget.capped:
+        if depth >= 2:
+            # El corte no es silencioso: la geometría del nivel 3 no entró.
+            budget.nesting_truncated = True
+            return
+        if budget.capped:
             return
         insert_layer = str(insert.dxf.layer)  # type: ignore[attr-defined]
         insert_handle = str(insert.dxf.handle)  # type: ignore[attr-defined]
@@ -189,6 +216,23 @@ class DxfParser:
                 budget.capped = True
                 return
             if child.dxftype() == "INSERT":
+                # El INSERT anidado también es una entidad: sin normalizarlo,
+                # su nombre de bloque y sus atributos se perdían para siempre
+                # (y el levantamiento subcontaba símbolos empacados).
+                try:
+                    nested, _warnings = normalize_entity(child, source_file, self._ids)
+                except Exception:
+                    nested = None
+                if nested is not None:
+                    if nested.layer == "0":
+                        nested.layer = insert_layer
+                    nested.raw_handle = f"{insert_handle}#{index}"
+                    nested.properties["from_block"] = block_name
+                    nested.properties["parent_insert"] = insert_handle
+                    nested.evidence.notes.append(f"Expandido del bloque {block_name}")
+                    drawing.entities.append(nested)
+                    emitted += 1
+                    budget.total += 1
                 self._explode_insert(child, drawing, source_file, budget, depth + 1)
                 continue
             if child.dxftype() in NON_GRAPHICAL_TYPES:

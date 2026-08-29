@@ -152,6 +152,7 @@ def _summarize_parse(drawings: list[ParsedDrawing]) -> list[dict]:
                 "from_block_count": sum(
                     1 for e in drawing.entities if e.properties.get("from_block")
                 ),
+                "block_attdefs": drawing.block_attdefs,
                 "derived_by_type": dict(derived_by_type.most_common()),
                 "dropped_by_type": dict(dropped_by_type.most_common()),
                 "text_count": sum(1 for e in drawing.entities if e.is_textual),

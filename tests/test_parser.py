@@ -136,3 +136,59 @@ def test_missing_xref_is_reported_not_hidden(tmp_path):
     missing = [w for w in drawing.warnings if w.warning_type == "xref_missing"]
     assert len(missing) == 1 and "súbela como hoja" in missing[0].message
     assert len(drawing.entities) == 2  # the line and the unresolved insert
+
+
+def test_insert_anidado_conserva_su_identidad(tmp_path):
+    import ezdxf
+    from klave_engine.dxf.parser import DxfParser
+
+    doc = ezdxf.new("R2010")
+    inner = doc.blocks.new(name="SIMBOLO-WC")
+    inner.add_line((0, 0), (1, 0))
+    outer = doc.blocks.new(name="BANO-TIPO")
+    outer.add_blockref("SIMBOLO-WC", (2, 2))
+    doc.modelspace().add_blockref("BANO-TIPO", (10, 10))
+    path = tmp_path / "anidado.dxf"
+    doc.saveas(path)
+
+    drawing = DxfParser().parse_file(path)
+    inserts = [e for e in drawing.entities if e.entity_type.value == "insert"]
+    names = sorted(e.block_name for e in inserts if e.block_name)
+    # El INSERT anidado existe como entidad con su nombre — antes se perdía.
+    assert names == ["BANO-TIPO", "SIMBOLO-WC"]
+    nested = next(e for e in inserts if e.block_name == "SIMBOLO-WC")
+    assert (nested.properties or {}).get("parent_insert")
+
+
+def test_corte_de_profundidad_avisa(tmp_path):
+    import ezdxf
+    from klave_engine.dxf.parser import DxfParser
+
+    doc = ezdxf.new("R2010")
+    n3 = doc.blocks.new(name="NIVEL3")
+    n3.add_line((0, 0), (1, 0))
+    n2 = doc.blocks.new(name="NIVEL2")
+    n2.add_blockref("NIVEL3", (0, 0))
+    n1 = doc.blocks.new(name="NIVEL1")
+    n1.add_blockref("NIVEL2", (0, 0))
+    doc.modelspace().add_blockref("NIVEL1", (0, 0))
+    path = tmp_path / "profundo.dxf"
+    doc.saveas(path)
+
+    drawing = DxfParser().parse_file(path)
+    assert any(w.warning_type == "block_nesting_truncated" for w in drawing.warnings)
+
+
+def test_attdef_se_lee_del_bloque(tmp_path):
+    import ezdxf
+    from klave_engine.dxf.parser import DxfParser
+
+    doc = ezdxf.new("R2010")
+    block = doc.blocks.new(name="NOMENCLATURA-V")
+    block.add_attdef("CLAVE", (0, 0), dxfattribs={"height": 0.2})
+    doc.modelspace().add_blockref("NOMENCLATURA-V", (0, 0))
+    path = tmp_path / "attdef.dxf"
+    doc.saveas(path)
+
+    drawing = DxfParser().parse_file(path)
+    assert drawing.block_attdefs.get("NOMENCLATURA-V") == ["CLAVE"]
