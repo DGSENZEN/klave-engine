@@ -24,10 +24,10 @@
 - Create: `packages/klave_engine/detection/cancel_pieces.py` — `detect_cancel_pieces(entities, ids) -> DetectorOutput`: inserts whose `block_name` matches `CANC|CANCEL|PTALOUVER|PTA` (vocab) **and** whose `properties["attributes"]` carry a clave matching `^[A-Z]{1,4}-?\d{1,3}[A-Z]?$` → one `DetectionType.opening` detection per insert: label/mark = clave, `opening_family` by prefix table, `properties["clave"]`, confidence 0.85 (block + attribute, two declared facts), evidence noting both.
 - Test: `tests/test_cancel_pieces.py` (create)
 
-- [ ] **Step 1: Failing test** — ezdxf: block `CANC_ALUM` with an ATTDEF `CLAVE`; three inserts with attribute values `CA-01`, `PA-02`, `CA-01`; one insert with no attribute. Assert: 3 detections, families `{cancel: 2, puerta: 1}`, marks carry the claves, the attribute-less insert is NOT detected (it has no clave to declare), and `output.warnings` says «1 pieza de cancelería sin clave legible».
-- [ ] **Step 2–3:** red → implement (attribute value = first attribute whose value matches the clave regex — the tag key varies by plano, `CLAVE` on Marina).
-- [ ] **Step 4:** tests PASS; `make eval-gold` untouched (no wiring yet).
-- [ ] **Step 5: Commit** — `feat(detección): la pieza de cancelería se lee de su clave — el bloque de nomenclatura ya sabe qué es`.
+- [x] **Step 1: Failing test** — ezdxf: block `CANC_ALUM` with an ATTDEF `CLAVE`; three inserts with attribute values `CA-01`, `PA-02`, `CA-01`; one insert with no attribute. Assert: 3 detections, families `{cancel: 2, puerta: 1}`, marks carry the claves, the attribute-less insert is NOT detected (it has no clave to declare), and `output.warnings` says «1 pieza de cancelería sin clave legible».
+- [x] **Step 2–3:** red → implement (attribute value = first attribute whose value matches the clave regex — the tag key varies by plano, `CLAVE` on Marina).
+- [x] **Step 4:** tests PASS; `make eval-gold` untouched (no wiring yet).
+- [x] **Step 5: Commit** — `feat(detección): la pieza de cancelería se lee de su clave — el bloque de nomenclatura ya sabe qué es`.
 
 ---
 
@@ -39,10 +39,10 @@
 - Modify: `packages/klave_engine/detection/disciplines/vocab.py` — canceleria gets `block_hints=("CANC", "PTALOUVER")` (content voting sees it).
 - Test: `tests/test_disciplinas.py` (extend)
 
-- [ ] **Step 1: Failing test** — parse a small DXF with one attributed `CANC_ALUM` insert on a canceleria-named sheet; route + `run_detectors(..., suite=route_sheet(...))` → exactly ONE opening detection for that insert (the piece), never two.
-- [ ] **Step 2–3:** red → implement.
-- [ ] **Step 4:** `make eval-gold` — instalaciones-mini and structural fixtures identical (no canceleria-named sheet among them).
-- [ ] **Step 5: Commit** — `feat(detección): cancelería ocupa su hueco detect — la pieza manda y el vano genérico no la recuenta`.
+- [x] **Step 1: Failing test** — parse a small DXF with one attributed `CANC_ALUM` insert on a canceleria-named sheet; route + `run_detectors(..., suite=route_sheet(...))` → exactly ONE opening detection for that insert (the piece), never two.
+- [x] **Step 2–3:** red → implement.
+- [x] **Step 4:** `make eval-gold` — instalaciones-mini and structural fixtures identical (no canceleria-named sheet among them).
+- [x] **Step 5: Commit** — `feat(detección): cancelería ocupa su hueco detect — la pieza manda y el vano genérico no la recuenta`.
 
 ---
 
@@ -53,16 +53,16 @@
 - Modify: `packages/klave_engine/costing/hallazgos.py` — `Rule(pattern=r"piezas? de cancelería sin clave", severity="revisar", group="canceleria_sin_clave", momento="cotizar", …)`.
 - Test: `tests/test_hallazgos.py` — `_classify` returns the rule; denominator survives in the headline.
 
-- [ ] **Steps:** failing test → implement → PASS → gold untouched → commit `feat(diagnóstico): piezas de cancelería sin clave legible, agrupadas (cancelería)`.
+- [x] **Steps:** failing test → implement → PASS → gold untouched → commit `feat(diagnóstico): piezas de cancelería sin clave legible, agrupadas (cancelería)`.
 
 ---
 
 ### Task 4: Gold, aceptación y cierre
 
-- [ ] **Step 1:** `data/uploads/gold_canceleria_mini/drawings/` ← the converted cancelería DXF from the completo project (`data/uploads/marina_lote_04_completo_887d5624/converted/…canceleria…/*.dxf`); pipeline; inspect: expect ~35 pieces, families cancel/puerta, marks CA-*/PA-*; compare against the scout (22 claves, CA-15×6).
-- [ ] **Step 2:** `gold capture … --id canceleria-mini --fresh`; `time make eval-gold` < 30 s, PASS.
-- [ ] **Step 3:** Full suite + lint; Marina completo stability (P1 numbers).
-- [ ] **Step 4:** Audit note «Suite cancelería cerrada» (measured numbers + the descoped cuadro-de-cotas reader recorded for the next round); tick plan; suites-spec row updated; docs commit; finishing-a-development-branch.
+- [x] **Step 1:** `data/uploads/gold_canceleria_mini/drawings/` ← the converted cancelería DXF from the completo project (`data/uploads/marina_lote_04_completo_887d5624/converted/…canceleria…/*.dxf`); pipeline; inspect: expect ~35 pieces, families cancel/puerta, marks CA-*/PA-*; compare against the scout (22 claves, CA-15×6).
+- [x] **Step 2:** `gold capture … --id canceleria-mini --fresh`; `time make eval-gold` < 30 s, PASS.
+- [x] **Step 3:** Full suite + lint; Marina completo stability (P1 numbers).
+- [x] **Step 4:** Audit note «Suite cancelería cerrada» (measured numbers + the descoped cuadro-de-cotas reader recorded for the next round); tick plan; suites-spec row updated; docs commit; finishing-a-development-branch.
 
 ## Out of scope (recorded, not forgotten)
 

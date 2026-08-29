@@ -337,8 +337,35 @@ plan solo construyó los huecos reales:
 - **El hueco `detect` tiene su primer inquilino**: hidráulica y sanitaria
   se leen por su suite del registro, con conducta idéntica al trío.
 
-Siguiente en la cola: **cancelería** (cuadro + los vanos que los muros ya
-devuelven).
+### Suite cancelería cerrada (2026-08-29, rama `suite-canceleria`)
+
+El scout tumbó el supuesto del spec: **no hay cuadro de cancelería como
+tabla** en Marina (309 textos, cero N×M) — los tipos se dibujan como
+alzados acotados (119 cotas, la ronda siguiente). Lo que sí hay es mejor:
+**el globo de nomenclatura sabe su clave** — `CANC_ALUM` con atributo
+`CLAVE` (CA-01…PA-02). La suite lee de ahí:
+
+- `detect_cancel_pieces`: una pieza por globo con clave, familia por
+  prefijo (CA/CB→cancel, PA/PTA→puerta, V/PV→ventana), como detección
+  `opening` — CAN-001/CAN-002/CAR-001 la cobran **sin cambiar una línea
+  del costing**. Marina: 35 piezas (29 cancel, 6 puerta), 22 claves.
+- La suite ocupa su hueco `detect` con filtro de reclamo: el mismo insert
+  jamás es pieza y además vano genérico (43 openings = 35 piezas + 8
+  genéricos, cero dobles).
+- Hallazgo agrupado «5 de 40 piezas sin clave legible» — y un mecanismo
+  nuevo con doctrina: `promote_detection_warnings` lleva al diagnóstico
+  SOLO los avisos de detección que sus reglas saben clasificar (el
+  detector conoce denominadores que el presupuesto no ve; promover todo
+  inundaría la lista que el diagnóstico existe para no inundar).
+- Gold `canceleria-mini` (43 openings, F1 = 1.0); el eval completo sigue
+  en ~10 s. Marina completo: estable (593/175/0) y con sus 35 piezas.
+
+**Para la siguiente ronda de cancelería:** dimensiones por clave desde las
+cotas del alzado (119 en la hoja) → los m² del cancel y el primer lector
+real del seam S4.
+
+Siguiente en la cola: **eléctrica** — que primero necesita el spike de
+conversión (su DWG de Marina no convierte).
 
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·

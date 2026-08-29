@@ -1,0 +1,86 @@
+{
+  "drawing_id": "canceleria-mini",
+  "source": "data/uploads/gold_canceleria_mini",
+  "files": {
+    "12-12_canceleria_l_04_-_26_01_15.dxf": "ec552fd016fc5f729475ac3cf0615b87a8b0e0b171c5280af783785e5524a58f"
+  },
+  "status": "baseline",
+  "captured_at": "2026-08-29T20:51:49.006662Z",
+  "labels": {
+    "opening": [
+      "VAN-01",
+      "VAN-02",
+      "VAN-03",
+      "VAN-04",
+      "VAN-05",
+      "VAN-06",
+      "VAN-07",
+      "VAN-08",
+      "VAN-09",
+      "VAN-10",
+      "VAN-11",
+      "VAN-12",
+      "VAN-13",
+      "VAN-14",
+      "VAN-15",
+      "VAN-16",
+      "VAN-17",
+      "VAN-18",
+      "VAN-19",
+      "VAN-20",
+      "VAN-21",
+      "VAN-22",
+      "VAN-23",
+      "VAN-24",
+      "VAN-25",
+      "VAN-26",
+      "VAN-27",
+      "VAN-28",
+      "VAN-29",
+      "VAN-30",
+      "VAN-31",
+      "VAN-32",
+      "VAN-33",
+      "VAN-34",
+      "VAN-35",
+      "VAN-36",
+      "VAN-37",
+      "VAN-38",
+      "VAN-39",
+      "VAN-40",
+      "VAN-41",
+      "VAN-42",
+      "VAN-43"
+    ]
+  },
+  "confirmed": [],
+  "excluded": [],
+  "baseline_f1": {
+    "opening": 1.0
+  },
+  "money": {
+    "concepts": {
+      "CAN-001": {
+        "quantity": 36.0,
+        "unit": "PZA",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      },
+      "CAR-001": {
+        "quantity": 7.0,
+        "unit": "PZA",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      }
+    },
+    "direct_cost": 0.0,
+    "direct_cost_tolerance_pct": 5.0,
+    "unpriced": [
+      "CAN-001",
+      "CAR-001"
+    ]
+  },
+  "notes": ""
+}

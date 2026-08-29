@@ -207,7 +207,7 @@ prefabricados (S2), no de cada suite.
 | # | Suite | Datos reales hoy | Bloqueo |
 |---|---|---|---|
 | 1 | Hidrosanitaria — **cerrada 2026-08-29**: corridas por tramo de Ø, tiros de bajada ligados (SAN-006 espera N.P.T.), hallazgos agrupados, hueco `detect` ocupado. Nota: media §2 ya existía (corridas con Ø/material, muebles→salidas, registros) — medir antes de construir. | Marina convierte | — |
-| 2 | Cancelería | tags legibles | — |
+| 2 | Cancelería — **cerrada 2026-08-29**: la pieza se lee del globo con clave (35 piezas, familias por prefijo, cero cambios de costing); no hay cuadro-tabla en Marina — dimensiones por clave desde las 119 cotas del alzado quedan para la ronda 2. | tags legibles | — |
 | 3 | Gas | spec "PEAD 19MM" legible | — |
 | 4 | AA | bloques con tonelaje legibles | — |
 | 5 | Especiales (CCTV/voz) | bloques legibles | — |
