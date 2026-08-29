@@ -212,7 +212,7 @@ prefabricados (S2), no de cada suite.
 | 4 | AA | bloques con tonelaje legibles | — |
 | 5 | Especiales (CCTV/voz) | bloques legibles | — |
 | 6 | Acabados y plafones — **suite cerrada 2026-08-29**: marcas PI/PL con clave (98), locales anclados por marca, áreas por clave cuando la base entregue muros. Áreas: bloqueadas por el xref arquitectónico. | símbolos legibles | xref (S3) |
-| 7 | Albañilería profunda — **veredicto 2026-08-29**: sus hojas son cotas sobre una base que no embebe; bloqueada por el xref, igual que acabados-áreas. | cotas sobre base ausente | xref (S3) |
+| 7 | Albañilería profunda — **cerrada 2026-08-29** (tras el spike): la base embebe, la suite estampa tabique y ALB-001 cobra el m² con vano descontado (Marina: 1,983 m² sin precio). La ruta arquitectura (§9) quedó implementada: sustrato que se ve y jamás cobra. Cadenas CE-n/CR-n: ronda dos. | base embebida | — |
 | 8 | Eléctrica | **no convierte** | S3 |
 | 9 | Carpintería/herrería | **0 entidades tras convertir** | S3 |
 

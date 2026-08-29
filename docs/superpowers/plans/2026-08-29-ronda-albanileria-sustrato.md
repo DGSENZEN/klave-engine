@@ -19,7 +19,7 @@
 - boq guard: in `generate_bill_of_quantities`, filter `matched_plan`-eligible detections: any with `properties.get("substrate")` never feeds a rule (one place, before rule matching).
 - Tests: routing row for "00 XREF L.04.dwg" → arquitectura; a substrate wall detection produces NO EST-004 line; the wall still exists as a detection (visor keeps it).
 
-- [ ] failing tests → implement → PASS → gold untouched → commit `feat(detección): el fondo arquitectónico es sustrato — se ve, ancla locales, y jamás cobra (ruta arquitectura)`.
+- [x] failing tests → implement → PASS → gold untouched → commit `feat(detección): el fondo arquitectónico es sustrato — se ve, ancla locales, y jamás cobra (ruta arquitectura)`.
 
 ### Task 2: La suite de albañilería — el tabique con su descuento
 
@@ -28,20 +28,20 @@
 - Store seed v23 (`_sync_builtin_concepts(("ALB-001",))`), unpriced (no APU template).
 - Tests: albañilería-named sheet through the suite yields tabique walls; boq gives ALB-001 with vano deduction and EST-004 does NOT take them.
 
-- [ ] failing tests → implement → PASS → gold untouched → commit `feat(detección): albañilería lee sus muros de tabique — con su vano descontado y sin precio inventado (ALB-001)`.
+- [x] failing tests → implement → PASS → gold untouched → commit `feat(detección): albañilería lee sus muros de tabique — con su vano descontado y sin precio inventado (ALB-001)`.
 
 ### Task 3: La marca casa con su local, en su marco
 
 - `disciplines/acabados.py`: matching per frame — a mark matches the nearest room whose frame is its own, by polygon/bbox distance ≤ 2.0 m (meters via factor); strict containment first, tolerance second; cross-frame never.
 - Test: two frames, room only in frame A; mark inside room A (matches), mark 1 m outside room A same frame (matches by tolerance), mark in frame B (stays loose, counted).
 
-- [ ] failing test → implement → PASS → gold untouched (acabados-mini has no locales) → commit `feat(detección): la marca de acabado casa con su local dentro de su marco — cerca de veras, nunca de otro marco`.
+- [x] failing test → implement → PASS → gold untouched (acabados-mini has no locales) → commit `feat(detección): la marca de acabado casa con su local dentro de su marco — cerca de veras, nunca de otro marco`.
 
 ### Task 4: Gold, aceptación y cierre
 
-- [ ] `gold_albanileria_mini` from the two converted albañilería DXFs + the converted xref DXF (so the base embeds in-fixture); pipeline; expect tabique walls > 0; capture `--id albanileria-mini --fresh`; eval < 30 s PASS.
-- [ ] Marina completo rerun + acceptance: xref-sheet walls no longer in EST-004 (declare the delta from 253.7 m²), ALB-001 present with meters, stability (ejes 593, ancladas ≥ 173), acabados m² per clave preserved or better.
-- [ ] Full suite + lint; audit note «Ronda albañilería y sustrato»; suites-spec rows (albañilería cerrada, arquitectura §9 implementada); tick plan; docs commit; finishing-a-development-branch.
+- [x] `gold_albanileria_mini` from the two converted albañilería DXFs + the converted xref DXF (so the base embeds in-fixture); pipeline; expect tabique walls > 0; capture `--id albanileria-mini --fresh`; eval < 30 s PASS.
+- [x] Marina completo rerun + acceptance: xref-sheet walls no longer in EST-004 (declare the delta from 253.7 m²), ALB-001 present with meters, stability (ejes 593, ancladas ≥ 173), acabados m² per clave preserved or better.
+- [x] Full suite + lint; audit note «Ronda albañilería y sustrato»; suites-spec rows (albañilería cerrada, arquitectura §9 implementada); tick plan; docs commit; finishing-a-development-branch.
 
 ## Out of scope
 

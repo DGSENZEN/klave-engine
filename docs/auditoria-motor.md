@@ -416,6 +416,28 @@ es lo siguiente del motor.
   muro, no en el centroide), y albañilería profunda ya tiene su base
   embebida esperando su suite.
 
+### Ronda albañilería y sustrato cerrada (2026-08-29, rama `ronda-albanileria`)
+
+- **La ruta `arquitectura` (spec §9) existe**: XREF/ARQ es sustrato — sus
+  muros y locales se detectan estampados `substrate: true`, el visor los
+  ve, los locales anclan, y el presupuesto los ignora por regla general
+  (guardia única en boq). El «leak» sospechado de EST-004 resultó no
+  existir (el view-scoping ya lo excluía): la guardia queda de cinturón y
+  tirantes.
+- **Albañilería profunda, por fin**: su suite corre el detector de muros en
+  sus hojas (la base embebida entrega), estampa `wall_kind: "tabique"`, y
+  **ALB-001** cobra el m² con vano descontado — Marina: 736.5 m de muros,
+  **1,983 m² de tabique sin precio**, con su nota de altura supuesta.
+  EST-004 intacto (253.7). El hueco que lo escondía: la suma por plantas
+  con niveles declarados solo recorría vistas estructurales — los muros de
+  una planta de disciplina cobran ahora a altura supuesta, nunca cero en
+  silencio.
+- **La marca casa en su marco**: tolerancia de 2 m dentro del mismo marco,
+  jamás de otro (la mediana de 16 m era marcos sin base, no near-misses).
+  Marina: 5 claves con m² (eran 3).
+- Gold `albanileria-mini` (154 muros: 136 sustrato + 18 tabique → ALB-001
+  81.7 m², F1 = 1.0). Ocho fixtures, eval ~13 s.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
