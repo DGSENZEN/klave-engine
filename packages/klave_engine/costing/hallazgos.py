@@ -199,6 +199,19 @@ _RULES: list[Rule] = [
         ),
     ),
     Rule(
+        pattern=r"locales sin clave de acabado",
+        severity="revisar",
+        action="Marca el piso y el plafón de esos locales en el plano de acabados.",
+        target="lectura",
+        group="locales_sin_acabado",
+        plural="{n} hojas con locales sin clave de acabado",
+        momento="cotizar",
+        verificar=(
+            "El local sin marca no declara acabado: su área existe pero no "
+            "pertenece a ningún concepto todavía."
+        ),
+    ),
+    Rule(
         pattern=r"piezas? de cancelería sin clave",
         severity="revisar",
         action="Revisa los globos de nomenclatura sin atributo de clave en el plano.",

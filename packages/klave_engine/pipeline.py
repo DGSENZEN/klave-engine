@@ -513,6 +513,45 @@ def run_full_pipeline(
     )
     if stamped_stacks:
         log_stage(logger, "bajada_stacks_stamped", stacks=stamped_stacks)
+    # Áreas de acabado por clave: lo que el local declara, agregado para que
+    # el taller lo mapee. Sin unidad confiable no hay m² (regla A6).
+    to_m = units.to_meters()
+    acabados_resumen: dict[tuple[str, str], dict] = {}
+    sin_acabado = 0
+    for detection in result.detections:
+        if detection.detection_type != DetectionType.room:
+            continue
+        props = detection.properties or {}
+        tiene = False
+        for tipo, prop in (("piso", "piso_clave"), ("plafon", "plafon_clave")):
+            clave = props.get(prop)
+            if not clave:
+                continue
+            tiene = True
+            area_du2 = float(props.get("estimated_area") or 0.0)
+            registro = acabados_resumen.setdefault(
+                (tipo, str(clave)),
+                {"tipo": tipo, "clave": str(clave), "area_du2": 0.0,
+                 "area_m2": 0.0 if to_m else None, "locales": 0},
+            )
+            registro["area_du2"] = round(registro["area_du2"] + area_du2, 4)
+            if to_m:
+                registro["area_m2"] = round(
+                    (registro["area_m2"] or 0.0) + area_du2 * to_m * to_m, 2
+                )
+            registro["locales"] += 1
+        if not tiene:
+            sin_acabado += 1
+    if acabados_resumen:
+        write_json(
+            processed / "acabados.json",
+            sorted(acabados_resumen.values(), key=lambda r: (r["tipo"], r["clave"])),
+        )
+        if sin_acabado:
+            result.warnings.append(
+                f"{sin_acabado} locales sin clave de acabado: su área no pertenece "
+                "a ningún acabado declarado."
+            )
     write_json(processed / "detections.json", result.detections)
     log_stage(
         logger,

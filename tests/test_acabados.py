@@ -82,3 +82,51 @@ def test_el_local_sabe_su_piso_y_su_plafon(tmp_path):
                  for d in rooms}
     assert ("4", "A") in por_clave  # la sala: piso 4, plafón A
     assert any(p == "7" for p, _ in por_clave)  # el baño: piso 7
+
+
+def test_el_pipeline_agrega_las_areas_por_clave(data_dir, tmp_path):
+    import json as jsonlib
+
+    from klave_engine.common.config import get_settings
+    from klave_engine.costing.hallazgos import _classify
+    from klave_engine.pipeline import run_full_pipeline
+
+    # La regla del diagnóstico clasifica el aviso agrupado.
+    rule = _classify("2 locales sin clave de acabado: su área no pertenece a "
+                     "ningún acabado declarado.")
+    assert rule.group == "locales_sin_acabado" and rule.severity == "revisar"
+
+    doc = ezdxf.new("R2010")
+    doc.header["$INSUNITS"] = 6
+    msp = doc.modelspace()
+
+    def muro(a, b, t=0.15):
+        (x0, y0), (x1, y1) = a, b
+        if y0 == y1:
+            msp.add_line((x0, y0 - t/2), (x1, y1 - t/2), dxfattribs={"layer": "A-MUROS"})
+            msp.add_line((x0, y0 + t/2), (x1, y1 + t/2), dxfattribs={"layer": "A-MUROS"})
+        else:
+            msp.add_line((x0 - t/2, y0), (x1 - t/2, y1), dxfattribs={"layer": "A-MUROS"})
+            msp.add_line((x0 + t/2, y0), (x1 + t/2, y1), dxfattribs={"layer": "A-MUROS"})
+
+    for a, b in [((0, 0), (7, 0)), ((0, 4), (7, 4)), ((0, 0), (0, 4)),
+                 ((4, 0), (4, 4)), ((7, 0), (7, 4))]:
+        muro(a, b)
+    msp.add_text("SALA", height=0.2).set_placement((1.5, 2))
+    msp.add_text("BAÑO", height=0.2).set_placement((5, 2))
+    pi = doc.blocks.new(name="PI")
+    pi.add_circle((0, 0), 0.15)
+    pi.add_attdef("P1", (0, 0), dxfattribs={"height": 0.1})
+    msp.add_blockref("PI", (2, 1)).add_auto_attribs({"P1": "4"})
+
+    root = data_dir / "uploads" / "acabados_demo"
+    (root / "drawings").mkdir(parents=True)
+    doc.saveas(root / "drawings" / "10-10_acabados.dxf")
+    settings = get_settings()
+    run_full_pipeline(root, settings)
+
+    artifact = root / settings.processed_dir_name / "acabados.json"
+    assert artifact.exists()
+    rows = jsonlib.loads(artifact.read_text())
+    piso4 = next(r for r in rows if r["tipo"] == "piso" and r["clave"] == "4")
+    assert piso4["locales"] == 1 and piso4["area_m2"] and piso4["area_m2"] > 5
