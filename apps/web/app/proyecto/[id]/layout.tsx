@@ -29,7 +29,34 @@ const STEPS = [
   { key: "processed", label: "Detección, vistas y costos" },
 ];
 
+// Qué está haciendo el motor en cada paso, en frases honestas que rotan:
+// la pantalla dice trabajo real, nunca inventa cifras.
+const STEP_DETAIL: Record<string, string[]> = {
+  ingested: ["Registrando las hojas del proyecto…", "Preparando la carpeta de trabajo…"],
+  converted: [
+    "Convirtiendo cada DWG a DXF…",
+    "Verificando qué tan completa quedó cada conversión…",
+    "Resolviendo referencias externas…",
+  ],
+  parsed: [
+    "Leyendo entidades y capas…",
+    "Reventando bloques y sus atributos…",
+    "Detectando la unidad de dibujo…",
+    "Armando el índice de prefabricados…",
+  ],
+  processed: [
+    "Detectando ejes, columnas y zapatas…",
+    "Cerrando tableros de losa entre trabes…",
+    "Leyendo corridas de instalación por diámetro…",
+    "Segmentando plantas y niveles…",
+    "Cuantificando conceptos y armando el presupuesto…",
+  ],
+};
+
 const ORDER = ["queued", "ingested", "converted", "running", "parsed", "processed"];
+// El estado terminal no se queda esperando eventos; todo lo demás sí.
+const TERMINAL = new Set(["processed", "failed"]);
+const POLL_MS = 5000;
 
 export default function ProjectLayout({ children }: { children: ReactNode }) {
   const params = useParams<{ id: string }>();
@@ -67,6 +94,16 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
     // Stay subscribed even when processed: adding sheets re-enqueues the
     // project and the gate must flip back to the processing timeline.
     const source = new EventSource(projectEventsUrl(id), { withCredentials: true });
+    // El bus de eventos vive en memoria con ventana corta: una reconexión
+    // pudo saltarse el evento terminal. Cada (re)apertura vuelve a
+    // preguntar el estado — el empuje avisa rápido, el jalón no se pierde.
+    source.onopen = () => {
+      getStatus(id)
+        .then((s) => {
+          if (active) setStatus(s);
+        })
+        .catch(() => {});
+    };
     source.onmessage = (message) => {
       const event = parseProjectEvent(message);
       if (!event || !active) return;
@@ -96,6 +133,42 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       source.close();
     };
   }, [id, attempt]);
+
+  // Mientras el proyecto procesa, el estado también se jala por intervalo:
+  // si el evento terminal se perdió (pestaña dormida, stream caído, ventana
+  // del bus rebasada), la pantalla de procesamiento no puede quedarse
+  // varada — era el bug de «terminó y no llegó la pantalla principal».
+  const processing = status !== null && !TERMINAL.has(status.state);
+  useEffect(() => {
+    if (!processing) return;
+    let active = true;
+    const refetch = () => {
+      getStatus(id)
+        .then((s) => {
+          if (active) setStatus(s);
+        })
+        .catch(() => {});
+    };
+    const timer = window.setInterval(refetch, POLL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refetch();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [id, processing]);
+
+  // El reloj de la pantalla de procesamiento: rota la frase del paso actual
+  // y cuenta el tiempo transcurrido. Texto que cambia, no animación.
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!processing) return;
+    const timer = window.setInterval(() => setTick((n) => n + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [processing]);
 
   const failed = status?.state === "failed";
   const notStarted =
@@ -203,13 +276,20 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       >
         <Buildings size={16} weight="duotone" /> Klave
       </Link>
-      <h1 className="text-xl font-semibold">
+      <h1 className="flex items-baseline gap-3 text-xl font-semibold">
         {failed ? "No se pudo procesar el plano" : "Procesando tu plano…"}
+        {!failed && tick >= 3 && (
+          <span className="tabular text-sm font-normal text-faint">
+            {Math.floor(tick / 60)}:{String(tick % 60).padStart(2, "0")}
+          </span>
+        )}
       </h1>
       <p className="mt-1 text-sm text-muted">
         {failed
           ? "Revisa el archivo e inténtalo de nuevo."
-          : "Leemos las entidades, detectamos elementos y calculamos el presupuesto."}
+          : status?.stage && status.stage !== "Desconocido"
+            ? status.stage
+            : "Leemos las entidades, detectamos elementos y calculamos el presupuesto."}
       </p>
 
       <div className="card rise-in mt-6 p-5">
@@ -245,6 +325,13 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
                 }
               >
                 {step.label}
+                {isCurrent && !failed && (
+                  <span className="block text-xs font-normal text-faint">
+                    {STEP_DETAIL[step.key][
+                      Math.floor(tick / 4) % STEP_DETAIL[step.key].length
+                    ]}
+                  </span>
+                )}
               </span>
               {step.key === "parsed" && done && status?.entity_count != null && (
                 <span className="ml-auto tabular text-xs text-faint">
