@@ -624,6 +624,19 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '21') "
                     "ON CONFLICT(key) DO UPDATE SET value = '21'"
                 )
+            if version_row is None or int(version_row["value"]) < 22:
+                # La losa sin sistema declarado deja de cobrarse como
+                # reticular: EST-016 la recibe, sin matriz — sin precio hasta
+                # que el plano declare el sistema o el taller la mapee.
+                self._sync_builtin_concepts(conn, ("EST-016",))
+                conn.execute(
+                    "UPDATE concepts SET rule_key = ? WHERE code = ? AND rule_key IS NULL",
+                    ("EST-016", "EST-016"),
+                )
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '22') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '22'"
+                )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.
                 conn.execute(

@@ -327,12 +327,31 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
                 detection_type=DetectionType.slab_region,
                 kind=QuantityKind.AREA,
                 source_property="estimated_area",
-                property_filter={"family": [None, "reticular", "sin_tipo", "losa"]},
+                property_filter={"family": ["reticular"]},
+            ),
+            quantity_factor=1.0,
+            view_scope=ViewScope.SUPERSTRUCTURE_SUM,
+            assumptions=["Área de tableros reticulares por nivel"],
+            production_rate_per_day=35.0,
+            sequence_order=2,
+        ),
+        Concept(
+            code="EST-016",
+            description="Losa sin sistema declarado en el plano",
+            unit="M2",
+            phase="Estructura",
+            rule=QuantityRule(
+                detection_type=DetectionType.slab_region,
+                kind=QuantityKind.AREA,
+                source_property="estimated_area",
+                property_filter={"family": [None, "sin_tipo", "losa"]},
             ),
             quantity_factor=1.0,
             view_scope=ViewScope.SUPERSTRUCTURE_SUM,
             assumptions=[
-                "Área de tableros reticulares (y de losas sin sistema declarado) por nivel"
+                "El plano no declara el sistema de esta losa: la línea sale sin "
+                "precio. Declara el sistema en el plano (reticular, maciza, "
+                "vigueta) o asigna el concepto correcto en el catálogo."
             ],
             production_rate_per_day=35.0,
             sequence_order=2,

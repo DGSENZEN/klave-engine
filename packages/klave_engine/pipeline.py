@@ -338,24 +338,39 @@ def run_full_pipeline(
             result.warnings.extend(output.warnings)
             result.detections.extend(output.detections)
     # Where the sheet draws tableros, a large closed polyline is a notes box
-    # or a detail, never a slab: the tablero reading is the authority.
-    panel_files = {
-        d.evidence.source for d in result.detections if d.evidence.method == "slab_panel"
+    # or a detail, never a slab: the tablero reading is the authority. Con
+    # marcos, la autoridad es por marco — una esquina sin panelizar de otro
+    # marco del mismo archivo no pierde su losa. Sin marcos, por archivo.
+    def _frame_key(detection) -> tuple[str, str | None]:
+        cx = (detection.bbox[0] + detection.bbox[2]) / 2
+        cy = (detection.bbox[1] + detection.bbox[3]) / 2
+        for frame in frames:
+            if frame.source_file == detection.evidence.source and frame.contains((cx, cy)):
+                return (detection.evidence.source, frame.frame_id)
+        return (detection.evidence.source, None)
+
+    framed_files = {f.source_file for f in frames}
+    panel_scopes = {
+        _frame_key(d) if d.evidence.source in framed_files else (d.evidence.source, None)
+        for d in result.detections
+        if d.evidence.method == "slab_panel"
     }
-    if panel_files:
-        kept = [
-            d for d in result.detections
-            if not (
-                d.evidence.method == "slab_region_from_large_closed_polyline"
-                and d.evidence.source in panel_files
-            )
-        ]
+    panel_files_unframed = {src for (src, fid) in panel_scopes if fid is None}
+    if panel_scopes:
+        def _outline_dropped(d) -> bool:
+            if d.evidence.method != "slab_region_from_large_closed_polyline":
+                return False
+            if d.evidence.source in framed_files:
+                return _frame_key(d) in panel_scopes
+            return d.evidence.source in panel_files_unframed
+
+        kept = [d for d in result.detections if not _outline_dropped(d)]
         dropped = len(result.detections) - len(kept)
         if dropped:
             result.detections = kept
             log_stage(
                 logger, "legacy_slab_outlines_dropped", dropped=dropped,
-                files=sorted(panel_files),
+                files=sorted({src for (src, _fid) in panel_scopes}),
             )
     # What the sheet declares about its marks outranks measured markers and
     # assumptions: stamp sections from cuadros, details, and notes first.

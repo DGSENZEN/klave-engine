@@ -44,3 +44,20 @@ def test_quantities_split_by_planta():
     assert lines["EST-003"].by_view == {"ES-100 · PLANTA BAJA": 140.0, "ES-400 · AZOTEA": 60.0}
     # A single-planta line carries no breakdown (nothing to split).
     assert lines["CIM-007"].by_view == {}
+
+
+def test_losa_sin_tipo_no_se_cobra_como_reticular():
+    # Una losa sin sistema declarado no es reticular: sale como EST-016,
+    # sin precio, hasta que el plano declare el sistema o el taller la mapee.
+    dets = [_slab("s1", 20.0, family=None)]
+    assumptions = CostingAssumptions()
+    catalog = [c for c in build_default_catalog(assumptions) if c.code in {"EST-003", "EST-016"}]
+    units = DrawingUnits(unit="m", source="declared", confidence=1.0)
+    boq = generate_bill_of_quantities(
+        "t", dets, units, catalog, build_all_apus(catalog, LIBRO),
+        assumptions=assumptions,
+    )
+    lines = {line.concept_code: line for line in boq.lines}
+    assert "EST-003" not in lines or lines["EST-003"].quantity == 0.0
+    assert lines["EST-016"].quantity == 20.0
+    assert lines["EST-016"].unpriced is True
