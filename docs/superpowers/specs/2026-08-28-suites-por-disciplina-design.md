@@ -211,8 +211,8 @@ prefabricados (S2), no de cada suite.
 | 3 | Gas | spec "PEAD 19MM" legible | — |
 | 4 | AA | bloques con tonelaje legibles | — |
 | 5 | Especiales (CCTV/voz) | bloques legibles | — |
-| 6 | Acabados y plafones | símbolos + H LIBRE legibles | cuadro por leer |
-| 7 | Albañilería profunda | hojas casi puras cotas | reclamo con estructural |
+| 6 | Acabados y plafones — **suite cerrada 2026-08-29**: marcas PI/PL con clave (98), locales anclados por marca, áreas por clave cuando la base entregue muros. Áreas: bloqueadas por el xref arquitectónico. | símbolos legibles | xref (S3) |
+| 7 | Albañilería profunda — **veredicto 2026-08-29**: sus hojas son cotas sobre una base que no embebe; bloqueada por el xref, igual que acabados-áreas. | cotas sobre base ausente | xref (S3) |
 | 8 | Eléctrica | **no convierte** | S3 |
 | 9 | Carpintería/herrería | **0 entidades tras convertir** | S3 |
 

@@ -364,8 +364,25 @@ alzados acotados (119 cotas, la ronda siguiente). Lo que sí hay es mejor:
 cotas del alzado (119 en la hoja) → los m² del cancel y el primer lector
 real del seam S4.
 
-Siguiente en la cola: **eléctrica** — que primero necesita el spike de
-conversión (su DWG de Marina no convierte).
+### Ronda acabados cerrada (2026-08-29, rama `ronda-acabados`) — y el veredicto que cambia la cola
+
+La suite de acabados existe y es correcta: marcas PI/PL con su clave
+(98 leídas en Marina), locales anclados por marca (extensión razonada del
+detector de rooms: una hoja que no nombra sus locales pero los marca con
+acabados declarados ES una planta de locales), áreas por clave por local en
+`acabados.json` y la Lectura, hallazgo agrupado «locales sin clave», gold
+`acabados-mini` (98 marcas, F1 = 1.0). Sin locales, las claves cuentan
+igual — piezas por clave con `m² = None`, nunca un área inventada.
+
+**El veredicto estratégico, medido tres veces:** las áreas de acabados, la
+albañilería profunda y los m² de cancelería están bloqueados por **la misma
+causa raíz** — el fondo arquitectónico (xref) no entrega sus muros: la hoja
+de acabados trae 378 «líneas de muro» que son flechas de símbolo, la de
+albañilería es 988 cotas sobre una base ausente, y los alzados de
+cancelería no anclan sus claves. Igual que eléctrica (DWG ilegible) y
+carpintería (bloques tirados). **Cinco cosas, un desbloqueador: el
+workstream de conversión (S3 profundo).** Ese spike deja de ser opcional:
+es lo siguiente del motor.
 
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
