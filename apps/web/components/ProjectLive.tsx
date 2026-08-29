@@ -449,7 +449,8 @@ function dataString(event: ProjectEvent, key: string): string {
 
 function projectLocationLabel(projectId: string, pathname: string): string {
   const base = `/proyecto/${projectId}`;
-  if (pathname === base) return "Resumen";
+  if (pathname === base) return "Tablero";
+  if (pathname === `${base}/resumen`) return "Resumen";
   if (pathname === `${base}/plano`) return "Visor del Plano";
   if (pathname === `${base}/presupuesto`) return "Presupuesto";
   if (pathname === `${base}/parametros`) return "Parámetros e Insumos";

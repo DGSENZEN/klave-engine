@@ -52,7 +52,7 @@ export function UnverifiedBanner({
       <Callout
         tone="warning"
         action={
-          <Link href={`/proyecto/${id}`} className="inline-flex">
+          <Link href={`/proyecto/${id}/resumen`} className="inline-flex">
             <Button size="sm">Ruta de verificación</Button>
           </Link>
         }

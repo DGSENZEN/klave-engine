@@ -539,6 +539,44 @@ export type ProjectInfo = {
   }[];
 };
 
+export type TableroChip = {
+  label: string;
+  tone: "ok" | "warn" | "bad" | "muted";
+  /** Fragmento de ruta del proyecto (p.ej. «/lectura»); se antepone /proyecto/{id}. */
+  href?: string;
+};
+
+export type TableroEstado = "ok" | "atencion" | "bloqueado" | "pendiente";
+
+export type TableroNodeKey =
+  | "planos"
+  | "revision"
+  | "catalogo"
+  | "presupuesto"
+  | "programa"
+  | "contrato";
+
+export type TableroNode = { estado: TableroEstado; chips: TableroChip[] };
+
+export type TableroGate = { approved_at: string | null; approved_by: string };
+
+export type Tablero = {
+  project_id: string;
+  /** null en modo abierto (sin cuentas): todos pueden abrir candados. */
+  my_role: "owner" | "editor" | "viewer" | "admin" | null;
+  gates: Partial<Record<TableroNodeKey, TableroGate>>;
+  nodes: Record<TableroNodeKey, TableroNode>;
+};
+
+export const getTablero = (id: string) => getJSON<Tablero>(`/projects/${id}/tablero`);
+
+export const putGate = (id: string, node: TableroNodeKey, approved: boolean, actor?: string) =>
+  putJSON<{ gates: Partial<Record<TableroNodeKey, TableroGate>> }>(
+    `/projects/${id}/gates/${node}`,
+    { approved },
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
 export const getProject = (id: string) => getJSON<ProjectInfo>(`/projects/${id}`);
 export const getStatus = (id: string) => getJSON<ProjectStatus>(`/projects/${id}/status`);
 export const getEventsHistory = (id: string) =>

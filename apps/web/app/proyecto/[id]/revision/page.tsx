@@ -204,7 +204,7 @@ export default function RevisionPage() {
           tone={error === "not_processed" ? "info" : "danger"}
           action={
             error === "not_processed" ? (
-              <Link href={`/proyecto/${id}`} className={buttonClasses("secondary", "sm")}>
+              <Link href={`/proyecto/${id}/resumen`} className={buttonClasses("secondary", "sm")}>
                 Ir al resumen
               </Link>
             ) : (

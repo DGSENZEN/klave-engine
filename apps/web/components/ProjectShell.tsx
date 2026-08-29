@@ -13,6 +13,7 @@ import {
   Coins,
   FileMagnifyingGlass,
   Flag,
+  Gauge,
   GearSix,
   List,
   ListChecks,
@@ -45,7 +46,13 @@ function nav(id: string): { group: string; items: Item[] }[] {
     {
       group: "Leer",
       items: [
-        { key: "resumen", label: "Resumen", icon: <SquaresFour size={18} />, href: b },
+        { key: "tablero", label: "Tablero", icon: <SquaresFour size={18} />, href: b },
+        {
+          key: "resumen",
+          label: "Resumen",
+          icon: <Gauge size={18} />,
+          href: `${b}/resumen`,
+        },
         {
           key: "lectura",
           label: "Lectura del plano",
