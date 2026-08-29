@@ -40,7 +40,8 @@ SUITES: tuple[DisciplineSuite, ...] = (
     DisciplineSuite("aire", _r(r"AIRE|\bAA\b|DUCTO|CLIMA|HVAC|MINISPLIT|COND"),
                     block_hints=("COND", "COMPUERTA")),
     DisciplineSuite("cctv", _r(r"CCTV|CAMARA|CÁMARA|SEGURIDAD|SENSOR|ALARMA")),
-    DisciplineSuite("canceleria", _r(r"CANCEL|VENTANA|PUERTA|ALUM|HERRER")),
+    DisciplineSuite("canceleria", _r(r"CANCEL|VENTANA|PUERTA|ALUM|HERRER"),
+                    block_hints=("CANC", "PTALOUVER")),
     DisciplineSuite("acabados", _r(r"ACABAD|\bPISOS?\b|PLAFON|PINTURA|AZULEJO|LAMBR")),
     DisciplineSuite("carpinteria", _r(r"CARPINT|MADERA|CLOSET|COCINA")),
     # La subida slugifica y pierde la ñ: «albañilería» llega como "alba iler a".

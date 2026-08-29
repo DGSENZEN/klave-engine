@@ -97,3 +97,41 @@ def test_hidrosanitaria_ocupa_el_hueco_detect(tmp_path):
     tipos = sorted(d.detection_type.value for o in outputs for d in o.detections)
     # El trío de siempre: el mueble se detecta; la corrida no (sin unidades).
     assert "fixture" in tipos
+
+
+def test_canceleria_detecta_la_pieza_sin_recontarla(tmp_path):
+    """La suite de cancelería: el globo con clave es UNA pieza — el detector
+    genérico de vanos no la vuelve a contar."""
+    import ezdxf
+    from klave_engine.common.ids import IdGenerator
+    from klave_engine.detection.disciplines import route_sheet
+    from klave_engine.detection.suite import DetectorSuiteConfig, run_detectors
+    from klave_engine.dxf.parser import DxfParser
+    from klave_engine.geometry.spatial_index import SpatialIndex
+    from klave_engine.ingestion.manifest import ProjectManifest
+
+    doc = ezdxf.new("R2010")
+    block = doc.blocks.new(name="CANC_ALUM")
+    block.add_line((0, 0), (0.4, 0))
+    block.add_attdef("CLAVE", (0, 0), dxfattribs={"height": 0.2})
+    ref = doc.modelspace().add_blockref(
+        "CANC_ALUM", (5, 5), dxfattribs={"layer": "CANCELERIA"}
+    )
+    ref.add_auto_attribs({"CLAVE": "CA-07"})
+    path = tmp_path / "12-12_canceleria.dxf"
+    doc.saveas(path)
+    entities = DxfParser().parse_file(path).entities
+
+    suite = route_sheet("12-12_canceleria.dxf")
+    assert suite.key == "canceleria" and suite.detect is not None
+
+    manifest = ProjectManifest(project_id="t", project_name="t", root_path=str(tmp_path))
+    outputs = run_detectors(
+        entities, SpatialIndex(entities), manifest, DetectorSuiteConfig(),
+        ids=IdGenerator("d"), units=None, structural=False, suite=suite,
+    )
+    openings = [d for o in outputs for d in o.detections
+                if d.detection_type.value == "opening"]
+    assert len(openings) == 1
+    assert openings[0].label == "CA-07"
+    assert openings[0].properties["opening_family"] == "cancel"
