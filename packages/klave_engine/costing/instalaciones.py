@@ -75,6 +75,8 @@ _CONCEPTOS: tuple[tuple[str, str, str, str, float, int], ...] = (
      "M", FASE_SANITARIA, 30.0, 30),
     ("SAN-004", "Registro sanitario de tabique con tapa de concreto",
      "PZA", FASE_SANITARIA, 1.5, 40),
+    ("SAN-006", "Tramo vertical de bajada, medido de los niveles del plano",
+     "M", FASE_SANITARIA, 30.0, 50),
     # --- Gas --------------------------------------------------------------
     ("GAS-001", "Tubería de gas, incluye conexiones y prueba de hermeticidad",
      "M", FASE_GAS, 22.0, 10),
@@ -193,10 +195,13 @@ _MUEBLES_POR_CONCEPTO: dict[str, tuple[str, ...]] = {
     "GAS-002": ("tanque_gas",),
 }
 
-# «bajada» se detecta y a propósito no recibe concepto: el símbolo de
-# subida-bajada marca dónde la tubería cambia de nivel, y esos metros ya los
-# cobra la corrida. Darle concepto propio sería cobrar dos veces el mismo
-# tramo. Se queda visible en el visor, que es donde sirve.
+# «bajada» por PIEZA sigue sin concepto: los metros EN PLANTA de ese tramo
+# ya los cobra la corrida, y cobrar el símbolo además sería doble. Lo que la
+# corrida en planta NUNCA dibuja es el tramo VERTICAL entre niveles: ese lo
+# mide `stamp_bajada_stacks` ligando el símbolo entre plantas por posición y
+# leyendo los N.P.T. declarados — y lo cobra SAN-006, solo cuando hay
+# niveles de dónde medirlo. Un tiro es una columna: la representante del
+# nivel más bajo lleva los metros; las demás, cero.
 
 _VANOS_POR_CONCEPTO: dict[str, tuple[str, ...]] = {
     "CAN-001": ("cancel",),
@@ -241,6 +246,16 @@ def _regla(code: str) -> QuantityRule | None:
             kind=QuantityKind.LENGTH,
             source_property="estimated_length",
             property_filter={"run_family": list(familias)},
+        )
+    if code == "SAN-006":
+        # El tramo vertical del tiro, estampado por stamp_bajada_stacks en
+        # la representante del nivel más bajo (vertical_length_du); las
+        # bajadas sin la propiedad suman cero, nunca un supuesto.
+        return QuantityRule(
+            detection_type=DetectionType.fixture,
+            kind=QuantityKind.LENGTH,
+            source_property="vertical_length_du",
+            property_filter={"fixture_family": ["bajada"]},
         )
     return None
 

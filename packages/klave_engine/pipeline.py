@@ -30,6 +30,7 @@ from klave_engine.costing.report import (
 from klave_engine.costing.reviews import filter_excluded, load_reviews
 from klave_engine.detection.dimension_links import link_dimensions
 from klave_engine.detection.dimensions import build_dimension_inventory
+from klave_engine.detection.bajadas import stamp_bajada_stacks
 from klave_engine.detection.disciplines import route_sheet, vote_content
 from klave_engine.detection.frames import SheetFrame, detect_frames
 from klave_engine.detection.inventory import build_inventory, reads_as_structure
@@ -503,6 +504,13 @@ def run_full_pipeline(
             ):
                 detection.properties["on_roof"] = True  # a pretil: costed knee-high
                 tagged += 1
+    # Las bajadas se ligan entre plantas por posición; con niveles N.P.T.
+    # declarados, el tiro mide su tramo vertical (SAN-006).
+    stamped_stacks = stamp_bajada_stacks(
+        result.detections, frames, segmentation, units.to_meters()
+    )
+    if stamped_stacks:
+        log_stage(logger, "bajada_stacks_stamped", stacks=stamped_stacks)
     write_json(processed / "detections.json", result.detections)
     log_stage(
         logger,
