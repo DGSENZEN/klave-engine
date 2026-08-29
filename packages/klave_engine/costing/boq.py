@@ -26,7 +26,7 @@ from klave_engine.costing.models import (
     UnitPriceAnalysis,
     ViewScope,
 )
-from klave_engine.detection.results import Detection
+from klave_engine.detection.results import Detection, DetectionType
 from klave_engine.detection.views import SheetSegmentation
 from klave_engine.dxf.units import DrawingUnits
 
@@ -730,6 +730,32 @@ def generate_bill_of_quantities(
                 f"({line.confidence:.0%}); revisar la cantidad en el visor del "
                 "plano antes de usar este importe."
             )
+
+    # Hidrosanitaria: un solo aviso por causa, con denominador y exposición
+    # física — nunca uno por elemento (principio 7).
+    corridas = [d for d in detections if d.detection_type == DetectionType.pipe_run]
+    sin_diametro = [d for d in corridas if not (d.properties or {}).get("spec")]
+    if sin_diametro:
+        metros = sum(float((d.properties or {}).get("length_m") or 0.0) for d in sin_diametro)
+        boq.warnings.append(
+            f"{len(sin_diametro)} de {len(corridas)} corridas de instalación sin "
+            f"diámetro legible: {metros:,.0f} m que ninguna publicación deja cotizar."
+        )
+    stacks_sin_nivel = {
+        (d.properties or {}).get("stack_id")
+        for d in detections
+        if d.detection_type == DetectionType.fixture
+        and (d.properties or {}).get("stack_id")
+    } - {
+        (d.properties or {}).get("stack_id")
+        for d in detections
+        if (d.properties or {}).get("vertical_length_m") is not None
+    }
+    if stacks_sin_nivel:
+        boq.warnings.append(
+            f"{len(stacks_sin_nivel)} tiros de bajada ligados sin niveles N.P.T. "
+            "de dónde medir su tramo vertical."
+        )
 
     boq.direct_cost_total = round(sum(line.amount for line in boq.lines), 2)
     totals: dict[str, float] = defaultdict(float)

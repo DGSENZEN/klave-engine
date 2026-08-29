@@ -199,6 +199,32 @@ _RULES: list[Rule] = [
         ),
     ),
     Rule(
+        pattern=r"corridas de instalación sin diámetro legible",
+        severity="dinero",
+        action="Rotula el diámetro sobre el trazo, o decláralo al adoptar el precio.",
+        target="lectura",
+        group="corridas_sin_diametro",
+        plural="{n} hojas con corridas sin diámetro legible",
+        momento="cotizar",
+        verificar=(
+            "Nadie publica precio de «tubería» a secas: sin diámetro, esos "
+            "metros no se pueden cotizar contra ninguna publicación."
+        ),
+    ),
+    Rule(
+        pattern=r"tiros de bajada ligados sin niveles",
+        severity="revisar",
+        action="Declara los N.P.T. de cada planta para medir el tramo vertical.",
+        target="lectura",
+        group="bajadas_sin_nivel",
+        plural="{n} hojas con tiros de bajada sin nivel de dónde medirse",
+        momento="entregar",
+        verificar=(
+            "El tiro está ligado por posición entre plantas; lo que falta es "
+            "el nivel que convierte los niveles en metros verticales."
+        ),
+    ),
+    Rule(
         pattern=r"nivel de plataforma",
         severity="revisar",
         action="Define el nivel de plataforma en Parámetros para calcular corte y terraplén.",

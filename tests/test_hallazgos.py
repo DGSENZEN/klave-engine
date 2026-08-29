@@ -210,3 +210,46 @@ def test_findings_carry_the_last_responsible_moment_and_a_way_to_check_them():
     finding = d.hallazgos[0]
     assert finding.momento == "cotizar"
     assert "notas de f'c" in finding.verificar
+
+
+def test_corridas_sin_diametro_es_un_hallazgo_con_denominador():
+    from klave_engine.costing.hallazgos import _classify
+    texto = ("3 de 20 corridas de instalación sin diámetro legible: 481 m que "
+             "ninguna publicación deja cotizar.")
+    rule = _classify(texto)
+    assert rule.severity == "dinero"
+    assert rule.group == "corridas_sin_diametro"
+    assert rule.momento == "cotizar"
+
+    tiros = "2 tiros de bajada ligados sin niveles N.P.T. de dónde medir su tramo vertical."
+    rule2 = _classify(tiros)
+    assert rule2.severity == "revisar"
+    assert rule2.group == "bajadas_sin_nivel"
+
+
+def test_el_boq_emite_un_solo_aviso_por_causa():
+    from klave_engine.costing.apu import build_all_apus
+    from klave_engine.costing.boq import generate_bill_of_quantities
+    from klave_engine.costing.instalaciones import conceptos_de_instalaciones
+    from klave_engine.detection.results import DetectionType, make_detection
+    from klave_engine.dxf.units import DrawingUnits
+
+    from tests.precios import LIBRO
+
+    def corrida(det_id, spec):
+        return make_detection(
+            det_id, DetectionType.pipe_run, "00-SANITARIA", (0, 0, 1, 1), 0.78, [],
+            "layer_run", [],
+            {"run_family": "sanitaria", "estimated_length": 10.0, "length_m": 10.0,
+             "spec": spec},
+        )
+
+    dets = [corrida("r1", ""), corrida("r2", ""), corrida("r3", '4"')]
+    catalog = [c for c in conceptos_de_instalaciones() if c.code == "SAN-002"]
+    units = DrawingUnits(unit="m", source="declared", confidence=1.0)
+    boq = generate_bill_of_quantities(
+        "t", dets, units, catalog, build_all_apus(catalog, LIBRO)
+    )
+    avisos = [w for w in boq.warnings if "sin diámetro legible" in w]
+    assert len(avisos) == 1
+    assert "2 de 3" in avisos[0] and "20 m" in avisos[0]
