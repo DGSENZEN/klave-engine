@@ -106,3 +106,39 @@ def test_sin_alturas_las_plantas_se_suman():
     # …y estrictamente más que quedarse con la planta más poblada.
     assert dos_plantas.quantity > solo_tres.quantity
     assert set(dos_plantas.by_view) == {"ES · F1", "ES · F2"}
+
+
+def test_los_muros_de_una_hoja_no_estructural_cobran_con_altura_supuesta():
+    """Los tabiques viven en la planta de albañilería (no estructural): con
+    niveles declarados en las hojas estructurales, igual deben cobrar — a
+    altura supuesta, con su nota — en vez de sumar cero en silencio."""
+    def _muro(det_id, kind="tabique"):
+        return make_detection(
+            det_id, DetectionType.wall, det_id, (0, 0, 8, 0.14), 0.8, [], "wall_pair", [],
+            {"estimated_length": 8.0, "wall_kind": kind},
+        )
+
+    seg = SheetSegmentation(
+        views=[
+            ViewRegion(view_id="e1", title="ES-100 · PB", kind=ViewKind.plan,
+                       level_key="planta_baja", npt_level=0.0, anchor=(0, 0)),
+            ViewRegion(view_id="e2", title="ES-200 · PA", kind=ViewKind.plan,
+                       level_key="planta_alta", npt_level=2.7, anchor=(0, 0)),
+            ViewRegion(view_id="a1", title="ALB-01", kind=ViewKind.plan,
+                       level_key="planta", structural=False, anchor=(0, 0)),
+        ],
+        assignment={"t1": "a1", "t2": "a1"},
+        is_segmented=True,
+    )
+    dets = [_muro("t1"), _muro("t2")]
+    assumptions = CostingAssumptions()
+    catalog = [c for c in build_default_catalog(assumptions) if c.code == "ALB-001"]
+    units = DrawingUnits(unit="m", source="declared", confidence=1.0)
+    boq = generate_bill_of_quantities(
+        "t", dets, units, catalog, build_all_apus(catalog, LIBRO),
+        segmentation=seg, assumptions=assumptions,
+    )
+    linea = next(li for li in boq.lines if li.concept_code == "ALB-001")
+    assert linea.raw_quantity == 16.0  # 2 muros × 8 m
+    assert linea.quantity > 0
+    assert any("supuesta" in n.lower() for n in linea.assumptions)

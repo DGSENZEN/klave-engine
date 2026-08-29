@@ -18,8 +18,8 @@ from klave_engine.detection.results import DetectorOutput
 from klave_engine.detection.rooms import detect_rooms
 from klave_engine.detection.run_detector import detect_runs
 from klave_engine.detection.wall_detector import detect_walls
-from klave_engine.geometry.spatial_index import SpatialIndex
 from klave_engine.dxf.entities import NormalizedEntity
+from klave_engine.geometry.spatial_index import SpatialIndex
 
 
 def detect(

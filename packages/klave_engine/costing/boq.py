@@ -464,6 +464,28 @@ def _scoped_result(
                 quantity_sum += view_quantity
                 raw_sum += view_raw
                 view_split[titles[view.view_id]] = round(view_quantity, 4)
+            # Los muros de una hoja de disciplina (albañilería) viven en
+            # plantas no estructurales: cobran a altura supuesta — sumar
+            # cero en silencio sería perder la partida entera.
+            plantas_disciplina = {
+                v.view_id for v in segmentation.plan_views() if not v.structural
+            }
+            resto = [
+                d for d in dets if assignment.get(d.detection_id) in plantas_disciplina
+            ]
+            resto_note: str | None = None
+            if resto:
+                resto_raw = _raw_over(concept, resto, meters_factor)
+                if resto_raw > 0:
+                    quantity_sum += resto_raw * concept.quantity_factor
+                    raw_sum += resto_raw
+                    view_split["Hojas de disciplina"] = round(
+                        resto_raw * concept.quantity_factor, 4
+                    )
+                    resto_note = (
+                        f"{len(resto)} detecciones en hojas de disciplina sin nivel "
+                        f"declarado: altura supuesta {assumptions.wall_height_m:.2f} m"
+                    )
             declared = ", ".join(
                 f"{titles[v.view_id].split(' · ')[-1][:22]} {heights[v.view_id]:.2f} m"
                 for v in segmentation.superstructure_views()
@@ -473,6 +495,8 @@ def _scoped_result(
                 f"Suma de plantas de superestructura ({len(dets)} detecciones)",
                 f"Altura de entrepiso por planta declarada en el plano (NTC/NPT): {declared}",
             ]
+            if resto_note:
+                notes.append(resto_note)
             if parapet_views:
                 notes.append(
                     f"Pretiles en {', '.join(parapet_views)}: altura "

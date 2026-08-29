@@ -100,7 +100,10 @@ def test_runs_split_per_planta_with_frames(tmp_path):
 def test_structural_detectors_skip_installation_sheets():
     assert reads_as_structure("02 ESTRUCTURAL L.04.dwg")
     assert reads_as_structure("Plano Prueba 1.dxf")  # unknown names are structure
-    assert reads_as_structure("01 ARQ L.04.dwg")
+    # Desde la ruta «arquitectura» (spec §9): el plano ARQ es sustrato — sus
+    # muros se ven y anclan locales, pero los detectores estructurales no
+    # corren ahí y su geometría jamás cobra.
+    assert not reads_as_structure("01 ARQ L.04.dwg")
     assert not reads_as_structure("05 SANITARIO L.04.dwg")
     assert not reads_as_structure("09 GAS L.04.dwg")
     assert not reads_as_structure("12 CANCELERIA L.04.dwg")
