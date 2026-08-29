@@ -31,6 +31,7 @@ from apps.api.routes import (
     graph,
     health,
     lectura,
+    tablero,
     obra,
     projects,
     reports,
@@ -129,6 +130,7 @@ def create_app() -> FastAPI:
     app.include_router(detections.router)
     app.include_router(reports.router)
     app.include_router(lectura.router)
+    app.include_router(tablero.router)
     app.include_router(exports.router)
     app.include_router(reviews.router)
     app.include_router(version_routes.router)
