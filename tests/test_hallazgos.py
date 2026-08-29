@@ -253,3 +253,18 @@ def test_el_boq_emite_un_solo_aviso_por_causa():
     avisos = [w for w in boq.warnings if "sin diámetro legible" in w]
     assert len(avisos) == 1
     assert "2 de 3" in avisos[0] and "20 m" in avisos[0]
+
+
+def test_piezas_sin_clave_es_hallazgo_y_viaja_al_diagnostico():
+    from klave_engine.costing.hallazgos import _classify, promote_detection_warnings
+
+    texto = ("3 de 38 piezas de cancelería sin clave legible: el globo no "
+             "declara qué pieza es. Siguen en el levantamiento.")
+    rule = _classify(texto)
+    assert rule.severity == "revisar"
+    assert rule.group == "canceleria_sin_clave"
+
+    # Solo viaja lo que el diagnóstico sabe clasificar; el ruido de
+    # detección genérico se queda donde estaba.
+    ruido = "126 líneas largas fuera de las capas de muros se ignoraron al buscar muros."
+    assert promote_detection_warnings([texto, ruido]) == [texto]

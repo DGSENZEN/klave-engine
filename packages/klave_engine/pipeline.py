@@ -21,6 +21,7 @@ from klave_engine.conversion.dwg_to_dxf import ConversionResult, convert_project
 from klave_engine.costing.catalog_store import CatalogStore, get_catalog_store
 from klave_engine.costing.insumos import apply_price_overrides
 from klave_engine.costing.models import CostingConfig, CostReport
+from klave_engine.costing.hallazgos import promote_detection_warnings
 from klave_engine.costing.recompute import load_overrides
 from klave_engine.costing.report import (
     boq_to_csv,
@@ -566,6 +567,12 @@ def run_full_pipeline(
         parametric_rules=catalog_store.list_parametric_rules(),
         plantillas=catalog_store.list_plantillas(),
         price_vigencias=catalog_store.price_vigencias(),
+    )
+    # El detector conoce denominadores que el presupuesto no ve; viaja al
+    # diagnóstico solo lo que sus reglas saben clasificar.
+    result.cost_report.warnings.extend(
+        w for w in promote_detection_warnings(result.warnings)
+        if w not in result.cost_report.warnings
     )
     write_json(processed / "cost_report.json", result.cost_report)
     write_json(

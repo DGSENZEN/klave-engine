@@ -199,6 +199,19 @@ _RULES: list[Rule] = [
         ),
     ),
     Rule(
+        pattern=r"piezas? de cancelería sin clave",
+        severity="revisar",
+        action="Revisa los globos de nomenclatura sin atributo de clave en el plano.",
+        target="lectura",
+        group="canceleria_sin_clave",
+        plural="{n} hojas con piezas de cancelería sin clave legible",
+        momento="cotizar",
+        verificar=(
+            "El globo sin clave no declara qué pieza es: no puede entrar al "
+            "cuadro ni al presupuesto. Sigue contado en el levantamiento."
+        ),
+    ),
+    Rule(
         pattern=r"corridas de instalación sin diámetro legible",
         severity="dinero",
         action="Rotula el diámetro sobre el trazo, o decláralo al adoptar el precio.",
@@ -268,6 +281,23 @@ _ACTION_SENTENCE = re.compile(
     r"(?:^|\s)(Ajusta|Captura|Define|Revisa|Actualiza|Confirma|Corrige|Da)\b[^.]*\.?\s*$",
     re.IGNORECASE,
 )
+
+
+def promote_detection_warnings(warnings: list[str]) -> list[str]:
+    """Los avisos de detección que el diagnóstico sabe clasificar.
+
+    El detector conoce denominadores que el presupuesto no ve (piezas sin
+    clave, por ejemplo). Viaja al diagnóstico solo lo que una regla con
+    severidad reconoce; el ruido de detección genérico se queda donde
+    estaba — promover todo sería inundar la lista que este módulo existe
+    para no inundar."""
+    promoted: list[str] = []
+    for text in warnings:
+        for rule in _RULES:
+            if rule.severity is not None and re.search(rule.pattern, text, re.I):
+                promoted.append(text)
+                break
+    return promoted
 
 
 def _classify(text: str) -> Rule:
