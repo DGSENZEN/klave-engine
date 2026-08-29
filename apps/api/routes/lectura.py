@@ -149,6 +149,9 @@ def get_lectura(
                 if record
                 else {"status": "unknown", "message": "Sin registro de conversión."}
             )
+        parse_row = summary_by_file.get(parsed_path)
+        ilegible_row = summary_by_file.get(source.path.split("/")[-1])
+        coverage_row = parse_row or ilegible_row or {}
         sheets.append(
             {
                 "name": source.path.split("/")[-1],
@@ -156,7 +159,11 @@ def get_lectura(
                 "discipline": source.discipline,
                 "file_type": source.file_type.value,
                 "conversion": conversion,
-                "parse": summary_by_file.get(parsed_path),
+                "parse": parse_row,
+                # El veredicto de cobertura: ok, parcial o ilegible, con razones.
+                "coverage": coverage_row.get("coverage")
+                or ("ilegible" if conversion and conversion.get("status") == "failed" else None),
+                "coverage_reasons": coverage_row.get("coverage_reasons", []),
             }
         )
 

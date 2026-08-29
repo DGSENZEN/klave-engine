@@ -123,7 +123,9 @@ def parse_drawings(
     processed = output_dir or _processed_dir(manifest.root(), settings)
     write_json(processed / "normalized_entities.json", entities)
     write_json(processed / "parse_warnings.json", warnings)
-    write_json(processed / "parse_summary.json", _summarize_parse(drawings))
+    conversions_path = processed / "conversion_results.json"
+    conversions = read_json(conversions_path) if conversions_path.exists() else []
+    write_json(processed / "parse_summary.json", _summarize_parse(drawings, conversions))
     write_json(processed / "layer_summary.json", summarize_layers(entities))
     write_json(processed / "block_summary.json", summarize_blocks(entities))
     attdefs: dict[str, list[str]] = {}
@@ -139,8 +141,15 @@ def parse_drawings(
     return drawings
 
 
-def _summarize_parse(drawings: list[ParsedDrawing]) -> list[dict]:
-    """Per-sheet legibility record: what was read, derived, and dropped."""
+def _summarize_parse(
+    drawings: list[ParsedDrawing], conversions: list[dict] | None = None
+) -> list[dict]:
+    """Per-sheet legibility record: what was read, derived, and dropped.
+
+    Cada archivo fuente lleva un veredicto de cobertura — ok, parcial o
+    ilegible, con sus razones. Un DWG que no convirtió no tiene drawing:
+    entra igual, como renglón ilegible, porque el silencio no es cobertura.
+    """
     summary: list[dict] = []
     for drawing in drawings:
         entities_by_type = Counter(e.entity_type.value for e in drawing.entities)
@@ -175,6 +184,35 @@ def _summarize_parse(drawings: list[ParsedDrawing]) -> list[dict]:
                 "block_count": len(drawing.blocks),
                 "layouts": [layout.model_dump() for layout in drawing.layouts],
                 "xrefs": [xref.model_dump() for xref in drawing.xrefs],
+            }
+        )
+        reasons: list[str] = []
+        if not drawing.entities:
+            reasons.append("El archivo convirtió pero no trae entidades legibles.")
+        if any(w.warning_type == "dxf_recovered" for w in drawing.warnings):
+            reasons.append("Se leyó en modo de recuperación.")
+        if any(w.warning_type == "block_explosion_capped" for w in drawing.warnings):
+            reasons.append("Bloques con demasiadas entidades: se omitió una parte.")
+        if any(w.warning_type == "block_nesting_truncated" for w in drawing.warnings):
+            reasons.append("Bloques anidados a más de dos niveles: el fondo no se leyó.")
+        if any(w.warning_type == "xref_missing" for w in drawing.warnings):
+            reasons.append("Referencias externas ausentes: su geometría no entró.")
+        summary[-1]["coverage"] = "parcial" if reasons else "ok"
+        summary[-1]["coverage_reasons"] = reasons
+    # Un DWG que no convirtió no aparece en drawings: su renglón se agrega
+    # aquí, ilegible y con la razón del convertidor.
+    for record in conversions or []:
+        if record.get("status") != "failed":
+            continue
+        name = Path(str(record.get("source_path") or "")).name
+        summary.append(
+            {
+                "source_file": name,
+                "entity_count": 0,
+                "coverage": "ilegible",
+                "coverage_reasons": [
+                    record.get("error_message") or "La conversión falló sin mensaje."
+                ],
             }
         )
     return summary

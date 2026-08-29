@@ -192,3 +192,30 @@ def test_attdef_se_lee_del_bloque(tmp_path):
 
     drawing = DxfParser().parse_file(path)
     assert drawing.block_attdefs.get("NOMENCLATURA-V") == ["CLAVE"]
+
+
+def test_cobertura_declarada_por_archivo(tmp_path):
+    import ezdxf
+    from klave_engine.dxf.parser import DxfParser, ParsedDrawing
+    from klave_engine.pipeline import _summarize_parse
+
+    doc = ezdxf.new("R2010")
+    doc.modelspace().add_line((0, 0), (10, 0))
+    path = tmp_path / "limpio.dxf"
+    doc.saveas(path)
+    limpio = DxfParser().parse_file(path)
+    vacio = ParsedDrawing(source_file="converted/carpinteria/13.dxf")
+    conversions = [
+        {"source_path": "/x/drawings/06_electrico.dwg", "status": "failed",
+         "error_message": "READ ERROR 0x940", "output_path": None},
+    ]
+
+    rows = {r["source_file"]: r for r in _summarize_parse([limpio, vacio], conversions)}
+    assert rows[limpio.source_file]["coverage"] == "ok"
+    assert rows["converted/carpinteria/13.dxf"]["coverage"] == "parcial"
+    assert any("entidad" in reason.lower()
+               for reason in rows["converted/carpinteria/13.dxf"]["coverage_reasons"])
+    ilegible = rows["06_electrico.dwg"]
+    assert ilegible["coverage"] == "ilegible"
+    assert "READ ERROR 0x940" in " ".join(ilegible["coverage_reasons"])
+    assert ilegible["entity_count"] == 0
