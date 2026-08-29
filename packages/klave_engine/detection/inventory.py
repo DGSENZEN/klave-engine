@@ -43,6 +43,9 @@ _DISCIPLINE_HINTS: list[tuple[str, re.Pattern[str]]] = [
     ("canceleria", re.compile(r"CANCEL|VENTANA|PUERTA|ALUM|HERRER", re.I)),
     ("acabados", re.compile(r"ACABAD|\bPISOS?\b|PLAFON|PINTURA|AZULEJO|LAMBR", re.I)),
     ("carpinteria", re.compile(r"CARPINT|MADERA|CLOSET|COCINA", re.I)),
+    # La subida slugifica y pierde la ñ: «albañilería» llega como "alba iler a".
+    ("albanileria", re.compile(r"ALBA[ÑN]ILER|ALBA\W?ILER", re.I)),
+    ("indice", re.compile(r"\bINDICE\b|ÍNDICE|PORTADA|CAR[ÁA]TULA", re.I)),
     ("estructural", re.compile(r"EST|TRABE|LOSA|ZAPATA|CASTILL|COLUMN|CIMENT", re.I)),
 ]
 # Element tags: one or two letters, a dash or nothing, one to three digits,
@@ -128,7 +131,7 @@ def guess_discipline(text: str) -> str | None:
 # structural detectors stay off them, the levantamiento reads them.
 NON_STRUCTURAL = frozenset(
     {"hidraulica", "sanitaria", "electrica", "gas", "aire", "cctv", "canceleria",
-     "carpinteria", "acabados"}
+     "carpinteria", "acabados", "albanileria", "indice"}
 )
 
 
