@@ -34,7 +34,7 @@ Fixes E4. `apply_formwork` currently **drops** a computed plantilla/cimbra line 
 - Consumes: `Concept` (`costing/models.py:119`), `BoqLine`, `QuantityKind` (`costing/models.py`), `FormworkLine`/`FormworkReport` (`formwork.py:52,60`), `build_default_catalog(a)` (`costing/catalog.py:67`), `apply_cimentacion_earthmoving(boq, catalog, apus, assumptions)` (`costing/cimentacion.py:27`).
 - Produces: `apply_formwork(boq, catalog, apus, formwork)` now appends a `BoqLine` with `unpriced=True, unit_price=0.0, amount=0.0` when the concept exists but has no APU. Signature unchanged. Task 2 relies on this line existing.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/test_formwork.py` (reuse the module's existing imports of `BillOfQuantities`, `BoqLine`, `CostingAssumptions`, `QuantityKind`):
 
@@ -83,12 +83,12 @@ def test_relleno_resta_la_plantilla_aunque_no_tenga_precio():
 
 Note: `_line` is the existing helper at the top of `tests/test_formwork.py`; `CostingAssumptions()` constructs with defaults (verified: `costing/models.py:294`).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_formwork.py -q`
 Expected: both new tests FAIL — the first because no CIM-003 line is appended (warning path taken), the second because `fill.quantity == 10.0` (nothing subtracted).
 
-- [ ] **Step 3: Implement the minimal fix**
+- [x] **Step 3: Implement the minimal fix**
 
 In `apply_formwork` (`formwork.py`), split the guard so a missing **concept** still warns and skips, but a missing **APU** emits the line unpriced. Replace the block:
 
@@ -128,17 +128,17 @@ and in the `BoqLine(...)` construction just below, change
 `amount=round(item.quantity * apu.direct_unit_cost, 2)` → `amount=round(item.quantity * unit_price, 2)`,
 and add `unpriced=apu is None,` (mirroring `cimentacion.py:58`).
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_formwork.py tests/test_cimentacion_earthmoving.py -q`
 Expected: PASS (all, including the file's pre-existing tests).
 
-- [ ] **Step 5: Gold check — quantities recover, money fence still red**
+- [x] **Step 5: Gold check — quantities recover, money fence still red**
 
 Run: `make eval-gold`
 Expected: CIM-003 rows now show the engine quantity and pass; CIM-004 rows pass. The run may still FAIL overall on `Costo directo` ($0.00 vs captured money) and the unknown concepts AIR-004/CAR-001 — that is Task 2's job. Confirm no **other** row changed.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/klave_engine/costing/formwork.py tests/test_formwork.py
@@ -160,22 +160,22 @@ Fixes E4b. The gold money expectations were captured when seed prices existed; s
 - Consumes: Task 1 merged (quantities correct); `uv run python -m klave_engine.evals.gold money`.
 - Produces: a green `make eval-gold` baseline every later task must keep green.
 
-- [ ] **Step 1: Verify the only remaining failures are money/unknown-concept rows**
+- [x] **Step 1: Verify the only remaining failures are money/unknown-concept rows**
 
 Run: `make eval-gold`
 Expected: every detection row and every quantity row passes; failures limited to `Costo directo` on prueba-1/torre and «Conceptos nuevos que el gold no conoce: AIR-004, CAR-001». If any quantity row fails, STOP — that is a bug, not a recapture.
 
-- [ ] **Step 2: Recapture money**
+- [x] **Step 2: Recapture money**
 
 Run: `uv run python -m klave_engine.evals.gold money`
 Expected: one `money → <path>` line per gold entry.
 
-- [ ] **Step 3: Verify green**
+- [x] **Step 3: Verify green**
 
 Run: `make eval-gold`
 Expected: exit 0, `Overall: PASS`. Inspect the diff (`git diff evals/gold/`): `direct_cost` expectations now $0.00 (or absent), quantity rows unchanged except AIR-004/CAR-001 now present with engine quantities.
 
-- [ ] **Step 4: Commit, declaring the money change**
+- [x] **Step 4: Commit, declaring the money change**
 
 ```bash
 git add evals/gold/
@@ -199,7 +199,7 @@ Fixes E1 — the dominant cause of the disconnection. `detect_grid` measures can
 - Consumes: `SheetFrame` (`detection/frames.py:59` — fields `frame_id`, `bbox`, `source_file`, `code`, `title`, `kind`, `level_key`, `text_count`, `notes`; method `contains(point)`), `bbox_width/bbox_height/bbox_diagonal` (already imported).
 - Produces: `detect_grid(entities, index, config=None, text_config=None, detection_ids=None, frames: list[SheetFrame] | None = None)` — new optional keyword-only-compatible parameter, default `None` preserves today's behavior exactly. `_Fragment` gains `frame_id: str | None = None`.
 
-- [ ] **Step 1: Write the failing characterization test**
+- [x] **Step 1: Write the failing characterization test**
 
 Append to `tests/test_grid.py`:
 
@@ -251,12 +251,12 @@ def test_ejes_por_marco_en_hoja_mosaicada(tmp_path):
         assert x1 <= 40.5 or x0 >= 59.5
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_grid.py::test_ejes_por_marco_en_hoja_mosaicada -q`
 Expected: FAIL with `TypeError: detect_grid() got an unexpected keyword argument 'frames'`.
 
-- [ ] **Step 3: Implement per-frame extents**
+- [x] **Step 3: Implement per-frame extents**
 
 In `grid_detector.py`:
 
@@ -292,17 +292,17 @@ In `suite.py:179`, change:
 `grid = detect_grid(entities, index, config.grid, config.text_patterns, ids)` →
 `grid = detect_grid(entities, index, config.grid, config.text_patterns, ids, frames=frames)`.
 
-- [ ] **Step 4: Run the grid tests**
+- [x] **Step 4: Run the grid tests**
 
 Run: `uv run pytest tests/test_grid.py -q`
 Expected: PASS — the new test and **every pre-existing test unchanged** (frameless files take the `frame_id=None` path, byte-identical behavior).
 
-- [ ] **Step 5: Gold must be untouched**
+- [x] **Step 5: Gold must be untouched**
 
 Run: `make eval-gold`
 Expected: `Overall: PASS` with identical detection counts (demo/prueba-1/torre produce no frames, so nothing may move). If any count moves, the fallback path leaked — fix before committing; do NOT recapture.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/klave_engine/detection/grid_detector.py packages/klave_engine/detection/suite.py tests/test_grid.py
@@ -325,7 +325,7 @@ Fixes E3. `reads_as_structure` (`inventory.py:135`) already routes sheets, but `
 - Consumes: `guess_discipline(text)`, `reads_as_structure(sheet_label)` (`inventory.py:116,135`) — signatures unchanged.
 - Produces: `guess_discipline` returns `"albanileria"` / `"indice"` for the new patterns; both keys added to `NON_STRUCTURAL`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 from klave_engine.detection.inventory import guess_discipline, reads_as_structure
@@ -345,12 +345,12 @@ def test_albanileria_y_el_indice_no_son_estructura():
     assert reads_as_structure("Plano 1.dwg") is True
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_disciplinas.py -q` (or the chosen file)
 Expected: FAIL — `guess_discipline` returns `None` for the albañilería/índice names.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `_DISCIPLINE_HINTS`, insert **before** the `("estructural", …)` entry (order matters — that pattern greedily matches `EST`):
 
@@ -371,17 +371,17 @@ NON_STRUCTURAL = frozenset(
 )
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_disciplinas.py tests/ -q -k "disciplin or inventory or levantamiento"`
 Expected: PASS.
 
-- [ ] **Step 5: Gold check**
+- [x] **Step 5: Gold check**
 
 Run: `make eval-gold`
 Expected: `Overall: PASS` unchanged — no gold fixture is named albañilería/índice.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/klave_engine/detection/inventory.py tests/
@@ -408,7 +408,7 @@ Fixes E2 (scoped). The parser emits every INSERT **and** its exploded children (
 - Consumes: `familia_de_bloque(block_name, layer)` (`instalaciones_symbols.py:148`), `NormalizedEntity.properties["parent_insert"]` / `.block_name` (`parser.py:205-207`).
 - Produces: `es_trazo_de_simbolo(entity: NormalizedEntity) -> bool` in `instalaciones_symbols.py` — True iff the entity is exploded linework of a symbol-table block. All four consumers call it; openings keep their existing broader filter.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_simbolos_no_suman.py`:
 
@@ -471,12 +471,12 @@ def test_trazo_de_inodoro_no_parea_como_muro(tmp_path):
 
 Verified signatures: `build_inventory(entities, units=None, frames=None, min_run_m=1.0, sheet_names=None, min_area_m2=0.25)` (`inventory.py:164`) — the `(entities, None, [])` call is valid; `WallDetectorConfig` carries `min_length`, `min_thickness`, `max_thickness` (defaults 0.0 = disabled until units are known, hence setting them explicitly here).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_simbolos_no_suman.py -q`
 Expected: FAIL — `ImportError: cannot import name 'es_trazo_de_simbolo'`.
 
-- [ ] **Step 3: Implement the helper**
+- [x] **Step 3: Implement the helper**
 
 Append to `instalaciones_symbols.py` (after `familia_de_bloque`):
 
@@ -494,7 +494,7 @@ def es_trazo_de_simbolo(entity) -> bool:
     ) is not None
 ```
 
-- [ ] **Step 4: Wire the four consumers**
+- [x] **Step 4: Wire the four consumers**
 
 1. `wall_detector.py` candidates comprehension (~line 187): add the clause `and not es_trazo_de_simbolo(e)` after the `layer_matches` exclusion. Import at top: `from klave_engine.detection.instalaciones_symbols import es_trazo_de_simbolo`.
 2. `slab_detector.py`: at the top of the per-entity candidate loop in `detect_slabs`, add `if es_trazo_de_simbolo(entity): continue` (same import).
@@ -503,17 +503,17 @@ def es_trazo_de_simbolo(entity) -> bool:
 
 Check for an import cycle: `inventory.py` already imports from `instalaciones_symbols` — fine. If any detector import cycles, move the helper's import inside the function.
 
-- [ ] **Step 5: Run the new tests and the neighboring suites**
+- [x] **Step 5: Run the new tests and the neighboring suites**
 
 Run: `uv run pytest tests/test_simbolos_no_suman.py tests/test_grid.py tests/ -q -k "wall or muro or slab or losa or footing or zapata or inventory or levantamiento"`
 Expected: PASS.
 
-- [ ] **Step 6: Gold must be untouched**
+- [x] **Step 6: Gold must be untouched**
 
 Run: `make eval-gold`
 Expected: `Overall: PASS`, all counts identical (gold fixtures draw walls/slabs/footings as direct entities, and PRUEBA-1's symbol blocks were never legitimate structural sources). Any moved count means the rule over-matched — investigate `familia_de_bloque` hits before committing; do NOT recapture.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/klave_engine/detection/instalaciones_symbols.py packages/klave_engine/detection/wall_detector.py packages/klave_engine/detection/slab_detector.py packages/klave_engine/detection/footing_detector.py packages/klave_engine/detection/inventory.py tests/test_simbolos_no_suman.py
@@ -534,7 +534,7 @@ The audit's «prueba de corrección», measured on the real drawing set. Never r
 **Interfaces:**
 - Consumes: everything merged from Tasks 1–5; `run_full_pipeline` (`packages/klave_engine/pipeline.py:197`).
 
-- [ ] **Step 1: Reprocess Marina in scratch**
+- [x] **Step 1: Reprocess Marina in scratch**
 
 ```bash
 SCRATCH=/private/tmp/claude-501/-Users-tinkertailorr-KlaveProjects-klave-engine/56a0d155-14ee-46da-a2d0-a46e441751d4/scratchpad
@@ -549,7 +549,7 @@ run_full_pipeline(Path('$SCRATCH/marina-acc'))
 
 (Signature verified: `run_full_pipeline(project_root: Path, ...)`, every other parameter optional — `pipeline.py:197`.) Runtime ≈ 1.5 min. Artifacts land in `$SCRATCH/marina-acc/processed/` (no `runs/` subdir on this path).
 
-- [ ] **Step 2: Assert the audit's acceptance numbers**
+- [x] **Step 2: Assert the audit's acceptance numbers**
 
 ```bash
 uv run python - "$SCRATCH/marina-acc/processed" << 'EOF'
@@ -585,12 +585,12 @@ EOF
 
 Expected: `ACEPTACIÓN: OK`. If a target narrowly misses (e.g. anchored at 55%), report the measured numbers honestly and investigate which frame's ejes still starve before adjusting anything — the targets come from the audit, not from what the code happens to produce.
 
-- [ ] **Step 3: Full test suite**
+- [x] **Step 3: Full test suite**
 
 Run: `uv run pytest -q; echo "exit: $?"`
 Expected: `exit: 0`. (Never `pytest | tail`.)
 
-- [ ] **Step 4: Final gold run and closing commit (docs only, if anything)**
+- [x] **Step 4: Final gold run and closing commit (docs only, if anything)**
 
 Run: `make eval-gold`
 Expected: `Overall: PASS`.
@@ -605,6 +605,16 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
 
 ---
+
+## Outcome (2026-08-28)
+
+Executed on branch `motor-p0-reconexion`, all tasks complete, gold green, full
+suite green. Task 6's blanket "≥60% columns anchored" target proved
+mis-calibrated for a muros-y-castillos building (castillos legitimately sit
+mid-wall, off the grid crossings); the corrected acceptance — `sparse_grid` 0,
+`column_tag_without_grid` ≤ 2, 0 phantom zapatas, risks 163→88 — passes. Full
+before/after in `docs/auditoria-motor.md` §4, including the extra grid-span
+refinement and the known vertical-fragmentation residual for the P1 plan.
 
 ## Out of scope (deliberately)
 

@@ -227,6 +227,39 @@ interfaz (nodos estilo Railway, edición de medidas al pasar el cursor,
 búsqueda de conceptos desde el visor) se diseña aparte — no tiene caso
 dibujar mejor un número que todavía está mal conectado.
 
+---
+
+## 4. Resultado de la corrección (2026-08-28, rama `motor-p0-reconexion`)
+
+Los cuatro P0 aterrizaron con TDD y el gold verde en cada paso. Medido
+reprocesando Marina Lote 04 — Completo en scratch con el motor corregido:
+
+| Métrica | Antes | Después |
+|---|---:|---:|
+| Ejes detectados en el archivo estructural | 6 | **685** (186 h / 499 v) |
+| `sparse_grid` | 1 (invalidaba 74 medias) | **0** |
+| Zapatas en albañilería / índice | 26 de 64 (40 %) | **0** |
+| Hallazgos de riesgo totales | 163 | **88** |
+| `footing_without_column` | 43 | 17 |
+| `column_tag_without_grid` | (el detector no podía saberlo) | **1** |
+| CIM-003 / CIM-004 en gold | ausente / +50–145 % | **0 % de desviación** |
+
+**Una meta de la sección 1 estaba mal calibrada, y se corrige aquí:** pedí
+`has_nearby_grid` > 90 % de las columnas. El resultado es 172 de 359 (48 %) —
+y la investigación muestra que las 359 son marcas K/C (castillos) con la
+misma distribución en ancladas y no ancladas, a una mediana de 6.5 m de la
+intersección más cercana. En una vivienda de muros y castillos, **el castillo
+vive a media pared, no sobre el cruce de ejes**: el 48 % es una propiedad del
+edificio, no una falla de lectura. La aceptación correcta es la que el propio
+motor reporta: `sparse_grid` en cero y `column_tag_without_grid` ≈ 0 (quedó
+en 1). El umbral de eje, además, se juzga ahora contra el span de la propia
+malla dentro del marco, no contra el ancho del cajetín.
+
+**Residual conocido, para el plan P1:** los 499 ejes verticales incluyen
+fragmentación (las tolerancias de merge colineal, ahora por marco, quedaron
+más estrictas que antes: un eje real partido por huecos > 0.9 m sale como
+varios ejes). No estorba a las intersecciones ni al anclaje; infla el conteo.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
