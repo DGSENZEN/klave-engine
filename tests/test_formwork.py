@@ -1,7 +1,14 @@
 """Cimbra from counted elements; declared f'c checked against priced f'c."""
 
 import pytest
-from klave_engine.costing.formwork import compute_formwork
+from klave_engine.costing.catalog import build_default_catalog
+from klave_engine.costing.cimentacion import apply_cimentacion_earthmoving
+from klave_engine.costing.formwork import (
+    FormworkLine,
+    FormworkReport,
+    apply_formwork,
+    compute_formwork,
+)
 from klave_engine.costing.models import (
     BillOfQuantities,
     BoqLine,
@@ -75,3 +82,40 @@ def test_formwork_areas_and_fc_mismatch_warning():
 
     maciza = compute_formwork(boq, [k, t, z], specs, DimensionInventory(), assumptions, 1.0, None)
     assert next(line for line in maciza.lines if line.concept_code == "EST-011").quantity == 50.0
+
+
+def test_plantilla_sin_matriz_sale_sin_precio():
+    # A9: la línea sin precio queda visible y lo dice — nunca se descarta.
+    a = CostingAssumptions()
+    catalog = build_default_catalog(a)
+    boq = BillOfQuantities(project_id="p", lines=[])
+    report = FormworkReport(
+        lines=[FormworkLine(concept_code="CIM-003", quantity=12.03,
+                            source_detections=["f1"], notes=["área en planta"])]
+    )
+    added = apply_formwork(boq, catalog, apus={}, formwork=report)
+    assert added == 1
+    line = next(l for l in boq.lines if l.concept_code == "CIM-003")
+    assert line.unpriced is True
+    assert line.unit_price == 0.0 and line.amount == 0.0
+    assert line.quantity == 12.03
+
+
+def test_relleno_resta_la_plantilla_aunque_no_tenga_precio():
+    # CIM-004 = excavación − enterrado; la plantilla enterrada (área × 0.05 m)
+    # debe restarse aun cuando la línea de plantilla salga sin precio.
+    a = CostingAssumptions()
+    catalog = build_default_catalog(a)
+    boq = BillOfQuantities(
+        project_id="p",
+        lines=[_line("CIM-001", 10.0, 10.0, ["e1"], description="Excavación")],
+    )
+    report = FormworkReport(
+        lines=[FormworkLine(concept_code="CIM-003", quantity=12.0,
+                            source_detections=["f1"], notes=[])]
+    )
+    apply_formwork(boq, catalog, apus={}, formwork=report)
+    apply_cimentacion_earthmoving(boq, catalog, apus={}, assumptions=a)
+    fill = next(l for l in boq.lines if l.concept_code == "CIM-004")
+    # 10.0 excavados − 12.0 m² × 0.05 m de plantilla = 9.4 m³
+    assert fill.quantity == 9.4

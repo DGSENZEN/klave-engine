@@ -320,23 +320,27 @@ def apply_formwork(
     for item in formwork.lines:
         concept = concepts.get(item.concept_code)
         apu = apus.get(item.concept_code)
-        if concept is None or apu is None:
+        if concept is None:
             what = "Plantilla" if item.concept_code == CODE_PLANTILLA else "Cimbra"
             boq.warnings.append(
-                f"{what} calculada ({item.quantity:,.0f} m²) pero el catálogo no tiene el "
-                f"concepto {item.concept_code} con matriz."
+                f"{what} calculada ({item.quantity:,.0f} m²) pero el catálogo no tiene "
+                f"el concepto {item.concept_code}."
             )
             continue
         if item.concept_code in existing or item.quantity <= 0:
             continue
+        # Sin matriz la línea sale igual, sin precio: descartar la cantidad
+        # escondería trabajo medido (A9) y dejaría al relleno sin qué restar.
+        unit_price = apu.direct_unit_cost if apu is not None else 0.0
         boq.lines.append(
             BoqLine(
                 concept_code=concept.code,
                 description=concept.description,
                 unit=concept.unit,
                 quantity=round(item.quantity, 4),
-                unit_price=apu.direct_unit_cost,
-                amount=round(item.quantity * apu.direct_unit_cost, 2),
+                unit_price=unit_price,
+                amount=round(item.quantity * unit_price, 2),
+                unpriced=apu is None,
                 phase=concept.phase,
                 raw_quantity=item.quantity,
                 raw_kind=QuantityKind.AREA,
