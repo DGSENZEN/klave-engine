@@ -30,8 +30,13 @@ def detect(
     frames: list[SheetFrame],
 ) -> list[DetectorOutput]:
     frame_boxes = [f.bbox for f in frames]
-    rooms = detect_rooms(entities, config.room, ids, frame_boxes)
     marks = detect_acabado_marks(entities, ids)
+    # Las marcas anclan los locales: Marina no los nombra, pero los marca.
+    anchors = [
+        ((d.bbox[0] + d.bbox[2]) / 2, (d.bbox[1] + d.bbox[3]) / 2)
+        for d in marks.detections
+    ]
+    rooms = detect_rooms(entities, config.room, ids, frame_boxes, anchor_points=anchors)
     claimed = {
         entity_id for d in marks.detections for entity_id in d.source_entities
     }

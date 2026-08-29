@@ -542,6 +542,19 @@ def run_full_pipeline(
             registro["locales"] += 1
         if not tiene:
             sin_acabado += 1
+    if not acabados_resumen:
+        # Sin locales (el fondo arquitectónico no embebe sus muros), las
+        # marcas leídas cuentan igual: piezas por clave, sin área — el área
+        # llega cuando la conversión entregue la base.
+        for detection in result.detections:
+            props = detection.properties or {}
+            if props.get("acabado_tipo") and props.get("clave"):
+                registro = acabados_resumen.setdefault(
+                    (props["acabado_tipo"], str(props["clave"])),
+                    {"tipo": props["acabado_tipo"], "clave": str(props["clave"]),
+                     "area_du2": 0.0, "area_m2": None, "locales": 0, "marcas": 0},
+                )
+                registro["marcas"] += 1
     if acabados_resumen:
         write_json(
             processed / "acabados.json",

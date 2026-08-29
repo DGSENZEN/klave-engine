@@ -130,3 +130,39 @@ def test_el_pipeline_agrega_las_areas_por_clave(data_dir, tmp_path):
     rows = jsonlib.loads(artifact.read_text())
     piso4 = next(r for r in rows if r["tipo"] == "piso" and r["clave"] == "4")
     assert piso4["locales"] == 1 and piso4["area_m2"] and piso4["area_m2"] > 5
+
+
+def test_la_marca_ancla_el_local_sin_nombre(tmp_path):
+    """Marina no nombra sus locales en la hoja de acabados: la marca PI/PL
+    parada dentro del local es evidencia más fuerte que un nombre."""
+    from klave_engine.detection.rooms import RoomDetectorConfig, detect_rooms
+
+    doc = ezdxf.new("R2010")
+    doc.header["$INSUNITS"] = 6
+    msp = doc.modelspace()
+
+    def muro(a, b, t=0.15):
+        (x0, y0), (x1, y1) = a, b
+        if y0 == y1:
+            msp.add_line((x0, y0 - t/2), (x1, y1 - t/2), dxfattribs={"layer": "A-MUROS"})
+            msp.add_line((x0, y0 + t/2), (x1, y1 + t/2), dxfattribs={"layer": "A-MUROS"})
+        else:
+            msp.add_line((x0 - t/2, y0), (x1 - t/2, y1), dxfattribs={"layer": "A-MUROS"})
+            msp.add_line((x0 + t/2, y0), (x1 + t/2, y1), dxfattribs={"layer": "A-MUROS"})
+
+    for a, b in [((0, 0), (7, 0)), ((0, 4), (7, 4)), ((0, 0), (0, 4)),
+                 ((4, 0), (4, 4)), ((7, 0), (7, 4))]:
+        muro(a, b)
+    # Ni un solo nombre de local en toda la hoja.
+    path = tmp_path / "sin_nombres.dxf"
+    doc.saveas(path)
+    entities = DxfParser().parse_file(path).entities
+    config = RoomDetectorConfig(min_area=1.5, max_area=400, min_width=0.7)
+
+    callado = detect_rooms(entities, config)
+    assert callado.detections == []  # la guardia de siempre: sin nombres, nada
+
+    anclado = detect_rooms(entities, config,
+                           anchor_points=[(2, 2), (5.5, 2), (2.5, 2.5)])
+    locales = [d for d in anclado.detections if d.detection_type.value == "room"]
+    assert len(locales) == 2  # las marcas anclan los locales aunque nadie los nombre
