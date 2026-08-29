@@ -93,10 +93,119 @@ def sanitize_dxf_text(raw: str) -> tuple[str, int, int]:
         if skipping:
             continue
         out.extend([code, value])
-    text = _drop_truncated_polylines("\n".join(out) + "\n")
+    text, orphans = _close_open_sequences("\n".join(out) + "\n")
+    text = _drop_truncated_polylines(text)
     if "\nEOF\n" not in text[-40:]:
         text = text.rstrip("\n") + "\n  0\nEOF\n"
-    return text, rejoined, dropped
+    return text, rejoined, dropped + orphans
+
+
+def _close_open_sequences(text: str) -> tuple[str, int]:
+    """Cierra lo que el convertidor dejó abierto y tira lo imposible.
+
+    LibreDWG a veces escribe BLOCK sin ENDBLK y POLYLINE sin SEQEND (la
+    carpintería de Marina trae ambos): cerrar conserva la geometría, y el
+    cierre se inserta donde el siguiente registro demuestra que la
+    secuencia terminó. También deja entidades huérfanas DENTRO de BLOCKS,
+    después de un ENDBLK prematuro: sin bloque al que pertenecer no se
+    pueden colocar, así que se tiran contadas — una lectura parcial
+    declarada, nunca un archivo entero ilegible. Regresa (texto, huérfanos).
+    """
+    lines = text.split("\n")
+    out: list[str] = []
+    open_block = False
+    # Una cadena ligada abierta: POLYLINE→VERTEX…SEQEND, o INSERT con
+    # atributos→ATTRIB…SEQEND. Ambas mueren igual cuando falta el SEQEND.
+    open_chain = False
+    section: str | None = None
+    orphans = 0
+    skipping_orphan = False
+    last_kind: str | None = None
+    # El INSERT solo espera ATTRIBs si lo declaró (código 66 = 1).
+    insert_expects_attribs = False
+
+    def close_polyline() -> None:
+        nonlocal open_chain
+        if open_chain:
+            out.extend(["  0", "SEQEND"])
+            open_chain = False
+
+    def close_block() -> None:
+        nonlocal open_block
+        close_polyline()
+        if open_block:
+            out.extend(["  0", "ENDBLK"])
+            open_block = False
+
+    i = 0
+    while i + 1 < len(lines):
+        code, value = lines[i], lines[i + 1]
+        stripped = code.strip()
+        if stripped == "0":
+            kind = value.strip()
+            # Un registro nuevo termina cualquier corrida huérfana: lo que
+            # se tira es exactamente el registro huérfano y sus pares.
+            skipping_orphan = False
+            if kind == "SECTION":
+                close_block()
+                section = (
+                    lines[i + 3].strip() if i + 3 < len(lines) and
+                    lines[i + 2].strip() == "2" else None
+                )
+            elif kind == "ENDSEC":
+                close_block()
+                section = None
+            elif kind == "BLOCK":
+                close_block()
+                open_block = True
+            elif kind == "ENDBLK":
+                close_polyline()
+                open_block = False
+            elif kind == "POLYLINE":
+                close_polyline()
+                open_chain = True
+            elif kind == "ATTRIB":
+                if not open_chain:
+                    # Un ATTRIB sin su INSERT (el convertidor metió otra
+                    # entidad a media cadena): no se puede colocar; se tira
+                    # contado en vez de matar el archivo entero.
+                    orphans += 1
+                    skipping_orphan = True
+                    i += 2
+                    continue
+                open_chain = True
+            elif kind == "SEQEND":
+                open_chain = False
+            elif kind != "VERTEX":
+                close_polyline()
+            if (
+                section == "BLOCKS"
+                and not open_block
+                and kind not in ("BLOCK", "ENDBLK", "ENDSEC", "SECTION")
+            ):
+                # Huérfana entre bloques: nadie sabe de qué bloque era.
+                skipping_orphan = True
+                orphans += 1
+                i += 2
+                continue
+            if kind == "INSERT":
+                insert_expects_attribs = False
+            last_kind = kind
+        elif skipping_orphan:
+            i += 2
+            continue
+        elif last_kind == "INSERT" and stripped == "66":
+            # El 66=1 abre la cadena desde el INSERT mismo: aunque el
+            # convertidor no haya escrito ni un ATTRIB, falta su SEQEND.
+            insert_expects_attribs = value.strip() == "1"
+            if insert_expects_attribs:
+                open_chain = True
+        out.append(code)
+        out.append(value)
+        i += 2
+    if i < len(lines):
+        out.append(lines[i])
+    return "\n".join(out), orphans
 
 
 def _drop_truncated_polylines(text: str) -> str:

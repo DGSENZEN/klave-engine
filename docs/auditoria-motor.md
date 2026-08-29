@@ -384,6 +384,38 @@ carpintería (bloques tirados). **Cinco cosas, un desbloqueador: el
 workstream de conversión (S3 profundo).** Ese spike deja de ser opcional:
 es lo siguiente del motor.
 
+### Spike de conversión cerrado (2026-08-29, rama `conversion-s3`) — el desbloqueador funcionó
+
+- **El xref embebe, por fin.** Tres defectos apilados lo impedían: el
+  casamiento exigía nombres idénticos cuando la subida slugifica
+  (`_slug_key`); los directorios de búsqueda asumían hojas en `drawings/`
+  cuando las convertidas viven en `converted/<dir>/`; y ezdxf valida la
+  ruta declarada del bloque **antes** de consultar el `load_fn` — se
+  reescribe a la resuelta. Marina completo + el archivo xref: **10 de 10
+  referencias embebidas** (eran 10 ausentes), 22 locales poligonizados en
+  la hoja de acabados desde los muros de la base, y los primeros m² reales
+  por clave — *piso 8 → 69.82 m²*. La base convertida en modo mínimo trae
+  los muros como entidades directas (MUROS1 ×272, MUROBAJO ×416): no hizo
+  falta cirugía a LibreDWG.
+- **Carpintería se lee: 2,583 entidades** (era ilegible). Cuatro
+  enfermedades del convertidor, curadas en el saneador: BLOCK sin ENDBLK y
+  POLYLINE sin SEQEND (ahora se **cierran** — antes la corrida se tiraba
+  entera), entidades huérfanas dentro de BLOCKS tras un ENDBLK prematuro
+  (se tiran contadas), ATTRIBs sin su INSERT (ídem), y el INSERT que
+  declara `66=1` sin escribir ni un ATTRIB ni su SEQEND (la cadena abre
+  desde la bandera). Gold `carpinteria-mini` (33 openings, F1 = 1.0).
+- **Eléctrico: veredicto externo.** `dwgread` 0.13.3 rechaza el DWG
+  (0x940) en todos los modos: el decodificador mismo no puede con el
+  archivo. Camino de producto: pedir el re-export al cliente (o un
+  LibreDWG más nuevo cuando exista); la cobertura ya lo declara ilegible
+  con su razón.
+- **Para el usuario:** subir el archivo XREF a los proyectos reales ahora
+  sí paga — el aviso «súbela como hoja adicional» deja de ser un deseo.
+- **Siguiente ronda registrada:** el casamiento marca↔local necesita
+  tolerancia (2 de 22 locales con clave: la marca suele pararse junto al
+  muro, no en el centroide), y albañilería profunda ya tiene su base
+  embebida esperando su suite.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)

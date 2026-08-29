@@ -1,0 +1,68 @@
+{
+  "drawing_id": "carpinteria-mini",
+  "source": "data/uploads/gold_carpinteria_mini",
+  "files": {
+    "13_carpinteria_l_04.dxf": "36544ed2230822c01d31ee37beac28b31b73136b190e057b2d2370fe7fb2d41c"
+  },
+  "status": "baseline",
+  "captured_at": "2026-08-29T22:13:47.963351Z",
+  "labels": {
+    "opening": [
+      "VAN-01",
+      "VAN-02",
+      "VAN-03",
+      "VAN-04",
+      "VAN-05",
+      "VAN-06",
+      "VAN-07",
+      "VAN-08",
+      "VAN-09",
+      "VAN-10",
+      "VAN-11",
+      "VAN-12",
+      "VAN-13",
+      "VAN-14",
+      "VAN-15",
+      "VAN-16",
+      "VAN-17",
+      "VAN-18",
+      "VAN-19",
+      "VAN-20",
+      "VAN-21",
+      "VAN-22",
+      "VAN-23",
+      "VAN-24",
+      "VAN-25",
+      "VAN-26",
+      "VAN-27",
+      "VAN-28",
+      "VAN-29",
+      "VAN-30",
+      "VAN-31",
+      "VAN-32",
+      "VAN-33"
+    ]
+  },
+  "confirmed": [],
+  "excluded": [],
+  "baseline_f1": {
+    "opening": 1.0
+  },
+  "money": {
+    "concepts": {
+      "CAR-001": {
+        "quantity": 33.0,
+        "unit": "PZA",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": ""
+      }
+    },
+    "direct_cost": 0.0,
+    "direct_cost_tolerance_pct": 5.0,
+    "unpriced": [
+      "CAR-001"
+    ]
+  },
+  "notes": ""
+}

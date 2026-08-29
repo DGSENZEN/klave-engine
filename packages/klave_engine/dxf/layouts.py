@@ -8,11 +8,11 @@ file is in the project the reference is embedded in place, so the block
 explodes like any other. When it is not, the gap is reported, never hidden.
 """
 
+import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Literal
 
-import ezdxf
 from ezdxf import xref as ezdxf_xref
 from pydantic import BaseModel, Field
 
@@ -114,13 +114,21 @@ def read_layouts(doc: Any, insunits: int | None) -> list[LayoutInfo]:
     return layouts
 
 
+def _slug_key(stem: str) -> str:
+    """La subida slugifica los nombres («00 XREF L.04» → 00_xref_l_04): para
+    casar un xref con su archivo, solo cuentan las letras y los números."""
+    return re.sub(r"[^a-z0-9]+", "", stem.lower())
+
+
 def _find_sibling(stem: str, search_dirs: Iterable[Path]) -> Path | None:
-    wanted = stem.lower()
+    wanted = _slug_key(stem)
+    if not wanted:
+        return None
     for directory in search_dirs:
         if not directory.is_dir():
             continue
         for candidate in sorted(directory.rglob("*.dxf")):
-            if candidate.stem.lower() == wanted:
+            if _slug_key(candidate.stem) == wanted:
                 return candidate
     return None
 
@@ -132,7 +140,14 @@ def resolve_xrefs(
     rest. Must run before model space is walked so embedded blocks explode."""
     xrefs: list[XrefInfo] = []
     warnings: list[ParseWarning] = []
-    search_dirs = [dxf_path.parent, dxf_path.parent.parent / "converted"]
+    # La hoja puede vivir en drawings/ o en converted/<dir>/: el abuelo
+    # cubre ambos (rglob baja a los subdirectorios), y el caso drawings
+    # conserva su ruta explícita a converted/.
+    search_dirs = [
+        dxf_path.parent,
+        dxf_path.parent.parent,
+        dxf_path.parent.parent / "converted",
+    ]
     for block in list(doc.blocks):
         try:
             is_xref = bool(block.block_record.is_xref)
@@ -169,8 +184,20 @@ def resolve_xrefs(
                 )
             )
             continue
+        # ezdxf valida la ruta declarada del bloque antes de consultar el
+        # load_fn: se reescribe a la resuelta o el embed muere en un
+        # FileNotFoundError aunque el archivo esté en el proyecto.
+        try:
+            block.block.dxf.xref_path = str(found)
+        except Exception:
+            pass
+
         def load_resolved(_filename: str | Path, path: Path = found) -> Any:
-            return ezdxf.readfile(str(path))
+            # La escalera completa, no solo la lectura estricta: el xref
+            # suele venir de una conversión mínima con sus propias mañas.
+            from klave_engine.dxf.loader import load_dxf
+
+            return load_dxf(path).doc
 
         try:
             ezdxf_xref.embed(block, load_fn=load_resolved)

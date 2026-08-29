@@ -51,7 +51,9 @@ def test_unreadable_file_raises_with_every_reason(tmp_path):
     assert "estricto" in str(info.value) and "saneado" in str(info.value)
 
 
-def test_truncated_polyline_runs_are_dropped():
+def test_truncated_polyline_runs_are_closed_not_dropped():
+    # Antes se tiraba la corrida entera; cerrar con SEQEND conserva la
+    # geometría — tirarla era perder metros reales del levantamiento.
     raw = (
         "  0\nSECTION\n  2\nENTITIES\n"
         "  0\nPOLYLINE\n  8\n0\n  0\nVERTEX\n 10\n0\n 20\n0\n  0\nVERTEX\n 10\n1\n 20\n0\n"
@@ -59,5 +61,65 @@ def test_truncated_polyline_runs_are_dropped():
         "  0\nENDSEC\n"
     )
     text, _rejoined, _dropped = sanitize_dxf_text(raw)
-    assert "POLYLINE" not in text and "VERTEX" not in text
+    assert "POLYLINE" in text and "SEQEND" in text
+    assert text.index("SEQEND") < text.index("\nLINE\n")
     assert "\nLINE\n" in text and text.rstrip().endswith("EOF")
+
+
+def test_el_saneador_cierra_bloques_y_polilineas_sin_terminar(tmp_path):
+    """LibreDWG a veces escribe BLOCK sin ENDBLK y POLYLINE sin SEQEND
+    (carpintería de Marina): el saneador los cierra donde el siguiente
+    registro demuestra que la secuencia terminó."""
+    from io import BytesIO
+
+    import ezdxf
+    from ezdxf import recover as ezdxf_recover
+    from klave_engine.dxf.loader import sanitize_dxf_text
+
+    # Un DXF válido, roto a propósito: se le quitan ENDBLK y SEQEND.
+    doc = ezdxf.new("R2010")
+    block = doc.blocks.new(name="ROTO")
+    block.add_line((0, 0), (1, 0))
+    msp = doc.modelspace()
+    msp.add_blockref("ROTO", (5, 5))
+    msp.add_polyline2d([(0, 0), (3, 0), (3, 3)])  # POLYLINE + VERTEX + SEQEND
+    path = tmp_path / "ok.dxf"
+    doc.saveas(path)
+    text = path.read_text()
+    roto = "\n".join(
+        line for i, line in enumerate(text.splitlines())
+        if not (line.strip() in ("ENDBLK", "SEQEND")
+                and text.splitlines()[i - 1].strip() == "0")
+    )
+    # Y sin los códigos 0 huérfanos que quedaron apuntando a nada.
+    lineas = roto.splitlines()
+    limpio: list[str] = []
+    skip = False
+    for i, line in enumerate(lineas):
+        if skip:
+            skip = False
+            continue
+        if line.strip() == "0" and i + 1 < len(lineas) and lineas[i + 1].strip() in ("", ):
+            skip = True
+            continue
+        limpio.append(line)
+    roto = "\n".join(limpio) + "\n"
+
+    saneado, _rejoined, _dropped = sanitize_dxf_text(roto)
+    doc2, _auditor = ezdxf_recover.read(BytesIO(saneado.encode("utf-8")))
+    assert len(list(doc2.modelspace())) >= 2  # el insert y la polilínea siguen
+    assert "ROTO" in [b.name for b in doc2.blocks if not b.name.startswith("*")]
+
+
+def test_el_xref_se_encuentra_aunque_la_subida_lo_haya_slugificado(tmp_path):
+    """El plano declara «00 XREF L.04 - 26.01.15»; la subida lo guardó como
+    00_xref_l_04_-_26_01_15.dxf. Son el mismo archivo y deben casar."""
+    from klave_engine.dxf.layouts import _find_sibling
+
+    d = tmp_path / "converted" / "algo"
+    d.mkdir(parents=True)
+    (d / "00_xref_l_04_-_26_01_15.dxf").write_text("stub")
+    found = _find_sibling("00 XREF L.04 - 26.01.15", [tmp_path / "converted"])
+    assert found is not None and found.name == "00_xref_l_04_-_26_01_15.dxf"
+    # Y lo que no es el mismo archivo, no casa.
+    assert _find_sibling("01 ARQ L.04", [tmp_path / "converted"]) is None
