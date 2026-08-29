@@ -20,6 +20,56 @@ from klave_engine.detection.run_detector import detect_runs
 from klave_engine.dxf.entities import NormalizedEntity
 
 _CLAVE_PROP = {"piso": "piso_clave", "plafon": "plafon_clave"}
+# La marca suele pararse junto al muro del local, no en su centroide:
+# estricto primero, cerca después — y de otro marco, jamás.
+MARK_TOLERANCE_M = 2.0
+
+
+def _frame_of(bbox, frames: list[SheetFrame]) -> str | None:
+    cx, cy = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
+    for frame in frames:
+        if frame.contains((cx, cy)):
+            return frame.frame_id
+    return None
+
+
+def _bbox_distance(point: tuple[float, float], bbox) -> float:
+    dx = max(bbox[0] - point[0], 0.0, point[0] - bbox[2])
+    dy = max(bbox[1] - point[1], 0.0, point[1] - bbox[3])
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def _match_marks_to_rooms(
+    marks, rooms, frames: list[SheetFrame], meters_factor: float | None
+) -> int:
+    """Estampa la clave de cada marca en su local. Regresa las sueltas."""
+    tolerance = MARK_TOLERANCE_M / meters_factor if meters_factor else MARK_TOLERANCE_M
+    room_frames = {r.detection_id: _frame_of(r.bbox, frames) for r in rooms}
+    sueltas = 0
+    for mark in marks:
+        cx = (mark.bbox[0] + mark.bbox[2]) / 2
+        cy = (mark.bbox[1] + mark.bbox[3]) / 2
+        mark_frame = _frame_of(mark.bbox, frames)
+        best = None
+        for room in rooms:
+            if room_frames[room.detection_id] != mark_frame:
+                continue
+            distance = _bbox_distance((cx, cy), room.bbox)
+            if distance <= tolerance and (best is None or distance < best[0]):
+                best = (distance, room)
+        if best is None:
+            sueltas += 1
+            continue
+        local = best[1]
+        prop = _CLAVE_PROP[mark.properties["acabado_tipo"]]
+        local.properties[prop] = mark.properties["clave"]
+        local.evidence.notes.append(
+            f"Acabado de {mark.properties['acabado_tipo']}: clave "
+            f"{mark.properties['clave']}"
+            + (", de la marca parada en el local."
+               if best[0] == 0 else f", de la marca a {best[0]:.1f} u. del local.")
+        )
+    return sueltas
 
 
 def detect(
@@ -41,24 +91,9 @@ def detect(
         entity_id for d in marks.detections for entity_id in d.source_entities
     }
 
-    sueltas = 0
-    for mark in marks.detections:
-        mx = (mark.bbox[0] + mark.bbox[2]) / 2
-        my = (mark.bbox[1] + mark.bbox[3]) / 2
-        local = next(
-            (r for r in rooms.detections
-             if r.bbox[0] <= mx <= r.bbox[2] and r.bbox[1] <= my <= r.bbox[3]),
-            None,
-        )
-        if local is None:
-            sueltas += 1
-            continue
-        prop = _CLAVE_PROP[mark.properties["acabado_tipo"]]
-        local.properties[prop] = mark.properties["clave"]
-        local.evidence.notes.append(
-            f"Acabado de {mark.properties['acabado_tipo']}: clave "
-            f"{mark.properties['clave']}, de la marca parada en el local."
-        )
+    sueltas = _match_marks_to_rooms(
+        marks.detections, rooms.detections, frames, meters_factor
+    )
     if sueltas:
         marks.warnings.append(
             f"{sueltas} de {len(marks.detections)} marcas de acabado fuera de todo "

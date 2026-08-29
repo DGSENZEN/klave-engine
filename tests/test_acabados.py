@@ -166,3 +166,38 @@ def test_la_marca_ancla_el_local_sin_nombre(tmp_path):
                            anchor_points=[(2, 2), (5.5, 2), (2.5, 2.5)])
     locales = [d for d in anclado.detections if d.detection_type.value == "room"]
     assert len(locales) == 2  # las marcas anclan los locales aunque nadie los nombre
+
+
+def test_la_marca_casa_en_su_marco_con_tolerancia(tmp_path):
+    """Estricto primero, cerca después, otro marco jamás."""
+    from klave_engine.detection.disciplines.acabados import _match_marks_to_rooms
+    from klave_engine.detection.frames import SheetFrame
+    from klave_engine.detection.results import DetectionType, make_detection
+
+    frames = [
+        SheetFrame(frame_id="fA", bbox=(0.0, 0.0, 40.0, 30.0), source_file="x.dxf"),
+        SheetFrame(frame_id="fB", bbox=(60.0, 0.0, 100.0, 30.0), source_file="x.dxf"),
+    ]
+    local = make_detection(
+        "L1", DetectionType.room, "LOC1", (5, 5, 12, 12), 0.85, [], "room", [],
+        {"estimated_area": 49.0}, "x.dxf",
+    )
+
+    def marca(det_id, x, y):
+        return make_detection(
+            det_id, DetectionType.fixture, "PI-4", (x, y, x + 0.3, y + 0.3), 0.85,
+            [], "acabado_clave", [],
+            {"fixture_family": "acabado_piso", "clave": "4", "acabado_tipo": "piso"},
+            "x.dxf",
+        )
+
+    dentro = marca("m1", 8, 8)          # dentro del local
+    cerca = marca("m2", 12.8, 8)        # a ~0.8 m del borde, mismo marco
+    lejos = marca("m3", 25, 25)         # mismo marco, a >2 m
+    otro_marco = marca("m4", 66, 8)     # posición análoga, marco B
+
+    sueltas = _match_marks_to_rooms(
+        [dentro, cerca, lejos, otro_marco], [local], frames, meters_factor=1.0
+    )
+    assert local.properties["piso_clave"] == "4"
+    assert sueltas == 2  # la lejana y la de otro marco
