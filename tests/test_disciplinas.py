@@ -177,3 +177,55 @@ def test_el_sustrato_se_ve_pero_no_cobra():
     # Solo el muro real cobra: 10 m × altura, no 20.
     assert linea.raw_quantity == 10.0
     assert "fondo" not in linea.source_detections
+
+
+def test_albanileria_lee_su_tabique_y_est004_no_lo_toma(tmp_path):
+    import ezdxf
+    from klave_engine.common.ids import IdGenerator
+    from klave_engine.costing.apu import build_all_apus
+    from klave_engine.costing.boq import generate_bill_of_quantities
+    from klave_engine.costing.catalog import build_default_catalog
+    from klave_engine.costing.models import CostingAssumptions
+    from klave_engine.detection.disciplines import route_sheet
+    from klave_engine.detection.suite import DetectorSuiteConfig, run_detectors
+    from klave_engine.dxf.parser import DxfParser
+    from klave_engine.dxf.units import DrawingUnits
+    from klave_engine.geometry.spatial_index import SpatialIndex
+    from klave_engine.ingestion.manifest import ProjectManifest
+
+    from tests.precios import LIBRO
+
+    doc = ezdxf.new("R2010")
+    doc.header["$INSUNITS"] = 6
+    msp = doc.modelspace()
+    msp.add_line((0, 0), (8, 0), dxfattribs={"layer": "MUROS1"})
+    msp.add_line((0, 0.14), (8, 0.14), dxfattribs={"layer": "MUROS1"})
+    path = tmp_path / "03-03_alba_iler_a.dxf"
+    doc.saveas(path)
+    entities = DxfParser().parse_file(path).entities
+
+    suite = route_sheet("03-03_alba_iler_a.dxf")
+    assert suite.key == "albanileria" and suite.detect is not None
+
+    manifest = ProjectManifest(project_id="t", project_name="t", root_path=str(tmp_path))
+    units = DrawingUnits(unit="m", source="dxf_header", confidence=0.9)
+    config = DetectorSuiteConfig.preset_for_units(units, None)
+    outputs = run_detectors(
+        entities, SpatialIndex(entities), manifest, config,
+        ids=IdGenerator("d"), units=units, structural=False, suite=suite,
+    )
+    walls = [d for o in outputs for d in o.detections if d.detection_type.value == "wall"]
+    assert len(walls) == 1
+    assert walls[0].properties["wall_kind"] == "tabique"
+
+    assumptions = CostingAssumptions()
+    catalog = [c for c in build_default_catalog(assumptions)
+               if c.code in ("EST-004", "ALB-001")]
+    boq = generate_bill_of_quantities(
+        "t", walls, units, catalog, build_all_apus(catalog, LIBRO),
+        assumptions=assumptions,
+    )
+    lines = {li.concept_code: li for li in boq.lines}
+    assert "ALB-001" in lines and lines["ALB-001"].unpriced is True
+    assert lines["ALB-001"].raw_quantity > 0
+    assert "EST-004" not in lines or lines["EST-004"].quantity == 0.0

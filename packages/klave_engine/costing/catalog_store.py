@@ -637,6 +637,18 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '22') "
                     "ON CONFLICT(key) DO UPDATE SET value = '22'"
                 )
+            if version_row is None or int(version_row["value"]) < 23:
+                # El tabique de albañilería, aparte del block estructural:
+                # ALB-001 sin matriz — el taller le pone precio.
+                self._sync_builtin_concepts(conn, ("ALB-001",))
+                conn.execute(
+                    "UPDATE concepts SET rule_key = ? WHERE code = ? AND rule_key IS NULL",
+                    ("ALB-001", "ALB-001"),
+                )
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '23') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '23'"
+                )
             if version_row is None or int(version_row["value"]) < 4:
                 # v3 seeded acero matrices in kg against the per-tonne insumo.
                 conn.execute(

@@ -442,6 +442,29 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
             production_rate_per_day=14.0,
             sequence_order=3,
         ),
+        Concept(
+            code="ALB-001",
+            description="Muro de tabique rojo recocido 14 cm, junteado con mortero cemento-arena",
+            unit="M2",
+            phase="Albañilería",
+            rule=QuantityRule(
+                detection_type=DetectionType.wall,
+                kind=QuantityKind.LENGTH,
+                source_property="estimated_length",
+                property_filter={"wall_kind": ["tabique"]},
+                height_from_levels=True,
+                opening_deduction=True,
+                roof_walls_are_parapets=True,
+            ),
+            quantity_factor=a.wall_height_m,
+            view_scope=ViewScope.SUPERSTRUCTURE_SUM,
+            assumptions=[
+                f"Altura promedio de muro {a.wall_height_m:.2f} m; vanos descontados "
+                "según medición o 18 % supuesto (A4)"
+            ],
+            production_rate_per_day=9.0,
+            sequence_order=3,
+        ),
     ] + _terracerias(a) + _acabados(a) + conceptos_de_instalaciones()
 
 

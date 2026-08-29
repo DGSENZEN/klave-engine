@@ -11,7 +11,13 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 
-from klave_engine.detection.disciplines import acabados, arquitectura, canceleria, hidrosanitaria
+from klave_engine.detection.disciplines import (
+    acabados,
+    albanileria,
+    arquitectura,
+    canceleria,
+    hidrosanitaria,
+)
 from klave_engine.detection.disciplines.vocab import SUITES, DisciplineSuite
 
 # Qué suite llenó su hueco ``detect``. Las demás siguen con el cableado por
@@ -22,6 +28,7 @@ _DETECTORS = {
     "canceleria": canceleria.detect,
     "acabados": acabados.detect,
     "arquitectura": arquitectura.detect,
+    "albanileria": albanileria.detect,
 }
 
 SUITES_WIRED: tuple[DisciplineSuite, ...] = tuple(
