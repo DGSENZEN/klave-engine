@@ -33,6 +33,7 @@ from klave_engine.detection.dimensions import build_dimension_inventory
 from klave_engine.detection.frames import SheetFrame, detect_frames
 from klave_engine.detection.disciplines import route_sheet, vote_content
 from klave_engine.detection.inventory import build_inventory, reads_as_structure
+from klave_engine.detection.prefabs import build_prefab_index
 from klave_engine.detection.results import Detection, DetectionType
 from klave_engine.detection.schedules import (
     apply_schedule,
@@ -125,6 +126,14 @@ def parse_drawings(
     write_json(processed / "parse_summary.json", _summarize_parse(drawings))
     write_json(processed / "layer_summary.json", summarize_layers(entities))
     write_json(processed / "block_summary.json", summarize_blocks(entities))
+    attdefs: dict[str, list[str]] = {}
+    for drawing in drawings:
+        for name, tags in drawing.block_attdefs.items():
+            merged = attdefs.setdefault(name, [])
+            for tag in tags:
+                if tag not in merged:
+                    merged.append(tag)
+    write_json(processed / "prefab_index.json", build_prefab_index(entities, attdefs))
     manifest.processing_status = ProcessingStatus.parsed
     save_manifest(manifest, settings.processed_dir_name)
     return drawings
