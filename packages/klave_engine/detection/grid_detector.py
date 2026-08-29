@@ -273,6 +273,33 @@ def detect_grid(
 
     def _radius(frame_id: str | None) -> float:
         return bbox_diagonal(_local_extent(frame_id)) * config.label_search_radius_factor
+
+    # Within a frame, "long enough to be an axis" se juzga contra el span que
+    # la propia malla dibuja (sus líneas en capa semántica), no contra el
+    # marco: el contenido nunca llena la hoja, y medir un eje real contra el
+    # ancho del cajetín mata la malla horizontal. Sin marcos no aplica.
+    grid_span: dict[tuple[str, str], tuple[float, float]] = {}
+    if frame_list:
+        for entity in entities:
+            endpoints = _line_endpoints(entity)
+            if endpoints is None or not layer_matches(entity.layer, config.layer_hints):
+                continue
+            start, end = endpoints
+            angle = segment_angle_degrees(start, end)
+            if angles_parallel(angle, 0.0, config.angle_tolerance_deg):
+                orientation, lo, hi = "horizontal", min(start[0], end[0]), max(start[0], end[0])
+            elif angles_parallel(angle, 90.0, config.angle_tolerance_deg):
+                orientation, lo, hi = "vertical", min(start[1], end[1]), max(start[1], end[1])
+            else:
+                continue
+            span_frame = _frame_of(start, end)
+            if span_frame is None:
+                continue
+            key = (span_frame, orientation)
+            span = grid_span.get(key)
+            grid_span[key] = (
+                (lo, hi) if span is None else (min(span[0], lo), max(span[1], hi))
+            )
     grid_label_texts = [
         e
         for e in entities
@@ -295,6 +322,10 @@ def detect_grid(
             orientation, extent_dim = "vertical", bbox_height(local)
         else:
             continue
+        if frame_id is not None:
+            span = grid_span.get((frame_id, orientation))
+            if span is not None and span[1] - span[0] > 0:
+                extent_dim = span[1] - span[0]
         if extent_dim <= 0 or length < config.min_relative_length * extent_dim:
             continue
         fragments.append(

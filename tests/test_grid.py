@@ -90,6 +90,9 @@ def test_ejes_por_marco_en_hoja_mosaicada(tmp_path):
             y = 5 + j * 18
             msp.add_line((ox + 2, y), (ox + 38, y), dxfattribs={"layer": "EJES"})
             msp.add_text(chr(65 + j), height=1.0).set_placement((ox - 2, y))
+        # Un eje real que no llega a la mitad del marco (19 m de 40): contra
+        # el ancho del marco se muere; contra el span de la malla (36 m), pasa.
+        msp.add_line((ox + 2, 15), (ox + 21, 15), dxfattribs={"layer": "EJES"})
     path = tmp_path / "mosaico.dxf"
     doc.saveas(path)
 
@@ -110,9 +113,11 @@ def test_ejes_por_marco_en_hoja_mosaicada(tmp_path):
         return [d for d in output.detections if d.detection_type.value == "grid_line"]
 
     # La caracterización del bug: contra el extent del archivo ningún eje
-    # horizontal de 36 m pasa (umbral ~51 m); contra su marco, todos pasan.
+    # horizontal de 36 m pasa (umbral ~51 m); contra su marco, todos pasan —
+    # incluido el de 20 m, que se juzga contra el span de la malla (36 m),
+    # no contra el ancho del marco (40 m).
     assert len(ejes(sin_marcos)) < len(ejes(con_marcos))
-    assert len(ejes(con_marcos)) == 10  # (3 verticales + 2 horizontales) × 2 marcos
+    assert len(ejes(con_marcos)) == 12  # (3 verticales + 3 horizontales) × 2 marcos
     # Los ejes de marcos distintos nunca se funden en uno.
     for det in ejes(con_marcos):
         x0, _, x1, _ = det.bbox
