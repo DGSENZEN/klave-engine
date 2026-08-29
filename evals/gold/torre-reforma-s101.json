@@ -179,9 +179,22 @@
         "note": ""
       }
     },
-    "direct_cost": 83098.87,
+    "direct_cost": 0.0,
     "direct_cost_tolerance_pct": 5.0,
-    "unpriced": []
+    "unpriced": [
+      "ACA-001",
+      "ACA-002",
+      "CIM-001",
+      "CIM-002",
+      "CIM-003",
+      "CIM-004",
+      "CIM-005",
+      "EST-001",
+      "EST-002",
+      "EST-003",
+      "EST-004",
+      "PRE-001"
+    ]
   },
   "notes": ""
 }
