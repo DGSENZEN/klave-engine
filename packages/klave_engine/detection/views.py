@@ -77,6 +77,9 @@ class ViewRegion(BaseModel):
 # Declared levels closer than this are the same level on different sheets.
 SAME_LEVEL_M = 0.6
 
+# El Voronoi de títulos tiene tope: 1.5× la separación mediana entre anclas.
+ANCHOR_ASSIGN_FACTOR = 1.5
+
 
 class SheetSegmentation(BaseModel):
     views: list[ViewRegion]
@@ -402,6 +405,24 @@ def segment_views(
         )
     anchor_ids = list(regions.keys())
 
+    # Un ancla no adopta lo que está lejos de todos los títulos: el Voronoi
+    # tiene tope — más allá de 1.5× la separación mediana entre anclas, la
+    # detección queda excluida en vez de atribuida a la menos lejana.
+    cap_sq: float | None = None
+    if len(anchor_ids) >= 2:
+        spacings = sorted(
+            min(
+                (regions[other].anchor[0] - regions[vid].anchor[0]) ** 2
+                + (regions[other].anchor[1] - regions[vid].anchor[1]) ** 2
+                for other in anchor_ids
+                if other != vid
+            )
+            for vid in anchor_ids
+        )
+        cap = ANCHOR_ASSIGN_FACTOR * spacings[len(spacings) // 2] ** 0.5
+        cap_sq = cap * cap
+    far_region: ViewRegion | None = None
+
     assignment: dict[str, str] = {}
     member_boxes: dict[str, list[BBox]] = {vid: [] for vid in anchor_ids}
     for detection in detections:
@@ -411,6 +432,25 @@ def segment_views(
             key=lambda vid: (regions[vid].anchor[0] - cx) ** 2
             + (regions[vid].anchor[1] - cy) ** 2,
         )
+        nearest_sq = (regions[nearest_id].anchor[0] - cx) ** 2 + (
+            regions[nearest_id].anchor[1] - cy
+        ) ** 2
+        if cap_sq is not None and nearest_sq > cap_sq:
+            if far_region is None:
+                far_region = ViewRegion(
+                    view_id="far_from_titles",
+                    title="Lejos de todo título",
+                    kind=ViewKind.excluded,
+                    level_key=None,
+                    anchor=(cx, cy),
+                )
+                regions["far_from_titles"] = far_region
+            assignment[detection.detection_id] = far_region.view_id
+            far_region.detection_ids.append(detection.detection_id)
+            far_region.detection_counts[detection.detection_type.value] = (
+                far_region.detection_counts.get(detection.detection_type.value, 0) + 1
+            )
+            continue
         assignment[detection.detection_id] = nearest_id
         region = regions[nearest_id]
         region.detection_ids.append(detection.detection_id)

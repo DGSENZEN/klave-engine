@@ -111,3 +111,28 @@ def test_frames_hold_only_their_own_file(tmp_path):
     assert seg is not None
     assert seg.assignment["x"] == frames[0].frame_id
     assert seg.assignment["y"] == "outside_frames"
+
+
+def test_lo_lejano_de_todo_titulo_queda_excluido(tmp_path):
+    # Camino de anclas por título (sin marcos): una detección a 10 m del
+    # título se atribuye; una a 400 m de todos queda excluida, no adoptada.
+    def build(msp):
+        for i in range(8):
+            msp.add_text("nota chica", height=0.2).set_placement((i, -5))
+        msp.add_text("PLANTA BAJA", height=1.0).set_placement((0, 30))
+        msp.add_text("PLANTA ALTA", height=1.0).set_placement((50, 30))
+
+    entities = _entities(tmp_path, build)
+    cerca = make_detection(
+        "d1", DetectionType.column_tag, "K-1", (5, 25, 5.5, 25.5), 0.9, [], "m", []
+    )
+    lejos = make_detection(
+        "d2", DetectionType.column_tag, "K-2", (400, 400, 400.5, 400.5), 0.9, [], "m", []
+    )
+    seg = segment_views(entities, [cerca, lejos], [])
+    assert seg.is_segmented
+    assigned = seg.assignment["d1"]
+    assert seg.assignment["d2"] == "far_from_titles"
+    far = next(v for v in seg.views if v.view_id == "far_from_titles")
+    assert far.kind.value == "excluded"
+    assert assigned != "far_from_titles"
