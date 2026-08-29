@@ -260,6 +260,32 @@ fragmentación (las tolerancias de merge colineal, ahora por marco, quedaron
 más estrictas que antes: un eje real partido por huecos > 0.9 m sale como
 varios ejes). No estorba a las intersecciones ni al anclaje; infla el conteo.
 
+### P1 cerrado (2026-08-28, rama `motor-p1-limpieza`)
+
+E5–E9 y el residual, con dos correcciones de esta misma auditoría:
+
+- **El residual de fragmentación estaba mal diagnosticado.** Medido: el
+  grueso de los 685 «ejes» era **un eje por aparición de marco** (correcto,
+  la regla de PRUEBA-1); la fragmentación real eran 49 detecciones — huecos
+  de burbuja (mediana 1.9 m) y **doble trazo** del mismo eje (desfase ≤ 0.16
+  m). Tolerancias de marco (`merge_gap_frame_factor` 0.06,
+  `collinear_tolerance_frame_factor` 0.005): 685 → **593** ejes, anclaje
+  **sube** a 175, gold intacto.
+- **Dos recapturas declaradas de gold:** la losa sin sistema migra
+  EST-003 → **EST-016** sin precio (cantidades idénticas: 120000 / 34.291 /
+  36 m²) — resultó que *todo* el EST-003 de los tres fixtures era área sin
+  familia declarada; y prueba-1 EST-001 17.436 → **12.422 m³**: sin alturas
+  las plantas ahora se **suman** por entrepiso supuesto en vez de castillos
+  de la vista más poblada a altura de edificio entero (la misma dirección
+  que A1/A2 tomó con el acero).
+- Riesgos de Marina 88 → 116: honesto — al sumar plantas, más elementos
+  reales entran al takeoff y sus dudas se reportan; que Riesgos los agrupe
+  es el pendiente M1 de la auditoría de densidad, no de este plan.
+- Además: el config externo overlaya el preset escalado; `detections.json`
+  se escribe una vez; el INSERT anidado conserva identidad, el corte de
+  profundidad avisa y ATTDEF se lee (`block_attdefs`, para el índice de
+  prefabricados); la asignación por título tiene tope de distancia.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
