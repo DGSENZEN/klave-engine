@@ -48,6 +48,8 @@ SUITES: tuple[DisciplineSuite, ...] = (
     # La subida slugifica y pierde la ñ: «albañilería» llega como "alba iler a".
     DisciplineSuite("albanileria", _r(r"ALBA[ÑN]ILER|ALBA\W?ILER")),
     DisciplineSuite("indice", _r(r"\bINDICE\b|ÍNDICE|PORTADA|CAR[ÁA]TULA")),
+    # El fondo arquitectónico: sustrato que ancla, nunca partida (§9).
+    DisciplineSuite("arquitectura", _r(r"\bXREF\b|\bARQ\b|ARQUITEC")),
     DisciplineSuite("estructural", _r(r"EST|TRABE|LOSA|ZAPATA|CASTILL|COLUMN|CIMENT"),
                     layer_hints=("EST", "EJES", "TRABE", "ZAPATA"), structural=True),
 )

@@ -541,6 +541,9 @@ def generate_bill_of_quantities(
     boq = BillOfQuantities(project_id=project_id, currency=currency)
     boq.assumptions.append(REFERENCE_PRICE_DISCLAIMER)
     assumptions = assumptions or CostingAssumptions()
+    # El sustrato (fondo arquitectónico) se ve y ancla, pero jamás cobra:
+    # sus muros ya los cobra la disciplina dueña en SU hoja (spec §9).
+    detections = [d for d in detections if not (d.properties or {}).get("substrate")]
 
     meters_factor = units.to_meters()
     if meters_factor is None:

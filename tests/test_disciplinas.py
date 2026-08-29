@@ -135,3 +135,45 @@ def test_canceleria_detecta_la_pieza_sin_recontarla(tmp_path):
     assert len(openings) == 1
     assert openings[0].label == "CA-07"
     assert openings[0].properties["opening_family"] == "cancel"
+
+
+def test_el_fondo_arquitectonico_es_sustrato():
+    from klave_engine.detection.disciplines import route_sheet
+
+    assert route_sheet("00 XREF L.04 - 26.01.15.dwg").key == "arquitectura"
+    assert route_sheet("01 ARQ L.04 - 26.01.15.dwg").key == "arquitectura"
+    assert route_sheet("00_xref_l_04_-_26_01_15.dwg").key == "arquitectura"
+    suite = route_sheet("00 XREF L.04.dwg")
+    assert suite.structural is False and suite.detect is not None
+
+
+def test_el_sustrato_se_ve_pero_no_cobra():
+    from klave_engine.costing.apu import build_all_apus
+    from klave_engine.costing.boq import generate_bill_of_quantities
+    from klave_engine.costing.catalog import build_default_catalog
+    from klave_engine.costing.models import CostingAssumptions
+    from klave_engine.detection.results import DetectionType, make_detection
+    from klave_engine.dxf.units import DrawingUnits
+
+    from tests.precios import LIBRO
+
+    def muro(det_id, substrate):
+        props = {"estimated_length": 10.0, "wall_kind": None}
+        if substrate:
+            props["substrate"] = True
+        return make_detection(
+            det_id, DetectionType.wall, f"M-{det_id}", (0, 0, 10, 0.15), 0.8, [],
+            "wall_pair", [], props,
+        )
+
+    dets = [muro("real", False), muro("fondo", True)]
+    assumptions = CostingAssumptions()
+    catalog = [c for c in build_default_catalog(assumptions) if c.code == "EST-004"]
+    units = DrawingUnits(unit="m", source="declared", confidence=1.0)
+    boq = generate_bill_of_quantities(
+        "t", dets, units, catalog, build_all_apus(catalog, LIBRO), assumptions=assumptions
+    )
+    linea = next(li for li in boq.lines if li.concept_code == "EST-004")
+    # Solo el muro real cobra: 10 m × altura, no 20.
+    assert linea.raw_quantity == 10.0
+    assert "fondo" not in linea.source_detections
