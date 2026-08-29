@@ -142,11 +142,23 @@ class DetectorSuiteConfig(BaseModel):
 def load_detector_config(
     path: Path | None, units: DrawingUnits | None = None, extent: BBox | None = None
 ) -> DetectorSuiteConfig:
+    base = (
+        DetectorSuiteConfig.preset_for_units(units, extent)
+        if units is not None
+        else DetectorSuiteConfig()
+    )
     if path is not None and path.exists():
-        return DetectorSuiteConfig.model_validate(read_json(path))
-    if units is not None:
-        return DetectorSuiteConfig.preset_for_units(units, extent)
-    return DetectorSuiteConfig()
+        # El archivo ajusta campos sueltos; el escalado por unidades del
+        # resto sigue vivo — un config externo nunca apaga los presets.
+        overrides = read_json(path)
+        data = base.model_dump()
+        for section, fields in overrides.items():
+            if isinstance(fields, dict) and section in data and isinstance(data[section], dict):
+                data[section].update(fields)
+            else:
+                data[section] = fields
+        return DetectorSuiteConfig.model_validate(data)
+    return base
 
 
 def run_detectors(

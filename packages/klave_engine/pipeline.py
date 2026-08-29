@@ -393,7 +393,8 @@ def run_full_pipeline(
     result.graph = graph
 
     write_json(processed / "drawing_graph.json", graph.to_export(manifest.project_id))
-    write_json(processed / "detections.json", result.detections)
+    # detections.json se escribe una sola vez, después del etiquetado de
+    # pretiles de azotea: un lector intermedio no debe ver datos sin on_roof.
 
     result.quantity_report = generate_quantity_report(
         manifest.project_id,
@@ -427,8 +428,7 @@ def run_full_pipeline(
             ):
                 detection.properties["on_roof"] = True  # a pretil: costed knee-high
                 tagged += 1
-        if tagged:
-            write_json(processed / "detections.json", result.detections)
+    write_json(processed / "detections.json", result.detections)
     log_stage(
         logger,
         "views_segmented",
