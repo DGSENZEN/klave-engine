@@ -206,7 +206,7 @@ prefabricados (S2), no de cada suite.
 
 | # | Suite | Datos reales hoy | Bloqueo |
 |---|---|---|---|
-| 1 | Hidrosanitaria (spec en el doc madre) | Marina convierte | — |
+| 1 | Hidrosanitaria — **cerrada 2026-08-29**: corridas por tramo de Ø, tiros de bajada ligados (SAN-006 espera N.P.T.), hallazgos agrupados, hueco `detect` ocupado. Nota: media §2 ya existía (corridas con Ø/material, muebles→salidas, registros) — medir antes de construir. | Marina convierte | — |
 | 2 | Cancelería | tags legibles | — |
 | 3 | Gas | spec "PEAD 19MM" legible | — |
 | 4 | AA | bloques con tonelaje legibles | — |

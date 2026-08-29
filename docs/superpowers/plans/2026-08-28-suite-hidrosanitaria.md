@@ -22,11 +22,11 @@
 
 Copy the full instalaciones project to scratch and reprocess (`data/uploads/marina_lote_04_instalaciones_596e05ed` → `$SCRATCH/marina-inst`), then measure on BOTH it and `data/uploads/gold_instalaciones_mini/processed`:
 
-- [ ] **Step 1: Reprocess** the scratch copy with the current engine (house rule: never reprocess the user's project in place).
-- [ ] **Step 2: Corridas** — per `pipe_run` detection: how many spec labels with **distinct nominal diameters** sit within `_SPEC_REACH_M` of its segments (reuse `_etiquetas_de_especificacion` + `normaliza_diametro` in an ad-hoc script)? Report: groups with 0 / 1 / ≥2 distinct diameters, and the meters in the ≥2 bucket. **Gate:** Task 2 is built only if the ≥2 bucket holds real meters (> 10 m somewhere); otherwise it is descoped with the measurement in the plan outcome.
-- [ ] **Step 3: Bajadas** — for `fixture` detections with `fixture_family == "bajada"`: positions relative to their containing plan frame (center − frame bbox origin); cluster across frames of the same file at tolerance 0.5 m; report stack count, sizes, and whether the instalaciones frames carry NPT levels (`frames.json` `level_key`/`npt_level`, `views.json` story heights). **Gate:** vertical ML derivation needs levels; without them Task 3 stamps stacks + emits the grouped hallazgo only.
-- [ ] **Step 4: Registros/coladeras** — count `registro`/`coladera` fixtures (SAN-004/SAN-005 feeds) so the «bajada sin registro» hallazgo has an honest denominator, or is descoped if the symbols simply aren't drawn.
-- [ ] **Step 5:** Record all numbers in the task's commit message (docs-only commit if no code changed).
+- [x] **Step 1: Reprocess** the scratch copy with the current engine (house rule: never reprocess the user's project in place).
+- [x] **Step 2: Corridas** — per `pipe_run` detection: how many spec labels with **distinct nominal diameters** sit within `_SPEC_REACH_M` of its segments (reuse `_etiquetas_de_especificacion` + `normaliza_diametro` in an ad-hoc script)? Report: groups with 0 / 1 / ≥2 distinct diameters, and the meters in the ≥2 bucket. **Gate:** Task 2 is built only if the ≥2 bucket holds real meters (> 10 m somewhere); otherwise it is descoped with the measurement in the plan outcome.
+- [x] **Step 3: Bajadas** — for `fixture` detections with `fixture_family == "bajada"`: positions relative to their containing plan frame (center − frame bbox origin); cluster across frames of the same file at tolerance 0.5 m; report stack count, sizes, and whether the instalaciones frames carry NPT levels (`frames.json` `level_key`/`npt_level`, `views.json` story heights). **Gate:** vertical ML derivation needs levels; without them Task 3 stamps stacks + emits the grouped hallazgo only.
+- [x] **Step 4: Registros/coladeras** — count `registro`/`coladera` fixtures (SAN-004/SAN-005 feeds) so the «bajada sin registro» hallazgo has an honest denominator, or is descoped if the symbols simply aren't drawn.
+- [x] **Step 5:** Record all numbers in the task's commit message (docs-only commit if no code changed).
 
 ---
 
@@ -38,10 +38,10 @@ When a (layer, marco) group's nearby labels declare ≥2 distinct nominal diamet
 - Modify: `packages/klave_engine/detection/run_detector.py` (`_spec_de` call site → a `_specs_por_tramo` that returns `[(spec, meters_du, entity_ids)]`)
 - Test: `tests/test_instalaciones_detectors.py` (extend — it already exercises `detect_runs`)
 
-- [ ] **Step 1: Failing test** — ezdxf fixture: one layer `00-SANITARIA` polyline network in one frame, a `2"` label hugging the first 10 m and a `4"` label hugging the last 20 m → two `pipe_run` detections, ~10 m at 51 mm and ~20 m at 102 mm, notes naming both labels; control: same network with one label → one detection, properties identical to today's.
-- [ ] **Step 2–3:** red → implement (nearest-label-per-segment; a segment farther than `_SPEC_REACH_M` from every label joins the largest-meters tramo with the «sin rótulo cerca» note).
-- [ ] **Step 4: Fences** — detector tests PASS; `make eval-gold`: structural fixtures identical; if `instalaciones-mini` moved, verify the new rows by hand against Step 1's measurement, recapture with `gold capture … --id instalaciones-mini --fresh`, and declare the before/after counts in the commit.
-- [ ] **Step 5: Commit** — `feat(detección): la corrida se parte donde el plano cambia de diámetro — ML por diámetro nominal (hidrosanitaria)`.
+- [x] **Step 1: Failing test** — ezdxf fixture: one layer `00-SANITARIA` polyline network in one frame, a `2"` label hugging the first 10 m and a `4"` label hugging the last 20 m → two `pipe_run` detections, ~10 m at 51 mm and ~20 m at 102 mm, notes naming both labels; control: same network with one label → one detection, properties identical to today's.
+- [x] **Step 2–3:** red → implement (nearest-label-per-segment; a segment farther than `_SPEC_REACH_M` from every label joins the largest-meters tramo with the «sin rótulo cerca» note).
+- [x] **Step 4: Fences** — detector tests PASS; `make eval-gold`: structural fixtures identical; if `instalaciones-mini` moved, verify the new rows by hand against Step 1's measurement, recapture with `gold capture … --id instalaciones-mini --fresh`, and declare the before/after counts in the commit.
+- [x] **Step 5: Commit** — `feat(detección): la corrida se parte donde el plano cambia de diámetro — ML por diámetro nominal (hidrosanitaria)`.
 
 ---
 
@@ -53,10 +53,10 @@ When a (layer, marco) group's nearby labels declare ≥2 distinct nominal diamet
 - Modify: `packages/klave_engine/costing/instalaciones.py` — revise the «bajada sin concepto» comment with the vertical/plan distinction, and add `SAN-006 («Tramo vertical de bajada, medido de los niveles del plano», M, FASE_SANITARIA)` fed by `QuantityRule(detection_type=fixture, kind=LENGTH, source_property="vertical_length_m", property_filter={"fixture_family": ["bajada"]})` — confirm `QuantityKind.LENGTH` + `source_property` semantics against an existing LENGTH rule before writing it.
 - Test: `tests/test_bajadas.py` (create)
 
-- [ ] **Step 1: Failing test** — synthetic: two plan frames (SheetFrame) of one file with `npt_level` 0.0 and 2.7, two bajada fixtures at the same frame-relative position + one unpaired; `stamp_bajada_stacks` → paired stack has `stack_levels == 2`, representative carries `vertical_length_m == 2.7`, unpaired has no stack; a boq built over the stamped detections shows SAN-006 == 2.7 m unpriced.
-- [ ] **Step 2–3:** red → implement. If Task 1 found no levels on instalaciones frames, the stamps still land (stack_id/levels) but `vertical_length_m` stays absent and SAN-006 emits nothing — the hallazgo of Task 4 says why.
-- [ ] **Step 4: Fences** — tests PASS; gold: structural identical; instalaciones-mini recapture declared if fixture properties changed its captured rows.
-- [ ] **Step 5: Commit** — `feat(detección): las bajadas se ligan entre niveles — el tramo vertical que la corrida en planta nunca dibujó (hidrosanitaria; revisa la decisión «bajada sin concepto»)`.
+- [x] **Step 1: Failing test** — synthetic: two plan frames (SheetFrame) of one file with `npt_level` 0.0 and 2.7, two bajada fixtures at the same frame-relative position + one unpaired; `stamp_bajada_stacks` → paired stack has `stack_levels == 2`, representative carries `vertical_length_m == 2.7`, unpaired has no stack; a boq built over the stamped detections shows SAN-006 == 2.7 m unpriced.
+- [x] **Step 2–3:** red → implement. If Task 1 found no levels on instalaciones frames, the stamps still land (stack_id/levels) but `vertical_length_m` stays absent and SAN-006 emits nothing — the hallazgo of Task 4 says why.
+- [x] **Step 4: Fences** — tests PASS; gold: structural identical; instalaciones-mini recapture declared if fixture properties changed its captured rows.
+- [x] **Step 5: Commit** — `feat(detección): las bajadas se ligan entre niveles — el tramo vertical que la corrida en planta nunca dibujó (hidrosanitaria; revisa la decisión «bajada sin concepto»)`.
 
 ---
 
@@ -69,7 +69,7 @@ In `costing/hallazgos.py` (the compliant findings system — NOT `risks/rules.py
 
 **Test:** `tests/test_hallazgos.py` exists (`grep -l hallazgos tests/`) — mirror an existing rule's test: build detections, assert ONE card per rule with the denominator in its headline, never one card per element.
 
-- [ ] **Steps:** failing test → implement → PASS → gold untouched (hallazgos are computed on demand, never persisted) → commit `feat(diagnóstico): corridas sin diámetro y bajadas sin nivel, agrupadas con denominador (hidrosanitaria)`.
+- [x] **Steps:** failing test → implement → PASS → gold untouched (hallazgos are computed on demand, never persisted) → commit `feat(diagnóstico): corridas sin diámetro y bajadas sin nivel, agrupadas con denominador (hidrosanitaria)`.
 
 ---
 
@@ -81,16 +81,16 @@ In `costing/hallazgos.py` (the compliant findings system — NOT `risks/rules.py
 - Modify: `packages/klave_engine/detection/suite.py` — in the `structural=False` branch: if the routed suite has `detect`, call it; else the default trio. Thread the routed suite (or its key) into `run_detectors` — today it only receives `structural: bool`; add `suite: DisciplineSuite | None = None` keeping the bool for compatibility.
 - Test: `tests/test_disciplinas.py` — a sanitaria-named sheet routed through `run_detectors` produces the same outputs via the suite path (compare detection counts against a direct trio call on the same entities).
 
-- [ ] **Steps:** failing test → implement → PASS → `make eval-gold` **identical everywhere** (the tenant changes wiring, not behavior — bajada stamping stays in the pipeline, shared by every discipline) → commit `feat(detección): hidrosanitaria ocupa el hueco detect del registro — el primer inquilino real (S1 cerrado de verdad)`.
+- [x] **Steps:** failing test → implement → PASS → `make eval-gold` **identical everywhere** (the tenant changes wiring, not behavior — bajada stamping stays in the pipeline, shared by every discipline) → commit `feat(detección): hidrosanitaria ocupa el hueco detect del registro — el primer inquilino real (S1 cerrado de verdad)`.
 
 ---
 
 ### Task 6: Cierre
 
-- [ ] Full suite (`uv run pytest -q; echo $?` → 0), `make lint` clean, `make eval-gold` PASS.
-- [ ] Marina completo stability (P1 numbers hold) + full instalaciones scratch: report bajada stacks, corridas per diameter, SAN-006 meters, and the two new hallazgos with their denominators.
-- [ ] «Suite hidrosanitaria cerrada» note in `docs/auditoria-motor.md` §4 with the measured numbers; tick this plan; note in the suites spec which §2 items were already built pre-plan (corridas con diámetro, muebles→salidas, registros) so the next suite's plan starts from reality.
-- [ ] Docs commit → finishing-a-development-branch (merge menu).
+- [x] Full suite (`uv run pytest -q; echo $?` → 0), `make lint` clean, `make eval-gold` PASS.
+- [x] Marina completo stability (P1 numbers hold) + full instalaciones scratch: report bajada stacks, corridas per diameter, SAN-006 meters, and the two new hallazgos with their denominators.
+- [x] «Suite hidrosanitaria cerrada» note in `docs/auditoria-motor.md` §4 with the measured numbers; tick this plan; note in the suites spec which §2 items were already built pre-plan (corridas con diámetro, muebles→salidas, registros) so the next suite's plan starts from reality.
+- [x] Docs commit → finishing-a-development-branch (merge menu).
 
 ## Out of scope
 

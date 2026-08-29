@@ -8,7 +8,6 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from klave_engine.detection.disciplines.vocab import DisciplineSuite
 from klave_engine.common.ids import IdGenerator
 from klave_engine.common.io import read_json
 from klave_engine.detection.beam_detector import BeamDetectorConfig, detect_beams
@@ -17,6 +16,7 @@ from klave_engine.detection.detail_reference_detector import (
     DetailReferenceDetectorConfig,
     detect_detail_references,
 )
+from klave_engine.detection.disciplines.vocab import DisciplineSuite
 from klave_engine.detection.fixture_detector import (
     FixtureDetectorConfig,
     detect_fixtures,

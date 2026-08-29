@@ -454,7 +454,6 @@ def _tramos_por_diametro(
         largo = math.dist((ax, ay), (bx, by))
         if largo <= 0:
             continue
-        mx, my = (ax + bx) / 2, (ay + by) / 2
         mejor: tuple[float, tuple[int, str], str] | None = None
         for (tx, ty), texto, diametro in legibles:
             d = _distancia_a_segmento(tx, ty, (ax, ay, bx, by))

@@ -314,8 +314,31 @@ S1–S5 v1, todo con la conducta de detección **byte-estable** contra P1
   109 muebles, 20 corridas, F1 = 1.0; los 25 compuertas y 16 DESCSAN1
   coinciden con lo que la memoria del proyecto recuerda.
 
-Siguiente en la cola: la suite **hidrosanitaria** (spec §2 del doc
-multidisciplina), primera consumidora real del índice y del hueco `detect`.
+### Suite hidrosanitaria cerrada (2026-08-29, rama `suite-hidrosanitaria`)
+
+Medir primero pagó otra vez: la mitad del §2 **ya existía** (corridas por
+sistema con diámetro/material, muebles→salidas por familia, registros) y el
+plan solo construyó los huecos reales:
+
+- **La corrida se parte donde cambia el diámetro.** Medido: 16 de 20
+  corridas del fixture tenían ≥2 diámetros rotulados (481 m perdiendo
+  resolución). Ahora cada segmento se adjudica al rótulo legible más
+  cercano: instalaciones completas, 68 corridas y 64 con diámetro nominal
+  (sanitaria 4"/2", agua fría 1/2", gas 3/4"). Gold recapturado y
+  declarado (20→34 en `instalaciones-mini`).
+- **Las bajadas se ligan entre niveles** por posición relativa al marco:
+  45 de 56 símbolos en 18 tiros. La decisión «bajada sin concepto» se
+  revisó con su razón: en planta sigue sin doble cobro; el **tramo
+  vertical** — que la corrida en planta nunca dibuja — lo mide SAN-006
+  cuando hay N.P.T. de dónde (aquí no los hay, y el diagnóstico lo dice).
+- **Dos hallazgos agrupados** (principio 7, en el Diagnóstico, no en
+  Riesgos): «4 de 68 corridas sin diámetro legible: 47 m que ninguna
+  publicación deja cotizar» y «18 tiros de bajada sin niveles N.P.T.».
+- **El hueco `detect` tiene su primer inquilino**: hidráulica y sanitaria
+  se leen por su suite del registro, con conducta idéntica al trío.
+
+Siguiente en la cola: **cancelería** (cuadro + los vanos que los muros ya
+devuelven).
 
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·

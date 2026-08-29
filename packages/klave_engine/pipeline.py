@@ -28,9 +28,9 @@ from klave_engine.costing.report import (
     generate_cost_report,
 )
 from klave_engine.costing.reviews import filter_excluded, load_reviews
+from klave_engine.detection.bajadas import stamp_bajada_stacks
 from klave_engine.detection.dimension_links import link_dimensions
 from klave_engine.detection.dimensions import build_dimension_inventory
-from klave_engine.detection.bajadas import stamp_bajada_stacks
 from klave_engine.detection.disciplines import route_sheet, vote_content
 from klave_engine.detection.frames import SheetFrame, detect_frames
 from klave_engine.detection.inventory import build_inventory, reads_as_structure
