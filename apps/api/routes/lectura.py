@@ -121,6 +121,7 @@ def get_lectura(
     detections = _optional(store, project_id, "detections.json") or []
     schedules = _optional(store, project_id, "schedules.json") or {}
     inventory = _optional(store, project_id, "inventory.json")
+    prefabs = _optional(store, project_id, "prefab_index.json") or []
 
     conversion_by_source = {c.get("source_path", ""): c for c in conversions}
     summary_by_file = {s.get("source_file", ""): s for s in parse_summary}
@@ -199,6 +200,21 @@ def get_lectura(
         "layers": layers[:20],
         "layer_total": len(layers),
         "blocks": blocks[:12],
+        # El índice de prefabricados, resumido: qué definiciones trae el
+        # plano, cuántas veces se colocan, y qué reconoce la tabla.
+        "prefabs": [
+            {
+                "name": p.get("name"),
+                "familia": p.get("familia"),
+                "que_es": p.get("que_es"),
+                "disciplina": p.get("disciplina"),
+                "clase": p.get("clase"),
+                "es_anotacion": p.get("es_anotacion", False),
+                "attdefs": p.get("attdefs", []),
+                "instance_count": len(p.get("instances", [])),
+            }
+            for p in prefabs
+        ],
         "warning_groups": sorted(
             warning_groups.values(), key=lambda g: -g["count"]
         ),

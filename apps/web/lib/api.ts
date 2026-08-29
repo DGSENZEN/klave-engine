@@ -832,6 +832,17 @@ export type Lectura = {
   layers: { layer: string; entity_count: number; entity_types: Record<string, number> }[];
   layer_total: number;
   blocks: { block_name: string; insert_count: number }[];
+  /** Índice de prefabricados: definiciones de bloque clasificadas una vez. */
+  prefabs?: {
+    name: string;
+    familia: string | null;
+    que_es: string | null;
+    disciplina: string | null;
+    clase: string | null;
+    es_anotacion: boolean;
+    attdefs: string[];
+    instance_count: number;
+  }[];
   warning_groups: { type: string; label: string; count: number; samples: string[] }[];
   detection_total: number;
   detections_by_family: Record<string, number>;
