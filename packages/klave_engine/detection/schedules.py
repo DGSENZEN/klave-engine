@@ -13,7 +13,7 @@ a typical value.
 import re
 import statistics
 from collections import Counter
-from typing import Literal
+from typing import Callable, Literal
 
 from pydantic import BaseModel, Field
 
@@ -669,6 +669,7 @@ def build_schedule_inventory(
     config: TextPatternConfig | None = None,
     unit_to_m: float | None = None,
     detail_boxes: list[BBox] | None = None,
+    extra_readers: list[Callable[[list[NormalizedEntity]], list[ElementSpec]]] | None = None,
 ) -> ScheduleInventory:
     config = config or TextPatternConfig()
     texts = [e for e in entities if e.is_textual and e.text]
@@ -693,6 +694,11 @@ def build_schedule_inventory(
                 entities, config, unit_to_m, detail_boxes or [], usual, cuadro_marks
             )
             inventory_cuadro_marks = cuadro_marks
+    # Lectores por disciplina (cuadro de cancelería, tablero eléctrico…):
+    # sus entradas llegan con el rango que ellas declaren — normalmente
+    # «cuadro», porque la tabla del plano es la autoridad de su disciplina.
+    for reader in extra_readers or []:
+        specs += reader(entities)
     inventory = ScheduleInventory(
         specs=specs,
         tables_found=tables,
