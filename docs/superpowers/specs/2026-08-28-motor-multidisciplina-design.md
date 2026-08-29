@@ -125,6 +125,12 @@ tipo etiquetadas a mano una vez, protegidas para siempre.
 
 ## 3. Secuencia y cola de trabajo
 
+Las suites 4–7 de abajo están especificadas a detalle — contrato, reglas de
+reclamo entre suites, vocabulario real de Marina, estado de datos por
+disciplina — en
+[2026-08-28-suites-por-disciplina-design.md](2026-08-28-suites-por-disciplina-design.md);
+eléctrica y carpintería/herrería quedan explícitamente detrás de S3.
+
 1. **P1 estructural pendiente** (E5–E9 + fragmentación de ejes) — corto, ya
    diagnosticado, no bloquea el espine.
 2. **Espine S1–S5** (registro, prefab index, conversión, sustrato, gold
