@@ -101,7 +101,13 @@ existentes como su contenido. El riel derecho es la **actividad** que ya emite
 
 ## Orden de las pistas
 
-1. **Motor P0** (plan escrito) → 2. **Tablero + candados** → 3. **Visor**
-(las tres ideas del cliente) → 4. **Pre-escaneo + índice de prefabricados en
-la interfaz**. Cada pista recibe su plan de implementación al llegar su turno,
-escrito contra el código real de ese momento.
+**Actualizado 2026-08-28 (mismo día, después de aterrizar el motor P0):**
+Diego redefinió el motor como **multidisciplina a profundidad** — la cola del
+lado del motor vive ahora en
+[2026-08-28-motor-multidisciplina-design.md](2026-08-28-motor-multidisciplina-design.md)
+(P1 estructural → espine S1–S5 → hidrosanitaria → cancelería → eléctrica…).
+Esta pista de interfaz corre **en paralelo y sin cambios de diseño**: el
+tablero es agnóstico a la disciplina, y su nodo «Planos» mostrará el estado
+de lectura por disciplina cuando el registro exista. El índice de
+prefabricados dejó de ser el paso 4 de esta pista: es parte del espine del
+motor (S2), y aquí solo se consume (pre-escaneo de subida).
