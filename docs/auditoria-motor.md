@@ -438,6 +438,37 @@ es lo siguiente del motor.
 - Gold `albanileria-mini` (154 muros: 136 sustrato + 18 tabique → ALB-001
   81.7 m², F1 = 1.0). Ocho fixtures, eval ~13 s.
 
+### Tablero de nodos, Fase 1 cerrada (2026-08-29, rama `tablero-fase-1`)
+
+La identidad de interfaz aprobada en la pista del tablero empezó a existir:
+
+- **Candados con firma** — `ProjectReviews.gates` guarda quién abrió cada
+  nodo y cuándo (`GateState`, nodos `presupuesto|programa|contrato`);
+  `PUT /projects/{id}/gates/{node}` exige admin del taller u owner del
+  proyecto (modo abierto pasa, como todo lo local-first), asienta en el
+  `audit_log` y publica SSE `gate_updated`.
+- **`GET /projects/{id}/tablero`** — una sola lectura barata que compone los
+  seis nodos (planos, revisión, catálogo, presupuesto, programa, contrato)
+  desde artefactos ya en disco: cobertura de lectura, verificación m de 3,
+  líneas sin precio n de N, total, riesgos, candados y `my_role` (el hueco
+  conocido del frontend, cerrado aquí). Artefacto ausente → nodo
+  «pendiente», nunca 500.
+- **El tablero es la vista principal** — la raíz del proyecto pinta los seis
+  nodos sobre el lienzo punteado (DOM+CSS, sin librerías de grafo), un hecho
+  por chip con denominador, presencia por nodo y el rail de actividad en
+  vivo. El Resumen viejo vive intacto en `/resumen`; la barra lateral
+  sobrevive hasta la paridad (decisión 1 de la especificación).
+- **GateGuard** — las secciones de Programa y Contrato bloqueadas muestran
+  el candado: qué falta (con enlaces), quién puede abrir y el botón para la
+  autoridad. Presupuesto queda sin guardia en v1 a propósito (el money gate
+  ya lo gobierna). Un error al leer el estado deja pasar: candado de
+  proceso, no de seguridad.
+
+Verificado: pytest completo verde, gold intacto (8 fixtures), lint + tsc +
+build de producción verdes. Las rutas nuevas responden 401 en modo protegido
+como el resto (sin puerta abierta accidental); la vista autenticada queda
+para el humo con sesión de Diego.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)

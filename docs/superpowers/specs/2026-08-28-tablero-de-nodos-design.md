@@ -111,3 +111,12 @@ tablero es agnóstico a la disciplina, y su nodo «Planos» mostrará el estado
 de lectura por disciplina cuando el registro exista. El índice de
 prefabricados dejó de ser el paso 4 de esta pista: es parte del espine del
 motor (S2), y aquí solo se consume (pre-escaneo de subida).
+
+## Fase 1 implementada (2026-08-29, rama `tablero-fase-1`)
+
+Candados con firma y audit (`gates` en reviews + `PUT /gates/{node}` + SSE
+`gate_updated`), `GET /tablero` barato con `my_role`, el tablero como vista
+principal (Resumen intacto en `/resumen`, sidebar viva), y GateGuard sobre
+los grupos Programa y Contrato (Presupuesto sin guardia en v1, a propósito).
+Quedan para fases 2–3: expansión en sitio, ronda del visor, pre-escaneo de
+subida y el enforcement de rutas en el backend.

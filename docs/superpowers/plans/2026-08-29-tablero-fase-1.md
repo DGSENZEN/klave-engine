@@ -1,6 +1,6 @@
 # Tablero de Nodos · Fase 1 · Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** The project's main view becomes the node canvas — six nodes with real derived state, presence, the activity rail, and admin candados (visible-but-locked, VerificationState-style signatures, audit_log) — with every existing screen preserved and the sidebar surviving until parity (approved decisions 1–3).
 
@@ -20,7 +20,7 @@
 - `apps/api/routes/reviews.py` (o `gates.py`): `PUT /projects/{id}/gates/{node}` body `{approved: bool}` — authority helper mirroring `require_catalog_admin` (read it; open mode passes with X-Actor); writes reviews under `project_recompute_lock`; `audit()` entry (`action="gate_approved"/"gate_revoked"`, target project); publish SSE `gate_updated` like `review_updated` is published (find the publish call in reviews routes and mirror).
 - Tests (`tests/test_gates.py`): approve → persisted with actor+timestamp; revoke → cleared; invalid node → 422; reviews file round-trips.
 
-- [ ] failing tests → implement → PASS (`pytest > /dev/null; echo $?`) → gold untouched → commit `feat(api): los candados del tablero — la firma del administrador, asentada y avisada`.
+- [x] failing tests → implement → PASS (`pytest > /dev/null; echo $?`) → gold untouched → commit `feat(api): los candados del tablero — la firma del administrador, asentada y avisada`.
 
 ### Task 2: El estado del tablero — un solo GET barato
 
@@ -28,7 +28,7 @@
 - Register router; middleware gives GET viewer-level for free (URL shape `/projects/{id}/...`).
 - Test: demo fixture project → shape asserted; missing artifacts → nodes degrade to `pendiente`, never 500.
 
-- [ ] failing test → implement → PASS → commit `feat(api): el estado del tablero en una sola lectura barata — cada nodo con sus hechos y su candado`.
+- [x] failing test → implement → PASS → commit `feat(api): el estado del tablero en una sola lectura barata — cada nodo con sus hechos y su candado`.
 
 ### Task 3: El tablero — la vista principal del proyecto
 
@@ -38,20 +38,20 @@
 - Move `app/proyecto/[id]/page.tsx` → `app/proyecto/[id]/resumen/page.tsx` (content intact); new root page renders the Tablero; `ProjectShell` nav: first item «Tablero» (href b), second «Resumen» (`/resumen`); `projectLocationLabel` gains both.
 - Refetch on `connectionEpoch` + events (`job_updated`, `review_updated`, `costing_updated`, `run_published`, `gate_updated`) via the `useProjectReport`-style pattern.
 
-- [ ] implement → `npm run lint` + `npx tsc --noEmit` green → commit `feat(web): el tablero de nodos es la vista principal — seis nodos con hechos, candados y actividad en vivo`.
+- [x] implement → `npm run lint` + `npx tsc --noEmit` green → commit `feat(web): el tablero de nodos es la vista principal — seis nodos con hechos, candados y actividad en vivo`.
 
 ### Task 4: El candado se respeta — GateGuard
 
 - `apps/web/components/GateGuard.tsx`: client wrapper reading the tablero (shared fetch/context or its own light call); when the node is locked → full-pane lock screen: candado icon, requisitos list (verificación m de 3, gate previo), quién puede abrir (`my_role`-aware), «Aprobar nodo» button (`putGate`) for admin/owner, and the doctrine line (visible, nunca oculto). Wrap the Programa group (`programa`, `flujo`, `parametros`) and Contrato group pages (`contrato`, `estimaciones`, `convenios`, `bitacora`, `ajuste-costos`, `finiquito`) — one-line wrap per page.
 - Presupuesto node: v1 SIN guard (money gate already governs it) — its gate chip shows state only; enforcing waits for product feedback. Stated in the plan on purpose.
 
-- [ ] implement → lint/tsc green → commit `feat(web): el candado se respeta — el nodo bloqueado dice qué falta y quién puede abrirlo, nunca se esconde`.
+- [x] implement → lint/tsc green → commit `feat(web): el candado se respeta — el nodo bloqueado dice qué falta y quién puede abrirlo, nunca se esconde`.
 
 ### Task 5: Verificación y cierre
 
-- [ ] `npm run lint`, `npx tsc --noEmit`, `npm run build` (catches Next-16 API drift), python full suite + gold (backend files changed).
-- [ ] Browser smoke within auth limits: unauthenticated render path + (if the dev API allows any open project) tablero screenshot; otherwise state the limit and hand the user the two-step check (push, log in, open any project).
-- [ ] Docs: tablero spec «Fase 1 implementada» note; audit bitácora entry; tick plan; commit; finishing-a-development-branch.
+- [x] `npm run lint`, `npx tsc --noEmit`, `npm run build` (catches Next-16 API drift), python full suite + gold (backend files changed).
+- [x] Browser smoke within auth limits: unauthenticated render path + (if the dev API allows any open project) tablero screenshot; otherwise state the limit and hand the user the two-step check (push, log in, open any project).
+- [x] Docs: tablero spec «Fase 1 implementada» note; audit bitácora entry; tick plan; commit; finishing-a-development-branch.
 
 ## Out of scope (phases 2–3, unchanged)
 
