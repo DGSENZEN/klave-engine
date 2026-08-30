@@ -26,8 +26,8 @@ from klave_engine.costing.levantamiento import apply_inventory
 from klave_engine.costing.models import (
     BillOfQuantities,
     BoqLine,
-    Concept,
     ComponenteResuelto,
+    Concept,
     CostingAssumptions,
     CostingConfig,
     CostIntegration,
