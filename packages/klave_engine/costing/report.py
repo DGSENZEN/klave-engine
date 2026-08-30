@@ -278,6 +278,15 @@ def _integrate_with_analyses(
             f"El costo de financiamiento no convergió tras 10 iteraciones; "
             f"residual de ${residual:,.2f} en el total con contingencia."
         )
+    # El porcentaje derivado del análisis vive en integration.lines (lo
+    # calcula integrate_costs a partir del importe); sin este relleno el
+    # componente resuelto se queda con el 0.0 de fábrica y así lo ven la
+    # API y el web junto a la insignia de "análisis".
+    percentages_by_code = {line.code: line.percentage for line in integration.lines}
+    for comp in resolved:
+        pct = percentages_by_code.get(comp.code)
+        if pct is not None:
+            comp.pct = pct
     for comp in resolved:
         for falta in comp.faltantes:
             cola = (

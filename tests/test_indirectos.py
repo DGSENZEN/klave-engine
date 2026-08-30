@@ -221,6 +221,53 @@ def test_resolver_campo_sin_programa_se_reclama():
     assert any("programa de obra" in f for f in campo.faltantes)
 
 
+def test_resolver_campo_vacio_cae_en_declarado_silencioso():
+    # DesgloseCampo(rubros=[]) sin plantilla: nada se capturó nunca, ni un
+    # renglón. Cae en declarado sin regaños, la misma doctrina que un
+    # desglose ausente — no un "análisis" en $0.
+    config = CostingConfig()
+    config.desglose_campo = DesgloseCampo(rubros=[])
+    resolved = resolve_integration(config, None, 1_000_000.0, _schedule(), None)
+    campo = resolved[0]
+    assert campo.fuente == "declarado"
+    assert campo.pct == IndirectsConfig().field_indirects_pct
+    assert campo.faltantes == []
+
+
+def test_resolver_campo_rubro_en_cero_reclama_que_no_suma():
+    # Un renglón sí se capturó, pero en $0: a medias, no vacío — se reclama.
+    config = CostingConfig()
+    config.desglose_campo = DesgloseCampo(rubros=[
+        RubroIndirecto(concepto="Renta de bodega", importe=0.0, base="mensual"),
+    ])
+    resolved = resolve_integration(config, None, 1_000_000.0, _schedule(), None)
+    campo = resolved[0]
+    assert campo.fuente == "declarado"
+    assert any("no suma" in f for f in campo.faltantes)
+
+
+def test_taller_financiamiento_en_blanco_no_reclama_nada():
+    # El web siempre manda las dos mitades del PUT: guardar sólo la oficina
+    # deja financiamiento como puros defaults, truthy como dict pero vacío
+    # como captura. No debe adoptarse ni reclamar sus cuatro faltantes.
+    config = CostingConfig()
+    taller = {"financiamiento": {"tasa_anual": 0, "indicador": "", "fuente": "",
+                                 "fecha_publicacion": ""}}
+    resolved = resolve_integration(config, taller, 1_000_000.0, _schedule(), None)
+    fi = resolved[2]
+    assert fi.fuente == "declarado"
+    assert fi.faltantes == []
+
+
+def test_config_financiamiento_en_blanco_cuenta_como_ausente():
+    config = CostingConfig()
+    config.financiamiento = AnalisisFinanciamiento()  # todo en su valor por defecto
+    resolved = resolve_integration(config, None, 1_000_000.0, _schedule(), None)
+    fi = resolved[2]
+    assert fi.fuente == "declarado"
+    assert fi.faltantes == []
+
+
 def test_resolver_financiamiento_completo_sin_flujo_se_reclama():
     config = CostingConfig()
     config.financiamiento = AnalisisFinanciamiento(
@@ -296,6 +343,12 @@ def test_iteracion_converge_y_los_totales_se_estabilizan():
     again = integrate_costs(1_000_000.0, _config_analisis_total().indirects, resolved=resolved)
     assert abs(again.grand_total - integration.grand_total) < 0.01
     assert not any("no convergió" in w for w in warnings)
+    # El pct derivado del análisis se rellena en el componente resuelto, no
+    # se queda en el 0.0 de fábrica junto a la insignia de "análisis".
+    campo = next(c for c in resolved if c.code == "CI-C")
+    linea = next(l for l in integration.lines if l.code == "CI-C")
+    assert campo.pct == linea.percentage
+    assert campo.pct != 0.0
 
 
 def test_modo_declarado_una_pasada_numeros_de_siempre():

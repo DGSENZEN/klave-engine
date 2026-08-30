@@ -115,30 +115,45 @@ def resolve_integration(
         doc = documenta_campo(
             config.desglose_campo, meses, programa.total, programa.cargos_sin_sueldo
         )
-        mensual_mes = sum(
-            r.importe for r in config.desglose_campo.rubros
-            if r.base == "mensual" and r.importe > 0
-        )
-        unicos = sum(
-            r.importe for r in config.desglose_campo.rubros
-            if r.base == "unico" and r.importe > 0
-        )
-        por_periodo = []
-        for i in range(meses):
-            plantilla_i = (
-                programa.total_por_periodo[i]
-                if i < len(programa.total_por_periodo) else 0.0
+        if doc.total > 0:
+            mensual_mes = sum(
+                r.importe for r in config.desglose_campo.rubros
+                if r.base == "mensual" and r.importe > 0
             )
-            por_periodo.append(round(
-                mensual_mes + plantilla_i + (unicos if i == 0 else 0.0), 2
+            unicos = sum(
+                r.importe for r in config.desglose_campo.rubros
+                if r.base == "unico" and r.importe > 0
+            )
+            por_periodo = []
+            for i in range(meses):
+                plantilla_i = (
+                    programa.total_por_periodo[i]
+                    if i < len(programa.total_por_periodo) else 0.0
+                )
+                por_periodo.append(round(
+                    mensual_mes + plantilla_i + (unicos if i == 0 else 0.0), 2
+                ))
+            documento = doc.model_dump()
+            documento["por_periodo"] = por_periodo
+            faltantes = [n for n in doc.notas if "sin importe" in n or "sin sueldo" in n]
+            out.append(ComponenteResuelto(
+                code="CI-C", amount=doc.total, fuente="analisis",
+                documento=documento, faltantes=faltantes,
             ))
-        documento = doc.model_dump()
-        documento["por_periodo"] = por_periodo
-        faltantes = [n for n in doc.notas if "sin importe" in n or "sin sueldo" in n]
-        out.append(ComponenteResuelto(
-            code="CI-C", amount=doc.total, fuente="analisis",
-            documento=documento, faltantes=faltantes,
-        ))
+        else:
+            # El desglose no suma nada: ni un rubro con importe ni plantilla
+            # capturada. Un intento a medias (un renglón en $0, o plantilla
+            # sin sueldo) se reclama; un desglose realmente vacío cae en
+            # silencio, la misma doctrina que uno ausente.
+            faltantes = []
+            if config.desglose_campo.rubros or programa.cargos_sin_sueldo:
+                faltantes = [
+                    "el desglose de campo no suma nada todavía: se usa el "
+                    "porcentaje declarado"
+                ]
+            out.append(ComponenteResuelto(
+                code="CI-C", pct=ind.field_indirects_pct, faltantes=faltantes,
+            ))
     else:
         faltantes = []
         if config.desglose_campo is not None:  # capturó pero no hay programa: se reclama
@@ -184,8 +199,23 @@ def resolve_integration(
 
     # ---- Financiamiento ----------------------------------------------
     analisis = config.financiamiento
-    if analisis is None and taller.get("financiamiento"):
-        analisis = AnalisisFinanciamiento.model_validate(taller["financiamiento"])
+    if (
+        analisis is not None
+        and analisis.tasa_anual <= 0
+        and not analisis.indicador.strip()
+        and not analisis.fuente.strip()
+        and not analisis.fecha_publicacion.strip()
+    ):
+        # Instancia en blanco (todo en su valor por defecto): cuenta como no
+        # capturada, igual que None — nunca reclama cuatro faltantes de la nada.
+        analisis = None
+    if analisis is None:
+        # El web siempre manda las dos mitades del PUT; guardar sólo la
+        # oficina deja financiamiento como un dict de puros defaults —
+        # truthy como dict, vacío como captura. any(...) es la prueba real.
+        taller_fin = taller.get("financiamiento") or {}
+        if any(taller_fin.values()):
+            analisis = AnalisisFinanciamiento.model_validate(taller_fin)
     if analisis is not None and analisis.completo and flujo is not None and flujo.periods:
         n = len(flujo.periods)
         campo = out[0]
