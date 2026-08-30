@@ -207,3 +207,25 @@ def test_share_de_oficina_solo_con_motivo_escrito():
     oficina = resolved[1]
     assert oficina.amount == 30_000.0 and oficina.fuente == "analisis"
     assert oficina.documento["override"] == 3.0
+
+
+def test_resolver_campo_sin_programa_se_reclama():
+    config = CostingConfig()
+    config.desglose_campo = DesgloseCampo(rubros=[
+        RubroIndirecto(concepto="Renta de bodega", importe=10_000.0, base="mensual"),
+    ])
+    resolved = resolve_integration(config, None, 1_000_000.0, None, None)
+    campo = resolved[0]
+    assert campo.fuente == "declarado"
+    assert any("programa de obra" in f for f in campo.faltantes)
+
+
+def test_resolver_financiamiento_completo_sin_flujo_se_reclama():
+    config = CostingConfig()
+    config.financiamiento = AnalisisFinanciamiento(
+        tasa_anual=12.0, indicador="TIIE 28 días",
+        fuente="Banxico SF43783", fecha_publicacion="2026-08-27")
+    resolved = resolve_integration(config, None, 1_000_000.0, _schedule(), None)
+    fi = resolved[2]
+    assert fi.fuente == "declarado"
+    assert any("flujo" in f for f in fi.faltantes)

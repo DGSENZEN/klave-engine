@@ -125,7 +125,13 @@ def resolve_integration(
             documento=documento, faltantes=faltantes,
         ))
     else:
-        out.append(ComponenteResuelto(code="CI-C", pct=ind.field_indirects_pct))
+        faltantes = []
+        if config.desglose_campo is not None:  # capturó pero no hay programa: se reclama
+            faltantes = ["sin programa de obra: el desglose de campo no puede "
+                         "ponerse en el calendario"]
+        out.append(ComponenteResuelto(
+            code="CI-C", pct=ind.field_indirects_pct, faltantes=faltantes,
+        ))
 
     # ---- CI de oficina central ---------------------------------------
     oficina = DesgloseOficinaCentral.model_validate(taller.get("oficina") or {})
@@ -194,7 +200,11 @@ def resolve_integration(
         ))
     else:
         faltantes = []
-        if analisis is not None and analisis.faltantes():
+        if analisis is not None and analisis.completo:
+            # análisis completo pero sin flujo con qué correr: se reclama.
+            faltantes = ["sin flujo calculado: el análisis del financiamiento "
+                         "no puede correr"]
+        elif analisis is not None and analisis.faltantes():
             faltantes = [f"sin {f} capturada" if f == "tasa" else f"sin {f}"
                          for f in analisis.faltantes()]
         out.append(ComponenteResuelto(
