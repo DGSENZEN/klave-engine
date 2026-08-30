@@ -1894,6 +1894,44 @@ export const rollForwardPrices = (
     actor ? { "X-Actor": actor } : undefined,
   );
 
+// ---- Integración del precio (oficina central y financiamiento del taller) ----
+
+/** Los dos análisis a nivel taller que alimentan la integración de cada
+ * obra: los rubros de oficina central (con su volumen anual para el
+ * prorrateo) y la tasa de financiamiento con su indicador, fuente y fecha.
+ * Ver packages/klave_engine/costing/indirectos.py. */
+export type IntegracionTaller = {
+  oficina: { rubros: RubroIndirecto[]; volumen_anual_contratado: number };
+  financiamiento: AnalisisFinanciamiento;
+};
+
+const OFICINA_VACIA: IntegracionTaller["oficina"] = { rubros: [], volumen_anual_contratado: 0 };
+const FINANCIAMIENTO_VACIO: AnalisisFinanciamiento = {
+  tasa_anual: 0,
+  indicador: "",
+  fuente: "",
+  fecha_publicacion: "",
+};
+
+/** El GET manda `{}` en la mitad que nunca se ha guardado; se normaliza aquí
+ * para que el resto del código no repita el fallback. */
+export const getIntegracionTaller = () =>
+  getJSON<{
+    oficina: Partial<IntegracionTaller["oficina"]>;
+    financiamiento: Partial<AnalisisFinanciamiento>;
+  }>("/catalog/integracion").then((r) => ({
+    oficina: { ...OFICINA_VACIA, ...r.oficina },
+    financiamiento: { ...FINANCIAMIENTO_VACIO, ...r.financiamiento },
+  }));
+
+/** El PUT siempre manda las dos mitades juntas — el endpoint las guarda como un solo objeto. */
+export const putIntegracionTaller = (body: IntegracionTaller, actor?: string) =>
+  putJSON<IntegracionTaller>(
+    "/catalog/integracion",
+    body,
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
 // ---- Plantillas & paramétricos (the taller's history) ----
 
 export type Plantilla = {

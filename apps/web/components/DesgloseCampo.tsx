@@ -28,6 +28,7 @@
  * número sin motivo es un decreto, no un criterio.
  */
 
+import type { ReactNode } from "react";
 import { Trash } from "@phosphor-icons/react";
 import type { RubroIndirecto } from "@/lib/api";
 import { Card, Input, SectionTitle, Select, Td, Th } from "@/components/ui";
@@ -56,15 +57,28 @@ const RUBRO_VACIO: RubroIndirecto = {
   base: "mensual",
 };
 
-export function DesgloseCampoCard({
-  value,
+/**
+ * El renglón-por-renglón de un desglose: concepto, categoría e importe, con
+ * la fila fantasma al final. Se usa tal cual para indirectos de campo
+ * (`DesgloseCampoCard`, con `base` mensual/único) y para los rubros de
+ * oficina central (`IntegracionSection`, con `baseAnual` — los importes ya
+ * son anuales y la columna Base no aplica). `children` deja inyectar filas
+ * fijas antes de las editables (p. ej. el renglón de personal de campo) sin
+ * romper la tabla en dos.
+ */
+export function RubrosEditor({
+  rubros,
   onChange,
+  baseAnual,
+  children,
 }: {
-  value: { rubros: RubroIndirecto[] } | null;
-  onChange: (v: { rubros: RubroIndirecto[] }) => void;
+  rubros: RubroIndirecto[];
+  onChange: (r: RubroIndirecto[]) => void;
+  baseAnual?: boolean;
+  children?: ReactNode;
 }) {
-  const rubros = value?.rubros ?? [];
   const hayCero = rubros.some((r) => r.importe === 0);
+  const importeLabel = baseAnual ? "Importe anual" : "Importe";
 
   // El renglón `rubros.length` es la fila fantasma: no existe todavía en
   // `rubros`, así que tocarla no reemplaza un renglón — lo crea. La llave de
@@ -72,41 +86,33 @@ export function DesgloseCampoCard({
   // input no se desmonta y el cursor no salta.
   function set(index: number, patch: Partial<RubroIndirecto>) {
     if (index === rubros.length) {
-      onChange({ rubros: [...rubros, { ...RUBRO_VACIO, ...patch }] });
+      onChange([...rubros, { ...RUBRO_VACIO, ...patch }]);
       return;
     }
-    onChange({ rubros: rubros.map((r, i) => (i === index ? { ...r, ...patch } : r)) });
+    onChange(rubros.map((r, i) => (i === index ? { ...r, ...patch } : r)));
   }
 
   function remove(index: number) {
-    onChange({ rubros: rubros.filter((_, i) => i !== index) });
+    onChange(rubros.filter((_, i) => i !== index));
   }
 
   const filas = [...rubros, RUBRO_VACIO];
 
   return (
-    <Card className="p-5">
-      <SectionTitle sub="RLOPSRM arts. 211-220. Cada renglón es un gasto real de la obra, con su importe y su categoría contable — un porcentaje desnudo no es un desglose.">
-        Desglose de indirectos de campo
-      </SectionTitle>
+    <>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] text-sm">
           <thead className="border-b border-border">
             <tr>
               <Th>Concepto</Th>
               <Th>Categoría</Th>
-              <Th align="right">Importe</Th>
-              <Th>Base</Th>
+              <Th align="right">{importeLabel}</Th>
+              {!baseAnual && <Th>Base</Th>}
               <Th />
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-border/60">
-              <Td colSpan={5} className="text-xs italic text-muted">
-                Personal técnico, administrativo y de servicio — se calcula de la plantilla de
-                campo (abajo)
-              </Td>
-            </tr>
+            {children}
             {filas.map((rubro, index) => {
               const fantasma = index === rubros.length;
               return (
@@ -146,26 +152,30 @@ export function DesgloseCampoCard({
                       placeholder="sin capturar"
                       className="w-32 px-2 py-1 text-right text-sm tabular"
                       aria-label={
-                        fantasma ? "Importe de nuevo renglón" : `Importe de ${rubro.concepto || index + 1}`
+                        fantasma
+                          ? `${importeLabel} de nuevo renglón`
+                          : `${importeLabel} de ${rubro.concepto || index + 1}`
                       }
                     />
                   </Td>
-                  <Td>
-                    <Select
-                      size="sm"
-                      value={rubro.base}
-                      onChange={(e) =>
-                        set(index, { base: e.target.value as RubroIndirecto["base"] })
-                      }
-                      aria-label={fantasma ? "Base de nuevo renglón" : `Base de ${rubro.concepto || index + 1}`}
-                    >
-                      {Object.entries(BASE_LABEL).map(([val, label]) => (
-                        <option key={val} value={val}>
-                          {label}
-                        </option>
-                      ))}
-                    </Select>
-                  </Td>
+                  {!baseAnual && (
+                    <Td>
+                      <Select
+                        size="sm"
+                        value={rubro.base}
+                        onChange={(e) =>
+                          set(index, { base: e.target.value as RubroIndirecto["base"] })
+                        }
+                        aria-label={fantasma ? "Base de nuevo renglón" : `Base de ${rubro.concepto || index + 1}`}
+                      >
+                        {Object.entries(BASE_LABEL).map(([val, label]) => (
+                          <option key={val} value={val}>
+                            {label}
+                          </option>
+                        ))}
+                      </Select>
+                    </Td>
+                  )}
                   <Td align="right">
                     {!fantasma && (
                       <button
@@ -189,6 +199,32 @@ export function DesgloseCampoCard({
           Renglones en $0 se muestran vacíos y no suman: captúralos o bórralos.
         </p>
       )}
+    </>
+  );
+}
+
+export function DesgloseCampoCard({
+  value,
+  onChange,
+}: {
+  value: { rubros: RubroIndirecto[] } | null;
+  onChange: (v: { rubros: RubroIndirecto[] }) => void;
+}) {
+  const rubros = value?.rubros ?? [];
+
+  return (
+    <Card className="p-5">
+      <SectionTitle sub="RLOPSRM arts. 211-220. Cada renglón es un gasto real de la obra, con su importe y su categoría contable — un porcentaje desnudo no es un desglose.">
+        Desglose de indirectos de campo
+      </SectionTitle>
+      <RubrosEditor rubros={rubros} onChange={(r) => onChange({ rubros: r })}>
+        <tr className="border-b border-border/60">
+          <Td colSpan={5} className="text-xs italic text-muted">
+            Personal técnico, administrativo y de servicio — se calcula de la plantilla de
+            campo (abajo)
+          </Td>
+        </tr>
+      </RubrosEditor>
     </Card>
   );
 }

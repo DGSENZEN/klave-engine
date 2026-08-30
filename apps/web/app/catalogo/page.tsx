@@ -80,6 +80,7 @@ import {
   Th,
 } from "@/components/ui";
 import { AliasesSection } from "@/components/AliasesSection";
+import { IntegracionSection } from "@/components/IntegracionSection";
 import { ButtonMenu, MenuItem } from "@/components/Menu";
 import { Modal } from "@/components/Modal";
 import { PlantillasSection } from "@/components/PlantillasSection";
@@ -418,6 +419,7 @@ export default function CatalogoPage() {
         ) : (
           <>
             <SalarioRealSection onChanged={reload} onError={setError} onNotice={setNotice} />
+            <IntegracionSection onChanged={reload} onError={setError} onNotice={setNotice} />
             <VigenciaSection onChanged={reload} onError={setError} onNotice={setNotice} />
           </>
         )}
