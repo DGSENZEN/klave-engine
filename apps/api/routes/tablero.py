@@ -27,6 +27,8 @@ def _optional(store: ProjectStore, project_id: str, name: str) -> Any:
 
 
 def _chip(label: str, tone: str, href: str | None = None) -> dict:
+    """href es un fragmento de ruta del proyecto (p.ej. «/lectura»); el
+    frontend lo antepone con /proyecto/{id}."""
     chip: dict[str, Any] = {"label": label, "tone": tone}
     if href:
         chip["href"] = href
@@ -115,11 +117,11 @@ def get_tablero(
     confirmados = sum(pasos)
     revision_chips = [
         _chip(f"{confirmados} de 3 pasos", "ok" if confirmados == 3 else "warn",
-              "/verificacion")
+              "/resumen")
     ]
     excluidos = sum(1 for r in reviews.detections.values() if r.status == "excluded")
     if excluidos:
-        revision_chips.append(_chip(f"{excluidos} excluidas", "muted", "/detecciones"))
+        revision_chips.append(_chip(f"{excluidos} excluidas", "muted", "/revision"))
     risk_report = _optional(store, project_id, "risk_report.json")
     if risk_report:
         hallazgos = len(risk_report.get("findings") or [])
@@ -151,12 +153,12 @@ def get_tablero(
     elif sin_precio:
         catalogo_estado = "atencion"
         catalogo_chips = [
-            _chip(f"{sin_precio} de {len(lines)} sin precio", "warn", "/catalogo")
+            _chip(f"{sin_precio} de {len(lines)} sin precio", "warn", "/presupuesto")
         ]
     else:
         catalogo_estado = "ok"
         catalogo_chips = [
-            _chip(f"{len(lines)} conceptos con precio", "ok", "/catalogo")
+            _chip(f"{len(lines)} conceptos con precio", "ok", "/presupuesto")
         ]
 
     presupuesto_chips = []
@@ -166,7 +168,7 @@ def get_tablero(
                   "ok" if units_reliable else "warn", "/presupuesto")
         )
     if units_reliable is False:
-        presupuesto_chips.append(_chip("unidades sin confirmar", "warn", "/verificacion"))
+        presupuesto_chips.append(_chip("unidades sin confirmar", "warn", "/resumen"))
     if sin_precio:
         presupuesto_chips.append(_chip(f"{sin_precio} líneas sin precio", "warn"))
     if cost_report is None:
