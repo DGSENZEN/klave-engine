@@ -304,3 +304,14 @@ def test_share_fijado_es_criterio():
         "cobertura de la oficina"
     )
     assert rule.criterio is True
+
+
+def test_share_fijado_no_es_interceptado_por_la_regla_ancha_de_vigencia():
+    """The broad rule 'vigencia|vencido|por revisar' should not intercept
+    'Oficina central por share fijado' even when the text contains 'por revisar'."""
+    from klave_engine.costing.hallazgos import _classify
+
+    rule = _classify(
+        "Oficina central por share fijado: 3 % — monto por revisar con el socio"
+    )
+    assert rule.criterio is True

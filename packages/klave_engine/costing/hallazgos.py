@@ -267,6 +267,11 @@ _RULES: list[Rule] = [
         plural="{n} conceptos del catálogo se quedaron sin cantidad",
     ),
     Rule(
+        pattern=r"Oficina central por share fijado: ",
+        severity="revisar",
+        criterio=True,
+    ),
+    Rule(
         pattern=r"vigencia|vencido|por revisar",
         severity="revisar",
         action="Actualiza o cotiza esos precios en el catálogo.",
@@ -306,11 +311,6 @@ _RULES: list[Rule] = [
         target="parametros",
         momento="entregar",
         verificar="Compara el total de dos recomputos seguidos.",
-    ),
-    Rule(
-        pattern=r"Oficina central por share fijado",
-        severity="revisar",
-        criterio=True,
     ),
 ]
 
