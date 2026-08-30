@@ -513,6 +513,20 @@ celdas que guardan al salir sin botón, recurso nuevo por teclado
 (typeahead), renglones fantasma para crear, y los insumos con descripción y
 costo editables en su lugar.
 
+**Ronda de pulido (2026-08-30, rama `pulido-navegacion`):** los menús de la
+miga cuelgan de su propia flecha (no del origen de la barra), el hover
+cambia de miga como en una barra de menús y el menú de la entrada trae a
+los nodos hermanos — de cualquier parte a cualquier otra en un clic. Se
+retiraron los tooltips que repetían lo visible o explicaban botones
+(quedan los que revelan texto truncado o cargan conocimiento del oficio).
+El texto gigante del plano (portadas, títulos) se desvanece al crecer más
+allá de lo legible: deja de tapar y se puede explorar debajo. Y nació la
+**ficha técnica** (`costing/ficha.py`): f'c, fy, varilla, t.m.a.,
+revenimiento, fraguado, clase, colocación, fabricación, acabado, espesor,
+proporción y elemento, extraídos del texto del concepto — a la vista en la
+hoja del catálogo (el brillo OPUS) y decidiendo en el matcher (fy y
+acabado castigan como la f'c; las razones llegan solas al ConceptPicker).
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
