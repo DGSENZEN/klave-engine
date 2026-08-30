@@ -257,7 +257,6 @@ export default function EstimacionesPage() {
                     <Td align="right">
                       <IconButton
                         onClick={() => void descargarEstimacion(id, resumen.numero)}
-                        title="Descargar la estimación con sus generadores"
                         aria-label={`Descargar la estimación ${resumen.numero}`}
                       >
                         <DownloadSimple size={16} />

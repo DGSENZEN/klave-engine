@@ -118,17 +118,35 @@ function TopBar({
     if (openMenu) setOpenMenu(null);
   }
 
-  function crumbButton(label: ReactNode, which: "nodo" | "entrada") {
+  // Cada miga es su propia ancla: el menú cuelga de la flecha que tocaste,
+  // no del origen de la barra. Con un menú abierto, pasar el cursor por la
+  // otra miga lo cambia — comportamiento de barra de menús, cero clics extra.
+  function crumbButton(label: ReactNode, which: "nodo" | "entrada", menu: ReactNode) {
+    const isOpen = openMenu === which;
     return (
-      <button
-        type="button"
-        onClick={() => setOpenMenu(openMenu === which ? null : which)}
-        aria-expanded={openMenu === which}
-        className="flex max-w-40 items-center gap-1 truncate rounded-lg px-2 py-1 text-sm transition-colors hover:bg-surface-2 sm:max-w-none"
-      >
-        {label}
-        <CaretDown size={11} className="shrink-0 text-faint" />
-      </button>
+      // Con un menú abierto las migas suben sobre el velo de cierre para que
+      // el hover pueda cambiar de menú sin cerrar primero.
+      <span className={`relative ${openMenu ? "z-40" : ""}`}>
+        <button
+          type="button"
+          onClick={() => setOpenMenu(isOpen ? null : which)}
+          onPointerEnter={() => {
+            if (openMenu && openMenu !== which && openMenu !== "yo") setOpenMenu(which);
+          }}
+          aria-expanded={isOpen}
+          className={`flex max-w-40 items-center gap-1 truncate rounded-lg px-2 py-1 text-sm transition-colors hover:bg-surface-2 sm:max-w-none ${
+            isOpen ? "bg-surface-2" : ""
+          }`}
+        >
+          {label}
+          <CaretDown size={11} className="shrink-0 text-faint" />
+        </button>
+        {isOpen && (
+          <div className="menu-pop absolute left-0 top-full z-50 mt-1 origin-top-left rounded-xl border border-border-strong bg-surface shadow-xl">
+            {menu}
+          </div>
+        )}
+      </span>
     );
   }
 
@@ -193,44 +211,53 @@ function TopBar({
         {!onTablero && (
           <>
             <span className="text-faint">/</span>
-            {crumbButton(node?.label ?? pageLabel ?? "…", "nodo")}
+            {crumbButton(node?.label ?? pageLabel ?? "…", "nodo", mapa)}
             {node && entry && (
               <>
                 <span className="hidden text-faint sm:inline">/</span>
                 <span className="hidden sm:contents">
-                  {crumbButton(<span className="font-medium">{entry.label}</span>, "entrada")}
+                  {crumbButton(
+                    <span className="font-medium">{entry.label}</span>,
+                    "entrada",
+                    <div className="w-60 p-1.5">
+                      {node.entries.map((item) => (
+                        <Link
+                          key={item.key}
+                          href={entryHref(base, item)}
+                          className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors hover:bg-surface-2 hover:text-foreground ${
+                            item.key === entry.key ? "text-foreground" : "text-muted"
+                          }`}
+                        >
+                          {item.icon}
+                          {item.label}
+                        </Link>
+                      ))}
+                      <div className="mt-1 border-t border-border pt-1">
+                        {NODE_NAV.filter((group) => group.key !== node.key).map((group) => (
+                          <Link
+                            key={group.key}
+                            href={entryHref(base, group.entries[0])}
+                            className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+                          >
+                            {group.icon}
+                            {group.label}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>,
+                  )}
                 </span>
               </>
             )}
           </>
         )}
         {(openMenu === "nodo" || openMenu === "entrada") && (
-          <>
-            <button
-              type="button"
-              aria-label="Cerrar menú"
-              onClick={() => setOpenMenu(null)}
-              className="fixed inset-0 z-40 cursor-default"
-            />
-            <div className="menu-pop absolute left-0 top-full z-50 mt-1 origin-top rounded-xl border border-border-strong bg-surface shadow-xl">
-              {openMenu === "nodo" || !node ? (
-                mapa
-              ) : (
-                <div className="w-56 p-1.5">
-                  {node.entries.map((item) => (
-                    <Link
-                      key={item.key}
-                      href={entryHref(base, item)}
-                      className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
-                    >
-                      {item.icon}
-                      {item.label}
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
+          <button
+            type="button"
+            aria-label="Cerrar menú"
+            onClick={() => setOpenMenu(null)}
+            className="fixed inset-0 z-30 cursor-default"
+          />
         )}
       </div>
       <div className="relative flex shrink-0 items-center gap-1">

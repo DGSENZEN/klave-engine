@@ -204,17 +204,23 @@ export function PlanoCanvas({
       ctx.textAlign = "start";
     }
 
-    // Texts: drawn at their real height once it is legible on screen.
-    ctx.fillStyle = ink;
+    // Texts: drawn at their real height once it is legible on screen — and
+    // desvanecidos cuando crecen más allá de lo legible. Un rótulo gigante
+    // (portadas, pies de plano, títulos) a cierto zoom deja de ser dato y se
+    // vuelve muro: se difumina y desaparece para dejar explorar lo de abajo.
     for (const s of geometry.shapes) {
       if (s.t !== "text" || !visibleLayers.has(s.layer)) continue;
       const px = s.h * v.scale;
       if (px < 4) continue;
+      const alpha = px <= 72 ? 1 : Math.max(0, 1 - (px - 72) / 96);
+      if (alpha <= 0.02) continue;
       const [sx, sy] = toScreen(s.p[0], s.p[1], v);
       ctx.save();
+      ctx.globalAlpha *= alpha;
+      ctx.fillStyle = ink;
       ctx.translate(sx, sy);
       if (s.rot) ctx.rotate((-s.rot * Math.PI) / 180);
-      ctx.font = `${Math.min(px, 64)}px ui-sans-serif, system-ui`;
+      ctx.font = `${Math.min(px, 96)}px ui-sans-serif, system-ui`;
       ctx.fillText(s.s, 0, 0);
       ctx.restore();
     }

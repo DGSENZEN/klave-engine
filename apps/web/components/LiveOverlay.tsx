@@ -72,7 +72,6 @@ export function ChangesPanel({ onClose }: { onClose: () => void }) {
           {timeline.length > 0 && (
             <IconButton
               aria-label="Limpiar historial"
-              title="Limpiar historial"
               onClick={clearTimeline}
             >
               <Check size={14} weight="bold" />

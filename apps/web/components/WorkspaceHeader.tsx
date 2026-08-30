@@ -110,7 +110,6 @@ export function WorkspaceHeader({ active }: { active: Section }) {
           {actorName && (
             <Link
               href="/cuenta"
-              title="Tu cuenta"
               className="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-3 text-sm font-medium transition-colors hover:bg-surface-2"
             >
               <Avatar name={actorName} src={avatarSrc} self size="sm" />

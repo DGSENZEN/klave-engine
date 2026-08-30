@@ -563,7 +563,6 @@ function PhaseGroup({
                 open ? "bg-surface-2/40" : ""
               }`}
               onClick={() => setOpenCode(open ? null : l.concept_code)}
-              title="Ver de dónde sale esta cantidad"
             >
               <Td className="font-mono text-xs text-muted">
                 {l.taller_clave ? (

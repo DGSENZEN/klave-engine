@@ -1082,7 +1082,6 @@ function NewConceptRow({
                 type="button"
                 onClick={() => setResourceCode("")}
                 className="flex w-full items-baseline gap-2 rounded-lg border border-border px-2 py-1.5 text-left text-sm transition-colors hover:bg-surface-2"
-                title="Cambiar recurso"
               >
                 <span className="font-mono text-xs text-muted">{primerRecurso.code}</span>
                 <span className="min-w-0 flex-1 truncate">{primerRecurso.description}</span>

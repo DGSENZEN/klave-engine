@@ -273,7 +273,6 @@ export default function RevisionPage() {
                 card.active ? "ring-2 ring-accent" : "hover:brightness-105"
               }`}
               aria-pressed={card.active}
-              title={`Ver solo: ${card.label.toLowerCase()}`}
             >
               <Metric label={card.label} value={card.value} accent={card.accent} />
             </button>
@@ -384,7 +383,6 @@ export default function RevisionPage() {
           size="sm"
           onClick={() => apply("none")}
           disabled={busy || selectedVisible.length === 0}
-          title="Quita la revisión: el elemento vuelve a contar como lo leyó el motor"
         >
           <ArrowCounterClockwise size={14} weight="bold" /> Quitar revisión
         </Button>
@@ -532,7 +530,6 @@ function SortButton({
       type="button"
       onClick={() => onSort(k)}
       className={`inline-flex items-center gap-1 uppercase tracking-wide ${active ? "text-foreground" : ""}`}
-      title={`Ordenar por ${label.toLowerCase()}`}
     >
       {label}
       <span className="text-[10px]">{active ? (sort.dir === 1 ? "▲" : "▼") : ""}</span>
