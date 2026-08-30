@@ -135,3 +135,62 @@ def test_unpriced_lines_say_so_in_every_layout(data_dir):
             c.value for ws in workbook.worksheets for row in ws.iter_rows() for c in row
         ]
         assert UNPRICED in cells, fmt
+
+
+def test_licitacion_bloquea_componentes_declarados(data_dir):
+    from apps.api.routes.exports import _licitacion_bloqueantes
+
+    report, _ = _report(data_dir)  # modo declarado puro
+    bloqueantes = _licitacion_bloqueantes(report)
+    assert len(bloqueantes) == 4  # CI-C, CI-O, FI y CA; la utilidad no bloquea
+    assert not any("(UT)" in b for b in bloqueantes)
+    assert all("porcentaje declarado" in b for b in bloqueantes)
+
+
+def test_licitacion_reporte_viejo_pide_reproceso(data_dir):
+    from apps.api.routes.exports import _licitacion_bloqueantes
+
+    report, _ = _report(data_dir)
+    report.integracion_resuelta = []  # artefacto anterior a los análisis
+    assert any("reprocesa" in b for b in _licitacion_bloqueantes(report))
+
+
+def _overrides_analisis(data_dir):
+    """Captura completa: campo, oficina del taller, tasa y cargos itemizados."""
+    from klave_engine.costing.indirectos import (
+        CargoAdicional,
+        DesgloseCampo,
+        RubroIndirecto,
+    )
+    from klave_engine.costing.models import CostingOverrides
+
+    get_catalog_store(data_dir).set_setting("integracion", {
+        "oficina": {
+            "rubros": [{"concepto": "Renta de oficina", "categoria": "gastos_oficina",
+                        "importe": 600000.0}],
+            "volumen_anual_contratado": 40000000.0,
+        },
+        "financiamiento": {"tasa_anual": 12.0, "indicador": "TIIE 28 días",
+                           "fuente": "Banxico SF43783", "fecha_publicacion": "2026-08-27"},
+    })
+    overrides = CostingOverrides()
+    overrides.config.desglose_campo = DesgloseCampo(rubros=[
+        RubroIndirecto(concepto="Renta de bodega",
+                       categoria="depreciacion_mantenimiento_rentas",
+                       importe=10000.0, base="mensual")])
+    overrides.config.cargos_adicionales = [CargoAdicional(
+        concepto="Inspección y vigilancia", base_legal="5 al millar", pct=0.5)]
+    return overrides
+
+
+def test_licitacion_sin_bloqueantes_en_modo_analisis(data_dir):
+    from apps.api.routes.exports import _licitacion_bloqueantes
+
+    sembrar(get_catalog_store(data_dir))
+    inputs = CostingInputs(
+        project_id="p", detections=_detections(),
+        units=DrawingUnits(unit="m", source="dxf_header", confidence=0.9),
+        segmentation=None, dimensions=None,
+    )
+    report = build_cost_report(inputs, _overrides_analisis(data_dir))
+    assert _licitacion_bloqueantes(report) == []

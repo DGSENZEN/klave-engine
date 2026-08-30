@@ -81,11 +81,36 @@ def _blocking_findings(store: ProjectStore, project_id: str, settings: Settings)
     return [h.title for h in diagnostico.hallazgos if h.severity == "bloqueante"]
 
 
+def _licitacion_bloqueantes(report: CostReport) -> list[str]:
+    """El formato de licitación con un componente por porcentaje declarado es
+    el documento desechable que este análisis existe para impedir. La utilidad
+    declarada es un criterio de diseño y nunca bloquea."""
+    resueltos = {c.code: c for c in report.integracion_resuelta}
+    if not resueltos:
+        return [
+            "La integración no trae fuentes (reporte anterior a los análisis): "
+            "reprocesa el proyecto."
+        ]
+    extra: list[str] = []
+    for code, nombre in (
+        ("CI-C", "indirectos de campo"), ("CI-O", "indirectos de oficina central"),
+        ("FI", "financiamiento"), ("CA", "cargos adicionales"),
+    ):
+        comp = resueltos.get(code)
+        if comp is not None and comp.fuente == "declarado":
+            extra.append(
+                f"El formato de licitación lleva {nombre} por porcentaje "
+                f"declarado ({code}): sin análisis, es causal de desechamiento."
+            )
+    return extra
+
+
 def _guard_export(
-    store: ProjectStore, project_id: str, settings: Settings, motivo: str
+    store: ProjectStore, project_id: str, settings: Settings, motivo: str,
+    extra_blocking: list[str] | None = None,
 ) -> str:
     """Refuse a deliverable that would be wrong, unless the engineer says why."""
-    blocking = _blocking_findings(store, project_id, settings)
+    blocking = _blocking_findings(store, project_id, settings) + list(extra_blocking or [])
     if blocking and not motivo.strip():
         raise HTTPException(
             status_code=409,
@@ -172,9 +197,7 @@ def export_presupuesto(
     settings: Settings = Depends(get_settings),
 ) -> Response:
     rate_limit(request, "export", max_attempts=60, window_seconds=3600.0)
-    reason = _guard_export(store, project_id, settings, motivo)
     manifest = store.get_manifest(project_id)
-    _mark_exported(store, project_id)
     try:
         report = CostReport.model_validate(
             store.read_artifact(project_id, "cost_report.json")
@@ -189,6 +212,12 @@ def export_presupuesto(
                 "message": "El reporte de costos no se pudo leer; vuelve a procesar.",
             },
         ) from exc
+    extra = (
+        _licitacion_bloqueantes(report)
+        if format in ("licitacion", "licitacion_larga") else []
+    )
+    reason = _guard_export(store, project_id, settings, motivo, extra_blocking=extra)
+    _mark_exported(store, project_id)
     detections = [
         Detection.model_validate(d)
         for d in store.read_artifact(project_id, "detections.json")
