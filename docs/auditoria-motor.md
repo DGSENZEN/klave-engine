@@ -527,6 +527,17 @@ proporción y elemento, extraídos del texto del concepto — a la vista en la
 hoja del catálogo (el brillo OPUS) y decidiendo en el matcher (fy y
 acabado castigan como la f'c; las razones llegan solas al ConceptPicker).
 
+**Pre-escaneo de subida y partidas plegables (2026-08-30, rama
+`presupuesto-opus`):** cayó el tercer punto de la retroalimentación del
+cliente — el diálogo de nuevo proyecto ahora dice **qué datos jala** cada
+hoja: `POST /disciplines/preview` rutea por el registro real de disciplinas
+(la misma `route_sheet` del pipeline) y contesta con la disciplina y una
+lista honesta de lo que esa suite lee hoy (lo no detectado se declara como
+levantamiento; el detector eléctrico se dice pendiente). Cada archivo en el
+diálogo trae su chip de disciplina y se despliega. Y el presupuesto ganó el
+gesto que faltaba de OPUS: las partidas se pliegan con clic y su renglón
+dice cuántos conceptos y qué % del costo directo pesan.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
