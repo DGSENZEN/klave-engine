@@ -487,6 +487,16 @@ hábiles con su calificador, anticipo/retención, periodos) y el importe del
 nodo Presupuesto respeta el money gate: sin unidad confiable no viaja
 ningún peso; con unidad sin firmar, viaja marcado «sin verificar».
 
+**Tercer refinado (misma rama `tablero-escenario`):** el lienzo cubre toda
+la pantalla con una barra superior delgada (identidad, Resumen, en vivo,
+cambios, configuración); la navegación se mudó a los nodos — un clic abre
+el nodo EN SU LUGAR con su menú adentro (nada de saltos sorpresa), la barra
+lateral de las subpantallas se volvió contextual (Tablero/Resumen fijos +
+el nodo donde estás + Ajustes; el mapa completo vive en el tablero y en el
+cajón móvil) y las descripciones-tooltip de los nodos se retiraron. El
+copiloto también se pulió: botón flotante circular con conteo en acento,
+panel con identidad y burbujas de conversación, entrada redonda.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
