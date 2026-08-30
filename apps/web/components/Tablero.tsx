@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   Books,
@@ -16,28 +16,29 @@ import {
   apiMessage,
   putGate,
   type TableroChip,
+  type TableroEstado,
   type TableroNodeKey,
 } from "@/lib/api";
-import { canApproveGate, GATED_NODES, quienPuedeAbrir } from "@/lib/gates";
+import { canApproveGate, GATED_NODES } from "@/lib/gates";
 import { getBrowserActor } from "@/lib/collab";
 import { useTablero } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
 import { timeAgo } from "@/lib/time";
-import { Avatar, Badge, Button, Card, PageHeader, Skeleton } from "@/components/ui";
+import { Avatar, Badge, Button, PageHeader, Skeleton } from "@/components/ui";
 import type { BadgeTone } from "@/components/ui";
 
 /**
- * El tablero: el anteproyecto como seis nodos en el orden del proceso.
- * Cada nodo dice sus hechos en chips (un hecho por chip, con denominador),
- * y los nodos con candado dicen qué falta y quién puede abrirlos — visibles
- * siempre, ocultos nunca.
+ * El tablero: el anteproyecto como seis nodos conectados en el orden del
+ * proceso, sobre el lienzo punteado. Los permisos se ven, no se explican:
+ * un nodo que no puedes tocar se ve apagado y no responde; el botón de
+ * abrir solo existe para quien puede abrirlo.
  */
 
 type NodeDef = {
   key: TableroNodeKey;
   label: string;
   icon: ReactNode;
-  /** Ruta principal al hacer clic; fragmento de proyecto salvo que empiece absoluta. */
+  /** Ruta principal al hacer clic; fragmento de proyecto salvo el catálogo. */
   route: string;
   /** Rutas cuya presencia cuenta para este nodo (fragmentos o absolutas). */
   presence: string[];
@@ -47,42 +48,42 @@ const NODES: NodeDef[] = [
   {
     key: "planos",
     label: "Planos",
-    icon: <FileMagnifyingGlass size={20} />,
+    icon: <FileMagnifyingGlass size={18} />,
     route: "/lectura",
     presence: ["/lectura", "/plano", "/resumen"],
   },
   {
     key: "revision",
     label: "Revisión",
-    icon: <ListChecks size={20} />,
+    icon: <ListChecks size={18} />,
     route: "/revision",
     presence: ["/revision", "/riesgos"],
   },
   {
     key: "catalogo",
     label: "Catálogo",
-    icon: <Books size={20} />,
+    icon: <Books size={18} />,
     route: "/catalogo",
     presence: ["/catalogo"],
   },
   {
     key: "presupuesto",
     label: "Presupuesto",
-    icon: <Receipt size={20} />,
+    icon: <Receipt size={18} />,
     route: "/presupuesto",
     presence: ["/presupuesto", "/apus"],
   },
   {
     key: "programa",
     label: "Programa",
-    icon: <CalendarBlank size={20} />,
+    icon: <CalendarBlank size={18} />,
     route: "/programa",
     presence: ["/programa", "/flujo", "/parametros"],
   },
   {
     key: "contrato",
     label: "Contrato",
-    icon: <Scales size={20} />,
+    icon: <Scales size={18} />,
     route: "/contrato",
     presence: [
       "/contrato",
@@ -95,11 +96,27 @@ const NODES: NodeDef[] = [
   },
 ];
 
-const ESTADO_BADGE: Record<string, { tone: BadgeTone; label: string }> = {
-  ok: { tone: "success", label: "En orden" },
-  atencion: { tone: "warning", label: "Atención" },
-  bloqueado: { tone: "default", label: "Con candado" },
-  pendiente: { tone: "default", label: "Pendiente" },
+/** El flujo del proceso: cada arista une un nodo con el que le sigue. */
+const EDGES: [TableroNodeKey, TableroNodeKey][] = [
+  ["planos", "revision"],
+  ["revision", "catalogo"],
+  ["catalogo", "presupuesto"],
+  ["presupuesto", "programa"],
+  ["programa", "contrato"],
+];
+
+const ESTADO_LABEL: Record<TableroEstado, string> = {
+  ok: "En orden",
+  atencion: "Atención",
+  bloqueado: "Con candado",
+  pendiente: "Pendiente",
+};
+
+const ESTADO_DOT: Record<TableroEstado, string> = {
+  ok: "bg-success",
+  atencion: "bg-warning node-dot-pulse",
+  bloqueado: "bg-faint",
+  pendiente: "bg-faint",
 };
 
 const CHIP_TONE: Record<TableroChip["tone"], BadgeTone> = {
@@ -108,6 +125,8 @@ const CHIP_TONE: Record<TableroChip["tone"], BadgeTone> = {
   bad: "danger",
   muted: "default",
 };
+
+type EdgePath = { d: string; flowing: boolean };
 
 export function TableroBoard({ id }: { id: string }) {
   const { tablero, error, refetch } = useTablero(id);
@@ -118,6 +137,39 @@ export function TableroBoard({ id }: { id: string }) {
   const base = `/proyecto/${id}`;
   // El catálogo vive a nivel taller; todo lo demás es una ruta del proyecto.
   const resolve = (route: string) => (route === "/catalogo" ? route : `${base}${route}`);
+
+  // Las aristas se dibujan midiendo dónde quedó cada tarjeta en el lienzo.
+  // ResizeObserver notifica al observar y en cada cambio de tamaño; el
+  // setState ocurre en su callback (asíncrono), nunca en el cuerpo del efecto.
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const cardRefs = useRef(new Map<TableroNodeKey, HTMLDivElement>());
+  const [edges, setEdges] = useState<EdgePath[]>([]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const estados: Record<string, TableroEstado> = Object.fromEntries(
+      NODES.map((node) => [node.key, tablero?.nodes?.[node.key]?.estado ?? "pendiente"]),
+    );
+    const measure = () => {
+      const origin = canvas.getBoundingClientRect();
+      const boxes = new Map<TableroNodeKey, DOMRect>();
+      for (const [key, el] of cardRefs.current) boxes.set(key, el.getBoundingClientRect());
+      const next: EdgePath[] = [];
+      for (const [from, to] of EDGES) {
+        const a = boxes.get(from);
+        const b = boxes.get(to);
+        if (!a || !b) continue;
+        const path = connect(a, b, origin);
+        if (path) next.push({ d: path, flowing: estados[from] === "ok" });
+      }
+      setEdges(next);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(canvas);
+    for (const el of cardRefs.current.values()) observer.observe(el);
+    return () => observer.disconnect();
+  }, [tablero]);
 
   async function toggleGate(node: TableroNodeKey, approved: boolean) {
     setGateBusy(node);
@@ -133,6 +185,7 @@ export function TableroBoard({ id }: { id: string }) {
   }
 
   const otherViewers = viewers.filter((viewer) => viewer.client_id !== clientId);
+  const canApprove = tablero ? canApproveGate(tablero.my_role) : false;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 lg:px-8">
@@ -147,20 +200,40 @@ export function TableroBoard({ id }: { id: string }) {
       )}
       <div className="flex flex-col gap-6 lg:flex-row">
         <div
-          className="grid flex-1 grid-cols-1 gap-4 rounded-xl border border-border p-4 sm:grid-cols-2 xl:grid-cols-3"
+          ref={canvasRef}
+          className="relative grid flex-1 grid-cols-1 content-start gap-x-10 gap-y-8 rounded-xl border border-border p-6 sm:grid-cols-2 xl:grid-cols-3"
           style={{
             backgroundColor: "var(--canvas-bg)",
             backgroundImage: "radial-gradient(var(--canvas-stroke) 1px, transparent 1px)",
             backgroundSize: "22px 22px",
           }}
         >
+          <svg
+            aria-hidden
+            className="pointer-events-none absolute inset-0 h-full w-full"
+          >
+            {edges.map((edge) => (
+              <g key={edge.d}>
+                <path d={edge.d} fill="none" stroke="var(--canvas-stroke)" strokeWidth="1.5" />
+                {edge.flowing && (
+                  <path
+                    d={edge.d}
+                    fill="none"
+                    stroke="var(--accent)"
+                    strokeWidth="1.5"
+                    className="edge-flow"
+                  />
+                )}
+              </g>
+            ))}
+          </svg>
           {NODES.map((node) => {
             const data = tablero?.nodes?.[node.key];
-            const estado = data?.estado ?? "pendiente";
-            const badge = ESTADO_BADGE[estado] ?? ESTADO_BADGE.pendiente;
+            const estado: TableroEstado = data?.estado ?? "pendiente";
             const gated = GATED_NODES.includes(node.key);
             const gate = tablero?.gates?.[node.key];
-            const canApprove = canApproveGate(tablero?.my_role ?? null);
+            const locked = gated && tablero ? !gate : false;
+            const untouchable = locked && !canApprove;
             const nodeViewers = otherViewers.filter((viewer) =>
               node.presence.some((route) =>
                 route === "/catalogo"
@@ -169,32 +242,44 @@ export function TableroBoard({ id }: { id: string }) {
               ),
             );
             return (
-              <Card
+              <div
                 key={node.key}
-                className={`flex cursor-pointer flex-col gap-3 p-4 transition hover:border-border-strong ${
-                  estado === "bloqueado" ? "opacity-80" : ""
+                ref={(el) => {
+                  if (el) cardRefs.current.set(node.key, el);
+                  else cardRefs.current.delete(node.key);
+                }}
+                role={untouchable ? undefined : "link"}
+                tabIndex={untouchable ? undefined : 0}
+                aria-disabled={untouchable || undefined}
+                onClick={untouchable ? undefined : () => router.push(resolve(node.route))}
+                onKeyDown={
+                  untouchable
+                    ? undefined
+                    : (event) => {
+                        if (event.key === "Enter") router.push(resolve(node.route));
+                      }
+                }
+                className={`relative z-10 flex min-h-32 flex-col gap-2.5 rounded-xl border bg-surface p-4 shadow-sm transition ${
+                  untouchable
+                    ? "cursor-not-allowed border-border opacity-55 saturate-0"
+                    : "cursor-pointer border-border hover:-translate-y-0.5 hover:border-border-strong hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 }`}
               >
-                <button
-                  type="button"
-                  onClick={() => router.push(resolve(node.route))}
-                  className="flex items-start justify-between gap-2 text-left"
-                >
-                  <span className="flex items-center gap-2 font-medium">
-                    <span className="text-muted">{node.icon}</span>
-                    {node.label}
-                    {gated &&
-                      (gate ? (
-                        <LockSimpleOpen size={14} className="text-success" />
-                      ) : (
-                        <LockSimple size={14} className="text-muted" />
-                      ))}
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-muted">
+                    {locked ? <LockSimple size={18} weight="fill" /> : node.icon}
                   </span>
-                  <Badge tone={badge.tone} dot>
-                    {badge.label}
-                  </Badge>
-                </button>
-                {!tablero && !error && <Skeleton className="h-6 w-full" />}
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                    {node.label}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-muted">
+                    <span
+                      className={`inline-block h-2 w-2 rounded-full ${ESTADO_DOT[estado]}`}
+                    />
+                    {ESTADO_LABEL[estado]}
+                  </span>
+                </div>
+                {!tablero && !error && <Skeleton className="h-5 w-3/4" />}
                 {error && !tablero && (
                   <span className="text-xs text-muted">No se pudo leer el estado.</span>
                 )}
@@ -205,12 +290,16 @@ export function TableroBoard({ id }: { id: string }) {
                     </Badge>
                   ))}
                 </div>
-                {gated && (
-                  <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-2.5 text-xs text-muted">
+                {gated && tablero && (gate || (locked && canApprove)) && (
+                  <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-2 text-xs text-muted">
                     {gate ? (
                       <>
-                        <span className="truncate" title={gate.approved_at ?? undefined}>
-                          Abierto por {gate.approved_by || "—"}
+                        <span
+                          className="flex min-w-0 items-center gap-1.5 truncate"
+                          title={gate.approved_at ?? undefined}
+                        >
+                          <LockSimpleOpen size={13} className="shrink-0 text-success" />
+                          {gate.approved_by || "—"}
                           {gate.approved_at ? ` · ${timeAgo(gate.approved_at)}` : ""}
                         </span>
                         {canApprove && (
@@ -218,31 +307,33 @@ export function TableroBoard({ id }: { id: string }) {
                             size="sm"
                             variant="ghost"
                             disabled={gateBusy === node.key}
-                            onClick={() => toggleGate(node.key, false)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleGate(node.key, false);
+                            }}
                           >
                             Cerrar
                           </Button>
                         )}
                       </>
                     ) : (
-                      <>
-                        <span className="truncate">{quienPuedeAbrir(tablero?.my_role ?? null)}</span>
-                        {canApprove && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={gateBusy === node.key || !tablero}
-                            onClick={() => toggleGate(node.key, true)}
-                          >
-                            Abrir nodo
-                          </Button>
-                        )}
-                      </>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={gateBusy === node.key}
+                        className="ml-auto"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleGate(node.key, true);
+                        }}
+                      >
+                        Abrir nodo
+                      </Button>
                     )}
                   </div>
                 )}
                 {nodeViewers.length > 0 && (
-                  <div className="flex -space-x-1.5">
+                  <div className="absolute -top-2 right-3 flex -space-x-1.5">
                     {nodeViewers.slice(0, 4).map((viewer) => (
                       <Avatar
                         key={viewer.client_id}
@@ -253,7 +344,7 @@ export function TableroBoard({ id }: { id: string }) {
                     ))}
                   </div>
                 )}
-              </Card>
+              </div>
             );
           })}
         </div>
@@ -261,6 +352,35 @@ export function TableroBoard({ id }: { id: string }) {
       </div>
     </div>
   );
+}
+
+/**
+ * La curva entre dos tarjetas: sale del lado que mira al destino y entra
+ * por el lado que mira al origen — horizontal entre vecinos de fila,
+ * vertical al saltar de fila (el regreso del acordeón).
+ */
+function connect(a: DOMRect, b: DOMRect, origin: DOMRect): string | null {
+  const dx = b.left + b.width / 2 - (a.left + a.width / 2);
+  const dy = b.top + b.height / 2 - (a.top + a.height / 2);
+  const rel = (x: number, y: number) => `${x - origin.left} ${y - origin.top}`;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    const fromRight = dx >= 0;
+    const x1 = fromRight ? a.right : a.left;
+    const y1 = a.top + a.height / 2;
+    const x2 = fromRight ? b.left : b.right;
+    const y2 = b.top + b.height / 2;
+    if (fromRight ? x2 <= x1 : x2 >= x1) return null;
+    const bend = Math.max(24, Math.abs(x2 - x1) / 2) * (fromRight ? 1 : -1);
+    return `M ${rel(x1, y1)} C ${rel(x1 + bend, y1)}, ${rel(x2 - bend, y2)}, ${rel(x2, y2)}`;
+  }
+  const fromBottom = dy >= 0;
+  const x1 = a.left + a.width / 2;
+  const y1 = fromBottom ? a.bottom : a.top;
+  const x2 = b.left + b.width / 2;
+  const y2 = fromBottom ? b.top : b.bottom;
+  if (fromBottom ? y2 <= y1 : y2 >= y1) return null;
+  const bend = Math.max(24, Math.abs(y2 - y1) / 2) * (fromBottom ? 1 : -1);
+  return `M ${rel(x1, y1)} C ${rel(x1, y1 + bend)}, ${rel(x2, y2 - bend)}, ${rel(x2, y2)}`;
 }
 
 function ActivityRail({

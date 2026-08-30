@@ -20,9 +20,3 @@ export const GATED_NODES: TableroNodeKey[] = ["presupuesto", "programa", "contra
 export function canApproveGate(myRole: Tablero["my_role"]): boolean {
   return myRole === null || myRole === "admin" || myRole === "owner";
 }
-
-/** La frase que el nodo bloqueado muestra sobre quién puede abrirlo. */
-export function quienPuedeAbrir(myRole: Tablero["my_role"]): string {
-  if (canApproveGate(myRole)) return "Tú puedes abrir este nodo.";
-  return "Lo abre el administrador del taller o el responsable del proyecto.";
-}

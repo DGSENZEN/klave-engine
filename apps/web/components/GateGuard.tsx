@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { LockSimple } from "@phosphor-icons/react";
 import { apiMessage, putGate, type TableroNodeKey } from "@/lib/api";
-import { canApproveGate, quienPuedeAbrir } from "@/lib/gates";
+import { canApproveGate } from "@/lib/gates";
 import { getBrowserActor } from "@/lib/collab";
 import { useTablero } from "@/lib/useProjectReport";
 import { Button, Card, Skeleton } from "@/components/ui";
@@ -61,8 +61,7 @@ export function GateGuard({ node, children }: { node: TableroNodeKey; children: 
           <div>
             <h1 className="text-lg font-semibold">Este nodo tiene candado</h1>
             <p className="text-sm text-muted">
-              La sección existe y se puede ver desde el tablero, pero se trabaja hasta que
-              alguien con autoridad la abre. Nada se esconde; solo se ordena.
+              Se abre desde aquí o desde el tablero cuando los requisitos estén listos.
             </p>
           </div>
         </div>
@@ -85,7 +84,6 @@ export function GateGuard({ node, children }: { node: TableroNodeKey; children: 
             </ul>
           </div>
         )}
-        <p className="text-sm text-muted">{quienPuedeAbrir(tablero.my_role)}</p>
         {actionError && <p className="text-sm text-danger">{actionError}</p>}
         <div className="flex items-center gap-2">
           {canApprove && (

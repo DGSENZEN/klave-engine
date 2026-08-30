@@ -282,9 +282,37 @@ h3 {
   animation: toast-in 200ms ease-out both;
 }
 
+/* Tablero: las aristas entre nodos «fluyen» cuando el nodo de origen está
+ * en orden — el guiño Railway. Solo se anima el dash-offset, nada de layout. */
+@keyframes tablero-dash {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+.edge-flow {
+  stroke-dasharray: 6 8;
+  animation: tablero-dash 1.1s linear infinite;
+}
+@keyframes tablero-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.node-dot-pulse {
+  animation: tablero-pulse 1.6s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rise-in,
   .toast-in {
+    animation: none;
+  }
+  .edge-flow,
+  .node-dot-pulse {
     animation: none;
   }
   .skeleton {
