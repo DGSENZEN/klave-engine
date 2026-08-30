@@ -9,6 +9,7 @@ import {
   getCosts,
   recompute,
   money,
+  type ComponenteIntegracion,
   type CostingConfigResponse,
   type CostingConfigFull,
   type CostReport,
@@ -29,11 +30,21 @@ import {
   Th,
 } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
-import { CONFIG_GROUPS, CONFIG_LABELS, ConfigGroup } from "@/components/CostingConfigForm";
+import { CONFIG_GROUPS, CONFIG_LABELS, ConfigGroup, type FuentePct } from "@/components/CostingConfigForm";
+import { DesgloseCampoCard, OficinaShareCard } from "@/components/DesgloseCampo";
 import { actorLabel } from "@/lib/collab";
 import { resourceTypeLabel } from "@/lib/format";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
+/** integracion_resuelta viene por código de componente; el formulario lo
+ * necesita por clave de config para prender el aviso de "análisis" en la
+ * casilla correcta. */
+const COMPONENTE_CONFIG_KEY: Record<string, string> = {
+  "CI-C": "field_indirects_pct",
+  "CI-O": "office_indirects_pct",
+  FI: "financing_pct",
+  CA: "additional_charges_pct",
+};
 
 type ConflictDetail = {
   error_type?: string;
@@ -48,6 +59,7 @@ export default function ParametrosPage() {
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [report, setReport] = useState<CostReport | null>(null);
+  const [integracion, setIntegracion] = useState<ComponenteIntegracion[]>([]);
   const [baseline, setBaseline] = useState<{ direct: number; total: number } | null>(null);
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -64,7 +76,17 @@ export default function ParametrosPage() {
     setInsumos(response.insumos);
     setPrices(response.insumo_prices);
     setVersion(response.version);
+    setIntegracion(response.integracion ?? []);
   }, []);
+
+  const fuentesIndirectos = useMemo(() => {
+    const map: Record<string, FuentePct> = {};
+    for (const c of integracion) {
+      const key = COMPONENTE_CONFIG_KEY[c.code];
+      if (key) map[key] = { fuente: c.fuente, pct: c.pct };
+    }
+    return map;
+  }, [integracion]);
 
   const isRemoteEvent = useCallback(
     (event: ProjectEvent): boolean => {
@@ -148,6 +170,15 @@ export default function ParametrosPage() {
     setConflict(null);
     announceEdit(CONFIG_LABELS[key] ?? key);
   }
+  // Los campos que no viven en uno de los cuatro grupos numéricos —el
+  // desglose de campo, el share de oficina— se editan igual: estado local
+  // optimista, "sucio" hasta que Recalcular lo mande al mismo PUT.
+  function setConfigField<K extends keyof CostingConfigFull>(key: K, value: CostingConfigFull[K]) {
+    setConfig((c) => (c ? { ...c, [key]: value } : c));
+    setDirty(true);
+    setConflict(null);
+    announceEdit(CONFIG_LABELS[key as string] ?? String(key));
+  }
   function setPrice(code: string, label: string, value: number) {
     setPrices((p) => ({ ...p, [code]: value }));
     setDirty(true);
@@ -228,8 +259,16 @@ export default function ParametrosPage() {
             financial: {},
             // La plantilla de campo no es un parámetro afinado: son puestos y
             // sueldos que alguien capturó. Restablecer los parámetros no los
-            // borra.
+            // borra. El desglose de indirectos, el análisis de financiamiento
+            // y el share de oficina fijado a mano son la misma clase de dato
+            // — hechos capturados, no porcentajes que se calibran — así que
+            // sobreviven al restablecimiento igual que la plantilla.
             plantilla_campo: config?.plantilla_campo ?? [],
+            desglose_campo: config?.desglose_campo ?? null,
+            cargos_adicionales: config?.cargos_adicionales ?? [],
+            financiamiento: config?.financiamiento ?? null,
+            oficina_share_pct: config?.oficina_share_pct ?? null,
+            oficina_share_motivo: config?.oficina_share_motivo ?? "",
           },
           insumo_prices: {},
           version,
@@ -344,8 +383,30 @@ export default function ParametrosPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         {CONFIG_GROUPS.map(({ group, title }) => (
-          <ConfigGroup key={group} title={title} group={group} config={config} onChange={setField} />
+          <ConfigGroup
+            key={group}
+            title={title}
+            group={group}
+            config={config}
+            onChange={setField}
+            fuentes={group === "indirects" ? fuentesIndirectos : undefined}
+          />
         ))}
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <DesgloseCampoCard
+            value={config.desglose_campo ?? null}
+            onChange={(v) => setConfigField("desglose_campo", v)}
+          />
+        </div>
+        <OficinaShareCard
+          pct={config.oficina_share_pct ?? null}
+          motivo={config.oficina_share_motivo ?? ""}
+          onPctChange={(v) => setConfigField("oficina_share_pct", v)}
+          onMotivoChange={(v) => setConfigField("oficina_share_motivo", v)}
+        />
       </div>
 
       <Card className="mt-4 overflow-hidden">

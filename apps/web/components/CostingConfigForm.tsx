@@ -1,7 +1,7 @@
 "use client";
 
 import type { CostingConfigFull } from "@/lib/api";
-import { Card, Input, SectionTitle } from "@/components/ui";
+import { Badge, Card, Input, SectionTitle } from "@/components/ui";
 
 /** One vocabulary for costing parameters, shared by the project page and
  * the taller defaults so the same field reads the same everywhere. */
@@ -32,6 +32,10 @@ export const CONFIG_LABELS: Record<string, string> = {
   profit_pct: "Utilidad (%)",
   additional_charges_pct: "Cargos adicionales (%)",
   contingency_pct: "Contingencia (%)",
+  // top-level (fuera de los cuatro grupos numéricos)
+  desglose_campo: "Desglose de indirectos de campo",
+  oficina_share_pct: "Share de oficina central (%)",
+  oficina_share_motivo: "Motivo del share de oficina central",
   // schedule
   workdays_per_month: "Días hábiles por mes",
   intra_phase_overlap_pct: "Traslape entre actividades (%)",
@@ -56,16 +60,23 @@ export const CONFIG_GROUPS: { group: keyof CostingConfigFull; title: string }[] 
 
 const NON_NUMERIC_KEYS = new Set(["start_date"]);
 
+/** Un componente cuya fuente es "analisis" trae ya su porcentaje derivado de
+ * un desglose o un análisis capturado — la casilla se apaga y lo muestra en
+ * vez de dejar que alguien lo pise a mano; "declarado" es la casilla normal. */
+export type FuentePct = { fuente: string; pct: number | null };
+
 export function ConfigGroup({
   title,
   group,
   config,
   onChange,
+  fuentes,
 }: {
   title: string;
   group: keyof CostingConfigFull;
   config: CostingConfigFull;
   onChange: (g: keyof CostingConfigFull, k: string, v: number | null) => void;
+  fuentes?: Record<string, FuentePct>;
 }) {
   // Non-numeric settings (the obra's start date) have their own control on
   // the page that owns them; this form is numbers only.
@@ -76,21 +87,30 @@ export function ConfigGroup({
     <Card className="p-5">
       <SectionTitle>{title}</SectionTitle>
       <div className="space-y-2.5">
-        {entries.map(([key, value]) => (
-          <label key={key} className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-muted">{CONFIG_LABELS[key] ?? key}</span>
-            <Input
-              type="number"
-              step="any"
-              value={value ?? ""}
-              placeholder={value === null ? "sin definir" : undefined}
-              onChange={(e) =>
-                onChange(group, key, e.target.value === "" ? null : Number(e.target.value))
-              }
-              className="w-28 px-2 py-1 text-right tabular"
-            />
-          </label>
-        ))}
+        {entries.map(([key, value]) => {
+          const fuente = fuentes?.[key];
+          const esAnalisis = fuente?.fuente === "analisis";
+          return (
+            <label key={key} className="flex items-center justify-between gap-3 text-sm">
+              <span className="flex items-center gap-1.5 text-muted">
+                {CONFIG_LABELS[key] ?? key}
+                {esAnalisis && <Badge tone="accent">análisis</Badge>}
+              </span>
+              <Input
+                type="number"
+                step="any"
+                value={esAnalisis ? (fuente?.pct ?? "") : (value ?? "")}
+                disabled={esAnalisis}
+                placeholder={value === null ? "sin definir" : undefined}
+                title={esAnalisis ? "Viene de un desglose o análisis capturado; no se edita aquí." : undefined}
+                onChange={(e) =>
+                  onChange(group, key, e.target.value === "" ? null : Number(e.target.value))
+                }
+                className="w-28 px-2 py-1 text-right tabular"
+              />
+            </label>
+          );
+        })}
       </div>
     </Card>
   );

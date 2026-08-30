@@ -626,6 +626,43 @@ export type CargoCampo = {
   razon: string;
 };
 
+/** Un renglón del desglose de indirectos de campo: gasto real, categoría
+ * contable y si su importe es mensual o único. El personal técnico no vive
+ * aquí — nace de la plantilla de campo y se agrega aparte. */
+export type RubroIndirecto = {
+  concepto: string;
+  categoria: string;
+  importe: number;
+  base: "mensual" | "unico";
+};
+
+/** Un cargo adicional declarado (p. ej. impuestos locales), con su base legal. */
+export type CargoAdicional = {
+  concepto: string;
+  base_legal: string;
+  pct: number;
+};
+
+/** La tasa de financiamiento con su indicador, fuente y fecha — sin los tres
+ * datos no es un análisis, es un invento (ver indirectos.py). */
+export type AnalisisFinanciamiento = {
+  tasa_anual: number;
+  indicador: string;
+  fuente: string;
+  fecha_publicacion: string;
+};
+
+/** Un componente de la integración con la fuente que lo respalda: "analisis"
+ * cuando un desglose/análisis capturado manda, "declarado" cuando es el
+ * porcentaje a mano de `indirects`. */
+export type ComponenteIntegracion = {
+  code: string;
+  pct: number | null;
+  amount: number | null;
+  fuente: "analisis" | "declarado";
+  faltantes: string[];
+};
+
 export type CostingConfigFull = {
   currency: string;
   /** Nullable: a level the engineer has not set yet (platform_level_m). */
@@ -634,6 +671,16 @@ export type CostingConfigFull = {
   schedule: Record<string, number> & { start_date?: string | null };
   financial: Record<string, number>;
   plantilla_campo: CargoCampo[];
+  /** null = sin desglose capturado: los indirectos de campo se quedan en el
+   * porcentaje declarado. */
+  desglose_campo?: { rubros: RubroIndirecto[] } | null;
+  cargos_adicionales?: CargoAdicional[];
+  /** null = sin análisis de financiamiento: el porcentaje declarado manda. */
+  financiamiento?: AnalisisFinanciamiento | null;
+  /** Share de oficina central fijado a mano; null = prorrateo derivado. Sólo
+   * vale con `oficina_share_motivo` de al menos 15 caracteres. */
+  oficina_share_pct?: number | null;
+  oficina_share_motivo?: string;
 };
 
 export type RenglonPlantilla = {
@@ -674,6 +721,8 @@ export type CostingConfigResponse = {
   version: number;
   updated_by: string | null;
   updated_at: string | null;
+  /** Absent on old cached responses: treat as []. */
+  integracion?: ComponenteIntegracion[];
 };
 
 export type CostingOverrides = {
