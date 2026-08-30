@@ -269,3 +269,69 @@ def test_integrate_pct_resuelto_reemplaza_al_de_config():
     integration = integrate_costs(1_000_000.0, config, resolved=resolved)
     ca = integration.lines[4]
     assert ca.percentage == 0.7 and ca.fuente == "analisis"
+
+
+from klave_engine.costing.report import _integrate_with_analyses
+
+
+def _config_analisis_total() -> CostingConfig:
+    config = CostingConfig()
+    config.desglose_campo = DesgloseCampo(rubros=[
+        RubroIndirecto(concepto="Renta de bodega", importe=10_000.0, base="mensual")])
+    config.plantilla_campo = [CargoCampo(puesto="Residente de obra",
+                                         salario_mensual=30_000.0, fsr=1.6)]
+    config.financiamiento = AnalisisFinanciamiento(
+        tasa_anual=12.0, indicador="TIIE 28 días",
+        fuente="Banxico SF43783", fecha_publicacion="2026-08-27")
+    return config
+
+
+def test_iteracion_converge_y_los_totales_se_estabilizan():
+    warnings: list[str] = []
+    resolved, integration, financial = _integrate_with_analyses(
+        1_000_000.0, _config_analisis_total(), None, _schedule(months=2), "MXN", warnings)
+    fi = next(c for c in resolved if c.code == "FI")
+    assert fi.fuente == "analisis"
+    # Punto fijo: reintegrar con lo resuelto no mueve el total ni un centavo.
+    again = integrate_costs(1_000_000.0, _config_analisis_total().indirects, resolved=resolved)
+    assert abs(again.grand_total - integration.grand_total) < 0.01
+    assert not any("no convergió" in w for w in warnings)
+
+
+def test_modo_declarado_una_pasada_numeros_de_siempre():
+    warnings: list[str] = []
+    resolved, integration, _ = _integrate_with_analyses(
+        1_000_000.0, CostingConfig(), None, _schedule(), "MXN", warnings)
+    assert all(c.fuente == "declarado" for c in resolved)
+    assert integration.model_dump(exclude={"lines"}) == integrate_costs(
+        1_000_000.0, IndirectsConfig()).model_dump(exclude={"lines"})
+    assert warnings == []
+
+
+def test_faltantes_parciales_llegan_como_warnings():
+    config = CostingConfig()
+    config.financiamiento = AnalisisFinanciamiento(tasa_anual=12.0)  # a medias
+    warnings: list[str] = []
+    _integrate_with_analyses(1_000_000.0, config, None, _schedule(), "MXN", warnings)
+    assert any("Integración (FI)" in w and "sin indicador" in w for w in warnings)
+
+
+def test_congruencia_de_plantilla_solo_en_modo_declarado():
+    from klave_engine.costing.models import BillOfQuantities
+    from klave_engine.costing.report import _warn_plantilla_vs_indirectos
+
+    config = CostingConfig()
+    config.plantilla_campo = [CargoCampo(puesto="Residente de obra",
+                                         salario_mensual=80_000.0, fsr=1.6)]
+    sched = _schedule(months=2)
+    # Plantilla 256,000 contra indirectos de campo de 100,000: desajuste real.
+    declarado = BillOfQuantities(project_id="p")
+    _warn_plantilla_vs_indirectos(declarado, config, sched, 100_000.0,
+                                  ci_c_fuente="declarado")
+    assert any("plantilla" in w for w in declarado.warnings)
+    # En modo análisis la plantilla está DENTRO del desglose: comparar sería
+    # compararla consigo misma, y el aviso no existe.
+    analisis = BillOfQuantities(project_id="p")
+    _warn_plantilla_vs_indirectos(analisis, config, sched, 100_000.0,
+                                  ci_c_fuente="analisis")
+    assert analisis.warnings == []

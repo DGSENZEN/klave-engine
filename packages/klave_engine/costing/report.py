@@ -21,15 +21,18 @@ from klave_engine.costing.financial import build_financial_plan
 from klave_engine.costing.formwork import apply_formwork, compute_formwork
 from klave_engine.costing.indicadores import compute_indicators
 from klave_engine.costing.instalaciones import ya_detectado
-from klave_engine.costing.integration import integrate_costs
+from klave_engine.costing.integration import integrate_costs, resolve_integration
 from klave_engine.costing.levantamiento import apply_inventory
 from klave_engine.costing.models import (
     BillOfQuantities,
     BoqLine,
     Concept,
+    ComponenteResuelto,
     CostingAssumptions,
     CostingConfig,
+    CostIntegration,
     CostReport,
+    FinancialPlan,
     QuantityKind,
     Resource,
     ResourceType,
@@ -237,6 +240,63 @@ def _declare_schedule_basis(
     )
 
 
+def _integrate_with_analyses(
+    direct_cost: float,
+    config: CostingConfig,
+    integracion_taller: dict | None,
+    schedule: WorkSchedule,
+    currency: str,
+    warnings: list[str],
+) -> tuple[list[ComponenteResuelto], CostIntegration, FinancialPlan]:
+    """Integración y flujo al punto fijo.
+
+    Sólo el financiamiento depende del flujo, y el flujo del precio de venta:
+    se siembra con lo declarado y se itera. El factor de perturbación es la
+    porción del financiamiento (~1–3 %), así que converge en pocas pasadas;
+    el tope de 10 es un guardarraíl, y tocarlo se dice con el residual."""
+    resolved = resolve_integration(config, integracion_taller, direct_cost, schedule, None)
+    integration = integrate_costs(direct_cost, config.indirects, resolved=resolved)
+    financial = build_financial_plan(schedule, integration, config.financial, currency)
+    residual = 0.0
+    for _ in range(10):
+        resolved = resolve_integration(
+            config, integracion_taller, direct_cost, schedule, financial
+        )
+        if next(c for c in resolved if c.code == "FI").fuente == "declarado":
+            integration = integrate_costs(direct_cost, config.indirects, resolved=resolved)
+            financial = build_financial_plan(schedule, integration, config.financial, currency)
+            break
+        new_integration = integrate_costs(direct_cost, config.indirects, resolved=resolved)
+        new_financial = build_financial_plan(schedule, new_integration, config.financial, currency)
+        residual = abs(new_integration.grand_total - integration.grand_total)
+        integration, financial = new_integration, new_financial
+        if residual < 0.01:
+            break
+    else:
+        warnings.append(
+            f"El costo de financiamiento no convergió tras 10 iteraciones; "
+            f"residual de ${residual:,.2f} en el total con contingencia."
+        )
+    for comp in resolved:
+        for falta in comp.faltantes:
+            warnings.append(
+                f"Integración ({comp.code}): {falta}. El componente sigue por "
+                "porcentaje declarado."
+            )
+    if any(c.fuente == "analisis" for c in resolved):
+        warnings.append(
+            f"Utilidad declarada: {config.indirects.profit_pct:g} % — criterio "
+            "del taller, no un análisis."
+        )
+    oficina = next(c for c in resolved if c.code == "CI-O")
+    if oficina.documento.get("override") is not None:
+        warnings.append(
+            f"Oficina central por share fijado: {oficina.documento['override']:g} % — "
+            f"{oficina.documento.get('motivo', '')}"
+        )
+    return resolved, integration, financial
+
+
 def generate_cost_report(
     project_id: str,
     detections: list[Detection],
@@ -257,6 +317,7 @@ def generate_cost_report(
     parametric_rules: list[dict] | None = None,
     plantillas: list[dict] | None = None,
     price_vigencias: dict[str, str] | None = None,
+    integracion_taller: dict | None = None,
 ) -> CostReport:
     config = config or CostingConfig()
     assumptions, calibration_notes = _calibrate_assumptions(
@@ -333,10 +394,6 @@ def generate_cost_report(
     if price_vigencias is not None:
         _warn_stale_prices(boq, apus, price_vigencias)
     _warn_solo_mano_de_obra(boq, apus)
-    integration = integrate_costs(boq.direct_cost_total, config.indirects)
-    indirectos_campo = round(
-        boq.direct_cost_total * config.indirects.field_indirects_pct / 100.0, 2
-    )
     levels = (
         max(len(segmentation.superstructure_views()), 1)
         if segmentation is not None and segmentation.is_segmented
@@ -345,9 +402,16 @@ def generate_cost_report(
     # The programa reads its rendimientos from the same matrices that priced
     # the obra, so the two cannot contradict each other (RLOPSRM 64-A-I-c).
     schedule = build_schedule(boq, catalog, config.schedule, levels=levels, apus=apus)
-    financial = build_financial_plan(schedule, integration, config.financial, config.currency)
+    resolved, integration, financial = _integrate_with_analyses(
+        boq.direct_cost_total, config, integracion_taller, schedule,
+        config.currency, boq.warnings,
+    )
+    indirectos_campo = next(l.amount for l in integration.lines if l.code == "CI-C")
     _declare_schedule_basis(boq, schedule, config.schedule)
-    _warn_plantilla_vs_indirectos(boq, config, schedule, indirectos_campo)
+    _warn_plantilla_vs_indirectos(
+        boq, config, schedule, indirectos_campo,
+        ci_c_fuente=next(c for c in resolved if c.code == "CI-C").fuente,
+    )
 
     report = CostReport(
         project_id=project_id,
@@ -365,6 +429,7 @@ def generate_cost_report(
         # tiene que cuadrar, guardados con el reporte.
         plantilla_campo=list(config.plantilla_campo),
         indirectos_campo=indirectos_campo,
+        integracion_resuelta=resolved,
     )
     log_stage(
         logger,
@@ -383,6 +448,7 @@ def _warn_plantilla_vs_indirectos(
     config: CostingConfig,
     schedule: WorkSchedule,
     indirectos_campo: float,
+    ci_c_fuente: str = "declarado",
 ) -> None:
     """El personal que el taller planea tener contra el dinero que los
     indirectos le destinan.
@@ -392,6 +458,10 @@ def _warn_plantilla_vs_indirectos(
     proyecto. Se avisa cuando la plantilla existe, está completa y no cabe en
     los indirectos — ahí el problema es real en obra pública y privada por
     igual, porque ese personal se paga con o sin formato de por medio."""
+    if ci_c_fuente == "analisis":
+        # En modo análisis la plantilla está dentro del desglose: no hay dos
+        # números que comparar.
+        return
     if not config.plantilla_campo:
         return
     period_days = schedule.workdays_per_month or 24

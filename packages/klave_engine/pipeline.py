@@ -619,6 +619,7 @@ def run_full_pipeline(
         parametric_rules=catalog_store.list_parametric_rules(),
         plantillas=catalog_store.list_plantillas(),
         price_vigencias=catalog_store.price_vigencias(),
+        integracion_taller=catalog_store.get_setting("integracion"),
     )
     # El detector conoce denominadores que el presupuesto no ve; viaja al
     # diagnóstico solo lo que sus reglas saben clasificar.

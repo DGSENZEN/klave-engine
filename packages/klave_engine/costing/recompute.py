@@ -133,6 +133,7 @@ def build_cost_report(
         parametric_rules=store.list_parametric_rules(),
         plantillas=store.list_plantillas(),
         price_vigencias=store.price_vigencias(),
+        integracion_taller=store.get_setting("integracion"),
     )
 
 
