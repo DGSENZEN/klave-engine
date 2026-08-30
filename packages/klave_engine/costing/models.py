@@ -15,6 +15,12 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from klave_engine.costing.indirectos import (
+    AnalisisFinanciamiento,
+    CargoAdicional,
+    ComponenteResuelto,
+    DesgloseCampo,
+)
 from klave_engine.costing.plantilla import CargoCampo
 from klave_engine.detection.results import DetectionType
 from klave_engine.dxf.units import DrawingUnits
@@ -190,6 +196,9 @@ class IntegrationLine(BaseModel):
     percentage: float
     amount: float
     accumulated: float
+    # De dónde salió este renglón: "analisis" (un documento lo respalda) o
+    # "declarado" (porcentaje del taller, sin análisis detrás).
+    fuente: str = "declarado"
 
 
 class CostIntegration(BaseModel):
@@ -369,6 +378,15 @@ class CostingConfig(BaseModel):
     # costo indirecto y no vive en ninguna matriz. Vacío = programa vacío, y
     # el programa lo dice en vez de fingir que no hacía falta.
     plantilla_campo: list[CargoCampo] = Field(default_factory=list)
+    # Integración como análisis (modo dual): capturados = el importe manda;
+    # None/vacío = el porcentaje declarado de ``indirects`` con su etiqueta.
+    desglose_campo: DesgloseCampo | None = None
+    financiamiento: AnalisisFinanciamiento | None = None
+    cargos_adicionales: list[CargoAdicional] = Field(default_factory=list)
+    # Share de oficina central fijado a mano: sólo vale con motivo escrito
+    # (≥15 caracteres), y queda como criterio, no como alarma.
+    oficina_share_pct: float | None = None
+    oficina_share_motivo: str = ""
     financial: FinancialConfig = Field(default_factory=FinancialConfig)
 
 
@@ -408,3 +426,6 @@ class CostReport(BaseModel):
     # configuración de hoy.
     plantilla_campo: list[CargoCampo] = Field(default_factory=list)
     indirectos_campo: float = 0.0
+    # La integración con sus fuentes por componente y los documentos que los
+    # exports imprimen tal cual (jamás recalculan).
+    integracion_resuelta: list[ComponenteResuelto] = Field(default_factory=list)

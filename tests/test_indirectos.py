@@ -94,3 +94,116 @@ def test_financiamiento_negativo_se_conserva():
     doc = compute_financiamiento(_analisis(), egresos=[100.0, 100.0], ingresos=[150.0, 50.0])
     assert [p.saldo for p in doc.periodos] == [-50.0, 0.0]
     assert doc.total == -0.5
+
+
+from klave_engine.costing.indirectos import CargoAdicional
+from klave_engine.costing.integration import integrate_costs, resolve_integration
+from klave_engine.costing.models import (
+    CostingConfig,
+    FinancialConfig,
+    IndirectsConfig,
+    ScheduleActivity,
+    WorkSchedule,
+)
+from klave_engine.costing.financial import build_financial_plan
+from klave_engine.costing.plantilla import CargoCampo
+
+
+def _schedule(months: int = 2) -> WorkSchedule:
+    days = months * 24
+    return WorkSchedule(
+        activities=[ScheduleActivity(
+            concept_code="EST-001", description="Obra", phase="Estructura",
+            quantity=1.0, unit="LOTE", rendimiento_per_day=1.0, crews=1,
+            duration_days=days, start_day=0, end_day=days, direct_cost=1_000_000.0,
+        )],
+        total_duration_days=days, workdays_per_month=24, phases=["Estructura"],
+    )
+
+
+def test_resolver_todo_declarado_sin_captura():
+    config = CostingConfig()
+    resolved = resolve_integration(config, None, 1_000_000.0, _schedule(), None)
+    assert [c.code for c in resolved] == ["CI-C", "CI-O", "FI", "UT", "CA"]
+    assert all(c.fuente == "declarado" for c in resolved)
+    assert all(c.amount is None for c in resolved)
+    # Nada capturado = nada que reclamar: sin faltantes ruidosos.
+    assert all(not c.faltantes for c in resolved)
+    assert resolved[0].pct == IndirectsConfig().field_indirects_pct
+
+
+def test_resolver_campo_con_desglose_y_plantilla():
+    config = CostingConfig()
+    config.desglose_campo = DesgloseCampo(rubros=[
+        RubroIndirecto(concepto="Renta de bodega", importe=10_000.0, base="mensual"),
+    ])
+    config.plantilla_campo = [CargoCampo(puesto="Residente de obra", salario_mensual=30_000.0, fsr=1.6)]
+    resolved = resolve_integration(config, None, 1_000_000.0, _schedule(months=2), None)
+    campo = resolved[0]
+    # 10,000×2 + (30,000×1.6×2) = 20,000 + 96,000 = 116,000
+    assert campo.fuente == "analisis" and campo.amount == 116_000.0
+    assert campo.documento["por_periodo"] == [58_000.0, 58_000.0]
+
+
+def test_resolver_oficina_parcial_reclama_el_volumen():
+    config = CostingConfig()
+    taller = {"oficina": {"rubros": [{"concepto": "Renta", "importe": 600_000.0}],
+                          "volumen_anual_contratado": 0.0}}
+    resolved = resolve_integration(config, taller, 1_000_000.0, _schedule(), None)
+    oficina = resolved[1]
+    assert oficina.fuente == "declarado"
+    assert any("volumen anual" in f for f in oficina.faltantes)
+
+
+def test_resolver_financiamiento_necesita_tasa_y_flujo():
+    config = CostingConfig()
+    config.financiamiento = AnalisisFinanciamiento(tasa_anual=12.0, indicador="TIIE 28 días")
+    sched = _schedule()
+    sin_flujo = resolve_integration(config, None, 1_000_000.0, sched, None)
+    assert sin_flujo[2].fuente == "declarado"
+    assert any("fuente" in f for f in sin_flujo[2].faltantes)  # análisis parcial: se reclama
+    config.financiamiento = AnalisisFinanciamiento(
+        tasa_anual=12.0, indicador="TIIE 28 días",
+        fuente="Banxico SF43783", fecha_publicacion="2026-08-27")
+    integration = integrate_costs(1_000_000.0, config.indirects)
+    flujo = build_financial_plan(sched, integration, FinancialConfig())
+    con_flujo = resolve_integration(config, None, 1_000_000.0, sched, flujo)
+    fi = con_flujo[2]
+    assert fi.fuente == "analisis" and fi.amount is not None
+    assert fi.documento["periodos"], "el documento trae la tabla por periodo"
+
+
+def test_resolver_cargos_itemizados():
+    config = CostingConfig()
+    config.cargos_adicionales = [
+        CargoAdicional(concepto="Inspección y vigilancia", base_legal="5 al millar", pct=0.5),
+        CargoAdicional(concepto="Impuesto estatal de obra", base_legal="2 al millar", pct=0.2),
+    ]
+    resolved = resolve_integration(config, None, 1_000_000.0, _schedule(), None)
+    ca = resolved[4]
+    assert ca.fuente == "analisis" and ca.amount is None and ca.pct == 0.7
+    assert len(ca.documento["items"]) == 2
+
+
+def test_utilidad_siempre_declarada():
+    config = CostingConfig()
+    resolved = resolve_integration(config, None, 1_000_000.0, _schedule(), None)
+    assert resolved[3].code == "UT" and resolved[3].fuente == "declarado"
+
+
+def test_share_de_oficina_solo_con_motivo_escrito():
+    taller = {"oficina": {"rubros": [{"concepto": "Renta", "importe": 600_000.0}],
+                          "volumen_anual_contratado": 40_000_000.0}}
+    config = CostingConfig()
+    config.oficina_share_pct = 3.0
+    config.oficina_share_motivo = "corto"  # < 15 caracteres: no cuenta
+    resolved = resolve_integration(config, taller, 1_000_000.0, _schedule(), None)
+    oficina = resolved[1]
+    assert oficina.amount == 15_000.0  # 1.5 % derivado del prorrateo, no el 3 %
+    assert any("motivo" in f for f in oficina.faltantes)
+
+    config.oficina_share_motivo = "obra fuera de la zona de cobertura de la oficina"
+    resolved = resolve_integration(config, taller, 1_000_000.0, _schedule(), None)
+    oficina = resolved[1]
+    assert oficina.amount == 30_000.0 and oficina.fuente == "analisis"
+    assert oficina.documento["override"] == 3.0
