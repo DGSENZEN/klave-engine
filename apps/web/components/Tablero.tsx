@@ -1,18 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import {
-  Books,
-  CalendarBlank,
-  FileMagnifyingGlass,
-  ListChecks,
-  LockSimple,
-  LockSimpleOpen,
-  Receipt,
-  Scales,
-} from "@phosphor-icons/react";
+import { CaretRight, LockSimple, LockSimpleOpen } from "@phosphor-icons/react";
 import {
   apiMessage,
   putGate,
@@ -22,89 +12,30 @@ import {
 } from "@/lib/api";
 import { canApproveGate, GATED_NODES } from "@/lib/gates";
 import { getBrowserActor } from "@/lib/collab";
+import { entryHref, NODE_NAV } from "@/lib/nodeNav";
 import { useTablero } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
 import { timeAgo } from "@/lib/time";
 import { Avatar, Button, Skeleton } from "@/components/ui";
 
 /**
- * El tablero: el anteproyecto como seis nodos conectados en el orden del
- * proceso, sobre el lienzo punteado. Los nodos son el escenario: cada uno
- * dice sus hechos como renglones etiqueta·valor — minimalismo denso, sin
- * píldoras. Los permisos se ven, no se explican: un nodo que no puedes
- * tocar se ve apagado y no responde; el botón de abrir solo existe para
- * quien puede abrirlo.
+ * El tablero: el anteproyecto como seis nodos conectados sobre el lienzo
+ * que cubre toda la pantalla. Un clic abre el nodo EN SU LUGAR — su menú
+ * aparece dentro de la tarjeta; navegar es elegir una entrada, nunca un
+ * salto sorpresa. Los permisos se ven, no se explican: el nodo que no
+ * puedes tocar se ve apagado y no responde.
  */
 
-type NodeDef = {
-  key: TableroNodeKey;
-  label: string;
-  icon: ReactNode;
-  /** Qué es este nodo, en una línea corta que siempre se muestra. */
-  detail: string;
-  /** Ruta principal al hacer clic; fragmento de proyecto salvo el catálogo. */
-  route: string;
-  /** Rutas cuya presencia cuenta para este nodo (fragmentos o absolutas). */
-  presence: string[];
-};
-
-const NODES: NodeDef[] = [
-  {
-    key: "planos",
-    label: "Planos",
-    icon: <FileMagnifyingGlass size={18} />,
-    detail: "Lo que el motor leyó del dibujo",
-    route: "/lectura",
-    presence: ["/lectura", "/plano", "/resumen"],
-  },
-  {
-    key: "revision",
-    label: "Revisión",
-    icon: <ListChecks size={18} />,
-    detail: "La firma humana sobre la lectura",
-    route: "/revision",
-    presence: ["/revision", "/riesgos"],
-  },
-  {
-    key: "catalogo",
-    label: "Catálogo",
-    icon: <Books size={18} />,
-    detail: "Conceptos y precios del taller",
-    route: "/catalogo",
-    presence: ["/catalogo"],
-  },
-  {
-    key: "presupuesto",
-    label: "Presupuesto",
-    icon: <Receipt size={18} />,
-    detail: "El dinero, con sus huecos a la vista",
-    route: "/presupuesto",
-    presence: ["/presupuesto", "/apus"],
-  },
-  {
-    key: "programa",
-    label: "Programa",
-    icon: <CalendarBlank size={18} />,
-    detail: "Plazo, fases y flujo de la obra",
-    route: "/programa",
-    presence: ["/programa", "/flujo", "/parametros"],
-  },
-  {
-    key: "contrato",
-    label: "Contrato",
-    icon: <Scales size={18} />,
-    detail: "La vida legal de la obra",
-    route: "/contrato",
-    presence: [
-      "/contrato",
-      "/estimaciones",
-      "/convenios",
-      "/bitacora",
-      "/ajuste-costos",
-      "/finiquito",
+/** Rutas cuya presencia cuenta para cada nodo, derivadas de sus entradas. */
+const PRESENCE: Record<TableroNodeKey, string[]> = Object.fromEntries(
+  NODE_NAV.map((node) => [
+    node.key,
+    [
+      ...node.entries.flatMap((entry) => [entry.href, ...(entry.also ?? [])]),
+      ...(node.key === "planos" ? ["/resumen"] : []),
     ],
-  },
-];
+  ]),
+) as Record<TableroNodeKey, string[]>;
 
 /** El flujo del proceso: cada arista une un nodo con el que le sigue. */
 const EDGES: [TableroNodeKey, TableroNodeKey][] = [
@@ -141,16 +72,15 @@ type EdgePath = { d: string; flowing: boolean };
 export function TableroBoard({ id }: { id: string }) {
   const { tablero, error, refetch } = useTablero(id);
   const { viewers, clientId, activities, timeline } = useProjectLive();
-  const router = useRouter();
+  const [expanded, setExpanded] = useState<TableroNodeKey | null>(null);
   const [gateError, setGateError] = useState<string | null>(null);
   const [gateBusy, setGateBusy] = useState<TableroNodeKey | null>(null);
   const base = `/proyecto/${id}`;
-  // El catálogo vive a nivel taller; todo lo demás es una ruta del proyecto.
-  const resolve = (route: string) => (route === "/catalogo" ? route : `${base}${route}`);
 
   // Las aristas se dibujan midiendo dónde quedó cada tarjeta en el lienzo.
   // ResizeObserver notifica al observar y en cada cambio de tamaño; el
-  // setState ocurre en su callback (asíncrono), nunca en el cuerpo del efecto.
+  // setState ocurre en su callback (asíncrono), nunca en el cuerpo del
+  // efecto. Abrir un nodo cambia tamaños: el efecto también depende de eso.
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const cardRefs = useRef(new Map<TableroNodeKey, HTMLDivElement>());
   const [edges, setEdges] = useState<EdgePath[]>([]);
@@ -159,7 +89,7 @@ export function TableroBoard({ id }: { id: string }) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const estados: Record<string, TableroEstado> = Object.fromEntries(
-      NODES.map((node) => [node.key, tablero?.nodes?.[node.key]?.estado ?? "pendiente"]),
+      NODE_NAV.map((node) => [node.key, tablero?.nodes?.[node.key]?.estado ?? "pendiente"]),
     );
     const measure = () => {
       const origin = canvas.getBoundingClientRect();
@@ -179,7 +109,7 @@ export function TableroBoard({ id }: { id: string }) {
     observer.observe(canvas);
     for (const el of cardRefs.current.values()) observer.observe(el);
     return () => observer.disconnect();
-  }, [tablero]);
+  }, [tablero, expanded]);
 
   async function toggleGate(node: TableroNodeKey, approved: boolean) {
     setGateBusy(node);
@@ -198,45 +128,48 @@ export function TableroBoard({ id }: { id: string }) {
   const canApprove = tablero ? canApproveGate(tablero.my_role) : false;
 
   return (
-    <div className="px-4 py-5 lg:px-8">
-      <div className="mb-4 flex items-baseline justify-between">
-        <h1 className="font-display text-xl font-semibold tracking-tight">Tablero</h1>
-        {gateError && <span className="text-sm text-danger">{gateError}</span>}
-      </div>
-      <div
-        ref={canvasRef}
-        className="relative grid min-h-[70vh] grid-cols-1 content-center gap-x-14 gap-y-12 rounded-xl border border-border p-6 sm:grid-cols-2 lg:p-10 xl:grid-cols-3"
-        style={{
-          backgroundColor: "var(--canvas-bg)",
-          backgroundImage: "radial-gradient(var(--canvas-stroke) 1px, transparent 1px)",
-          backgroundSize: "22px 22px",
-        }}
-      >
-        <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full">
-          {edges.map((edge) => (
-            <g key={edge.d}>
-              <path d={edge.d} fill="none" stroke="var(--canvas-stroke)" strokeWidth="1.5" />
-              {edge.flowing && (
-                <path
-                  d={edge.d}
-                  fill="none"
-                  stroke="var(--accent)"
-                  strokeWidth="1.5"
-                  className="edge-flow"
-                />
-              )}
-            </g>
-          ))}
-        </svg>
-        {NODES.map((node) => {
+    <div
+      ref={canvasRef}
+      className="relative flex flex-1"
+      style={{
+        backgroundColor: "var(--canvas-bg)",
+        backgroundImage: "radial-gradient(var(--canvas-stroke) 1px, transparent 1px)",
+        backgroundSize: "22px 22px",
+      }}
+      onClick={() => setExpanded(null)}
+    >
+      <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full">
+        {edges.map((edge) => (
+          <g key={edge.d}>
+            <path d={edge.d} fill="none" stroke="var(--canvas-stroke)" strokeWidth="1.5" />
+            {edge.flowing && (
+              <path
+                d={edge.d}
+                fill="none"
+                stroke="var(--accent)"
+                strokeWidth="1.5"
+                className="edge-flow"
+              />
+            )}
+          </g>
+        ))}
+      </svg>
+      {gateError && (
+        <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 rounded-lg bg-danger-soft px-4 py-2 text-sm text-danger shadow-sm">
+          {gateError}
+        </div>
+      )}
+      <div className="m-auto grid w-full max-w-5xl grid-cols-1 gap-x-16 gap-y-12 px-6 py-10 sm:grid-cols-2 xl:grid-cols-3">
+        {NODE_NAV.map((node) => {
           const data = tablero?.nodes?.[node.key];
           const estado: TableroEstado = data?.estado ?? "pendiente";
           const gated = GATED_NODES.includes(node.key);
           const gate = tablero?.gates?.[node.key];
           const locked = gated && tablero ? !gate : false;
           const untouchable = locked && !canApprove;
+          const open = expanded === node.key;
           const nodeViewers = otherViewers.filter((viewer) =>
-            node.presence.some((route) =>
+            PRESENCE[node.key].some((route) =>
               route === "/catalogo"
                 ? viewer.location_path === route
                 : viewer.location_path === `${base}${route}`,
@@ -249,34 +182,42 @@ export function TableroBoard({ id }: { id: string }) {
                 if (el) cardRefs.current.set(node.key, el);
                 else cardRefs.current.delete(node.key);
               }}
-              role={untouchable ? undefined : "link"}
+              role={untouchable ? undefined : "button"}
               tabIndex={untouchable ? undefined : 0}
               aria-disabled={untouchable || undefined}
-              onClick={untouchable ? undefined : () => router.push(resolve(node.route))}
+              aria-expanded={untouchable ? undefined : open}
+              onClick={
+                untouchable
+                  ? undefined
+                  : (event) => {
+                      event.stopPropagation();
+                      setExpanded(open ? null : node.key);
+                    }
+              }
               onKeyDown={
                 untouchable
                   ? undefined
                   : (event) => {
-                      if (event.key === "Enter") router.push(resolve(node.route));
+                      if (event.key === "Enter") setExpanded(open ? null : node.key);
+                      if (event.key === "Escape") setExpanded(null);
                     }
               }
-              className={`relative z-10 flex min-h-44 flex-col gap-3 rounded-xl border bg-surface p-5 shadow-sm transition ${
+              className={`relative flex flex-col gap-3 rounded-xl border bg-surface p-5 shadow-sm transition ${
                 untouchable
                   ? "cursor-not-allowed border-border opacity-55 saturate-0"
-                  : "cursor-pointer border-border hover:-translate-y-0.5 hover:border-border-strong hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  : open
+                    ? "z-20 cursor-pointer border-border-strong shadow-md"
+                    : "z-10 cursor-pointer border-border hover:-translate-y-0.5 hover:border-border-strong hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               }`}
             >
               <div className="flex items-start gap-2.5">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-muted">
                   {locked ? <LockSimple size={18} weight="fill" /> : node.icon}
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] font-semibold">
-                    {node.label}
-                  </span>
-                  <span className="block truncate text-xs text-muted">{node.detail}</span>
+                <span className="min-w-0 flex-1 pt-1.5 text-[15px] font-semibold leading-none">
+                  {node.label}
                 </span>
-                <span className="flex shrink-0 items-center gap-1.5 pt-0.5 text-xs text-muted">
+                <span className="flex shrink-0 items-center gap-1.5 pt-2 text-xs text-muted">
                   <span className={`inline-block h-2 w-2 rounded-full ${ESTADO_DOT[estado]}`} />
                   {ESTADO_LABEL[estado]}
                 </span>
@@ -292,26 +233,35 @@ export function TableroBoard({ id }: { id: string }) {
               )}
               <div className="flex flex-col gap-1.5">
                 {(data?.facts ?? []).slice(0, 5).map((fact, index) => (
-                  <FactRow
-                    key={`${fact.label}-${index}`}
-                    fact={fact}
-                    href={fact.href ? resolve(fact.href) : undefined}
-                  />
+                  <FactRow key={`${fact.label}-${index}`} fact={fact} />
                 ))}
               </div>
-              {gated && tablero && (gate || (locked && canApprove)) && (
+              {open && !locked && (
+                <div className="rise-in flex flex-col border-t border-border pt-2">
+                  {node.entries.map((entry) => (
+                    <Link
+                      key={entry.key}
+                      href={entryHref(base, entry)}
+                      onClick={(event) => event.stopPropagation()}
+                      className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted transition-colors hover:bg-surface-2/70 hover:text-foreground"
+                    >
+                      {entry.icon}
+                      <span className="flex-1">{entry.label}</span>
+                      <CaretRight size={12} className="opacity-60" />
+                    </Link>
+                  ))}
+                </div>
+              )}
+              {gated && tablero && (gate ? open || canApprove : open && canApprove) && (
                 <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-2.5 text-xs text-muted">
                   {gate ? (
                     <>
-                      <span
-                        className="flex min-w-0 items-center gap-1.5 truncate"
-                        title={gate.approved_at ?? undefined}
-                      >
+                      <span className="flex min-w-0 items-center gap-1.5 truncate">
                         <LockSimpleOpen size={13} className="shrink-0 text-success" />
                         {gate.approved_by || "—"}
                         {gate.approved_at ? ` · ${timeAgo(gate.approved_at)}` : ""}
                       </span>
-                      {canApprove && (
+                      {canApprove && open && (
                         <Button
                           size="sm"
                           variant="ghost"
@@ -344,12 +294,7 @@ export function TableroBoard({ id }: { id: string }) {
               {nodeViewers.length > 0 && (
                 <div className="absolute -top-2 right-3 flex -space-x-1.5">
                   {nodeViewers.slice(0, 4).map((viewer) => (
-                    <Avatar
-                      key={viewer.client_id}
-                      name={viewer.actor}
-                      size="xs"
-                      title={`${viewer.actor} · ${viewer.location_label || node.label}`}
-                    />
+                    <Avatar key={viewer.client_id} name={viewer.actor} size="xs" />
                   ))}
                 </div>
               )}
@@ -357,36 +302,24 @@ export function TableroBoard({ id }: { id: string }) {
           );
         })}
       </div>
-      <ActivityStrip activities={activities} timeline={timeline} />
+      <ActivityDock activities={activities} timeline={timeline} />
     </div>
   );
 }
 
 /** Un hecho por renglón: etiqueta a la izquierda, dato tabular a la
- * derecha, tono como punto — nada de píldoras. */
-function FactRow({ fact, href }: { fact: TableroFact; href?: string }) {
-  const row = (
-    <span className="flex items-baseline justify-between gap-3">
+ * derecha, tono como punto — nada de píldoras ni saltos de página. */
+function FactRow({ fact }: { fact: TableroFact }) {
+  return (
+    <span className="flex items-baseline justify-between gap-3 text-xs">
       <span className="flex min-w-0 items-center gap-1.5 truncate text-muted">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${FACT_DOT[fact.tone]}`} />
         {fact.label}
       </span>
       {fact.value && (
-        <span className="shrink-0 font-medium tabular-nums text-foreground">
-          {fact.value}
-        </span>
+        <span className="shrink-0 font-medium tabular-nums text-foreground">{fact.value}</span>
       )}
     </span>
-  );
-  if (!href) return <span className="block text-xs">{row}</span>;
-  return (
-    <Link
-      href={href}
-      onClick={(event) => event.stopPropagation()}
-      className="block rounded text-xs transition hover:bg-surface-2/70"
-    >
-      {row}
-    </Link>
   );
 }
 
@@ -419,8 +352,9 @@ function connect(a: DOMRect, b: DOMRect, origin: DOMRect): string | null {
   return `M ${rel(x1, y1)} C ${rel(x1, y1 + bend)}, ${rel(x2, y2 - bend)}, ${rel(x2, y2)}`;
 }
 
-/** La actividad va debajo del escenario, en una tira discreta. */
-function ActivityStrip({
+/** La actividad flota discreta en la esquina del lienzo, sin robar espacio
+ * al escenario. */
+function ActivityDock({
   activities,
   timeline,
 }: {
@@ -433,7 +367,7 @@ function ActivityStrip({
       main: activity.message,
       sub: activity.locationLabel,
     })),
-    ...timeline.slice(0, 6).map((entry) => ({
+    ...timeline.slice(0, 3).map((entry) => ({
       key: `t-${entry.id}`,
       main: entry.title,
       sub: `${entry.actor} · ${timeAgo(entry.ts)}`,
@@ -441,18 +375,18 @@ function ActivityStrip({
   ];
   if (entries.length === 0) return null;
   return (
-    <div className="mt-5">
-      <div className="microlabel mb-2">Actividad</div>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        {entries.slice(0, 8).map((entry) => (
-          <div key={entry.key} className="rounded-lg border border-border bg-surface px-3 py-2">
-            <div className="truncate text-sm" title={entry.main}>
-              {entry.main}
+    <aside className="pointer-events-none absolute bottom-4 right-4 z-20 hidden w-64 lg:block">
+      <div className="pointer-events-auto rounded-xl border border-border bg-surface/90 p-3 shadow-sm backdrop-blur">
+        <div className="microlabel mb-2">Actividad</div>
+        <div className="space-y-2">
+          {entries.slice(0, 4).map((entry) => (
+            <div key={entry.key} className="min-w-0">
+              <div className="truncate text-xs">{entry.main}</div>
+              {entry.sub && <div className="truncate text-[11px] text-faint">{entry.sub}</div>}
             </div>
-            {entry.sub && <div className="truncate text-xs text-muted">{entry.sub}</div>}
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
-    </div>
+    </aside>
   );
 }

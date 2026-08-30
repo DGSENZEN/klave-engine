@@ -4,27 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  Books,
   Buildings,
-  Calculator,
-  CalendarBlank,
-  ChartLineUp,
   CaretLeft,
-  Coins,
-  FileMagnifyingGlass,
-  Flag,
   Gauge,
   GearSix,
   List,
-  ListChecks,
-  MapTrifold,
-  Notebook,
-  NotePencil,
-  Receipt,
-  Scales,
   SquaresFour,
   User,
-  Warning,
   WifiHigh,
   WifiSlash,
   X,
@@ -33,151 +19,15 @@ import { useProjectLive } from "@/components/ProjectLive";
 import { ChangesPanel, ChangesTrigger, LiveToasts } from "@/components/LiveOverlay";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar, IconButton } from "@/components/ui";
-
-type Item = { key: string; label: string; icon: ReactNode; href: string };
+import { entryHref, nodeForPath, NODE_NAV, type NodeNav } from "@/lib/nodeNav";
 
 /**
- * Three jobs, in the order they happen: read the plano, review what was
- * read, deliver the numbers. Settings sit apart, as settings do.
+ * La navegación vive en los nodos. En el tablero (la raíz del proyecto) no
+ * hay barra lateral: el lienzo cubre todo y arriba queda una barra delgada.
+ * En las subpantallas la barra lateral es contextual — el nodo donde estás
+ * parado, con sus entradas, más Tablero/Resumen y Ajustes. El mapa completo
+ * vive en el propio tablero (y en el cajón móvil).
  */
-function nav(id: string): { group: string; items: Item[] }[] {
-  const b = `/proyecto/${id}`;
-  return [
-    {
-      group: "Leer",
-      items: [
-        { key: "tablero", label: "Tablero", icon: <SquaresFour size={18} />, href: b },
-        {
-          key: "resumen",
-          label: "Resumen",
-          icon: <Gauge size={18} />,
-          href: `${b}/resumen`,
-        },
-        {
-          key: "lectura",
-          label: "Lectura del plano",
-          icon: <FileMagnifyingGlass size={18} />,
-          href: `${b}/lectura`,
-        },
-        {
-          key: "plano",
-          label: "Visor del plano",
-          icon: <MapTrifold size={18} />,
-          href: `${b}/plano`,
-        },
-      ],
-    },
-    {
-      group: "Revisar",
-      items: [
-        {
-          key: "revision",
-          label: "Revisión",
-          icon: <ListChecks size={18} />,
-          href: `${b}/revision`,
-        },
-        {
-          key: "riesgos",
-          label: "Riesgos",
-          icon: <Warning size={18} />,
-          href: `${b}/riesgos`,
-        },
-      ],
-    },
-    {
-      group: "Entregar",
-      items: [
-        {
-          key: "presupuesto",
-          label: "Presupuesto",
-          icon: <Receipt size={18} />,
-          href: `${b}/presupuesto`,
-        },
-        {
-          key: "apu",
-          label: "Precios unitarios",
-          icon: <Calculator size={18} />,
-          href: `${b}/apus`,
-        },
-        {
-          key: "programa",
-          label: "Programa y flujo",
-          icon: <CalendarBlank size={18} />,
-          href: `${b}/programa`,
-        },
-        {
-          key: "parametros",
-          label: "Parámetros e insumos",
-          icon: <Coins size={18} />,
-          href: `${b}/parametros`,
-        },
-      ],
-    },
-    {
-      // Ganar la obra, cobrarla, modificarla y cerrarla: la vida entera del
-      // contrato, en el orden en que ocurre. El convenio va después de las
-      // estimaciones porque nace de ellas —una cantidad rebasada— y el
-      // finiquito al final porque no hay nada después.
-      group: "Contrato",
-      items: [
-        {
-          key: "contrato",
-          label: "Catálogo del contrato",
-          icon: <Scales size={18} />,
-          href: `${b}/contrato`,
-        },
-        {
-          key: "estimaciones",
-          label: "Estimaciones",
-          icon: <Receipt size={18} />,
-          href: `${b}/estimaciones`,
-        },
-        {
-          key: "convenios",
-          label: "Convenios",
-          icon: <NotePencil size={18} />,
-          href: `${b}/convenios`,
-        },
-        {
-          key: "bitacora",
-          label: "Bitácora",
-          icon: <Notebook size={18} />,
-          href: `${b}/bitacora`,
-        },
-        {
-          key: "ajuste-costos",
-          label: "Ajuste de costos",
-          icon: <ChartLineUp size={18} />,
-          href: `${b}/ajuste-costos`,
-        },
-        {
-          key: "finiquito",
-          label: "Finiquito",
-          icon: <Flag size={18} />,
-          href: `${b}/finiquito`,
-        },
-      ],
-    },
-    {
-      group: "Ajustes",
-      items: [
-        {
-          key: "configuracion",
-          label: "Configuración del proyecto",
-          icon: <GearSix size={18} />,
-          href: `${b}/configuracion`,
-        },
-        {
-          key: "catalogo",
-          label: "Catálogo del taller",
-          icon: <Books size={18} />,
-          href: "/catalogo",
-        },
-      ],
-    },
-  ];
-}
-
 export function ProjectShell({
   id,
   name,
@@ -188,6 +38,8 @@ export function ProjectShell({
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const base = `/proyecto/${id}`;
+  const onTablero = pathname === base;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { timeline } = useProjectLive();
 
@@ -210,15 +62,24 @@ export function ProjectShell({
   }
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-border bg-sidebar lg:flex">
-        <SidebarContent
+    <div className={`flex min-h-screen ${onTablero ? "flex-col" : ""}`}>
+      {onTablero ? (
+        <TableroTopBar
           id={id}
           name={name}
           unseenChanges={unseen}
           onOpenChanges={() => setChangesOpen(true)}
         />
-      </aside>
+      ) : (
+        <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-border bg-sidebar lg:flex">
+          <SidebarContent
+            id={id}
+            name={name}
+            unseenChanges={unseen}
+            onOpenChanges={() => setChangesOpen(true)}
+          />
+        </aside>
+      )}
 
       {/* Mobile top bar */}
       <header className="fixed inset-x-0 top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-sidebar px-3 lg:hidden">
@@ -233,9 +94,7 @@ export function ProjectShell({
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-fg">
             <Buildings size={16} weight="duotone" />
           </div>
-          <span className="truncate text-sm font-semibold" title={name}>
-            {name ?? id}
-          </span>
+          <span className="truncate text-sm font-semibold">{name ?? id}</span>
         </div>
         <div className="flex items-center gap-1">
           <ChangesTrigger
@@ -247,7 +106,7 @@ export function ProjectShell({
         </div>
       </header>
 
-      {/* Mobile drawer */}
+      {/* Mobile drawer: el mapa completo, nodo por nodo */}
       {drawerOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <button
@@ -265,6 +124,7 @@ export function ProjectShell({
             <SidebarContent
               id={id}
               name={name}
+              allNodes
               unseenChanges={unseen}
               onOpenChanges={() => {
                 setDrawerOpen(false);
@@ -275,14 +135,22 @@ export function ProjectShell({
         </div>
       )}
 
-      <main className="min-w-0 flex-1 overflow-x-hidden pt-14 lg:pt-0">{children}</main>
+      <main
+        className={`min-w-0 flex-1 overflow-x-hidden pt-14 lg:pt-0 ${
+          onTablero ? "flex flex-col" : ""
+        }`}
+      >
+        {children}
+      </main>
       {changesOpen && <ChangesPanel onClose={closeChanges} />}
       <LiveToasts />
     </div>
   );
 }
 
-function SidebarContent({
+/** La barra delgada sobre el lienzo: identidad a la izquierda, en vivo y
+ * ajustes a la derecha. */
+function TableroTopBar({
   id,
   name,
   unseenChanges,
@@ -293,8 +161,81 @@ function SidebarContent({
   unseenChanges: number;
   onOpenChanges: () => void;
 }) {
+  const { connected, clientId, viewers } = useProjectLive();
+  const otherViewers = viewers.filter((viewer) => viewer.client_id !== clientId);
+  return (
+    <header className="sticky top-0 z-30 hidden h-12 shrink-0 items-center justify-between border-b border-border bg-sidebar px-4 lg:flex">
+      <div className="flex min-w-0 items-center gap-3">
+        <Link
+          href="/"
+          className="flex items-center gap-1 text-xs font-medium text-muted transition hover:text-foreground"
+        >
+          <CaretLeft size={13} weight="bold" /> Proyectos
+        </Link>
+        <span className="h-4 w-px bg-border" />
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-fg">
+          <Buildings size={14} weight="duotone" />
+        </div>
+        <span className="truncate text-sm font-semibold">{name ?? id}</span>
+        <Link
+          href={`/proyecto/${id}/resumen`}
+          className="ml-2 flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-muted transition hover:bg-surface-2 hover:text-foreground"
+        >
+          <Gauge size={14} /> Resumen
+        </Link>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="flex items-center gap-1.5 text-xs text-muted">
+          <span
+            className={`inline-block h-1.5 w-1.5 rounded-full ${
+              connected ? "bg-success" : "bg-warning"
+            }`}
+          />
+          {connected ? (
+            <WifiHigh size={13} weight="bold" />
+          ) : (
+            <WifiSlash size={13} weight="bold" />
+          )}
+        </span>
+        {otherViewers.length > 0 && (
+          <span className="flex -space-x-1.5">
+            {otherViewers.slice(0, 4).map((viewer) => (
+              <Avatar key={viewer.client_id} name={viewer.actor} size="xs" />
+            ))}
+          </span>
+        )}
+        <ChangesTrigger variant="topbar" unseen={unseenChanges} onClick={onOpenChanges} />
+        <Link
+          href={`/proyecto/${id}/configuracion`}
+          aria-label="Configuración del proyecto"
+          className="rounded-lg p-1.5 text-muted transition hover:bg-surface-2 hover:text-foreground"
+        >
+          <GearSix size={16} />
+        </Link>
+        <ThemeToggle />
+      </div>
+    </header>
+  );
+}
+
+function SidebarContent({
+  id,
+  name,
+  allNodes = false,
+  unseenChanges,
+  onOpenChanges,
+}: {
+  id: string;
+  name?: string;
+  /** true en el cajón móvil: el mapa completo, no solo el nodo actual. */
+  allNodes?: boolean;
+  unseenChanges: number;
+  onOpenChanges: () => void;
+}) {
   const pathname = usePathname();
-  const groups = nav(id);
+  const base = `/proyecto/${id}`;
+  const currentNode = nodeForPath(base, pathname);
+  const nodes: NodeNav[] = allNodes ? NODE_NAV : currentNode ? [currentNode] : [];
   const { actorName, setActorName, connected, clientId, viewers, activities } =
     useProjectLive();
   const [nameDraft, setNameDraft] = useState(actorName);
@@ -314,6 +255,52 @@ function SidebarContent({
     setActorName(nameDraft);
   }
 
+  const pinned = [
+    { key: "tablero", label: "Tablero", icon: <SquaresFour size={18} />, href: base },
+    { key: "resumen", label: "Resumen", icon: <Gauge size={18} />, href: `${base}/resumen` },
+  ];
+
+  function itemLink(item: {
+    key: string;
+    label: string;
+    icon: ReactNode;
+    href: string;
+    also?: string[];
+  }) {
+    const active = item.href === pathname || (item.also ?? []).includes(pathname);
+    const itemViewers = otherViewers.filter((viewer) => viewer.location_path === item.href);
+    const itemActivities = activities.filter(
+      (activity) => activity.locationPath === item.href,
+    );
+    return (
+      <Link
+        key={item.key}
+        href={item.href}
+        className={`relative mb-0.5 flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
+          active
+            ? "bg-surface-2 font-medium text-foreground"
+            : "text-muted hover:bg-surface-2/70 hover:text-foreground"
+        }`}
+      >
+        {active && (
+          <span className="absolute left-0 top-1/2 h-4.5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent" />
+        )}
+        {item.icon}
+        <span className="flex-1">{item.label}</span>
+        {itemViewers.length > 0 && (
+          <span className="flex -space-x-1">
+            {itemViewers.slice(0, 3).map((viewer) => (
+              <Avatar key={viewer.client_id} name={viewer.actor} size="xs" />
+            ))}
+          </span>
+        )}
+        {itemActivities.length > 0 && (
+          <span className="h-2 w-2 rounded-full bg-warning shadow-[0_0_0_3px_var(--warning-soft)]" />
+        )}
+      </Link>
+    );
+  }
+
   return (
     <>
       <Link
@@ -327,9 +314,7 @@ function SidebarContent({
           <Buildings size={18} weight="duotone" />
         </div>
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold" title={name}>
-            {name ?? id}
-          </div>
+          <div className="truncate text-sm font-semibold">{name ?? id}</div>
           <div className="text-xs text-muted">Ingeniería de costos</div>
         </div>
       </div>
@@ -356,120 +341,42 @@ function SidebarContent({
           {connected ? <WifiHigh size={13} weight="bold" /> : <WifiSlash size={13} weight="bold" />}
           {connected ? "En vivo" : "Reconectando"}
         </div>
-        {viewers.length > 0 && (
-          <>
-            <div className="mt-3 flex items-center justify-between gap-2">
-              <span className="text-xs text-muted">{viewers.length} viendo</span>
-              <div className="flex -space-x-1.5">
-                {viewers.slice(0, 5).map((viewer) => (
-                  <Avatar
-                    key={viewer.client_id}
-                    name={viewer.actor}
-                    self={viewer.client_id === clientId}
-                    title={`${viewer.actor}${viewer.client_id === clientId ? " (tú)" : ""} · ${
-                      viewer.location_label || "Proyecto"
-                    }`}
-                  />
-                ))}
-                {viewers.length > 5 && (
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-surface bg-faint text-[10px] font-semibold text-primary-fg">
-                    +{viewers.length - 5}
-                  </span>
-                )}
-              </div>
-            </div>
-            {otherViewers.length > 0 && (
-              <div className="mt-2 space-y-1">
-                {otherViewers.slice(0, 3).map((viewer) => (
-                  <div
-                    key={viewer.client_id}
-                    className="truncate text-xs text-muted"
-                    title={`${viewer.actor} · ${viewer.location_label || "Proyecto"}`}
-                  >
-                    {viewer.actor} · {viewer.location_label || "Proyecto"}
-                  </div>
-                ))}
-                {otherViewers.length > 3 && (
-                  <div className="text-xs text-muted">+{otherViewers.length - 3} más</div>
-                )}
-              </div>
-            )}
-          </>
-        )}
-        {activities.length > 0 && (
-          <div className="mt-3 border-t border-border pt-2">
-            <div className="mb-1 text-xs font-medium text-foreground">Actividad reciente</div>
-            <div className="space-y-1">
-              {activities.slice(0, 3).map((activity) => (
-                <div
-                  key={activity.id}
-                  className="truncate text-xs text-muted"
-                  title={`${activity.message} · ${activity.locationLabel || "Proyecto"}`}
-                >
-                  {activity.message}
-                </div>
+        {otherViewers.length > 0 && (
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <span className="text-xs text-muted">{viewers.length} viendo</span>
+            <div className="flex -space-x-1.5">
+              {otherViewers.slice(0, 5).map((viewer) => (
+                <Avatar key={viewer.client_id} name={viewer.actor} />
               ))}
             </div>
           </div>
         )}
       </div>
       <nav className="flex-1 px-3 pb-4 pt-2">
-        {groups.map((g) => (
-          <div key={g.group} className="mb-4">
-            <div className="microlabel px-2 pb-1.5">{g.group}</div>
-            {g.items.map((it) => {
-              const active =
-                it.href === pathname ||
-                (it.key === "programa" && pathname === it.href.replace(/\/programa$/, "/flujo"));
-              const itemViewers = otherViewers.filter(
-                (viewer) => viewer.location_path === it.href,
-              );
-              const itemActivities = activities.filter(
-                (activity) => activity.locationPath === it.href,
-              );
-              return (
-                <Link
-                  key={it.key}
-                  href={it.href}
-                  className={`relative mb-0.5 flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-                    active
-                      ? "bg-surface-2 font-medium text-foreground"
-                      : "text-muted hover:bg-surface-2/70 hover:text-foreground"
-                  }`}
-                >
-                  {active && (
-                    <span className="absolute left-0 top-1/2 h-4.5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent" />
-                  )}
-                  {it.icon}
-                  <span className="flex-1">{it.label}</span>
-                  {itemViewers.length > 0 && (
-                    <span className="flex -space-x-1">
-                      {itemViewers.slice(0, 3).map((viewer) => (
-                        <Avatar
-                          key={viewer.client_id}
-                          name={viewer.actor}
-                          size="xs"
-                          title={`${viewer.actor} · ${viewer.location_label || it.label}`}
-                        />
-                      ))}
-                      {itemViewers.length > 3 && (
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full border border-surface bg-faint text-[9px] font-semibold text-primary-fg">
-                          +{itemViewers.length - 3}
-                        </span>
-                      )}
-                    </span>
-                  )}
-                  {itemActivities.length > 0 && (
-                    <span
-                      title={itemActivities[0].message}
-                      className="h-2 w-2 rounded-full bg-warning shadow-[0_0_0_3px_var(--warning-soft)]"
-                    />
-                  )}
-                </Link>
-              );
-            })}
+        <div className="mb-4">{pinned.map((item) => itemLink(item))}</div>
+        {nodes.map((node) => (
+          <div key={node.key} className="mb-4">
+            <div className="microlabel px-2 pb-1.5">{node.label}</div>
+            {node.entries.map((entry) =>
+              itemLink({
+                key: entry.key,
+                label: entry.label,
+                icon: entry.icon,
+                href: entryHref(base, entry),
+                also: (entry.also ?? []).map((href) => `${base}${href}`),
+              }),
+            )}
           </div>
         ))}
+        <div className="mb-4">
+          <div className="microlabel px-2 pb-1.5">Ajustes</div>
+          {itemLink({
+            key: "configuracion",
+            label: "Configuración del proyecto",
+            icon: <GearSix size={18} />,
+            href: `${base}/configuracion`,
+          })}
+        </div>
       </nav>
       <div className="flex items-center justify-between border-t border-border px-3 py-2.5">
         <ChangesTrigger variant="sidebar" unseen={unseenChanges} onClick={onOpenChanges} />
