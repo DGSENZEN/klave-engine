@@ -69,18 +69,12 @@ export function CopilotFab() {
             ? `Pregúntale a Klave — ${pendientes} cosa(s) que puede hacer`
             : "Pregúntale a Klave"
         }
-        title={
-          pendientes > 0
-            ? `Klave puede resolver ${pendientes} hallazgo(s) de esta obra`
-            : "Pregúntale a Klave: normativa, la app, y esta obra"
-        }
-        className="fixed bottom-5 right-5 z-[60] flex h-12 items-center gap-2 rounded-full border border-border bg-primary px-4 text-primary-fg shadow-lg transition hover:brightness-110"
+        className="toast-in fixed bottom-5 right-5 z-[60] flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-fg shadow-lg transition hover:scale-105 hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
-        <Sparkle size={18} weight="duotone" />
-        <span className="hidden text-sm font-medium sm:inline">Preguntar</span>
+        <Sparkle size={20} weight="duotone" />
         {pendientes > 0 && (
           <span
-            className="tabular flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1.5 text-xs font-semibold text-white"
+            className="tabular absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-semibold text-white shadow-sm"
             aria-hidden
           >
             {pendientes}

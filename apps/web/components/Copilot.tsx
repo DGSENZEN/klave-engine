@@ -183,16 +183,18 @@ export function Copilot({ open, onClose }: { open: boolean; onClose: () => void 
   return (
     <aside
       ref={panelRef}
-      className="fixed bottom-20 right-5 z-[60] flex max-h-[min(70vh,32rem)] w-[min(23rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+      className="toast-in fixed bottom-20 right-5 z-[60] flex max-h-[min(70vh,32rem)] w-[min(23rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
       role="dialog"
       aria-label="Copiloto de Klave"
     >
-      <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <Sparkle size={15} weight="duotone" className="shrink-0 text-accent" />
+      <header className="flex items-center gap-2.5 border-b border-border px-3 py-2.5">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
+          <Sparkle size={15} weight="duotone" />
+        </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium leading-tight">Klave</div>
+          <div className="truncate text-[13px] font-semibold leading-tight">Klave</div>
           {diagnostico?.resumen && (
-            <p className="truncate text-[11px] leading-tight text-muted" title={diagnostico.resumen}>
+            <p className="truncate text-[11px] leading-tight text-muted">
               {diagnostico.resumen}
             </p>
           )}
@@ -270,8 +272,12 @@ export function Copilot({ open, onClose }: { open: boolean; onClose: () => void 
 
         <div className="space-y-2.5">
           {turnos.map((turno, i) => (
-            <div key={i} className="border-t border-border/50 pt-2 first:border-t-0 first:pt-0">
-              <p className="text-[11px] font-medium text-faint">{turno.pregunta}</p>
+            <div key={i}>
+              <p className="flex justify-end">
+                <span className="max-w-[85%] rounded-2xl rounded-br-md bg-surface-2 px-3 py-1.5 text-[13px] leading-snug">
+                  {turno.pregunta}
+                </span>
+              </p>
               {turno.error && (
                 <p className="mt-1 text-[13px] text-danger">{turno.error}</p>
               )}
@@ -312,21 +318,21 @@ export function Copilot({ open, onClose }: { open: boolean; onClose: () => void 
           void preguntar(texto);
         }}
       >
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 rounded-full border border-border bg-surface py-1 pl-3.5 pr-1 transition focus-within:border-border-strong focus-within:ring-2 focus-within:ring-ring">
           <input
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
             maxLength={500}
-            placeholder="Pregunta algo…"
-            className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[13px]"
+            placeholder="Pregúntale a Klave…"
+            className="min-w-0 flex-1 bg-transparent text-[13px] outline-none"
           />
           <button
             type="submit"
             disabled={pensando || !texto.trim()}
             aria-label="Preguntar"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-fg transition disabled:opacity-40"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-fg transition disabled:opacity-40"
           >
-            <ArrowUp size={14} weight="bold" />
+            <ArrowUp size={13} weight="bold" />
           </button>
         </div>
       </form>
