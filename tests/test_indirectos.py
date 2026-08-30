@@ -2,6 +2,7 @@
 
 from klave_engine.costing.indirectos import (
     AnalisisFinanciamiento,
+    ComponenteResuelto,
     DesgloseCampo,
     DesgloseOficinaCentral,
     RubroIndirecto,
@@ -229,3 +230,42 @@ def test_resolver_financiamiento_completo_sin_flujo_se_reclama():
     fi = resolved[2]
     assert fi.fuente == "declarado"
     assert any("flujo" in f for f in fi.faltantes)
+
+
+def test_integrate_declarado_identico_a_hoy():
+    # La garantía de regresión del modo dual: sin resolved, la aritmética de
+    # siempre (los importes encadenados, verificados a mano para el primero).
+    config = IndirectsConfig()
+    antes = integrate_costs(1_000_000.0, config)
+    despues = integrate_costs(1_000_000.0, config, resolved=None)
+    assert antes.model_dump() == despues.model_dump()
+    assert [l.code for l in antes.lines] == ["CI-C", "CI-O", "FI", "UT", "CA"]
+    assert antes.lines[0].amount == 80_000.0  # 8 % de 1,000,000, a mano
+    assert antes.lines[2].base == 1_130_000.0  # FI corre sobre CD+CI
+    assert all(line.fuente == "declarado" for line in antes.lines)
+
+
+def test_integrate_amounts_mandan_y_el_pct_es_derivado():
+    config = IndirectsConfig()
+    resolved = [
+        ComponenteResuelto(code="CI-C", amount=116_000.0, fuente="analisis"),
+        ComponenteResuelto(code="CI-O", pct=5.0),
+        ComponenteResuelto(code="FI", pct=1.5),
+        ComponenteResuelto(code="UT", pct=10.0),
+        ComponenteResuelto(code="CA", pct=0.5),
+    ]
+    integration = integrate_costs(1_000_000.0, config, resolved=resolved)
+    campo = integration.lines[0]
+    assert campo.amount == 116_000.0 and campo.fuente == "analisis"
+    assert campo.percentage == 11.6  # derivado del importe, no al revés
+    # El documento y el presupuesto no pueden discrepar ni por un centavo:
+    assert campo.amount == round(1_000_000.0 * campo.percentage / 100.0, 2)
+
+
+def test_integrate_pct_resuelto_reemplaza_al_de_config():
+    config = IndirectsConfig()  # additional_charges_pct = 0.5
+    resolved = resolve_integration(CostingConfig(), None, 1_000_000.0, _schedule(), None)
+    resolved[4] = ComponenteResuelto(code="CA", pct=0.7, fuente="analisis")
+    integration = integrate_costs(1_000_000.0, config, resolved=resolved)
+    ca = integration.lines[4]
+    assert ca.percentage == 0.7 and ca.fuente == "analisis"

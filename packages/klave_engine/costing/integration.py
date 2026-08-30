@@ -26,13 +26,27 @@ from klave_engine.costing.models import (
 from klave_engine.costing.plantilla import build_personal_tecnico
 
 
-def integrate_costs(direct_cost: float, config: IndirectsConfig) -> CostIntegration:
+def integrate_costs(
+    direct_cost: float,
+    config: IndirectsConfig,
+    resolved: list[ComponenteResuelto] | None = None,
+) -> CostIntegration:
+    componentes = {c.code: c for c in (resolved or [])}
     lines: list[IntegrationLine] = []
     accumulated = direct_cost
 
     def add(code: str, description: str, base: float, pct: float) -> float:
         nonlocal accumulated
-        amount = round(base * pct / 100.0, 2)
+        comp = componentes.get(code)
+        fuente = comp.fuente if comp is not None else "declarado"
+        if comp is not None and comp.amount is not None:
+            # El importe del análisis manda; el porcentaje es su sombra.
+            amount = round(comp.amount, 2)
+            pct = round(amount / base * 100.0, 4) if base else 0.0
+        else:
+            if comp is not None:
+                pct = comp.pct
+            amount = round(base * pct / 100.0, 2)
         accumulated = round(accumulated + amount, 2)
         lines.append(
             IntegrationLine(
@@ -42,6 +56,7 @@ def integrate_costs(direct_cost: float, config: IndirectsConfig) -> CostIntegrat
                 percentage=pct,
                 amount=amount,
                 accumulated=accumulated,
+                fuente=fuente,
             )
         )
         return amount
