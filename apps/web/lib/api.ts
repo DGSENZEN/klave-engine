@@ -293,6 +293,8 @@ export type DetectionOverlay = {
   review_note: string;
   /** Sheet index into Geometry.sheets; null when unmapped (old runs). */
   sheet: number | null;
+  /** Medidas legibles del elemento (solo con unidad honesta). */
+  medidas?: { label: string; value: string }[];
 };
 
 export type BoqLine = {

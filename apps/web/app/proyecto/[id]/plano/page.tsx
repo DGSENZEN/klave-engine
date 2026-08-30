@@ -21,6 +21,7 @@ import {
   getCosts,
   getGeometry,
   setDetectionReview,
+  type BoqLine,
   type CatalogConcept,
   type DetectionOverlay,
   type Geometry,
@@ -42,6 +43,8 @@ import {
   Skeleton,
 } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
+import { useCostReport } from "@/lib/useProjectReport";
+import { ConceptPicker } from "@/components/ConceptPicker";
 
 export default function PlanoPage() {
   const { id } = useParams<{ id: string }>();
@@ -68,6 +71,15 @@ export default function PlanoPage() {
   const [measureMode, setMeasureMode] = useState<MeasureMode | null>(null);
   const [measurePoints, setMeasurePoints] = useState<[number, number][]>([]);
   const { latestEvent, connectionEpoch, actorName, clientId } = useProjectLive();
+  const { costs } = useCostReport(id);
+  // La vuelta medidas↔plano: qué línea del presupuesto alimenta cada elemento.
+  const lineByDetection = useMemo(() => {
+    const map = new Map<string, BoqLine>();
+    for (const line of costs?.boq.lines ?? []) {
+      for (const detectionId of line.source_detections ?? []) map.set(detectionId, line);
+    }
+    return map;
+  }, [costs]);
 
   const searchParams = useSearchParams();
   const conceptParam = searchParams.get("concept") ?? "";
@@ -529,6 +541,26 @@ export default function PlanoPage() {
                   </Badge>
                 )}
               </div>
+              {(selected.medidas?.length ?? 0) > 0 && (
+                <div className="mt-3 space-y-1 border-t border-border pt-3">
+                  {selected.medidas!.map((m) => (
+                    <div
+                      key={m.label}
+                      className="flex items-baseline justify-between gap-3 text-xs"
+                    >
+                      <span className="text-muted">{m.label}</span>
+                      <span className="font-medium tabular-nums">{m.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <ConceptoDelElemento
+                key={selected.id}
+                projectId={id}
+                line={lineByDetection.get(selected.id) ?? null}
+                actorName={actorName}
+                clientId={clientId}
+              />
               <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
                 {selected.review !== "confirmed" && (
                   <Button size="sm" onClick={() => review(selected, "confirmed")}>
@@ -560,6 +592,140 @@ export default function PlanoPage() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+
+/**
+ * La ida y vuelta con el dinero, sin salir del plano: qué concepto alimenta
+ * este elemento, buscar uno parecido en el catálogo (alias del taller) y el
+ * ajuste rápido de cantidad — el mismo circuito de corrección de siempre,
+ * al alcance del clic que ya estabas dando.
+ */
+function ConceptoDelElemento({
+  projectId,
+  line,
+  actorName,
+  clientId,
+}: {
+  projectId: string;
+  line: BoqLine | null;
+  actorName: string;
+  clientId: string | null;
+}) {
+  const [mode, setMode] = useState<"idle" | "picker" | "ajuste">("idle");
+  const [cantidad, setCantidad] = useState("");
+  const [nota, setNota] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [hecho, setHecho] = useState(false);
+  if (!line) return null;
+
+  async function ajustar() {
+    const value = Number(cantidad);
+    if (!line || !Number.isFinite(value) || value < 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await addAdjustment(
+        projectId,
+        { concept_code: line.concept_code, quantity_set: value, note: nota.trim() },
+        actorName,
+        clientId,
+      );
+      setHecho(true);
+      setMode("idle");
+    } catch {
+      setError("No se pudo guardar el ajuste.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t border-border pt-3">
+      <div className="flex items-baseline justify-between gap-3 text-xs">
+        <span className="text-muted">Concepto</span>
+        <span className="font-medium">{line.taller_clave || line.concept_code}</span>
+      </div>
+      <div className="mt-0.5 truncate text-xs text-muted" title={line.description}>
+        {line.description}
+      </div>
+      <div className="mt-0.5 flex items-baseline justify-between gap-3 text-xs">
+        <span className="text-muted">Cantidad de la línea</span>
+        <span className="font-medium tabular-nums">
+          {line.quantity.toLocaleString("es-MX", { maximumFractionDigits: 2 })} {line.unit}
+        </span>
+      </div>
+      {hecho && (
+        <p className="mt-1.5 text-xs text-success">
+          Ajuste guardado: la línea quedó en el presupuesto con tu firma.
+        </p>
+      )}
+      {error && <p className="mt-1.5 text-xs text-danger">{error}</p>}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setMode(mode === "picker" ? "idle" : "picker")}
+          className="rounded-md border border-border px-2 py-1 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+        >
+          Buscar en catálogo
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setMode(mode === "ajuste" ? "idle" : "ajuste");
+            setCantidad(String(line.quantity));
+          }}
+          className="rounded-md border border-border px-2 py-1 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+        >
+          Ajustar cantidad
+        </button>
+        <Link
+          href={`/proyecto/${projectId}/presupuesto`}
+          className="rounded-md px-2 py-1 text-xs text-muted underline-offset-2 transition-colors hover:text-foreground hover:underline"
+        >
+          Ver en presupuesto
+        </Link>
+      </div>
+      {mode === "picker" && (
+        <div className="mt-2 rounded-lg border border-border bg-surface-2/50 p-2">
+          <ConceptPicker
+            conceptCode={line.concept_code}
+            conceptDescription={line.description}
+            unit={line.unit}
+            currentClave={line.taller_clave ?? ""}
+            projectId={projectId}
+            actorName={actorName}
+            onDone={() => setMode("idle")}
+          />
+        </div>
+      )}
+      {mode === "ajuste" && (
+        <div className="mt-2 space-y-1.5 rounded-lg border border-border bg-surface-2/50 p-2">
+          <div className="flex items-center gap-1.5">
+            <Input
+              value={cantidad}
+              onChange={(e) => setCantidad(e.target.value)}
+              inputMode="decimal"
+              aria-label="Nueva cantidad"
+              className="h-8 flex-1 text-sm"
+            />
+            <span className="text-xs text-muted">{line.unit}</span>
+          </div>
+          <Input
+            value={nota}
+            onChange={(e) => setNota(e.target.value)}
+            placeholder="Por qué (queda en la bitácora de ajustes)"
+            aria-label="Nota del ajuste"
+            className="h-8 w-full text-sm"
+          />
+          <Button size="sm" onClick={ajustar} disabled={busy || !cantidad.trim()}>
+            Guardar ajuste
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

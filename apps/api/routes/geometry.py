@@ -90,6 +90,54 @@ def _renderable(entity: dict) -> dict | None:
     return None
 
 
+
+# Medidas legibles por elemento para el visor: solo lo que tiene unidad
+# honesta — metros nativos siempre; unidades de dibujo solo cuando el factor
+# a metros es confiable. Nada se inventa: sin factor, el dato no aparece.
+_MEDIDAS_M = [("length_m", "Longitud"), ("vertical_length_m", "Bajada (vertical)")]
+_MEDIDAS_DU = [
+    ("length", "Longitud"),
+    ("estimated_length", "Longitud estimada"),
+    ("estimated_span_length", "Claro estimado"),
+    ("opening_length", "Ancho de vano"),
+    ("estimated_thickness", "Espesor estimado"),
+]
+_MEDIDAS_DU2 = [
+    ("estimated_area", "Área estimada"),
+    ("section_area_du2", "Área de sección"),
+    ("void_area", "Área de vanos"),
+]
+
+
+def _medidas(props: dict, to_meters: float | None) -> list[dict]:
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    def _num(key: str) -> float | None:
+        value = props.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return float(value) if value > 0 else None
+
+    for key, label in _MEDIDAS_M:
+        value = _num(key)
+        if value is not None and label not in seen:
+            out.append({"label": label, "value": f"{value:,.2f} m"})
+            seen.add(label)
+    if to_meters:
+        for key, label in _MEDIDAS_DU:
+            value = _num(key)
+            if value is not None and label not in seen:
+                out.append({"label": label, "value": f"{value * to_meters:,.2f} m"})
+                seen.add(label)
+        for key, label in _MEDIDAS_DU2:
+            value = _num(key)
+            if value is not None and label not in seen:
+                out.append({"label": label, "value": f"{value * to_meters**2:,.2f} m²"})
+                seen.add(label)
+    return out[:4]
+
+
 @router.get("/{project_id}/geometry")
 def get_geometry(
     project_id: str,
@@ -123,6 +171,15 @@ def get_geometry(
                 shape["sheet"] = sheet
             shapes.append(shape)
 
+    try:
+        units_read = DrawingUnits.model_validate(
+            store.read_artifact(project_id, "drawing_units.json")
+        )
+        units_payload = {"unit": units_read.unit, "to_meters": units_read.to_meters()}
+    except (HTTPException, ValueError):
+        units_payload = None
+    to_meters = units_payload["to_meters"] if units_payload else None
+
     overlay = []
     for d in detections:
         key = d.get("display_label") or d["detection_id"]
@@ -154,6 +211,7 @@ def get_geometry(
                 "review_key": key,
                 "review": review.status if review else "",
                 "review_note": review.note if review else "",
+                "medidas": _medidas(d.get("properties") or {}, to_meters),
             }
         )
     extent = (
@@ -165,14 +223,6 @@ def get_geometry(
         {"name": name, "count": count}
         for name, count in sorted(layer_counts.items(), key=lambda kv: (-kv[1], kv[0]))
     ]
-    try:
-        units = DrawingUnits.model_validate(
-            store.read_artifact(project_id, "drawing_units.json")
-        )
-        units_payload = {"unit": units.unit, "to_meters": units.to_meters()}
-    except (HTTPException, ValueError):
-        units_payload = None
-
     return {
         "extent": extent,
         # Sheet frames (plantas, detalles) so the visor can jump to a sheet.

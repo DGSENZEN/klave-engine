@@ -39,7 +39,12 @@ export function PlanoCanvas({
   const wrapRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<View | null>(null);
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [tooltip, setTooltip] = useState<{
+    x: number;
+    y: number;
+    text: string;
+    medidas: { label: string; value: string }[];
+  } | null>(null);
   const [, force] = useState(0);
 
   const [minx, miny, maxx, maxy] = geometry.extent;
@@ -391,6 +396,7 @@ export function PlanoCanvas({
             x: mx,
             y: my,
             text: `${detectionTitle(hit)} · ${(hit.confidence * 100).toFixed(0)}%`,
+            medidas: hit.medidas ?? [],
           }
         : null,
     );
@@ -444,7 +450,17 @@ export function PlanoCanvas({
           className="pointer-events-none absolute z-10 max-w-xs rounded-md bg-foreground/95 px-2.5 py-1.5 text-xs text-background shadow-lg"
           style={{ left: tooltip.x + 12, top: tooltip.y + 12 }}
         >
-          {tooltip.text}
+          <div className="font-medium">{tooltip.text}</div>
+          {tooltip.medidas.length > 0 && (
+            <div className="mt-1 space-y-0.5 border-t border-background/25 pt-1">
+              {tooltip.medidas.map((m) => (
+                <div key={m.label} className="flex justify-between gap-3">
+                  <span className="opacity-75">{m.label}</span>
+                  <span className="tabular font-medium">{m.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
