@@ -478,6 +478,15 @@ botón «Abrir nodo» solo existe para quien tiene la autoridad. Se retiraron
 las frases «tú puedes abrir» / «lo abre el administrador» del tablero y del
 GateGuard: el permiso se ve, no se explica.
 
+**Segundo refinado (rama `tablero-escenario`):** los nodos pasaron al
+centro — el lienzo toma el ancho completo (la actividad bajó a una tira
+discreta), y los chips-píldora se volvieron renglones etiqueta·valor con
+número tabular y tono como punto: minimalismo denso. El backend ahora emite
+`facts` descriptivos por nodo (entidades leídas, riesgos, plazo en días
+hábiles con su calificador, anticipo/retención, periodos) y el importe del
+nodo Presupuesto respeta el money gate: sin unidad confiable no viaja
+ningún peso; con unidad sin firmar, viaja marcado «sin verificar».
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
