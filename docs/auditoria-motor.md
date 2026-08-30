@@ -497,6 +497,22 @@ cajón móvil) y las descripciones-tooltip de los nodos se retiraron. El
 copiloto también se pulió: botón flotante circular con conteo en acento,
 panel con identidad y burbujas de conversación, entrada redonda.
 
+**Consolidación (misma rama, 2026-08-29):** la barra lateral desapareció de
+toda la app — una sola barra superior con la miga proyecto/nodo/entrada
+como navegación (el nombre regresa al tablero; identidad y conexión en un
+popover). El lienzo se volvió lienzo de verdad: nodos que se arrastran y
+estiran, paneo y zoom (rueda y controles), acomodo recordado por persona en
+localStorage — datos de todos, acomodo tuyo. El visor del plano tomó la
+retroalimentación del cliente: medidas al pasar el cursor (solo con unidad
+honesta: metros nativos o unidades de dibujo × factor confiable), y en el
+elemento seleccionado la ida y vuelta con el dinero — su concepto del
+presupuesto, buscar uno parecido en el catálogo (ConceptPicker) y el ajuste
+rápido de cantidad, sin salir del plano. El catálogo habla OPUS con nuestra
+piel: una sola hoja jerárquica (fase → concepto → matriz como renglones),
+celdas que guardan al salir sin botón, recurso nuevo por teclado
+(typeahead), renglones fantasma para crear, y los insumos con descripción y
+costo editables en su lugar.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
