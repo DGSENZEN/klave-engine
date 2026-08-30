@@ -210,7 +210,9 @@ export function ConceptPicker({
             : "Sin coincidencias claras; busca por palabras de tu catálogo."}
         </p>
       ) : (
-        <ul className="divide-y divide-border">
+        // Con un catálogo grande la lista crecía sin fin y tapaba la
+        // pantalla: aquí adentro se hace scroll, el resto sigue a la mano.
+        <ul className="max-h-72 divide-y divide-border overflow-y-auto overscroll-contain pr-1">
           {list.map((m) => (
             <li key={`${m.kind}-${m.key}`} className="flex items-start gap-3 py-2">
               <div className="min-w-0 flex-1">
