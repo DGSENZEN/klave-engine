@@ -16,8 +16,8 @@ from klave_engine.costing.indirectos import (
     documenta_oficina,
 )
 from klave_engine.costing.models import (
-    CostIntegration,
     CostingConfig,
+    CostIntegration,
     FinancialPlan,
     IndirectsConfig,
     IntegrationLine,

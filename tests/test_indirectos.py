@@ -1,7 +1,9 @@
 """Desglose de indirectos: la aritmética del documento, a mano."""
 
+from klave_engine.costing.financial import build_financial_plan
 from klave_engine.costing.indirectos import (
     AnalisisFinanciamiento,
+    CargoAdicional,
     ComponenteResuelto,
     DesgloseCampo,
     DesgloseOficinaCentral,
@@ -10,6 +12,16 @@ from klave_engine.costing.indirectos import (
     documenta_campo,
     documenta_oficina,
 )
+from klave_engine.costing.integration import integrate_costs, resolve_integration
+from klave_engine.costing.models import (
+    CostingConfig,
+    FinancialConfig,
+    IndirectsConfig,
+    ScheduleActivity,
+    WorkSchedule,
+)
+from klave_engine.costing.plantilla import CargoCampo
+from klave_engine.costing.report import _integrate_with_analyses
 
 
 def test_campo_mensual_por_meses_y_unicos_una_vez():
@@ -97,19 +109,6 @@ def test_financiamiento_negativo_se_conserva():
     assert doc.total == -0.5
 
 
-from klave_engine.costing.indirectos import CargoAdicional
-from klave_engine.costing.integration import integrate_costs, resolve_integration
-from klave_engine.costing.models import (
-    CostingConfig,
-    FinancialConfig,
-    IndirectsConfig,
-    ScheduleActivity,
-    WorkSchedule,
-)
-from klave_engine.costing.financial import build_financial_plan
-from klave_engine.costing.plantilla import CargoCampo
-
-
 def _schedule(months: int = 2) -> WorkSchedule:
     days = months * 24
     return WorkSchedule(
@@ -138,7 +137,8 @@ def test_resolver_campo_con_desglose_y_plantilla():
     config.desglose_campo = DesgloseCampo(rubros=[
         RubroIndirecto(concepto="Renta de bodega", importe=10_000.0, base="mensual"),
     ])
-    config.plantilla_campo = [CargoCampo(puesto="Residente de obra", salario_mensual=30_000.0, fsr=1.6)]
+    config.plantilla_campo = [CargoCampo(
+        puesto="Residente de obra", salario_mensual=30_000.0, fsr=1.6)]
     resolved = resolve_integration(config, None, 1_000_000.0, _schedule(months=2), None)
     campo = resolved[0]
     # 10,000×2 + (30,000×1.6×2) = 20,000 + 96,000 = 116,000
@@ -286,7 +286,7 @@ def test_integrate_declarado_identico_a_hoy():
     antes = integrate_costs(1_000_000.0, config)
     despues = integrate_costs(1_000_000.0, config, resolved=None)
     assert antes.model_dump() == despues.model_dump()
-    assert [l.code for l in antes.lines] == ["CI-C", "CI-O", "FI", "UT", "CA"]
+    assert [linea.code for linea in antes.lines] == ["CI-C", "CI-O", "FI", "UT", "CA"]
     assert antes.lines[0].amount == 80_000.0  # 8 % de 1,000,000, a mano
     assert antes.lines[2].base == 1_130_000.0  # FI corre sobre CD+CI
     assert all(line.fuente == "declarado" for line in antes.lines)
@@ -318,9 +318,6 @@ def test_integrate_pct_resuelto_reemplaza_al_de_config():
     assert ca.percentage == 0.7 and ca.fuente == "analisis"
 
 
-from klave_engine.costing.report import _integrate_with_analyses
-
-
 def _config_analisis_total() -> CostingConfig:
     config = CostingConfig()
     config.desglose_campo = DesgloseCampo(rubros=[
@@ -346,7 +343,7 @@ def test_iteracion_converge_y_los_totales_se_estabilizan():
     # El pct derivado del análisis se rellena en el componente resuelto, no
     # se queda en el 0.0 de fábrica junto a la insignia de "análisis".
     campo = next(c for c in resolved if c.code == "CI-C")
-    linea = next(l for l in integration.lines if l.code == "CI-C")
+    linea = next(line for line in integration.lines if line.code == "CI-C")
     assert campo.pct == linea.percentage
     assert campo.pct != 0.0
 

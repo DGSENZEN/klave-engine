@@ -26,6 +26,7 @@ from klave_engine.costing.catalog_store import CatalogStore, UnitMismatch
 from klave_engine.costing.descripciones import long_description
 from klave_engine.costing.equipment import EquipmentParameters, compute_costo_horario
 from klave_engine.costing.exports import build_cotizacion_workbook
+from klave_engine.costing.ficha import extraer_ficha
 from klave_engine.costing.indirectos import AnalisisFinanciamiento, DesgloseOficinaCentral
 from klave_engine.costing.labor import (
     REGION_PRESETS,
@@ -35,7 +36,6 @@ from klave_engine.costing.labor import (
     compute_fsr,
     preset_by_key,
 )
-from klave_engine.costing.ficha import extraer_ficha
 from klave_engine.costing.matching import Candidate, Match, rank, split_alcance
 from klave_engine.costing.models import CostingAssumptions, CostingOverrides
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist

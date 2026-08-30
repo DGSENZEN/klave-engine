@@ -226,7 +226,7 @@ def test_licitacion_imprime_los_analisis(data_dir):
     assert any("Banxico SF43783" in t for t in ftextos)
     # Los totales del documento y de la integración cuadran al centavo:
     campo = next(c for c in report.integracion_resuelta if c.code == "CI-C")
-    linea = next(l for l in report.integration.lines if l.code == "CI-C")
+    linea = next(line for line in report.integration.lines if line.code == "CI-C")
     assert campo.amount == linea.amount
 
 

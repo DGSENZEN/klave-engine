@@ -157,7 +157,10 @@ def documenta_campo(
                 base=rubro.base, importe=0.0, sin_capturar=True,
             ))
             continue
-        importe = round(rubro.importe * meses, 2) if rubro.base == "mensual" else round(rubro.importe, 2)
+        importe = (
+            round(rubro.importe * meses, 2) if rubro.base == "mensual"
+            else round(rubro.importe, 2)
+        )
         total += importe
         renglones.append(RenglonDocumento(
             concepto=rubro.concepto, categoria=rubro.categoria,
