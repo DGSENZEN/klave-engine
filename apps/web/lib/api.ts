@@ -643,7 +643,7 @@ export type CargoAdicional = {
   pct: number;
 };
 
-/** La tasa de financiamiento con su indicador, fuente y fecha — sin los tres
+/** La tasa de financiamiento con su indicador, fuente y fecha — sin los cuatro
  * datos no es un análisis, es un invento (ver indirectos.py). */
 export type AnalisisFinanciamiento = {
   tasa_anual: number;

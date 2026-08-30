@@ -208,7 +208,7 @@ export function DesgloseCampoCard({
   onChange,
 }: {
   value: { rubros: RubroIndirecto[] } | null;
-  onChange: (v: { rubros: RubroIndirecto[] }) => void;
+  onChange: (v: { rubros: RubroIndirecto[] } | null) => void;
 }) {
   const rubros = value?.rubros ?? [];
 
@@ -217,7 +217,10 @@ export function DesgloseCampoCard({
       <SectionTitle sub="RLOPSRM arts. 211-220. Cada renglón es un gasto real de la obra, con su importe y su categoría contable — un porcentaje desnudo no es un desglose.">
         Desglose de indirectos de campo
       </SectionTitle>
-      <RubrosEditor rubros={rubros} onChange={(r) => onChange({ rubros: r })}>
+      <RubrosEditor
+        rubros={rubros}
+        onChange={(r) => onChange(r.length === 0 ? null : { rubros: r })}
+      >
         <tr className="border-b border-border/60">
           <Td colSpan={5} className="text-xs italic text-muted">
             Personal técnico, administrativo y de servicio — se calcula de la plantilla de
