@@ -2147,6 +2147,8 @@ export type CatalogConcept = {
   price_source?: string | null;
   price_clave?: string | null;
   price_vigencia?: string | null;
+  /** Características extraídas del texto (f'c, t.m.a., acabado, elemento…). */
+  ficha?: { campo: string; valor: string }[];
 };
 
 export type ApuComponent = { resource_code: string; quantity: number };

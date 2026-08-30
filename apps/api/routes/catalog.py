@@ -34,6 +34,7 @@ from klave_engine.costing.labor import (
     compute_fsr,
     preset_by_key,
 )
+from klave_engine.costing.ficha import extraer_ficha
 from klave_engine.costing.matching import Candidate, Match, rank, split_alcance
 from klave_engine.costing.models import CostingAssumptions, CostingOverrides
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
@@ -169,6 +170,8 @@ def get_catalog_state(catalog: CatalogStore = Depends(get_catalog)) -> dict:
                 "price_source": row.get("price_source"),
                 "price_clave": row.get("price_clave"),
                 "price_vigencia": row.get("price_vigencia"),
+                # La ficha técnica sale del propio texto: campos duros a la vista.
+                "ficha": extraer_ficha(row["description"]),
             }
             for row in catalog.load_concepts()
         ],

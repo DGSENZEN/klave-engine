@@ -226,3 +226,25 @@ def test_el_orden_invertido_pide_que_los_dos_digan_las_dos_cosas():
         "Estructura",
     )
     assert m is None or not any("al revés" in r for r in m.reasons)
+
+
+def test_fy_y_acabado_deciden_como_la_fc():
+    # El grado del acero es identidad: fy=4200 no cotiza un fy=6000.
+    acero = 'Acero de refuerzo en estructura del no.2 (1/4"), de fy=6000 kg/cm2'
+    ranked = rank(acero, "TON", [
+        _c("ACE-6000", "Acero de refuerzo fy=6000 kg/cm2 no.2 habilitado y armado", "TON"),
+        _c("ACE-4200", "Acero de refuerzo fy=4200 kg/cm2 no.4 habilitado y armado", "TON"),
+    ])
+    assert ranked[0].candidate.clave == "ACE-6000"
+    assert any("fy=6000 coincide" in r for r in ranked[0].reasons)
+    peor = next((m for m in ranked if m.candidate.clave == "ACE-4200"), None)
+    assert peor is None or peor.score < ranked[0].score - 0.2
+
+    # Cimbra aparente no es cimbra común: el acabado es el precio.
+    cimbra = "Cimbra en columnas de cimentación, acabado común, incluye: cimbrado y descimbrado"
+    ranked = rank(cimbra, "M2", [
+        _c("CIM-COM", "Cimbra de madera en columnas acabado común", "M2"),
+        _c("CIM-APA", "Cimbra de madera en columnas acabado aparente", "M2"),
+    ])
+    assert ranked[0].candidate.clave == "CIM-COM"
+    assert any("mismo acabado" in r for r in ranked[0].reasons)

@@ -112,6 +112,9 @@ _CM_RE = re.compile(r"\b(\d{1,3}(?:[.,]\d)?)\s*(?:cms?\.?|cent[ií]metros?)\b", 
 _NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)?")
 _DIM_RE = re.compile(r"\b(\d{1,3})\s*[x×]\s*(\d{1,3})(?:\s*[x×]\s*(\d{1,3}))?\b", re.IGNORECASE)
 _FC_RE = re.compile(r"f['’]?c\s*=?\s*(\d{2,3})", re.IGNORECASE)
+_FY_RE = re.compile(r"fy\s*=?\s*(\d{3,4})", re.IGNORECASE)
+_TMA_RE = re.compile(r"t\.?\s*m\.?\s*a\.?\s*(?:de\s*)?(\d{1,2})\s*mm", re.IGNORECASE)
+_ACABADO_RE = re.compile(r"acabado\s+(comun|común|aparente)", re.IGNORECASE)
 # Un trozo que puede contener un diámetro, para pasárselo al normalizador.
 _TROZO_DIAMETRO = re.compile(
     r'\d{1,3}(?:\s+\d\s*/\s*\d)?\s*"|\d\s*/\s*\d\s*"|\d{2,3}\s*mm\b|Ø\s*\d{2,3}',
@@ -273,17 +276,23 @@ def _diametros(text: str) -> set[str]:
 def _specs(text: str) -> dict[str, set[str]]:
     low = normalize(text)
     fc = {m.group(1) for m in _FC_RE.finditer(low)}
+    fy = {m.group(1) for m in _FY_RE.finditer(low)}
+    tma = {m.group(1) for m in _TMA_RE.finditer(low)}
+    acabado = {m.group(1).replace("común", "comun") for m in _ACABADO_RE.finditer(low)}
     dims = {
         "x".join(g for g in m.groups() if g) for m in _DIM_RE.finditer(low)
     }
     cm = {m.group(1).replace(",", ".") for m in _CM_RE.finditer(low)}
     plain = {n.replace(",", ".") for n in _NUMBER_RE.findall(low)}
     plain -= fc
+    plain -= fy
+    plain -= tma
     plain -= cm
     for d in dims:
         plain -= set(d.split("x"))
     return {
-        "fc": fc, "dims": dims, "cm": cm, "numbers": plain,
+        "fc": fc, "fy": fy, "tma": tma, "acabado": acabado,
+        "dims": dims, "cm": cm, "numbers": plain,
         "diam": _diametros(text), "mat": materiales_declarados(text),
     }
 
@@ -425,6 +434,28 @@ def score(
         else:
             value -= 0.3
             reasons.append(f"f'c distinto ({', '.join(sb['fc'])} vs {', '.join(sa['fc'])})")
+    if sa["fy"] and sb["fy"]:
+        if sa["fy"] & sb["fy"]:
+            value += 0.08
+            reasons.append(f"fy={next(iter(sa['fy'] & sb['fy']))} coincide")
+        else:
+            value -= 0.3
+            reasons.append(f"fy distinto ({', '.join(sb['fy'])} vs {', '.join(sa['fy'])})")
+    if sa["tma"] and sb["tma"]:
+        if sa["tma"] & sb["tma"]:
+            value += 0.04
+            reasons.append(f"t.m.a. {next(iter(sa['tma'] & sb['tma']))} mm coincide")
+        else:
+            value -= 0.1
+            reasons.append(f"t.m.a. distinto ({', '.join(sb['tma'])} mm)")
+    if sa["acabado"] and sb["acabado"]:
+        if sa["acabado"] & sb["acabado"]:
+            value += 0.05
+            reasons.append("mismo acabado de cimbra")
+        else:
+            # Cimbra aparente no es cimbra común: el acabado es el precio.
+            value -= 0.2
+            reasons.append(f"acabado distinto ({', '.join(sb['acabado'])})")
     if sa["dims"] and sb["dims"]:
         if sa["dims"] & sb["dims"]:
             value += 0.08

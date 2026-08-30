@@ -886,7 +886,12 @@ function PhaseRows({
       <tr className="border-b border-border bg-surface-2/60">
         <td colSpan={4} className="px-5 py-1.5">
           <div className="flex items-center justify-between">
-            <span className="microlabel">{phase}</span>
+            <span className="microlabel">
+              {phase}
+              <span className="ml-2 normal-case tracking-normal text-faint">
+                {concepts.length === 1 ? "1 concepto" : `${concepts.length} conceptos`}
+              </span>
+            </span>
             <button
               type="button"
               onClick={() => onCreating(!creating)}
@@ -1260,6 +1265,16 @@ function ConceptRows({
                 <Badge tone="warning">
                   P.U. de {concept.price_source} · {concept.price_clave}
                 </Badge>
+              )}
+              {(concept.ficha?.length ?? 0) > 0 && (
+                <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
+                  {concept.ficha!.slice(0, 6).map((dato) => (
+                    <span key={dato.campo} className="whitespace-nowrap">
+                      <span className="text-faint">{dato.campo}</span>{" "}
+                      <span className="tabular font-medium text-muted">{dato.valor}</span>
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
           </div>
