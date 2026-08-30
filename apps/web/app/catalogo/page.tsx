@@ -9,7 +9,6 @@ import {
   DownloadSimple,
   HardHat,
   MagnifyingGlass,
-  Plus,
   Trash,
   UploadSimple,
 } from "@phosphor-icons/react";
@@ -473,13 +472,10 @@ function InsumosSection({
 
   return (
     <Card className="mb-8 overflow-hidden">
-      <div className="flex items-center justify-between border-b border-border px-5 py-4">
-        <SectionTitle sub="El costo unitario alimenta cada matriz de APU. La fuente documenta de dónde viene el precio.">
+      <div className="border-b border-border px-5 py-4">
+        <SectionTitle sub="El costo unitario alimenta cada matriz de APU; descripción y costo se editan en su lugar. La fuente documenta de dónde viene el precio.">
           Insumos
         </SectionTitle>
-        <Button size="sm" onClick={() => setAdding((current) => !current)}>
-          <Plus size={14} weight="bold" /> Agregar insumo
-        </Button>
       </div>
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3">
         <div className="relative flex-1">
@@ -507,15 +503,6 @@ function InsumosSection({
             : `${visible.length} de ${catalog.insumos.length}`}
         </span>
       </div>
-      {adding && (
-        <NewInsumoRow
-          onDone={() => {
-            setAdding(false);
-            onChanged();
-          }}
-          onError={onError}
-        />
-      )}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -541,7 +528,13 @@ function InsumosSection({
                 className="border-b border-border last:border-0"
               >
                 <Td className="px-5">
-                  <div>{insumo.description}</div>
+                  <CommitText
+                    value={insumo.description}
+                    placeholder="Descripción"
+                    onCommit={(value) =>
+                      commitInsumo(insumo.code, { description: value })
+                    }
+                  />
                   <div className="font-mono text-xs text-muted">
                     {insumo.code}
                   </div>
@@ -621,6 +614,27 @@ function InsumosSection({
                 </Td>
               </tr>
             ))}
+            <tr>
+              <td colSpan={5} className="px-0 py-0">
+                {adding ? (
+                  <NewInsumoRow
+                    onDone={() => {
+                      setAdding(false);
+                      onChanged();
+                    }}
+                    onError={onError}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setAdding(true)}
+                    className="w-full px-5 py-2.5 text-left text-sm text-faint transition-colors hover:bg-surface-2/60 hover:text-foreground"
+                  >
+                    + Nuevo insumo
+                  </button>
+                )}
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -745,7 +759,10 @@ function ApusSection({
   onChanged: () => void;
   onError: (message: string) => void;
 }) {
-  const [open, setOpen] = useState<string | null>(null);
+  // Varios conceptos abiertos a la vez: la matriz es un renglón hijo de la
+  // hoja, no un panel aparte — el idioma de OPUS con nuestra piel.
+  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  const [creatingIn, setCreatingIn] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const byPhase = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -764,32 +781,27 @@ function ApusSection({
       if (list) list.push(concept);
       else phases.set(concept.phase, [concept]);
     }
-    return [...phases.entries()].filter(([, concepts]) => concepts.length > 0);
+    // Con búsqueda las fases vacías sobran; sin búsqueda se quedan para que
+    // el renglón fantasma pueda crear el primer concepto de una fase.
+    return [...phases.entries()].filter(([, concepts]) => !q || concepts.length > 0);
   }, [catalog, query]);
   const shown = byPhase.reduce((sum, [, concepts]) => sum + concepts.length, 0);
 
-  const [creating, setCreating] = useState(false);
+  function toggle(code: string) {
+    setOpen((current) => {
+      const next = new Set(current);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  }
+
   return (
     <div>
-      <div className="flex items-start justify-between gap-3">
-        <SectionTitle sub="Cantidad de cada recurso por unidad de concepto. El costo directo unitario se recalcula con la ecuación %MO para herramienta menor.">
-          Matrices de precio unitario
-        </SectionTitle>
-        <Button size="sm" onClick={() => setCreating((value) => !value)}>
-          <Plus size={14} weight="bold" /> Agregar concepto
-        </Button>
-      </div>
-      {creating && (
-        <NewConceptCard
-          catalog={catalog}
-          onDone={() => {
-            setCreating(false);
-            onChanged();
-          }}
-          onError={onError}
-        />
-      )}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <SectionTitle sub="Cantidad de cada recurso por unidad de concepto, editable en su lugar: cada celda guarda al salir. El costo directo se recalcula con la ecuación %MO para herramienta menor.">
+        Matrices de precio unitario
+      </SectionTitle>
+      <div className="mb-4 mt-3 flex flex-wrap items-center gap-2">
         <div className="relative flex-1">
           <MagnifyingGlass
             size={14}
@@ -807,70 +819,210 @@ function ApusSection({
           {shown === catalog.concepts.length ? `${shown} conceptos` : `${shown} de ${catalog.concepts.length}`}
         </span>
       </div>
-      {shown === 0 && (
+      {shown === 0 && query.trim() !== "" && (
         <p className="py-6 text-center text-sm text-muted">
           Ningún concepto coincide con «{query.trim()}».
         </p>
       )}
-      {byPhase.map(([phase, concepts]) => (
-        <div key={phase} className="mb-6">
-          <div className="microlabel mb-2">{phase}</div>
-          <div className="space-y-3">
-            {concepts.map((concept) => (
-              <ApuEditor
-                key={concept.code}
-                concept={concept}
-                components={catalog.apus[concept.code] ?? []}
-                insumos={catalog.insumos}
-                open={open === concept.code}
-                onToggle={() =>
-                  setOpen(open === concept.code ? null : concept.code)
-                }
-                onChanged={onChanged}
-                onError={onError}
-              />
-            ))}
-          </div>
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-surface-2">
+                <Th className="px-5">Concepto / recurso</Th>
+                <Th align="right">Cantidad</Th>
+                <Th align="right">Costo</Th>
+                <Th align="right" className="px-5">
+                  Importe
+                </Th>
+              </tr>
+            </thead>
+            <tbody>
+              {byPhase.map(([phase, concepts]) => (
+                <PhaseRows
+                  key={phase}
+                  phase={phase}
+                  concepts={concepts}
+                  catalog={catalog}
+                  open={open}
+                  onToggle={toggle}
+                  creating={creatingIn === phase}
+                  onCreating={(value) => setCreatingIn(value ? phase : null)}
+                  onChanged={onChanged}
+                  onError={onError}
+                />
+              ))}
+            </tbody>
+          </table>
         </div>
-      ))}
+      </Card>
     </div>
   );
 }
 
-function NewConceptCard({
+function PhaseRows({
+  phase,
+  concepts,
   catalog,
+  open,
+  onToggle,
+  creating,
+  onCreating,
+  onChanged,
+  onError,
+}: {
+  phase: string;
+  concepts: CatalogConcept[];
+  catalog: CatalogState;
+  open: Set<string>;
+  onToggle: (code: string) => void;
+  creating: boolean;
+  onCreating: (value: boolean) => void;
+  onChanged: () => void;
+  onError: (message: string) => void;
+}) {
+  return (
+    <>
+      <tr className="border-b border-border bg-surface-2/60">
+        <td colSpan={4} className="px-5 py-1.5">
+          <div className="flex items-center justify-between">
+            <span className="microlabel">{phase}</span>
+            <button
+              type="button"
+              onClick={() => onCreating(!creating)}
+              className="rounded-md px-1.5 py-0.5 text-xs text-faint transition-colors hover:bg-surface-2 hover:text-foreground"
+            >
+              + concepto
+            </button>
+          </div>
+        </td>
+      </tr>
+      {creating && (
+        <NewConceptRow
+          phase={phase}
+          insumos={catalog.insumos}
+          onDone={() => {
+            onCreating(false);
+            onChanged();
+          }}
+          onError={onError}
+        />
+      )}
+      {concepts.map((concept) => (
+        <ConceptRows
+          key={concept.code}
+          concept={concept}
+          components={catalog.apus[concept.code] ?? []}
+          insumos={catalog.insumos}
+          open={open.has(concept.code)}
+          onToggle={() => onToggle(concept.code)}
+          onChanged={onChanged}
+          onError={onError}
+        />
+      ))}
+    </>
+  );
+}
+
+/**
+ * Buscar un insumo tecleando, no desplegando quinientos: filtra por clave y
+ * descripción, Enter toma el primero. El idioma de captura rápida de OPUS.
+ */
+function InsumoSearch({
+  insumos,
+  exclude,
+  placeholder,
+  onPick,
+}: {
+  insumos: CatalogInsumo[];
+  exclude?: Set<string>;
+  placeholder: string;
+  onPick: (code: string) => void;
+}) {
+  const [term, setTerm] = useState("");
+  const matches = useMemo(() => {
+    const q = term.trim().toLowerCase();
+    if (q.length < 1) return [];
+    return insumos
+      .filter(
+        (insumo) =>
+          !exclude?.has(insumo.code) &&
+          (insumo.code.toLowerCase().includes(q) ||
+            insumo.description.toLowerCase().includes(q)),
+      )
+      .slice(0, 8);
+  }, [insumos, exclude, term]);
+  return (
+    <div className="relative">
+      <Input
+        value={term}
+        onChange={(e) => setTerm(e.target.value)}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        className="w-full px-2 py-1.5 text-sm"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && matches[0]) {
+            e.preventDefault();
+            onPick(matches[0].code);
+            setTerm("");
+          }
+          if (e.key === "Escape") setTerm("");
+        }}
+      />
+      {matches.length > 0 && (
+        <div className="absolute left-0 top-full z-20 mt-1 max-h-64 w-full min-w-72 overflow-y-auto rounded-lg border border-border-strong bg-surface p-1 shadow-lg">
+          {matches.map((insumo) => (
+            <button
+              key={insumo.code}
+              type="button"
+              onClick={() => {
+                onPick(insumo.code);
+                setTerm("");
+              }}
+              className="flex w-full items-baseline gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-surface-2"
+            >
+              <span className="shrink-0 font-mono text-xs text-muted">{insumo.code}</span>
+              <span className="min-w-0 flex-1 truncate">{insumo.description}</span>
+              <span className="tabular shrink-0 text-xs text-muted">
+                {insumo.is_labor_percentage
+                  ? `${(insumo.unit_cost * 100).toFixed(1)}% MO`
+                  : money2(insumo.unit_cost)}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NewConceptRow({
+  phase,
+  insumos,
   onDone,
   onError,
 }: {
-  catalog: CatalogState;
+  phase: string;
+  insumos: CatalogInsumo[];
   onDone: () => void;
   onError: (message: string) => void;
 }) {
   const [code, setCode] = useState("");
   const [description, setDescription] = useState("");
   const [unit, setUnit] = useState("");
-  const [phase, setPhase] = useState(catalog.phase_order[0] ?? "Estructura");
   const [rate, setRate] = useState("");
   const [resourceCode, setResourceCode] = useState("");
-  const [resourceQty, setResourceQty] = useState("1");
   const [busy, setBusy] = useState(false);
+  const primerRecurso = insumos.find((insumo) => insumo.code === resourceCode);
 
   async function submit() {
     const production = Number(rate);
-    const quantity = Number(resourceQty);
-    if (
-      !code.trim() ||
-      description.trim().length < 3 ||
-      !unit.trim() ||
-      !(production > 0)
-    ) {
+    if (!code.trim() || description.trim().length < 3 || !unit.trim() || !(production > 0)) {
       onError("Completa clave, descripción, unidad y rendimiento positivo.");
       return;
     }
-    if (!resourceCode || !(quantity > 0)) {
-      onError(
-        "Un concepto nace con al menos un recurso en su APU (sin precio no hay costo).",
-      );
+    if (!resourceCode) {
+      onError("Un concepto nace con al menos un recurso en su APU (sin precio no hay costo).");
       return;
     }
     setBusy(true);
@@ -882,7 +1034,7 @@ function NewConceptCard({
           unit: unit.trim().toUpperCase(),
           phase,
           production_rate_per_day: production,
-          components: [{ resource_code: resourceCode, quantity }],
+          components: [{ resource_code: resourceCode, quantity: 1 }],
         },
         getBrowserActor(),
       );
@@ -895,72 +1047,60 @@ function NewConceptCard({
   }
 
   return (
-    <Card className="mb-4 p-4">
-      <p className="mb-3 text-sm text-muted">
-        Concepto manual: su cantidad se captura con ajustes documentados o
-        mediciones del visor; su precio sale de la matriz que definas aquí.
-      </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          placeholder="CLAVE"
-          className="w-32 px-2 py-1.5 font-mono text-xs uppercase"
-        />
-        <Input
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Descripción del concepto"
-          className="min-w-56 flex-1 px-2 py-1.5"
-        />
-        <Input
-          value={unit}
-          onChange={(e) => setUnit(e.target.value)}
-          placeholder="UN"
-          className="w-16 px-2 py-1.5 uppercase"
-        />
-        <Select value={phase} onChange={(e) => setPhase(e.target.value)}>
-          {catalog.phase_order.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </Select>
-        <Input
-          type="number"
-          step="any"
-          value={rate}
-          onChange={(e) => setRate(e.target.value)}
-          placeholder="Rend./día"
-          className="w-24 px-2 py-1.5 text-right tabular"
-        />
-      </div>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span className="text-xs text-muted">Primer recurso del APU:</span>
-        <Select
-          value={resourceCode}
-          onChange={(e) => setResourceCode(e.target.value)}
-          className="min-w-52"
-        >
-          <option value="">Recurso…</option>
-          {catalog.insumos.map((insumo) => (
-            <option key={insumo.code} value={insumo.code}>
-              {insumo.code} · {insumo.description}
-            </option>
-          ))}
-        </Select>
-        <Input
-          type="number"
-          step="any"
-          value={resourceQty}
-          onChange={(e) => setResourceQty(e.target.value)}
-          className="w-24 px-2 py-1.5 text-right tabular"
-        />
-        <Button size="sm" variant="primary" onClick={submit} disabled={busy}>
-          Crear concepto
-        </Button>
-      </div>
-    </Card>
+    <tr className="border-b border-border bg-surface-2/40">
+      <td colSpan={4} className="px-5 py-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="CLAVE"
+            className="w-28 px-2 py-1.5 font-mono text-xs uppercase"
+          />
+          <Input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Descripción del concepto"
+            className="min-w-48 flex-1 px-2 py-1.5"
+          />
+          <Input
+            value={unit}
+            onChange={(e) => setUnit(e.target.value)}
+            placeholder="UN"
+            className="w-16 px-2 py-1.5 uppercase"
+          />
+          <Input
+            type="number"
+            step="any"
+            value={rate}
+            onChange={(e) => setRate(e.target.value)}
+            placeholder="Rend./día"
+            className="w-24 px-2 py-1.5 text-right tabular"
+          />
+          <div className="min-w-56 flex-1">
+            {primerRecurso ? (
+              <button
+                type="button"
+                onClick={() => setResourceCode("")}
+                className="flex w-full items-baseline gap-2 rounded-lg border border-border px-2 py-1.5 text-left text-sm transition-colors hover:bg-surface-2"
+                title="Cambiar recurso"
+              >
+                <span className="font-mono text-xs text-muted">{primerRecurso.code}</span>
+                <span className="min-w-0 flex-1 truncate">{primerRecurso.description}</span>
+              </button>
+            ) : (
+              <InsumoSearch
+                insumos={insumos}
+                placeholder="Primer recurso del APU (teclea para buscar)…"
+                onPick={setResourceCode}
+              />
+            )}
+          </div>
+          <Button size="sm" variant="primary" onClick={submit} disabled={busy}>
+            Crear
+          </Button>
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -988,7 +1128,12 @@ function directUnitCost(
   return total;
 }
 
-function ApuEditor({
+/**
+ * El concepto y su matriz como renglones de la misma hoja: la fila abre en
+ * su lugar, cada celda guarda al salir (sin botón de guardar) y el recurso
+ * nuevo se busca tecleando. Quitar aparece al pasar el cursor.
+ */
+function ConceptRows({
   concept,
   components,
   insumos,
@@ -1006,16 +1151,11 @@ function ApuEditor({
   onError: (message: string) => void;
 }) {
   const [draft, setDraft] = useState<ApuComponent[]>(components);
-  const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [rate, setRate] = useState(String(concept.production_rate_per_day));
   const byCode = useMemo(
     () => new Map(insumos.map((insumo) => [insumo.code, insumo])),
     [insumos],
-  );
-  const available = insumos.filter(
-    (insumo) =>
-      !draft.some((component) => component.resource_code === insumo.code),
   );
 
   // Re-sync local drafts when fresh catalog state arrives (render-time adjust).
@@ -1023,54 +1163,60 @@ function ApuEditor({
   if (lastComponents !== components) {
     setLastComponents(components);
     setDraft(components);
-    setDirty(false);
     setRate(String(concept.production_rate_per_day));
+  }
+
+  async function saveDraft(next: ApuComponent[]) {
+    if (next.length === 0) {
+      onError("La matriz no puede quedar vacía: un concepto sin recursos no tiene costo.");
+      setDraft(components);
+      return;
+    }
+    if (next.some((component) => !(component.quantity > 0))) {
+      return; // la celda sigue en edición; se guarda cuando la cantidad sea válida
+    }
+    setBusy(true);
+    try {
+      await updateApu(concept.code, next, getBrowserActor());
+      onChanged();
+    } catch {
+      onError(`No se pudo guardar la matriz de ${concept.code}.`);
+      setDraft(components);
+    } finally {
+      setBusy(false);
+    }
   }
 
   function setQuantity(resourceCode: string, quantity: number) {
     setDraft((current) =>
       current.map((component) =>
-        component.resource_code === resourceCode
-          ? { ...component, quantity }
-          : component,
+        component.resource_code === resourceCode ? { ...component, quantity } : component,
       ),
     );
-    setDirty(true);
+  }
+
+  function commitQuantity(resourceCode: string) {
+    const original = components.find((c) => c.resource_code === resourceCode)?.quantity;
+    const edited = draft.find((c) => c.resource_code === resourceCode)?.quantity;
+    if (edited == null || edited === original) return;
+    if (!(edited > 0)) {
+      setDraft(components);
+      return;
+    }
+    void saveDraft(draft);
   }
 
   function removeComponent(resourceCode: string) {
-    setDraft((current) =>
-      current.filter((component) => component.resource_code !== resourceCode),
-    );
-    setDirty(true);
+    const next = draft.filter((component) => component.resource_code !== resourceCode);
+    setDraft(next);
+    void saveDraft(next);
   }
 
   function addComponent(resourceCode: string) {
-    if (!resourceCode) return;
-    setDraft((current) => [
-      ...current,
-      { resource_code: resourceCode, quantity: 1 },
-    ]);
-    setDirty(true);
-  }
-
-  async function save() {
-    const invalid = draft.some((component) => !(component.quantity > 0));
-    if (invalid || draft.length === 0) {
-      onError(
-        "Todas las cantidades deben ser positivas y la matriz no puede quedar vacía.",
-      );
-      return;
-    }
-    setBusy(true);
-    try {
-      await updateApu(concept.code, draft, getBrowserActor());
-      onChanged();
-    } catch {
-      onError(`No se pudo guardar la matriz de ${concept.code}.`);
-    } finally {
-      setBusy(false);
-    }
+    if (!resourceCode || draft.some((c) => c.resource_code === resourceCode)) return;
+    const next = [...draft, { resource_code: resourceCode, quantity: 1 }];
+    setDraft(next);
+    void saveDraft(next);
   }
 
   async function commitRate() {
@@ -1089,74 +1235,68 @@ function ApuEditor({
   }
 
   const preview = directUnitCost(draft, insumos);
+  const enMatriz = new Set(draft.map((component) => component.resource_code));
 
   return (
-    <Card className="overflow-hidden">
-      <button
-        type="button"
+    <>
+      <tr
+        className={`cursor-pointer border-b border-border transition-colors hover:bg-surface-2/50 ${
+          open ? "bg-surface-2/40" : ""
+        }`}
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full items-center gap-4 px-5 py-3.5 text-left transition hover:bg-surface-2/50"
       >
-        <div className="min-w-0 flex-1">
-          <span className="font-mono text-xs text-muted">{concept.code}</span>{" "}
-          <span className="font-medium">{concept.description}</span>{" "}
-          <Badge tone={concept.detection_backed ? "accent" : "default"}>
-            {concept.detection_backed ? "Detección" : "Manual"}
-          </Badge>
-          {concept.price_override != null && (
-            <Badge tone="warning">
-              P.U. de {concept.price_source} · {concept.price_clave}
-              {concept.price_vigencia ? ` · ${concept.price_vigencia}` : ""}
-            </Badge>
-          )}
-        </div>
-        <div className="shrink-0 text-right">
-          <div className="font-semibold tabular">
-            {money2(
-              concept.price_override != null ? concept.price_override : preview,
-            )}
+        <Td className="px-5">
+          <div className="flex items-center gap-2">
+            <CaretDown
+              size={13}
+              weight="bold"
+              className={`shrink-0 text-faint transition-transform ${open ? "" : "-rotate-90"}`}
+            />
+            <div className="min-w-0">
+              <span className="font-mono text-xs text-muted">{concept.code}</span>{" "}
+              <span className="font-medium">{concept.description}</span>{" "}
+              {concept.detection_backed && <Badge tone="accent">Detección</Badge>}
+              {concept.price_override != null && (
+                <Badge tone="warning">
+                  P.U. de {concept.price_source} · {concept.price_clave}
+                </Badge>
+              )}
+            </div>
           </div>
-          <div className="text-xs text-muted">
-            por {concept.unit}
-            {concept.price_override != null ? " · matriz en pausa" : ""}
-          </div>
-        </div>
-        <CaretDown
-          size={15}
-          weight="bold"
-          className={`shrink-0 text-faint transition-transform ${open ? "rotate-180" : ""}`}
-        />
-      </button>
-
-      {open && (
-        <div className="border-t border-border">
-          {concept.price_override != null && (
-            <div className="flex flex-wrap items-center gap-3 border-b border-border bg-surface-2/60 px-5 py-3 text-sm">
+        </Td>
+        <Td align="right" className="text-muted">
+          por {concept.unit}
+        </Td>
+        <Td align="right" className="tabular text-muted">
+          {draft.length} recursos
+        </Td>
+        <Td align="right" className="tabular px-5 font-semibold">
+          {money2(concept.price_override != null ? concept.price_override : preview)}
+        </Td>
+      </tr>
+      {open && concept.price_override != null && (
+        <tr className="border-b border-border bg-warning-soft/60">
+          <td colSpan={4} className="px-5 py-2 text-sm">
+            <div className="flex flex-wrap items-center gap-3">
               <span className="min-w-0 flex-1">
-                Este concepto se costea a{" "}
-                <strong>{money2(concept.price_override)}</strong> por{" "}
-                {concept.unit}, tomado de {concept.price_source} ·{" "}
-                {concept.price_clave}
-                {concept.price_vigencia
-                  ? ` · vigencia ${concept.price_vigencia}`
-                  : ""}
-                . La matriz de abajo no se usa mientras el precio adoptado esté
-                activo.
+                Se costea a <strong>{money2(concept.price_override)}</strong> por {concept.unit},
+                de {concept.price_source} · {concept.price_clave}
+                {concept.price_vigencia ? ` · vigencia ${concept.price_vigencia}` : ""}. La
+                matriz no se usa mientras el precio adoptado esté activo.
               </span>
               <Button
                 size="sm"
                 variant="ghost"
                 disabled={busy}
-                onClick={async () => {
+                onClick={async (event) => {
+                  event.stopPropagation();
                   setBusy(true);
                   try {
                     await clearConceptPrice(concept.code, getBrowserActor());
                     onChanged();
                   } catch {
-                    onError(
-                      `No se pudo quitar el precio adoptado de ${concept.code}.`,
-                    );
+                    onError(`No se pudo quitar el precio adoptado de ${concept.code}.`);
                   } finally {
                     setBusy(false);
                   }
@@ -1165,123 +1305,101 @@ function ApuEditor({
                 Volver a la matriz
               </Button>
             </div>
-          )}
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-surface-2">
-                  <Th className="px-5">Recurso</Th>
-                  <Th align="right">Cantidad / {concept.unit}</Th>
-                  <Th align="right">Costo unitario</Th>
-                  <Th align="right">Importe</Th>
-                  <Th align="center" className="w-12" aria-label="Acciones" />
-                </tr>
-              </thead>
-              <tbody>
-                {draft.map((component) => {
-                  const insumo = byCode.get(component.resource_code);
-                  if (!insumo) return null;
-                  const amount = insumo.is_labor_percentage
-                    ? null
-                    : component.quantity * insumo.unit_cost;
-                  return (
-                    <tr
-                      key={component.resource_code}
-                      className="border-b border-border last:border-0"
-                    >
-                      <Td className="px-5">
-                        <div>{insumo.description}</div>
-                        <div className="font-mono text-xs text-muted">
-                          {insumo.code}
-                        </div>
-                      </Td>
-                      <Td align="right">
-                        <Input
-                          type="number"
-                          step="any"
-                          value={component.quantity}
-                          onChange={(e) =>
-                            setQuantity(
-                              component.resource_code,
-                              Number(e.target.value),
-                            )
-                          }
-                          className="w-24 px-2 py-1 text-right tabular"
-                        />
-                      </Td>
-                      <Td align="right" className="tabular text-muted">
-                        {insumo.is_labor_percentage
-                          ? `${(insumo.unit_cost * 100).toFixed(1)}% MO`
-                          : money2(insumo.unit_cost)}
-                      </Td>
-                      <Td align="right" className="tabular">
-                        {amount == null ? "—" : money2(amount)}
-                      </Td>
-                      <Td align="center">
-                        <button
-                          type="button"
-                          aria-label={`Quitar ${insumo.code}`}
-                          onClick={() =>
-                            removeComponent(component.resource_code)
-                          }
-                          className="rounded-md p-1 text-faint transition-colors hover:bg-danger-soft hover:text-danger"
-                        >
-                          <Trash size={14} />
-                        </button>
-                      </Td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <Select
-                value=""
-                onChange={(e) => addComponent(e.target.value)}
-                className="text-muted"
-              >
-                <option value="">+ Agregar recurso…</option>
-                {available.map((insumo) => (
-                  <option key={insumo.code} value={insumo.code}>
-                    {insumo.code} · {insumo.description}
-                  </option>
-                ))}
-              </Select>
-              <label className="flex items-center gap-2 text-sm text-muted">
-                Rendimiento
+          </td>
+        </tr>
+      )}
+      {open &&
+        draft.map((component) => {
+          const insumo = byCode.get(component.resource_code);
+          if (!insumo) return null;
+          const amount = insumo.is_labor_percentage
+            ? null
+            : component.quantity * insumo.unit_cost;
+          return (
+            <tr
+              key={component.resource_code}
+              className="group border-b border-border bg-surface-2/20 last:border-0"
+            >
+              <Td className="px-5">
+                <div className="flex items-center gap-2 pl-6">
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm">{insumo.description}</span>{" "}
+                    <span className="font-mono text-xs text-muted">{insumo.code}</span>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Quitar ${insumo.code}`}
+                    onClick={() => removeComponent(component.resource_code)}
+                    className="rounded-md p-1 text-faint opacity-0 transition group-hover:opacity-100 hover:bg-danger-soft hover:text-danger"
+                  >
+                    <Trash size={14} />
+                  </button>
+                </div>
+              </Td>
+              <Td align="right">
                 <Input
                   type="number"
                   step="any"
-                  value={rate}
-                  onChange={(e) => setRate(e.target.value)}
-                  onBlur={commitRate}
+                  value={component.quantity}
+                  onChange={(e) =>
+                    setQuantity(component.resource_code, Number(e.target.value))
+                  }
+                  onBlur={() => commitQuantity(component.resource_code)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                  }}
+                  aria-label={`Cantidad de ${insumo.code} por ${concept.unit}`}
                   className="w-24 px-2 py-1 text-right tabular"
                 />
-                {concept.unit}/día
-              </label>
+              </Td>
+              <Td align="right" className="tabular text-muted">
+                {insumo.is_labor_percentage
+                  ? `${(insumo.unit_cost * 100).toFixed(1)}% MO`
+                  : money2(insumo.unit_cost)}
+              </Td>
+              <Td align="right" className="tabular px-5">
+                {amount == null ? "—" : money2(amount)}
+              </Td>
+            </tr>
+          );
+        })}
+      {open && (
+        <tr className="border-b border-border bg-surface-2/20">
+          <Td className="px-5">
+            <div className="pl-6">
+              <InsumoSearch
+                insumos={insumos}
+                exclude={enMatriz}
+                placeholder="+ recurso (teclea para buscar)…"
+                onPick={addComponent}
+              />
             </div>
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-muted">
-                CD unitario:{" "}
-                <span className="tabular font-semibold text-foreground">
-                  {money2(preview)}
-                </span>
-              </span>
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={save}
-                disabled={!dirty || busy}
-              >
-                Guardar matriz
-              </Button>
-            </div>
-          </div>
-        </div>
+          </Td>
+          <Td align="right" colSpan={2}>
+            <label className="flex items-center justify-end gap-2 text-xs text-muted">
+              Rendimiento
+              <Input
+                type="number"
+                step="any"
+                value={rate}
+                onChange={(e) => setRate(e.target.value)}
+                onBlur={commitRate}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
+                aria-label={`Rendimiento de ${concept.code}`}
+                className="w-24 px-2 py-1 text-right tabular"
+              />
+              {concept.unit}/día
+            </label>
+          </Td>
+          <Td align="right" className="px-5">
+            <span className="text-xs text-muted">CD </span>
+            <span className="tabular text-sm font-semibold">{money2(preview)}</span>
+          </Td>
+        </tr>
       )}
-    </Card>
+    </>
   );
 }
 
