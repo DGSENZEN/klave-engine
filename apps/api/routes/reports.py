@@ -99,6 +99,16 @@ def get_costing_config(
         {**resource.model_dump(mode="json"), "unit_cost": prices.get(code, resource.unit_cost)}
         for code, resource in catalog_book.items()
     ]
+    integracion: list[dict] = []
+    try:
+        report = store.read_artifact(project_id, "cost_report.json")
+        integracion = [
+            {"code": c.get("code"), "pct": c.get("pct"), "amount": c.get("amount"),
+             "fuente": c.get("fuente"), "faltantes": c.get("faltantes") or []}
+            for c in report.get("integracion_resuelta") or []
+        ]
+    except HTTPException:
+        pass  # sin reporte todavía: la forma muestra sólo lo declarado
     return {
         "config": config.model_dump(mode="json"),
         "insumos": insumos,
@@ -111,6 +121,7 @@ def get_costing_config(
             if overrides and overrides.updated_at
             else None
         ),
+        "integracion": integracion,
     }
 
 

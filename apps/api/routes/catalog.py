@@ -26,6 +26,7 @@ from klave_engine.costing.catalog_store import CatalogStore, UnitMismatch
 from klave_engine.costing.descripciones import long_description
 from klave_engine.costing.equipment import EquipmentParameters, compute_costo_horario
 from klave_engine.costing.exports import build_cotizacion_workbook
+from klave_engine.costing.indirectos import AnalisisFinanciamiento, DesgloseOficinaCentral
 from klave_engine.costing.labor import (
     REGION_PRESETS,
     FsrParameters,
@@ -53,7 +54,7 @@ from klave_engine.costing.vigencia import (
     price_ages,
     roll_forward_factor,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from apps.api.auth.common import rate_limit
 from apps.api.dependencies import ProjectStore, get_settings, get_store
@@ -796,6 +797,41 @@ def put_indices(
         x_actor, "indices_saved", f"{len(saved['values'])} meses", catalog=catalog
     )
     return saved
+
+
+class IntegracionInput(BaseModel):
+    oficina: dict = Field(default_factory=dict)
+    financiamiento: dict = Field(default_factory=dict)
+
+
+@router.get("/integracion")
+def get_integracion(catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    stored = catalog.get_setting("integracion") or {}
+    return {"oficina": stored.get("oficina") or {},
+            "financiamiento": stored.get("financiamiento") or {}}
+
+
+@router.put("/integracion")
+def put_integracion(
+    request: Request,
+    body: IntegracionInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    require_catalog_admin(request)
+    try:
+        oficina = DesgloseOficinaCentral.model_validate(body.oficina or {})
+        financiamiento = AnalisisFinanciamiento.model_validate(body.financiamiento or {})
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail={
+            "error_type": "integracion_invalida", "message": str(exc)[:400]}) from exc
+    value = {"oficina": oficina.model_dump(), "financiamiento": financiamiento.model_dump()}
+    catalog.set_setting("integracion", value)
+    _publish_catalog_updated(
+        x_actor, "integracion_saved",
+        f"{len(oficina.rubros)} rubros de oficina", catalog=catalog,
+    )
+    return value
 
 
 @router.post("/indices/roll-forward")
