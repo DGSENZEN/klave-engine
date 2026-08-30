@@ -30,6 +30,7 @@ from klave_engine.costing.descripciones import long_description
 from klave_engine.costing.estimaciones import Estimacion, ResumenEstimacion
 from klave_engine.costing.explosion import explode
 from klave_engine.costing.generadores import calcular as calcular_generador
+from klave_engine.costing.indirectos import CATEGORIA_LABEL
 from klave_engine.costing.letras import pesos_con_letra
 from klave_engine.costing.models import BoqLine, Concept, CostReport
 from klave_engine.costing.programas import build_programas
@@ -252,7 +253,88 @@ def _licitacion_workbook(
     widths = {"A": 9, "B": 11, "C": 58, "D": 8, "E": 12, "F": 15, "G": 52, "H": 16}
     for letter, width in widths.items():
         ws.column_dimensions[letter].width = width
+    _analisis_indirectos(workbook.create_sheet("Análisis de indirectos"), report)
+    if any(c.code == "FI" and c.fuente == "analisis" for c in report.integracion_resuelta):
+        _financiamiento_doc(workbook.create_sheet("Financiamiento"), report)
     return workbook
+
+
+def _analisis_indirectos(ws: Worksheet, report: CostReport) -> None:
+    """El desglose que respalda el porcentaje de CI-C y CI-O — renglón por
+    renglón, con su categoría y su base — más los cargos adicionales
+    itemizados. Los documentos se imprimen tal cual: esta hoja nunca recalcula."""
+    _title(ws, 1, "ANÁLISIS DE COSTOS INDIRECTOS", size=14)
+    row = 3
+    etiquetas = {"CI-C": "Indirectos de campo", "CI-O": "Indirectos de oficina central"}
+    for comp in report.integracion_resuelta:
+        if comp.code not in etiquetas:
+            continue
+        _muted(ws, row, 1, etiquetas[comp.code] + (
+            "" if comp.fuente == "analisis" else " — PORCENTAJE DECLARADO, SIN ANÁLISIS"))
+        row += 1
+        doc = comp.documento or {}
+        if doc.get("renglones"):
+            _header(ws, row, ["Concepto", "Categoría", "Base", "Importe"])
+            row += 1
+            for renglon in doc["renglones"]:
+                ws.cell(row=row, column=1, value=renglon["concepto"] + (
+                    " (SIN CAPTURAR)" if renglon.get("sin_capturar") else ""))
+                ws.cell(row=row, column=2,
+                        value=CATEGORIA_LABEL.get(renglon["categoria"], renglon["categoria"]))
+                ws.cell(row=row, column=3, value=renglon["base"])
+                if not renglon.get("sin_capturar"):
+                    ws.cell(row=row, column=4, value=renglon["importe"]).number_format = (
+                        MONEY_FORMAT
+                    )
+                if renglon.get("fuente") == "plantilla de campo":
+                    ws.cell(row=row, column=5, value="de la plantilla de campo")
+                row += 1
+            total = ws.cell(row=row, column=1, value="Total")
+            total.font = Font(bold=True, size=9)
+            ws.cell(row=row, column=4, value=doc.get("total", 0.0)).number_format = MONEY_FORMAT
+            row += 1
+        for nota in doc.get("notas", []):
+            _muted(ws, row, 1, nota)
+            row += 1
+        row += 1
+    ca = next((c for c in report.integracion_resuelta if c.code == "CA"), None)
+    if ca is not None and ca.documento.get("items"):
+        _muted(ws, row, 1, "Cargos adicionales")
+        row += 1
+        _header(ws, row, ["Concepto", "Base legal", "%"])
+        row += 1
+        for item in ca.documento["items"]:
+            ws.cell(row=row, column=1, value=item["concepto"])
+            ws.cell(row=row, column=2, value=item["base_legal"])
+            ws.cell(row=row, column=3, value=item["pct"])
+            row += 1
+    _autosize(ws, [34, 32, 10, 16, 22])
+
+
+def _financiamiento_doc(ws: Worksheet, report: CostReport) -> None:
+    """El costo de financiamiento como documento: tasa con su indicador,
+    fuente y fecha, y el flujo periodo por periodo que lo respalda."""
+    fi = next((c for c in report.integracion_resuelta if c.code == "FI"), None)
+    doc = (fi.documento or {}) if fi is not None else {}
+    _title(ws, 1, "ANÁLISIS DEL COSTO DE FINANCIAMIENTO", size=14)
+    _muted(ws, 2, 1,
+           f"Tasa {doc.get('tasa_anual', 0):g} % anual — {doc.get('indicador', '')} · "
+           f"{doc.get('fuente', '')} · publicada {doc.get('fecha_publicacion', '')}")
+    _header(ws, 4, ["Periodo", "Egresos", "Ingresos", "Saldo", "Costo del periodo"])
+    row = 5
+    for periodo in doc.get("periodos", []):
+        ws.cell(row=row, column=1, value=periodo["periodo"])
+        for col, key in ((2, "egresos"), (3, "ingresos"), (4, "saldo"), (5, "costo")):
+            ws.cell(row=row, column=col, value=periodo[key]).number_format = MONEY_FORMAT
+        row += 1
+    total = ws.cell(row=row, column=1, value="Costo de financiamiento")
+    total.font = Font(bold=True, size=9)
+    ws.cell(row=row, column=5, value=doc.get("total", 0.0)).number_format = MONEY_FORMAT
+    if doc.get("total", 0.0) < 0:
+        _muted(ws, row + 1, 1,
+               "Negativo: el anticipo financia los trabajos antes de que el saldo "
+               "cruce a favor del contratista. Es legal y se declara tal cual.")
+    _autosize(ws, [14, 16, 16, 16, 18])
 
 
 def _flat_workbook(report: CostReport, sheet_title: str, columns: list[str]) -> Workbook:
@@ -344,6 +426,12 @@ def _caratula(
          if verified else "SIN VERIFICAR — revisar antes de usar"),
         ("", ""),
         ("Costo directo", report.boq.direct_cost_total),
+        *[
+            (f"{line.description} ({line.percentage:g} %"
+             + (", análisis" if line.fuente == "analisis" else ", declarado") + ")",
+             line.amount)
+            for line in report.integration.lines
+        ],
         ("Precio de venta", report.integration.sale_price),
         ("Contingencia", report.integration.contingency),
         ("Total con contingencia", report.integration.grand_total),

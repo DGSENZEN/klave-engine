@@ -194,3 +194,52 @@ def test_licitacion_sin_bloqueantes_en_modo_analisis(data_dir):
     )
     report = build_cost_report(inputs, _overrides_analisis(data_dir))
     assert _licitacion_bloqueantes(report) == []
+
+
+def test_licitacion_imprime_los_analisis(data_dir):
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    sembrar(get_catalog_store(data_dir))
+    inputs = CostingInputs(
+        project_id="p", detections=_detections(),
+        units=DrawingUnits(unit="m", source="dxf_header", confidence=0.9),
+        segmentation=None, dimensions=None,
+    )
+    reviews = ProjectReviews()
+    report = build_cost_report(inputs, _overrides_analisis(data_dir), reviews=reviews)
+    contenido = build_presupuesto_workbook(
+        report, _detections(), reviews,
+        project_name="Obra de prueba", client="Cliente", fmt="licitacion",
+    )
+    libro = load_workbook(BytesIO(contenido))
+    assert "Análisis de indirectos" in libro.sheetnames
+    assert "Financiamiento" in libro.sheetnames
+    indirectos = libro["Análisis de indirectos"]
+    textos = [str(c.value) for fila in indirectos.iter_rows() for c in fila if c.value]
+    assert any("Renta de bodega" in t for t in textos)
+    assert any("volumen anual contratado" in t.lower() for t in textos)
+    financiamiento = libro["Financiamiento"]
+    ftextos = [str(c.value) for fila in financiamiento.iter_rows() for c in fila if c.value]
+    assert any("TIIE 28 días" in t for t in ftextos)
+    assert any("Banxico SF43783" in t for t in ftextos)
+    # Los totales del documento y de la integración cuadran al centavo:
+    campo = next(c for c in report.integracion_resuelta if c.code == "CI-C")
+    linea = next(l for l in report.integration.lines if l.code == "CI-C")
+    assert campo.amount == linea.amount
+
+
+def test_caratula_dice_la_fuente_de_cada_renglon(data_dir):
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    report, reviews = _report(data_dir)  # modo declarado
+    contenido = build_presupuesto_workbook(
+        report, _detections(), reviews,
+        project_name="Obra de prueba", client=None, fmt="klave",
+    )
+    caratula = load_workbook(BytesIO(contenido))["Carátula"]
+    textos = [str(c.value) for fila in caratula.iter_rows() for c in fila if c.value]
+    assert any("declarado" in t for t in textos)
