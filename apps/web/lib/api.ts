@@ -539,8 +539,10 @@ export type ProjectInfo = {
   }[];
 };
 
-export type TableroChip = {
+export type TableroFact = {
   label: string;
+  /** El dato en sí («3 de 4», «$40,857.73 MXN»); null cuando la etiqueta basta. */
+  value: string | null;
   tone: "ok" | "warn" | "bad" | "muted";
   /** Fragmento de ruta del proyecto (p.ej. «/lectura»); se antepone /proyecto/{id}. */
   href?: string;
@@ -556,7 +558,7 @@ export type TableroNodeKey =
   | "programa"
   | "contrato";
 
-export type TableroNode = { estado: TableroEstado; chips: TableroChip[] };
+export type TableroNode = { estado: TableroEstado; facts: TableroFact[] };
 
 export type TableroGate = { approved_at: string | null; approved_by: string };
 

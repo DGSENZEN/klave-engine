@@ -89,8 +89,9 @@ def test_el_tablero_degrada_a_pendiente_sin_artefactos(data_dir, monkeypatch):
     assert body["nodes"]["programa"]["estado"] == "ok"
     assert body["gates"]["programa"]["approved_by"] == "Diego"
     assert body["nodes"]["contrato"]["estado"] == "bloqueado"
-    labels = [c["label"] for c in body["nodes"]["contrato"]["chips"]]
-    assert any("verificación" in l for l in labels)
+    valores = [f["value"] for f in body["nodes"]["contrato"]["facts"]]
+    assert any("verificación" in v for v in valores if v)
     for node in body["nodes"].values():
-        for chip in node["chips"]:
-            assert chip["tone"] in ("ok", "warn", "bad", "muted")
+        for fact in node["facts"]:
+            assert fact["tone"] in ("ok", "warn", "bad", "muted")
+            assert fact["label"]

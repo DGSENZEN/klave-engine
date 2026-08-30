@@ -35,7 +35,7 @@ export function GateGuard({ node, children }: { node: TableroNodeKey; children: 
   if (tablero.gates?.[node]) return <>{children}</>;
 
   const nodeData = tablero.nodes?.[node];
-  const requisitos = (nodeData?.chips ?? []).filter((chip) => chip.tone === "warn");
+  const requisitos = (nodeData?.facts ?? []).filter((fact) => fact.tone === "warn");
   const canApprove = canApproveGate(tablero.my_role);
 
   async function abrir() {
@@ -69,18 +69,24 @@ export function GateGuard({ node, children }: { node: TableroNodeKey; children: 
           <div>
             <div className="microlabel mb-1.5">Antes de abrir</div>
             <ul className="space-y-1 text-sm">
-              {requisitos.map((chip) => (
-                <li key={chip.label} className="flex items-center gap-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-warning" />
-                  {chip.href ? (
-                    <Link href={`/proyecto/${id}${chip.href}`} className="underline underline-offset-2">
-                      {chip.label}
-                    </Link>
-                  ) : (
-                    chip.label
-                  )}
-                </li>
-              ))}
+              {requisitos.map((fact, index) => {
+                const texto = fact.value ?? fact.label;
+                return (
+                  <li key={`${fact.label}-${index}`} className="flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+                    {fact.href ? (
+                      <Link
+                        href={`/proyecto/${id}${fact.href}`}
+                        className="underline underline-offset-2"
+                      >
+                        {texto}
+                      </Link>
+                    ) : (
+                      texto
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
