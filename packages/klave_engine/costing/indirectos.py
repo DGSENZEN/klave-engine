@@ -215,3 +215,54 @@ def documenta_oficina(
             "capturado: el porcentaje está incompleto en esa medida."
         )
     return DocumentoDesglose(renglones=renglones, total=total, notas=notas)
+
+
+class PeriodoFinanciamiento(BaseModel):
+    """Un mes del flujo de efectivo financiado a tasa.
+
+    ``periodo`` es el ordinal (1, 2, ...). ``saldo`` es lo acumulado que nadie
+    ha pagado todavía. ``costo`` es el saldo × tasa del período; negativo cuando
+    el anticipo financia la obra."""
+    periodo: int
+    egresos: float
+    ingresos: float
+    saldo: float   # acumulado: lo gastado que nadie ha pagado todavía
+    costo: float   # saldo × tasa del periodo; negativo cuando el anticipo financia
+
+
+class DocumentoFinanciamiento(BaseModel):
+    """El costo de traer dinero puesto antes de que lo paguen."""
+    tasa_anual: float
+    indicador: str
+    fuente: str
+    fecha_publicacion: str
+    periodos: list[PeriodoFinanciamiento] = Field(default_factory=list)
+    total: float = 0.0
+
+
+def compute_financiamiento(
+    analisis: AnalisisFinanciamiento, egresos: list[float], ingresos: list[float]
+) -> DocumentoFinanciamiento:
+    """El costo de traer dinero puesto antes de que lo paguen.
+
+    ``egresos`` e ``ingresos`` van por periodo del flujo (meses); la tasa del
+    periodo es la anual entre doce. El saldo acumulado por periodo paga (o
+    cobra, cuando el anticipo lo vuelve negativo) la tasa. No se interpola,
+    no se estima: listas de la misma longitud o nada."""
+    tasa_periodo = analisis.tasa_anual / 12.0 / 100.0
+    periodos: list[PeriodoFinanciamiento] = []
+    saldo = 0.0
+    total = 0.0
+    for numero, (egreso, ingreso) in enumerate(zip(egresos, ingresos, strict=True), start=1):
+        saldo = round(saldo + egreso - ingreso, 2)
+        costo = round(saldo * tasa_periodo, 2)
+        total = round(total + costo, 2)
+        periodos.append(PeriodoFinanciamiento(
+            periodo=numero, egresos=round(egreso, 2), ingresos=round(ingreso, 2),
+            saldo=saldo, costo=costo,
+        ))
+    return DocumentoFinanciamiento(
+        tasa_anual=analisis.tasa_anual, indicador=analisis.indicador,
+        fuente=analisis.fuente, fecha_publicacion=analisis.fecha_publicacion,
+        periodos=periodos, total=total,
+    )

@@ -5,6 +5,7 @@ from klave_engine.costing.indirectos import (
     DesgloseCampo,
     DesgloseOficinaCentral,
     RubroIndirecto,
+    compute_financiamiento,
     documenta_campo,
     documenta_oficina,
 )
@@ -70,3 +71,26 @@ def test_financiamiento_faltantes_nombra_lo_que_falta():
     b = AnalisisFinanciamiento(tasa_anual=12.0, indicador="TIIE 28 días",
                                fuente="Banxico SF43783", fecha_publicacion="2026-08-27")
     assert b.completo and b.faltantes() == []
+
+
+def _analisis():
+    return AnalisisFinanciamiento(tasa_anual=12.0, indicador="TIIE 28 días",
+                                  fuente="Banxico SF43783", fecha_publicacion="2026-08-27")
+
+
+def test_financiamiento_a_mano():
+    # Tasa 12 % anual → 1 % mensual. Mes 1: saldo 100, costo 1.00.
+    # Mes 2: saldo 100+100−250 = −50, costo −0.50. Total 0.50.
+    doc = compute_financiamiento(_analisis(), egresos=[100.0, 100.0], ingresos=[0.0, 250.0])
+    assert [p.saldo for p in doc.periodos] == [100.0, -50.0]
+    assert [p.costo for p in doc.periodos] == [1.0, -0.5]
+    assert doc.total == 0.5
+    assert doc.indicador == "TIIE 28 días" and doc.fecha_publicacion == "2026-08-27"
+
+
+def test_financiamiento_negativo_se_conserva():
+    # Anticipo grande: el contratista trabaja con dinero ajeno y el costo es
+    # negativo. Se conserva, jamás se recorta a cero.
+    doc = compute_financiamiento(_analisis(), egresos=[100.0, 100.0], ingresos=[150.0, 50.0])
+    assert [p.saldo for p in doc.periodos] == [-50.0, 0.0]
+    assert doc.total == -0.5
