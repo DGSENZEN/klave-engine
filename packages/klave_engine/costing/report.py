@@ -263,8 +263,9 @@ def _integrate_with_analyses(
             config, integracion_taller, direct_cost, schedule, financial
         )
         if next(c for c in resolved if c.code == "FI").fuente == "declarado":
-            integration = integrate_costs(direct_cost, config.indirects, resolved=resolved)
-            financial = build_financial_plan(schedule, integration, config.financial, currency)
+            # Sólo el financiamiento lee el flujo; si sigue declarado con un
+            # flujo real ya disponible, recalcular repetiría byte a byte lo
+            # que la siembra ya dejó en integration/financial.
             break
         new_integration = integrate_costs(direct_cost, config.indirects, resolved=resolved)
         new_financial = build_financial_plan(schedule, new_integration, config.financial, currency)
@@ -279,10 +280,12 @@ def _integrate_with_analyses(
         )
     for comp in resolved:
         for falta in comp.faltantes:
-            warnings.append(
-                f"Integración ({comp.code}): {falta}. El componente sigue por "
-                "porcentaje declarado."
+            cola = (
+                "El componente sigue por porcentaje declarado."
+                if comp.fuente == "declarado"
+                else "El importe del análisis está incompleto en esa medida."
             )
+            warnings.append(f"Integración ({comp.code}): {falta}. {cola}")
     if any(c.fuente == "analisis" for c in resolved):
         warnings.append(
             f"Utilidad declarada: {config.indirects.profit_pct:g} % — criterio "
@@ -406,7 +409,7 @@ def generate_cost_report(
         boq.direct_cost_total, config, integracion_taller, schedule,
         config.currency, boq.warnings,
     )
-    indirectos_campo = next(l.amount for l in integration.lines if l.code == "CI-C")
+    indirectos_campo = next(line.amount for line in integration.lines if line.code == "CI-C")
     _declare_schedule_basis(boq, schedule, config.schedule)
     _warn_plantilla_vs_indirectos(
         boq, config, schedule, indirectos_campo,

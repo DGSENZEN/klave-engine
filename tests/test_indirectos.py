@@ -335,3 +335,19 @@ def test_congruencia_de_plantilla_solo_en_modo_declarado():
     _warn_plantilla_vs_indirectos(analisis, config, sched, 100_000.0,
                                   ci_c_fuente="analisis")
     assert analisis.warnings == []
+
+
+def test_faltantes_de_analisis_no_dicen_declarado():
+    # Desglose capturado (modo análisis) con un rubro sin importe: el
+    # componente sigue siendo "analisis", no "declarado" — el aviso no
+    # puede decir que sigue por porcentaje declarado.
+    config = CostingConfig()
+    config.desglose_campo = DesgloseCampo(rubros=[
+        RubroIndirecto(concepto="Renta de bodega", importe=10_000.0, base="mensual"),
+        RubroIndirecto(concepto="Vehículo de residente", importe=0.0, base="mensual"),
+    ])
+    warnings: list[str] = []
+    _integrate_with_analyses(1_000_000.0, config, None, _schedule(months=2), "MXN", warnings)
+    ci_c = [w for w in warnings if w.startswith("Integración (CI-C):")]
+    assert any("incompleto" in w for w in ci_c)
+    assert not any("sigue por porcentaje declarado" in w for w in ci_c)
