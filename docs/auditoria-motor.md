@@ -469,6 +469,15 @@ build de producción verdes. Las rutas nuevas responden 401 en modo protegido
 como el resto (sin puerta abierta accidental); la vista autenticada queda
 para el humo con sesión de Diego.
 
+**Refinado el mismo día (rama `tablero-railway`):** el lienzo ganó las
+aristas del proceso — curvas medidas entre tarjetas que «fluyen» animadas
+cuando el nodo de origen está en orden (dash sobre `--accent`, quieto bajo
+`prefers-reduced-motion`) — y los permisos se volvieron visuales: un nodo
+con candado que no puedes abrir se ve apagado y no responde al clic; el
+botón «Abrir nodo» solo existe para quien tiene la autoridad. Se retiraron
+las frases «tú puedes abrir» / «lo abre el administrador» del tablero y del
+GateGuard: el permiso se ve, no se explica.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
