@@ -268,3 +268,39 @@ def test_piezas_sin_clave_es_hallazgo_y_viaja_al_diagnostico():
     # detección genérico se queda donde estaba.
     ruido = "126 líneas largas fuera de las capas de muros se ignoraron al buscar muros."
     assert promote_detection_warnings([texto, ruido]) == [texto]
+
+
+def test_integracion_incompleta_es_revisar_y_se_agrupa():
+    from klave_engine.costing.hallazgos import _classify
+
+    rule = _classify(
+        "Integración (FI): sin indicador. El componente sigue por porcentaje declarado."
+    )
+    assert rule.severity == "revisar" and rule.group == "integracion_incompleta"
+
+
+def test_utilidad_declarada_es_criterio_no_alarma():
+    from klave_engine.costing.hallazgos import _classify
+
+    rule = _classify("Utilidad declarada: 10 % — criterio del taller, no un análisis.")
+    assert rule.criterio is True
+
+
+def test_no_convergencia_es_dinero():
+    from klave_engine.costing.hallazgos import _classify
+
+    rule = _classify(
+        "El costo de financiamiento no convergió tras 10 iteraciones; "
+        "residual de $532.10 en el total con contingencia."
+    )
+    assert rule.severity == "dinero"
+
+
+def test_share_fijado_es_criterio():
+    from klave_engine.costing.hallazgos import _classify
+
+    rule = _classify(
+        "Oficina central por share fijado: 3 % — obra fuera de la zona de "
+        "cobertura de la oficina"
+    )
+    assert rule.criterio is True

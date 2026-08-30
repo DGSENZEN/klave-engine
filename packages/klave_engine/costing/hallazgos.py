@@ -284,6 +284,34 @@ _RULES: list[Rule] = [
         severity=None,
         criterio=True,
     ),
+    Rule(
+        pattern=r"Integración \((CI-C|CI-O|FI|CA)\): ",
+        severity="revisar",
+        action="Completa la captura para que el análisis sustituya al porcentaje declarado.",
+        target="parametros",
+        group="integracion_incompleta",
+        plural="{n} componentes de la integración siguen por porcentaje declarado",
+        momento="cotizar",
+        verificar="Revisa Integración en parámetros del proyecto y en el catálogo del taller.",
+    ),
+    Rule(
+        pattern=r"Utilidad declarada: ",
+        severity="revisar",
+        criterio=True,
+    ),
+    Rule(
+        pattern=r"costo de financiamiento no convergió",
+        severity="dinero",
+        action="Revisa tasa y calendario del flujo; el residual indica cuánto baila el total.",
+        target="parametros",
+        momento="entregar",
+        verificar="Compara el total de dos recomputos seguidos.",
+    ),
+    Rule(
+        pattern=r"Oficina central por share fijado",
+        severity="revisar",
+        criterio=True,
+    ),
 ]
 
 _FALLBACK = Rule(pattern="", severity="revisar")
