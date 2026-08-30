@@ -21,9 +21,9 @@ import { Avatar, Button, Skeleton } from "@/components/ui";
 /**
  * El tablero: el anteproyecto como seis nodos conectados sobre el lienzo
  * que cubre toda la pantalla. Un clic abre el nodo EN SU LUGAR — su menú
- * aparece dentro de la tarjeta; navegar es elegir una entrada, nunca un
- * salto sorpresa. Los permisos se ven, no se explican: el nodo que no
- * puedes tocar se ve apagado y no responde.
+ * brota hacia el lienzo, anclado a la tarjeta; navegar es elegir una
+ * entrada, nunca un salto sorpresa. Los permisos se ven, no se explican:
+ * el nodo que no puedes tocar se ve apagado y no responde.
  */
 
 /** Rutas cuya presencia cuenta para cada nodo, derivadas de sus entradas. */
@@ -69,18 +69,26 @@ const FACT_DOT: Record<TableroFact["tone"], string> = {
 
 type EdgePath = { d: string; flowing: boolean };
 
+const MENU_WIDTH = 248;
+
+type MenuPos = {
+  node: TableroNodeKey;
+  left: number;
+  top: number;
+  origin: "left" | "right" | "top";
+};
+
 export function TableroBoard({ id }: { id: string }) {
   const { tablero, error, refetch } = useTablero(id);
   const { viewers, clientId, activities, timeline } = useProjectLive();
-  const [expanded, setExpanded] = useState<TableroNodeKey | null>(null);
+  const [menu, setMenu] = useState<MenuPos | null>(null);
   const [gateError, setGateError] = useState<string | null>(null);
   const [gateBusy, setGateBusy] = useState<TableroNodeKey | null>(null);
   const base = `/proyecto/${id}`;
 
   // Las aristas se dibujan midiendo dónde quedó cada tarjeta en el lienzo.
   // ResizeObserver notifica al observar y en cada cambio de tamaño; el
-  // setState ocurre en su callback (asíncrono), nunca en el cuerpo del
-  // efecto. Abrir un nodo cambia tamaños: el efecto también depende de eso.
+  // setState ocurre en su callback (asíncrono), nunca en el cuerpo del efecto.
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const cardRefs = useRef(new Map<TableroNodeKey, HTMLDivElement>());
   const [edges, setEdges] = useState<EdgePath[]>([]);
@@ -109,7 +117,37 @@ export function TableroBoard({ id }: { id: string }) {
     observer.observe(canvas);
     for (const el of cardRefs.current.values()) observer.observe(el);
     return () => observer.disconnect();
-  }, [tablero, expanded]);
+  }, [tablero]);
+
+  // Un cambio de tamaño invalida el ancla del menú: se cierra, sin drama.
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    window.addEventListener("resize", close);
+    return () => window.removeEventListener("resize", close);
+  }, [menu]);
+
+  /** Dónde brota el menú: al lado que tenga aire; si no, debajo. */
+  function openMenu(node: TableroNodeKey) {
+    const canvas = canvasRef.current;
+    const card = cardRefs.current.get(node);
+    if (!canvas || !card) return;
+    const c = canvas.getBoundingClientRect();
+    const r = card.getBoundingClientRect();
+    if (r.right + 12 + MENU_WIDTH <= c.right - 8) {
+      setMenu({ node, left: r.right - c.left + 12, top: r.top - c.top, origin: "left" });
+    } else if (r.left - 12 - MENU_WIDTH >= c.left + 8) {
+      setMenu({
+        node,
+        left: r.left - c.left - 12 - MENU_WIDTH,
+        top: r.top - c.top,
+        origin: "right",
+      });
+    } else {
+      const left = Math.min(r.left - c.left, c.width - MENU_WIDTH - 8);
+      setMenu({ node, left: Math.max(8, left), top: r.bottom - c.top + 10, origin: "top" });
+    }
+  }
 
   async function toggleGate(node: TableroNodeKey, approved: boolean) {
     setGateBusy(node);
@@ -126,6 +164,10 @@ export function TableroBoard({ id }: { id: string }) {
 
   const otherViewers = viewers.filter((viewer) => viewer.client_id !== clientId);
   const canApprove = tablero ? canApproveGate(tablero.my_role) : false;
+  const menuNode = menu ? NODE_NAV.find((node) => node.key === menu.node) : null;
+  const menuGate = menu ? tablero?.gates?.[menu.node] : undefined;
+  const menuLocked =
+    menu && tablero ? GATED_NODES.includes(menu.node) && !menuGate : false;
 
   return (
     <div
@@ -136,7 +178,7 @@ export function TableroBoard({ id }: { id: string }) {
         backgroundImage: "radial-gradient(var(--canvas-stroke) 1px, transparent 1px)",
         backgroundSize: "22px 22px",
       }}
-      onClick={() => setExpanded(null)}
+      onClick={() => setMenu(null)}
     >
       <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full">
         {edges.map((edge) => (
@@ -167,7 +209,7 @@ export function TableroBoard({ id }: { id: string }) {
           const gate = tablero?.gates?.[node.key];
           const locked = gated && tablero ? !gate : false;
           const untouchable = locked && !canApprove;
-          const open = expanded === node.key;
+          const open = menu?.node === node.key;
           const nodeViewers = otherViewers.filter((viewer) =>
             PRESENCE[node.key].some((route) =>
               route === "/catalogo"
@@ -191,23 +233,27 @@ export function TableroBoard({ id }: { id: string }) {
                   ? undefined
                   : (event) => {
                       event.stopPropagation();
-                      setExpanded(open ? null : node.key);
+                      if (open) setMenu(null);
+                      else openMenu(node.key);
                     }
               }
               onKeyDown={
                 untouchable
                   ? undefined
                   : (event) => {
-                      if (event.key === "Enter") setExpanded(open ? null : node.key);
-                      if (event.key === "Escape") setExpanded(null);
+                      if (event.key === "Enter") {
+                        if (open) setMenu(null);
+                        else openMenu(node.key);
+                      }
+                      if (event.key === "Escape") setMenu(null);
                     }
               }
-              className={`relative flex flex-col gap-3 rounded-xl border bg-surface p-5 shadow-sm transition ${
+              className={`relative flex flex-col gap-3 rounded-xl border bg-surface p-5 transition-all duration-200 ${
                 untouchable
-                  ? "cursor-not-allowed border-border opacity-55 saturate-0"
+                  ? "cursor-not-allowed border-border opacity-55 saturate-0 shadow-sm"
                   : open
-                    ? "z-20 cursor-pointer border-border-strong shadow-md"
-                    : "z-10 cursor-pointer border-border hover:-translate-y-0.5 hover:border-border-strong hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    ? "z-20 -translate-y-0.5 scale-[1.02] cursor-pointer border-border-strong shadow-lg"
+                    : "z-10 cursor-pointer border-border shadow-sm hover:-translate-y-0.5 hover:border-border-strong hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               }`}
             >
               <div className="flex items-start gap-2.5">
@@ -236,59 +282,11 @@ export function TableroBoard({ id }: { id: string }) {
                   <FactRow key={`${fact.label}-${index}`} fact={fact} />
                 ))}
               </div>
-              {open && !locked && (
-                <div className="rise-in flex flex-col border-t border-border pt-2">
-                  {node.entries.map((entry) => (
-                    <Link
-                      key={entry.key}
-                      href={entryHref(base, entry)}
-                      onClick={(event) => event.stopPropagation()}
-                      className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted transition-colors hover:bg-surface-2/70 hover:text-foreground"
-                    >
-                      {entry.icon}
-                      <span className="flex-1">{entry.label}</span>
-                      <CaretRight size={12} className="opacity-60" />
-                    </Link>
-                  ))}
-                </div>
-              )}
-              {gated && tablero && (gate ? open || canApprove : open && canApprove) && (
-                <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-2.5 text-xs text-muted">
-                  {gate ? (
-                    <>
-                      <span className="flex min-w-0 items-center gap-1.5 truncate">
-                        <LockSimpleOpen size={13} className="shrink-0 text-success" />
-                        {gate.approved_by || "—"}
-                        {gate.approved_at ? ` · ${timeAgo(gate.approved_at)}` : ""}
-                      </span>
-                      {canApprove && open && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={gateBusy === node.key}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            toggleGate(node.key, false);
-                          }}
-                        >
-                          Cerrar
-                        </Button>
-                      )}
-                    </>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={gateBusy === node.key}
-                      className="ml-auto"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        toggleGate(node.key, true);
-                      }}
-                    >
-                      Abrir nodo
-                    </Button>
-                  )}
+              {gate && (
+                <div className="mt-auto flex items-center gap-1.5 truncate border-t border-border pt-2.5 text-xs text-muted">
+                  <LockSimpleOpen size={13} className="shrink-0 text-success" />
+                  {gate.approved_by || "—"}
+                  {gate.approved_at ? ` · ${timeAgo(gate.approved_at)}` : ""}
                 </div>
               )}
               {nodeViewers.length > 0 && (
@@ -302,6 +300,63 @@ export function TableroBoard({ id }: { id: string }) {
           );
         })}
       </div>
+      {menu && menuNode && (
+        <div
+          key={menu.node}
+          className="menu-pop absolute z-30 rounded-xl border border-border-strong bg-surface p-1.5 shadow-xl"
+          style={{
+            left: menu.left,
+            top: menu.top,
+            width: MENU_WIDTH,
+            transformOrigin:
+              menu.origin === "left"
+                ? "left center"
+                : menu.origin === "right"
+                  ? "right center"
+                  : "top center",
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {!menuLocked &&
+            menuNode.entries.map((entry) => (
+              <Link
+                key={entry.key}
+                href={entryHref(base, entry)}
+                className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+              >
+                {entry.icon}
+                <span className="flex-1">{entry.label}</span>
+                <CaretRight size={12} className="opacity-60" />
+              </Link>
+            ))}
+          {menuLocked && canApprove && (
+            <div className="px-2.5 py-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={gateBusy === menu.node}
+                className="w-full"
+                onClick={() => toggleGate(menu.node, true)}
+              >
+                Abrir nodo
+              </Button>
+            </div>
+          )}
+          {menuGate && canApprove && (
+            <div className="mt-1 border-t border-border px-1 pt-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={gateBusy === menu.node}
+                className="w-full"
+                onClick={() => toggleGate(menu.node, false)}
+              >
+                Cerrar nodo
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
       <ActivityDock activities={activities} timeline={timeline} />
     </div>
   );

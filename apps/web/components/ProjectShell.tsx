@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Buildings,
+  CaretDown,
   CaretLeft,
   Gauge,
   GearSix,
@@ -140,10 +141,154 @@ export function ProjectShell({
           onTablero ? "flex flex-col" : ""
         }`}
       >
+        {!onTablero && <Crumbs id={id} name={name} />}
         {children}
       </main>
       {changesOpen && <ChangesPanel onClose={closeChanges} />}
       <LiveToasts />
+    </div>
+  );
+}
+
+/**
+ * La miga de pan de las subpantallas: proyecto / nodo / entrada. El nombre
+ * regresa al tablero (nunca más el viaje hasta la lista de proyectos), el
+ * nodo abre el mapa completo y la entrada salta entre hermanas — moverse
+ * entre menús es un clic, no una expedición.
+ */
+function Crumbs({ id, name }: { id: string; name?: string }) {
+  const pathname = usePathname();
+  const base = `/proyecto/${id}`;
+  const node = nodeForPath(base, pathname);
+  const entry = node?.entries.find((candidate) => {
+    const targets = [candidate.href, ...(candidate.also ?? [])].map((href) =>
+      href === "/catalogo" ? href : `${base}${href}`,
+    );
+    return targets.includes(pathname);
+  });
+  const pageLabel =
+    pathname === `${base}/resumen`
+      ? "Resumen"
+      : pathname === `${base}/configuracion`
+        ? "Configuración"
+        : null;
+  const [openMenu, setOpenMenu] = useState<"nodo" | "entrada" | null>(null);
+  const { connected } = useProjectLive();
+
+  // Navegar cierra el menú (ajuste de estado durante el render, como el cajón).
+  const [lastPathname, setLastPathname] = useState(pathname);
+  if (lastPathname !== pathname) {
+    setLastPathname(pathname);
+    if (openMenu) setOpenMenu(null);
+  }
+
+  function crumbButton(label: ReactNode, which: "nodo" | "entrada") {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpenMenu(openMenu === which ? null : which)}
+        aria-expanded={openMenu === which}
+        className="flex items-center gap-1 rounded-lg px-2 py-1 text-sm transition-colors hover:bg-surface-2"
+      >
+        {label}
+        <CaretDown size={11} className="text-faint" />
+      </button>
+    );
+  }
+
+  const mapa = (
+    <div className="max-h-[70vh] w-64 overflow-y-auto p-1.5">
+      <Link
+        href={base}
+        className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+      >
+        <SquaresFour size={16} /> Tablero
+      </Link>
+      <Link
+        href={`${base}/resumen`}
+        className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+      >
+        <Gauge size={16} /> Resumen
+      </Link>
+      {NODE_NAV.map((group) => (
+        <div key={group.key} className="mt-1.5">
+          <div className="microlabel px-2.5 pb-1">{group.label}</div>
+          {group.entries.map((item) => (
+            <Link
+              key={item.key}
+              href={entryHref(base, item)}
+              className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+            >
+              {item.icon}
+              {item.label}
+            </Link>
+          ))}
+        </div>
+      ))}
+      <div className="mt-1.5 border-t border-border pt-1.5">
+        <Link
+          href={`${base}/configuracion`}
+          className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+        >
+          <GearSix size={16} /> Configuración del proyecto
+        </Link>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="sticky top-0 z-30 hidden h-11 items-center justify-between border-b border-border bg-background/85 px-4 backdrop-blur lg:flex">
+      <div className="relative flex min-w-0 items-center gap-0.5">
+        <Link
+          href={base}
+          className="flex items-center gap-1.5 truncate rounded-lg px-2 py-1 text-sm font-medium transition-colors hover:bg-surface-2"
+        >
+          <SquaresFour size={14} className="text-muted" />
+          {name ?? id}
+        </Link>
+        <span className="text-faint">/</span>
+        {crumbButton(node?.label ?? pageLabel ?? "…", "nodo")}
+        {node && entry && (
+          <>
+            <span className="text-faint">/</span>
+            {crumbButton(<span className="font-medium">{entry.label}</span>, "entrada")}
+          </>
+        )}
+        {openMenu && (
+          <>
+            <button
+              type="button"
+              aria-label="Cerrar menú"
+              onClick={() => setOpenMenu(null)}
+              className="fixed inset-0 z-40 cursor-default"
+            />
+            <div className="menu-pop absolute left-0 top-full z-50 mt-1 origin-top rounded-xl border border-border-strong bg-surface shadow-xl">
+              {openMenu === "nodo" || !node ? (
+                mapa
+              ) : (
+                <div className="w-56 p-1.5">
+                  {node.entries.map((item) => (
+                    <Link
+                      key={item.key}
+                      href={entryHref(base, item)}
+                      className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+                    >
+                      {item.icon}
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+      <span
+        className={`inline-block h-1.5 w-1.5 rounded-full ${
+          connected ? "bg-success" : "bg-warning"
+        }`}
+        aria-label={connected ? "En vivo" : "Reconectando"}
+      />
     </div>
   );
 }
