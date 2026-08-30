@@ -95,3 +95,24 @@ def test_el_tablero_degrada_a_pendiente_sin_artefactos(data_dir, monkeypatch):
         for fact in node["facts"]:
             assert fact["tone"] in ("ok", "warn", "bad", "muted")
             assert fact["label"]
+
+
+def test_el_preescaneo_dice_que_jala_cada_archivo(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from klave_engine.common import config as config_module
+
+    from apps.api.main import create_app
+
+    monkeypatch.setenv("KLAVE_USERS_DATABASE_URL", "postgresql://nobody@127.0.0.1:1/none")
+    config_module.get_settings.cache_clear()
+    client = TestClient(create_app())
+    r = client.post("/disciplines/preview", json={"filenames": [
+        "05 SANITARIO L.04.dwg", "12 CANCELERIA.dwg", "Plano Prueba 1.dxf",
+    ]})
+    assert r.status_code == 200, r.text
+    p = r.json()["previews"]
+    assert [x["discipline"] for x in p] == ["sanitaria", "canceleria", "estructural"]
+    assert p[2]["structural"] is True
+    assert any("diámetro" in j for j in p[0]["jala"])
+    assert all(x["jala"] for x in p)

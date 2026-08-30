@@ -581,6 +581,20 @@ export const putGate = (id: string, node: TableroNodeKey, approved: boolean, act
     actor ? { "X-Actor": actor } : undefined,
   );
 
+export type DisciplinePreview = {
+  filename: string;
+  discipline: string;
+  label: string;
+  structural: boolean;
+  /** Qué datos jala el motor de esta hoja, en frases honestas. */
+  jala: string[];
+};
+
+export const previewDisciplinas = (filenames: string[]) =>
+  postJSON<{ previews: DisciplinePreview[] }>("/disciplines/preview", { filenames }).then(
+    (r) => r.previews,
+  );
+
 export const getProject = (id: string) => getJSON<ProjectInfo>(`/projects/${id}`);
 export const getStatus = (id: string) => getJSON<ProjectStatus>(`/projects/${id}/status`);
 export const getEventsHistory = (id: string) =>

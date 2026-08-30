@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
+  CaretDown,
   Check,
   CircleNotch,
   DownloadSimple,
@@ -393,6 +394,7 @@ export default function PresupuestoPage() {
                 phase={phase}
                 lines={lines}
                 subtotal={subtotal}
+                total={costs.boq.direct_cost_total}
                 projectId={id}
                 actorName={actorName}
                 clientId={clientId}
@@ -521,6 +523,7 @@ function PhaseGroup({
   phase,
   lines,
   subtotal,
+  total,
   projectId,
   actorName,
   clientId,
@@ -529,6 +532,7 @@ function PhaseGroup({
   phase: string;
   lines: BoqLine[];
   subtotal: number;
+  total: number;
   projectId: string;
   actorName: string;
   clientId: string | null;
@@ -537,23 +541,45 @@ function PhaseGroup({
   const [openCode, setOpenCode] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [picking, setPicking] = useState<string | null>(null);
+  // La partida se pliega como en OPUS: el renglón dice cuánto pesa (% del
+  // costo directo) aunque sus conceptos estén guardados.
+  const [collapsed, setCollapsed] = useState(false);
+  const pct = total > 0 ? (subtotal / total) * 100 : 0;
   return (
     <>
-      <tr className="border-b border-border bg-surface-2/60">
+      <tr
+        className="cursor-pointer border-b border-border bg-surface-2/60 transition-colors hover:bg-surface-2"
+        onClick={() => setCollapsed((value) => !value)}
+        aria-expanded={!collapsed}
+      >
         <td
           colSpan={4}
           className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted"
         >
-          {phase}
+          <span className="inline-flex items-center gap-1.5">
+            <CaretDown
+              size={11}
+              weight="bold"
+              className={`transition-transform ${collapsed ? "-rotate-90" : ""}`}
+            />
+            {phase}
+            <span className="font-normal normal-case tracking-normal text-faint">
+              {lines.length === 1 ? "1 concepto" : `${lines.length} conceptos`}
+            </span>
+          </span>
         </td>
         <td
           colSpan={2}
           className="px-4 py-2 text-right text-xs font-semibold tabular text-muted"
         >
+          {total > 0 && (
+            <span className="mr-2 font-normal text-faint">{pct.toFixed(1)} %</span>
+          )}
           {money2(subtotal)}
         </td>
       </tr>
-      {lines.map((l) => {
+      {!collapsed &&
+        lines.map((l) => {
         const open = openCode === l.concept_code;
         const levels = l.by_view ? Object.entries(l.by_view) : [];
         return (

@@ -17,6 +17,7 @@ import {
   Plus,
   SealCheck,
   Stack,
+  CaretDown,
   Trash,
   UserSwitch,
   UsersThree,
@@ -25,6 +26,8 @@ import {
 import {
   apiMessage,
   getWorkspaceOverview,
+  previewDisciplinas,
+  type DisciplinePreview,
   money,
   patchProject,
   processProject,
@@ -868,6 +871,21 @@ function NewProjectDialog({
   const [client, setClient] = useState("");
   const totalMb = files.reduce((sum, f) => sum + f.size, 0) / 1e6;
   const formId = "nuevo-proyecto";
+  // Qué datos jala cada hoja: el ruteo real del motor, consultado por
+  // nombre. Si la consulta falla, la lista simple sigue sirviendo.
+  const [previews, setPreviews] = useState<Map<string, DisciplinePreview> | null>(null);
+  const [openFile, setOpenFile] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    previewDisciplinas(files.map((f) => f.name))
+      .then((rows) => {
+        if (active) setPreviews(new Map(rows.map((row) => [row.filename, row])));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [files]);
 
   return (
     <Modal
@@ -919,12 +937,43 @@ function NewProjectDialog({
           maxLength={120}
           className="mb-3 w-full"
         />
-        <ul className="max-h-32 space-y-1 overflow-y-auto text-xs text-muted">
-          {files.map((file) => (
-            <li key={file.name} className="flex items-center gap-1.5">
-              <FileText size={12} /> <span className="truncate">{file.name}</span>
-            </li>
-          ))}
+        <ul className="max-h-56 space-y-0.5 overflow-y-auto text-xs">
+          {files.map((file) => {
+            const preview = previews?.get(file.name);
+            const open = openFile === file.name;
+            return (
+              <li key={file.name}>
+                <button
+                  type="button"
+                  onClick={() => setOpenFile(open ? null : file.name)}
+                  aria-expanded={open}
+                  className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-muted transition-colors hover:bg-surface-2"
+                >
+                  <FileText size={12} className="shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                  {preview && (
+                    <Badge tone={preview.structural ? "accent" : "default"}>
+                      {preview.label}
+                    </Badge>
+                  )}
+                  <CaretDown
+                    size={10}
+                    className={`shrink-0 text-faint transition-transform ${open ? "" : "-rotate-90"}`}
+                  />
+                </button>
+                {open && (
+                  <ul className="mb-1 ml-6 space-y-0.5 border-l border-border pl-2.5 text-muted">
+                    {(preview?.jala ?? ["Consultando qué datos jala…"]).map((dato) => (
+                      <li key={dato} className="flex items-start gap-1.5">
+                        <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-faint" />
+                        {dato}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </form>
     </Modal>
