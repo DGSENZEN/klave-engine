@@ -52,7 +52,7 @@ import {
 } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
 import { timeAgo } from "@/lib/time";
-import { moneyGate, UnitsGate } from "@/components/MoneyGate";
+import { moneyState, UnitsGate } from "@/components/MoneyGate";
 
 export default function Resumen() {
   const { id } = useParams<{ id: string }>();
@@ -219,7 +219,13 @@ export default function Resumen() {
         </div>
       )}
 
-      {diff?.available && <RunDiffCard diff={diff} />}
+      {/* Rendered above the gate below, on the blocked project's own page:
+          without the flag it showed the peso delta of the total the gate
+          three lines down is withholding. The family counts stay — those are
+          the reading, and they are the reason to look at this card. */}
+      {diff?.available && (
+        <RunDiffCard diff={diff} blocked={!costs || moneyState(costs) === "blocked"} />
+      )}
 
       {costs && reviews && !verified && (
         <VerificationPath
@@ -230,13 +236,13 @@ export default function Resumen() {
         />
       )}
 
-      {costs && moneyGate(costs, reviews) === "blocked" && (
+      {costs && moneyState(costs) === "blocked" && (
         <div className="mb-6">
           <UnitsGate id={id} costs={costs} actorName={actorName} />
         </div>
       )}
 
-      {costs && moneyGate(costs, reviews) !== "blocked" && (
+      {costs && moneyState(costs) !== "blocked" && (
         <div className="rise-in">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Metric
@@ -429,12 +435,12 @@ function SheetsCard({ id, project }: { id: string; project: ProjectInfo }) {
   );
 }
 
-function RunDiffCard({ diff }: { diff: RunDiff }) {
+function RunDiffCard({ diff, blocked }: { diff: RunDiff; blocked: boolean }) {
   const families = Object.entries(diff.families ?? {}).filter(
     ([, counts]) => counts.prev !== counts.new,
   );
   const totalDelta =
-    diff.prev_grand_total != null && diff.new_grand_total != null
+    !blocked && diff.prev_grand_total != null && diff.new_grand_total != null
       ? diff.new_grand_total - diff.prev_grand_total
       : null;
   const changed =

@@ -22,6 +22,7 @@ from klave_engine.costing.catalog_store import CatalogStore, get_catalog_store
 from klave_engine.costing.hallazgos import promote_detection_warnings
 from klave_engine.costing.insumos import apply_price_overrides
 from klave_engine.costing.models import CostingConfig, CostReport
+from klave_engine.costing.presentation import publishable_stored_total, publishable_total
 from klave_engine.costing.recompute import load_overrides
 from klave_engine.costing.report import (
     boq_to_csv,
@@ -266,9 +267,13 @@ def run_full_pipeline(
         _previous_artifact(control_dir, "cost_report_override.json")
         or _previous_artifact(control_dir, "cost_report.json")
     )
-    prev_total = None
-    if isinstance(prev_report, dict):
-        prev_total = (prev_report.get("integration") or {}).get("grand_total")
+    # The run diff is the source of the "Total ▲ $Y" chip on the project
+    # page, so both ends of that delta go through the money authority. The
+    # sign-off on disk is what both are measured against: reprocessing
+    # re-reads the plan, it does not re-ask the human.
+    prev_total = publishable_stored_total(
+        prev_report, load_reviews(control_dir).verification
+    )
 
     manifest = ingest_project(
         project_root, project_name=project_name, processed_dir_name=settings.processed_dir_name
@@ -636,7 +641,7 @@ def run_full_pipeline(
         prev_detections,
         prev_total,
         result.detections,
-        result.cost_report.integration.grand_total,
+        publishable_total(result.cost_report, reviews.verification),
     )
     if diff is not None:
         write_json(processed / "run_diff.json", diff)
@@ -698,7 +703,7 @@ def _run_diff(
     prev_detections: list[dict] | None,
     prev_total: float | None,
     new_detections: list[Detection],
-    new_total: float,
+    new_total: float | None,
 ) -> dict | None:
     """What changed since the last processing: the revision story."""
     if prev_detections is None:

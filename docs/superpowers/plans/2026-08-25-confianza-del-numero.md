@@ -16,7 +16,7 @@
 - **Spanish stays in the product.** All user-facing strings, finding text, warnings and column headers are Mexican Spanish. Code identifiers, docstrings and comments follow the file they live in (this codebase writes English docstrings with Spanish domain nouns).
 - **No invented numbers.** A value the engine cannot derive is rendered as an honest absence (`sin precio`, `sin unidades`, `no se sabe`) — never `0`, never a guess. This applies to new code exactly as it does to existing code.
 - **Confidence threshold is 0.70**, defined today as `CONFIDENCE_FIRM` in `apps/web/components/ui.tsx:477` and as the `>= 0.7` floor in `DrawingUnits.reliable` (`packages/klave_engine/dxf/units.py:51`). Do not change the value in this round; only how it is presented.
-- **Run from the repo root** with the project venv: `.venv/bin/python -m pytest …`, `.venv/bin/ruff check .`, `.venv/bin/mypy packages/klave_engine`. Web checks: `npx --prefix apps/web tsc --noEmit`.
+- **Run from the repo root** with the project venv: `.venv/bin/python -m pytest …`, `.venv/bin/ruff check .`, `.venv/bin/mypy packages/klave_engine`. Web checks: `apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`.
 - **Every task ends green**: `ruff`, `mypy` and the full `pytest` suite pass before the commit.
 
 ---
@@ -42,7 +42,7 @@
 | `packages/klave_engine/costing/models.py` | `money_basis` field on `CostReport`; `sequence_order` docstring note |
 | `packages/klave_engine/costing/report.py` | Build and attach `MoneyBasis` |
 | `packages/klave_engine/costing/schedule.py` | Dedupe links, FS forward-pass branch, frentes assumption text |
-| `packages/klave_engine/costing/catalog_store.py` | `DERIVADO_DE` map + migration v14 (data only — the catalog is already spaced by 10, so `catalog.py`, `steel.py` and `formwork.py` are untouched) |
+| `packages/klave_engine/costing/catalog_store.py` | `DERIVADO_DE` map + migration v22 (data only — the catalog is already spaced by 10, so `catalog.py`, `steel.py` and `formwork.py` are untouched) |
 | `packages/klave_engine/costing/hallazgos.py` | `HallazgoGrupo`; group by rule id |
 | `packages/klave_engine/costing/exports.py` | Four `units_reliable` checks → resolver |
 | `packages/klave_engine/evals/recall_cli.py` | Read project store first |
@@ -68,7 +68,16 @@
 
 **Interfaces:**
 - Consumes: `BillOfQuantities` and `DrawingUnits` (existing), `VerificationState` from `klave_engine.costing.reviews`
-- Produces: `MoneyState = Literal["ok","unverified","blocked"]`; `MoneyBasis` (pydantic model with fields `units_reliable: bool`, `unit: str`, `source: str`, `confidence: float`, `reasons: list[str]`, `confidence_bands: dict[str, float]`); `resolve_money_state(basis: MoneyBasis | None, verification: VerificationState | None) -> MoneyState`; `money_basis_from_boq(boq: BillOfQuantities, units: DrawingUnits) -> MoneyBasis`
+- Produces, **in `models.py`** (pre-flight ruling R1 — see Task 2 Step 3 for why): `MoneyBasis`, a pydantic model with fields `units_reliable: bool`, `unit: str`, `source: str`, `confidence: float`, `reasons: list[str]`, `confidence_bands: dict[str, float]`
+- Produces, **in `presentation.py`**: `MoneyState = Literal["ok","unverified","blocked"]`; `CONFIDENCE_FIRM = 0.7`; `resolve_money_state(basis: MoneyBasis | None, verification: VerificationState | None) -> MoneyState`; `money_basis_from_boq(boq: BillOfQuantities, units: DrawingUnits) -> MoneyBasis`; `basis_reasons(basis: MoneyBasis | None) -> list[str]`
+
+> **Pre-flight ruling R1:** define `MoneyBasis` in `models.py` beside the other
+> domain models, and import it into `presentation.py`. Do **not** define it in
+> `presentation.py` — that module imports `BillOfQuantities` from `models.py`,
+> so defining `MoneyBasis` there and importing it back would be a cycle. The
+> code block in Step 3 below shows `MoneyBasis` inside `presentation.py`;
+> ignore that placement and put the class in `models.py`, keeping every
+> function in `presentation.py` exactly as written.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -289,7 +298,7 @@ Expected: PASS — 11 passed
 - [ ] **Step 5: Verify nothing else moved**
 
 Run: `.venv/bin/python -m pytest tests -q -p no:warnings && .venv/bin/ruff check . && .venv/bin/mypy packages/klave_engine`
-Expected: 451+ passed, `All checks passed!`, `Success: no issues found`
+Expected: 540+ passed (baseline in this worktree is 540), `All checks passed!`, `Success: no issues found`
 
 - [ ] **Step 6: Commit**
 
@@ -373,6 +382,16 @@ Expected: FAIL — `AttributeError: 'CostReport' object has no attribute 'money_
 
 - [ ] **Step 3: Add the field**
 
+> **Pre-flight ruling R1 — `MoneyBasis` lives in `models.py`, not `presentation.py`.**
+> The original plan put the model in `presentation.py`, which imports
+> `BillOfQuantities` from `models.py` — so `models.py` importing it back
+> created a cycle survivable only via a bottom-of-file import plus
+> `model_rebuild()`. `MoneyBasis` is a pydantic domain model like every other
+> one in this file, so it belongs here, and the dependency runs one way:
+> `presentation` → `models`, never back. Task 1 defines `MoneyBasis` in
+> `models.py` and imports it into `presentation.py`; no `model_rebuild()`
+> anywhere.
+
 In `packages/klave_engine/costing/models.py`, inside `class CostReport`, after `indirectos_campo: float = 0.0`:
 
 ```python
@@ -380,16 +399,11 @@ In `packages/klave_engine/costing/models.py`, inside `class CostReport`, after `
     # Joined with the reviews' sign-off by costing.presentation at read time;
     # None on runs written before the verdict existed, which resolve to
     # "blocked" rather than being trusted.
-    money_basis: "MoneyBasis | None" = None
+    money_basis: MoneyBasis | None = None
 ```
 
-At the end of `models.py`, resolve the forward reference (`presentation` imports `models`, so the import must be deferred to avoid a cycle):
-
-```python
-from klave_engine.costing.presentation import MoneyBasis  # noqa: E402
-
-CostReport.model_rebuild()
-```
+`MoneyBasis` is defined earlier in this same file (Task 1), so this is a plain
+forward-free annotation — no quotes, no rebuild.
 
 - [ ] **Step 4: Populate it**
 
@@ -427,7 +441,7 @@ git commit -m "feat(presentacion): el reporte carga su propio veredicto de unida
 ## Task 3: Every server surface asks the authority
 
 **Files:**
-- Modify: `apps/api/routes/workspace.py:129-140` (`_project_entry`)
+- Modify: `apps/api/routes/workspace.py:73-150` (`_project_overview` — note: NOT `_project_entry`)
 - Modify: `apps/api/routes/reports.py:35-38` (`get_costs`)
 - Modify: `apps/api/routes/copilot.py:200-232`
 - Modify: `packages/klave_engine/costing/exports.py:164, 263, 340, 377`
@@ -724,7 +738,7 @@ In `apps/web/app/page.tsx`, replace the total block (currently `{project.grand_t
 
 - [ ] **Step 5: Verify types and the running app**
 
-Run: `npx --prefix apps/web tsc --noEmit`
+Run: `apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`
 Expected: exit 0, no output
 
 Then start the dev servers and confirm in the browser that the Torre Reforma row reads **sin unidades** instead of `$768,759,055`, and that Marina still shows its total with the SIN VERIFICAR banner.
@@ -778,7 +792,7 @@ Expected: roughly `76% alta · 24% en el límite`, not `100%`.
 
 - [ ] **Step 3: Verify types**
 
-Run: `npx --prefix apps/web tsc --noEmit`
+Run: `apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`
 Expected: exit 0
 
 - [ ] **Step 4: Commit**
@@ -924,13 +938,61 @@ git commit -m "fix(programa): una restriccion enunciada dos veces era dos arista
 > read must be deterministic (`ORDER BY sequence_order, code`).
 
 **Files:**
-- Modify: `packages/klave_engine/costing/catalog_store.py` (migration v14 + the shared map)
+- Modify: `packages/klave_engine/costing/catalog_store.py` (migration v22 + the shared map)
 - Test: `tests/test_schedule_precedence.py` (append)
 
 **Interfaces:**
 - Produces: `DERIVADO_DE: dict[str, tuple[str, str]]` mapping derived code → `(parent code, "cimbra" | "acero")`. **Task 8 consumes this same map** — one statement of which concept serves which pour, used by both the ordering and the hard edges.
 
 - [ ] **Step 1: Write the failing test**
+
+> **Pre-flight ruling R7 — the fixture must be store-backed, or this test is vacuous.**
+> I verified this empirically before dispatch. Task 6's `_structural_report()` helper calls
+> `generate_cost_report(..., price_book=LIBRO)` with no store, so the catalog is
+> `build_default_catalog` alone — which does **not** contain the derived concepts. The
+> resulting BoQ holds only `EST-001` and `EST-002`, and the engine says so in its own
+> warnings: *"Acero calculado (62 KG) pero el catálogo no tiene el concepto ACE-001 con
+> matriz"*. The invariant loop below would `continue` past every single pair and pass while
+> the bug is fully present.
+>
+> The derived concepts live in the **catalog store**, and they need matrices, not just
+> concept rows. Add this helper and use it — I ran exactly this shape and it reproduces the
+> defect (`EST-008` day 4 vs `EST-001` day 0, inverted):
+>
+> ```python
+> @pytest.fixture
+> def store_report(tmp_path):
+>     """A report built through a real catalog store.
+>
+>     The acero and cimbra concepts this test is about are created by
+>     apply_steel/apply_formwork against the store's catalog and matrices —
+>     build_default_catalog alone has neither, so a store-less fixture produces
+>     a two-line BoQ and an invariant that passes by skipping every pair.
+>     """
+>     from klave_engine.costing.catalog_store import CatalogStore
+>     from tests.precios import sembrar
+>
+>     store = CatalogStore(tmp_path / "catalog.db")
+>     sembrar(store)
+>     detections = _structural_detections()   # extract from Task 6's helper
+>     units = DrawingUnits(unit="m", source="dxf_header", confidence=0.9)
+>     return generate_cost_report(
+>         "p", detections, units, CostingConfig(), None, None,
+>         price_book=store.load_price_book(),
+>         store_concepts=store.load_concepts(),
+>         apu_templates=store.load_templates(),
+>         rendimientos=store.load_rendimientos(),
+>     )
+> ```
+>
+> Refactor Task 6's `_structural_report()` so the detection-building half becomes
+> `_structural_detections()`, shared by both. Do not change Task 6's existing tests'
+> behaviour — they pass today and must keep passing.
+>
+> **The invariant must also assert it saw something.** After the loop, assert that at least
+> one derived/pour pair was actually checked. A `continue`-only pass is the exact failure
+> mode this ruling exists to prevent, and without that assertion the next refactor
+> reintroduces it silently.
 
 Append to `tests/test_schedule_precedence.py`:
 
@@ -964,7 +1026,15 @@ Expected: FAIL — `EST-008 arranca el día …, después de colar EST-001 el d�
 
 - [ ] **Step 3: State which concept serves which pour, once**
 
-In `packages/klave_engine/costing/catalog_store.py`, at module level:
+> **Pre-flight ruling R2 — `DERIVADO_DE` lives in `models.py`, not
+> `catalog_store.py`.** Task 8 needs the same map inside `schedule.py`. I
+> verified there is no import cycle either way, but pulling the SQLite and
+> migration module into the scheduler for one constant is the wrong layering.
+> `models.py` is already imported by both `catalog_store.py` and `schedule.py`,
+> so the map goes there and both import it from one place.
+
+In `packages/klave_engine/costing/models.py`, at module level (the migration in
+Step 4 imports it from there):
 
 ```python
 # Which derived concept serves which pour, and as what. Task 8's hard edges
@@ -990,12 +1060,12 @@ DERIVADO_DE: dict[str, tuple[str, str]] = {
 _OFFSET_POR_TIPO = {"cimbra": -2, "acero": -1}
 ```
 
-- [ ] **Step 4: Add migration v14**
+- [ ] **Step 4: Add migration v22**
 
 In the same file, following the existing `_migrate_vN` pattern:
 
 ```python
-    def _migrate_v14(self, conn: sqlite3.Connection) -> None:
+    def _migrate_v22(self, conn: sqlite3.Connection) -> None:
         """Put acero and cimbra before the pour they serve.
 
         They sat in blocks appended at the end of their phase — ACE-* at
@@ -1020,7 +1090,7 @@ In the same file, following the existing `_migrate_vN` pattern:
             )
 ```
 
-Register it in the migration chain exactly as v13 is registered, bumping the stored schema version to 14.
+Register it in the migration chain following the `_migrate_v13` pattern (a named method invoked from an inline `if version_row is None or int(version_row["value"]) < N:` block), bumping the stored schema version to **22**. NOTE: the chain already reaches v21 — 14 was taken long ago by a concurrent session. Verify the highest existing version yourself before writing the block.
 
 - [ ] **Step 5: Verify the migration on a copy of the real catalog**
 
@@ -1070,6 +1140,13 @@ git commit -m "fix(programa): se cimbra y se arma antes de colar, no 213 dias de
 
 - [ ] **Step 1: Write the failing test**
 
+> **Pre-flight ruling R7 applies here too.** Both tests below must use the store-backed
+> `store_report` fixture introduced in Task 7, not `_structural_report()`. Without a store
+> the report contains only `EST-001` and `EST-002`, so there are no formwork or steel
+> activities to build a hard edge to — `test_the_pour_waits_for_its_formwork_to_finish`
+> would fail on its `hard_edges > 0` guard for the wrong reason, and
+> `test_the_critical_path_is_not_the_whole_job` would be measuring a two-activity network.
+
 Append to `tests/test_schedule_precedence.py`:
 
 ```python
@@ -1110,11 +1187,10 @@ Expected: FAIL — `ninguna arista dura: el colado no espera a nada`
 - [ ] **Step 3: Emit FS for the pairs that cannot overlap**
 
 In `packages/klave_engine/costing/schedule.py`, add near the top — inverting the
-map Task 7 already defined, so which-serves-which is stated exactly once:
+map Task 7 defined in `models.py` (pre-flight ruling R2), so which-serves-which
+is stated exactly once:
 
 ```python
-from klave_engine.costing.catalog_store import DERIVADO_DE
-
 # The pairs that genuinely cannot overlap, derived from the same map that
 # orders them. Everything else stays start-to-start with a lag, because
 # traslape between trades is how obra actually runs — flattening that would
@@ -1124,9 +1200,10 @@ for _derived, (_parent, _tipo) in DERIVADO_DE.items():
     HARD_PREDECESSORS[_parent] = (*HARD_PREDECESSORS.get(_parent, ()), _derived)
 ```
 
-If importing `catalog_store` into `schedule` would create a cycle, move
-`DERIVADO_DE` and `_OFFSET_POR_TIPO` into `costing/models.py` instead and import
-from there in both places. Check with `.venv/bin/python -c "import klave_engine.costing.schedule"` after the edit.
+`DERIVADO_DE` comes from the existing `from klave_engine.costing.models import (...)`
+block already at the top of this file — add it to that import list rather than
+writing a new import line. Confirm with
+`.venv/bin/python -c "import klave_engine.costing.schedule"` after the edit.
 
 In the per-line loop, after the existing SS branches and before the dedup block from Task 6, add:
 
@@ -1225,7 +1302,7 @@ Label it `Frentes de trabajo`, help text:
 
 - [ ] **Step 5: Run tests and verify types**
 
-Run: `.venv/bin/python -m pytest tests -q -p no:warnings && npx --prefix apps/web tsc --noEmit`
+Run: `.venv/bin/python -m pytest tests -q -p no:warnings && apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`
 Expected: all green
 
 - [ ] **Step 6: Verify in the running app**
@@ -1848,7 +1925,7 @@ Build `filas` by joining, per sheet, each family the engine detected there with 
 
 - [ ] **Step 3: Verify types**
 
-Run: `npx --prefix apps/web tsc --noEmit`
+Run: `apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`
 Expected: exit 0
 
 - [ ] **Step 4: Verify in the running app**
@@ -1899,7 +1976,7 @@ Under **I. Honestidad**, add:
 
 - [ ] **Step 4: Full verification**
 
-Run: `.venv/bin/python -m pytest tests -q -p no:warnings && .venv/bin/ruff check . && .venv/bin/mypy packages/klave_engine && npx --prefix apps/web tsc --noEmit && make eval-gold && make eval-demo`
+Run: `.venv/bin/python -m pytest tests -q -p no:warnings && .venv/bin/ruff check . && .venv/bin/mypy packages/klave_engine && apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit && make eval-gold && make eval-demo`
 Expected: all green, `test_gold_money` unchanged
 
 - [ ] **Step 5: Commit**

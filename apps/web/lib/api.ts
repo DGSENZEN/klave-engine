@@ -390,9 +390,31 @@ export type Indicators = {
   notes: string[];
 };
 
+/**
+ * Whether a total may be shown as money, resolved once on the server by
+ * costing.presentation.resolve_money_state and shipped on every surface
+ * that renders a total. Owned here (not in components/MoneyGate.tsx) so
+ * that lib/ never has to import from components/ to use it.
+ */
+export type MoneyGateState = "ok" | "unverified" | "blocked";
+
+/** What the engine read about the drawing's scale, frozen with the run. */
+export type MoneyBasis = {
+  units_reliable: boolean;
+  unit: string;
+  source: string;
+  confidence: number;
+  reasons: string[];
+  /** Share of direct cost by confidence band, in percent. */
+  confidence_bands: Record<string, number>;
+};
+
 export type CostReport = {
   project_id: string;
   currency: string;
+  /** Resolved server-side; the client renders this, it does not derive it. */
+  money_state?: MoneyGateState;
+  money_basis?: MoneyBasis | null;
   /** Sanity ratios and partida shares (empty object on older runs). */
   indicators?: Partial<Indicators>;
   drawing_units: { unit: string; source: string; confidence: number; notes?: string[] };
@@ -422,6 +444,9 @@ export type CostReport = {
     end_date?: string | null;
     /** Días naturales corridos — the unit the contract counts in. */
     calendar_days?: number;
+    /** The crew assumption in words: frentes and cuadrillas per activity,
+     * because nothing in the drawing can say what those should be. */
+    assumptions: string[];
   };
   financial: {
     advance_payment_pct?: number;
@@ -1580,7 +1605,10 @@ export const aplicarAccion = (
   postJSON<{
     aplicadas: string[];
     total_antes: number | null;
-    total_despues: number;
+    // Null when the verdict withholds money (copilot.py resolves it before
+    // answering). Typed as a bare number, `money(null)` rendered "$0" — an
+    // invented zero, in the one place the gate had already done its job.
+    total_despues: number | null;
     accion: string;
   }>(
     `/copilot/aplicar`,
@@ -1622,8 +1650,26 @@ export type Hallazgo = {
   concept_code: string | null;
 };
 
+/** Findings that differ only in which concept they name, collapsed to one
+ * card with a count — nineteen repeats of the same four lines is not
+ * nineteen warnings, it is one warning and eighteen distractions. */
+export type HallazgoGrupo = {
+  rule_id: string;
+  titulo: string;
+  severity: Severity;
+  momento: Hallazgo["momento"];
+  count: number;
+  miembros: Hallazgo[];
+  monto_afectado: number | null;
+  /** What is at stake across the group when pesos are honestly unknowable. */
+  exposicion_total: string;
+};
+
 export type Diagnostico = {
   hallazgos: Hallazgo[];
+  /** Findings collapsed by rule; the renderer walks these, not `hallazgos` —
+   * two code paths reading the same findings is how they drift apart. */
+  grupos: HallazgoGrupo[];
   /** Deliberate engine choices — recorded, not alarmed. */
   criterios: string[];
   by_severity: Partial<Record<Severity, number>>;
@@ -1819,6 +1865,36 @@ export const setDetectionReviews = (
     `/projects/${id}/reviews/detections`,
     { keys, status, note, recompute },
     actorClientHeaders(actor, clientId),
+  );
+
+// ---- Conteos: lo que una persona contó sobre el plano ----
+//
+// El motor se compara contra sí mismo en cada otra prueba; esto es lo único
+// que compara contra el plano. No recomputa nada (ver put_conteos en
+// reviews.py) — es evidencia sobre el motor, no un insumo para el costeo.
+
+export type ConteoHoja = {
+  hoja: string;
+  familia: string;
+  dibujados: number;
+  detectados: number;
+  nota: string;
+};
+
+export type ConteosDeProyecto = {
+  contado_por: string;
+  contado_en: string;
+  hojas: ConteoHoja[];
+};
+
+export const getConteos = (id: string) =>
+  getJSON<ConteosDeProyecto>(`/projects/${id}/conteos`);
+
+export const putConteos = (id: string, body: ConteosDeProyecto, actor?: string) =>
+  putJSON<ConteosDeProyecto>(
+    `/projects/${id}/conteos`,
+    body,
+    actor ? { "X-Actor": actor } : undefined,
   );
 
 // ---- Croquis for the generadores ----
@@ -2420,6 +2496,7 @@ export type ProjectOverview = ProjectSummary & {
   excluded_count: number;
   adjustment_count: number;
   grand_total: number | null;
+  money_state?: MoneyGateState;
   currency: string;
   last_activity: string | null;
   job_error: string | null;

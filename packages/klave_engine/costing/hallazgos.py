@@ -96,10 +96,34 @@ class Hallazgo(BaseModel):
     concept_code: str | None = None
 
 
+class HallazgoGrupo(BaseModel):
+    """Findings that differ only in which concept they name.
+
+    Nineteen cards repeating the same four lines is not nineteen warnings; it
+    is one warning and eighteen distractions, and it buries the finding in
+    the group that actually differs.
+    """
+
+    rule_id: str
+    titulo: str
+    severity: Severity
+    momento: Momento = "entregar"
+    count: int
+    miembros: list[Hallazgo] = Field(default_factory=list)
+    monto_afectado: float | None = None
+    # What is at stake when pesos are genuinely unknowable, across the whole
+    # group ("238.89 M; 167.75 M; 1.00 PZA") — never a peso figure the engine
+    # cannot derive: an invented exposure is worse than an honest "no se sabe".
+    exposicion_total: str = ""
+
+
 class Diagnostico(BaseModel):
     """The page's honest headline plus every finding behind it."""
 
     hallazgos: list[Hallazgo] = Field(default_factory=list)
+    # Findings collapsed by rule; the renderer walks these, not `hallazgos` —
+    # two code paths reading the same findings is how they drift apart.
+    grupos: list[HallazgoGrupo] = Field(default_factory=list)
     # Deliberate engine choices: not alarms (nothing is asked of the reader),
     # but exactly what defends the number under scrutiny months later.
     criterios: list[str] = Field(default_factory=list)
@@ -553,6 +577,88 @@ def diagnose(
     return _summarize(hallazgos, criterios, report)
 
 
+def _rule_id(hallazgo: Hallazgo) -> str:
+    """The shared identity across repeats of the same finding.
+
+    `sin_precio:{concept_code}` repeats one rule per unpriced line: the
+    prefix is the rule and the suffix only says which line, so stripping the
+    suffix is exactly the collapse this exists for. `motor:{key}` is
+    different — the engine's free-text warnings are already collapsed by
+    family before a Hallazgo exists (the `grouped` dict above, in
+    `diagnose`), so two `motor:` findings share only that namespace, never a
+    rule. Grouping on the bare "motor" prefix would merge unrelated
+    warnings — possibly of different severities — under one card, which is
+    the same failure this module exists to prevent.
+    """
+    prefix, sep, _rest = hallazgo.id.partition(":")
+    if not sep or prefix == "motor":
+        return hallazgo.id
+    return prefix
+
+
+def _agrupar(hallazgos: list[Hallazgo]) -> list[HallazgoGrupo]:
+    """One group per rule, members ranked by what each puts at stake."""
+    orden: list[str] = []
+    por_regla: dict[str, list[Hallazgo]] = {}
+    for hallazgo in hallazgos:
+        rule_id = _rule_id(hallazgo)
+        if rule_id not in por_regla:
+            por_regla[rule_id] = []
+            orden.append(rule_id)
+        por_regla[rule_id].append(hallazgo)
+
+    grupos: list[HallazgoGrupo] = []
+    for rule_id in orden:
+        miembros = sorted(
+            por_regla[rule_id], key=lambda h: -(h.monto_afectado or _cantidad(h))
+        )
+        primero = miembros[0]
+        montos = [h.monto_afectado for h in miembros if h.monto_afectado is not None]
+        grupos.append(
+            HallazgoGrupo(
+                rule_id=rule_id,
+                titulo=(
+                    primero.title if len(miembros) == 1
+                    else f"{len(miembros)} conceptos: {_titulo_de_regla(rule_id)}"
+                ),
+                severity=primero.severity,
+                momento=primero.momento,
+                count=len(miembros),
+                miembros=miembros,
+                monto_afectado=round(sum(montos), 2) if montos else None,
+                exposicion_total="; ".join(
+                    h.exposicion for h in miembros[:3] if h.exposicion
+                ),
+            )
+        )
+    return sorted(grupos, key=lambda g: (SEVERITY_ORDER.get(g.severity, 9), -g.count))
+
+
+def _cantidad(hallazgo: Hallazgo) -> float:
+    """The number inside an exposición ("238.89 M"), for ranking only.
+
+    Never shown as money: it is a quantity, and quantities in different
+    units do not compare. It orders members within one rule, where the unit
+    is the same kind of thing.
+    """
+    if not hallazgo.exposicion:
+        return 0.0
+    head = hallazgo.exposicion.split(" ", 1)[0].replace(",", "")
+    try:
+        return float(head)
+    except ValueError:
+        return 0.0
+
+
+_TITULO_DE_REGLA: dict[str, str] = {
+    "sin_precio": "tienen cantidad pero no precio",
+}
+
+
+def _titulo_de_regla(rule_id: str) -> str:
+    return _TITULO_DE_REGLA.get(rule_id, rule_id.replace("_", " "))
+
+
 def _summarize(
     hallazgos: list[Hallazgo], criterios: list[str], report: CostReport
 ) -> Diagnostico:
@@ -581,6 +687,7 @@ def _summarize(
 
     return Diagnostico(
         hallazgos=hallazgos,
+        grupos=_agrupar(hallazgos),
         criterios=criterios,
         by_severity=by_severity,
         monto_en_duda=monto_en_duda,

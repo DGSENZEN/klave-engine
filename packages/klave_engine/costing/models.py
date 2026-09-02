@@ -189,6 +189,25 @@ class BillOfQuantities(BaseModel):
     units_reliable: bool = True
 
 
+class MoneyBasis(BaseModel):
+    """What the engine read about the drawing's scale, frozen with the run.
+
+    Stable for the life of a run: re-reading the plan is what changes it, and
+    that always produces a new run.
+    """
+
+    units_reliable: bool = True
+    unit: str = ""
+    source: str = ""
+    confidence: float = 0.0
+    # Why, in the words the screens already use.
+    reasons: list[str] = Field(default_factory=list)
+    # Share of the direct cost by confidence band, in percent. Money-weighted
+    # on purpose: a simple average lets a hundred safe screws hide one
+    # doubtful beam.
+    confidence_bands: dict[str, float] = Field(default_factory=dict)
+
+
 class IntegrationLine(BaseModel):
     code: str
     description: str
@@ -208,6 +227,29 @@ class CostIntegration(BaseModel):
     contingency: float
     grand_total: float
     overcost_factor: float  # precio de venta / costo directo
+
+
+# Which derived concept serves which pour, and as what. Task 8's hard edges
+# read the same map: one statement of "EST-008 is the formwork for EST-001",
+# used both to order it before the pour and to make the pour wait for it.
+# You form, you reinforce, you pour — so cimbra takes parent - 2 and acero
+# parent - 1, in the gap of nine the catalog already leaves before each parent.
+DERIVADO_DE: dict[str, tuple[str, str]] = {
+    "EST-008": ("EST-001", "cimbra"),
+    "EST-009": ("EST-002", "cimbra"),
+    "EST-010": ("EST-005", "cimbra"),
+    "EST-011": ("EST-013", "cimbra"),
+    "CIM-006": ("CIM-002", "cimbra"),
+    "CIM-009": ("CIM-008", "cimbra"),
+    "ACE-001": ("EST-001", "acero"),
+    "ACE-002": ("EST-005", "acero"),
+    "ACE-003": ("CIM-002", "acero"),
+    "ACE-004": ("EST-002", "acero"),
+    "ACE-005": ("EST-012", "acero"),
+    "ACE-006": ("EST-013", "acero"),
+}
+
+_OFFSET_POR_TIPO = {"cimbra": -2, "acero": -1}
 
 
 class ScheduleLink(BaseModel):
@@ -272,6 +314,9 @@ class WorkSchedule(BaseModel):
     # art. 31 fr. V): the working days above run on a six-day site week, so
     # reporting them as the contractual plazo understates it by about a fifth.
     calendar_days: int = 0
+    # The crew assumption in words, because it is the single biggest lever on
+    # the plazo and nothing in the drawing can tell us its value.
+    assumptions: list[str] = Field(default_factory=list)
 
     @property
     def critical_path(self) -> list[str]:
@@ -429,3 +474,8 @@ class CostReport(BaseModel):
     # La integración con sus fuentes por componente y los documentos que los
     # exports imprimen tal cual (jamás recalculan).
     integracion_resuelta: list[ComponenteResuelto] = Field(default_factory=list)
+    # What the engine read about the drawing's scale, frozen with this run.
+    # Joined with the reviews' sign-off by costing.presentation at read time;
+    # None on runs written before the verdict existed, which resolve to
+    # "blocked" rather than being trusted.
+    money_basis: MoneyBasis | None = None

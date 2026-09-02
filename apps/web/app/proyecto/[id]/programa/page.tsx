@@ -2,7 +2,7 @@
 
 import { useParams } from "next/navigation";
 import { CalendarBlank, Stack, ListChecks } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   getCostingConfig,
   money,
@@ -11,10 +11,10 @@ import {
   type ScheduleActivity,
 } from "@/lib/api";
 import { phaseColor } from "@/lib/phases";
-import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
+import { useCostReport } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
 import { ProgramaFlujoTabs } from "@/components/ProgramaFlujoTabs";
-import { moneyGate, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
+import { moneyState, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
 import { PlantillaCampo } from "@/components/PlantillaCampo";
 import {
   Callout,
@@ -32,10 +32,27 @@ import {
 export default function ProgramaPage() {
   const { id } = useParams<{ id: string }>();
   const { costs, error } = useCostReport(id);
-  const reviews = useProjectReviews(id);
   const { actorName, clientId } = useProjectLive();
   const [dateBusy, setDateBusy] = useState(false);
   const [dateError, setDateError] = useState<string | null>(null);
+  // Frentes vive en la config de programa, no en el reporte: se carga aparte,
+  // igual que en parámetros/page.tsx, y no en costs.schedule (que sólo trae
+  // el supuesto ya redactado, no el número editable detrás de él).
+  const [frentes, setFrentesValue] = useState<number | null>(null);
+  const [frentesBusy, setFrentesBusy] = useState(false);
+  const [frentesError, setFrentesError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getCostingConfig(id)
+      .then((r) => {
+        if (active) setFrentesValue(Number(r.config.schedule.frentes) || 1);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [id]);
 
   async function setStartDate(value: string) {
     setDateBusy(true);
@@ -54,6 +71,32 @@ export default function ProgramaPage() {
     } finally {
       setDateBusy(false);
     }
+  }
+
+  async function setFrentes(value: number) {
+    setFrentesBusy(true);
+    setFrentesError(null);
+    try {
+      const current = await getCostingConfig(id);
+      current.config.schedule.frentes = value;
+      await recompute(
+        id,
+        { config: current.config, insumo_prices: current.insumo_prices, version: current.version },
+        actorName,
+        clientId,
+      );
+      setFrentesValue(value);
+    } catch {
+      setFrentesError("No se pudo guardar los frentes de trabajo; inténtalo de nuevo.");
+    } finally {
+      setFrentesBusy(false);
+    }
+  }
+
+  function commitFrentes(raw: string) {
+    const value = Math.round(Number(raw));
+    if (!Number.isFinite(value) || value < 1 || value === frentes) return;
+    void setFrentes(value);
   }
 
   if (error) {
@@ -92,7 +135,7 @@ export default function ProgramaPage() {
     );
   }
 
-  if (moneyGate(costs, reviews) === "blocked") {
+  if (moneyState(costs) === "blocked") {
     return (
       <div className="px-6 py-7 lg:px-8">
         <PageHeader title="Programa de obra" />
@@ -120,7 +163,7 @@ export default function ProgramaPage() {
         sub="Red de actividades derivada de las cantidades y del rendimiento de cada matriz; holguras y ruta crítica conforme al RLOPSRM art. 224."
       />
       <ProgramaFlujoTabs id={id} />
-      <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
+      <UnverifiedBanner id={id} costs={costs} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Metric
@@ -155,6 +198,10 @@ export default function ProgramaPage() {
         />
       </div>
 
+      {costs.schedule.assumptions.length > 0 && (
+        <div className="mb-3 text-xs text-muted">{costs.schedule.assumptions.join(" ")}</div>
+      )}
+
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 text-sm">
           <span className="text-muted">Fecha de arranque</span>
@@ -175,6 +222,31 @@ export default function ProgramaPage() {
               : "Sin fecha, el programa queda en días laborables relativos."}
         </span>
         {dateError && <span className="text-xs text-danger">{dateError}</span>}
+
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-muted">Frentes de trabajo</span>
+          <Input
+            // Frentes llega de un fetch aparte que resuelve después del primer
+            // render (a diferencia de costs, que ya bloquea el render hasta
+            // estar listo): sin key, un input no controlado nunca vuelve a
+            // aplicar un defaultValue que cambia después de montado.
+            key={frentes ?? "loading"}
+            type="number"
+            min={1}
+            step={1}
+            defaultValue={frentes ?? ""}
+            onBlur={(e) => commitFrentes(e.target.value)}
+            disabled={frentesBusy || frentes === null}
+            className="w-16 px-2 py-1.5 text-right tabular"
+            aria-label="Frentes de trabajo"
+          />
+        </label>
+        <span className="text-xs text-muted">
+          {frentesBusy
+            ? "Recalculando el plazo…"
+            : "Cuántos frentes simultáneos tendrá la obra. Un frente con una cuadrilla por actividad es el supuesto por omisión, y es el que produce los plazos largos."}
+        </span>
+        {frentesError && <span className="text-xs text-danger">{frentesError}</span>}
       </div>
 
       {activities.length === 0 ? (

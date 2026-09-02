@@ -36,7 +36,6 @@ from klave_engine.costing.models import (
     QuantityKind,
     Resource,
     ResourceType,
-    ScheduleConfig,
     UnitPriceAnalysis,
     WorkSchedule,
 )
@@ -46,6 +45,7 @@ from klave_engine.costing.plantilla import (
     build_personal_tecnico,
     desajuste_de_indirectos,
 )
+from klave_engine.costing.presentation import money_basis_from_boq
 from klave_engine.costing.reviews import ManualAdjustment
 from klave_engine.costing.schedule import build_schedule
 from klave_engine.costing.steel import SteelAssumptions, apply_steel, compute_steel
@@ -223,21 +223,17 @@ def apply_aliases(
             )
 
 
-def _declare_schedule_basis(
-    boq: BillOfQuantities, schedule: WorkSchedule, config: ScheduleConfig
-) -> None:
-    """Say what the programa assumed, in the register that defends it later."""
-    if not schedule.activities:
-        return
-    from_matrix = sum(1 for a in schedule.activities if a.rendimiento_source == "matriz")
-    boq.assumptions.append(
-        f"Programa de obra: duraciones de {from_matrix} de {len(schedule.activities)} "
-        "actividades derivadas del rendimiento de su propia matriz (RLOPSRM art. 190), "
-        f"con {config.crews_per_activity} cuadrilla(s) por actividad y "
-        f"{config.frentes} frente(s) de trabajo. "
-        f"Plazo {schedule.total_duration_days} días hábiles = "
-        f"{schedule.calendar_days} días naturales, en semana de seis días."
-    )
+def _mirror_schedule_assumptions(boq: BillOfQuantities, schedule: WorkSchedule) -> None:
+    """Put what the programa assumed in the register that defends it later.
+
+    Does not construct that sentence — ``build_schedule`` already did, once,
+    into ``schedule.assumptions`` (see ``_crew_assumption_sentence`` in
+    schedule.py). This just copies it here, so the same words that render on
+    the programa page also reach the Diagnóstico's criterios (hallazgos.py
+    extends criterios from ``boq.assumptions``) and the resumen_costos.md
+    export. A second, independently-worded copy of the same fact is the bug
+    this function replaced."""
+    boq.assumptions.extend(schedule.assumptions)
 
 
 def _integrate_with_analyses(
@@ -442,6 +438,7 @@ def generate_cost_report(
         plantilla_campo=list(config.plantilla_campo),
         indirectos_campo=indirectos_campo,
         integracion_resuelta=resolved,
+        money_basis=money_basis_from_boq(boq, units),
     )
     log_stage(
         logger,

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from klave_engine.common.config import Settings
 from klave_engine.common.errors import ReportGenerationError
 from klave_engine.costing.models import CostingOverrides, CostReport
+from klave_engine.costing.presentation import publishable_total
 from klave_engine.costing.recompute import (
     load_overrides,
     recompute_and_persist,
@@ -79,16 +80,20 @@ def create_version(
     control_dir = store.get_root(project_id) / settings.processed_dir_name
     with project_recompute_lock(project_id):
         report = _current_report(store, project_id)
+        reviews = load_reviews(control_dir)
         summary = save_version(
             control_dir,
             report,
-            load_reviews(control_dir),
+            reviews,
             load_overrides(control_dir) or CostingOverrides(),
             label=body.label,
             note=body.note,
             actor=actor,
             run_id=store.active_run_id(project_id),
         )
+    # The saved version keeps its own total (it is the record of what was
+    # signed), but the broadcast is a money surface: nothing on the bus
+    # carries a total the presupuesto page refuses to show.
     BUS.publish(
         "version_saved",
         project_id=project_id,
@@ -98,7 +103,7 @@ def create_version(
             "version_id": summary.version_id,
             "number": summary.number,
             "label": summary.label,
-            "grand_total": summary.grand_total,
+            "grand_total": publishable_total(report, reviews.verification),
         },
     )
     return summary.model_dump(mode="json")
@@ -179,11 +184,15 @@ def restore_version(
         except HTTPException:
             current = None
         current_overrides = load_overrides(control_dir) or CostingOverrides()
+        # Captured before save_reviews below replaces them: the "antes" total
+        # belongs to the sign-off that was in force when that report was the
+        # live one, and the "después" total to the sign-off being restored.
+        previous_reviews = load_reviews(control_dir)
         if current is not None:
             save_version(
                 control_dir,
                 current,
-                load_reviews(control_dir),
+                previous_reviews,
                 current_overrides,
                 label=f"Antes de restaurar v{version.summary.number}",
                 note="Guardada automáticamente al restaurar.",
@@ -225,8 +234,11 @@ def restore_version(
             "client_id": clean_client_id(x_client_id),
             "version": restored.version,
             "direct_cost": report.boq.direct_cost_total,
-            "grand_total": report.integration.grand_total,
-            "prev_grand_total": current.integration.grand_total if current else None,
+            "grand_total": publishable_total(report, version.reviews.verification),
+            "prev_grand_total": (
+                publishable_total(current, previous_reviews.verification)
+                if current else None
+            ),
             "review_action": "version_restored",
         },
     )

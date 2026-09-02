@@ -33,6 +33,7 @@ from datetime import date, timedelta
 
 from klave_engine.costing.catalog import PHASE_ORDER
 from klave_engine.costing.models import (
+    DERIVADO_DE,
     BillOfQuantities,
     Concept,
     ResourceType,
@@ -42,6 +43,14 @@ from klave_engine.costing.models import (
     UnitPriceAnalysis,
     WorkSchedule,
 )
+
+# The pairs that genuinely cannot overlap, derived from the same map that
+# orders them. Everything else stays start-to-start with a lag, because
+# traslape between trades is how obra actually runs — flattening that would
+# replace one wrong model with another.
+HARD_PREDECESSORS: dict[str, tuple[str, ...]] = {}
+for _derived, (_parent, _tipo) in DERIVADO_DE.items():
+    HARD_PREDECESSORS[_parent] = (*HARD_PREDECESSORS.get(_parent, ()), _derived)
 
 # Units that mean "one crew for one journey" in a matrix (art. 190: R is
 # per eight-hour journey) and "one machine for one hour" (art. 194: Rhm is
@@ -199,6 +208,19 @@ def build_schedule(
                         lag_days=max(0, cursor - previous_anchor.start_day),
                     )
                 )
+            for hard_code in HARD_PREDECESSORS.get(line.concept_code, ()):
+                placed = next(
+                    (a for a in activities if a.concept_code == hard_code), None
+                )
+                if placed is None:
+                    continue
+                cursor = max(cursor, placed.end_day)
+                links.append(
+                    ScheduleLink(predecessor=hard_code, kind="FS", lag_days=0)
+                )
+            # Same predecessor can reach here via two branches above; see
+            # _dedupe_links for why the collision is resolved by lag size.
+            links = _dedupe_links(links)
             activities.append(
                 ScheduleActivity(
                     concept_code=line.concept_code,
@@ -243,7 +265,60 @@ def build_schedule(
     )
     _compute_float(schedule)
     _apply_calendar(schedule, config.start_date)
+    # Built last, from the now-final schedule, so it can state calendar_days
+    # (only set by _apply_calendar, above) instead of the 0 it defaults to.
+    if schedule.activities:
+        schedule.assumptions.append(_crew_assumption_sentence(schedule, config))
     return schedule
+
+
+def _crew_assumption_sentence(schedule: WorkSchedule, config: ScheduleConfig) -> str:
+    """The one sentence that states the crew assumption behind the plazo.
+
+    Built here, and *only* here. report.py's BoQ-level assumptions register
+    does not write its own version of this fact — it mirrors
+    ``schedule.assumptions`` (see ``_mirror_schedule_assumptions``), and that
+    register in turn reaches the Diagnóstico's criterios (hallazgos.py) and
+    the resumen_costos.md export. Two independently-worded sentences stating
+    the same two config numbers — one on the programa page, one everywhere
+    ``boq.assumptions`` surfaces — is exactly the failure this plan exists to
+    close; the fix is one function, not "keep two texts in sync by hand".
+
+    Uses the clamped values (``max(..., 1)``), the same ones the duration
+    math above actually runs on — not the raw config, which a 0 or negative
+    frentes/crews_per_activity would otherwise let this sentence disagree
+    with the number of activities it is describing.
+    """
+    frentes = max(config.frentes, 1)
+    crews = max(config.crews_per_activity, 1)
+    from_matrix = sum(1 for a in schedule.activities if a.rendimiento_source == "matriz")
+    return (
+        f"Programa de obra: duraciones de {from_matrix} de {len(schedule.activities)} "
+        "actividades derivadas del rendimiento de su propia matriz (RLOPSRM art. 190), "
+        f"con {frentes} frente(s) de trabajo y {crews} cuadrilla(s) por actividad — "
+        "el supuesto que más mueve el plazo, y el plano no puede decirlo: ajústalo si "
+        "la obra tendrá más frentes. "
+        f"Plazo {schedule.total_duration_days} días hábiles = "
+        f"{schedule.calendar_days} días naturales, en semana de seis días."
+    )
+
+
+def _dedupe_links(links: list[ScheduleLink]) -> list[ScheduleLink]:
+    """Collapse links that state the same constraint twice.
+
+    The step anchor and the crew tail are frequently the same concept, and
+    each branch that can propose a link appends its own — so a link is kept
+    per distinct ``(predecessor, kind)``, not per branch. When two links do
+    collide, the larger lag wins: for a start-to-start relation both
+    constraints apply at once, so the true bound is their max and the
+    smaller lag is redundant."""
+    deduped: dict[tuple[str, str], ScheduleLink] = {}
+    for link in links:
+        key = (link.predecessor, link.kind)
+        current = deduped.get(key)
+        if current is None or link.lag_days > current.lag_days:
+            deduped[key] = link
+    return list(deduped.values())
 
 
 def _compute_float(schedule: WorkSchedule) -> None:
@@ -340,15 +415,37 @@ def _stretch_phase(
     phase_end: int,
     target_end: int,
 ) -> None:
-    """Scale a phase's activity timeline to span up to target_end (per-level floor)."""
+    """Scale a phase's activity timeline to span up to target_end (per-level floor).
+
+    Both ends of an activity go through one map of day coordinates, and the
+    duration falls out of them. Scaling ``start_day`` and ``duration_days``
+    independently rounds twice, and ``round(a·s) + round(b·s)`` can exceed
+    ``round((a+b)·s)`` by one — which slid a colado one day into its own
+    cimbra on 2 915 of 17 280 synthetic multi-level schedules. Nothing
+    re-checked it: the FS edge is established while placing the activity
+    (``cursor = max(cursor, placed.end_day)``, some 200 lines above) and
+    ``levels > 1`` is the only path that reaches this function afterwards.
+
+    The map is monotone non-decreasing, so every ordering the network already
+    established survives it: a pour that started no earlier than its
+    formwork's end still does. It also lands the phase exactly on
+    ``target_end`` instead of near it, since the last activity's end is
+    ``day(phase_end)``.
+    """
     span = max(phase_end - phase_start, 1)
     scale = (target_end - phase_start) / span
+
+    def day(value: int) -> int:
+        return phase_start + round((value - phase_start) * scale)
+
     for activity in activities:
         if activity.phase != phase:
             continue
-        activity.start_day = phase_start + round((activity.start_day - phase_start) * scale)
-        activity.duration_days = max(1, round(activity.duration_days * scale))
-        activity.end_day = activity.start_day + activity.duration_days
+        activity.start_day = day(activity.start_day)
+        # scale >= 1 here (target_end > phase_end), so a stretched activity
+        # can never be shorter than one day; the floor is defensive.
+        activity.end_day = max(day(activity.end_day), activity.start_day + 1)
+        activity.duration_days = activity.end_day - activity.start_day
 
 
 def direct_spend_by_period(schedule: WorkSchedule) -> list[float]:

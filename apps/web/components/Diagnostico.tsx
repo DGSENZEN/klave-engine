@@ -19,6 +19,7 @@ import {
   type CopilotAccion,
   type Diagnostico,
   type Hallazgo,
+  type HallazgoGrupo,
   type Severity,
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
@@ -103,7 +104,16 @@ function href(target: string | null, projectId: string): string | null {
   return target ? `/proyecto/${projectId}/${target}` : `/proyecto/${projectId}`;
 }
 
-function HallazgoRow({
+/**
+ * Por qué importa / cómo comprobarlo / qué hacer — the prose that explains
+ * one finding, plus the copilot action if there is one.
+ *
+ * Factored out of the card so the singleton path and the grouped path show
+ * this from the exact same markup. A group renders it once, from its
+ * highest-stake member: repeating it per member is what turned nineteen
+ * findings into a wall a reader learns to skim past.
+ */
+function HallazgoGuidance({
   hallazgo,
   projectId,
   accion,
@@ -115,6 +125,55 @@ function HallazgoRow({
   onApplied?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  return (
+    <>
+      {hallazgo.detail && (
+        <>
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted hover:text-foreground"
+            aria-expanded={open}
+          >
+            {open ? "Menos" : "Por qué importa"}
+            <CaretDown size={11} weight="bold" className={open ? "rotate-180" : ""} />
+          </button>
+          {open && (
+            <p className="mt-1 text-sm leading-relaxed text-muted">{hallazgo.detail}</p>
+          )}
+        </>
+      )}
+      {hallazgo.verificar && (
+        <p className="mt-1 text-sm text-muted">
+          <span className="font-medium text-foreground">Cómo comprobarlo: </span>
+          {hallazgo.verificar}
+        </p>
+      )}
+      {hallazgo.action && (
+        <p className="mt-1 text-sm text-muted">
+          <span className="font-medium text-foreground">Qué hacer: </span>
+          {hallazgo.action}
+        </p>
+      )}
+      {accion && (
+        <AccionDeKlave accion={accion} projectId={projectId} onApplied={onApplied} />
+      )}
+    </>
+  );
+}
+
+/** One finding, on its own: title, stake, guidance, and the way to act on it. */
+function HallazgoCard({
+  hallazgo,
+  projectId,
+  accion,
+  onApplied,
+}: {
+  hallazgo: Hallazgo;
+  projectId: string;
+  accion?: CopilotAccion;
+  onApplied?: () => void;
+}) {
   const tier = TIERS[hallazgo.severity];
   const link = href(hallazgo.target, projectId);
   const stake =
@@ -143,36 +202,121 @@ function HallazgoRow({
               </span>
             )}
           </div>
-          {hallazgo.detail && (
-            <>
-              <button
-                type="button"
-                onClick={() => setOpen((v) => !v)}
-                className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted hover:text-foreground"
-                aria-expanded={open}
+          <HallazgoGuidance
+            hallazgo={hallazgo}
+            projectId={projectId}
+            accion={accion}
+            onApplied={onApplied}
+          />
+        </div>
+        {link && (
+          <Link href={link} className={`${buttonClasses("ghost", "sm")} shrink-0`}>
+            Ir <ArrowRight size={13} weight="bold" />
+          </Link>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/**
+ * Many findings that differ only in which concept they name, as one card
+ * with a count. The header states the shared stake; the guidance below it
+ * comes from the highest-stake member and renders once; the members
+ * themselves stay one click away, named, with their own exposición and with
+ * their own copilot action, so nothing is actually hidden — it is just not
+ * printed nineteen times.
+ *
+ * That last clause used to be false in the way that mattered. The prose is
+ * genuinely shared — one "por qué importa" for nineteen unpriced concepts is
+ * the point of grouping — but an action is not prose: acciones.py emits one
+ * `dar_precio` per finding, addressed to that concept's own code and its own
+ * endpoint. Resolving only `primero`'s left eighteen of nineteen one-click
+ * "Darle precio a SAN-003" buttons with nothing rendering them.
+ */
+function HallazgoGrupoCard({
+  grupo,
+  projectId,
+  acciones,
+  onApplied,
+}: {
+  grupo: HallazgoGrupo;
+  projectId: string;
+  acciones: CopilotAccion[];
+  onApplied?: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const primero = grupo.miembros[0];
+  const tier = TIERS[grupo.severity];
+  const link = href(primero.target, projectId);
+  const accion = acciones.find((a) => a.hallazgo_id === primero.id);
+  const stake =
+    grupo.monto_afectado != null ? money(grupo.monto_afectado) : grupo.exposicion_total || null;
+
+  return (
+    <li className="border-t border-border/60 first:border-t-0">
+      <div className="flex items-start gap-3 px-4 py-3">
+        <span className={`mt-0.5 shrink-0 ${tier.text}`}>{tier.icon}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="text-sm font-medium">{grupo.titulo}</span>
+            <span className="text-xs text-faint">{MOMENTO[grupo.momento]}</span>
+            {stake && (
+              <span
+                className={`tabular rounded px-1.5 py-0.5 text-xs font-semibold ${tier.text} bg-surface-3/70`}
+                title={
+                  grupo.monto_afectado != null
+                    ? "Dinero ya contado que depende de esto"
+                    : "Cantidad en juego; su costo no se puede saber desde aquí"
+                }
               >
-                {open ? "Menos" : "Por qué importa"}
-                <CaretDown size={11} weight="bold" className={open ? "rotate-180" : ""} />
-              </button>
-              {open && (
-                <p className="mt-1 text-sm leading-relaxed text-muted">{hallazgo.detail}</p>
-              )}
-            </>
-          )}
-          {hallazgo.verificar && (
-            <p className="mt-1 text-sm text-muted">
-              <span className="font-medium text-foreground">Cómo comprobarlo: </span>
-              {hallazgo.verificar}
-            </p>
-          )}
-          {hallazgo.action && (
-            <p className="mt-1 text-sm text-muted">
-              <span className="font-medium text-foreground">Qué hacer: </span>
-              {hallazgo.action}
-            </p>
-          )}
-          {accion && (
-            <AccionDeKlave accion={accion} projectId={projectId} onApplied={onApplied} />
+                {stake}
+              </span>
+            )}
+          </div>
+          <HallazgoGuidance
+            hallazgo={primero}
+            projectId={projectId}
+            accion={accion}
+            onApplied={onApplied}
+          />
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="mt-1.5 inline-flex items-center gap-1 text-xs text-muted hover:text-foreground"
+          >
+            Ver los {grupo.count} conceptos
+            <CaretDown size={11} weight="bold" className={expanded ? "rotate-180" : ""} />
+          </button>
+          {expanded && (
+            <ul className="mt-1.5 space-y-2 rounded-lg border border-border/60 bg-surface-2/40 p-2">
+              {grupo.miembros.map((h) => {
+                // Skipped for `primero`: its action is already rendered by the
+                // shared guidance above, and printing it twice is a second
+                // button that does the same thing.
+                const suya = h.id === primero.id
+                  ? undefined
+                  : acciones.find((a) => a.hallazgo_id === h.id);
+                return (
+                  <li key={h.id} className="text-sm">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-muted">{h.concept_code ?? h.title}</span>
+                      {h.exposicion && (
+                        <span className="tabular text-xs text-faint">{h.exposicion}</span>
+                      )}
+                    </div>
+                    {suya && (
+                      <AccionDeKlave
+                        accion={suya}
+                        projectId={projectId}
+                        onApplied={onApplied}
+                      />
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </div>
         {link && (
@@ -207,14 +351,23 @@ export function AccionDeKlave({
   const [abierto, setAbierto] = useState(false);
   const [aplicando, setAplicando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hecho, setHecho] = useState<{ antes: number | null; despues: number } | null>(null);
+  const [hecho, setHecho] = useState<{
+    antes: number | null;
+    despues: number | null;
+  } | null>(null);
 
   if (hecho) {
     return (
       <p className="mt-1.5 flex items-center gap-1.5 text-sm text-success">
         <CheckCircle size={14} weight="fill" className="shrink-0" />
-        Hecho. El total pasó de {hecho.antes != null ? money(hecho.antes) : "—"} a{" "}
-        {money(hecho.despues)}.
+        {hecho.despues == null ? (
+          <>Hecho. El total sigue sin mostrarse hasta que se confirme la unidad del plano.</>
+        ) : (
+          <>
+            Hecho. El total pasó de {hecho.antes != null ? money(hecho.antes) : "—"} a{" "}
+            {money(hecho.despues)}.
+          </>
+        )}
       </p>
     );
   }
@@ -318,7 +471,11 @@ export function DiagnosticoPanel({
 }) {
   const groups = ORDER.map((severity) => ({
     severity,
-    items: diagnostico.hallazgos.filter((h) => h.severity === severity),
+    items: diagnostico.grupos.filter((g) => g.severity === severity),
+    // The pill and the section header count findings, not cards: nineteen
+    // unpriced concepts collapsed into one card are still nineteen things
+    // that need a price, and `by_severity` already counts them that way.
+    count: diagnostico.by_severity[severity] ?? 0,
   })).filter((g) => g.items.length > 0);
 
   if (groups.length === 0) {
@@ -341,23 +498,24 @@ export function DiagnosticoPanel({
         <div className="border-b border-border px-4 py-3">
           <p className="text-[15px] font-medium leading-snug">{diagnostico.resumen}</p>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {groups.map(({ severity, items }) => (
+            {groups.map(({ severity, count }) => (
               <span
                 key={severity}
                 className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${TIERS[severity].box} ${TIERS[severity].text}`}
                 title={TIERS[severity].sub}
               >
                 {TIERS[severity].icon}
-                {TIERS[severity].count(items.length)}
+                {TIERS[severity].count(count)}
               </span>
             ))}
           </div>
         </div>
-        {groups.map(({ severity, items }) => (
+        {groups.map(({ severity, items, count }) => (
           <TierGroup
             key={severity}
             severity={severity}
             items={items}
+            count={count}
             projectId={projectId}
             acciones={acciones}
             onApplied={onApplied}
@@ -375,13 +533,16 @@ export function DiagnosticoPanel({
 function TierGroup({
   severity,
   items,
+  count,
   projectId,
   defaultOpen,
   acciones,
   onApplied,
 }: {
   severity: Severity;
-  items: Hallazgo[];
+  items: HallazgoGrupo[];
+  /** Findings in this tier, counted individually (see the caller). */
+  count: number;
   projectId: string;
   defaultOpen: boolean;
   acciones: CopilotAccion[];
@@ -400,7 +561,7 @@ function TierGroup({
         <span className={tier.text}>{tier.icon}</span>
         <span className="text-xs font-semibold uppercase tracking-wide">{tier.label}</span>
         <span className="text-xs text-muted">· {tier.sub}</span>
-        <span className="tabular ml-auto text-xs text-faint">{items.length}</span>
+        <span className="tabular ml-auto text-xs text-faint">{count}</span>
         <CaretDown
           size={12}
           weight="bold"
@@ -409,15 +570,25 @@ function TierGroup({
       </button>
       {open && (
         <ul>
-          {items.map((h) => (
-            <HallazgoRow
-              key={h.id}
-              hallazgo={h}
-              projectId={projectId}
-              accion={acciones.find((a) => a.hallazgo_id === h.id)}
-              onApplied={onApplied}
-            />
-          ))}
+          {items.map((grupo) =>
+            grupo.count === 1 ? (
+              <HallazgoCard
+                key={grupo.miembros[0].id}
+                hallazgo={grupo.miembros[0]}
+                projectId={projectId}
+                accion={acciones.find((a) => a.hallazgo_id === grupo.miembros[0].id)}
+                onApplied={onApplied}
+              />
+            ) : (
+              <HallazgoGrupoCard
+                key={grupo.rule_id}
+                grupo={grupo}
+                projectId={projectId}
+                acciones={acciones}
+                onApplied={onApplied}
+              />
+            ),
+          )}
         </ul>
       )}
     </div>

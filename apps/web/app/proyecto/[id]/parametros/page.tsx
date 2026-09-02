@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowCounterClockwise, Calculator, CircleNotch } from "@phosphor-icons/react";
 import {
@@ -30,6 +31,7 @@ import {
   Th,
 } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
+import { moneyState } from "@/components/MoneyGate";
 import { CONFIG_GROUPS, CONFIG_LABELS, ConfigGroup, type FuentePct } from "@/components/CostingConfigForm";
 import { DesgloseCampoCard, OficinaShareCard } from "@/components/DesgloseCampo";
 import { actorLabel } from "@/lib/collab";
@@ -288,13 +290,20 @@ export default function ParametrosPage() {
     }
   }
 
+  // The same authority every other money page obeys. This page had no call to
+  // it at all, so a legacy project showed the verification gate on
+  // /presupuesto and its full total in the barra fija here.
+  const blocked = moneyState(report) === "blocked";
+
   const delta = useMemo(() => {
-    if (!report || !baseline) return null;
+    // A delta is a peso figure like any other — and the delta of a withheld
+    // total leaks its movement even when the number itself is hidden.
+    if (!report || !baseline || blocked) return null;
     return {
       direct: report.boq.direct_cost_total - baseline.direct,
       total: report.integration.grand_total - baseline.total,
     };
-  }, [report, baseline]);
+  }, [report, baseline, blocked]);
 
   if (!config && error) {
     return (
@@ -356,6 +365,23 @@ export default function ParametrosPage() {
       {error && (
         <div className="mb-4">
           <Callout tone="danger">{error}</Callout>
+        </div>
+      )}
+
+      {blocked && (
+        <div className="mb-4">
+          <Callout
+            tone="warning"
+            action={
+              <Link href={`/proyecto/${id}`} className="inline-flex">
+                <Button size="sm">Ruta de verificación</Button>
+              </Link>
+            }
+          >
+            <span className="font-medium">Sin precio.</span> Puedes ajustar parámetros y
+            precios, pero no mostramos importes mientras la escala del plano no esté
+            confirmada: todo el dinero se multiplica por ella.
+          </Callout>
         </div>
       )}
 
@@ -464,15 +490,21 @@ export default function ParametrosPage() {
               label="Costo directo"
               value={report?.boq.direct_cost_total}
               delta={delta?.direct}
+              blocked={blocked}
             />
             <div className="hidden sm:block">
-              <Summary label="Precio de venta" value={report?.integration.sale_price} />
+              <Summary
+                label="Precio de venta"
+                value={report?.integration.sale_price}
+                blocked={blocked}
+              />
             </div>
             <div className="hidden md:block">
               <Summary
                 label="Total c/ contingencia"
                 value={report?.integration.grand_total}
                 delta={delta?.total}
+                blocked={blocked}
                 accent
               />
             </div>
@@ -528,12 +560,24 @@ function Summary({
   value,
   delta,
   accent,
+  blocked,
 }: {
   label: string;
   value?: number;
   delta?: number;
   accent?: boolean;
+  /** The verdict withholds money: say so, rather than print the figure or a
+   * zero. Distinct from `value == null`, which only means "aún cargando". */
+  blocked?: boolean;
 }) {
+  if (blocked) {
+    return (
+      <div>
+        <div className="microlabel">{label}</div>
+        <div className="text-lg font-semibold text-muted">Sin precio</div>
+      </div>
+    );
+  }
   return (
     <div>
       <div className="microlabel">{label}</div>

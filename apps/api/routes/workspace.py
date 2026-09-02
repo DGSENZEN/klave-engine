@@ -20,6 +20,7 @@ from klave_engine.costing.defaults import (
     save_workspace_defaults,
 )
 from klave_engine.costing.models import CostingConfig
+from klave_engine.costing.presentation import MoneyBasis, resolve_money_state
 from klave_engine.costing.reviews import REVIEWS_FILENAME, load_reviews
 from klave_engine.costing.vigencia import FRESH_MONTHS, freshness
 from klave_engine.llm.tarifas import consumo_del_mes
@@ -87,6 +88,7 @@ def _project_overview(
         "excluded_count": 0,
         "adjustment_count": 0,
         "grand_total": None,
+        "money_state": "blocked",
         "currency": "MXN",
         "last_activity": None,
         "job_error": None,
@@ -134,7 +136,15 @@ def _project_overview(
     if report_path.exists():
         try:
             report = read_json(report_path)
-            entry["grand_total"] = report["integration"]["grand_total"]
+            raw_basis = report.get("money_basis")
+            basis = MoneyBasis.model_validate(raw_basis) if raw_basis else None
+            state = resolve_money_state(basis, verification)
+            entry["money_state"] = state
+            # A total the presupuesto refuses to show is a total the list may
+            # not show either: one authority, every surface.
+            entry["grand_total"] = (
+                None if state == "blocked" else report["integration"]["grand_total"]
+            )
             entry["currency"] = report.get("currency", "MXN")
         except (KeyError, TypeError, ValueError, OSError):
             pass

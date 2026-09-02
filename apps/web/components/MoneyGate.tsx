@@ -3,35 +3,26 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Ruler, Warning } from "@phosphor-icons/react";
-import { setVerification, type CostReport, type ProjectReviews } from "@/lib/api";
 import {
-  Button,
-  Callout,
-  Card,
-  CONFIDENCE_FIRM,
-  Select,
-} from "@/components/ui";
+  setVerification,
+  type CostReport,
+  type MoneyGateState,
+} from "@/lib/api";
+import { Button, Callout, Card, Select } from "@/components/ui";
 
-export type MoneyGateState = "ok" | "unverified" | "blocked";
+// Re-exported so the existing `import { MoneyGateState } from
+// "@/components/MoneyGate"` call sites keep working: the type itself now
+// lives in lib/api.ts, because lib/ must not import from components/.
+export type { MoneyGateState };
 
 /**
- * The one rule every money surface obeys: no MXN until the unit everything
- * multiplies by is either detected with confidence or confirmed by a person.
- * "unverified" shows money with the SIN VERIFICAR banner; "blocked" shows
- * the gate instead of amounts.
+ * The verdict is resolved on the server by costing.presentation, because the
+ * rule used to live here, in the exports, and in the project list at three
+ * different levels of rigor — and the newest surface always got the weakest
+ * one. The client renders the answer; it no longer derives it.
  */
-export function moneyGate(
-  costs: CostReport | null,
-  reviews: ProjectReviews | null,
-): MoneyGateState {
-  if (!costs) return "ok";
-  // The engine's own verdict wins: without a reliable unit it priced nothing.
-  if (costs.boq.units_reliable === false) return "blocked";
-  const units = costs.drawing_units;
-  const confirmed = Boolean(reviews?.verification.units_confirmed_at);
-  if (confirmed) return "ok";
-  const trustworthy = units.unit !== "drawing_units" && units.confidence >= CONFIDENCE_FIRM;
-  return trustworthy ? "unverified" : "blocked";
+export function moneyState(costs: CostReport | null): MoneyGateState {
+  return costs?.money_state ?? "ok";
 }
 
 /** Money is shown, but nobody has signed off the reading yet: say so on
@@ -39,13 +30,11 @@ export function moneyGate(
 export function UnverifiedBanner({
   id,
   costs,
-  reviews,
 }: {
   id: string;
   costs: CostReport | null;
-  reviews: ProjectReviews | null;
 }) {
-  if (moneyGate(costs, reviews) !== "unverified") return null;
+  if (moneyState(costs) !== "unverified") return null;
   const units = costs?.drawing_units;
   return (
     <div className="mb-4">

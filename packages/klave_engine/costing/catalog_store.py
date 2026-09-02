@@ -28,7 +28,13 @@ from klave_engine.costing.instalaciones import (
 )
 from klave_engine.costing.insumos import APU_TEMPLATES, RESOURCES
 from klave_engine.costing.matching import unit_key
-from klave_engine.costing.models import CostingAssumptions, Resource, ResourceType
+from klave_engine.costing.models import (
+    _OFFSET_POR_TIPO,
+    DERIVADO_DE,
+    CostingAssumptions,
+    Resource,
+    ResourceType,
+)
 
 logger = get_logger(__name__)
 
@@ -637,6 +643,32 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '22') "
                     "ON CONFLICT(key) DO UPDATE SET value = '22'"
                 )
+            # ⚠ FUERA DE ORDEN — este bloque `< 4` va *después* del `< 22`, así
+            # que en su momento era la última escritura de schema_version.
+            # Medido: un store nuevo quedaba en '4' al primer open (version_row
+            # es None, corren todos los bloques, y éste escribía al final) y
+            # sólo llegaba al tope al segundo, cuando el snapshot `version_row`
+            # decía 4 y todos los `< N` de arriba volvían a correr — son
+            # idempotentes.
+            #
+            # Los datos quedan bien en ambos casos y se corrige solo, así que
+            # la cadena NO se reestructura: mover este bloque volvería a
+            # correr v4 sobre stores que ya pasaron por él. La regla al
+            # agregar versiones nuevas: van *debajo* de este bloque, no
+            # encima, o un store nuevo terminará en '4'. Y nada puede suponer
+            # que schema_version == la última versión justo después de crear
+            # el store; sólo lo es a partir del segundo open.
+            if version_row is None or int(version_row["value"]) < 4:
+                # v3 seeded acero matrices in kg against the per-tonne insumo.
+                conn.execute(
+                    "UPDATE apu_components SET quantity = quantity / 1000.0 "
+                    "WHERE concept_code LIKE 'ACE-%' AND resource_code = 'MAT-ACERO' "
+                    "AND quantity > 0.5"
+                )
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '4') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '4'"
+                )
             if version_row is None or int(version_row["value"]) < 23:
                 # El tabique de albañilería, aparte del block estructural:
                 # ALB-001 sin matriz — el taller le pone precio.
@@ -649,16 +681,14 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '23') "
                     "ON CONFLICT(key) DO UPDATE SET value = '23'"
                 )
-            if version_row is None or int(version_row["value"]) < 4:
-                # v3 seeded acero matrices in kg against the per-tonne insumo.
+            if version_row is None or int(version_row["value"]) < 24:
+                # El acero y la cimbra se acomodan antes del colado al que
+                # sirven (la rama confianza-del-numero lo traía como v22; el
+                # número ya estaba tomado por EST-016 y aquí se renumera).
+                self._migrate_v24(conn)
                 conn.execute(
-                    "UPDATE apu_components SET quantity = quantity / 1000.0 "
-                    "WHERE concept_code LIKE 'ACE-%' AND resource_code = 'MAT-ACERO' "
-                    "AND quantity > 0.5"
-                )
-                conn.execute(
-                    "INSERT INTO meta (key, value) VALUES ('schema_version', '4') "
-                    "ON CONFLICT(key) DO UPDATE SET value = '4'"
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '24') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '24'"
                 )
 
     @contextmanager
@@ -830,6 +860,30 @@ class CatalogStore:
             logger, "catalog_migrated_v13", db_path=str(self.db_path),
             kept_with_steel_or_cimbra=",".join(kept),
         )
+
+    def _migrate_v24(self, conn: sqlite3.Connection) -> None:
+        """Put acero and cimbra before the pour they serve.
+
+        They sat in blocks appended at the end of their phase — ACE-* at
+        240-245, EST-008..011 at 344-347 — so the programa scheduled the
+        formwork for a column 213 days after that column was poured. The
+        catalog is already spaced by ten, so each derived concept moves into
+        the gap immediately before its parent. Nothing else is reordered.
+
+        Idempotent: the target is computed from the parent's order, which this
+        migration never changes, so re-running writes the same values.
+        """
+        orders = {
+            row["code"]: row["sequence_order"]
+            for row in conn.execute("SELECT code, sequence_order FROM concepts")
+        }
+        for code, (parent, tipo) in DERIVADO_DE.items():
+            if code not in orders or parent not in orders:
+                continue
+            conn.execute(
+                "UPDATE concepts SET sequence_order = ? WHERE code = ?",
+                (orders[parent] + _OFFSET_POR_TIPO[tipo], code),
+            )
 
     def _migrate_v11(self, conn: sqlite3.Connection) -> None:
         """Albañilería y acabados read from the architecture (aplanado,

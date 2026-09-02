@@ -76,7 +76,17 @@ Reglas que salen de ahí:
   mientras que la formulación impersonal («no está claro») no alcanzó
   significancia ([FAccT 2024](https://arxiv.org/abs/2405.00623)).
 
-### 3. La procedencia es un recorte de la hoja, no un párrafo
+### 3. El veredicto se decide una vez
+
+Si un número puede mostrarse como dinero lo decide
+`costing/presentation.py` y nadie más. La regla vivía en tres pantallas
+con tres niveles de rigor, y la más nueva siempre heredaba el más
+débil: la lista de proyectos llegó a mostrar $768,759,055 de una obra
+cuyo presupuesto se negaba a mostrar un peso. Una regla que se vuelve a
+deducir en cada superficie es una regla que se degrada con cada
+superficie.
+
+### 4. La procedencia es un recorte de la hoja, no un párrafo
 
 Aquí está el hallazgo más incómodo de toda la investigación, y hay que
 mirarlo de frente: **las explicaciones aumentan la aceptación de lo que
@@ -107,7 +117,7 @@ la hoja exacta de donde salió la cantidad se comprueba en segundos. Por eso:
   detalle. Si confirmar una lectura toma más de unos segundos, se deja de
   confirmar, y ninguna redacción lo arregla.
 
-### 4. La verificación es desafío-respuesta, no una palomita
+### 5. La verificación es desafío-respuesta, no una palomita
 
 Una casilla se marca sin mirar; por lo tanto se marcará sin mirar. La
 aviación resolvió esto hace décadas distinguiendo la lista *read-do* (para
@@ -138,7 +148,7 @@ correcciones del ingeniero se le devuelven visibles — «tus verificaciones
 corrigieron 12 lecturas este mes» — porque eso es lo que convierte un
 trámite en un instrumento profesional.
 
-### 5. El sello no puede estar en todas partes
+### 6. El sello no puede estar en todas partes
 
 «SIN VERIFICAR» en todo, siempre, no se lee. Anderson et al. midieron con
 resonancia que la respuesta visual a una advertencia **idéntica se
@@ -157,7 +167,7 @@ que se lee.
 
 ## II. Severidad
 
-### 6. Cuatro canales, tres de ellos alarmas
+### 7. Cuatro canales, tres de ellos alarmas
 
 Klave clasifica todo hallazgo antes de mostrarlo, como una *filosofía de
 alarmas* racionaliza una alarma (ANSI/ISA-18.2, EEMUA 191). La prueba de
@@ -188,7 +198,7 @@ Esa misma alerta reporta 98 eventos centinela relacionados con alarmas
 entre 2009 y 2012, **80 de ellos con muerte**. Las apuestas de Klave son
 dinero, no vidas; el mecanismo de falla es idéntico.
 
-### 7. Nunca un hallazgo por renglón
+### 8. Nunca un hallazgo por renglón
 
 Seis conceptos con el f'c equivocado son **una** decisión y se muestran
 como un hallazgo que carga el millón de pesos completo. La gestión de
@@ -202,7 +212,7 @@ prioridad principalmente **eliminando duplicados**, no reordenándolos.
 Corolario: todo grupo lleva denominador. «40 de 277 marcas de trabe sin
 sección» dice algo; «40 marcas sin sección» no.
 
-### 8. La categoría nunca sustituye al número
+### 9. La categoría nunca sustituye al número
 
 Las matrices de riesgo tienen un defecto documentado: Cox mostró que
 resuelven correctamente **menos del 10 %** de los pares de riesgos, que
@@ -220,7 +230,7 @@ por eso **no hay eje de probabilidad**: no tenemos una frecuencia medida
 que poner ahí, y adivinarla es exactamente el caso donde Cox mide que la
 matriz empeora las decisiones.
 
-### 9. Cada hallazgo dice cuándo deja de ser barato
+### 10. Cada hallazgo dice cuándo deja de ser barato
 
 La prioridad en ISA-18.2 es bidimensional: consecuencia **×** tiempo de
 respuesta. El análogo en costos no es el reloj, es la etapa: *antes de
@@ -228,7 +238,7 @@ entregar*, *antes de cotizar*, *antes de contratar*. Arreglar un f'c antes
 de cotizar cuesta trabajo; después de contratar cuesta una orden de
 cambio. Esa etiqueta es lo que permite triar sin leerlo todo.
 
-### 10. Un bloqueo se bloquea; no se pinta de rojo
+### 11. Un bloqueo se bloquea; no se pinta de rojo
 
 Akhawe y Felt midieron 25 millones de impresiones de advertencias de
 navegador: la misma advertencia de SSL tuvo **33 % de click-through en
@@ -243,7 +253,7 @@ Por eso un hallazgo bloqueante en Klave **detiene el archivo**. El camino
 para pasar es escribir por qué, y lo escrito viaja dentro del Excel: quien
 lo recibe se entera por el archivo, no por quien se lo mandó.
 
-### 11. Lo que nadie atiende se mide y se degrada
+### 12. Lo que nadie atiende se mide y se degrada
 
 Google define falso positivo de manera conductual: un hallazgo es
 «efectivamente falso positivo» **si el desarrollador no hizo nada después
@@ -264,7 +274,7 @@ me sirve». Está aquí porque la regla se decide antes que el código.)*
 
 ## III. Legibilidad
 
-### 12. Panorama primero; y el panorama es el filtro
+### 13. Panorama primero; y el panorama es el filtro
 
 «Overview first, zoom and filter, then details-on-demand» (Shneiderman,
 [1996](https://www.cs.umd.edu/~ben/papers/Shneiderman1996eyes.pdf)). La
@@ -278,7 +288,7 @@ De las siete tareas de Shneiderman, las dos que Klave más descuida son
 justo las que necesita un perito que defiende un presupuesto seis meses
 después.
 
-### 13. Cada renglón carga su propio contexto
+### 14. Cada renglón carga su propio contexto
 
 La queja original —«hay que escarbar para tener contexto legible»— tiene
 nombre técnico: **falta de rastro de información** (Pirolli y Card,
@@ -293,7 +303,7 @@ navegar para decidir. La prueba de aceptación es concreta: **toma 20
 renglones al azar; el veredicto debe ser el mismo leyendo solo el renglón
 que leyendo el renglón más su panel de detalle.**
 
-### 14. Lo que hay que integrar mentalmente va junto físicamente
+### 15. Lo que hay que integrar mentalmente va junto físicamente
 
 El *efecto de atención dividida*: separar dos fuentes que solo se entienden
 juntas impone carga extraneosa (Chandler y Sweller,
@@ -305,7 +315,7 @@ caso de manual.
 
 Regla: la advertencia de la línea *N* se dibuja dentro de la línea *N*.
 
-### 15. Etiquetas directas, no leyendas
+### 16. Etiquetas directas, no leyendas
 
 Franconeri et al., revisión par-evaluada: la gente responde **más rápido y
 con más exactitud** con datos etiquetados directamente que con leyenda, y
@@ -319,7 +329,7 @@ precomputar la comparación y mostrar la diferencia.
 De ahí también: la severidad nunca la carga el color solo. Cada nivel dice
 su nombre y muestra su ícono.
 
-### 16. Dos niveles de revelación, no tres
+### 17. Dos niveles de revelación, no tres
 
 Nielsen: más de dos niveles de revelación progresiva «típicamente tienen
 baja usabilidad porque los usuarios se pierden»
@@ -332,7 +342,7 @@ complejas dice lo mismo por el otro lado: permitir ver información
 suplementaria **sin salir de la pantalla principal**
 ([NN/g 2020](https://www.nngroup.com/articles/complex-application-design/)).
 
-### 17. Una cola plana de 2 000 elementos está rota
+### 18. Una cola plana de 2 000 elementos está rota
 
 Este es el hallazgo que más obliga a rediseñar, y no es intuitivo.
 
@@ -386,7 +396,7 @@ proponga otra vez sin evidencia nueva.
 | «Maximizar la razón dato-tinta» | Franconeri et al.: la definición de «tinta» es «frustrantemente vaga», la evidencia de preferencia se contradice, y quitar unos elementos acelera mientras quitar otros retrasa. Heurística estética, no ley. En una tabla que alguien va a barrer 40 minutos, los separadores están trabajando. |
 | Quitar toda decoración por «chartjunk» | Mismo trabajo: los adornos **relacionados con el dato** pueden mejorar memoria y enganche. La literatura está dividida, no cerrada. |
 | Mostrar «87 %» junto a cada detección | Ver principio 2. Sin calibración medida, es una mentira con decimales. |
-| Explicar en prosa por qué la IA leyó lo que leyó | Ver principio 3: aumenta la aceptación sin aumentar el acierto, y una explicación vacía funciona casi igual. Va el recorte de la hoja. |
+| Explicar en prosa por qué la IA leyó lo que leyó | Ver principio 4: aumenta la aceptación sin aumentar el acierto, y una explicación vacía funciona casi igual. Va el recorte de la hoja. |
 | Pre-llenar el presupuesto con lo que propone la IA y dejar que el ingeniero corrija | Green y Chen, N=2 140: presentar la evaluación algorítmica **cambió cómo la gente pondera valores** y esos corrimientos **cancelaron** la ganancia de exactitud ([CSCW 2021](https://dl.acm.org/doi/10.1145/3479562)). Un campo pre-llenado es el ancla más fuerte que se puede construir. |
 | «Que el ingeniero decida primero y luego vea la IA» | Suena obvio y la evidencia está **peleada**. Buçinca et al. midieron que forzar el compromiso reduce la sobreconfianza ([CSCW 2021](https://arxiv.org/abs/2102.09692)); Fogliato et al., con 19 radiólogos reales, encontraron que decidir primero los hizo **menos propensos a estar de acuerdo con la IA tuviera o no razón**, y consultar menos a colegas ([FAccT 2022](https://arxiv.org/abs/2205.09696)). Su población se parece más a nuestros ingenieros. Se prueba con bandera, no se asume. |
 
@@ -396,18 +406,18 @@ proponga otra vez sin evidencia nueva.
 
 - **Al escribir un hallazgo nuevo:** el tipo se registra con causa,
   consecuencia, cómo comprobarlo, acción, momento límite y nivel. Si no se
-  puede escribir la acción, no es un hallazgo (principio 6). El nivel se
+  puede escribir la acción, no es un hallazgo (principio 7). El nivel se
   decide contra esta regla escrita, nunca al vuelo por quien agrega el
   check — que es justo lo que Cox mide que produce calificaciones opuestas
   para el mismo riesgo.
-- **Al diseñar una pantalla de datos:** panorama primero (12), el renglón
-  se basta solo (13), lo relacionado va junto (14), etiquetas directas
-  (15), dos niveles (16).
+- **Al diseñar una pantalla de datos:** panorama primero (13), el renglón
+  se basta solo (14), lo relacionado va junto (15), etiquetas directas
+  (16), dos niveles (17).
 - **Al pedirle algo al usuario:** si es una verificación, es
-  desafío-respuesta (4). Si es una revisión masiva, se sube la prevalencia
-  (17).
+  desafío-respuesta (5). Si es una revisión masiva, se sube la prevalencia
+  (18).
 - **Al mostrar algo de la IA:** recorte verificable, duda en primera
-  persona, y la confianza dirige la atención en vez de estamparse (2, 3).
+  persona, y la confianza dirige la atención en vez de estamparse (2, 4).
 
 ### Advertencia honesta sobre estas fuentes
 

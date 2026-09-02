@@ -3,10 +3,10 @@
 import { useParams } from "next/navigation";
 import { Money, CalendarBlank, PiggyBank, Wrench } from "@phosphor-icons/react";
 import { money, money2, type PeriodCashflow } from "@/lib/api";
-import { useCostReport, useProjectReviews } from "@/lib/useProjectReport";
+import { useCostReport } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
 import { ProgramaFlujoTabs } from "@/components/ProgramaFlujoTabs";
-import { moneyGate, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
+import { moneyState, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
 import {
   Callout,
   Card,
@@ -25,7 +25,6 @@ import {
 export default function FlujoPage() {
   const { id } = useParams<{ id: string }>();
   const { costs, error } = useCostReport(id);
-  const reviews = useProjectReviews(id);
   const { actorName } = useProjectLive();
 
   if (error) {
@@ -61,7 +60,7 @@ export default function FlujoPage() {
     );
   }
 
-  if (moneyGate(costs, reviews) === "blocked") {
+  if (moneyState(costs) === "blocked") {
     return (
       <div className="px-6 py-7 lg:px-8">
         <PageHeader title="Flujo financiero" />
@@ -81,7 +80,7 @@ export default function FlujoPage() {
         sub="Estimaciones por periodo a precio de venta: anticipo, amortización, retenciones y flujo neto."
       />
       <ProgramaFlujoTabs id={id} />
-      <UnverifiedBanner id={id} costs={costs} reviews={reviews} />
+      <UnverifiedBanner id={id} costs={costs} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric

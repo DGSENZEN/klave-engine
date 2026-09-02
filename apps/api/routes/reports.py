@@ -7,6 +7,12 @@ from klave_engine.common.config import Settings
 from klave_engine.costing.hallazgos import diagnose
 from klave_engine.costing.models import CostingConfig, CostingOverrides, CostReport
 from klave_engine.costing.plantilla import build_personal_tecnico, plantilla_sugerida
+from klave_engine.costing.presentation import (
+    MoneyBasis,
+    publishable_stored_total,
+    publishable_total,
+    resolve_money_state,
+)
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
 from klave_engine.costing.reviews import load_reviews
 from klave_engine.detection.frames import SheetFrame
@@ -33,8 +39,27 @@ def get_quantities(project_id: str, store: ProjectStore = Depends(get_store)) ->
 
 
 @router.get("/{project_id}/costs")
-def get_costs(project_id: str, store: ProjectStore = Depends(get_store)) -> dict:
-    return store.read_artifact(project_id, "cost_report.json")
+def get_costs(
+    project_id: str,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """The report as stored, plus the verdict resolved against today's
+    sign-off. The verdict is not stored because confirming a unit changes no
+    number and therefore triggers no recompute: a frozen verdict would read
+    "unverified" forever."""
+    report = store.read_artifact(project_id, "cost_report.json")
+    control_dir = store.get_root(project_id) / settings.processed_dir_name
+    raw_basis = report.get("money_basis")
+    try:
+        basis = MoneyBasis.model_validate(raw_basis) if raw_basis else None
+    except (KeyError, TypeError, ValueError, OSError):
+        # A hand-edited or corrupted basis is exactly the kind of legacy data
+        # this feature exists to gate, not 500 on — same tolerance as
+        # workspace.py's report-reading block, which resolves the same way.
+        basis = None
+    report["money_state"] = resolve_money_state(basis, load_reviews(control_dir).verification)
+    return report
 
 
 @router.get("/{project_id}/diagnostico")
@@ -196,12 +221,15 @@ def recompute(
         )
     actor = clean_actor(x_actor)
     control_dir = root / settings.processed_dir_name
-    # Snapshot the total before recomputing so the broadcast can show the delta.
+    # Snapshot the total before recomputing so the broadcast can show the
+    # delta — through the same authority the presupuesto page obeys, because
+    # ProjectLive renders this payload as "Total $X · ▲ $Y" in the timeline.
+    verification = load_reviews(control_dir).verification
     try:
-        prev_grand_total = store.read_artifact(project_id, "cost_report.json")[
-            "integration"
-        ]["grand_total"]
-    except (HTTPException, KeyError, TypeError):
+        prev_grand_total = publishable_stored_total(
+            store.read_artifact(project_id, "cost_report.json"), verification
+        )
+    except HTTPException:
         prev_grand_total = None
     with project_recompute_lock(project_id):
         current = load_overrides(control_dir)
@@ -240,7 +268,7 @@ def recompute(
             "client_id": clean_client_id(x_client_id),
             "version": overrides.version,
             "direct_cost": report.boq.direct_cost_total,
-            "grand_total": report.integration.grand_total,
+            "grand_total": publishable_total(report, verification),
             "prev_grand_total": prev_grand_total,
             "insumo_overrides": len(overrides.insumo_prices),
         },

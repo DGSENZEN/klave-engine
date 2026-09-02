@@ -32,7 +32,8 @@ from klave_engine.costing.explosion import explode
 from klave_engine.costing.generadores import calcular as calcular_generador
 from klave_engine.costing.indirectos import CATEGORIA_LABEL
 from klave_engine.costing.letras import pesos_con_letra
-from klave_engine.costing.models import BoqLine, Concept, CostReport
+from klave_engine.costing.models import BoqLine, Concept, CostReport, MoneyBasis
+from klave_engine.costing.presentation import MoneyState, basis_reasons, resolve_money_state
 from klave_engine.costing.programas import build_programas
 from klave_engine.costing.reviews import ProjectReviews
 from klave_engine.costing.schedule import quantity_by_period
@@ -46,9 +47,22 @@ SOFT = "F2F2F3"
 # A line with quantity and no price: the cell says so instead of a zero
 # that would hide in a sum.
 UNPRICED = "SIN PRECIO"
+# The one cause this sentence actually describes. It used to be emitted for
+# every ``blocked`` workbook, and ``blocked`` has three causes — so a run
+# whose unit was read as metres at 30 % confidence shipped a catálogo de
+# conceptos (LOPSRM art. 45) asserting in writing that its cantidades were
+# in unidades de dibujo, directly under a carátula row saying "Unidades del
+# plano: m". Every report written before this verdict existed carries no
+# basis at all and hit the same sentence.
 SIN_UNIDADES = (
     "SIN UNIDADES — la unidad del plano no es confiable: cantidades en unidades de dibujo, "
     "sin precio. Confirma la unidad en Klave antes de usar este archivo."
+)
+SIN_PRECIOS = "SIN PRECIOS —"
+SIN_VEREDICTO = "esta corrida no trae veredicto de unidades"
+CANTIDADES_SI = (
+    "Las cantidades son las medidas; ningún importe se imprime hasta que confirmes "
+    "la unidad en Klave."
 )
 MONEY_FORMAT = '"$"#,##0.00'
 QTY_FORMAT = "#,##0.00"
@@ -92,6 +106,43 @@ def _muted(ws: Worksheet, row: int, col: int, text: str) -> None:
     cell.font = Font(size=9, color=MUTED)
 
 
+def _sentence(text: str) -> str:
+    text = text.strip()
+    return text if text.endswith((".", "!", "?")) else f"{text}."
+
+
+def blocked_banner(basis: MoneyBasis | None) -> str:
+    """Why this workbook carries no prices, in the run's own words.
+
+    ``resolve_money_state`` returns ``blocked`` for three different reasons
+    and only one of them is "the unit is not trustworthy". The reasons were
+    already recorded on the run's ``MoneyBasis`` by ``money_basis_from_boq``
+    and read back by ``presentation.basis_reasons`` — this is where they were
+    always meant to be printed. A basis with no stated reason still gets an
+    honest sentence rather than an empty banner.
+    """
+    if basis is not None and not basis.units_reliable:
+        return SIN_UNIDADES
+    motivos = " ".join(_sentence(r) for r in basis_reasons(basis) if r.strip())
+    return f"{SIN_PRECIOS} {motivos or _sentence(SIN_VEREDICTO)} {CANTIDADES_SI}"
+
+
+def _banner_row(ws: Worksheet, row: int, report: CostReport) -> None:
+    cell = ws.cell(row=row, column=1, value=blocked_banner(report.money_basis))
+    cell.font = Font(bold=True, size=9, color="B42318")
+
+
+def _peso(value: float, blocked: bool) -> float | str:
+    """A peso figure, or the honest absence when the verdict withholds money.
+
+    Every derived amount in these workbooks goes through here. Gating only
+    the grand total left the presupuesto printing "Precio de venta 29,689.18"
+    and "Contingencia 1,484.46" two rows above a withheld TOTAL — the reader
+    just adds them. What is gated is money, not the last row.
+    """
+    return UNPRICED if blocked else value
+
+
 CroquisProvider = Callable[[BoqLine], list[tuple[str, Path]]]
 
 
@@ -106,25 +157,33 @@ def build_presupuesto_workbook(
     croquis: CroquisProvider | None = None,
     override_reason: str = "",
 ) -> bytes:
+    # One verdict for the whole workbook, resolved once here and threaded to
+    # every sheet that could show a total — not re-derived per sheet from
+    # ``report.boq.units_reliable`` alone, which is the bug this module
+    # exists to stop repeating.
+    state = resolve_money_state(report.money_basis, reviews.verification)
     if fmt == "opus":
         workbook = _flat_workbook(
             report,
             sheet_title="Presupuesto",
             columns=["Clave", "Descripción", "Unidad", "Cantidad", "Precio Unitario", "Importe"],
+            money_state=state,
         )
     elif fmt == "neodata":
         workbook = _flat_workbook(
             report,
             sheet_title="Presupuesto",
             columns=["Código", "Concepto", "Unidad", "Cantidad", "P.U.", "Monto"],
+            money_state=state,
         )
     elif fmt in ("licitacion", "licitacion_larga"):
         workbook = _licitacion_workbook(
-            report, reviews, project_name, client, long_descriptions=fmt == "licitacion_larga"
+            report, reviews, project_name, client, state,
+            long_descriptions=fmt == "licitacion_larga",
         )
     else:
         workbook = _klave_workbook(
-            report, detections, reviews, project_name, client,
+            report, detections, reviews, project_name, client, state,
             croquis=croquis,
             override_reason=override_reason,
         )
@@ -142,6 +201,7 @@ IVA_PCT = 16.0
 
 def _licitacion_workbook(
     report: CostReport, reviews: ProjectReviews, project_name: str, client: str | None,
+    money_state: MoneyState,
     long_descriptions: bool = False,
 ) -> Workbook:
     """Catálogo de conceptos for a licitación pública (LOPSRM art. 45 / RLOPSRM
@@ -164,9 +224,9 @@ def _licitacion_workbook(
         f"(factor {factor:.4f} sobre costo directo)",
     )
     verification = reviews.verification
-    if not report.boq.units_reliable:
-        cell = ws.cell(row=5, column=1, value=SIN_UNIDADES)
-        cell.font = Font(bold=True, size=9, color="B42318")
+    blocked = money_state == "blocked"
+    if blocked:
+        _banner_row(ws, 5, report)
     elif not (verification.units_confirmed_at and verification.detections_confirmed_at):
         cell = ws.cell(
             row=5, column=1,
@@ -205,12 +265,13 @@ def _licitacion_workbook(
                     ),
                     apus_by_code.get(line.concept_code),
                 )
+            sin_precio = blocked or line.unpriced
             values: list[Any] = [
                 f"{partida}.{index:03d}", line.taller_clave or line.concept_code,
                 description, line.unit, line.quantity,
-                UNPRICED if line.unpriced else unit_price,
-                UNPRICED if line.unpriced else pesos_con_letra(unit_price),
-                UNPRICED if line.unpriced else amount,
+                UNPRICED if sin_precio else unit_price,
+                UNPRICED if sin_precio else pesos_con_letra(unit_price),
+                UNPRICED if sin_precio else amount,
             ]
             for col, value in enumerate(values, start=1):
                 cell = ws.cell(row=row, column=col, value=value)
@@ -224,17 +285,22 @@ def _licitacion_workbook(
             row += 1
         total_cell = ws.cell(row=row, column=3, value=f"Subtotal partida {partida}")
         total_cell.font = Font(italic=True, size=9, color=MUTED)
-        amount_cell = ws.cell(row=row, column=8, value=round(partida_total, 2))
+        # A withheld SUBTOTAL under three printed partida subtotals is not
+        # withheld: the reader adds three numbers.
+        amount_cell = ws.cell(row=row, column=8, value=_peso(round(partida_total, 2), blocked))
         amount_cell.number_format = MONEY_FORMAT
         amount_cell.font = Font(italic=True, size=9, color=MUTED)
         subtotal += partida_total
         row += 2
     iva = round(subtotal * IVA_PCT / 100, 2)
     total = round(subtotal + iva, 2)
+    # Same rule as every amount above, reaching its last cell: SUBTOTAL/IVA/
+    # TOTAL are the closing summary of the sheet this banner already warns
+    # about, so they render the absence too rather than the arithmetic.
     for label, value in (
-        ("SUBTOTAL", round(subtotal, 2)),
-        (f"I.V.A. {IVA_PCT:.0f} %", iva),
-        ("TOTAL", total),
+        ("SUBTOTAL", UNPRICED if blocked else round(subtotal, 2)),
+        (f"I.V.A. {IVA_PCT:.0f} %", UNPRICED if blocked else iva),
+        ("TOTAL", UNPRICED if blocked else total),
     ):
         label_cell = ws.cell(row=row, column=3, value=label)
         label_cell.font = Font(bold=True, size=10)
@@ -242,7 +308,12 @@ def _licitacion_workbook(
         value_cell.number_format = MONEY_FORMAT
         value_cell.font = Font(bold=True, size=10)
         row += 1
-    letra = ws.cell(row=row, column=3, value=f"Importe total con letra: {pesos_con_letra(total)}")
+    # The spelled-out total is the same number in another alphabet — leaving
+    # it would just re-print what the three cells above just withheld.
+    letra_text = (
+        UNPRICED if blocked else f"Importe total con letra: {pesos_con_letra(total)}"
+    )
+    letra = ws.cell(row=row, column=3, value=letra_text)
     letra.font = Font(bold=True, size=9)
     row += 2
     _muted(
@@ -337,28 +408,33 @@ def _financiamiento_doc(ws: Worksheet, report: CostReport) -> None:
     _autosize(ws, [14, 16, 16, 16, 18])
 
 
-def _flat_workbook(report: CostReport, sheet_title: str, columns: list[str]) -> Workbook:
+def _flat_workbook(
+    report: CostReport, sheet_title: str, columns: list[str], money_state: MoneyState
+) -> Workbook:
     """One row per concept, no merges: made for import wizards."""
     workbook = Workbook()
     ws = workbook.active
     ws.title = sheet_title
     _header(ws, 1, columns)
     row = 2
-    if not report.boq.units_reliable:
-        # The first data row carries the warning so an import never reads
-        # drawing units as metres in silence.
-        ws.cell(row=row, column=1, value=SIN_UNIDADES).font = Font(
-            bold=True, size=9, color="B42318"
-        )
+    blocked = money_state == "blocked"
+    if blocked:
+        # The first data row carries the warning so an import never reads a
+        # doubtful reading as a firm one in silence.
+        _banner_row(ws, row, report)
         row += 1
     for line in report.boq.lines:
+        # OPUS and Neodata import these columns straight into a presupuesto.
+        # A banner they may not read is not a gate; the P.U. and importe
+        # columns have to carry the absence themselves.
+        sin_precio = blocked or line.unpriced
         values: list[Any] = [
             line.taller_clave or line.concept_code,
             line.description,
             line.unit,
             line.quantity,
-            UNPRICED if line.unpriced else line.unit_price,
-            UNPRICED if line.unpriced else line.amount,
+            UNPRICED if sin_precio else line.unit_price,
+            UNPRICED if sin_precio else line.amount,
         ]
         for col, value in enumerate(values, start=1):
             cell = ws.cell(row=row, column=col, value=value)
@@ -381,18 +457,22 @@ def _klave_workbook(
     reviews: ProjectReviews,
     project_name: str,
     client: str | None,
+    money_state: MoneyState,
     croquis: CroquisProvider | None = None,
     override_reason: str = "",
 ) -> Workbook:
     workbook = Workbook()
-    _caratula(workbook.active, report, reviews, project_name, client, override_reason)
-    _presupuesto(workbook.create_sheet("Presupuesto"), report)
-    _apus(workbook.create_sheet("APUs"), report)
+    # One verdict, every sheet that prints a peso. The Generadores and
+    # Programa sheets take no gate because neither prints one: they carry
+    # cantidades, fechas and evidence, and the doctrine keeps those.
+    _caratula(workbook.active, report, reviews, project_name, client, money_state, override_reason)
+    _presupuesto(workbook.create_sheet("Presupuesto"), report, money_state)
+    _apus(workbook.create_sheet("APUs"), report, money_state)
     _generadores(workbook.create_sheet("Generadores"), report, detections, reviews, croquis)
-    _explosion(workbook.create_sheet("Explosión de insumos"), report)
+    _explosion(workbook.create_sheet("Explosión de insumos"), report, money_state)
     _programa(workbook.create_sheet("Programa"), report)
-    _programas_erogaciones(workbook, report)
-    _flujo(workbook.create_sheet("Flujo"), report)
+    _programas_erogaciones(workbook, report, money_state)
+    _flujo(workbook.create_sheet("Flujo"), report, money_state)
     return workbook
 
 
@@ -402,6 +482,7 @@ def _caratula(
     reviews: ProjectReviews,
     project_name: str,
     client: str | None,
+    money_state: MoneyState,
     override_reason: str = "",
 ) -> None:
     ws.title = "Carátula"
@@ -414,6 +495,7 @@ def _caratula(
         and verification.detections_confirmed_at
         and verification.assumptions_confirmed_at
     )
+    blocked = money_state == "blocked"
     rows = [
         ("Proyecto", project_name),
         ("Cliente", client or "—"),
@@ -421,20 +503,27 @@ def _caratula(
         ("Moneda", report.currency),
         ("Unidades del plano", f"{report.drawing_units.unit} "
          f"({report.drawing_units.confidence:.0%} de confianza)"),
-        ("Verificación", SIN_UNIDADES if not report.boq.units_reliable
+        # The banner sits one row under the reading it is about, so it has to
+        # agree with it: a row saying "m (30 % de confianza)" above a fixed
+        # sentence claiming the drawing is in unidades de dibujo is the screen
+        # contradicting itself in the document that gets signed.
+        ("Verificación", blocked_banner(report.money_basis) if blocked
          else "Verificado (unidades, detecciones y supuestos)"
          if verified else "SIN VERIFICAR — revisar antes de usar"),
         ("", ""),
-        ("Costo directo", report.boq.direct_cost_total),
+        # Cada renglón dice su fuente (análisis o declarado) y cada peso pasa
+        # por el veredicto: retener solo el total publicaba sus propios
+        # sumandos tres renglones arriba.
+        ("Costo directo", _peso(report.boq.direct_cost_total, blocked)),
         *[
             (f"{line.description} ({line.percentage:g} %"
              + (", análisis" if line.fuente == "analisis" else ", declarado") + ")",
-             line.amount)
+             _peso(line.amount, blocked))
             for line in report.integration.lines
         ],
-        ("Precio de venta", report.integration.sale_price),
-        ("Contingencia", report.integration.contingency),
-        ("Total con contingencia", report.integration.grand_total),
+        ("Precio de venta", _peso(report.integration.sale_price, blocked)),
+        ("Contingencia", _peso(report.integration.contingency, blocked)),
+        ("Total con contingencia", _peso(report.integration.grand_total, blocked)),
         ("Plazo estimado", f"{report.schedule.total_duration_days} días hábiles"),
     ]
     if override_reason:
@@ -460,14 +549,13 @@ def _caratula(
     _autosize(ws, [26, 46])
 
 
-def _presupuesto(ws: Worksheet, report: CostReport) -> None:
+def _presupuesto(ws: Worksheet, report: CostReport, money_state: MoneyState) -> None:
     columns = ["Clave", "Concepto", "Unidad", "Cantidad", "P.U. (CD)", "Importe", "Confianza"]
     _header(ws, 1, [*columns, "Por nivel"])
     row = 2
-    if not report.boq.units_reliable:
-        ws.cell(row=row, column=1, value=SIN_UNIDADES).font = Font(
-            bold=True, size=9, color="B42318"
-        )
+    blocked = money_state == "blocked"
+    if blocked:
+        _banner_row(ws, row, report)
         row += 1
     for phase, phase_total in report.boq.totals_by_phase.items():
         phase_cell = ws.cell(row=row, column=1, value=phase.upper())
@@ -475,7 +563,7 @@ def _presupuesto(ws: Worksheet, report: CostReport) -> None:
         phase_cell.fill = PatternFill("solid", fgColor=SOFT)
         for col in range(2, 9):
             ws.cell(row=row, column=col).fill = PatternFill("solid", fgColor=SOFT)
-        total_cell = ws.cell(row=row, column=6, value=phase_total)
+        total_cell = ws.cell(row=row, column=6, value=_peso(phase_total, blocked))
         total_cell.number_format = MONEY_FORMAT
         total_cell.font = Font(bold=True, size=9, color=MUTED)
         total_cell.fill = PatternFill("solid", fgColor=SOFT)
@@ -483,11 +571,12 @@ def _presupuesto(ws: Worksheet, report: CostReport) -> None:
         for line in report.boq.lines:
             if line.phase != phase:
                 continue
+            sin_precio = blocked or line.unpriced
             values: list[Any] = [
                 line.taller_clave or line.concept_code, line.description, line.unit,
                 line.quantity,
-                UNPRICED if line.unpriced else line.unit_price,
-                UNPRICED if line.unpriced else line.amount,
+                UNPRICED if sin_precio else line.unit_price,
+                UNPRICED if sin_precio else line.amount,
                 f"{line.confidence:.0%}",
                 "; ".join(f"{title}: {qty:,.2f}" for title, qty in line.by_view.items()),
             ]
@@ -500,13 +589,16 @@ def _presupuesto(ws: Worksheet, report: CostReport) -> None:
                     cell.number_format = MONEY_FORMAT
             row += 1
     row += 1
-    summary = [
-        ("Costo directo", report.boq.direct_cost_total),
-        *((line.description + f" ({line.percentage}%)", line.amount)
+    # Every addend, not only the sum: indirectos, financiamiento and utilidad
+    # are percentages of a costo directo this sheet would otherwise print in
+    # full, so leaving them would reconstruct the withheld TOTAL exactly.
+    summary: list[tuple[str, float | str]] = [
+        ("Costo directo", _peso(report.boq.direct_cost_total, blocked)),
+        *((line.description + f" ({line.percentage}%)", _peso(line.amount, blocked))
           for line in report.integration.lines),
-        ("Precio de venta", report.integration.sale_price),
-        ("Contingencia", report.integration.contingency),
-        ("TOTAL", report.integration.grand_total),
+        ("Precio de venta", _peso(report.integration.sale_price, blocked)),
+        ("Contingencia", _peso(report.integration.contingency, blocked)),
+        ("TOTAL", _peso(report.integration.grand_total, blocked)),
     ]
     for label, amount in summary:
         font = Font(bold=label in ("Costo directo", "Precio de venta", "TOTAL"))
@@ -520,8 +612,15 @@ def _presupuesto(ws: Worksheet, report: CostReport) -> None:
     ws.freeze_panes = "A2"
 
 
-def _apus(ws: Worksheet, report: CostReport) -> None:
+def _apus(ws: Worksheet, report: CostReport, money_state: MoneyState) -> None:
     row = 1
+    blocked = money_state == "blocked"
+    if blocked:
+        # The matrix is where a P.U. is reconstructed from: consumos × costos.
+        # Withholding the presupuesto's importes while this sheet prints every
+        # matrix in full hands the reader the arithmetic instead of the answer.
+        _banner_row(ws, row, report)
+        row += 2
     for apu in report.apus:
         _title(ws, row, f"{apu.concept_code} — {apu.concept_description}", size=11)
         _muted(ws, row + 1, 1, f"Costo directo por {apu.unit}")
@@ -534,7 +633,7 @@ def _apus(ws: Worksheet, report: CostReport) -> None:
         for line in apu.lines:
             values: list[Any] = [
                 line.resource_code, line.description, line.unit,
-                line.quantity, line.unit_cost, line.amount,
+                line.quantity, _peso(line.unit_cost, blocked), _peso(line.amount, blocked),
             ]
             for col, value in enumerate(values, start=1):
                 cell = ws.cell(row=row, column=col, value=value)
@@ -546,7 +645,7 @@ def _apus(ws: Worksheet, report: CostReport) -> None:
             row += 1
         total_label = ws.cell(row=row, column=5, value="CD unitario")
         total_label.font = Font(bold=True)
-        total_cell = ws.cell(row=row, column=6, value=apu.direct_unit_cost)
+        total_cell = ws.cell(row=row, column=6, value=_peso(apu.direct_unit_cost, blocked))
         total_cell.number_format = MONEY_FORMAT
         total_cell.font = Font(bold=True)
         row += 3
@@ -793,10 +892,17 @@ def _programa(ws: Worksheet, report: CostReport) -> None:
     ws.freeze_panes = "B2"
 
 
-def _programas_erogaciones(workbook: Workbook, report: CostReport) -> None:
+def _programas_erogaciones(
+    workbook: Workbook, report: CostReport, money_state: MoneyState
+) -> None:
     """The four calendarised programs of RLOPSRM art. 45-A-XI, each on its own
-    sheet, in its own unit and in pesos."""
+    sheet, in its own unit and in pesos.
+
+    The cantidades and the calendar are the programa and they stay; the
+    importe column and its totals are money like any other, so a blocked run
+    prints the absence there too."""
     programas = build_programas(report)
+    blocked = money_state == "blocked"
     period_headers = [
         f"{programas.period_label.capitalize()} {i + 1}" for i in range(programas.periods)
     ]
@@ -816,6 +922,8 @@ def _programas_erogaciones(workbook: Workbook, report: CostReport) -> None:
             if programa.rubro == "personal_tecnico"
             else ["Clave", "Insumo", "Unidad", "Cantidad", "Importe"]
         )
+        if blocked:
+            _banner_row(ws, 2, report)
         _header(ws, 3, [*primeras, *period_headers])
         row = 4
         for entry in programa.rows:
@@ -823,7 +931,8 @@ def _programas_erogaciones(workbook: Workbook, report: CostReport) -> None:
                 entry.code, entry.description, entry.unit, entry.quantity,
                 # Un puesto sin sueldo capturado tiene cantidad y no tiene
                 # importe. En cero se leería como que sale gratis.
-                "sin sueldo capturado" if entry.sin_importe else entry.amount,
+                "sin sueldo capturado" if entry.sin_importe
+                else _peso(entry.amount, blocked),
                 *entry.by_period,
             ]
             for col, value in enumerate(values, start=1):
@@ -836,11 +945,13 @@ def _programas_erogaciones(workbook: Workbook, report: CostReport) -> None:
             row += 1
         if programa.rows:
             ws.cell(row=row, column=2, value="TOTAL (importe)").font = Font(bold=True)
-            total_cell = ws.cell(row=row, column=5, value=programa.total)
+            total_cell = ws.cell(row=row, column=5, value=_peso(programa.total, blocked))
             total_cell.font = Font(bold=True)
             total_cell.number_format = MONEY_FORMAT
+            # These are pesos per period, not cantidades — the row above them
+            # is what carries the calendarised quantity.
             for index, value in enumerate(programa.total_by_period):
-                cell = ws.cell(row=row, column=6 + index, value=value)
+                cell = ws.cell(row=row, column=6 + index, value=_peso(value, blocked))
                 cell.font = Font(bold=True)
                 cell.number_format = MONEY_FORMAT
             row += 1
@@ -850,15 +961,23 @@ def _programas_erogaciones(workbook: Workbook, report: CostReport) -> None:
         _autosize(ws, [14, 46, 10, 14, 16] + [14] * programas.periods)
 
 
-def _flujo(ws: Worksheet, report: CostReport) -> None:
+def _flujo(ws: Worksheet, report: CostReport, money_state: MoneyState) -> None:
     _header(ws, 1, ["Periodo", "Avance %", "Gasto directo", "Estimación",
                     "Amort. anticipo", "Retención", "Flujo neto", "Fact. acumulada"])
     row = 2
+    blocked = money_state == "blocked"
+    if blocked:
+        # Six of this sheet's eight columns are pesos, and the last one
+        # accumulates to the withheld total by construction. The calendar and
+        # the avance curve stay: those are the programa, not the money.
+        _banner_row(ws, row, report)
+        row += 1
     for period in report.financial.periods:
         values: list[Any] = [
-            period.label, period.progress_pct, period.direct_spend, period.billing,
-            period.advance_amortization, period.retention, period.net_cashflow,
-            period.accumulated_billing,
+            period.label, period.progress_pct,
+            _peso(period.direct_spend, blocked), _peso(period.billing, blocked),
+            _peso(period.advance_amortization, blocked), _peso(period.retention, blocked),
+            _peso(period.net_cashflow, blocked), _peso(period.accumulated_billing, blocked),
         ]
         for col, value in enumerate(values, start=1):
             cell = ws.cell(row=row, column=col, value=value)
@@ -872,15 +991,22 @@ def _flujo(ws: Worksheet, report: CostReport) -> None:
     ws.freeze_panes = "A2"
 
 
-def _explosion(ws: Worksheet, report: CostReport) -> None:
+def _explosion(ws: Worksheet, report: CostReport, money_state: MoneyState) -> None:
     """Every resource the presupuesto consumes: quantity, cost, by partida."""
     explosion = explode(report)
+    blocked = money_state == "blocked"
     _title(ws, 1, "Explosión de insumos", size=13)
     _muted(
         ws, 2, 1,
         "APU × cantidad, sumado por insumo. Lo que hay que comprar, contratar y programar; "
         "los conceptos con P.U. adoptado sin matriz no se explotan.",
     )
+    if blocked:
+        # "Total explotado" is the costo directo under another name, and the
+        # per-insumo importes rebuild it. The cantidades and the per-partida
+        # split are cantidades — they stay, and they are the useful half of
+        # this sheet for buying and contracting.
+        _banner_row(ws, 3, report)
     phases = list(report.boq.totals_by_phase.keys())
     _header(
         ws, 4,
@@ -892,7 +1018,8 @@ def _explosion(ws: Worksheet, report: CostReport) -> None:
     for r in explosion.resources:
         values: list[Any] = [
             r.code, r.description, type_label.get(r.resource_type, r.resource_type), r.unit,
-            r.quantity, r.unit_cost, r.amount,
+            # by_phase is a cantidad per partida, not an importe: it stays.
+            r.quantity, _peso(r.unit_cost, blocked), _peso(r.amount, blocked),
             *[r.by_phase.get(phase, 0.0) or None for phase in phases],
         ]
         for col, value in enumerate(values, start=1):
@@ -911,7 +1038,7 @@ def _explosion(ws: Worksheet, report: CostReport) -> None:
         ("Total explotado", explosion.total),
     ):
         ws.cell(row=row, column=2, value=label).font = Font(bold=True, size=9)
-        cell = ws.cell(row=row, column=7, value=value)
+        cell = ws.cell(row=row, column=7, value=_peso(value, blocked))
         cell.number_format = MONEY_FORMAT
         cell.font = Font(bold=True, size=9)
         row += 1
@@ -922,19 +1049,26 @@ def _explosion(ws: Worksheet, report: CostReport) -> None:
         ws.column_dimensions[letter].width = width
 
 
-def build_apus_workbook(report: CostReport) -> bytes:
-    """Every APU as it prints in the presupuesto workbook, on its own."""
+def build_apus_workbook(report: CostReport, reviews: ProjectReviews) -> bytes:
+    """Every APU as it prints in the presupuesto workbook, on its own.
+
+    Takes ``reviews`` for the same reason ``build_presupuesto_workbook`` does:
+    the verdict is a join of what the engine read (on the report) and what a
+    person signed off (in the reviews), and a download that skips the second
+    half is a download with no gate."""
     workbook = Workbook()
-    _apus(workbook.active, report)
+    _apus(workbook.active, report, resolve_money_state(report.money_basis, reviews.verification))
     workbook.active.title = "APUs"
     buffer = io.BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
 
 
-def build_explosion_workbook(report: CostReport) -> bytes:
+def build_explosion_workbook(report: CostReport, reviews: ProjectReviews) -> bytes:
     workbook = Workbook()
-    _explosion(workbook.active, report)
+    _explosion(
+        workbook.active, report, resolve_money_state(report.money_basis, reviews.verification)
+    )
     workbook.active.title = "Explosión de insumos"
     buffer = io.BytesIO()
     workbook.save(buffer)

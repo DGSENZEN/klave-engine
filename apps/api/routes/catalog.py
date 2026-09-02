@@ -38,7 +38,9 @@ from klave_engine.costing.labor import (
 )
 from klave_engine.costing.matching import Candidate, Match, rank, split_alcance
 from klave_engine.costing.models import CostingAssumptions, CostingOverrides
+from klave_engine.costing.presentation import publishable_total
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
+from klave_engine.costing.reviews import load_reviews
 from klave_engine.costing.sources.custom import (
     CustomCatalogError,
     parse_concept_workbook,
@@ -1248,13 +1250,17 @@ def _recompute_project(
         )
     except ReportGenerationError:
         return
+    # The sixth publisher of this payload, and the same rule: ProjectLive
+    # renders it as "Total $X" in the timeline of whatever project page is
+    # open, gate or no gate.
     BUS.publish(
         "costing_updated",
         project_id=project_id,
         actor=actor,
         data={
             "version": overrides.version, "direct_cost": report.boq.direct_cost_total,
-            "grand_total": report.integration.grand_total, "review_action": "alias",
+            "grand_total": publishable_total(report, load_reviews(control_dir).verification),
+            "review_action": "alias",
         },
     )
 
