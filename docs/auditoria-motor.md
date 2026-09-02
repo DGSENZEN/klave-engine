@@ -553,6 +553,24 @@ guardados — hojas «Análisis de indirectos» y «Financiamiento» que cuadran
 con la carátula al centavo — y la web enseña el prorrateo mientras se
 captura. Once tareas TDD, ~34 pruebas nuevas, aceptación final fenceada.
 
+### Consolidación de confianza-del-número (2026-09-02, rama `consolida-confianza`)
+
+Los 28 commits de la rama paralela (una sola autoridad decide si un número
+puede verse como dinero: `costing/presentation.py`, `money_basis` congelado
+en el reporte, `MoneyState` hilado a cada hoja del Excel y `moneyState` en
+la web; el colado espera a su cimbra en el programa; los conteos humanos de
+medición viven junto a las revisiones; hallazgos con cuenta) se fundieron
+con la integración como análisis. Decisiones del merge: la carátula itemiza
+cada renglón con su fuente Y cada peso pasa por el veredicto (las dos
+doctrinas juntas); la migración de cimbra de la rama se renumera a **v24**
+(su v22 colisionaba con EST-016) y la cadena aprende la regla medida del
+bloque v4 fuera de orden — las versiones nuevas van debajo, y el v23 de
+ALB-001 se movió a su lugar; el registro del programa se **espeja** desde
+`schedule.assumptions` (la frase canónica de `_crew_assumption_sentence`),
+no se redacta dos veces; los cambios de la rama al Resumen viejo se
+portaron a `/resumen`. Suite completa, gold, lint, tsc y build verdes sobre
+el árbol fundido.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
