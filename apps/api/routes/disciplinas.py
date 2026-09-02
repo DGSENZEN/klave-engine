@@ -6,10 +6,9 @@ el pipeline — y una lista honesta de lo que esa suite lee hoy. Nada de
 promesas: lo que una disciplina aún no detecta se dice como levantamiento.
 """
 
+from fastapi import APIRouter
 from klave_engine.detection.disciplines import route_sheet
 from pydantic import BaseModel, Field
-
-from fastapi import APIRouter
 
 router = APIRouter(prefix="/disciplines", tags=["disciplinas"])
 

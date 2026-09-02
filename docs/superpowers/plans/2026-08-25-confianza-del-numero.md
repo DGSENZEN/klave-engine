@@ -1,6 +1,16 @@
 # Confianza del número — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+
+> **Cerrado 2026-09-02:** las trece tareas aterrizaron en la rama
+> `worktree-confianza-del-numero` (28 commits) y se consolidaron a `main` en
+> el merge `ddd4f75` junto con la integración como análisis. La definición
+> de hecho está fenceada: `test_money_state_contract`, `test_presentation`,
+> `test_schedule_precedence`, `test_conteos`, `test_hallazgos_grouping` en
+> verde; gold money intacto; ruff, tsc, eval-gold y eval-demo verdes sobre
+> el árbol fundido. Nota del merge: la migración de reorden pasó a **v24**
+> (v22 ya era EST-016) y el registro del programa se espeja desde
+> `schedule.assumptions`, nunca se redacta dos veces.
 
 **Goal:** Make Klave's output stop contradicting its own honesty doctrine — one authority decides whether a number may be shown as money, the programa stops scheduling formwork after its own pour, findings stop drowning their signal — and open the measurement loop every accuracy claim depends on.
 
@@ -79,7 +89,7 @@
 > ignore that placement and put the class in `models.py`, keeping every
 > function in `presentation.py` exactly as written.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_presentation.py`:
 
@@ -160,12 +170,12 @@ def test_bands_weigh_money_not_lines():
     assert sum(bands.values()) == pytest.approx(100.0)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/python -m pytest tests/test_presentation.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'klave_engine.costing.presentation'`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `packages/klave_engine/costing/presentation.py`:
 
@@ -290,17 +300,17 @@ def basis_reasons(basis: MoneyBasis | None) -> list[str]:
     return [LEGACY_REASON] if basis is None else list(basis.reasons)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `.venv/bin/python -m pytest tests/test_presentation.py -q`
 Expected: PASS — 11 passed
 
-- [ ] **Step 5: Verify nothing else moved**
+- [x] **Step 5: Verify nothing else moved**
 
 Run: `.venv/bin/python -m pytest tests -q -p no:warnings && .venv/bin/ruff check . && .venv/bin/mypy packages/klave_engine`
 Expected: 540+ passed (baseline in this worktree is 540), `All checks passed!`, `Success: no issues found`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/klave_engine/costing/presentation.py tests/test_presentation.py
@@ -320,7 +330,7 @@ git commit -m "feat(presentacion): una sola autoridad decide si un numero puede 
 - Consumes: `money_basis_from_boq` from Task 1
 - Produces: `CostReport.money_basis: MoneyBasis | None` — every consumer in Tasks 3–5 reads this field
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_presentation.py`:
 
@@ -375,12 +385,12 @@ def test_an_unreadable_drawing_produces_a_basis_that_blocks():
     assert report.money_basis.reasons  # it says why, not just no
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/python -m pytest tests/test_presentation.py -q -k "carries_its_own_basis or unreadable_drawing"`
 Expected: FAIL — `AttributeError: 'CostReport' object has no attribute 'money_basis'`
 
-- [ ] **Step 3: Add the field**
+- [x] **Step 3: Add the field**
 
 > **Pre-flight ruling R1 — `MoneyBasis` lives in `models.py`, not `presentation.py`.**
 > The original plan put the model in `presentation.py`, which imports
@@ -405,7 +415,7 @@ In `packages/klave_engine/costing/models.py`, inside `class CostReport`, after `
 `MoneyBasis` is defined earlier in this same file (Task 1), so this is a plain
 forward-free annotation — no quotes, no rebuild.
 
-- [ ] **Step 4: Populate it**
+- [x] **Step 4: Populate it**
 
 In `packages/klave_engine/costing/report.py`, add to the imports:
 
@@ -419,17 +429,17 @@ Then in the `CostReport(...)` construction (the call that already passes `indire
         money_basis=money_basis_from_boq(boq, units),
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `.venv/bin/python -m pytest tests/test_presentation.py -q`
 Expected: PASS — 13 passed
 
-- [ ] **Step 6: Verify no peso moved**
+- [x] **Step 6: Verify no peso moved**
 
 Run: `.venv/bin/python -m pytest tests/test_gold_money.py -q && .venv/bin/python -m pytest tests -q -p no:warnings && .venv/bin/mypy packages/klave_engine`
 Expected: all pass. If `test_gold_money` fails, stop — this task must not change an amount.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/klave_engine/costing/models.py packages/klave_engine/costing/report.py tests/test_presentation.py
@@ -451,7 +461,7 @@ git commit -m "feat(presentacion): el reporte carga su propio veredicto de unida
 - Consumes: `resolve_money_state`, `basis_reasons`, `MoneyBasis` (Task 1); `CostReport.money_basis` (Task 2)
 - Produces: every money-bearing JSON payload carries `money_state: MoneyState`; blocked rows carry `grand_total: None`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_money_state_contract.py`:
 
@@ -548,12 +558,12 @@ do not loosen the manifest model to make the test pass. If the overview
 response shape is not `{"projects": [...]}`, read `apps/api/routes/workspace.py`'s
 `overview()` return value and match it.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/python -m pytest tests/test_money_state_contract.py -q`
 Expected: FAIL — `KeyError: 'money_state'`, and `grand_total` is `768759055.0` rather than `None`
 
-- [ ] **Step 3: Gate the project list**
+- [x] **Step 3: Gate the project list**
 
 In `apps/api/routes/workspace.py`, add to the imports:
 
@@ -584,7 +594,7 @@ Then replace the report-reading block (currently `entry["grand_total"] = report[
 
 `verification` is already in scope — it is read from `load_reviews(control_dir)` earlier in the same function.
 
-- [ ] **Step 4: Enrich the costs endpoint**
+- [x] **Step 4: Enrich the costs endpoint**
 
 In `apps/api/routes/reports.py`, replace `get_costs`:
 
@@ -613,7 +623,7 @@ Add to that file's imports:
 from klave_engine.costing.presentation import MoneyBasis, resolve_money_state
 ```
 
-- [ ] **Step 5: Gate the copilot and the exports**
+- [x] **Step 5: Gate the copilot and the exports**
 
 In `apps/api/routes/copilot.py`, both places that read `report.integration.grand_total` (around lines 202 and 223) must not hand a blocked total to the model. Wrap each read:
 
@@ -632,17 +642,17 @@ In `packages/klave_engine/costing/exports.py`, the four sites currently reading 
 
 `build_presupuesto_workbook` must accept a `verification: VerificationState | None = None` parameter and thread it to the four sites. Update `apps/api/routes/exports.py` to pass `load_reviews(control_dir).verification`.
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `.venv/bin/python -m pytest tests/test_money_state_contract.py -q`
 Expected: PASS — 3 passed
 
-- [ ] **Step 7: Verify the whole suite and no moved peso**
+- [x] **Step 7: Verify the whole suite and no moved peso**
 
 Run: `.venv/bin/python -m pytest tests -q -p no:warnings && .venv/bin/ruff check . && .venv/bin/mypy packages/klave_engine`
 Expected: all green
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add apps/api/routes/workspace.py apps/api/routes/reports.py apps/api/routes/copilot.py apps/api/routes/exports.py packages/klave_engine/costing/exports.py tests/test_money_state_contract.py
@@ -663,7 +673,7 @@ git commit -m "fix(dinero): la lista deja de mostrar el total que el presupuesto
 - Consumes: `money_state` on the `/costs` payload and on overview rows (Task 3)
 - Produces: `moneyState(costs)` — a one-line accessor replacing the two-document join
 
-- [ ] **Step 1: Add the types**
+- [x] **Step 1: Add the types**
 
 In `apps/web/lib/api.ts`, add near the `CostReport` type. **Reuse the existing
 `MoneyGateState` union** exported from `components/MoneyGate.tsx` rather than
@@ -692,7 +702,7 @@ If importing from a component into `lib/` inverts the dependency direction this
 codebase uses, move `MoneyGateState` into `lib/api.ts` and re-export it from
 `MoneyGate.tsx` so the six existing importers keep working unchanged.
 
-- [ ] **Step 2: Replace the gate with an accessor**
+- [x] **Step 2: Replace the gate with an accessor**
 
 In `apps/web/components/MoneyGate.tsx`, delete the `moneyGate` function entirely and replace it with:
 
@@ -710,11 +720,11 @@ export function moneyState(costs: CostReport | null): MoneyGateState {
 
 Keep `MoneyGateState`, `UnverifiedBanner` and `UnitsGate` as they are, changing their internal `moneyGate(costs, reviews)` calls to `moneyState(costs)`.
 
-- [ ] **Step 3: Update the six call sites**
+- [x] **Step 3: Update the six call sites**
 
 In each of `app/proyecto/[id]/page.tsx`, `presupuesto/page.tsx`, `apus/page.tsx`, `programa/page.tsx`, `flujo/page.tsx`, change the import from `moneyGate` to `moneyState` and every call `moneyGate(costs, reviews)` to `moneyState(costs)`. Do not change the surrounding conditionals.
 
-- [ ] **Step 4: Rows lead with what is unresolved**
+- [x] **Step 4: Rows lead with what is unresolved**
 
 In `apps/web/app/page.tsx`, replace the total block (currently `{project.grand_total != null && (…)}`) with:
 
@@ -736,14 +746,14 @@ In `apps/web/app/page.tsx`, replace the total block (currently `{project.grand_t
       )}
 ```
 
-- [ ] **Step 5: Verify types and the running app**
+- [x] **Step 5: Verify types and the running app**
 
 Run: `apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`
 Expected: exit 0, no output
 
 Then start the dev servers and confirm in the browser that the Torre Reforma row reads **sin unidades** instead of `$768,759,055`, and that Marina still shows its total with the SIN VERIFICAR banner.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/web
@@ -761,7 +771,7 @@ git commit -m "fix(web): el cliente lee el veredicto, ya no lo deduce"
 **Interfaces:**
 - Consumes: `costs.money_basis.confidence_bands` (Tasks 1–2)
 
-- [ ] **Step 1: Replace the pass rate with the bands**
+- [x] **Step 1: Replace the pass rate with the bands**
 
 Find the tile rendering `IMPORTE EN LECTURAS FIRMES` and `100%`. Replace its value and help text with:
 
@@ -785,17 +795,17 @@ Change the help text to:
 
 > Del costo directo, cuánto descansa en lecturas de confianza alta, cuánto queda justo en el umbral de 70 % y cuánto por debajo. Pesa el dinero, no cuenta elementos: un promedio simple deja que cien tornillos seguros tapen una trabe dudosa. Una sola tasa de aprobación escondería que un cuarto del importe está exactamente en la raya.
 
-- [ ] **Step 2: Verify in the running app**
+- [x] **Step 2: Verify in the running app**
 
 Run the dev servers, open Marina Lote 04 — Completo → Presupuesto.
 Expected: roughly `76% alta · 24% en el límite`, not `100%`.
 
-- [ ] **Step 3: Verify types**
+- [x] **Step 3: Verify types**
 
 Run: `apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`
 Expected: exit 0
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/web/app/proyecto/\[id\]/presupuesto/page.tsx
@@ -813,7 +823,7 @@ git commit -m "fix(presupuesto): la confianza se reparte en bandas, no en una ta
 **Interfaces:**
 - Produces: `ScheduleActivity.predecessors` holds at most one link per `(predecessor, kind)`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_schedule_precedence.py`:
 
@@ -882,12 +892,12 @@ def test_deduplication_keeps_the_binding_lag():
                 assert activity.start_day >= predecessor.start_day + link.lag_days
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/python -m pytest tests/test_schedule_precedence.py -q`
 Expected: FAIL — `AssertionError: EST-002 repite [('EST-001', 'SS'), ('EST-001', 'SS')]`
 
-- [ ] **Step 3: Deduplicate**
+- [x] **Step 3: Deduplicate**
 
 In `packages/klave_engine/costing/schedule.py`, immediately before the `activities.append(ScheduleActivity(…))` call, insert:
 
@@ -904,17 +914,17 @@ In `packages/klave_engine/costing/schedule.py`, immediately before the `activiti
             links = list(deduped.values())
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `.venv/bin/python -m pytest tests/test_schedule_precedence.py -q`
 Expected: PASS — 2 passed
 
-- [ ] **Step 5: Verify no peso moved**
+- [x] **Step 5: Verify no peso moved**
 
 Run: `.venv/bin/python -m pytest tests/test_gold_money.py tests -q -p no:warnings && .venv/bin/mypy packages/klave_engine`
 Expected: all green
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/klave_engine/costing/schedule.py tests/test_schedule_precedence.py
@@ -944,7 +954,7 @@ git commit -m "fix(programa): una restriccion enunciada dos veces era dos arista
 **Interfaces:**
 - Produces: `DERIVADO_DE: dict[str, tuple[str, str]]` mapping derived code → `(parent code, "cimbra" | "acero")`. **Task 8 consumes this same map** — one statement of which concept serves which pour, used by both the ordering and the hard edges.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 > **Pre-flight ruling R7 — the fixture must be store-backed, or this test is vacuous.**
 > I verified this empirically before dispatch. Task 6's `_structural_report()` helper calls
@@ -1019,12 +1029,12 @@ def test_nothing_is_poured_before_it_is_formed_or_reinforced():
         )
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/python -m pytest tests/test_schedule_precedence.py::test_nothing_is_poured_before_it_is_formed_or_reinforced -q`
 Expected: FAIL — `EST-008 arranca el día …, después de colar EST-001 el día …`
 
-- [ ] **Step 3: State which concept serves which pour, once**
+- [x] **Step 3: State which concept serves which pour, once**
 
 > **Pre-flight ruling R2 — `DERIVADO_DE` lives in `models.py`, not
 > `catalog_store.py`.** Task 8 needs the same map inside `schedule.py`. I
@@ -1060,7 +1070,7 @@ DERIVADO_DE: dict[str, tuple[str, str]] = {
 _OFFSET_POR_TIPO = {"cimbra": -2, "acero": -1}
 ```
 
-- [ ] **Step 4: Add migration v22**
+- [x] **Step 4: Add migration v22**
 
 In the same file, following the existing `_migrate_vN` pattern:
 
@@ -1092,7 +1102,7 @@ In the same file, following the existing `_migrate_vN` pattern:
 
 Register it in the migration chain following the `_migrate_v13` pattern (a named method invoked from an inline `if version_row is None or int(version_row["value"]) < N:` block), bumping the stored schema version to **22**. NOTE: the chain already reaches v21 — 14 was taken long ago by a concurrent session. Verify the highest existing version yourself before writing the block.
 
-- [ ] **Step 5: Verify the migration on a copy of the real catalog**
+- [x] **Step 5: Verify the migration on a copy of the real catalog**
 
 ```bash
 cp data/catalogs/*.db /tmp/klave-migration-check.db
@@ -1109,17 +1119,17 @@ for r in c.execute(\"SELECT code, sequence_order FROM concepts WHERE phase='Estr
 
 Expected: `EST-008` at 28 and `ACE-001` at 29 immediately before `EST-001` at 30; `EST-009` at 38 and `ACE-004` at 39 before `EST-002` at 40. Run the same command twice and confirm the second run prints identical output — that is the idempotence check.
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `.venv/bin/python -m pytest tests/test_schedule_precedence.py -q`
 Expected: PASS — 3 passed
 
-- [ ] **Step 7: Verify no peso moved and the migration is idempotent**
+- [x] **Step 7: Verify no peso moved and the migration is idempotent**
 
 Run: `.venv/bin/python -m pytest tests -q -p no:warnings && .venv/bin/mypy packages/klave_engine`
 Expected: all green — in particular `test_gold_money` unchanged, since ordering changes dates and not amounts.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/klave_engine/costing/catalog_store.py tests/test_schedule_precedence.py
@@ -1138,7 +1148,7 @@ git commit -m "fix(programa): se cimbra y se arma antes de colar, no 213 dias de
 - Consumes: the `CIMBRA_DE` / `ACERO_DE` relationships from Task 7
 - Produces: `ScheduleLink(kind="FS")` for formwork→pour and steel→pour; every other link stays `"SS"`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 > **Pre-flight ruling R7 applies here too.** Both tests below must use the store-backed
 > `store_report` fixture introduced in Task 7, not `_structural_report()`. Without a store
@@ -1179,12 +1189,12 @@ def test_the_critical_path_is_not_the_whole_job():
     assert len(critical) < len(activities), "todo es ruta crítica: no hay red"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/python -m pytest tests/test_schedule_precedence.py -q -k "pour_waits or critical_path"`
 Expected: FAIL — `ninguna arista dura: el colado no espera a nada`
 
-- [ ] **Step 3: Emit FS for the pairs that cannot overlap**
+- [x] **Step 3: Emit FS for the pairs that cannot overlap**
 
 In `packages/klave_engine/costing/schedule.py`, add near the top — inverting the
 map Task 7 defined in `models.py` (pre-flight ruling R2), so which-serves-which
@@ -1220,17 +1230,17 @@ In the per-line loop, after the existing SS branches and before the dedup block 
                 )
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `.venv/bin/python -m pytest tests/test_schedule_precedence.py -q`
 Expected: PASS — 5 passed
 
-- [ ] **Step 5: Verify no peso moved**
+- [x] **Step 5: Verify no peso moved**
 
 Run: `.venv/bin/python -m pytest tests -q -p no:warnings && .venv/bin/ruff check . && .venv/bin/mypy packages/klave_engine`
 Expected: all green
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/klave_engine/costing/schedule.py tests/test_schedule_precedence.py
@@ -1250,7 +1260,7 @@ git commit -m "feat(programa): el colado espera a su cimbra — aristas duras do
 - Consumes: `CostingConfig.frentes` and `CostingConfig.crews_per_activity` (both exist, both default `1`)
 - Produces: `WorkSchedule.assumptions: list[str]` stating the crew assumption in words
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_schedule_precedence.py`:
 
@@ -1267,12 +1277,12 @@ def test_the_programa_states_the_crew_assumption_it_is_making():
     assert "cuadrilla" in stated.lower()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/python -m pytest tests/test_schedule_precedence.py::test_the_programa_states_the_crew_assumption_it_is_making -q`
 Expected: FAIL — `AttributeError: 'WorkSchedule' object has no attribute 'assumptions'`
 
-- [ ] **Step 3: Add the field and state the assumption**
+- [x] **Step 3: Add the field and state the assumption**
 
 In `packages/klave_engine/costing/models.py`, add to `class WorkSchedule`:
 
@@ -1292,7 +1302,7 @@ In `packages/klave_engine/costing/schedule.py`, after constructing `schedule = W
     )
 ```
 
-- [ ] **Step 4: Surface the control**
+- [x] **Step 4: Surface the control**
 
 In `apps/web/app/proyecto/[id]/programa/page.tsx`, beside the `PLAZO CONTRACTUAL` tile, render `costs.schedule.assumptions` as muted text, and add a numeric input bound to the project's `frentes` costing-config value that saves through the existing costing-config endpoint (`PUT /projects/{id}/costing-config`, already used by `CostingConfigForm.tsx` — follow that component's save pattern rather than writing a new one).
 
@@ -1300,16 +1310,16 @@ Label it `Frentes de trabajo`, help text:
 
 > Cuántos frentes simultáneos tendrá la obra. Un frente con una cuadrilla por actividad es el supuesto por omisión, y es el que produce los plazos largos.
 
-- [ ] **Step 5: Run tests and verify types**
+- [x] **Step 5: Run tests and verify types**
 
 Run: `.venv/bin/python -m pytest tests -q -p no:warnings && apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`
 Expected: all green
 
-- [ ] **Step 6: Verify in the running app**
+- [x] **Step 6: Verify in the running app**
 
 Open Marina Lote 04 — Completo → Programa y flujo. Confirm the assumption text renders, and that raising Frentes to 3 shortens the plazo and leaves the presupuesto total unchanged.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/klave_engine/costing/models.py packages/klave_engine/costing/schedule.py apps/web/app/proyecto/\[id\]/programa/page.tsx tests/test_schedule_precedence.py
@@ -1329,7 +1339,7 @@ git commit -m "feat(programa): el supuesto de frentes se dice y se ajusta, no se
 - Consumes: `Hallazgo.id` (already `f"sin_precio:{concept_code}"` — the text before `:` is the rule id)
 - Produces: `Diagnostico.grupos: list[HallazgoGrupo]` with fields `rule_id: str`, `titulo: str`, `severity: Severity`, `momento: Momento`, `count: int`, `miembros: list[Hallazgo]`, `monto_afectado: float | None`, `exposicion_total: str`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_hallazgos_grouping.py`:
 
@@ -1404,12 +1414,12 @@ def test_a_lone_finding_still_becomes_a_group_of_one():
     assert sin_precio.count == 1
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/python -m pytest tests/test_hallazgos_grouping.py -q`
 Expected: FAIL — `AttributeError: 'Diagnostico' object has no attribute 'grupos'`
 
-- [ ] **Step 3: Add the group model**
+- [x] **Step 3: Add the group model**
 
 In `packages/klave_engine/costing/hallazgos.py`, above `class Diagnostico`:
 
@@ -1440,7 +1450,7 @@ Add to `class Diagnostico`:
     grupos: list[HallazgoGrupo] = Field(default_factory=list)
 ```
 
-- [ ] **Step 4: Group them**
+- [x] **Step 4: Group them**
 
 In `hallazgos.py`, add:
 
@@ -1510,12 +1520,12 @@ def _titulo_de_regla(rule_id: str) -> str:
 
 In `_summarize`, set `diagnostico.grupos = _agrupar(hallazgos)` before returning.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `.venv/bin/python -m pytest tests/test_hallazgos_grouping.py -q`
 Expected: PASS — 3 passed
 
-- [ ] **Step 6: Render the groups**
+- [x] **Step 6: Render the groups**
 
 In `apps/web/components/Diagnostico.tsx`, walk `diagnostico.grupos` instead of `diagnostico.hallazgos`. Replace the body of the per-finding `.map(...)` with:
 
@@ -1554,12 +1564,12 @@ this file. If the current code renders a finding inline rather than through name
 components, extract those two first — the singleton path and the group path must
 render the same markup, or they will drift.
 
-- [ ] **Step 7: Verify in the running app**
+- [x] **Step 7: Verify in the running app**
 
 Open Marina Lote 04 — Completo → Presupuesto.
 Expected: `DINERO FALTANTE` holds a handful of entries, one of which is *"19 conceptos: tienen cantidad pero no precio"*, and *"3 elementos sin armado leído"* is visible without scrolling past boilerplate.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/klave_engine/costing/hallazgos.py apps/web/components/Diagnostico.tsx tests/test_hallazgos_grouping.py
@@ -1580,7 +1590,7 @@ git commit -m "fix(hallazgos): diecinueve tarjetas iguales son un hallazgo con c
 - Consumes: `ConteoDeObra` / `ConteoHumano` from `klave_engine.evals.recall`
 - Produces: `load_conteos(control_dir) -> ConteosDeProyecto`, `save_conteos(control_dir, conteos)`, `ConteosDeProyecto.a_conteo_de_obra(drawing_id) -> ConteoDeObra`; endpoints `GET/PUT /projects/{id}/conteos`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_conteos.py`:
 
@@ -1671,12 +1681,12 @@ def test_reviewing_a_project_promotes_its_gold_entry_past_baseline(tmp_path):
 
 Read `packages/klave_engine/costing/reviews.py` for the exact `DetectionReview` constructor and the name of the save helper (`save_reviews` or equivalent) — match it rather than assuming.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/python -m pytest tests/test_conteos.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'klave_engine.costing.conteos'`
 
-- [ ] **Step 3: Write the module**
+- [x] **Step 3: Write the module**
 
 Create `packages/klave_engine/costing/conteos.py`:
 
@@ -1750,12 +1760,12 @@ def save_conteos(control_dir: Path, conteos: ConteosDeProyecto) -> None:
 
 If `ConteoDeObra` or `ConteoHumano` are dataclasses rather than pydantic models, construct them with plain keyword arguments — read `packages/klave_engine/evals/recall.py:40-60` and match its constructor exactly.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `.venv/bin/python -m pytest tests/test_conteos.py -q`
 Expected: PASS — 4 passed
 
-- [ ] **Step 5: Add the endpoints**
+- [x] **Step 5: Add the endpoints**
 
 In `apps/api/routes/reviews.py`, following the shape of the existing review endpoints (same auth, same `project_recompute_lock`, same event broadcast — but **no recompute**, since counts change no number):
 
@@ -1787,7 +1797,7 @@ def put_conteos(
     return body.model_dump()
 ```
 
-- [ ] **Step 6: Teach recall_cli to read the project store**
+- [x] **Step 6: Teach recall_cli to read the project store**
 
 In `packages/klave_engine/evals/recall_cli.py`, in the `medir` branch, look for `<project_root>/processed/conteos.json` first and fall back to `evals/conteos/<project_id>.json`:
 
@@ -1800,12 +1810,12 @@ In `packages/klave_engine/evals/recall_cli.py`, in the `medir` branch, look for 
         conteo = ConteoDeObra.desde_json(Path("evals/conteos") / f"{project_id}.json")
 ```
 
-- [ ] **Step 7: Verify the whole suite**
+- [x] **Step 7: Verify the whole suite**
 
 Run: `.venv/bin/python -m pytest tests -q -p no:warnings && .venv/bin/ruff check . && .venv/bin/mypy packages/klave_engine`
 Expected: all green
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/klave_engine/costing/conteos.py packages/klave_engine/evals/recall_cli.py apps/api/routes/reviews.py tests/test_conteos.py
@@ -1823,7 +1833,7 @@ git commit -m "feat(medicion): los conteos humanos viven junto a las revisiones 
 **Interfaces:**
 - Consumes: `GET/PUT /projects/{id}/conteos` (Task 11); the AI coverage comparison already computed by `klave_engine.llm.coverage.coverage_flags`
 
-- [ ] **Step 1: Add the client functions**
+- [x] **Step 1: Add the client functions**
 
 In `apps/web/lib/api.ts`, following the existing typed-client pattern:
 
@@ -1854,7 +1864,7 @@ export const putConteos = (id: string, body: ConteosDeProyecto, actor?: string) 
 them — `putIndices` at line 1626 is the closest shape to copy, including how it
 threads `actor`.
 
-- [ ] **Step 2: Add the counting section**
+- [x] **Step 2: Add the counting section**
 
 In `apps/web/app/proyecto/[id]/revision/page.tsx`, add a section below the existing review list:
 
@@ -1923,19 +1933,19 @@ Build `filas` by joining, per sheet, each family the engine detected there with 
 
 `guardar` merges one `ConteoHoja` into the loaded `ConteosDeProyecto` (replacing any row with the same `hoja` + `familia`) and calls `putConteos`. `FAMILIAS` is the 21 values of `Family` from `klave_engine.detection.taxonomy`; the web already maps family keys to Spanish labels in `lib/families.ts` — reuse that rather than adding a second table.
 
-- [ ] **Step 3: Verify types**
+- [x] **Step 3: Verify types**
 
 Run: `apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit`
 Expected: exit 0
 
-- [ ] **Step 4: Verify in the running app**
+- [x] **Step 4: Verify in the running app**
 
 Open Marina Lote 04 — Estructural → Revisión. Enter a count for `castillo`, add `escalera` with a count of 2, reload, and confirm both persist.
 
 Then run: `.venv/bin/python -m klave_engine.evals.recall_cli medir marina_lote_04_estructural_d1cd5ec8`
 Expected: a recall table reading the counts entered in the app, with `escalera` showing recall 0.00 and a Wilson interval.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web
@@ -1949,7 +1959,7 @@ git commit -m "feat(revision): contar lo dibujado deja de ser editar un JSON a m
 **Files:**
 - Modify: `docs/evals.md`, `docs/recall.md`, `docs/principios-de-interfaz.md`
 
-- [ ] **Step 1: Document the loop in `docs/evals.md`**
+- [x] **Step 1: Document the loop in `docs/evals.md`**
 
 Add a section **El lazo completo**:
 
@@ -1962,11 +1972,11 @@ Add a section **El lazo completo**:
 >
 > Para promover una cantidad a verdad humana, cuantifícala a mano y cambia su `source` de `engine` a `human` en `evals/gold/<id>.json`, con una tolerancia estrecha y una nota que diga cómo se cuantificó.
 
-- [ ] **Step 2: Update `docs/recall.md`**
+- [x] **Step 2: Update `docs/recall.md`**
 
 Replace the `plantilla` instructions with the in-app flow, and state that counts now live in `<proyecto>/processed/conteos.json`, with `evals/conteos/` kept as the local fallback. Leave the methodology sections — Wilson intervals, money weighting, the fifteen-to-twenty-drawing sample — unchanged; they were already right.
 
-- [ ] **Step 3: Update `docs/principios-de-interfaz.md`**
+- [x] **Step 3: Update `docs/principios-de-interfaz.md`**
 
 Under **I. Honestidad**, add:
 
@@ -1974,12 +1984,12 @@ Under **I. Honestidad**, add:
 >
 > Si un número puede mostrarse como dinero lo decide `costing/presentation.py` y nadie más. La regla vivía en tres pantallas con tres niveles de rigor, y la más nueva siempre heredaba el más débil: la lista de proyectos llegó a mostrar $768,759,055 de una obra cuyo presupuesto se negaba a mostrar un peso. Una regla que se vuelve a deducir en cada superficie es una regla que se degrada con cada superficie.
 
-- [ ] **Step 4: Full verification**
+- [x] **Step 4: Full verification**
 
 Run: `.venv/bin/python -m pytest tests -q -p no:warnings && .venv/bin/ruff check . && .venv/bin/mypy packages/klave_engine && apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit && make eval-gold && make eval-demo`
 Expected: all green, `test_gold_money` unchanged
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/
@@ -1990,12 +2000,12 @@ git commit -m "docs: el lazo de medicion, y por que el veredicto se decide una s
 
 ## Definition of done
 
-- [ ] Torre Reforma's row reads **sin unidades**; no surface shows a total the presupuesto withholds
-- [ ] No cimbra or acero activity starts after the pour it serves, on any project
-- [ ] No activity lists the same predecessor twice
-- [ ] Critical-path share is below 27/30 on Marina, and the programa states its crew assumption
-- [ ] The presupuesto shows confidence bands, not a single pass rate
-- [ ] `DINERO FALTANTE` shows one grouped entry, not nineteen identical cards
-- [ ] Counting a family happens in the app and `recall_cli medir` reads it
-- [ ] **`test_gold_money` passes unchanged** — no peso moved in this round
-- [ ] `ruff`, `mypy`, `tsc`, `make eval-gold`, `make eval-demo` all green
+- [x] Torre Reforma's row reads **sin unidades**; no surface shows a total the presupuesto withholds
+- [x] No cimbra or acero activity starts after the pour it serves, on any project
+- [x] No activity lists the same predecessor twice
+- [x] Critical-path share is below 27/30 on Marina, and the programa states its crew assumption
+- [x] The presupuesto shows confidence bands, not a single pass rate
+- [x] `DINERO FALTANTE` shows one grouped entry, not nineteen identical cards
+- [x] Counting a family happens in the app and `recall_cli medir` reads it
+- [x] **`test_gold_money` passes unchanged** — no peso moved in this round
+- [x] `ruff`, `mypy`, `tsc`, `make eval-gold`, `make eval-demo` all green

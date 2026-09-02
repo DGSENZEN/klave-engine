@@ -1,9 +1,8 @@
 """Los candados del tablero: la firma del administrador, asentada."""
 
 import json
-from pathlib import Path
 
-from klave_engine.costing.reviews import GateState, ProjectReviews, load_reviews, save_reviews
+from klave_engine.costing.reviews import GateState, load_reviews, save_reviews
 
 
 def test_el_candado_persiste_con_firma(tmp_path):
@@ -24,7 +23,6 @@ def test_el_candado_persiste_con_firma(tmp_path):
 
 def test_el_endpoint_abre_y_cierra_el_candado(data_dir, monkeypatch):
     from fastapi.testclient import TestClient
-
     from klave_engine.common import config as config_module
 
     from apps.api.main import create_app
@@ -56,7 +54,6 @@ def test_el_endpoint_abre_y_cierra_el_candado(data_dir, monkeypatch):
 def test_el_tablero_degrada_a_pendiente_sin_artefactos(data_dir, monkeypatch):
     """Sin corrida ni manifest completo, cada nodo dice «pendiente» — nunca 500."""
     from fastapi.testclient import TestClient
-
     from klave_engine.common import config as config_module
 
     from apps.api.main import create_app
@@ -99,7 +96,6 @@ def test_el_tablero_degrada_a_pendiente_sin_artefactos(data_dir, monkeypatch):
 
 def test_el_preescaneo_dice_que_jala_cada_archivo(monkeypatch):
     from fastapi.testclient import TestClient
-
     from klave_engine.common import config as config_module
 
     from apps.api.main import create_app
