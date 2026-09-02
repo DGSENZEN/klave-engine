@@ -415,7 +415,7 @@ def generate_cost_report(
         config.currency, boq.warnings,
     )
     indirectos_campo = next(line.amount for line in integration.lines if line.code == "CI-C")
-    _declare_schedule_basis(boq, schedule, config.schedule)
+    _mirror_schedule_assumptions(boq, schedule)
     _warn_plantilla_vs_indirectos(
         boq, config, schedule, indirectos_campo,
         ci_c_fuente=next(c for c in resolved if c.code == "CI-C").fuente,
