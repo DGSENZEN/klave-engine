@@ -538,6 +538,21 @@ diálogo trae su chip de disciplina y se despliega. Y el presupuesto ganó el
 gesto que faltaba de OPUS: las partidas se pliegan con clic y su renglón
 dice cuántos conceptos y qué % del costo directo pesan.
 
+### Integración como análisis cerrada (2026-09-02, en `main`)
+
+Los seis porcentajes planos de la integración dejaron de ser el techo: el
+desglose de indirectos (campo + oficina central) se captura renglón por
+renglón, el financiamiento se calcula del flujo a una tasa capturada y los
+cargos adicionales se detallan — en modo dual, donde el porcentaje
+declarado sigue siendo el sello de respaldo y el importe gana cuando el
+análisis existe. El modo declarado es bit a bit el de ayer (gold intacto);
+nada se inventa: el rubro en $0 es «sin capturar», el faltante se dice con
+nombre, y la licitación rechaza con 409 los componentes por declarado (la
+utilidad declarada por diseño no bloquea). El Excel imprime los documentos
+guardados — hojas «Análisis de indirectos» y «Financiamiento» que cuadran
+con la carátula al centavo — y la web enseña el prorrateo mientras se
+captura. Once tareas TDD, ~34 pruebas nuevas, aceptación final fenceada.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)

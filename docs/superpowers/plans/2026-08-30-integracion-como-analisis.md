@@ -1,6 +1,13 @@
 # Integración como análisis — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Cerrado 2026-09-02:** las once tareas aterrizaron en `main` (resolvedor →
+> punto fijo → hallazgos → API → guard de licitación → Excel → web taller y
+> parámetros, más las correcciones de la ronda). La aceptación final está
+> fenceada por pruebas: suite completa y gold verdes, cuadre al centavo
+> (`test_exports.py`, `test_indirectos.py`), hojas «Análisis de indirectos» y
+> «Financiamiento» en el workbook, y el 409 por declarado sin UT a nivel ruta.
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Replace the six flat integration percentages with real analyses — itemized desglose de indirectos (campo + oficina central), financiamiento computed from the flujo at a captured tasa, itemized cargos adicionales — in dual mode: percentages stay as the stamped fallback, amounts win when an analysis exists.
 
@@ -46,7 +53,7 @@
   - `documenta_oficina(oficina: DesgloseOficinaCentral, costo_directo: float) -> DocumentoDesglose | None`
   - `ComponenteResuelto(code: str, amount: float | None = None, pct: float = 0.0, fuente: Literal["analisis","declarado"] = "declarado", documento: dict = {}, faltantes: list[str] = [])`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_indirectos.py`:
 
@@ -125,12 +132,12 @@ def test_financiamiento_faltantes_nombra_lo_que_falta():
     assert b.completo and b.faltantes() == []
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/test_indirectos.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'klave_engine.costing.indirectos'`
 
-- [ ] **Step 3: Write the module**
+- [x] **Step 3: Write the module**
 
 Create `packages/klave_engine/costing/indirectos.py`. The docstring is part of the deliverable — write it in the voice of `escalatoria.py` (read that file first). It must state: what a desglose is and why a bare percentage is the disqualifiable document; that the personal de campo line comes from the plantilla and is never typed twice; that the oficina central percentage is *derived* (costo anual ÷ volumen anual, which is what prorating means); that a tasa without indicador+fuente+fecha is not a tasa; and that this is the ONE place article numbers may be cited (RLOPSRM arts. 211–220 territory).
 
@@ -324,12 +331,12 @@ def documenta_oficina(
     return DocumentoDesglose(renglones=renglones, total=total, notas=notas)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_indirectos.py -v`
 Expected: 6 PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/klave_engine/costing/indirectos.py tests/test_indirectos.py
@@ -352,7 +359,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   - `DocumentoFinanciamiento(tasa_anual: float, indicador: str, fuente: str, fecha_publicacion: str, periodos: list[PeriodoFinanciamiento] = [], total: float = 0.0)`
   - `compute_financiamiento(analisis: AnalisisFinanciamiento, egresos: list[float], ingresos: list[float]) -> DocumentoFinanciamiento`
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_indirectos.py`)
+- [x] **Step 1: Write the failing tests** (append to `tests/test_indirectos.py`)
 
 ```python
 from klave_engine.costing.indirectos import compute_financiamiento
@@ -381,12 +388,12 @@ def test_financiamiento_negativo_se_conserva():
     assert doc.total == -0.5
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/test_indirectos.py -v -k financiamiento_`
 Expected: FAIL — `ImportError: cannot import name 'compute_financiamiento'` (the faltantes test from Task 1 still passes)
 
-- [ ] **Step 3: Implement** (append to `indirectos.py`)
+- [x] **Step 3: Implement** (append to `indirectos.py`)
 
 ```python
 class PeriodoFinanciamiento(BaseModel):
@@ -434,12 +441,12 @@ def compute_financiamiento(
     )
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_indirectos.py -v`
 Expected: 8 PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/klave_engine/costing/indirectos.py tests/test_indirectos.py
@@ -465,7 +472,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   - `models.CostReport` gains `integracion_resuelta: list[ComponenteResuelto] = []`
   - `integration.resolve_integration(config: CostingConfig, integracion_taller: dict | None, direct_cost: float, schedule: WorkSchedule | None, flujo: FinancialPlan | None) -> list[ComponenteResuelto]` — always returns exactly five components in order CI-C, CI-O, FI, UT, CA.
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_indirectos.py`)
+- [x] **Step 1: Write the failing tests** (append to `tests/test_indirectos.py`)
 
 ```python
 from klave_engine.costing.indirectos import CargoAdicional
@@ -581,12 +588,12 @@ def test_share_de_oficina_solo_con_motivo_escrito():
     assert oficina.documento["override"] == 3.0
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/test_indirectos.py -v -k resolver`
 Expected: FAIL — `ImportError: cannot import name 'resolve_integration'`
 
-- [ ] **Step 3: Modify `models.py`**
+- [x] **Step 3: Modify `models.py`**
 
 Add to the imports at the top (models.py already imports from `plantilla`; mirror that placement):
 
@@ -629,7 +636,7 @@ In `CostReport`, after `indirectos_campo`:
     integracion_resuelta: list[ComponenteResuelto] = Field(default_factory=list)
 ```
 
-- [ ] **Step 4: Add `resolve_integration` to `integration.py`**
+- [x] **Step 4: Add `resolve_integration` to `integration.py`**
 
 Replace the module imports and append the resolver (keep `integrate_costs` as-is for now — Task 4 touches it):
 
@@ -800,17 +807,17 @@ def resolve_integration(
     return out
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `pytest tests/test_indirectos.py -v`
 Expected: all PASS
 
-- [ ] **Step 6: Run the neighbors to catch model fallout**
+- [x] **Step 6: Run the neighbors to catch model fallout**
 
 Run: `pytest tests/test_plantilla.py tests/test_obra_api.py tests/test_gold_money.py -q`
 Expected: PASS (new fields all have defaults; old artifacts still validate)
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/klave_engine/costing/models.py packages/klave_engine/costing/integration.py tests/test_indirectos.py
@@ -830,7 +837,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 **Interfaces:**
 - Produces: `integrate_costs(direct_cost: float, config: IndirectsConfig, resolved: list[ComponenteResuelto] | None = None) -> CostIntegration`. With `resolved=None` behavior is IDENTICAL to today. With amounts, `IntegrationLine.percentage` = `round(amount / base * 100.0, 4)` and `IntegrationLine.fuente` mirrors the component.
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_indirectos.py`)
+- [x] **Step 1: Write the failing tests** (append to `tests/test_indirectos.py`)
 
 ```python
 from klave_engine.costing.indirectos import ComponenteResuelto
@@ -875,12 +882,12 @@ def test_integrate_pct_resuelto_reemplaza_al_de_config():
     assert ca.percentage == 0.7 and ca.fuente == "analisis"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/test_indirectos.py -v -k integrate`
 Expected: FAIL — `TypeError: integrate_costs() got an unexpected keyword argument 'resolved'`
 
-- [ ] **Step 3: Rewrite `integrate_costs`**
+- [x] **Step 3: Rewrite `integrate_costs`**
 
 Replace the whole function body (docstring of the module stays):
 
@@ -946,17 +953,17 @@ def integrate_costs(
     )
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_indirectos.py -v`
 Expected: all PASS
 
-- [ ] **Step 5: Regression sweep**
+- [x] **Step 5: Regression sweep**
 
 Run: `pytest tests/test_gold_money.py tests/test_obra_api.py tests/test_exports.py tests/test_programas.py -q`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/klave_engine/costing/integration.py tests/test_indirectos.py
@@ -982,7 +989,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   - `report._integrate_with_analyses(direct_cost: float, config: CostingConfig, integracion_taller: dict | None, schedule: WorkSchedule, currency: str, warnings: list[str]) -> tuple[list[ComponenteResuelto], CostIntegration, FinancialPlan]` — the extracted, testable loop.
   - `CostReport.integracion_resuelta` populated; `CostReport.indirectos_campo` = the CI-C line's `amount` (identical value to today in declared mode).
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_indirectos.py`)
+- [x] **Step 1: Write the failing tests** (append to `tests/test_indirectos.py`)
 
 ```python
 from klave_engine.costing.report import _integrate_with_analyses
@@ -1051,12 +1058,12 @@ def test_congruencia_de_plantilla_solo_en_modo_declarado():
     assert analisis.warnings == []
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/test_indirectos.py -v -k "iteracion or declarado_una or faltantes_parciales"`
 Expected: FAIL — `ImportError: cannot import name '_integrate_with_analyses'`
 
-- [ ] **Step 3: Implement in `report.py`**
+- [x] **Step 3: Implement in `report.py`**
 
 Add the imports (`resolve_integration` from integration; `ComponenteResuelto` comes via models). Add the helper above `generate_cost_report`:
 
@@ -1146,7 +1153,7 @@ Then in `generate_cost_report`:
 
 4. In the `CostReport(...)` construction add `integracion_resuelta=resolved,`.
 
-- [ ] **Step 4: Wire the two call sites**
+- [x] **Step 4: Wire the two call sites**
 
 `packages/klave_engine/pipeline.py` (~line 605 call): add argument
 `integracion_taller=catalog_store.get_setting("integracion"),`
@@ -1156,17 +1163,17 @@ Then in `generate_cost_report`:
 
 (`evals/gold.py` stays untouched: default `None` = declared mode = gold money can't move.)
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `pytest tests/test_indirectos.py -v`
 Expected: all PASS
 
-- [ ] **Step 6: Full regression sweep**
+- [x] **Step 6: Full regression sweep**
 
 Run: `pytest tests/test_gold_money.py tests/test_gold.py tests/test_obra_api.py tests/test_exports.py tests/test_programas.py tests/test_plantilla.py tests/test_estimaciones.py -q`
 Expected: PASS. `indirectos_campo` in declared mode is `round(direct × pct / 100, 2)` exactly as before (same arithmetic, now read off the CI-C line).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/klave_engine/costing/report.py packages/klave_engine/pipeline.py packages/klave_engine/costing/recompute.py tests/test_indirectos.py
@@ -1187,7 +1194,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Consumes: the exact warning strings emitted by `_integrate_with_analyses` in Task 5.
 - Produces: three new `Rule` entries; no new severity vocabulary.
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_hallazgos.py`, following that file's existing conventions for building a minimal report — read its helpers first and reuse them)
+- [x] **Step 1: Write the failing tests** (append to `tests/test_hallazgos.py`, following that file's existing conventions for building a minimal report — read its helpers first and reuse them)
 
 ```python
 def test_integracion_incompleta_es_revisar_y_se_agrupa():
@@ -1216,12 +1223,12 @@ def test_no_convergencia_es_dinero():
     assert rule.severity == "dinero"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/test_hallazgos.py -v -k "integracion or utilidad_declarada or convergencia"`
 Expected: FAIL — the strings fall through to `_FALLBACK` (severity "revisar" but empty group), so the group/criterio asserts fail.
 
-- [ ] **Step 3: Add the rules to `_RULES`**
+- [x] **Step 3: Add the rules to `_RULES`**
 
 Insert before the `_FALLBACK` definition, mirroring the style of the neighbors (see the `criterio=True` examples around lines 276–286):
 
@@ -1269,12 +1276,12 @@ def test_share_fijado_es_criterio():
     assert rule.criterio is True
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_hallazgos.py -q`
 Expected: PASS (the whole file, not only the new tests — the new patterns must not shadow existing rules; if an existing test breaks, the new rules are matching too broadly and need tightening, not the old test changing).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/klave_engine/costing/hallazgos.py tests/test_hallazgos.py
@@ -1299,7 +1306,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   - `PUT /catalog/integracion` body `{"oficina": {...}, "financiamiento": {...}}` — validated through `DesgloseOficinaCentral` / `AnalisisFinanciamiento`, stored under settings key `"integracion"`, audit event `"integracion_saved"`.
   - `GET /projects/{id}/costing-config` response gains `"integracion": [{"code","pct","amount","fuente","faltantes"}]` read from the stored `cost_report.json` (best-effort: `[]` when no report yet).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_indirectos_api.py`:
 
@@ -1349,12 +1356,12 @@ def test_integracion_rechaza_basura(data_dir, monkeypatch):
     assert malo.status_code == 422
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/test_indirectos_api.py -v`
 Expected: FAIL — 404 on `/catalog/integracion`
 
-- [ ] **Step 3: Add the routes** (in `apps/api/routes/catalog.py`, next to the `/indices` block; reuse its imports)
+- [x] **Step 3: Add the routes** (in `apps/api/routes/catalog.py`, next to the `/indices` block; reuse its imports)
 
 ```python
 class IntegracionInput(BaseModel):
@@ -1394,7 +1401,7 @@ def put_integracion(
 
 Add to the file's imports: `from klave_engine.costing.indirectos import AnalisisFinanciamiento, DesgloseOficinaCentral` and `from pydantic import ValidationError` (check what's already imported first).
 
-- [ ] **Step 4: Extend `get_costing_config` in `apps/api/routes/reports.py`**
+- [x] **Step 4: Extend `get_costing_config` in `apps/api/routes/reports.py`**
 
 Read the function (line ~86) first. Add to its response dict:
 
@@ -1413,12 +1420,12 @@ Read the function (line ~86) first. Add to its response dict:
 
 and include `"integracion": integracion` in the returned payload.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `pytest tests/test_indirectos_api.py tests/test_obra_api.py -q`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/api/routes/catalog.py apps/api/routes/reports.py tests/test_indirectos_api.py
@@ -1439,7 +1446,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Consumes: `CostReport.integracion_resuelta` (Task 3/5); the `_report(data_dir)` fixture style of `tests/test_exports.py` (reports built directly via `build_cost_report`, no API client — read the top of that file first and reuse its imports/helpers).
 - Produces: `_licitacion_bloqueantes(report: CostReport) -> list[str]` in `apps/api/routes/exports.py` (pure, unit-tested), and `_guard_export(store, project_id, settings, motivo, extra_blocking: list[str] | None = None) -> str`. For `format` in `("licitacion", "licitacion_larga")`, each of CI-C/CI-O/FI/CA still in declared mode is a blocker; UT never is. An old artifact with empty `integracion_resuelta` blocks with a single "reprocesa" message.
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_exports.py`; it builds reports directly with `build_cost_report` — reuse its `_report(data_dir)` and `_detections()` helpers and its imports)
+- [x] **Step 1: Write the failing tests** (append to `tests/test_exports.py`; it builds reports directly with `build_cost_report` — reuse its `_report(data_dir)` and `_detections()` helpers and its imports)
 
 ```python
 def test_licitacion_bloquea_componentes_declarados(data_dir):
@@ -1504,12 +1511,12 @@ def test_licitacion_sin_bloqueantes_en_modo_analisis(data_dir):
 
 (If any of `CostingInputs`, `build_cost_report`, `sembrar`, `get_catalog_store`, `DrawingUnits` are not already imported at the top of `tests/test_exports.py`, they are — the `_report` fixture uses them. Do not re-import.)
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/test_exports.py -v -k licitacion`
 Expected: FAIL — `ImportError: cannot import name '_licitacion_bloqueantes'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `apps/api/routes/exports.py`, add the pure function next to `_blocking_findings`:
 
@@ -1560,12 +1567,12 @@ def _guard_export(
 
 `_mark_exported` moves after the guard too (only a successful export marks). Keep the rate-limit call first.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_exports.py -q`
 Expected: PASS (all — the reorder must not break the other export routes, which don't pass `extra_blocking`)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/routes/exports.py tests/test_exports.py
@@ -1586,7 +1593,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Consumes: `report.integracion_resuelta` documentos (printed verbatim — the export layer NEVER recomputes), `CATEGORIA_LABEL` from `indirectos.py`, existing helpers `_title`, `_muted`, `_header` in exports.py (read their signatures first).
 - Produces: licitación workbook gains sheets `"Análisis de indirectos"` and `"Financiamiento"` (the latter only when FI is analysis-backed); Carátula gains an "Integración del precio" block with fuente per line.
 
-- [ ] **Step 1: Write the failing test** (append to `tests/test_exports.py`, direct-builder style like the rest of the file; `_overrides_analisis(data_dir)` was added to this same file by Task 8 — its body is repeated below in case that task's code moved)
+- [x] **Step 1: Write the failing test** (append to `tests/test_exports.py`, direct-builder style like the rest of the file; `_overrides_analisis(data_dir)` was added to this same file by Task 8 — its body is repeated below in case that task's code moved)
 
 ```python
 def test_licitacion_imprime_los_analisis(data_dir):
@@ -1640,12 +1647,12 @@ def test_caratula_dice_la_fuente_de_cada_renglon(data_dir):
 
 Mirror `build_presupuesto_workbook`'s exact call signature from `test_klave_workbook_structure_and_generadores` in the same file if it differs from the above. `_overrides_analisis` for reference: seeds `set_setting("integracion", {oficina: {rubros: [Renta de oficina 600000], volumen_anual_contratado: 40000000}, financiamiento: {tasa 12, TIIE 28 días, Banxico SF43783, 2026-08-27}})` and returns `CostingOverrides()` whose config carries a `desglose_campo` with "Renta de bodega" (10,000 mensual) and one `CargoAdicional` (0.5 %).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/test_exports.py -v -k "imprime_los_analisis or caratula_dice"`
 Expected: FAIL — sheet "Análisis de indirectos" not in sheetnames; no "declarado" text on the Carátula
 
-- [ ] **Step 3: Implement the sheets**
+- [x] **Step 3: Implement the sheets**
 
 In `exports.py`, two new sheet builders (place next to `_licitacion_workbook`, reuse `_title`/`_muted`/`_header` and the number formats used by `_flujo` — read `_flujo` first for the money-format idiom):
 
@@ -1740,12 +1747,12 @@ In `_caratula`, extend the `rows` list after `("Costo directo", ...)` — insert
         ],
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_exports.py tests/test_croquis.py tests/test_generadores.py -q`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/klave_engine/costing/exports.py tests/test_exports.py
@@ -1772,11 +1779,11 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Before writing any code:** read `apps/web/node_modules/next/dist/docs/` for the app-router conventions this Next.js version uses, and read `PlantillaCampo.tsx` end-to-end — the new card must look and behave like its sibling (same Card/SectionTitle primitives, same ghost-row entry idiom, same save path through the page's config state).
 
-- [ ] **Step 1: Extend `lib/api.ts`**
+- [x] **Step 1: Extend `lib/api.ts`**
 
 Add the three types above next to `CostingConfigFull` (~line 629) and the optional fields on `CostingConfigFull`/`CostingConfigResponse`. No new fetch helpers needed for the project page (config rides `getCostingConfig`/the existing save call the parametros page uses — read how the page saves before assuming names).
 
-- [ ] **Step 2: Build `DesgloseCampoCard`**
+- [x] **Step 2: Build `DesgloseCampoCard`**
 
 `apps/web/components/DesgloseCampo.tsx` — a Card titled "Desglose de indirectos de campo" with:
 - One table: Concepto (text input) / Categoría (select over the nine categories with Spanish labels — copy `CATEGORIA_LABEL` values from `indirectos.py` into a local `const CATEGORIAS`) / Importe (number, right-aligned tabular) / Base (mensual|único select) / a remove button.
@@ -1784,7 +1791,7 @@ Add the three types above next to `CostingConfigFull` (~line 629) and the option
 - A fixed, non-editable first line: "Personal técnico, administrativo y de servicio — se calcula de la plantilla de campo (abajo)" with muted styling, so nobody types the personal twice.
 - A one-line note when any row has importe 0: "Renglones en $0 se muestran vacíos y no suman: captúralos o bórralos."
 
-- [ ] **Step 3: Mount it on the parametros page**
+- [x] **Step 3: Mount it on the parametros page**
 
 In `parametros/page.tsx`, next to where `PlantillaCampo` renders (find it), add:
 
@@ -1797,22 +1804,22 @@ In `parametros/page.tsx`, next to where `PlantillaCampo` renders (find it), add:
 
 using the page's existing config-update mechanism (it has `setField(group, key, value)` for grouped numbers; add a sibling `setConfigField(key, value)` for top-level fields if none exists — mirror how `plantilla_campo` edits are saved, since that is also a top-level config field edited outside `ConfigGroup`).
 
-- [ ] **Step 4: Share override inputs**
+- [x] **Step 4: Share override inputs**
 
 Below the `DesgloseCampoCard` (same card or a small sibling card titled "Oficina central en esta obra"), two fields writing top-level config keys via the same save path: "Share de oficina central (%)" (number, maps to `oficina_share_pct`, empty = null = prorrateo derivado) and "Motivo del share" (text, maps to `oficina_share_motivo`, helper text: "Obligatorio, mínimo 15 caracteres — sin motivo escrito se usa el prorrateo derivado"). Add both keys to the api.ts `CostingConfigFull` optional fields (`oficina_share_pct?: number | null; oficina_share_motivo?: string`).
 
-- [ ] **Step 5: Fuente hints on `CostingConfigForm`**
+- [x] **Step 5: Fuente hints on `CostingConfigForm`**
 
 Give `ConfigGroup` an optional prop `fuentes?: Record<string, { fuente: string; pct: number | null }>` keyed by config key (`field_indirects_pct`, `office_indirects_pct`, `financing_pct`, `additional_charges_pct`). When a key has `fuente === "analisis"`, render the input disabled with the derived pct as its value and a small badge "análisis" (use the `Badge` primitive); when declared, render normally. The parametros page maps the `integracion` array from `CostingConfigResponse` (`CI-C → field_indirects_pct`, `CI-O → office_indirects_pct`, `FI → financing_pct`, `CA → additional_charges_pct`) and passes it only to the "Indirectos y sobrecosto" group.
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run: `cd apps/web && npx tsc --noEmit`
 Expected: clean.
 
 Then verify in the browser per the preview workflow: start the dev servers (`make api`, and the web preview via the launch config — never Bash for the web server), open `/proyecto/<id>/parametros` on a processed project, add a rubro row, save, confirm the row round-trips after reload, and screenshot the card. Fix and re-check until clean.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add apps/web/lib/api.ts apps/web/components/DesgloseCampo.tsx apps/web/components/CostingConfigForm.tsx "apps/web/app/proyecto/[id]/parametros/page.tsx"
@@ -1836,9 +1843,9 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   - api.ts: `export type IntegracionTaller = { oficina: { rubros: RubroIndirecto[]; volumen_anual_contratado: number }; financiamiento: { tasa_anual: number; indicador: string; fuente: string; fecha_publicacion: string } }`, `getIntegracionTaller(): Promise<IntegracionTaller>`, `putIntegracionTaller(body: IntegracionTaller, actor?: string)` — mirror the fetch-helper and actor-header idiom of the existing workspace calls (read `saveWorkspaceDefaults` at ~line 2379 and copy its shape).
   - `IntegracionSection.tsx` exports `IntegracionSection({ onChanged, onError, onNotice })` with the same props contract as `VigenciaSection` (read it first).
 
-- [ ] **Step 1: Add the api.ts types + fetchers** (as specified above).
+- [x] **Step 1: Add the api.ts types + fetchers** (as specified above).
 
-- [ ] **Step 2: Build `IntegracionSection`**
+- [x] **Step 2: Build `IntegracionSection`**
 
 Two cards inside one section titled "Integración del precio":
 1. **Oficina central** — same rubro-row editor as `DesgloseCampoCard` (extract the row-editor into a shared component in `DesgloseCampo.tsx` — export `RubrosEditor({ rubros, onChange, baseAnual }: { rubros: RubroIndirecto[]; onChange: (r: RubroIndirecto[]) => void; baseAnual?: boolean })` — rather than duplicating it; `baseAnual` hides the mensual/único select and labels the amount "Importe anual"), plus a "Volumen anual contratado (MXN)" number input and a muted line that renders the live derivation when both are set: `costo anual ÷ volumen = X.XXXX %`.
@@ -1846,7 +1853,7 @@ Two cards inside one section titled "Integración del precio":
 
 Save button per section calling `putIntegracionTaller` with the merged object (a PUT always carries both halves — the endpoint stores them together), then `onChanged()`.
 
-- [ ] **Step 3: Mount on the catalogo page**
+- [x] **Step 3: Mount on the catalogo page**
 
 In `apps/web/app/catalogo/page.tsx`, next to `<SalarioRealSection …/>` (~line 420):
 
@@ -1854,12 +1861,12 @@ In `apps/web/app/catalogo/page.tsx`, next to `<SalarioRealSection …/>` (~line 
 <IntegracionSection onChanged={reload} onError={setError} onNotice={setNotice} />
 ```
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `cd apps/web && npx tsc --noEmit` — clean.
 Browser: open `/catalogo`, capture oficina rubros + volumen, confirm the derived pct line renders, save, reload, confirm round-trip. Then on a project: recompute from parámetros and confirm the "Indirectos de oficina" input in the config form now shows the análisis badge with the derived pct. Screenshot both.
 
-- [ ] **Step 5: Full suite + commit**
+- [x] **Step 5: Full suite + commit**
 
 Run: `pytest -q` (entire suite) — everything green.
 
@@ -1874,7 +1881,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ## Final acceptance (run after Task 11)
 
-- [ ] `pytest -q` — full suite green.
-- [ ] Demo project (declared mode): direct cost `157533681.21` and today's sale price unchanged.
-- [ ] Analysis-mode walkthrough on a processed project: capture taller integracion + desglose campo + plantilla salaries → recompute → presupuesto shows fuente per component → `format=licitacion` exports without motivo → workbook carries "Análisis de indirectos" + "Financiamiento" sheets whose totals equal the Carátula's integration lines to the centavo.
-- [ ] Declared-mode licitación export returns 409 with the per-component messages, and UT is not among them.
+- [x] `pytest -q` — full suite green.
+- [x] Demo project (declared mode): direct cost `157533681.21` and today's sale price unchanged.
+- [x] Analysis-mode walkthrough on a processed project: capture taller integracion + desglose campo + plantilla salaries → recompute → presupuesto shows fuente per component → `format=licitacion` exports without motivo → workbook carries "Análisis de indirectos" + "Financiamiento" sheets whose totals equal the Carátula's integration lines to the centavo.
+- [x] Declared-mode licitación export returns 409 with the per-component messages, and UT is not among them.
