@@ -571,6 +571,22 @@ no se redacta dos veces; los cambios de la rama al Resumen viejo se
 portaron a `/resumen`. Suite completa, gold, lint, tsc y build verdes sobre
 el árbol fundido.
 
+### Riesgos agrupados — la deuda M1 saldada (2026-09-02, rama `riesgos-agrupados`)
+
+El pendiente M1 de la auditoría de densidad: Riesgos era el sistema sin
+agrupar (112 tarjetas en Marina donde caben 4). Ahora `risks/agrupar.py`
+junta los hallazgos por tipo en la fuente, con la regla del Diagnóstico:
+una tarjeta por tipo con título del oficio (nunca el nombre interno del
+método), cuenta con denominador donde lo hay («63 de N detecciones»), la
+acción dicha una vez y en plural, y los miembros completos — la frase
+original de cada elemento con su bbox, para que el salto al visor
+sobreviva. La causa abre la lista aunque sea «low» (sparse_grid, unidades
+desconocidas, plano vacío explican a los demás). `counts_by_severity`
+sigue contando ELEMENTOS: agrupar ordena la pantalla, no encoge el riesgo.
+La tarjeta web perdió el «Método:» en monoespaciada y el porcentaje de
+confianza estampado (P0-4 de la misma auditoría) y ganó la lista plegable
+de miembros. Los evals solo fencean tipos de riesgo — intactos.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
