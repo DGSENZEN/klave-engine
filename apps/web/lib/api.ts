@@ -484,6 +484,13 @@ export type ScheduleActivity = {
   direct_cost: number;
 };
 
+export type RiskMember = {
+  /** La frase original del elemento, con su lugar para saltar al visor. */
+  message: string;
+  bbox: [number, number, number, number] | null;
+  related_detections: string[];
+};
+
 export type RiskFinding = {
   risk_id: string;
   risk_type: string;
@@ -492,6 +499,10 @@ export type RiskFinding = {
   source_entities: string[];
   related_detections: string[];
   bbox: [number, number, number, number] | null;
+  /** Tarjeta agrupada (regla del Diagnóstico): título del oficio y miembros. */
+  titulo?: string;
+  member_count?: number;
+  members?: RiskMember[];
   evidence: {
     source: string;
     method: string;

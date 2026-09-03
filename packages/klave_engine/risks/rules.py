@@ -37,6 +37,15 @@ class Severity(StrEnum):
     high = "high"
 
 
+class RiskMember(BaseModel):
+    """Un elemento dentro de una tarjeta agrupada: su frase original y su
+    lugar en el plano, para que el salto al visor sobreviva al agrupado."""
+
+    message: str
+    bbox: BBox | None = None
+    related_detections: list[str] = Field(default_factory=list)
+
+
 class RiskFinding(BaseModel):
     risk_id: str
     risk_type: str
@@ -47,6 +56,12 @@ class RiskFinding(BaseModel):
     bbox: BBox | None = None
     evidence: EvidencePacket
     recommended_human_action: str
+    # Agrupado (regla del Diagnóstico: nunca un hallazgo por renglón): la
+    # tarjeta dice el título del oficio, cuántos elementos junta y quiénes
+    # son. Cero en hallazgos sin agrupar — el JSON viejo sigue validando.
+    titulo: str = ""
+    member_count: int = 0
+    members: list[RiskMember] = Field(default_factory=list)
 
 
 class RiskReport(BaseModel):
@@ -372,11 +387,19 @@ def generate_risk_report(
             )
         )
 
+    # La deuda M1 se salda aquí, en la fuente: las tarjetas se agrupan por
+    # tipo con la regla del Diagnóstico y la causa abre la lista. La
+    # exposición por severidad se cuenta sobre los ELEMENTOS, no sobre las
+    # tarjetas: agrupar ordena la pantalla, no encoge el riesgo.
+    from klave_engine.risks.agrupar import agrupar_hallazgos
+
+    elementos = findings
+    findings = agrupar_hallazgos(findings, total_detecciones=len(detections))
     report = RiskReport(
         project_id=project_id,
         findings=findings,
         counts_by_severity=dict(
-            sorted(Counter(f.severity.value for f in findings).items())
+            sorted(Counter(f.severity.value for f in elementos).items())
         ),
     )
     log_stage(

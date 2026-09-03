@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { MapTrifold, ShieldCheck, Warning } from "@phosphor-icons/react";
+import { CaretDown, MapTrifold, ShieldCheck, Warning } from "@phosphor-icons/react";
 import type { RiskFinding } from "@/lib/api";
 import { useRiskReport } from "@/lib/useProjectReport";
 import {
@@ -146,7 +146,12 @@ export default function RiesgosPage() {
 }
 
 function RiskCard({ finding, projectId }: { finding: RiskFinding; projectId: string }) {
-  const relatedCount = finding.related_detections.length + finding.source_entities.length;
+  // La tarjeta agrupada abre su lista de miembros; una tarjeta suelta no
+  // tiene nada que abrir. Sin nombres de método ni porcentajes estampados:
+  // el título del oficio, la cuenta y la acción — lo que se decide con.
+  const [open, setOpen] = useState(false);
+  const members = finding.members ?? [];
+  const grouped = (finding.member_count ?? 0) > 1 && members.length > 0;
   return (
     <Card className="p-5">
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -154,8 +159,13 @@ function RiskCard({ finding, projectId }: { finding: RiskFinding; projectId: str
           {SEVERITY_LABELS[finding.severity] ?? finding.severity}
         </Badge>
         <span className="text-sm font-semibold">
-          {RISK_TYPE_LABELS[finding.risk_type] ?? finding.risk_type}
+          {finding.titulo || RISK_TYPE_LABELS[finding.risk_type] || finding.risk_type}
         </span>
+        {grouped && (
+          <span className="tabular text-xs text-muted">
+            {finding.member_count} elementos
+          </span>
+        )}
       </div>
       <p className="text-sm leading-relaxed">{finding.message}</p>
       {finding.bbox && (
@@ -170,19 +180,42 @@ function RiskCard({ finding, projectId }: { finding: RiskFinding; projectId: str
         <span className="font-medium">Acción recomendada:</span>{" "}
         {finding.recommended_human_action}
       </div>
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-        <span>
-          Método: <span className="font-mono">{finding.evidence.method}</span>
-        </span>
-        <span className="tabular">
-          Confianza {(finding.evidence.confidence * 100).toFixed(0)}%
-        </span>
-        {relatedCount > 0 && (
-          <span className="tabular">
-            {relatedCount} {relatedCount === 1 ? "elemento relacionado" : "elementos relacionados"}
-          </span>
-        )}
-      </div>
+      {grouped && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setOpen((value) => !value)}
+            aria-expanded={open}
+            className="flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-foreground"
+          >
+            <CaretDown
+              size={11}
+              weight="bold"
+              className={`transition-transform ${open ? "" : "-rotate-90"}`}
+            />
+            {open ? "Ocultar los elementos" : `Ver los ${finding.member_count} elementos`}
+          </button>
+          {open && (
+            <ul className="mt-2 space-y-1.5 border-l border-border pl-3">
+              {members.map((member, i) => (
+                <li key={i} className="text-xs text-muted">
+                  {member.message}{" "}
+                  {member.bbox && (
+                    <Link
+                      href={`/proyecto/${projectId}/plano?bbox=${member.bbox
+                        .map((v) => v.toFixed(2))
+                        .join(",")}`}
+                      className="inline-flex items-center gap-1 text-accent underline"
+                    >
+                      <MapTrifold size={11} /> ver
+                    </Link>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {finding.evidence.notes.length > 0 && (
         <ul className="mt-2 space-y-0.5 text-xs text-faint">
           {finding.evidence.notes.slice(0, 3).map((note, i) => (

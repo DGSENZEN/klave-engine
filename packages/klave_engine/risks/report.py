@@ -17,8 +17,10 @@ def risk_report_to_markdown(report: RiskReport) -> str:
         report.findings, key=lambda f: (_SEVERITY_ORDER[f.severity.value], f.risk_id)
     )
     for finding in ordered:
+        titulo = finding.titulo or finding.risk_type
+        cuenta = f" — {finding.member_count} elementos" if finding.member_count > 1 else ""
         lines += [
-            f"### [{finding.severity.value.upper()}] {finding.risk_type} ({finding.risk_id})",
+            f"### [{finding.severity.value.upper()}] {titulo}{cuenta} ({finding.risk_id})",
             "",
             finding.message,
             "",
