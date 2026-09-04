@@ -587,6 +587,22 @@ La tarjeta web perdió el «Método:» en monoespaciada y el porcentaje de
 confianza estampado (P0-4 de la misma auditoría) y ganó la lista plegable
 de miembros. Los evals solo fencean tipos de riesgo — intactos.
 
+### Pulido de pantallas (2026-09-03, rama `pulido-pantallas`)
+
+Tres fricciones dichas por Diego, tres respuestas: (1) **la paleta de
+salto directo** — ⌘K/Ctrl+K abre una paleta que lleva a cualquier pantalla
+del proyecto en tres letras (la lista es el mismo `NODE_NAV` de la
+navegación: una sola fuente), con botón ⌘K discreto en la barra; (2)
+**presupuesto y parámetros dejan de bombardear** — las secciones apiladas
+se volvieron pestañas `?tab=` (Partidas · Integración · Ajustes ·
+Versiones; Supuestos · Análisis de indirectos · Insumos): una vista a la
+vez, el resto a un clic, los banners de doctrina siempre visibles y el
+estado de las filas sobrevive al cambio (se oculta, no se desmonta); (3)
+**el teclado de OPUS en la hoja del catálogo** — ↑↓ recorren los
+conceptos, Enter/→ abre la matriz, ← la cierra, la fila enfocada se marca
+con el acento y las celdas siguen siendo celdas (tecleando en un input la
+hoja no se mueve).
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
