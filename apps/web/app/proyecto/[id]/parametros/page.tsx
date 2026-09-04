@@ -25,6 +25,7 @@ import {
   Input,
   PageHeader,
   SectionTitle,
+  Tabs,
   Skeleton,
   SkeletonHeader,
   Td,
@@ -55,8 +56,27 @@ type ConflictDetail = {
   message?: string;
 };
 
+const PARAMETROS_TABS = ["supuestos", "indirectos", "insumos"] as const;
+type ParametrosTab = (typeof PARAMETROS_TABS)[number];
+
 export default function ParametrosPage() {
   const { id } = useParams<{ id: string }>();
+  // Una vista a la vez (?tab=): supuestos, análisis de indirectos o insumos.
+  const [tab, setTabState] = useState<ParametrosTab>("supuestos");
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const param = new URLSearchParams(window.location.search).get("tab");
+      if (PARAMETROS_TABS.includes(param as ParametrosTab)) {
+        setTabState(param as ParametrosTab);
+      }
+    }, 0);
+    return () => window.clearTimeout(handle);
+  }, []);
+  const setTab = useCallback((next: ParametrosTab) => {
+    setTabState(next);
+    const basePath = window.location.pathname;
+    window.history.replaceState(null, "", next === "supuestos" ? basePath : `${basePath}?tab=${next}`);
+  }, []);
   const [config, setConfig] = useState<CostingConfigFull | null>(null);
   const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [prices, setPrices] = useState<Record<string, number>>({});
@@ -407,7 +427,18 @@ export default function ParametrosPage() {
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <Tabs
+        className="mb-5"
+        value={tab}
+        onChange={setTab}
+        items={[
+          { key: "supuestos", label: "Porcentajes y supuestos" },
+          { key: "indirectos", label: "Análisis de indirectos" },
+          { key: "insumos", label: "Insumos del proyecto" },
+        ]}
+      />
+
+      <div className={`grid gap-4 lg:grid-cols-2 ${tab !== "supuestos" ? "hidden" : ""}`}>
         {CONFIG_GROUPS.map(({ group, title }) => (
           <ConfigGroup
             key={group}
@@ -420,7 +451,7 @@ export default function ParametrosPage() {
         ))}
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+      <div className={`mt-4 grid gap-4 lg:grid-cols-3 ${tab !== "indirectos" ? "hidden" : ""}`}>
         <div className="lg:col-span-2">
           <DesgloseCampoCard
             value={config.desglose_campo ?? null}
@@ -435,7 +466,7 @@ export default function ParametrosPage() {
         />
       </div>
 
-      <Card className="mt-4 overflow-hidden">
+      <Card className={`mt-4 overflow-hidden ${tab !== "insumos" ? "hidden" : ""}`}>
         <div className="border-b border-border px-5 py-4">
           <SectionTitle sub="Precios de referencia (MXN); edítalos con tus cotizaciones">
             Catálogo de insumos

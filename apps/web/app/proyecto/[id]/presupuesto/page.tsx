@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -57,6 +57,7 @@ import {
   SkeletonHeader,
   SkeletonMetrics,
   SkeletonTable,
+  Tabs,
   TableCard,
   Td,
   Th,
@@ -69,6 +70,9 @@ import { ConceptPicker } from "@/components/ConceptPicker";
 import { IndicatorsCard } from "@/components/IndicatorsCard";
 import { DiagnosticoPanel, ExportBlockedDialog } from "@/components/Diagnostico";
 import { SuggestionsBar } from "@/components/SuggestionsBar";
+
+const PRESUPUESTO_TABS = ["partidas", "integracion", "ajustes", "versiones"] as const;
+type PresupuestoTab = (typeof PRESUPUESTO_TABS)[number];
 
 export default function PresupuestoPage() {
   const { id } = useParams<{ id: string }>();
@@ -86,6 +90,24 @@ export default function PresupuestoPage() {
     fallbackName: string;
     detail: { message?: string; bloqueantes?: string[] };
   } | null>(null);
+  // Una vista a la vez (?tab=): partidas, integración, ajustes o versiones.
+  // Las secciones apiladas bombardeaban; el resto queda a un clic, no a un
+  // scroll de página y media.
+  const [tab, setTabState] = useState<PresupuestoTab>("partidas");
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const param = new URLSearchParams(window.location.search).get("tab");
+      if (PRESUPUESTO_TABS.includes(param as PresupuestoTab)) {
+        setTabState(param as PresupuestoTab);
+      }
+    }, 0);
+    return () => window.clearTimeout(handle);
+  }, []);
+  const setTab = useCallback((next: PresupuestoTab) => {
+    setTabState(next);
+    const basePath = window.location.pathname;
+    window.history.replaceState(null, "", next === "partidas" ? basePath : `${basePath}?tab=${next}`);
+  }, []);
   const { latestEvent, sendActivity, connectionEpoch, actorName, clientId } =
     useProjectLive();
 
@@ -364,7 +386,19 @@ export default function PresupuestoPage() {
         </div>
       )}
 
-      <TableCard className={`mb-6 ${costs.boq.lines.length === 0 ? "hidden" : ""}`}>
+      <Tabs
+        className="mb-5"
+        value={tab}
+        onChange={setTab}
+        items={[
+          { key: "partidas", label: "Partidas", count: costs.boq.lines.length },
+          { key: "integracion", label: "Integración del precio" },
+          { key: "ajustes", label: "Ajustes a mano", count: reviews?.adjustments.length },
+          { key: "versiones", label: "Versiones" },
+        ]}
+      />
+
+      <TableCard className={`mb-6 ${tab !== "partidas" || costs.boq.lines.length === 0 ? "hidden" : ""}`}>
         <thead>
           <tr className="border-b border-border bg-surface-2">
             <Th>Clave</Th>
@@ -404,7 +438,7 @@ export default function PresupuestoPage() {
         </tfoot>
       </TableCard>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className={`grid gap-4 lg:grid-cols-2 ${tab !== "integracion" ? "hidden" : ""}`}>
         <Card className="p-5">
           <SectionTitle>Integración del precio</SectionTitle>
           <div className="space-y-2 text-sm">
@@ -467,9 +501,9 @@ export default function PresupuestoPage() {
         </Card>
       </div>
 
-      {costs.indicators && <IndicatorsCard indicators={costs.indicators} />}
+      {tab === "integracion" && costs.indicators && <IndicatorsCard indicators={costs.indicators} />}
 
-      <Card className="mt-6 p-5">
+      <Card className={`mt-6 p-5 ${tab !== "ajustes" ? "hidden" : ""}`}>
         <SectionTitle sub="Lo que el plano no trae y el presupuesto necesita: un concepto con su cantidad y el motivo, con autor. Para corregir una cantidad leída usa el lápiz de su línea.">
           Conceptos agregados a mano
         </SectionTitle>
@@ -484,14 +518,14 @@ export default function PresupuestoPage() {
         />
       </Card>
 
-      <Card className="mt-6 p-5">
+      <Card className={`mt-6 p-5 ${tab !== "versiones" ? "hidden" : ""}`}>
         <SectionTitle sub="Guarda el presupuesto tal como está — con tus revisiones, ajustes y parámetros — para compararlo después y volver a él.">
           Versiones del presupuesto
         </SectionTitle>
         <VersionsPanel projectId={id} />
       </Card>
 
-      {costs.boq.warnings.length > 0 && (
+      {tab === "partidas" && costs.boq.warnings.length > 0 && (
         <Card className="mt-6 p-5">
           <SectionTitle sub="Revisar antes de usar el presupuesto como referencia.">
             Advertencias ({costs.boq.warnings.length})
