@@ -798,6 +798,56 @@ function ApusSection({
     });
   }
 
+  // El teclado de OPUS: ↑↓ recorren la hoja, Enter o → abren la matriz,
+  // ← la cierra. Las celdas siguen siendo celdas — tecleando en un input
+  // la hoja no se mueve.
+  const [focusCode, setFocusCode] = useState<string | null>(null);
+  const planos = useMemo(
+    () => byPhase.flatMap(([, concepts]) => concepts.map((c) => c.code)),
+    [byPhase],
+  );
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target && ("value" in target || target.isContentEditable)) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (planos.length === 0) return;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        setFocusCode((current) => {
+          const index = current ? planos.indexOf(current) : -1;
+          const step = event.key === "ArrowDown" ? 1 : -1;
+          const next = planos[Math.min(Math.max(index + step, 0), planos.length - 1)];
+          window.setTimeout(() => {
+            document
+              .querySelector(`[data-concept-row="${next}"]`)
+              ?.scrollIntoView({ block: "nearest" });
+          }, 0);
+          return next;
+        });
+        return;
+      }
+      setFocusCode((current) => {
+        if (!current) return current;
+        if (event.key === "Enter" || event.key === "ArrowRight") {
+          event.preventDefault();
+          setOpen((abiertos) => new Set(abiertos).add(current));
+        }
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          setOpen((abiertos) => {
+            const next = new Set(abiertos);
+            next.delete(current);
+            return next;
+          });
+        }
+        return current;
+      });
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [planos]);
+
   return (
     <div>
       <SectionTitle sub="Cantidad de cada recurso por unidad de concepto, editable en su lugar: cada celda guarda al salir. El costo directo se recalcula con la ecuación %MO para herramienta menor.">
@@ -819,6 +869,9 @@ function ApusSection({
         </div>
         <span className="text-xs text-muted">
           {shown === catalog.concepts.length ? `${shown} conceptos` : `${shown} de ${catalog.concepts.length}`}
+        </span>
+        <span className="hidden text-[11px] text-faint lg:inline">
+          ↑ ↓ recorren · Enter abre la matriz · ← la cierra
         </span>
       </div>
       {shown === 0 && query.trim() !== "" && (
@@ -847,6 +900,8 @@ function ApusSection({
                   concepts={concepts}
                   catalog={catalog}
                   open={open}
+                  focusCode={focusCode}
+                  onFocus={setFocusCode}
                   onToggle={toggle}
                   creating={creatingIn === phase}
                   onCreating={(value) => setCreatingIn(value ? phase : null)}
@@ -867,6 +922,8 @@ function PhaseRows({
   concepts,
   catalog,
   open,
+  focusCode,
+  onFocus,
   onToggle,
   creating,
   onCreating,
@@ -877,6 +934,8 @@ function PhaseRows({
   concepts: CatalogConcept[];
   catalog: CatalogState;
   open: Set<string>;
+  focusCode: string | null;
+  onFocus: (code: string) => void;
   onToggle: (code: string) => void;
   creating: boolean;
   onCreating: (value: boolean) => void;
@@ -922,6 +981,8 @@ function PhaseRows({
           components={catalog.apus[concept.code] ?? []}
           insumos={catalog.insumos}
           open={open.has(concept.code)}
+          focused={focusCode === concept.code}
+          onFocus={() => onFocus(concept.code)}
           onToggle={() => onToggle(concept.code)}
           onChanged={onChanged}
           onError={onError}
@@ -1144,6 +1205,8 @@ function ConceptRows({
   components,
   insumos,
   open,
+  focused,
+  onFocus,
   onToggle,
   onChanged,
   onError,
@@ -1152,6 +1215,8 @@ function ConceptRows({
   components: ApuComponent[];
   insumos: CatalogInsumo[];
   open: boolean;
+  focused: boolean;
+  onFocus: () => void;
   onToggle: () => void;
   onChanged: () => void;
   onError: (message: string) => void;
@@ -1246,10 +1311,14 @@ function ConceptRows({
   return (
     <>
       <tr
+        data-concept-row={concept.code}
         className={`cursor-pointer border-b border-border transition-colors hover:bg-surface-2/50 ${
           open ? "bg-surface-2/40" : ""
-        }`}
-        onClick={onToggle}
+        } ${focused ? "bg-accent-soft/40 shadow-[inset_3px_0_0_var(--accent)]" : ""}`}
+        onClick={() => {
+          onFocus();
+          onToggle();
+        }}
         aria-expanded={open}
       >
         <Td className="px-5">
