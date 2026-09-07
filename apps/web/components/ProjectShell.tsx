@@ -59,6 +59,7 @@ export function ProjectShell({
         unseenChanges={unseen}
         onOpenChanges={() => setChangesOpen(true)}
       />
+      <NodeWorkspaceBar id={id} />
       <main className={`min-w-0 flex-1 ${onTablero ? "flex flex-col" : "overflow-x-hidden"}`}>
         {children}
       </main>
@@ -66,6 +67,47 @@ export function ProjectShell({
       <CommandPalette projectId={id} />
       <LiveToasts />
     </div>
+  );
+}
+
+/**
+ * La barra del nodo: cuando la pantalla pertenece a un nodo con varias
+ * entradas, sus hermanas quedan SIEMPRE visibles como pestañas — moverse
+ * dentro de Planos o Revisión es un clic a la vista, nunca un menú.
+ */
+function NodeWorkspaceBar({ id }: { id: string }) {
+  const pathname = usePathname();
+  const base = `/proyecto/${id}`;
+  const node = nodeForPath(base, pathname);
+  if (!node || node.entries.length < 2) return null;
+  return (
+    <nav
+      aria-label={`Pantallas de ${node.label}`}
+      className="sticky top-12 z-30 flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-sidebar px-3 sm:px-4"
+    >
+      {node.entries.map((item) => {
+        const targets = [item.href, ...(item.also ?? [])].map((href) =>
+          href === "/catalogo" ? href : `${base}${href}`,
+        );
+        const active = targets.includes(pathname);
+        return (
+          <Link
+            key={item.key}
+            href={entryHref(base, item)}
+            aria-current={active ? "page" : undefined}
+            className={`relative flex h-full shrink-0 items-center gap-1.5 px-2.5 text-sm transition-colors ${
+              active ? "font-medium text-foreground" : "text-muted hover:text-foreground"
+            }`}
+          >
+            {item.icon}
+            {item.label}
+            {active && (
+              <span className="absolute inset-x-2 bottom-0 h-[2px] rounded-t-full bg-accent" />
+            )}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -89,19 +131,13 @@ function TopBar({
   const base = `/proyecto/${id}`;
   const onTablero = pathname === base;
   const node = nodeForPath(base, pathname);
-  const entry = node?.entries.find((candidate) => {
-    const targets = [candidate.href, ...(candidate.also ?? [])].map((href) =>
-      href === "/catalogo" ? href : `${base}${href}`,
-    );
-    return targets.includes(pathname);
-  });
   const pageLabel =
     pathname === `${base}/resumen`
       ? "Resumen"
       : pathname === `${base}/configuracion`
         ? "Configuración"
         : null;
-  const [openMenu, setOpenMenu] = useState<"nodo" | "entrada" | "yo" | null>(null);
+  const [openMenu, setOpenMenu] = useState<"nodo" | "yo" | null>(null);
   const { connected, clientId, viewers, actorName, setActorName } = useProjectLive();
   const [nameDraft, setNameDraft] = useState(actorName);
   const otherViewers = viewers.filter((viewer) => viewer.client_id !== clientId);
@@ -123,7 +159,7 @@ function TopBar({
   // Cada miga es su propia ancla: el menú cuelga de la flecha que tocaste,
   // no del origen de la barra. Con un menú abierto, pasar el cursor por la
   // otra miga lo cambia — comportamiento de barra de menús, cero clics extra.
-  function crumbButton(label: ReactNode, which: "nodo" | "entrada", menu: ReactNode) {
+  function crumbButton(label: ReactNode, which: "nodo", menu: ReactNode) {
     const isOpen = openMenu === which;
     return (
       // Con un menú abierto las migas suben sobre el velo de cierre para que
@@ -222,46 +258,9 @@ function TopBar({
           <>
             <span className="text-faint">/</span>
             {crumbButton(node?.label ?? pageLabel ?? "…", "nodo", mapa)}
-            {node && entry && (
-              <>
-                <span className="hidden text-faint sm:inline">/</span>
-                <span className="hidden sm:contents">
-                  {crumbButton(
-                    <span className="font-medium">{entry.label}</span>,
-                    "entrada",
-                    <div className="w-60 p-1.5">
-                      {node.entries.map((item) => (
-                        <Link
-                          key={item.key}
-                          href={entryHref(base, item)}
-                          className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors hover:bg-surface-2 hover:text-foreground ${
-                            item.key === entry.key ? "text-foreground" : "text-muted"
-                          }`}
-                        >
-                          {item.icon}
-                          {item.label}
-                        </Link>
-                      ))}
-                      <div className="mt-1 border-t border-border pt-1">
-                        {NODE_NAV.filter((group) => group.key !== node.key).map((group) => (
-                          <Link
-                            key={group.key}
-                            href={entryHref(base, group.entries[0])}
-                            className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
-                          >
-                            {group.icon}
-                            {group.label}
-                          </Link>
-                        ))}
-                      </div>
-                    </div>,
-                  )}
-                </span>
-              </>
-            )}
           </>
         )}
-        {(openMenu === "nodo" || openMenu === "entrada") && (
+        {openMenu === "nodo" && (
           <button
             type="button"
             aria-label="Cerrar menú"
