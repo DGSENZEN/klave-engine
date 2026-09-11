@@ -40,6 +40,7 @@ import {
   SkeletonMetrics,
   SkeletonTable,
   TableCard,
+  Tabs,
   Td,
   Th,
 } from "@/components/ui";
@@ -56,9 +57,12 @@ import { useProjectLive } from "@/components/ProjectLive";
  */
 export default function RevisionPage() {
   const { id } = useParams<{ id: string }>();
-  const { latestEvent, connectionEpoch, actorName, clientId } = useProjectLive();
+  const { latestEvent, connectionEpoch, actorName, clientId } =
+    useProjectLive();
   const [table, setTable] = useState<RevisionTable | null>(null);
-  const [error, setError] = useState<"none" | "not_processed" | "failed">("none");
+  const [error, setError] = useState<"none" | "not_processed" | "failed">(
+    "none",
+  );
   const [concept, setConcept] = useState("");
   const [view, setView] = useState("");
   const [onlyDoubts, setOnlyDoubts] = useState(false);
@@ -78,7 +82,13 @@ export default function RevisionPage() {
         setTable(t);
         setError("none");
       })
-      .catch((e) => setError(e instanceof ApiError && e.status === 404 ? "not_processed" : "failed"));
+      .catch((e) =>
+        setError(
+          e instanceof ApiError && e.status === 404
+            ? "not_processed"
+            : "failed",
+        ),
+      );
   }, [id]);
 
   useEffect(() => {
@@ -96,9 +106,35 @@ export default function RevisionPage() {
     setLote(false);
   }
 
-  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "doubts", dir: 1 });
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({
+    key: "doubts",
+    dir: 1,
+  });
+  // Una vista a la vez (?tab=): los elementos del lote, los omitidos que la
+  // persona agregó y el conteo a mano. Antes las tres iban apiladas y el
+  // conteo quedaba a dos pantallas de scroll.
+  const [tab, setTabState] = useState<RevisionTab>("elementos");
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const param = new URLSearchParams(window.location.search).get("tab");
+      if (REVISION_TABS.includes(param as RevisionTab))
+        setTabState(param as RevisionTab);
+    }, 0);
+    return () => window.clearTimeout(handle);
+  }, []);
+  const setTab = useCallback((next: RevisionTab) => {
+    setTabState(next);
+    const basePath = window.location.pathname;
+    window.history.replaceState(
+      null,
+      "",
+      next === "elementos" ? basePath : `${basePath}?tab=${next}`,
+    );
+  }, []);
   function sortBy(key: SortKey) {
-    setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 }));
+    setSort((s) =>
+      s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 },
+    );
   }
   const rows = useMemo(() => {
     if (!table) return [];
@@ -108,13 +144,22 @@ export default function RevisionPage() {
         case "label":
           return a.label.localeCompare(b.label, "es");
         case "concept":
-          return a.concept_code.localeCompare(b.concept_code) || a.label.localeCompare(b.label, "es");
+          return (
+            a.concept_code.localeCompare(b.concept_code) ||
+            a.label.localeCompare(b.label, "es")
+          );
         case "view":
-          return a.view_title.localeCompare(b.view_title, "es") || a.label.localeCompare(b.label, "es");
+          return (
+            a.view_title.localeCompare(b.view_title, "es") ||
+            a.label.localeCompare(b.label, "es")
+          );
         case "confidence":
           return a.confidence - b.confidence;
         case "status":
-          return a.status.localeCompare(b.status) || a.label.localeCompare(b.label, "es");
+          return (
+            a.status.localeCompare(b.status) ||
+            a.label.localeCompare(b.label, "es")
+          );
         default:
           return (
             (b.doubts.length > 0 ? 1 : 0) - (a.doubts.length > 0 ? 1 : 0) ||
@@ -123,15 +168,19 @@ export default function RevisionPage() {
           );
       }
     };
-    return [...table.rows].sort((a, b) => cmp(a, b) * sort.dir).filter(
-      (r) =>
-        (!concept || r.concept_code === concept) &&
-        (!view || r.view_id === view) &&
-        (!onlyDoubts || r.doubts.length > 0) &&
-        (!lote || (r.status === "" && isDoubtful(r))) &&
-        (!onlyPending || r.status === "") &&
-        (!q || r.label.toLowerCase().includes(q) || r.mark.toLowerCase().includes(q)),
-    );
+    return [...table.rows]
+      .sort((a, b) => cmp(a, b) * sort.dir)
+      .filter(
+        (r) =>
+          (!concept || r.concept_code === concept) &&
+          (!view || r.view_id === view) &&
+          (!onlyDoubts || r.doubts.length > 0) &&
+          (!lote || (r.status === "" && isDoubtful(r))) &&
+          (!onlyPending || r.status === "") &&
+          (!q ||
+            r.label.toLowerCase().includes(q) ||
+            r.mark.toLowerCase().includes(q)),
+      );
   }, [table, concept, view, onlyDoubts, onlyPending, lote, query, sort]);
 
   // Long sets render in pages of 500; filters and "seleccionar todo" always
@@ -219,7 +268,10 @@ export default function RevisionPage() {
           tone={error === "not_processed" ? "info" : "danger"}
           action={
             error === "not_processed" ? (
-              <Link href={`/proyecto/${id}/resumen`} className={buttonClasses("secondary", "sm")}>
+              <Link
+                href={`/proyecto/${id}/resumen`}
+                className={buttonClasses("secondary", "sm")}
+              >
                 Ir al resumen
               </Link>
             ) : (
@@ -254,286 +306,437 @@ export default function RevisionPage() {
         sub="Cada elemento que alimenta una cantidad. Empieza por las dudas; confirma o excluye en lote, con motivo."
       />
 
-      {/* The overview is the filter, not a caption above it: clicking a figure
-          takes you to exactly the rows it counts (Shneiderman 1996). */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-5">
-        {(
-          [
-            {
-              label: "Elementos", value: table.total, accent: undefined,
-              active: !onlyDoubts && !onlyPending && !lote,
-              on: () => clearFilters(),
-            },
-            {
-              label: "Con dudas", value: table.with_doubts,
-              accent: table.with_doubts === 0 ? "success" : undefined,
-              active: onlyDoubts,
-              on: () => { clearFilters(); setOnlyDoubts(true); },
-            },
-            { label: "Confirmados", value: table.confirmed, accent: "success", active: false },
-            { label: "Excluidos", value: table.excluded, accent: undefined, active: false },
-            {
-              label: "Sin revisar", value: pending, accent: undefined, active: onlyPending,
-              on: () => { clearFilters(); setOnlyPending(true); },
-            },
-          ] as { label: string; value: number; accent?: "accent" | "danger" | "success" | "primary"; active: boolean;
-                 on?: () => void }[]
-        ).map((card) =>
-          card.on ? (
-            <button
-              key={card.label}
-              type="button"
-              onClick={card.on}
-              className={`rounded-xl text-left transition ${
-                card.active ? "ring-2 ring-accent" : "hover:brightness-105"
-              }`}
-              aria-pressed={card.active}
-            >
-              <Metric label={card.label} value={card.value} accent={card.accent} />
-            </button>
-          ) : (
-            <Metric key={card.label} label={card.label} value={card.value} accent={card.accent} />
-          ),
-        )}
-      </div>
-
-      <LoteDeRevision
-        rows={table.rows}
-        active={lote}
-        onFocus={() => setLote(true)}
-        onShowAll={() => setLote(false)}
+      <Tabs
+        className="mb-5"
+        value={tab}
+        onChange={setTab}
+        items={[
+          {
+            key: "elementos",
+            label: "Elementos del plano",
+            count: table.rows.length,
+          },
+          { key: "omitidos", label: "Omitidos por el motor" },
+          { key: "conteo", label: "Cuántos hay dibujados" },
+        ]}
       />
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <Select
-          value={concept}
-          onChange={(e) => setConcept(e.target.value)}
-          aria-label="Concepto"
-        >
-          <option value="">Todos los conceptos</option>
-          {table.concepts.map((c) => (
-            <option key={c.code || "none"} value={c.code}>
-              {c.code ? `${c.code} · ${c.description.slice(0, 40)}` : "Sin concepto"} ({c.count})
-            </option>
-          ))}
-        </Select>
-        {table.views.length > 1 && (
+      <div className={tab !== "elementos" ? "hidden" : ""}>
+        {/* The overview is the filter, not a caption above it: clicking a figure
+          takes you to exactly the rows it counts (Shneiderman 1996). */}
+        <div className="mb-6 grid gap-4 sm:grid-cols-5">
+          {(
+            [
+              {
+                label: "Elementos",
+                value: table.total,
+                accent: undefined,
+                active: !onlyDoubts && !onlyPending && !lote,
+                on: () => clearFilters(),
+              },
+              {
+                label: "Con dudas",
+                value: table.with_doubts,
+                accent: table.with_doubts === 0 ? "success" : undefined,
+                active: onlyDoubts,
+                on: () => {
+                  clearFilters();
+                  setOnlyDoubts(true);
+                },
+              },
+              {
+                label: "Confirmados",
+                value: table.confirmed,
+                accent: "success",
+                active: false,
+              },
+              {
+                label: "Excluidos",
+                value: table.excluded,
+                accent: undefined,
+                active: false,
+              },
+              {
+                label: "Sin revisar",
+                value: pending,
+                accent: undefined,
+                active: onlyPending,
+                on: () => {
+                  clearFilters();
+                  setOnlyPending(true);
+                },
+              },
+            ] as {
+              label: string;
+              value: number;
+              accent?: "accent" | "danger" | "success" | "primary";
+              active: boolean;
+              on?: () => void;
+            }[]
+          ).map((card) =>
+            card.on ? (
+              <button
+                key={card.label}
+                type="button"
+                onClick={card.on}
+                className={`rounded-xl text-left transition ${
+                  card.active ? "ring-2 ring-accent" : "hover:brightness-105"
+                }`}
+                aria-pressed={card.active}
+              >
+                <Metric
+                  label={card.label}
+                  value={card.value}
+                  accent={card.accent}
+                />
+              </button>
+            ) : (
+              <Metric
+                key={card.label}
+                label={card.label}
+                value={card.value}
+                accent={card.accent}
+              />
+            ),
+          )}
+        </div>
+
+        <LoteDeRevision
+          rows={table.rows}
+          active={lote}
+          onFocus={() => setLote(true)}
+          onShowAll={() => setLote(false)}
+        />
+
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <Select
-            value={view}
-            onChange={(e) => setView(e.target.value)}
-            aria-label="Planta"
+            value={concept}
+            onChange={(e) => setConcept(e.target.value)}
+            aria-label="Concepto"
           >
-            <option value="">Todas las plantas</option>
-            {table.views.map((v) => (
-              <option key={v.view_id} value={v.view_id}>
-                {v.title} ({v.count})
+            <option value="">Todos los conceptos</option>
+            {table.concepts.map((c) => (
+              <option key={c.code || "none"} value={c.code}>
+                {c.code
+                  ? `${c.code} · ${c.description.slice(0, 40)}`
+                  : "Sin concepto"}{" "}
+                ({c.count})
               </option>
             ))}
           </Select>
-        )}
-        <label className="flex items-center gap-1.5 text-sm">
-          <Checkbox checked={onlyDoubts} onChange={(e) => setOnlyDoubts(e.target.checked)} />
-          solo con dudas
-        </label>
-        <label className="flex items-center gap-1.5 text-sm">
-          <Checkbox checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)} />
-          sin revisar
-        </label>
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Buscar etiqueta o marca"
-          className="w-48 px-2 py-1.5"
-          aria-label="Buscar"
-        />
-        <span className="ml-auto text-xs text-muted">
-          {rows.length} de {table.total}
-        </span>
-      </div>
-
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-2">
-        <span className="text-sm font-medium tabular">
-          {selectedVisible.length} seleccionado{selectedVisible.length === 1 ? "" : "s"}
-        </span>
-        <Button
-          size="sm"
-          variant="primary"
-          onClick={() => apply("confirmed")}
-          disabled={busy || selectedVisible.length === 0}
-        >
-          <CheckCircle size={14} weight="bold" /> Confirmar
-        </Button>
-        {excluding ? (
-          <>
-            <Input
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Motivo de la exclusión (obligatorio)"
-              maxLength={300}
-              autoFocus
-              className="min-w-64 px-2 py-1"
-              aria-label="Motivo"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void apply("excluded");
-                if (e.key === "Escape") setExcluding(false);
-              }}
+          {table.views.length > 1 && (
+            <Select
+              value={view}
+              onChange={(e) => setView(e.target.value)}
+              aria-label="Planta"
+            >
+              <option value="">Todas las plantas</option>
+              {table.views.map((v) => (
+                <option key={v.view_id} value={v.view_id}>
+                  {v.title} ({v.count})
+                </option>
+              ))}
+            </Select>
+          )}
+          <label className="flex items-center gap-1.5 text-sm">
+            <Checkbox
+              checked={onlyDoubts}
+              onChange={(e) => setOnlyDoubts(e.target.checked)}
             />
-            <Button size="sm" onClick={() => apply("excluded")} disabled={busy}>
-              <Prohibit size={14} weight="bold" /> Excluir
-            </Button>
-            <Button size="sm" onClick={() => setExcluding(false)} disabled={busy}>
-              Cancelar
-            </Button>
-          </>
-        ) : (
+            solo con dudas
+          </label>
+          <label className="flex items-center gap-1.5 text-sm">
+            <Checkbox
+              checked={onlyPending}
+              onChange={(e) => setOnlyPending(e.target.checked)}
+            />
+            sin revisar
+          </label>
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Buscar etiqueta o marca"
+            className="w-48 px-2 py-1.5"
+            aria-label="Buscar"
+          />
+          <span className="ml-auto text-xs text-muted">
+            {rows.length} de {table.total}
+          </span>
+        </div>
+
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-2">
+          <span className="text-sm font-medium tabular">
+            {selectedVisible.length} seleccionado
+            {selectedVisible.length === 1 ? "" : "s"}
+          </span>
           <Button
             size="sm"
-            onClick={() => setExcluding(true)}
+            variant="primary"
+            onClick={() => apply("confirmed")}
             disabled={busy || selectedVisible.length === 0}
           >
-            <Prohibit size={14} weight="bold" /> Excluir…
+            <CheckCircle size={14} weight="bold" /> Confirmar
           </Button>
-        )}
-        <Button
-          size="sm"
-          onClick={() => apply("none")}
-          disabled={busy || selectedVisible.length === 0}
-        >
-          <ArrowCounterClockwise size={14} weight="bold" /> Quitar revisión
-        </Button>
-        {actionError && <span className="text-sm text-danger">{actionError}</span>}
-        <span className="ml-auto text-xs text-faint">Shift+clic selecciona un rango</span>
+          {excluding ? (
+            <>
+              <Input
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Motivo de la exclusión (obligatorio)"
+                maxLength={300}
+                autoFocus
+                className="min-w-64 px-2 py-1"
+                aria-label="Motivo"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void apply("excluded");
+                  if (e.key === "Escape") setExcluding(false);
+                }}
+              />
+              <Button
+                size="sm"
+                onClick={() => apply("excluded")}
+                disabled={busy}
+              >
+                <Prohibit size={14} weight="bold" /> Excluir
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setExcluding(false)}
+                disabled={busy}
+              >
+                Cancelar
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              onClick={() => setExcluding(true)}
+              disabled={busy || selectedVisible.length === 0}
+            >
+              <Prohibit size={14} weight="bold" /> Excluir…
+            </Button>
+          )}
+          <Button
+            size="sm"
+            onClick={() => apply("none")}
+            disabled={busy || selectedVisible.length === 0}
+          >
+            <ArrowCounterClockwise size={14} weight="bold" /> Quitar revisión
+          </Button>
+          {actionError && (
+            <span className="text-sm text-danger">{actionError}</span>
+          )}
+          <span className="ml-auto text-xs text-faint">
+            Shift+clic selecciona un rango
+          </span>
+        </div>
+
+        <TableCard>
+          <thead>
+            <tr className="border-b border-border bg-surface-2">
+              <Th>
+                <Checkbox
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  aria-label="Seleccionar todos los visibles"
+                />
+              </Th>
+              <Th>
+                <SortButton
+                  label="Elemento"
+                  k="label"
+                  sort={sort}
+                  onSort={sortBy}
+                />
+              </Th>
+              <Th>
+                <SortButton
+                  label="Concepto"
+                  k="concept"
+                  sort={sort}
+                  onSort={sortBy}
+                />
+              </Th>
+              <Th>
+                <SortButton
+                  label="Planta"
+                  k="view"
+                  sort={sort}
+                  onSort={sortBy}
+                />
+              </Th>
+              <Th>Medida</Th>
+              <Th align="center">
+                <SortButton
+                  label="Conf."
+                  k="confidence"
+                  sort={sort}
+                  onSort={sortBy}
+                />
+              </Th>
+              <Th>
+                <SortButton
+                  label="Dudas"
+                  k="doubts"
+                  sort={sort}
+                  onSort={sortBy}
+                />
+              </Th>
+              <Th>
+                <SortButton
+                  label="Estado"
+                  k="status"
+                  sort={sort}
+                  onSort={sortBy}
+                />
+              </Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 && (
+              <tr>
+                <td
+                  colSpan={8}
+                  className="px-4 py-6 text-center text-sm text-muted"
+                >
+                  Nada que mostrar con estos filtros.
+                </td>
+              </tr>
+            )}
+            {pagedRows.map((r, index) => {
+              const on = selected.has(r.key);
+              return (
+                <tr
+                  key={r.key}
+                  className={`border-b border-border transition-colors hover:bg-surface-2/60 ${
+                    on ? "bg-accent-soft/50" : ""
+                  }`}
+                  onClick={(e) => toggle(r, index, e.shiftKey)}
+                >
+                  <Td>
+                    <Checkbox
+                      checked={on}
+                      onChange={() => undefined}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggle(r, index, (e as React.MouseEvent).shiftKey);
+                      }}
+                      aria-label={`Seleccionar ${r.label}`}
+                    />
+                  </Td>
+                  <Td>
+                    <span className="font-medium">{r.label}</span>
+                    {r.mark && r.mark !== r.label && (
+                      <span className="ml-1.5 font-mono text-xs text-muted">
+                        {r.mark}
+                      </span>
+                    )}
+                    <div className="text-[11px] text-faint">
+                      {r.family_label}
+                    </div>
+                  </Td>
+                  <Td className="font-mono text-xs text-muted">
+                    {r.concept_code || "—"}
+                  </Td>
+                  <Td className="text-xs text-muted">
+                    {r.view_title.replace(
+                      /^[A-Z]{1,3}-\d{2,4}[A-Z]?\s*·\s*/,
+                      "",
+                    ) || r.sheet}
+                  </Td>
+                  <Td className="whitespace-nowrap tabular text-xs">
+                    {r.measure || "—"}
+                  </Td>
+                  <Td align="center">
+                    <ConfidenceBadge value={r.confidence} />
+                  </Td>
+                  <Td>
+                    <div className="flex flex-wrap gap-1">
+                      {r.doubts.map((d) => (
+                        <Badge key={d} tone="warning">
+                          {d}
+                        </Badge>
+                      ))}
+                    </div>
+                  </Td>
+                  <Td>
+                    {r.status === "confirmed" && (
+                      <Badge tone="success">confirmado</Badge>
+                    )}
+                    {r.status === "excluded" && (
+                      <Badge tone="danger">excluido</Badge>
+                    )}
+                    {r.status === "" && (
+                      <span className="text-xs text-faint">—</span>
+                    )}
+                    {(r.note || r.actor) && (
+                      <div className="text-[11px] text-faint">
+                        {r.note}
+                        {r.actor && ` — ${r.actor}`}
+                      </div>
+                    )}
+                    {r.concept_code && (
+                      <Link
+                        href={`/proyecto/${id}/plano?concept=${encodeURIComponent(r.concept_code)}`}
+                        className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-muted underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <MapTrifold size={11} /> plano
+                      </Link>
+                    )}
+                  </Td>
+                </tr>
+              );
+            })}
+            {rows.length > shown && (
+              <tr>
+                <td colSpan={8} className="px-4 py-3 text-center">
+                  <Button
+                    size="sm"
+                    onClick={() => setShown((n) => n + PAGE_SIZE)}
+                  >
+                    Mostrar{" "}
+                    {Math.min(PAGE_SIZE, rows.length - shown).toLocaleString(
+                      "es-MX",
+                    )}{" "}
+                    más ({(rows.length - shown).toLocaleString("es-MX")}{" "}
+                    restantes)
+                  </Button>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </TableCard>
       </div>
 
-      <TableCard>
-        <thead>
-          <tr className="border-b border-border bg-surface-2">
-            <Th>
-              <Checkbox
-                checked={allSelected}
-                onChange={toggleAll}
-                aria-label="Seleccionar todos los visibles"
-              />
-            </Th>
-            <Th><SortButton label="Elemento" k="label" sort={sort} onSort={sortBy} /></Th>
-            <Th><SortButton label="Concepto" k="concept" sort={sort} onSort={sortBy} /></Th>
-            <Th><SortButton label="Planta" k="view" sort={sort} onSort={sortBy} /></Th>
-            <Th>Medida</Th>
-            <Th align="center"><SortButton label="Conf." k="confidence" sort={sort} onSort={sortBy} /></Th>
-            <Th><SortButton label="Dudas" k="doubts" sort={sort} onSort={sortBy} /></Th>
-            <Th><SortButton label="Estado" k="status" sort={sort} onSort={sortBy} /></Th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 && (
-            <tr>
-              <td colSpan={8} className="px-4 py-6 text-center text-sm text-muted">
-                Nada que mostrar con estos filtros.
-              </td>
-            </tr>
-          )}
-          {pagedRows.map((r, index) => {
-            const on = selected.has(r.key);
-            return (
-              <tr
-                key={r.key}
-                className={`border-b border-border transition-colors hover:bg-surface-2/60 ${
-                  on ? "bg-accent-soft/50" : ""
-                }`}
-                onClick={(e) => toggle(r, index, e.shiftKey)}
-              >
-                <Td>
-                  <Checkbox
-                    checked={on}
-                    onChange={() => undefined}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggle(r, index, (e as React.MouseEvent).shiftKey);
-                    }}
-                    aria-label={`Seleccionar ${r.label}`}
-                  />
-                </Td>
-                <Td>
-                  <span className="font-medium">{r.label}</span>
-                  {r.mark && r.mark !== r.label && (
-                    <span className="ml-1.5 font-mono text-xs text-muted">{r.mark}</span>
-                  )}
-                  <div className="text-[11px] text-faint">{r.family_label}</div>
-                </Td>
-                <Td className="font-mono text-xs text-muted">{r.concept_code || "—"}</Td>
-                <Td className="text-xs text-muted">
-                  {r.view_title.replace(/^[A-Z]{1,3}-\d{2,4}[A-Z]?\s*·\s*/, "") || r.sheet}
-                </Td>
-                <Td className="whitespace-nowrap tabular text-xs">{r.measure || "—"}</Td>
-                <Td align="center">
-                  <ConfidenceBadge value={r.confidence} />
-                </Td>
-                <Td>
-                  <div className="flex flex-wrap gap-1">
-                    {r.doubts.map((d) => (
-                      <Badge key={d} tone="warning">
-                        {d}
-                      </Badge>
-                    ))}
-                  </div>
-                </Td>
-                <Td>
-                  {r.status === "confirmed" && <Badge tone="success">confirmado</Badge>}
-                  {r.status === "excluded" && <Badge tone="danger">excluido</Badge>}
-                  {r.status === "" && <span className="text-xs text-faint">—</span>}
-                  {(r.note || r.actor) && (
-                    <div className="text-[11px] text-faint">
-                      {r.note}
-                      {r.actor && ` — ${r.actor}`}
-                    </div>
-                  )}
-                  {r.concept_code && (
-                    <Link
-                      href={`/proyecto/${id}/plano?concept=${encodeURIComponent(r.concept_code)}`}
-                      className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-muted underline"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <MapTrifold size={11} /> plano
-                    </Link>
-                  )}
-                </Td>
-              </tr>
-            );
-          })}
-          {rows.length > shown && (
-            <tr>
-              <td colSpan={8} className="px-4 py-3 text-center">
-                <Button size="sm" onClick={() => setShown((n) => n + PAGE_SIZE)}>
-                  Mostrar {Math.min(PAGE_SIZE, rows.length - shown).toLocaleString("es-MX")} más
-                  ({(rows.length - shown).toLocaleString("es-MX")} restantes)
-                </Button>
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </TableCard>
+      <div className={tab !== "omitidos" ? "hidden" : ""}>
+        <OmittedSection
+          projectId={id}
+          actorName={actorName}
+          clientId={clientId}
+          reloadKey={latestEvent?.seq}
+        />
+      </div>
 
-      <OmittedSection
-        projectId={id}
-        actorName={actorName}
-        clientId={clientId}
-        reloadKey={latestEvent?.seq}
-      />
-
-      <ConteoSection
-        projectId={id}
-        detections={table.rows}
-        actorName={actorName}
-        reloadKey={latestEvent?.seq}
-      />
+      <div className={tab !== "conteo" ? "hidden" : ""}>
+        <ConteoSection
+          projectId={id}
+          detections={table.rows}
+          actorName={actorName}
+          reloadKey={latestEvent?.seq}
+        />
+      </div>
     </div>
   );
 }
 
-
 const PAGE_SIZE = 500;
 
-type SortKey = "doubts" | "label" | "concept" | "view" | "confidence" | "status";
+const REVISION_TABS = ["elementos", "omitidos", "conteo"] as const;
+type RevisionTab = (typeof REVISION_TABS)[number];
+
+type SortKey =
+  "doubts" | "label" | "concept" | "view" | "confidence" | "status";
 
 function SortButton({
   label,
@@ -554,7 +757,9 @@ function SortButton({
       className={`inline-flex items-center gap-1 uppercase tracking-wide ${active ? "text-foreground" : ""}`}
     >
       {label}
-      <span className="text-[10px]">{active ? (sort.dir === 1 ? "▲" : "▼") : ""}</span>
+      <span className="text-[10px]">
+        {active ? (sort.dir === 1 ? "▲" : "▼") : ""}
+      </span>
     </button>
   );
 }
@@ -585,7 +790,8 @@ function normalizarHoja(raw: string): string {
 // key (see engineInfo/filas below), so it only has to be collision-free
 // in practice, not literally unsplittable. Keys on the normalized hoja so
 // a variant spelling always joins the same row instead of forking a new one.
-const filaKey = (hoja: string, familia: string) => `${normalizarHoja(hoja)}::${familia}`;
+const filaKey = (hoja: string, familia: string) =>
+  `${normalizarHoja(hoja)}::${familia}`;
 const familyLabel = (familia: string) => FAMILY_LABELS[familia] ?? familia;
 const FAMILIAS_ORDENADAS = [...FAMILIES].sort((a, b) =>
   familyLabel(a).localeCompare(familyLabel(b), "es"),
@@ -610,7 +816,11 @@ type Fila = {
   nota: string;
 };
 
-const CONTEOS_VACIOS: ConteosDeProyecto = { contado_por: "", contado_en: "", hojas: [] };
+const CONTEOS_VACIOS: ConteosDeProyecto = {
+  contado_por: "",
+  contado_en: "",
+  hojas: [],
+};
 
 function ConteoSection({
   projectId,
@@ -657,7 +867,9 @@ function ConteoSection({
         // contado nada", and someone could re-enter counts that already
         // exist and just failed to load.
         setConteos(CONTEOS_VACIOS);
-        setError("No se pudieron cargar los conteos guardados; lo que se ve aquí puede estar incompleto.");
+        setError(
+          "No se pudieron cargar los conteos guardados; lo que se ve aquí puede estar incompleto.",
+        );
       });
     // The AI coverage comparison is only ever a pre-fill hint, never the
     // primary data: failing to load it just means no suggestions, silently.
@@ -688,7 +900,9 @@ function ConteoSection({
 
   const filas = useMemo<Fila[]>(() => {
     if (!conteos) return [];
-    const saved = new Map(conteos.hojas.map((h) => [filaKey(h.hoja, h.familia), h]));
+    const saved = new Map(
+      conteos.hojas.map((h) => [filaKey(h.hoja, h.familia), h]),
+    );
     const aiCount = new Map<string, number>();
     for (const flag of cobertura) {
       aiCount.set(filaKey(flag.frame_code, flag.family), flag.ai_count);
@@ -721,7 +935,10 @@ function ConteoSection({
   }, [conteos, cobertura, engineInfo]);
 
   const hojasConocidas = useMemo(
-    () => [...new Set(filas.map((f) => f.hoja))].sort((a, b) => a.localeCompare(b, "es")),
+    () =>
+      [...new Set(filas.map((f) => f.hoja))].sort((a, b) =>
+        a.localeCompare(b, "es"),
+      ),
     [filas],
   );
 
@@ -742,7 +959,8 @@ function ConteoSection({
     const row = { ...fila, hoja: normalizarHoja(fila.hoja) };
     const current = conteosRef.current ?? CONTEOS_VACIOS;
     const resto = current.hojas.filter(
-      (h) => !(normalizarHoja(h.hoja) === row.hoja && h.familia === row.familia),
+      (h) =>
+        !(normalizarHoja(h.hoja) === row.hoja && h.familia === row.familia),
     );
     const next = { ...current, hojas: [...resto, row] };
     setConteos(next);
@@ -802,7 +1020,7 @@ function ConteoSection({
   }
 
   return (
-    <Card className="mt-6 p-5">
+    <Card className="p-5">
       <SectionTitle sub="El motor se compara contra sí mismo en todo lo demás. Esto es lo único que dice cuánto de lo dibujado encuentra, y sólo lo puede contestar alguien contando.">
         Cuántos hay dibujados
       </SectionTitle>
@@ -825,20 +1043,29 @@ function ConteoSection({
         <tbody>
           {conteos === null && (
             <tr>
-              <td colSpan={4} className="px-4 py-6 text-center text-sm text-muted">
+              <td
+                colSpan={4}
+                className="px-4 py-6 text-center text-sm text-muted"
+              >
                 Cargando conteos…
               </td>
             </tr>
           )}
           {conteos !== null && filas.length === 0 && (
             <tr>
-              <td colSpan={4} className="px-4 py-6 text-center text-sm text-muted">
+              <td
+                colSpan={4}
+                className="px-4 py-6 text-center text-sm text-muted"
+              >
                 El motor no detectó nada todavía en este proyecto.
               </td>
             </tr>
           )}
           {filas.map((fila) => (
-            <tr key={filaKey(fila.hoja, fila.familia)} className="border-b border-border">
+            <tr
+              key={filaKey(fila.hoja, fila.familia)}
+              className="border-b border-border"
+            >
               <Td className="text-xs">{fila.hoja}</Td>
               <Td>{familyLabel(fila.familia)}</Td>
               <Td align="right" className="tabular text-muted">
@@ -863,8 +1090,8 @@ function ConteoSection({
       <div className="mt-4 border-t border-border pt-3">
         <p className="text-sm text-muted">
           Lo más importante son las familias que no aparecen arriba. Si el plano
-          tiene escaleras y el motor no detectó ninguna, ese renglón lo escribes tú:
-          es el que cuesta más caro descubrir tarde.
+          tiene escaleras y el motor no detectó ninguna, ese renglón lo escribes
+          tú: es el que cuesta más caro descubrir tarde.
         </p>
         <div className="mt-2 flex flex-wrap items-end gap-2">
           <label className="text-sm">
@@ -885,7 +1112,10 @@ function ConteoSection({
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-xs text-muted">Familia</span>
-            <Select value={nuevaFamilia} onChange={(e) => setNuevaFamilia(e.target.value)}>
+            <Select
+              value={nuevaFamilia}
+              onChange={(e) => setNuevaFamilia(e.target.value)}
+            >
               {FAMILIAS_ORDENADAS.map((f) => (
                 <option key={f} value={f}>
                   {familyLabel(f)}

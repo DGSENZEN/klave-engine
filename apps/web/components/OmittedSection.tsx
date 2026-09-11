@@ -8,11 +8,22 @@ import {
   removeOmittedElement,
   type OmittedElement,
 } from "@/lib/api";
-import { Button, Callout, Card, Input, SectionTitle, Select } from "@/components/ui";
+import {
+  Button,
+  Callout,
+  Card,
+  Input,
+  SectionTitle,
+  Select,
+} from "@/components/ui";
 
 /** What each family needs from the engineer: nothing beyond the count, a
  * total length, or a total area. Mirrors the API's validation. */
-const FAMILIES: { value: string; label: string; measure: "none" | "length" | "area" }[] = [
+const FAMILIES: {
+  value: string;
+  label: string;
+  measure: "none" | "length" | "area";
+}[] = [
   { value: "castillo", label: "Castillo", measure: "none" },
   { value: "columna", label: "Columna", measure: "none" },
   { value: "trabe", label: "Trabe", measure: "length" },
@@ -97,7 +108,9 @@ export function OmittedSection({
       setNote("");
     } catch (e) {
       setError(
-        e instanceof Error && e.message ? e.message : "No se pudo agregar el elemento.",
+        e instanceof Error && e.message
+          ? e.message
+          : "No se pudo agregar el elemento.",
       );
     } finally {
       setBusy(false);
@@ -107,7 +120,12 @@ export function OmittedSection({
   async function remove(elementId: string) {
     setBusy(true);
     try {
-      const result = await removeOmittedElement(projectId, elementId, actorName, clientId);
+      const result = await removeOmittedElement(
+        projectId,
+        elementId,
+        actorName,
+        clientId,
+      );
       setOmitted(result.omitted ?? []);
     } catch {
       setError("No se pudo quitar el elemento.");
@@ -117,7 +135,7 @@ export function OmittedSection({
   }
 
   return (
-    <Card className="mt-6 p-5">
+    <Card className="p-5">
       <SectionTitle sub="¿El motor no vio algo que está en el plano? Regístralo aquí: entra al presupuesto como levantamiento manual, con tu nombre — y le enseña al motor dónde falló.">
         Elementos omitidos por el motor
       </SectionTitle>
@@ -131,7 +149,8 @@ export function OmittedSection({
             >
               <span className="min-w-0 flex-1 truncate">
                 <span className="font-medium">
-                  {FAMILIES.find((f) => f.value === element.family)?.label ?? element.family}
+                  {FAMILIES.find((f) => f.value === element.family)?.label ??
+                    element.family}
                   {element.mark ? ` ${element.mark}` : ""}
                 </span>{" "}
                 × {element.count}
@@ -140,7 +159,9 @@ export function OmittedSection({
                 {element.section_cm ? ` · ${element.section_cm} cm` : ""}
                 {element.note ? ` — ${element.note}` : ""}
               </span>
-              <span className="shrink-0 text-xs text-muted">{element.actor}</span>
+              <span className="shrink-0 text-xs text-muted">
+                {element.actor}
+              </span>
               <button
                 type="button"
                 aria-label="Quitar elemento omitido"
@@ -166,7 +187,10 @@ export function OmittedSection({
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-sm">
               <span className="mb-1 block text-xs text-muted">Familia</span>
-              <Select value={family} onChange={(e) => setFamily(e.target.value)}>
+              <Select
+                value={family}
+                onChange={(e) => setFamily(e.target.value)}
+              >
                 {FAMILIES.map((f) => (
                   <option key={f.value} value={f.value}>
                     {f.label}
@@ -175,7 +199,9 @@ export function OmittedSection({
               </Select>
             </label>
             <label className="text-sm">
-              <span className="mb-1 block text-xs text-muted">Marca (como en el plano)</span>
+              <span className="mb-1 block text-xs text-muted">
+                Marca (como en el plano)
+              </span>
               <Input
                 value={mark}
                 onChange={(e) => setMark(e.target.value)}
@@ -197,7 +223,9 @@ export function OmittedSection({
             {familyInfo.measure !== "none" && (
               <label className="text-sm">
                 <span className="mb-1 block text-xs text-muted">
-                  {familyInfo.measure === "length" ? "Longitud total (m)" : "Área total (m²)"}
+                  {familyInfo.measure === "length"
+                    ? "Longitud total (m)"
+                    : "Área total (m²)"}
                 </span>
                 <Input
                   type="number"
@@ -210,7 +238,9 @@ export function OmittedSection({
               </label>
             )}
             <label className="text-sm">
-              <span className="mb-1 block text-xs text-muted">Sección (cm, opcional)</span>
+              <span className="mb-1 block text-xs text-muted">
+                Sección (cm, opcional)
+              </span>
               <Input
                 value={sectionCm}
                 onChange={(e) => setSectionCm(e.target.value)}
@@ -221,7 +251,8 @@ export function OmittedSection({
           </div>
           <label className="block text-sm">
             <span className="mb-1 block text-xs text-muted">
-              Nota: dónde está y cómo lo encontraste (ayuda a mejorar la detección)
+              Nota: dónde está y cómo lo encontraste (ayuda a mejorar la
+              detección)
             </span>
             <Input
               value={note}
@@ -236,13 +267,19 @@ export function OmittedSection({
               variant="primary"
               disabled={
                 busy ||
-                (familyInfo.measure !== "none" && !(Number(measure.replace(",", ".")) > 0))
+                (familyInfo.measure !== "none" &&
+                  !(Number(measure.replace(",", ".")) > 0))
               }
               onClick={submit}
             >
               Agregar al presupuesto
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setOpen(false)}
+              disabled={busy}
+            >
               Cancelar
             </Button>
           </div>
