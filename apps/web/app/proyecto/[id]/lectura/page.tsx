@@ -54,10 +54,41 @@ import {
   SkeletonCards,
   SkeletonHeader,
   SkeletonMetrics,
+  Tabs,
 } from "@/components/ui";
+
+const LECTURA_TABS = [
+  "hojas",
+  "capas",
+  "levantamiento",
+  "cuadros",
+  "avisos",
+] as const;
+type LecturaTab = (typeof LECTURA_TABS)[number];
 
 export default function LecturaPage() {
   const { id } = useParams<{ id: string }>();
+  // Una vista a la vez (?tab=): hojas, capas y familias, levantamiento,
+  // cuadros del plano o avisos. Antes todo iba apilado en dos columnas y
+  // había que recorrer página y media para llegar a los avisos.
+  const [tab, setTabState] = useState<LecturaTab>("hojas");
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const param = new URLSearchParams(window.location.search).get("tab");
+      if (LECTURA_TABS.includes(param as LecturaTab))
+        setTabState(param as LecturaTab);
+    }, 0);
+    return () => window.clearTimeout(handle);
+  }, []);
+  const setTab = useCallback((next: LecturaTab) => {
+    setTabState(next);
+    const basePath = window.location.pathname;
+    window.history.replaceState(
+      null,
+      "",
+      next === "hojas" ? basePath : `${basePath}?tab=${next}`,
+    );
+  }, []);
   const [lectura, setLectura] = useState<Lectura | null>(null);
   const [concepts, setConcepts] = useState<CatalogConcept[]>([]);
   const [mappings, setMappings] = useState<InventoryMapping[]>([]);
@@ -66,7 +97,9 @@ export default function LecturaPage() {
   const [aiReads, setAiReads] = useState<AiReads | null>(null);
   const [aiNotice, setAiNotice] = useState<string | null>(null);
   const reloadAiReads = useCallback(() => {
-    getAiReads(id).then(setAiReads).catch(() => setAiReads(null));
+    getAiReads(id)
+      .then(setAiReads)
+      .catch(() => setAiReads(null));
   }, [id]);
   useEffect(() => {
     reloadAiReads();
@@ -92,7 +125,9 @@ export default function LecturaPage() {
     setAiNotice(null);
     try {
       await cancelAiRead(id);
-      setAiNotice("Se detiene al terminar la hoja en curso; lo leído se conserva.");
+      setAiNotice(
+        "Se detiene al terminar la hoja en curso; lo leído se conserva.",
+      );
     } catch (e) {
       setAiNotice(apiMessage(e, "No se pudo cancelar la lectura."));
     }
@@ -112,10 +147,14 @@ export default function LecturaPage() {
         : `${frameCount} hojas · del orden de ${num(frameCount * 7000)} tokens de entrada`
       : null;
   const reloadMappings = useCallback(() => {
-    listInventoryMappings().then(setMappings).catch(() => setMappings([]));
+    listInventoryMappings()
+      .then(setMappings)
+      .catch(() => setMappings([]));
   }, []);
   useEffect(() => {
-    getCatalog().then((c) => setConcepts(c.concepts)).catch(() => setConcepts([]));
+    getCatalog()
+      .then((c) => setConcepts(c.concepts))
+      .catch(() => setConcepts([]));
     reloadMappings();
   }, [reloadMappings]);
 
@@ -127,16 +166,25 @@ export default function LecturaPage() {
     setMappingBusy(pattern);
     setMappingNotice(`Asignando «${pattern}» a ${conceptCode} y recalculando…`);
     try {
-      await addInventoryMapping({ kind, pattern, concept_code: conceptCode }, getBrowserActor());
+      await addInventoryMapping(
+        { kind, pattern, concept_code: conceptCode },
+        getBrowserActor(),
+      );
       reloadMappings();
       // The presupuesto follows: recompute with the project's current parameters.
       const cfg = await getCostingConfig(id);
       await recompute(
         id,
-        { config: cfg.config, insumo_prices: cfg.insumo_prices, version: cfg.version },
+        {
+          config: cfg.config,
+          insumo_prices: cfg.insumo_prices,
+          version: cfg.version,
+        },
         getBrowserActor(),
       );
-      setMappingNotice(`«${pattern}» ahora cuenta como ${conceptCode}; presupuesto actualizado.`);
+      setMappingNotice(
+        `«${pattern}» ahora cuenta como ${conceptCode}; presupuesto actualizado.`,
+      );
     } catch {
       setMappingNotice(`No se pudo asignar «${pattern}» a ${conceptCode}.`);
     } finally {
@@ -149,7 +197,9 @@ export default function LecturaPage() {
   async function assignMany(elegidas: MapeoSugerido[]) {
     if (!elegidas.length) return;
     setMappingBusy("sugeridas");
-    setMappingNotice(`Asignando ${elegidas.length} y recalculando el presupuesto…`);
+    setMappingNotice(
+      `Asignando ${elegidas.length} y recalculando el presupuesto…`,
+    );
     try {
       for (const s of elegidas) {
         await addInventoryMapping(
@@ -161,7 +211,11 @@ export default function LecturaPage() {
       const cfg = await getCostingConfig(id);
       await recompute(
         id,
-        { config: cfg.config, insumo_prices: cfg.insumo_prices, version: cfg.version },
+        {
+          config: cfg.config,
+          insumo_prices: cfg.insumo_prices,
+          version: cfg.version,
+        },
         getBrowserActor(),
       );
       const l = await getLectura(id);
@@ -170,7 +224,9 @@ export default function LecturaPage() {
         `${elegidas.length} ${elegidas.length === 1 ? "asignación aplicada" : "asignaciones aplicadas"}; presupuesto actualizado.`,
       );
     } catch {
-      setMappingNotice("No se pudieron aplicar todas las asignaciones; revisa cuáles quedaron.");
+      setMappingNotice(
+        "No se pudieron aplicar todas las asignaciones; revisa cuáles quedaron.",
+      );
     } finally {
       setMappingBusy(null);
     }
@@ -183,12 +239,18 @@ export default function LecturaPage() {
       const cfg = await getCostingConfig(id);
       await recompute(
         id,
-        { config: cfg.config, insumo_prices: cfg.insumo_prices, version: cfg.version },
+        {
+          config: cfg.config,
+          insumo_prices: cfg.insumo_prices,
+          version: cfg.version,
+        },
         getBrowserActor(),
       );
       setMappingNotice(`«${mapping.pattern}» vuelve a ser solo un conteo.`);
     } catch {
-      setMappingNotice(`No se pudo quitar la asignación de «${mapping.pattern}».`);
+      setMappingNotice(
+        `No se pudo quitar la asignación de «${mapping.pattern}».`,
+      );
     }
   }
   const [error, setError] = useState(false);
@@ -213,7 +275,9 @@ export default function LecturaPage() {
 
   useEffect(() => {
     if (latestEvent?.type !== "run_published") return;
-    getLectura(id).then(setLectura).catch(() => {});
+    getLectura(id)
+      .then(setLectura)
+      .catch(() => {});
   }, [id, latestEvent]);
 
   if (error) {
@@ -241,7 +305,10 @@ export default function LecturaPage() {
     (sum, sheet) => sum + (sheet.parse?.entity_count ?? 0),
     0,
   );
-  const maxLayerCount = Math.max(...lectura.layers.map((l) => l.entity_count), 1);
+  const maxLayerCount = Math.max(
+    ...lectura.layers.map((l) => l.entity_count),
+    1,
+  );
 
   return (
     <div className="rise-in px-6 py-7 lg:px-8">
@@ -260,11 +327,21 @@ export default function LecturaPage() {
               : undefined
           }
           icon={<Ruler size={16} weight="duotone" />}
-          accent={lectura.units && lectura.units.confidence >= CONFIDENCE_FIRM ? "success" : undefined}
+          accent={
+            lectura.units && lectura.units.confidence >= CONFIDENCE_FIRM
+              ? "success"
+              : undefined
+          }
         />
         <Metric
-          label={lectura.frames && lectura.frames.total > 0 ? "Hojas" : "Archivos"}
-          value={lectura.frames && lectura.frames.total > 0 ? lectura.frames.total : lectura.sheets.length}
+          label={
+            lectura.frames && lectura.frames.total > 0 ? "Hojas" : "Archivos"
+          }
+          value={
+            lectura.frames && lectura.frames.total > 0
+              ? lectura.frames.total
+              : lectura.sheets.length
+          }
           icon={<FileText size={16} weight="duotone" />}
         />
         <Metric
@@ -279,13 +356,51 @@ export default function LecturaPage() {
         />
       </div>
 
-      <div className="mb-6 space-y-3">
+      <Tabs
+        className="mb-5"
+        value={tab}
+        onChange={setTab}
+        items={[
+          { key: "hojas", label: "Hojas", count: lectura.sheets.length },
+          {
+            key: "capas",
+            label: "Capas y familias",
+            count: lectura.layer_total,
+          },
+          {
+            key: "levantamiento",
+            label: "Levantamiento",
+            count: lectura.inventory?.sheets.length ?? 0,
+          },
+          {
+            key: "cuadros",
+            label: "Cuadros del plano",
+            count: lectura.schedules
+              ? lectura.schedules.by_mark.length +
+                lectura.schedules.by_family.length
+              : 0,
+          },
+          {
+            key: "avisos",
+            label: "Avisos",
+            count: lectura.warning_groups.length,
+          },
+        ]}
+      />
+
+      <div className={`space-y-3 ${tab !== "hojas" ? "hidden" : ""}`}>
         {lectura.sheets.map((sheet) => (
-          <SheetCard key={sheet.name} sheet={sheet} labels={lectura.entity_type_labels} />
+          <SheetCard
+            key={sheet.name}
+            sheet={sheet}
+            labels={lectura.entity_type_labels}
+          />
         ))}
       </div>
 
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
+      <div
+        className={`grid gap-4 lg:grid-cols-2 ${tab !== "capas" ? "hidden" : ""}`}
+      >
         <Card className="p-5">
           <SectionTitle
             sub={
@@ -300,13 +415,19 @@ export default function LecturaPage() {
             {lectura.layers.map((layer) => (
               <div key={layer.layer}>
                 <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
-                  <span className="truncate font-mono text-xs">{layer.layer}</span>
-                  <span className="tabular text-xs text-muted">{layer.entity_count}</span>
+                  <span className="truncate font-mono text-xs">
+                    {layer.layer}
+                  </span>
+                  <span className="tabular text-xs text-muted">
+                    {layer.entity_count}
+                  </span>
                 </div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
                   <div
                     className="h-full rounded-full bg-chart-2"
-                    style={{ width: `${(layer.entity_count / maxLayerCount) * 100}%` }}
+                    style={{
+                      width: `${(layer.entity_count / maxLayerCount) * 100}%`,
+                    }}
                   />
                 </div>
               </div>
@@ -326,15 +447,17 @@ export default function LecturaPage() {
               </p>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {Object.entries(lectura.detections_by_family).map(([family, count]) => (
-                  <span
-                    key={family}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-2/60 px-2.5 py-1.5 text-xs"
-                  >
-                    {FAMILY_LABELS[family] ?? family}
-                    <span className="tabular font-semibold">{count}</span>
-                  </span>
-                ))}
+                {Object.entries(lectura.detections_by_family).map(
+                  ([family, count]) => (
+                    <span
+                      key={family}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-2/60 px-2.5 py-1.5 text-xs"
+                    >
+                      {FAMILY_LABELS[family] ?? family}
+                      <span className="tabular font-semibold">{count}</span>
+                    </span>
+                  ),
+                )}
               </div>
             )}
           </Card>
@@ -345,8 +468,9 @@ export default function LecturaPage() {
             </SectionTitle>
             {aiReads && !aiReads.available && (
               <p className="mb-3 text-sm text-muted">
-                No está activada en este servidor; pide a tu administrador que configure la
-                lectura con IA. Las imágenes de las hojas sí están disponibles en el visor.
+                No está activada en este servidor; pide a tu administrador que
+                configure la lectura con IA. Las imágenes de las hojas sí están
+                disponibles en el visor.
               </p>
             )}
             <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -365,8 +489,13 @@ export default function LecturaPage() {
                 )}
               </Button>
               {!aiReads?.running && (aiReads?.failed?.length ?? 0) > 0 && (
-                <Button size="sm" variant="primary" onClick={() => readWithAi(true)}>
-                  <ArrowsClockwise size={14} /> Reintentar {aiReads?.failed.length} hoja
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => readWithAi(true)}
+                >
+                  <ArrowsClockwise size={14} /> Reintentar{" "}
+                  {aiReads?.failed.length} hoja
                   {aiReads?.failed.length === 1 ? "" : "s"} sin lectura
                 </Button>
               )}
@@ -380,18 +509,27 @@ export default function LecturaPage() {
                   {aiReads.total_frames > 0
                     ? `Hoja ${Math.min(aiReads.readings.length + 1, aiReads.total_frames)} de ${aiReads.total_frames}`
                     : "Preparando las imágenes de las hojas…"}
-                  {aiReads.readings.length > 0 && ` · ${num(aiReads.input_tokens)} tokens hasta ahora`}
+                  {aiReads.readings.length > 0 &&
+                    ` · ${num(aiReads.input_tokens)} tokens hasta ahora`}
                 </span>
-              ) : aiReads?.status === "done" || aiReads?.status === "cancelled" ? (
+              ) : aiReads?.status === "done" ||
+                aiReads?.status === "cancelled" ? (
                 <span className="text-xs text-muted">
                   {aiReads.readings.length}
-                  {aiReads.total_frames > aiReads.readings.length ? ` de ${aiReads.total_frames}` : ""} hojas
-                  leídas · {num(aiReads.input_tokens)} tokens de entrada · {aiReads.model}
+                  {aiReads.total_frames > aiReads.readings.length
+                    ? ` de ${aiReads.total_frames}`
+                    : ""}{" "}
+                  hojas leídas · {num(aiReads.input_tokens)} tokens de entrada ·{" "}
+                  {aiReads.model}
                 </span>
               ) : aiReads?.status === "failed" ? (
-                <span className="text-xs text-warning">Falló: {aiReads.error}</span>
+                <span className="text-xs text-warning">
+                  Falló: {aiReads.error}
+                </span>
               ) : (
-                estimate && <span className="text-xs text-muted">{estimate}</span>
+                estimate && (
+                  <span className="text-xs text-muted">{estimate}</span>
+                )
               )}
             </div>
             {aiReads?.running && aiReads.total_frames > 0 && (
@@ -404,7 +542,9 @@ export default function LecturaPage() {
               >
                 <div
                   className="h-full rounded-full bg-accent transition-[width]"
-                  style={{ width: `${(100 * aiReads.readings.length) / aiReads.total_frames}%` }}
+                  style={{
+                    width: `${(100 * aiReads.readings.length) / aiReads.total_frames}%`,
+                  }}
                 />
               </div>
             )}
@@ -414,159 +554,245 @@ export default function LecturaPage() {
                 {n}
               </p>
             ))}
-            {aiReads && (aiReads.cobertura ?? []).some((f) => f.kind === "faltante") && (
-              <div className="mb-3">
-                <Callout tone="warning">
-                  <span className="font-medium">Cobertura: posibles elementos no detectados.</span>{" "}
-                  El conteo de la IA no cuantifica nada — señala dónde mirar.
-                  <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
-                    {(aiReads.cobertura ?? [])
-                      .filter((f) => f.kind === "faltante")
-                      .map((f) => (
-                        <li key={`${f.frame_code}-${f.family}`}>
-                          En <span className="font-mono text-xs">{f.frame_code}</span> la IA
-                          cuenta {f.ai_count} × {FAMILY_LABELS[f.family] ?? f.family}; el motor
-                          detectó {f.engine_count}. Revisa la hoja y, si falta algo, agrégalo
-                          en Revisión como elemento omitido.
-                        </li>
-                      ))}
-                  </ul>
-                </Callout>
-              </div>
-            )}
-            {aiReads && (aiReads.cobertura ?? []).some((f) => f.kind === "sobrante") && (
-              <p className="mb-3 text-xs text-muted">
-                Conteos donde el motor ve más que la IA (normalmente inofensivo):{" "}
-                {(aiReads.cobertura ?? [])
-                  .filter((f) => f.kind === "sobrante")
-                  .map(
-                    (f) =>
-                      `${f.frame_code}: ${f.engine_count} vs ${f.ai_count} ${FAMILY_LABELS[f.family] ?? f.family}`,
-                  )
-                  .join(" · ")}
-              </p>
-            )}
+            {aiReads &&
+              (aiReads.cobertura ?? []).some((f) => f.kind === "faltante") && (
+                <div className="mb-3">
+                  <Callout tone="warning">
+                    <span className="font-medium">
+                      Cobertura: posibles elementos no detectados.
+                    </span>{" "}
+                    El conteo de la IA no cuantifica nada — señala dónde mirar.
+                    <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
+                      {(aiReads.cobertura ?? [])
+                        .filter((f) => f.kind === "faltante")
+                        .map((f) => (
+                          <li key={`${f.frame_code}-${f.family}`}>
+                            En{" "}
+                            <span className="font-mono text-xs">
+                              {f.frame_code}
+                            </span>{" "}
+                            la IA cuenta {f.ai_count} ×{" "}
+                            {FAMILY_LABELS[f.family] ?? f.family}; el motor
+                            detectó {f.engine_count}. Revisa la hoja y, si falta
+                            algo, agrégalo en Revisión como elemento omitido.
+                          </li>
+                        ))}
+                    </ul>
+                  </Callout>
+                </div>
+              )}
+            {aiReads &&
+              (aiReads.cobertura ?? []).some((f) => f.kind === "sobrante") && (
+                <p className="mb-3 text-xs text-muted">
+                  Conteos donde el motor ve más que la IA (normalmente
+                  inofensivo):{" "}
+                  {(aiReads.cobertura ?? [])
+                    .filter((f) => f.kind === "sobrante")
+                    .map(
+                      (f) =>
+                        `${f.frame_code}: ${f.engine_count} vs ${f.ai_count} ${FAMILY_LABELS[f.family] ?? f.family}`,
+                    )
+                    .join(" · ")}
+                </p>
+              )}
             {aiReads && aiReads.readings.length > 0 && (
               <div className="mt-3 space-y-2">
                 {aiReads.readings.map((r) => (
-                  <AiReadingCard key={r.frame_code} reading={r} projectId={id} />
+                  <AiReadingCard
+                    key={r.frame_code}
+                    reading={r}
+                    projectId={id}
+                  />
                 ))}
               </div>
             )}
           </Card>
-
-          <MapeosSugeridos
-            sugerencias={lectura.mapeos_sugeridos ?? []}
-            busy={mappingBusy !== null}
-            onAssign={assignMany}
-          />
-
-          {lectura.inventory && lectura.inventory.sheets.length > 0 && (
-            <Card className="p-5">
-              <SectionTitle sub="Lo que cada hoja contiene, contado: símbolos por bloque y metros de trazo por capa. Un conteo no es una cantidad hasta que se asigna a un concepto del catálogo.">
-                Levantamiento por hoja
-              </SectionTitle>
-              {mappingNotice && <p className="mb-3 text-sm text-muted">{mappingNotice}</p>}
-              <div className="space-y-4">
-                {lectura.inventory.sheets.map((sheet) => (
-                  <InventoryCard
-                    key={sheet.sheet}
-                    sheet={sheet}
-                    unit={lectura.inventory?.unit ?? null}
-                    concepts={concepts}
-                    mappings={mappings}
-                    onAssign={assign}
-                    onUnassign={unassign}
-                    busy={mappingBusy !== null}
-                  />
-                ))}
-              </div>
-            </Card>
-          )}
-
-          {lectura.blocks.length > 0 && (
-            <Card className="p-5">
-              <SectionTitle sub="Definiciones de bloque más usadas; su geometría interna se expande para la detección.">
-                Bloques
-              </SectionTitle>
-              <div className="flex flex-wrap gap-2">
-                {lectura.blocks.map((block) => (
-                  <span
-                    key={block.block_name}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-2/60 px-2.5 py-1.5 font-mono text-xs"
-                  >
-                    {block.block_name}
-                    <span className="tabular font-semibold">×{block.insert_count}</span>
-                  </span>
-                ))}
-              </div>
-            </Card>
-          )}
         </div>
       </div>
 
-      {lectura.schedules && (lectura.schedules.by_mark.length > 0 || lectura.schedules.by_family.length > 0) && (
-        <Card className="mb-6 p-5">
-          <SectionTitle sub="Secciones y armados que el plano declara por marca; mandan sobre el marcador medido y sobre los supuestos.">
-            Especificaciones del plano
-          </SectionTitle>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-muted">
-                  <th className="py-1.5 pr-3 font-medium">Marca</th>
-                  <th className="py-1.5 pr-3 font-medium">Familia</th>
-                  <th className="py-1.5 pr-3 font-medium">Sección</th>
-                  <th className="py-1.5 pr-3 font-medium">Armado</th>
-                  <th className="py-1.5 pr-3 font-medium">Estribos</th>
-                  <th className="py-1.5 font-medium">Fuente</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...lectura.schedules.by_mark, ...lectura.schedules.by_family].map((spec) => (
-                  <tr key={`${spec.source}-${spec.mark}`} className="border-t border-border">
-                    <td className="py-1.5 pr-3 font-mono text-xs">{spec.mark}</td>
-                    <td className="py-1.5 pr-3 capitalize">{spec.family}</td>
-                    <td className="py-1.5 pr-3 tabular">
-                      {spec.section_cm ? `${spec.section_cm[0]}×${spec.section_cm[1]} cm` : "—"}
-                    </td>
-                    <td className="py-1.5 pr-3 font-mono text-xs">{spec.rebar ?? "—"}</td>
-                    <td className="py-1.5 pr-3 font-mono text-xs">{spec.stirrups ?? "—"}</td>
-                    <td className="py-1.5">
-                      <Badge tone={spec.source === "cuadro" ? "success" : "default"}>
-                        {spec.source === "cuadro" ? "Cuadro" : spec.source === "detalle" ? "Detalle" : "Nota"}
-                      </Badge>
-                      <span className="ml-2 text-xs text-faint">«{spec.source_text.slice(0, 48)}»</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
+      <div className={`space-y-4 ${tab !== "levantamiento" ? "hidden" : ""}`}>
+        <MapeosSugeridos
+          sugerencias={lectura.mapeos_sugeridos ?? []}
+          busy={mappingBusy !== null}
+          onAssign={assignMany}
+        />
 
-      {lectura.warning_groups.length > 0 && (
-        <Card className="p-5">
-          <SectionTitle sub="Nada se omite en silencio: esto es lo que no se pudo leer o se ajustó.">
-            Avisos de lectura
-          </SectionTitle>
-          <ul className="space-y-3">
-            {lectura.warning_groups.map((group) => (
-              <li key={group.type} className="text-sm">
-                <div className="flex items-center gap-2">
-                  <Warning size={15} weight="bold" className="shrink-0 text-warning" />
-                  <span className="font-medium">{group.label}</span>
-                  <span className="tabular text-xs text-muted">×{group.count}</span>
-                </div>
-                {group.samples[0] && (
-                  <p className="ml-6 mt-0.5 text-xs text-faint">{group.samples[0]}</p>
-                )}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
+        {!lectura.inventory || lectura.inventory.sheets.length === 0 ? (
+          <Card className="p-5">
+            <SectionTitle sub="Lo que cada hoja contiene, contado: símbolos por bloque y metros de trazo por capa.">
+              Levantamiento por hoja
+            </SectionTitle>
+            <p className="text-sm text-muted">
+              Este plano no produjo un levantamiento por hoja: no hay bloques ni
+              trazos contables que asignar a conceptos.
+            </p>
+          </Card>
+        ) : (
+          <Card className="p-5">
+            <SectionTitle sub="Lo que cada hoja contiene, contado: símbolos por bloque y metros de trazo por capa. Un conteo no es una cantidad hasta que se asigna a un concepto del catálogo.">
+              Levantamiento por hoja
+            </SectionTitle>
+            {mappingNotice && (
+              <p className="mb-3 text-sm text-muted">{mappingNotice}</p>
+            )}
+            <div className="space-y-4">
+              {lectura.inventory.sheets.map((sheet) => (
+                <InventoryCard
+                  key={sheet.sheet}
+                  sheet={sheet}
+                  unit={lectura.inventory?.unit ?? null}
+                  concepts={concepts}
+                  mappings={mappings}
+                  onAssign={assign}
+                  onUnassign={unassign}
+                  busy={mappingBusy !== null}
+                />
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {lectura.blocks.length > 0 && (
+          <Card className="p-5">
+            <SectionTitle sub="Definiciones de bloque más usadas; su geometría interna se expande para la detección.">
+              Bloques
+            </SectionTitle>
+            <div className="flex flex-wrap gap-2">
+              {lectura.blocks.map((block) => (
+                <span
+                  key={block.block_name}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-2/60 px-2.5 py-1.5 font-mono text-xs"
+                >
+                  {block.block_name}
+                  <span className="tabular font-semibold">
+                    ×{block.insert_count}
+                  </span>
+                </span>
+              ))}
+            </div>
+          </Card>
+        )}
+      </div>
+
+      <div className={tab !== "cuadros" ? "hidden" : ""}>
+        {lectura.schedules &&
+        (lectura.schedules.by_mark.length > 0 ||
+          lectura.schedules.by_family.length > 0) ? (
+          <Card className="p-5">
+            <SectionTitle sub="Secciones y armados que el plano declara por marca; mandan sobre el marcador medido y sobre los supuestos.">
+              Especificaciones del plano
+            </SectionTitle>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-muted">
+                    <th className="py-1.5 pr-3 font-medium">Marca</th>
+                    <th className="py-1.5 pr-3 font-medium">Familia</th>
+                    <th className="py-1.5 pr-3 font-medium">Sección</th>
+                    <th className="py-1.5 pr-3 font-medium">Armado</th>
+                    <th className="py-1.5 pr-3 font-medium">Estribos</th>
+                    <th className="py-1.5 font-medium">Fuente</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    ...lectura.schedules.by_mark,
+                    ...lectura.schedules.by_family,
+                  ].map((spec) => (
+                    <tr
+                      key={`${spec.source}-${spec.mark}`}
+                      className="border-t border-border"
+                    >
+                      <td className="py-1.5 pr-3 font-mono text-xs">
+                        {spec.mark}
+                      </td>
+                      <td className="py-1.5 pr-3 capitalize">{spec.family}</td>
+                      <td className="py-1.5 pr-3 tabular">
+                        {spec.section_cm
+                          ? `${spec.section_cm[0]}×${spec.section_cm[1]} cm`
+                          : "—"}
+                      </td>
+                      <td className="py-1.5 pr-3 font-mono text-xs">
+                        {spec.rebar ?? "—"}
+                      </td>
+                      <td className="py-1.5 pr-3 font-mono text-xs">
+                        {spec.stirrups ?? "—"}
+                      </td>
+                      <td className="py-1.5">
+                        <Badge
+                          tone={
+                            spec.source === "cuadro" ? "success" : "default"
+                          }
+                        >
+                          {spec.source === "cuadro"
+                            ? "Cuadro"
+                            : spec.source === "detalle"
+                              ? "Detalle"
+                              : "Nota"}
+                        </Badge>
+                        <span className="ml-2 text-xs text-faint">
+                          «{spec.source_text.slice(0, 48)}»
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        ) : (
+          <Card className="p-5">
+            <SectionTitle sub="Secciones y armados que el plano declara por marca; mandan sobre el marcador medido y sobre los supuestos.">
+              Especificaciones del plano
+            </SectionTitle>
+            <p className="text-sm text-muted">
+              El plano no declara cuadros de secciones ni armados por marca; se
+              costea con los supuestos de Parámetros.
+            </p>
+          </Card>
+        )}
+      </div>
+
+      <div className={tab !== "avisos" ? "hidden" : ""}>
+        {lectura.warning_groups.length > 0 ? (
+          <Card className="p-5">
+            <SectionTitle sub="Nada se omite en silencio: esto es lo que no se pudo leer o se ajustó.">
+              Avisos de lectura
+            </SectionTitle>
+            <ul className="space-y-3">
+              {lectura.warning_groups.map((group) => (
+                <li key={group.type} className="text-sm">
+                  <div className="flex items-center gap-2">
+                    <Warning
+                      size={15}
+                      weight="bold"
+                      className="shrink-0 text-warning"
+                    />
+                    <span className="font-medium">{group.label}</span>
+                    <span className="tabular text-xs text-muted">
+                      ×{group.count}
+                    </span>
+                  </div>
+                  {group.samples[0] && (
+                    <p className="ml-6 mt-0.5 text-xs text-faint">
+                      {group.samples[0]}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ) : (
+          <Card className="p-5">
+            <SectionTitle sub="Nada se omite en silencio: esto es lo que no se pudo leer o se ajustó.">
+              Avisos de lectura
+            </SectionTitle>
+            <p className="text-sm text-muted">
+              Sin avisos: todo lo del archivo se leyó.
+            </p>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }
@@ -586,8 +812,14 @@ const DISCIPLINE_LABELS: Record<string, string> = {
 
 /** M2, m², "m2 " and "Pza." are the same unit to a person. */
 function normalizeUnit(unit: string): string {
-  return unit.trim().toUpperCase().replace("²", "2").replace("³", "3").replace(/\.$/, "")
-    .replace(/^PIEZA$/, "PZA").replace(/^ML$/, "M");
+  return unit
+    .trim()
+    .toUpperCase()
+    .replace("²", "2")
+    .replace("³", "3")
+    .replace(/\.$/, "")
+    .replace(/^PIEZA$/, "PZA")
+    .replace(/^ML$/, "M");
 }
 
 function MappingControl({
@@ -606,7 +838,11 @@ function MappingControl({
   concepts: CatalogConcept[];
   busy?: boolean;
   mappings: InventoryMapping[];
-  onAssign: (kind: "block" | "layer" | "tag" | "area", pattern: string, conceptCode: string) => void;
+  onAssign: (
+    kind: "block" | "layer" | "tag" | "area",
+    pattern: string,
+    conceptCode: string,
+  ) => void;
   onUnassign: (mapping: InventoryMapping) => void;
 }) {
   const current = mappings.find(
@@ -653,7 +889,13 @@ function MappingControl({
   );
 }
 
-function AiReadingCard({ reading, projectId }: { reading: AiSheetReading; projectId: string }) {
+function AiReadingCard({
+  reading,
+  projectId,
+}: {
+  reading: AiSheetReading;
+  projectId: string;
+}) {
   const [open, setOpen] = useState(false);
   const r = reading.read;
   const fc = Object.entries(r.concrete_fc);
@@ -665,7 +907,9 @@ function AiReadingCard({ reading, projectId }: { reading: AiSheetReading; projec
         aria-expanded={open}
         className="flex w-full flex-wrap items-center gap-3 px-4 py-2.5 text-left"
       >
-        <span className="font-mono text-xs text-muted">{reading.frame_code}</span>
+        <span className="font-mono text-xs text-muted">
+          {reading.frame_code}
+        </span>
         <span className="min-w-0 flex-1 truncate text-sm">
           {r.title || reading.frame_title || "(sin título leído)"}
           {r.level ? ` · ${r.level}` : ""}
@@ -706,10 +950,14 @@ function AiReadingCard({ reading, projectId }: { reading: AiSheetReading; projec
             </ul>
           )}
           {r.notes.length > 0 && (
-            <div className="text-xs text-muted">Notas: {r.notes.slice(0, 6).join(" · ")}</div>
+            <div className="text-xs text-muted">
+              Notas: {r.notes.slice(0, 6).join(" · ")}
+            </div>
           )}
           {r.uncertainties.length > 0 && (
-            <div className="text-xs text-warning">Dudas: {r.uncertainties.slice(0, 6).join(" · ")}</div>
+            <div className="text-xs text-warning">
+              Dudas: {r.uncertainties.slice(0, 6).join(" · ")}
+            </div>
           )}
         </div>
       )}
@@ -737,7 +985,9 @@ function ElementoLeido({
 }) {
   const [open, setOpen] = useState(false);
   const [failed, setFailed] = useState(false);
-  const claims = [element.section_cm, element.rebar, element.stirrups].filter(Boolean);
+  const claims = [element.section_cm, element.rebar, element.stirrups].filter(
+    Boolean,
+  );
   return (
     <li className="border-t border-border/40 py-1 first:border-t-0">
       <div className="flex items-baseline gap-2">
@@ -790,8 +1040,8 @@ function ElementoLeido({
       )}
       {failed && (
         <p className="mt-0.5 text-[11px] text-faint">
-          «{element.mark}» no aparece escrito en esta hoja: la lectura no se puede
-          comprobar contra el dibujo.
+          «{element.mark}» no aparece escrito en esta hoja: la lectura no se
+          puede comprobar contra el dibujo.
         </p>
       )}
     </li>
@@ -813,7 +1063,11 @@ function InventoryCard({
   mappings: InventoryMapping[];
   /** A mapping is being saved and the presupuesto recomputed: selects wait. */
   busy?: boolean;
-  onAssign: (kind: "block" | "layer" | "tag" | "area", pattern: string, conceptCode: string) => void;
+  onAssign: (
+    kind: "block" | "layer" | "tag" | "area",
+    pattern: string,
+    conceptCode: string,
+  ) => void;
   onUnassign: (mapping: InventoryMapping) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -822,9 +1076,14 @@ function InventoryCard({
     (sheet.tags ?? []).reduce((s, t) => s + t.count, 0);
   const metres = sheet.runs.reduce((s, r) => s + (r.length_m ?? 0), 0);
   const levels = new Set<string>();
-  sheet.blocks.forEach((b) => Object.keys(b.by_view).forEach((k) => levels.add(k)));
-  sheet.runs.forEach((r) => Object.keys(r.by_view).forEach((k) => levels.add(k)));
-  const short = (title: string) => title.replace(/^[A-Z]{1,3}-\d{2,4}[A-Z]?\s*·\s*/, "");
+  sheet.blocks.forEach((b) =>
+    Object.keys(b.by_view).forEach((k) => levels.add(k)),
+  );
+  sheet.runs.forEach((r) =>
+    Object.keys(r.by_view).forEach((k) => levels.add(k)),
+  );
+  const short = (title: string) =>
+    title.replace(/^[A-Z]{1,3}-\d{2,4}[A-Z]?\s*·\s*/, "");
   return (
     <div className="rounded-lg border border-border">
       <button
@@ -837,10 +1096,13 @@ function InventoryCard({
           {sheet.label || sheet.sheet}
         </span>
         {sheet.discipline && (
-          <Badge tone="accent">{DISCIPLINE_LABELS[sheet.discipline] ?? sheet.discipline}</Badge>
+          <Badge tone="accent">
+            {DISCIPLINE_LABELS[sheet.discipline] ?? sheet.discipline}
+          </Badge>
         )}
         <span className="text-xs tabular text-muted">
-          {num(symbols)} símbolos · {unit ? `${num(metres)} m` : "longitud sin unidad"} en{" "}
+          {num(symbols)} símbolos ·{" "}
+          {unit ? `${num(metres)} m` : "longitud sin unidad"} en{" "}
           {sheet.runs.length} capas
         </span>
       </button>
@@ -850,13 +1112,19 @@ function InventoryCard({
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
               Símbolos (bloques)
             </div>
-            {sheet.blocks.length === 0 && <div className="text-xs text-muted">Ninguno.</div>}
+            {sheet.blocks.length === 0 && (
+              <div className="text-xs text-muted">Ninguno.</div>
+            )}
             <ul className="space-y-1">
               {sheet.blocks.slice(0, 30).map((b) => (
-                <li key={`${b.block_name}|${b.layer}`} className="flex items-baseline gap-2">
+                <li
+                  key={`${b.block_name}|${b.layer}`}
+                  className="flex items-baseline gap-2"
+                >
                   <span className="tabular font-medium">{b.count}</span>
                   <span className="min-w-0 flex-1 truncate">
-                    {b.block_name} <span className="text-xs text-muted">· {b.layer}</span>
+                    {b.block_name}{" "}
+                    <span className="text-xs text-muted">· {b.layer}</span>
                   </span>
                   {Object.keys(b.by_view).length > 1 && (
                     <span className="text-[11px] tabular text-muted">
@@ -866,7 +1134,7 @@ function InventoryCard({
                     </span>
                   )}
                   <MappingControl
-              busy={busy}
+                    busy={busy}
                     kind="block"
                     pattern={b.block_name}
                     unit="PZA"
@@ -883,15 +1151,22 @@ function InventoryCard({
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
               Trazos por capa
             </div>
-            {sheet.runs.length === 0 && <div className="text-xs text-muted">Ninguno.</div>}
+            {sheet.runs.length === 0 && (
+              <div className="text-xs text-muted">Ninguno.</div>
+            )}
             <ul className="space-y-1">
               {sheet.runs.slice(0, 30).map((r) => (
                 <li key={r.layer} className="flex items-baseline gap-2">
                   <span className="tabular font-medium">
-                    {r.length_m != null ? `${num(r.length_m)} m` : `${num(r.length_du)} u.`}
+                    {r.length_m != null
+                      ? `${num(r.length_m)} m`
+                      : `${num(r.length_du)} u.`}
                   </span>
                   <span className="min-w-0 flex-1 truncate">
-                    {r.layer} <span className="text-xs text-muted">· {r.segments} tramos</span>
+                    {r.layer}{" "}
+                    <span className="text-xs text-muted">
+                      · {r.segments} tramos
+                    </span>
                   </span>
                   {Object.keys(r.by_view).length > 1 && (
                     <span className="text-[11px] tabular text-muted">
@@ -902,7 +1177,7 @@ function InventoryCard({
                   )}
                   {r.length_m != null && (
                     <MappingControl
-              busy={busy}
+                      busy={busy}
                       kind="layer"
                       pattern={r.layer}
                       unit="M"
@@ -924,10 +1199,15 @@ function InventoryCard({
                   {(sheet.areas ?? []).slice(0, 20).map((a) => (
                     <li key={a.layer} className="flex items-baseline gap-2">
                       <span className="tabular font-medium">
-                        {a.area_m2 != null ? `${num(a.area_m2)} m²` : `${num(a.area_du2)} u.²`}
+                        {a.area_m2 != null
+                          ? `${num(a.area_m2)} m²`
+                          : `${num(a.area_du2)} u.²`}
                       </span>
                       <span className="min-w-0 flex-1 truncate">
-                        {a.layer} <span className="text-xs text-muted">· {a.count} figuras</span>
+                        {a.layer}{" "}
+                        <span className="text-xs text-muted">
+                          · {a.count} figuras
+                        </span>
                       </span>
                       {Object.keys(a.by_view).length > 1 && (
                         <span className="text-[11px] tabular text-muted">
@@ -938,7 +1218,7 @@ function InventoryCard({
                       )}
                       {a.area_m2 != null && (
                         <MappingControl
-              busy={busy}
+                          busy={busy}
                           kind="area"
                           pattern={a.layer}
                           unit="M2"
@@ -962,7 +1242,9 @@ function InventoryCard({
                   {(sheet.tags ?? []).slice(0, 30).map((t) => (
                     <li key={t.tag} className="flex items-baseline gap-2">
                       <span className="tabular font-medium">{t.count}</span>
-                      <span className="min-w-0 flex-1 truncate font-mono text-xs">{t.tag}</span>
+                      <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                        {t.tag}
+                      </span>
                       {Object.keys(t.by_view).length > 1 && (
                         <span className="text-[11px] tabular text-muted">
                           {Object.entries(t.by_view)
@@ -971,7 +1253,7 @@ function InventoryCard({
                         </span>
                       )}
                       <MappingControl
-              busy={busy}
+                        busy={busy}
                         kind="tag"
                         pattern={t.tag}
                         unit="PZA"
@@ -1018,8 +1300,12 @@ function SheetCard({
         <span className="text-xs text-faint">{sheet.name}</span>
         <span className="uppercase text-xs text-faint">{sheet.file_type}</span>
         {sheet.conversion && (
-          <Badge tone={sheet.conversion.status === "success" ? "success" : "warning"}>
-            {sheet.conversion.status === "success" ? "Convertido" : "Conversión con avisos"}
+          <Badge
+            tone={sheet.conversion.status === "success" ? "success" : "warning"}
+          >
+            {sheet.conversion.status === "success"
+              ? "Convertido"
+              : "Conversión con avisos"}
           </Badge>
         )}
         {parse?.recovered && (
@@ -1043,7 +1329,9 @@ function SheetCard({
           </div>
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
             {parse.from_block_count > 0 && (
-              <span>{parse.from_block_count} entidades expandidas de bloques</span>
+              <span>
+                {parse.from_block_count} entidades expandidas de bloques
+              </span>
             )}
             {Object.entries(parse.derived_by_type).map(([type, count]) => (
               <span key={type}>
@@ -1063,7 +1351,10 @@ function SheetCard({
             <div className="mt-3 space-y-1.5 border-t border-border pt-3">
               <div className="microlabel">Presentaciones (espacio papel)</div>
               {parse.layouts!.map((layout) => (
-                <div key={layout.name} className="flex flex-wrap items-center gap-x-2 text-xs text-muted">
+                <div
+                  key={layout.name}
+                  className="flex flex-wrap items-center gap-x-2 text-xs text-muted"
+                >
                   <span className="inline-flex items-center gap-1 font-medium text-foreground">
                     <Layout size={13} weight="duotone" /> {layout.name}
                   </span>
@@ -1089,9 +1380,10 @@ function SheetCard({
                         .join(" · ")}
                     </span>
                   )}
-                  {Object.keys(layout.attributes).length === 0 && layout.texts[0] && (
-                    <span className="truncate">«{layout.texts[0]}»</span>
-                  )}
+                  {Object.keys(layout.attributes).length === 0 &&
+                    layout.texts[0] && (
+                      <span className="truncate">«{layout.texts[0]}»</span>
+                    )}
                 </div>
               ))}
             </div>
@@ -1100,10 +1392,15 @@ function SheetCard({
             <div className="mt-3 space-y-1.5 border-t border-border pt-3">
               <div className="microlabel">Referencias externas</div>
               {parse.xrefs!.map((xref) => (
-                <div key={xref.name} className="flex flex-wrap items-center gap-2 text-xs">
+                <div
+                  key={xref.name}
+                  className="flex flex-wrap items-center gap-2 text-xs"
+                >
                   <span className="font-mono">{xref.name}</span>
                   <span className="truncate text-faint">{xref.path}</span>
-                  <Badge tone={xref.status === "embedded" ? "success" : "warning"}>
+                  <Badge
+                    tone={xref.status === "embedded" ? "success" : "warning"}
+                  >
                     {xref.status === "embedded"
                       ? "Incorporada"
                       : xref.status === "missing"
@@ -1117,8 +1414,8 @@ function SheetCard({
         </>
       ) : (
         <p className="text-sm text-muted">
-          Sin resumen de lectura para esta hoja (procesamiento anterior a esta versión;
-          vuelve a procesar el proyecto).
+          Sin resumen de lectura para esta hoja (procesamiento anterior a esta
+          versión; vuelve a procesar el proyecto).
         </p>
       )}
     </Card>
