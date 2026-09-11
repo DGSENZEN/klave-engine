@@ -603,6 +603,29 @@ conceptos, Enter/→ abre la matriz, ← la cierra, la fila enfocada se marca
 con el acento y las celdas siguen siendo celdas (tecleando en un input la
 hoja no se mueve).
 
+### Nodos condensados (2026-09-11, rama `nodos-condensados`)
+
+La queja: para moverse entre las pantallas de un nodo había que abrir un
+menú de la miga, y dentro de Planos y Revisión había que recorrer dos
+columnas de tarjetas para llegar a lo de abajo. Cuatro respuestas: (1)
+**la barra del nodo** — cuando la ruta pertenece a un nodo con varias
+entradas, sus hermanas quedan fijas como pestañas bajo la barra superior
+(`NodeWorkspaceBar` en `ProjectShell`, misma fuente `NODE_NAV`); la miga
+pierde la tercera entrada y su menú desplegable — proyecto / nodo basta,
+lo demás está a la vista; (2) **la lectura del plano en cinco pestañas
+`?tab=`** — Hojas · Capas y familias · Levantamiento · Cuadros del plano ·
+Avisos, con conteo en cada pestaña y estado vacío honesto en las que
+antes simplemente desaparecían; (3) **la revisión en tres** — Elementos
+del plano · Omitidos por el motor · Cuántos hay dibujados, el conteo deja
+de vivir a dos pantallas de scroll; (4) **Programa y Flujo son dos
+entradas del nodo** — fuera la tira `ProgramaFlujoTabs` que duplicaba a
+la barra; y **el visor del plano cabe bajo las dos barras**
+(`100vh − 5.5rem`, ya no `h-screen`) con la cabecera reducida a una línea,
+porque la barra del nodo ya nombra la pantalla. La regla de las pestañas
+sigue: la sección se oculta, no se desmonta, y el estado de las filas
+sobrevive. Solo cambió la web: suite, gold y ruff intactos; tsc, lint y
+build verdes.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
