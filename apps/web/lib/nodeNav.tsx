@@ -13,6 +13,7 @@ import {
   NotePencil,
   Receipt,
   Scales,
+  Wallet,
   Warning,
 } from "@phosphor-icons/react";
 import type { TableroNodeKey } from "@/lib/api";
@@ -53,7 +54,12 @@ export const NODE_NAV: NodeNav[] = [
         icon: <FileMagnifyingGlass size={16} />,
         href: "/lectura",
       },
-      { key: "plano", label: "Visor del plano", icon: <MapTrifold size={16} />, href: "/plano" },
+      {
+        key: "plano",
+        label: "Visor del plano",
+        icon: <MapTrifold size={16} />,
+        href: "/plano",
+      },
     ],
   },
   {
@@ -61,8 +67,18 @@ export const NODE_NAV: NodeNav[] = [
     label: "Revisión",
     icon: <ListChecks size={18} />,
     entries: [
-      { key: "revision", label: "Revisión", icon: <ListChecks size={16} />, href: "/revision" },
-      { key: "riesgos", label: "Riesgos", icon: <Warning size={16} />, href: "/riesgos" },
+      {
+        key: "revision",
+        label: "Revisión",
+        icon: <ListChecks size={16} />,
+        href: "/revision",
+      },
+      {
+        key: "riesgos",
+        label: "Riesgos",
+        icon: <Warning size={16} />,
+        href: "/riesgos",
+      },
     ],
   },
   {
@@ -83,8 +99,18 @@ export const NODE_NAV: NodeNav[] = [
     label: "Presupuesto",
     icon: <Receipt size={18} />,
     entries: [
-      { key: "presupuesto", label: "Presupuesto", icon: <Receipt size={16} />, href: "/presupuesto" },
-      { key: "apu", label: "Precios unitarios", icon: <Calculator size={16} />, href: "/apus" },
+      {
+        key: "presupuesto",
+        label: "Presupuesto",
+        icon: <Receipt size={16} />,
+        href: "/presupuesto",
+      },
+      {
+        key: "apu",
+        label: "Precios unitarios",
+        icon: <Calculator size={16} />,
+        href: "/apus",
+      },
     ],
   },
   {
@@ -94,10 +120,15 @@ export const NODE_NAV: NodeNav[] = [
     entries: [
       {
         key: "programa",
-        label: "Programa y flujo",
+        label: "Programa de obra",
         icon: <CalendarBlank size={16} />,
         href: "/programa",
-        also: ["/flujo"],
+      },
+      {
+        key: "flujo",
+        label: "Flujo financiero",
+        icon: <Wallet size={16} />,
+        href: "/flujo",
       },
       {
         key: "parametros",
@@ -124,15 +155,30 @@ export const NODE_NAV: NodeNav[] = [
         icon: <Receipt size={16} />,
         href: "/estimaciones",
       },
-      { key: "convenios", label: "Convenios", icon: <NotePencil size={16} />, href: "/convenios" },
-      { key: "bitacora", label: "Bitácora", icon: <Notebook size={16} />, href: "/bitacora" },
+      {
+        key: "convenios",
+        label: "Convenios",
+        icon: <NotePencil size={16} />,
+        href: "/convenios",
+      },
+      {
+        key: "bitacora",
+        label: "Bitácora",
+        icon: <Notebook size={16} />,
+        href: "/bitacora",
+      },
       {
         key: "ajuste-costos",
         label: "Ajuste de costos",
         icon: <ChartLineUp size={16} />,
         href: "/ajuste-costos",
       },
-      { key: "finiquito", label: "Finiquito", icon: <Flag size={16} />, href: "/finiquito" },
+      {
+        key: "finiquito",
+        label: "Finiquito",
+        icon: <Flag size={16} />,
+        href: "/finiquito",
+      },
     ],
   },
 ];

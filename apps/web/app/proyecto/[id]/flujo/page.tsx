@@ -5,8 +5,11 @@ import { Money, CalendarBlank, PiggyBank, Wrench } from "@phosphor-icons/react";
 import { money, money2, type PeriodCashflow } from "@/lib/api";
 import { useCostReport } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
-import { ProgramaFlujoTabs } from "@/components/ProgramaFlujoTabs";
-import { moneyState, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
+import {
+  moneyState,
+  UnitsGate,
+  UnverifiedBanner,
+} from "@/components/MoneyGate";
 import {
   Callout,
   Card,
@@ -32,7 +35,8 @@ export default function FlujoPage() {
       <div className="px-6 py-7 lg:px-8">
         <PageHeader title="Flujo financiero" />
         <Callout tone="danger">
-          No se pudo cargar el flujo financiero. Revisa que el servidor esté activo.
+          No se pudo cargar el flujo financiero. Revisa que el servidor esté
+          activo.
         </Callout>
       </div>
     );
@@ -76,24 +80,31 @@ export default function FlujoPage() {
   return (
     <div className="rise-in px-6 py-7 lg:px-8">
       <PageHeader
-        title="Programa y flujo"
+        title="Flujo financiero"
         sub="Estimaciones por periodo a precio de venta: anticipo, amortización, retenciones y flujo neto."
       />
-      <ProgramaFlujoTabs id={id} />
       <UnverifiedBanner id={id} costs={costs} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric
           label="Anticipo"
           value={money(fin.advance_payment)}
-          hint={fin.advance_payment_pct != null ? `${fin.advance_payment_pct}% del monto` : undefined}
+          hint={
+            fin.advance_payment_pct != null
+              ? `${fin.advance_payment_pct}% del monto`
+              : undefined
+          }
           icon={<Money size={16} weight="duotone" />}
           accent="accent"
         />
         <Metric
           label="Retención total"
           value={money(fin.total_retention)}
-          hint={fin.retention_pct != null ? `${fin.retention_pct}% por estimación` : undefined}
+          hint={
+            fin.retention_pct != null
+              ? `${fin.retention_pct}% por estimación`
+              : undefined
+          }
           icon={<PiggyBank size={16} weight="duotone" />}
         />
         <Metric
@@ -147,7 +158,10 @@ export default function FlujoPage() {
                 </thead>
                 <tbody>
                   {periods.map((p) => (
-                    <tr key={p.period} className="border-b border-border last:border-0">
+                    <tr
+                      key={p.period}
+                      className="border-b border-border last:border-0"
+                    >
                       <Td className="font-medium">{p.label}</Td>
                       <Td align="right" className="tabular text-muted">
                         {p.progress_pct.toFixed(1)}%
@@ -204,7 +218,10 @@ export default function FlujoPage() {
               </thead>
               <tbody>
                 {operating.map((year) => (
-                  <tr key={year.year} className="border-b border-border last:border-0">
+                  <tr
+                    key={year.year}
+                    className="border-b border-border last:border-0"
+                  >
                     <Td className="font-medium">Año {year.year}</Td>
                     <Td align="right" className="tabular text-muted">
                       {money2(year.operation)}

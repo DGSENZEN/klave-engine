@@ -13,8 +13,11 @@ import {
 import { phaseColor } from "@/lib/phases";
 import { useCostReport } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
-import { ProgramaFlujoTabs } from "@/components/ProgramaFlujoTabs";
-import { moneyState, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
+import {
+  moneyState,
+  UnitsGate,
+  UnverifiedBanner,
+} from "@/components/MoneyGate";
 import { PlantillaCampo } from "@/components/PlantillaCampo";
 import {
   Callout,
@@ -62,12 +65,18 @@ export default function ProgramaPage() {
       current.config.schedule.start_date = value || null;
       await recompute(
         id,
-        { config: current.config, insumo_prices: current.insumo_prices, version: current.version },
+        {
+          config: current.config,
+          insumo_prices: current.insumo_prices,
+          version: current.version,
+        },
         actorName,
         clientId,
       );
     } catch {
-      setDateError("No se pudo guardar la fecha de arranque; inténtalo de nuevo.");
+      setDateError(
+        "No se pudo guardar la fecha de arranque; inténtalo de nuevo.",
+      );
     } finally {
       setDateBusy(false);
     }
@@ -81,13 +90,19 @@ export default function ProgramaPage() {
       current.config.schedule.frentes = value;
       await recompute(
         id,
-        { config: current.config, insumo_prices: current.insumo_prices, version: current.version },
+        {
+          config: current.config,
+          insumo_prices: current.insumo_prices,
+          version: current.version,
+        },
         actorName,
         clientId,
       );
       setFrentesValue(value);
     } catch {
-      setFrentesError("No se pudo guardar los frentes de trabajo; inténtalo de nuevo.");
+      setFrentesError(
+        "No se pudo guardar los frentes de trabajo; inténtalo de nuevo.",
+      );
     } finally {
       setFrentesBusy(false);
     }
@@ -104,7 +119,8 @@ export default function ProgramaPage() {
       <div className="px-6 py-7 lg:px-8">
         <PageHeader title="Programa de obra" />
         <Callout tone="danger">
-          No se pudo cargar el programa de obra. Revisa que el servidor esté activo.
+          No se pudo cargar el programa de obra. Revisa que el servidor esté
+          activo.
         </Callout>
       </div>
     );
@@ -124,7 +140,10 @@ export default function ProgramaPage() {
                 <div className="relative h-5 flex-1">
                   <Skeleton
                     className="absolute top-0.5 h-4"
-                    style={{ left: `${(i * 13) % 55}%`, width: `${12 + ((i * 9) % 28)}%` }}
+                    style={{
+                      left: `${(i * 13) % 55}%`,
+                      width: `${12 + ((i * 9) % 28)}%`,
+                    }}
                   />
                 </div>
               </div>
@@ -159,10 +178,9 @@ export default function ProgramaPage() {
   return (
     <div className="rise-in px-6 py-7 lg:px-8">
       <PageHeader
-        title="Programa y flujo"
+        title="Programa de obra"
         sub="Red de actividades derivada de las cantidades y del rendimiento de cada matriz; holguras y ruta crítica conforme al RLOPSRM art. 224."
       />
-      <ProgramaFlujoTabs id={id} />
       <UnverifiedBanner id={id} costs={costs} />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
@@ -182,7 +200,11 @@ export default function ProgramaPage() {
               ? formatDate(costs.schedule.end_date)
               : activities.length
           }
-          hint={costs.schedule.end_date ? `${activities.length} actividades` : undefined}
+          hint={
+            costs.schedule.end_date
+              ? `${activities.length} actividades`
+              : undefined
+          }
           icon={<ListChecks size={16} weight="duotone" />}
         />
         <Metric
@@ -194,12 +216,16 @@ export default function ProgramaPage() {
               : `${activities.length - criticalCount} actividades tienen holgura`
           }
           icon={<Stack size={16} weight="duotone" />}
-          accent={criticalCount >= activities.length * 0.8 ? "danger" : undefined}
+          accent={
+            criticalCount >= activities.length * 0.8 ? "danger" : undefined
+          }
         />
       </div>
 
       {costs.schedule.assumptions.length > 0 && (
-        <div className="mb-3 text-xs text-muted">{costs.schedule.assumptions.join(" ")}</div>
+        <div className="mb-3 text-xs text-muted">
+          {costs.schedule.assumptions.join(" ")}
+        </div>
       )}
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -246,7 +272,9 @@ export default function ProgramaPage() {
             ? "Recalculando el plazo…"
             : "Cuántos frentes simultáneos tendrá la obra. Un frente con una cuadrilla por actividad es el supuesto por omisión, y es el que produce los plazos largos."}
         </span>
-        {frentesError && <span className="text-xs text-danger">{frentesError}</span>}
+        {frentesError && (
+          <span className="text-xs text-danger">{frentesError}</span>
+        )}
       </div>
 
       {activities.length === 0 ? (
@@ -264,8 +292,13 @@ export default function ProgramaPage() {
             <div className="min-w-[720px]">
               <DayScale totalDays={totalDays} />
               {phases.map((phase, phaseIndex) => {
-                const phaseActivities = activities.filter((a) => a.phase === phase);
-                const phaseCost = phaseActivities.reduce((s, a) => s + a.direct_cost, 0);
+                const phaseActivities = activities.filter(
+                  (a) => a.phase === phase,
+                );
+                const phaseCost = phaseActivities.reduce(
+                  (s, a) => s + a.direct_cost,
+                  0,
+                );
                 return (
                   <div key={phase} className="mt-4 first:mt-2">
                     <div className="mb-1.5 flex items-baseline justify-between gap-3">
@@ -276,7 +309,9 @@ export default function ProgramaPage() {
                         />
                         {phase}
                       </span>
-                      <span className="tabular text-xs text-muted">{money(phaseCost)}</span>
+                      <span className="tabular text-xs text-muted">
+                        {money(phaseCost)}
+                      </span>
                     </div>
                     {phaseActivities.map((activity) => (
                       <GanttRow
@@ -328,7 +363,11 @@ function formatDate(iso: string): string {
   const date = new Date(`${iso}T12:00:00`);
   return Number.isNaN(date.getTime())
     ? iso
-    : date.toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "2-digit" });
+    : date.toLocaleDateString("es-MX", {
+        day: "numeric",
+        month: "short",
+        year: "2-digit",
+      });
 }
 
 function GanttRow({
@@ -341,7 +380,10 @@ function GanttRow({
   color: string;
 }) {
   const left = (activity.start_day / totalDays) * 100;
-  const width = Math.max(((activity.end_day - activity.start_day) / totalDays) * 100, 0.8);
+  const width = Math.max(
+    ((activity.end_day - activity.start_day) / totalDays) * 100,
+    0.8,
+  );
   // Holgura drawn as the bar's shadow: how far this activity could slide
   // before it pushes the obra's end. RLOPSRM art. 224 asks for it, and it is
   // the difference between a bar chart and a programa you can defend.
@@ -364,7 +406,8 @@ function GanttRow({
           )}
         </div>
         <div className="text-[11px] tabular text-faint">
-          {num(activity.quantity)} {activity.unit} · {activity.duration_days} días
+          {num(activity.quantity)} {activity.unit} · {activity.duration_days}{" "}
+          días
           {float > 0 && ` · ${float} d de holgura`}
           {activity.start_date && ` · ${formatDate(activity.start_date)}`}
         </div>
