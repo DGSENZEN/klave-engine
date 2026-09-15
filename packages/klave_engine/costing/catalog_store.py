@@ -18,8 +18,11 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
+from klave_engine.common.errors import ReportGenerationError
 from klave_engine.common.logging import get_logger, log_stage
+from klave_engine.costing.apu import build_apu
 from klave_engine.costing.catalog import build_default_catalog
+from klave_engine.costing.generacion import generar, precios_semilla
 from klave_engine.costing.instalaciones import (
     CODIGOS_CON_REGLA as INSTALACIONES_CON_REGLA,
 )
@@ -27,10 +30,11 @@ from klave_engine.costing.instalaciones import (
     CONCEPTOS_STORE as INSTALACIONES_CONCEPTS,
 )
 from klave_engine.costing.insumos import APU_TEMPLATES, RESOURCES
-from klave_engine.costing.matching import unit_key
+from klave_engine.costing.matching import Candidate, rank, unit_key
 from klave_engine.costing.models import (
     _OFFSET_POR_TIPO,
     DERIVADO_DE,
+    Concept,
     CostingAssumptions,
     Resource,
     ResourceType,
@@ -771,6 +775,20 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '26') "
                     "ON CONFLICT(key) DO UPDATE SET value = '26'"
                 )
+            if version_row is None or int(version_row["value"]) < 27:
+                # La fuente de cada línea de una matriz (las generadas la traen).
+                apu_columns = {
+                    row["name"]
+                    for row in conn.execute("PRAGMA table_info(apu_components)").fetchall()
+                }
+                if "source" not in apu_columns:
+                    conn.execute(
+                        "ALTER TABLE apu_components ADD COLUMN source TEXT NOT NULL DEFAULT ''"
+                    )
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '27') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '27'"
+                )
             if version_row is None or int(version_row["value"]) < 25:
                 # El origen de cada fila: oficial, importada, generada o taller.
                 self._migrate_v25(conn)
@@ -1503,6 +1521,18 @@ class CatalogStore:
             )
         return templates
 
+    def load_template_sources(self) -> dict[str, dict[str, str]]:
+        """La fuente de cada línea, por concepto: sólo las que la tienen."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT concept_code, resource_code, source FROM apu_components "
+                "WHERE source != ''"
+            ).fetchall()
+        sources: dict[str, dict[str, str]] = {}
+        for row in rows:
+            sources.setdefault(row["concept_code"], {})[row["resource_code"]] = row["source"]
+        return sources
+
     def load_concepts(self, include_inactive: bool = False) -> list[dict]:
         """Concepts ordered for the catalog: phase groups keep built-in order
         first, then manual concepts by their sequence."""
@@ -1738,6 +1768,8 @@ class CatalogStore:
             self.recompute_basicos()
             with self._connect() as conn:
                 row = conn.execute("SELECT * FROM insumos WHERE code = ?", (code,)).fetchone()
+        if unit_cost is not None:
+            self._revalidate_priced()
         return dict(row)
 
     def _herramienta_fraction(self) -> float:
@@ -1796,6 +1828,7 @@ class CatalogStore:
                     (f"tocado por {actor[:80]}", code),
                 )
         self.recompute_basicos()
+        self._revalidate_priced()
         return next(i for i in self.list_insumos() if i["code"] == code)
 
     @staticmethod
@@ -1971,6 +2004,7 @@ class CatalogStore:
             adjustment_id = int(cursor.lastrowid)
         if self._has_basicos():
             self.recompute_basicos()
+        self._revalidate_priced()
         return {"adjustment_id": adjustment_id, "adjusted": len(targets), "pct": pct}
 
     def replace_resource(
@@ -2027,6 +2061,7 @@ class CatalogStore:
             adjustment_id = int(cursor.lastrowid)
         if self._has_basicos():
             self.recompute_basicos()
+        self._revalidate_priced()
         return {"adjustment_id": adjustment_id, "affected": sorted(affected), "old": old,
                 "new": new}
 
@@ -2085,13 +2120,17 @@ class CatalogStore:
             )
         if self._has_basicos():
             self.recompute_basicos()
+        self._revalidate_priced()
         return {"adjustment_id": adjustment_id, "restored": restored, "kind": row["kind"]}
 
     def set_apu_components(
-        self, concept_code: str, components: list[tuple[str, float]], *, actor: str | None = None
+        self, concept_code: str, components: list[tuple[str, float]], *,
+        actor: str | None = None, sources: dict[str, str] | None = None,
     ) -> None:
         """Replace one concept's APU matrix. Every resource must exist and every
-        quantity must be positive; the matrix must not be empty."""
+        quantity must be positive; the matrix must not be empty. Las fuentes
+        de las líneas que sobreviven se conservan salvo que vengan nuevas; una
+        persona que edita promueve la fila y el veredicto se recalcula."""
         if not components:
             raise ValueError("An APU needs at least one component.")
         book = self.load_price_book()
@@ -2106,15 +2145,24 @@ class CatalogStore:
             ).fetchone()
             if actor and existing is not None:
                 _touch_concept(conn, concept_code, existing["origin"], actor)
+            previous = {
+                row["resource_code"]: row["source"]
+                for row in conn.execute(
+                    "SELECT resource_code, source FROM apu_components WHERE concept_code = ?",
+                    (concept_code,),
+                ).fetchall()
+            }
             conn.execute(
                 "DELETE FROM apu_components WHERE concept_code = ?", (concept_code,)
             )
             for resource_code, quantity in components:
+                source = (sources or {}).get(resource_code, previous.get(resource_code, ""))
                 conn.execute(
-                    "INSERT INTO apu_components (concept_code, resource_code, quantity) "
-                    "VALUES (?, ?, ?)",
-                    (concept_code, resource_code, quantity),
+                    "INSERT INTO apu_components (concept_code, resource_code, quantity, source) "
+                    "VALUES (?, ?, ?, ?)",
+                    (concept_code, resource_code, quantity, source or ""),
                 )
+        self._revalidate_concept(concept_code)
 
     def set_rendimiento(self, concept_code: str, production_rate_per_day: float) -> None:
         if production_rate_per_day <= 0:
@@ -2727,6 +2775,276 @@ class CatalogStore:
         with _LOCK, self._connect() as conn:
             cursor = conn.execute("DELETE FROM inventory_mappings WHERE id = ?", (mapping_id,))
         return cursor.rowcount > 0
+
+    # ---------------------------------------------- matrices generadas y validación
+
+    VALIDATION_SETTING = "validacion"
+    DEFAULT_TOLERANCE_PCT = 15.0
+    MATCH_MIN_SCORE = 0.5
+
+    def validation_tolerance(self) -> float:
+        saved = self.get_setting(self.VALIDATION_SETTING) or {}
+        try:
+            return float(saved.get("tolerance_pct", self.DEFAULT_TOLERANCE_PCT))
+        except (TypeError, ValueError):
+            return self.DEFAULT_TOLERANCE_PCT
+
+    def set_validation_tolerance(self, pct: float) -> float:
+        """La tolerancia es del taller; cambiarla recalcula los veredictos sin
+        volver a buscar la referencia."""
+        if not (0 < float(pct) <= 100):
+            raise ValueError("La tolerancia debe estar entre 0 y 100 %.")
+        self.set_setting(self.VALIDATION_SETTING, {"tolerance_pct": float(pct)})
+        self._revalidate_priced()
+        return float(pct)
+
+    def _concept_model(self, row: dict) -> Concept:
+        return Concept(
+            code=row["code"], description=row["description"], unit=row["unit"],
+            phase=row["phase"], production_rate_per_day=row["production_rate_per_day"] or 1.0,
+        )
+
+    def _reference_candidates(self) -> list[Candidate]:
+        """Los renglones publicados con precio completo (precios unitarios):
+        un destajo o un costo horario no valida una matriz."""
+        keys = [
+            s["source_key"] for s in self.list_sources()
+            if (s.get("kind") or "precios_unitarios") == "precios_unitarios"
+        ]
+        if not keys:
+            return []
+        return [
+            Candidate(
+                kind="reference", key=str(row["ref_id"]), clave=row["clave"],
+                description=row["description"], unit=row["unit"], price=float(row["price"]),
+                source=row.get("source_name") or "", vigencia=row.get("source_vigencia") or "",
+                phase=row.get("group_description") or "",
+            )
+            for row in self.list_reference_rows(keys)
+            if float(row.get("price") or 0) > 0
+        ]
+
+    def validate_concept(
+        self, code: str, *, rematch: bool = True, candidates: list[Candidate] | None = None,
+    ) -> dict:
+        """El costo directo de la matriz contra el precio publicado que mejor
+        le corresponde. Dentro de la tolerancia: validada; fuera: fuera de
+        rango con la desviación; sin renglón que le corresponda: sin
+        referencia. ValueError si la matriz no se puede costear."""
+        row = next((c for c in self.load_concepts(include_inactive=True) if c["code"] == code),
+                   None)
+        if row is None:
+            raise ValueError(f"El concepto {code} no existe.")
+        try:
+            apu = build_apu(
+                self._concept_model(row), resources=self.load_price_book(),
+                templates=self.load_templates(),
+            )
+        except ReportGenerationError as exc:
+            raise ValueError(str(exc)) from exc
+        direct = apu.direct_unit_cost
+        previous = row.get("validation") or {}
+        reference: dict | None = None
+        score = previous.get("score")
+        if not rematch and previous.get("reference_ref_id"):
+            reference = self.get_reference(int(previous["reference_ref_id"]))
+        if reference is None:
+            pool = candidates if candidates is not None else self._reference_candidates()
+            matches = rank(row["description"], row["unit"], pool, phase=row["phase"], limit=1)
+            if matches and matches[0].score >= self.MATCH_MIN_SCORE:
+                reference = self.get_reference(int(matches[0].candidate.key))
+                score = round(matches[0].score, 3)
+        tolerance = self.validation_tolerance()
+        validation: dict = {
+            "direct_cost": direct, "tolerance_pct": tolerance, "at": _now(),
+            "reference_ref_id": None, "reference_clave": "", "reference_source": "",
+            "reference_price": None, "deviation_pct": None, "score": score,
+            "verdict": "sin_referencia",
+        }
+        if reference is not None and float(reference.get("price") or 0) > 0:
+            price = float(reference["price"])
+            deviation = round((direct - price) / price * 100.0, 2)
+            validation.update({
+                "reference_ref_id": int(reference["ref_id"]),
+                "reference_clave": reference["clave"],
+                "reference_source": reference.get("source_name") or "",
+                "reference_price": price, "deviation_pct": deviation,
+                "verdict": "validada" if abs(deviation) <= tolerance else "fuera_de_rango",
+            })
+        with _LOCK, self._connect() as conn:
+            conn.execute(
+                "UPDATE concepts SET validation = ? WHERE code = ?",
+                (json.dumps(validation, ensure_ascii=False), code),
+            )
+        return validation
+
+    def _validated_codes(self) -> list[str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT code FROM concepts WHERE validation IS NOT NULL AND validation != ''"
+            ).fetchall()
+        return [row["code"] for row in rows]
+
+    def _revalidate_concept(self, code: str) -> None:
+        if code not in self._validated_codes():
+            return
+        try:
+            self.validate_concept(code, rematch=False)
+        except ValueError:
+            return  # la matriz quedó sin precio: el veredicto anterior se queda
+
+    def _revalidate_priced(self) -> None:
+        """Un precio cambió: cada veredicto se recalcula contra su misma
+        referencia, sin volver a buscar."""
+        for code in self._validated_codes():
+            try:
+                self.validate_concept(code, rematch=False)
+            except ValueError:
+                continue
+
+    def validate_generated(self, *, rematch: bool = True) -> dict:
+        """Todos los conceptos generados (y los ya validados alguna vez)."""
+        candidates = self._reference_candidates() if rematch else None
+        verdicts = {"validada": 0, "fuera_de_rango": 0, "sin_referencia": 0}
+        problems: list[str] = []
+        validated = 0
+        for row in self.load_concepts():
+            generated = (row.get("origin_ref") or "").startswith("generada · plantilla")
+            if not generated and not row.get("validation"):
+                continue
+            try:
+                result = self.validate_concept(row["code"], rematch=rematch, candidates=candidates)
+            except ValueError as exc:
+                problems.append(f"{row['code']}: {exc}")
+                continue
+            validated += 1
+            verdicts[result["verdict"]] = verdicts.get(result["verdict"], 0) + 1
+        return {"validated": validated, "verdicts": verdicts, "problems": problems}
+
+    def generate_matrix(self, code: str, *, actor: str | None = None, force: bool = False) -> dict:
+        """La matriz de un concepto desde la plantilla de su familia: las
+        cuadrillas nacen con su matriz, la mano de obra se cobra a salario
+        real, los insumos sin precio toman el de referencia marcado «validar»,
+        cada línea guarda su fuente y el concepto pasa a «generada» con su
+        veredicto. Una matriz del taller no se pisa sin `force`."""
+        from klave_engine.costing.catalog_services import ensure_labor_priced
+        from klave_engine.costing.labor import LaborCategory
+
+        row = next((c for c in self.load_concepts(include_inactive=True) if c["code"] == code),
+                   None)
+        if row is None:
+            raise ValueError(f"El concepto {code} no existe.")
+        existing = self.load_templates().get(code)
+        if existing and row.get("origin") == "taller" and not force:
+            raise ValueError(
+                f"{code} ya tiene una matriz del taller; regenerarla la sustituye "
+                "(confirma con force)."
+            )
+        generada = generar(
+            row["description"], row["unit"], row["phase"], row.get("spec_signature") or None
+        )
+        labor = ensure_labor_priced(self, [
+            LaborCategory(code=c.code, description=c.description,
+                          salario_nominal=c.salario_nominal)
+            for c in generada.categorias
+        ])
+        book = self.load_price_book()
+        semilla = precios_semilla()
+        created: list[str] = []
+        priced: list[str] = []
+        cuadrillas: list[str] = []
+        problems: list[str] = []
+        plantilla_ref = f"generada · plantilla {generada.plantilla_key}"
+        for insumo in generada.insumos_nuevos:
+            if insumo.code in book:
+                continue
+            price = semilla["precios"].get(insumo.code, 0.0)
+            self.upsert_insumo(
+                insumo.code, description=insumo.description, unit=insumo.unit,
+                resource_type=insumo.resource_type, unit_cost=price,
+                source=semilla["source"] if price > 0 else "",
+                source_type="referencia", region=semilla["region"],
+                vigencia=semilla["vigencia"] if price > 0 else "",
+                origin="generada", origin_ref=plantilla_ref,
+            )
+            created.append(insumo.code)
+            if price > 0:
+                priced.append(insumo.code)
+            else:
+                problems.append(f"{insumo.code}: sin precio de referencia; cotízalo.")
+        for cuadrilla in generada.cuadrillas:
+            if cuadrilla.code not in book:
+                self.upsert_insumo(
+                    cuadrilla.code, description=cuadrilla.description, unit="JOR",
+                    resource_type="mano_de_obra", unit_cost=1.0, kind="cuadrilla",
+                    source="derivado de su matriz", source_type="calculado",
+                    origin="generada", origin_ref=plantilla_ref,
+                )
+                self.set_basico_components(cuadrilla.code, list(cuadrilla.members))
+                cuadrillas.append(cuadrilla.code)
+        book = self.load_price_book()
+        for line in generada.lines:
+            resource = book.get(line.resource_code)
+            if resource is None or resource.unit_cost > 0 or resource.kind != "insumo":
+                continue
+            price = semilla["precios"].get(line.resource_code, 0.0)
+            if price <= 0:
+                problems.append(f"{line.resource_code}: sin precio; cotízalo o adóptalo.")
+                continue
+            self.upsert_insumo(
+                line.resource_code, unit_cost=price, source=semilla["source"],
+                source_type="referencia", region=semilla["region"], vigencia=semilla["vigencia"],
+                origin="generada", origin_ref="semilla Klave · precio de referencia",
+            )
+            priced.append(line.resource_code)
+        self.set_apu_components(
+            code, [(line.resource_code, line.quantity) for line in generada.lines],
+            sources={line.resource_code: line.source for line in generada.lines},
+        )
+        with _LOCK, self._connect() as conn:
+            conn.execute(
+                "UPDATE concepts SET origin = 'generada', origin_ref = ?, "
+                "production_rate_per_day = ?, touched_by = NULL, touched_at = NULL "
+                "WHERE code = ?",
+                (plantilla_ref, generada.rendimiento if generada.rendimiento > 0
+                 else row["production_rate_per_day"], code),
+            )
+        if self._has_basicos():
+            self.recompute_basicos()
+        try:
+            validation = self.validate_concept(code)
+        except ValueError as exc:
+            validation = None
+            problems.append(str(exc))
+        return {
+            "code": code, "plantilla": generada.plantilla_key,
+            "plantilla_label": generada.plantilla_label, "lines": len(generada.lines),
+            "insumos_creados": created, "precios_de_referencia": sorted(set(priced)),
+            "cuadrillas_creadas": cuadrillas, "labor_aplicada": labor["applied"],
+            "rendimiento": generada.rendimiento, "rendimiento_source": generada.rendimiento_source,
+            "variables": generada.variables, "validation": validation, "problems": problems,
+        }
+
+    def generate_missing(self, *, actor: str | None = None) -> dict:
+        """Una matriz para cada concepto activo que no tiene ninguna ni un
+        precio adoptado; lo que ninguna plantilla reconoce se reporta."""
+        templates = self.load_templates()
+        generated: list[dict] = []
+        skipped: list[dict] = []
+        for row in self.load_concepts():
+            if templates.get(row["code"]) or row.get("price_override") is not None:
+                continue
+            try:
+                result = self.generate_matrix(row["code"], actor=actor)
+            except ValueError as exc:
+                skipped.append({"code": row["code"], "reason": str(exc)})
+                continue
+            generated.append({
+                "code": row["code"], "plantilla": result["plantilla"],
+                "verdict": (result["validation"] or {}).get("verdict"),
+                "problems": result["problems"],
+            })
+        return {"generated": generated, "skipped": skipped}
 
     # ------------------------------------------------- settings + analyses
 

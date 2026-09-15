@@ -73,6 +73,28 @@ def apply_labor(
     return applied
 
 
+def ensure_labor_priced(
+    store: CatalogStore, extra: list[LaborCategory] | None = None
+) -> dict:
+    """Las categorías de mano de obra con precio antes de generar una matriz:
+    si el taller nunca aplicó el salario real, se aplica con los parámetros
+    por defecto (CONASAMI y el Fsr de ley) y queda dicho; si ya lo aplicó,
+    sólo se agregan las categorías que la plantilla trae y no estaban."""
+    saved = store.get_setting(LABOR_SETTINGS_KEY) or {}
+    params = FsrParameters.model_validate(saved.get("params") or {})
+    categories = [
+        LaborCategory.model_validate(c) for c in saved.get("categories") or []
+    ] or list(DEFAULT_CATEGORIES)
+    known = {c.code for c in categories}
+    added = [c for c in (extra or []) if c.code not in known]
+    priced = {row["code"]: float(row["unit_cost"]) for row in store.list_insumos()}
+    unpriced = [c.code for c in categories if priced.get(c.code, 0.0) <= 0]
+    if not saved or added or unpriced:
+        apply_labor(store, params, categories + added)
+        return {"applied": True, "added": [c.code for c in added], "repriced": unpriced}
+    return {"applied": False, "added": [], "repriced": []}
+
+
 def apply_equipment(
     store: CatalogStore, code: str, description: str | None, params: EquipmentParameters
 ) -> dict:

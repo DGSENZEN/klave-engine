@@ -444,10 +444,17 @@ def _recurso(line: Linea, ficha: dict) -> tuple[str, InsumoDef | None]:
     de clave (tubo por material y diámetro), y su definición si es nuevo."""
     insumos = _catalogo()["insumos"]
     if line.template:
+        if not ficha.get("diam_mm"):
+            # Nadie publica el precio de un tubo sin decir de cuál: el
+            # diámetro llega con la firma del plano o escrito en el concepto.
+            raise ValueError(
+                "La tubería necesita su diámetro para generar la matriz: el plano lo "
+                "declara por línea o se escribe en el concepto («de 100 mm»)."
+            )
         try:
             code = line.template.format(
                 material=ficha.get("material") or "PVC-SAN",
-                diam_mm=int(ficha.get("diam_mm") or 0) or "SIN-DIAM",
+                diam_mm=int(ficha["diam_mm"]),
             )
         except (KeyError, ValueError):
             code = line.resource

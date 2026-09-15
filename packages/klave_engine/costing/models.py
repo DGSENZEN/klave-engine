@@ -57,6 +57,8 @@ class ApuLine(BaseModel):
     kind: Literal["insumo", "basico", "cuadrilla"] = "insumo"
     # La matriz del básico, para desplegarla en su lugar.
     sub_analysis: "UnitPriceAnalysis | None" = None
+    # De dónde sale la cantidad (una matriz generada la trae por línea).
+    source: str = ""
 
 
 class UnitPriceAnalysis(BaseModel):

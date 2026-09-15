@@ -18,6 +18,7 @@ def build_apu(
     resources: dict[str, Resource] | None = None,
     templates: dict[str, list[tuple[str, float]]] | None = None,
     *,
+    line_sources: dict[str, dict[str, str]] | None = None,
     _stack: tuple[str, ...] = (),
 ) -> UnitPriceAnalysis:
     resources = resources or RESOURCES
@@ -25,6 +26,7 @@ def build_apu(
     template = templates.get(concept.code)
     if not template:
         raise ReportGenerationError(f"No APU template for concept {concept.code}")
+    sources = (line_sources or {}).get(concept.code, {})
 
     lines: list[ApuLine] = []
     percentage_entries: list[tuple[Resource, float]] = []
@@ -52,7 +54,7 @@ def build_apu(
                     code=resource.code, description=resource.description, unit=resource.unit,
                     phase="Básicos", production_rate_per_day=1.0,
                 ),
-                resources=resources, templates=templates,
+                resources=resources, templates=templates, line_sources=line_sources,
                 _stack=(*_stack, concept.code),
             )
             resource = resource.model_copy(update={"unit_cost": sub_analysis.direct_unit_cost})
@@ -76,6 +78,7 @@ def build_apu(
                 resource_type=resource.resource_type,
                 kind=resource.kind,
                 sub_analysis=sub_analysis,
+                source=sources.get(resource.code, ""),
             )
         )
 
@@ -93,6 +96,7 @@ def build_apu(
                 unit_cost=round(labor_subtotal, 2),
                 amount=round(fraction * labor_subtotal, 2),
                 resource_type=resource.resource_type,
+                source=sources.get(resource.code, ""),
             )
         )
 

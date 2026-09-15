@@ -109,6 +109,8 @@ def test_dala_takes_volume_from_its_section_and_pipe_from_its_diameter():
     tubo = generar("Tubería de PVC sanitario de 100 mm", "M")
     codes = {line.resource_code for line in tubo.lines}
     assert "MAT-TUBO-PVC-SAN-100" in codes and "CUAD-PLOM-1x1" in codes
+    with pytest.raises(ValueError, match="diámetro"):
+        generar("Tubería de PVC sanitario", "M")
 
 
 def test_evaluator_is_arithmetic_only():
