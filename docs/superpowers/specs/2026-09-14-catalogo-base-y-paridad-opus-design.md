@@ -127,12 +127,16 @@ what is loaded and its vigencia).
 |---|---|---|---|
 | CDMX Tabulador 2026 (mar, jun) | present | present | 5,458 priced concepts, section → partida |
 | SICT maquinaria 2026 | present | present | costo horario per machine |
-| SICT costo directo carretero 2026, servicios 2026, paramétricos 2026 | present (3 PDFs) | new, same line grammar as CDMX (`clave · descripción · unidad · precio`) | ~1,500 priced concepts (terracerías, pavimentos, drenaje, puentes, señalamiento) |
-| CONAGUA Catálogo General 2026 | to download (gob.mx PDF) | new | agua potable, alcantarillado, obras civiles hidráulicas |
-| INIFECH Chiapas tabulador | to download | new: one clave, 15 regional prices → `extra={"regiones":{"1":…}}` | the regional price signal for §6.4 |
-| Guanajuato UEC Tabulador de Referencia 2026 | to locate | new | state reference prices + insumo list |
-| INEGI INPP construcción (materiales, mano de obra, maquinaria) | CSV from BIE | new: feeds `indices` | escalatorias per LOPSRM art. 58 |
+| SICT costo directo carretero 2026 | present (485 pp) | new, pypdfium2 text: `LINEA CÓDIGO descripción` + `unidad $precio` | ~4,000 priced concepts (terracerías, estructuras, drenaje, pavimentos, túneles, señalamiento) |
+| CONAGUA Catálogo General 2026 | downloaded (119 pp) | new: `NNNN NN concepto UNIDAD $ precio`, `NNNN 00` = group | agua potable, alcantarillado, piezas especiales, tubería, obras civiles |
+| INIFECH Chiapas tabulador | downloaded (90 pp, encrypted; pypdfium2 reads it) | new: 10-digit code, multi-line description, 15 regional prices → `extra.regiones` | the regional price signal for §6.4 |
+| Guanajuato UEC Tabulador de Referencia 2026 | downloaded: **Excel**, one file per region (I–VI, ~3,400 rows each) | new (openpyxl): hierarchical `UEC.ED.cap.sub.item`, unit, price; six files → one source with `extra.regiones` | ~3,400 priced concepts × 6 regions, edificación and urbanización |
+| Guanajuato UEC listado de materiales (sep 2026) | downloaded (3 pp, table) | new (pdfplumber tables): material, presentación, unidad, 6 regional market prices | the first official **insumo** price list (kind `insumos`) |
+| Guanajuato UEC listado de maquinaria (sep 2026) | downloaded (1 p, table) | new: máquina, motor, HP, costo horario | costo horario, state level |
+| INEGI INPP construcción | CSV from BIE, user-downloaded | existing `indices` import + roll-forward | escalatorias per LOPSRM art. 58 (documented, no new parser) |
 | CONASAMI 2026 | constants in `labor.py` | verify vigencia | salario mínimo general / frontera |
+
+Dropped after inspection: SICT paramétricos 2026 (narrative models per road type, not concept rows) and SICT servicios (file not in hand). Guanajuato also publishes 23 Excel "catálogos de referencia" for typical buildings (aulas, bardas, canchas, líneas de agua) — catálogo de conceptos with quantities per prototype, a later track for plantillas.
 
 Parser rule shared by all PDF tabuladores: a row is `clave`, a description
 that may wrap, a unit token, a price; group headers become
