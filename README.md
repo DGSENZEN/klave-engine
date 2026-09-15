@@ -50,7 +50,11 @@ candado de administrador:
   importada, generada o taller. Básicos y cuadrillas anidan (una matriz
   dentro de una matriz), los precios se ajustan en lote o se sustituyen en
   todas las matrices con deshacer, y el inspector dice dónde se usa cada
-  insumo.
+  insumo. Un concepto sin matriz recibe una **generada** desde la plantilla
+  de su familia (cada línea y cada rendimiento con su fuente, la ficha del
+  texto en números) y se **valida contra el precio publicado**: validada,
+  fuera de rango con la desviación o sin referencia, en la fila, recalculado
+  cuando un precio cambia; la tolerancia es del taller.
 - **Presupuesto** — partidas plegables con su peso, precios con fuente,
   ajustes documentados con autor, versiones comparables, y la
   **integración como análisis**: desglose de indirectos renglón por

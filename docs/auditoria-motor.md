@@ -714,6 +714,48 @@ matriz con un chevrón; la hoja de insumos gana casillas y la barra de
 selección con «Ajustar %» y «Sustituir en matrices…» (solo con selección);
 ⌘K llega a los insumos. Fences verdes; gold intacto.
 
+### Fase C · Matrices generadas, validadas contra el precio oficial (2026-09-15, rama `fase-c-generadas`)
+
+(1) **Plantillas de matriz por familia** (`costing/plantillas_matriz.json`,
+diecisiete familias: dala/castillo, firme, plantilla, concreto hecho en
+obra, concreto armado por elemento, concreto simple, cimbra, acero de
+refuerzo, mampostería, aplanado, pintura, yeso, loseta, excavación,
+relleno, acarreo, trazo, tubería): cada línea trae una fórmula sobre la
+ficha del texto y **su fuente**, y cada rendimiento también. La ficha se
+lee en números (f'c, sección b×h, espesor, elemento, acabado, material,
+diámetro) y la firma del plano manda sobre el texto; la cimbra de una
+columna de 30×40 sale de 2(b+h)/(b·h), el cemento de un concreto hecho en
+obra sale de la tabla por clase, y donde el texto calla entra el valor
+usual del oficio con su fuente dicha. Los valores están marcados «valor de
+referencia Klave, revisar»: la tabla es un documento con fuentes que Diego
+revisa, no un número mágico. La calculadora sólo sabe aritmética (nada de
+nombres ni atributos). Una tubería sin diámetro **no se inventa**: se
+rechaza con el motivo. (2) **Precios de referencia** (`insumos_semilla.json`):
+un insumo sin precio toma el de referencia marcado «precio de referencia,
+validar» y origen generada; la mano de obra se cobra a salario real (si el
+taller nunca lo aplicó, se aplica con CONASAMI y el Fsr de ley, y queda
+dicho); las cuadrillas de la plantilla nacen con su matriz. (3) **La
+validación**: el costo directo de la matriz contra el renglón publicado que
+mejor le corresponde (el matcher de siempre, sólo fuentes de precios
+unitarios, puntaje ≥ 0.5); dentro de la tolerancia → validada, fuera →
+fuera de rango con la desviación, sin renglón → sin referencia. El
+veredicto vive en `concepts.validation`, se recalcula contra su misma
+referencia cuando un precio cambia (alta de precio, ajuste en lote,
+sustitución, deshacer, básicos) y sobrevive a la edición de una persona,
+que promueve la fila a taller. La tolerancia es del taller (15 % por
+defecto). (4) **Las fuentes de las líneas** viven en `apu_components.source`
+(v27) y viajan en el análisis y en el estado del catálogo. (5) **API**:
+generar una matriz (una del taller no se pisa sin `force`), generar las que
+faltan (lo que ninguna plantilla reconoce se reporta), validar una o todas,
+la tolerancia y las plantillas a la vista. (6) **Web sin botones nuevos**:
+el veredicto en la fila junto al origen, la fuente bajo cada línea,
+«Generar matriz» dentro de la matriz vacía, «Validar de nuevo» y
+«Regenerar» al pie de una generada, el aviso «Generar las que faltan» que
+sólo existe mientras haya huecos, el resumen de validación con la
+tolerancia editable en su lugar, ⌘K. Desviación del spec: los archivos
+curados viven en el paquete (`data/` es de cada instalación y no va al
+repo). Fences: suite (+32 pruebas), gold, ruff, tsc, lint y build verdes.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
