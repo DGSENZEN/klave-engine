@@ -239,6 +239,99 @@ def create_insumo(
     return row
 
 
+class AjusteBody(BaseModel):
+    codes: list[str] | None = None
+    pct: float
+    resource_type: str | None = None
+    source: str | None = None
+    vigencia: str | None = Field(default=None, max_length=7)
+
+
+class SustituirBody(BaseModel):
+    replacement: str = Field(min_length=2, max_length=40)
+    concept_codes: list[str] | None = None
+
+
+@router.post("/insumos/ajuste")
+def adjust_insumo_prices(
+    request: Request,
+    body: AjusteBody,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    """Subir o bajar precios en lote, con asiento que se deshace exacto."""
+    require_catalog_admin(request)
+    try:
+        result = catalog.adjust_prices(
+            body.codes, body.pct, resource_type=body.resource_type, source=body.source,
+            vigencia=body.vigencia, actor=_actor(x_actor) or "",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error_type": "invalid_adjustment", "message": str(exc)}
+        ) from exc
+    _publish_catalog_updated(
+        x_actor, "prices_adjusted", f"{result['adjusted']} insumos {body.pct:+g} %", catalog=catalog
+    )
+    return result
+
+
+@router.get("/insumos/ajustes")
+def list_insumo_adjustments(catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    return {"adjustments": catalog.list_adjustments()}
+
+
+@router.delete("/insumos/ajustes/{adjustment_id}")
+def undo_insumo_adjustment(
+    request: Request,
+    adjustment_id: int,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    require_catalog_admin(request)
+    try:
+        result = catalog.undo_adjustment(adjustment_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409, detail={"error_type": "adjustment_not_undoable", "message": str(exc)}
+        ) from exc
+    _publish_catalog_updated(x_actor, "adjustment_undone", str(adjustment_id), catalog=catalog)
+    return result
+
+
+@router.get("/insumos/{code}/uso")
+def insumo_uses(code: str, catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    """Dónde se usa un insumo: conceptos con su parte del costo, y básicos."""
+    if code not in catalog.load_price_book():
+        raise HTTPException(status_code=404, detail={"error_type": "insumo_not_found"})
+    return catalog.insumo_uses(code)
+
+
+@router.post("/insumos/{code}/sustituir")
+def replace_insumo(
+    request: Request,
+    code: str,
+    body: SustituirBody,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    """Sustituir un insumo por otro en las matrices que lo usan."""
+    require_catalog_admin(request)
+    try:
+        result = catalog.replace_resource(
+            code, body.replacement, concept_codes=body.concept_codes, actor=_actor(x_actor) or "",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error_type": "invalid_replacement", "message": str(exc)}
+        ) from exc
+    _publish_catalog_updated(
+        x_actor, "resource_replaced", f"{code} → {body.replacement} en {len(result['affected'])}",
+        catalog=catalog,
+    )
+    return result
+
+
 @router.put("/insumos/{code}")
 def update_insumo(
     code: str,

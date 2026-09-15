@@ -209,6 +209,15 @@ CREATE TABLE IF NOT EXISTS reference_prices (
 );
 CREATE INDEX IF NOT EXISTS reference_prices_source_clave
     ON reference_prices (source_key, clave);
+CREATE TABLE IF NOT EXISTS price_adjustments (
+    adjustment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    at TEXT NOT NULL,
+    actor TEXT NOT NULL DEFAULT '',
+    params TEXT NOT NULL,
+    rows TEXT NOT NULL,
+    undone_at TEXT
+);
 CREATE TABLE IF NOT EXISTS reference_components (
     ref_id INTEGER NOT NULL REFERENCES reference_prices(ref_id) ON DELETE CASCADE,
     resource_clave TEXT NOT NULL,
@@ -1913,6 +1922,171 @@ class CatalogStore:
         in_concepts.sort(key=lambda r: -(r["amount"] or 0))
         return {"code": code, "concepts": in_concepts, "basicos": in_basicos}
 
+    # ------------------------------------------------------ el diario de ajustes
+
+    def adjust_prices(
+        self, codes: list[str] | None, pct: float, *, resource_type: str | None = None,
+        source: str | None = None, vigencia: str | None = None, actor: str = "",
+    ) -> dict:
+        """Sube o baja en lote el costo de los insumos elegidos (por clave o por
+        filtro) y deja un asiento con el antes de cada uno, para deshacerlo
+        exacto. Los porcentajes de mano de obra no se tocan: no son precios."""
+        if not -99.0 < pct < 1000.0 or pct == 0:
+            raise ValueError("El porcentaje debe estar entre -99 y 1000 y no ser cero.")
+        rows = self.list_insumos()
+        wanted = {c.strip().upper() for c in codes} if codes else None
+        targets = [
+            r for r in rows
+            if not r["is_labor_percentage"]
+            and (wanted is None or r["code"] in wanted)
+            and (resource_type is None or r["resource_type"] == resource_type)
+            and (source is None or r["source"] == source)
+        ]
+        if not targets:
+            raise ValueError("Ningún insumo coincide con la selección.")
+        before = [
+            {"code": r["code"], "unit_cost": r["unit_cost"], "vigencia": r["vigencia"],
+             "origin": r["origin"], "origin_ref": r["origin_ref"], "source_type": r["source_type"]}
+            for r in targets
+        ]
+        factor = 1 + pct / 100
+        stamp = f"ajuste {pct:+g} %" + (f" ({actor[:60]})" if actor else "")
+        with _LOCK, self._connect() as conn:
+            for r in targets:
+                conn.execute(
+                    "UPDATE insumos SET unit_cost = ?, vigencia = ?, origin = 'taller', "
+                    "origin_ref = ?, updated_at = ? WHERE code = ?",
+                    (round(float(r["unit_cost"]) * factor, 4),
+                     vigencia if vigencia is not None else r["vigencia"], stamp, _now(),
+                     r["code"]),
+                )
+            cursor = conn.execute(
+                "INSERT INTO price_adjustments (kind, at, actor, params, rows) "
+                "VALUES ('ajuste', ?, ?, ?, ?)",
+                (_now(), actor[:80], json.dumps({
+                    "pct": pct, "codes": sorted(r["code"] for r in targets),
+                    "resource_type": resource_type, "source": source, "vigencia": vigencia,
+                }, ensure_ascii=False), json.dumps(before, ensure_ascii=False)),
+            )
+            adjustment_id = int(cursor.lastrowid)
+        if self._has_basicos():
+            self.recompute_basicos()
+        return {"adjustment_id": adjustment_id, "adjusted": len(targets), "pct": pct}
+
+    def replace_resource(
+        self, old: str, new: str, *, concept_codes: list[str] | None = None, actor: str = "",
+    ) -> dict:
+        """Sustituye un insumo por otro en todas las matrices (o en las
+        elegidas): cantidades intactas, sumadas si el nuevo ya estaba. El
+        asiento guarda las matrices tal como estaban."""
+        old, new = old.strip().upper(), new.strip().upper()
+        if old == new:
+            raise ValueError("Es el mismo insumo.")
+        book = self.load_price_book()
+        if new not in book:
+            raise ValueError(f"El insumo {new} no existe.")
+        if old not in book:
+            raise ValueError(f"El insumo {old} no existe.")
+        templates = self.load_templates()
+        scope = {c.strip().upper() for c in concept_codes} if concept_codes else None
+        affected: dict[str, list[tuple[str, float]]] = {
+            owner: components for owner, components in templates.items()
+            if any(code == old for code, _ in components) and (scope is None or owner in scope)
+        }
+        if not affected:
+            raise ValueError(f"Ninguna matriz usa {old}.")
+        if book[new].kind != "insumo":
+            # Un básico que se mete en su propia cadena sería un ciclo.
+            for owner in affected:
+                if owner == new:
+                    raise ValueError(f"{new} no puede contener a sí mismo.")
+        with _LOCK, self._connect() as conn:
+            for owner, components in affected.items():
+                merged: dict[str, float] = {}
+                order: list[str] = []
+                for code, quantity in components:
+                    target = new if code == old else code
+                    if target not in merged:
+                        order.append(target)
+                    merged[target] = round(merged.get(target, 0.0) + float(quantity), 8)
+                conn.execute("DELETE FROM apu_components WHERE concept_code = ?", (owner,))
+                conn.executemany(
+                    "INSERT INTO apu_components (concept_code, resource_code, quantity) "
+                    "VALUES (?, ?, ?)",
+                    [(owner, code, merged[code]) for code in order],
+                )
+            cursor = conn.execute(
+                "INSERT INTO price_adjustments (kind, at, actor, params, rows) "
+                "VALUES ('sustitucion', ?, ?, ?, ?)",
+                (_now(), actor[:80],
+                 json.dumps({"old": old, "new": new, "concept_codes": sorted(affected)},
+                            ensure_ascii=False),
+                 json.dumps([{"owner": o, "components": c} for o, c in affected.items()],
+                            ensure_ascii=False)),
+            )
+            adjustment_id = int(cursor.lastrowid)
+        if self._has_basicos():
+            self.recompute_basicos()
+        return {"adjustment_id": adjustment_id, "affected": sorted(affected), "old": old,
+                "new": new}
+
+    def list_adjustments(self, limit: int = 50) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT adjustment_id, kind, at, actor, params, rows, undone_at "
+                "FROM price_adjustments ORDER BY adjustment_id DESC LIMIT ?",
+                (max(1, min(limit, 500)),),
+            ).fetchall()
+        out = []
+        for row in rows:
+            payload = json.loads(row["rows"])
+            out.append({
+                "adjustment_id": row["adjustment_id"], "kind": row["kind"], "at": row["at"],
+                "actor": row["actor"], "params": json.loads(row["params"]),
+                "rows": len(payload), "undone_at": row["undone_at"],
+            })
+        return out
+
+    def undo_adjustment(self, adjustment_id: int) -> dict:
+        """Deshace un asiento: cada insumo vuelve a su costo, vigencia y origen
+        de antes; cada matriz sustituida vuelve tal como estaba."""
+        with _LOCK, self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM price_adjustments WHERE adjustment_id = ?", (adjustment_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("El ajuste no existe.")
+            if row["undone_at"]:
+                raise ValueError("Ese ajuste ya se deshizo.")
+            payload = json.loads(row["rows"])
+            restored = 0
+            if row["kind"] == "ajuste":
+                for before in payload:
+                    conn.execute(
+                        "UPDATE insumos SET unit_cost = ?, vigencia = ?, origin = ?, "
+                        "origin_ref = ?, source_type = ?, updated_at = ? WHERE code = ?",
+                        (before["unit_cost"], before["vigencia"], before["origin"],
+                         before["origin_ref"], before["source_type"], _now(), before["code"]),
+                    )
+                    restored += 1
+            else:
+                for entry in payload:
+                    owner = entry["owner"]
+                    conn.execute("DELETE FROM apu_components WHERE concept_code = ?", (owner,))
+                    conn.executemany(
+                        "INSERT INTO apu_components (concept_code, resource_code, quantity) "
+                        "VALUES (?, ?, ?)",
+                        [(owner, code, quantity) for code, quantity in entry["components"]],
+                    )
+                    restored += 1
+            conn.execute(
+                "UPDATE price_adjustments SET undone_at = ? WHERE adjustment_id = ?",
+                (_now(), adjustment_id),
+            )
+        if self._has_basicos():
+            self.recompute_basicos()
+        return {"adjustment_id": adjustment_id, "restored": restored, "kind": row["kind"]}
+
     def set_apu_components(
         self, concept_code: str, components: list[tuple[str, float]], *, actor: str | None = None
     ) -> None:
@@ -2105,10 +2279,36 @@ class CatalogStore:
                 resource_type=insumo.resource_type, unit_cost=insumo.unit_cost,
                 source=source, source_type="cotizacion", region="MX", vigencia=vigencia,
                 origin="importada", origin_ref=f"{source} · {insumo.code}",
+                kind=getattr(insumo, "kind", "insumo"),
             )
             upserted += 1
         created = updated = 0
         problems = list(parse.problems)
+        # Las matrices de los básicos y cuadrillas, ya con todos sus miembros
+        # presentes; el precio compuesto de la fuente queda como respaldo hasta
+        # que la matriz resuelva.
+        basicos = 0
+        for insumo in parse.insumos.values():
+            components = getattr(insumo, "components", None) or []
+            if getattr(insumo, "kind", "insumo") == "insumo" or not components:
+                continue
+            members: list[tuple[str, float]] = []
+            for code, quantity in components:
+                member = parse.insumos.get(code)
+                if member is not None and member.is_labor_percentage:
+                    fraction = quantity / 100 if quantity > 1 else quantity
+                    members.append(("EQ-HERRAMIENTA", fraction / self._herramienta_fraction()))
+                elif code in parse.insumos and not parse.insumos[code].is_labor_percentage:
+                    members.append((code, quantity))
+            if not members:
+                continue
+            try:
+                self.set_basico_components(insumo.code, members)
+                basicos += 1
+            except ValueError as exc:
+                problems.append(f"{insumo.code}: {exc}")
+        if basicos:
+            problems.append(f"{basicos} básicos o cuadrillas importados con su matriz.")
         if pisados:
             problems.append(
                 f"{len(pisados)} insumos cambiaron de precio al venir de otro catálogo "

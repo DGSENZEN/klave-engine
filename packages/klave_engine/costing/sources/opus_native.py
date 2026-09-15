@@ -242,10 +242,13 @@ def parse_opus_native(files: Mapping[str, bytes]) -> OpusParse:
             continue
         is_pct = unit_raw.strip().upper().startswith("(%)") or unit_raw.strip() == "%" \
             or code.startswith("%")
+        kind = "insumo"
         if prefijo == PREFIJO_MANO_DE_OBRA and bool(row.get("BASICO")):
             extras.cuadrillas += 1
+            kind = "cuadrilla"
         if prefijo == PREFIJO_AUXILIAR:
             extras.auxiliares += 1
+            kind = "basico"
         if not is_pct and price <= 0:
             problems.append(
                 f"Insumo {code} sin costo (por cotización); las matrices que lo usan quedan "
@@ -255,7 +258,7 @@ def parse_opus_native(files: Mapping[str, bytes]) -> OpusParse:
         insumos[code] = InsumoRow(
             code=code, description=description, unit=_unit(unit_raw) if not is_pct else "%",
             unit_cost=price, resource_type=_resource_type(prefijo),
-            is_labor_percentage=is_pct,
+            is_labor_percentage=is_pct, kind=kind,
         )
 
     # Las fases: subcapítulo del árbol del presupuesto, si la base lo trae.
@@ -298,6 +301,19 @@ def parse_opus_native(files: Mapping[str, bytes]) -> OpusParse:
         if name:
             rows_by_matrix.setdefault(name, []).append(row)
 
+    # La matriz de cada básico o cuadrilla: sus componentes son insumos de
+    # la misma tabla (una cuadrilla lleva categorías; un auxiliar, materiales).
+    for code, resource in insumos.items():
+        if resource.kind == "insumo":
+            continue
+        for row in rows_by_matrix.get(code, []):
+            comp = (row.get("COMPONENTE") or "").strip().upper()
+            qty = row.get("CANTIDAD")
+            if comp and qty and qty > 0 and comp in insumos and comp != code:
+                resource.components.append((comp, float(qty)))
+        if not resource.components:
+            resource.kind = "insumo"  # sin matriz en la base: entra con su precio compuesto
+
     concepts: list[ConceptRow] = []
     for code, meta in concept_meta.items():
         rows = rows_by_matrix.get(code, [])
@@ -338,10 +354,11 @@ def parse_opus_native(files: Mapping[str, bytes]) -> OpusParse:
     if not concepts:
         raise CustomCatalogError("La base OPUS no trae conceptos con matriz; nada que importar.")
 
-    if extras.cuadrillas or extras.auxiliares:
+    flat = [r.code for r in insumos.values() if r.kind == "insumo" and r.components == []
+            and (r.code in rows_by_matrix)]
+    if flat:
         problems.append(
-            f"{extras.cuadrillas} cuadrillas y {extras.auxiliares} auxiliares entran como insumos "
-            "con su precio compuesto: Klave no anida básicos todavía."
+            f"{len(flat)} básicos sin componentes legibles entran con su precio compuesto."
         )
     derived = sum(1 for c in concepts if c.production_rate_per_day is not None)
     if derived:

@@ -58,6 +58,10 @@ class InsumoRow:
     unit_cost: float
     resource_type: str  # material | mano_de_obra | equipo
     is_labor_percentage: bool = False
+    # Un básico o una cuadrilla trae su propia matriz; unit_cost es su
+    # precio compuesto en la fuente, por si la matriz no se puede resolver.
+    kind: str = "insumo"  # insumo | basico | cuadrilla
+    components: list[tuple[str, float]] = field(default_factory=list)
 
 
 @dataclass

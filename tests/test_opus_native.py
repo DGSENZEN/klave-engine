@@ -194,6 +194,9 @@ def test_elements_matrices_and_phases_come_through(base):
     assert emc3.production_rate_per_day == pytest.approx(0.3333, abs=1e-4)
     assert m.insumos["1S2E"].resource_type == "mano_de_obra"
     assert m.insumos["1S2E"].unit == "JOR" and m.insumos["1S2E"].unit_cost == 4130.89
+    # La cuadrilla trae su matriz: ya no se aplana.
+    assert m.insumos["1S2E"].kind == "cuadrilla"
+    assert m.insumos["1S2E"].components == [("MO091", 1.0)]
     assert m.insumos["%MO1"].is_labor_percentage and m.insumos["%MO1"].unit == "%"
     assert m.insumos["EQECORTE"].resource_type == "equipo"
     assert "C.F. EQECORTE" not in m.insumos and "SIN-PRECIO" not in m.insumos
@@ -201,7 +204,7 @@ def test_elements_matrices_and_phases_come_through(base):
     assert "SIN-PRECIO sin costo" in joined
     assert "FANTASMA no existe" in joined
     assert "HUECO sin matriz" in joined
-    assert "1 cuadrillas" in joined and "se derivó" in joined
+    assert "se derivó" in joined and "cuadrillas y" not in joined
 
 
 def test_extras_report_what_the_base_declares(base):
@@ -233,6 +236,11 @@ def test_zip_dispatch_and_store_import(base, data_dir):
     # El % de herramienta cae en EQ-HERRAMIENTA como fracción de la mano de obra.
     assert template["EQ-HERRAMIENTA"] == pytest.approx(1.0)  # 3 % = una unidad de 0.03
     assert template["1S2E"] == 2.5
+    # La cuadrilla entró como tal, con su matriz y su precio derivado.
+    cuadrilla = next(i for i in store.list_insumos() if i["code"] == "1S2E")
+    assert cuadrilla["kind"] == "cuadrilla" and cuadrilla["unit_cost"] == 1748.2
+    assert dict(store.load_templates()["1S2E"]) == {"MO091": 1.0}
+    assert any("cuadrillas importados" in p for p in result["problems"])
 
 
 def test_missing_tables_are_said():
