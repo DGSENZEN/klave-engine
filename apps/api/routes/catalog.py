@@ -271,6 +271,26 @@ def update_insumo(
     return row
 
 
+@router.get("/apus/{concept_code}")
+def get_apu(concept_code: str, catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    """El análisis de un concepto con sus básicos desplegados (sub_analysis)."""
+    concepts = build_catalog_from_store(catalog.load_concepts(), CostingAssumptions())
+    concept = next((c for c in concepts if c.code == concept_code), None)
+    if concept is None:
+        raise HTTPException(status_code=404, detail={"error_type": "concept_not_found"})
+    try:
+        from klave_engine.costing.apu import build_apu
+
+        apu = build_apu(
+            concept, resources=catalog.load_price_book(), templates=catalog.load_templates()
+        )
+    except ReportGenerationError as exc:
+        raise HTTPException(
+            status_code=409, detail={"error_type": "apu_unavailable", "message": str(exc)}
+        ) from exc
+    return apu.model_dump()
+
+
 @router.put("/apus/{concept_code}")
 def update_apu(
     concept_code: str,

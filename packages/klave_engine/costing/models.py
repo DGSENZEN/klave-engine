@@ -41,6 +41,9 @@ class Resource(BaseModel):
     # When true, unit_cost is a fraction applied to the APU labor subtotal
     # (e.g. herramienta menor = 3% de mano de obra).
     is_labor_percentage: bool = False
+    # Un básico (concreto en obra, mortero) o una cuadrilla es un insumo cuyo
+    # precio sale de su propia matriz; unit_cost es la caché de ese cálculo.
+    kind: Literal["insumo", "basico", "cuadrilla"] = "insumo"
 
 
 class ApuLine(BaseModel):
@@ -51,6 +54,9 @@ class ApuLine(BaseModel):
     unit_cost: float
     amount: float
     resource_type: ResourceType
+    kind: Literal["insumo", "basico", "cuadrilla"] = "insumo"
+    # La matriz del básico, para desplegarla en su lugar.
+    sub_analysis: "UnitPriceAnalysis | None" = None
 
 
 class UnitPriceAnalysis(BaseModel):
@@ -63,6 +69,10 @@ class UnitPriceAnalysis(BaseModel):
     # Set when the P.U. was adopted from a reference row (catálogo propio or
     # publication) instead of priced from the matrix: "source · clave · vigencia".
     price_source: str | None = None
+
+
+ApuLine.model_rebuild()
+UnitPriceAnalysis.model_rebuild()
 
 
 class QuantityKind(StrEnum):

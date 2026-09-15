@@ -38,7 +38,7 @@ def test_import_matrices_creates_and_updates_concepts(store):
     assert existing["description"] == "Muros de block (matriz del taller)"
     templates = store.load_templates()
     assert sorted(templates["ALB-010"]) == [
-        ("EQ-HERRAMIENTA", 0.03), ("MAT-BLOCK15", 12.5), ("MO-OF-ALB2", 0.16),
+        ("EQ-HERRAMIENTA", 1.0), ("MAT-BLOCK15", 12.5), ("MO-OF-ALB2", 0.16),
     ]
     assert sorted(templates["EST-004"]) == [("MAT-BLOCK15", 12.5), ("MO-OF-ALB2", 0.14)]
     insumo = next(i for i in store.list_insumos() if i["code"] == "MAT-BLOCK15")

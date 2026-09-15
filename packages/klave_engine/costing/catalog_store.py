@@ -43,6 +43,8 @@ SEED_SOURCE = "Referencia Klave"
 # Las cuatro capas del catálogo: de dónde salió cada concepto e insumo. Es una
 # columna, no una frase — se ve en la fila y se filtra.
 ORIGINS = ("oficial", "importada", "generada", "taller")
+INSUMO_KINDS = ("insumo", "basico", "cuadrilla")
+MAX_BASICO_DEPTH = 4
 SEED_ORIGIN_REF = "semilla Klave"
 # La partida canónica del matcher → la etiqueta de fase con que el catálogo
 # agrupa (las seis del motor con su orden; el resto con su nombre).
@@ -746,6 +748,19 @@ class CatalogStore:
                 conn.execute(
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '24') "
                     "ON CONFLICT(key) DO UPDATE SET value = '24'"
+                )
+            if version_row is None or int(version_row["value"]) < 26:
+                # Básicos y cuadrillas: un insumo con matriz propia.
+                insumo_columns = {
+                    row["name"] for row in conn.execute("PRAGMA table_info(insumos)").fetchall()
+                }
+                if "kind" not in insumo_columns:
+                    conn.execute(
+                        "ALTER TABLE insumos ADD COLUMN kind TEXT NOT NULL DEFAULT 'insumo'"
+                    )
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '26') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '26'"
                 )
             if version_row is None or int(version_row["value"]) < 25:
                 # El origen de cada fila: oficial, importada, generada o taller.
@@ -1461,6 +1476,7 @@ class CatalogStore:
                 unit_cost=row["unit_cost"],
                 resource_type=ResourceType(row["resource_type"]),
                 is_labor_percentage=bool(row["is_labor_percentage"]),
+                kind=(row["kind"] if "kind" in row.keys() and row["kind"] else "insumo"),
             )
             for row in rows
         }
@@ -1637,6 +1653,7 @@ class CatalogStore:
         origin: str | None = None,
         origin_ref: str | None = None,
         actor: str | None = None,
+        kind: str | None = None,
     ) -> dict:
         """Update an existing insumo, or create one when all fields are given.
         Sin `origin`, una fila nueva es del taller (capturada a mano); con
@@ -1647,6 +1664,8 @@ class CatalogStore:
             raise ValueError("Tipo de fuente inválido.")
         if origin is not None:
             _check_origin(origin)
+        if kind is not None and kind not in INSUMO_KINDS:
+            raise ValueError(f"Tipo de insumo inválido: {kind!r}.")
         with _LOCK, self._connect() as conn:
             existing = conn.execute(
                 "SELECT * FROM insumos WHERE code = ?", (code,)
@@ -1661,13 +1680,13 @@ class CatalogStore:
                 conn.execute(
                     "INSERT INTO insumos (code, description, unit, resource_type, "
                     "unit_cost, is_labor_percentage, source, source_type, region, "
-                    "vigencia, updated_at, origin, origin_ref) "
-                    "VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)",
+                    "vigencia, updated_at, origin, origin_ref, kind) "
+                    "VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         code, description, unit, resource_type, unit_cost,
                         source or "", source_type or "cotizacion",
                         region or "MX-CMX", vigencia or "", _now(),
-                        origin or "taller", origin_ref or "",
+                        origin or "taller", origin_ref or "", kind or "insumo",
                     ),
                 )
             else:
@@ -1692,6 +1711,8 @@ class CatalogStore:
                         code,
                     ),
                 )
+                if kind is not None:
+                    conn.execute("UPDATE insumos SET kind = ? WHERE code = ?", (kind, code))
                 if origin is not None:
                     conn.execute(
                         "UPDATE insumos SET origin = ?, origin_ref = ? WHERE code = ?",
@@ -1704,7 +1725,193 @@ class CatalogStore:
                         (f"tocado por {actor}", code),
                     )
             row = conn.execute("SELECT * FROM insumos WHERE code = ?", (code,)).fetchone()
+        if unit_cost is not None and self._has_basicos():
+            self.recompute_basicos()
+            with self._connect() as conn:
+                row = conn.execute("SELECT * FROM insumos WHERE code = ?", (code,)).fetchone()
         return dict(row)
+
+    def _herramienta_fraction(self) -> float:
+        """La fracción de mano de obra que representa una unidad de
+        EQ-HERRAMIENTA (0.03 en la semilla): los porcentajes importados se
+        escalan contra ella para que un 3 % sea un 3 %."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT unit_cost FROM insumos WHERE code = 'EQ-HERRAMIENTA'"
+            ).fetchone()
+        value = float(row["unit_cost"]) if row and row["unit_cost"] else 0.03
+        return value if value > 0 else 0.03
+
+    def _has_basicos(self) -> bool:
+        with self._connect() as conn:
+            return conn.execute(
+                "SELECT 1 FROM insumos WHERE kind != 'insumo' LIMIT 1"
+            ).fetchone() is not None
+
+    # ------------------------------------------------------ básicos y cuadrillas
+
+    def set_basico_components(
+        self, code: str, components: list[tuple[str, float]], *, actor: str | None = None
+    ) -> dict:
+        """La matriz de un básico o cuadrilla: sus componentes son insumos (otro
+        básico también, hasta cuatro niveles); un ciclo se rechaza con los dos
+        nombres. Al guardar se recalcula el precio del básico y de todo lo que
+        lo usa."""
+        if not components:
+            raise ValueError("Un básico necesita al menos un componente.")
+        book = self.load_price_book()
+        own = book.get(code)
+        if own is None:
+            raise ValueError(f"El insumo {code} no existe.")
+        if own.kind == "insumo":
+            raise ValueError(f"{code} no es un básico ni una cuadrilla.")
+        for resource_code, quantity in components:
+            if resource_code not in book:
+                raise ValueError(f"Unknown resource {resource_code}.")
+            if quantity <= 0:
+                raise ValueError(f"Quantity for {resource_code} must be positive.")
+        templates = self.load_templates()
+        templates[code] = list(components)
+        self._check_basico_cycle(code, templates, book)
+        with _LOCK, self._connect() as conn:
+            conn.execute("DELETE FROM apu_components WHERE concept_code = ?", (code,))
+            conn.executemany(
+                "INSERT INTO apu_components (concept_code, resource_code, quantity) "
+                "VALUES (?, ?, ?)",
+                [(code, r, q) for r, q in components],
+            )
+            if actor:
+                conn.execute(
+                    "UPDATE insumos SET origin = 'taller', origin_ref = ? WHERE code = ? "
+                    "AND origin != 'taller'",
+                    (f"tocado por {actor[:80]}", code),
+                )
+        self.recompute_basicos()
+        return next(i for i in self.list_insumos() if i["code"] == code)
+
+    @staticmethod
+    def _check_basico_cycle(
+        start: str, templates: dict[str, list[tuple[str, float]]], book: dict[str, Resource]
+    ) -> None:
+        def walk(code: str, path: tuple[str, ...]) -> None:
+            if code in path:
+                raise ValueError(f"Ciclo entre básicos: {' → '.join((*path, code))}")
+            if len(path) >= MAX_BASICO_DEPTH:
+                raise ValueError(
+                    f"{start}: los básicos anidan más de {MAX_BASICO_DEPTH} niveles."
+                )
+            for resource_code, _ in templates.get(code, []):
+                resource = book.get(resource_code)
+                if resource is not None and resource.kind != "insumo":
+                    walk(resource_code, (*path, code))
+
+        walk(start, ())
+
+    def recompute_basicos(self) -> dict:
+        """El precio de cada básico sale de su matriz, de abajo hacia arriba.
+        Un básico con un componente sin precio conserva su costo anterior y se
+        reporta; nunca vale cero."""
+        book = self.load_price_book()
+        templates = self.load_templates()
+        basicos = [code for code, resource in book.items() if resource.kind != "insumo"]
+        computed: dict[str, float] = {}
+        problems: list[str] = []
+        pending = set(basicos)
+        for _round in range(MAX_BASICO_DEPTH + 1):
+            progressed = False
+            for code in sorted(pending):
+                template = templates.get(code)
+                if not template:
+                    pending.discard(code)
+                    problems.append(f"{code}: básico sin matriz; conserva su precio.")
+                    progressed = True
+                    continue
+                inner = [r for r, _ in template if r in book and book[r].kind != "insumo"]
+                if any(r in pending for r in inner):
+                    continue
+                total = 0.0
+                labor = 0.0
+                missing = None
+                percentages: list[tuple[Resource, float]] = []
+                for resource_code, quantity in template:
+                    resource = book.get(resource_code)
+                    if resource is None:
+                        missing = resource_code
+                        break
+                    if resource.is_labor_percentage:
+                        percentages.append((resource, quantity))
+                        continue
+                    cost = computed.get(resource_code, resource.unit_cost)
+                    if cost <= 0:
+                        missing = resource_code
+                        break
+                    amount = quantity * cost
+                    total += amount
+                    if resource.resource_type == ResourceType.labor:
+                        labor += amount
+                if missing is not None:
+                    problems.append(f"{code}: {missing} sin precio; conserva su precio.")
+                else:
+                    for resource, quantity in percentages:
+                        total += resource.unit_cost * quantity * labor
+                    computed[code] = round(total, 2)
+                pending.discard(code)
+                progressed = True
+            if not pending or not progressed:
+                break
+        for code in sorted(pending):
+            problems.append(f"{code}: no se pudo resolver (ciclo o profundidad).")
+        with _LOCK, self._connect() as conn:
+            for code, cost in computed.items():
+                conn.execute(
+                    "UPDATE insumos SET unit_cost = ?, source_type = 'calculado', "
+                    "origin_ref = 'derivado de su matriz', updated_at = ? "
+                    "WHERE code = ? AND abs(unit_cost - ?) > 0.005",
+                    (cost, _now(), code, cost),
+                )
+        return {"computed": computed, "problems": problems}
+
+    def insumo_uses(self, code: str) -> dict:
+        """Dónde se usa un insumo: los conceptos (con cantidad, importe y su
+        parte del costo directo) y los básicos que lo llevan."""
+        book = self.load_price_book()
+        templates = self.load_templates()
+        concepts = {c["code"]: c for c in self.load_concepts()}
+        resource = book.get(code)
+        unit_cost = resource.unit_cost if resource else 0.0
+        in_concepts: list[dict] = []
+        in_basicos: list[dict] = []
+        for owner, components in templates.items():
+            for resource_code, quantity in components:
+                if resource_code != code:
+                    continue
+                amount = round(quantity * unit_cost, 2)
+                if owner in concepts:
+                    direct = 0.0
+                    labor = 0.0
+                    for r, q in components:
+                        res = book.get(r)
+                        if res is None or res.is_labor_percentage:
+                            continue
+                        direct += q * res.unit_cost
+                        if res.resource_type == ResourceType.labor:
+                            labor += q * res.unit_cost
+                    for r, q in components:
+                        res = book.get(r)
+                        if res is not None and res.is_labor_percentage:
+                            direct += res.unit_cost * q * labor
+                    in_concepts.append({
+                        "code": owner, "description": concepts[owner]["description"],
+                        "unit": concepts[owner]["unit"], "quantity": quantity, "amount": amount,
+                        "share": round(amount / direct, 4) if direct > 0 else None,
+                    })
+                elif owner in book and book[owner].kind != "insumo":
+                    in_basicos.append({
+                        "code": owner, "description": book[owner].description,
+                        "quantity": quantity, "amount": amount,
+                    })
+        in_concepts.sort(key=lambda r: -(r["amount"] or 0))
+        return {"code": code, "concepts": in_concepts, "basicos": in_basicos}
 
     def set_apu_components(
         self, concept_code: str, components: list[tuple[str, float]], *, actor: str | None = None
@@ -1921,8 +2128,11 @@ class CatalogStore:
             for code, quantity in concept.components:
                 resource = parse.insumos.get(code)
                 if resource is not None and resource.is_labor_percentage:
+                    # EQ-HERRAMIENTA vale 0.03 de la mano de obra por unidad de
+                    # cantidad: un 3 % importado es cantidad 1, un 5 % es 1.67.
                     clave = "EQ-HERRAMIENTA"
-                    valor = quantity / 100 if quantity > 1 else quantity
+                    fraction = quantity / 100 if quantity > 1 else quantity
+                    valor = fraction / self._herramienta_fraction()
                 else:
                     clave, valor = code, quantity
                 if clave not in acumulado:
@@ -2166,9 +2376,8 @@ class CatalogStore:
             orden: list[str] = []
             for line in components:
                 if line["is_labor_percentage"]:
-                    clave, valor = "EQ-HERRAMIENTA", (
-                        line["quantity"] / 100 if line["quantity"] > 1 else line["quantity"]
-                    )
+                    fraction = line["quantity"] / 100 if line["quantity"] > 1 else line["quantity"]
+                    clave, valor = "EQ-HERRAMIENTA", fraction / self._herramienta_fraction()
                 else:
                     clave, valor = line["resource_clave"], float(line["quantity"])
                     self.upsert_insumo(

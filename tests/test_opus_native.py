@@ -231,7 +231,7 @@ def test_zip_dispatch_and_store_import(base, data_dir):
     assert rows["EMC3"]["unit"] == "TON"
     template = dict(store.load_templates()["EMC3"])
     # El % de herramienta cae en EQ-HERRAMIENTA como fracción de la mano de obra.
-    assert template["EQ-HERRAMIENTA"] == pytest.approx(0.03)
+    assert template["EQ-HERRAMIENTA"] == pytest.approx(1.0)  # 3 % = una unidad de 0.03
     assert template["1S2E"] == 2.5
 
 

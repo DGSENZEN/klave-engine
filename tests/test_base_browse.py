@@ -87,7 +87,7 @@ def test_bring_an_imported_row_with_its_matrix_and_insumos(store):
     assert row["production_rate_per_day"] == 0.28
     template = dict(store.load_templates()["EMC3"])
     assert template["313-APL-0104"] == 1.034 and template["1S2E"] == 2.5
-    assert template["EQ-HERRAMIENTA"] == pytest.approx(0.03)
+    assert template["EQ-HERRAMIENTA"] == pytest.approx(1.0)  # 3 % = una unidad de 0.03
     insumos = {i["code"]: i for i in store.list_insumos()}
     assert insumos["1S2E"]["origin"] == "importada"
     assert insumos["1S2E"]["origin_ref"] == "prisma-acero-2026 · 1S2E"

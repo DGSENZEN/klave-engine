@@ -10,11 +10,15 @@ from klave_engine.costing.models import (
     UnitPriceAnalysis,
 )
 
+MAX_BASICO_DEPTH = 4
+
 
 def build_apu(
     concept: Concept,
     resources: dict[str, Resource] | None = None,
     templates: dict[str, list[tuple[str, float]]] | None = None,
+    *,
+    _stack: tuple[str, ...] = (),
 ) -> UnitPriceAnalysis:
     resources = resources or RESOURCES
     templates = templates or APU_TEMPLATES
@@ -31,6 +35,27 @@ def build_apu(
         if resource.is_labor_percentage:
             percentage_entries.append((resource, quantity))
             continue
+        sub_analysis: UnitPriceAnalysis | None = None
+        if resource.kind != "insumo" and resource.code in templates:
+            # Un básico trae su propia matriz: se resuelve aquí mismo, con
+            # tope de profundidad y sin ciclos (A usa B usa A no es un precio,
+            # es un error que se dice con los dos nombres).
+            if resource.code in _stack or concept.code == resource.code:
+                cycle = " → ".join((*_stack, concept.code, resource.code))
+                raise ReportGenerationError(f"Ciclo entre básicos: {cycle}")
+            if len(_stack) + 1 >= MAX_BASICO_DEPTH:
+                raise ReportGenerationError(
+                    f"{concept.code}: los básicos anidan más de {MAX_BASICO_DEPTH} niveles."
+                )
+            sub_analysis = build_apu(
+                Concept(
+                    code=resource.code, description=resource.description, unit=resource.unit,
+                    phase="Básicos", production_rate_per_day=1.0,
+                ),
+                resources=resources, templates=templates,
+                _stack=(*_stack, concept.code),
+            )
+            resource = resource.model_copy(update={"unit_cost": sub_analysis.direct_unit_cost})
         if resource.unit_cost <= 0:
             # Un insumo sin precio no vale cero: vale lo que nadie ha dicho
             # todavía. Sumarlo como cero daría un P.U. más barato que la obra
@@ -49,6 +74,8 @@ def build_apu(
                 unit_cost=resource.unit_cost,
                 amount=round(quantity * resource.unit_cost, 2),
                 resource_type=resource.resource_type,
+                kind=resource.kind,
+                sub_analysis=sub_analysis,
             )
         )
 
