@@ -68,6 +68,13 @@ from apps.api.tenancy import store_for_project, store_for_request
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 
 MAX_IMPORT_BYTES = 1_000_000
+
+
+def _actor(x_actor: str | None) -> str | None:
+    """Quién toca la fila, si alguien la toca: promueve a «taller»."""
+    value = (x_actor or "").strip()
+    return value or None
+
 # Una base OPUS nativa (.zip con sus .DBF/.FPT) pesa más que un XLSX: las
 # matrices de un catálogo de 300 conceptos rondan los 2 MB sin comprimir.
 MAX_OPUS_BYTES = 25_000_000
@@ -177,6 +184,12 @@ def get_catalog_state(catalog: CatalogStore = Depends(get_catalog)) -> dict:
                 "price_source": row.get("price_source"),
                 "price_clave": row.get("price_clave"),
                 "price_vigencia": row.get("price_vigencia"),
+                # De qué capa viene la fila y, si es generada, cómo salió su validación.
+                "origin": row.get("origin") or "taller",
+                "origin_ref": row.get("origin_ref") or "",
+                "variant_of": row.get("variant_of"),
+                "validation": row.get("validation"),
+                "touched_by": row.get("touched_by"),
                 # La ficha técnica sale del propio texto: campos duros a la vista.
                 "ficha": extraer_ficha(row["description"]),
             }
@@ -243,6 +256,7 @@ def update_insumo(
             source_type=body.source_type,
             region=body.region,
             vigencia=body.vigencia,
+            actor=_actor(x_actor),
         )
     except ValueError as exc:
         raise HTTPException(
@@ -269,6 +283,7 @@ def update_apu(
         catalog.set_apu_components(
             concept_code,
             [(component.resource_code, component.quantity) for component in body.components],
+            actor=_actor(x_actor),
         )
     except ValueError as exc:
         raise HTTPException(
@@ -337,6 +352,7 @@ def update_concept(
             phase=body.phase,
             production_rate_per_day=body.production_rate_per_day,
             active=body.active,
+            actor=_actor(x_actor),
         )
     except ValueError as exc:
         raise HTTPException(

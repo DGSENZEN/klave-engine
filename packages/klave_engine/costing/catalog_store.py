@@ -40,6 +40,10 @@ logger = get_logger(__name__)
 
 CATALOG_DB_FILENAME = "catalog.db"
 SEED_SOURCE = "Referencia Klave"
+# Las cuatro capas del catálogo: de dónde salió cada concepto e insumo. Es una
+# columna, no una frase — se ve en la fila y se filtra.
+ORIGINS = ("oficial", "importada", "generada", "taller")
+SEED_ORIGIN_REF = "semilla Klave"
 
 _LOCK = threading.Lock()
 
@@ -54,6 +58,36 @@ class UnitMismatch(ValueError):
             "un precio por unidad distinta multiplica mal. Elige una referencia en "
             f"{own_unit} o fuerza la adopción explicando por qué."
         )
+
+
+def _check_origin(origin: str) -> None:
+    if origin not in ORIGINS:
+        raise ValueError(f"Origen inválido: {origin!r} (uno de {', '.join(ORIGINS)}).")
+
+
+def _touch_concept(conn: sqlite3.Connection, code: str, origin: str, actor: str) -> None:
+    """Una persona editó la fila: si no era del taller, ahora lo es."""
+    if origin == "taller":
+        return
+    conn.execute(
+        "UPDATE concepts SET origin = 'taller', touched_by = ?, touched_at = ? WHERE code = ?",
+        (actor[:80], _now(), code),
+    )
+
+
+def _concept_row(row: sqlite3.Row | dict) -> dict:
+    """Fila de concepto con sus columnas JSON decodificadas."""
+    record = dict(row)
+    for column in ("spec_signature", "validation"):
+        value = record.get(column)
+        if isinstance(value, str) and value:
+            try:
+                record[column] = json.loads(value)
+            except ValueError:
+                record[column] = None
+        elif column in record:
+            record[column] = value or None
+    return record
 
 
 def _check_units(code: str, own_unit: str, other_unit: str, force: bool) -> None:
@@ -690,6 +724,16 @@ class CatalogStore:
                     "INSERT INTO meta (key, value) VALUES ('schema_version', '24') "
                     "ON CONFLICT(key) DO UPDATE SET value = '24'"
                 )
+            if version_row is None or int(version_row["value"]) < 25:
+                # El origen de cada fila: oficial, importada, generada o taller.
+                self._migrate_v25(conn)
+                conn.execute(
+                    "INSERT INTO meta (key, value) VALUES ('schema_version', '25') "
+                    "ON CONFLICT(key) DO UPDATE SET value = '25'"
+                )
+            # Toda fila nueva sin origen declarado (siembras, migraciones
+            # viejas) se clasifica aquí; es idempotente y solo toca vacíos.
+            self._backfill_origins(conn)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -899,6 +943,82 @@ class CatalogStore:
             )
         self._sync_builtin_concepts(conn, ACABADOS_CONCEPT_CODES)
         log_stage(logger, "catalog_migrated_v11", db_path=str(self.db_path))
+
+    @staticmethod
+    def _migrate_v25(conn: sqlite3.Connection) -> None:
+        """Origen y validación en conceptos e insumos (spec catálogo base §1.1).
+        `origin` vacío significa «sin clasificar»; `_backfill_origins` lo llena."""
+        concept_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(concepts)").fetchall()
+        }
+        for column, kind in (
+            ("origin", "TEXT NOT NULL DEFAULT ''"), ("origin_ref", "TEXT NOT NULL DEFAULT ''"),
+            ("variant_of", "TEXT"), ("spec_signature", "TEXT"), ("validation", "TEXT"),
+            ("touched_by", "TEXT"), ("touched_at", "TEXT"),
+        ):
+            if column not in concept_columns:
+                conn.execute(f"ALTER TABLE concepts ADD COLUMN {column} {kind}")
+        insumo_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(insumos)").fetchall()
+        }
+        for column, kind in (
+            ("origin", "TEXT NOT NULL DEFAULT ''"), ("origin_ref", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if column not in insumo_columns:
+                conn.execute(f"ALTER TABLE insumos ADD COLUMN {column} {kind}")
+
+    @staticmethod
+    def _seed_concept_codes() -> set[str]:
+        """Los conceptos que Klave siembra: la regla del motor y las matrices
+        semilla. Es lo que la migración clasifica como «generada»."""
+        codes = {c.code for c in build_default_catalog(CostingAssumptions())}
+        for constant in (
+            "STEEL_CONCEPTS", "FORMWORK_CONCEPTS", "FORMWORK_CONCEPTS_V7", "EXTRA_CONCEPTS",
+            "SLAB_STEEL_CONCEPTS", "INSTALACIONES_CONCEPTS",
+        ):
+            for entry in globals().get(constant, []) or []:
+                codes.add(entry[0])
+        return codes
+
+    @classmethod
+    def _backfill_origins(cls, conn: sqlite3.Connection) -> None:
+        """Clasifica las filas sin origen. Conceptos: los importados dicen su
+        importación; los que Klave sembró (regla del motor o matriz semilla)
+        son «generada · semilla Klave»; lo demás es del taller. Insumos: una
+        publicación es oficial, una cotización que vino de un catálogo es
+        importada, la semilla es generada y lo capturado a mano es del taller."""
+        conn.execute(
+            "UPDATE concepts SET origin = 'importada', origin_ref = import_source "
+            "WHERE origin = '' AND import_source != ''"
+        )
+        conn.execute(
+            "UPDATE concepts SET origin = 'generada', origin_ref = ? "
+            "WHERE origin = '' AND rule_key IS NOT NULL",
+            (SEED_ORIGIN_REF,),
+        )
+        seeds = sorted(cls._seed_concept_codes())
+        for start in range(0, len(seeds), 400):
+            chunk = seeds[start:start + 400]
+            conn.execute(
+                "UPDATE concepts SET origin = 'generada', origin_ref = ? WHERE origin = '' "
+                f"AND code IN ({','.join('?' * len(chunk))})",
+                (SEED_ORIGIN_REF, *chunk),
+            )
+        conn.execute("UPDATE concepts SET origin = 'taller' WHERE origin = ''")
+        conn.execute(
+            "UPDATE insumos SET origin = 'oficial', origin_ref = source "
+            "WHERE origin = '' AND source_type = 'publicacion'"
+        )
+        conn.execute(
+            "UPDATE insumos SET origin = 'generada', origin_ref = ? "
+            "WHERE origin = '' AND (source_type = 'referencia' OR source = ?)",
+            (SEED_ORIGIN_REF, SEED_SOURCE),
+        )
+        conn.execute(
+            "UPDATE insumos SET origin = 'importada', origin_ref = source "
+            "WHERE origin = '' AND source_type = 'cotizacion' AND source != ''"
+        )
+        conn.execute("UPDATE insumos SET origin = 'taller' WHERE origin = ''")
 
     @staticmethod
     def _migrate_v8(conn: sqlite3.Connection) -> None:
@@ -1341,7 +1461,7 @@ class CatalogStore:
                 + ("" if include_inactive else " WHERE active = 1")
                 + " ORDER BY sequence_order, code"
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [_concept_row(row) for row in rows]
 
     def create_concept(
         self,
@@ -1353,9 +1473,12 @@ class CatalogStore:
         production_rate_per_day: float,
         components: list[tuple[str, float]],
         import_source: str = "",
+        origin: str = "taller",
+        origin_ref: str = "",
     ) -> dict:
         """A manual concept needs its APU from birth: a concept without a
         matrix cannot be priced, and unpriced never means zero."""
+        _check_origin(origin)
         if production_rate_per_day <= 0:
             raise ValueError("El rendimiento debe ser positivo.")
         if not components:
@@ -1374,9 +1497,10 @@ class CatalogStore:
                 raise ValueError(f"El concepto {code} ya existe.")
             conn.execute(
                 "INSERT INTO concepts (code, description, unit, phase, "
-                "production_rate_per_day, rule_key, import_source) "
-                "VALUES (?, ?, ?, ?, ?, NULL, ?)",
-                (code, description, unit, phase, production_rate_per_day, import_source),
+                "production_rate_per_day, rule_key, import_source, origin, origin_ref) "
+                "VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+                (code, description, unit, phase, production_rate_per_day, import_source,
+                 origin, origin_ref),
             )
             for resource_code, quantity in components:
                 conn.execute(
@@ -1385,7 +1509,7 @@ class CatalogStore:
                     (code, resource_code, quantity),
                 )
             row = conn.execute("SELECT * FROM concepts WHERE code = ?", (code,)).fetchone()
-        return dict(row)
+        return _concept_row(row)
 
     def update_concept(
         self,
@@ -1396,9 +1520,17 @@ class CatalogStore:
         phase: str | None = None,
         production_rate_per_day: float | None = None,
         active: bool | None = None,
+        actor: str | None = None,
+        origin: str | None = None,
+        origin_ref: str | None = None,
     ) -> dict:
+        """Con `actor`, una persona tocó la fila: si venía de una publicación,
+        una importación o una generación, pasa a ser del taller y queda quién
+        y cuándo. Con `origin` explícito, la importación reclasifica."""
         if production_rate_per_day is not None and production_rate_per_day <= 0:
             raise ValueError("El rendimiento debe ser positivo.")
+        if origin is not None:
+            _check_origin(origin)
         with _LOCK, self._connect() as conn:
             existing = conn.execute(
                 "SELECT * FROM concepts WHERE code = ?", (code,)
@@ -1419,8 +1551,16 @@ class CatalogStore:
                     code,
                 ),
             )
+            if origin is not None:
+                conn.execute(
+                    "UPDATE concepts SET origin = ?, origin_ref = ? WHERE code = ?",
+                    (origin, origin_ref if origin_ref is not None else existing["origin_ref"],
+                     code),
+                )
+            elif actor:
+                _touch_concept(conn, code, existing["origin"], actor)
             row = conn.execute("SELECT * FROM concepts WHERE code = ?", (code,)).fetchone()
-        return dict(row)
+        return _concept_row(row)
 
     def load_rendimientos(self) -> dict[str, float]:
         with self._connect() as conn:
@@ -1468,12 +1608,19 @@ class CatalogStore:
         source_type: str | None = None,
         region: str | None = None,
         vigencia: str | None = None,
+        origin: str | None = None,
+        origin_ref: str | None = None,
+        actor: str | None = None,
     ) -> dict:
-        """Update an existing insumo, or create one when all fields are given."""
+        """Update an existing insumo, or create one when all fields are given.
+        Sin `origin`, una fila nueva es del taller (capturada a mano); con
+        `actor`, la edición de una fila que no era del taller la promueve."""
         if source_type is not None and source_type not in (
             "referencia", "cotizacion", "publicacion", "calculado",
         ):
             raise ValueError("Tipo de fuente inválido.")
+        if origin is not None:
+            _check_origin(origin)
         with _LOCK, self._connect() as conn:
             existing = conn.execute(
                 "SELECT * FROM insumos WHERE code = ?", (code,)
@@ -1488,11 +1635,13 @@ class CatalogStore:
                 conn.execute(
                     "INSERT INTO insumos (code, description, unit, resource_type, "
                     "unit_cost, is_labor_percentage, source, source_type, region, "
-                    "vigencia, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)",
+                    "vigencia, updated_at, origin, origin_ref) "
+                    "VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         code, description, unit, resource_type, unit_cost,
                         source or "", source_type or "cotizacion",
                         region or "MX-CMX", vigencia or "", _now(),
+                        origin or "taller", origin_ref or "",
                     ),
                 )
             else:
@@ -1517,11 +1666,22 @@ class CatalogStore:
                         code,
                     ),
                 )
+                if origin is not None:
+                    conn.execute(
+                        "UPDATE insumos SET origin = ?, origin_ref = ? WHERE code = ?",
+                        (origin, origin_ref if origin_ref is not None
+                         else existing["origin_ref"], code),
+                    )
+                elif actor and existing["origin"] != "taller":
+                    conn.execute(
+                        "UPDATE insumos SET origin = 'taller', origin_ref = ? WHERE code = ?",
+                        (f"tocado por {actor}", code),
+                    )
             row = conn.execute("SELECT * FROM insumos WHERE code = ?", (code,)).fetchone()
         return dict(row)
 
     def set_apu_components(
-        self, concept_code: str, components: list[tuple[str, float]]
+        self, concept_code: str, components: list[tuple[str, float]], *, actor: str | None = None
     ) -> None:
         """Replace one concept's APU matrix. Every resource must exist and every
         quantity must be positive; the matrix must not be empty."""
@@ -1534,6 +1694,11 @@ class CatalogStore:
             if quantity <= 0:
                 raise ValueError(f"Quantity for {resource_code} must be positive.")
         with _LOCK, self._connect() as conn:
+            existing = conn.execute(
+                "SELECT origin FROM concepts WHERE code = ?", (concept_code,)
+            ).fetchone()
+            if actor and existing is not None:
+                _touch_concept(conn, concept_code, existing["origin"], actor)
             conn.execute(
                 "DELETE FROM apu_components WHERE concept_code = ?", (concept_code,)
             )
@@ -1706,6 +1871,7 @@ class CatalogStore:
                 insumo.code, description=insumo.description, unit=insumo.unit,
                 resource_type=insumo.resource_type, unit_cost=insumo.unit_cost,
                 source=source, source_type="cotizacion", region="MX", vigencia=vigencia,
+                origin="importada", origin_ref=f"{source} · {insumo.code}",
             )
             upserted += 1
         created = updated = 0
@@ -1743,6 +1909,7 @@ class CatalogStore:
                     self.update_concept(
                         concept.code, description=concept.description, unit=concept.unit,
                         phase=concept.phase, production_rate_per_day=rate,
+                        origin="importada", origin_ref=f"{source} · {concept.code}",
                     )
                     self.set_apu_components(concept.code, components)
                     updated += 1
@@ -1751,6 +1918,7 @@ class CatalogStore:
                         code=concept.code, description=concept.description, unit=concept.unit,
                         phase=concept.phase, production_rate_per_day=rate,
                         components=components, import_source=source,
+                        origin="importada", origin_ref=f"{source} · {concept.code}",
                     )
                     created += 1
             except ValueError as exc:
@@ -1865,6 +2033,8 @@ class CatalogStore:
             source_type="publicacion",
             region=reference["source_region"],
             vigencia=reference["source_vigencia"],
+            origin="oficial",
+            origin_ref=f"{reference['source_key']} · {reference['clave']}",
         )
 
     # ------------------------------------------------- levantamiento mappings
