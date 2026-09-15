@@ -1,0 +1,40 @@
+TABULADOR A COSTO DIRECTO PARA LA CONSTRUCCIÓN, MODERNIZACIÓN
+Y CONSERVACIÓN DE OBRAS PARA INFRAESTRUCTURA CARRETERA 2026 (Vigente desde 1 de febrero 2026)
+LINEA CÓDIGO DESCRIPCIÓN UNIDAD
+COSTO
+DIRECTO
+1 CONSTRUCCIÓN
+1034 101.02.1150 Despalme de 20 cm de espesor, el material producto del despalme ya no se utilizará.
+Incluye: carga a unidades de transporte PUOT. (N·CTR·CAR·1·01·002/11).
+m³ $35.39
+1035 101.02.1160 Despalme de 30 cm de espesor, el material producto del despalme ya no se utilizará.
+Incluye: carga a unidades de transporte PUOT. (N·CTR·CAR·1·01·002/11).
+m³ $38.66
+1036 101.02.1170 Despalme de 40 cm de espesor, el material producto del despalme ya no se utilizará.
+Incluye: carga a unidades de transporte PUOT. (N·CTR·CAR·1·01·002/11).
+m³ $43.40
+1037 101.02.1180 Despalme de 50 cm de espesor, el material producto del despalme ya no se utilizará.
+Incluye: carga a unidades de transporte PUOT. (N·CTR·CAR·1·01·002/11).
+m³ $50.27
+1038 101.02.1190 Despalme de 60 cm de espesor, el material producto del despalme ya no se utilizará.
+Incluye: carga a unidades de transporte PUOT. (N·CTR·CAR·1·01·002/11).
+m³ $58.20
+1039 101.02.1200 Despalme de 20 cm de espesor, en material tipo C, cuando el material producto del
+despalme ya no se utilizará. Incluye: carga de material a unidades de transporte.
+(N·CTR·CAR·1·01·002/11).
+m³ $803.74
+1040 101.02.1210 Despalme de 30 cm de espesor, en material tipo C, cuando el material producto del
+despalme ya no se utilizará. Incluye: carga de material a unidades de transporte.
+(N·CTR·CAR·1·01·002/11).
+m³ $858.58
+1041 101.02.1220 Despalme de 40 cm de espesor, en material tipo C, cuando el material producto del
+despalme ya no se utilizará. Incluye: carga de material a unidades de transporte.
+(N·CTR·CAR·1·01·002/11).
+m³ $913.41
+1042 101.02.1230 Despalme de 50 cm de espesor, en material tipo C, cuando el material producto del
+despalme ya no se utilizará. Incluye: carga de material a unidades de transporte.
+(N·CTR·CAR·1·01·002/11).
+m³ $995.66
+1043 101.02.1240 Despalme de 60 cm de espesor, en material tipo C, cuando el material producto del
+despalme ya no se utilizará. Incluye: carga de material a unidades de transporte.
+(N·CTR·CAR·1·01·002/11).

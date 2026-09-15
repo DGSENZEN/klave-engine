@@ -1,0 +1,149 @@
+[
+ [
+  "",
+  "",
+  "",
+  "",
+  ""
+ ],
+ [
+  "Código",
+  "Concepto",
+  "Unidad",
+  "Cantidad",
+  "Costo"
+ ],
+ [
+  "UEC",
+  "UNIDAD ESTATAL DE COSTOS",
+  "",
+  "",
+  ""
+ ],
+ [
+  "ED",
+  "EDIFICACIÓN",
+  "",
+  "",
+  ""
+ ],
+ [
+  "10",
+  "PRELIMINARES",
+  "",
+  "",
+  ""
+ ],
+ [
+  "100",
+  "Despalmes",
+  "",
+  "",
+  ""
+ ],
+ [
+  "UEC.ED.10.100.1010",
+  "Despalme de terreno tipo A, por medios manuales, a 20 cm de profundidad. Incluye: carga y retiro de material fuera de la obra.",
+  "m2",
+  1,
+  66.54
+ ],
+ [
+  "UEC.ED.10.100.1015",
+  "Despalme de terreno tipo B, por medios manuales, a 20 cm de profundidad. Incluye: carga y retiro de material fuera de la obra.",
+  "m2",
+  1,
+  88.71
+ ],
+ [
+  "UEC.ED.10.100.1020",
+  "Despalme de terreno tipo A, con equipo mecánico, a 20 cm de profundidad. Incluye: carga y retiro de material fuera de la obra.",
+  "m2",
+  1,
+  12.6
+ ],
+ [
+  "UEC.ED.10.100.1025",
+  "Despalme de terreno tipo B, con equipo mecánico, a 20 cm de profundidad. Incluye: carga y retiro de material fuera de la obra.",
+  "m2",
+  1,
+  21.6
+ ],
+ [
+  "UEC.ED.10.100.1050",
+  "Despalme de terreno tipo A, con equipo mecánico, a 30 cm de profundidad. Incluye: carga y retiro de material fuera de la obra.",
+  "m2",
+  1,
+  18.9
+ ],
+ [
+  "UEC.ED.10.100.1055",
+  "Despalme de terreno tipo B, con equipo mecánico, a 30 cm de profundidad. Incluye: carga y retiro de material fuera de la obra.",
+  "m2",
+  1,
+  30.24
+ ],
+ [
+  "105",
+  "Demoliciones manuales",
+  "",
+  "",
+  ""
+ ],
+ [
+  "UEC.ED.10.105.1010",
+  "Demolición manual de piso de concreto simple de hasta 12 cm de espesor. Incluye: carga manual y retiro de material a primera estación de 20 m.",
+  "m2",
+  1,
+  66.54
+ ],
+ [
+  "UEC.ED.10.105.1015",
+  "Demolición manual de piso de concreto armado, de hasta 12 cm de espesor, con recuperación de acero. Incluye: corte de acero, carga manual y retiro de material a primera estación de 20 m.",
+  "m3",
+  1,
+  1330.7
+ ],
+ [
+  "UEC.ED.10.105.1020",
+  "Demolición manual de piso de concreto armado con malla electrosoldada de hasta 12 cm de esperor, sin recuperación de acero. Incluye: corte de acero, carga manual y retiro de material a primera estación de 20 m.",
+  "m2",
+  1,
+  114.62
+ ],
+ [
+  "UEC.ED.10.105.1025",
+  "Demolición manual de piso de concreto armado con malla electrosoldasa de 12 a 20 cm de esperor, sin recuperación de acero. Incluye: corte de acero, carga manual y retiro de material a primera estación de 20 m.",
+  "m2",
+  1,
+  166.34
+ ],
+ [
+  "UEC.ED.10.105.1030",
+  "Demolición manual de firme de concreto armado con malla electrosoldada, de 10 cm de espesor, sin recuperación de acero. Incluye: corte de acero, carga manual y retiro de material a primera estación de 20 m.",
+  "m2",
+  1,
+  95.46
+ ],
+ [
+  "UEC.ED.10.105.1035",
+  "Demolición manual de firme de concreto armado con malla electrosoldada, de 12 cm de espesor, sin recuperación de acero. Incluye: corte de acero, carga manual y retiro de material a primera estación de 20 m.",
+  "m2",
+  1,
+  114.62
+ ],
+ [
+  "UEC.ED.10.105.1040",
+  "Demolición manual de firme de concreto armado con malla electrosoldasa de 12 a 20 cm de esperor, sin recuperación de acero. Incluye: corte de acero, carga manual y retiro de material a primera estación de 20 m.",
+  "m2",
+  1,
+  166.34
+ ],
+ [
+  "UEC.ED.10.105.1110",
+  "Demolición manual de muro de 14 cm de espesor, a base de tabique de barro rojo. Incluye: carga manual y retiro de material a primera estación de 20 m.",
+  "m2",
+  1,
+  53.23
+ ]
+]

@@ -49,7 +49,12 @@ from klave_engine.costing.sources.custom import (
 from klave_engine.costing.sources.destajos import parse_destajos_workbook
 from klave_engine.costing.sources.matrices import parse_matrices_workbook
 from klave_engine.costing.sources.opus_native import extras_summary, is_opus_zip, parse_opus_zip
-from klave_engine.costing.sources.registry import SOURCES, available_sources, sources_dir
+from klave_engine.costing.sources.registry import (
+    SOURCES,
+    available_sources,
+    fetch_source,
+    sources_dir,
+)
 from klave_engine.costing.vigencia import (
     FRESH_MONTHS,
     STALE_MONTHS,
@@ -735,6 +740,163 @@ def import_reference_source(
         x_actor, "reference_imported", f"{spec.name}: {count} renglones", catalog=catalog
     )
     return {"source_key": source_key, "rows": count}
+
+
+def _import_official(source_key: str, catalog: CatalogStore, settings: Settings) -> dict:
+    """Importa una fuente del registro ya descargada; el resultado dice qué pasó."""
+    spec = SOURCES[source_key]
+    path = sources_dir(settings.data_dir) / spec.filename
+    if not path.exists():
+        return {"source_key": source_key, "ok": False, "problem": "archivo no descargado"}
+    manifest = next(
+        (e for e in available_sources(settings.data_dir) if e["key"] == source_key), {}
+    )
+    try:
+        count = catalog.import_reference(
+            {
+                "key": spec.key, "name": spec.name, "publisher": spec.publisher,
+                "region": spec.region, "vigencia": spec.vigencia, "kind": spec.kind,
+                "url": spec.url,
+            },
+            spec.parser(path),
+            sha256=manifest.get("sha256"),
+        )
+    except Exception as exc:  # noqa: BLE001 — una fuente rota no tumba a las demás
+        return {"source_key": source_key, "ok": False, "problem": f"no se pudo leer: {exc}"}
+    return {"source_key": source_key, "ok": True, "rows": count}
+
+
+@router.post("/sources/{source_key}/download")
+def download_reference_source(
+    request: Request,
+    source_key: str,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Descargar e importar en un paso: la publicación llega al servidor y
+    entra a la base. Si el enlace no es directo, lo dice y no inventa."""
+    require_catalog_admin(request)
+    spec = SOURCES.get(source_key)
+    if spec is None:
+        raise HTTPException(status_code=404, detail={"error_type": "source_not_found"})
+    fetched = fetch_source(spec, settings.data_dir)
+    if not fetched.get("ok"):
+        raise HTTPException(
+            status_code=409,
+            detail={"error_type": "source_download_failed", "message": fetched.get("problem"),
+                    "url": spec.url},
+        )
+    result = _import_official(source_key, catalog, settings)
+    if not result.get("ok"):
+        raise HTTPException(
+            status_code=422,
+            detail={"error_type": "source_unreadable", "message": result.get("problem")},
+        )
+    _publish_catalog_updated(
+        x_actor, "reference_imported", f"{spec.name}: {result['rows']} renglones", catalog=catalog
+    )
+    return {"source_key": source_key, "rows": result["rows"], "bytes": fetched.get("bytes")}
+
+
+@router.post("/sources/bootstrap")
+def bootstrap_reference_sources(
+    request: Request,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """El primer arranque de un taller: cada fuente oficial que no esté
+    importada se descarga (si tiene enlace directo) e importa, en el orden
+    del registro. Una que falle se reporta y no detiene a las demás."""
+    require_catalog_admin(request)
+    imported = {s["source_key"] for s in catalog.list_sources()}
+    results: list[dict] = []
+    for spec in SOURCES.values():
+        if spec.key in imported:
+            results.append({"source_key": spec.key, "ok": True, "skipped": "ya importada"})
+            continue
+        path = sources_dir(settings.data_dir) / spec.filename
+        if not path.exists():
+            fetched = fetch_source(spec, settings.data_dir)
+            if not fetched.get("ok"):
+                results.append({"source_key": spec.key, "ok": False,
+                                "problem": fetched.get("problem")})
+                continue
+        results.append(_import_official(spec.key, catalog, settings))
+    done = [r for r in results if r.get("ok") and "rows" in r]
+    if done:
+        _publish_catalog_updated(
+            x_actor, "reference_imported",
+            f"{len(done)} fuentes oficiales importadas", catalog=catalog,
+        )
+    return {"results": results}
+
+
+# ------------------------------------------------------------ la base: hojear y traer
+
+@router.get("/base")
+def browse_base(
+    q: str = "",
+    source: str = "",
+    partida: str = "",
+    region: str = "",
+    kind: str = "",
+    limit: int = 50,
+    offset: int = 0,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    """La hoja de la base: renglones de todas las publicaciones e
+    importaciones con filtros, paginados, y si ya están en el taller."""
+    keys = [k for k in source.split(",") if k.strip()] or None
+    page = catalog.browse_reference(
+        q, source_keys=keys, partida=partida or None, region=region or None,
+        kind=kind or None, limit=max(1, min(limit, 200)), offset=max(0, offset),
+    )
+    return {**page, "sources": catalog.list_sources()}
+
+
+class AdoptBaseBody(BaseModel):
+    ref_ids: list[int] = Field(min_length=1, max_length=500)
+    phase: str | None = None
+    code: str | None = None
+    force: bool = False
+
+
+@router.post("/base/adopt", status_code=201)
+def adopt_from_base(
+    request: Request,
+    body: AdoptBaseBody,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    """«Traer al taller»: cada renglón elegido se vuelve concepto — con su
+    precio de tabulador (oficial) o con su matriz e insumos (importada).
+    Lo que no procede se reporta renglón por renglón; nada se pisa."""
+    require_catalog_admin(request)
+    if body.code and len(body.ref_ids) != 1:
+        raise HTTPException(
+            status_code=422,
+            detail={"error_type": "code_needs_single_row",
+                    "message": "Un código propio solo aplica a un renglón."},
+        )
+    created: list[dict] = []
+    skipped: list[dict] = []
+    for ref_id in body.ref_ids:
+        try:
+            row = catalog.adopt_reference_as_concept(
+                ref_id, code=body.code, phase=body.phase, actor=_actor(x_actor) or "",
+                force=body.force,
+            )
+            created.append({"ref_id": ref_id, "code": row["code"], "origin": row["origin"]})
+        except ValueError as exc:
+            skipped.append({"ref_id": ref_id, "reason": str(exc)})
+    if created:
+        _publish_catalog_updated(
+            x_actor, "concepts_adopted", f"{len(created)} conceptos traídos de la base",
+            catalog=catalog,
+        )
+    return {"created": created, "skipped": skipped}
 
 
 # ------------------------------------------------------------ descripciones LOPSRM

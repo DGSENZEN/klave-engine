@@ -1,0 +1,66 @@
+[
+ [
+  "Descripción",
+  null,
+  "Motor",
+  "Potencia (H.P.)",
+  "Operación",
+  "Costo Horario\nActivo"
+ ],
+ [
+  "",
+  "Vibrador de inmersión",
+  "Gasolina",
+  "5.5",
+  "Operador de\nequipo menor",
+  "$120.00"
+ ],
+ [
+  "",
+  "Apisonadora",
+  "Gasolina",
+  "4.0",
+  "Operador de\nequipo menor",
+  "$130.00"
+ ],
+ [
+  "",
+  "Revolvedora de Concreto\ncapacidad de 1 saco",
+  "Gasolina",
+  "9.0",
+  "Operador de\nequipo menor",
+  "$135.00"
+ ],
+ [
+  "",
+  "Retroexcavadora",
+  "Diesel",
+  "93",
+  "Operador de\nequipo menor",
+  "$760.00"
+ ],
+ [
+  "",
+  "Camión de volteo de 7 m3 de\ncapacidad",
+  "Diesel",
+  "214",
+  "Operador de\nequipo menor",
+  "$810.00"
+ ],
+ [
+  "",
+  "Camión pipa de 16,000 litros con\nmotobomba de autocebante a\ngasolina de 6 H.P. 2” de diámetro\nde salida y barra de riego",
+  "Diesel",
+  "214",
+  "Operador de\nequipo menor",
+  "$845.00"
+ ],
+ [
+  "",
+  "Compactador de rodillo vibratorio",
+  "Diesel",
+  "125",
+  "Operador de\nequipo menor",
+  "$850.00"
+ ]
+]
