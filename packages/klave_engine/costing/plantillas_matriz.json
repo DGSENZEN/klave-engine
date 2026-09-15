@@ -1,0 +1,381 @@
+{
+  "version": "2026-09",
+  "nota": "Plantillas de matriz por familia. Cada factor y cada rendimiento dice de dónde sale. Los valores marcados «valor de referencia Klave» son práctica usual de obra negra en el Valle de México, tomados de los manuales citados sin página verificada: se validan contra el precio publicado y Diego los revisa. Las cantidades son por unidad del concepto.",
+  "fuentes": {
+    "cmic": "CMIC, Rendimientos de mano de obra en edificación (ed. 2019)",
+    "suarez": "Suárez Salazar, Costo y tiempo en edificación (3.ª ed., Limusa)",
+    "practica": "práctica usual de análisis de precios unitarios en el Valle de México — valor de referencia Klave, revisar"
+  },
+  "categorias": {
+    "MO-PINTOR-OF": {"description": "Pintor (oficial)", "salario_nominal": 460.0},
+    "MO-YESERO-OF": {"description": "Yesero (oficial)", "salario_nominal": 460.0},
+    "MO-PLOMERO": {"description": "Plomero (oficial)", "salario_nominal": 480.0},
+    "MO-ELECTRICISTA": {"description": "Electricista (oficial)", "salario_nominal": 480.0},
+    "MO-OPERADOR": {"description": "Operador de maquinaria", "salario_nominal": 560.0}
+  },
+  "cuadrillas": {
+    "CUAD-ALB-1x1": {"description": "Cuadrilla de albañilería (1 oficial albañil + 1 ayudante)", "members": {"MO-ALBA": 1, "MO-AYUD": 1}},
+    "CUAD-FIE-1x1": {"description": "Cuadrilla de fierrero (1 oficial + 1 ayudante)", "members": {"MO-FIERRERO": 1, "MO-AYUD": 1}},
+    "CUAD-CARP-1x1": {"description": "Cuadrilla de carpintería de obra negra (1 oficial + 1 ayudante)", "members": {"MO-CARP": 1, "MO-AYUD": 1}},
+    "CUAD-PEON-2": {"description": "Cuadrilla de peones (2 peones)", "members": {"MO-PEON": 2}},
+    "CUAD-PINT-1x1": {"description": "Cuadrilla de pintura (1 pintor + 1 ayudante)", "members": {"MO-PINTOR-OF": 1, "MO-AYUD": 1}},
+    "CUAD-YES-1x1": {"description": "Cuadrilla de yesería (1 yesero + 1 ayudante)", "members": {"MO-YESERO-OF": 1, "MO-AYUD": 1}},
+    "CUAD-PLOM-1x1": {"description": "Cuadrilla de plomería (1 plomero + 1 ayudante)", "members": {"MO-PLOMERO": 1, "MO-AYUD": 1}},
+    "CUAD-ELEC-1x1": {"description": "Cuadrilla eléctrica (1 electricista + 1 ayudante)", "members": {"MO-ELECTRICISTA": 1, "MO-AYUD": 1}}
+  },
+  "insumos": {
+    "MAT-VARILLA": {"description": "Varilla corrugada fy=4200 kg/cm² (n.º 3 al 8)", "unit": "KG", "resource_type": "material"},
+    "MAT-ARMEX-15X15": {"description": "Armadura electrosoldada tipo armex 15×15-4", "unit": "M", "resource_type": "material"},
+    "MAT-CONC200": {"description": "Concreto premezclado f'c=200 kg/cm²", "unit": "M3", "resource_type": "material"},
+    "MAT-CONC300": {"description": "Concreto premezclado f'c=300 kg/cm²", "unit": "M3", "resource_type": "material"},
+    "MAT-BLOCK-PZA": {"description": "Block hueco de concreto 15×20×40 cm", "unit": "PZA", "resource_type": "material"},
+    "MAT-TABIQUE": {"description": "Tabique rojo recocido 7×14×28 cm", "unit": "PZA", "resource_type": "material"},
+    "MAT-CAL": {"description": "Cal hidratada, saco 25 kg", "unit": "KG", "resource_type": "material"},
+    "MAT-DESMOLDANTE": {"description": "Desmoldante para cimbra", "unit": "L", "resource_type": "material"},
+    "MAT-JUNTEADOR": {"description": "Junteador para loseta, saco 10 kg", "unit": "KG", "resource_type": "material"},
+    "MAT-CEMENTO-PVC": {"description": "Cemento para PVC", "unit": "L", "resource_type": "material"},
+    "MAT-SOLDADURA-COBRE": {"description": "Soldadura de estaño 50/50 con fundente", "unit": "KG", "resource_type": "material"},
+    "MAT-TUBO-PVC-SAN-50": {"description": "Tubo de PVC sanitario de 50 mm", "unit": "M", "resource_type": "material"},
+    "MAT-TUBO-PVC-SAN-100": {"description": "Tubo de PVC sanitario de 100 mm", "unit": "M", "resource_type": "material"},
+    "MAT-TUBO-PVC-SAN-150": {"description": "Tubo de PVC sanitario de 150 mm", "unit": "M", "resource_type": "material"},
+    "MAT-TUBO-COBRE-13": {"description": "Tubo de cobre tipo M de 13 mm", "unit": "M", "resource_type": "material"},
+    "MAT-TUBO-COBRE-19": {"description": "Tubo de cobre tipo M de 19 mm", "unit": "M", "resource_type": "material"},
+    "MAT-TUBO-COBRE-25": {"description": "Tubo de cobre tipo M de 25 mm", "unit": "M", "resource_type": "material"},
+    "MAT-TUBO-CPVC-13": {"description": "Tubo de CPVC de 13 mm", "unit": "M", "resource_type": "material"},
+    "MAT-TUBO-CPVC-19": {"description": "Tubo de CPVC de 19 mm", "unit": "M", "resource_type": "material"},
+    "MAT-TUBO-CONDUIT-13": {"description": "Tubo conduit de PVC pesado de 13 mm", "unit": "M", "resource_type": "material"},
+    "MAT-TUBO-CONDUIT-19": {"description": "Tubo conduit de PVC pesado de 19 mm", "unit": "M", "resource_type": "material"},
+    "MAT-TUBO-CONDUIT-25": {"description": "Tubo conduit de PVC pesado de 25 mm", "unit": "M", "resource_type": "material"}
+  },
+  "plantillas": [
+    {
+      "key": "dala-castillo-m",
+      "label": "Dala, cadena o castillo de concreto armado, por metro",
+      "units": ["M"],
+      "match": {"any": ["dala", "cadena", "castillo", "cerramiento"], "not": ["cimbra comun", "acero de refuerzo"]},
+      "vars": {
+        "b": {"formulas": [{"formula": "b_cm", "requires": ["b_cm"]}], "default": 15, "source": "sección 15×20 cm cuando el texto no la dice — {practica}"},
+        "h": {"formulas": [{"formula": "h_cm", "requires": ["h_cm"]}], "default": 20, "source": "sección 15×20 cm cuando el texto no la dice — {practica}"},
+        "kg_acero_m": {"formulas": [{"formula": "3.6 * (b * h) / 300", "requires": []}], "source": "4 varillas n.º 3 + estribos n.º 2 @ 20 cm ≈ 3.6 kg/m para 15×20, escalado por la sección — {suarez}, cap. estructuras de concreto"},
+        "rend": {"default": 12, "source": "colado de dalas y castillos: 12 m por cuadrilla-jornada — {cmic}, concreto en elementos lineales"}
+      },
+      "lines": [
+        {"resource": "MAT-CONC150", "by_fc": {"200": "MAT-CONC200", "250": "MAT-CONC250", "300": "MAT-CONC300"}, "formula": "b * h / 10000 * 1.05", "source": "volumen b×h por metro con 5 % de desperdicio en colado de elementos pequeños — {suarez}"},
+        {"resource": "MAT-VARILLA", "unless_any": ["armex"], "formula": "kg_acero_m * 1.03", "source": "3 % de desperdicio en habilitado — {cmic}"},
+        {"resource": "MAT-ARMEX-15X15", "when_any": ["armex"], "formula": "1.05", "source": "armadura prefabricada con 5 % de traslapes — {practica}"},
+        {"resource": "MAT-ALAMBRE", "unless_any": ["armex"], "formula": "kg_acero_m * 0.02", "source": "2 % del peso del acero en alambre de amarre — {suarez}"},
+        {"resource": "MAT-CIMBRA", "formula": "2 * h / 100", "source": "cimbra por las dos caras: 2h por metro — geometría"},
+        {"resource": "CUAD-ALB-1x1", "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "CUAD-CARP-1x1", "formula": "(2 * h / 100) / 10", "source": "cimbra común: 10 m² por cuadrilla-jornada — {cmic}"},
+        {"resource": "CUAD-FIE-1x1", "unless_any": ["armex"], "formula": "kg_acero_m / 250", "source": "habilitado y armado: 250 kg por cuadrilla-jornada — {cmic}"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "el del colado, que gobierna el frente — {cmic}"}
+    },
+    {
+      "key": "firme-m2",
+      "label": "Firme de concreto hecho en obra, por m²",
+      "units": ["M2"],
+      "match": {"all": ["firme"]},
+      "vars": {
+        "esp": {"formulas": [{"formula": "espesor_cm", "requires": ["espesor_cm"]}, {"formula": "cm", "requires": ["cm"]}], "default": 10, "source": "10 cm cuando el texto no dice el espesor — {practica}"},
+        "fcv": {"formulas": [{"formula": "fc", "requires": ["fc"]}], "default": 150, "source": "f'c=150 kg/cm² cuando el texto no lo dice — {practica}"},
+        "rend": {"default": 30, "source": "firme de 10 cm: 30 m² por cuadrilla-jornada — {cmic}, firmes"}
+      },
+      "lines": [
+        {"resource": "MAT-CEM", "formula": "cemento_ton(fcv) * esp / 100 * 1.03", "source": "cemento por clase de concreto (tabla de proporciones) × espesor, 3 % de desperdicio — {suarez}, concretos hechos en obra"},
+        {"resource": "MAT-ARENA", "formula": "0.55 * esp / 100 * 1.05", "source": "0.55 m³ de arena por m³ de concreto, 5 % de desperdicio — {suarez}"},
+        {"resource": "MAT-GRAVA", "formula": "0.75 * esp / 100 * 1.05", "source": "0.75 m³ de grava por m³ de concreto, 5 % de desperdicio — {suarez}"},
+        {"resource": "MAT-AGUA", "formula": "0.20 * esp / 100", "source": "0.20 m³ de agua por m³ de concreto — {suarez}"},
+        {"resource": "MAT-MALLA66", "when_any": ["malla"], "formula": "1.15", "source": "malla 6×6-10/10 con 15 % de traslapes — {practica}"},
+        {"resource": "CUAD-ALB-1x1", "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "EQ-REVOLVEDORA", "formula": "1 / rend", "source": "una revolvedora por cuadrilla — {practica}"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "{cmic}, firmes"}
+    },
+    {
+      "key": "plantilla-m2",
+      "label": "Plantilla de concreto pobre, por m²",
+      "units": ["M2"],
+      "match": {"all": ["plantilla"]},
+      "vars": {
+        "esp": {"formulas": [{"formula": "espesor_cm", "requires": ["espesor_cm"]}, {"formula": "cm", "requires": ["cm"]}], "default": 5, "source": "5 cm cuando el texto no dice el espesor — {practica}"},
+        "fcv": {"formulas": [{"formula": "fc", "requires": ["fc"]}], "default": 100, "source": "f'c=100 kg/cm² cuando el texto no lo dice — {practica}"},
+        "rend": {"default": 60, "source": "plantilla de 5 cm: 60 m² por cuadrilla-jornada — {cmic}, plantillas"}
+      },
+      "lines": [
+        {"resource": "MAT-CEM", "formula": "cemento_ton(fcv) * esp / 100 * 1.03", "source": "cemento por clase × espesor, 3 % de desperdicio — {suarez}"},
+        {"resource": "MAT-ARENA", "formula": "0.55 * esp / 100 * 1.05", "source": "0.55 m³ por m³ de concreto — {suarez}"},
+        {"resource": "MAT-GRAVA", "formula": "0.75 * esp / 100 * 1.05", "source": "0.75 m³ por m³ de concreto — {suarez}"},
+        {"resource": "MAT-AGUA", "formula": "0.20 * esp / 100", "source": "0.20 m³ por m³ de concreto — {suarez}"},
+        {"resource": "CUAD-ALB-1x1", "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "EQ-REVOLVEDORA", "formula": "1 / rend", "source": "una revolvedora por cuadrilla — {practica}"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "{cmic}, plantillas"}
+    },
+    {
+      "key": "concreto-en-obra-m3",
+      "label": "Concreto hecho en obra, por m³",
+      "units": ["M3"],
+      "match": {"all": ["concreto"], "any": ["hecho en obra", "hecha en obra", "en obra"], "not": ["cimbra comun", "acero de refuerzo"]},
+      "vars": {
+        "fcv": {"formulas": [{"formula": "fc", "requires": ["fc"]}], "default": 150, "source": "f'c=150 kg/cm² cuando el texto no lo dice — {practica}"},
+        "rend": {"by": "elemento", "table": {"columnas": 3, "castillos": 3, "trabes": 4, "contratrabes": 4, "losas": 8, "muros": 6, "zapatas": 5, "firmes": 10, "cimentacion": 6}, "default": 5, "source": "colado con revolvedora por elemento — {cmic}, concreto"}
+      },
+      "lines": [
+        {"resource": "MAT-CEM", "formula": "cemento_ton(fcv) * 1.03", "source": "cemento por clase de concreto (100: 250 kg · 150: 300 · 200: 340 · 250: 380 · 300: 420), 3 % de desperdicio — {suarez}, concretos hechos en obra"},
+        {"resource": "MAT-ARENA", "formula": "0.55 * 1.05", "source": "0.55 m³ de arena por m³, 5 % de desperdicio — {suarez}"},
+        {"resource": "MAT-GRAVA", "formula": "0.75 * 1.05", "source": "0.75 m³ de grava por m³, 5 % de desperdicio — {suarez}"},
+        {"resource": "MAT-AGUA", "formula": "0.20", "source": "0.20 m³ de agua por m³ — {suarez}"},
+        {"resource": "CUAD-ALB-1x1", "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "EQ-REVOLVEDORA", "formula": "1 / rend", "source": "una revolvedora por cuadrilla — {practica}"},
+        {"resource": "EQ-VIBRADOR", "formula": "1 / rend", "source": "un vibrador por cuadrilla — {practica}"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "{cmic}, concreto"}
+    },
+    {
+      "key": "concreto-armado-m3",
+      "label": "Concreto armado por elemento (concreto + acero + cimbra), por m³",
+      "units": ["M3"],
+      "match": {"all": ["concreto"], "any": ["armado", "armada", "castillos"], "not": ["hecho en obra", "hecha en obra", "cimbra comun", "acero de refuerzo"]},
+      "vars": {
+        "kg_acero": {"by": "elemento", "table": {"columnas": 160, "castillos": 160, "trabes": 120, "contratrabes": 120, "losas": 85, "muros": 90, "zapatas": 75, "cimentacion": 90, "pilotes": 100}, "default": 110, "source": "cuantías usuales de acero por elemento (kg/m³) — {suarez}, cap. estructuras de concreto; valor de referencia Klave"},
+        "cimbra_m2_m3": {"formulas": [{"formula": "2 * (b_cm + h_cm) / (b_cm * h_cm) * 100", "requires": ["b_cm", "h_cm"]}, {"formula": "100 / espesor_cm", "requires": ["espesor_cm"]}], "by": "elemento", "table": {"columnas": 9.0, "castillos": 9.0, "trabes": 6.5, "contratrabes": 5.0, "losas": 8.0, "muros": 10.0, "zapatas": 1.2, "cimentacion": 1.5, "pilotes": 0.0}, "default": 6.0, "source": "m² de cimbra por m³: 2(b+h)/(b·h) con la sección, 1/espesor en losas; por elemento cuando el texto no la dice — geometría y {practica}"},
+        "rend": {"by": "elemento", "table": {"columnas": 3, "castillos": 3, "trabes": 4, "contratrabes": 4, "losas": 8, "muros": 6, "zapatas": 5, "cimentacion": 6, "pilotes": 6}, "default": 4, "source": "colado de concreto premezclado por elemento, m³ por cuadrilla-jornada — {cmic}, concreto"}
+      },
+      "lines": [
+        {"resource": "MAT-CONC250", "by_fc": {"150": "MAT-CONC150", "200": "MAT-CONC200", "250": "MAT-CONC250", "300": "MAT-CONC300"}, "formula": "1.03", "source": "3 % de desperdicio en concreto premezclado — {suarez}, concretos"},
+        {"resource": "MAT-VARILLA", "formula": "kg_acero * 1.03", "source": "cuantía por elemento con 3 % de desperdicio en habilitado — {cmic}"},
+        {"resource": "MAT-ALAMBRE", "formula": "kg_acero * 0.02", "source": "2 % del peso del acero en alambre de amarre — {suarez}"},
+        {"resource": "MAT-CIMBRA", "formula": "cimbra_m2_m3", "source": "cimbra de contacto por m³ (ver variable) — geometría"},
+        {"resource": "CUAD-ALB-1x1", "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "CUAD-FIE-1x1", "formula": "kg_acero / 250", "source": "habilitado y armado: 250 kg por cuadrilla-jornada — {cmic}, acero de refuerzo"},
+        {"resource": "CUAD-CARP-1x1", "formula": "cimbra_m2_m3 / 10", "source": "cimbra común: 10 m² por cuadrilla-jornada — {cmic}, cimbra"},
+        {"resource": "EQ-VIBRADOR", "formula": "1 / rend", "source": "un vibrador por cuadrilla de colado — {practica}"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "el del colado, que gobierna el frente — {cmic}"}
+    },
+    {
+      "key": "concreto-simple-m3",
+      "label": "Concreto premezclado colado por elemento, por m³",
+      "units": ["M3"],
+      "match": {"all": ["concreto"], "not": ["cimbra comun", "acero de refuerzo", "muro de block", "excavacion", "relleno"]},
+      "vars": {
+        "rend": {"by": "elemento", "table": {"columnas": 3, "castillos": 3, "trabes": 4, "contratrabes": 4, "losas": 8, "muros": 6, "zapatas": 5, "cimentacion": 6, "pilotes": 6, "firmes": 10}, "default": 4, "source": "colado de concreto premezclado por elemento — {cmic}, concreto"}
+      },
+      "lines": [
+        {"resource": "MAT-CONC250", "by_fc": {"150": "MAT-CONC150", "200": "MAT-CONC200", "250": "MAT-CONC250", "300": "MAT-CONC300"}, "formula": "1.03", "source": "3 % de desperdicio en concreto premezclado — {suarez}, concretos"},
+        {"resource": "CUAD-ALB-1x1", "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "EQ-VIBRADOR", "formula": "1 / rend", "source": "un vibrador por cuadrilla de colado — {practica}"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "{cmic}, concreto"}
+    },
+    {
+      "key": "cimbra-m2",
+      "label": "Cimbra de madera, por m² de contacto",
+      "units": ["M2"],
+      "match": {"any": ["cimbra"]},
+      "vars": {
+        "rend": {"by": "acabado", "table": {"aparente": 8, "comun": 10}, "default": 10, "source": "cimbra común 10 m², aparente 8 m² por cuadrilla-jornada — {cmic}, cimbra"}
+      },
+      "lines": [
+        {"resource": "MAT-MADERA", "formula": "1.75", "source": "7 pies-tabla por m² a 4 usos — {suarez}, cimbras"},
+        {"resource": "MAT-CLAVO", "formula": "0.10", "source": "0.10 kg de clavo por m² — {suarez}"},
+        {"resource": "MAT-ALAMBRE", "formula": "0.05", "source": "0.05 kg de alambre por m² — {practica}"},
+        {"resource": "MAT-DESMOLDANTE", "formula": "0.05", "source": "0.05 L de desmoldante por m² — {practica}"},
+        {"resource": "CUAD-CARP-1x1", "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "{cmic}, cimbra"}
+    },
+    {
+      "key": "acero-refuerzo-ton",
+      "label": "Acero de refuerzo habilitado y armado",
+      "units": ["TON", "KG"],
+      "unit_scale": {"TON": 1.0, "KG": 0.001},
+      "match": {"any": ["acero de refuerzo", "varilla", "acero fy"]},
+      "vars": {
+        "rend": {"default": 0.25, "source": "habilitado y armado: 250 kg por cuadrilla-jornada — {cmic}, acero de refuerzo"}
+      },
+      "lines": [
+        {"resource": "MAT-VARILLA", "formula": "1000 * 1.03", "source": "3 % de desperdicio en habilitado — {cmic}"},
+        {"resource": "MAT-ALAMBRE", "formula": "20", "source": "2 % del peso del acero en alambre de amarre — {suarez}"},
+        {"resource": "CUAD-FIE-1x1", "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "{cmic}, acero de refuerzo"}
+    },
+    {
+      "key": "mamposteria-m2",
+      "label": "Muro de block o tabique junteado con mortero, por m²",
+      "units": ["M2"],
+      "match": {"all": ["muro"], "any": ["block", "tabique", "ladrillo", "tabicon"], "not": ["aplanado", "pintura"]},
+      "vars": {
+        "piezas": {"by": "material", "table": {"block": 12.5, "tabique": 56, "tabicon": 22}, "default": 12.5, "source": "block 15×20×40: 12.5 pza/m²; tabique 7×14×28 a soga: 56 pza/m²; tabicón 10×14×28: 22 pza/m² — geometría con junta de 1 cm"},
+        "mortero": {"by": "material", "table": {"block": 0.025, "tabique": 0.035, "tabicon": 0.03}, "default": 0.025, "source": "mortero por m² según pieza — {suarez}, mampostería"},
+        "rend": {"by": "material", "table": {"block": 9, "tabique": 8, "tabicon": 9}, "default": 9, "source": "muro de block 9 m², de tabique 8 m² por cuadrilla-jornada — {cmic}, muros"}
+      },
+      "lines": [
+        {"resource": "MAT-BLOCK-PZA", "by_material": {"block": "MAT-BLOCK-PZA", "tabique": "MAT-TABIQUE", "tabicon": "MAT-BLOCK-PZA"}, "formula": "piezas * 1.05", "source": "piezas por m² con 5 % de desperdicio — {practica}"},
+        {"resource": "MAT-MORTERO", "formula": "mortero * 1.10", "source": "mortero por m² con 10 % de desperdicio — {suarez}"},
+        {"resource": "CUAD-ALB-1x1", "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "{cmic}, muros"}
+    },
+    {
+      "key": "aplanado-m2",
+      "label": "Aplanado o repellado de mortero, por m²",
+      "units": ["M2"],
+      "match": {"any": ["aplanado", "repellado", "emboquillado"]},
+      "vars": {
+        "esp": {"formulas": [{"formula": "espesor_cm", "requires": ["espesor_cm"]}], "default": 1.5, "source": "1.5 cm cuando el texto no dice el espesor — {practica}"},
+        "rend": {"by": "acabado", "table": {"fino": 12, "rustico": 16, "comun": 14}, "default": 12, "source": "aplanado fino 12 m², rústico 16 m² por cuadrilla-jornada — {cmic}, aplanados"}
+      },
+      "lines": [
+        {"resource": "MAT-MORTERO", "formula": "esp / 100 * 1.30", "source": "espesor × 1.30 por rugosidad y desperdicio — {suarez}, aplanados"},
+        {"resource": "MAT-AGUA", "formula": "0.01", "source": "curado — {practica}"},
+        {"resource": "CUAD-ALB-1x1", "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "{cmic}, aplanados"}
+    },
+    {
+      "key": "pintura-m2",
+      "label": "Pintura vinílica a dos manos, por m²",
+      "units": ["M2"],
+      "match": {"any": ["pintura", "pintado"]},
+      "vars": {
+        "rend": {"by": "elemento", "table": {"muros": 40, "plafones": 35}, "default": 40, "source": "pintura vinílica a dos manos: 40 m² en muros, 35 m² en plafones por cuadrilla-jornada — {cmic}, pintura"}
+      },
+      "lines": [
+        {"resource": "MAT-PINTURA", "formula": "0.22", "source": "rendimiento de 9 m²/L por mano, dos manos — ficha técnica usual de vinílica; {practica}"},
+        {"resource": "MAT-SELLADOR", "formula": "0.10", "source": "sellador 5×1: 0.10 L/m² — {practica}"},
+        {"resource": "CUAD-PINT-1x1", "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "{cmic}, pintura"}
+    },
+    {
+      "key": "plafon-yeso-m2",
+      "label": "Plafón o aplanado de yeso, por m²",
+      "units": ["M2"],
+      "match": {"any": ["yeso"]},
+      "vars": {
+        "rend": {"default": 14, "source": "yeso en plafón, acabado fino: 14 m² por cuadrilla-jornada — {cmic}, yesería"}
+      },
+      "lines": [
+        {"resource": "MAT-YESO", "formula": "12", "source": "12 kg/m² para 1.5 cm de espesor — {suarez}, yesería"},
+        {"resource": "MAT-AGUA", "formula": "0.01", "source": "amasado — {practica}"},
+        {"resource": "CUAD-YES-1x1", "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "{cmic}, yesería"}
+    },
+    {
+      "key": "piso-loseta-m2",
+      "label": "Piso de loseta asentada con adhesivo, por m²",
+      "units": ["M2"],
+      "match": {"any": ["loseta", "azulejo", "porcelanato"]},
+      "vars": {
+        "rend": {"default": 12, "source": "loseta 60×60 con adhesivo: 12 m² por cuadrilla-jornada — {cmic}, pisos"}
+      },
+      "lines": [
+        {"resource": "MAT-PISO-CER", "formula": "1.05", "source": "5 % de desperdicio en cortes — {practica}"},
+        {"resource": "MAT-ADHESIVO", "formula": "5", "source": "5 kg/m² de adhesivo base cemento — ficha técnica usual; {practica}"},
+        {"resource": "MAT-JUNTEADOR", "formula": "0.5", "source": "0.5 kg/m² de junteador para junta de 3 mm — {practica}"},
+        {"resource": "CUAD-ALB-1x1", "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "{cmic}, pisos"}
+    },
+    {
+      "key": "excavacion-m3",
+      "label": "Excavación en cepas o cajones, por m³",
+      "units": ["M3"],
+      "match": {"any": ["excavacion"]},
+      "vars": {
+        "rend_maq": {"default": 200, "source": "retroexcavadora 415F: 25 m³/h, 8 h — {practica}"},
+        "rend_mano": {"default": 4.4, "source": "excavación a mano en material B: 2.2 m³ por peón-jornada — {cmic}, excavaciones"}
+      },
+      "lines": [
+        {"resource": "EQ-RETRO", "when_any": ["mecanic", "maquina", "retro"], "formula": "8 / rend_maq", "source": "horas de retroexcavadora = 8 / rendimiento diario"},
+        {"resource": "MO-PEON", "when_any": ["mecanic", "maquina", "retro"], "formula": "0.05", "source": "un peón de apoyo y afine por cada 20 m³ — {practica}"},
+        {"resource": "CUAD-PEON-2", "unless_any": ["mecanic", "maquina", "retro"], "formula": "1 / rend_mano", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend_maq", "source": "{practica}"}
+    },
+    {
+      "key": "relleno-m3",
+      "label": "Relleno compactado en capas, por m³",
+      "units": ["M3"],
+      "match": {"any": ["relleno"]},
+      "vars": {
+        "rend": {"default": 20, "source": "relleno compactado con bailarina en capas de 20 cm: 20 m³ por cuadrilla-jornada — {cmic}, rellenos"}
+      },
+      "lines": [
+        {"resource": "MAT-TEPETATE", "when_any": ["tepetate", "banco"], "formula": "1.25", "source": "abundamiento y compactación: 1.25 m³ sueltos por m³ compacto — {suarez}, terracerías"},
+        {"resource": "MAT-AGUA", "formula": "0.15", "source": "humedad óptima — {practica}"},
+        {"resource": "CUAD-PEON-2", "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "EQ-BAILARINA", "formula": "1 / rend", "source": "una bailarina por cuadrilla — {practica}"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "{cmic}, rellenos"}
+    },
+    {
+      "key": "acarreo-m3",
+      "label": "Acarreo de material en camión, por m³",
+      "units": ["M3"],
+      "match": {"any": ["acarreo"]},
+      "vars": {
+        "rend": {"default": 50, "source": "carga a mano y acarreo en camión de 7 m³ — {practica}"}
+      },
+      "lines": [
+        {"resource": "EQ-CAMION", "formula": "1 / 7 * 1.30", "source": "viajes de 7 m³ con 30 % de abundamiento — {suarez}, terracerías"},
+        {"resource": "MO-PEON", "formula": "0.06", "source": "carga a mano: 16 m³ por peón-jornada — {cmic}"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "{practica}"}
+    },
+    {
+      "key": "trazo-m2",
+      "label": "Trazo y nivelación con equipo topográfico, por m²",
+      "units": ["M2"],
+      "match": {"any": ["trazo"]},
+      "vars": {
+        "rend": {"default": 500, "source": "trazo con equipo topográfico: 500 m² por jornada — {practica}"}
+      },
+      "lines": [
+        {"resource": "MAT-CAL", "formula": "0.05", "source": "0.05 kg de cal por m² para marcar — {practica}"},
+        {"resource": "EQ-TOPOGRAFIA", "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "CUAD-PEON-2", "formula": "1 / rend", "source": "dos peones con el topógrafo — {practica}"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "{practica}"}
+    },
+    {
+      "key": "tuberia-m",
+      "label": "Tubería instalada, por metro",
+      "units": ["M"],
+      "match": {"any": ["tuberia", "tubo", "canalizacion"]},
+      "vars": {
+        "rend": {"by": "material", "table": {"PVC-SAN": 25, "CPVC": 30, "COBRE": 30, "CONDUIT": 40}, "default": 25, "source": "instalación de tubería por material, m por cuadrilla-jornada — {cmic}, instalaciones"}
+      },
+      "lines": [
+        {"resource": "MAT-TUBO-PVC-SAN-100", "template": "MAT-TUBO-{material}-{diam_mm}", "template_description": "Tubo de {material_label} de {diam_mm} mm", "formula": "1.05", "source": "5 % de desperdicio en cortes — {practica}"},
+        {"resource": "MAT-CEMENTO-PVC", "materials": ["PVC-SAN", "CPVC", "CONDUIT"], "formula": "0.02", "source": "0.02 L por metro en uniones cementadas — {practica}"},
+        {"resource": "MAT-SOLDADURA-COBRE", "materials": ["COBRE"], "formula": "0.01", "source": "0.01 kg de soldadura por metro — {practica}"},
+        {"resource": "CUAD-PLOM-1x1", "materials": ["PVC-SAN", "CPVC", "COBRE"], "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "CUAD-ELEC-1x1", "materials": ["CONDUIT"], "formula": "1 / rend", "source": "jornadas = 1 / rendimiento"},
+        {"resource": "EQ-HERRAMIENTA", "formula": "1", "source": "herramienta menor: 3 % de la mano de obra — {practica}"}
+      ],
+      "rendimiento": {"formula": "rend", "source": "{cmic}, instalaciones"}
+    }
+  ]
+}
