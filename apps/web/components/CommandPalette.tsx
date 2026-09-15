@@ -41,6 +41,13 @@ function destinos(base: string): Destino[] {
       href: "/catalogo?tab=insumos",
     },
     {
+      key: "matrices-generar",
+      label: "Matrices: generar las que faltan y validar contra el precio publicado",
+      grupo: "Catálogo",
+      icon: <Books size={16} />,
+      href: "/catalogo?tab=conceptos",
+    },
+    {
       key: "base",
       label: "Base de precios: buscar en las publicaciones",
       grupo: "Catálogo",

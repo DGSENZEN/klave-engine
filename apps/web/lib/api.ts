@@ -2338,6 +2338,8 @@ export type ApuLineDetail = {
   resource_type: string;
   kind: "insumo" | "basico" | "cuadrilla";
   sub_analysis: ApuDetail | null;
+  /** De dónde sale la cantidad (una matriz generada la trae por línea). */
+  source?: string;
 };
 
 export type ApuDetail = {
@@ -2432,11 +2434,70 @@ export type CatalogConcept = {
   origin?: "oficial" | "importada" | "generada" | "taller";
   origin_ref?: string;
   variant_of?: string | null;
-  validation?: { verdict?: string; deviation_pct?: number; reference_price?: number } | null;
+  validation?: MatrixValidation | null;
   touched_by?: string | null;
 };
 
-export type ApuComponent = { resource_code: string; quantity: number };
+/** El veredicto de una matriz contra el precio publicado que le corresponde. */
+export type MatrixValidation = {
+  verdict: "validada" | "fuera_de_rango" | "sin_referencia";
+  direct_cost: number;
+  deviation_pct: number | null;
+  reference_ref_id: number | null;
+  reference_clave: string;
+  reference_source: string;
+  reference_price: number | null;
+  tolerance_pct: number;
+  score: number | null;
+  at: string;
+};
+
+export type ApuComponent = { resource_code: string; quantity: number; source?: string };
+
+export type GenerationResult = {
+  code: string;
+  plantilla: string;
+  plantilla_label: string;
+  lines: number;
+  insumos_creados: string[];
+  precios_de_referencia: string[];
+  cuadrillas_creadas: string[];
+  labor_aplicada: boolean;
+  rendimiento: number;
+  rendimiento_source: string;
+  validation: MatrixValidation | null;
+  problems: string[];
+};
+
+export const generateMatrix = (code: string, force: boolean, actor?: string) =>
+  postJSON<GenerationResult>(
+    `/catalog/concepts/${encodeURIComponent(code)}/generar`,
+    { force },
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export const generateMissingMatrices = (actor?: string) =>
+  postJSON<{
+    generated: { code: string; plantilla: string; verdict: string | null; problems: string[] }[];
+    skipped: { code: string; reason: string }[];
+  }>("/catalog/matrices/generar-faltantes", {}, actor ? { "X-Actor": actor } : undefined);
+
+export const validateMatrix = (code: string) =>
+  postJSON<MatrixValidation>(`/catalog/concepts/${encodeURIComponent(code)}/validar`, {});
+
+export const validateGeneratedMatrices = () =>
+  postJSON<{ validated: number; verdicts: Record<string, number>; problems: string[] }>(
+    "/catalog/matrices/validar",
+    {},
+  );
+
+export const getValidationSettings = () =>
+  getJSON<{ tolerance_pct: number }>("/catalog/matrices/validacion");
+
+export const putValidationSettings = (tolerancePct: number) =>
+  putJSON<{ tolerance_pct: number }>("/catalog/matrices/validacion", {
+    tolerance_pct: tolerancePct,
+  });
 
 export type CatalogState = {
   insumos: CatalogInsumo[];

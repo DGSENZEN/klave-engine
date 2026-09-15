@@ -8,6 +8,7 @@ import {
   Crane,
   DownloadSimple,
   HardHat,
+  MagicWand,
   MagnifyingGlass,
   Trash,
   UploadSimple,
@@ -43,6 +44,13 @@ import {
   updateApu,
   updateInsumo,
   updateRendimiento,
+  generateMatrix,
+  generateMissingMatrices,
+  validateMatrix,
+  validateGeneratedMatrices,
+  getValidationSettings,
+  putValidationSettings,
+  type MatrixValidation,
   type ApuComponent,
   type CatalogConcept,
   type CatalogInsumo,
@@ -419,6 +427,7 @@ export default function CatalogoPage() {
               catalog={catalog}
               onChanged={reload}
               onError={setError}
+              onNotice={setNotice}
               onGoToBase={() => setTab("fuentes")}
             />
             <div className="mt-8">
@@ -1016,11 +1025,13 @@ function ApusSection({
   catalog,
   onChanged,
   onError,
+  onNotice,
   onGoToBase,
 }: {
   catalog: CatalogState;
   onChanged: () => void;
   onError: (message: string) => void;
+  onNotice: (message: string) => void;
   onGoToBase: () => void;
 }) {
   // Varios conceptos abiertos a la vez: la matriz es un renglón hijo de la
@@ -1058,6 +1069,95 @@ function ApusSection({
       else next.add(code);
       return next;
     });
+  }
+
+  // Lo que falta y lo que ya se validó: la generación no vive en un botón
+  // del encabezado sino en el aviso que sólo existe mientras haya huecos.
+  const sinMatriz = useMemo(
+    () =>
+      catalog.concepts.filter(
+        (c) => (catalog.apus[c.code]?.length ?? 0) === 0 && c.price_override == null,
+      ),
+    [catalog],
+  );
+  const veredictos = useMemo(() => {
+    const counts = { validada: 0, fuera_de_rango: 0, sin_referencia: 0 };
+    for (const c of catalog.concepts) {
+      const v = c.validation?.verdict;
+      if (v && v in counts) counts[v as keyof typeof counts] += 1;
+    }
+    return counts;
+  }, [catalog]);
+  const validadasTotal = veredictos.validada + veredictos.fuera_de_rango + veredictos.sin_referencia;
+  const [tolerance, setTolerance] = useState<string>("");
+  const [working, setWorking] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const handle = window.setTimeout(() => {
+      getValidationSettings()
+        .then((v) => active && setTolerance(String(v.tolerance_pct)))
+        .catch(() => active && setTolerance("15"));
+    }, 0);
+    return () => {
+      active = false;
+      window.clearTimeout(handle);
+    };
+  }, []);
+
+  async function commitTolerance() {
+    const value = Number(tolerance);
+    if (!(value > 0 && value <= 100)) return;
+    try {
+      const saved = await putValidationSettings(value);
+      setTolerance(String(saved.tolerance_pct));
+      onNotice(`Tolerancia de validación ±${saved.tolerance_pct} %; los veredictos se recalcularon`);
+      onChanged();
+    } catch (e) {
+      onError(apiMessage(e, "No se pudo guardar la tolerancia."));
+    }
+  }
+
+  async function generateAll() {
+    setWorking(true);
+    try {
+      const result = await generateMissingMatrices(getBrowserActor());
+      const skipped = result.skipped.length
+        ? ` · sin plantilla: ${result.skipped
+            .slice(0, 4)
+            .map((s) => s.code)
+            .join(", ")}${result.skipped.length > 4 ? ` y ${result.skipped.length - 4} más` : ""}`
+        : "";
+      const conProblemas = result.generated.filter((g) => g.problems.length).length;
+      onNotice(
+        `${result.generated.length} matrices generadas${
+          conProblemas ? ` (${conProblemas} con insumos sin precio)` : ""
+        }${skipped}`,
+      );
+      onChanged();
+    } catch (e) {
+      onError(apiMessage(e, "No se pudieron generar las matrices."));
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function validateAll() {
+    setWorking(true);
+    try {
+      const result = await validateGeneratedMatrices();
+      onNotice(
+        `${result.validated} matrices validadas: ${result.verdicts.validada ?? 0} dentro de la tolerancia, ${
+          result.verdicts.fuera_de_rango ?? 0
+        } fuera de rango, ${result.verdicts.sin_referencia ?? 0} sin referencia${
+          result.problems.length ? ` · ${result.problems.length} sin precio` : ""
+        }`,
+      );
+      onChanged();
+    } catch (e) {
+      onError(apiMessage(e, "No se pudieron validar las matrices."));
+    } finally {
+      setWorking(false);
+    }
   }
 
   // El teclado de OPUS: ↑↓ recorren la hoja, Enter o → abren la matriz,
@@ -1157,6 +1257,56 @@ function ApusSection({
           </Callout>
         </div>
       )}
+      {sinMatriz.length > 0 && (
+        <div className="mb-4">
+          <Callout
+            tone="info"
+            action={
+              <Button size="sm" variant="primary" disabled={working} onClick={generateAll}>
+                <MagicWand size={14} weight="bold" /> Generar las que faltan ({sinMatriz.length})
+              </Button>
+            }
+          >
+            {sinMatriz.length === 1
+              ? "Un concepto no tiene matriz ni precio adoptado."
+              : `${sinMatriz.length} conceptos no tienen matriz ni precio adoptado.`}{" "}
+            Una matriz generada sale de la plantilla de su familia, cada línea dice de dónde
+            viene y el veredicto contra el precio publicado queda en la fila; lo que ninguna
+            plantilla reconoce se queda como está y se dice.
+          </Callout>
+        </div>
+      )}
+      {validadasTotal > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+          <span className="microlabel">Validación</span>
+          <span>
+            <Badge tone="success">{veredictos.validada} validadas</Badge>{" "}
+            <Badge tone="warning">{veredictos.fuera_de_rango} fuera de rango</Badge>{" "}
+            <Badge tone="default">{veredictos.sin_referencia} sin referencia</Badge>
+          </span>
+          <label className="flex items-center gap-1">
+            tolerancia ±
+            <Input
+              type="number"
+              step="any"
+              min={0.5}
+              max={100}
+              value={tolerance}
+              onChange={(e) => setTolerance(e.target.value)}
+              onBlur={commitTolerance}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+              }}
+              aria-label="Tolerancia de validación en porcentaje"
+              className="w-16 px-2 py-0.5 text-right tabular"
+            />
+            %
+          </label>
+          <Button size="sm" variant="ghost" disabled={working} onClick={validateAll}>
+            Validar de nuevo
+          </Button>
+        </div>
+      )}
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -1185,6 +1335,7 @@ function ApusSection({
                   onCreating={(value) => setCreatingIn(value ? phase : null)}
                   onChanged={onChanged}
                   onError={onError}
+                  onNotice={onNotice}
                 />
               ))}
             </tbody>
@@ -1207,6 +1358,7 @@ function PhaseRows({
   onCreating,
   onChanged,
   onError,
+  onNotice,
 }: {
   phase: string;
   concepts: CatalogConcept[];
@@ -1219,6 +1371,7 @@ function PhaseRows({
   onCreating: (value: boolean) => void;
   onChanged: () => void;
   onError: (message: string) => void;
+  onNotice: (message: string) => void;
 }) {
   return (
     <>
@@ -1265,6 +1418,7 @@ function PhaseRows({
           onToggle={() => onToggle(concept.code)}
           onChanged={onChanged}
           onError={onError}
+          onNotice={onNotice}
         />
       ))}
     </>
@@ -1479,6 +1633,50 @@ function directUnitCost(
  * su lugar, cada celda guarda al salir (sin botón de guardar) y el recurso
  * nuevo se busca tecleando. Quitar aparece al pasar el cursor.
  */
+function signed(pct: number | null | undefined): string {
+  if (pct == null) return "—";
+  return `${pct > 0 ? "+" : ""}${pct.toFixed(1)} %`;
+}
+
+/**
+ * El veredicto de una matriz contra el precio publicado: validada, fuera de
+ * rango (con la desviación) o sin referencia. El detalle — qué renglón, qué
+ * publicación, cuánto — va en el título, no en la fila.
+ */
+function VeredictoBadge({ validation }: { validation?: MatrixValidation | null }) {
+  if (!validation) return null;
+  const tone =
+    validation.verdict === "validada"
+      ? "success"
+      : validation.verdict === "fuera_de_rango"
+        ? "warning"
+        : "default";
+  const label =
+    validation.verdict === "validada"
+      ? "Validada"
+      : validation.verdict === "fuera_de_rango"
+        ? "Fuera de rango"
+        : "Sin referencia";
+  const pct = validation.deviation_pct == null ? "" : ` · ${signed(validation.deviation_pct)}`;
+  const title = validation.reference_clave
+    ? `${validation.reference_source} · ${validation.reference_clave}: ${money2(
+        validation.reference_price ?? 0,
+      )} publicado contra ${money2(validation.direct_cost)} de la matriz · tolerancia ±${
+        validation.tolerance_pct
+      } %`
+    : `Ningún renglón publicado corresponde a este concepto (costo directo ${money2(
+        validation.direct_cost,
+      )})`;
+  return (
+    <span title={title}>
+      <Badge tone={tone}>
+        {label}
+        {pct}
+      </Badge>
+    </span>
+  );
+}
+
 function ConceptRows({
   concept,
   components,
@@ -1490,6 +1688,7 @@ function ConceptRows({
   onToggle,
   onChanged,
   onError,
+  onNotice,
 }: {
   concept: CatalogConcept;
   components: ApuComponent[];
@@ -1501,6 +1700,7 @@ function ConceptRows({
   onToggle: () => void;
   onChanged: () => void;
   onError: (message: string) => void;
+  onNotice: (message: string) => void;
 }) {
   const [draft, setDraft] = useState<ApuComponent[]>(components);
   // Un básico o cuadrilla en la matriz se despliega en su lugar, de solo
@@ -1591,6 +1791,59 @@ function ConceptRows({
 
   const preview = directUnitCost(draft, insumos);
   const enMatriz = new Set(draft.map((component) => component.resource_code));
+  const generada =
+    concept.origin === "generada" && (concept.origin_ref ?? "").startsWith("generada · plantilla");
+
+  async function runGenerate(force: boolean) {
+    setBusy(true);
+    try {
+      const result = await generateMatrix(concept.code, force, getBrowserActor());
+      const verdict = result.validation
+        ? result.validation.verdict === "validada"
+          ? `validada (${signed(result.validation.deviation_pct)} contra ${result.validation.reference_clave})`
+          : result.validation.verdict === "fuera_de_rango"
+            ? `fuera de rango (${signed(result.validation.deviation_pct)} contra ${result.validation.reference_clave})`
+            : "sin referencia publicada"
+        : "sin costear";
+      const extras = [
+        result.cuadrillas_creadas.length ? `${result.cuadrillas_creadas.length} cuadrillas nuevas` : "",
+        result.precios_de_referencia.length
+          ? `${result.precios_de_referencia.length} insumos con precio de referencia por validar`
+          : "",
+        result.labor_aplicada ? "salario real aplicado con los parámetros por defecto" : "",
+        ...result.problems,
+      ].filter(Boolean);
+      onNotice(
+        `${concept.code}: matriz generada con la plantilla «${result.plantilla_label}» (${result.lines} líneas), ${verdict}${
+          extras.length ? ` · ${extras.join(" · ")}` : ""
+        }`,
+      );
+      onChanged();
+    } catch (e) {
+      onError(apiMessage(e, `No se pudo generar la matriz de ${concept.code}.`));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runValidate() {
+    setBusy(true);
+    try {
+      const v = await validateMatrix(concept.code);
+      onNotice(
+        v.verdict === "sin_referencia"
+          ? `${concept.code}: ningún renglón publicado corresponde (costo directo ${money2(v.direct_cost)})`
+          : `${concept.code}: ${v.verdict === "validada" ? "validada" : "fuera de rango"}, ${signed(
+              v.deviation_pct,
+            )} contra ${v.reference_clave} (${v.reference_source}, ${money2(v.reference_price ?? 0)})`,
+      );
+      onChanged();
+    } catch (e) {
+      onError(apiMessage(e, `No se pudo validar ${concept.code}.`));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <>
@@ -1620,7 +1873,8 @@ function ConceptRows({
                 origin={concept.origin}
                 originRef={concept.origin_ref}
                 verdict={concept.validation?.verdict}
-              />
+              />{" "}
+              <VeredictoBadge validation={concept.validation} />
               {concept.price_override != null && (
                 <Badge tone="warning">
                   P.U. de {concept.price_source} · {concept.price_clave}
@@ -1682,6 +1936,29 @@ function ConceptRows({
           </td>
         </tr>
       )}
+      {open && draft.length === 0 && concept.price_override == null && (
+        <tr className="border-b border-border bg-surface-2/20">
+          <td colSpan={4} className="px-5 py-2 text-sm">
+            <div className="flex flex-wrap items-center gap-3 pl-6">
+              <span className="min-w-0 flex-1 text-muted">
+                Sin matriz. Genera una desde la plantilla de su familia: cada línea dirá de dónde
+                sale y el veredicto contra el precio publicado quedará en la fila.
+              </span>
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={busy}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void runGenerate(false);
+                }}
+              >
+                <MagicWand size={14} weight="bold" /> Generar matriz
+              </Button>
+            </div>
+          </td>
+        </tr>
+      )}
       {open &&
         draft.map((component) => {
           const insumo = byCode.get(component.resource_code);
@@ -1729,6 +2006,9 @@ function ConceptRows({
                         {" "}
                         <Badge tone="accent">{insumo.kind === "cuadrilla" ? "cuadrilla" : "básico"}</Badge>
                       </>
+                    )}
+                    {component.source && (
+                      <div className="text-[11px] text-faint">{component.source}</div>
                     )}
                   </div>
                   <button
@@ -1804,13 +2084,31 @@ function ConceptRows({
       {open && (
         <tr className="border-b border-border bg-surface-2/20">
           <Td className="px-5">
-            <div className="pl-6">
-              <InsumoSearch
-                insumos={insumos}
-                exclude={enMatriz}
-                placeholder="+ recurso (teclea para buscar)…"
-                onPick={addComponent}
-              />
+            <div className="flex items-center gap-2 pl-6">
+              <div className="min-w-0 flex-1">
+                <InsumoSearch
+                  insumos={insumos}
+                  exclude={enMatriz}
+                  placeholder="+ recurso (teclea para buscar)…"
+                  onPick={addComponent}
+                />
+              </div>
+              {generada && draft.length > 0 && (
+                <>
+                  <Button size="sm" variant="ghost" disabled={busy} onClick={runValidate}>
+                    Validar de nuevo
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => void runGenerate(false)}
+                    title="Vuelve a derivar la matriz de la plantilla; lo editado a mano se pierde."
+                  >
+                    Regenerar
+                  </Button>
+                </>
+              )}
             </div>
           </Td>
           <Td align="right" colSpan={2}>
