@@ -111,3 +111,33 @@ def test_insumo_uses_reports_concepts_and_basicos(store):
     assert uses["concepts"][0]["code"] == "EMC-TEST"
     assert uses["concepts"][0]["quantity"] == 2.5
     assert 0 < uses["concepts"][0]["share"] < 1
+
+
+def test_cuadrilla_endpoints(store, monkeypatch):
+    from fastapi.testclient import TestClient
+    from klave_engine.common import config as config_module
+
+    from apps.api.main import create_app
+
+    config_module.get_settings.cache_clear()
+    client = TestClient(create_app())
+    created = client.post(
+        "/catalog/insumos",
+        json={"code": "CUAD-1A2P", "description": "1 albañil + 2 peones", "unit": "JOR",
+              "resource_type": "mano_de_obra", "unit_cost": 1.0, "kind": "cuadrilla",
+              "components": [{"resource_code": "MO-SOLD", "quantity": 1},
+                             {"resource_code": "MO-AYU", "quantity": 2}]},
+        headers={"X-Actor": "Diego"},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["kind"] == "cuadrilla"
+    assert created.json()["unit_cost"] == pytest.approx(1748.2 + 2 * 1113.01)
+    saved = client.put(
+        "/catalog/insumos/CUAD-1A2P/matriz",
+        json={"components": [{"resource_code": "MO-SOLD", "quantity": 2}]},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["unit_cost"] == pytest.approx(2 * 1748.2)
+    apu = client.get("/catalog/apus/EMC-TEST").json()
+    line = next(row for row in apu["lines"] if row["resource_code"] == "CUAD-1S2E")
+    assert line["kind"] == "cuadrilla" and len(line["sub_analysis"]["lines"]) == 2

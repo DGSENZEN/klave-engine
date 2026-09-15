@@ -2324,7 +2324,95 @@ export type CatalogInsumo = {
   /** De qué capa viene: oficial · importada · generada · taller. */
   origin?: "oficial" | "importada" | "generada" | "taller";
   origin_ref?: string;
+  /** Un básico o una cuadrilla trae su propia matriz (en `apus[code]`). */
+  kind?: "insumo" | "basico" | "cuadrilla";
 };
+
+export type ApuLineDetail = {
+  resource_code: string;
+  description: string;
+  unit: string;
+  quantity: number;
+  unit_cost: number;
+  amount: number;
+  resource_type: string;
+  kind: "insumo" | "basico" | "cuadrilla";
+  sub_analysis: ApuDetail | null;
+};
+
+export type ApuDetail = {
+  concept_code: string;
+  concept_description: string;
+  unit: string;
+  lines: ApuLineDetail[];
+  breakdown: Record<string, number>;
+  direct_unit_cost: number;
+  price_source: string | null;
+};
+
+export const getApu = (code: string) =>
+  getJSON<ApuDetail>(`/catalog/apus/${encodeURIComponent(code)}`);
+
+export type InsumoUses = {
+  code: string;
+  concepts: { code: string; description: string; unit: string; quantity: number; amount: number; share: number | null }[];
+  basicos: { code: string; description: string; quantity: number; amount: number }[];
+};
+
+export const insumoUses = (code: string) =>
+  getJSON<InsumoUses>(`/catalog/insumos/${encodeURIComponent(code)}/uso`);
+
+export const adjustPrices = (
+  body: { codes?: string[]; pct: number; resource_type?: string; source?: string; vigencia?: string },
+  actor?: string,
+) =>
+  postJSON<{ adjustment_id: number; adjusted: number; pct: number }>(
+    "/catalog/insumos/ajuste",
+    body,
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export type PriceAdjustment = {
+  adjustment_id: number;
+  kind: "ajuste" | "sustitucion";
+  at: string;
+  actor: string;
+  params: Record<string, unknown>;
+  rows: number;
+  undone_at: string | null;
+};
+
+export const listAdjustments = () =>
+  getJSON<{ adjustments: PriceAdjustment[] }>("/catalog/insumos/ajustes").then((r) => r.adjustments);
+
+export const undoAdjustment = (id: number, actor?: string) =>
+  deleteJSON<{ adjustment_id: number; restored: number; kind: string }>(
+    `/catalog/insumos/ajustes/${id}`,
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export const replaceInsumo = (
+  code: string,
+  replacement: string,
+  actor?: string,
+  conceptCodes?: string[],
+) =>
+  postJSON<{ adjustment_id: number; affected: string[]; old: string; new: string }>(
+    `/catalog/insumos/${encodeURIComponent(code)}/sustituir`,
+    { replacement, concept_codes: conceptCodes },
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export const setBasicoComponents = (
+  code: string,
+  components: { resource_code: string; quantity: number }[],
+  actor?: string,
+) =>
+  putJSON<CatalogInsumo>(
+    `/catalog/insumos/${encodeURIComponent(code)}/matriz`,
+    { components },
+    actor ? { "X-Actor": actor } : undefined,
+  );
 
 export type CatalogConcept = {
   code: string;
@@ -2377,7 +2465,7 @@ export const createInsumo = (
   insumo: Pick<
     CatalogInsumo,
     "code" | "description" | "unit" | "resource_type" | "unit_cost" | "source"
-  >,
+  > & { kind?: "insumo" | "basico" | "cuadrilla"; components?: ApuComponent[] },
   actor?: string,
 ) =>
   postJSON<CatalogInsumo>("/catalog/insumos", insumo, {

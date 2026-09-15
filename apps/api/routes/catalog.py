@@ -108,6 +108,7 @@ def get_catalog(request: Request, settings: Settings = Depends(get_settings)) ->
 
 
 class InsumoUpdate(BaseModel):
+    kind: Literal["insumo", "basico", "cuadrilla"] | None = None
     description: str | None = Field(default=None, min_length=1, max_length=200)
     unit: str | None = Field(default=None, min_length=1, max_length=12)
     resource_type: str | None = None
@@ -135,6 +136,11 @@ class ConceptUpdate(BaseModel):
     active: bool | None = None
 
 
+class ApuComponentInput(BaseModel):
+    resource_code: str
+    quantity: float = Field(gt=0)
+
+
 class InsumoCreate(BaseModel):
     code: str = Field(min_length=2, max_length=40, pattern=r"^[A-Za-z0-9._-]+$")
     description: str = Field(min_length=1, max_length=200)
@@ -142,11 +148,9 @@ class InsumoCreate(BaseModel):
     resource_type: str
     unit_cost: float = Field(gt=0)
     source: str = Field(default="", max_length=200)
-
-
-class ApuComponentInput(BaseModel):
-    resource_code: str
-    quantity: float = Field(gt=0)
+    kind: Literal["insumo", "basico", "cuadrilla"] = "insumo"
+    # La matriz de un básico o cuadrilla, cuando nace con ella.
+    components: list[ApuComponentInput] | None = None
 
 
 class ApuUpdate(BaseModel):
@@ -230,7 +234,13 @@ def create_insumo(
             resource_type=body.resource_type,
             unit_cost=body.unit_cost,
             source=body.source,
+            kind=body.kind,
         )
+        if body.kind != "insumo" and body.components:
+            row = catalog.set_basico_components(
+                body.code, [(c.resource_code, c.quantity) for c in body.components],
+                actor=_actor(x_actor),
+            )
     except ValueError as exc:
         raise HTTPException(
             status_code=422, detail={"error_type": "invalid_insumo", "message": str(exc)}
@@ -299,6 +309,29 @@ def undo_insumo_adjustment(
     return result
 
 
+@router.put("/insumos/{code}/matriz")
+def set_insumo_matrix(
+    request: Request,
+    code: str,
+    body: ApuUpdate,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    """La matriz de un básico o cuadrilla; su precio se deriva al guardar."""
+    require_catalog_admin(request)
+    try:
+        row = catalog.set_basico_components(
+            code, [(c.resource_code, c.quantity) for c in body.components],
+            actor=_actor(x_actor),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error_type": "invalid_basico", "message": str(exc)}
+        ) from exc
+    _publish_catalog_updated(x_actor, "basico_updated", code, catalog=catalog)
+    return row
+
+
 @router.get("/insumos/{code}/uso")
 def insumo_uses(code: str, catalog: CatalogStore = Depends(get_catalog)) -> dict:
     """Dónde se usa un insumo: conceptos con su parte del costo, y básicos."""
@@ -355,6 +388,7 @@ def update_insumo(
             region=body.region,
             vigencia=body.vigencia,
             actor=_actor(x_actor),
+            kind=body.kind,
         )
     except ValueError as exc:
         raise HTTPException(

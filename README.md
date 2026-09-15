@@ -47,7 +47,10 @@ candado de administrador:
   **Base** hojea las publicaciones oficiales (CDMX, SICT, CONAGUA, Chiapas por
   región, Guanajuato por región con materiales y maquinaria) y las trae al
   taller con un clic; cada concepto e insumo dice de qué capa viene: oficial,
-  importada, generada o taller.
+  importada, generada o taller. Básicos y cuadrillas anidan (una matriz
+  dentro de una matriz), los precios se ajustan en lote o se sustituyen en
+  todas las matrices con deshacer, y el inspector dice dónde se usa cada
+  insumo.
 - **Presupuesto** — partidas plegables con su peso, precios con fuente,
   ajustes documentados con autor, versiones comparables, y la
   **integración como análisis**: desglose de indirectos renglón por

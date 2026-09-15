@@ -34,6 +34,13 @@ function destinos(base: string): Destino[] {
       })),
     ),
     {
+      key: "insumos-ajuste",
+      label: "Insumos: ajustar precios o sustituir en matrices",
+      grupo: "Catálogo",
+      icon: <Books size={16} />,
+      href: "/catalogo?tab=insumos",
+    },
+    {
       key: "base",
       label: "Base de precios: buscar en las publicaciones",
       grupo: "Catálogo",

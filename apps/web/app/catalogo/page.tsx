@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Books,
   CaretDown,
@@ -30,6 +30,11 @@ import {
   importDestajos,
   importMatrices,
   downloadReferenceSource,
+  adjustPrices,
+  insumoUses,
+  replaceInsumo,
+  setBasicoComponents,
+  type InsumoUses,
   importReferenceSource,
   listReferenceSources,
   money2,
@@ -57,6 +62,8 @@ import {
 import Link from "next/link";
 import { getBrowserActor } from "@/lib/collab";
 import { BaseSheet } from "@/components/BaseSheet";
+import { Inspector, InspectorSection } from "@/components/Inspector";
+import { SelectionBar } from "@/components/SelectionBar";
 import { OrigenBadge } from "@/components/OrigenBadge";
 import { RESOURCE_TYPE_LABELS, downloadCsv } from "@/lib/format";
 import {
@@ -400,7 +407,12 @@ export default function CatalogoPage() {
             <SkeletonTable rows={8} />
           </>
         ) : tab === "insumos" ? (
-          <InsumosSection catalog={catalog} onChanged={reload} onError={setError} />
+          <InsumosSection
+            catalog={catalog}
+            onChanged={reload}
+            onError={setError}
+            onNotice={setNotice}
+          />
         ) : tab === "conceptos" ? (
           <>
             <ApusSection
@@ -424,6 +436,12 @@ export default function CatalogoPage() {
         ) : (
           <>
             <SalarioRealSection onChanged={reload} onError={setError} onNotice={setNotice} />
+            <CuadrillasSection
+              catalog={catalog}
+              onChanged={reload}
+              onError={setError}
+              onNotice={setNotice}
+            />
             <IntegracionSection onChanged={reload} onError={setError} onNotice={setNotice} />
             <VigenciaSection onChanged={reload} onError={setError} onNotice={setNotice} />
           </>
@@ -439,15 +457,71 @@ function InsumosSection({
   catalog,
   onChanged,
   onError,
+  onNotice,
 }: {
   catalog: CatalogState;
   onChanged: () => void;
   onError: (message: string) => void;
+  onNotice: (message: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [equipmentCode, setEquipmentCode] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  // La selección: acciones en lote sólo cuando hay filas marcadas.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [pct, setPct] = useState("");
+  const [replacing, setReplacing] = useState(false);
+  const [lotBusy, setLotBusy] = useState(false);
+  // El inspector: dónde se usa un insumo.
+  const [inspecting, setInspecting] = useState<string | null>(null);
+  const [uses, setUses] = useState<InsumoUses | null>(null);
+  const clearSelection = useCallback(() => setSelected(new Set()), []);
+  useEffect(() => {
+    if (!inspecting) return;
+    let active = true;
+    const handle = window.setTimeout(() => {
+      insumoUses(inspecting)
+        .then((u) => active && setUses(u))
+        .catch(() => active && setUses(null));
+    }, 0);
+    return () => {
+      active = false;
+      window.clearTimeout(handle);
+    };
+  }, [inspecting]);
+  async function applyPct() {
+    const value = Number(pct);
+    if (!value || selected.size === 0) return;
+    setLotBusy(true);
+    try {
+      const result = await adjustPrices({ codes: [...selected], pct: value }, getBrowserActor());
+      onNotice(`${result.adjusted} insumos ajustados ${value > 0 ? "+" : ""}${value} %. Se puede deshacer desde Importaciones.`);
+      setPct("");
+      clearSelection();
+      onChanged();
+    } catch (e) {
+      onError(apiMessage(e, "No se pudieron ajustar los precios."));
+    } finally {
+      setLotBusy(false);
+    }
+  }
+  async function replaceWith(target: string) {
+    const [old] = [...selected];
+    if (!old || old === target) return;
+    setLotBusy(true);
+    try {
+      const result = await replaceInsumo(old, target, getBrowserActor());
+      onNotice(`${old} → ${target} en ${result.affected.length} matrices. Se puede deshacer desde Importaciones.`);
+      setReplacing(false);
+      clearSelection();
+      onChanged();
+    } catch (e) {
+      onError(apiMessage(e, "No se pudo sustituir el insumo."));
+    } finally {
+      setLotBusy(false);
+    }
+  }
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return catalog.insumos.filter(
@@ -514,6 +588,22 @@ function InsumosSection({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-surface-2">
+              <Th className="w-8 px-3">
+                <Checkbox
+                  aria-label="Seleccionar los visibles"
+                  checked={visible.length > 0 && visible.every((i) => selected.has(i.code))}
+                  onChange={(e) =>
+                    setSelected((current) => {
+                      const next = new Set(current);
+                      for (const i of visible) {
+                        if (e.target.checked) next.add(i.code);
+                        else next.delete(i.code);
+                      }
+                      return next;
+                    })
+                  }
+                />
+              </Th>
               <Th className="px-5">Insumo</Th>
               <Th>Tipo</Th>
               <Th>Unidad</Th>
@@ -524,7 +614,7 @@ function InsumosSection({
           <tbody>
             {visible.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-5 py-6 text-center text-sm text-muted">
+                <td colSpan={6} className="px-5 py-6 text-center text-sm text-muted">
                   Ningún insumo coincide con «{query.trim()}».
                 </td>
               </tr>
@@ -532,8 +622,24 @@ function InsumosSection({
             {visible.map((insumo) => (
               <tr
                 key={insumo.code}
-                className="border-b border-border last:border-0"
+                className={`border-b border-border last:border-0 ${
+                  selected.has(insumo.code) ? "bg-surface-2/60" : ""
+                } ${inspecting === insumo.code ? "shadow-[inset_3px_0_0_var(--accent)]" : ""}`}
               >
+                <Td className="px-3">
+                  <Checkbox
+                    aria-label={`Seleccionar ${insumo.code}`}
+                    checked={selected.has(insumo.code)}
+                    onChange={() =>
+                      setSelected((current) => {
+                        const next = new Set(current);
+                        if (next.has(insumo.code)) next.delete(insumo.code);
+                        else next.add(insumo.code);
+                        return next;
+                      })
+                    }
+                  />
+                </Td>
                 <Td className="px-5">
                   <CommitText
                     value={insumo.description}
@@ -545,6 +651,17 @@ function InsumosSection({
                   <div className="flex items-center gap-2 font-mono text-xs text-muted">
                     {insumo.code}
                     <OrigenBadge origin={insumo.origin} originRef={insumo.origin_ref} />
+                    {(insumo.kind ?? "insumo") !== "insumo" && (
+                      <Badge tone="accent">{insumo.kind === "cuadrilla" ? "cuadrilla" : "básico"}</Badge>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setInspecting(insumo.code)}
+                      className="rounded-md border border-border bg-surface px-1.5 py-0.5 font-sans text-[11px] text-muted hover:text-foreground"
+                      title="Dónde se usa este insumo"
+                    >
+                      Dónde se usa
+                    </button>
                   </div>
                 </Td>
                 <Td>
@@ -623,7 +740,7 @@ function InsumosSection({
               </tr>
             ))}
             <tr>
-              <td colSpan={5} className="px-0 py-0">
+              <td colSpan={6} className="px-0 py-0">
                 {adding ? (
                   <NewInsumoRow
                     onDone={() => {
@@ -646,6 +763,143 @@ function InsumosSection({
           </tbody>
         </table>
       </div>
+      <SelectionBar count={selected.size} noun="insumos" onClear={clearSelection}>
+        <div className="flex items-center gap-1.5">
+          <Input
+            type="number"
+            step="0.1"
+            value={pct}
+            onChange={(e) => setPct(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void applyPct();
+            }}
+            placeholder="+4"
+            aria-label="Porcentaje de ajuste"
+            className="w-20 px-2 py-1 text-right tabular"
+          />
+          <Button size="sm" variant="primary" disabled={lotBusy || !Number(pct)} onClick={applyPct}>
+            Ajustar %
+          </Button>
+        </div>
+        {selected.size === 1 && (
+          replacing ? (
+            <div className="w-72">
+              <InsumoSearch
+                insumos={catalog.insumos}
+                exclude={selected}
+                placeholder="Sustituir por… (teclea para buscar)"
+                onPick={replaceWith}
+              />
+            </div>
+          ) : (
+            <Button size="sm" variant="secondary" disabled={lotBusy} onClick={() => setReplacing(true)}>
+              Sustituir en matrices…
+            </Button>
+          )
+        )}
+      </SelectionBar>
+      {inspecting && (
+        <Inspector
+          title={catalog.insumos.find((i) => i.code === inspecting)?.description ?? inspecting}
+          subtitle={<span className="font-mono">{inspecting}</span>}
+          onClose={() => setInspecting(null)}
+        >
+          {(() => {
+            const row = catalog.insumos.find((i) => i.code === inspecting);
+            if (!row) return null;
+            return (
+              <>
+                <InspectorSection title="Precio">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="tabular font-semibold">
+                      {row.is_labor_percentage
+                        ? `${(row.unit_cost * 100).toFixed(1)}% MO`
+                        : money2(row.unit_cost)}
+                    </span>
+                    <span className="text-muted">por {row.unit}</span>
+                    <OrigenBadge origin={row.origin} originRef={row.origin_ref} />
+                  </div>
+                  <div className="mt-1 text-xs text-muted">
+                    {row.source || "sin fuente"} · {row.source_type}
+                    {row.vigencia ? ` · vigencia ${row.vigencia}` : ""}
+                    {row.origin_ref ? ` · ${row.origin_ref}` : ""}
+                  </div>
+                </InspectorSection>
+                {(row.kind ?? "insumo") !== "insumo" && (
+                  <InspectorSection title={row.kind === "cuadrilla" ? "Cuadrilla" : "Matriz del básico"}>
+                    <ul className="space-y-1">
+                      {(catalog.apus[row.code] ?? []).map((c) => {
+                        const m = catalog.insumos.find((i) => i.code === c.resource_code);
+                        return (
+                          <li key={c.resource_code} className="flex items-baseline justify-between gap-2">
+                            <span className="min-w-0 truncate">
+                              {m?.description ?? c.resource_code}{" "}
+                              <span className="font-mono text-xs text-faint">{c.resource_code}</span>
+                            </span>
+                            <span className="tabular text-xs text-muted">
+                              {c.quantity} × {m ? money2(m.unit_cost) : "—"}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </InspectorSection>
+                )}
+                <InspectorSection title="Dónde se usa">
+                  {uses === null ? (
+                    <Skeleton className="h-16" />
+                  ) : uses.concepts.length === 0 && uses.basicos.length === 0 ? (
+                    <p className="text-muted">Ninguna matriz lo usa todavía.</p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {uses.basicos.map((b) => (
+                        <li key={`b:${b.code}`} className="flex items-baseline justify-between gap-2">
+                          <span className="min-w-0 truncate">
+                            <Badge tone="accent">básico</Badge> {b.description}
+                          </span>
+                          <span className="tabular text-xs text-muted">{b.quantity}</span>
+                        </li>
+                      ))}
+                      {uses.concepts.map((c) => (
+                        <li key={c.code} className="flex items-baseline justify-between gap-2">
+                          <span className="min-w-0 truncate">
+                            {c.description}{" "}
+                            <span className="font-mono text-xs text-faint">{c.code}</span>
+                          </span>
+                          <span className="shrink-0 tabular text-xs text-muted">
+                            {c.quantity} / {c.unit}
+                            {c.share != null && ` · ${(c.share * 100).toFixed(0)} %`}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </InspectorSection>
+                <InspectorSection title="Acciones">
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        setSelected(new Set([row.code]));
+                        setReplacing(true);
+                        setInspecting(null);
+                      }}
+                    >
+                      Sustituir en matrices…
+                    </Button>
+                    {row.resource_type === "equipo" && !row.is_labor_percentage && (
+                      <Button size="sm" variant="secondary" onClick={() => setEquipmentCode(row.code)}>
+                        Costo horario
+                      </Button>
+                    )}
+                  </div>
+                </InspectorSection>
+              </>
+            );
+          })()}
+        </Inspector>
+      )}
       {equipmentCode && (
         <EquipmentDialog
           insumo={catalog.insumos.find((i) => i.code === equipmentCode)!}
@@ -1004,6 +1258,7 @@ function PhaseRows({
           concept={concept}
           components={catalog.apus[concept.code] ?? []}
           insumos={catalog.insumos}
+          apus={catalog.apus}
           open={open.has(concept.code)}
           focused={focusCode === concept.code}
           onFocus={() => onFocus(concept.code)}
@@ -1228,6 +1483,7 @@ function ConceptRows({
   concept,
   components,
   insumos,
+  apus,
   open,
   focused,
   onFocus,
@@ -1238,6 +1494,7 @@ function ConceptRows({
   concept: CatalogConcept;
   components: ApuComponent[];
   insumos: CatalogInsumo[];
+  apus: Record<string, ApuComponent[]>;
   open: boolean;
   focused: boolean;
   onFocus: () => void;
@@ -1246,6 +1503,9 @@ function ConceptRows({
   onError: (message: string) => void;
 }) {
   const [draft, setDraft] = useState<ApuComponent[]>(components);
+  // Un básico o cuadrilla en la matriz se despliega en su lugar, de solo
+  // lectura: su matriz vive en la hoja de insumos.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
   const [rate, setRate] = useState(String(concept.production_rate_per_day));
   const byCode = useMemo(
@@ -1429,16 +1689,47 @@ function ConceptRows({
           const amount = insumo.is_labor_percentage
             ? null
             : component.quantity * insumo.unit_cost;
+          const isBasico = (insumo.kind ?? "insumo") !== "insumo";
+          const isExpanded = expanded.has(insumo.code);
+          const subLines = isBasico ? (apus[insumo.code] ?? []) : [];
           return (
+            <Fragment key={component.resource_code}>
             <tr
-              key={component.resource_code}
               className="group border-b border-border bg-surface-2/20 last:border-0"
             >
               <Td className="px-5">
                 <div className="flex items-center gap-2 pl-6">
+                  {isBasico && (
+                    <button
+                      type="button"
+                      aria-label={isExpanded ? `Plegar ${insumo.code}` : `Desplegar ${insumo.code}`}
+                      aria-expanded={isExpanded}
+                      onClick={() =>
+                        setExpanded((current) => {
+                          const next = new Set(current);
+                          if (next.has(insumo.code)) next.delete(insumo.code);
+                          else next.add(insumo.code);
+                          return next;
+                        })
+                      }
+                      className="rounded p-0.5 text-faint hover:text-foreground"
+                    >
+                      <CaretDown
+                        size={12}
+                        weight="bold"
+                        className={`transition-transform ${isExpanded ? "" : "-rotate-90"}`}
+                      />
+                    </button>
+                  )}
                   <div className="min-w-0 flex-1">
                     <span className="text-sm">{insumo.description}</span>{" "}
                     <span className="font-mono text-xs text-muted">{insumo.code}</span>
+                    {isBasico && (
+                      <>
+                        {" "}
+                        <Badge tone="accent">{insumo.kind === "cuadrilla" ? "cuadrilla" : "básico"}</Badge>
+                      </>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -1475,6 +1766,39 @@ function ConceptRows({
                 {amount == null ? "—" : money2(amount)}
               </Td>
             </tr>
+            {isExpanded &&
+              subLines.map((sub) => {
+                const member = byCode.get(sub.resource_code);
+                if (!member) return null;
+                const subAmount = member.is_labor_percentage
+                  ? null
+                  : sub.quantity * member.unit_cost;
+                return (
+                  <tr
+                    key={`${insumo.code}:${sub.resource_code}`}
+                    className="border-b border-border bg-surface-2/40 text-xs last:border-0"
+                  >
+                    <Td className="px-5">
+                      <div className="pl-14 text-muted">
+                        {member.description}{" "}
+                        <span className="font-mono text-[11px] text-faint">{member.code}</span>
+                      </div>
+                    </Td>
+                    <Td align="right" className="tabular text-muted">
+                      {sub.quantity}
+                    </Td>
+                    <Td align="right" className="tabular text-muted">
+                      {member.is_labor_percentage
+                        ? `${(member.unit_cost * 100).toFixed(1)}% MO`
+                        : money2(member.unit_cost)}
+                    </Td>
+                    <Td align="right" className="tabular px-5 text-muted">
+                      {subAmount == null ? "—" : money2(subAmount)}
+                    </Td>
+                  </tr>
+                );
+              })}
+            </Fragment>
           );
         })}
       {open && (
@@ -1955,6 +2279,232 @@ const FSR_FIELDS: { key: keyof FsrParameters; label: string; step?: string }[] =
     { key: "customary_days", label: "Días de costumbre" },
     { key: "isn_pct", label: "ISN estatal (%)" },
   ];
+
+/**
+ * Las cuadrillas: mano de obra compuesta. Cada una es un insumo con su
+ * matriz de categorías (1 oficial + 2 ayudantes) y su costo por jornada se
+ * deriva de los salarios reales: al aplicar el Fsr, cambian todas.
+ */
+function CuadrillasSection({
+  catalog,
+  onChanged,
+  onError,
+  onNotice,
+}: {
+  catalog: CatalogState;
+  onChanged: () => void;
+  onError: (message: string) => void;
+  onNotice: (message: string) => void;
+}) {
+  const cuadrillas = catalog.insumos.filter((i) => i.kind === "cuadrilla");
+  const categorias = catalog.insumos.filter(
+    (i) => i.resource_type === "mano_de_obra" && (i.kind ?? "insumo") === "insumo" && !i.is_labor_percentage,
+  );
+  const [creating, setCreating] = useState(false);
+  const [code, setCode] = useState("");
+  const [description, setDescription] = useState("");
+  const [members, setMembers] = useState<ApuComponent[]>([]);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editMembers, setEditMembers] = useState<ApuComponent[]>([]);
+  const [busy, setBusy] = useState(false);
+  const byCode = useMemo(() => new Map(catalog.insumos.map((i) => [i.code, i])), [catalog.insumos]);
+
+  function jornada(list: ApuComponent[]): number {
+    return list.reduce((sum, m) => sum + m.quantity * (byCode.get(m.resource_code)?.unit_cost ?? 0), 0);
+  }
+
+  async function create() {
+    if (!code.trim() || !description.trim() || members.length === 0) return;
+    setBusy(true);
+    try {
+      await createInsumo(
+        {
+          code: code.trim().toUpperCase(),
+          description: description.trim(),
+          unit: "JOR",
+          resource_type: "mano_de_obra",
+          unit_cost: Math.max(jornada(members), 0.01),
+          source: "cuadrilla del taller",
+          kind: "cuadrilla",
+          components: members,
+        },
+        getBrowserActor(),
+      );
+      onNotice(`Cuadrilla ${code.trim().toUpperCase()} creada: ${money2(jornada(members))} por jornada.`);
+      setCreating(false);
+      setCode("");
+      setDescription("");
+      setMembers([]);
+      onChanged();
+    } catch (e) {
+      onError(apiMessage(e, "No se pudo crear la cuadrilla."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveMembers(cuadrillaCode: string) {
+    if (editMembers.length === 0) return;
+    setBusy(true);
+    try {
+      await setBasicoComponents(cuadrillaCode, editMembers, getBrowserActor());
+      setEditing(null);
+      onChanged();
+    } catch (e) {
+      onError(apiMessage(e, "No se pudo guardar la cuadrilla."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function memberEditor(list: ApuComponent[], setList: (next: ApuComponent[]) => void) {
+    return (
+      <div className="space-y-1.5">
+        {list.map((m) => (
+          <div key={m.resource_code} className="flex items-center gap-2 text-sm">
+            <Input
+              type="number"
+              step="0.5"
+              min="0.5"
+              value={m.quantity}
+              onChange={(e) =>
+                setList(
+                  list.map((x) =>
+                    x.resource_code === m.resource_code ? { ...x, quantity: Number(e.target.value) } : x,
+                  ),
+                )
+              }
+              aria-label={`Cuántos ${byCode.get(m.resource_code)?.description ?? m.resource_code}`}
+              className="w-20 px-2 py-1 text-right tabular"
+            />
+            <span className="min-w-0 flex-1 truncate">
+              {byCode.get(m.resource_code)?.description ?? m.resource_code}{" "}
+              <span className="font-mono text-xs text-muted">{m.resource_code}</span>
+            </span>
+            <span className="tabular text-xs text-muted">
+              {money2((byCode.get(m.resource_code)?.unit_cost ?? 0) * m.quantity)}
+            </span>
+            <button
+              type="button"
+              aria-label={`Quitar ${m.resource_code}`}
+              onClick={() => setList(list.filter((x) => x.resource_code !== m.resource_code))}
+              className="rounded-md p-1 text-faint hover:bg-danger-soft hover:text-danger"
+            >
+              <Trash size={14} />
+            </button>
+          </div>
+        ))}
+        <InsumoSearch
+          insumos={categorias}
+          exclude={new Set(list.map((m) => m.resource_code))}
+          placeholder="+ categoría (oficial, ayudante, peón…)"
+          onPick={(picked) => setList([...list, { resource_code: picked, quantity: 1 }])}
+        />
+        <div className="text-xs text-muted">
+          Jornada: <span className="tabular font-medium text-foreground">{money2(jornada(list))}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Card className="mb-8 overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+        <SectionTitle sub="Mano de obra compuesta: cada cuadrilla es un insumo con su matriz de categorías; su jornada se deriva del salario real y cambia con él.">
+          Cuadrillas
+        </SectionTitle>
+        {!creating && (
+          <Button size="sm" variant="secondary" onClick={() => setCreating(true)}>
+            Nueva cuadrilla
+          </Button>
+        )}
+      </div>
+      {creating && (
+        <div className="space-y-3 border-b border-border bg-surface-2/40 px-5 py-4">
+          <div className="flex flex-wrap gap-2">
+            <Input
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="Clave (p. ej. CUAD-1A2P)"
+              aria-label="Clave de la cuadrilla"
+              className="w-44 font-mono"
+            />
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Descripción (1 albañil + 2 peones)"
+              aria-label="Descripción de la cuadrilla"
+              className="min-w-64 flex-1"
+            />
+          </div>
+          {memberEditor(members, setMembers)}
+          <div className="flex gap-2">
+            <Button size="sm" variant="primary" disabled={busy || members.length === 0} onClick={create}>
+              Crear cuadrilla
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setCreating(false)}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
+      {cuadrillas.length === 0 ? (
+        <p className="px-5 py-6 text-sm text-muted">
+          Sin cuadrillas todavía. Una base OPUS importada las trae; también se arman aquí con las categorías del salario real.
+        </p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {cuadrillas.map((c) => {
+            const list = catalog.apus[c.code] ?? [];
+            const isEditing = editing === c.code;
+            return (
+              <li key={c.code} className="px-5 py-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium">{c.description}</div>
+                    <div className="text-xs text-muted">
+                      <span className="font-mono">{c.code}</span> ·{" "}
+                      {list
+                        .map((m) => `${m.quantity} × ${byCode.get(m.resource_code)?.description ?? m.resource_code}`)
+                        .join(" + ") || "sin miembros"}
+                    </div>
+                  </div>
+                  <span className="tabular text-sm font-semibold">{money2(c.unit_cost)} / jor</span>
+                  <OrigenBadge origin={c.origin} originRef={c.origin_ref} />
+                  {!isEditing && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setEditing(c.code);
+                        setEditMembers(list);
+                      }}
+                    >
+                      Editar
+                    </Button>
+                  )}
+                </div>
+                {isEditing && (
+                  <div className="mt-3 space-y-3">
+                    {memberEditor(editMembers, setEditMembers)}
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="primary" disabled={busy} onClick={() => saveMembers(c.code)}>
+                        Guardar
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
 
 function SalarioRealSection({
   onChanged,

@@ -687,6 +687,33 @@ conceptos e insumos; el taller vacío invita a traer los conceptos de sus
 partidas; ⌘K llega a la base. Fences: suite (+24 pruebas), gold, ruff,
 tsc, lint y build verdes.
 
+### Fase B · Básicos, cuadrillas y el primer lote OPUS (2026-09-14, rama `fase-b-basicos`)
+
+(1) **Una matriz puede contener una matriz**: `insumos.kind` (insumo ·
+basico · cuadrilla) y `apu_components` con la clave del básico como dueño;
+`build_apu` recurre con tope de cuatro niveles y un ciclo se rechaza con
+los dos nombres; `recompute_basicos` resuelve de abajo hacia arriba y
+escribe el precio como caché con la procedencia «derivado de su matriz»
+(un básico con un componente sin precio conserva el suyo y lo dice); cada
+línea del análisis lleva `sub_analysis` para desplegarse en su lugar. (2)
+**El lector de OPUS deja de aplanar**: cuadrillas y auxiliares entran con
+su matriz. Hallazgo de paso: la herramienta importada por porcentaje se
+guardaba como cantidad 0.03 sobre un recurso que ya vale 0.03 — un 3 %
+costaba 0.09 %; ahora se escala contra la fracción del recurso y un 3 %
+es un 3 %. (3) **El diario de ajustes** (`price_adjustments`): subir o
+bajar precios en lote por clave o filtro estampa vigencia y origen y deja
+el antes de cada fila; sustituir un insumo en las matrices (sumando
+cantidades si el nuevo ya estaba) guarda las matrices tal como estaban;
+ambos se deshacen exactos y recalculan los básicos. (4) **Dónde se usa**:
+conceptos con cantidad, importe y su parte del costo directo, y básicos.
+(5) **Cuadrillas** en la pestaña de salario real: se arman con las
+categorías, su jornada se deriva y cambia al aplicar el Fsr. (6) **La
+web sin botones nuevos**: el inspector (panel derecho, Esc cierra) con
+Precio · Matriz · Dónde se usa · Acciones; los básicos se despliegan en la
+matriz con un chevrón; la hoja de insumos gana casillas y la barra de
+selección con «Ajustar %» y «Sustituir en matrices…» (solo con selección);
+⌘K llega a los insumos. Fences verdes; gold intacto.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)

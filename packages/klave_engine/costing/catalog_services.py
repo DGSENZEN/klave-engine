@@ -66,6 +66,10 @@ def apply_labor(
             "applied_at": vigencia,
         },
     )
+    # Las cuadrillas se cobran por sus categorías: al cambiar el salario real
+    # cambia su jornada.
+    if store._has_basicos():
+        store.recompute_basicos()
     return applied
 
 
