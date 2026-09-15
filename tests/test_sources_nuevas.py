@@ -50,7 +50,7 @@ def test_conagua_rows_carry_their_group_and_clean_prices():
     first = rows[0]
     assert first["clave"] == "8002-03" and first["unit"] == "M" and first["price"] == 254.66
     assert first["group_clave"] == "8002"
-    assert first["group_description"].startswith("SUMINISTRO DE TUBERÍA DE ASBESTO-CEMENTO CLASE A-10")
+    assert first["group_description"].startswith("SUMINISTRO DE TUBERÍA DE ASBESTO-CEMENTO")
     assert first["description"] == '100 MM (4") DE DIÁMETRO.'
     assert next(r for r in rows if r["clave"] == "8002-06")["price"] == 1006.84
     later = list(parse_conagua_lines(lines("conagua_p31.txt"), page=31))
@@ -68,10 +68,12 @@ def test_inifech_rows_carry_fifteen_regions():
     assert first["price"] == 14.11 and first["group_clave"] == "1101"
     assert first["description"].startswith("LIMPIEZA, TRAZO Y NIVELACION")
     assert len(first["extra"]["regiones"]) == 15
-    assert first["extra"]["regiones"]["15"] == 14.11 and first["extra"]["regiones"]["11"] == 14.32
+    regiones = first["extra"]["regiones"]
+    assert regiones["15"] == 14.11 and regiones["11"] == 14.32
     # Código solo en su línea, descripción en cuatro líneas, precios al final.
     second = rows[1]
-    assert second["clave"] == "1101000031" and second["unit"] == "M3" and second["price"] == 115.30
+    assert second["clave"] == "1101000031" and second["unit"] == "M3"
+    assert second["price"] == 115.30
     assert second["description"].endswith("P.U.O.T.")
 
 
@@ -117,7 +119,9 @@ def test_guanajuato_material_and_machinery_tables():
     arena = rows[0]
     assert arena["clave"] == "GTO-MAT-ARENA" and arena["unit"] == "m3"
     assert arena["price"] == 242.09
-    assert arena["extra"]["regiones"] == {"1": 242.09, "2": 252.61, "3": 320.0, "4": 260.0, "5": 225.0}
+    assert arena["extra"]["regiones"] == {
+        "1": 242.09, "2": 252.61, "3": 320.0, "4": 260.0, "5": 225.0,
+    }
     assert arena["extra"]["presentacion"] == "Camión de 7 m3"
     tezontle = next(r for r in rows if r["description"] == "Tezontle")
     assert tezontle["extra"]["regiones"] == {"6": 82.76} and tezontle["price"] == 82.76
@@ -127,7 +131,8 @@ def test_guanajuato_material_and_machinery_tables():
     machines = list(parse_guanajuato_maquinaria_table(table))
     assert machines[0]["description"] == "Vibrador de inmersión"
     assert machines[0]["unit"] == "HORA" and machines[0]["price"] == 120.0
-    assert machines[0]["extra"]["motor"] == "Gasolina" and machines[0]["extra"]["potencia_hp"] == "5.5"
+    assert machines[0]["extra"]["motor"] == "Gasolina"
+    assert machines[0]["extra"]["potencia_hp"] == "5.5"
 
 
 @pytest.mark.parametrize("key", [

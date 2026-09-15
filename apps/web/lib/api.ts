@@ -2321,6 +2321,9 @@ export type CatalogInsumo = {
   region: string;
   vigencia: string;
   updated_at: string;
+  /** De qué capa viene: oficial · importada · generada · taller. */
+  origin?: "oficial" | "importada" | "generada" | "taller";
+  origin_ref?: string;
 };
 
 export type CatalogConcept = {
@@ -2337,6 +2340,12 @@ export type CatalogConcept = {
   price_vigencia?: string | null;
   /** Características extraídas del texto (f'c, t.m.a., acabado, elemento…). */
   ficha?: { campo: string; valor: string }[];
+  /** De qué capa viene: oficial · importada · generada · taller. */
+  origin?: "oficial" | "importada" | "generada" | "taller";
+  origin_ref?: string;
+  variant_of?: string | null;
+  validation?: { verdict?: string; deviation_pct?: number; reference_price?: number } | null;
+  touched_by?: string | null;
 };
 
 export type ApuComponent = { resource_code: string; quantity: number };
@@ -2581,7 +2590,7 @@ export type ReferenceSource = {
   publisher: string;
   region: string;
   vigencia: string;
-  kind: "precios_unitarios" | "costo_horario";
+  kind: "precios_unitarios" | "costo_horario" | "insumos" | "matrices";
   filename: string;
   url: string;
   available: boolean;
@@ -2609,6 +2618,70 @@ export type ReferenceRow = {
 
 export const listReferenceSources = () =>
   getJSON<{ sources: ReferenceSource[] }>("/catalog/sources").then((r) => r.sources);
+
+/** Descargar e importar en un paso (solo fuentes con enlace directo). */
+export const downloadReferenceSource = (key: string, actor?: string) =>
+  postJSON<{ source_key: string; rows: number; bytes: number | null }>(
+    `/catalog/sources/${encodeURIComponent(key)}/download`,
+    {},
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+/** El primer arranque: toda fuente oficial que falte se descarga e importa. */
+export const bootstrapReferenceSources = (actor?: string) =>
+  postJSON<{ results: { source_key: string; ok: boolean; rows?: number; skipped?: string; problem?: string }[] }>(
+    "/catalog/sources/bootstrap",
+    {},
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export type BaseSource = {
+  source_key: string;
+  name: string;
+  publisher: string;
+  region: string;
+  vigencia: string;
+  kind: string;
+  row_count: number;
+  imported_at: string;
+};
+
+export type BaseRow = ReferenceRow & {
+  group_clave: string;
+  group_description: string;
+  extra: Record<string, unknown> | null;
+  source_kind: string;
+  partida: string;
+  in_taller: boolean;
+};
+
+export const browseBase = (params: {
+  q?: string;
+  partida?: string;
+  source?: string;
+  region?: string;
+  kind?: string;
+  limit?: number;
+  offset?: number;
+}) => {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "" && value !== null) search.set(key, String(value));
+  }
+  return getJSON<{ rows: BaseRow[]; total: number; sources: BaseSource[] }>(
+    `/catalog/base?${search.toString()}`,
+  );
+};
+
+export const adoptFromBase = (
+  refIds: number[],
+  actor?: string,
+  options?: { phase?: string; code?: string; force?: boolean },
+) =>
+  postJSON<{
+    created: { ref_id: number; code: string; origin: string }[];
+    skipped: { ref_id: number; reason: string }[];
+  }>("/catalog/base/adopt", { ref_ids: refIds, ...options }, actor ? { "X-Actor": actor } : undefined);
 
 export const importReferenceSource = (key: string, actor?: string) =>
   postJSON<{ source_key: string; rows: number }>(

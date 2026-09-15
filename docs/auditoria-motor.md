@@ -654,6 +654,39 @@ Queda para la pista del catálogo base: anidar básicos, importar el FSR y
 los costos horarios como parámetros del taller, y leer varias bases de
 una vez.
 
+### Fase A · La base con precio (2026-09-14, rama `fase-a-base-con-precio`)
+
+La primera fase del spec de catálogo base y paridad OPUS. (1) **Origen en
+cada fila**: conceptos e insumos llevan `origin` (oficial · importada ·
+generada · taller) y `origin_ref`; los sembrados por Klave se clasifican
+«generada · semilla Klave», una persona que toca una fila ajena la vuelve
+del taller y queda quién y cuándo; la migración clasifica lo que ya había.
+(2) **La base se hojea sin tocar el taller**: una base de matrices (OPUS,
+Excel) entra como fuente con sus componentes (`reference_components`);
+`browse_reference` filtra por texto, fuente, partida (la canónica del
+matcher) y región, y dice qué renglón ya está en el taller; «traer al
+taller» crea el concepto con su precio de tabulador (oficial) o con su
+matriz e insumos (importada), sin pisar claves existentes. (3) **Seis
+fuentes oficiales nuevas** leídas con pypdfium2 (conserva espacios donde
+pdfplumber pega palabras y abre el PDF cifrado de INIFECH) y openpyxl:
+SICT costo directo carretero (3,715 conceptos), CONAGUA (2,009), INIFECH
+Chiapas (1,644 con quince regiones), Guanajuato UEC en Excel (2,675
+conceptos × seis regiones), su listado de materiales (52 insumos con precio
+de mercado por región — la primera lista oficial de insumos) y su listado
+de maquinaria (12 costos horarios). Descartados tras inspección: SICT
+paramétricos (modelos, no renglones) y servicios (sin archivo). (4)
+**Descargar e importar en un paso** (`POST /sources/{key}/download`,
+manifiesto con sha256) y el **arranque del taller** (`POST
+/sources/bootstrap`) que trae toda fuente oficial que falte y reporta la
+que falla sin detener a las demás. (5) **La pestaña Base** sustituye a
+«Fuentes de referencia»: la lista de publicaciones con «Descargar e
+importar», la hoja de la base con filtros por partida (chips), fuente y
+región, «Traer» por fila (Enter) y por selección (barra inferior que sólo
+existe con selección, Esc la vacía); insignia de origen en las hojas de
+conceptos e insumos; el taller vacío invita a traer los conceptos de sus
+partidas; ⌘K llega a la base. Fences: suite (+24 pruebas), gold, ruff,
+tsc, lint y build verdes.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)

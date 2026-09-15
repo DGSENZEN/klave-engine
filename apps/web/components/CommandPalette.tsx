@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Gauge, GearSix, MagnifyingGlass, SquaresFour } from "@phosphor-icons/react";
+import { Books, Gauge, GearSix, MagnifyingGlass, SquaresFour } from "@phosphor-icons/react";
 import { entryHref, NODE_NAV } from "@/lib/nodeNav";
 
 /**
@@ -33,6 +33,13 @@ function destinos(base: string): Destino[] {
         href: entryHref(base, entry),
       })),
     ),
+    {
+      key: "base",
+      label: "Base de precios: buscar en las publicaciones",
+      grupo: "Catálogo",
+      icon: <Books size={16} />,
+      href: "/catalogo?tab=fuentes",
+    },
     {
       key: "configuracion",
       label: "Configuración del proyecto",

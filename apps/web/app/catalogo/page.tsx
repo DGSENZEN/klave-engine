@@ -15,9 +15,6 @@ import {
 import {
   ApiError,
   apiMessage,
-  unitMismatch,
-  adoptConceptReference,
-  adoptReference,
   clearConceptPrice,
   createConcept,
   createInsumo,
@@ -32,12 +29,12 @@ import {
   importCustomSource,
   importDestajos,
   importMatrices,
+  downloadReferenceSource,
   importReferenceSource,
   listReferenceSources,
   money2,
   putEquipment,
   putLabor,
-  searchReference,
   updateApu,
   updateInsumo,
   updateRendimiento,
@@ -52,7 +49,6 @@ import {
   type LaborState,
   listProjects,
   type ProjectSummary,
-  type ReferenceRow,
   type ReferenceSource,
   listImports,
   undoImport,
@@ -60,6 +56,8 @@ import {
 } from "@/lib/api";
 import Link from "next/link";
 import { getBrowserActor } from "@/lib/collab";
+import { BaseSheet } from "@/components/BaseSheet";
+import { OrigenBadge } from "@/components/OrigenBadge";
 import { RESOURCE_TYPE_LABELS, downloadCsv } from "@/lib/format";
 import {
   Badge,
@@ -390,7 +388,7 @@ export default function CatalogoPage() {
           items={[
             { key: "insumos", label: "Insumos", count: catalog?.insumos.length },
             { key: "conceptos", label: "Conceptos y matrices", count: catalog?.concepts.length },
-            { key: "fuentes", label: "Fuentes de referencia" },
+            { key: "fuentes", label: "Base" },
             { key: "plantillas", label: "Plantillas y paramétricos" },
             { key: "salario", label: "Salario real y vigencia" },
           ]}
@@ -405,14 +403,18 @@ export default function CatalogoPage() {
           <InsumosSection catalog={catalog} onChanged={reload} onError={setError} />
         ) : tab === "conceptos" ? (
           <>
-            <ApusSection catalog={catalog} onChanged={reload} onError={setError} />
+            <ApusSection
+              catalog={catalog}
+              onChanged={reload}
+              onError={setError}
+              onGoToBase={() => setTab("fuentes")}
+            />
             <div className="mt-8">
               <AliasesSection onChanged={reload} onError={setError} />
             </div>
           </>
         ) : tab === "fuentes" ? (
           <FuentesSection
-            catalog={catalog}
             onChanged={reload}
             onError={setError}
             onNotice={setNotice}
@@ -540,8 +542,9 @@ function InsumosSection({
                       commitInsumo(insumo.code, { description: value })
                     }
                   />
-                  <div className="font-mono text-xs text-muted">
+                  <div className="flex items-center gap-2 font-mono text-xs text-muted">
                     {insumo.code}
+                    <OrigenBadge origin={insumo.origin} originRef={insumo.origin_ref} />
                   </div>
                 </Td>
                 <Td>
@@ -759,10 +762,12 @@ function ApusSection({
   catalog,
   onChanged,
   onError,
+  onGoToBase,
 }: {
   catalog: CatalogState;
   onChanged: () => void;
   onError: (message: string) => void;
+  onGoToBase: () => void;
 }) {
   // Varios conceptos abiertos a la vez: la matriz es un renglón hijo de la
   // hoja, no un panel aparte — el idioma de OPUS con nuestra piel.
@@ -881,6 +886,22 @@ function ApusSection({
         <p className="py-6 text-center text-sm text-muted">
           Ningún concepto coincide con «{query.trim()}».
         </p>
+      )}
+      {catalog.concepts.every((c) => c.origin === "generada") && (
+        <div className="mb-4">
+          <Callout
+            tone="info"
+            action={
+              <Button size="sm" variant="primary" onClick={onGoToBase}>
+                Ir a la base
+              </Button>
+            }
+          >
+            Tu taller solo tiene los conceptos que Klave genera del plano. Trae los de tus
+            partidas desde las publicaciones oficiales: cada uno llega con su precio y su
+            fuente.
+          </Callout>
+        </div>
       )}
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
@@ -1334,7 +1355,12 @@ function ConceptRows({
             <div className="min-w-0">
               <span className="font-mono text-xs text-muted">{concept.code}</span>{" "}
               <span className="font-medium">{concept.description}</span>{" "}
-              {concept.detection_backed && <Badge tone="accent">Detección</Badge>}
+              {concept.detection_backed && <Badge tone="accent">Detección</Badge>}{" "}
+              <OrigenBadge
+                origin={concept.origin}
+                originRef={concept.origin_ref}
+                verdict={concept.validation?.verdict}
+              />
               {concept.price_override != null && (
                 <Badge tone="warning">
                   P.U. de {concept.price_source} · {concept.price_clave}
@@ -1566,32 +1592,23 @@ function CommitText({
 /* ------------------------------------------------------------- fuentes --- */
 
 function FuentesSection({
-  catalog,
   onChanged,
   onError,
   onNotice,
 }: {
-  catalog: CatalogState;
   onChanged: () => void;
   onError: (message: string) => void;
   onNotice: (message: string) => void;
 }) {
   const [sources, setSources] = useState<ReferenceSource[] | null>(null);
   const [importing, setImporting] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [sourceKey, setSourceKey] = useState("");
-  const [rows, setRows] = useState<ReferenceRow[] | null>(null);
-  /** Per reference row: "insumo:CODE" or "concept:CODE" — one verb, explicit scope. */
-  const [adopting, setAdopting] = useState<Record<number, string>>({});
   const [ownFile, setOwnFile] = useState<File | null>(null);
   const [ownName, setOwnName] = useState("");
   const [ownVigencia, setOwnVigencia] = useState("");
   const [ownBusy, setOwnBusy] = useState(false);
 
   const [sourcesError, setSourcesError] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState(false);
-  const [searchAttempt, setSearchAttempt] = useState(0);
+  const [downloading, setDownloading] = useState<string | null>(null);
 
   const loadSources = useCallback(() => {
     listReferenceSources()
@@ -1609,36 +1626,20 @@ function FuentesSection({
     loadSources();
   }, [loadSources]);
 
-  useEffect(() => {
-    if (query.trim().length < 2) {
-      const handle = window.setTimeout(() => {
-        setRows(null);
-        setSearching(false);
-        setSearchError(false);
-      }, 0);
-      return () => window.clearTimeout(handle);
+
+  async function runDownload(source: ReferenceSource) {
+    setDownloading(source.key);
+    try {
+      const result = await downloadReferenceSource(source.key, getBrowserActor());
+      onNotice(`${source.name}: ${result.rows.toLocaleString("es-MX")} renglones importados.`);
+      loadSources();
+      onChanged();
+    } catch (e) {
+      onError(apiMessage(e, `No se pudo descargar ${source.name}.`));
+    } finally {
+      setDownloading(null);
     }
-    let active = true;
-    const handle = window.setTimeout(() => {
-      setSearching(true);
-      setSearchError(false);
-      searchReference(query.trim(), sourceKey || undefined)
-        .then((found) => {
-          if (!active) return;
-          setRows(found);
-        })
-        .catch(() => {
-          if (!active) return;
-          setRows([]);
-          setSearchError(true);
-        })
-        .finally(() => active && setSearching(false));
-    }, 250);
-    return () => {
-      active = false;
-      window.clearTimeout(handle);
-    };
-  }, [query, sourceKey, searchAttempt]);
+  }
 
   async function runImport(source: ReferenceSource) {
     setImporting(source.key);
@@ -1678,35 +1679,6 @@ function FuentesSection({
     }
   }
 
-  async function applyReference(row: ReferenceRow) {
-    const target = adopting[row.ref_id] ?? "";
-    const [scope, code] = target.split(":");
-    if (!code) return;
-    try {
-      if (scope === "concept") {
-        await adoptConceptReference(code, row.ref_id, getBrowserActor());
-        onNotice(
-          `${code} se costea a ${money2(row.price)} por ${row.unit} (${row.source_name}, ${row.clave}); su matriz queda en pausa`,
-        );
-      } else {
-        await adoptReference(code, row.ref_id, getBrowserActor());
-        onNotice(
-          `${code} ahora vale ${money2(row.price)} (${row.source_name}, ${row.clave})`,
-        );
-      }
-      setAdopting((a) => ({ ...a, [row.ref_id]: "" }));
-      onChanged();
-    } catch (e) {
-      const mismatch = unitMismatch(e);
-      onError(
-        mismatch
-          ? `${mismatch.message} (elige un insumo o concepto en ${mismatch.reference_unit}, o adopta desde el presupuesto con una nota).`
-          : apiMessage(e, `No se pudo usar la referencia en ${code}.`),
-      );
-    }
-  }
-
-  const imported = (sources ?? []).filter((s) => s.imported);
 
   return (
     <>
@@ -1768,20 +1740,31 @@ function FuentesSection({
               ) : source.available ? (
                 <Badge>Descargada</Badge>
               ) : (
-                <a
-                  href={source.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs text-muted underline"
-                  title="El archivo no está en el servidor; pide a tu administrador que descargue la publicación"
-                >
-                  No descargada
-                </a>
+                <span className="text-xs text-muted">No descargada</span>
               )}
               {source.custom ? (
                 <span className="text-xs text-muted">
                   Vuelve a subir el archivo para actualizarlo
                 </span>
+              ) : !source.available && /\.(pdf|xlsx?|csv)$/i.test(source.url) ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={downloading !== null || importing !== null}
+                  onClick={() => runDownload(source)}
+                >
+                  {downloading === source.key ? "Descargando…" : "Descargar e importar"}
+                </Button>
+              ) : !source.available ? (
+                <a
+                  href={source.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-muted underline"
+                  title={`Sin enlace directo: descarga el archivo y colócalo en data/sources/${source.filename}`}
+                >
+                  Descargar a mano
+                </a>
               ) : (
                 <Button
                   size="sm"
@@ -1841,170 +1824,13 @@ function FuentesSection({
           </Button>
         </div>
       </div>
-      {imported.length > 0 && (
-        <div className="border-t border-border px-5 py-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-64 flex-1">
-              <MagnifyingGlass
-                size={15}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
-              />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Buscar en las publicaciones: tabique, concreto f'c=250, retroexcavadora…"
-                className="w-full pl-9"
-              />
-            </div>
-            <Select
-              value={sourceKey}
-              onChange={(e) => setSourceKey(e.target.value)}
-            >
-              <option value="">Todas las fuentes</option>
-              {imported.map((s) => (
-                <option key={s.key} value={s.key}>
-                  {s.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-          {searching && rows === null && (
-            <div className="mt-3 space-y-2" aria-busy="true">
-              <Skeleton className="h-10" />
-              <Skeleton className="h-10" />
-              <Skeleton className="h-10 w-3/4" />
-            </div>
-          )}
-          {rows && (
-            <div
-              className={`mt-3 overflow-x-auto ${searching ? "opacity-60" : ""}`}
-              aria-busy={searching}
-            >
-              {searchError ? (
-                <Callout
-                  tone="danger"
-                  action={
-                    <Button
-                      size="sm"
-                      onClick={() => setSearchAttempt((n) => n + 1)}
-                    >
-                      Reintentar
-                    </Button>
-                  }
-                >
-                  La búsqueda falló; el servidor no respondió.
-                </Callout>
-              ) : rows.length === 0 ? (
-                <p className="py-3 text-sm text-muted">
-                  Nada en {sourceKey ? "esa fuente" : "las fuentes importadas"}{" "}
-                  para «{query.trim()}».
-                  {imported.length === 0 && " Importa primero una publicación."}
-                </p>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs text-muted">
-                      <th className="py-1.5 pr-3 font-medium">Clave</th>
-                      <th className="py-1.5 pr-3 font-medium">Concepto</th>
-                      <th className="py-1.5 pr-3 font-medium">Unidad</th>
-                      <th className="py-1.5 pr-3 text-right font-medium">
-                        Precio
-                      </th>
-                      <th className="py-1.5 font-medium">
-                        Usar este precio como…
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row) => (
-                      <tr
-                        key={row.ref_id}
-                        className="border-t border-border align-top"
-                      >
-                        <td className="py-2 pr-3 font-mono text-xs">
-                          {row.clave}
-                        </td>
-                        <td className="py-2 pr-3">
-                          <div>{row.description}</div>
-                          {row.group_description && (
-                            <div className="text-xs text-faint">
-                              {row.group_description}
-                            </div>
-                          )}
-                          <div className="text-xs text-faint">
-                            {row.source_name} · {row.source_vigencia}
-                          </div>
-                        </td>
-                        <td className="py-2 pr-3 text-muted">{row.unit}</td>
-                        <td className="py-2 pr-3 text-right tabular">
-                          {money2(row.price)}
-                        </td>
-                        <td className="py-2">
-                          <div className="flex items-center gap-1.5">
-                            <Select
-                              value={adopting[row.ref_id] ?? ""}
-                              onChange={(e) =>
-                                setAdopting((a) => ({
-                                  ...a,
-                                  [row.ref_id]: e.target.value,
-                                }))
-                              }
-                              className="max-w-64"
-                              aria-label="Dónde usar este precio"
-                              size="sm"
-                            >
-                              <option value="">elige insumo o concepto…</option>
-                              <optgroup label="Costo de un insumo (material, mano de obra, equipo)">
-                                {catalog.insumos
-                                  .filter((i) => !i.is_labor_percentage)
-                                  .map((i) => (
-                                    <option
-                                      key={i.code}
-                                      value={`insumo:${i.code}`}
-                                    >
-                                      {i.code} · {i.unit} ·{" "}
-                                      {i.description.slice(0, 40)}
-                                    </option>
-                                  ))}
-                              </optgroup>
-                              <optgroup
-                                label={`P.U. de un concepto en ${row.unit} (pausa su matriz)`}
-                              >
-                                {catalog.concepts
-                                  .filter(
-                                    (c) =>
-                                      c.unit.toUpperCase() ===
-                                      row.unit.toUpperCase(),
-                                  )
-                                  .map((c) => (
-                                    <option
-                                      key={c.code}
-                                      value={`concept:${c.code}`}
-                                    >
-                                      {c.code} · {c.description.slice(0, 40)}
-                                    </option>
-                                  ))}
-                              </optgroup>
-                            </Select>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              disabled={!adopting[row.ref_id]}
-                              onClick={() => applyReference(row)}
-                            >
-                              Usar este precio
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+      <div className="border-t border-border px-5 py-4">
+        <BaseSheet
+          onChanged={onChanged}
+          onError={onError}
+          onNotice={onNotice}
+        />
+      </div>
     </Card>
     </>
   );

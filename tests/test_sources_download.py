@@ -126,7 +126,8 @@ def test_bootstrap_reports_each_source(data_dir, monkeypatch):
     assert results["buena"] == {"source_key": "buena", "ok": True, "rows": 1}
     assert results["manual"]["ok"] is False and "a mano" in results["manual"]["problem"]
     # Segunda vez: la buena ya está y se salta.
-    again = {r["source_key"]: r for r in client.post("/catalog/sources/bootstrap").json()["results"]}
+    second = client.post("/catalog/sources/bootstrap").json()["results"]
+    again = {r["source_key"]: r for r in second}
     assert again["buena"]["skipped"] == "ya importada"
 
 

@@ -43,7 +43,11 @@ candado de administrador:
   fuentes oficiales (CDMX, SICT) con vigencia, salario real (Fsr) y costo
   horario por RLOPSRM, e importación de OPUS/Neodata (el Excel exportado o
   la base nativa tal cual: un .zip de sus .DBF/.FPT con matrices,
-  cuadrillas, FSR y costos horarios) y destajos con deshacer.
+  cuadrillas, FSR y costos horarios) y destajos con deshacer. La pestaña
+  **Base** hojea las publicaciones oficiales (CDMX, SICT, CONAGUA, Chiapas por
+  región, Guanajuato por región con materiales y maquinaria) y las trae al
+  taller con un clic; cada concepto e insumo dice de qué capa viene: oficial,
+  importada, generada o taller.
 - **Presupuesto** — partidas plegables con su peso, precios con fuente,
   ajustes documentados con autor, versiones comparables, y la
   **integración como análisis**: desglose de indirectos renglón por
