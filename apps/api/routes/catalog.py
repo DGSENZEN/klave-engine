@@ -176,6 +176,7 @@ def _publish_catalog_updated(
 @router.get("")
 def get_catalog_state(catalog: CatalogStore = Depends(get_catalog)) -> dict:
     templates = catalog.load_templates()
+    sources = catalog.load_template_sources()
     return {
         "insumos": catalog.list_insumos(),
         "concepts": [
@@ -206,7 +207,10 @@ def get_catalog_state(catalog: CatalogStore = Depends(get_catalog)) -> dict:
         ],
         "apus": {
             code: [
-                {"resource_code": resource_code, "quantity": quantity}
+                {
+                    "resource_code": resource_code, "quantity": quantity,
+                    "source": sources.get(code, {}).get(resource_code, ""),
+                }
                 for resource_code, quantity in components
             ]
             for code, components in templates.items()
@@ -409,13 +413,105 @@ def get_apu(concept_code: str, catalog: CatalogStore = Depends(get_catalog)) -> 
         from klave_engine.costing.apu import build_apu
 
         apu = build_apu(
-            concept, resources=catalog.load_price_book(), templates=catalog.load_templates()
+            concept, resources=catalog.load_price_book(), templates=catalog.load_templates(),
+            line_sources=catalog.load_template_sources(),
         )
     except ReportGenerationError as exc:
         raise HTTPException(
             status_code=409, detail={"error_type": "apu_unavailable", "message": str(exc)}
         ) from exc
     return apu.model_dump()
+
+
+class GenerarBody(BaseModel):
+    force: bool = False
+
+
+class ToleranciaBody(BaseModel):
+    tolerance_pct: float
+
+
+@router.post("/concepts/{concept_code}/generar")
+def generate_concept_matrix(
+    concept_code: str,
+    body: GenerarBody | None = None,
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    """La matriz generada desde la plantilla de su familia, con su veredicto.
+    Una matriz del taller no se pisa sin `force`."""
+    known = {row["code"] for row in catalog.load_concepts(include_inactive=True)}
+    if concept_code not in known:
+        raise HTTPException(
+            status_code=404, detail={"error_type": "concept_not_found", "code": concept_code}
+        )
+    try:
+        result = catalog.generate_matrix(
+            concept_code, actor=_actor(x_actor), force=bool(body and body.force)
+        )
+    except ValueError as exc:
+        status = 409 if "matriz del taller" in str(exc) else 422
+        raise HTTPException(
+            status_code=status, detail={"error_type": "generation_failed", "message": str(exc)}
+        ) from exc
+    _publish_catalog_updated(x_actor, "apu_generated", concept_code, catalog=catalog)
+    return result
+
+
+@router.post("/matrices/generar-faltantes")
+def generate_missing_matrices(
+    x_actor: Annotated[str | None, Header()] = None,
+    catalog: CatalogStore = Depends(get_catalog),
+) -> dict:
+    result = catalog.generate_missing(actor=_actor(x_actor))
+    if result["generated"]:
+        _publish_catalog_updated(
+            x_actor, "apus_generated", str(len(result["generated"])), catalog=catalog
+        )
+    return result
+
+
+@router.post("/concepts/{concept_code}/validar")
+def validate_concept_matrix(
+    concept_code: str, catalog: CatalogStore = Depends(get_catalog)
+) -> dict:
+    try:
+        return catalog.validate_concept(concept_code)
+    except ValueError as exc:
+        status = 404 if "no existe" in str(exc) else 422
+        raise HTTPException(
+            status_code=status, detail={"error_type": "validation_failed", "message": str(exc)}
+        ) from exc
+
+
+@router.post("/matrices/validar")
+def validate_generated_matrices(catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    return catalog.validate_generated()
+
+
+@router.get("/matrices/validacion")
+def get_validation_settings(catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    return {"tolerance_pct": catalog.validation_tolerance()}
+
+
+@router.put("/matrices/validacion")
+def put_validation_settings(
+    body: ToleranciaBody, catalog: CatalogStore = Depends(get_catalog)
+) -> dict:
+    try:
+        return {"tolerance_pct": catalog.set_validation_tolerance(body.tolerance_pct)}
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail={"error_type": "invalid_tolerance", "message": str(exc)}
+        ) from exc
+
+
+@router.get("/matrices/plantillas")
+def list_matrix_plantillas() -> dict:
+    """Las plantillas de matriz por familia, con la fuente de cada línea."""
+    from klave_engine.costing.generacion import plantillas_resumen
+
+    return {"plantillas": plantillas_resumen()}
 
 
 @router.put("/apus/{concept_code}")
