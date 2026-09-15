@@ -41,8 +41,9 @@ candado de administrador:
   teclado), ficha técnica extraída del texto de cada concepto (f'c, fy,
   t.m.a., acabado…) que también decide en el matcher de referencias,
   fuentes oficiales (CDMX, SICT) con vigencia, salario real (Fsr) y costo
-  horario por RLOPSRM, e importación de OPUS/Neodata y destajos con
-  deshacer.
+  horario por RLOPSRM, e importación de OPUS/Neodata (el Excel exportado o
+  la base nativa tal cual: un .zip de sus .DBF/.FPT con matrices,
+  cuadrillas, FSR y costos horarios) y destajos con deshacer.
 - **Presupuesto** — partidas plegables con su peso, precios con fuente,
   ajustes documentados con autor, versiones comparables, y la
   **integración como análisis**: desglose de indirectos renglón por

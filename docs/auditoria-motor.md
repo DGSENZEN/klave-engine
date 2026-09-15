@@ -626,6 +626,34 @@ sigue: la sección se oculta, no se desmonta, y el estado de las filas
 sobrevive. Solo cambió la web: suite, gold y ruff intactos; tsc, lint y
 build verdes.
 
+### El lector de la base nativa de OPUS (2026-09-14, rama `lector-opus`)
+
+Diego trajo una base OPUS de estructuras de acero y herrería (Ingeniería
+Integral, mayo 2026): 301 conceptos, 334 matrices con 3,262 renglones,
+417 insumos, 18 cuadrillas, el FSR con su formulación, 13 costos horarios
+y el árbol capítulo → subcapítulo → concepto. Es la capa que ninguna
+fuente oficial publica —las matrices con rendimiento— y llegaba en el
+formato que el Excel de exportación pierde a medias. Ahora
+`costing/sources/opus_native.py` lee las tablas Visual FoxPro (.DBF/.FPT)
+sin librerías: elementos por `PREFIJO` (material, mano de obra,
+herramienta, equipo, auxiliar, concepto), matrices por renglón con la
+cantidad por unidad, el porcentaje de herramienta sobre la mano de obra
+como `EQ-HERRAMIENTA`, la fase desde el subcapítulo del presupuesto
+(`PRE_IDPAD` apunta al `PRE_IDUNI` del padre, el texto vive en la tabla 3
+bajo el mismo `ID`), y el rendimiento por día derivado de las jornadas
+de mano de obra por unidad — declarado derivado. Lo que Klave no modela
+se dice, no se calla: las cuadrillas y los auxiliares entran como insumo
+con su precio compuesto (el modelo no anida básicos todavía), los cargos
+fijos «C.F.» y los insumos sin precio no entran. El endpoint de
+`import-matrices` acepta el .zip de la carpeta (hasta 25 MB) y devuelve,
+además del resultado, lo que la base declara: FSR, indirectos,
+financiamiento, utilidad, costos horarios y capítulos. Sobre la base
+real: 301 conceptos con matriz, 291 con fase del árbol, 297 con
+rendimiento derivado. Cinco pruebas con un escritor DBF/FPT mínimo.
+Queda para la pista del catálogo base: anidar básicos, importar el FSR y
+los costos horarios como parámetros del taller, y leer varias bases de
+una vez.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)

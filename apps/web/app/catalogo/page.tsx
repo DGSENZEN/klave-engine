@@ -168,9 +168,12 @@ export default function CatalogoPage() {
       const problems = result.problems.length
         ? ` · ${result.problems.length} avisos: ${result.problems.slice(0, 3).join(" / ")}${result.problems.length > 3 ? "…" : ""}`
         : "";
+      const opus = result.opus
+        ? ` · base OPUS: FSR ${result.opus.fsr ?? "—"}, indirectos ${result.opus.indirectos_pct ?? "—"} %, ${result.opus.costos_horarios} costos horarios, ${result.opus.cuadrillas} cuadrillas`
+        : "";
       setNotice(
         `Matrices importadas de ${result.source}: ${result.concepts_created} conceptos nuevos, ` +
-          `${result.concepts_updated} actualizados, ${result.insumos_upserted} insumos (cotización)${problems}`,
+          `${result.concepts_updated} actualizados, ${result.insumos_upserted} insumos (cotización)${opus}${problems}`,
       );
       reload();
     } catch (e) {
@@ -246,7 +249,7 @@ export default function CatalogoPage() {
               <input
                 ref={matricesRef}
                 type="file"
-                accept=".csv,.xlsx"
+                accept=".csv,.xlsx,.zip"
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
@@ -286,9 +289,9 @@ export default function CatalogoPage() {
                         close();
                         matricesRef.current?.click();
                       }}
-                      hint="Catálogo de conceptos con insumos exportado de OPUS o Neodata (XLSX/CSV): crea conceptos con su matriz."
+                      hint="La base OPUS tal cual (un .zip de su carpeta con los .DBF y .FPT) o el catálogo de conceptos con insumos exportado de OPUS o Neodata (XLSX/CSV): crea conceptos con su matriz."
                     >
-                      Matrices de OPUS / Neodata
+                      Base o matrices de OPUS / Neodata
                     </MenuItem>
                     <MenuItem
                       onSelect={() => {

@@ -2752,6 +2752,17 @@ export type MatricesImportResult = {
   insumos_upserted: number;
   problems: string[];
   source: string;
+  /** Presente cuando lo importado fue una base OPUS nativa (.zip de .DBF). */
+  opus?: {
+    fsr: number | null;
+    indirectos_pct: number | null;
+    financiamiento_pct: number | null;
+    utilidad_pct: number | null;
+    costos_horarios: number;
+    capitulos: string[];
+    cuadrillas: number;
+    auxiliares: number;
+  };
 };
 
 export async function importMatrices(file: File, source: string, actor?: string) {

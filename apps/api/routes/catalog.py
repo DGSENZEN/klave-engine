@@ -48,6 +48,7 @@ from klave_engine.costing.sources.custom import (
 )
 from klave_engine.costing.sources.destajos import parse_destajos_workbook
 from klave_engine.costing.sources.matrices import parse_matrices_workbook
+from klave_engine.costing.sources.opus_native import extras_summary, is_opus_zip, parse_opus_zip
 from klave_engine.costing.sources.registry import SOURCES, available_sources, sources_dir
 from klave_engine.costing.vigencia import (
     FRESH_MONTHS,
@@ -67,6 +68,9 @@ from apps.api.tenancy import store_for_project, store_for_request
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 
 MAX_IMPORT_BYTES = 1_000_000
+# Una base OPUS nativa (.zip con sus .DBF/.FPT) pesa más que un XLSX: las
+# matrices de un catálogo de 300 conceptos rondan los 2 MB sin comprimir.
+MAX_OPUS_BYTES = 25_000_000
 
 
 def require_catalog_admin(request: Request) -> None:
@@ -643,23 +647,34 @@ async def import_matrices(
     catalog: CatalogStore = Depends(get_catalog),
 ) -> dict:
     """Conceptos con sus matrices from an OPUS/Neodata Excel export (or the
-    documented Tipo/Clave/Descripción/Unidad/Cantidad/Costo layout)."""
+    documented Tipo/Clave/Descripción/Unidad/Cantidad/Costo layout), or the
+    native OPUS base itself: a .zip of its .DBF/.FPT tables."""
     require_catalog_admin(request)
+    is_zip = (file.filename or "").lower().endswith(".zip")
+    limit = MAX_OPUS_BYTES if is_zip else MAX_IMPORT_BYTES
     # Read at most the limit plus one byte: a bigger body never lands in memory.
-    raw = await file.read(MAX_IMPORT_BYTES + 1)
-    if len(raw) > MAX_IMPORT_BYTES:
+    raw = await file.read(limit + 1)
+    if len(raw) > limit:
         raise HTTPException(
             status_code=413,
-            detail={"error_type": "import_too_large", "max_bytes": MAX_IMPORT_BYTES},
+            detail={"error_type": "import_too_large", "max_bytes": limit},
         )
     label = source.strip() or Path(file.filename or "matrices").stem[:80]
+    extras: dict | None = None
     try:
-        parse = parse_matrices_workbook(raw, file.filename or "")
+        if is_opus_zip(raw, file.filename or ""):
+            opus = parse_opus_zip(raw)
+            parse = opus.matrices
+            extras = extras_summary(opus.extras)
+        else:
+            parse = parse_matrices_workbook(raw, file.filename or "")
     except CustomCatalogError as exc:
         raise HTTPException(
             status_code=422, detail={"error_type": "headers_not_found", "message": str(exc)}
         ) from exc
     result = catalog.import_matrices(parse, label)
+    if extras is not None:
+        result["opus"] = extras
     _publish_catalog_updated(
         x_actor, "matrices_imported",
         f"{label}: {result['concepts_created']} nuevos, {result['concepts_updated']} actualizados",
