@@ -44,6 +44,18 @@ SEED_SOURCE = "Referencia Klave"
 # columna, no una frase — se ve en la fila y se filtra.
 ORIGINS = ("oficial", "importada", "generada", "taller")
 SEED_ORIGIN_REF = "semilla Klave"
+# La partida canónica del matcher → la etiqueta de fase con que el catálogo
+# agrupa (las seis del motor con su orden; el resto con su nombre).
+PARTIDA_LABELS = {
+    "preliminares": "Preliminares", "terracerias": "Terracerías", "cimentacion": "Cimentación",
+    "estructura": "Estructura", "albanileria": "Albañilería", "acabados": "Acabados",
+    "hidraulica": "Instalación hidráulica", "sanitaria": "Instalación sanitaria",
+    "electrica": "Instalación eléctrica", "gas": "Instalación de gas",
+    "aire": "Aire acondicionado", "canceleria": "Cancelería", "pavimentos": "Pavimentos",
+    "urbanizacion": "Urbanización", "senalamiento": "Señalamiento", "jardineria": "Jardinería",
+    "impermeabilizacion": "Impermeabilización", "limpieza": "Limpieza", "proteccion": "Protección",
+    "herreria": "Herrería", "carpinteria": "Carpintería", "pintura": "Pintura",
+}
 
 _LOCK = threading.Lock()
 
@@ -195,6 +207,17 @@ CREATE TABLE IF NOT EXISTS reference_prices (
 );
 CREATE INDEX IF NOT EXISTS reference_prices_source_clave
     ON reference_prices (source_key, clave);
+CREATE TABLE IF NOT EXISTS reference_components (
+    ref_id INTEGER NOT NULL REFERENCES reference_prices(ref_id) ON DELETE CASCADE,
+    resource_clave TEXT NOT NULL,
+    description TEXT NOT NULL,
+    unit TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    unit_cost REAL NOT NULL,
+    resource_type TEXT NOT NULL,
+    is_labor_percentage INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (ref_id, resource_clave)
+);
 CREATE TABLE IF NOT EXISTS insumo_analysis (
     code TEXT PRIMARY KEY,
     kind TEXT NOT NULL,
@@ -1078,25 +1101,28 @@ class CatalogStore:
                 ),
             )
             row = conn.execute("SELECT * FROM concepts WHERE code = ?", (code,)).fetchone()
-        return dict(row)
+        return _concept_row(row)
 
     # ------------------------------------------------------ plantillas / paramétricos
 
     def create_priced_concept(
         self, *, code: str, description: str, unit: str, phase: str,
-        production_rate_per_day: float, ref_id: int,
+        production_rate_per_day: float, ref_id: int, origin: str = "taller",
+        origin_ref: str = "", import_source: str = "plantilla",
     ) -> dict:
         """A manual concept priced by an adopted reference row from birth (no
         matrix): how a past presupuesto's line becomes a concept the taller
         can use again."""
+        _check_origin(origin)
         with _LOCK, self._connect() as conn:
             if conn.execute("SELECT 1 FROM concepts WHERE code = ?", (code,)).fetchone():
                 raise ValueError(f"El concepto {code} ya existe.")
             conn.execute(
                 "INSERT INTO concepts (code, description, unit, phase, "
-                "production_rate_per_day, rule_key, import_source) "
-                "VALUES (?, ?, ?, ?, ?, NULL, ?)",
-                (code, description, unit, phase, production_rate_per_day, "plantilla"),
+                "production_rate_per_day, rule_key, import_source, origin, origin_ref) "
+                "VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+                (code, description, unit, phase, production_rate_per_day, import_source,
+                 origin, origin_ref),
             )
         return self.adopt_concept_reference(code, ref_id)
 
@@ -1970,6 +1996,218 @@ class CatalogStore:
             )
         log_stage(logger, "reference_imported", source=source["key"], rows=len(kept))
         return len(kept)
+
+    # ------------------------------------------------ la base: hojear y traer
+
+    def import_matrices_as_source(
+        self, parse: object, *, source_key: str, name: str, publisher: str = "",
+        region: str = "MX", vigencia: str = "", url: str = "",
+    ) -> int:
+        """Una base de matrices (OPUS, Excel) como fuente hojeable: cada
+        concepto es un renglón de referencia con su costo directo y sus
+        componentes, sin tocar el taller. «Traer al taller» copia después."""
+        from klave_engine.costing.sources.matrices import MatricesParse
+
+        assert isinstance(parse, MatricesParse)
+        rows: list[dict] = []
+        components_by_clave: dict[str, list[tuple]] = {}
+        for concept in parse.concepts:
+            direct = 0.0
+            labor = 0.0
+            lines: list[tuple] = []
+            for code, quantity in concept.components:
+                resource = parse.insumos.get(code)
+                if resource is None:
+                    continue
+                lines.append((
+                    code, resource.description, resource.unit, float(quantity),
+                    float(resource.unit_cost), resource.resource_type,
+                    int(resource.is_labor_percentage),
+                ))
+                if resource.is_labor_percentage:
+                    continue
+                amount = float(quantity) * float(resource.unit_cost)
+                direct += amount
+                if resource.resource_type == "mano_de_obra":
+                    labor += amount
+            for code, quantity in concept.components:
+                resource = parse.insumos.get(code)
+                if resource is not None and resource.is_labor_percentage:
+                    direct += labor * (float(quantity) / 100 if quantity > 1 else float(quantity))
+            if direct <= 0:
+                continue
+            rows.append({
+                "clave": concept.code, "description": concept.description, "unit": concept.unit,
+                "price": round(direct, 2), "group_clave": "", "group_description": concept.phase,
+                "extra": {"rendimiento": concept.production_rate_per_day, "matriz": True},
+            })
+            components_by_clave[concept.code] = lines
+        count = self.import_reference(
+            {"key": source_key, "name": name, "publisher": publisher, "region": region,
+             "vigencia": vigencia, "kind": "matrices", "url": url},
+            rows,
+        )
+        with self._connect() as conn:
+            ids = {
+                row["clave"]: row["ref_id"]
+                for row in conn.execute(
+                    "SELECT ref_id, clave FROM reference_prices WHERE source_key = ?",
+                    (source_key,),
+                ).fetchall()
+            }
+            conn.executemany(
+                "INSERT OR REPLACE INTO reference_components (ref_id, resource_clave, "
+                "description, unit, quantity, unit_cost, resource_type, is_labor_percentage) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (ids[clave], *line)
+                    for clave, lines in components_by_clave.items() if clave in ids
+                    for line in lines
+                ],
+            )
+        return count
+
+    def reference_components(self, ref_id: int) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM reference_components WHERE ref_id = ? ORDER BY resource_clave",
+                (ref_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def taller_origin_refs(self) -> set[str]:
+        """Las referencias que ya están en el taller («<fuente> · <clave>»)."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT origin_ref FROM concepts WHERE origin_ref != '' AND active = 1"
+            ).fetchall()
+        return {str(row["origin_ref"]) for row in rows}
+
+    def browse_reference(
+        self, query: str = "", *, source_keys: list[str] | None = None,
+        partida: str | None = None, region: str | None = None, kind: str | None = None,
+        limit: int = 50, offset: int = 0,
+    ) -> dict:
+        """La hoja de la base: renglones de todas las publicaciones e
+        importaciones, filtrados y paginados, con si ya están en el taller."""
+        from klave_engine.costing.matching import partida_de
+
+        tokens = [t for t in query.lower().split() if t][:6]
+        where = ["1 = 1"]
+        params: list[object] = []
+        if source_keys:
+            where.append(f"r.source_key IN ({','.join('?' * len(source_keys))})")
+            params.extend(source_keys)
+        if region:
+            where.append("s.region = ?")
+            params.append(region)
+        if kind:
+            where.append("s.kind = ?")
+            params.append(kind)
+        for token in tokens:
+            where.append("(lower(r.description) LIKE ? OR lower(r.clave) LIKE ? "
+                         "OR lower(r.group_description) LIKE ?)")
+            like = f"%{token}%"
+            params.extend([like, like, like])
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT r.*, s.name AS source_name, s.vigencia AS source_vigencia, "
+                "s.region AS source_region, s.kind AS source_kind FROM reference_prices r "
+                "JOIN price_sources s ON s.source_key = r.source_key "
+                f"WHERE {' AND '.join(where)} ORDER BY s.vigencia DESC, r.clave",
+                params,
+            ).fetchall()
+        records = [self._reference_row(row) for row in rows]
+        for record in records:
+            record["partida"] = partida_de(
+                str(record["clave"]), str(record["description"]),
+                str(record.get("group_description") or ""),
+            )
+        if partida:
+            records = [r for r in records if r["partida"] == partida]
+        in_taller = self.taller_origin_refs()
+        for record in records:
+            record["in_taller"] = f"{record['source_key']} · {record['clave']}" in in_taller
+        total = len(records)
+        start = max(0, offset)
+        page = records[start:start + max(1, min(limit, 500))]
+        return {"rows": page, "total": total}
+
+    def adopt_reference_as_concept(
+        self, ref_id: int, *, code: str | None = None, phase: str | None = None,
+        actor: str = "", force: bool = False,
+    ) -> dict:
+        """«Traer al taller»: un renglón publicado se vuelve concepto con su
+        precio de tabulador (oficial), o —si la fuente trae matriz— con su
+        matriz y sus insumos (importada). La clave del renglón es el código
+        salvo que se pida otro; una clave ya en el taller no se pisa."""
+        from klave_engine.costing.matching import partida_de
+
+        reference = self.get_reference(ref_id)
+        if reference is None:
+            raise ValueError("la referencia no existe")
+        concept_code = (code or str(reference["clave"])).strip().upper()
+        origin_ref = f"{reference['source_key']} · {reference['clave']}"
+        existing = {c["code"]: c for c in self.load_concepts(include_inactive=True)}
+        if concept_code in existing and not force:
+            raise ValueError(f"El concepto {concept_code} ya existe en el taller.")
+        if not phase:
+            canonical = partida_de(
+                str(reference["clave"]), str(reference["description"]),
+                str(reference.get("group_description") or ""),
+            )
+            phase = PARTIDA_LABELS.get(canonical, canonical.capitalize() or "Sin partida")
+        components = self.reference_components(ref_id)
+        extra = reference.get("extra") or {}
+        rate = float(extra.get("rendimiento") or 0) or 10.0
+        if components:
+            source_name = str(reference["source_name"])
+            acumulado: dict[str, float] = {}
+            orden: list[str] = []
+            for line in components:
+                if line["is_labor_percentage"]:
+                    clave, valor = "EQ-HERRAMIENTA", (
+                        line["quantity"] / 100 if line["quantity"] > 1 else line["quantity"]
+                    )
+                else:
+                    clave, valor = line["resource_clave"], float(line["quantity"])
+                    self.upsert_insumo(
+                        clave, description=line["description"], unit=line["unit"],
+                        resource_type=line["resource_type"], unit_cost=float(line["unit_cost"]),
+                        source=source_name, source_type="cotizacion",
+                        region=str(reference["source_region"]),
+                        vigencia=str(reference["source_vigencia"]),
+                        origin="importada", origin_ref=f"{reference['source_key']} · {clave}",
+                    )
+                if clave not in acumulado:
+                    orden.append(clave)
+                acumulado[clave] = round(acumulado.get(clave, 0.0) + valor, 8)
+            if concept_code in existing:
+                self.update_concept(
+                    concept_code, description=str(reference["description"]),
+                    unit=str(reference["unit"]), phase=phase, production_rate_per_day=rate,
+                    origin="importada", origin_ref=origin_ref,
+                )
+                self.set_apu_components(concept_code, [(c, acumulado[c]) for c in orden])
+                return existing[concept_code] | {"origin": "importada", "origin_ref": origin_ref}
+            return self.create_concept(
+                code=concept_code, description=str(reference["description"]),
+                unit=str(reference["unit"]), phase=phase, production_rate_per_day=rate,
+                components=[(c, acumulado[c]) for c in orden],
+                import_source=str(reference["source_key"]), origin="importada",
+                origin_ref=origin_ref,
+            )
+        if concept_code in existing:
+            self.update_concept(
+                concept_code, origin="oficial", origin_ref=origin_ref, phase=phase,
+            )
+            return self.adopt_concept_reference(concept_code, ref_id, force=True)
+        return self.create_priced_concept(
+            code=concept_code, description=str(reference["description"]),
+            unit=str(reference["unit"]), phase=phase, production_rate_per_day=rate,
+            ref_id=ref_id, origin="oficial", origin_ref=origin_ref,
+            import_source=str(reference["source_key"]),
+        )
 
     def search_reference(
         self, query: str, *, source_key: str | None = None, limit: int = 50
