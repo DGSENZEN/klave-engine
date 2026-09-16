@@ -115,7 +115,7 @@ Every Revisión action — confirm, exclude, reassign, mapping correction, measu
 
 **Why:** the omission that loses the bid: 1,983 m² of muro and no aplanado in the catálogo.
 
-**Data:** a curated `data`-free table in the package, `costing/implicaciones.json`: `{"si": "zapatas", "entonces": ["plantilla", "excavación", "relleno"]}`, `{"si": "muros de block", "entonces": ["aplanado", "cadenas", "castillos"]}`, `{"si": "losa en nivel > 0", "entonces": ["escalera"]}`… each with a source and a phrase. Later versions learn the table from what offices add after the engine's pass (flywheel spec).
+**Data:** a curated table shipped in the package (not in the runtime `data/` dir), `costing/implicaciones.json`: `{"si": "zapatas", "entonces": ["plantilla", "excavación", "relleno"]}`, `{"si": "muros de block", "entonces": ["aplanado", "cadenas", "castillos"]}`, `{"si": "losa en nivel > 0", "entonces": ["escalera"]}`… each with a source and a phrase. Later versions learn the table from what offices add after the engine's pass (flywheel spec).
 
 **Output:** the captura list (§2.5) gains a third group: «Esperado y ausente», one line per implication with the evidence («el plano trae 1,983 m² de muro»), and a row action «Agregar concepto» that opens the office's catálogo search with the family pre-filtered.
 
