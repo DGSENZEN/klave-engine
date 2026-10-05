@@ -110,6 +110,8 @@ class EntryResult(BaseModel):
     direct_cost_actual: float | None = None
     direct_cost_passed: bool | None = None
     concepts_unexpected: list[str] = Field(default_factory=list)
+    # Renglones cuyas variantes no suman su cantidad (debe estar vacío).
+    variants_unbalanced: list[str] = Field(default_factory=list)
     passed: bool
     message: str = ""
 
@@ -399,6 +401,10 @@ def evaluate_entry(entry: GoldEntry, settings: Settings | None = None) -> EntryR
     cost_passed: bool | None = None
     unexpected: list[str] = []
     cost_actual: float | None = None
+    variants_unbalanced: list[str] = []
+    if report is not None:
+        variants_unbalanced = unbalanced_variants(report)
+        passed = passed and not variants_unbalanced
     if entry.money is not None and report is not None:
         money_scores, cost_passed, unexpected = score_money(entry.money, report)
         cost_actual = round(report.boq.direct_cost_total, 2)
@@ -420,9 +426,23 @@ def evaluate_entry(entry: GoldEntry, settings: Settings | None = None) -> EntryR
         direct_cost_actual=cost_actual,
         direct_cost_passed=cost_passed,
         concepts_unexpected=unexpected,
+        variants_unbalanced=variants_unbalanced,
         passed=passed,
         message=message,
     )
+
+
+def unbalanced_variants(report: CostReport) -> list[str]:
+    """Renglones cuyas variantes no suman exactamente su cantidad: las
+    variantes reparten el renglón, nunca lo cambian."""
+    bad = []
+    for line in report.boq.lines:
+        if not line.variants:
+            continue
+        total = sum(v.quantity for v in line.variants)
+        if abs(total - line.quantity) > 1e-6 * max(1.0, abs(line.quantity)):
+            bad.append(f"{line.concept_code}: Σ variantes {total:.6f} ≠ {line.quantity:.6f}")
+    return bad
 
 
 def run(
@@ -494,6 +514,9 @@ def render_markdown(summary: dict) -> str:
             if entry.get("concepts_unexpected"):
                 lines += ["", "Conceptos nuevos que el gold no conoce: "
                           + ", ".join(entry["concepts_unexpected"])]
+        if entry.get("variants_unbalanced"):
+            lines += ["", "Variantes que no suman su renglón: "
+                      + "; ".join(entry["variants_unbalanced"])]
         lines.append("")
     return "\n".join(lines) + "\n"
 

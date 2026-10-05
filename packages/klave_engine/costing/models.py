@@ -157,6 +157,28 @@ class Concept(BaseModel):
     taller_clave: str = ""
 
 
+class BoqVariant(BaseModel):
+    """Una variante del renglón: los elementos que el plano especifica igual
+    (sección, armado, tipo, espesor, diámetro, material). Las variantes de un
+    renglón suman exactamente su cantidad; es lo que se mapea al catálogo del
+    taller y lo que sale a OPUS o Neodata con la clave de la oficina."""
+
+    key: str  # «EST-001.30X40-8N4»: clave del motor + firma; identidad para la memoria
+    signature: dict[str, str] = Field(default_factory=dict)
+    description: str = ""
+    quantity: float = 0.0
+    source_detection_count: int = 0
+    source_detections: list[str] = Field(default_factory=list)
+    # El mapeo al catálogo del taller (vacío mientras nadie lo resuelva).
+    clave: str = ""
+    mapped_description: str = ""
+    mapping: str = ""  # automatica | propuesta | confirmada | sin_equivalente | ""
+    mapping_reason: str = ""
+    unit_price: float | None = None
+    amount: float | None = None
+    price_source: str = ""
+
+
 class BoqLine(BaseModel):
     concept_code: str
     description: str
@@ -185,6 +207,8 @@ class BoqLine(BaseModel):
     # True when the concept has no matrix nor adopted P.U.: the quantity is
     # real, the amount is not zero — it is unknown, and the presupuesto says so.
     unpriced: bool = False
+    # Lo que el plano distingue dentro del renglón; Σ variantes == quantity.
+    variants: list[BoqVariant] = Field(default_factory=list)
 
 
 class BillOfQuantities(BaseModel):

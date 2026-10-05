@@ -134,6 +134,7 @@ def build_cost_report(
         plantillas=store.list_plantillas(),
         price_vigencias=store.price_vigencias(),
         integracion_taller=store.get_setting("integracion"),
+        variant_mappings=store.load_variant_mappings(),
     )
 
 

@@ -12,6 +12,7 @@ fixture) the flat count/sum computation is used unchanged.
 
 import re
 from collections import defaultdict
+from collections.abc import Callable
 
 from klave_engine.common.logging import get_logger, log_stage
 from klave_engine.costing.earthwork import cut_fill_volumes, describe
@@ -19,12 +20,20 @@ from klave_engine.costing.insumos import REFERENCE_PRICE_DISCLAIMER
 from klave_engine.costing.models import (
     BillOfQuantities,
     BoqLine,
+    BoqVariant,
     Concept,
     CostingAssumptions,
     QuantityKind,
     QuantityRule,
     UnitPriceAnalysis,
     ViewScope,
+)
+from klave_engine.costing.sintesis import (
+    agrupar,
+    descripcion_variante,
+    dividir,
+    separa,
+    variant_key,
 )
 from klave_engine.detection.results import Detection, DetectionType
 from klave_engine.detection.views import SheetSegmentation
@@ -552,6 +561,41 @@ def _scoped_result(
                        _contributing(concept, matched_plan), [], per_view(matched_plan))
 
 
+def _variantes(
+    concept: Concept,
+    result: _LineResult,
+    matched: list[Detection],
+    meters_factor: float,
+    measure: Callable[[list[Detection]], _LineResult] | None,
+) -> list[BoqVariant]:
+    """El renglón separado por lo que el plano especifica de sus elementos.
+    Un solo grupo no se vuelve a medir; varios se miden con la misma regla y
+    se reparten para que sumen exactamente el renglón."""
+    groups = agrupar(result.dets or matched, meters_factor) if separa(concept.code) else []
+    if measure is None or len(groups) <= 1:
+        sig = groups[0][0] if groups else {}
+        return [BoqVariant(
+            key=variant_key(concept.code, sig), signature=sig,
+            description=descripcion_variante(concept.description, sig),
+            quantity=result.quantity, source_detection_count=len(result.dets),
+            source_detections=[d.detection_id for d in result.dets][:200],
+        )]
+
+    def medir(subset: list[Detection]) -> tuple[float, list[Detection]]:
+        part = measure(subset)
+        return part.quantity, part.dets
+
+    rows, factor = dividir(
+        concept.code, concept.description, result.quantity, matched, meters_factor, medir
+    )
+    if abs(factor - 1.0) > 0.02:
+        result.notes.append(
+            "Variantes repartidas en proporción a su medición: medidas por separado "
+            f"sumaban {1 / factor:.1%} del renglón (la regla no es aditiva aquí)."
+        )
+    return [BoqVariant(**row) for row in rows]
+
+
 def generate_bill_of_quantities(
     project_id: str,
     detections: list[Detection],
@@ -622,51 +666,61 @@ def generate_bill_of_quantities(
                     )
                 continue
             result = _earthwork_result(concept, matched, meters_factor, assumptions)
-        elif seg is not None:
-            # The engineer's levantamiento manual has no place on the sheet —
-            # no bbox, no view assignment — so it bypasses the view scoping
-            # that would silently drop it, and adds on top of the scoped
-            # result with its own note.
-            manual = [d for d in matched if d.evidence.method == "levantamiento_manual"]
-            manual_ids = {d.detection_id for d in manual}
-            matched_plan = [
-                d for d in matched
-                if d.detection_id not in manual_ids
-                and seg.assignment.get(d.detection_id) in plan_ids
-            ]
-            result = _scoped_result(
-                concept, matched_plan, seg, meters_factor, assumptions
-            )
-            if manual:
-                if concept.view_scope == ViewScope.COLUMN_VOLUME:
-                    extra = _column_volume(manual, meters_factor, assumptions, None)
-                else:
-                    raw = _raw_over(concept, manual, meters_factor)
-                    extra = _LineResult(
-                        round(raw * concept.quantity_factor, 6), raw,
-                        _contributing(concept, manual), [],
-                    )
-                if extra.quantity > 0:
-                    result.quantity = round(result.quantity + extra.quantity, 6)
-                    result.raw += extra.raw
-                    result.dets = result.dets + extra.dets
-                    result.notes = list(result.notes) + [
-                        f"Incluye {len(extra.dets)} elemento(s) del levantamiento "
-                        "manual del ingeniero (omitidos por el motor)."
-                    ]
-        elif concept.view_scope == ViewScope.COLUMN_VOLUME and matched:
-            # A sheet without frames (one planta, or a file with no title
-            # blocks) still declares sections in its cuadro and markers; the
-            # count × default section × default height shortcut threw that
-            # reading away. One planta: the assumed column height applies.
-            result = _column_volume(matched, meters_factor, assumptions, None)
+            variant_measure = None
         else:
-            raw = _raw_over(concept, matched, meters_factor)
-            quantity = round(raw * concept.quantity_factor, 6)
-            result = _LineResult(quantity, raw, _contributing(concept, matched), [])
+            def measure(subset: list[Detection], concept: Concept = concept) -> _LineResult:
+                """La regla del concepto sobre un subconjunto: el renglón entero o
+                una de sus variantes."""
+                if seg is not None:
+                    # The engineer's levantamiento manual has no place on the sheet —
+                    # no bbox, no view assignment — so it bypasses the view scoping
+                    # that would silently drop it, and adds on top of the scoped
+                    # result with its own note.
+                    manual = [d for d in subset if d.evidence.method == "levantamiento_manual"]
+                    manual_ids = {d.detection_id for d in manual}
+                    matched_plan = [
+                        d for d in subset
+                        if d.detection_id not in manual_ids
+                        and seg.assignment.get(d.detection_id) in plan_ids
+                    ]
+                    result = _scoped_result(
+                        concept, matched_plan, seg, meters_factor, assumptions
+                    )
+                    if manual:
+                        if concept.view_scope == ViewScope.COLUMN_VOLUME:
+                            extra = _column_volume(manual, meters_factor, assumptions, None)
+                        else:
+                            raw = _raw_over(concept, manual, meters_factor)
+                            extra = _LineResult(
+                                round(raw * concept.quantity_factor, 6), raw,
+                                _contributing(concept, manual), [],
+                            )
+                        if extra.quantity > 0:
+                            result.quantity = round(result.quantity + extra.quantity, 6)
+                            result.raw += extra.raw
+                            result.dets = result.dets + extra.dets
+                            result.notes = list(result.notes) + [
+                                f"Incluye {len(extra.dets)} elemento(s) del levantamiento "
+                                "manual del ingeniero (omitidos por el motor)."
+                            ]
+                elif concept.view_scope == ViewScope.COLUMN_VOLUME and subset:
+                    # A sheet without frames (one planta, or a file with no title
+                    # blocks) still declares sections in its cuadro and markers; the
+                    # count × default section × default height shortcut threw that
+                    # reading away. One planta: the assumed column height applies.
+                    result = _column_volume(subset, meters_factor, assumptions, None)
+                else:
+                    raw = _raw_over(concept, subset, meters_factor)
+                    quantity = round(raw * concept.quantity_factor, 6)
+                    result = _LineResult(quantity, raw, _contributing(concept, subset), [])
 
-        if concept.rule.opening_deduction and result.quantity > 0:
-            _deduct_openings(concept, result, meters_factor, assumptions)
+                rule = concept.rule
+                if rule is not None and rule.opening_deduction and result.quantity > 0:
+                    _deduct_openings(concept, result, meters_factor, assumptions)
+                return result
+
+            result = measure(matched)
+            variant_measure = measure
 
         # La nota del renglón no basta cuando el alcance entero se degradó:
         # cimentación calculada sobre todas las plantas se avisa una vez.
@@ -714,15 +768,18 @@ def generate_bill_of_quantities(
             if len(valores) == 1:
                 descripcion = _con_especificacion(descripcion, f"de {next(iter(valores))}")
             elif len(valores) > 1:
-                boq.warnings.append(
-                    f"Concepto {concept.code}: el plano declara {len(valores)} {nombre} "
-                    f"distintos ({', '.join(sorted(valores))}) en la misma línea. Se "
-                    f"presupuestan juntos y no deberían: cada uno tiene su precio."
+                result.notes.append(
+                    f"El plano declara {len(valores)} {nombre} distintos "
+                    f"({', '.join(sorted(valores))}): el renglón se separa en variantes, "
+                    "cada una con su precio."
                 )
         confidence = (
             sum(d.confidence for d in contributing) / len(contributing)
             if contributing
             else 0.0
+        )
+        variants = _variantes(
+            concept, result, matched, meters_factor, variant_measure
         )
         boq.lines.append(
             BoqLine(
@@ -747,6 +804,7 @@ def generate_bill_of_quantities(
                 ),
                 by_view=result.by_view if len(result.by_view) > 1 else {},
                 taller_clave=concept.taller_clave,
+                variants=variants,
             )
         )
 

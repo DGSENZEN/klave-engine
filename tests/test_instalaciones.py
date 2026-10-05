@@ -258,7 +258,11 @@ def test_dos_diametros_en_una_linea_se_dicen_en_vez_de_fingirse_uno():
     )
     linea = next(x for x in boq.lines if x.concept_code == "SAN-002")
     assert "mm" not in linea.description  # no se elige uno de los dos
-    assert any("2 diámetros distintos" in w for w in boq.warnings)
+    assert any("2 diámetros distintos" in a for a in linea.assumptions)
+    # Y ahora se separan: cada diámetro es una variante con su cantidad.
+    assert sorted(v.signature["diametro"] for v in linea.variants) == ['102 mm (4")', '51 mm (2")']
+    assert all('mm' in v.description for v in linea.variants)
+    assert sum(v.quantity for v in linea.variants) == linea.quantity
 
 
 def test_la_linea_carga_el_material_junto_al_diametro():

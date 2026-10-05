@@ -213,6 +213,20 @@ CREATE TABLE IF NOT EXISTS reference_prices (
 );
 CREATE INDEX IF NOT EXISTS reference_prices_source_clave
     ON reference_prices (source_key, clave);
+CREATE TABLE IF NOT EXISTS variant_mappings (
+    variant_key TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    target_kind TEXT NOT NULL DEFAULT '',
+    target_code TEXT NOT NULL DEFAULT '',
+    ref_id INTEGER,
+    clave TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    unit TEXT NOT NULL DEFAULT '',
+    score REAL,
+    reason TEXT NOT NULL DEFAULT '',
+    actor TEXT NOT NULL DEFAULT '',
+    at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS price_adjustments (
     adjustment_id INTEGER PRIMARY KEY AUTOINCREMENT,
     kind TEXT NOT NULL,
@@ -2774,6 +2788,56 @@ class CatalogStore:
     def delete_inventory_mapping(self, mapping_id: int) -> bool:
         with _LOCK, self._connect() as conn:
             cursor = conn.execute("DELETE FROM inventory_mappings WHERE id = ?", (mapping_id,))
+        return cursor.rowcount > 0
+
+    # ---------------------------------------------- variantes → catálogo del taller
+
+    MAPPING_STATUSES = ("automatica", "propuesta", "confirmada", "sin_equivalente")
+
+    def load_variant_mappings(self) -> dict[str, dict]:
+        """La memoria del mapeo: variante → concepto del taller o renglón de su
+        base, con el precio vigente del renglón cuando apunta a uno."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT m.*, r.price AS ref_price, s.name AS ref_source "
+                "FROM variant_mappings m "
+                "LEFT JOIN reference_prices r ON r.ref_id = m.ref_id "
+                "LEFT JOIN price_sources s ON s.source_key = r.source_key"
+            ).fetchall()
+        return {row["variant_key"]: dict(row) for row in rows}
+
+    def set_variant_mapping(
+        self, variant_key: str, *, status: str, target_kind: str = "",
+        target_code: str = "", ref_id: int | None = None, clave: str = "",
+        description: str = "", unit: str = "", score: float | None = None,
+        reason: str = "", actor: str = "",
+    ) -> dict:
+        if status not in self.MAPPING_STATUSES:
+            raise ValueError(f"Estado de mapeo inválido: {status!r}.")
+        if status in ("automatica", "propuesta", "confirmada") and not (target_code or ref_id):
+            raise ValueError("Un mapeo necesita a qué concepto o renglón apunta.")
+        if target_kind not in ("", "concept", "reference"):
+            raise ValueError(f"Destino inválido: {target_kind!r}.")
+        with _LOCK, self._connect() as conn:
+            conn.execute(
+                "INSERT INTO variant_mappings (variant_key, status, target_kind, target_code, "
+                "ref_id, clave, description, unit, score, reason, actor, at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(variant_key) DO UPDATE "
+                "SET status = excluded.status, target_kind = excluded.target_kind, "
+                "target_code = excluded.target_code, ref_id = excluded.ref_id, "
+                "clave = excluded.clave, description = excluded.description, "
+                "unit = excluded.unit, score = excluded.score, reason = excluded.reason, "
+                "actor = excluded.actor, at = excluded.at",
+                (variant_key, status, target_kind, target_code, ref_id, clave, description,
+                 unit, score, reason[:300], actor[:80], _now()),
+            )
+        return self.load_variant_mappings()[variant_key]
+
+    def delete_variant_mapping(self, variant_key: str) -> bool:
+        with _LOCK, self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM variant_mappings WHERE variant_key = ?", (variant_key,)
+            )
         return cursor.rowcount > 0
 
     # ---------------------------------------------- matrices generadas y validación

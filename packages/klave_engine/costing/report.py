@@ -23,6 +23,7 @@ from klave_engine.costing.indicadores import compute_indicators
 from klave_engine.costing.instalaciones import ya_detectado
 from klave_engine.costing.integration import integrate_costs, resolve_integration
 from klave_engine.costing.levantamiento import apply_inventory
+from klave_engine.costing.mapeo import consolidar_variantes
 from klave_engine.costing.models import (
     BillOfQuantities,
     BoqLine,
@@ -326,6 +327,7 @@ def generate_cost_report(
     plantillas: list[dict] | None = None,
     price_vigencias: dict[str, str] | None = None,
     integracion_taller: dict | None = None,
+    variant_mappings: dict[str, dict] | None = None,
 ) -> CostReport:
     config = config or CostingConfig()
     assumptions, calibration_notes = _calibrate_assumptions(
@@ -389,6 +391,9 @@ def generate_cost_report(
         apply_parametrics(boq, catalog, apus, parametric_rules, basis)
     if adjustments:
         _apply_adjustments(boq, catalog, apus, adjustments)
+    # Las variantes del plano con las claves y los precios de la oficina; el
+    # renglón queda como la suma de sus variantes.
+    consolidar_variantes(boq, variant_mappings or {}, apus)
     if not boq.units_reliable:
         # Drawing units are not metres: nothing here may carry a price.
         for line in boq.lines:
