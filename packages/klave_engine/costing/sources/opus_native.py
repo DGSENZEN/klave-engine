@@ -412,13 +412,25 @@ def is_opus_zip(raw: bytes, filename: str = "") -> bool:
         return False
 
 
+def _is_table(name: str) -> bool:
+    """Un .DBF/.FPT de la base. «Comprimir» en el Finder agrega
+    __MACOSX/._<tabla>.DBF —metadatos del Mac con el mismo sufijo— que no son
+    tablas y vaciaban el prefijo común de la base."""
+    base = name.rsplit("/", 1)[-1]
+    return (
+        name.upper().endswith((".DBF", ".FPT"))
+        and not name.startswith("__MACOSX/")
+        and not base.startswith("._")
+    )
+
+
 def parse_opus_zip(raw: bytes) -> OpusParse:
     try:
         with zipfile.ZipFile(io.BytesIO(raw)) as zf:
             files = {
                 info.filename: zf.read(info)
                 for info in zf.infolist()
-                if not info.is_dir() and info.filename.upper().endswith((".DBF", ".FPT"))
+                if not info.is_dir() and _is_table(info.filename)
             }
     except zipfile.BadZipFile as exc:
         raise CustomCatalogError("El .zip de la base OPUS no se pudo abrir.") from exc

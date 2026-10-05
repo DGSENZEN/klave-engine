@@ -243,6 +243,19 @@ def test_zip_dispatch_and_store_import(base, data_dir):
     assert any("cuadrillas importados" in p for p in result["problems"])
 
 
+def test_finder_zip_ignores_macos_resource_forks(base):
+    # «Comprimir» en el Finder agrega __MACOSX/._<tabla>.DBF: 212 bytes de
+    # metadatos con el mismo sufijo, que vaciaban el prefijo de la base.
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as zf:
+        for name, data in base.items():
+            zf.writestr(f"KLAV3-Catalogo/{name}", data)
+            zf.writestr(f"__MACOSX/KLAV3-Catalogo/._{name}", b"\x00\x05\x16\x07" + b"\x00" * 208)
+        zf.writestr("KLAV3-Catalogo/.DS_Store", b"\x00" * 64)
+    parse = parse_opus_zip(buffer.getvalue())
+    assert [c.code for c in parse.matrices.concepts] == ["EMC3"]
+
+
 def test_missing_tables_are_said():
     with pytest.raises(CustomCatalogError, match="elementos"):
         parse_opus_native({"X_IGIF.DBF": write_dbf([("NOMBRE", "C", 5, 0)], [])})
