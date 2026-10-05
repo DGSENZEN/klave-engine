@@ -914,6 +914,30 @@ lo eliminado punteado). Pendiente: la vista «supuesto → leído» del
 anteproyecto al ejecutivo (el cálculo ya sirve: compara renglones por
 concepto) y verlo en un navegador con sesión.
 
+### V1 · R5 · Esperado y ausente, tus índices, la convocante antes de firmar (2026-10-06, rama `v1-r5`)
+
+(1) **Esperado y ausente** (`costing/implicaciones.json` + `completitud.py`):
+lo que una partida trae consigo — plantilla bajo la zapata, relleno y acarreo
+tras la excavación, acero y cimbra del concreto armado, aplanado, castillos y
+cadenas del muro, pintura del aplanado, escalera con más de una planta — y el
+presupuesto no tiene, con su evidencia; viaja en «Lo que el plano no dio». El
+acero y la cimbra se piden **renglón por renglón**: la primera versión daba
+por presente el acero de Marina porque una losa decía «armada con varilla», y
+el acero de una losa no arma las columnas. Lo que un renglón dice incluir
+(«incluye acero, cimbra») cuenta. En Marina faltan relleno, acero de refuerzo
+(ocho renglones de concreto sin acero) y escalera (cuatro plantas); en
+prueba-1, acero y escalera. (2) **Tus índices**: cada recálculo guarda los
+índices del proyecto en el catálogo del taller y cada uno se compara con los
+otros proyectos (con tres o más: mediana, rango y la frase cuando cae fuera).
+El gold no escribe en esa historia (una primera corrida sí lo hizo; se
+borraron esas siete filas). (3) **La convocante antes de firmar**: la pantalla
+vivía sólo en Contrato, tras su candado; ahora también es una entrada del
+nodo Presupuesto. Cada renglón se compara contra la variante del plano que
+nombra, dice en palabras lo que Klave mide con su liga al plano (antes: la
+clave del motor y un porcentaje) y sale a Excel. De paso: la primera lectura
+de un proyecto ya aplica la memoria del mapeo del taller (R1 sólo la aplicaba
+al recalcular).
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
