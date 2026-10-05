@@ -38,7 +38,9 @@ def candidatos_del_taller(store: CatalogStore) -> list[Candidate]:
     del motor) y los renglones de las bases que importó con matrices."""
     candidates: list[Candidate] = []
     for row in store.load_concepts():
-        if row.get("rule_key"):
+        # Ni las reglas del motor ni lo que Klave sembró o generó: el catálogo
+        # de la oficina es lo que la oficina escribió, importó o adoptó.
+        if row.get("rule_key") or (row.get("origin") or "taller") == "generada":
             continue
         candidates.append(Candidate(
             kind="concept", key=row["code"], clave=row["code"],
@@ -184,7 +186,11 @@ def mapear(
             if existing and (existing["status"] == "confirmada" or not rematch):
                 counts["conservadas"] += 1
                 continue
-            status, match = proponer(variant.description, line.unit, line.phase, candidates)
+            pool = [
+                c for c in candidates
+                if not (c.kind == "concept" and c.key == line.concept_code)
+            ]
+            status, match = proponer(variant.description, line.unit, line.phase, pool)
             if match is None:
                 store.set_variant_mapping(
                     variant.key, status="sin_equivalente",

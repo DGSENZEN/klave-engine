@@ -107,3 +107,14 @@ def test_mapear_remembers_and_respects_a_person(data_dir):
     assert store.load_variant_mappings()["EST-001.30X40"]["actor"] == "Diego"
     with pytest.raises(ValueError):
         store.set_variant_mapping("EST-001.X", status="confirmada")
+
+
+def test_klave_seeds_are_not_the_office_catalog(data_dir):
+    """Los conceptos que Klave sembró no son «tu catálogo»: una cimbra del
+    motor no puede mapearse a sí misma y llamarse acierto."""
+    from klave_engine.costing.mapeo import candidatos_del_taller
+
+    store = get_catalog_store(data_dir)
+    codes = {c.key for c in candidatos_del_taller(store) if c.kind == "concept"}
+    assert "EST-008" not in codes and "CIM-003" not in codes
+
