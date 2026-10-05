@@ -1043,6 +1043,10 @@ export type RenglonConvocante = {
   diferencia_pct: number | null;
   unit_price: number | null;
   amount: number | null;
+  /** La variante del plano que el renglón nombra (sección, armado…), si una gana. */
+  variant_key?: string;
+  /** Lo que Klave mide para ese renglón, en palabras. */
+  mide_como?: string;
 };
 
 export type CatalogoConvocante = {

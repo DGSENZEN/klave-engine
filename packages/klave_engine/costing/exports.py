@@ -1304,6 +1304,40 @@ def build_cambios_workbook(
     return buffer.getvalue()
 
 
+def build_convocante_workbook(payload: dict) -> bytes:
+    """El catálogo de la convocante contra el plano: sus claves, su orden y sus
+    cantidades tal cual, y al lado lo que el plano sostiene."""
+    workbook = Workbook()
+    ws = workbook.active
+    ws.title = "Convocante contra plano"
+    _title(ws, 1, f"{payload.get('nombre') or 'Catálogo de la convocante'} — contra el plano",
+           size=13)
+    _muted(ws, 2, 1, "Las cantidades de la convocante son el contrato; la diferencia se "
+                     "aclara en junta. Positivo: el plano trae más que el catálogo.")
+    _header(ws, 4, ["Clave", "Concepto", "Unidad", "Convocante", "Plano", "Diferencia", "%",
+                    "Klave lo mide como"])
+    for i, r in enumerate(payload.get("renglones") or [], start=5):
+        plano = r.get("quantity_engine")
+        dif = None if plano is None else round(plano - float(r.get("quantity") or 0.0), 4)
+        pct = r.get("diferencia_pct")
+        values: list[Any] = [
+            r.get("clave"), r.get("description"), r.get("unit"), r.get("quantity"),
+            "—" if plano is None else plano, "—" if dif is None else dif,
+            "—" if pct is None else round(pct, 1),
+            r.get("mide_como") or ("Sin equivalente en Klave" if not r.get("concept_code") else ""),
+        ]
+        for col, value in enumerate(values, start=1):
+            cell = ws.cell(row=i, column=col, value=value)
+            cell.border = _box
+            if col in (4, 5, 6) and isinstance(value, (int, float)):
+                cell.number_format = QTY_FORMAT
+    _autosize(ws, [12, 60, 9, 13, 13, 13, 8, 50])
+    ws.freeze_panes = "A5"
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
 def build_apus_workbook(report: CostReport, reviews: ProjectReviews) -> bytes:
     """Every APU as it prints in the presupuesto workbook, on its own.
 

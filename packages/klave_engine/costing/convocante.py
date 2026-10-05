@@ -30,7 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from klave_engine.costing.matching import Candidate, rank
-from klave_engine.costing.models import BillOfQuantities, Concept
+from klave_engine.costing.models import BillOfQuantities, BoqLine, BoqVariant, Concept
 from klave_engine.costing.sources.presupuesto import PresupuestoRow
 
 # Debajo de esto la coincidencia no se propone sola: el renglón queda para que
@@ -63,6 +63,11 @@ class RenglonConvocante:
     # La cantidad que el plano sostiene para ese concepto, cuando la hay.
     quantity_engine: float | None = None
     unit_price: float | None = None
+    # La variante del plano a la que corresponde (sección, armado, diámetro…),
+    # y lo que Klave mide en palabras: «columna 30×40» se compara contra las
+    # columnas de 30×40, no contra todas.
+    variant_key: str = ""
+    mide_como: str = ""
 
     @property
     def amount(self) -> float | None:
@@ -126,6 +131,25 @@ def _atadura(
     return None
 
 
+def _variante(fila: PresupuestoRow, linea: BoqLine) -> BoqVariant | None:
+    """La variante del renglón del plano que el texto de la convocante nombra:
+    sólo cuando el renglón se separa en varias y una gana con claridad."""
+    variantes = [v for v in linea.variants if v.quantity > 0]
+    if len(variantes) < 2:
+        return None
+    candidatos = [
+        Candidate(kind="concept", key=v.key, clave=v.key, description=v.description,
+                  unit=linea.unit, price=None)
+        for v in variantes
+    ]
+    mejores = rank(fila.description, fila.unit, candidatos, limit=2)
+    if not mejores or mejores[0].score < UMBRAL_MOTOR:
+        return None
+    if len(mejores) > 1 and mejores[1].score >= mejores[0].score - 0.02:
+        return None  # empate: la convocante no dice cuál; se compara contra el renglón
+    return next(v for v in variantes if v.key == mejores[0].candidate.key)
+
+
 def atar_catalogo(
     filas: list[PresupuestoRow],
     catalog: list[Concept],
@@ -140,7 +164,7 @@ def atar_catalogo(
     sostiene y el precio que el taller tenga, y nada de eso toca el renglón."""
     del_motor = _candidatos([c for c in catalog if c.rule is not None])
     del_taller = _candidatos([c for c in catalog if c.rule is None])
-    del_plano = {line.concept_code: line.quantity for line in (boq.lines if boq else [])}
+    lineas = {line.concept_code: line for line in (boq.lines if boq else [])}
     precios = precios or {}
     renglones: list[RenglonConvocante] = []
     for orden, fila in enumerate(filas):
@@ -151,7 +175,15 @@ def atar_catalogo(
         atado = _atadura(fila, del_motor, del_taller)
         if atado is not None:
             renglon.concept_code, renglon.match_score, renglon.match_reasons = atado
-            renglon.quantity_engine = del_plano.get(renglon.concept_code)
+            linea = lineas.get(renglon.concept_code)
+            if linea is not None:
+                renglon.quantity_engine = linea.quantity
+                renglon.mide_como = linea.description
+                variante = _variante(fila, linea)
+                if variante is not None:
+                    renglon.variant_key = variante.key
+                    renglon.quantity_engine = variante.quantity
+                    renglon.mide_como = variante.description
         # El precio del renglón es del licitante: el catálogo entrante nunca
         # los trae, y si los trae no son suyos.
         precio = precios.get(renglon.concept_code) if renglon.concept_code else None

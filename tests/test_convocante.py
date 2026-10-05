@@ -160,3 +160,38 @@ def test_si_ninguno_del_motor_alcanza_se_mira_el_resto():
     cat = atar_catalogo(filas, catalogo)
     assert cat.renglones[0].concept_code == "MOB-01"
     assert cat.renglones[0].quantity_engine is None
+
+
+def test_rows_compare_against_the_variant_they_name():
+    """«Columna 30×40» se compara contra las columnas de 30×40 del plano, no
+    contra todas; si el texto no distingue, contra el renglón entero."""
+    from klave_engine.costing.models import BoqVariant
+
+    linea = BoqLine(
+        concept_code="EST-001", description="Columnas de concreto armado f'c=250 kg/cm²",
+        unit="M3", quantity=10.0, unit_price=0.0, amount=0.0, phase="Estructura",
+        raw_quantity=10.0, raw_kind=QuantityKind.COUNT, source_detection_count=3,
+        confidence=0.9,
+        variants=[
+            BoqVariant(key="EST-001.30X40", quantity=7.0,
+                       description=(
+                           "Columnas de concreto armado f'c=250 kg/cm², de sección 30×40 cm"
+                       )),
+            BoqVariant(key="EST-001.15X15", quantity=3.0,
+                       description=(
+                           "Columnas de concreto armado f'c=250 kg/cm², de sección 15×15 cm"
+                       )),
+        ],
+    )
+    catalogo = [_concepto("EST-001", "Columnas de concreto armado f'c=250 kg/cm²", "M3")]
+    filas = [
+        _fila("E-1", "Columna de concreto armado f'c=250 kg/cm2 de 30x40 cm", "M3", 6.5),
+        _fila("E-2", "Columna de concreto armado f'c=250 kg/cm2 de 15x15 cm", "M3", 3.0),
+        _fila("E-3", "Columnas de concreto armado f'c=250 kg/cm2", "M3", 10.0),
+    ]
+    atado = atar_catalogo(filas, catalogo, BillOfQuantities(project_id="p", lines=[linea]))
+    a, b, c = atado.renglones
+    assert a.variant_key == "EST-001.30X40" and a.quantity_engine == 7.0
+    assert "30×40" in a.mide_como
+    assert b.variant_key == "EST-001.15X15" and b.quantity_engine == 3.0
+    assert c.variant_key == "" and c.quantity_engine == 10.0

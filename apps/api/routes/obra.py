@@ -105,6 +105,7 @@ def _renglon_payload(renglon: object) -> dict:
         "quantity_engine": r.quantity_engine,  # type: ignore[attr-defined]
         "diferencia_pct": r.diferencia_pct,  # type: ignore[attr-defined]
         "unit_price": r.unit_price, "amount": r.amount,  # type: ignore[attr-defined]
+        "variant_key": r.variant_key, "mide_como": r.mide_como,  # type: ignore[attr-defined]
     }
 
 
@@ -182,6 +183,24 @@ def leer_catalogo(
     if datos is None:
         return {"nombre": "", "renglones": [], "notas": [], "avisos": [], "total": 0.0}
     return datos
+
+
+@router.get("/{project_id}/catalogo-convocante.xlsx")
+def exportar_catalogo(
+    project_id: str,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    from klave_engine.costing.exports import build_convocante_workbook
+
+    datos = _leer(store, settings, project_id, CATALOGO)
+    if not datos or not datos.get("renglones"):
+        raise HTTPException(status_code=404, detail={"error_type": "sin_catalogo"})
+    return Response(
+        content=build_convocante_workbook(datos),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="convocante_contra_plano.xlsx"'},
+    )
 
 
 # ---------------------------------------------------------- estimaciones ---

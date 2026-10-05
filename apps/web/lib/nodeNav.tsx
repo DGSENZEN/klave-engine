@@ -113,6 +113,12 @@ export const NODE_NAV: NodeNav[] = [
         href: "/presupuesto",
       },
       {
+        key: "convocante",
+        label: "Catálogo de la convocante",
+        icon: <Scales size={16} />,
+        href: "/convocante",
+      },
+      {
         key: "apu",
         label: "Precios unitarios",
         icon: <Calculator size={16} />,
