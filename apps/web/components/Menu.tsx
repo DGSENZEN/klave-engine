@@ -103,12 +103,26 @@ export function ButtonMenu({
         <CaretDown size={13} weight="bold" className={open ? "rotate-180" : ""} />
       </button>
       {open && (
-        <div className={`toast-in absolute right-0 top-full z-40 mt-1 ${width} overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg`}>
+        <div
+          ref={keepOnScreen}
+          className={`toast-in absolute right-0 top-full z-40 mt-1 ${width} max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg`}
+        >
           {children(() => setOpen(false))}
         </div>
       )}
     </div>
   );
+}
+
+/** The menu hangs from the trigger's right edge; when the page header wraps
+ *  and the trigger lands on the left, that pushes it off-screen (the Importar…
+ *  options were cut in half), so it hangs from the left edge instead. */
+function keepOnScreen(menu: HTMLDivElement | null) {
+  if (!menu) return;
+  if (menu.getBoundingClientRect().left < 8) {
+    menu.style.right = "auto";
+    menu.style.left = "0";
+  }
 }
 
 export function MenuItem({
