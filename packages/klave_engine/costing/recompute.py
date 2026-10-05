@@ -138,6 +138,20 @@ def build_cost_report(
     )
 
 
+def apply_taller_history(
+    report: CostReport, store: CatalogStore, project_id: str, *, save: bool = True
+) -> None:
+    """Los índices de este proyecto contra los otros del taller, y los suyos
+    guardados para el siguiente."""
+    from klave_engine.costing.indicadores import con_historia, valores_de
+
+    if not report.indicators:
+        return
+    report.indicators = con_historia(report.indicators, store.load_project_indices(project_id))
+    if save and report.boq.units_reliable:
+        store.save_project_indices(project_id, valores_de(report.indicators))
+
+
 def recompute_and_persist(
     input_dir: Path,
     control_dir: Path,
@@ -148,9 +162,9 @@ def recompute_and_persist(
 ) -> CostReport:
     """Recompute costs from an immutable run and persist a derived scenario."""
     inputs = load_costing_inputs(input_dir, project_id)
-    report = build_cost_report(
-        inputs, overrides, reviews=load_reviews(control_dir), store=catalog_store
-    )
+    store = catalog_store or get_catalog_store(get_settings().data_dir)
+    report = build_cost_report(inputs, overrides, reviews=load_reviews(control_dir), store=store)
+    apply_taller_history(report, store, project_id)
 
     write_json(control_dir / COST_REPORT_OVERRIDE_FILENAME, report)
     save_overrides(control_dir, overrides)

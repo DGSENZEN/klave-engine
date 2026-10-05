@@ -23,7 +23,7 @@ from klave_engine.costing.hallazgos import promote_detection_warnings
 from klave_engine.costing.insumos import apply_price_overrides
 from klave_engine.costing.models import CostingConfig, CostReport
 from klave_engine.costing.presentation import publishable_stored_total, publishable_total
-from klave_engine.costing.recompute import load_overrides
+from klave_engine.costing.recompute import apply_taller_history, load_overrides
 from klave_engine.costing.report import (
     boq_to_csv,
     cost_report_to_markdown,
@@ -253,7 +253,10 @@ def run_full_pipeline(
     artifact_dir: Path | None = None,
     reports_dir: Path | None = None,
     catalog_store: CatalogStore | None = None,
+    record_history: bool = True,
 ) -> PipelineResult:
+    """``record_history`` guarda los índices de este proyecto en la historia
+    del taller; las evaluaciones del gold lo apagan para no contaminarla."""
     settings = settings or get_settings()
     configure_logging(settings.log_level)
     project_root = Path(project_root)
@@ -625,6 +628,10 @@ def run_full_pipeline(
         plantillas=catalog_store.list_plantillas(),
         price_vigencias=catalog_store.price_vigencias(),
         integracion_taller=catalog_store.get_setting("integracion"),
+        variant_mappings=catalog_store.load_variant_mappings(),
+    )
+    apply_taller_history(
+        result.cost_report, catalog_store, manifest.project_id, save=record_history
     )
     # El detector conoce denominadores que el presupuesto no ve; viaja al
     # diagnóstico solo lo que sus reglas saben clasificar.

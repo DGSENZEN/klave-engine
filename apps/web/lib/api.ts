@@ -375,6 +375,12 @@ export type Indicator = {
   high: number | null;
   status: "ok" | "alto" | "bajo" | "sin_dato";
   detail: string;
+  /** Contra los otros proyectos del taller (con 3 o más). */
+  taller_n?: number;
+  taller_median?: number | null;
+  taller_low?: number | null;
+  taller_high?: number | null;
+  taller_note?: string;
 };
 
 export type PhaseShare = {

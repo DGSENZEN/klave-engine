@@ -27,6 +27,7 @@ export function IndicatorsCard({ indicators }: { indicators: Partial<Indicators>
   const shares = indicators.phase_shares ?? [];
   if (ratios.length === 0 && shares.length === 0) return null;
   const flagged = ratios.filter((i) => i.status === "alto" || i.status === "bajo").length;
+  const fueraDeTuHistoria = ratios.filter((i) => i.taller_note).length;
   const missing = indicators.missing_phases ?? [];
   return (
     <Card className="mt-6 p-5">
@@ -37,6 +38,11 @@ export function IndicatorsCard({ indicators }: { indicators: Partial<Indicators>
         {flagged > 0 && (
           <span className="ml-2 align-middle">
             <Badge tone="warning">{flagged} fuera de rango</Badge>
+          </span>
+        )}
+        {fueraDeTuHistoria > 0 && (
+          <span className="ml-2 align-middle">
+            <Badge tone="warning">{fueraDeTuHistoria} fuera de tu historia</Badge>
           </span>
         )}
         {missing.length > 0 && (
@@ -64,6 +70,13 @@ export function IndicatorsCard({ indicators }: { indicators: Partial<Indicators>
               {i.low != null && i.high != null && `típico ${num(i.low)}–${num(i.high)} · `}
               {i.detail}
             </div>
+            {(i.taller_n ?? 0) >= 3 && i.taller_low != null && i.taller_high != null && (
+              <div className={`mt-1 text-[11px] ${i.taller_note ? "font-medium text-warning" : "text-muted"}`}>
+                {i.taller_note
+                  ? `Fuera de tu historia: ${i.taller_note}`
+                  : `Tus últimos ${i.taller_n}: ${num(i.taller_low)}–${num(i.taller_high)} (mediana ${num(i.taller_median ?? 0)})`}
+              </div>
+            )}
           </div>
         ))}
       </div>

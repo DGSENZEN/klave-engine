@@ -39,6 +39,12 @@ class Indicator(BaseModel):
     high: float | None = None
     status: str  # ok | alto | bajo | sin_dato
     detail: str = ""
+    # Contra la historia del taller: sus otros proyectos, no un rango de libro.
+    taller_n: int = 0
+    taller_median: float | None = None
+    taller_low: float | None = None
+    taller_high: float | None = None
+    taller_note: str = ""
 
 
 class PhaseShare(BaseModel):
@@ -207,3 +213,40 @@ def phase_shares_from_rows(rows: list) -> dict[str, float]:
     if grand <= 0:
         return {}
     return {k: round(v / grand * 100.0, 2) for k, v in totals.items()}
+
+
+HISTORIA_N = 10
+HISTORIA_MIN = 3
+
+
+def con_historia(indicators: dict, otros: list[dict[str, float]]) -> dict:
+    """Cada índice contra los otros proyectos del taller: mediana, rango y una
+    frase cuando éste cae fuera. Con menos de tres proyectos no hay historia
+    que decir y no se inventa."""
+    for item in indicators.get("indicators") or []:
+        valores = sorted(
+            float(o[item["key"]]) for o in otros[:HISTORIA_N]
+            if isinstance(o.get(item["key"]), (int, float))
+        )
+        item["taller_n"] = len(valores)
+        if len(valores) < HISTORIA_MIN:
+            continue
+        mid = len(valores) // 2
+        mediana = valores[mid] if len(valores) % 2 else (valores[mid - 1] + valores[mid]) / 2
+        item["taller_median"] = round(mediana, 2)
+        item["taller_low"] = round(valores[0], 2)
+        item["taller_high"] = round(valores[-1], 2)
+        value = item.get("value")
+        if value is not None and not (valores[0] <= value <= valores[-1]):
+            item["taller_note"] = (
+                f"{value:,.2f} {item['unit']}; tus últimos {len(valores)}: "
+                f"{valores[0]:,.2f}–{valores[-1]:,.2f}"
+            )
+    return indicators
+
+
+def valores_de(indicators: dict) -> dict[str, float]:
+    return {
+        i["key"]: float(i["value"]) for i in indicators.get("indicators") or []
+        if isinstance(i.get("value"), (int, float))
+    }

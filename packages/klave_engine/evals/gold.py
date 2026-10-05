@@ -215,7 +215,7 @@ def _fresh_run(project_root: Path, settings: Settings) -> tuple[list[Detection],
     scratch = Path(tempfile.mkdtemp(prefix="klave_gold_")) / project_root.name
     try:
         shutil.copytree(project_root / "drawings", scratch / "drawings")
-        detections = run_full_pipeline(scratch, settings).detections
+        detections = run_full_pipeline(scratch, settings, record_history=False).detections
         return detections, _engine_money(scratch, settings, detections)
     finally:
         shutil.rmtree(scratch.parent, ignore_errors=True)
@@ -383,7 +383,7 @@ def evaluate_entry(entry: GoldEntry, settings: Settings | None = None) -> EntryR
     scratch = Path(tempfile.mkdtemp(prefix="klave_gold_")) / entry.drawing_id
     try:
         shutil.copytree(source / "drawings", scratch / "drawings")
-        result = run_full_pipeline(scratch, settings)
+        result = run_full_pipeline(scratch, settings, record_history=False)
         predicted = result.detections
         report = _engine_money(scratch, settings, predicted) if entry.money else None
     finally:

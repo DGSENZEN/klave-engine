@@ -213,6 +213,11 @@ CREATE TABLE IF NOT EXISTS reference_prices (
 );
 CREATE INDEX IF NOT EXISTS reference_prices_source_clave
     ON reference_prices (source_key, clave);
+CREATE TABLE IF NOT EXISTS project_indices (
+    project_id TEXT PRIMARY KEY,
+    at TEXT NOT NULL,
+    valores TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS variant_mappings (
     variant_key TEXT PRIMARY KEY,
     status TEXT NOT NULL,
@@ -2789,6 +2794,25 @@ class CatalogStore:
         with _LOCK, self._connect() as conn:
             cursor = conn.execute("DELETE FROM inventory_mappings WHERE id = ?", (mapping_id,))
         return cursor.rowcount > 0
+
+    # ---------------------------------------------- índices de los proyectos
+
+    def save_project_indices(self, project_id: str, valores: dict[str, float]) -> None:
+        with _LOCK, self._connect() as conn:
+            conn.execute(
+                "INSERT INTO project_indices (project_id, at, valores) VALUES (?, ?, ?) "
+                "ON CONFLICT(project_id) DO UPDATE SET at = excluded.at, "
+                "valores = excluded.valores",
+                (project_id, _now(), json.dumps(valores)),
+            )
+
+    def load_project_indices(self, exclude: str | None = None) -> list[dict[str, float]]:
+        """Los índices de los proyectos del taller, del más reciente al más viejo."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT project_id, valores FROM project_indices ORDER BY at DESC"
+            ).fetchall()
+        return [json.loads(r["valores"]) for r in rows if r["project_id"] != exclude]
 
     # ---------------------------------------------- variantes → catálogo del taller
 
