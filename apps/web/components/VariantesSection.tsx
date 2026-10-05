@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { CaretDown, MagicWand, MagnifyingGlass } from "@phosphor-icons/react";
 import {
   apiMessage,
@@ -210,6 +211,7 @@ export function VariantesSection({
               {lines.map((line) => (
                 <LineRows
                   key={line.concept_code}
+                  projectId={projectId}
                   line={line}
                   open={open.has(line.concept_code) || filter === "dudas"}
                   onToggle={() =>
@@ -265,6 +267,7 @@ export function VariantesSection({
 }
 
 function LineRows({
+  projectId,
   line,
   open,
   onToggle,
@@ -277,6 +280,7 @@ function LineRows({
   onNone,
   onForget,
 }: {
+  projectId: string;
   line: VariantLine;
   open: boolean;
   onToggle: () => void;
@@ -302,6 +306,13 @@ function LineRows({
             <span className="text-xs text-muted">
               · {line.variants.length} {line.variants.length === 1 ? "variante" : "variantes"}
             </span>
+            <Link
+              href={`/proyecto/${projectId}/plano?concept=${encodeURIComponent(line.concept_code)}`}
+              className="text-xs text-muted underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              ver en el plano
+            </Link>
           </span>
         </td>
       </tr>

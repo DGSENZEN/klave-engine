@@ -680,7 +680,8 @@ export default function RevisionPage() {
                     )}
                     {r.concept_code && (
                       <Link
-                        href={`/proyecto/${id}/plano?concept=${encodeURIComponent(r.concept_code)}`}
+                        // El elemento mismo, encuadrado — no el concepto entero.
+                        href={`/proyecto/${id}/plano?bbox=${r.bbox.map((v) => v.toFixed(3)).join(",")}`}
                         className="mt-0.5 flex w-fit items-center gap-1 text-[11px] text-muted underline"
                         onClick={(e) => e.stopPropagation()}
                       >
