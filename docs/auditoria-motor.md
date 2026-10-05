@@ -756,6 +756,42 @@ tolerancia editable en su lugar, ⌘K. Desviación del spec: los archivos
 curados viven en el paquete (`data/` es de cada instalación y no va al
 repo). Fences: suite (+32 pruebas), gold, ruff, tsc, lint y build verdes.
 
+### V1 · R1 · Variantes del plano y mapeo a tu catálogo (2026-10-05, rama `producto-v1`)
+
+La primera ronda del producto v1 (spec `2026-09-16-producto-v1-cuantificacion-design.md`).
+(1) **Variantes dentro del renglón**: cada detección recibe su firma —lo que el
+plano declara y cambia el precio: sección y armado en columnas y trabes, tipo y
+espesor en muros, sistema y espesor en losas, tipo de zapata, diámetro de
+pilote, material y diámetro de tubería— y el renglón se separa por firma
+midiendo cada grupo con la misma regla; las variantes suman exacto (reparto
+proporcional cuando la regla no es aditiva, y se dice). Viven **dentro** de
+`BoqLine.variants` porque quince módulos indexan los renglones por clave del
+motor. En Marina: 27 variantes de columnas y castillos (las secciones del
+cuadro), 41 de trabes, muros por block y espesor, losas por sistema y peralte,
+tuberías por diámetro. Trazo, aplanado, pintura y pisos no se separan: su
+precio no depende de esa firma. El aviso «dos diámetros en una línea se
+presupuestan juntos y no deberían» desaparece porque ya no pasa.
+(2) **Mapeo al catálogo de la oficina**: cada variante se empareja con los
+conceptos del taller y los renglones de las bases importadas con el
+emparejador de siempre (≥ 0.8 se aplica, 0.5–0.8 queda como duda, debajo
+«sin equivalente»); la memoria (`variant_mappings`) es del taller y respeta
+la decisión de una persona en el siguiente proyecto; el importe del renglón es
+la suma de sus variantes con el precio del concepto o renglón al que apuntan.
+Lo que Klave sembró o generó no cuenta como catálogo de la oficina (hallado
+contra la base OPUS de acero real: la cimbra del motor se mapeaba a sí misma).
+(3) **Etiquetas**: cada confirmación, exclusión y decisión de mapeo se anota
+en `labels.jsonl` con lo que el motor sabía del elemento — el gancho del
+lector que aprende, activo desde el primer piloto. (4) **API** bajo
+`/projects/{id}/variantes` (el middleware cuida el proyecto) y **web**: la
+pestaña «Tu catálogo» en Revisión (buscar en mi catálogo, confirmar, elegir
+otro, sin equivalente, olvidar) y las variantes con clave y precio en el
+renglón abierto del presupuesto; ⌘K. (5) **Limpieza**: mypy sin errores; el
+«se puede deshacer desde Importaciones» por fin tiene dónde — «Ajustes
+recientes» con Deshacer bajo la hoja de insumos. El gold vigila ahora que las
+variantes cuadren con su renglón. Pendiente: la prueba del mapeo contra una
+base de obra negra real de una oficina (la de acero sólo da 4 dudas de 150
+variantes, como debe).
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)

@@ -55,6 +55,11 @@ candado de administrador:
   texto en números) y se **valida contra el precio publicado**: validada,
   fuera de rango con la desviación o sin referencia, en la fila, recalculado
   cuando un precio cambia; la tolerancia es del taller.
+- **Variantes y tu catálogo** — cada renglón del plano se separa en lo que
+  el plano especifica de sus elementos (sección, armado, espesor, diámetro…)
+  y cada variante se mapea al catálogo de la oficina —sus conceptos y las
+  bases que importó— con su motivo; lo dudoso espera a una persona y lo que
+  se decide se recuerda en el siguiente proyecto (Revisión → Tu catálogo).
 - **Presupuesto** — partidas plegables con su peso, precios con fuente,
   ajustes documentados con autor, versiones comparables, y la
   **integración como análisis**: desglose de indirectos renglón por
