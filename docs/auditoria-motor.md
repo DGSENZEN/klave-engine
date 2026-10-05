@@ -820,6 +820,30 @@ los libros contra una instalación real de OPUS y de Neodata (no hay layout
 oficial público; Diego tiene las instalaciones) y el lector de Neodata contra
 un export real.
 
+### V1 · R3 · Fluidez del visor (2026-10-06, rama `v1-r3`)
+
+Medido primero en Marina (sólo lectura): `/geometry` pesaba **18.3 MB** sin
+comprimir y tardaba **~0.8 s** en cada visita (se rearmaba de un archivo de
+100 MB); el catálogo, la revisión y el tablero ya eran ligeros (60 KB / 10 ms,
+380 KB / 36 ms, 5 ms). (1) **Servidor**: compresión gzip (Starlette no
+comprime el bus SSE), coordenadas a cuatro decimales (una décima de milímetro
+en metros), el dibujo de cada corrida armado una vez y guardado en memoria
+(tres corridas, ~60 MB cada plano grande), `/geometry/shapes` con ETag (304 si
+no cambió), `/geometry/detections` para refrescar sólo veredictos y `?sheet=`
+para bajar una hoja. Resultado: **1.46 MB comprimido; 60–150 ms en la segunda
+visita**, 1.2 s la primera (`python -m scripts.perf_plano`). (2) **Visor**: la
+capa estática se pinta una vez en un lienzo aparte y se desplaza o escala con
+el gesto (nítida al detenerse), lo que cae fuera de la vista no se pinta, un
+cuadro por fotograma, y pasar el ratón ya no repinta el plano (antes un
+efecto sin dependencias repintaba las 76 mil figuras en cada movimiento);
+fuera el porcentaje de confianza del tooltip. Una revisión de un colega
+refresca sólo las detecciones. (3) **Coordinación**: otra sesión (limpieza de
+interfaz) trabaja en el mismo árbol — el encuadre por grupo de hojas, una
+hoja a la vez en el visor; sus cambios siguen sin confirmar y se combinan
+limpio con éstos. La mitad «camino dorado» de R3 (§4.2) quedó con esa sesión.
+Sin medir aún: cuadros por segundo en un navegador real (el visor está detrás
+de la sesión y la API de desarrollo corre sin recarga).
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
