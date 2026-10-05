@@ -938,6 +938,29 @@ clave del motor y un porcentaje) y sale a Excel. De paso: la primera lectura
 de un proyecto ya aplica la memoria del mapeo del taller (R1 sólo la aplicaba
 al recalcular).
 
+### El lector que aprende · F1 · Lo que se ve y se guarda (2026-10-06, rama `lector-f1`)
+
+La primera ronda del lector (spec `2026-10-04-lector-que-aprende-design.md`):
+los datos, sin modelo todavía. (1) **Rasgos** (`detection/features.py`,
+versión 1): lo que cada detector medía y tiraba tras su umbral — tamaño en
+metros, sección, longitud, área, distancia al cruce de ejes más cercano,
+prefijo de la marca y cuántas veces se repite, fichas de capa y de bloque, el
+método de la regla — viaja en cada etiqueta; nunca coordenadas absolutas.
+(2) **Revisiones que sobreviven a un reproceso**: cada revisión guarda la
+identidad estable del elemento y, tras procesar, la que ya no encuentra su
+clave se mueve al elemento con la misma identidad (las marcas «MUE-01» que se
+vuelven «MUE-001» dejaban de aplicar en silencio); las que no tienen a dónde
+ir se dicen. (3) **Candidatos** (`candidates.jsonl` por corrida): figuras
+cerradas y bloques con tamaño de elemento que ninguna regla tomó, con sus
+rasgos y «no considerado», sin tocar ninguna detección — en Marina 1,667 en
+0.18 s, muchos en capas de cotas y muros: los ejemplos de «no es elemento» que
+el modelo necesita. (4) **Gestos**: «Es otro elemento…» en cada renglón de
+Revisión (excluye y registra la familia nombrada con la medida que la lectura
+traía; si no trae la medida que esa familia pide, lo dice), y el elemento
+omitido gana su lugar en el plano; los dos escriben etiqueta. Pendiente para
+F2/F3: el perfil del taller, el modelo y la duda, el consentimiento para
+compartir (las etiquetas de F1 no salen del proyecto).
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
