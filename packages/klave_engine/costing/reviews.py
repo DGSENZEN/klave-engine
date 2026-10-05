@@ -75,6 +75,8 @@ class OmittedElement(BaseModel):
     area_m2: float | None = Field(default=None, gt=0)  # area families
     section_cm: str = ""  # "15x40" when declared on the sheet
     sheet: str = ""  # source file or sheet code, for provenance
+    # Dónde está, cuando se marcó en el visor o vino de una reasignación.
+    bbox: list[float] | None = None
     note: str = ""
     actor: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

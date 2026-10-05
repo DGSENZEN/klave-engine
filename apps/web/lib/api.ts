@@ -1789,6 +1789,22 @@ export const setDetectionReview = (
     actorClientHeaders(actor, clientId),
   );
 
+/** «Es otro elemento…»: excluye la lectura y la registra como otra familia,
+ * con las medidas que ya traía. */
+export const reassignDetection = (
+  id: string,
+  key: string,
+  family: string,
+  note = "",
+  actor?: string,
+  clientId?: string | null,
+) =>
+  postJSON<ProjectReviews>(
+    `/projects/${id}/reviews/detections/${encodeURIComponent(key)}/reasignar`,
+    { family, note },
+    actorClientHeaders(actor, clientId),
+  );
+
 export const addAdjustment = (
   id: string,
   adjustment: {

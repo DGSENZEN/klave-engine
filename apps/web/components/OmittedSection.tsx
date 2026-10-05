@@ -19,7 +19,7 @@ import {
 
 /** What each family needs from the engineer: nothing beyond the count, a
  * total length, or a total area. Mirrors the API's validation. */
-const FAMILIES: {
+export const FAMILIES: {
   value: string;
   label: string;
   measure: "none" | "length" | "area";

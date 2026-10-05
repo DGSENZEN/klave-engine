@@ -3,6 +3,7 @@ verification path. Every mutation recomputes the cost report so the budget
 always reflects what the human accepted, and broadcasts the change."""
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -76,6 +77,15 @@ class OmittedInput(BaseModel):
     area_m2: float | None = Field(default=None, gt=0, le=100_000)
     section_cm: str = Field(default="", max_length=20)
     sheet: str = Field(default="", max_length=120)
+    note: str = Field(default="", max_length=300)
+    bbox: list[float] | None = Field(default=None, min_length=4, max_length=4)
+
+
+class ReasignarInput(BaseModel):
+    """«Es otro elemento»: la lectura se excluye y entra como la familia que
+    la persona nombra, con las medidas que la lectura ya traía."""
+
+    family: str = Field(min_length=2, max_length=30)
     note: str = Field(default="", max_length=300)
 
 
@@ -315,6 +325,85 @@ def set_detection_reviews(
     return _reviews_payload(reviews)
 
 
+@router.post("/{project_id}/reviews/detections/{key}/reasignar")
+def reassign_detection(
+    project_id: str,
+    key: str,
+    body: ReasignarInput,
+    x_actor: Annotated[str | None, Header()] = None,
+    x_client_id: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """«Es otro elemento…»: esta lectura no es lo que el motor dijo. Se excluye
+    y entra como la familia que la persona nombra, con la sección y la medida
+    que la lectura ya traía — por los mismos caminos que mueven cantidades a
+    la vista (exclusión + elemento manual), nunca por una etiqueta."""
+    family = body.family.strip().lower()
+    if family not in FAMILY_TYPES:
+        raise HTTPException(status_code=422, detail={
+            "error_type": "unknown_family",
+            "message": "Familia desconocida. Usa: " + ", ".join(sorted(FAMILY_TYPES)),
+        })
+    detections, factor = _detections_and_factor(store, project_id)
+    det = next((d for d in detections if (d.display_label or d.detection_id) == key), None)
+    if det is None:
+        raise HTTPException(status_code=404, detail={"error_type": "detection_not_found"})
+    f = factor or 1.0
+    props = det.properties or {}
+    length_m = next(
+        (float(props[k]) * (1.0 if k == "length_m" else f) for k in
+         ("length_m", "estimated_length", "estimated_span_length")
+         if isinstance(props.get(k), (int, float))), None,
+    )
+    area_m2 = (
+        float(props["estimated_area"]) * f * f
+        if isinstance(props.get("estimated_area"), (int, float)) else None
+    )
+    if family in LINEAR_FAMILIES and not length_m:
+        raise HTTPException(status_code=422, detail={
+            "error_type": "measure_required",
+            "message": "Esta lectura no trae longitud: regístralo en «Lo que Klave no vio» "
+                       "con su medida.",
+        })
+    if family in AREA_FAMILIES and not area_m2:
+        raise HTTPException(status_code=422, detail={
+            "error_type": "measure_required",
+            "message": "Esta lectura no trae área: regístralo en «Lo que Klave no vio» "
+                       "con su área.",
+        })
+    actor = clean_actor(x_actor) or ""
+    control_dir = store.get_root(project_id) / settings.processed_dir_name
+    from klave_engine.costing.referencias import element_id
+
+    anterior = det.family or det.detection_type.value
+    with project_recompute_lock(project_id):
+        reviews = load_reviews(control_dir)
+        reviews.detections[key] = DetectionReview(
+            status="excluded", note=f"reasignado a {family}" + (
+                f" — {body.note.strip()}" if body.note.strip() else ""),
+            actor=actor, element_id=element_id(det, factor),
+        )
+        reviews.omitted.append(OmittedElement(
+            element_id=short_uuid("om"), family=family, mark=(det.mark or "").upper(),
+            count=1,
+            length_m=round(length_m, 4) if family in LINEAR_FAMILIES and length_m else None,
+            area_m2=round(area_m2, 4) if family in AREA_FAMILIES and area_m2 else None,
+            section_cm=str(props.get("section_cm") or ""),
+            sheet=Path(det.evidence.source or "").stem, bbox=list(det.bbox),
+            note=f"reasignado de {anterior} ({key})", actor=actor,
+        ))
+        save_reviews(control_dir, reviews)
+        append_labels(control_dir, detection_labels(
+            [key], family, actor, detections, body.note, factor, action="reassign",
+        ))
+        _recompute_after_review(
+            store, settings, project_id, actor, clean_client_id(x_client_id),
+            "detection_reassigned", f"{key} → {family}",
+        )
+    return _reviews_payload(reviews)
+
+
 @router.get("/{project_id}/revision")
 def get_revision_table(
     project_id: str,
@@ -440,11 +529,17 @@ def add_omitted(
                 area_m2=body.area_m2,
                 section_cm=body.section_cm.strip(),
                 sheet=body.sheet.strip(),
+                bbox=body.bbox,
                 note=body.note.strip(),
                 actor=actor,
             )
         )
         save_reviews(control_dir, reviews)
+        append_labels(control_dir, [{
+            "kind": "omitido", "action": "add_missed", "verdict": family,
+            "mark": body.mark.strip().upper(), "sheet": body.sheet.strip(),
+            "bbox": body.bbox, "count": body.count, "actor": actor,
+        }])
         _recompute_after_review(
             store, settings, project_id, actor, clean_client_id(x_client_id),
             "omitted_added", f"{family} {body.mark}".strip(),

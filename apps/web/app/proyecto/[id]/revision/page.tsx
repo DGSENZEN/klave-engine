@@ -12,6 +12,8 @@ import {
 } from "@phosphor-icons/react";
 import {
   ApiError,
+  apiMessage,
+  reassignDetection,
   getAiReads,
   getConteos,
   getRevisionTable,
@@ -46,7 +48,7 @@ import {
 } from "@/components/ui";
 import { FAMILIES, FAMILY_LABELS } from "@/lib/families";
 import { isDoubtful, LoteDeRevision } from "@/components/LoteDeRevision";
-import { OmittedSection } from "@/components/OmittedSection";
+import { FAMILIES as OMITTED_FAMILIES, OmittedSection } from "@/components/OmittedSection";
 import { VariantesSection } from "@/components/VariantesSection";
 import { useProjectLive } from "@/components/ProjectLive";
 
@@ -688,6 +690,15 @@ export default function RevisionPage() {
                         <MapTrifold size={11} /> plano
                       </Link>
                     )}
+                    {r.status !== "excluded" && (
+                      <Reasignar
+                        projectId={id}
+                        rowKey={r.key}
+                        actorName={actorName}
+                        clientId={clientId}
+                        onDone={reload}
+                      />
+                    )}
                   </Td>
                 </tr>
               );
@@ -1159,5 +1170,84 @@ function ConteoSection({
         </div>
       </div>
     </Card>
+  );
+}
+
+
+/**
+ * «Es otro elemento…»: el motor dijo columna y es castillo. La lectura se
+ * excluye y entra como la familia elegida, con su sección y su medida; la
+ * decisión queda como etiqueta para el lector que aprende.
+ */
+function Reasignar({
+  projectId,
+  rowKey,
+  actorName,
+  clientId,
+  onDone,
+}: {
+  projectId: string;
+  rowKey: string;
+  actorName: string;
+  clientId: string | null;
+  onDone: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [family, setFamily] = useState(OMITTED_FAMILIES[0].value);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="mt-0.5 block text-[11px] text-muted underline"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+      >
+        Es otro elemento…
+      </button>
+    );
+  }
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+      <Select
+        value={family}
+        onChange={(e) => setFamily(e.target.value)}
+        aria-label="Qué elemento es"
+        className="py-0.5 text-xs"
+      >
+        {OMITTED_FAMILIES.map((f) => (
+          <option key={f.value} value={f.value}>
+            {f.label}
+          </option>
+        ))}
+      </Select>
+      <Button
+        size="sm"
+        variant="primary"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setError(null);
+          try {
+            await reassignDetection(projectId, rowKey, family, "", actorName, clientId);
+            setOpen(false);
+            onDone();
+          } catch (e) {
+            setError(apiMessage(e, "No se pudo reasignar."));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        Reasignar
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+        Cancelar
+      </Button>
+      {error && <span className="w-full text-[11px] text-danger">{error}</span>}
+    </div>
   );
 }

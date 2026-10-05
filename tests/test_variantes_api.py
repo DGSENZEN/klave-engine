@@ -114,3 +114,37 @@ def test_variants_map_confirm_label_and_forget(data_dir, monkeypatch):
 
     forgot = client.delete(f"/projects/{pid}/variantes/EST-001.30X40-8N5")
     assert forgot.status_code == 200 and forgot.json()["removed"] is True
+
+
+def test_reassign_moves_quantity_through_existing_paths_and_labels(data_dir, monkeypatch):
+    from fastapi.testclient import TestClient
+    from klave_engine.common import config as config_module
+
+    from apps.api.main import create_app
+
+    config_module.get_settings.cache_clear()
+    pid, processed = _project(data_dir)
+    client = TestClient(create_app())
+    # c2 es la columna 15×15: «es un castillo».
+    r = client.post(f"/projects/{pid}/reviews/detections/c2/reasignar",
+                    json={"family": "castillo", "note": "es K-1 del cuadro"},
+                    headers={"X-Actor": "Diego"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["detections"]["c2"]["status"] == "excluded"
+    assert body["detections"]["c2"]["element_id"].startswith("el_")
+    nuevo = body["omitted"][-1]
+    assert nuevo["family"] == "castillo" and nuevo["section_cm"] == "15x15"
+    assert nuevo["bbox"] and "reasignado de" in nuevo["note"]
+    label = [lab for lab in read_labels(processed) if lab.get("action") == "reassign"][-1]
+    assert label["verdict"] == "castillo" and label["features"]["tipo"] == "column_tag"
+    assert label["proposals"]["rule"]
+    # Una familia lineal sin longitud en la lectura se rechaza con el camino.
+    lineal = client.post(f"/projects/{pid}/reviews/detections/c0/reasignar",
+                         json={"family": "trabe"})
+    assert lineal.status_code == 422 and "Lo que Klave no vio" in lineal.json()["detail"]["message"]
+    omit = client.post(f"/projects/{pid}/reviews/omitted",
+                       json={"family": "castillo", "mark": "K-9", "bbox": [1, 1, 1.2, 1.2]})
+    assert omit.status_code == 200
+    assert [lab for lab in read_labels(processed) if lab.get("action") == "add_missed"][-1][
+        "bbox"] == [1, 1, 1.2, 1.2]
