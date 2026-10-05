@@ -3230,3 +3230,80 @@ export async function getShared<T>(token: string, path = ""): Promise<T> {
 
 export const sharedGeneradoresUrl = (token: string) =>
   `${API_BASE}/compartido/${encodeURIComponent(token)}/generadores.xlsx`;
+
+/* ------------------------------------------------ cambios entre revisiones (R4) */
+
+export type Revision = {
+  run_id: string;
+  processed_at: string;
+  engine: string;
+  label: string;
+  active: boolean;
+  mismo_plano_que_anterior: boolean | null;
+  misma_version_que_anterior: boolean | null;
+};
+
+export type CambioElemento = {
+  tipo: "agregado" | "eliminado" | "movido" | "modificado";
+  detection_type: string;
+  familia: string;
+  marca: string;
+  hoja: string;
+  antes_id: string | null;
+  despues_id: string | null;
+  bbox_antes: number[] | null;
+  bbox_despues: number[] | null;
+  movido_m: number;
+  campos: { campo: string; antes: string; despues: string }[];
+};
+
+export type CambioConcepto = {
+  concept_code: string;
+  descripcion: string;
+  unidad: string;
+  fase: string;
+  cantidad_antes: number;
+  cantidad_despues: number;
+  diferencia: number;
+  precio_unitario: number | null;
+  importe_diferencia: number | null;
+  elementos: Partial<Record<CambioElemento["tipo"], number>>;
+};
+
+export type CambiosState = {
+  antes: string;
+  despues: string;
+  antes_label: string;
+  despues_label: string;
+  mismo_plano: boolean | null;
+  misma_version: boolean | null;
+  conceptos: CambioConcepto[];
+  elementos: CambioElemento[];
+  resumen: Partial<Record<CambioElemento["tipo"], number>>;
+  importe_diferencia: number;
+  importe_sin_precio: number;
+};
+
+export const getRevisiones = (projectId: string) =>
+  getJSON<{ revisiones: Revision[] }>(`/projects/${encodeURIComponent(projectId)}/revisiones`).then(
+    (r) => r.revisiones,
+  );
+
+export const labelRevision = (projectId: string, runId: string, label: string) =>
+  putJSON<{ run_id: string; label: string }>(
+    `/projects/${encodeURIComponent(projectId)}/revisiones/${encodeURIComponent(runId)}`,
+    { label },
+  );
+
+export const cambiosQuery = (antes?: string, despues?: string) => {
+  const q = new URLSearchParams();
+  if (antes) q.set("antes", antes);
+  if (despues) q.set("despues", despues);
+  const s = q.toString();
+  return s ? `?${s}` : "";
+};
+
+export const getCambios = (projectId: string, antes?: string, despues?: string) =>
+  getJSON<CambiosState>(
+    `/projects/${encodeURIComponent(projectId)}/cambios${cambiosQuery(antes, despues)}`,
+  );

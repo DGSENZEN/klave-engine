@@ -22,6 +22,8 @@ import {
   getCosts,
   getGeometry,
   getGeometryDetections,
+  getCambios,
+  type CambiosState,
   processProject,
   setDetectionReview,
   type BoqLine,
@@ -104,6 +106,43 @@ export default function PlanoPage() {
   const searchParams = useSearchParams();
   const conceptParam = searchParams.get("concept") ?? "";
   const bboxParam = searchParams.get("bbox") ?? "";
+  // ?cambios=<lectura anterior>: el visor pinta lo que cambió desde entonces.
+  const cambiosParam = searchParams.get("cambios") ?? "";
+  const [cambios, setCambios] = useState<CambiosState | null>(null);
+  useEffect(() => {
+    if (!cambiosParam) return;
+    let alive = true;
+    const handle = window.setTimeout(() => {
+      getCambios(id, cambiosParam)
+        .then((c) => alive && setCambios(c))
+        .catch(() => alive && setCambios(null));
+    }, 0);
+    return () => {
+      alive = false;
+      window.clearTimeout(handle);
+    };
+  }, [id, cambiosParam]);
+  const cambiosVista = cambiosParam ? cambios : null;
+  const highlight = useMemo(() => {
+    if (!cambiosVista) return null;
+    const colors: Record<string, string> = {
+      agregado: "#2f7d4f", movido: "#2b4acb", modificado: "#c2410c",
+    };
+    const map = new Map<string, string>();
+    for (const e of cambiosVista.elementos) {
+      if (e.despues_id && colors[e.tipo]) map.set(e.despues_id, colors[e.tipo]);
+    }
+    return map;
+  }, [cambiosVista]);
+  const ghosts = useMemo(
+    () =>
+      cambiosVista
+        ? cambiosVista.elementos
+            .filter((e) => e.tipo === "eliminado" && e.bbox_antes)
+            .map((e) => ({ bbox: e.bbox_antes as number[], color: "#b4382f" }))
+        : null,
+    [cambiosVista],
+  );
   // ?bbox=x0,y0,x1,y1 — a risk finding or a colleague's pointer: fit there.
   const bboxFit = useMemo(() => {
     const parts = bboxParam.split(",").map(Number);
@@ -589,7 +628,22 @@ export default function PlanoPage() {
               setMeasurePoints((current) => [...current, point])
             }
             focus={focus ?? conceptFit ?? bboxFit}
+            highlight={highlight}
+            ghosts={ghosts}
           />
+          {cambiosVista && (
+            <div className="absolute bottom-4 left-4 z-10 rounded-lg border border-border bg-surface/95 px-3 py-2 text-xs shadow-sm">
+              <div className="mb-1 font-medium">
+                Cambios desde «{cambiosVista.antes_label}»
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <span style={{ color: "#2f7d4f" }}>■ agregado {cambiosVista.resumen.agregado ?? 0}</span>
+                <span style={{ color: "#2b4acb" }}>■ movido {cambiosVista.resumen.movido ?? 0}</span>
+                <span style={{ color: "#c2410c" }}>■ modificado {cambiosVista.resumen.modificado ?? 0}</span>
+                <span style={{ color: "#b4382f" }}>┅ eliminado {cambiosVista.resumen.eliminado ?? 0}</span>
+              </div>
+            </div>
+          )}
           {geom.detections.length === 0 && !measureMode && (
             <div className="pointer-events-none absolute inset-x-0 top-14 z-10 flex justify-center px-4">
               <div className="pointer-events-auto max-w-md rounded-xl border border-border bg-surface/95 p-4 text-sm shadow-lg backdrop-blur">

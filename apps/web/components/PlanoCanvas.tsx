@@ -22,6 +22,8 @@ export function PlanoCanvas({
   measure,
   onWorldClick,
   focus,
+  highlight,
+  ghosts,
 }: {
   geometry: Geometry;
   visibleLayers: Set<string>;
@@ -34,6 +36,10 @@ export function PlanoCanvas({
   onWorldClick?: (point: [number, number]) => void;
   /** Fit the view to a world bbox whenever `nonce` changes (sheet navigation). */
   focus?: { bbox: [number, number, number, number]; nonce: number } | null;
+  /** Elementos pintados con un color propio (los cambios entre revisiones). */
+  highlight?: Map<string, string> | null;
+  /** Recuadros punteados de lo que ya no está (eliminados en la revisión). */
+  ghosts?: { bbox: number[]; color: string }[] | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -336,7 +342,8 @@ export function PlanoCanvas({
     for (const d of geometry.detections) {
       if (!isVisible(d)) continue;
       if (d.bbox[2] < wx0 || d.bbox[0] > wx1 || d.bbox[3] < wy0 || d.bbox[1] > wy1) continue;
-      const color = FAMILY_COLORS[familyOf(d)] ?? "#111827";
+      const marked = highlight?.get(d.id);
+      const color = marked ?? FAMILY_COLORS[familyOf(d)] ?? "#111827";
       const selected = d.id === selectedId;
       const [x1, y1] = toScreen(d.bbox[0], d.bbox[1], v);
       const [x2, y2] = toScreen(d.bbox[2], d.bbox[3], v);
@@ -351,7 +358,7 @@ export function PlanoCanvas({
       ctx.globalAlpha = excluded ? 0.35 : 1;
       ctx.setLineDash(excluded ? [5, 4] : []);
       ctx.strokeStyle = color;
-      ctx.lineWidth = selected ? 2.4 : d.review === "confirmed" ? 1.9 : 1.4;
+      ctx.lineWidth = selected ? 2.4 : marked ? 2.6 : d.review === "confirmed" ? 1.9 : 1.4;
       if (outline) {
         // A tablero is drawn as its real outline, lightly filled so the
         // slab system reads at a glance.
@@ -381,6 +388,23 @@ export function PlanoCanvas({
       }
       ctx.globalAlpha = 1;
       ctx.setLineDash([]);
+    }
+
+    // Lo que ya no está: su recuadro anterior, punteado.
+    if (ghosts && ghosts.length > 0) {
+      ctx.save();
+      ctx.setLineDash([6, 4]);
+      ctx.lineWidth = 2;
+      for (const g of ghosts) {
+        if (g.bbox.length !== 4) continue;
+        const [x1, y1] = toScreen(g.bbox[0], g.bbox[1], v);
+        const [x2, y2] = toScreen(g.bbox[2], g.bbox[3], v);
+        ctx.strokeStyle = g.color;
+        ctx.strokeRect(
+          Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1) || 3, Math.abs(y2 - y1) || 3,
+        );
+      }
+      ctx.restore();
     }
 
     // Measurement overlay: always on top, in the accent color.
@@ -425,7 +449,7 @@ export function PlanoCanvas({
         }
       }
     }
-  }, [geometry, isVisible, selectedId, measure, drawStatic, schedule]);
+  }, [geometry, isVisible, selectedId, measure, drawStatic, schedule, highlight, ghosts]);
 
   useEffect(() => {
     drawRef.current = draw;
