@@ -9,9 +9,12 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from klave_engine.common.config import Settings
+from klave_engine.costing.captura import lo_que_el_plano_no_dio
 from klave_engine.costing.etiquetas import append_labels, mapping_label
 from klave_engine.costing.mapeo import mapear
 from klave_engine.costing.models import CostReport
+from klave_engine.costing.reviews import load_reviews
+from klave_engine.detection.results import Detection
 from pydantic import BaseModel
 
 from apps.api.dependencies import ProjectStore, get_settings, get_store, project_recompute_lock
@@ -154,3 +157,26 @@ def forget_variant_mapping(
         removed = catalog.delete_variant_mapping(variant_key)
         _recompute_project(store, settings, project_id, actor, action="mapeo")
     return {"removed": removed}
+
+
+@router.get("/{project_id}/captura")
+def get_captura(
+    project_id: str,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Lo que el plano no dio: lo que hay que capturar a mano antes de entregar."""
+    report = _report(store, project_id)
+    try:
+        detections = [
+            Detection.model_validate(d) for d in store.read_artifact(project_id, "detections.json")
+        ]
+    except HTTPException:
+        detections = []
+    try:
+        inventory = store.read_artifact(project_id, "inventory.json")
+    except HTTPException:
+        inventory = None
+    reviews = load_reviews(store.get_root(project_id) / settings.processed_dir_name)
+    captura = lo_que_el_plano_no_dio(report, detections, reviews, inventory)
+    return {**captura.model_dump(), "total": captura.total}

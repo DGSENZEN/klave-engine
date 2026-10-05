@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { CapturaCallout } from "@/components/CapturaCallout";
 import { useParams } from "next/navigation";
 import {
   CaretDown,
@@ -347,6 +348,7 @@ export default function PresupuestoPage() {
         />
       )}
       <SuggestionsBar projectId={id} actorName={actorName} conceptCodes={conceptCodes} />
+      <CapturaCallout projectId={id} reloadKey={latestEvent?.seq} />
       {parametricCount > 0 && (
         <div className="mb-4">
           <Callout tone="info">

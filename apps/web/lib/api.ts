@@ -3177,3 +3177,13 @@ export const forgetVariantMapping = (projectId: string, key: string, actor?: str
     `/projects/${encodeURIComponent(projectId)}/variantes/${encodeURIComponent(key)}`,
     actor ? { "X-Actor": actor } : undefined,
   );
+
+export type CapturaState = {
+  vistos_sin_cantidad: { familia: string; cantidad: number; marcas: string[] }[];
+  sin_precio: { clave: string; descripcion: string; cantidad: number; unidad: string }[];
+  hojas_sin_lectura: { hoja: string; disciplina: string }[];
+  total: number;
+};
+
+export const getCaptura = (projectId: string) =>
+  getJSON<CapturaState>(`/projects/${encodeURIComponent(projectId)}/captura`);

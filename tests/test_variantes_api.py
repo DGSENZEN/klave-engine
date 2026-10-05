@@ -108,5 +108,9 @@ def test_variants_map_confirm_label_and_forget(data_dir, monkeypatch):
     assert accepted.json()["status"] == "confirmada"
     assert accepted.json()["target_code"] == "EMC-30X40" and accepted.json()["actor"] == "Ana"
 
+    captura = client.get(f"/projects/{pid}/captura")
+    assert captura.status_code == 200 and "vistos_sin_cantidad" in captura.json()
+    assert captura.json()["total"] >= 0
+
     forgot = client.delete(f"/projects/{pid}/variantes/EST-001.30X40-8N5")
     assert forgot.status_code == 200 and forgot.json()["removed"] is True
