@@ -9,7 +9,7 @@ import json
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from klave_engine.common.config import Settings, get_settings
 from klave_engine.common.errors import ConversionError, ProjectManifestError
@@ -31,6 +31,7 @@ from klave_engine.costing.report import (
 )
 from klave_engine.costing.reviews import filter_excluded, load_reviews, rekey_reviews, save_reviews
 from klave_engine.detection.bajadas import stamp_bajada_stacks
+from klave_engine.detection.candidates import candidatos, write_candidates
 from klave_engine.detection.dimension_links import link_dimensions
 from klave_engine.detection.dimensions import build_dimension_inventory
 from klave_engine.detection.disciplines import route_sheet, vote_content
@@ -574,6 +575,12 @@ def run_full_pipeline(
                 "a ningún acabado declarado."
             )
     write_json(processed / "detections.json", result.detections)
+    # Lo que tiene forma de elemento y ninguna regla tomó: datos para el
+    # lector que aprende; no cambia ninguna detección ni ninguna cantidad.
+    write_candidates(processed, candidatos(
+        result.entities, result.detections, units.to_meters(),
+        {PurePath(sh.sheet).name: sh.discipline or "" for sh in inventory.sheets},
+    ))
     log_stage(
         logger,
         "views_segmented",
