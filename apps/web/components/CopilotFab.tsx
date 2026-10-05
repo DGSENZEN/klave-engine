@@ -18,6 +18,7 @@ import { Copilot } from "@/components/Copilot";
 
 // Pantallas de acceso y recuperación: ahí no hay nada que copilotear.
 const SIN_COPILOTO = [
+  "/compartido",
   "/bienvenida",
   "/invitacion",
   "/recuperar",

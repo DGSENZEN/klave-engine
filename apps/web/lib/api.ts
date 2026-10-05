@@ -3187,3 +3187,36 @@ export type CapturaState = {
 
 export const getCaptura = (projectId: string) =>
   getJSON<CapturaState>(`/projects/${encodeURIComponent(projectId)}/captura`);
+
+/* ------------------------------------------------ liga para compartir (R2) */
+
+export type ShareLink = {
+  token: string;
+  project_id: string;
+  created_by: string;
+  created_at: string;
+  expires_at: string;
+  revoked_at: string | null;
+  url?: string;
+  active?: boolean;
+};
+
+export const createShareLink = (projectId: string, days = 14) =>
+  postJSON<ShareLink>(`/projects/${encodeURIComponent(projectId)}/compartir`, { days });
+
+export const revokeShareLink = (projectId: string, token: string) =>
+  deleteJSON<{ revoked: boolean }>(
+    `/projects/${encodeURIComponent(projectId)}/compartir/${encodeURIComponent(token)}`,
+  );
+
+/** Del lado de quien abre la liga: sin cuenta, sin cookies. */
+export async function getShared<T>(token: string, path = ""): Promise<T> {
+  const res = await fetch(`${API_BASE}/compartido/${encodeURIComponent(token)}${path}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(String(res.status));
+  return (await res.json()) as T;
+}
+
+export const sharedGeneradoresUrl = (token: string) =>
+  `${API_BASE}/compartido/${encodeURIComponent(token)}/generadores.xlsx`;

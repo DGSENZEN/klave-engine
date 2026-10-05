@@ -22,6 +22,7 @@ from apps.api.observability import RequestIdMiddleware
 from apps.api.routes import ai as ai_routes
 from apps.api.routes import (
     catalog,
+    compartido,
     copilot,
     detections,
     disciplinas,
@@ -142,6 +143,8 @@ def create_app() -> FastAPI:
     app.include_router(workspace.router)
     app.include_router(copilot.router)
     app.include_router(variantes.router)
+    app.include_router(compartido.router)
+    app.include_router(compartido.public)
 
     @app.exception_handler(KlaveEngineError)
     async def klave_error_handler(request: Request, exc: KlaveEngineError) -> JSONResponse:

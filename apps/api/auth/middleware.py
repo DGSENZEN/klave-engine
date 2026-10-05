@@ -21,7 +21,9 @@ from apps.api.auth.store import ROLE_RANK, UsersDbUnavailable, get_user_store
 
 SESSION_COOKIE = "klave_session"
 
-OPEN_PREFIXES = ("/health", "/auth/", "/docs", "/openapi.json", "/redoc")
+# /compartido/: ligas de sólo lectura con token; el token es la autorización y
+# sólo hay GET (el guard CSRF de arriba sigue aplicando a cualquier mutación).
+OPEN_PREFIXES = ("/health", "/auth/", "/docs", "/openapi.json", "/redoc", "/compartido/")
 
 _MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
 _LOCAL_ORIGIN = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$")
@@ -81,7 +83,7 @@ def _required_project_role(segments: list[str], method: str) -> str | None:
         return None
     if len(segments) == 2:
         return "owner" if method in ("PATCH", "DELETE") else "viewer"
-    if segments[2] in ("files", "access"):
+    if segments[2] in ("files", "access", "compartir"):
         return "owner"
     if method in _MUTATING:
         return "editor"

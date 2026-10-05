@@ -781,6 +781,7 @@ def _generadores(
     croquis: CroquisProvider | None = None,
     segmentation: SheetSegmentation | None = None,
     web_origin: str = "",
+    link_path: Callable[[str], str] | None = None,
 ) -> None:
     """The evidence backup sheet: where every quantity comes from — and,
     with a croquis provider, where on the planta it sits.
@@ -860,7 +861,8 @@ def _generadores(
                     if col == 6 and isinstance(value, float):
                         cell.number_format = QTY_FORMAT
                     if col == 7 and ref and origin:
-                        cell.hyperlink = f"{origin}{ref.visor}"
+                        path = link_path(ref.visor) if link_path else ref.visor
+                        cell.hyperlink = f"{origin}{path}"
                         cell.font = Font(color="2B4ACB", underline="single", size=10)
                 row += 1
         # Provenance that is not a detection: mapped levantamiento counts,
@@ -1183,6 +1185,33 @@ def _explosion(ws: Worksheet, report: CostReport, money_state: MoneyState) -> No
         row += 1
     for letter, width in {"A": 18, "B": 48, "C": 13, "D": 8, "E": 13, "F": 14, "G": 15}.items():
         ws.column_dimensions[letter].width = width
+
+
+def build_generadores_workbook(
+    report: CostReport,
+    detections: list[Detection],
+    reviews: ProjectReviews,
+    *,
+    segmentation: SheetSegmentation | None = None,
+    inventory: dict | None = None,
+    web_origin: str = "",
+    link_path: Callable[[str], str] | None = None,
+) -> bytes:
+    """Sólo los generadores y lo que el plano no dio: lo que se comparte con
+    un supervisor o un socio. Cantidades y evidencia, ningún peso."""
+    workbook = Workbook()
+    _generadores(
+        workbook.active, report, detections, reviews,
+        segmentation=segmentation, web_origin=web_origin, link_path=link_path,
+    )
+    workbook.active.title = "Generadores"
+    _captura(
+        workbook.create_sheet("Lo que el plano no dio"),
+        lo_que_el_plano_no_dio(report, detections, reviews, inventory),
+    )
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
 
 
 def build_apus_workbook(report: CostReport, reviews: ProjectReviews) -> bytes:

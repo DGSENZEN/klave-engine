@@ -10,6 +10,7 @@ import {
   CircleNotch,
   DownloadSimple,
   FileXls,
+  LinkSimple,
   PencilSimpleLine,
   Trash,
   Warning,
@@ -38,6 +39,9 @@ import {
   type Dimensions,
   type Diagnostico as DiagnosticoType,
   type ProjectReviews,
+  createShareLink,
+  revokeShareLink,
+  type ShareLink,
 } from "@/lib/api";
 import { useCostReport } from "@/lib/useProjectReport";
 import { downloadCsv } from "@/lib/format";
@@ -81,6 +85,7 @@ export default function PresupuestoPage() {
   const [dims, setDims] = useState<Dimensions | null>(null);
   const [reviews, setReviews] = useState<ProjectReviews | null>(null);
   const [exporting, setExporting] = useState<string | null>(null);
+  const [liga, setLiga] = useState<ShareLink | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [concepts, setConcepts] = useState<CatalogConcept[] | null>(null);
   const [diagnostico, setDiagnostico] = useState<DiagnosticoType | null>(null);
@@ -228,6 +233,14 @@ export default function PresupuestoPage() {
     }
   }
 
+  async function crearLiga() {
+    try {
+      setLiga(await createShareLink(id));
+    } catch (e) {
+      setExportError(apiMessage(e, "No se pudo crear la liga; sólo el dueño del proyecto puede."));
+    }
+  }
+
   return (
     <div className="rise-in px-6 py-7 lg:px-8">
       <PageHeader
@@ -289,6 +302,15 @@ export default function PresupuestoPage() {
                 <MenuItem
                   onSelect={() => {
                     close();
+                    void crearLiga();
+                  }}
+                  hint="El plano con sus elementos y los generadores, sin cuenta y sin dinero; caduca en 14 días."
+                >
+                  <LinkSimple size={15} weight="duotone" /> Liga para compartir (supervisor o socio)
+                </MenuItem>
+                <MenuItem
+                  onSelect={() => {
+                    close();
                     void exportFile("Explosión de insumos", `/projects/${id}/export/explosion.xlsx`, "explosion_insumos.xlsx");
                   }}
                 >
@@ -346,6 +368,37 @@ export default function PresupuestoPage() {
             getAcciones(id).then((r) => setAcciones(r.acciones)).catch(() => {});
           }}
         />
+      )}
+      {liga && (
+        <div className="mb-4">
+          <Callout
+            tone="info"
+            action={
+              <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => void navigator.clipboard?.writeText(liga.url ?? "")}
+                >
+                  Copiar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={async () => {
+                    await revokeShareLink(id, liga.token).catch(() => undefined);
+                    setLiga(null);
+                  }}
+                >
+                  Revocar
+                </Button>
+              </div>
+            }
+          >
+            Liga de sólo lectura, caduca el {liga.expires_at.slice(0, 10)}:{" "}
+            <span className="break-all font-mono text-xs">{liga.url}</span>
+          </Callout>
+        </div>
       )}
       <SuggestionsBar projectId={id} actorName={actorName} conceptCodes={conceptCodes} />
       <CapturaCallout projectId={id} reloadKey={latestEvent?.seq} />
