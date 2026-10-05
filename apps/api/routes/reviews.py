@@ -10,6 +10,7 @@ from klave_engine.common.config import Settings
 from klave_engine.common.errors import ReportGenerationError
 from klave_engine.common.ids import short_uuid
 from klave_engine.costing.conteos import ConteosDeProyecto, load_conteos, save_conteos
+from klave_engine.costing.etiquetas import append_labels, detection_labels
 from klave_engine.costing.models import CostingOverrides, CostReport
 from klave_engine.costing.omitted import AREA_FAMILIES, FAMILY_TYPES, LINEAR_FAMILIES
 from klave_engine.costing.presentation import publishable_stored_total, publishable_total
@@ -193,6 +194,19 @@ def _recompute_after_review(
     )
 
 
+def _label_reviews(
+    store: ProjectStore, project_id: str, control_dir, keys: list[str], status: str,
+    actor: str, note: str,
+) -> None:
+    """Cada revisión queda como etiqueta para el lector que aprende. Nunca
+    detiene la revisión: si no hay detecciones legibles, se etiqueta sin ellas."""
+    try:
+        detections = store.read_artifact(project_id, "detections.json")
+    except HTTPException:
+        detections = []
+    append_labels(control_dir, detection_labels(keys, status, actor, detections, note))
+
+
 @router.get("/{project_id}/reviews")
 def get_reviews(
     project_id: str,
@@ -224,6 +238,7 @@ def set_detection_review(
                 status=body.status, note=body.note.strip(), actor=actor
             )
         save_reviews(control_dir, reviews)
+        _label_reviews(store, project_id, control_dir, [key], body.status, actor, body.note)
         _recompute_after_review(
             store, settings, project_id, actor, clean_client_id(x_client_id),
             f"detection_{body.status}", key,
@@ -254,6 +269,7 @@ def set_detection_reviews(
                     status=body.status, note=body.note.strip(), actor=actor
                 )
         save_reviews(control_dir, reviews)
+        _label_reviews(store, project_id, control_dir, keys, body.status, actor, body.note)
         if body.recompute:
             _recompute_after_review(
                 store, settings, project_id, actor, clean_client_id(x_client_id),

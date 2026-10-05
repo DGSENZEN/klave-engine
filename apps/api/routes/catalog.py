@@ -1667,7 +1667,8 @@ def list_aliases(catalog: CatalogStore = Depends(get_catalog)) -> dict:
 
 
 def _recompute_project(
-    store: ProjectStore, settings: Settings, project_id: str, actor: str
+    store: ProjectStore, settings: Settings, project_id: str, actor: str,
+    action: str = "alias",
 ) -> None:
     """Aliases are workspace-wide; the project that asked sees its numbers move now."""
     if not project_id:
@@ -1696,7 +1697,7 @@ def _recompute_project(
         data={
             "version": overrides.version, "direct_cost": report.boq.direct_cost_total,
             "grand_total": publishable_total(report, load_reviews(control_dir).verification),
-            "review_action": "alias",
+            "review_action": action,
         },
     )
 

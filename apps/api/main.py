@@ -37,6 +37,7 @@ from apps.api.routes import (
     reports,
     reviews,
     tablero,
+    variantes,
     workspace,
 )
 from apps.api.routes import croquis as croquis_routes
@@ -140,6 +141,7 @@ def create_app() -> FastAPI:
     app.include_router(catalog.router)
     app.include_router(workspace.router)
     app.include_router(copilot.router)
+    app.include_router(variantes.router)
 
     @app.exception_handler(KlaveEngineError)
     async def klave_error_handler(request: Request, exc: KlaveEngineError) -> JSONResponse:
