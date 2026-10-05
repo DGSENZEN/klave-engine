@@ -31,6 +31,7 @@ from klave_engine.llm.reader import (
 )
 from pydantic import BaseModel, Field
 
+from apps.api.auth.access import require_project_role
 from apps.api.auth.common import rate_limit
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
@@ -80,6 +81,7 @@ class Aplicar(BaseModel):
 @router.get("/acciones/{project_id}")
 def acciones_del_proyecto(
     project_id: str,
+    request: Request,
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
     catalog: CatalogStore = Depends(get_catalog),
@@ -88,6 +90,7 @@ def acciones_del_proyecto(
 
     Derivado del diagnóstico, no redactado por un modelo: reproducible, gratis
     y auditable."""
+    require_project_role(request, project_id, "viewer")
     contexto = _acciones(store, settings, catalog, project_id)
     return {"acciones": [_serializar(a) for a in contexto]}
 
@@ -133,6 +136,8 @@ def aplicar(
     que el presupuesto pide **ahora**, no lo que pedía cuando se dibujó el
     botón. Si el hallazgo ya se resolvió, no hay nada que hacer y se dice."""
     rate_limit(request, "copilot_apply", max_attempts=60, window_seconds=3600.0)
+    # Aplicar cambia el presupuesto: hace falta poder editar ese proyecto.
+    require_project_role(request, body.project_id, "editor")
     actor = clean_actor(x_actor) or ""
     disponibles = _acciones(store, settings, catalog, body.project_id)
     accion = next(
@@ -257,6 +262,8 @@ def ask(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     rate_limit(request, "copilot", max_attempts=60, window_seconds=3600.0)
+    if body.project_id:
+        require_project_role(request, body.project_id, "viewer")
     workspace = workspace_de(request, settings)
     revisar_presupuesto(settings, workspace)
     if not credentials_available(settings.ai_provider):

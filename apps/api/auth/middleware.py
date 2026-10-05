@@ -17,7 +17,8 @@ from urllib.parse import urlsplit
 
 from klave_engine.common.config import get_settings
 
-from apps.api.auth.store import ROLE_RANK, UsersDbUnavailable, get_user_store
+from apps.api.auth.access import project_access_problem
+from apps.api.auth.store import UsersDbUnavailable, get_user_store
 
 SESSION_COOKIE = "klave_session"
 
@@ -164,22 +165,10 @@ class AccessControlMiddleware:
                 segments = [s for s in path.split("/") if s]
                 if segments and segments[0] == "projects":
                     required = _required_project_role(segments, method)
-                    if required is not None and user["role"] == "admin":
-                        # Admins pass every role check, but only inside
-                        # their own workspace.
-                        if store.project_workspace_id(segments[1]) != str(
-                            user["workspace_id"]
-                        ):
-                            denial = _deny(
-                                403, "forbidden_project", "Proyecto de otro taller."
-                            )
-                    elif required is not None:
-                        role = store.project_role(segments[1], str(user["user_id"]))
-                        if role is None or ROLE_RANK[role] < ROLE_RANK[required]:
-                            denial = _deny(
-                                403, "forbidden_project",
-                                "No tienes acceso suficiente a este proyecto.",
-                            )
+                    if required is not None:
+                        problem = project_access_problem(store, user, segments[1], required)
+                        if problem is not None:
+                            denial = _deny(*problem)
         except UsersDbUnavailable:
             # En producción la base de usuarios caída cierra, siempre: tras un
             # reinicio el proceso no recuerda si había cuentas, y abrir «por

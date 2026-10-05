@@ -356,6 +356,21 @@ def test_workspace_scoping_and_cli_bootstrap(app, capsys):
     assert cross.status_code == 404
     assert cli_main(["create-workspace", "otro", "Duplicado"]) == 1
 
+    # Y fuera de /projects: el copiloto y los alias con recálculo cuidan el
+    # proyecto igual que el middleware (antes cualquier cuenta llegaba).
+    assert otro.get("/copilot/acciones/proj_taller").status_code == 403
+    aplicar = otro.post("/copilot/aplicar", json={"project_id": "proj_taller", "tipo": "x"})
+    assert aplicar.status_code == 403
+    alias = otro.post("/catalog/aliases", json={
+        "concept_code": "EST-001", "kind": "concept", "target_code": "X-1",
+        "project_id": "proj_taller",
+    })
+    assert alias.status_code == 403
+    assert otro.delete("/catalog/aliases/EST-001?project_id=proj_taller").status_code == 403
+    pregunta = otro.post("/copilot/ask", json={"pregunta": "¿cuánto cuesta?",
+                                               "project_id": "proj_taller"})
+    assert pregunta.status_code == 403
+
 
 def test_weak_passwords_are_refused_with_the_reason():
     from apps.api.auth.passwords import password_problem
