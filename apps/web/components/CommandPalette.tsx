@@ -34,6 +34,13 @@ function destinos(base: string): Destino[] {
       })),
     ),
     {
+      key: "revision-catalogo",
+      label: "Tu catálogo: mapear las variantes del plano a tus conceptos",
+      grupo: "Revisión",
+      icon: <Books size={16} />,
+      href: `${base}/revision?tab=catalogo`,
+    },
+    {
       key: "insumos-ajuste",
       label: "Insumos: ajustar precios o sustituir en matrices",
       grupo: "Catálogo",

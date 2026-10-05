@@ -320,6 +320,8 @@ export type BoqLine = {
   parametric?: boolean;
   /** No matrix nor adopted P.U.: the quantity is real, the amount is unknown (shown as sin precio, never $0). */
   unpriced?: boolean;
+  /** Lo que el plano distingue dentro del renglón; suman su cantidad. */
+  variants?: BoqVariantDetail[];
 };
 
 export type ApuLine = {
@@ -3102,3 +3104,76 @@ export const putEquipment = (
 /** Re-run the whole pipeline on the project's current files. */
 export const processProject = (id: string) =>
   postJSON<{ project_id: string; job_id: string; state: string }>(`/projects/${id}/process`, {});
+
+/* ------------------------------------------------ variantes y mapeo (v1 R1) */
+
+export type VariantMapping = "automatica" | "propuesta" | "confirmada" | "sin_equivalente" | "";
+
+export type BoqVariantDetail = {
+  key: string;
+  signature: Record<string, string>;
+  description: string;
+  quantity: number;
+  source_detection_count: number;
+  source_detections: string[];
+  clave: string;
+  mapped_description: string;
+  mapping: VariantMapping;
+  mapping_reason: string;
+  unit_price: number | null;
+  amount: number | null;
+  price_source: string;
+};
+
+export type VariantLine = {
+  concept_code: string;
+  description: string;
+  unit: string;
+  phase: string;
+  quantity: number;
+  unpriced: boolean;
+  variants: BoqVariantDetail[];
+};
+
+export type VariantsState = {
+  lines: VariantLine[];
+  counts: Record<string, number>;
+};
+
+export const getVariants = (projectId: string) =>
+  getJSON<VariantsState>(`/projects/${encodeURIComponent(projectId)}/variantes`);
+
+export const mapVariants = (projectId: string, rematch: boolean, actor?: string) =>
+  postJSON<{
+    automatica: number;
+    propuesta: number;
+    sin_equivalente: number;
+    conservadas: number;
+    sin_catalogo: boolean;
+  }>(
+    `/projects/${encodeURIComponent(projectId)}/variantes/mapear`,
+    { rematch },
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export const setVariantMapping = (
+  projectId: string,
+  key: string,
+  body:
+    | { status: "sin_equivalente" }
+    | { status: "confirmada" }
+    | { status: "confirmada"; target_kind: "concept"; target_code: string }
+    | { status: "confirmada"; target_kind: "reference"; ref_id: number },
+  actor?: string,
+) =>
+  putJSON<Record<string, unknown>>(
+    `/projects/${encodeURIComponent(projectId)}/variantes/${encodeURIComponent(key)}`,
+    body,
+    actor ? { "X-Actor": actor } : undefined,
+  );
+
+export const forgetVariantMapping = (projectId: string, key: string, actor?: string) =>
+  deleteJSON<{ removed: boolean }>(
+    `/projects/${encodeURIComponent(projectId)}/variantes/${encodeURIComponent(key)}`,
+    actor ? { "X-Actor": actor } : undefined,
+  );

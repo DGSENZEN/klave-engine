@@ -117,6 +117,13 @@ def set_variant_mapping(
             fields.update(target_kind="concept", target_code=concept["code"],
                           clave=concept["code"], description=concept["description"],
                           unit=concept["unit"])
+        elif previous and previous.get("status") in ("automatica", "propuesta") and (
+            previous.get("target_code") or previous.get("ref_id")
+        ):
+            # Confirmar la propuesta tal cual: el mismo destino, ahora de una persona.
+            fields.update({k: previous[k] for k in (
+                "target_kind", "target_code", "ref_id", "clave", "description", "unit", "score",
+            )})
         else:
             raise HTTPException(
                 status_code=422,

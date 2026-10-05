@@ -84,7 +84,9 @@ def test_variants_map_confirm_label_and_forget(data_dir, monkeypatch):
     assert labels[-1]["verdict"]["target_code"] == "EMC-30X40"
     assert labels[-1]["actor"] == "Diego"
 
-    bad = client.put(f"/projects/{pid}/variantes/EST-001.30X40-8N5",
+    # Confirmar sin destino sólo vale para aceptar una propuesta existente.
+    client.put(f"/projects/{pid}/variantes/EST-001.15X15-4N3", json={"status": "sin_equivalente"})
+    bad = client.put(f"/projects/{pid}/variantes/EST-001.15X15-4N3",
                      json={"status": "confirmada"})
     assert bad.status_code == 422
     assert client.put(f"/projects/{pid}/variantes/NO.EXISTE",
@@ -96,6 +98,15 @@ def test_variants_map_confirm_label_and_forget(data_dir, monkeypatch):
     det_label = [lab for lab in read_labels(processed) if lab["kind"] == "deteccion"][-1]
     assert det_label["verdict"] == "excluded" and det_label["element"]["type"] == "column_tag"
     assert det_label["element"]["properties"]["section_cm"] == "15x15"
+
+    store = get_catalog_store(data_dir)
+    store.set_variant_mapping("EST-001.30X40-8N5", status="propuesta", target_kind="concept",
+                              target_code="EMC-30X40", clave="EMC-30X40", score=0.6)
+    accepted = client.put(f"/projects/{pid}/variantes/EST-001.30X40-8N5",
+                          json={"status": "confirmada"}, headers={"X-Actor": "Ana"})
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["status"] == "confirmada"
+    assert accepted.json()["target_code"] == "EMC-30X40" and accepted.json()["actor"] == "Ana"
 
     forgot = client.delete(f"/projects/{pid}/variantes/EST-001.30X40-8N5")
     assert forgot.status_code == 200 and forgot.json()["removed"] is True

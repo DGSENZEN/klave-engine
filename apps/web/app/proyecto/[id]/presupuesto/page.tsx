@@ -742,6 +742,38 @@ function PhaseGroup({
                       />
                     </div>
                   )}
+                  {(l.variants?.length ?? 0) > 1 && (
+                    <div className="mb-3">
+                      <div className="mb-1 flex items-center gap-2 font-medium text-foreground">
+                        Lo que el plano distingue: {l.variants!.length} variantes
+                        <Link
+                          href={`/proyecto/${projectId}/revision?tab=catalogo`}
+                          className="font-normal underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          mapear a mi catálogo
+                        </Link>
+                      </div>
+                      <table className="w-full max-w-3xl">
+                        <tbody>
+                          {l.variants!.map((v) => (
+                            <tr key={v.key} className="border-t border-border/60">
+                              <td className="py-1 pr-3 text-foreground">
+                                {v.clave && <span className="mr-1.5 font-mono">{v.clave}</span>}
+                                {v.description}
+                              </td>
+                              <td className="tabular whitespace-nowrap py-1 pr-3 text-right">
+                                {v.quantity.toLocaleString("es-MX", { maximumFractionDigits: 2 })} {l.unit}
+                              </td>
+                              <td className="tabular whitespace-nowrap py-1 text-right">
+                                {v.amount == null ? "sin precio" : money2(v.amount)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                   <div className="mb-1.5 font-medium text-foreground">
                     De dónde sale: {l.source_detection_count} elemento
                     {l.source_detection_count === 1 ? "" : "s"} del plano

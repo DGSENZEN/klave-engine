@@ -47,6 +47,7 @@ import {
 import { FAMILIES, FAMILY_LABELS } from "@/lib/families";
 import { isDoubtful, LoteDeRevision } from "@/components/LoteDeRevision";
 import { OmittedSection } from "@/components/OmittedSection";
+import { VariantesSection } from "@/components/VariantesSection";
 import { useProjectLive } from "@/components/ProjectLive";
 
 /**
@@ -316,6 +317,7 @@ export default function RevisionPage() {
             label: "Elementos del plano",
             count: table.rows.length,
           },
+          { key: "catalogo", label: "Tu catálogo" },
           { key: "omitidos", label: "Omitidos por el motor" },
           { key: "conteo", label: "Cuántos hay dibujados" },
         ]}
@@ -709,6 +711,16 @@ export default function RevisionPage() {
         </TableCard>
       </div>
 
+      <div className={tab !== "catalogo" ? "hidden" : ""}>
+        {tab === "catalogo" && (
+          <VariantesSection
+            projectId={id}
+            actorName={actorName}
+            reloadKey={latestEvent?.seq}
+          />
+        )}
+      </div>
+
       <div className={tab !== "omitidos" ? "hidden" : ""}>
         <OmittedSection
           projectId={id}
@@ -732,7 +744,7 @@ export default function RevisionPage() {
 
 const PAGE_SIZE = 500;
 
-const REVISION_TABS = ["elementos", "omitidos", "conteo"] as const;
+const REVISION_TABS = ["elementos", "catalogo", "omitidos", "conteo"] as const;
 type RevisionTab = (typeof REVISION_TABS)[number];
 
 type SortKey =
