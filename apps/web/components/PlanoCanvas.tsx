@@ -435,8 +435,13 @@ export function PlanoCanvas({
   }, [draw]);
   useEffect(
     () => () => {
+      // Se cancela y se olvida: en desarrollo React monta, desmonta y vuelve
+      // a montar, y un identificador viejo hacía creer a schedule() que ya
+      // había un cuadro pendiente — el visor se quedaba en blanco.
       if (frameRef.current != null) window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
       if (settleRef.current) window.clearTimeout(settleRef.current);
+      settleRef.current = null;
     },
     [],
   );
