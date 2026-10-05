@@ -350,7 +350,7 @@ export default function LecturaPage() {
           icon={<Stack size={16} weight="duotone" />}
         />
         <Metric
-          label="Detecciones"
+          label="Elementos leídos"
           value={lectura.detection_total}
           icon={<Scan size={16} weight="duotone" />}
         />
@@ -437,7 +437,7 @@ export default function LecturaPage() {
 
         <div className="space-y-4">
           <Card className="p-5">
-            <SectionTitle sub="Familias estructurales que la detección encontró.">
+            <SectionTitle sub="Familias estructurales que la lectura encontró.">
               Detecciones por familia
             </SectionTitle>
             {lectura.detection_total === 0 ? (
@@ -654,7 +654,7 @@ export default function LecturaPage() {
 
         {lectura.blocks.length > 0 && (
           <Card className="p-5">
-            <SectionTitle sub="Definiciones de bloque más usadas; su geometría interna se expande para la detección.">
+            <SectionTitle sub="Definiciones de bloque más usadas; su geometría interna se expande para la lectura.">
               Bloques
             </SectionTitle>
             <div className="flex flex-wrap gap-2">

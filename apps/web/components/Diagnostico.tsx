@@ -654,7 +654,7 @@ function Criterios({ items }: { items: string[] }) {
         <span className="text-xs font-semibold uppercase tracking-wide text-muted">
           Criterios adoptados
         </span>
-        <span className="text-xs text-muted">· lo que el motor decidió, y por qué</span>
+        <span className="text-xs text-muted">· lo que Klave decidió, y por qué</span>
         <span className="tabular ml-auto text-xs text-faint">{items.length}</span>
         <CaretDown size={12} weight="bold" className={`text-faint ${open ? "rotate-180" : ""}`} />
       </button>

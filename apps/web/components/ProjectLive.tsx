@@ -317,11 +317,11 @@ function reviewMessage(actor: string, event: ProjectEvent): string | null {
   const detail = dataString(event, "detail");
   switch (dataString(event, "action")) {
     case "detection_confirmed":
-      return `${actor} confirmó ${detail || "una detección"}`;
+      return `${actor} confirmó ${detail || "un elemento"}`;
     case "detection_excluded":
-      return `${actor} excluyó ${detail || "una detección"}`;
+      return `${actor} excluyó ${detail || "un elemento"}`;
     case "detection_none":
-      return `${actor} quitó la revisión de ${detail || "una detección"}`;
+      return `${actor} quitó la revisión de ${detail || "un elemento"}`;
     case "adjustment_added":
       return `${actor} agregó un ajuste manual (${detail})`;
     case "adjustment_removed":
@@ -371,7 +371,7 @@ function changeEntry(event: ProjectEvent, isOwn: boolean): ChangeEntry | null {
       return {
         ...base,
         title: "Nuevo procesamiento publicado",
-        detail: "Detección y presupuesto actualizados",
+        detail: "Lectura y presupuesto actualizados",
       };
     case "project_updated":
       return { ...base, title: `${actor} actualizó el proyecto` };

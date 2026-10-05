@@ -26,7 +26,7 @@ const STEPS = [
   { key: "ingested", label: "Ingesta del proyecto" },
   { key: "converted", label: "Conversión DWG → DXF" },
   { key: "parsed", label: "Lectura de entidades" },
-  { key: "processed", label: "Detección, vistas y costos" },
+  { key: "processed", label: "Lectura, vistas y costos" },
 ];
 
 // Qué está haciendo el motor en cada paso, en frases honestas que rotan:

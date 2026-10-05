@@ -318,7 +318,7 @@ export default function RevisionPage() {
             count: table.rows.length,
           },
           { key: "catalogo", label: "Tu catálogo" },
-          { key: "omitidos", label: "Omitidos por el motor" },
+          { key: "omitidos", label: "Lo que Klave no vio" },
           { key: "conteo", label: "Cuántos hay dibujados" },
         ]}
       />
@@ -1034,7 +1034,7 @@ function ConteoSection({
 
   return (
     <Card className="p-5">
-      <SectionTitle sub="El motor se compara contra sí mismo en todo lo demás. Esto es lo único que dice cuánto de lo dibujado encuentra, y sólo lo puede contestar alguien contando.">
+      <SectionTitle sub="Klave se compara contra sí mismo en todo lo demás. Esto es lo único que dice cuánto de lo dibujado encuentra, y sólo lo puede contestar alguien contando.">
         Cuántos hay dibujados
       </SectionTitle>
 

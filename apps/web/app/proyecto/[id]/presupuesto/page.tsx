@@ -714,7 +714,7 @@ function PhaseGroup({
                     {l.engine_quantity != null && l.engine_quantity !== l.quantity && (
                       <span
                         className="text-xs text-faint line-through"
-                        title="Lo que leyó el motor"
+                        title="Lo que leyó Klave"
                       >
                         {num(l.engine_quantity)}
                       </span>

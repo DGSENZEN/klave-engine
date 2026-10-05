@@ -697,7 +697,7 @@ function ProjectRow({
                     <SealCheck size={12} weight="bold" /> Verificado
                   </Badge>
                 ) : (
-                  <span title="Unidades, detecciones y supuestos por confirmar">
+                  <span title="Unidades, elementos y supuestos por confirmar">
                     <Badge tone="default">{doneSteps}/3 verificado</Badge>
                   </span>
                 ))}
@@ -721,7 +721,7 @@ function ProjectRow({
               {project.engine_stale && (
                 <>
                   <span className="text-faint">·</span>
-                  <span className="inline-flex items-center gap-1" title="Procesado con una versión anterior del motor">
+                  <span className="inline-flex items-center gap-1" title="Procesado con una versión anterior de Klave">
                     <ArrowsClockwise size={12} /> lectura anterior
                   </span>
                 </>

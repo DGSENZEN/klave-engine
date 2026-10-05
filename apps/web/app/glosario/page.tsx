@@ -48,7 +48,7 @@ const SECTIONS: { title: string; terms: [string, string][] }[] = [
       ["Catálogo de licitación", "El formato de entrega para concurso: partidas numeradas, P.U. con número y letra, importes."],
       ["P.U.O.T.", "\"Precio Unitario por Obra Terminada\": la descripción larga termina así por convención."],
       ["OPUS / Neodata", "Los programas de precios unitarios más usados en México. Klave exporta layouts de Excel que ambos importan."],
-      ["SIN VERIFICAR", "El sello que llevan pantallas y Excel hasta que alguien confirma unidades y detecciones. El dinero sin verificar no se entrega."],
+      ["SIN VERIFICAR", "El sello que llevan pantallas y Excel hasta que alguien confirma unidades y elementos. El dinero sin verificar no se entrega."],
     ],
   },
 ];

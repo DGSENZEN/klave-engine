@@ -23,7 +23,7 @@ const PRINCIPLES: {
     icon: <MagnifyingGlass size={20} weight="duotone" />,
     title: "Todo sale del plano, con evidencia",
     body:
-      "Cada cantidad apunta al elemento del que salió: qué marca, en qué hoja, con qué medida. Si el motor supuso algo (un vano típico, una altura), el supuesto está escrito junto al número. Nunca vas a encontrar una cantidad que no puedas rastrear hasta un trazo del dibujo o un supuesto declarado.",
+      "Cada cantidad apunta al elemento del que salió: qué marca, en qué hoja, con qué medida. Si Klave supuso algo (un vano típico, una altura), el supuesto está escrito junto al número. Nunca vas a encontrar una cantidad que no puedas rastrear hasta un trazo del dibujo o un supuesto declarado.",
   },
   {
     icon: <Prohibit size={20} weight="duotone" />,
@@ -64,12 +64,12 @@ const STEPS: { title: string; body: string }[] = [
       "DXF abre siempre; DWG se convierte con LibreDWG. Todas las hojas juntas: cimentación, estructura y plantas se leen como un solo conjunto y se complementan.",
   },
   {
-    title: "El motor lee y muestra su trabajo",
+    title: "Klave lee y muestra su trabajo",
     body:
       "Detecta ejes, marcos, cuadros y elementos; arma el levantamiento con confianza por lectura. En el visor ves exactamente qué leyó y de dónde.",
   },
   {
-    title: "Verificas — unidades, detecciones, supuestos",
+    title: "Verificas — unidades, elementos, supuestos",
     body:
       "Excluyes lo que no va, ajustas lo que leyó mal, confirmas los supuestos. Hasta aquí todo está sellado SIN VERIFICAR.",
   },

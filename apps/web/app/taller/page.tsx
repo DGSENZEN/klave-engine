@@ -99,7 +99,7 @@ export default function TallerPage() {
       setDefaults(saved);
       setConfig(saved.config);
       setDirty(false);
-      setNote("Valores restablecidos a los del motor.");
+      setNote("Valores restablecidos a los de Klave.");
     } catch (e) {
       setError(apiMessage(e, "No se pudieron restablecer los valores."));
     } finally {
@@ -140,7 +140,7 @@ export default function TallerPage() {
                     {defaults.customized ? (
                       <Badge tone="accent">Personalizados</Badge>
                     ) : (
-                      <Badge>Del motor</Badge>
+                      <Badge>De Klave</Badge>
                     )}
                   </div>
                   <div className="text-xs text-muted">
@@ -195,7 +195,7 @@ export default function TallerPage() {
           <ConfirmDialog
             open
             title="Restablecer valores del taller"
-            description="Los proyectos nuevos volverán a usar los valores del motor. Los proyectos existentes no cambian."
+            description="Los proyectos nuevos volverán a usar los valores de Klave. Los proyectos existentes no cambian."
             confirmLabel="Restablecer"
             onCancel={() => setConfirmReset(false)}
             onConfirm={reset}

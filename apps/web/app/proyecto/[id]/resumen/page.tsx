@@ -522,7 +522,7 @@ function VerificationPath({
     },
     {
       key: "detections" as const,
-      title: "Detecciones revisadas",
+      title: "Elementos revisados",
       detail:
         reviews.summary.confirmed + reviews.summary.excluded > 0
           ? `${reviews.summary.confirmed} confirmadas · ${reviews.summary.excluded} excluidas. Confirma cuando el plano esté revisado.`
@@ -536,7 +536,7 @@ function VerificationPath({
       key: "assumptions" as const,
       title: "Supuestos de cálculo",
       detail:
-        "Alturas, secciones y porcentajes que convierten detecciones en cantidades y dinero.",
+        "Alturas, secciones y porcentajes que convierten elementos en cantidades y dinero.",
       done: Boolean(v.assumptions_confirmed_at),
       by: v.assumptions_confirmed_by,
       href: `/proyecto/${id}/parametros`,

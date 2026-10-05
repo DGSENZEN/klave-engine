@@ -1960,7 +1960,7 @@ function ConceptRows({
             <div className="min-w-0">
               <span className="font-mono text-xs text-muted">{concept.code}</span>{" "}
               <span className="font-medium">{concept.description}</span>{" "}
-              {concept.detection_backed && <Badge tone="accent">Detección</Badge>}{" "}
+              {concept.detection_backed && <Badge tone="accent">Del plano</Badge>}{" "}
               <OrigenBadge
                 origin={concept.origin}
                 originRef={concept.origin_ref}
@@ -2610,7 +2610,7 @@ function Importaciones({
   return (
     <Card className="mb-8 overflow-hidden">
       <div className="border-b border-border px-5 py-4">
-        <SectionTitle sub="Deshacer quita sólo los conceptos que nacieron de esa importación: los del motor, los escritos a mano y los que ya tengan precio adoptado se quedan.">
+        <SectionTitle sub="Deshacer quita sólo los conceptos que nacieron de esa importación: los de Klave, los escritos a mano y los que ya tengan precio adoptado se quedan.">
           Importaciones de matrices
         </SectionTitle>
       </div>

@@ -66,7 +66,7 @@ export function OnboardingChecklist({
     {
       key: "verify",
       title: "Verifica una lectura",
-      why: "Unidades, detecciones y supuestos: tres pasos en el Resumen. Hasta entonces, todo sale sellado SIN VERIFICAR — a propósito.",
+      why: "Unidades, elementos y supuestos: tres pasos en el Resumen. Hasta entonces, todo sale sellado SIN VERIFICAR — a propósito.",
       href: unverified
         ? `/proyecto/${encodeURIComponent(unverified.project_id)}`
         : "/como-funciona",

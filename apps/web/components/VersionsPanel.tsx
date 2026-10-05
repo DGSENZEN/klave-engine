@@ -197,7 +197,7 @@ export function VersionsPanel({ projectId }: { projectId: string }) {
                     {v.excluded > 0 && ` · ${v.excluded} excluido${v.excluded === 1 ? "" : "s"}`}
                   </span>
                   {v.actor === "Klave" && (
-                    <Badge tone="default" title="Guardada sola al reprocesar: compárala para ver qué cambió entre corridas">
+                    <Badge tone="default" title="Guardada sola al reprocesar: compárala para ver qué cambió entre lecturas">
                       automática
                     </Badge>
                   )}

@@ -136,7 +136,7 @@ export function OmittedSection({
 
   return (
     <Card className="p-5">
-      <SectionTitle sub="¿El motor no vio algo que está en el plano? Regístralo aquí: entra al presupuesto como levantamiento manual, con tu nombre — y le enseña al motor dónde falló.">
+      <SectionTitle sub="¿Klave no vio algo que está en el plano? Regístralo aquí: entra al presupuesto como levantamiento manual, con tu nombre — y le enseña al motor dónde falló.">
         Elementos omitidos por el motor
       </SectionTitle>
 
@@ -257,7 +257,7 @@ export function OmittedSection({
             <Input
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Eje 4-B, planta N2; el motor no leyó el símbolo"
+              placeholder="Eje 4-B, planta N2; Klave no leyó el símbolo"
               maxLength={300}
             />
           </label>

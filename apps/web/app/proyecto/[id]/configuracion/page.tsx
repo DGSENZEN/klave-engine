@@ -224,7 +224,7 @@ export default function ConfiguracionPage() {
             <span className="font-medium text-foreground">{project.project_name}</span>{" "}
             dejará de aparecer en el taller para todo el equipo.{" "}
             {purgeFiles
-              ? "Se borran del disco los planos, las corridas, las revisiones y las versiones. No hay vuelta atrás (salvo el respaldo del servidor)."
+              ? "Se borran del disco los planos, las lecturas, las revisiones y las versiones. No hay vuelta atrás (salvo el respaldo del servidor)."
               : "Los archivos y reportes permanecen en el disco."}
             <label className="mt-3 flex items-center gap-2 text-sm text-foreground">
               <Checkbox

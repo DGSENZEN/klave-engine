@@ -55,7 +55,7 @@ export function MapeosSugeridos({
 
   return (
     <Card className="p-5">
-      <SectionTitle sub="Capas y bloques de instalaciones que reconoce la biblioteca del motor. Son propuestas: revisa la razón, palomea las que apliquen y asígnalas.">
+      <SectionTitle sub="Capas y bloques de instalaciones que reconoce la biblioteca de Klave. Son propuestas: revisa la razón, palomea las que apliquen y asígnalas.">
         Instalaciones sin asignar
       </SectionTitle>
 

@@ -13,7 +13,7 @@ const STEPS = [
   },
   {
     icon: <Scan size={20} weight="duotone" />,
-    title: "Detección con evidencia",
+    title: "Lectura con evidencia",
     text: "Ejes, columnas, trabes, zapatas y muros, cada uno con su origen y confianza.",
   },
   {
