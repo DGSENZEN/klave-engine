@@ -20,6 +20,7 @@ import {
   frameRenderUrl,
   getCosts,
   getGeometry,
+  getGeometryDetections,
   setDetectionReview,
   type BoqLine,
   type CatalogConcept,
@@ -219,12 +220,12 @@ export default function PlanoPage() {
   // A collaborator reviewed something: refresh verdicts, keep the selection.
   useEffect(() => {
     if (latestEvent?.type !== "review_updated") return;
-    getGeometry(id).then((g) => {
-      setGeom(g);
+    // Una revisión mueve veredictos, no el dibujo: sólo se bajan las
+    // detecciones (1 MB en Marina) en vez del plano entero.
+    getGeometryDetections(id).then(({ detections }) => {
+      setGeom((prev) => (prev ? { ...prev, detections } : prev));
       setSelected((current) =>
-        current
-          ? (g.detections.find((d) => d.id === current.id) ?? null)
-          : null,
+        current ? (detections.find((d) => d.id === current.id) ?? null) : null,
       );
     });
   }, [id, latestEvent]);

@@ -640,6 +640,8 @@ export const getEventsHistory = (id: string) =>
     (r) => r.events,
   );
 export const getGeometry = (id: string) => getJSON<Geometry>(`/projects/${id}/geometry`);
+export const getGeometryDetections = (id: string) =>
+  getJSON<{ detections: DetectionOverlay[] }>(`/projects/${id}/geometry/detections`);
 export const getCosts = (id: string) => getJSON<CostReport>(`/projects/${id}/costs`);
 export type Insumo = {
   code: string;
