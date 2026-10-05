@@ -19,6 +19,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib import resources
@@ -63,7 +64,9 @@ def _piezas_m2(largo_cm: float, alto_cm: float, junta_cm: float = 1.0) -> float:
     return 10000.0 / ((largo_cm + junta_cm) * (alto_cm + junta_cm))
 
 
-_FUNCIONES = {"max": max, "min": min, "cemento_ton": _cemento_ton, "piezas_m2": _piezas_m2}
+_FUNCIONES: dict[str, Callable[..., float]] = {
+    "max": max, "min": min, "cemento_ton": _cemento_ton, "piezas_m2": _piezas_m2,
+}
 _OPERADORES = {
     ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b,
     ast.Mult: lambda a, b: a * b, ast.Div: lambda a, b: a / b,

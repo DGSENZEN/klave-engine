@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from klave_engine.costing.sources.cdmx_tabulador import parse_cdmx_tabulador
 from klave_engine.costing.sources.conagua import parse_conagua
@@ -22,6 +23,9 @@ from klave_engine.costing.sources.guanajuato import (
 from klave_engine.costing.sources.inifech import parse_inifech
 from klave_engine.costing.sources.sict_costo_directo import parse_sict_costo_directo
 from klave_engine.costing.sources.sict_maquinaria import parse_sict_maquinaria
+
+if TYPE_CHECKING:
+    import httpx
 
 ReferenceRow = dict[str, object]
 
@@ -159,7 +163,7 @@ def local_manifest(data_dir: Path) -> dict:
         return {}
 
 
-def fetch_source(spec: SourceSpec, data_dir: Path, *, client: object | None = None) -> dict:
+def fetch_source(spec: SourceSpec, data_dir: Path, *, client: "httpx.Client | None" = None) -> dict:
     """Descarga la publicación a `data/sources` y la asienta en el manifiesto
     (sha256, bytes, fecha). Escribe en `.part` y renombra al final: un corte
     a medias nunca deja un archivo que parezca completo. Sin URL, sin
@@ -183,7 +187,7 @@ def fetch_source(spec: SourceSpec, data_dir: Path, *, client: object | None = No
     own_client = client is None
     http = client or httpx.Client(follow_redirects=True, timeout=120.0)
     try:
-        with http.stream("GET", spec.url) as response:  # type: ignore[union-attr]
+        with http.stream("GET", spec.url) as response:
             if response.status_code >= 300:
                 return {
                     "ok": False, "filename": spec.filename, "http": response.status_code,
@@ -199,7 +203,7 @@ def fetch_source(spec: SourceSpec, data_dir: Path, *, client: object | None = No
         return {"ok": False, "filename": spec.filename, "problem": f"No se pudo descargar: {exc}"}
     finally:
         if own_client:
-            http.close()  # type: ignore[union-attr]
+            http.close()
     if size == 0:
         partial.unlink(missing_ok=True)
         return {"ok": False, "filename": spec.filename, "problem": "La descarga vino vacía."}

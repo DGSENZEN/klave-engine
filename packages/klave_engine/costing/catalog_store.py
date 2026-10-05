@@ -2001,7 +2001,7 @@ class CatalogStore:
                     "resource_type": resource_type, "source": source, "vigencia": vigencia,
                 }, ensure_ascii=False), json.dumps(before, ensure_ascii=False)),
             )
-            adjustment_id = int(cursor.lastrowid)
+            adjustment_id = int(cursor.lastrowid or 0)
         if self._has_basicos():
             self.recompute_basicos()
         self._revalidate_priced()
@@ -2058,7 +2058,7 @@ class CatalogStore:
                  json.dumps([{"owner": o, "components": c} for o, c in affected.items()],
                             ensure_ascii=False)),
             )
-            adjustment_id = int(cursor.lastrowid)
+            adjustment_id = int(cursor.lastrowid or 0)
         if self._has_basicos():
             self.recompute_basicos()
         self._revalidate_priced()
@@ -2386,7 +2386,7 @@ class CatalogStore:
                 if clave not in acumulado:
                     orden.append(clave)
                 acumulado[clave] = round(acumulado.get(clave, 0.0) + valor, 8)
-            components: list[tuple[str, float]] = [(c, acumulado[c]) for c in orden]
+            components = [(c, acumulado[c]) for c in orden]
             rate = concept.production_rate_per_day or 10.0
             try:
                 if concept.code in existing_codes:

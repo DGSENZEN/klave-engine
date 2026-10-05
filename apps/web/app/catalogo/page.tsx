@@ -32,6 +32,9 @@ import {
   importMatrices,
   downloadReferenceSource,
   adjustPrices,
+  listAdjustments,
+  undoAdjustment,
+  type PriceAdjustment,
   insumoUses,
   replaceInsumo,
   setBasicoComponents,
@@ -505,7 +508,7 @@ function InsumosSection({
     setLotBusy(true);
     try {
       const result = await adjustPrices({ codes: [...selected], pct: value }, getBrowserActor());
-      onNotice(`${result.adjusted} insumos ajustados ${value > 0 ? "+" : ""}${value} %. Se puede deshacer desde Importaciones.`);
+      onNotice(`${result.adjusted} insumos ajustados ${value > 0 ? "+" : ""}${value} %. Se puede deshacer abajo, en «Ajustes recientes».`);
       setPct("");
       clearSelection();
       onChanged();
@@ -521,7 +524,7 @@ function InsumosSection({
     setLotBusy(true);
     try {
       const result = await replaceInsumo(old, target, getBrowserActor());
-      onNotice(`${old} → ${target} en ${result.affected.length} matrices. Se puede deshacer desde Importaciones.`);
+      onNotice(`${old} → ${target} en ${result.affected.length} matrices. Se puede deshacer abajo, en «Ajustes recientes».`);
       setReplacing(false);
       clearSelection();
       onChanged();
@@ -920,8 +923,97 @@ function InsumosSection({
           onError={onError}
         />
       )}
+      <AjustesRecientes
+        catalog={catalog}
+        onChanged={onChanged}
+        onError={onError}
+        onNotice={onNotice}
+      />
     </Card>
   );
+}
+
+/**
+ * Lo que se ajustó en lote o se sustituyó en las matrices, con su «Deshacer»:
+ * el aviso dice que se puede deshacer, y aquí es donde. Sólo existe cuando hay
+ * algo que deshacer.
+ */
+function AjustesRecientes({
+  catalog,
+  onChanged,
+  onError,
+  onNotice,
+}: {
+  catalog: CatalogState;
+  onChanged: () => void;
+  onError: (message: string) => void;
+  onNotice: (message: string) => void;
+}) {
+  const [lista, setLista] = useState<PriceAdjustment[]>([]);
+  const [busy, setBusy] = useState<number | null>(null);
+  // El catálogo cambia después de cada ajuste: se vuelve a leer el diario.
+  useEffect(() => {
+    let vivo = true;
+    const handle = window.setTimeout(() => {
+      listAdjustments()
+        .then((r) => vivo && setLista(r))
+        .catch(() => vivo && setLista([]));
+    }, 0);
+    return () => {
+      vivo = false;
+      window.clearTimeout(handle);
+    };
+  }, [catalog]);
+  const vigentes = lista.filter((a) => !a.undone_at).slice(0, 6);
+  if (vigentes.length === 0) return null;
+
+  async function deshacer(a: PriceAdjustment) {
+    setBusy(a.adjustment_id);
+    try {
+      const r = await undoAdjustment(a.adjustment_id, getBrowserActor());
+      onNotice(`${describirAjuste(a)} deshecho: ${r.restored} filas restauradas`);
+      onChanged();
+    } catch (e) {
+      onError(apiMessage(e, "No se pudo deshacer ese ajuste."));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="border-t border-border px-5 py-3">
+      <div className="microlabel mb-1.5">Ajustes recientes</div>
+      <ul className="divide-y divide-border text-sm">
+        {vigentes.map((a) => (
+          <li key={a.adjustment_id} className="flex flex-wrap items-center gap-3 py-1.5">
+            <span className="min-w-0 flex-1">
+              {describirAjuste(a)}{" "}
+              <span className="text-xs text-muted">
+                · {a.rows} {a.rows === 1 ? "fila" : "filas"}
+                {a.actor ? ` · ${a.actor}` : ""} · {a.at.slice(0, 16).replace("T", " ")}
+              </span>
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy !== null}
+              onClick={() => void deshacer(a)}
+            >
+              Deshacer
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function describirAjuste(a: PriceAdjustment): string {
+  if (a.kind === "sustitucion") {
+    return `${String(a.params.old ?? "")} → ${String(a.params.new ?? "")} en las matrices`;
+  }
+  const pct = Number(a.params.pct ?? 0);
+  return `Precios ${pct > 0 ? "+" : ""}${pct} %`;
 }
 
 function NewInsumoRow({
