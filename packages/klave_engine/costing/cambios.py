@@ -166,10 +166,10 @@ def comparar_elementos(
                 # Varias piezas pueden compartir identidad (corridas partidas
                 # por diámetro, tableros con el mismo centro): se toma la que
                 # coincide en propiedades y contorno, no la primera.
-                mejor = min(
-                    candidatos,
-                    key=lambda b, a=a: (len(_campos(a, b)), _distancia_bbox(a, b, fa, fd)),
-                )
+                def parecido(b: Detection, a: Detection = a) -> tuple[int, float]:
+                    return len(_campos(a, b)), _distancia_bbox(a, b, fa, fd)
+
+                mejor = min(candidatos, key=parecido)
                 candidatos.remove(mejor)
                 pares.append((a, mejor, 0.0))
             else:

@@ -26,6 +26,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
+from klave_engine.costing.cambios import Cambios
 from klave_engine.costing.captura import Captura, lo_que_el_plano_no_dio
 from klave_engine.costing.descripciones import long_description
 from klave_engine.costing.estimaciones import Estimacion, ResumenEstimacion
@@ -1209,6 +1210,83 @@ def build_generadores_workbook(
         workbook.create_sheet("Lo que el plano no dio"),
         lo_que_el_plano_no_dio(report, detections, reviews, inventory),
     )
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def build_cambios_workbook(
+    cambios: Cambios,
+    report: CostReport,
+    *,
+    antes_label: str,
+    despues_label: str,
+    project_id: str,
+    web_origin: str = "",
+) -> bytes:
+    """Aditivas y deductivas: lo que cambió entre dos revisiones, por concepto
+    con su importe a precio de hoy, y por elemento con su referencia."""
+    visibles = claves_visibles(report)
+    origin = web_origin.rstrip("/")
+    workbook = Workbook()
+    ws = workbook.active
+    ws.title = "Aditivas y deductivas"
+    _title(ws, 1, f"Cambios de «{antes_label}» a «{despues_label}»", size=13)
+    nota = (
+        "Mismo plano, lectura distinta: estos cambios son de Klave, no del proyecto."
+        if cambios.mismo_plano
+        else "Cantidades leídas de cada revisión; importes a precio unitario de hoy."
+    )
+    _muted(ws, 2, 1, nota)
+    _header(ws, 4, ["Clave", "Concepto", "Unidad", "Antes", "Después", "Aditiva",
+                    "Deductiva", "P.U.", "Importe"])
+    row = 5
+    for c in cambios.conceptos:
+        aditiva = c.diferencia if c.diferencia > 0 else None
+        deductiva = -c.diferencia if c.diferencia < 0 else None
+        values: list[Any] = [
+            visibles.get(c.concept_code, ""), c.descripcion, c.unidad, c.cantidad_antes,
+            c.cantidad_despues, aditiva, deductiva,
+            UNPRICED if c.precio_unitario is None else c.precio_unitario,
+            UNPRICED if c.importe_diferencia is None else c.importe_diferencia,
+        ]
+        for col, value in enumerate(values, start=1):
+            cell = ws.cell(row=row, column=col, value=value)
+            cell.border = _box
+            if col in (4, 5, 6, 7):
+                cell.number_format = QTY_FORMAT
+            if col in (8, 9):
+                cell.number_format = MONEY_FORMAT
+        row += 1
+    total = ws.cell(row=row + 1, column=8, value="Diferencia")
+    total.font = Font(bold=True)
+    amount = ws.cell(row=row + 1, column=9, value=cambios.importe_diferencia)
+    amount.number_format = MONEY_FORMAT
+    amount.font = Font(bold=True)
+    if cambios.importe_sin_precio:
+        _muted(ws, row + 2, 1,
+               f"{cambios.importe_sin_precio} conceptos cambiaron sin precio: no están en la suma.")
+    _autosize(ws, [12, 60, 9, 12, 12, 12, 12, 14, 16])
+
+    el = workbook.create_sheet("Elementos")
+    _header(el, 1, ["Cambio", "Elemento", "Marca", "Hoja", "Qué cambió", "Ver"])
+    tipo = {"agregado": "Agregado", "eliminado": "Eliminado", "movido": "Movido",
+            "modificado": "Modificado"}
+    for i, e in enumerate(cambios.elementos, start=2):
+        que = "; ".join(f"{f.campo}: {f.antes} → {f.despues}" for f in e.campos)
+        if e.tipo == "movido":
+            que = f"se movió {e.movido_m:.2f} m"
+        bbox = e.bbox_despues or e.bbox_antes
+        values = [tipo.get(e.tipo, e.tipo), e.familia, e.marca or "—", e.hoja, que,
+                  "Ver" if origin and bbox else ""]
+        for col, value in enumerate(values, start=1):
+            cell = el.cell(row=i, column=col, value=value)
+            cell.border = _box
+            if col == 6 and origin and bbox:
+                coords = ",".join(f"{v:.3f}" for v in bbox)
+                cell.hyperlink = f"{origin}/proyecto/{project_id}/plano?bbox={coords}"
+                cell.font = Font(color="2B4ACB", underline="single", size=10)
+    _autosize(el, [12, 22, 10, 30, 50, 8])
     buffer = io.BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()

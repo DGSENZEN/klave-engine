@@ -22,6 +22,7 @@ from apps.api.auth.routes import router as auth_router
 from apps.api.observability import RequestIdMiddleware
 from apps.api.routes import ai as ai_routes
 from apps.api.routes import (
+    cambios,
     catalog,
     compartido,
     copilot,
@@ -151,6 +152,7 @@ def create_app() -> FastAPI:
     app.include_router(workspace.router)
     app.include_router(copilot.router)
     app.include_router(variantes.router)
+    app.include_router(cambios.router)
     app.include_router(compartido.router)
     app.include_router(compartido.public)
 

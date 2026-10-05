@@ -637,6 +637,9 @@ def run_full_pipeline(
         processed / "engine.json",
         {**engine_stamp(), "processed_at": datetime.now(UTC).isoformat()},
     )
+    # Qué planos leyó esta lectura: con esto «qué cambió» sabe distinguir una
+    # revisión del plano de una lectura nueva de los mismos planos.
+    write_json(processed / "inputs.json", _input_hashes(manifest))
     diff = _run_diff(
         prev_detections,
         prev_total,
@@ -676,6 +679,25 @@ def run_full_pipeline(
         status=manifest.processing_status.value,
     )
     return result
+
+
+def _input_hashes(manifest: ProjectManifest) -> dict:
+    """sha256 de cada plano fuente (DWG/DXF), por su ruta en el proyecto."""
+    import hashlib
+
+    root = manifest.root()
+    files: dict[str, str] = {}
+    for source in manifest.source_files:
+        path = root / source.path
+        try:
+            digest = hashlib.sha256()
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1 << 20), b""):
+                    digest.update(chunk)
+            files[source.path] = digest.hexdigest()
+        except OSError:
+            continue
+    return {"files": files}
 
 
 def _previous_artifact(control_dir: Path, name: str):
