@@ -4,9 +4,11 @@ Returns lightweight renderable primitives (per layer) plus detection overlays,
 so the frontend can draw the plano without shipping the full entity records.
 """
 
+import hashlib
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 from klave_engine.common.config import Settings
 from klave_engine.costing.reviews import load_reviews
 from klave_engine.dxf.units import DrawingUnits
@@ -138,21 +140,58 @@ def _medidas(props: dict, to_meters: float | None) -> list[dict]:
     return out[:4]
 
 
-@router.get("/{project_id}/geometry")
-def get_geometry(
-    project_id: str,
-    store: ProjectStore = Depends(get_store),
-    settings: Settings = Depends(get_settings),
-) -> dict:
+# El dibujo de una corrida no cambia: se arma una vez y se guarda en memoria
+# (las últimas corridas abiertas). Marina: 76 mil figuras, 18 MB de JSON y
+# ~0.8 s por visita antes de esto; sólo las detecciones con su veredicto se
+# rehacen en cada petición.
+_STATIC_CACHE: dict[tuple, dict] = {}
+_STATIC_CACHE_MAX = 3  # ~60 MB por plano grande (Marina) en memoria
+# Cuatro decimales: una décima de milímetro en un plano en metros. Las
+# coordenadas venían con quince y eran la mitad del peso de la respuesta.
+_DECIMALS = 4
+
+
+def _r(value: float) -> float:
+    return round(float(value), _DECIMALS)
+
+
+def _round_shape(shape: dict) -> dict:
+    if "pts" in shape:
+        shape["pts"] = [[_r(x), _r(y)] for x, y, *_rest in shape["pts"]]
+    for key in ("c", "p"):
+        if key in shape and shape[key]:
+            shape[key] = [_r(v) for v in shape[key][:2]]
+    if "bbox" in shape and shape["bbox"]:
+        shape["bbox"] = [_r(v) for v in shape["bbox"]]
+    if "r" in shape:
+        shape["r"] = _r(shape["r"])
+    if "h" in shape:
+        shape["h"] = _r(shape["h"])
+    return shape
+
+
+def _cache_key(store: ProjectStore, project_id: str) -> tuple:
+    path = store.artifact_root(project_id) / "normalized_entities.json"
+    try:
+        stat = path.stat()
+    except OSError:
+        return (str(path), 0, 0)
+    return (str(path), stat.st_mtime_ns, stat.st_size)
+
+
+def static_geometry(store: ProjectStore, project_id: str, settings: Settings) -> dict:
+    """Lo que no cambia en una corrida: extensión, marcos, capas, figuras,
+    hojas y unidades. ``_etag`` identifica la corrida para el navegador."""
+    key = _cache_key(store, project_id)
+    cached = _STATIC_CACHE.get(key)
+    if cached is not None:
+        return cached
     entities = store.read_artifact(project_id, "normalized_entities.json")
-    detections = store.read_artifact(project_id, "detections.json")
     try:
         frames = store.read_artifact(project_id, "frames.json")
     except HTTPException:
         frames = []
-    reviews = load_reviews(store.get_root(project_id) / settings.processed_dir_name)
     sheets, sheet_index = _sheet_index(store, project_id)
-
     shapes: list[dict] = []
     layer_counts: dict[str, int] = {}
     minx = miny = float("inf")
@@ -169,8 +208,7 @@ def get_geometry(
         if shape is not None:
             if sheet is not None:
                 shape["sheet"] = sheet
-            shapes.append(shape)
-
+            shapes.append(_round_shape(shape))
     try:
         units_read = DrawingUnits.model_validate(
             store.read_artifact(project_id, "drawing_units.json")
@@ -180,6 +218,45 @@ def get_geometry(
         units_payload = None
     to_meters = units_payload["to_meters"] if units_payload else None
 
+    extent = (
+        [minx, miny, maxx, maxy]
+        if shapes or entities
+        else [0.0, 0.0, 1.0, 1.0]
+    )
+    layers = [
+        {"name": name, "count": count}
+        for name, count in sorted(layer_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
+    payload = {
+        "extent": extent,
+        # Sheet frames (plantas, detalles) so the visor can jump to a sheet.
+        "frames": [
+            {
+                "code": f.get("code", ""), "title": f.get("title", ""), "kind": f.get("kind", ""),
+                "bbox": f.get("bbox"), "source_file": f.get("source_file", ""),
+            }
+            for f in (frames or []) if f.get("bbox")
+        ],
+        "layers": layers,
+        "shapes": shapes,
+        "sheets": sheets,
+        "units": units_payload,
+        "_etag": hashlib.sha1(repr(key).encode()).hexdigest()[:16],
+        "_to_meters": to_meters,
+    }
+    if len(_STATIC_CACHE) >= _STATIC_CACHE_MAX:
+        _STATIC_CACHE.pop(next(iter(_STATIC_CACHE)))
+    _STATIC_CACHE[key] = payload
+    return payload
+
+
+def detection_overlay(
+    store: ProjectStore, project_id: str, settings: Settings, to_meters: float | None
+) -> list[dict]:
+    """Las detecciones con el veredicto vigente de cada una: lo que sí cambia."""
+    detections = store.read_artifact(project_id, "detections.json")
+    reviews = load_reviews(store.get_root(project_id) / settings.processed_dir_name)
+    _sheets, sheet_index = _sheet_index(store, project_id)
     overlay = []
     for d in detections:
         key = d.get("display_label") or d["detection_id"]
@@ -214,28 +291,63 @@ def get_geometry(
                 "medidas": _medidas(d.get("properties") or {}, to_meters),
             }
         )
-    extent = (
-        [minx, miny, maxx, maxy]
-        if shapes or entities
-        else [0.0, 0.0, 1.0, 1.0]
-    )
-    layers = [
-        {"name": name, "count": count}
-        for name, count in sorted(layer_counts.items(), key=lambda kv: (-kv[1], kv[0]))
-    ]
+    return overlay
+
+
+def _public(static: dict, sheet: int | None = None) -> dict:
+    out = {k: v for k, v in static.items() if not k.startswith("_")}
+    if sheet is not None:
+        # El visor dibuja una hoja a la vez: sólo baja la que va a dibujar.
+        out["shapes"] = [s for s in static["shapes"] if s.get("sheet") == sheet]
+    return out
+
+
+def _of_sheet(overlay: list[dict], sheet: int | None) -> list[dict]:
+    return overlay if sheet is None else [d for d in overlay if d.get("sheet") == sheet]
+
+
+@router.get("/{project_id}/geometry")
+def get_geometry(
+    project_id: str,
+    sheet: int | None = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    static = static_geometry(store, project_id, settings)
     return {
-        "extent": extent,
-        # Sheet frames (plantas, detalles) so the visor can jump to a sheet.
-        "frames": [
-            {
-                "code": f.get("code", ""), "title": f.get("title", ""), "kind": f.get("kind", ""),
-                "bbox": f.get("bbox"), "source_file": f.get("source_file", ""),
-            }
-            for f in (frames or []) if f.get("bbox")
-        ],
-        "layers": layers,
-        "shapes": shapes,
-        "detections": overlay,
-        "sheets": sheets,
-        "units": units_payload,
+        **_public(static, sheet),
+        "detections": _of_sheet(
+            detection_overlay(store, project_id, settings, static["_to_meters"]), sheet
+        ),
     }
+
+
+@router.get("/{project_id}/geometry/shapes")
+def get_geometry_shapes(
+    project_id: str,
+    request: Request,
+    sheet: int | None = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """El dibujo de la corrida, con ETag: si no cambió, el navegador no lo
+    vuelve a bajar."""
+    static = static_geometry(store, project_id, settings)
+    etag = f'"{static["_etag"]}-{sheet if sheet is not None else "all"}"'
+    headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return JSONResponse(_public(static, sheet), headers=headers)
+
+
+@router.get("/{project_id}/geometry/detections")
+def get_geometry_detections(
+    project_id: str,
+    sheet: int | None = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Sólo las detecciones y sus veredictos: lo que una revisión mueve."""
+    static = static_geometry(store, project_id, settings)
+    overlay = detection_overlay(store, project_id, settings, static["_to_meters"])
+    return {"detections": _of_sheet(overlay, sheet)}

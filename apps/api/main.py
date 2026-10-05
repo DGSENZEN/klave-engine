@@ -7,6 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from klave_engine.common.bitacora import ErrorRegistrado, anotar_error, redactar
 from klave_engine.common.config import get_settings
@@ -80,6 +81,9 @@ def create_app() -> FastAPI:
     # Session-based access control. Added before CORS so CORS wraps it and
     # 401/403 responses still carry CORS headers the browser can read.
     app.add_middleware(AccessControlMiddleware)
+    # El plano de Marina pesa 12 MB en JSON y 1.5 MB comprimido. Starlette no
+    # comprime text/event-stream, así que el bus SSE sigue en vivo.
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
     # Outermost: every log line of a request carries its id, every response
     # echoes it, every request logs its duration.
     app.add_middleware(RequestIdMiddleware)
