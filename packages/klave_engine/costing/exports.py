@@ -26,6 +26,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
+from klave_engine.costing.captura import Captura, lo_que_el_plano_no_dio
 from klave_engine.costing.descripciones import long_description
 from klave_engine.costing.estimaciones import Estimacion, ResumenEstimacion
 from klave_engine.costing.explosion import explode
@@ -166,12 +167,14 @@ def build_presupuesto_workbook(
     # ``report.boq.units_reliable`` alone, which is the bug this module
     # exists to stop repeating.
     state = resolve_money_state(report.money_basis, reviews.verification)
+    captura = lo_que_el_plano_no_dio(report, detections, reviews, inventory)
     if fmt == "opus":
         workbook = _flat_workbook(
             report,
             sheet_title="Presupuesto",
             columns=["Clave", "Descripción", "Unidad", "Cantidad", "Precio Unitario", "Importe"],
             money_state=state,
+            captura=captura,
         )
     elif fmt == "neodata":
         workbook = _flat_workbook(
@@ -179,6 +182,7 @@ def build_presupuesto_workbook(
             sheet_title="Presupuesto",
             columns=["Código", "Concepto", "Unidad", "Cantidad", "P.U.", "Monto"],
             money_state=state,
+            captura=captura,
         )
     elif fmt in ("licitacion", "licitacion_larga"):
         workbook = _licitacion_workbook(
@@ -195,6 +199,7 @@ def build_presupuesto_workbook(
         )
         if inventory and inventory.get("sheets"):
             _levantamiento(workbook.create_sheet("Levantamiento"), inventory)
+        _captura(workbook.create_sheet("Lo que el plano no dio"), captura)
     buffer = io.BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
@@ -220,6 +225,7 @@ def _licitacion_workbook(
     ws.title = "Catálogo de conceptos"
     factor = report.integration.overcost_factor or 1.0
     apus_by_code = {apu.concept_code: apu for apu in report.apus}
+    visibles = claves_visibles(report)
     _title(ws, 1, "CATÁLOGO DE CONCEPTOS Y CANTIDADES DE OBRA", size=14)
     _muted(ws, 2, 1, f"Obra: {project_name}")
     _muted(ws, 3, 1, f"Dependencia / cliente: {client or '—'}")
@@ -273,7 +279,7 @@ def _licitacion_workbook(
                 )
             sin_precio = blocked or line.unpriced
             values: list[Any] = [
-                f"{partida}.{index:03d}", line.taller_clave or line.concept_code,
+                f"{partida}.{index:03d}", visibles[line.concept_code],
                 description, line.unit, line.quantity,
                 UNPRICED if sin_precio else unit_price,
                 UNPRICED if sin_precio else pesos_con_letra(unit_price),
@@ -414,14 +420,37 @@ def _financiamiento_doc(ws: Worksheet, report: CostReport) -> None:
     _autosize(ws, [14, 16, 16, 16, 18])
 
 
+def claves_visibles(report: CostReport) -> dict[str, str]:
+    """La clave que ve el cliente por renglón, la misma en todas las hojas: la
+    de la oficina (alias o la única variante mapeada) o una neutra «PL-0001».
+    Las claves del motor no salen en un documento."""
+    out: dict[str, str] = {}
+    sequence = 0
+    for line in report.boq.lines:
+        mapped = [v.clave for v in line.variants if v.clave]
+        if line.taller_clave:
+            out[line.concept_code] = line.taller_clave
+        elif len(line.variants) == 1 and mapped:
+            out[line.concept_code] = mapped[0]
+        else:
+            sequence += 1
+            out[line.concept_code] = f"PL-{sequence:04d}"
+    return out
+
+
 def _flat_workbook(
-    report: CostReport, sheet_title: str, columns: list[str], money_state: MoneyState
+    report: CostReport, sheet_title: str, columns: list[str], money_state: MoneyState,
+    captura: Captura | None = None,
 ) -> Workbook:
-    """One row per concept, no merges: made for import wizards."""
+    """One row per variant, no merges: made for import wizards.
+
+    La clave es la de la oficina: la del concepto al que se mapeó la
+    variante, si no el alias del renglón, si no una clave neutra «PL-0001».
+    Las claves del motor no salen: no son de nadie más que de Klave."""
     workbook = Workbook()
     ws = workbook.active
     ws.title = sheet_title
-    _header(ws, 1, columns)
+    _header(ws, 1, [*columns, "Partida"])
     row = 2
     blocked = money_state == "blocked"
     if blocked:
@@ -429,30 +458,89 @@ def _flat_workbook(
         # doubtful reading as a firm one in silence.
         _banner_row(ws, row, report)
         row += 1
+    visibles = claves_visibles(report)
     for line in report.boq.lines:
-        # OPUS and Neodata import these columns straight into a presupuesto.
-        # A banner they may not read is not a gate; the P.U. and importe
-        # columns have to carry the absence themselves.
-        sin_precio = blocked or line.unpriced
-        values: list[Any] = [
-            line.taller_clave or line.concept_code,
-            line.description,
-            line.unit,
-            line.quantity,
-            UNPRICED if sin_precio else line.unit_price,
-            UNPRICED if sin_precio else line.amount,
-        ]
-        for col, value in enumerate(values, start=1):
-            cell = ws.cell(row=row, column=col, value=value)
-            cell.border = _box
-            if col == 4:
-                cell.number_format = QTY_FORMAT
-            if col in (5, 6):
-                cell.number_format = MONEY_FORMAT
-        row += 1
-    _autosize(ws, [14, 64, 10, 14, 16, 18])
+        variants = line.variants or []
+        rows: list[tuple[str, str, float, float | None, float | None]] = []
+        base = visibles[line.concept_code]
+        if len(variants) > 1:
+            for i, v in enumerate(variants, start=1):
+                rows.append((
+                    v.clave or f"{base}-{i:02d}", v.description or line.description,
+                    v.quantity, v.unit_price, v.amount,
+                ))
+        else:
+            rows.append((
+                base, line.description, line.quantity,
+                None if line.unpriced else line.unit_price,
+                None if line.unpriced else line.amount,
+            ))
+        for clave, descripcion, cantidad, pu, importe in rows:
+            # OPUS and Neodata import these columns straight into a
+            # presupuesto. A banner they may not read is not a gate; the P.U.
+            # and importe columns have to carry the absence themselves.
+            sin_precio = blocked or pu is None
+            values: list[Any] = [
+                clave, descripcion, line.unit, cantidad,
+                UNPRICED if sin_precio else pu,
+                UNPRICED if sin_precio or importe is None else importe,
+                line.phase,
+            ]
+            for col, value in enumerate(values, start=1):
+                cell = ws.cell(row=row, column=col, value=value)
+                cell.border = _box
+                if col == 4:
+                    cell.number_format = QTY_FORMAT
+                if col in (5, 6):
+                    cell.number_format = MONEY_FORMAT
+            row += 1
+    _autosize(ws, [14, 64, 10, 14, 16, 18, 18])
     ws.freeze_panes = "A2"
+    if captura is not None:
+        _captura(workbook.create_sheet("Lo que el plano no dio"), captura)
     return workbook
+
+
+def _captura(ws: Worksheet, captura: Captura) -> None:
+    """La lista que viaja con cada juego: lo que falta se captura a sabiendas."""
+    _title(ws, 1, "Lo que el plano no dio", size=13)
+    _muted(ws, 2, 1, "Captúralo a mano antes de entregar: nada de esto está en las cantidades.")
+    row = 4
+    if not captura.total:
+        _muted(ws, row, 1, "Nada: todo lo que el motor vio quedó cuantificado y con precio.")
+        return
+    if captura.vistos_sin_cantidad:
+        _title(ws, row, "Elementos vistos sin cantidad", size=11)
+        row += 1
+        _header(ws, row, ["Familia", "Elementos", "Marcas"])
+        row += 1
+        for v in captura.vistos_sin_cantidad:
+            for col, value in enumerate([v.familia, v.cantidad, ", ".join(v.marcas)], start=1):
+                ws.cell(row=row, column=col, value=value).border = _box
+            row += 1
+        row += 1
+    if captura.sin_precio:
+        _title(ws, row, "Renglones sin precio", size=11)
+        row += 1
+        _header(ws, row, ["Clave", "Descripción", "Cantidad", "Unidad"])
+        row += 1
+        for p in captura.sin_precio:
+            for col, value in enumerate(
+                [p.clave or "—", p.descripcion, p.cantidad, p.unidad], start=1
+            ):
+                ws.cell(row=row, column=col, value=value).border = _box
+            row += 1
+        row += 1
+    if captura.hojas_sin_lectura:
+        _title(ws, row, "Hojas de las que no se leyó ningún elemento", size=11)
+        row += 1
+        _header(ws, row, ["Hoja", "Disciplina"])
+        row += 1
+        for h in captura.hojas_sin_lectura:
+            for col, value in enumerate([h.hoja, h.disciplina], start=1):
+                ws.cell(row=row, column=col, value=value).border = _box
+            row += 1
+    _autosize(ws, [40, 60, 14, 10])
 
 
 # ----------------------------------------------------------------- klave ---
@@ -561,8 +649,9 @@ def _caratula(
 
 
 def _presupuesto(ws: Worksheet, report: CostReport, money_state: MoneyState) -> None:
-    columns = ["Clave", "Concepto", "Unidad", "Cantidad", "P.U. (CD)", "Importe", "Confianza"]
+    columns = ["Clave", "Concepto", "Unidad", "Cantidad", "P.U. (CD)", "Importe"]
     _header(ws, 1, [*columns, "Por nivel"])
+    visibles = claves_visibles(report)
     row = 2
     blocked = money_state == "blocked"
     if blocked:
@@ -572,7 +661,7 @@ def _presupuesto(ws: Worksheet, report: CostReport, money_state: MoneyState) -> 
         phase_cell = ws.cell(row=row, column=1, value=phase.upper())
         phase_cell.font = Font(bold=True, size=9, color=MUTED)
         phase_cell.fill = PatternFill("solid", fgColor=SOFT)
-        for col in range(2, 9):
+        for col in range(2, 8):
             ws.cell(row=row, column=col).fill = PatternFill("solid", fgColor=SOFT)
         total_cell = ws.cell(row=row, column=6, value=_peso(phase_total, blocked))
         total_cell.number_format = MONEY_FORMAT
@@ -584,11 +673,10 @@ def _presupuesto(ws: Worksheet, report: CostReport, money_state: MoneyState) -> 
                 continue
             sin_precio = blocked or line.unpriced
             values: list[Any] = [
-                line.taller_clave or line.concept_code, line.description, line.unit,
+                visibles[line.concept_code], line.description, line.unit,
                 line.quantity,
                 UNPRICED if sin_precio else line.unit_price,
                 UNPRICED if sin_precio else line.amount,
-                f"{line.confidence:.0%}",
                 "; ".join(f"{title}: {qty:,.2f}" for title, qty in line.by_view.items()),
             ]
             for col, value in enumerate(values, start=1):
@@ -619,7 +707,7 @@ def _presupuesto(ws: Worksheet, report: CostReport, money_state: MoneyState) -> 
         amount_cell.number_format = MONEY_FORMAT
         amount_cell.font = font
         row += 1
-    _autosize(ws, [12, 62, 9, 13, 14, 16, 11, 48])
+    _autosize(ws, [12, 62, 9, 13, 14, 16, 48])
     ws.freeze_panes = "A2"
 
 
@@ -632,8 +720,10 @@ def _apus(ws: Worksheet, report: CostReport, money_state: MoneyState) -> None:
         # matrix in full hands the reader the arithmetic instead of the answer.
         _banner_row(ws, row, report)
         row += 2
+    visibles = claves_visibles(report)
     for apu in report.apus:
-        _title(ws, row, f"{apu.concept_code} — {apu.concept_description}", size=11)
+        clave = visibles.get(apu.concept_code, apu.concept_code)
+        _title(ws, row, f"{clave} — {apu.concept_description}", size=11)
         _muted(ws, row + 1, 1, f"Costo directo por {apu.unit}")
         row += 2
         _header(ws, row, ["Recurso", "Descripción", "Unidad", "Cantidad", "Costo", "Importe"])
@@ -889,10 +979,12 @@ def _programa(ws: Worksheet, report: CostReport) -> None:
         "Holgura libre", "Ruta crítica", *period_headers,
     ])
     row = 2
+    visibles = claves_visibles(report)
     quantities = quantity_by_period(schedule)
     for activity in schedule.activities:
         values: list[Any] = [
-            activity.concept_code, activity.description, activity.phase,
+            visibles.get(activity.concept_code, activity.concept_code),
+            activity.description, activity.phase,
             activity.quantity, activity.unit, activity.rendimiento_per_day,
             activity.rendimiento_source, activity.duration_days,
             activity.start_date or activity.start_day,

@@ -18,6 +18,7 @@ from klave_engine.common.logging import get_logger, log_stage
 from klave_engine.costing.earthwork import cut_fill_volumes, describe
 from klave_engine.costing.insumos import REFERENCE_PRICE_DISCLAIMER
 from klave_engine.costing.models import (
+    MAX_SOURCE_IDS,
     BillOfQuantities,
     BoqLine,
     BoqVariant,
@@ -578,7 +579,7 @@ def _variantes(
             key=variant_key(concept.code, sig), signature=sig,
             description=descripcion_variante(concept.description, sig),
             quantity=result.quantity, source_detection_count=len(result.dets),
-            source_detections=[d.detection_id for d in result.dets][:200],
+            source_detections=[d.detection_id for d in result.dets][:MAX_SOURCE_IDS],
         )]
 
     def medir(subset: list[Detection]) -> tuple[float, list[Detection]]:
@@ -794,7 +795,7 @@ def generate_bill_of_quantities(
                 raw_quantity=round(result.raw, 3),
                 raw_kind=concept.rule.kind,
                 source_detection_count=len(contributing),
-                source_detections=[d.detection_id for d in contributing][:200],
+                source_detections=[d.detection_id for d in contributing][:MAX_SOURCE_IDS],
                 confidence=round(confidence, 3),
                 assumptions=[
                     a for a in concept.assumptions

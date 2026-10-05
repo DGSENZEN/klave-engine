@@ -9,6 +9,7 @@ tepetate); everything excavated leaves the site bulked by the swell factor
 from __future__ import annotations
 
 from klave_engine.costing.models import (
+    MAX_SOURCE_IDS,
     BillOfQuantities,
     BoqLine,
     CostingAssumptions,
@@ -60,7 +61,7 @@ def apply_cimentacion_earthmoving(
                 raw_quantity=round(quantity, 3),
                 raw_kind=QuantityKind.VOLUME,
                 source_detection_count=excavation.source_detection_count,
-                source_detections=list(excavation.source_detections)[:200],
+                source_detections=list(excavation.source_detections)[:MAX_SOURCE_IDS],
                 confidence=excavation.confidence,
                 assumptions=list(concept.assumptions) + [note],
             )

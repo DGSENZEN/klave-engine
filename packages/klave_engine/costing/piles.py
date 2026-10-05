@@ -10,7 +10,7 @@ question it raises.
 
 from __future__ import annotations
 
-from klave_engine.costing.models import BillOfQuantities, BoqLine, QuantityKind
+from klave_engine.costing.models import MAX_SOURCE_IDS, BillOfQuantities, BoqLine, QuantityKind
 from klave_engine.detection.results import Detection
 
 CODE_COUNT = "CIM-010"
@@ -99,7 +99,7 @@ def apply_piles(
             raw_quantity=round(meters, 3),
             raw_kind=QuantityKind.LENGTH,
             source_detection_count=with_length,
-            source_detections=list(count_line.source_detections)[:200],
+            source_detections=list(count_line.source_detections)[:MAX_SOURCE_IDS],
             confidence=count_line.confidence,
             assumptions=list(concept.assumptions) + notes,
         )

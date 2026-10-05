@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterable
 
+from klave_engine.costing.models import MAX_SOURCE_IDS
 from klave_engine.detection.results import Detection
 
 _SECTION = re.compile(r"(\d{1,3}(?:\.\d)?)\s*[x×]\s*(\d{1,3}(?:\.\d)?)", re.IGNORECASE)
@@ -206,6 +207,6 @@ def dividir(
             "description": descripcion_variante(base_description, sig),
             "quantity": quantity,
             "source_detection_count": len(contributing),
-            "source_detections": [d.detection_id for d in contributing][:200],
+            "source_detections": [d.detection_id for d in contributing][:MAX_SOURCE_IDS],
         })
     return variants, factor

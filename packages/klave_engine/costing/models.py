@@ -157,6 +157,11 @@ class Concept(BaseModel):
     taller_clave: str = ""
 
 
+# Cuántos ids de elementos guarda un renglón: todos los de un proyecto real
+# (Marina trae 2,405), no una muestra — «lo que el plano no dio» los cuenta.
+MAX_SOURCE_IDS = 5000
+
+
 class BoqVariant(BaseModel):
     """Una variante del renglón: los elementos que el plano especifica igual
     (sección, armado, tipo, espesor, diámetro, material). Las variantes de un

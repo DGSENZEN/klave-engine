@@ -70,7 +70,7 @@ def test_klave_workbook_structure_and_generadores(data_dir):
     assert workbook.sheetnames == [
         "Carátula", "Presupuesto", "APUs", "Generadores", "Explosión de insumos", "Programa",
         "Prog. mano de obra", "Prog. maquinaria", "Prog. materiales",
-        "Prog. personal técnico", "Flujo",
+        "Prog. personal técnico", "Flujo", "Lo que el plano no dio",
     ]
     generadores = "\n".join(
         str(cell.value)
@@ -111,7 +111,13 @@ def test_apus_workbook_stands_alone(data_dir):
     assert workbook.sheetnames == ["APUs"]
     ws = workbook["APUs"]
     titles = [c.value for c in ws["A"] if isinstance(c.value, str) and " — " in c.value]
-    assert len(titles) == len(report.apus) and titles[0].startswith(report.apus[0].concept_code)
+    from klave_engine.costing.exports import claves_visibles
+
+    visibles = claves_visibles(report)
+    assert len(titles) == len(report.apus)
+    # La clave del cliente, no la del motor.
+    assert titles[0].startswith(visibles[report.apus[0].concept_code])
+    assert not any(t.startswith(("EST-", "CIM-")) for t in titles)
     assert any(c.value == "CD unitario" for row in ws.iter_rows() for c in row)
 
 
@@ -260,3 +266,29 @@ def test_generadores_reference_each_element_without_confidence(data_dir):
         link.startswith("https://app.klave.mx/proyecto/p/plano?bbox=") for link in links
     )
     assert "S-101" in values
+
+
+def test_flat_rows_use_office_claves_never_rule_codes(data_dir):
+    from klave_engine.costing.models import BoqVariant
+
+    report, reviews = _report(data_dir)
+    line = next(x for x in report.boq.lines if x.concept_code == "EST-001")
+    line.variants = [
+        BoqVariant(key="EST-001.30X40", description="Columnas 30×40", quantity=line.quantity / 2,
+                   clave="EMC-3", unit_price=100.0, amount=line.quantity / 2 * 100),
+        BoqVariant(key="EST-001.15X15", description="Castillos 15×15",
+                   quantity=line.quantity / 2, unit_price=None, amount=None),
+    ]
+    content = build_presupuesto_workbook(report, _detections(), reviews, "T", None, fmt="opus")
+    workbook = load_workbook(io.BytesIO(content))
+    ws = workbook["Presupuesto"]
+    claves = [ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)]
+    assert "EMC-3" in claves and not any(str(c).startswith(("EST-", "CIM-")) for c in claves)
+    assert any(str(c).startswith("PL-") for c in claves)
+    assert ws.cell(row=1, column=7).value == "Partida"
+    total_qty = sum(
+        ws.cell(row=r, column=4).value for r in range(2, ws.max_row + 1)
+        if ws.cell(row=r, column=2).value in ("Columnas 30×40", "Castillos 15×15")
+    )
+    assert abs(total_qty - line.quantity) < 1e-6
+    assert "Lo que el plano no dio" in workbook.sheetnames
