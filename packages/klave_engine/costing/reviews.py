@@ -27,6 +27,9 @@ class DetectionReview(BaseModel):
     status: Literal["confirmed", "excluded"]
     note: str = ""
     actor: str = ""
+    # La identidad estable del elemento (hoja, tipo, marca, posición a 5 cm):
+    # con ella la revisión sobrevive a un reproceso que renumera las marcas.
+    element_id: str = ""
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -146,3 +149,30 @@ def filter_excluded(
     if not excluded:
         return detections
     return [d for d in detections if review_key(d) not in excluded]
+
+
+def rekey_reviews(
+    reviews: ProjectReviews, detections: list[Detection], meters_factor: float | None
+) -> tuple[int, list[str]]:
+    """Tras un reproceso, cada revisión cuya clave ya no existe se mueve al
+    elemento con la misma identidad. Devuelve cuántas se movieron y las que
+    quedaron huérfanas (su elemento ya no está, o nunca guardó identidad)."""
+    from klave_engine.costing.referencias import element_id
+
+    vigentes = {review_key(d) for d in detections}
+    por_identidad: dict[str, str] = {}
+    for d in detections:
+        por_identidad.setdefault(element_id(d, meters_factor), review_key(d))
+    movidas = 0
+    huerfanas: list[str] = []
+    for key in list(reviews.detections):
+        if key in vigentes:
+            continue
+        review = reviews.detections[key]
+        destino = por_identidad.get(review.element_id) if review.element_id else None
+        if destino is None or destino in reviews.detections:
+            huerfanas.append(key)
+            continue
+        reviews.detections[destino] = reviews.detections.pop(key)
+        movidas += 1
+    return movidas, huerfanas

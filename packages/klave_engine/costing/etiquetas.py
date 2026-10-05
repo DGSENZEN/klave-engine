@@ -62,18 +62,38 @@ def append_labels(control_dir: Path, records: Iterable[dict]) -> int:
 
 
 def detection_labels(
-    keys: list[str], verdict: str, actor: str, detections: list[dict], note: str = ""
+    keys: list[str], verdict: str, actor: str, detections: list, note: str = "",
+    meters_factor: float | None = None, action: str = "",
 ) -> list[dict]:
-    """Una etiqueta por elemento revisado, con lo que el motor sabía de él."""
-    by_key: dict[str, dict] = {}
-    for d in detections:
-        by_key.setdefault(d.get("display_label") or d.get("detection_id") or "", d)
-        by_key.setdefault(d.get("detection_id") or "", d)
-    return [
-        {"kind": "deteccion", "key": key, "verdict": verdict, "note": note[:300],
-         "actor": actor, "element": _detection_snapshot(by_key.get(key))}
-        for key in keys
-    ]
+    """Una etiqueta por elemento revisado, con lo que el motor sabía de él:
+    su identidad estable y su vector de rasgos (spec del lector §6)."""
+    from klave_engine.costing.referencias import element_id
+    from klave_engine.detection.features import FEATURES_VERSION, Contexto, features
+    from klave_engine.detection.results import Detection
+
+    dets = [d if isinstance(d, Detection) else Detection.model_validate(d) for d in detections]
+    ctx = Contexto.de(dets, meters_factor)
+    by_key: dict[str, Detection] = {}
+    for d in dets:
+        by_key.setdefault(d.display_label or d.detection_id, d)
+        by_key.setdefault(d.detection_id, d)
+    out = []
+    for key in keys:
+        det = by_key.get(key)
+        record: dict = {
+            "kind": "deteccion", "key": key, "verdict": verdict, "note": note[:300],
+            "actor": actor, "action": action or verdict,
+        }
+        if det is not None:
+            record.update({
+                "element": _detection_snapshot(det.model_dump(mode="json")),
+                "element_id": element_id(det, meters_factor),
+                "features_version": FEATURES_VERSION,
+                "features": features(det, ctx),
+                "proposals": {"rule": det.family or det.detection_type.value},
+            })
+        out.append(record)
+    return out
 
 
 def mapping_label(

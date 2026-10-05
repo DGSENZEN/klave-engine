@@ -29,7 +29,7 @@ from klave_engine.costing.report import (
     cost_report_to_markdown,
     generate_cost_report,
 )
-from klave_engine.costing.reviews import filter_excluded, load_reviews
+from klave_engine.costing.reviews import filter_excluded, load_reviews, rekey_reviews, save_reviews
 from klave_engine.detection.bajadas import stamp_bajada_stacks
 from klave_engine.detection.dimension_links import link_dimensions
 from klave_engine.detection.dimensions import build_dimension_inventory
@@ -610,6 +610,14 @@ def run_full_pipeline(
     # deterministic display labels and adjustments are concept-level. The
     # detections artifact keeps everything; exclusion is a costing-layer act.
     reviews = load_reviews(control_dir)
+    movidas, huerfanas = rekey_reviews(reviews, result.detections, units.to_meters())
+    if movidas:
+        save_reviews(control_dir, reviews)
+    if huerfanas:
+        result.warnings.append(
+            f"{len(huerfanas)} revisiones ya no corresponden a ningún elemento de esta lectura "
+            "(el elemento cambió o desapareció); se conservan pero no aplican."
+        )
     result.cost_report = generate_cost_report(
         manifest.project_id,
         filter_excluded(result.detections, reviews),

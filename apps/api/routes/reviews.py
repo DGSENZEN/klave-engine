@@ -200,11 +200,45 @@ def _label_reviews(
 ) -> None:
     """Cada revisión queda como etiqueta para el lector que aprende. Nunca
     detiene la revisión: si no hay detecciones legibles, se etiqueta sin ellas."""
+    detections, factor = _detections_and_factor(store, project_id)
+    append_labels(
+        control_dir, detection_labels(keys, status, actor, detections, note, factor)
+    )
+
+
+def _detections_and_factor(
+    store: ProjectStore, project_id: str
+) -> tuple[list[Detection], float | None]:
     try:
-        detections = store.read_artifact(project_id, "detections.json")
+        detections = [
+            Detection.model_validate(d) for d in store.read_artifact(project_id, "detections.json")
+        ]
     except HTTPException:
-        detections = []
-    append_labels(control_dir, detection_labels(keys, status, actor, detections, note))
+        return [], None
+    try:
+        from klave_engine.dxf.units import DrawingUnits
+
+        units = DrawingUnits.model_validate(store.read_artifact(project_id, "drawing_units.json"))
+        return detections, units.to_meters()
+    except HTTPException:
+        return detections, None
+
+
+def _ids_de(
+    store: ProjectStore, project_id: str, keys: list[str]
+) -> dict[str, str]:
+    """La identidad estable de cada clave revisada, para que la revisión
+    sobreviva a un reproceso."""
+    from klave_engine.costing.referencias import element_id
+
+    detections, factor = _detections_and_factor(store, project_id)
+    wanted = set(keys)
+    out: dict[str, str] = {}
+    for d in detections:
+        key = d.display_label or d.detection_id
+        if key in wanted and key not in out:
+            out[key] = element_id(d, factor)
+    return out
 
 
 @router.get("/{project_id}/reviews")
@@ -235,7 +269,8 @@ def set_detection_review(
             reviews.detections.pop(key, None)
         else:
             reviews.detections[key] = DetectionReview(
-                status=body.status, note=body.note.strip(), actor=actor
+                status=body.status, note=body.note.strip(), actor=actor,
+                element_id=_ids_de(store, project_id, [key]).get(key, ""),
             )
         save_reviews(control_dir, reviews)
         _label_reviews(store, project_id, control_dir, [key], body.status, actor, body.note)
@@ -261,12 +296,14 @@ def set_detection_reviews(
     keys = [k.strip() for k in body.keys if k.strip()][:2000]
     with project_recompute_lock(project_id):
         reviews = load_reviews(control_dir)
+        ids = _ids_de(store, project_id, keys) if body.status != "none" else {}
         for key in keys:
             if body.status == "none":
                 reviews.detections.pop(key, None)
             else:
                 reviews.detections[key] = DetectionReview(
-                    status=body.status, note=body.note.strip(), actor=actor
+                    status=body.status, note=body.note.strip(), actor=actor,
+                    element_id=ids.get(key, ""),
                 )
         save_reviews(control_dir, reviews)
         _label_reviews(store, project_id, control_dir, keys, body.status, actor, body.note)
