@@ -156,7 +156,9 @@ def register(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     rate_limit(request, "register")
-    if settings.registration == "invite_only":
+    # Sólo por invitación, salvo la primera cuenta del servidor: alguien tiene
+    # que fundar el taller, y sin esto un despliegue nuevo no tenía entrada.
+    if settings.registration == "invite_only" and users.has_users():
         raise HTTPException(
             status_code=403,
             detail={
@@ -370,7 +372,10 @@ async def google_callback(
                 user = users.get_by_google_sub(sub) or signed_in
             elif existing is not None:
                 return fail("google_link_required")
-            elif settings.registration == "invite_only" and not invite_token:
+            elif (
+                settings.registration == "invite_only" and not invite_token
+                and users.has_users()
+            ):
                 return fail("invite")
             elif invite_token:
                 invite = users.get_invitation_by_token(invite_token)

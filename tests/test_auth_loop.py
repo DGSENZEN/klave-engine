@@ -365,3 +365,24 @@ def test_weak_passwords_are_refused_with_the_reason():
     assert "repetidos" in (password_problem("aaaaaaaaaaaa") or "")
     assert "correo" in (password_problem("ana.lopez-2026", "ana.lopez@taller.mx") or "")
     assert password_problem("mole-poblano-42", "ana@taller.mx") is None
+
+
+def test_invite_only_lets_the_first_account_found_the_taller(app, monkeypatch):
+    """Sólo por invitación, salvo la primera cuenta: sin esto un despliegue
+    nuevo con registro cerrado no tenía por dónde entrar."""
+    monkeypatch.setenv("KLAVE_REGISTRATION", "invite_only")
+    config_module.get_settings.cache_clear()
+    client = TestClient(app)
+    first = client.post(
+        "/auth/register",
+        json={"email": "fundadora@taller.mx", "name": "Fundadora", "password": "secreta-123"},
+    )
+    assert first.status_code == 201, first.text
+    assert first.json()["role"] == "admin"
+    store()
+    second = TestClient(app).post(
+        "/auth/register",
+        json={"email": "otra@taller.mx", "name": "Otra", "password": "secreta-123"},
+    )
+    assert second.status_code == 403
+    assert second.json()["detail"]["error_type"] == "registration_closed"

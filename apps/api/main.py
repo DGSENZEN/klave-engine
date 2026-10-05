@@ -64,6 +64,10 @@ def _validate_production_config(settings) -> None:
         )
     if "127.0.0.1" in settings.users_database_url and "klave@" in settings.users_database_url:
         problems.append("KLAVE_USERS_DATABASE_URL usa las credenciales locales de desarrollo")
+    if settings.registration != "invite_only":
+        # Con registro abierto cualquiera en internet funda un taller en este
+        # servidor. La primera cuenta sigue pudiendo registrarse sin invitación.
+        problems.append("KLAVE_REGISTRATION debe ser invite_only en producción")
     if problems:
         raise RuntimeError(
             "Configuración de producción incompleta: " + "; ".join(problems)

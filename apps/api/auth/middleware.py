@@ -128,10 +128,21 @@ class AccessControlMiddleware:
             await self.app(scope, receive, send)
             return
 
-        store = get_user_store(get_settings().users_database_url)
+        settings = get_settings()
+        production = settings.env == "production"
+        store = get_user_store(settings.users_database_url)
         denial: tuple[int, bytes] | None = None
         try:
             if not store.has_users():
+                if production:
+                    # Un servidor de producción sin cuentas no abre nada: la
+                    # primera cuenta se crea en /auth/ (abierto) y funda el
+                    # taller. Antes un volumen nuevo servía todo sin sesión.
+                    await _respond(send, *_deny(
+                        403, "setup_required",
+                        "Este servidor todavía no tiene cuentas: crea la del administrador.",
+                    ))
+                    return
                 scope.setdefault("state", {})["user"] = None
                 await self.app(scope, receive, send)
                 return
@@ -170,7 +181,10 @@ class AccessControlMiddleware:
                                 "No tienes acceso suficiente a este proyecto.",
                             )
         except UsersDbUnavailable:
-            if store.last_known_has_users:
+            # En producción la base de usuarios caída cierra, siempre: tras un
+            # reinicio el proceso no recuerda si había cuentas, y abrir «por
+            # si acaso» era abrir todo.
+            if production or store.last_known_has_users:
                 denial = _deny(
                     503, "users_db_unavailable",
                     "La base de datos de usuarios no está disponible.",
