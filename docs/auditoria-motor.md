@@ -844,6 +844,25 @@ limpio con éstos. La mitad «camino dorado» de R3 (§4.2) quedó con esa sesi�
 Sin medir aún: cuadros por segundo en un navegador real (el visor está detrás
 de la sesión y la API de desarrollo corre sin recarga).
 
+### V1 · R3 · El camino dorado (2026-10-06, rama `v1-camino`)
+
+Después de que la sesión de limpieza de interfaz confirmó su trabajo
+(8903077). (1) **«Lo que sigue»**: el tablero calcula el siguiente paso del
+camino de v1 —subir, leer, confirmar unidades, revisar los elementos, mapear
+las variantes a tu catálogo, darle precio a lo que falta, exportar— y lo
+muestra como un solo botón principal (`siguiente` en `GET /tablero`). (2)
+**Las palabras del oficio**: «elementos» y «la lectura» en vez de
+«detecciones», «Klave» en vez de «el motor», «lecturas» en vez de «corridas»
+(32 textos en 18 archivos); se quedan las «reglas por m²» de los paramétricos
+y las «corridas de instalación», que son del oficio. (3) **El catálogo abre
+en «Conceptos y matrices»**. (4) **De cada número al plano**: la fila de
+Revisión encuadra su elemento exacto y cada renglón de «Tu catálogo» abre sus
+elementos. Ya estaban: la obra de ejemplo en un taller vacío y los estados
+vacíos que dicen qué hacer. **No se ocultó** ningún nodo: la decisión del
+tablero (visible con candado) manda sobre el «aparecer cuando se llegue» del
+spec. Pendiente: la misma gramática de gestos (inspector a la derecha) en
+Revisión y Presupuesto, y la prueba con cinco ingenieros.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
