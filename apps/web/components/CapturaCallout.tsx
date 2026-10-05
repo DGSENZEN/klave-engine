@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { getCaptura, type CapturaState } from "@/lib/api";
 import { Button, Callout } from "@/components/ui";
 
@@ -26,7 +27,9 @@ export function CapturaCallout({ projectId, reloadKey }: { projectId: string; re
   }, [projectId, reloadKey]);
   if (!data || data.total === 0) return null;
   const vistos = data.vistos_sin_cantidad.reduce((a, v) => a + v.cantidad, 0);
+  const ausentes = data.esperado_y_ausente ?? [];
   const partes = [
+    ausentes.length ? `${ausentes.length} ${ausentes.length === 1 ? "partida esperada" : "partidas esperadas"} y ausentes` : "",
     vistos ? `${vistos} elementos vistos sin cantidad` : "",
     data.sin_precio.length ? `${data.sin_precio.length} renglones sin precio` : "",
     data.hojas_sin_lectura.length ? `${data.hojas_sin_lectura.length} hojas sin lectura` : "",
@@ -43,6 +46,25 @@ export function CapturaCallout({ projectId, reloadKey }: { projectId: string; re
       >
         <strong>Lo que el plano no dio:</strong> {partes.join(" · ")}. Captúralo a mano antes de
         entregar; la lista viaja en cada libro exportado.
+        {open && ausentes.length > 0 && (
+          <div className="mt-3 text-sm">
+            <div className="microlabel mb-1">Esperado y ausente</div>
+            <ul className="space-y-1">
+              {ausentes.map((a) => (
+                <li key={a.id}>
+                  <strong>{a.partida}</strong>: {a.porque}{" "}
+                  <span className="text-xs text-muted">({a.evidencia})</span>{" "}
+                  <Link href="/catalogo?tab=conceptos" className="text-xs underline">
+                    agregarla desde tu catálogo
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-xs text-faint">
+              Si ya está incluida en otro precio, dilo en su renglón («incluye…») y deja de aparecer.
+            </p>
+          </div>
+        )}
         {open && (
           <div className="mt-3 grid gap-4 text-sm sm:grid-cols-3">
             {data.vistos_sin_cantidad.length > 0 && (

@@ -13,6 +13,7 @@ from pathlib import PurePath
 
 from pydantic import BaseModel, Field
 
+from klave_engine.costing.completitud import Ausente, esperado_y_ausente
 from klave_engine.costing.models import CostReport
 from klave_engine.costing.reviews import ProjectReviews
 from klave_engine.detection.results import Detection, DetectionType
@@ -46,13 +47,22 @@ class Captura(BaseModel):
     vistos_sin_cantidad: list[Vistos] = Field(default_factory=list)
     sin_precio: list[SinPrecio] = Field(default_factory=list)
     hojas_sin_lectura: list[HojaSinLectura] = Field(default_factory=list)
+    esperado_y_ausente: list[Ausente] = Field(default_factory=list)
 
     @property
     def total(self) -> int:
         return (
             sum(v.cantidad for v in self.vistos_sin_cantidad)
             + len(self.sin_precio) + len(self.hojas_sin_lectura)
+            + len(self.esperado_y_ausente)
         )
+
+
+def plantas_de(segmentation) -> int:
+    """Cuántas plantas de superestructura leyó el plano (1 si no se segmentó)."""
+    if segmentation is None or not getattr(segmentation, "is_segmented", False):
+        return 1
+    return max(1, len(segmentation.superstructure_views()))
 
 
 def lo_que_el_plano_no_dio(
@@ -60,6 +70,7 @@ def lo_que_el_plano_no_dio(
     detections: list[Detection],
     reviews: ProjectReviews | None = None,
     inventory: dict | None = None,
+    plantas: int = 1,
 ) -> Captura:
     excluded = {
         key for key, review in (reviews.detections if reviews else {}).items()
@@ -102,4 +113,5 @@ def lo_que_el_plano_no_dio(
             out.hojas_sin_lectura.append(HojaSinLectura(
                 hoja=str(sheet.get("label") or sheet.get("sheet") or ""), disciplina=disciplina,
             ))
+    out.esperado_y_ausente = esperado_y_ausente(report.boq, plantas)
     return out

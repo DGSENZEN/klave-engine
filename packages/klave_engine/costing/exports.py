@@ -27,7 +27,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from klave_engine.costing.cambios import Cambios
-from klave_engine.costing.captura import Captura, lo_que_el_plano_no_dio
+from klave_engine.costing.captura import Captura, lo_que_el_plano_no_dio, plantas_de
 from klave_engine.costing.descripciones import long_description
 from klave_engine.costing.estimaciones import Estimacion, ResumenEstimacion
 from klave_engine.costing.explosion import explode
@@ -168,7 +168,9 @@ def build_presupuesto_workbook(
     # ``report.boq.units_reliable`` alone, which is the bug this module
     # exists to stop repeating.
     state = resolve_money_state(report.money_basis, reviews.verification)
-    captura = lo_que_el_plano_no_dio(report, detections, reviews, inventory)
+    captura = lo_que_el_plano_no_dio(
+        report, detections, reviews, inventory, plantas_de(segmentation)
+    )
     if fmt == "opus":
         workbook = _flat_workbook(
             report,
@@ -510,6 +512,16 @@ def _captura(ws: Worksheet, captura: Captura) -> None:
     if not captura.total:
         _muted(ws, row, 1, "Nada: todo lo que el motor vio quedó cuantificado y con precio.")
         return
+    if captura.esperado_y_ausente:
+        _title(ws, row, "Esperado y ausente", size=11)
+        row += 1
+        _header(ws, row, ["Partida", "Por qué se espera", "Evidencia"])
+        row += 1
+        for a in captura.esperado_y_ausente:
+            for col, texto in enumerate([a.partida, a.porque, a.evidencia], start=1):
+                ws.cell(row=row, column=col, value=texto).border = _box
+            row += 1
+        row += 1
     if captura.vistos_sin_cantidad:
         _title(ws, row, "Elementos vistos sin cantidad", size=11)
         row += 1
@@ -1208,7 +1220,7 @@ def build_generadores_workbook(
     workbook.active.title = "Generadores"
     _captura(
         workbook.create_sheet("Lo que el plano no dio"),
-        lo_que_el_plano_no_dio(report, detections, reviews, inventory),
+        lo_que_el_plano_no_dio(report, detections, reviews, inventory, plantas_de(segmentation)),
     )
     buffer = io.BytesIO()
     workbook.save(buffer)

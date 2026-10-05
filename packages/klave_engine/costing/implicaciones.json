@@ -1,0 +1,229 @@
+{
+ "version": "2026-10",
+ "nota": "Lo que una partida trae consigo en obra negra. Si el presupuesto tiene la primera y no la segunda, falta algo o está incluido en otro precio: se dice para que alguien lo decida. Una implicación se da por cumplida si hay un renglón con cantidad de los códigos esperados, o un renglón o concepto de la oficina que lo nombra. Con «por_renglon», cada renglón que la dispara tiene que traerla él mismo (en su alcance, «incluye…») o tener su renglón aparte: el acero de una losa no arma las columnas.",
+ "reglas": [
+  {
+   "id": "plantilla",
+   "si": [
+    "CIM-002",
+    "CIM-007",
+    "CIM-008"
+   ],
+   "espera": [
+    "CIM-003"
+   ],
+   "palabras": [
+    "plantilla"
+   ],
+   "partida": "Plantilla de concreto pobre",
+   "porque": "zapatas, contratrabes y losas de cimentación se cuelan sobre plantilla",
+   "incluido": [
+    "plantilla"
+   ]
+  },
+  {
+   "id": "excavacion",
+   "si": [
+    "CIM-002",
+    "CIM-007",
+    "CIM-008"
+   ],
+   "espera": [
+    "CIM-001"
+   ],
+   "palabras": [
+    "excavacion"
+   ],
+   "partida": "Excavación para cimentación",
+   "porque": "la cimentación va enterrada"
+  },
+  {
+   "id": "relleno",
+   "si": [
+    "CIM-001"
+   ],
+   "espera": [
+    "CIM-004"
+   ],
+   "palabras": [
+    "relleno"
+   ],
+   "partida": "Relleno compactado",
+   "porque": "lo excavado alrededor de la cimentación se rellena"
+  },
+  {
+   "id": "acarreo",
+   "si": [
+    "CIM-001"
+   ],
+   "espera": [
+    "CIM-005"
+   ],
+   "palabras": [
+    "acarreo"
+   ],
+   "partida": "Acarreo de material producto de excavación",
+   "porque": "lo que se excava y no se rellena sale de la obra"
+  },
+  {
+   "id": "acero",
+   "si": [
+    "CIM-002",
+    "CIM-007",
+    "CIM-008",
+    "EST-001",
+    "EST-002",
+    "EST-005",
+    "EST-013",
+    "EST-014"
+   ],
+   "espera_prefijo": [
+    "ACE-"
+   ],
+   "palabras": [
+    "acero de refuerzo",
+    "varilla",
+    "habilitado y armado"
+   ],
+   "partida": "Acero de refuerzo",
+   "porque": "el concreto armado lleva su acero, y aquí no hay renglón de acero",
+   "por_renglon": true,
+   "incluido": [
+    "acero",
+    "varilla"
+   ]
+  },
+  {
+   "id": "cimbra-columnas",
+   "si": [
+    "EST-001"
+   ],
+   "espera": [
+    "EST-008"
+   ],
+   "palabras": [
+    "cimbra en castillos",
+    "cimbra en columnas",
+    "cimbra comun en castillos"
+   ],
+   "partida": "Cimbra en columnas y castillos",
+   "porque": "columnas y castillos colados en sitio se cimbran",
+   "por_renglon": true,
+   "incluido": [
+    "cimbra"
+   ]
+  },
+  {
+   "id": "cimbra-trabes",
+   "si": [
+    "EST-002"
+   ],
+   "espera": [
+    "EST-009"
+   ],
+   "palabras": [
+    "cimbra en trabes"
+   ],
+   "partida": "Cimbra en trabes",
+   "porque": "las trabes coladas en sitio se cimbran",
+   "por_renglon": true,
+   "incluido": [
+    "cimbra"
+   ]
+  },
+  {
+   "id": "cimbra-zapatas",
+   "si": [
+    "CIM-002"
+   ],
+   "espera": [
+    "CIM-006"
+   ],
+   "palabras": [
+    "cimbra en zapatas"
+   ],
+   "partida": "Cimbra en zapatas y dados",
+   "porque": "zapatas y dados llevan cimbra de frontera",
+   "por_renglon": true,
+   "incluido": [
+    "cimbra"
+   ]
+  },
+  {
+   "id": "aplanado",
+   "si": [
+    "EST-004",
+    "ALB-001"
+   ],
+   "espera": [
+    "ACA-001"
+   ],
+   "palabras": [
+    "aplanado",
+    "repellado",
+    "yeso en muro"
+   ],
+   "partida": "Aplanado en muros",
+   "porque": "un muro de block o tabique se aplana"
+  },
+  {
+   "id": "castillos",
+   "si": [
+    "EST-004",
+    "ALB-001"
+   ],
+   "espera": [
+    "EST-001",
+    "EST-006"
+   ],
+   "palabras": [
+    "castillo"
+   ],
+   "partida": "Castillos",
+   "porque": "un muro de mampostería confinada lleva castillos"
+  },
+  {
+   "id": "cadenas",
+   "si": [
+    "EST-004",
+    "ALB-001"
+   ],
+   "espera": [
+    "EST-005"
+   ],
+   "palabras": [
+    "cadena",
+    "dala"
+   ],
+   "partida": "Cadenas y dalas",
+   "porque": "un muro de mampostería confinada lleva cadena de desplante y de cerramiento"
+  },
+  {
+   "id": "pintura",
+   "si": [
+    "ACA-001"
+   ],
+   "espera": [
+    "ACA-002"
+   ],
+   "palabras": [
+    "pintura"
+   ],
+   "partida": "Pintura en muros",
+   "porque": "un muro aplanado se pinta"
+  },
+  {
+   "id": "escalera",
+   "si_plantas": 2,
+   "espera": [
+    "EST-015"
+   ],
+   "palabras": [
+    "escalera",
+    "rampa"
+   ],
+   "partida": "Escalera",
+   "porque": "hay más de una planta y ningún renglón para subir entre ellas"
+  }
+ ]
+}

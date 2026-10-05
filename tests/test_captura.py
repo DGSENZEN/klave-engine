@@ -52,4 +52,35 @@ def test_lists_unconsumed_unpriced_and_unread():
     assert fams["Zapatas"].cantidad == 1  # la zapata excluida no cuenta
     assert [s.descripcion for s in out.sin_precio] == ["Columnas"]
     assert [h.hoja for h in out.hojas_sin_lectura] == ["IE-01.dwg"]
-    assert out.total == 4
+    assert out.total == 4 + len(out.esperado_y_ausente)
+
+
+def _linea(code, qty, desc="", unit="M3"):
+    return BoqLine(
+        concept_code=code, description=desc or code, unit=unit, quantity=qty, unit_price=0.0,
+        amount=0.0, phase="Estructura", raw_quantity=qty, raw_kind=QuantityKind.COUNT,
+        source_detection_count=1, confidence=0.9,
+    )
+
+
+def test_esperado_y_ausente_reads_scope_per_line():
+    from klave_engine.costing.completitud import esperado_y_ausente
+
+    boq = BillOfQuantities(project_id="p", lines=[
+        _linea("CIM-002", 10.0, "Concreto en zapatas, incluye acero, cimbra y plantilla"),
+        _linea("EST-001", 5.0, "Columnas de concreto armado"),
+        _linea("EST-003", 50.0, "Losa armada con varilla del no. 3", "M2"),
+        _linea("CIM-001", 30.0, "Excavación"),
+        _linea("EST-004", 200.0, "Muro de block", "M2"),
+    ])
+    ids = {a.id: a for a in esperado_y_ausente(boq, plantas=2)}
+    # Las zapatas traen su acero, cimbra y plantilla; las columnas no traen acero
+    # aunque la losa diga «varilla»: el acero de una losa no arma columnas.
+    assert "plantilla" not in ids and "cimbra-zapatas" not in ids
+    assert "acero" in ids and "Columnas" in ids["acero"].evidencia
+    assert {"relleno", "acarreo", "aplanado", "cadenas", "cimbra-columnas", "escalera"} <= set(ids)
+    assert "castillos" not in ids  # EST-001 está
+    # Con el renglón de acero aparte, ya no falta.
+    boq.lines.append(_linea("ACE-001", 1.2, "Acero de refuerzo fy=4200", "TON"))
+    assert "acero" not in {a.id for a in esperado_y_ausente(boq, plantas=1)}
+    assert "escalera" not in {a.id for a in esperado_y_ausente(boq, plantas=1)}

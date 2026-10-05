@@ -3192,6 +3192,8 @@ export type CapturaState = {
   vistos_sin_cantidad: { familia: string; cantidad: number; marcas: string[] }[];
   sin_precio: { clave: string; descripcion: string; cantidad: number; unidad: string }[];
   hojas_sin_lectura: { hoja: string; disciplina: string }[];
+  /** Lo que una partida trae consigo y el presupuesto no tiene. */
+  esperado_y_ausente?: { id: string; partida: string; porque: string; evidencia: string; buscar: string }[];
   total: number;
 };
 
