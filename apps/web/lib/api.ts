@@ -608,6 +608,14 @@ export type Tablero = {
   my_role: "owner" | "editor" | "viewer" | "admin" | null;
   gates: Partial<Record<TableroNodeKey, TableroGate>>;
   nodes: Record<TableroNodeKey, TableroNode>;
+  /** El siguiente paso del camino de v1: uno solo, el primero que falta. */
+  siguiente?: {
+    label: string;
+    detail: string;
+    /** Fragmento de ruta del proyecto («/revision?tab=catalogo»); null si no hay a dónde ir. */
+    href: string | null;
+    accion: string;
+  };
 };
 
 export const getTablero = (id: string) => getJSON<Tablero>(`/projects/${id}/tablero`);

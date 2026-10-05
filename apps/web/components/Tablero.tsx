@@ -403,6 +403,26 @@ export function TableroBoard({ id }: { id: string }) {
           {gateError}
         </div>
       )}
+      {tablero?.siguiente && (
+        // Lo que sigue: un solo botón principal por proyecto. Los nodos siguen
+        // ahí para quien quiera ir a otro lado; éste dice qué hacer ahora.
+        <div
+          className="absolute left-4 top-4 z-30 max-w-sm rounded-xl border border-border bg-surface/95 p-3 shadow-sm backdrop-blur"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <div className="microlabel mb-1">Lo que sigue</div>
+          <div className="text-sm font-semibold">{tablero.siguiente.label}</div>
+          <div className="mt-0.5 text-xs text-muted">{tablero.siguiente.detail}</div>
+          {tablero.siguiente.href && tablero.siguiente.accion !== "esperar" && (
+            <Link
+              href={`${base}${tablero.siguiente.href}`}
+              className="mt-2 inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
+            >
+              {tablero.siguiente.label}
+            </Link>
+          )}
+        </div>
+      )}
       <div
         className="absolute left-0 top-0"
         style={{

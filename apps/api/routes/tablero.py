@@ -265,9 +265,17 @@ def get_tablero(
     programa_estado, programa_facts = _gated("programa", programa_facts, None)
     contrato_estado, contrato_facts = _gated("contrato", contrato_facts, "programa")
 
+    siguiente = _lo_que_sigue(
+        status=status, sheet_count=sheet_count, has_reading=bool(parse_summary),
+        units_ok=units_ok, units_reliable=units_reliable,
+        detections_ok=verification.detections_confirmed_at is not None,
+        lines=lines, sin_precio=sin_precio, has_report=cost_report is not None,
+    )
+
     return {
         "project_id": project_id,
         "my_role": _my_role(request, project_id, settings),
+        "siguiente": siguiente,
         "gates": gates,
         "nodes": {
             "planos": {"estado": planos_estado, "facts": planos_facts},
@@ -278,3 +286,53 @@ def get_tablero(
             "contrato": {"estado": contrato_estado, "facts": contrato_facts},
         },
     }
+
+
+def _paso(label: str, detail: str, href: str | None, accion: str) -> dict:
+    return {"label": label, "detail": detail, "href": href, "accion": accion}
+
+
+def _lo_que_sigue(
+    *, status: str, sheet_count: int, has_reading: bool, units_ok: bool,
+    units_reliable: bool | None, detections_ok: bool, lines: list[dict], sin_precio: int,
+    has_report: bool,
+) -> dict:
+    """El siguiente paso del camino de v1 —subir, leer, confirmar unidades,
+    revisar los elementos, mapear a tu catálogo, darle precio, exportar—, el
+    primero que falta. Uno solo: el resto del proyecto sigue ahí, pero el
+    botón principal dice qué hacer ahora."""
+    if sheet_count == 0:
+        return _paso("Sube los planos", "Arrastra los DWG o DXF del proyecto.", None, "subir")
+    if status in ("queued", "running"):
+        return _paso("Leyendo los planos", "Klave está leyendo las hojas; tarda unos minutos.",
+                     "/lectura", "esperar")
+    if status == "failed":
+        return _paso("Revisa por qué falló la lectura",
+                     "Una hoja no se pudo leer; la lectura dice cuál y por qué.",
+                     "/lectura", "lectura")
+    if not has_reading or not has_report:
+        return _paso("Procesa los planos", "Los planos están subidos pero no leídos.",
+                     "/lectura", "procesar")
+    if not units_ok or units_reliable is False:
+        return _paso("Confirma las unidades",
+                     "Sin unidad confirmada ninguna cantidad es firme.", "/resumen", "unidades")
+    if not detections_ok:
+        return _paso("Revisa los elementos del plano",
+                     "Empieza por las dudas; confirma o excluye en lote.", "/revision", "revisar")
+    variantes = [v for line in lines for v in (line.get("variants") or [])]
+    pendientes = sum(1 for v in variantes if (v.get("mapping") or "") in ("", "propuesta"))
+    if pendientes:
+        return _paso(
+            "Mapea las variantes a tu catálogo",
+            f"{pendientes} de {len(variantes)} variantes sin decisión: cada una con tu clave.",
+            "/revision?tab=catalogo", "mapear",
+        )
+    if sin_precio:
+        return _paso(
+            "Dale precio a lo que falta",
+            f"{sin_precio} {'renglón' if sin_precio == 1 else 'renglones'} sin precio.",
+            "/presupuesto", "precio",
+        )
+    return _paso("Exporta los generadores",
+                 "Excel con referencias al plano, o directo para OPUS o Neodata.",
+                 "/presupuesto", "exportar")
