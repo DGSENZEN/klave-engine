@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CornersOut } from "@phosphor-icons/react";
 import type { DetectionOverlay, Geometry } from "@/lib/api";
 import { FAMILY_COLORS, detectionTitle, familyOf } from "@/lib/families";
@@ -46,8 +46,34 @@ export function PlanoCanvas({
     medidas: { label: string; value: string }[];
   } | null>(null);
   const [, force] = useState(0);
+  // La capa estática (líneas, arcos, achurados, cotas, textos) se pinta una
+  // vez en un lienzo aparte para una vista; al arrastrar o hacer zoom se
+  // mueve esa imagen, y cuando el gesto se detiene se vuelve a pintar nítida.
+  // Antes cada movimiento del ratón repintaba las 76 mil figuras de Marina.
+  const staticRef = useRef<{
+    canvas: HTMLCanvasElement;
+    view: View;
+    w: number;
+    h: number;
+    dpr: number;
+  } | null>(null);
+  const staticDirtyRef = useRef(true);
+  const frameRef = useRef<number | null>(null);
+  const settleRef = useRef<number | null>(null);
+  const drawRef = useRef<() => void>(() => {});
+  // Un cuadro por fotograma, pase lo que pase entre medio: el arrastre y la
+  // rueda piden cuadros; el navegador pinta uno.
+  const [schedule] = useState(() => () => {
+    if (frameRef.current != null) return;
+    frameRef.current = window.requestAnimationFrame(() => {
+      frameRef.current = null;
+      drawRef.current();
+    });
+  });
 
   const [minx, miny, maxx, maxy] = geometry.extent;
+  // El recuadro de cada figura, una vez: lo que cae fuera de la vista no se pinta.
+  const bounds = useMemo(() => shapeBounds(geometry), [geometry]);
 
   const fit = useCallback(() => {
     const canvas = canvasRef.current;
@@ -62,8 +88,10 @@ export function PlanoCanvas({
       ox: (w - spanX * scale) / 2 - minx * scale,
       oy: (h + spanY * scale) / 2 + miny * scale, // Y flipped (drawing up)
     };
+    staticDirtyRef.current = true;
     force((n) => n + 1);
-  }, [minx, miny, maxx, maxy]);
+    schedule();
+  }, [minx, miny, maxx, maxy, schedule]);
 
   const fitTo = useCallback((bbox: [number, number, number, number]) => {
     const canvas = canvasRef.current;
@@ -78,8 +106,10 @@ export function PlanoCanvas({
       ox: (w - spanX * scale) / 2 - bbox[0] * scale,
       oy: (h + spanY * scale) / 2 + bbox[1] * scale,
     };
+    staticDirtyRef.current = true;
     force((n) => n + 1);
-  }, []);
+    schedule();
+  }, [schedule]);
 
   useEffect(() => {
     if (focus) fitTo(focus.bbox);
@@ -96,22 +126,34 @@ export function PlanoCanvas({
     [visibleFamilies, minConfidence],
   );
 
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    const v = viewRef.current;
-    if (!canvas || !v) return;
-    const dpr = window.devicePixelRatio || 1;
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-    }
-    const ctx = canvas.getContext("2d")!;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = cssVar("--canvas-bg") || "#ffffff";
-    ctx.fillRect(0, 0, w, h);
+  /** Pinta la capa estática para la vista ``v`` en un lienzo propio. */
+  const drawStatic = useCallback(
+    (v: View, w: number, h: number, dpr: number) => {
+      let layer = staticRef.current?.canvas;
+      if (!layer) layer = document.createElement("canvas");
+      if (layer.width !== Math.round(w * dpr) || layer.height !== Math.round(h * dpr)) {
+        layer.width = Math.round(w * dpr);
+        layer.height = Math.round(h * dpr);
+      }
+      const ctx = layer.getContext("2d")!;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = cssVar("--canvas-bg") || "#ffffff";
+      ctx.fillRect(0, 0, w, h);
+      const shapes = geometry.shapes;
+      // La ventana del mundo que cabe en pantalla, con un margen.
+      const pad = 40 / v.scale;
+      const wx0 = -v.ox / v.scale - pad;
+      const wx1 = (w - v.ox) / v.scale + pad;
+      const wy1 = v.oy / v.scale + pad;
+      const wy0 = (v.oy - h) / v.scale - pad;
+      const inView = (i: number) => {
+        const o = i * 4;
+        return (
+          visibleLayers.has(shapes[i].layer) &&
+          bounds[o + 2] >= wx0 && bounds[o] <= wx1 && bounds[o + 3] >= wy0 && bounds[o + 1] <= wy1
+        );
+      };
 
     // Base geometry: linework first, then hatches, cotas and texts so the
     // sheet reads like the sheet — not a skeleton of it.
@@ -120,14 +162,16 @@ export function PlanoCanvas({
     ctx.lineWidth = 0.7;
     ctx.strokeStyle = stroke;
     ctx.beginPath();
-    for (const s of geometry.shapes) {
+    for (let i = 0; i < shapes.length; i++) {
+      if (!inView(i)) continue;
+      const s = shapes[i];
       if (!visibleLayers.has(s.layer)) continue;
       if (s.t === "hatch" || s.t === "text" || s.t === "dim" || s.t === "arc") continue;
       if (s.t === "path") {
         const pts = s.pts;
-        for (let i = 0; i < pts.length; i++) {
-          const [sx, sy] = toScreen(pts[i][0], pts[i][1], v);
-          if (i === 0) ctx.moveTo(sx, sy);
+        for (let k = 0; k < pts.length; k++) {
+          const [sx, sy] = toScreen(pts[k][0], pts[k][1], v);
+          if (k === 0) ctx.moveTo(sx, sy);
           else ctx.lineTo(sx, sy);
         }
         if (s.closed && pts.length > 2) {
@@ -148,7 +192,9 @@ export function PlanoCanvas({
 
     // Arcs (DXF angles are counter-clockwise in degrees; the screen Y is flipped).
     ctx.beginPath();
-    for (const s of geometry.shapes) {
+    for (let i = 0; i < shapes.length; i++) {
+      if (!inView(i)) continue;
+      const s = shapes[i];
       if (s.t !== "arc" || !visibleLayers.has(s.layer)) continue;
       const [cx, cy] = toScreen(s.c[0], s.c[1], v);
       const r = Math.max(s.r * v.scale, 0.5);
@@ -161,12 +207,14 @@ export function PlanoCanvas({
 
     // Hatches: the outline with a faint fill.
     ctx.fillStyle = `${stroke}33`;
-    for (const s of geometry.shapes) {
+    for (let i = 0; i < shapes.length; i++) {
+      if (!inView(i)) continue;
+      const s = shapes[i];
       if (s.t !== "hatch" || !visibleLayers.has(s.layer)) continue;
       ctx.beginPath();
-      s.pts.forEach(([px, py], i) => {
+      s.pts.forEach(([px, py], k) => {
         const [sx, sy] = toScreen(px, py, v);
-        if (i === 0) ctx.moveTo(sx, sy);
+        if (k === 0) ctx.moveTo(sx, sy);
         else ctx.lineTo(sx, sy);
       });
       ctx.closePath();
@@ -179,7 +227,9 @@ export function PlanoCanvas({
     ctx.strokeStyle = cotaColor;
     ctx.fillStyle = cotaColor;
     ctx.beginPath();
-    for (const s of geometry.shapes) {
+    for (let i = 0; i < shapes.length; i++) {
+      if (!inView(i)) continue;
+      const s = shapes[i];
       if (s.t !== "dim" || !visibleLayers.has(s.layer) || s.pts.length < 2) continue;
       const [x1, y1] = toScreen(s.pts[0][0], s.pts[0][1], v);
       const [x2, y2] = toScreen(s.pts[1][0], s.pts[1][1], v);
@@ -190,7 +240,9 @@ export function PlanoCanvas({
     if (v.scale > 12) {
       ctx.font = "10px ui-sans-serif, system-ui";
       ctx.textAlign = "center";
-      for (const s of geometry.shapes) {
+      for (let i = 0; i < shapes.length; i++) {
+      if (!inView(i)) continue;
+      const s = shapes[i];
         if (s.t !== "dim" || !visibleLayers.has(s.layer) || !s.label || s.pts.length < 2) continue;
         const [x1, y1] = toScreen(s.pts[0][0], s.pts[0][1], v);
         const [x2, y2] = toScreen(s.pts[1][0], s.pts[1][1], v);
@@ -208,7 +260,9 @@ export function PlanoCanvas({
     // desvanecidos cuando crecen más allá de lo legible. Un rótulo gigante
     // (portadas, pies de plano, títulos) a cierto zoom deja de ser dato y se
     // vuelve muro: se difumina y desaparece para dejar explorar lo de abajo.
-    for (const s of geometry.shapes) {
+    for (let i = 0; i < shapes.length; i++) {
+      if (!inView(i)) continue;
+      const s = shapes[i];
       if (s.t !== "text" || !visibleLayers.has(s.layer)) continue;
       const px = s.h * v.scale;
       if (px < 4) continue;
@@ -225,10 +279,66 @@ export function PlanoCanvas({
       ctx.restore();
     }
 
+      staticRef.current = { canvas: layer, view: { ...v }, w, h, dpr };
+      staticDirtyRef.current = false;
+    },
+    [geometry, visibleLayers, bounds],
+  );
+
+  /** Compone el cuadro: la capa estática (movida si la vista cambió) y encima
+   * las detecciones, la selección y la medición. */
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    const v = viewRef.current;
+    if (!canvas || !v) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      staticDirtyRef.current = true;
+    }
+    const cached = staticRef.current;
+    const stale =
+      staticDirtyRef.current || !cached || cached.w !== w || cached.h !== h || cached.dpr !== dpr;
+    const moved =
+      !!cached &&
+      (cached.view.scale !== v.scale || cached.view.ox !== v.ox || cached.view.oy !== v.oy);
+    if (stale) drawStatic(v, w, h, dpr);
+    const ctx = canvas.getContext("2d")!;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = cssVar("--canvas-bg") || "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    const layer = staticRef.current!;
+    if (!stale && moved) {
+      // La imagen de la vista anterior, llevada a la nueva: s' = (s − o)·k + o'.
+      const k = v.scale / layer.view.scale;
+      ctx.save();
+      ctx.translate(v.ox - layer.view.ox * k, v.oy - layer.view.oy * k);
+      ctx.scale(k, k);
+      ctx.drawImage(layer.canvas, 0, 0, layer.w, layer.h);
+      ctx.restore();
+      // Cuando el gesto se detiene, se repinta nítida.
+      if (settleRef.current) window.clearTimeout(settleRef.current);
+      settleRef.current = window.setTimeout(() => {
+        staticDirtyRef.current = true;
+        schedule();
+      }, 140);
+    } else {
+      ctx.drawImage(layer.canvas, 0, 0, w, h);
+    }
+    const pad = 40 / v.scale;
+    const wx0 = -v.ox / v.scale - pad;
+    const wx1 = (w - v.ox) / v.scale + pad;
+    const wy1 = v.oy / v.scale + pad;
+    const wy0 = (v.oy - h) / v.scale - pad;
+
     // Detection overlays
     const showLabels = v.scale > 6;
     for (const d of geometry.detections) {
       if (!isVisible(d)) continue;
+      if (d.bbox[2] < wx0 || d.bbox[0] > wx1 || d.bbox[3] < wy0 || d.bbox[1] > wy1) continue;
       const color = FAMILY_COLORS[familyOf(d)] ?? "#111827";
       const selected = d.id === selectedId;
       const [x1, y1] = toScreen(d.bbox[0], d.bbox[1], v);
@@ -318,24 +428,52 @@ export function PlanoCanvas({
         }
       }
     }
-  }, [geometry, visibleLayers, isVisible, selectedId, measure]);
+  }, [geometry, isVisible, selectedId, measure, drawStatic, schedule]);
+
+  useEffect(() => {
+    drawRef.current = draw;
+  }, [draw]);
+  useEffect(
+    () => () => {
+      if (frameRef.current != null) window.cancelAnimationFrame(frameRef.current);
+      if (settleRef.current) window.clearTimeout(settleRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     fit();
   }, [fit]);
 
+  // El dibujo o sus capas visibles cambiaron: la capa estática se rehace.
   useEffect(() => {
-    draw();
-  });
+    staticDirtyRef.current = true;
+    schedule();
+  }, [geometry, visibleLayers, schedule]);
+
+  // Selección, medición o familias visibles: sólo se recompone el cuadro.
+  useEffect(() => {
+    schedule();
+  }, [draw, schedule]);
 
   useEffect(() => {
-    const onResize = () => draw();
+    const onResize = () => {
+      staticDirtyRef.current = true;
+      schedule();
+    };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [draw]);
+  }, [schedule]);
 
   // The canvas palette lives in CSS tokens; redraw when the theme flips.
-  useEffect(() => subscribeTheme(() => draw()), [draw]);
+  useEffect(
+    () =>
+      subscribeTheme(() => {
+        staticDirtyRef.current = true;
+        schedule();
+      }),
+    [schedule],
+  );
 
   function hitTest(mx: number, my: number): DetectionOverlay | null {
     const v = viewRef.current;
@@ -371,7 +509,7 @@ export function PlanoCanvas({
     v.ox = mx - (mx - v.ox) * factor;
     v.oy = my - (my - v.oy) * factor;
     v.scale = ns;
-    draw();
+    schedule();
   }
 
   function onMouseDown(e: React.MouseEvent) {
@@ -387,7 +525,7 @@ export function PlanoCanvas({
       v.ox += dx;
       v.oy += dy;
       dragRef.current = { ...dragRef.current, x: e.clientX, y: e.clientY };
-      draw();
+      schedule();
       return;
     }
     const canvas = canvasRef.current;
@@ -401,7 +539,7 @@ export function PlanoCanvas({
         ? {
             x: mx,
             y: my,
-            text: `${detectionTitle(hit)} · ${(hit.confidence * 100).toFixed(0)}%`,
+            text: detectionTitle(hit),
             medidas: hit.medidas ?? [],
           }
         : null,
@@ -471,4 +609,47 @@ export function PlanoCanvas({
       )}
     </div>
   );
+}
+
+/** Recuadro de cada figura en un arreglo plano [x0, y0, x1, y1, …]. */
+function shapeBounds(geometry: Geometry): Float64Array {
+  const out = new Float64Array(geometry.shapes.length * 4);
+  geometry.shapes.forEach((shape, i) => {
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    const take = (x: number, y: number) => {
+      if (x < x0) x0 = x;
+      if (y < y0) y0 = y;
+      if (x > x1) x1 = x;
+      if (y > y1) y1 = y;
+    };
+    if ("pts" in shape) for (const [x, y] of shape.pts) take(x, y);
+    if ("bbox" in shape) {
+      take(shape.bbox[0], shape.bbox[1]);
+      take(shape.bbox[2], shape.bbox[3]);
+    }
+    if ("c" in shape) {
+      const r = "r" in shape ? shape.r : 0;
+      take(shape.c[0] - r, shape.c[1] - r);
+      take(shape.c[0] + r, shape.c[1] + r);
+    }
+    if ("p" in shape) {
+      // Un texto llega a la derecha de su punto de inserción: se le da holgura.
+      const h = "h" in shape ? shape.h : 0;
+      const len = "s" in shape ? shape.s.length : 1;
+      take(shape.p[0] - h * len, shape.p[1] - h * len);
+      take(shape.p[0] + h * len, shape.p[1] + h * len);
+    }
+    if (!Number.isFinite(x0)) {
+      x0 = y0 = -Infinity;
+      x1 = y1 = Infinity;
+    }
+    out[i * 4] = x0;
+    out[i * 4 + 1] = y0;
+    out[i * 4 + 2] = x1;
+    out[i * 4 + 3] = y1;
+  });
+  return out;
 }
