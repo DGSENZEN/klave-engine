@@ -886,6 +886,34 @@ Diego: el valor por defecto de `KLAVE_REGISTRATION` en su
 `docker-compose.prod.yml` (sin confirmar) sigue en `open`, y con este cambio
 producción no arranca así — una línea.
 
+### V1 · R4 · Qué cambió entre revisiones (2026-10-06, rama `v1-r4-cambios`)
+
+(1) **El cálculo** (`costing/cambios.py`): cada elemento de la lectura
+anterior se busca en la nueva por identidad (hoja, tipo, marca, posición a
+5 cm) y, si no, por la misma marca a menos de 2 m (se movió); lo que no
+encuentra pareja es agregado o eliminado — nunca se adivina. «Modificado» es
+una propiedad que cambia una cantidad o un precio (sección, armado, longitud,
+área, espesor, diámetro, claro, tipo). Por concepto: cantidad antes y
+después, diferencia y su importe a precio unitario de hoy. **Probado en
+Marina** (2,521 elementos, sólo lectura): una copia sin tocar da cero
+cambios; una con tres columnas movidas 1 m, una zapata quitada y una trabe
+alargada da exactamente esas cinco. La primera versión daba 56 «modificados»
+falsos: corridas partidas por diámetro y tableros con el mismo centro
+comparten identidad y se emparejaban cruzados; ahora gana la pieza que
+coincide en propiedades y contorno. (2) **Revisiones**: cada lectura guardada
+con su nombre (Rev C, ejecutivo), su versión de Klave y — desde ahora — el
+sha256 de los planos que leyó (`inputs.json`), para distinguir una revisión
+del plano de una lectura nueva de los mismos planos. Las lecturas viejas de
+Marina no lo guardaban: entre la del 29 de agosto y la de hoy aparecen 116
+elementos (98 muebles y 18 muros) y la pantalla dice que cambió Klave y no se
+sabe si el plano. (3) **API** `/revisiones`, `/cambios`, `/cambios.xlsx`
+(aditivas y deductivas por concepto con su clave visible, y por elemento con
+liga al visor). (4) **Web**: «Cambios entre revisiones» en el nodo Planos,
+y el visor pinta los cambios con `?cambios=` (agregado, movido, modificado, y
+lo eliminado punteado). Pendiente: la vista «supuesto → leído» del
+anteproyecto al ejecutivo (el cálculo ya sirve: compara renglones por
+concepto) y verlo en un navegador con sesión.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
