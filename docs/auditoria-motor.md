@@ -792,6 +792,34 @@ variantes cuadren con su renglón. Pendiente: la prueba del mapeo contra una
 base de obra negra real de una oficina (la de acero sólo da 4 dudas de 150
 variantes, como debe).
 
+### V1 · R2 · Fuera de la puerta (2026-10-06, rama `v1-r2`)
+
+(1) **Generadores con referencia** (`costing/referencias.py`): agrupados por
+variante con la clave de la oficina; cada elemento con su hoja, su planta (el
+marco al que el motor lo asignó), los ejes cercanos **sólo si el plano los
+nombró** (la malla de Marina trae nombres automáticos «V1, V2»: no se citan) y
+una liga «Ver» al visor encuadrado (`?bbox=`); un id estable por elemento
+(hoja, tipo, marca, centro a 5 cm). Fuera la columna de confianza de los
+generadores y del presupuesto (doctrina: la duda se resuelve en Revisión, no
+se estampa). (2) **OPUS y Neodata por variante**: una fila por variante con
+la clave de su mapeo, si no el alias del renglón, si no una neutra
+`PL-0001` — la misma en todas las hojas del libro (presupuesto, licitación,
+APUs, programa); las claves del motor ya no salen en ningún documento; columna
+Partida. (3) **Lo que el plano no dio** (`costing/captura.py`): elementos
+vistos que ningún renglón cuantificó, renglones sin precio y hojas de las que
+no se leyó nada; hoja en cada libro, `GET /projects/{id}/captura` y un aviso
+plegado en el presupuesto. Para contarlo bien, un renglón guarda ahora todos
+sus elementos (antes 200; Marina trae 2,405). (4) **Liga para compartir**:
+el dueño la crea desde Exportar (14 días, máximo 90, revocable); quien la abre
+sin cuenta ve el plano y descarga los generadores con ligas al visor
+compartido — nunca dinero; inexistente, caducada o revocada responden igual;
+`/compartido/` es el único prefijo abierto nuevo y sólo tiene GET. (5) La
+suite ya no toca la base de usuarios de quien la corre: con una cuenta en
+desarrollo siete pruebas de endpoints daban 401. Pendiente de R2: verificar
+los libros contra una instalación real de OPUS y de Neodata (no hay layout
+oficial público; Diego tiene las instalaciones) y el lector de Neodata contra
+un export real.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)

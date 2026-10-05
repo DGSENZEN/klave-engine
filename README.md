@@ -60,6 +60,11 @@ candado de administrador:
   y cada variante se mapea al catálogo de la oficina —sus conceptos y las
   bases que importó— con su motivo; lo dudoso espera a una persona y lo que
   se decide se recuerda en el siguiente proyecto (Revisión → Tu catálogo).
+- **Fuera de la puerta** — los generadores dicen de cada elemento su hoja,
+  planta y ejes, con una liga al visor; OPUS y Neodata reciben una fila por
+  variante con la clave de la oficina; «Lo que el plano no dio» viaja en cada
+  libro; y una liga de sólo lectura deja a un supervisor ver el plano y bajar
+  los generadores sin cuenta y sin dinero.
 - **Presupuesto** — partidas plegables con su peso, precios con fuente,
   ajustes documentados con autor, versiones comparables, y la
   **integración como análisis**: desglose de indirectos renglón por
