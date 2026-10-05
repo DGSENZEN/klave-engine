@@ -35,9 +35,11 @@ from klave_engine.costing.letras import pesos_con_letra
 from klave_engine.costing.models import BoqLine, Concept, CostReport, MoneyBasis
 from klave_engine.costing.presentation import MoneyState, basis_reasons, resolve_money_state
 from klave_engine.costing.programas import build_programas
+from klave_engine.costing.referencias import referencias
 from klave_engine.costing.reviews import ProjectReviews
 from klave_engine.costing.schedule import quantity_by_period
 from klave_engine.detection.results import Detection
+from klave_engine.detection.views import SheetSegmentation
 
 INK = "18181B"
 MUTED = "6E6E76"
@@ -156,6 +158,8 @@ def build_presupuesto_workbook(
     inventory: dict | None = None,
     croquis: CroquisProvider | None = None,
     override_reason: str = "",
+    segmentation: SheetSegmentation | None = None,
+    web_origin: str = "",
 ) -> bytes:
     # One verdict for the whole workbook, resolved once here and threaded to
     # every sheet that could show a total — not re-derived per sheet from
@@ -186,6 +190,8 @@ def build_presupuesto_workbook(
             report, detections, reviews, project_name, client, state,
             croquis=croquis,
             override_reason=override_reason,
+            segmentation=segmentation,
+            web_origin=web_origin,
         )
         if inventory and inventory.get("sheets"):
             _levantamiento(workbook.create_sheet("Levantamiento"), inventory)
@@ -460,6 +466,8 @@ def _klave_workbook(
     money_state: MoneyState,
     croquis: CroquisProvider | None = None,
     override_reason: str = "",
+    segmentation: SheetSegmentation | None = None,
+    web_origin: str = "",
 ) -> Workbook:
     workbook = Workbook()
     # One verdict, every sheet that prints a peso. The Generadores and
@@ -468,7 +476,10 @@ def _klave_workbook(
     _caratula(workbook.active, report, reviews, project_name, client, money_state, override_reason)
     _presupuesto(workbook.create_sheet("Presupuesto"), report, money_state)
     _apus(workbook.create_sheet("APUs"), report, money_state)
-    _generadores(workbook.create_sheet("Generadores"), report, detections, reviews, croquis)
+    _generadores(
+        workbook.create_sheet("Generadores"), report, detections, reviews, croquis,
+        segmentation=segmentation, web_origin=web_origin,
+    )
     _explosion(workbook.create_sheet("Explosión de insumos"), report, money_state)
     _programa(workbook.create_sheet("Programa"), report)
     _programas_erogaciones(workbook, report, money_state)
@@ -678,57 +689,90 @@ def _generadores(
     detections: list[Detection],
     reviews: ProjectReviews,
     croquis: CroquisProvider | None = None,
+    segmentation: SheetSegmentation | None = None,
+    web_origin: str = "",
 ) -> None:
     """The evidence backup sheet: where every quantity comes from — and,
-    with a croquis provider, where on the planta it sits."""
+    with a croquis provider, where on the planta it sits.
+
+    Agrupado por variante con la clave de la oficina: cada elemento dice su
+    hoja, su planta, los ejes que el plano le nombra y una liga que abre el
+    visor encuadrado en él. Sin porcentajes de confianza: lo dudoso se
+    resuelve en Revisión, no se estampa en el respaldo."""
     by_id = {d.detection_id: d for d in detections}
+    refs = referencias(
+        report.project_id, detections, segmentation, report.drawing_units.to_meters()
+    )
+    origin = web_origin.rstrip("/")
     row = 1
     _title(ws, row, "Números generadores", size=13)
     _muted(
         ws, row + 1, 1,
-        "Respaldo de cantidades: cada renglón es una detección del plano o un "
-        "ajuste manual documentado.",
+        "Respaldo de cantidades: cada renglón es un elemento del plano o un ajuste "
+        "manual documentado. «Ver» abre el plano encuadrado en el elemento.",
     )
     row += 3
     for line in report.boq.lines:
-        _title(ws, row, f"{line.concept_code} — {line.description}", size=11)
+        _title(ws, row, f"{line.taller_clave or ''} {line.description}".strip(), size=11)
         row += 1
         _muted(
             ws, row, 1,
             f"Base medida: {line.raw_quantity:,.2f} "
             f"{RAW_KIND_LABELS.get(line.raw_kind.value, line.raw_kind.value)} → "
-            f"cantidad: {line.quantity:,.2f} {line.unit} · "
-            f"confianza {line.confidence:.0%}",
+            f"cantidad: {line.quantity:,.2f} {line.unit}",
         )
         row += 1
-        _header(
-            ws, row,
-            ["Elemento", "Marca en plano", "Familia", "Hoja", "Medida base", "Confianza"],
-        )
-        row += 1
-        for detection_id in line.source_detections:
-            detection = by_id.get(detection_id)
-            if detection is None:
-                continue
-            measure: Any = 1
-            for prop in KIND_PROPERTY.get(line.raw_kind.value, ()):
-                if detection.properties.get(prop) is not None:
-                    measure = round(float(detection.properties[prop]), 3)
-                    break
-            values: list[Any] = [
-                detection.display_label or detection.label,
-                detection.mark or "—",
-                detection.family_label or detection.detection_type.value,
-                detection.evidence.source,
-                measure,
-                f"{detection.confidence:.0%}",
+        variants = line.variants or []
+        groups: list[tuple[str, str, float | None, list[str]]] = (
+            [
+                (v.clave, v.description, v.quantity, v.source_detections)
+                for v in variants
             ]
-            for col, value in enumerate(values, start=1):
-                cell = ws.cell(row=row, column=col, value=value)
-                cell.border = _box
-                if col == 5 and isinstance(value, float):
-                    cell.number_format = QTY_FORMAT
+            if len(variants) > 1
+            else [("", "", None, line.source_detections)]
+        )
+        for clave, descripcion, cantidad, ids in groups:
+            if cantidad is not None:
+                cell = ws.cell(
+                    row=row, column=1,
+                    value=f"{clave + ' · ' if clave else ''}{descripcion} — "
+                    f"{cantidad:,.2f} {line.unit}",
+                )
+                cell.font = Font(bold=True, size=10)
+                row += 1
+            _header(
+                ws, row,
+                ["Elemento", "Marca", "Hoja", "Planta", "Ejes", "Medida base", "Ver"],
+            )
             row += 1
+            for detection_id in ids:
+                detection = by_id.get(detection_id)
+                if detection is None:
+                    continue
+                measure: Any = 1
+                for prop in KIND_PROPERTY.get(line.raw_kind.value, ()):
+                    if detection.properties.get(prop) is not None:
+                        measure = round(float(detection.properties[prop]), 3)
+                        break
+                ref = refs.get(detection_id)
+                values: list[Any] = [
+                    detection.display_label or detection.label,
+                    detection.mark or "—",
+                    ref.hoja if ref else detection.evidence.source,
+                    ref.planta if ref else "",
+                    ref.ejes if ref else "",
+                    measure,
+                    "Ver" if ref and origin else "",
+                ]
+                for col, value in enumerate(values, start=1):
+                    cell = ws.cell(row=row, column=col, value=value)
+                    cell.border = _box
+                    if col == 6 and isinstance(value, float):
+                        cell.number_format = QTY_FORMAT
+                    if col == 7 and ref and origin:
+                        cell.hyperlink = f"{origin}{ref.visor}"
+                        cell.font = Font(color="2B4ACB", underline="single", size=10)
+                row += 1
         # Provenance that is not a detection: mapped levantamiento counts,
         # adopted prices, and the per-planta split.
         for assumption in line.assumptions:
@@ -778,7 +822,7 @@ def _generadores(
                 note += f" ({review.actor})"
             _muted(ws, row, 1, note)
             row += 1
-    _autosize(ws, [18, 16, 18, 26, 14, 11])
+    _autosize(ws, [22, 12, 30, 28, 10, 14, 8])
 
 
 def _levantamiento(ws: Worksheet, inventory: dict) -> None:

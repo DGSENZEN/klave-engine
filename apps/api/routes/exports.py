@@ -189,6 +189,13 @@ def export_apus(
     )
 
 
+def _segmentation(store: ProjectStore, project_id: str) -> SheetSegmentation | None:
+    try:
+        return SheetSegmentation.model_validate(store.read_artifact(project_id, "views.json"))
+    except HTTPException:
+        return None
+
+
 @router.get("/{project_id}/export/presupuesto.xlsx")
 def export_presupuesto(
     request: Request,
@@ -244,6 +251,8 @@ def export_presupuesto(
             else None
         ),
         override_reason=reason,
+        segmentation=_segmentation(store, project_id),
+        web_origin=settings.web_origin,
     )
     suffix = "" if format == "klave" else f"_{format}"
     filename = f"presupuesto_{slugify(manifest.project_name)[:40]}{suffix}.xlsx"

@@ -243,3 +243,20 @@ def test_caratula_dice_la_fuente_de_cada_renglon(data_dir):
     caratula = load_workbook(BytesIO(contenido))["Carátula"]
     textos = [str(c.value) for fila in caratula.iter_rows() for c in fila if c.value]
     assert any("declarado" in t for t in textos)
+
+
+def test_generadores_reference_each_element_without_confidence(data_dir):
+    report, reviews = _report(data_dir)
+    content = build_presupuesto_workbook(
+        report, _detections(), reviews, "Torre Test", None, fmt="klave",
+        web_origin="https://app.klave.mx",
+    )
+    ws = load_workbook(io.BytesIO(content))["Generadores"]
+    values = [cell.value for row in ws.iter_rows() for cell in row if cell.value is not None]
+    assert "Confianza" not in values and "Planta" in values and "Ejes" in values
+    assert not any(isinstance(v, str) and v.endswith("%") and v[:-1].isdigit() for v in values)
+    links = [cell.hyperlink.target for row in ws.iter_rows() for cell in row if cell.hyperlink]
+    assert links and all(
+        link.startswith("https://app.klave.mx/proyecto/p/plano?bbox=") for link in links
+    )
+    assert "S-101" in values
