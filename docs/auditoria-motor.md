@@ -863,6 +863,29 @@ tablero (visible con candado) manda sobre el «aparecer cuando se llegue» del
 spec. Pendiente: la misma gramática de gestos (inspector a la derecha) en
 Revisión y Presupuesto, y la prueba con cinco ingenieros.
 
+### Bloqueos de despliegue (2026-10-06, rama `despliegue-bloqueos`)
+
+Los cinco que encontró la auditoría del 2026-09-28, verificados contra el
+código de hoy antes de tocar nada. (1) **Producción ya no abre por
+accidente**: sin cuentas sólo sirve `/auth` y `/health` (antes un volumen
+nuevo servía todo sin sesión); con la base de usuarios caída cierra siempre,
+también tras reiniciar (antes, si el proceso no recordaba haber visto
+cuentas, abría). En desarrollo sigue el modo local abierto. (2) **El
+copiloto y los alias con recálculo cuidan el proyecto**: la regla de acceso
+vive en `apps/api/auth/access.py`, el middleware la usa bajo `/projects` y las
+rutas de fuera que reciben un proyecto la piden (ver para las acciones y
+preguntas del copiloto; editar para aplicar y para los alias); probado con
+dos talleres reales. (3) **El respaldo cubre todo `/data`** con las bases
+SQLite por copia en línea (probado con escrituras concurrentes y
+`integrity_check`); antes faltaban el registro de proyectos, la bitácora, las
+fuentes y las ligas. (4) **`apps/web/public` existe en un checkout limpio**.
+(5) **El registro**: producción exige `KLAVE_REGISTRATION=invite_only`, y
+«sólo por invitación» deja entrar a la primera cuenta, que funda el taller
+(antes un servidor cerrado no tenía por dónde entrar). Falta en manos de
+Diego: el valor por defecto de `KLAVE_REGISTRATION` en su
+`docker-compose.prod.yml` (sin confirmar) sigue en `open`, y con este cambio
+producción no arranca así — una línea.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
