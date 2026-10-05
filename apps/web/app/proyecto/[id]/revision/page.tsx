@@ -656,7 +656,8 @@ export default function RevisionPage() {
                     <div className="flex flex-wrap gap-1">
                       {r.doubts.map((d) => (
                         <Badge key={d} tone="warning">
-                          {d}
+                          {/* El porcentaje ya está en su columna. */}
+                          {d.startsWith("confianza ") ? "lectura débil" : d}
                         </Badge>
                       ))}
                     </div>
@@ -669,7 +670,7 @@ export default function RevisionPage() {
                       <Badge tone="danger">excluido</Badge>
                     )}
                     {r.status === "" && (
-                      <span className="text-xs text-faint">—</span>
+                      <span className="text-xs text-faint">sin revisar</span>
                     )}
                     {(r.note || r.actor) && (
                       <div className="text-[11px] text-faint">
@@ -680,7 +681,7 @@ export default function RevisionPage() {
                     {r.concept_code && (
                       <Link
                         href={`/proyecto/${id}/plano?concept=${encodeURIComponent(r.concept_code)}`}
-                        className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-muted underline"
+                        className="mt-0.5 flex w-fit items-center gap-1 text-[11px] text-muted underline"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <MapTrifold size={11} /> plano

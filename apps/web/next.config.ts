@@ -20,6 +20,9 @@ try {
 const nextConfig: NextConfig = {
   // Self-contained server bundle for the Docker image (node server.js).
   output: "standalone",
+  // The dev badge sat on the tablero's zoom controls and over table rows;
+  // compile and runtime errors still surface without it.
+  devIndicators: false,
 };
 
 export default nextConfig;

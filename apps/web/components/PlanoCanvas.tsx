@@ -71,7 +71,7 @@ export function PlanoCanvas({
     });
   });
 
-  const [minx, miny, maxx, maxy] = geometry.extent;
+  const [minx, miny, maxx, maxy] = useMemo(() => drawingExtent(geometry), [geometry]);
   // El recuadro de cada figura, una vez: lo que cae fuera de la vista no se pinta.
   const bounds = useMemo(() => shapeBounds(geometry), [geometry]);
 
@@ -111,9 +111,6 @@ export function PlanoCanvas({
     schedule();
   }, [schedule]);
 
-  useEffect(() => {
-    if (focus) fitTo(focus.bbox);
-  }, [focus, fitTo]);
 
   // World → screen
   const toScreen = (x: number, y: number, v: View): [number, number] => [
@@ -446,9 +443,13 @@ export function PlanoCanvas({
     [],
   );
 
+  // One effect, so the order is not a race: a focus (a planta, a concept,
+  // a ?bbox=) wins over fitting the whole sheet; it used to be fitted and
+  // then immediately overwritten by the full fit declared after it.
   useEffect(() => {
-    fit();
-  }, [fit]);
+    if (focus) fitTo(focus.bbox);
+    else fit();
+  }, [focus, fit, fitTo]);
 
   // El dibujo o sus capas visibles cambiaron: la capa estática se rehace.
   useEffect(() => {
@@ -614,6 +615,70 @@ export function PlanoCanvas({
       )}
     </div>
   );
+}
+
+type Extent = [number, number, number, number];
+
+/** Un punto que representa la figura, para medir dónde vive cada hoja. */
+function anchorPoint(shape: Geometry["shapes"][number]): [number, number] | null {
+  if ("pts" in shape) return shape.pts[0] ?? null;
+  if ("c" in shape) return shape.c;
+  if ("bbox" in shape) return [shape.bbox[0], shape.bbox[1]];
+  if ("p" in shape) return shape.p;
+  return null;
+}
+
+/**
+ * La extensión a encuadrar: la de las hojas que viven juntas. Una hoja
+ * georreferenciada (el índice de Marina está a 59 millones de unidades del
+ * resto) inflaba el encuadre hasta dejar todo el plano en un punto. Ancla:
+ * la hoja con más figuras; entra cada hoja cuyo recuadro cae a menos de diez
+ * diagonales del ancla. Sin figuras, la extensión que manda el servidor.
+ */
+function drawingExtent(geometry: Geometry): Extent {
+  const boxes = new Map<number, Extent>();
+  const counts = new Map<number, number>();
+  for (const shape of geometry.shapes) {
+    const point = anchorPoint(shape);
+    if (!point || !Number.isFinite(point[0]) || !Number.isFinite(point[1])) continue;
+    const key = shape.sheet ?? -1;
+    const box = boxes.get(key);
+    if (box) {
+      box[0] = Math.min(box[0], point[0]);
+      box[1] = Math.min(box[1], point[1]);
+      box[2] = Math.max(box[2], point[0]);
+      box[3] = Math.max(box[3], point[1]);
+    } else {
+      boxes.set(key, [point[0], point[1], point[0], point[1]]);
+    }
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  if (boxes.size === 0) return geometry.extent;
+  if (boxes.size === 1) return [...boxes.values()][0];
+  let anchorKey = -1;
+  let best = -1;
+  for (const [key, n] of counts) {
+    if (n > best) {
+      best = n;
+      anchorKey = key;
+    }
+  }
+  const anchor = boxes.get(anchorKey)!;
+  const reach = 10 * Math.max(Math.hypot(anchor[2] - anchor[0], anchor[3] - anchor[1]), 1);
+  const out: Extent = [anchor[0], anchor[1], anchor[2], anchor[3]];
+  for (const box of boxes.values()) {
+    const near =
+      box[0] < anchor[2] + reach &&
+      box[2] > anchor[0] - reach &&
+      box[1] < anchor[3] + reach &&
+      box[3] > anchor[1] - reach;
+    if (!near) continue;
+    out[0] = Math.min(out[0], box[0]);
+    out[1] = Math.min(out[1], box[1]);
+    out[2] = Math.max(out[2], box[2]);
+    out[3] = Math.max(out[3], box[3]);
+  }
+  return out;
 }
 
 /** Recuadro de cada figura en un arreglo plano [x0, y0, x1, y1, …]. */

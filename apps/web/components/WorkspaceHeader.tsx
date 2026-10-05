@@ -49,17 +49,17 @@ export function WorkspaceHeader({ active }: { active: Section }) {
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-4xl items-center justify-between px-5">
-        <div className="flex min-w-0 items-center gap-4">
+      <div className="mx-auto flex h-14 max-w-4xl items-center justify-between gap-2 px-4 sm:px-5">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-4">
           <Link href="/" className="flex shrink-0 items-center gap-2.5">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-fg">
               <Buildings size={17} weight="duotone" />
             </span>
-            <span className="font-display text-[1.05rem] font-semibold tracking-tight">
+            <span className="hidden font-display text-[1.05rem] font-semibold tracking-tight sm:inline">
               Klave
             </span>
           </Link>
-          <nav className="flex items-center gap-1">
+          <nav className="flex items-center gap-0.5 sm:gap-1">
             <Link href="/" className={linkClass("proyectos")}>
               <FolderOpen size={15} weight="duotone" />
               <span className="hidden sm:inline">Proyectos</span>
@@ -82,7 +82,7 @@ export function WorkspaceHeader({ active }: { active: Section }) {
             )}
           </nav>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <KebabMenu label="Ayuda" icon={<Question size={17} weight="duotone" />}>
             {(close) => (
               <>
@@ -110,7 +110,7 @@ export function WorkspaceHeader({ active }: { active: Section }) {
           {actorName && (
             <Link
               href="/cuenta"
-              className="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-1 pr-3 text-sm font-medium transition-colors hover:bg-surface-2"
+              className="flex items-center gap-2 rounded-full border border-border bg-surface p-1 text-sm md:pr-3 font-medium transition-colors hover:bg-surface-2"
             >
               <Avatar name={actorName} src={avatarSrc} self size="sm" />
               <span className="hidden max-w-32 truncate md:inline">{actorName}</span>

@@ -745,9 +745,12 @@ function ProjectRow({
           </div>
         )
       )}
-      <Badge tone={STATUS_TONE[project.status ?? ""] ?? "default"}>
-        {STATUS_LABELS[project.status ?? ""] ?? project.status ?? "—"}
-      </Badge>
+      {/* «Procesado» es el estado normal: sólo se anuncia lo que no lo es. */}
+      {project.status !== "processed" && (
+        <Badge tone={STATUS_TONE[project.status ?? ""] ?? "default"}>
+          {STATUS_LABELS[project.status ?? ""] ?? project.status ?? "—"}
+        </Badge>
+      )}
       <KebabMenu label={`Opciones de ${project.name}`}>
         {(close) => (
           <>

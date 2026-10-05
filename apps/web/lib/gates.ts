@@ -13,6 +13,13 @@ export function nodeGate(tablero: Tablero | null, node: TableroNodeKey): Tablero
 export const GATED_NODES: TableroNodeKey[] = ["presupuesto", "programa", "contrato"];
 
 /**
+ * Los nodos cuyas pantallas esperan al candado (GateGuard). El presupuesto
+ * lleva firma pero sus pantallas quedan abiertas: el tablero no debe
+ * esconder sus entradas ni pintarlo como cerrado.
+ */
+export const ROUTE_GUARDED_NODES: TableroNodeKey[] = ["programa", "contrato"];
+
+/**
  * Quién puede abrir un candado: el admin del taller o el owner del proyecto.
  * En modo abierto (my_role null, sin cuentas) todos pueden — la misma
  * libertad local-first del resto de la app.

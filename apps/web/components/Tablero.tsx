@@ -17,7 +17,7 @@ import {
   type TableroFact,
   type TableroNodeKey,
 } from "@/lib/api";
-import { canApproveGate, GATED_NODES } from "@/lib/gates";
+import { canApproveGate, GATED_NODES, ROUTE_GUARDED_NODES } from "@/lib/gates";
 import { getBrowserActor } from "@/lib/collab";
 import { entryHref, NODE_NAV } from "@/lib/nodeNav";
 import { useTablero } from "@/lib/useProjectReport";
@@ -242,6 +242,16 @@ export function TableroBoard({ id }: { id: string }) {
     return () => canvas.removeEventListener("wheel", onWheel);
   }, [id]);
 
+  // Esc cierra el menú aunque el foco ya no esté en la tarjeta.
+  useEffect(() => {
+    if (!menuFor) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuFor(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuFor]);
+
   /** Arrastres con umbral: menos de 4 px es un clic (abre el menú). */
   function startPointer(
     event: React.PointerEvent,
@@ -360,7 +370,9 @@ export function TableroBoard({ id }: { id: string }) {
   const menuNode = menuFor ? NODE_NAV.find((node) => node.key === menuFor) : null;
   const menuGate = menuFor ? tablero?.gates?.[menuFor] : undefined;
   const menuLocked =
-    menuFor && tablero ? GATED_NODES.includes(menuFor) && !menuGate : false;
+    menuFor && tablero ? ROUTE_GUARDED_NODES.includes(menuFor) && !menuGate : false;
+  const menuCanOpen =
+    menuFor && tablero ? GATED_NODES.includes(menuFor) && !menuGate && canApprove : false;
   const menuBox = menuFor ? layout[menuFor] : null;
 
   const edges = EDGES.flatMap(([from, to]) => {
@@ -426,7 +438,7 @@ export function TableroBoard({ id }: { id: string }) {
         {NODE_NAV.map((node) => {
           const data = tablero?.nodes?.[node.key];
           const estado: TableroEstado = data?.estado ?? "pendiente";
-          const gated = GATED_NODES.includes(node.key);
+          const gated = ROUTE_GUARDED_NODES.includes(node.key);
           const gate = tablero?.gates?.[node.key];
           const locked = gated && tablero ? !gate : false;
           const untouchable = locked && !canApprove;
@@ -560,11 +572,11 @@ export function TableroBoard({ id }: { id: string }) {
                   <CaretRight size={12} className="opacity-60" />
                 </Link>
               ))}
-            {menuLocked && canApprove && (
-              <div className="px-2.5 py-2">
+            {menuCanOpen && (
+              <div className={menuLocked ? "px-2.5 py-2" : "mt-1 border-t border-border px-1 pt-1"}>
                 <Button
                   size="sm"
-                  variant="secondary"
+                  variant={menuLocked ? "secondary" : "ghost"}
                   disabled={gateBusy === menuFor}
                   className="w-full"
                   onClick={() => toggleGate(menuFor, true)}
@@ -649,6 +661,19 @@ function FactRow({ fact }: { fact: TableroFact }) {
 function connect(a: Rect, b: Rect): string | null {
   const dx = b.left + b.width / 2 - (a.left + a.width / 2);
   const dy = b.top + b.height / 2 - (a.top + a.height / 2);
+  // Salto de renglón (catálogo → presupuesto): una curva lateral cruzaría
+  // por detrás de las tarjetas de en medio; baja, corre por el hueco entre
+  // renglones y entra por arriba.
+  if (b.top - a.bottom > 32 && Math.abs(dx) > (a.width + b.width) / 2) {
+    const x1 = a.left + a.width / 2;
+    const y1 = a.bottom;
+    const x2 = b.left + b.width / 2;
+    const y2 = b.top;
+    const my = (y1 + y2) / 2;
+    const r = Math.min(16, (y2 - y1) / 4);
+    const s = Math.sign(x2 - x1);
+    return `M ${x1} ${y1} L ${x1} ${my - r} Q ${x1} ${my}, ${x1 + s * r} ${my} L ${x2 - s * r} ${my} Q ${x2} ${my}, ${x2} ${my + r} L ${x2} ${y2}`;
+  }
   if (Math.abs(dx) >= Math.abs(dy)) {
     const fromRight = dx >= 0;
     const x1 = fromRight ? a.right : a.left;
@@ -692,7 +717,7 @@ function ActivityDock({
   ];
   if (entries.length === 0) return null;
   return (
-    <aside className="pointer-events-none absolute bottom-4 right-4 z-20 hidden w-64 lg:block">
+    <aside className="pointer-events-none absolute bottom-20 right-4 z-20 hidden w-64 lg:block">
       <div className="pointer-events-auto rounded-xl border border-border bg-surface/90 p-3 shadow-sm backdrop-blur">
         <div className="microlabel mb-2">Actividad</div>
         <div className="space-y-2">

@@ -60,7 +60,7 @@ export function ProjectShell({
         onOpenChanges={() => setChangesOpen(true)}
       />
       <NodeWorkspaceBar id={id} />
-      <main className={`min-w-0 flex-1 ${onTablero ? "flex flex-col" : "overflow-x-hidden"}`}>
+      <main className={`min-w-0 flex-1 ${onTablero ? "flex flex-col" : "overflow-x-hidden pb-24"}`}>
         {children}
       </main>
       {changesOpen && <ChangesPanel onClose={closeChanges} />}

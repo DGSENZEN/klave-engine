@@ -547,7 +547,7 @@ export function Tabs<K extends string>({
   className?: string;
 }) {
   return (
-    <div role="tablist" className={`flex gap-1 overflow-x-auto border-b border-border ${className}`}>
+    <div role="tablist" className={`tablist flex gap-1 overflow-x-auto ${className}`}>
       {items.map((item) => {
         const active = item.key === value;
         return (
@@ -557,7 +557,7 @@ export function Tabs<K extends string>({
             role="tab"
             aria-selected={active}
             onClick={() => onChange(item.key)}
-            className={`-mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm transition-colors ${
+            className={`inline-flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm transition-colors ${
               active
                 ? "border-foreground font-medium text-foreground"
                 : "border-transparent text-muted hover:text-foreground"

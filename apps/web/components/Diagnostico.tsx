@@ -124,24 +124,13 @@ function HallazgoGuidance({
   accion?: CopilotAccion;
   onApplied?: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   return (
     <>
       {hallazgo.detail && (
-        <>
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted hover:text-foreground"
-            aria-expanded={open}
-          >
-            {open ? "Menos" : "Por qué importa"}
-            <CaretDown size={11} weight="bold" className={open ? "rotate-180" : ""} />
-          </button>
-          {open && (
-            <p className="mt-1 text-sm leading-relaxed text-muted">{hallazgo.detail}</p>
-          )}
-        </>
+        <p className="mt-1.5 text-sm leading-relaxed text-muted">
+          <span className="font-medium text-foreground">Por qué importa: </span>
+          {hallazgo.detail}
+        </p>
       )}
       {hallazgo.verificar && (
         <p className="mt-1 text-sm text-muted">
@@ -159,6 +148,43 @@ function HallazgoGuidance({
         <AccionDeKlave accion={accion} projectId={projectId} onApplied={onApplied} />
       )}
     </>
+  );
+}
+
+/**
+ * A finding's one-line headline. The guidance under it (por qué, cómo
+ * comprobarlo, qué hacer, the action) opens on click: the tier list reads as
+ * headlines with their stakes, and the presupuesto table below stays within
+ * reach instead of three screens down.
+ */
+function FindingHeadline({
+  open,
+  onToggle,
+  children,
+}: {
+  open: boolean;
+  onToggle?: () => void;
+  children: React.ReactNode;
+}) {
+  if (!onToggle) {
+    return <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">{children}</div>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className="group flex w-full flex-wrap items-baseline gap-x-2 gap-y-1 text-left"
+    >
+      {children}
+      <CaretDown
+        size={11}
+        weight="bold"
+        className={`self-center text-faint transition-transform group-hover:text-foreground ${
+          open ? "rotate-180" : ""
+        }`}
+      />
+    </button>
   );
 }
 
@@ -181,12 +207,18 @@ function HallazgoCard({
       ? money(hallazgo.monto_afectado)
       : hallazgo.exposicion ?? null;
 
+  const [open, setOpen] = useState(false);
+  const hasGuidance = Boolean(hallazgo.detail || hallazgo.verificar || hallazgo.action || accion);
+
   return (
     <li className="border-t border-border/60 first:border-t-0">
-      <div className="flex items-start gap-3 px-4 py-3">
+      <div className="flex items-start gap-3 px-4 py-2.5">
         <span className={`mt-0.5 shrink-0 ${tier.text}`}>{tier.icon}</span>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <FindingHeadline
+            open={open}
+            onToggle={hasGuidance ? () => setOpen((v) => !v) : undefined}
+          >
             <span className="text-sm font-medium">{hallazgo.title}</span>
             <span className="text-xs text-faint">{MOMENTO[hallazgo.momento]}</span>
             {stake && (
@@ -201,13 +233,15 @@ function HallazgoCard({
                 {stake}
               </span>
             )}
-          </div>
-          <HallazgoGuidance
-            hallazgo={hallazgo}
-            projectId={projectId}
-            accion={accion}
-            onApplied={onApplied}
-          />
+          </FindingHeadline>
+          {open && (
+            <HallazgoGuidance
+              hallazgo={hallazgo}
+              projectId={projectId}
+              accion={accion}
+              onApplied={onApplied}
+            />
+          )}
         </div>
         {link && (
           <Link href={link} className={`${buttonClasses("ghost", "sm")} shrink-0`}>
@@ -245,6 +279,7 @@ function HallazgoGrupoCard({
   acciones: CopilotAccion[];
   onApplied?: () => void;
 }) {
+  const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const primero = grupo.miembros[0];
   const tier = TIERS[grupo.severity];
@@ -255,10 +290,10 @@ function HallazgoGrupoCard({
 
   return (
     <li className="border-t border-border/60 first:border-t-0">
-      <div className="flex items-start gap-3 px-4 py-3">
+      <div className="flex items-start gap-3 px-4 py-2.5">
         <span className={`mt-0.5 shrink-0 ${tier.text}`}>{tier.icon}</span>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <FindingHeadline open={open} onToggle={() => setOpen((v) => !v)}>
             <span className="text-sm font-medium">{grupo.titulo}</span>
             <span className="text-xs text-faint">{MOMENTO[grupo.momento]}</span>
             {stake && (
@@ -273,50 +308,54 @@ function HallazgoGrupoCard({
                 {stake}
               </span>
             )}
-          </div>
-          <HallazgoGuidance
-            hallazgo={primero}
-            projectId={projectId}
-            accion={accion}
-            onApplied={onApplied}
-          />
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            aria-expanded={expanded}
-            className="mt-1.5 inline-flex items-center gap-1 text-xs text-muted hover:text-foreground"
-          >
-            Ver los {grupo.count} conceptos
-            <CaretDown size={11} weight="bold" className={expanded ? "rotate-180" : ""} />
-          </button>
-          {expanded && (
-            <ul className="mt-1.5 space-y-2 rounded-lg border border-border/60 bg-surface-2/40 p-2">
-              {grupo.miembros.map((h) => {
-                // Skipped for `primero`: its action is already rendered by the
-                // shared guidance above, and printing it twice is a second
-                // button that does the same thing.
-                const suya = h.id === primero.id
-                  ? undefined
-                  : acciones.find((a) => a.hallazgo_id === h.id);
-                return (
-                  <li key={h.id} className="text-sm">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="text-muted">{h.concept_code ?? h.title}</span>
-                      {h.exposicion && (
-                        <span className="tabular text-xs text-faint">{h.exposicion}</span>
-                      )}
-                    </div>
-                    {suya && (
-                      <AccionDeKlave
-                        accion={suya}
-                        projectId={projectId}
-                        onApplied={onApplied}
-                      />
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+          </FindingHeadline>
+          {open && (
+            <>
+              <HallazgoGuidance
+                hallazgo={primero}
+                projectId={projectId}
+                accion={accion}
+                onApplied={onApplied}
+              />
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                aria-expanded={expanded}
+                className="mt-1.5 inline-flex items-center gap-1 text-xs text-muted hover:text-foreground"
+              >
+                Ver los {grupo.count} conceptos
+                <CaretDown size={11} weight="bold" className={expanded ? "rotate-180" : ""} />
+              </button>
+              {expanded && (
+                <ul className="mt-1.5 space-y-2 rounded-lg border border-border/60 bg-surface-2/40 p-2">
+                  {grupo.miembros.map((h) => {
+                    // Skipped for `primero`: its action is already rendered by the
+                    // shared guidance above, and printing it twice is a second
+                    // button that does the same thing.
+                    const suya = h.id === primero.id
+                      ? undefined
+                      : acciones.find((a) => a.hallazgo_id === h.id);
+                    return (
+                      <li key={h.id} className="text-sm">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="text-muted">{h.concept_code ?? h.title}</span>
+                          {h.exposicion && (
+                            <span className="tabular text-xs text-faint">{h.exposicion}</span>
+                          )}
+                        </div>
+                        {suya && (
+                          <AccionDeKlave
+                            accion={suya}
+                            projectId={projectId}
+                            onApplied={onApplied}
+                          />
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </>
           )}
         </div>
         {link && (

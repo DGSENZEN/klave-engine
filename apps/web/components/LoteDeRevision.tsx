@@ -56,21 +56,16 @@ export function LoteDeRevision({
       <div className="flex flex-wrap items-start gap-3">
         <Target size={20} weight="duotone" className="mt-0.5 shrink-0 text-accent" />
         <div className="min-w-0 flex-1">
+          {/* Por qué un lote y no la lista pareja (Wolfe et al., Nature 2005):
+              con 1 % de objetivos la vista pasa por alto el 30 %, y avisarlo
+              no lo corrige. La pantalla da la conclusión, no la cátedra. */}
           <div className="text-sm font-medium">
-            Revisar {pending.length.toLocaleString("es-MX")} elementos parejo no funciona
+            Empieza por {doubtful.length.toLocaleString("es-MX")} de{" "}
+            {pending.length.toLocaleString("es-MX")}: ahí está la duda
           </div>
           <p className="mt-0.5 text-sm text-muted">
-            Cuando lo que falla es raro, la vista se rinde antes de encontrarlo: en las
-            mediciones clásicas de búsqueda visual, con 1 % de objetivos se pasa por alto
-            el 30 %, y avisarlo de antemano no lo corrige.{" "}
-            <span className="text-foreground">
-              Estos {doubtful.length.toLocaleString("es-MX")} concentran la duda
-            </span>{" "}
-            ({(density * 100).toFixed(0)} % de lo pendiente): el motor no está seguro, la
-            lectura es débil, o la cantidad vino de tu historia y no del plano.
-          </p>
-          <p className="mt-1 text-xs text-faint">
-            No se te esconde nada: la lista completa sigue a un clic.
+            Lectura débil, motor inseguro o cantidad tomada de tu historia. En una lista
+            pareja lo raro se pasa por alto; la lista completa sigue a un clic.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">

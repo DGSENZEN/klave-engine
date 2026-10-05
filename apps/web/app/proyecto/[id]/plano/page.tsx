@@ -16,11 +16,13 @@ import {
 } from "@phosphor-icons/react";
 import {
   addAdjustment,
+  ApiError,
   getCatalog,
   frameRenderUrl,
   getCosts,
   getGeometry,
   getGeometryDetections,
+  processProject,
   setDetectionReview,
   type BoqLine,
   type CatalogConcept,
@@ -66,8 +68,11 @@ export default function PlanoPage() {
   const [focusedGeom, setFocusedGeom] = useState<Geometry | null>(null);
   if (geom && geom !== focusedGeom) {
     setFocusedGeom(geom);
-    const first =
-      geom.frames?.find((f) => f.kind === "plan") ?? geom.frames?.[0];
+    const start = defaultSheet(geom);
+    const frames = (geom.frames ?? []).filter(
+      (f) => start === "all" || frameSheet(geom, f) === start,
+    );
+    const first = frames.find((f) => f.kind === "plan") ?? frames[0];
     if (first)
       setFocus((f) => ({ bbox: first.bbox, nonce: (f?.nonce ?? 0) + 1 }));
   }
@@ -78,7 +83,9 @@ export default function PlanoPage() {
   const [selected, setSelected] = useState<DetectionOverlay | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showExcluded, setShowExcluded] = useState(true);
-  const [hiddenSheets, setHiddenSheets] = useState<Set<number>>(new Set());
+  // Una hoja a la vez: las hojas de un juego comparten origen y encimadas no
+  // se leen. null = todavía no eligió nadie (manda el contexto, ver abajo).
+  const [chosenSheet, setChosenSheet] = useState<number | "all" | null>(null);
   const [measureMode, setMeasureMode] = useState<MeasureMode | null>(null);
   const [measurePoints, setMeasurePoints] = useState<[number, number][]>([]);
   const { latestEvent, connectionEpoch, actorName, clientId } =
@@ -124,7 +131,8 @@ export default function PlanoPage() {
     conceptParam && fetchedFocus?.concept === conceptParam
       ? fetchedFocus
       : null;
-  const [geomError, setGeomError] = useState<string | null>(null);
+  const [geomError, setGeomError] = useState<"missing" | "failed" | null>(null);
+  const [reprocessing, setReprocessing] = useState(false);
   const router = useRouter();
 
   // connectionEpoch: a reconnect may have skipped events, so reload everything.
@@ -143,8 +151,13 @@ export default function PlanoPage() {
         );
         setSelected(null);
       })
-      .catch(() => {
-        if (active) setGeomError("No se pudo cargar la geometría del plano.");
+      .catch((err) => {
+        if (!active) return;
+        const missing =
+          err instanceof ApiError &&
+          (err.detail as { error_type?: string } | undefined)?.error_type ===
+            "artifact_not_found";
+        setGeomError(missing ? "missing" : "failed");
       });
     return () => {
       active = false;
@@ -284,6 +297,25 @@ export default function PlanoPage() {
       .sort((a, b) => b.count - a.count);
   }, [geom]);
 
+  // La hoja que se ve: la que eligió la persona; si no, la que contiene lo
+  // que pide la liga (?concept=, ?bbox=); si no, la de más dibujo.
+  const activeSheet = useMemo<number | "all">(() => {
+    if (!geom || (geom.sheets?.length ?? 0) <= 1) return "all";
+    if (chosenSheet !== null) return chosenSheet;
+    if (conceptFocus && conceptFocus.ids.size > 0) {
+      return busiestSheet(geom.detections.filter((d) => conceptFocus.ids.has(d.id)));
+    }
+    if (bboxFit) {
+      const [x0, y0, x1, y1] = bboxFit.bbox;
+      return busiestSheet(
+        geom.detections.filter(
+          (d) => d.bbox[0] < x1 && d.bbox[2] > x0 && d.bbox[1] < y1 && d.bbox[3] > y0,
+        ),
+      );
+    }
+    return defaultSheet(geom);
+  }, [geom, chosenSheet, conceptFocus, bboxFit]);
+
   const canvasGeom = useMemo(() => {
     if (!geom) return geom;
     let detections = geom.detections;
@@ -294,17 +326,13 @@ export default function PlanoPage() {
     if (!showExcluded) {
       detections = detections.filter((d) => d.review !== "excluded");
     }
-    if (hiddenSheets.size > 0) {
-      shapes = shapes.filter(
-        (s) => s.sheet == null || !hiddenSheets.has(s.sheet),
-      );
-      detections = detections.filter(
-        (d) => d.sheet == null || !hiddenSheets.has(d.sheet),
-      );
+    if (activeSheet !== "all") {
+      shapes = shapes.filter((s) => s.sheet == null || s.sheet === activeSheet);
+      detections = detections.filter((d) => d.sheet == null || d.sheet === activeSheet);
     }
     if (detections === geom.detections && shapes === geom.shapes) return geom;
     return { ...geom, detections, shapes };
-  }, [geom, showExcluded, hiddenSheets, conceptFocus]);
+  }, [geom, showExcluded, activeSheet, conceptFocus]);
 
   const visibleCount = useMemo(() => {
     if (!canvasGeom) return 0;
@@ -396,19 +424,37 @@ export default function PlanoPage() {
   }
 
   if (geomError) {
+    // Un archivo que falta no vuelve esperando: se recupera reprocesando.
+    const missing = geomError === "missing";
     return (
       <div className="px-6 py-7 lg:px-8">
         <PageHeader title="Visor del plano" />
         <Callout
-          tone="danger"
+          tone={missing ? "warning" : "danger"}
           action={
-            <Button size="sm" onClick={() => window.location.reload()}>
-              Reintentar
-            </Button>
+            missing ? (
+              <Button
+                size="sm"
+                disabled={reprocessing}
+                onClick={() => {
+                  setReprocessing(true);
+                  processProject(id)
+                    .then(() => router.push(`/proyecto/${id}`))
+                    .catch(() => setReprocessing(false));
+                }}
+              >
+                {reprocessing ? "Encolando…" : "Reprocesar"}
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => window.location.reload()}>
+                Reintentar
+              </Button>
+            )
           }
         >
-          {geomError} Si el proyecto acaba de procesarse, espera unos segundos y
-          reintenta.
+          {missing
+            ? "Esta lectura no guardó el dibujo del plano. Reprocesa el proyecto para volver a verlo."
+            : "No se pudo cargar el dibujo del plano. Si el proyecto acaba de procesarse, espera unos segundos y reintenta."}
         </Callout>
       </div>
     );
@@ -437,7 +483,7 @@ export default function PlanoPage() {
       visibleLayers={visibleLayers}
       minConfidence={minConfidence}
       showExcluded={showExcluded}
-      hiddenSheets={hiddenSheets}
+      activeSheet={activeSheet}
       onToggleFamily={(f) => toggle(visibleFamilies, f, setVisibleFamilies)}
       onToggleLayer={(l) => toggle(visibleLayers, l, setVisibleLayers)}
       onFocusFrame={(bbox) =>
@@ -445,14 +491,11 @@ export default function PlanoPage() {
       }
       onMinConfidence={setMinConfidence}
       onToggleExcluded={() => setShowExcluded((current) => !current)}
-      onToggleSheet={(index) =>
-        setHiddenSheets((current) => {
-          const next = new Set(current);
-          if (next.has(index)) next.delete(index);
-          else next.add(index);
-          return next;
-        })
-      }
+      onSelectSheet={(sheet) => {
+        setChosenSheet(sheet);
+        // Sin encuadre heredado: el lienzo se ajusta a la hoja nueva.
+        setFocus(null);
+      }}
     />
   );
 
@@ -1087,13 +1130,13 @@ function FilterPanel({
   visibleLayers,
   minConfidence,
   showExcluded,
-  hiddenSheets,
+  activeSheet,
   onToggleFamily,
   onToggleLayer,
   onFocusFrame,
   onMinConfidence,
   onToggleExcluded,
-  onToggleSheet,
+  onSelectSheet,
 }: {
   geom: Geometry;
   families: { family: string; count: number }[];
@@ -1101,41 +1144,65 @@ function FilterPanel({
   visibleLayers: Set<string>;
   minConfidence: number;
   showExcluded: boolean;
-  hiddenSheets: Set<number>;
+  activeSheet: number | "all";
   onToggleFamily: (family: string) => void;
   onToggleLayer: (layer: string) => void;
   onFocusFrame: (bbox: [number, number, number, number]) => void;
   projectId: string;
   onMinConfidence: (value: number) => void;
   onToggleExcluded: () => void;
-  onToggleSheet: (index: number) => void;
+  onSelectSheet: (sheet: number | "all") => void;
 }) {
+  const frames = (geom.frames ?? []).filter(
+    (f) => activeSheet === "all" || frameSheet(geom, f) === activeSheet,
+  );
   return (
     <>
       {(geom.sheets?.length ?? 0) > 1 && (
         <>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
-            Hojas ({geom.sheets.length - hiddenSheets.size}/{geom.sheets.length}
-            )
+            Hoja
           </h3>
-          <div className="mb-4 space-y-1">
-            {geom.sheets.map((sheet, index) => (
-              <label
-                key={index}
-                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm transition hover:bg-surface-2"
-              >
-                <Checkbox
-                  checked={!hiddenSheets.has(index)}
-                  onChange={() => onToggleSheet(index)}
-                />
-                <span className="flex-1 truncate" title={sheet.name}>
-                  {sheet.sheet_number ?? sheet.name}
-                </span>
-                <span className="tabular text-xs text-muted">
-                  {sheet.count}
-                </span>
-              </label>
-            ))}
+          <div role="radiogroup" aria-label="Hoja" className="mb-4 space-y-0.5">
+            {[
+              ...geom.sheets.map((sheet, index) => ({
+                key: index as number | "all",
+                label: sheet.sheet_number ?? sheetLabel(sheet.name),
+                title: sheet.name,
+                count: sheet.count,
+              })),
+              {
+                key: "all" as const,
+                label: "Todas, encimadas",
+                title: "Todas las hojas a la vez, en su mismo origen",
+                count: null,
+              },
+            ].map((item) => {
+              const on = activeSheet === item.key;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => onSelectSheet(item.key)}
+                  title={item.title}
+                  className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition ${
+                    on ? "bg-surface-2 font-medium text-foreground" : "text-muted hover:bg-surface-2"
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${on ? "bg-accent" : "bg-transparent"}`}
+                  />
+                  <span className="flex-1 truncate">{item.label}</span>
+                  {item.count != null && (
+                    <span className="tabular text-xs text-faint">
+                      {item.count.toLocaleString("es-MX")}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </>
       )}
@@ -1183,13 +1250,13 @@ function FilterPanel({
         <span className="flex-1">Mostrar excluidas</span>
       </label>
 
-      {(geom.frames ?? []).length > 0 && (
+      {frames.length > 0 && (
         <>
           <h3 className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-muted">
-            Hojas ({(geom.frames ?? []).length})
+            Vistas ({frames.length})
           </h3>
           <div className="space-y-0.5">
-            {(geom.frames ?? []).map((f, i) => (
+            {frames.map((f, i) => (
               <button
                 key={`${f.code}-${i}`}
                 type="button"
@@ -1244,4 +1311,47 @@ function FilterPanel({
       </div>
     </>
   );
+}
+
+type Frame = NonNullable<Geometry["frames"]>[number];
+
+/** La hoja con más dibujo: en un juego de planos, la que importa abrir. */
+function defaultSheet(geom: Geometry): number | "all" {
+  if ((geom.sheets?.length ?? 0) <= 1) return "all";
+  let best = 0;
+  geom.sheets.forEach((sheet, index) => {
+    if (sheet.count > geom.sheets[best].count) best = index;
+  });
+  return best;
+}
+
+/** La hoja donde cae la mayoría de estos elementos; sin hoja, todas. */
+function busiestSheet(detections: DetectionOverlay[]): number | "all" {
+  const counts = new Map<number, number>();
+  for (const d of detections) {
+    if (d.sheet != null) counts.set(d.sheet, (counts.get(d.sheet) ?? 0) + 1);
+  }
+  let best: number | "all" = "all";
+  let max = 0;
+  for (const [sheet, n] of counts) {
+    if (n > max) {
+      max = n;
+      best = sheet;
+    }
+  }
+  return best;
+}
+
+/** A qué hoja pertenece una vista: mismo archivo sin extensión (la vista
+ * sale del .dxf convertido, la hoja se llama como el .dwg subido). */
+function frameSheet(geom: Geometry, frame: Frame): number | null {
+  const stem = (name: string) => (name.split(/[\\/]/).pop() ?? "").replace(/\.[^.]+$/, "");
+  const file = stem(frame.source_file);
+  const index = (geom.sheets ?? []).findIndex((sheet) => stem(sheet.name) === file);
+  return index >= 0 ? index : null;
+}
+
+/** «02-02_estructural_l_04_-_26_01_15.dwg» → «02-02 estructural l 04 - 26 01 15». */
+function sheetLabel(name: string): string {
+  return name.replace(/\.(dwg|dxf)$/i, "").replace(/_/g, " ").replace(/\s+/g, " ").trim();
 }
