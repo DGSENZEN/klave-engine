@@ -104,7 +104,7 @@ import { VigenciaChip, VigenciaSection } from "@/components/VigenciaSection";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 
 type CatalogTab = "insumos" | "conceptos" | "fuentes" | "plantillas" | "salario";
-const TABS: CatalogTab[] = ["insumos", "conceptos", "fuentes", "plantillas", "salario"];
+const TABS: CatalogTab[] = ["conceptos", "insumos", "fuentes", "plantillas", "salario"];
 
 export default function CatalogoPage() {
   const [catalog, setCatalog] = useState<CatalogState | null>(null);
@@ -113,7 +113,9 @@ export default function CatalogoPage() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   // The tab lives in ?tab= so a link can open a section; read after mount
   // (static route, no Suspense) and mirrored with replaceState on change.
-  const [tab, setTabState] = useState<CatalogTab>("insumos");
+  // El camino de v1 empieza por los conceptos: lo que el plano mide y la
+  // oficina cobra. Los insumos, la base y el salario están a una pestaña.
+  const [tab, setTabState] = useState<CatalogTab>("conceptos");
   useEffect(() => {
     const handle = window.setTimeout(() => {
       const param = new URLSearchParams(window.location.search).get("tab");
@@ -123,7 +125,7 @@ export default function CatalogoPage() {
   }, []);
   const setTab = useCallback((next: CatalogTab) => {
     setTabState(next);
-    window.history.replaceState(null, "", next === "insumos" ? "/catalogo" : `/catalogo?tab=${next}`);
+    window.history.replaceState(null, "", next === "conceptos" ? "/catalogo" : `/catalogo?tab=${next}`);
   }, []);
   const fileRef = useRef<HTMLInputElement>(null);
   const matricesRef = useRef<HTMLInputElement>(null);
@@ -404,8 +406,8 @@ export default function CatalogoPage() {
           value={tab}
           onChange={setTab}
           items={[
-            { key: "insumos", label: "Insumos", count: catalog?.insumos.length },
             { key: "conceptos", label: "Conceptos y matrices", count: catalog?.concepts.length },
+            { key: "insumos", label: "Insumos", count: catalog?.insumos.length },
             { key: "fuentes", label: "Base" },
             { key: "plantillas", label: "Plantillas y paramétricos" },
             { key: "salario", label: "Salario real y vigencia" },
