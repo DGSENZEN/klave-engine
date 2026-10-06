@@ -220,6 +220,11 @@ class JobStore:
                 entity_count=len(result.entities),
                 detection_count=len(result.detections),
             )
+            # Ya publicado: con la persona viendo su proyecto, se dibujan los
+            # croquis de los generadores para que la primera exportación no espere.
+            from apps.api.routes.exports import precalentar_croquis
+
+            precalentar_croquis(project_id, settings)
         except ConversionError as exc:
             # Ninguna hoja se pudo convertir: se dice por qué, no un error genérico.
             logger.warning("Sin hojas legibles en %s: %s", project_id, exc)

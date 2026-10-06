@@ -19,6 +19,7 @@ from apps.api.auth.invitations import router as invitations_router
 from apps.api.auth.middleware import AccessControlMiddleware, allowed_origins
 from apps.api.auth.recovery import router as recovery_router
 from apps.api.auth.routes import router as auth_router
+from apps.api.events import BUS
 from apps.api.observability import RequestIdMiddleware
 from apps.api.routes import ai as ai_routes
 from apps.api.routes import (
@@ -36,6 +37,7 @@ from apps.api.routes import (
     health,
     lectura,
     obra,
+    piloto,
     projects,
     propuestas,
     reports,
@@ -127,6 +129,18 @@ def create_app() -> FastAPI:
         except Exception:  # noqa: BLE001 — repair is best-effort at boot
             pass
 
+    # Lo que pasa en cada proyecto queda guardado para medir el piloto.
+    from apps.api.actividad import escucha
+    from apps.api.dependencies import ProjectStore as _Store
+
+    def _control_dir(project_id: str):
+        try:
+            return _Store(settings).get_root(project_id) / settings.processed_dir_name
+        except Exception:  # noqa: BLE001 — un proyecto que ya no existe no se mide
+            return None
+
+    BUS.escuchar("actividad", escucha(_control_dir))
+
     app.include_router(health.router)
     app.include_router(auth_router)
     app.include_router(invitations_router)
@@ -157,6 +171,7 @@ def create_app() -> FastAPI:
     app.include_router(compartido.router)
     app.include_router(compartido.public)
     app.include_router(propuestas.router)
+    app.include_router(piloto.router)
 
     @app.exception_handler(KlaveEngineError)
     async def klave_error_handler(request: Request, exc: KlaveEngineError) -> JSONResponse:

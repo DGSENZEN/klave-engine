@@ -16,6 +16,7 @@ import {
   Scales,
   Wallet,
   Warning,
+  Timer,
 } from "@phosphor-icons/react";
 import type { TableroNodeKey } from "@/lib/api";
 
@@ -123,6 +124,12 @@ export const NODE_NAV: NodeNav[] = [
         label: "Precios unitarios",
         icon: <Calculator size={16} />,
         href: "/apus",
+      },
+      {
+        key: "piloto",
+        label: "Medición del piloto",
+        icon: <Timer size={16} />,
+        href: "/piloto",
       },
     ],
   },

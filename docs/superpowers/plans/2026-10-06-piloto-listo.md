@@ -16,7 +16,7 @@
 ### Task 1: the activity log
 - `apps/api/actividad.py`: `registrar(control_dir, tipo, actor, datos)` appends to `processed/actividad.jsonl`; `EventBus.escuchar(fn)` listeners called after publish; a listener in `main.py` persists project events (not presence/collaborator activity; job updates only when terminal).
 - Exports (`_mark_exported`) record the format.
-- `append_labels` stamps `at` on every label.
+- Labels already carry `at` (no change needed).
 
 ### Task 2: the measurement
 - `costing/piloto.py`: `medir(control_dir, artifacts_dir, labels, actividad, jobs, piloto) -> dict` — inicio, procesamiento (último y total), revisión activa (minutos, sesiones, decisiones), entrega (primera exportación, formatos), por hoja (decisiones and estimated minutes by share of decisions), método anterior and ahorro.

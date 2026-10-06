@@ -31,6 +31,22 @@ XLSX_MEDIA_TYPE = (
 )
 
 
+def precalentar_croquis(project_id: str, settings: Settings) -> int:
+    """Dibuja de antemano los croquis de cada renglón (se guardan con la
+    corrida), para que la primera exportación no espere ~10 s dibujándolos.
+    Lo llama el trabajo de proceso después de publicar; nunca falla."""
+    try:
+        store = ProjectStore(settings)
+        report = CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
+        detections = [
+            Detection.model_validate(d) for d in store.read_artifact(project_id, "detections.json")
+        ]
+        provide = _croquis_provider(store, settings, project_id, detections)
+        return sum(len(provide(line)) for line in report.boq.lines)
+    except Exception:  # noqa: BLE001 — un croquis que falta se dibuja al exportar
+        return 0
+
+
 def _croquis_provider(
     store: ProjectStore, settings: Settings, project_id: str, detections: list[Detection]
 ) -> CroquisProvider:
@@ -129,16 +145,21 @@ def _guard_export(
     return motivo.strip()[:300]
 
 
-def _mark_exported(store: ProjectStore, project_id: str) -> None:
-    """A tiny marker so onboarding can tell a delivery has happened."""
+def _mark_exported(
+    store: ProjectStore, project_id: str, formato: str = "", actor: str | None = None,
+) -> None:
+    """A tiny marker so onboarding can tell a delivery has happened — and an
+    entry in the activity log, so the pilot knows when and in what format."""
     try:
         from datetime import UTC, datetime
 
+        from klave_engine.common.actividad import registrar
         from klave_engine.common.io import write_json
 
         control = store.get_root(project_id) / store.settings.processed_dir_name
         control.mkdir(parents=True, exist_ok=True)
         write_json(control / "last_export.json", {"at": datetime.now(UTC).isoformat()})
+        registrar(control, "export", actor, {"formato": formato})
     except Exception:  # noqa: BLE001 — a marker must never fail an export
         pass
 
@@ -155,7 +176,7 @@ def export_explosion(
     rate_limit(request, "export", max_attempts=60, window_seconds=3600.0)
     _guard_export(store, project_id, settings, motivo)
     manifest = store.get_manifest(project_id)
-    _mark_exported(store, project_id)
+    _mark_exported(store, project_id, "explosion")
     report = CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
     reviews = load_reviews(store.get_root(project_id) / settings.processed_dir_name)
     filename = f"explosion_insumos_{slugify(manifest.project_name)[:40]}.xlsx"
@@ -178,7 +199,7 @@ def export_apus(
     rate_limit(request, "export", max_attempts=60, window_seconds=3600.0)
     _guard_export(store, project_id, settings, motivo)
     manifest = store.get_manifest(project_id)
-    _mark_exported(store, project_id)
+    _mark_exported(store, project_id, "apus")
     report = CostReport.model_validate(store.read_artifact(project_id, "cost_report.json"))
     reviews = load_reviews(store.get_root(project_id) / settings.processed_dir_name)
     filename = f"apus_{slugify(manifest.project_name)[:40]}.xlsx"
@@ -226,7 +247,7 @@ def export_presupuesto(
         if format in ("licitacion", "licitacion_larga") else []
     )
     reason = _guard_export(store, project_id, settings, motivo, extra_blocking=extra)
-    _mark_exported(store, project_id)
+    _mark_exported(store, project_id, format)
     detections = [
         Detection.model_validate(d)
         for d in store.read_artifact(project_id, "detections.json")

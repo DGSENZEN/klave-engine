@@ -132,6 +132,11 @@ def shared_generadores(
         web_origin=settings.web_origin, link_path=link_path,
     )
     filename = f"generadores_{slugify(manifest.project_name)[:40]}.xlsx"
+    # Para el piloto: el otro lado bajó los generadores de la liga.
+    from klave_engine.common.actividad import registrar
+
+    registrar(store.get_root(project_id) / settings.processed_dir_name, "export", None,
+              {"formato": "generadores_compartidos"})
     return Response(
         content=content, media_type=XLSX,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},

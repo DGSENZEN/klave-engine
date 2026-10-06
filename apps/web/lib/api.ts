@@ -3412,3 +3412,42 @@ export const rejectPropuesta = (projectId: string, key: string, actor?: string) 
     {},
     actorClientHeaders(actor, null),
   );
+
+/** La medición del piloto: lo que el proyecto guarda, convertido en tiempos. */
+export type Piloto = {
+  inicio: string | null;
+  procesamiento: { corridas: number; ultima_min: number | null; total_min: number };
+  revision: { minutos_activos: number; sesiones: number; decisiones: number; personas: string[] };
+  entrega: {
+    primera: string | null;
+    minutos_desde_inicio: number | null;
+    formatos: string[];
+    exportaciones: number;
+  };
+  por_hoja: { hoja: string; decisiones: number; minutos_estimados: number }[];
+  minutos_por_hoja: number | null;
+  metodo_anterior: { horas: number | null; horas_klave: number; ahorro_horas: number | null };
+  puerta: {
+    generadores_aceptados: boolean | null;
+    export_importado: boolean | null;
+    notas: string;
+  };
+  como_se_mide: string;
+};
+
+export type PilotoDeclarado = {
+  horas_metodo_anterior: number | null;
+  generadores_aceptados: boolean | null;
+  export_importado: boolean | null;
+  notas: string;
+};
+
+export const getPiloto = (projectId: string) =>
+  getJSON<Piloto>(`/projects/${encodeURIComponent(projectId)}/piloto`);
+
+export const putPiloto = (projectId: string, body: PilotoDeclarado, actor?: string) =>
+  putJSON<Piloto>(
+    `/projects/${encodeURIComponent(projectId)}/piloto`,
+    body,
+    actor ? { "X-Actor": actor } : undefined,
+  );

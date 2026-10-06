@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import PurePath
 from urllib.parse import quote
 
@@ -51,6 +52,21 @@ def element_id(detection: Detection, meters_factor: float | None) -> str:
     return "el_" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
 
 
+@lru_cache(maxsize=4096)
+def _hoja(source: str) -> str:
+    return PurePath(source).name
+
+
+def _ejes_con_nombre(grid_lines: list[Detection]) -> list[Detection]:
+    """Los ejes que el plano nombra (los automáticos no son referencia)."""
+    return [
+        g for g in grid_lines
+        if (g.properties or {}).get("label_source") != "auto" and g.label
+        and (g.properties or {}).get("axis") in ("vertical", "horizontal")
+        and (g.properties or {}).get("coordinate") is not None
+    ]
+
+
 def ejes_cercanos(
     detection: Detection, grid_lines: list[Detection], meters_factor: float | None
 ) -> str:
@@ -58,13 +74,13 @@ def ejes_cercanos(
     factor = meters_factor or 1.0
     radio = EJE_RADIO_M / factor
     cx, cy = _centro(detection)
-    source = PurePath(detection.evidence.source or "").name
+    source = _hoja(detection.evidence.source or "")
     best: dict[str, tuple[float, str]] = {}
     for g in grid_lines:
         props = g.properties or {}
         if props.get("label_source") == "auto" or not g.label:
             continue
-        if PurePath(g.evidence.source or "").name != source:
+        if _hoja(g.evidence.source or "") != source:
             continue
         axis = props.get("axis")
         coord = props.get("coordinate")
@@ -105,14 +121,21 @@ def referencias(
     meters_factor: float | None,
 ) -> dict[str, Referencia]:
     """La referencia de cada detección, por id."""
-    grid = [d for d in detections if d.detection_type == DetectionType.grid_line]
+    # Una sola vez: los ejes nombrados, por hoja (antes se filtraban y se
+    # recalculaba el nombre de la hoja por cada par elemento×eje).
+    por_hoja: dict[str, list[Detection]] = {}
+    for g in _ejes_con_nombre(
+        [d for d in detections if d.detection_type == DetectionType.grid_line]
+    ):
+        por_hoja.setdefault(_hoja(g.evidence.source or ""), []).append(g)
     out: dict[str, Referencia] = {}
     for d in detections:
         out[d.detection_id] = Referencia(
             element_id=element_id(d, meters_factor),
             hoja=PurePath(d.evidence.source or "").stem,
             planta=planta(d, segmentation),
-            ejes=ejes_cercanos(d, grid, meters_factor),
+            ejes=ejes_cercanos(d, por_hoja.get(_hoja(d.evidence.source or ""), []),
+                               meters_factor),
             visor=visor_url(project_id, d),
         )
     return out

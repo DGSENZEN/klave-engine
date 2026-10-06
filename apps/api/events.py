@@ -77,6 +77,9 @@ class EventBus:
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _seq: int = 0
     _events: deque[Event] = field(default_factory=lambda: deque(maxlen=HISTORY_LIMIT))
+    # Quienes guardan lo que pasa (la medición del piloto): se llaman después
+    # de publicar y nunca detienen la publicación.
+    _listeners: dict = field(default_factory=dict)
     # Live SSE subscribers: their wakeup Event mapped to the loop it belongs to.
     _waiters: dict["asyncio.Event", "asyncio.AbstractEventLoop"] = field(
         default_factory=dict
@@ -110,7 +113,17 @@ class EventBus:
                 loop.call_soon_threadsafe(waiter.set)
             except RuntimeError:
                 pass  # loop already closed; unsubscribe races cleanup
+        for listener in list(self._listeners.values()):
+            try:
+                listener(event)
+            except Exception:  # noqa: BLE001 — guardar nunca rompe una publicación
+                pass
         return event
+
+    def escuchar(self, nombre: str, listener) -> None:
+        """Registra (o reemplaza, por nombre) una función que recibe cada
+        evento publicado: crear la app dos veces no duplica lo que se guarda."""
+        self._listeners[nombre] = listener
 
     def latest_seq(self) -> int:
         with self._lock:
