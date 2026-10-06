@@ -1012,6 +1012,36 @@ encuadre de arranque del visor tapaba las ligas `?bbox=` y `?concept=`
 Pendiente: la cabeza de familia (necesita tipo de entidad, prefijo y «dentro
 de muro»), el consentimiento y el pool, el PDF vectorial.
 
+### El lector que aprende · F3b · El lector robusto (2026-10-06, rama `lector-f3b`)
+
+F3a funcionaba, pero sobre una base débil; esta ronda la corrige.
+(1) **Lo no revisado ya no es un «no».** Entrenaba marcando como «no es
+elemento» cada figura que ninguna regla tomó — y entre ellas están justo los
+elementos que debe encontrar. Ahora pesan 0.3 como «probablemente no»; una
+decisión de una persona pesa 5 y reemplaza a la regla (propuesta confirmada,
+detección confirmada o reasignada: elemento; propuesta descartada o
+detección excluida: no). (2) **Ya no calla en lo que vio.** Cada proyecto se
+califica con el pliegue que lo dejó fuera, y un plano subido a otro proyecto
+también (el modelo guarda los sha256 recortados de sus planos, nunca sus
+nombres): Marina estructural pasó de 0 a 20 propuestas, Marina completo —que
+trae el mismo DWG— también. (3) **No adivina:** sin unidades confirmadas o
+con rasgos de otra versión no propone, y lo dice en una línea. (4) **Su
+historial:** cada taller lleva la cuenta de propuestas confirmadas y
+descartadas por versión; con 20 decisiones y menos de 30 % confirmadas, el
+lector se pausa solo para ese taller (catálogo → «El lector», con
+«Reanudar»). Calificar figuras que no propuso no cuenta para la pausa.
+(5) **La vara de las personas:** «Calificar todas las figuras» en Revisión →
+Propuestas lista cada figura con tamaño de elemento en las plantas de
+estructura (Marina: 246); `python -m klave_engine.lector.oro capturar` lleva
+esas decisiones a `evals/lector/<nombre>.json` (clave, rasgos, veredicto),
+que mide la precisión y el alcance de cada versión, frena una promoción que
+los baje y nunca entra al entrenamiento. (6) **Un comando:** `uv run --group
+lector klave train-reader [--promover]` junta los proyectos de la carpeta de
+datos. Modelo `m-20261006-0400` (uno fuera contra las reglas, cota
+pesimista: 0.87 Marina, 0.97 PRUEBA-1). **Falta lo que sólo una persona puede
+dar:** el primer conjunto revisado — calificar las 246 figuras de Marina —;
+hasta entonces nadie sabe cuántas propuestas son elementos de verdad.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
