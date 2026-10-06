@@ -45,11 +45,14 @@ export function PropuestasSection({
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Calificar todas: cada figura con tamaño de elemento, la haya propuesto o
+  // no el lector — así se mide también lo que se le escapa.
+  const [todas, setTodas] = useState(false);
 
   useEffect(() => {
     let alive = true;
     const handle = window.setTimeout(() => {
-      getPropuestas(projectId)
+      getPropuestas(projectId, todas)
         .then((s) => {
           if (!alive) return;
           setState(s);
@@ -61,7 +64,7 @@ export function PropuestasSection({
       alive = false;
       window.clearTimeout(handle);
     };
-  }, [projectId, reloadKey, version]);
+  }, [projectId, reloadKey, version, todas]);
 
   const decidir = async (p: Propuesta, que: "confirmar" | "descartar") => {
     setBusy(p.key);
@@ -96,6 +99,17 @@ export function PropuestasSection({
           Cada decisión, de un lado o del otro, le enseña al lector.
         </p>
       </div>
+      <label className="flex items-center gap-2 text-sm text-muted">
+        <input
+          type="checkbox"
+          checked={todas}
+          onChange={(e) => {
+            setTodas(e.target.checked);
+            setState(null);
+          }}
+        />
+        Calificar todas las figuras, también las que el lector no propuso — para medirlo
+      </label>
       {notice && <Callout tone="info">{notice}</Callout>}
       {error && <Callout tone="danger">{error}</Callout>}
       {failed ? (
@@ -104,17 +118,22 @@ export function PropuestasSection({
         <Skeleton className="h-24" />
       ) : propuestas.length === 0 ? (
         <Callout tone="info">
-          No hay propuestas: el lector no vio nada con forma de elemento fuera de lo que las reglas
-          ya leen, o todo lo que propuso ya se decidió.
+          {todas
+            ? "No quedan figuras por calificar en las plantas de estructura."
+            : "No hay propuestas: el lector no vio nada con forma de elemento fuera de lo que las reglas ya leen, o todo lo que propuso ya se decidió."}
         </Callout>
       ) : (
         <>
-          <Link
-            href={`/proyecto/${projectId}/plano?propuestas=1`}
-            className="text-sm text-accent hover:underline"
-          >
-            Ver las {propuestas.length} en el plano
-          </Link>
+          {todas ? (
+            <p className="text-sm text-muted">{propuestas.length} figuras por calificar</p>
+          ) : (
+            <Link
+              href={`/proyecto/${projectId}/plano?propuestas=1`}
+              className="text-sm text-accent hover:underline"
+            >
+              Ver las {propuestas.length} en el plano
+            </Link>
+          )}
           <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-sm">
               <thead>
@@ -129,6 +148,9 @@ export function PropuestasSection({
                   <tr key={p.key} className="border-t border-border align-top">
                     <Td>
                       <div className="text-foreground first-letter:uppercase">{p.razon}</div>
+                      {p.propuesta === false && (
+                        <div className="text-xs text-faint">El lector no la propuso</div>
+                      )}
                       <Link
                         href={`/proyecto/${projectId}/plano?propuestas=1&bbox=${p.bbox.map((v) => v.toFixed(3)).join(",")}`}
                         className="mt-0.5 block text-xs text-accent hover:underline"

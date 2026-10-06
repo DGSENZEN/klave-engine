@@ -18,7 +18,7 @@ def _filas(n=300):
         f = {"ancho_m": ancho, "alto_m": alto, "proporcion": max(ancho, alto) / min(ancho, alto),
              "dist_eje_m": None if rnd.random() < 0.2 else rnd.uniform(0, 3),
              "repeticion_bloque": rnd.randint(0, 20)}
-        out.append((vector(f), int(ancho < 0.6 and alto < 0.6)))
+        out.append((vector(f), int(ancho < 0.6 and alto < 0.6), 1.0))
     return out
 
 
@@ -29,7 +29,7 @@ def test_python_puro_igual_a_sklearn(tmp_path):
     (tmp_path / "modelo.json").write_text(json.dumps(entrenar.exportar(clf, "t", 0.5)))
     modelo = Modelo.cargar(tmp_path)
     esperado = clf.predict_proba(entrenar._matriz(filas))[:, 1]
-    for (x, _), p in zip(filas, esperado, strict=True):
+    for (x, _, _), p in zip(filas, esperado, strict=True):
         assert modelo.puntuar(x) == pytest.approx(float(p), abs=1e-9)
 
 
@@ -37,9 +37,15 @@ def test_el_activo_carga_y_no_guarda_texto():
     modelo = Modelo.activo()
     assert modelo is not None and modelo.nombres == NOMBRES and 0 < modelo.umbral < 1
     data = json.loads((MODELOS / modelo.version / "modelo.json").read_text())
-    textos = {v for arbol in data["arboles"] for nodo in arbol for v in nodo if isinstance(v, str)}
+    todos = [data["completo"], *data["pliegues"].values()]
+    textos = {v for m in todos for arbol in m["arboles"] for nodo in arbol for v in nodo
+              if isinstance(v, str)}
     assert textos == set() and set(data) == {
-        "version", "rasgos", "base", "arboles", "umbral", "max_por_hoja"}
+        "version", "rasgos", "features_version", "completo", "pliegues", "dibujos", "umbral",
+        "max_por_hoja"}
+    # Los proyectos y sus planos, sólo como hashes.
+    assert all(len(k) == 10 for k in data["pliegues"])
+    assert all(len(h) == 16 for hs in data["dibujos"].values() for h in hs)
 
 
 def test_umbral_y_promocion():

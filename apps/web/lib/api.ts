@@ -3367,12 +3367,31 @@ export type Propuesta = {
   capa: string;
   razon: string;
   modelo: string;
+  /** false: no pasó el umbral; sólo se lista para calificar todas. */
+  propuesta?: boolean;
 };
 
-export const getPropuestas = (projectId: string) =>
+export const getPropuestas = (projectId: string, todas = false) =>
   getJSON<{ familias: string[]; propuestas: Propuesta[] }>(
-    `/projects/${encodeURIComponent(projectId)}/propuestas`,
+    `/projects/${encodeURIComponent(projectId)}/propuestas${todas ? "?todas=1" : ""}`,
   );
+
+/** El lector en este taller: su versión, cuánto se le acepta y si está en pausa. */
+export type LectorEstado = {
+  version: string | null;
+  confirmadas: number;
+  descartadas: number;
+  decisiones: number;
+  desde: string;
+  pausado: boolean;
+  minimo: number;
+  aceptacion_minima: number;
+  por_version: Record<string, { confirmadas: number; descartadas: number }>;
+};
+
+export const getLector = () => getJSON<LectorEstado>("/catalog/lector");
+
+export const resumeLector = () => postJSON<LectorEstado>("/catalog/lector/reanudar", {});
 
 export const confirmPropuesta = (
   projectId: string,

@@ -86,3 +86,19 @@ def demo(project_root: Path) -> None:
 
 if __name__ == "__main__":
     app()
+
+
+@app.command("train-reader")
+def train_reader(
+    projects: list[Path] = typer.Argument(None),  # noqa: B008
+    promover: bool = typer.Option(False, "--promover", help="Activar si pasa las reglas"),
+) -> None:
+    """Entrena el lector con las decisiones de todos los proyectos (necesita el
+    grupo ``lector``: ``uv run --group lector klave train-reader``)."""
+    from klave_engine.common.config import get_settings
+    from klave_engine.lector.entrenar import descubrir, entrenar
+
+    code = entrenar(list(projects or []) or descubrir(get_settings().data_dir), promover,
+                    typer.echo)
+    raise typer.Exit(code=code)
+

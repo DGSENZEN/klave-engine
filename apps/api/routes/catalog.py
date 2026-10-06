@@ -308,6 +308,29 @@ def get_perfil(catalog: CatalogStore = Depends(get_catalog)) -> dict:
     }
 
 
+@router.get("/lector")
+def get_lector(catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    """El lector en este taller: qué versión propone, cuántas de sus propuestas
+    se confirmaron y descartaron, y si está en pausa."""
+    from klave_engine.lector.modelo import Modelo
+    from klave_engine.lector.propuestas import estado_del_taller
+
+    modelo = Modelo.activo()
+    return {"version": modelo.version if modelo else None, **estado_del_taller(catalog)}
+
+
+@router.post("/lector/reanudar")
+def resume_lector(request: Request, catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    """Reanudar: la cuenta empieza de nuevo desde ahora."""
+    from datetime import UTC, datetime
+
+    from klave_engine.lector.propuestas import estado_del_taller
+
+    require_catalog_admin(request)
+    catalog.set_setting("lector_reanudado", {"at": datetime.now(UTC).isoformat()})
+    return estado_del_taller(catalog)
+
+
 @router.delete("/perfil/{clave:path}")
 def forget_perfil(
     request: Request, clave: str, catalog: CatalogStore = Depends(get_catalog)

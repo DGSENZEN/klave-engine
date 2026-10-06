@@ -213,6 +213,13 @@ CREATE TABLE IF NOT EXISTS reference_prices (
 );
 CREATE INDEX IF NOT EXISTS reference_prices_source_clave
     ON reference_prices (source_key, clave);
+CREATE TABLE IF NOT EXISTS lector_decisiones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    version TEXT NOT NULL,
+    key TEXT NOT NULL,
+    accion TEXT NOT NULL,
+    at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS perfil_taller (
     clave TEXT PRIMARY KEY,
     kind TEXT NOT NULL,
@@ -2804,6 +2811,34 @@ class CatalogStore:
         with _LOCK, self._connect() as conn:
             cursor = conn.execute("DELETE FROM inventory_mappings WHERE id = ?", (mapping_id,))
         return cursor.rowcount > 0
+
+    # ---------------------------------------------- el lector: su historial
+
+    def lector_registrar(self, version: str, key: str, accion: str) -> None:
+        """Una decisión de una persona sobre una propuesta del lector."""
+        with _LOCK, self._connect() as conn:
+            conn.execute(
+                "INSERT INTO lector_decisiones (version, key, accion, at) VALUES (?, ?, ?, ?)",
+                (version, key, accion, _now()),
+            )
+
+    def lector_aceptacion(self, desde: str = "") -> dict:
+        """Cuántas propuestas confirmó y descartó este taller desde ``desde``,
+        en total y por versión del modelo."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT version, accion, COUNT(*) AS n FROM lector_decisiones WHERE at >= ? "
+                "GROUP BY version, accion", (desde,),
+            ).fetchall()
+        por_version: dict[str, dict[str, int]] = {}
+        for r in rows:
+            v = por_version.setdefault(r["version"], {"confirmadas": 0, "descartadas": 0})
+            v["confirmadas" if r["accion"] == "confirm_proposal" else "descartadas"] += r["n"]
+        return {
+            "confirmadas": sum(v["confirmadas"] for v in por_version.values()),
+            "descartadas": sum(v["descartadas"] for v in por_version.values()),
+            "por_version": por_version,
+        }
 
     # ---------------------------------------------- el perfil del taller
 

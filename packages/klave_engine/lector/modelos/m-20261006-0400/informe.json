@@ -1,0 +1,51 @@
+{
+  "version": "m-20261006-0400",
+  "umbral": 0.6350669945123097,
+  "precision_objetivo": 0.9,
+  "pesos": {
+    "persona": 5.0,
+    "regla": 1.0,
+    "sin_revisar": 0.3
+  },
+  "ejemplos": {
+    "642708c54f": {
+      "total": 1924,
+      "elementos": 860,
+      "decisiones": 0
+    },
+    "3e90774d90": {
+      "total": 531,
+      "elementos": 321,
+      "decisiones": 0
+    },
+    "0dc8e086fc": {
+      "total": 9,
+      "elementos": 9,
+      "decisiones": 0
+    }
+  },
+  "evaluacion_uno_fuera": {
+    "642708c54f": {
+      "ejemplos": 1924,
+      "elementos": 860,
+      "propuestas": 804,
+      "precision": 0.8731,
+      "alcance": 0.8163
+    },
+    "3e90774d90": {
+      "ejemplos": 531,
+      "elementos": 321,
+      "propuestas": 303,
+      "precision": 0.9703,
+      "alcance": 0.9159
+    },
+    "0dc8e086fc": {
+      "ejemplos": 9,
+      "elementos": 9,
+      "propuestas": 9,
+      "precision": 1.0,
+      "alcance": 1.0
+    }
+  },
+  "revisado_por_personas": {}
+}

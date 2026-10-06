@@ -47,11 +47,14 @@ def razon(f: dict) -> str:
 def proponer(
     candidates: list[dict], modelo: Modelo, factor: float | None, resueltas: set[str],
     plantas: list[tuple[float, float, float, float]] | None = None,
+    todas: bool = False,
 ) -> list[dict]:
     """Las que pasan el umbral en hojas de estructura, las mejores primero, a
     lo más ``max_por_hoja`` por hoja. Sin puntaje en la salida. Si el plano
     trae plantas reconocidas (``plantas``), sólo dentro de ellas: en un
-    detalle o en un corte un recuadro de 30 cm no es un elemento más."""
+    detalle o en un corte un recuadro de 30 cm no es un elemento más.
+    ``todas`` quita el umbral y el tope: para que una persona califique cada
+    figura y el conjunto revisado mida también lo que el lector no propuso."""
     por_hoja: dict[str, list[tuple[float, dict]]] = defaultdict(list)
     estructura: dict[str, bool] = {}
     for cand in candidates:
@@ -72,12 +75,14 @@ def proponer(
         if k in resueltas:
             continue
         s = modelo.puntuar(vector(f))
-        if s >= modelo.umbral:
+        if todas or s >= modelo.umbral:
             por_hoja[cand.get("hoja", "")].append((s, {
                 "key": k, "hoja": cand.get("hoja", ""), "bbox": cand["bbox"],
                 "ancho_m": f["ancho_m"], "alto_m": f["alto_m"], "bloque": cand.get("bloque", ""),
                 "capa": cand.get("capa", ""), "razon": razon(f), "features": f,
                 "features_version": cand.get("features_version"), "modelo": modelo.version,
+                # Si el lector la propuso o sólo se lista para calificar.
+                "propuesta": s >= modelo.umbral,
             }))
     out: list[dict] = []
     for hoja in sorted(por_hoja):
@@ -89,5 +94,51 @@ def proponer(
             if p["key"] not in vistas:
                 vistas.add(p["key"])
                 filas.append(p)
-        out.extend(filas[: modelo.max_por_hoja])
+        out.extend(filas if todas else filas[: modelo.max_por_hoja])
     return out
+
+
+# Un taller que descarta casi todo lo que el lector propone deja de recibir
+# propuestas hasta que alguien lo reanude: proponer de más cuesta revisión.
+PAUSA_MIN_DECISIONES = 20
+PAUSA_ACEPTACION = 0.30
+
+
+def estado_del_taller(store) -> dict:
+    """La aceptación del taller desde su última reanudación, y si está en pausa."""
+    desde = (store.get_setting("lector_reanudado") or {}).get("at", "")
+    acept = store.lector_aceptacion(desde)
+    total = acept["confirmadas"] + acept["descartadas"]
+    pausado = total >= PAUSA_MIN_DECISIONES and acept["confirmadas"] / total < PAUSA_ACEPTACION
+    return {**acept, "desde": desde, "decisiones": total, "pausado": pausado,
+            "minimo": PAUSA_MIN_DECISIONES, "aceptacion_minima": PAUSA_ACEPTACION}
+
+
+def de_la_corrida(
+    candidates: list[dict], modelo: Modelo, factor: float | None, project_id: str,
+    planos: set[str], resueltas: set[str],
+    plantas: list[tuple[float, float, float, float]], estado: dict,
+) -> tuple[list[dict], list[str]]:
+    """Las propuestas de un proceso y lo que se dice de ellas. El lector no
+    adivina: sin metros, con rasgos de otra versión o con el taller en pausa,
+    no propone y dice por qué."""
+    versiones = {c.get("features_version") for c in candidates} - {None}
+    if factor is None:
+        return [], ["El lector no propone: las unidades del dibujo no están confirmadas."]
+    if versiones and versiones != {modelo.features_version}:
+        return [], [
+            f"El lector no propone: su modelo ({modelo.version}) se entrenó con otra versión "
+            "de los rasgos; hay que reentrenarlo."
+        ]
+    if estado.get("pausado"):
+        return [], [
+            f"El lector está en pausa para este taller: de sus últimas {estado['decisiones']} "
+            f"propuestas, se confirmaron {estado['confirmadas']}. Se reanuda desde el catálogo."
+        ]
+    out = proponer(candidates, modelo.para(project_id, planos), factor, resueltas, plantas)
+    if not out:
+        return [], []
+    return out, [
+        f"El lector propone {len(out)} elementos que ninguna regla tomó: están punteados en "
+        "el plano y en Revisión → Propuestas, y no cuentan hasta que alguien diga qué son."
+    ]

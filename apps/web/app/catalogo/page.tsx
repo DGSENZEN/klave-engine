@@ -1,5 +1,6 @@
 "use client";
 
+import { LectorSection } from "@/components/LectorSection";
 import { PerfilTallerSection } from "@/components/PerfilTallerSection";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -450,6 +451,7 @@ export default function CatalogoPage() {
           <>
             <PlantillasSection onChanged={reload} onError={setError} onNotice={setNotice} />
             <PerfilTallerSection onError={setError} onNotice={setNotice} />
+            <LectorSection onError={setError} onNotice={setNotice} />
           </>
         ) : (
           <>

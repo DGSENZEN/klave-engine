@@ -8,7 +8,7 @@ import json
 from klave_engine.costing.etiquetas import read_labels
 from klave_engine.costing.reviews import load_reviews
 from klave_engine.lector.modelo import Modelo
-from klave_engine.lector.propuestas import clave, proponer
+from klave_engine.lector.propuestas import clave, de_la_corrida, proponer
 
 # Un árbol: ancho ≤ 0.5 m → +4 (elemento), si no → -4.
 MODELO = Modelo(version="t", nombres=("a",) * 6, base=0.0,
@@ -90,3 +90,45 @@ def test_confirmar_y_descartar(data_dir, monkeypatch):
     acciones = [lab["action"] for lab in read_labels(processed) if lab.get("kind") == "propuesta"]
     assert acciones == ["confirm_proposal", "reject_proposal"]
     assert client.post(f"/projects/{pid}/propuestas/{k1}/descartar").status_code == 404
+
+
+def test_el_lector_no_adivina():
+    cands = [{**_cand(0, 0.3), "features_version": 1}]
+    args = ("obra", set(), set(), [])
+    sin_unidades = de_la_corrida(cands, MODELO, None, *args, {})
+    assert sin_unidades[0] == [] and "unidades" in sin_unidades[1][0]
+    otra = de_la_corrida([{**cands[0], "features_version": 2}], MODELO, 1.0, *args, {})
+    assert otra[0] == [] and "reentrenarlo" in otra[1][0]
+    pausa = de_la_corrida(cands, MODELO, 1.0, *args,
+                          {"pausado": True, "decisiones": 20, "confirmadas": 2})
+    assert pausa[0] == [] and "pausa" in pausa[1][0]
+    ok = de_la_corrida(cands, MODELO, 1.0, *args, {})
+    assert len(ok[0]) == 1 and "propone 1" in ok[1][0]
+
+
+def test_calificar_todas_no_cuenta_para_la_pausa(data_dir, monkeypatch):
+    from fastapi.testclient import TestClient
+    from klave_engine.common import config as config_module
+    from klave_engine.costing.catalog_store import get_catalog_store
+    from klave_engine.lector import modelo as modelo_mod
+
+    from apps.api.main import create_app
+
+    config_module.get_settings.cache_clear()
+    pid, processed, props = _project(data_dir)
+    (processed / "propuestas.json").write_text("[]")
+    # Una figura que no pasa el umbral (1.2 m) y otra que sí, para calificar.
+    cands = [{**_cand(3, 1.2), "features_version": 1}, {**_cand(5, 0.3), "features_version": 1}]
+    (processed / "candidates.jsonl").write_text("\n".join(json.dumps(c) for c in cands))
+    monkeypatch.setattr(modelo_mod, "_activo", lambda: MODELO)
+    client = TestClient(create_app())
+    todas = client.get(f"/projects/{pid}/propuestas?todas=1").json()["propuestas"]
+    assert [p["propuesta"] for p in todas] == [True, False]
+    assert client.get(f"/projects/{pid}/propuestas").json()["propuestas"] == []
+    for p in todas:
+        r = client.post(f"/projects/{pid}/propuestas/{p['key']}/descartar")
+        assert r.status_code == 200, r.text
+    estado = client.get("/catalog/lector").json()
+    assert (estado["descartadas"], estado["confirmadas"]) == (1, 0)  # sólo la propuesta
+    assert get_catalog_store(data_dir).lector_aceptacion()["descartadas"] == 1
+    assert client.post("/catalog/lector/reanudar").json()["decisiones"] == 0

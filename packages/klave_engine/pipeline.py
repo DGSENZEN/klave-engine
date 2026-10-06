@@ -68,7 +68,12 @@ from klave_engine.ingestion.manifest import (
 )
 from klave_engine.ingestion.project_loader import ingest_project
 from klave_engine.lector.modelo import Modelo
-from klave_engine.lector.propuestas import PROPUESTAS_FILENAME, claves_resueltas, proponer
+from klave_engine.lector.propuestas import (
+    PROPUESTAS_FILENAME,
+    claves_resueltas,
+    de_la_corrida,
+    estado_del_taller,
+)
 from klave_engine.llm.service import ai_element_specs, load_ai_reads
 from klave_engine.risks.report import risk_report_to_markdown
 from klave_engine.risks.rules import RiskReport, generate_risk_report
@@ -620,17 +625,14 @@ def run_full_pipeline(
     modelo_lector = Modelo.activo() if perfil_del_taller else None
     propuestas: list[dict] = []
     if modelo_lector is not None:
-        propuestas = proponer(
-            candidatos_hoja, modelo_lector, units.to_meters(),
+        propuestas, avisos = de_la_corrida(
+            candidatos_hoja, modelo_lector, units.to_meters(), manifest.project_id,
+            set(_input_hashes(manifest)["files"].values()),
             claves_resueltas(read_labels(control_dir)),
             [v.bbox for v in segmentation.structural_plan_views() if v.bbox],
+            estado_del_taller(catalog_store),
         )
-        if propuestas:
-            result.warnings.append(
-                f"El lector propone {len(propuestas)} elementos que ninguna regla tomó: están "
-                "punteados en el plano y en Revisión → Propuestas, y no cuentan hasta que "
-                "alguien diga qué son."
-            )
+        result.warnings.extend(avisos)
     write_json(processed / PROPUESTAS_FILENAME, propuestas)
     log_stage(
         logger,

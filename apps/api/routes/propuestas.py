@@ -5,16 +5,20 @@ nota —; las dos decisiones quedan como etiqueta y la propuesta no vuelve."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from klave_engine.common.config import Settings
 from klave_engine.common.ids import short_uuid
 from klave_engine.costing.etiquetas import read_labels
 from klave_engine.costing.perfil import etiquetar_y_aprender
 from klave_engine.costing.reviews import OmittedElement, load_reviews, save_reviews
-from klave_engine.lector.propuestas import PROPUESTAS_FILENAME, claves_resueltas
+from klave_engine.detection.views import SheetSegmentation
+from klave_engine.dxf.units import DrawingUnits
+from klave_engine.lector.modelo import Modelo
+from klave_engine.lector.propuestas import PROPUESTAS_FILENAME, claves_resueltas, proponer
 from pydantic import BaseModel, Field
 
 from apps.api.dependencies import ProjectStore, get_settings, get_store, project_recompute_lock
@@ -43,8 +47,40 @@ def _pendientes(store: ProjectStore, settings: Settings, project_id: str) -> lis
     return [p for p in propuestas if p["key"] not in resueltas]
 
 
+def _todas(store: ProjectStore, settings: Settings, project_id: str) -> list[dict]:
+    """Cada figura con tamaño de elemento en las plantas de estructura, sin
+    umbral ni tope, las más parecidas primero: para calificarlas todas."""
+    modelo = Modelo.activo()
+    root = store.artifact_root(project_id)
+    path = root / "candidates.jsonl"
+    if modelo is None or not path.exists():
+        return []
+    candidatos = [json.loads(line) for line in path.read_text("utf-8").splitlines() if line]
+    try:
+        factor = DrawingUnits.model_validate(
+            store.read_artifact(project_id, "drawing_units.json")).to_meters()
+    except HTTPException:
+        factor = None
+    try:
+        seg = SheetSegmentation.model_validate(store.read_artifact(project_id, "views.json"))
+        plantas = [v.bbox for v in seg.structural_plan_views() if v.bbox]
+    except HTTPException:
+        plantas = []
+    if factor is None:
+        return []
+    control_dir = store.get_root(project_id) / settings.processed_dir_name
+    try:
+        planos = set(store.read_artifact(project_id, "inputs.json").get("files", {}).values())
+    except HTTPException:
+        planos = set()
+    return proponer(candidatos, modelo.para(project_id, planos), factor,
+                    claves_resueltas(read_labels(control_dir)), plantas, todas=True)
+
+
 def _buscar(store: ProjectStore, settings: Settings, project_id: str, key: str) -> dict:
     hit = next((p for p in _pendientes(store, settings, project_id) if p["key"] == key), None)
+    if hit is None:
+        hit = next((p for p in _todas(store, settings, project_id) if p["key"] == key), None)
     if hit is None:
         raise HTTPException(status_code=404, detail={
             "error_type": "propuesta_not_found",
@@ -53,13 +89,25 @@ def _buscar(store: ProjectStore, settings: Settings, project_id: str, key: str) 
     return hit
 
 
+def _registrar(settings: Settings, project_id: str, p: dict, accion: str) -> None:
+    """El historial del taller: cuántas propuestas acepta (y cuándo pausar)."""
+    store = _perfil_store(settings, project_id)
+    # Sólo cuenta lo que el lector propuso: calificar las demás no lo juzga.
+    if store is not None and p.get("modelo") and p.get("propuesta", True):
+        try:
+            store.lector_registrar(str(p["modelo"]), p["key"], accion)
+        except Exception:  # noqa: BLE001 — el historial es un extra; la decisión ya quedó
+            pass
+
+
 @router.get("/{project_id}/propuestas")
 def list_propuestas(
     project_id: str,
+    todas: bool = Query(default=False),
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    pendientes = _pendientes(store, settings, project_id)
+    pendientes = (_todas if todas else _pendientes)(store, settings, project_id)
     return {
         "familias": list(FAMILIAS),
         "propuestas": [{k: v for k, v in p.items() if k != "features"} for p in pendientes],
@@ -70,7 +118,8 @@ def _etiqueta(p: dict, action: str, verdict: str, actor: str, note: str) -> dict
     return {"kind": "propuesta", "key": p["key"], "action": action, "verdict": verdict,
             "actor": actor, "note": note[:300], "bloque": p.get("bloque", ""),
             "features": p.get("features") or {}, "features_version": p.get("features_version"),
-            "proposals": {"model": "elemento", "model_version": p.get("modelo")}}
+            "proposals": {"model": "elemento" if p.get("propuesta", True) else None,
+                          "model_version": p.get("modelo")}}
 
 
 @router.post("/{project_id}/propuestas/{key}/confirmar")
@@ -113,6 +162,7 @@ def confirm_propuesta(
         etiquetar_y_aprender(control_dir, [_etiqueta(p, "confirm_proposal", family, actor,
                                                       body.note)],
                              _perfil_store(settings, project_id))
+        _registrar(settings, project_id, p, "confirm_proposal")
         _recompute_after_review(
             store, settings, project_id, actor, clean_client_id(x_client_id),
             "proposal_confirmed", family,
@@ -135,4 +185,5 @@ def reject_propuesta(
         etiquetar_y_aprender(control_dir, [_etiqueta(p, "reject_proposal", "no_es_elemento",
                                                       actor, "")],
                              _perfil_store(settings, project_id))
+        _registrar(settings, project_id, p, "reject_proposal")
     return {"ok": True, "key": key}
