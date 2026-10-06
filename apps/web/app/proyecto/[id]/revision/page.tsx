@@ -49,6 +49,7 @@ import {
 import { FAMILIES, FAMILY_LABELS } from "@/lib/families";
 import { isDoubtful, LoteDeRevision } from "@/components/LoteDeRevision";
 import { FAMILIES as OMITTED_FAMILIES, OmittedSection } from "@/components/OmittedSection";
+import { PropuestasSection } from "@/components/PropuestasSection";
 import { VariantesSection } from "@/components/VariantesSection";
 import { useProjectLive } from "@/components/ProjectLive";
 
@@ -321,6 +322,7 @@ export default function RevisionPage() {
           },
           { key: "catalogo", label: "Tu catálogo" },
           { key: "omitidos", label: "Lo que Klave no vio" },
+          { key: "propuestas", label: "Propuestas del lector" },
           { key: "conteo", label: "Cuántos hay dibujados" },
         ]}
       />
@@ -743,6 +745,17 @@ export default function RevisionPage() {
         />
       </div>
 
+      <div className={tab !== "propuestas" ? "hidden" : ""}>
+        {tab === "propuestas" && (
+          <PropuestasSection
+            projectId={id}
+            actorName={actorName}
+            clientId={clientId}
+            reloadKey={latestEvent?.seq}
+          />
+        )}
+      </div>
+
       <div className={tab !== "conteo" ? "hidden" : ""}>
         <ConteoSection
           projectId={id}
@@ -757,7 +770,7 @@ export default function RevisionPage() {
 
 const PAGE_SIZE = 500;
 
-const REVISION_TABS = ["elementos", "catalogo", "omitidos", "conteo"] as const;
+const REVISION_TABS = ["elementos", "catalogo", "omitidos", "propuestas", "conteo"] as const;
 type RevisionTab = (typeof REVISION_TABS)[number];
 
 type SortKey =

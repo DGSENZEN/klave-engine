@@ -59,8 +59,8 @@ export function PerfilTallerSection({
   return (
     <section className="mt-8 space-y-3">
       <div>
-        <h2 className="text-base font-semibold text-[var(--text)]">Lo que tu taller enseñó</h2>
-        <p className="mt-1 max-w-2xl text-sm text-[var(--text-muted)]">
+        <h2 className="text-base font-semibold text-foreground">Lo que tu taller enseñó</h2>
+        <p className="mt-1 max-w-2xl text-sm text-muted">
           Cada vez que alguien confirma, excluye o reasigna un elemento en Revisión, Klave anota el
           bloque y la capa con que estaba dibujado. Con {state?.firme ?? 3} a favor y ninguna en
           contra, un bloque de castillo, columna o pilote entra solo a la lectura del siguiente
@@ -77,7 +77,7 @@ export function PerfilTallerSection({
           Aún no hay nada. Se llena solo conforme tu taller revisa sus planos.
         </Callout>
       ) : (
-        <div className="overflow-x-auto rounded-md border border-[var(--border)]">
+        <div className="overflow-x-auto rounded-md border border-border">
           <table className="w-full text-sm">
             <thead>
               <tr>
@@ -91,9 +91,9 @@ export function PerfilTallerSection({
             </thead>
             <tbody>
               {state.entradas.map((e) => (
-                <tr key={e.clave} className="border-t border-[var(--border)]">
+                <tr key={e.clave} className="border-t border-border">
                   <Td>
-                    <span className="text-[var(--text-muted)]">{e.kind === "bloque" ? "Bloque" : "Capa"}</span>{" "}
+                    <span className="text-muted">{e.kind === "bloque" ? "Bloque" : "Capa"}</span>{" "}
                     <span className="font-mono">{e.value}</span>
                   </Td>
                   <Td>{e.family || e.detection_type}</Td>

@@ -3355,3 +3355,41 @@ export const getPerfil = () =>
 
 export const forgetPerfil = (clave: string) =>
   deleteJSON<{ ok: boolean }>(`/catalog/perfil/${encodeURIComponent(clave)}`);
+
+/** Lo que ninguna regla tomó y se parece a lo que sí lee. Nunca cuenta solo. */
+export type Propuesta = {
+  key: string;
+  hoja: string;
+  bbox: number[];
+  ancho_m: number;
+  alto_m: number;
+  bloque: string;
+  capa: string;
+  razon: string;
+  modelo: string;
+};
+
+export const getPropuestas = (projectId: string) =>
+  getJSON<{ familias: string[]; propuestas: Propuesta[] }>(
+    `/projects/${encodeURIComponent(projectId)}/propuestas`,
+  );
+
+export const confirmPropuesta = (
+  projectId: string,
+  key: string,
+  family: string,
+  actor?: string,
+  clientId?: string | null,
+) =>
+  postJSON<ProjectReviews>(
+    `/projects/${encodeURIComponent(projectId)}/propuestas/${encodeURIComponent(key)}/confirmar`,
+    { family },
+    actorClientHeaders(actor, clientId),
+  );
+
+export const rejectPropuesta = (projectId: string, key: string, actor?: string) =>
+  postJSON<{ ok: boolean }>(
+    `/projects/${encodeURIComponent(projectId)}/propuestas/${encodeURIComponent(key)}/descartar`,
+    {},
+    actorClientHeaders(actor, null),
+  );

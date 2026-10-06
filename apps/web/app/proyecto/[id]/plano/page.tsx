@@ -23,7 +23,9 @@ import {
   getGeometry,
   getGeometryDetections,
   getCambios,
+  getPropuestas,
   type CambiosState,
+  type Propuesta,
   processProject,
   setDetectionReview,
   type BoqLine,
@@ -57,6 +59,9 @@ import { useProjectLive } from "@/components/ProjectLive";
 import { useCostReport } from "@/lib/useProjectReport";
 import { ConceptPicker } from "@/components/ConceptPicker";
 
+// Lo que propone el lector: un violeta que no es ninguno de los cambios.
+const PROPUESTA_COLOR = "#7c3aed";
+
 export default function PlanoPage() {
   const { id } = useParams<{ id: string }>();
   const [geom, setGeom] = useState<Geometry | null>(null);
@@ -64,6 +69,9 @@ export default function PlanoPage() {
   const [focus, setFocus] = useState<{
     bbox: [number, number, number, number];
     nonce: number;
+    // El encuadre de arranque (la primera planta) cede ante lo que pide la
+    // liga (?bbox=, ?concept=); el que elige la persona, no.
+    auto?: boolean;
   } | null>(null);
   // Open on the first planta when the drawing is a set of tiled sheets
   // (render-time adjust: no effect, no extra frame).
@@ -76,7 +84,7 @@ export default function PlanoPage() {
     );
     const first = frames.find((f) => f.kind === "plan") ?? frames[0];
     if (first)
-      setFocus((f) => ({ bbox: first.bbox, nonce: (f?.nonce ?? 0) + 1 }));
+      setFocus((f) => ({ bbox: first.bbox, nonce: (f?.nonce ?? 0) + 1, auto: true }));
   }
   const [visibleFamilies, setVisibleFamilies] = useState<Set<string>>(
     new Set(),
@@ -134,7 +142,24 @@ export default function PlanoPage() {
     }
     return map;
   }, [cambiosVista]);
-  const ghosts = useMemo(
+  // ?propuestas=1: lo que propone el lector, punteado y sin contar.
+  const propuestasParam = searchParams.get("propuestas") === "1";
+  const [propuestas, setPropuestas] = useState<Propuesta[] | null>(null);
+  useEffect(() => {
+    if (!propuestasParam) return;
+    let alive = true;
+    const handle = window.setTimeout(() => {
+      getPropuestas(id)
+        .then((r) => alive && setPropuestas(r.propuestas))
+        .catch(() => alive && setPropuestas(null));
+    }, 0);
+    return () => {
+      alive = false;
+      window.clearTimeout(handle);
+    };
+  }, [id, propuestasParam]);
+  const propuestasVista = propuestasParam ? propuestas : null;
+  const ghostsCambios = useMemo(
     () =>
       cambiosVista
         ? cambiosVista.elementos
@@ -372,6 +397,18 @@ export default function PlanoPage() {
     if (detections === geom.detections && shapes === geom.shapes) return geom;
     return { ...geom, detections, shapes };
   }, [geom, showExcluded, activeSheet, conceptFocus]);
+
+  const propuestasHoja = useMemo(() => {
+    if (!propuestasVista) return null;
+    if (activeSheet === "all" || !geom) return propuestasVista;
+    const nombre = (geom.sheets[activeSheet]?.name ?? "").split(/[\\/]/).pop();
+    return propuestasVista.filter((p) => p.hoja === nombre);
+  }, [propuestasVista, activeSheet, geom]);
+  const ghosts = useMemo(() => {
+    const out = [...(ghostsCambios ?? [])];
+    for (const p of propuestasHoja ?? []) out.push({ bbox: p.bbox, color: PROPUESTA_COLOR });
+    return out.length ? out : null;
+  }, [ghostsCambios, propuestasHoja]);
 
   const visibleCount = useMemo(() => {
     if (!canvasGeom) return 0;
@@ -627,7 +664,7 @@ export default function PlanoPage() {
             onWorldClick={(point) =>
               setMeasurePoints((current) => [...current, point])
             }
-            focus={focus ?? conceptFit ?? bboxFit}
+            focus={(focus && !focus.auto ? focus : null) ?? conceptFit ?? bboxFit ?? focus}
             highlight={highlight}
             ghosts={ghosts}
           />
@@ -642,6 +679,20 @@ export default function PlanoPage() {
                 <span style={{ color: "#c2410c" }}>■ modificado {cambiosVista.resumen.modificado ?? 0}</span>
                 <span style={{ color: "#b4382f" }}>┅ eliminado {cambiosVista.resumen.eliminado ?? 0}</span>
               </div>
+            </div>
+          )}
+          {propuestasHoja && (
+            <div className="absolute bottom-4 right-4 z-10 max-w-xs rounded-lg border border-border bg-surface/95 px-3 py-2 text-xs shadow-sm">
+              <div className="font-medium" style={{ color: PROPUESTA_COLOR }}>
+                ┅ {propuestasHoja.length} propuestas del lector en esta hoja
+              </div>
+              <p className="mt-1 text-muted">
+                No cuentan hasta que alguien diga qué son, en{" "}
+                <Link href={`/proyecto/${id}/revision?tab=propuestas`} className="text-accent hover:underline">
+                  Revisión → Propuestas
+                </Link>
+                .
+              </p>
             </div>
           )}
           {geom.detections.length === 0 && !measureMode && (

@@ -68,6 +68,14 @@ def aprender(store: CatalogStore, records: Iterable[dict], candidates: list[dict
                     store.perfil_registrar("bloque", bloque, tipo, el.get("family") or "",
                                            en_contra=1)
                 contadas += 1
+        elif accion == "confirm_proposal" and rec.get("bloque"):
+            familia = str(rec.get("verdict") or "")
+            if familia in FAMILY_TYPES:
+                store.perfil_registrar(
+                    "bloque", str(rec["bloque"]), FAMILY_TYPES[familia].value, familia,
+                    a_favor=1,
+                )
+                contadas += 1
         elif accion == "add_missed" and rec.get("bbox"):
             familia = str(rec.get("verdict") or "")
             caja = rec["bbox"]

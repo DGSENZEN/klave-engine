@@ -37,6 +37,7 @@ from apps.api.routes import (
     lectura,
     obra,
     projects,
+    propuestas,
     reports,
     reviews,
     tablero,
@@ -155,6 +156,7 @@ def create_app() -> FastAPI:
     app.include_router(cambios.router)
     app.include_router(compartido.router)
     app.include_router(compartido.public)
+    app.include_router(propuestas.router)
 
     @app.exception_handler(KlaveEngineError)
     async def klave_error_handler(request: Request, exc: KlaveEngineError) -> JSONResponse:

@@ -1,0 +1,42 @@
+{
+  "version": "m-20261006-0340",
+  "umbral": 0.5945056362061216,
+  "precision_objetivo": 0.9,
+  "ejemplos": {
+    "642708c54f": {
+      "total": 1924,
+      "elementos": 860
+    },
+    "3e90774d90": {
+      "total": 531,
+      "elementos": 321
+    },
+    "0dc8e086fc": {
+      "total": 9,
+      "elementos": 9
+    }
+  },
+  "evaluacion_uno_fuera": {
+    "642708c54f": {
+      "ejemplos": 1924,
+      "elementos": 860,
+      "propuestas": 826,
+      "precision": 0.8741,
+      "alcance": 0.8395
+    },
+    "3e90774d90": {
+      "ejemplos": 531,
+      "elementos": 321,
+      "propuestas": 299,
+      "precision": 0.9699,
+      "alcance": 0.9034
+    },
+    "0dc8e086fc": {
+      "ejemplos": 9,
+      "elementos": 9,
+      "propuestas": 9,
+      "precision": 1.0,
+      "alcance": 1.0
+    }
+  }
+}

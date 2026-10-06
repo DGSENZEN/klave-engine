@@ -19,6 +19,7 @@ from klave_engine.common.logging import configure_logging, get_logger, log_stage
 from klave_engine.common.version import engine_stamp
 from klave_engine.conversion.dwg_to_dxf import ConversionResult, convert_project
 from klave_engine.costing.catalog_store import CatalogStore, get_catalog_store
+from klave_engine.costing.etiquetas import read_labels
 from klave_engine.costing.hallazgos import promote_detection_warnings
 from klave_engine.costing.insumos import apply_price_overrides
 from klave_engine.costing.models import CostingConfig, CostReport
@@ -66,6 +67,8 @@ from klave_engine.ingestion.manifest import (
     save_manifest,
 )
 from klave_engine.ingestion.project_loader import ingest_project
+from klave_engine.lector.modelo import Modelo
+from klave_engine.lector.propuestas import PROPUESTAS_FILENAME, claves_resueltas, proponer
 from klave_engine.llm.service import ai_element_specs, load_ai_reads
 from klave_engine.risks.report import risk_report_to_markdown
 from klave_engine.risks.rules import RiskReport, generate_risk_report
@@ -612,6 +615,23 @@ def run_full_pipeline(
             )
     write_json(processed / "detections.json", result.detections)
     write_candidates(processed, candidatos_hoja)
+    # Las propuestas del lector: lo que ninguna regla tomó y se parece a lo
+    # que sí lee. Punteadas, aparte, y sin contar hasta que alguien diga qué son.
+    modelo_lector = Modelo.activo() if perfil_del_taller else None
+    propuestas: list[dict] = []
+    if modelo_lector is not None:
+        propuestas = proponer(
+            candidatos_hoja, modelo_lector, units.to_meters(),
+            claves_resueltas(read_labels(control_dir)),
+            [v.bbox for v in segmentation.structural_plan_views() if v.bbox],
+        )
+        if propuestas:
+            result.warnings.append(
+                f"El lector propone {len(propuestas)} elementos que ninguna regla tomó: están "
+                "punteados en el plano y en Revisión → Propuestas, y no cuentan hasta que "
+                "alguien diga qué son."
+            )
+    write_json(processed / PROPUESTAS_FILENAME, propuestas)
     log_stage(
         logger,
         "views_segmented",
