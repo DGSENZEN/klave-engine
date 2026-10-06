@@ -980,6 +980,38 @@ medir sólo el motor. Nada de esto sale del taller; deshacer una revisión no
 resta su voto — para eso está «Olvidar». Pendiente para F3: el modelo, la
 duda con sus dos razones y el consentimiento para compartir.
 
+### El lector que aprende · F3a · «Aquí hay un elemento» (2026-10-06, rama `lector-f3a`)
+
+S0 midió que la forma cruza de un plano a otro y los nombres no; esta ronda
+lo usa. Un modelo pequeño — árboles de decisión entrenados fuera de línea
+(`python -m klave_engine.lector.entrenar`, grupo `lector` con scikit-learn) y
+leídos en Python puro, sin dependencia nueva en el servidor — ordena los
+candidatos que ninguna regla tomó por seis rasgos: ancho, alto, proporción,
+área, distancia al eje y repetición del bloque. Lo que se parece a lo que las
+reglas sí leen queda en `propuestas.json`: sólo en plantas de hojas de
+estructura (en un detalle o en una hoja de acabados un recuadro de 30 cm es
+otra cosa), una por lugar, a lo más 25 por hoja, con su razón en palabras y
+sin número. Se ven punteadas en violeta en el visor (`?propuestas=1`) y en
+Revisión → «Propuestas del lector»: «Es un elemento» (castillo, columna,
+pilote o zapata) entra por «Lo que Klave no vio» con la medida del recuadro
+y lo dice en la nota; «No es elemento» la quita. Las dos son etiqueta, no
+vuelven a proponerse y la confirmación enseña al perfil del taller su bloque.
+Ninguna cantidad se mueve sin una persona; el gold no cambia.
+
+Modelo `m-20261006-0340`, dejando un proyecto fuera cada vez: de lo que pasa
+el umbral, 0.87 en Marina y 0.97 en PRUEBA-1 son elementos — **según las
+reglas**. Sobre nuestros tres juegos no propone nada (los vio todos al
+entrenar); simulando una oficina nueva (entrenado sin Marina) propone 21 en la
+hoja estructural de Marina: los primeros son castillos de 0.20 × 0.30 m en
+EST-CASTILLOS junto a su marca K-5 que la regla no ligó; muchos otros son
+recuadros de detalle dibujados dentro de la planta. Cuántas propuestas son
+elementos de verdad sólo lo dirán las decisiones de la gente — cada una
+vuelve al entrenamiento. Al verificarlo apareció un error de antes: el
+encuadre de arranque del visor tapaba las ligas `?bbox=` y `?concept=`
+(los renglones de Revisión abrían el plano completo); ya encuadran.
+Pendiente: la cabeza de familia (necesita tipo de entidad, prefijo y «dentro
+de muro»), el consentimiento y el pool, el PDF vectorial.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
