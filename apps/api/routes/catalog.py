@@ -291,6 +291,34 @@ def adjust_insumo_prices(
     return result
 
 
+@router.get("/perfil")
+def get_perfil(catalog: CatalogStore = Depends(get_catalog)) -> dict:
+    """Lo que el taller enseñó en sus revisiones: qué bloques y capas suele
+    confirmar o excluir, y cuáles ya actúan en cada proceso."""
+    from klave_engine.costing.perfil import FIRME, firmes
+
+    perfil = catalog.load_perfil()
+    positivas, negativas = firmes(perfil)
+    activas = {p["clave"]: "agrega" for p in positivas} | {
+        p["clave"]: "duda" for p in negativas
+    }
+    return {
+        "firme": FIRME,
+        "entradas": [{**p, "actua": activas.get(p["clave"], "")} for p in perfil],
+    }
+
+
+@router.delete("/perfil/{clave:path}")
+def forget_perfil(
+    request: Request, clave: str, catalog: CatalogStore = Depends(get_catalog)
+) -> dict:
+    """Olvidar una costumbre: deja de actuar desde el próximo proceso."""
+    require_catalog_admin(request)
+    if not catalog.delete_perfil(clave):
+        raise HTTPException(status_code=404, detail={"error_type": "perfil_not_found"})
+    return {"ok": True}
+
+
 @router.get("/insumos/ajustes")
 def list_insumo_adjustments(catalog: CatalogStore = Depends(get_catalog)) -> dict:
     return {"adjustments": catalog.list_adjustments()}

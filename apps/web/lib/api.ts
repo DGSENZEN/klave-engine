@@ -3335,3 +3335,23 @@ export const getCambios = (projectId: string, antes?: string, despues?: string) 
   getJSON<CambiosState>(
     `/projects/${encodeURIComponent(projectId)}/cambios${cambiosQuery(antes, despues)}`,
   );
+
+/** El perfil del taller: lo que la oficina enseñó en sus revisiones. */
+export type PerfilEntrada = {
+  clave: string;
+  kind: "bloque" | "capa";
+  value: string;
+  detection_type: string;
+  family: string;
+  a_favor: number;
+  en_contra: number;
+  updated_at: string;
+  /** «agrega»: entra a la lectura; «duda»: entra con una duda; "": aún no actúa. */
+  actua: "agrega" | "duda" | "";
+};
+
+export const getPerfil = () =>
+  getJSON<{ firme: number; entradas: PerfilEntrada[] }>("/catalog/perfil");
+
+export const forgetPerfil = (clave: string) =>
+  deleteJSON<{ ok: boolean }>(`/catalog/perfil/${encodeURIComponent(clave)}`);

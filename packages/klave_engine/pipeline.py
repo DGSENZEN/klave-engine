@@ -22,6 +22,7 @@ from klave_engine.costing.catalog_store import CatalogStore, get_catalog_store
 from klave_engine.costing.hallazgos import promote_detection_warnings
 from klave_engine.costing.insumos import apply_price_overrides
 from klave_engine.costing.models import CostingConfig, CostReport
+from klave_engine.costing.perfil import aplicar_perfil
 from klave_engine.costing.presentation import publishable_stored_total, publishable_total
 from klave_engine.costing.recompute import apply_taller_history, load_overrides
 from klave_engine.costing.report import (
@@ -255,6 +256,7 @@ def run_full_pipeline(
     reports_dir: Path | None = None,
     catalog_store: CatalogStore | None = None,
     record_history: bool = True,
+    perfil_del_taller: bool = True,
 ) -> PipelineResult:
     """``record_history`` guarda los índices de este proyecto en la historia
     del taller; las evaluaciones del gold lo apagan para no contaminarla."""
@@ -574,13 +576,42 @@ def run_full_pipeline(
                 f"{sin_acabado} locales sin clave de acabado: su área no pertenece "
                 "a ningún acabado declarado."
             )
-    write_json(processed / "detections.json", result.detections)
     # Lo que tiene forma de elemento y ninguna regla tomó: datos para el
     # lector que aprende; no cambia ninguna detección ni ninguna cantidad.
-    write_candidates(processed, candidatos(
+    candidatos_hoja = candidatos(
         result.entities, result.detections, units.to_meters(),
         {PurePath(sh.sheet).name: sh.discipline or "" for sh in inventory.sheets},
-    ))
+    )
+    # El perfil del taller: lo que esta oficina ya enseñó en sus revisiones.
+    # Un bloque que confirmó tres veces entra como esa familia (dicho y
+    # excluible); lo que suele excluir entra con una duda. Nunca quita nada.
+    catalog_store = catalog_store or get_catalog_store(settings.data_dir)
+    perfil = catalog_store.load_perfil() if perfil_del_taller else []
+    if perfil:
+        result.detections, agregadas, dudas = aplicar_perfil(
+            result.detections, candidatos_hoja, perfil
+        )
+        if agregadas:
+            enrich_detections(result.detections, units.to_meters())
+            tomados = {
+                e for d in result.detections
+                if d.evidence.method == "perfil_del_taller" for e in d.source_entities
+            }
+            candidatos_hoja = [c for c in candidatos_hoja if c["entity_id"] not in tomados]
+        if agregadas or dudas:
+            partes = []
+            if agregadas:
+                partes.append(f"{agregadas} elementos entraron por bloques que tu taller "
+                              "ya confirmó")
+            if dudas:
+                partes.append(f"{dudas} quedaron en duda porque tu taller suele excluir "
+                              "elementos así")
+            result.warnings.append(
+                "Perfil del taller: " + "; ".join(partes)
+                + ". Revísalos en Revisión; se excluyen como cualquier lectura."
+            )
+    write_json(processed / "detections.json", result.detections)
+    write_candidates(processed, candidatos_hoja)
     log_stage(
         logger,
         "views_segmented",
@@ -603,7 +634,6 @@ def run_full_pipeline(
     )
 
     # Reapply any user costing edits so they survive a full reprocess.
-    catalog_store = catalog_store or get_catalog_store(settings.data_dir)
     overrides = load_overrides(control_dir)
     if overrides is not None:
         costing_config = overrides.config

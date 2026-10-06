@@ -89,6 +89,10 @@ def candidatos(
                 "dist_eje_m": round(dist, 3) if dist is not None else None,
             },
             "bbox": [round(v, 4) for v in e.bbox],
+            # Nombre exacto del bloque y de la capa: se quedan en el proyecto
+            # (el perfil del taller los aprende); nunca se comparten.
+            "bloque": e.block_name or "",
+            "capa": e.layer,
         })
     return out
 

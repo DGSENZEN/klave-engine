@@ -1,5 +1,6 @@
 "use client";
 
+import { PerfilTallerSection } from "@/components/PerfilTallerSection";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Books,
@@ -446,7 +447,10 @@ export default function CatalogoPage() {
             onNotice={setNotice}
           />
         ) : tab === "plantillas" ? (
-          <PlantillasSection onChanged={reload} onError={setError} onNotice={setNotice} />
+          <>
+            <PlantillasSection onChanged={reload} onError={setError} onNotice={setNotice} />
+            <PerfilTallerSection onError={setError} onNotice={setNotice} />
+          </>
         ) : (
           <>
             <SalarioRealSection onChanged={reload} onError={setError} onNotice={setNotice} />

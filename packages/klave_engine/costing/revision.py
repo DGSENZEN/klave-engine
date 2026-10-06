@@ -98,6 +98,12 @@ def _doubts(detection: Detection, concept_code: str) -> list[str]:
         doubts.append("espesor de muro no medido")
     if concept_code == "":
         doubts.append("no entra en ningún concepto")
+    # El perfil del taller: lo que agregó y lo que la oficina suele excluir
+    # se dice en el renglón, para que una persona lo confirme o lo quite.
+    if props.get("perfil_duda"):
+        doubts.append(str(props["perfil_duda"]))
+    if detection.evidence.method == "perfil_del_taller" and props.get("perfil"):
+        doubts.append(f"lo agregó el perfil: {props['perfil']}")
     return doubts
 
 

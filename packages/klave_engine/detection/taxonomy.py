@@ -117,6 +117,10 @@ _AXIS_ES = {"horizontal": "horizontal", "vertical": "vertical"}
 
 def classify_family(detection: Detection) -> Family:
     """Canonical family from detection type + mark prefix (Mexican convention)."""
+    # Lo que el perfil del taller agregó trae la familia que la oficina enseñó.
+    forced = str((detection.properties or {}).get("familia_perfil") or "")
+    if forced in Family.__members__:
+        return Family[forced]
     mark = detection.label.strip().upper()
     dtype = detection.detection_type
     if dtype == DetectionType.column_tag:

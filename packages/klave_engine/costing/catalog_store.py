@@ -213,6 +213,16 @@ CREATE TABLE IF NOT EXISTS reference_prices (
 );
 CREATE INDEX IF NOT EXISTS reference_prices_source_clave
     ON reference_prices (source_key, clave);
+CREATE TABLE IF NOT EXISTS perfil_taller (
+    clave TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    value TEXT NOT NULL,
+    detection_type TEXT NOT NULL,
+    family TEXT NOT NULL DEFAULT '',
+    a_favor INTEGER NOT NULL DEFAULT 0,
+    en_contra INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS project_indices (
     project_id TEXT PRIMARY KEY,
     at TEXT NOT NULL,
@@ -2793,6 +2803,38 @@ class CatalogStore:
     def delete_inventory_mapping(self, mapping_id: int) -> bool:
         with _LOCK, self._connect() as conn:
             cursor = conn.execute("DELETE FROM inventory_mappings WHERE id = ?", (mapping_id,))
+        return cursor.rowcount > 0
+
+    # ---------------------------------------------- el perfil del taller
+
+    def perfil_registrar(
+        self, kind: str, value: str, detection_type: str, family: str,
+        *, a_favor: int = 0, en_contra: int = 0,
+    ) -> None:
+        """Una decisión más a favor o en contra de «este bloque/capa es esta
+        familia» en este taller."""
+        clave = f"{kind}|{value}|{detection_type}"
+        with _LOCK, self._connect() as conn:
+            conn.execute(
+                "INSERT INTO perfil_taller (clave, kind, value, detection_type, family, a_favor, "
+                "en_contra, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(clave) DO "
+                "UPDATE SET a_favor = a_favor + excluded.a_favor, "
+                "en_contra = en_contra + excluded.en_contra, "
+                "family = CASE WHEN excluded.family != '' THEN excluded.family ELSE family END, "
+                "updated_at = excluded.updated_at",
+                (clave, kind, value, detection_type, family, a_favor, en_contra, _now()),
+            )
+
+    def load_perfil(self) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM perfil_taller ORDER BY a_favor + en_contra DESC, clave"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_perfil(self, clave: str) -> bool:
+        with _LOCK, self._connect() as conn:
+            cursor = conn.execute("DELETE FROM perfil_taller WHERE clave = ?", (clave,))
         return cursor.rowcount > 0
 
     # ---------------------------------------------- índices de los proyectos

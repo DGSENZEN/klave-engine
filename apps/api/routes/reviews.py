@@ -11,9 +11,10 @@ from klave_engine.common.config import Settings
 from klave_engine.common.errors import ReportGenerationError
 from klave_engine.common.ids import short_uuid
 from klave_engine.costing.conteos import ConteosDeProyecto, load_conteos, save_conteos
-from klave_engine.costing.etiquetas import append_labels, detection_labels
+from klave_engine.costing.etiquetas import detection_labels
 from klave_engine.costing.models import CostingOverrides, CostReport
 from klave_engine.costing.omitted import AREA_FAMILIES, FAMILY_TYPES, LINEAR_FAMILIES
+from klave_engine.costing.perfil import etiquetar_y_aprender
 from klave_engine.costing.presentation import publishable_stored_total, publishable_total
 from klave_engine.costing.recompute import load_overrides, recompute_and_persist
 from klave_engine.costing.reviews import (
@@ -204,15 +205,23 @@ def _recompute_after_review(
     )
 
 
+def _perfil_store(settings: Settings, project_id: str):
+    try:
+        return store_for_project(settings, project_id)
+    except Exception:  # noqa: BLE001 — sin catálogo, la etiqueta se escribe igual
+        return None
+
+
 def _label_reviews(
-    store: ProjectStore, project_id: str, control_dir, keys: list[str], status: str,
-    actor: str, note: str,
+    store: ProjectStore, settings: Settings, project_id: str, control_dir, keys: list[str],
+    status: str, actor: str, note: str,
 ) -> None:
     """Cada revisión queda como etiqueta para el lector que aprende. Nunca
     detiene la revisión: si no hay detecciones legibles, se etiqueta sin ellas."""
     detections, factor = _detections_and_factor(store, project_id)
-    append_labels(
-        control_dir, detection_labels(keys, status, actor, detections, note, factor)
+    etiquetar_y_aprender(
+        control_dir, detection_labels(keys, status, actor, detections, note, factor),
+        _perfil_store(settings, project_id),
     )
 
 
@@ -283,7 +292,9 @@ def set_detection_review(
                 element_id=_ids_de(store, project_id, [key]).get(key, ""),
             )
         save_reviews(control_dir, reviews)
-        _label_reviews(store, project_id, control_dir, [key], body.status, actor, body.note)
+        _label_reviews(
+            store, settings, project_id, control_dir, [key], body.status, actor, body.note
+        )
         _recompute_after_review(
             store, settings, project_id, actor, clean_client_id(x_client_id),
             f"detection_{body.status}", key,
@@ -316,7 +327,9 @@ def set_detection_reviews(
                     element_id=ids.get(key, ""),
                 )
         save_reviews(control_dir, reviews)
-        _label_reviews(store, project_id, control_dir, keys, body.status, actor, body.note)
+        _label_reviews(
+            store, settings, project_id, control_dir, keys, body.status, actor, body.note
+        )
         if body.recompute:
             _recompute_after_review(
                 store, settings, project_id, actor, clean_client_id(x_client_id),
@@ -394,9 +407,9 @@ def reassign_detection(
             note=f"reasignado de {anterior} ({key})", actor=actor,
         ))
         save_reviews(control_dir, reviews)
-        append_labels(control_dir, detection_labels(
+        etiquetar_y_aprender(control_dir, detection_labels(
             [key], family, actor, detections, body.note, factor, action="reassign",
-        ))
+        ), _perfil_store(settings, project_id))
         _recompute_after_review(
             store, settings, project_id, actor, clean_client_id(x_client_id),
             "detection_reassigned", f"{key} → {family}",
@@ -535,11 +548,11 @@ def add_omitted(
             )
         )
         save_reviews(control_dir, reviews)
-        append_labels(control_dir, [{
+        etiquetar_y_aprender(control_dir, [{
             "kind": "omitido", "action": "add_missed", "verdict": family,
             "mark": body.mark.strip().upper(), "sheet": body.sheet.strip(),
             "bbox": body.bbox, "count": body.count, "actor": actor,
-        }])
+        }], _perfil_store(settings, project_id))
         _recompute_after_review(
             store, settings, project_id, actor, clean_client_id(x_client_id),
             "omitted_added", f"{family} {body.mark}".strip(),
