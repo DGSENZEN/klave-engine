@@ -1042,6 +1042,34 @@ pesimista: 0.87 Marina, 0.97 PRUEBA-1). **Falta lo que sólo una persona puede
 dar:** el primer conjunto revisado — calificar las 246 figuras de Marina —;
 hasta entonces nadie sabe cuántas propuestas son elementos de verdad.
 
+### Piloto listo (2026-10-06, rama `piloto`)
+
+La puerta del v1 es un piloto: una licitación real con Klave junto al método
+de siempre — horas ahorradas, generadores aceptados, export importado. Nada
+lo medía. (0) **La pantalla que se quedaba cargando:** la subida convertía
+cada DWG dentro de la petición y congelaba todo el servidor (con 16 hojas,
+minutos); ahora la conversión es del trabajo y se ve hoja por hoja (corregido
+y publicado antes de esta rama). (1) **La actividad, guardada:** cada evento de
+proyecto queda en `processed/actividad.jsonl` — tipo, persona, hora, un
+detalle corto; nunca el dibujo — y cada exportación con su formato (también
+los generadores bajados por liga). (2) **«Medición del piloto»** (nodo
+Presupuesto) estima el tiempo de una persona (suma los huecos de hasta 10 min
+entre sus acciones; un hueco mayor es pausa y otra sesión), el proceso del
+motor, el tiempo hasta la primera entrega y los minutos de revisión por hoja
+(repartidos por decisiones), y los pone junto a las horas que la oficina
+declara de su método anterior y a sus dos respuestas — Klave no inventa la
+base. Un proyecto anterior a la medición lo dice. (3) **Ensayo en seco** del
+camino completo por HTTP con el estructural de Marina: subida en 0.02 s, 32 s
+de proceso con cada etapa a la vista, Revisión, mapeo, captura, y las tres
+exportaciones; las de OPUS y Neodata se releen con nuestro lector con las
+mismas cantidades del motor en cada unidad (m, m², m³, pza). Dos hallazgos
+corregidos: la primera exportación de Klave tardaba 13 s dibujando croquis —
+ahora el trabajo los dibuja después de publicar y tarda 1.1 s — y las
+referencias a ejes recalculaban el nombre de la hoja por cada par
+elemento×eje (3.5 s de los 4.7). También: crear la app dos veces duplicaba
+lo que guardaba el bus; los oyentes van por nombre. Pendiente de Diego: la
+oficina y la licitación del piloto, el servidor y su dominio.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
