@@ -144,7 +144,33 @@ F1 ships with v1 R1 (it's the v1 §2.6 label hook, done properly) so the first p
 
 ## 12. Spike results
 
-*(filled in by S0)*
+### S0(a) · Do the F1 features carry across drawings? (2026-10-06)
+
+**Setup (throwaway, not committed).** The three real sets were reprocessed in scratch copies with the current motor (profile off, history off): Marina estructural (952 structural detections, 1,064 candidates), PRUEBA-1 (390 / 210), S-101 cimentación (24 / 0). Labels were the *rules'* verdicts, not people's: an accepted detection's family (trabe/contratrabe/dala/cerramiento merged as `viga`) and, for the element-vs-not task, the candidates as weak `no_es_elemento`. The model was gradient-boosted trees (scikit-learn `HistGradientBoostingClassifier`, defaults) over the seven features detections and candidates share: width, height, aspect, area, distance to the nearest grid crossing, block repetition, and layer/block tokens. Each set was held out in turn, trained on the other two.
+
+| task · features | held out Marina | held out PRUEBA-1 | held out S-101 |
+|---|---|---|---|
+| family · geometry | 0.69 (majority 0.35) | 0.85 (0.11) | 0.25 (n = 24) |
+| family · names only | 0.35 | 0.66 | 0.12 |
+| family · all | 0.69, macro-F1 0.54 | 0.83, macro-F1 0.62 | 0.50 |
+| element vs not · geometry | 0.86 | 0.93 | — |
+| element vs not · names only | 0.44 | 0.68 | — |
+| element vs not · all | 0.86 (P 0.83 / R 0.89) | 0.94 (P 0.98 / R 0.93) | — |
+
+Restricting positives to the candidates' size window (0.08–3 m), to rule out "big means element", leaves element-vs-not unchanged (0.87 / 0.94).
+
+**What it says.**
+1. **Geometry carries; names don't.** Layer and block tokens alone are at or below the majority baseline on a drawing the model hasn't seen, and add nothing on top of geometry. Each office names its own way. That confirms the tier split: names belong in the per-office profile (F2, built), and the pooled model should lean on shape and context.
+2. **Element vs not transfers well** (0.86–0.94 on an unseen drawing). This is the useful part for F3: ranking the candidates nobody claimed, so proposals are mostly real elements.
+3. **Family doesn't yet transfer for the hard pairs.** Castillo vs columna (Marina castillo recall 0.41, columna 0.04), pilote (0.00: the shared features have no circle/entity type), and viga in PRUEBA-1 (recall 0.12). Before F3 trains a family head, the shared features need the entity type and closedness (candidates have them, detections don't), the mark prefix for both sides, and "inside a wall pair" (§3.3 context) — that last one is what separates a castillo from a columna.
+4. **The labels are the rules' own verdicts.** This measures whether the features can reproduce the rules on a new drawing, not whether the model beats them; that needs people's labels from at least two offices, which is F3's gate and still unmet.
+
+**Consequence for F3.** Ship element-vs-not first, as proposals («el lector cree que aquí hay un elemento») with geometry features, and hold the family head until the features above exist and labels from a second office arrive. Names stay per-office.
+
+
+### S0(b) · Vector PDF → entity stream — blocked (2026-10-06)
+
+No plotted plano PDF exists locally (`data/sources` holds price tabulators only). A round-trip made here (DXF → our own PDF → back) would only test our own exporter, not what an office receives: AutoCAD's «DWG To PDF» output flattens blocks into paths, may drop layers unless plotted as a layered PDF, and may turn text into glyph outlines. The spike needs one real plotted sheet, ideally a Marina structural sheet plotted from AutoCAD, with and without layers. Owed by Diego.
 
 ## 13. Out of scope
 
