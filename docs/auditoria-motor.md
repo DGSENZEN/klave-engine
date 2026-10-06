@@ -961,6 +961,25 @@ omitido gana su lugar en el plano; los dos escriben etiqueta. Pendiente para
 F2/F3: el perfil del taller, el modelo y la duda, el consentimiento para
 compartir (las etiquetas de F1 no salen del proyecto).
 
+### El lector que aprende · F2 · El perfil del taller (2026-10-06, rama `lector-f2`)
+
+Cada oficina dibuja a su modo, y lo enseña cada vez que revisa. Ahora esas
+revisiones se quedan en el taller: cada confirmación, exclusión,
+reasignación y omitido agregado suma a favor o en contra de «este bloque (o
+capa) es esta familia» (`costing/perfil.py`, tabla `perfil_taller` del
+catálogo). Con **tres a favor y ninguna en contra** la entrada es firme: un
+bloque sin reclamar dibujado así entra a la lectura del siguiente proceso
+como esa familia — sólo castillo, columna o pilote, porque un bloque
+aprendido no da una longitud ni un área —, con método `perfil_del_taller`,
+una duda en su renglón que dice cuántas veces lo confirmó el taller, y
+excluible como cualquier lectura. Lo que el taller **excluye** tres veces
+nunca se quita: entra con una duda que lo dice. Cada proceso lo cuenta en una
+línea de avisos; el catálogo lo lista en «Lo que tu taller enseñó» (pestaña
+Plantillas) con lo que ya actúa y «Olvidar». El gold corre sin perfil para
+medir sólo el motor. Nada de esto sale del taller; deshacer una revisión no
+resta su voto — para eso está «Olvidar». Pendiente para F3: el modelo, la
+duda con sus dos razones y el consentimiento para compartir.
+
 Ver también: [principios-de-interfaz.md](principios-de-interfaz.md) ·
 [auditoria-densidad.md](auditoria-densidad.md) ·
 [plan-de-pulido.md](plan-de-pulido.md)
