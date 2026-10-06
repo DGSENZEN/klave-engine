@@ -9,9 +9,8 @@ from klave_engine.common.config import Settings
 from klave_engine.common.ids import short_uuid, slugify
 from klave_engine.common.io import read_json
 from klave_engine.common.version import engine_fingerprint
-from klave_engine.conversion.libredwg import convert_dwg_to_dxf
 from klave_engine.costing.defaults import apply_workspace_defaults
-from klave_engine.ingestion.manifest import ConvertedFile, save_manifest
+from klave_engine.ingestion.manifest import save_manifest
 from klave_engine.ingestion.project_loader import ingest_project
 from pydantic import BaseModel
 
@@ -252,103 +251,6 @@ async def _save_sheet_uploads(
     return saved
 
 
-def _convert_new_dwgs(root: Path, manifest, settings: Settings) -> list[str]:
-    """Convert DWG sources that lack a successful conversion. A sheet that
-    cannot be converted is recorded as failed with its reason and the rest
-    of the project goes on; the caller decides whether anything is left."""
-    warnings: list[str] = []
-    converted_ids = {c.source_file_id for c in manifest.converted_files}
-    for source in manifest.source_files:
-        if source.file_type.value != "dwg" or source.file_id in converted_ids:
-            continue
-        dxf_path, message = convert_dwg_to_dxf(
-            root / source.path, timeout_seconds=settings.converter_timeout_seconds
-        )
-        converted = (
-            root
-            / settings.converted_dir_name
-            / source.file_id
-            / f"{Path(source.path).stem}.dxf"
-        )
-        if dxf_path is None:
-            manifest.converted_files.append(
-                ConvertedFile(
-                    source_file_id=source.file_id,
-                    path=str(converted.relative_to(root)),
-                    conversion_status="failed",
-                    error=message,
-                )
-            )
-            warnings.append(f"{Path(source.path).name}: {message}")
-            continue
-        converted.parent.mkdir(parents=True, exist_ok=True)
-        dxf_path.replace(converted)
-        manifest.converted_files.append(
-            ConvertedFile(
-                source_file_id=source.file_id,
-                path=str(converted.relative_to(root)),
-            )
-        )
-        warnings.append(message)
-    save_manifest(manifest, settings.processed_dir_name)
-    return warnings
-
-
-def _require_readable_sheet(manifest, root: Path) -> None:
-    """Reject a project only when not one sheet can be read."""
-    if manifest.dxf_paths():
-        return
-    failures = [c.error for c in manifest.converted_files if c.conversion_status == "failed"]
-    shutil.rmtree(root, ignore_errors=True)
-    raise HTTPException(
-        status_code=422,
-        detail={
-            "error_type": "conversion_failed",
-            "message": "Ninguna hoja se pudo leer. " + (failures[0] or "")[:300],
-            "failures": failures,
-        },
-    )
-
-
-@router.post("/demo", status_code=202)
-def create_demo_project(
-    request: Request,
-    x_actor: Annotated[str | None, Header()] = None,
-    store: ProjectStore = Depends(get_store),
-    settings: Settings = Depends(get_settings),
-) -> dict:
-    """A small synthetic obra, created and processed on the spot, so a firm
-    sees a finished presupuesto — with its evidence and its warnings —
-    before uploading anything of its own. Idempotent per workspace."""
-    rate_limit(request, "process", max_attempts=30, window_seconds=3600.0)
-    from klave_engine.evals.fixtures import write_demo_project
-
-    suffix = (request_workspace_id(request) or "local")[:8]
-    project_id = f"obra_de_ejemplo_{suffix}"
-    root = store.settings.data_dir / "uploads" / project_id
-    fresh = not root.exists()
-    if fresh:
-        write_demo_project(root, declare_units=True)
-    manifest = ingest_project(
-        root,
-        project_name="Obra de ejemplo (sintética)",
-        project_id=project_id,
-        processed_dir_name=settings.processed_dir_name,
-    )
-    store.register(manifest.project_id, root)
-    _grant_owner(request, settings, manifest.project_id)
-    if fresh:
-        apply_workspace_defaults(
-            defaults_scope(settings, request_workspace_id(request)),
-            root / settings.processed_dir_name,
-        )
-        BUS.publish(
-            "project_created", project_id=manifest.project_id, actor=clean_actor(x_actor)
-        )
-    job, _ = JOB_STORE.enqueue(manifest.project_id, root, settings)
-    return {"project_id": manifest.project_id, "job_id": job.job_id, "fresh": fresh}
-
-
 @router.post("/upload", status_code=202)
 async def upload_project(
     request: Request,
@@ -381,8 +283,10 @@ async def upload_project(
         if cleaned_client:
             manifest.client = cleaned_client
             save_manifest(manifest, settings.processed_dir_name)
-        warnings = _convert_new_dwgs(root, manifest, settings)
-        _require_readable_sheet(manifest, root)
+        # La conversión DWG→DXF corre en el trabajo, no aquí: tarda minutos en
+        # un juego grande y, dentro de la petición, congelaba todo el servidor
+        # (la pantalla se quedaba cargando). El avance se ve hoja por hoja.
+        warnings: list[str] = []
     except HTTPException:
         shutil.rmtree(root, ignore_errors=True)
         raise
@@ -560,7 +464,7 @@ async def add_project_files(
         manifest = ingest_project(
             root, project_id=project_id, processed_dir_name=settings.processed_dir_name
         )
-        warnings = _convert_new_dwgs(root, manifest, settings)
+        warnings: list[str] = []  # se convierten en el trabajo (ver upload_project)
     except HTTPException:
         for path in saved:
             path.unlink(missing_ok=True)

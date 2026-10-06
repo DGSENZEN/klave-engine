@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from klave_engine.common.config import Settings
+from klave_engine.common.errors import ConversionError
 from klave_engine.common.ids import short_uuid
 from klave_engine.common.io import read_json, write_json
 from klave_engine.common.logging import get_logger
@@ -180,6 +181,7 @@ class JobStore:
                 artifact_dir=run_dir,
                 reports_dir=run_dir / "reports",
                 catalog_store=store_for_project(settings, project_id),
+                progreso=lambda texto: self._update(project_id, root, settings, stage=texto),
             )
             # The presupuesto as it stood becomes an automatic version, so the
             # engineer can compare this corrida with the last one line by line.
@@ -217,6 +219,13 @@ class JobStore:
                 stage="Completado",
                 entity_count=len(result.entities),
                 detection_count=len(result.detections),
+            )
+        except ConversionError as exc:
+            # Ninguna hoja se pudo convertir: se dice por qué, no un error genérico.
+            logger.warning("Sin hojas legibles en %s: %s", project_id, exc)
+            self._mark_manifest_failed(root, settings)
+            self._update(
+                project_id, root, settings, state="failed", stage="Error", error=str(exc)[:400],
             )
         except Exception:  # noqa: BLE001 - convert all pipeline failures into durable job state
             logger.exception("Processing failed for %s", project_id)

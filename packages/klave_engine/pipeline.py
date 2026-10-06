@@ -7,6 +7,7 @@ individually (see the CLI) or together via ``run_full_pipeline``.
 
 import json
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path, PurePath
@@ -111,11 +112,12 @@ def _reports_dir(project_root: Path) -> Path:
 
 
 def convert_drawings(
-    manifest: ProjectManifest, settings: Settings, output_dir: Path | None = None
+    manifest: ProjectManifest, settings: Settings, output_dir: Path | None = None,
+    progreso: Callable[[str], None] | None = None,
 ) -> list[ConversionResult]:
     """Convert DWG sources to DXF (non-fatal). The real failure — no DXF at all —
     is caught by the caller via ``manifest.dxf_paths()``."""
-    results = convert_project(manifest, settings)
+    results = convert_project(manifest, settings, progreso)
     processed = output_dir or _processed_dir(manifest.root(), settings)
     write_json(processed / "conversion_results.json", results)
     save_manifest(manifest, settings.processed_dir_name)
@@ -265,6 +267,7 @@ def run_full_pipeline(
     catalog_store: CatalogStore | None = None,
     record_history: bool = True,
     perfil_del_taller: bool = True,
+    progreso: Callable[[str], None] | None = None,
 ) -> PipelineResult:
     """``record_history`` guarda los índices de este proyecto en la historia
     del taller; las evaluaciones del gold lo apagan para no contaminarla."""
@@ -299,12 +302,17 @@ def run_full_pipeline(
         raise ProjectManifestError("No DWG or DXF source files are available for processing")
     result = PipelineResult(manifest=manifest)
 
-    convert_drawings(manifest, settings, output_dir=processed)
+    convert_drawings(manifest, settings, output_dir=processed, progreso=progreso)
     if not manifest.dxf_paths():
         manifest.processing_status = ProcessingStatus.failed
         manifest.errors.append("No DXF files are available after conversion")
         save_manifest(manifest, settings.processed_dir_name)
-        raise ConversionError("No DXF files are available after conversion")
+        fallas = [e for e in manifest.errors if e.startswith("Conversion failed")]
+        raise ConversionError(
+            "Ninguna hoja se pudo leer. " + (fallas[0].split(": ", 1)[-1][:300] if fallas else "")
+        )
+    if progreso is not None:
+        progreso("Leyendo el dibujo")
     drawings = parse_drawings(manifest, settings, output_dir=processed)
     # Per-sheet units: each file's unit is read on its own and its geometry
     # scaled into the project's unit before anything measures it.

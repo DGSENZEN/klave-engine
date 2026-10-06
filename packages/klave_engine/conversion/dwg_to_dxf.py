@@ -7,6 +7,7 @@ conversions are recorded, never silently swallowed.
 
 import subprocess
 import time
+from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
 
@@ -143,7 +144,11 @@ class DwgToDxfConverter:
         return result
 
 
-def convert_project(manifest: ProjectManifest, settings: Settings) -> list[ConversionResult]:
+def convert_project(
+    manifest: ProjectManifest,
+    settings: Settings,
+    progreso: Callable[[str], None] | None = None,
+) -> list[ConversionResult]:
     """Ensure every DWG source has a DXF, using whatever converter is available.
 
     Conversion is non-fatal and sheet-aware: a DWG whose sheet already has a DXF
@@ -164,11 +169,21 @@ def convert_project(manifest: ProjectManifest, settings: Settings) -> list[Conve
         if f.file_type == FileType.dxf
     } | {Path(c.path).stem.lower() for c in manifest.converted_files}
 
+    pendientes = [
+        f for f in manifest.source_files
+        if f.file_type == FileType.dwg and Path(f.path).stem.lower() not in existing_stems
+    ]
     results: list[ConversionResult] = []
     for source_file in manifest.source_files:
         if source_file.file_type != FileType.dwg:
             continue
         source = root / source_file.path
+        if source.stem.lower() not in existing_stems and progreso is not None:
+            # Un juego grande tarda minutos en convertirse: se dice cuál va.
+            progreso(
+                f"Convirtiendo planos ({pendientes.index(source_file) + 1} de "
+                f"{len(pendientes)}): {source.name}"
+            )
         if source.stem.lower() in existing_stems:
             results.append(
                 ConversionResult(

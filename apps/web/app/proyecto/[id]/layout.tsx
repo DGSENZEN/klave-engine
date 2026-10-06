@@ -209,7 +209,10 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
     );
   }
   const reached = (key: string) => {
-    const current = ORDER.indexOf(status?.state ?? "queued");
+    // La conversión corre dentro del trabajo: mientras el motor dice que
+    // convierte, ese paso es el actual aunque el trabajo ya esté «running».
+    const converting = status?.state === "running" && status.stage?.startsWith("Convirtiendo");
+    const current = ORDER.indexOf(converting ? "ingested" : (status?.state ?? "queued"));
     return current >= ORDER.indexOf(key);
   };
 
