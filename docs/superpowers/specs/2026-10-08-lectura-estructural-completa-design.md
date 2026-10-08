@@ -61,6 +61,14 @@ Root causes in `detection/schedules.py`, each a loophole this spec closes:
 4. **Conflicting readings merged silently:** K-5 and K-6 read 20×30 on one sheet and 20×40 on another (the workbook says 20×40); K-8 reads 15×25 and 20×25 (§3.1, check 3/8).
 5. **The AI filled what a misparse emptied:** with the stirrup field empty after (1), the IA reading supplied `#2` where the drawing says `#3`, unflagged (§3.1 ia rule).
 
+The same audit over columns, the remaining castillos and pilotes (texts inside blocks included):
+- More first-group truncations: C-3 is `8#8+4#6` (the workbook also has only 8 × 1"), K-9 `4#6+2#4`, K-10 `6#6+4#4`, K-12 `4#6+4#4`, K-15A `6#8+6#6` (with `4E#3`), K-18 `4#8+4#6`.
+- **The zoned stirrup is written on two text entities**: `2E#3EXT@10` and, on the line below it, `CENTRO@20`. One mark owns several armado texts.
+- **ES-200's castillos (K-3A, K-11…K-20A) live inside the block `EST-CASTILLOS`**; their armado texts are there, but Klave associated none of them and every value came from the IA.
+- **The cuadros sit inside planta frames**, not detail frames: castillos/columnas on ES-200 and ES-400, pilotes on ES-000. Their labels are already tagged `role=cuadro` (128 castillo + 9 columna labels; 208 castillo placements remain).
+- **Pilotes have armado text**: P-1 `REFUERZO 4#5+4#4` · `2E#3 VER CORTE`; P-4 `4#8 + 12#6 3E#3 VER CORTE` · `REFUERZO 12#6` (two sections, zones in a corte).
+- **Measured convention (Marina):** the mark label (text height 0.13, centred) sits under a left-aligned stack of armado lines (height 0.10) at a pitch of 0.17–0.18 (≈1.7 × line height), within ±0.35 horizontally — longitudinal on top, then stirrups, then the zone continuation.
+
 **Rules in the drawing, unused:** Marina's `02 ESTRUCTURAL` carries the TABLA DE VARILLAS and NOTAS GENERALES DE ESTRUCTURA as real text inside blocks `NOTAS DE CIMENTACIÓN`, `ESPECIFICACIONES  EST-PB`, `ESPECIFICACIONES EST-AZOTEAS` (three identical copies). The table equals the PDF except #8, where Marina lists LT1 115 / LT2 150 while its own note 4 says only up to #6 may be lapped and #8+ is welded (Fig. D). Notes also give covers (5 cimentación, 5 columnas, 4 trabes/losas, 3–5 castillos/dalas/cerramientos), stirrup hooks (135° + 10Ø; grapas 180° + 10Ø), first stirrup at 6 cm from the paño, no laps in nudos or within two peraltes, and a detail «ANCLAJE DE CASTILLO 100 CM». Klave uses none of it (single cover 2.5 cm, 7.5 cm hooks, flat 40 cm anchorage, no laps).
 
 ## 3. The structural model (`klave_engine/estructura/`)
@@ -78,7 +86,7 @@ Precedence (higher wins, losers kept in `alternativas`):
 `humano` is a decision taken in Revisión (§4.3). No confidence number is stored or shown (doctrine).
 
 **Rules that keep precedence honest:**
-- **Same-rank disagreement is never resolved silently.** Two `detalle` readings of K-5 (20×30 and 20×40) both stay; the value used is the one from the detail whose frame matches the placement's level (ES-100 detail for PB placements, etc.) when that can be decided, and the element carries a check-3 duda either way.
+- **Same-rank disagreement is never resolved silently.** Two `detalle` readings of K-5 (20×30 and 20×40) both stay; the value used is the one from the cuadro/detail whose frame matches the placement's level (ES-200 cuadro for planta-alta placements, etc.) when that can be decided, and the element carries a check-8 duda either way (the drawing contradicts itself).
 - **`ia` never fills a field whose drawing text exists but failed to parse.** A parse failure is an `aviso` on that text, not an empty field. `ia` fills only fields for which no text was associated at all, and `ia` values never count as "from the drawing" in the scorecard.
 - **Copies are counted, not trusted blindly.** When the same mark is defined in several frames, all readings are compared; agreement across copies is recorded, disagreement is check 8.
 
@@ -89,7 +97,7 @@ Precedence (higher wins, losers kept in `alternativas`):
 ### 3.3 `Armado` — structure, not text
 
 - `longitudinales: list[GrupoVarillas{cantidad, numero, posicion: esquina|cara|lecho_sup|lecho_inf|ambos}]`
-- `estribos: list[JuegoEstribos{forma: perimetral|rombo|interior|grapa|liga, numero, por_juego, zonas: list[Zona{tramo: extremos|centro|longitud_m, separacion_m, longitud_m?}]}]`
+- `estribos: list[JuegoEstribos{tipo: estribo|grapa|liga, cantidad (the n of «nE»), numero, zonas: list[Zona{tramo: todo|extremos|centro, separacion_m | None, longitud_m?}], referencia («VER CORTE»), formas: list[perimetral|rombo|interior|grapa|liga] (one per piece, assigned later — §3.3 shapes), formas_fuente}]`
 - `parrillas: list[Parrilla{numero, separacion_m, lecho: sup|inf|unico, sentidos: ambos|x|y}]`
 - `texto_original` and `avisos` (what could not be parsed).
 
@@ -113,7 +121,7 @@ Precedence (higher wins, losers kept in `alternativas`):
 
 A placement is today's `Detection` (mark, family, planta/view, ejes, bbox, measured geometry, stable `element_id` from F1). Placements come only from structural plan views — never from detail, corte or cuadro frames (those are definitions). The join is by normalized mark (`K-15A.1` ≡ `K15A.1`; `K-15A` is a different mark from `K-15A.1` — no prefix matching); family-level definitions apply when no mark definition exists, **and that fallback never silences check 1**: the element still says its own mark is undefined.
 
-**Text-to-mark association** (definitions from details): an armado or section text belongs to a mark only if (a) it is inside the same detail frame, (b) it is the nearest such text to that mark's label and closer to it than to any other mark label, within a radius scaled to the detail (≤ 3 × text height + label width), or joined to it by a leader/MLEADER, or in the same cuadro row; and (c) its content fits the mark's family (a text naming another family — `LOSA…`, `DALA…`, `TRABE…` — never attaches to a K/C/P/D mark). Anything ambiguous (two marks equally near) is rejected and reported (check 11), never guessed. Resolved, each as a `Dato`: `seccion`, `longitud_o_altura` (definition → levels/cortes → measured), `volumen_m3`, `cimbra_m2`, `armado`, `continuidad` (same mark at the same position in the planta above → continues; used for splices), `apoyos` (what each end bears on: column, wall, cimentación, nothing).
+**Text-to-mark association** (definitions from cuadros and details, which may sit inside detail frames **or inside planta frames**): an armado text belongs to a mark only if (a) it is in the same frame as the label; (b) it is part of the label's **stack** — the first armado line starts within 1.5 label heights above or below the label, each next line within 1.2 line heights of the previous one, all horizontally overlapping the label's span widened by 3 line heights — or it is joined to the label by a leader, or it is in the same cuadro row; (c) no other label reaches it with a gap within 10 % of this one; and (d) its content fits the mark's family (a text naming another family — `LOSA…`, `DALA…`, `TRABE…` — never attaches to a K/C/P/D mark). Positions use the text's alignment point when it is not left-aligned. A stack's lines are read in order, so `CENTRO@20` continues the stirrup line above it. Anything ambiguous is rejected and reported (check 11), never guessed. **A label that owns a stack is a definition label (`role=cuadro`), never a placement**; a `role=cuadro` label with no stack, or a stack-owning label counted as a placement, is check 11. Resolved, each as a `Dato`: `seccion`, `longitud_o_altura` (definition → levels/cortes → measured), `volumen_m3`, `cimbra_m2`, `armado`, `continuidad` (same mark at the same position in the planta above → continues; used for splices), `apoyos` (what each end bears on: column, wall, cimentación, nothing).
 
 **Compatibility.** In E0–E1 the model writes its resolved values onto the detections the BoQ already reads (as `apply_schedule` does today: `section_cm`, `section_area_du2`, heights, lengths). Concepts, gold and exports keep working while steel (E0) and cimbra (E2) move to reading `Elemento` directly.
 
@@ -152,7 +160,9 @@ Per family: placements · joined to a definition · share of critical values fro
 | muro_concreto / contención | thickness · height · length · vertical and horizontal mesh per face |
 | muro (block) | thickness · height · length · castillo/dala spacing |
 | losa (each system) | thickness · area · mesh per layer and direction (or nervadura/vigueta spec) |
-| dala, cadena, cerramiento | section · length · longitudinal · stirrups | Shown at the top of Revisión (no new header buttons); `GET /projects/{id}/estructura` returns `resumen` + `verificaciones`; `GET /projects/{id}/estructura/elementos?familia=` returns elements.
+| dala, cadena, cerramiento | section · length · longitudinal · stirrups |
+
+Shown as the «Lectura estructural» tab of Revisión, beside elementos/omitidos/propuestas (no new header buttons); `GET /projects/{id}/estructura` returns `resumen` + `verificaciones`; `GET /projects/{id}/estructura/elementos?familia=` returns elements.
 
 ### 4.2 In Revisión
 
@@ -280,7 +290,7 @@ Structural steel (Marina has HSS 10"×10" columns and IPR 12"×8" beams: profile
 
 ## 12. What Diego owes / open items
 
-- Spot-check list after E0: castillo stirrup sizes K-2…K-3A and K-4A's longitudinal (workbook vs drawing, §2); K-5/K-6 sections (the drawing itself reads 20×30 on one sheet and 20×40 on another; the workbook says 20×40); K-8 (workbook 60×15, drawing 15×25 and 20×25); K-15A.1/K-15A.2 in the workbook vs `K-15A` (6#8+6#6) in the drawing; D-marks without a definition; the full Marina transcription.
+- Spot-check list after E0: castillo stirrup sizes K-2…K-3A and K-4A's longitudinal (workbook vs drawing, §2); K-5/K-6 sections (the drawing itself reads 20×30 on one sheet and 20×40 on another; the workbook says 20×40); K-8 (workbook 60×15, drawing 15×25 and 20×25); K-15A.1/K-15A.2 in the workbook vs `K-15A` (6#8+6#6) in the drawing; C-3 (workbook 8 × 1", drawing 8#8+4#6); D-marks without a definition; the full Marina transcription.
 - Confirm the «1/4"» weight (0.384 vs 0.248 kg/m) and dados cover (7.5 vs 5 cm).
 - Ask Marina's calculista about #8 laps (table lists them; note 4 forbids them).
 - Natural ground level for Marina if the drawing does not state it (otherwise excavation stays a `supuesto`).
