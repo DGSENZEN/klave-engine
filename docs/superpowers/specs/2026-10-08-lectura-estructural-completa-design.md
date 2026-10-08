@@ -131,7 +131,7 @@ Each finding: `{tipo, severidad: bloquea|duda|aviso, elementos[], datos_en_confl
 
 | # | check | severity |
 |---|---|---|
-| 1 | mark placed in a planta, defined nowhere | bloquea |
+| 1 | mark placed in a planta, defined nowhere | bloquea; duda when a family-level note covers it (the element uses the note and says its own mark is undefined) |
 | 2 | mark defined, never placed | aviso |
 | 3 | section disagreement — cuadro vs detail cotas vs planta geometry, beyond 1 cm or 5 % | duda |
 | 4 | armado disagreement — two texts, or text vs bars drawn in the section (E3) | duda |
