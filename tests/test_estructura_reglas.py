@@ -1349,8 +1349,8 @@ def test_marina_rules(tmp_path):
     assert cov["muro_concreto"] == (0.04, "supuesto")
     assert any("3.0 a 5.0" in a for a in r.avisos)
     assert r.traslape_max_numero.valor == "6" and r.soldar_desde_numero.valor == "8"
-    assert r.primer_estribo_m.valor == 0.06
-    assert r.primer_estribo_familias == ["trabe", "contratrabe"]
+    assert sorted(r.primer_estribo_m) == ["contratrabe", "trabe"]
+    assert r.primer_estribo_m["trabe"].valor == r.primer_estribo_m["contratrabe"].valor == 0.06
     assert r.gancho_estribo.valor == {"angulo": 135, "recto_diametros": 10}
     assert r.gancho_estribo.fuente == "nota"
     assert r.gancho_grapa.valor == {"angulo": 180, "recto_diametros": 10}
@@ -1376,7 +1376,7 @@ def test_reglas_estandar_is_everything_supuesto():
     assert r.gancho_grapa.fuente == "supuesto"
     assert r.gancho_grapa.valor == {"angulo": 180, "recto_diametros": 10}
     assert r.soldar_desde_numero is None and r.traslape_max_numero is None
-    assert r.primer_estribo_m is None and r.primer_estribo_familias == []
+    assert r.primer_estribo_m == {}
     assert r.anclajes_declarados_m == {} and r.plantilla_espesor_m is None
     assert r.contradicciones == [] and r.avisos == []
     r.recubrimiento_m["zapata"].valor = 9.0  # una copia: nadie corrompe el supuesto
@@ -1388,10 +1388,8 @@ def test_reglas_survive_a_trip_through_json(tmp_path):
 
     r = leer_reglas(_marina_notes_and_table(tmp_path), frames=[])
     vuelta = Reglas.model_validate(json.loads(json.dumps(r.model_dump(mode="json"))))
-    assert vuelta.soldar_desde_numero.valor == "8" and vuelta.primer_estribo_familias == [
-        "trabe",
-        "contratrabe",
-    ]
+    assert vuelta.soldar_desde_numero.valor == "8"
+    assert sorted(vuelta.primer_estribo_m) == ["contratrabe", "trabe"]
     assert vuelta.recubrimiento_m["castillo"].valor == 0.03
     assert vuelta.tabla_varillas.valor["8"]["LT1"] == 115  # tras recargar, las filas son dicts
     assert vuelta.contradicciones == r.contradicciones and vuelta.avisos == r.avisos
@@ -1431,7 +1429,7 @@ def test_a_note_with_a_source_carries_where_it_is_and_how_many_copies(tmp_path):
     assert all(i in ids for i in zapata.entidades) and zapata.entidades
     assert r.soldar_desde_numero.copias == 3 and r.soldar_desde_numero.hoja == "marina.dxf"
     assert "SE SOLDARAN" in r.soldar_desde_numero.texto
-    assert r.primer_estribo_m.copias == 3 and r.gancho_estribo.copias == 3
+    assert r.primer_estribo_m["trabe"].copias == 3 and r.gancho_estribo.copias == 3
 
 
 def test_the_hoja_of_a_rule_is_the_sheet_frame_that_holds_the_note(tmp_path):
@@ -1632,23 +1630,45 @@ def test_the_table_contradiction_lists_every_bar_with_a_lap_at_or_above_the_weld
     assert "#6 y #8" in frase and "del #6 en adelante" in frase
 
 
-def test_the_first_stirrup_names_its_families(tmp_path):
+def test_the_first_stirrup_is_one_value_per_family(tmp_path):
     r = _con_notas(tmp_path, MARINA_REFUERZO)
-    assert r.primer_estribo_m.valor == 0.06 and r.primer_estribo_m.fuente == "nota"
-    assert r.primer_estribo_familias == ["trabe", "contratrabe"]
-    assert "trabe" in r.primer_estribo_m.texto and "contratrabe" in r.primer_estribo_m.texto
-    assert "PRIMER ESTRIBO A 6 CMS" in r.primer_estribo_m.texto
+    assert sorted(r.primer_estribo_m) == [
+        "contratrabe",
+        "trabe",
+    ]  # «EN TRABES» incluye contratrabes
+    for dato in r.primer_estribo_m.values():
+        assert dato.valor == 0.06 and dato.fuente == "nota"
+        assert "PRIMER ESTRIBO A 6 CMS" in dato.texto and dato.entidades
 
 
 def test_a_first_stirrup_note_for_other_elements(tmp_path):
     renglones = ["3. EN COLUMNAS Y CASTILLOS EL PRIMER ESTRIBO SE COLOCARA A 5 CM DEL PAÑO"]
     r = _con_notas(tmp_path, renglones)
-    assert r.primer_estribo_m.valor == 0.05 and r.primer_estribo_familias == ["columna", "castillo"]
+    assert {f: d.valor for f, d in r.primer_estribo_m.items()} == {
+        "columna": 0.05,
+        "castillo": 0.05,
+    }
 
 
-def test_a_first_stirrup_without_families_keeps_the_value_and_says_so(tmp_path):
+def test_a_first_stirrup_that_differs_by_family_is_not_a_conflict(tmp_path):
+    renglones = [
+        "3. EN TRABES LA SEPARACION DE LOS ESTRIBOS EMPEZARA A PARTIR DEL PAÑO, COLOCANDO EL",
+        "PRIMER ESTRIBO A 6 CMS.",
+        "4. EN COLUMNAS EL PRIMER ESTRIBO SE COLOCARA A 5 CMS. DEL PAÑO",
+    ]
+    r = _con_notas(tmp_path, renglones)
+    assert {f: d.valor for f, d in r.primer_estribo_m.items()} == {
+        "trabe": 0.06,
+        "contratrabe": 0.06,
+        "columna": 0.05,
+    }
+    assert all(not d.en_conflicto for d in r.primer_estribo_m.values())
+    assert r.contradicciones == []
+
+
+def test_a_first_stirrup_without_families_is_reported_and_not_used(tmp_path):
     r = _con_notas(tmp_path, ["3. EL PRIMER ESTRIBO A 6 CMS. DEL PAÑO"])
-    assert r.primer_estribo_m.valor == 0.06 and r.primer_estribo_familias == []
+    assert r.primer_estribo_m == {}
     assert any("primer estribo" in a.lower() and "no dice" in a for a in r.avisos)
 
 
@@ -1749,6 +1769,10 @@ def test_two_anchorage_labels_that_disagree_are_flagged(tmp_path):
         "PLANTILLA 5 CM ESP.\\PCONCRETO F'C=100KG/CM2",
         "PLANTILLA DE CONCRETO\\PF'C=100 KG/CM2 ESPESOR 5 CM",
         "PLANTILLA DE 5 CM",
+        "PLANTILLA DE CONCRETO POBRE DE 5 CM DE ESPESOR",
+        "PLANTILLA DE 0.05 M",
+        "PLANTILLA DE CONCRETO POBRE\\PESPESOR 0.05 M",
+        "PLANTILLA DE CONCRETO POBRE DE 5 CMS. DE ESP.",
     ],
 )
 def test_plantilla_wordings(tmp_path, texto):
@@ -1901,3 +1925,443 @@ def test_marina_blocks_that_disagree_are_all_reported(tmp_path):
     assert any(
         "nota 4 de NOTAS GENERALES DE ESTRUCTURA" in c and "LIBRES" in c for c in r.contradicciones
     )
+
+
+# --- R34 y la ronda de arreglos: cada hoja dice sus reglas, y lo que no se lee se avisa -----------
+
+
+def test_every_rule_reading_knows_all_the_hojas_that_say_it(tmp_path):
+    cimentacion = [("REFUERZO :", MARINA_REFUERZO)]
+    plantas = [("REFUERZO :", MARINA_PB_REFUERZO)]
+    r = leer_reglas(
+        _dibujo(tmp_path, bloques=[(cimentacion, 2), (plantas, 3)]), frames=_marcos_de_los_bloques()
+    )
+    assert r.soldar_desde_numero.hojas == ["ES-101", "ES-102", "ES-103"]
+    assert r.soldar_desde_numero.hoja == "ES-101"
+    assert [(a.valor, a.hojas) for a in r.soldar_desde_numero.alternativas] == [
+        ("8", ["ES-001", "ES-002"])
+    ]
+    # Las que las cinco hojas dicen igual (el gancho) las traen todas.
+    assert sorted(r.gancho_estribo.hojas) == ["ES-001", "ES-002", "ES-101", "ES-102", "ES-103"]
+    for dato in (r.gancho_grapa, r.traslape_max_numero, *r.primer_estribo_m.values()):
+        assert dato.hojas and dato.hoja == dato.hojas[0]
+
+
+def test_each_sheet_resolves_its_own_lap_and_weld_limits(tmp_path):
+    cimentacion = [("REFUERZO :", MARINA_REFUERZO)]  # traslape hasta #6, suelda desde #8
+    plantas = [("REFUERZO :", MARINA_PB_REFUERZO)]  # traslape hasta #8, suelda desde #10
+    entidades = _dibujo(tmp_path, bloques=[(cimentacion, 2), (plantas, 3)])
+    r = leer_reglas(entidades, frames=_marcos_de_los_bloques())
+    assert r.traslape_max_numero.valor == "8" and r.soldar_desde_numero.valor == "10"  # global
+
+    de_cimentacion = r.para("ES-001")
+    assert de_cimentacion.traslape_max_numero.valor == "6"
+    assert de_cimentacion.soldar_desde_numero.valor == "8"
+    assert de_cimentacion.traslape_max_numero.en_conflicto is False
+    assert de_cimentacion.soldar_desde_numero.hoja == "ES-001"
+    assert [a.valor for a in de_cimentacion.soldar_desde_numero.alternativas] == ["10"]
+
+    de_plantas = r.para("ES-102")
+    assert (
+        de_plantas.traslape_max_numero.valor == "8" and de_plantas.soldar_desde_numero.valor == "10"
+    )
+    assert de_plantas.soldar_desde_numero.en_conflicto is False
+
+    sin_copia = r.para("ES-999")
+    assert (
+        sin_copia.traslape_max_numero.valor == "8" and sin_copia.soldar_desde_numero.valor == "10"
+    )
+    assert sin_copia.traslape_max_numero.en_conflicto is True  # global, con su conflicto a la vista
+    assert sin_copia.soldar_desde_numero.en_conflicto is True
+
+    # Las reglas que no cambian de hoja a hoja son las mismas; la contradicción sigue a la vista.
+    assert de_cimentacion.gancho_estribo.valor == r.gancho_estribo.valor
+    assert de_cimentacion.primer_estribo_m["trabe"].valor == 0.06
+    assert de_cimentacion.contradicciones == r.contradicciones and r.contradicciones
+    assert de_cimentacion.avisos == r.avisos
+
+
+def test_two_sheets_with_different_limits_resolve_each_its_own(tmp_path):
+    """El caso del ruling: ES-000 traslapa hasta el #6 y suelda desde el #8; ES-100 hasta el #8 y
+    desde el #10; ES-999 no dice nada y se queda con el conflicto a la vista."""
+    from klave_engine.detection.frames import SheetFrame
+
+    entidades = _dibujo(
+        tmp_path,
+        bloques=[
+            ([("REFUERZO :", MARINA_REFUERZO)], 1),
+            ([("REFUERZO :", MARINA_PB_REFUERZO)], 1),
+        ],
+    )
+    marcos = [
+        SheetFrame(frame_id="a", bbox=(40, 10, 140, 60), source_file="marina.dxf", code="ES-000"),
+        SheetFrame(frame_id="b", bbox=(40, -60, 140, -10), source_file="marina.dxf", code="ES-100"),
+    ]
+    r = leer_reglas(entidades, frames=marcos)
+    assert r.soldar_desde_numero.en_conflicto and r.traslape_max_numero.en_conflicto
+    cimentacion, plantas, ninguna = r.para("ES-000"), r.para("ES-100"), r.para("ES-999")
+    assert (cimentacion.traslape_max_numero.valor, cimentacion.soldar_desde_numero.valor) == (
+        "6",
+        "8",
+    )
+    assert (plantas.traslape_max_numero.valor, plantas.soldar_desde_numero.valor) == ("8", "10")
+    assert not cimentacion.soldar_desde_numero.en_conflicto
+    assert not plantas.soldar_desde_numero.en_conflicto
+    # Una hoja sin copia propia se queda con la elegida entre todas, y su conflicto se ve.
+    assert ninguna.soldar_desde_numero.valor == r.soldar_desde_numero.valor
+    assert ninguna.soldar_desde_numero.en_conflicto is True
+    assert ninguna.traslape_max_numero.en_conflicto is True
+
+
+def test_para_does_not_change_the_reglas_it_was_called_on(tmp_path):
+    cimentacion = [("REFUERZO :", MARINA_REFUERZO)]
+    plantas = [("REFUERZO :", MARINA_PB_REFUERZO)]
+    r = leer_reglas(
+        _dibujo(tmp_path, bloques=[(cimentacion, 2), (plantas, 3)]), frames=_marcos_de_los_bloques()
+    )
+    antes = r.model_dump()
+    r.para("ES-001")
+    assert r.model_dump() == antes
+
+
+def test_a_supuesto_is_the_same_for_every_sheet_in_para():
+    r = reglas_estandar()
+    de_una = r.para("ES-001")
+    assert de_una.model_dump() == r.model_dump()
+
+
+def test_para_survives_a_trip_through_json(tmp_path):
+    import json
+
+    cimentacion = [("REFUERZO :", MARINA_REFUERZO)]
+    plantas = [("REFUERZO :", MARINA_PB_REFUERZO)]
+    r = leer_reglas(
+        _dibujo(tmp_path, bloques=[(cimentacion, 2), (plantas, 3)]), frames=_marcos_de_los_bloques()
+    )
+    vuelta = Reglas.model_validate(json.loads(json.dumps(r.model_dump(mode="json"))))
+    assert vuelta.para("ES-001").soldar_desde_numero.valor == "8"
+    assert vuelta.para("ES-101").soldar_desde_numero.valor == "10"
+    assert vuelta.para("ES-999").soldar_desde_numero.en_conflicto is True
+
+
+def test_the_table_of_a_sheet_keeps_the_bars_filled_from_the_standard(tmp_path):
+    r = leer_reglas(_dibujo(tmp_path, tabla_kw={"sin": ("4",)}), frames=[])
+    de_hoja = r.para("marina.dxf")
+    assert de_hoja.tabla_varillas.valor["4"] == TABLA_ESTANDAR["4"]
+    assert de_hoja.tabla_varillas.en_conflicto is False
+
+
+def test_two_copies_of_the_table_that_differ_resolve_per_sheet(tmp_path):
+    doc = ezdxf.new("R2010")
+    _bloque(doc, "A")
+    _bloque(doc, "B", cambio={("8", "LT1"): 120})
+    msp = doc.modelspace()
+    msp.add_blockref("A", (0.0, 0.0))
+    msp.add_blockref("B", (40.0, 0.0))
+    ruta = tmp_path / "dos.dxf"
+    doc.saveas(ruta)
+    entidades = DxfParser().parse_file(ruta).entities
+    from klave_engine.detection.frames import SheetFrame
+
+    marcos = [
+        SheetFrame(frame_id="a", bbox=(-5, -5, 20, 5), source_file="dos.dxf", code="ES-001"),
+        SheetFrame(frame_id="b", bbox=(30, -5, 60, 5), source_file="dos.dxf", code="ES-002"),
+    ]
+    r = leer_reglas(entidades, frames=marcos)
+    assert r.tabla_varillas.en_conflicto is True
+    assert r.para("ES-001").tabla_varillas.valor["8"].LT1 == 115
+    assert r.para("ES-002").tabla_varillas.valor["8"].LT1 == 120
+    assert r.para("ES-002").tabla_varillas.en_conflicto is False
+
+
+def test_the_missing_bars_are_filled_in_every_copy_of_a_table_that_differs(tmp_path):
+    doc = ezdxf.new("R2010")
+    _bloque(doc, "A", sin=("4",))
+    _bloque(doc, "B", sin=("4",), cambio={("8", "LT1"): 120})
+    msp = doc.modelspace()
+    msp.add_blockref("A", (0.0, 0.0))
+    msp.add_blockref("B", (40.0, 0.0))
+    ruta = tmp_path / "dos.dxf"
+    doc.saveas(ruta)
+    from klave_engine.detection.frames import SheetFrame
+
+    marcos = [
+        SheetFrame(frame_id="a", bbox=(-5, -5, 20, 5), source_file="dos.dxf", code="ES-001"),
+        SheetFrame(frame_id="b", bbox=(30, -5, 60, 5), source_file="dos.dxf", code="ES-002"),
+    ]
+    r = leer_reglas(DxfParser().parse_file(ruta).entities, frames=marcos)
+    for hoja, lt1 in (("ES-001", 115), ("ES-002", 120)):
+        de_hoja = r.para(hoja).tabla_varillas
+        assert de_hoja.valor["4"] == TABLA_ESTANDAR["4"] and de_hoja.valor["8"].LT1 == lt1
+        assert de_hoja.en_conflicto is False  # la fila de la estándar no inventa una diferencia
+
+
+# --- el texto que dice una regla de otra manera se lee, y si no se lee se avisa ------------------
+
+
+@pytest.mark.parametrize(
+    ("texto", "traslape", "soldar"),
+    [
+        (
+            "SE PERMITE TRASLAPAR HASTA EL No. 6, DEL No. 8 Y DIAMETROS MAYORES SE SOLDARAN",
+            "6",
+            "8",
+        ),
+        (
+            "SE PERMITE TRASLAPAR VARILLA HASTA EL #6. VARILLAS DEL #8 EN ADELANTE SE SOLDARÁN",
+            "6",
+            "8",
+        ),
+        ("EL TRASLAPE MAXIMO SERA CON VARILLAS DEL 6", "6", None),
+        ("SE PERMITE TRASLAPAR VARILLAS HASTA EL 5, DEL 6 Y MAYORES SE SOLDARAN", "5", "6"),
+        ("SE TRASLAPARA HASTA #6; A PARTIR DEL #8 SE SOLDARAN LAS VARILLAS", "6", "8"),
+        ("SOLO SE PERMITE TRASLAPAR VARILLA HASTA EL #5 Y DESDE LA No. 6 SE SOLDARA", "5", "6"),
+        ("LAS VARILLAS DEL #10 EN ADELANTE SE SOLDARAN, SIN TRASLAPES", None, "10"),
+    ],
+)
+def test_lap_and_weld_phrasings_are_read(tmp_path, texto, traslape, soldar):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert (r.traslape_max_numero and r.traslape_max_numero.valor) == (traslape or None)
+    assert (r.soldar_desde_numero and r.soldar_desde_numero.valor) == (soldar or None)
+    assert r.avisos == [], r.avisos  # lo que se lee no deja avisos
+
+
+@pytest.mark.parametrize(
+    ("texto", "tema"),
+    [
+        ("NO SE TRASLAPARA VARILLA MAYOR AL #6", "hasta qué varilla se traslapa"),
+        ("LAS VARILLAS MAYORES AL #8 SE SOLDARAN A TOPE", "desde qué varilla se suelda"),
+        ("EN TRABES EL PRIMER ESTRIBO IRA A 0.06 M DEL PAÑO", "el primer estribo"),
+        ("LOS GANCHOS DE ESTRIBOS SERAN DE 135 GRADOS", "los ganchos de estribos y grapas"),
+        ("PLANTILLA ESP=5 CM CON CONCRETO POBRE", "el espesor de la plantilla"),
+    ],
+)
+def test_a_rule_a_note_names_with_a_number_and_that_is_not_read_is_reported(tmp_path, texto, tema):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    (aviso,) = r.avisos
+    assert tema in aviso and "La nota 4 de REFUERZO" in aviso and "no se usa" in aviso
+    assert "«" in aviso  # cita lo que no entendió
+
+
+def test_a_half_read_pair_says_which_half_is_missing(tmp_path):
+    r = _con_notas(
+        tmp_path,
+        ["4. SE PERMITE TRASLAPAR VARILLA HASTA EL #6. LAS DE MAS DE LA No. 8 SE SOLDARAN"],
+    )
+    assert r.traslape_max_numero.valor == "6" and r.soldar_desde_numero is None
+    (aviso,) = r.avisos
+    assert "hasta qué varilla se traslapa" in aviso and "desde qué varilla se suelda" in aviso
+    assert "mitad" in aviso
+
+
+def test_the_other_half_missing_is_reported_too(tmp_path):
+    r = _con_notas(
+        tmp_path,
+        ["4. NO SE TRASLAPARA VARILLA MAYOR AL #6 Y DEL #8 Y DIAMETROS MAYORES SE SOLDARAN"],
+    )
+    assert r.soldar_desde_numero.valor == "8" and r.traslape_max_numero is None
+    (aviso,) = r.avisos
+    assert "desde qué varilla se suelda" in aviso and "hasta qué varilla se traslapa" in aviso
+    assert "mitad" in aviso
+
+
+def test_a_single_angle_hook_is_read_for_the_element_it_names(tmp_path):
+    r = _con_notas(tmp_path, ["7. LOS ESTRIBOS TENDRAN GANCHOS A 135 GRADOS CON TRAMO RECTO DE 8Ø"])
+    assert r.gancho_estribo.valor == {"angulo": 135, "recto_diametros": 8}
+    assert r.gancho_estribo.fuente == "nota" and r.gancho_grapa.fuente == "supuesto"
+    assert r.avisos == []
+
+
+def test_a_single_angle_hook_without_the_straight_leg_says_so(tmp_path):
+    r = _con_notas(tmp_path, ["7. LOS ESTRIBOS TENDRAN GANCHOS A 135 GRADOS"])
+    assert r.gancho_estribo.valor == {"angulo": 135, "recto_diametros": 10}
+    assert r.gancho_estribo.fuente == "nota"
+    assert any("tramo recto" in a for a in r.avisos)
+
+
+def test_a_single_angle_hook_for_stirrups_and_grapas_both_is_reported_not_guessed(tmp_path):
+    r = _con_notas(tmp_path, ["7. LOS ESTRIBOS Y LAS GRAPAS TENDRAN GANCHOS A 135 GRADOS"])
+    assert r.gancho_estribo.fuente == "supuesto" and r.gancho_grapa.fuente == "supuesto"
+    assert any("estribos o de grapas" in a for a in r.avisos)
+
+
+def test_cover_for_walls_of_containment_is_read_as_concrete_walls(tmp_path):
+    renglones = ["4. EL RECUBRIMIENTO MINIMO SERA 5.0 CM EN CIMENTACION Y MUROS DE CONTENCION"]
+    r = _con_notas(tmp_path, renglones, titulo="NOTAS :")
+    assert r.recubrimiento_m["muro_concreto"].valor == 0.05
+    assert r.recubrimiento_m["muro_concreto"].fuente == "nota"
+    assert r.recubrimiento_m["zapata"].valor == 0.05 and r.avisos == []
+
+
+def test_an_element_in_a_cover_list_that_nobody_recognises_is_reported(tmp_path):
+    renglones = ["4. EL RECUBRIMIENTO MINIMO SERA 5.0 CM EN CIMENTACION Y ALBERCAS"]
+    r = _con_notas(tmp_path, renglones, titulo="NOTAS :")
+    assert r.recubrimiento_m["zapata"].valor == 0.05  # lo que sí se reconoce se usa
+    (aviso,) = r.avisos
+    assert "ALBERCAS" in aviso and "no se reconoce" in aviso
+
+
+def test_a_rule_in_a_displaced_line_of_a_note_is_reported_not_lost(tmp_path):
+    """La última línea de la nota quedó 2 unidades a la derecha (> 4 alturas): no es parte de la
+    nota, y es la que trae el traslape y la soldadura."""
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    for y, texto, dx in (
+        (10.0, "4. NO SE PERMITIRA TRASLAPAR NI SOLDAR MAS DEL 50% DEL REFUERZO", 0.0),
+        (9.78, "EN UNA MISMA SECCION, UNICAMENTE SE PERMITIRA TRASLAPAR VARILLA", 0.0),
+        (9.56, "HASTA EL #6, DEL #8 Y DIAMETROS MAYORES SE SOLDARAN", 2.0),
+    ):
+        msp.add_text(texto, height=0.1).set_placement((dx, y))
+    ruta = tmp_path / "corrida.dxf"
+    doc.saveas(ruta)
+    r = leer_reglas(DxfParser().parse_file(ruta).entities, frames=[])
+    assert r.traslape_max_numero is None and r.soldar_desde_numero is None
+    (aviso,) = r.avisos
+    assert "SOLDARAN" in aviso and "no es una nota numerada" in aviso
+    assert "corrida.dxf" in aviso  # dice dónde está
+
+
+def test_a_multi_line_text_that_states_a_rule_is_reported_not_skipped(tmp_path):
+    mtext = (
+        "4.- NO SE PERMITIRA TRASLAPAR VARILLA HASTA EL #6\\PDEL #8 Y DIAMETROS MAYORES SE SOLDARAN"
+    )
+    r = leer_reglas(_dibujo(tmp_path, tabla=False, mtexts=[(mtext, 5.0, 5.0)]), frames=[])
+    assert r.traslape_max_numero is None and r.soldar_desde_numero is None
+    assert len(r.avisos) == 2
+    assert any("hasta qué varilla se traslapa" in a for a in r.avisos)
+    assert any("desde qué varilla se suelda" in a for a in r.avisos)
+    assert all("no es una nota numerada" in a for a in r.avisos)
+
+
+def test_the_same_unread_text_in_many_sheets_is_one_aviso_with_its_sheets(tmp_path):
+    mtexts = [("PRIMER ESTRIBO A 0.06 M\\PEN TRABES", 5.0 + 100.0 * i, 5.0) for i in range(6)]
+    from klave_engine.detection.frames import SheetFrame
+
+    marcos = [
+        SheetFrame(
+            frame_id=f"f{i}",
+            bbox=(100.0 * i, 0, 100.0 * i + 90, 20),
+            source_file="marina.dxf",
+            code=f"ES-00{i}",
+        )
+        for i in range(6)
+    ]
+    r = leer_reglas(_dibujo(tmp_path, tabla=False, mtexts=mtexts), frames=marcos)
+    (aviso,) = r.avisos
+    assert "el primer estribo" in aviso and "ES-000, ES-001, ES-002 y 3 hojas más" in aviso
+
+
+def test_a_plantilla_text_with_only_its_strength_is_not_a_missing_thickness(tmp_path):
+    textos = [("PLANTILLA DE CONCRETO F'C=100 KG/CM2", 5.0, 5.0)]
+    r = leer_reglas(_dibujo(tmp_path, tabla=False, mtexts=textos), frames=[])
+    assert r.plantilla_espesor_m is None and r.avisos == []
+
+
+def test_a_plantilla_with_a_thickness_nobody_reads_is_reported(tmp_path):
+    r = leer_reglas(
+        _dibujo(tmp_path, tabla=False, mtexts=[("PLANTILLA ESP=5 CM", 5.0, 5.0)]), frames=[]
+    )
+    assert r.plantilla_espesor_m is None
+    (aviso,) = r.avisos
+    assert "el espesor de la plantilla" in aviso and "no se pudo leer" in aviso
+
+
+MARINA_REFUERZO_COMPLETO = [
+    "1. EN TRABES NO SE DEBERA SOLDAR O ACOPLAR MAS DEL 50 %%% DEL",
+    "REFUERZO LONGITUDINAL EN UNA SOLA SECCION, LA DISTANCIA ENTRE",
+    "SECCIONES DONDE SE REALICEN TRASLAPES NO SERA MENOR A 40 VECES",
+    "EL DIAMETRO DE LA BARRA MAS GRUESA.",
+    "2. NO DEBERAN EFECTUARSE TRASLAPES DENTRO DE LOS NUDOS, NI EN UNA",
+    "DISTANCIA DE DOS PERALTES MEDIDA A PARTIR DEL PAÑO DEL NUDO.",
+    *MARINA_REFUERZO[:2],
+    *MARINA_REFUERZO[2:6],
+    "5. LAS LONGITUDES DE ANCLAJE RECTO Y TRASLAPE PARA VARILLAS",
+    "CORRUGADAS SE ESPECIFICAN EN LA TABLA No. 1.",
+    "6. SI NO SE HACE OTRA INDICACION, TODAS LAS VARILLAS TERMINADAS EN",
+    "ESCUADRAS SE ANCLARAN EN LOS ELEMENTOS NORMALES COMO SE",
+    "INDICA EN LA FIGURA A.",
+    *MARINA_REFUERZO[6:],
+    "8. EN LA FIG-C SE REPRESENTA LA LONGITUD DE TRASLAPE.",
+]
+
+
+def test_marinas_own_notes_about_welds_and_laps_that_state_no_limit_stay_silent(tmp_path):
+    """Las notas 1, 2, 5, 6 y 8 de REFUERZO hablan de traslapes y soldadura sin dar un límite de
+    varilla (50 %, «TABLA No. 1», 40 diámetros): no son una regla que se dejó de leer."""
+    r = _con_notas(tmp_path, MARINA_REFUERZO_COMPLETO)
+    assert r.traslape_max_numero.valor == "6" and r.soldar_desde_numero.valor == "8"
+    assert r.primer_estribo_m["trabe"].valor == 0.06
+    assert r.gancho_estribo.fuente == "nota"
+    assert r.avisos == []
+
+
+def test_a_table_reference_is_not_a_bar_number(tmp_path):
+    r = _con_notas(
+        tmp_path, ["5. EL TRASLAPE MAXIMO Y EL ANCLAJE SE ESPECIFICAN EN LA TABLA No. 1."]
+    )
+    assert r.traslape_max_numero is None and r.avisos == []
+
+
+def test_a_percentage_is_not_a_bar_number(tmp_path):
+    renglones = [
+        "1. NO SE DEBERA SOLDAR MAS DEL 50 % DEL REFUERZO",
+        "NI TRASLAPAR VARILLA MAYOR A LA DEL PROYECTO",
+    ]
+    r = _con_notas(tmp_path, renglones)
+    assert r.soldar_desde_numero is None and r.avisos == []
+
+
+def test_a_materials_text_that_mentions_bars_from_a_number_on_stays_silent(tmp_path):
+    mtext = (
+        "2.\\t ACERO DE REFUERZO CON F'Y=4200KG/CM2 EN VARILLAS DEL No.3\\PEN ADELANTE Y "
+        "F'Y=2530KG/CM2 EN VARILLAS DEL No.2."
+    )
+    r = leer_reglas(_dibujo(tmp_path, tabla=False, mtexts=[(mtext, 5.0, 5.0)]), frames=[])
+    assert r.avisos == []
+
+
+# --- los arreglos menores ---------------------------------------------------------------------
+
+
+def test_the_conflict_sentence_lists_only_the_readings_of_the_deciding_rank(tmp_path):
+    notas = [("NOTAS :", ["2. BAJO LA CIMENTACION SE COLOCARA PLANTILLA DE 4 CM"])]
+    mtexts = [("PLANTILLA 5 CM", 5.0, 5.0), ("PLANTILLA 6 CM", 15.0, 5.0)]
+    r = leer_reglas(_dibujo(tmp_path, tabla=False, bloques=[(notas, 1)], mtexts=mtexts), frames=[])
+    assert r.plantilla_espesor_m.fuente == "detalle" and r.plantilla_espesor_m.en_conflicto
+    (frase,) = [c for c in r.contradicciones if "plantilla" in c]
+    assert "5 cm" in frase and "6 cm" in frase
+    assert "4 cm" not in frase  # la nota quedó por debajo de los detalles: no decide
+    assert [a.valor for a in r.plantilla_espesor_m.alternativas if a.fuente == "nota"] == [0.04]
+
+
+def test_the_same_value_twice_in_one_note_counts_one_copy(tmp_path):
+    renglones = ["4. EL RECUBRIMIENTO MINIMO SERA 5.0 CM EN TRABES Y TAMBIEN 5.0 CM EN TRABES"]
+    r = leer_reglas(
+        _dibujo(tmp_path, tabla=False, bloques=[([("NOTAS :", renglones)], 3)]), frames=[]
+    )
+    assert r.recubrimiento_m["trabe"].copias == 3  # tres copias del bloque, no seis
+    assert len(r.recubrimiento_m["trabe"].alternativas) == 0
+
+
+def test_the_same_value_in_two_different_notes_counts_both(tmp_path):
+    renglones = [
+        "4. EL RECUBRIMIENTO MINIMO SERA 5.0 CM EN COLUMNAS",
+        "5. EL RECUBRIMIENTO DE LAS COLUMNAS DE ORILLA SERA 5.0 CM EN COLUMNAS",
+    ]
+    r = leer_reglas(
+        _dibujo(tmp_path, tabla=False, bloques=[([("NOTAS :", renglones)], 1)]), frames=[]
+    )
+    assert (
+        r.recubrimiento_m["columna"].copias == 2 and not r.recubrimiento_m["columna"].en_conflicto
+    )
+
+
+def test_the_table_says_which_bars_it_has_no_row_for(tmp_path):
+    r = leer_reglas(_dibujo(tmp_path), frames=[])
+    assert "sin fila para #2 y #7: ni el plano ni la estándar las traen" in r.tabla_varillas.texto
+    assert r.avisos == []  # un dato del texto, no un aviso por proyecto
+    estandar = reglas_estandar().tabla_varillas
+    assert "sin fila para #2 y #7: la estándar no las trae" in estandar.texto
+    completa = leer_reglas(_dibujo(tmp_path, tabla_kw={"sin": ("4",)}), frames=[]).tabla_varillas
+    assert "#4 de la tabla estándar (supuesto)" in completa.texto
+    assert "sin fila para #2 y #7" in completa.texto

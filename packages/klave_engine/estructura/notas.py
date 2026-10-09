@@ -88,14 +88,6 @@ def mayusculas_sin_acentos(texto: str) -> str:
     return "".join(letras)
 
 
-def en_hojas(hojas: list[str]) -> str:
-    """Las hojas donde se lee algo; con muchas copias, cuántas."""
-    distintas = list(dict.fromkeys(hojas))
-    if len(distintas) > 4:
-        return f"{len(distintas)} copias"
-    return ", ".join(distintas)
-
-
 def donde_estan(hojas: list[str]) -> str:
     """Dónde está algo: las hojas si son pocas; con muchas, las primeras y cuántas faltan."""
     distintas = sorted(dict.fromkeys(hojas))

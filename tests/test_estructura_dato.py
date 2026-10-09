@@ -1,6 +1,6 @@
 """El dato con su fuente: la precedencia decide, y un desacuerdo del mismo rango nunca se calla."""
 
-from klave_engine.estructura.dato import PRECEDENCIA, Dato, elegir
+from klave_engine.estructura.dato import PRECEDENCIA, Dato, elegir, miembros, para_hoja
 from pydantic import BaseModel
 
 
@@ -284,3 +284,119 @@ def test_the_most_repeated_value_wins_by_the_copies_each_dato_already_carries():
         ]
     )
     assert empate.valor == "10" and empate.hoja == "ES-000"  # el empate lo desempata la hoja menor
+
+
+# --- hojas: todas las hojas que dicen el valor ---------------------------------------------------
+
+
+def _cimentacion_y_plantas():
+    """Dos lecturas de la misma regla, cada una en varias hojas (como las notas de Marina)."""
+    cimentacion = Dato(
+        valor="8",
+        fuente="nota",
+        hoja="ES-000",
+        hojas=["ES-000", "ES-001", "ES-002"],
+        copias=3,
+        texto="DEL #8 Y DIAMETROS MAYORES",
+    )
+    plantas = Dato(
+        valor="10",
+        fuente="nota",
+        hoja="ES-100",
+        hojas=["ES-100", "ES-101", "ES-200", "ES-201"],
+        copias=4,
+    )
+    return cimentacion, plantas
+
+
+def test_a_hoja_inside_hojas_counts_as_the_preferred_one():
+    cimentacion, plantas = _cimentacion_y_plantas()
+    d = elegir([cimentacion, plantas], preferir_hoja="ES-002")  # no es la primera de su dato
+    assert d.valor == "8" and d.hoja == "ES-000" and d.en_conflicto is True
+    assert d.copias == 3 and [a.valor for a in d.alternativas] == ["10"]
+    # Sin preferida gana la más repetida.
+    assert elegir([cimentacion, plantas]).valor == "10"
+    assert elegir([cimentacion, plantas], preferir_hoja="ES-201").valor == "10"
+    assert elegir([cimentacion, plantas], preferir_hoja="ES-999").valor == "10"
+
+
+def test_the_elected_dato_knows_every_hoja_of_its_group():
+    solo = Dato(valor=(20, 40), fuente="detalle", hoja="ES-300")
+    otro = Dato(valor=(20, 40), fuente="detalle", hoja="ES-200", hojas=["ES-200", "ES-201"])
+    perdedor = Dato(valor=(20, 30), fuente="detalle", hoja="ES-100")
+    d = elegir([solo, otro, perdedor])
+    assert d.hoja == "ES-300" and d.hojas == ["ES-300", "ES-200", "ES-201"]
+    assert d.copias == 2 and d.en_conflicto is True
+    preferido = elegir([solo, otro, perdedor], preferir_hoja="ES-201")
+    assert preferido.hoja == "ES-200" and preferido.hojas == ["ES-200", "ES-201", "ES-300"]
+    # Elegir de nuevo sobre el elegido no pierde ninguna hoja.
+    otra_vez = elegir([d, Dato(valor=(20, 40), fuente="detalle", hoja="ES-400")])
+    assert otra_vez.hojas == ["ES-300", "ES-200", "ES-201", "ES-400"] and otra_vez.copias == 3
+    assert elegir([Dato(valor=1, fuente="supuesto")]).hojas == []  # sin hoja, sin hojas
+
+
+def test_a_dato_without_hoja_is_not_preferred_by_an_empty_hoja():
+    d = elegir(
+        [Dato(valor="a", fuente="nota"), Dato(valor="b", fuente="nota", hoja="ES-100")],
+        preferir_hoja="",
+    )
+    assert d.valor == "a"  # empate: manda el orden, no una hoja vacía que no existe
+
+
+def test_members_gives_back_what_elegir_joined():
+    cimentacion, plantas = _cimentacion_y_plantas()
+    otra_cimentacion = Dato(valor="8", fuente="nota", hoja="ES-050", copias=2)
+    d = elegir([cimentacion, otra_cimentacion, plantas])
+    assert d.valor == "8" and d.copias == 5
+    originales = miembros(d)
+    assert [(m.valor, m.copias, m.alternativas, m.en_conflicto) for m in originales] == [
+        ("8", 3, [], False),
+        ("8", 2, [], False),
+        ("10", 4, [], False),
+    ]
+
+
+def test_each_hoja_resolves_its_own_value_and_the_others_stay_as_alternatives():
+    cimentacion, plantas = _cimentacion_y_plantas()
+    d = elegir([cimentacion, plantas])
+    assert d.valor == "10" and d.en_conflicto is True  # globalmente gana la mayoría
+
+    en_000 = para_hoja(d, "ES-000")
+    assert en_000.valor == "8" and en_000.hoja == "ES-000" and en_000.copias == 3
+    assert en_000.en_conflicto is False  # ES-000 se dice una sola vez
+    assert en_000.hojas == ["ES-000", "ES-001", "ES-002"]
+    assert [(a.valor, a.copias) for a in en_000.alternativas] == [("10", 4)]  # sin contar
+
+    en_201 = para_hoja(d, "ES-201")
+    assert en_201.valor == "10" and en_201.en_conflicto is False and en_201.copias == 4
+    assert [a.valor for a in en_201.alternativas] == ["8"]
+
+    sin_copia = para_hoja(d, "ES-999")  # una hoja sin copia propia: el elegido, con su conflicto
+    assert sin_copia.valor == "10" and sin_copia.en_conflicto is True
+    assert sin_copia == d
+
+
+def test_a_hoja_that_says_two_things_keeps_its_conflict():
+    a = Dato(valor="8", fuente="nota", hoja="ES-000", hojas=["ES-000", "ES-001"], copias=2)
+    b = Dato(valor="10", fuente="nota", hoja="ES-001", copias=1)
+    c = Dato(valor="12", fuente="nota", hoja="ES-100", copias=1)
+    d = elegir([a, b, c])
+    en_001 = para_hoja(d, "ES-001")
+    assert en_001.en_conflicto is True and en_001.valor == "8"  # la más repetida de las suyas
+    assert sorted(x.valor for x in en_001.alternativas) == ["10", "12"]
+    en_100 = para_hoja(d, "ES-100")
+    assert en_100.valor == "12" and en_100.en_conflicto is False
+
+
+def test_a_supuesto_is_the_same_for_every_hoja():
+    d = Dato(valor=0.05, fuente="supuesto")
+    assert para_hoja(d, "ES-000") is d
+
+
+def test_a_hojas_own_nota_beats_a_detalle_of_another_hoja():
+    nota = Dato(valor=0.05, fuente="nota", hoja="ES-000")
+    detalle = Dato(valor=0.08, fuente="detalle", hoja="ES-100")
+    d = elegir([nota, detalle])
+    assert d.valor == 0.08  # globalmente un detalle manda sobre una nota
+    assert para_hoja(d, "ES-000").valor == 0.05  # pero cada hoja manda sobre lo suyo
+    assert para_hoja(d, "ES-100").valor == 0.08
