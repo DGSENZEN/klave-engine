@@ -23,7 +23,7 @@ estándar)."""
 
 import re
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -41,6 +41,7 @@ from klave_engine.estructura.notas import (
     limpiar_texto,
     mayusculas_sin_acentos,
 )
+from klave_engine.estructura.oraciones import clausula, niega, oracion_de, oraciones
 from klave_engine.estructura.tablas import (
     Tabla,
     TextoSinCelda,
@@ -574,21 +575,30 @@ _ELEMENTO_DE_ANCLAJE = {
 }
 
 _NUM = r"\d+(?:[.,]\d+)?"
-# Una varilla escrita como «#6», «No. 6», «NUMERO 6», «6» o en pulgadas («3/4"», «1"»). El número
-# pelado no es una varilla si lo sigue un porcentaje, una medida, un «/», unas comillas o «VARILLAS»
-# («HASTA 2 VARILLAS POR SECCION»). Los grupos son ``n§`` (el número) y ``p§`` (las pulgadas,
-# que ``numero_de_varilla`` pasa al número mexicano); ``§`` se cambia por el sufijo.
+# Una varilla escrita como «#6», «No. 6», «NUMERO 6» o en pulgadas («3/4"», «1"», «5/8 PULG»).
+# Un número pelado («HASTA 6») sólo es una varilla si lo cierra el fin de la frase, una coma, un
+# punto, un paréntesis o «Y», «O», «DEL», «AL», «INCLUSIVE», «EN ADELANTE», «SE SOLDAR…»: no lo
+# es «HASTA 2 POR SECCION», «HASTA 3 VARS.», «HASTA 4 REDONDOS» ni «HASTA 10Ø». Una fracción sin
+# comillas ni «PULG» («HASTA 3/4 DEL REFUERZO») no se sabe si son pulgadas: no es una varilla, y
+# se avisa. Los grupos son ``n§`` (el número), ``p§`` (pulgadas, que ``numero_de_varilla`` pasa al
+# número mexicano) y ``f§`` (la fracción sin unidad); ``§`` se cambia por el sufijo.
 _COMILLAS = "\"”″'"
+_CIERRE_DE_UN_NUMERO_PELADO = (
+    r"(?=\s*(?:$|[,;.)]|(?:Y|O|INCLUSIVE|DEL|AL|SE\s+SOLDAR\w*)\b|A\s+LA\b|EN\s+ADELANTE\b))"
+)
 _UNA_VARILLA = (
-    r"(?:(?P<p§>\d+(?:\s+\d+)?\s*/\s*\d+\s*["
+    r"(?:(?P<p§>\d+(?:\s+\d+)?\s*/\s*\d+\s*(?:["
     + _COMILLAS
-    + r"]{0,2}|\d+\s*["
+    + r"]{1,2}|PULG\w*)|\d+\s*(?:["
     + _COMILLAS
-    + r"]{1,2})"
-    r"|(?:#|NUMERO|NUM\.?|N[O°º]\.?)?\s*(?P<n§>\d{1,2}(?:[.,]\d)?)(?![\d.,]*\d)"
-    r"(?!\s*(?:CMS?\b|%|VECES|MM\b|M\b|MTS?\b|KG|DIAM|/|["
+    + r"]{1,2}|PULG\w*))"
+    r"|(?P<f§>\d+\s*/\s*\d+)(?!\s*[" + _COMILLAS + r"])(?!\s*PULG)"
+    r"|(?:(?P<m§>#|NUMERO|NUM\.?|N[O°º]\.?)\s*)?(?P<n§>\d{1,2}(?:[.,]\d)?)(?![\d.,]*\d)"
+    r"(?(m§)(?!\s*(?:CMS?\b|%|VECES|MM\b|M\b|MTS?\b|KG|DIAM|/|["
     + _COMILLAS
-    + r"]|VARILLAS?\b|BARRAS?\b)))"
+    + r"]|VARILLAS?\b|BARRAS?\b))|"
+    + _CIERRE_DE_UN_NUMERO_PELADO
+    + r"))"
 )
 
 
@@ -645,6 +655,15 @@ _PRIMER_ESTRIBO = re.compile(rf"PRIMER\s+ESTRIBO\s+(?:[A-Z]+\s+){{0,3}}?A\s+({_N
 _ANGULO = r"(\d{2,3})\s*(?:°|º|GRADOS)"
 _GANCHOS_DOBLES = re.compile(rf"(?:DOBLEZ(?:ES)?|GANCHOS?)\s+(?:A|DE)\s+{_ANGULO}\s*Y\s*{_ANGULO}")
 _GANCHO_UNO = re.compile(rf"(?:DOBLEZ(?:ES)?|GANCHOS?)\s+(?:A|DE)\s+{_ANGULO}")
+# «… GANCHOS A 135° Y LAS GRAPAS A 180°»: el otro gancho, justo después del primero.
+_GANCHO_SEGUNDO = re.compile(
+    rf"\s*Y\s+(?:LOS\s+|LAS\s+)?(?P<quien>ESTRIBOS?|GRAPAS?)\s+(?:(?:A|DE|CON)\s+)?"
+    rf"(?:(?:GANCHOS?|DOBLEZ(?:ES)?)\s+(?:A|DE)\s+)?{_ANGULO}"
+)
+# Una medida de la plantilla seguida de esto no es su espesor: «DE 10 CM DE VOLADO», «DE ANCHO».
+_NO_ES_EL_ESPESOR = re.compile(
+    r"\s*(?:DE\s+(?:ANCHO|VOLADO|LARGO|ALTO|MAS|SOBRE\w*)\b|MAS\b|POR\s+LADO\b|SOBRE\w*)"
+)
 _TRAMO_RECTO = re.compile(rf"RECTO\s+DE\s+({_NUM})\s*(?:Ø|⌀|DIAMETROS?)")
 _ARTICULO = r"(?:LOS\s+|LAS\s+|LA\s+|EL\s+)?"
 _ANCLAJES = (
@@ -659,7 +678,7 @@ _PLANTILLAS = (
     (re.compile(rf"PLANTILLA\b[^.]{{0,120}}?\bESPESOR\s+(?:DE\s+)?(?P<n>{_NUM})\s*CMS?\b"), 1.0),
     (
         re.compile(
-            rf"PLANTILLA\b[^.]{{0,120}}?\bDE\s+(?P<n>{_NUM})\s*CMS?\.?\s+DE\s+(?:ESPESOR|ESP\b)"
+            rf"PLANTILLA\b[^.]{{0,120}}?\b(?:DE|Y|CON)\s+(?P<n>{_NUM})\s*CMS?\.?\s+DE\s+(?:ESPESOR|ESP\b)"
         ),
         1.0,
     ),
@@ -673,7 +692,7 @@ _PLANTILLAS = (
     ),
     (
         re.compile(
-            rf"PLANTILLA\b[^.]{{0,120}}?\bDE\s+(?P<n>{_NUM})\s*(?:MTS?|M)\.?\s+DE\s+"
+            rf"PLANTILLA\b[^.]{{0,120}}?\b(?:DE|Y|CON)\s+(?P<n>{_NUM})\s*(?:MTS?|M)\.?\s+DE\s+"
             r"(?:ESPESOR|ESP\b)"
         ),
         100.0,
@@ -858,43 +877,63 @@ def _recubrimientos_de(o: _Origen, mayus: str, lecturas: _Lecturas) -> None:
             lecturas.poner(f"recubrimiento:{familia}", o.dato(_metros(minimo), cita))
 
 
-def _varilla_escrita(m: re.Match[str], sufijo: str = "") -> tuple[str | None, str, bool]:
+def _positivas(mayus: str, patron: re.Pattern[str]) -> Iterator[tuple[int, re.Match[str]]]:
+    """Cada lugar donde una oración dice ``patron`` sin que la niegue una negación de su cláusula
+    («NO SE PERMITE TRASLAPAR…»): dónde empieza la oración y el trozo, relativo a ella. Una regla
+    se lee sólo de una frase conocida que la oración dice en positivo."""
+    for inicio, fin in oraciones(mayus):
+        frase = mayus[inicio:fin]
+        for m in patron.finditer(frase):
+            if not niega(frase, m.start(), m.end()):
+                yield inicio, m
+
+
+def _varilla_escrita(m: re.Match[str], sufijo: str = "") -> tuple[str | None, str, str]:
     """La varilla que dice un trozo del texto: su número mexicano (``None`` si no es ninguna de
-    ``NUMEROS``), cómo está escrita y si venía en pulgadas («3/4"» es la #6)."""
+    ``NUMEROS``), cómo está escrita y de qué tipo (``num``, ``pulg`` o ``fraccion`` sin unidad:
+    «3/4"» es la #6, «3/4» sola no se sabe)."""
     pulgadas = m.group(f"p{sufijo}")
     if pulgadas is not None:
-        return numero_de_varilla(pulgadas), pulgadas.strip(), True
-    escrito = m.group(f"n{sufijo}")
-    numero = escrito.replace(",", ".")
-    return (numero if numero in NUMEROS else None), numero, False
+        escrito = pulgadas.strip()
+        return numero_de_varilla(re.sub(r"\s*PULG\w*", '"', escrito)), escrito, "pulg"
+    fraccion = m.group(f"f{sufijo}")
+    if fraccion is not None:
+        return None, fraccion.strip(), "fraccion"
+    numero = m.group(f"n{sufijo}").replace(",", ".")
+    return (numero if numero in NUMEROS else None), numero, "num"
 
 
 def _varilla_en(
     o: _Origen, m: re.Match[str], cita: str, lecturas: _Lecturas, sufijo: str = ""
 ) -> str | None:
     """El número de varilla de un trozo del texto; si no es una varilla, un aviso."""
-    numero, escrito, en_pulgadas = _varilla_escrita(m, sufijo)
+    numero, escrito, tipo = _varilla_escrita(m, sufijo)
     if numero is not None:
         return numero
-    nombre = f"«{escrito}»" if en_pulgadas else f"#{escrito}"
-    lecturas.avisar(f"{o.donde} dice «{cita}» y {nombre} no es un número de varilla; no se usa.")
+    if tipo == "fraccion":
+        quien = f"«{escrito}» no se sabe si son pulgadas"
+    elif tipo == "pulg":
+        quien = f"«{escrito}» no es un número de varilla"
+    else:
+        quien = f"#{escrito} no es un número de varilla"
+    lecturas.avisar(f"{o.donde} dice «{cita}» y {quien}; no se usa.")
     return None
 
 
 def _traslape_y_soldadura_de(o: _Origen, mayus: str, lecturas: _Lecturas) -> None:
     for regla, patrones in (("traslape", _TRASLAPES), ("soldar", _SOLDADURAS)):
         for patron in patrones:
-            for m in patron.finditer(mayus):
-                cita = _cita(o.texto, m.start(), m.end())
-                # En un rango («del 3 al 6») el límite del traslape es el número de arriba.
-                sufijo = "2" if "n2" in patron.groupindex else ""
+            # En un rango («del 3 al 6») el límite del traslape es el número de arriba.
+            sufijo = "2" if "n2" in patron.groupindex else ""
+            for inicio, m in _positivas(mayus, patron):
+                cita = _cita(o.texto, inicio + m.start(), inicio + m.end())
                 numero = _varilla_en(o, m, cita, lecturas, sufijo)
                 if numero is not None:
                     lecturas.poner(regla, o.dato(numero, cita))
     mayor = NUMEROS[-1]
     for patron in _RANGOS_DE_SOLDADURA:
-        for m in patron.finditer(mayus):
-            cita = _cita(o.texto, m.start(), m.end())
+        for inicio, m in _positivas(mayus, patron):
+            cita = _cita(o.texto, inicio + m.start(), inicio + m.end())
             hasta = _varilla_escrita(m, "2")[0]
             desde = _varilla_en(o, m, cita, lecturas)
             if desde is not None and hasta == mayor:
@@ -902,11 +941,12 @@ def _traslape_y_soldadura_de(o: _Origen, mayus: str, lecturas: _Lecturas) -> Non
 
 
 def _primer_estribo_de(o: _Origen, mayus: str, lecturas: _Lecturas) -> None:
-    for m in _PRIMER_ESTRIBO.finditer(mayus):
+    for inicio, m in _positivas(mayus, _PRIMER_ESTRIBO):
         centimetros = _numero(m.group(1))
-        fin = m.end() + (1 if mayus[m.end() : m.end() + 1] == "." else 0)
-        cita = _cita(o.texto, 0, fin)
-        familias, _ = _familias_en(mayus[: m.start()], _PALABRAS_DE_ESTRIBO)
+        fin = inicio + m.end()
+        fin += 1 if mayus[fin : fin + 1] == "." else 0
+        cita = _cita(o.texto, inicio, fin)
+        familias, _ = _familias_en(mayus[inicio : inicio + m.start()], _PALABRAS_DE_ESTRIBO)
         if not _PRIMER_ESTRIBO_CM[0] <= centimetros <= _PRIMER_ESTRIBO_CM[1]:
             lecturas.avisar(
                 f"{o.donde} da el primer estribo a {centimetros:g} cm, fuera de lo posible "
@@ -942,44 +982,87 @@ def _poner_gancho(
     lecturas.poner(regla, o.dato({"angulo": angulo, "recto_diametros": en_numero}, cita))
 
 
+def _regla_de_gancho(palabra: str) -> str:
+    return "gancho_estribo" if palabra.startswith("ESTRIBO") else "gancho_grapa"
+
+
 def _ganchos_de(o: _Origen, mayus: str, lecturas: _Lecturas) -> None:
-    pares = list(_GANCHOS_DOBLES.finditer(mayus))
-    for m in pares:
-        antes = mayus[: m.start()]
-        estribo, grapa = antes.rfind("ESTRIBO"), antes.rfind("GRAPA")
-        angulos = (int(m.group(1)), int(m.group(2)))
-        if estribo < 0 or grapa < 0:
+    """Los ganchos de estribos y grapas, oración por oración. El gancho es de lo que nombra su
+    propia oración: «LOS ESTRIBOS SE COLOCARAN @ 10 CM. TODAS LAS ESCUADRAS LLEVARAN GANCHOS A 90°»
+    habla de las escuadras, no de los estribos. Un ángulo de una oración de ganchos que ninguna
+    frase conocida lee se avisa."""
+    for inicio, fin in oraciones(mayus):
+        frase = mayus[inicio:fin]
+        usados: list[tuple[int, int]] = []  # dónde dijo la oración un ángulo que una frase tomó
+        for m in _GANCHOS_DOBLES.finditer(frase):
+            usados.append(m.span())
+            if niega(frase, m.start(), m.end()):
+                continue
+            antes = frase[: m.start()]
+            estribo, grapa = antes.rfind("ESTRIBO"), antes.rfind("GRAPA")
+            angulos = (int(m.group(1)), int(m.group(2)))
+            if estribo < 0 or grapa < 0:
+                lecturas.avisar(
+                    f"{o.donde} da dobleces a {angulos[0]}° y {angulos[1]}° pero no dice cuál es "
+                    "de estribos y cuál de grapas; no se usa."
+                )
+                continue
+            angulo_estribo, angulo_grapa = angulos if estribo < grapa else angulos[::-1]
+            diametros, hasta = _tramo_recto(o, mayus, inicio + m.end(), lecturas)
+            cita = _cita(o.texto, inicio + m.start() - 70, max(hasta, inicio + m.end()))
+            _poner_gancho(o, "gancho_estribo", angulo_estribo, diametros, cita, lecturas)
+            _poner_gancho(o, "gancho_grapa", angulo_grapa, diametros, cita, lecturas)
+        con_par = {desde for desde, _ in usados}
+        for m in _GANCHO_UNO.finditer(frase):
+            if m.start() in con_par:
+                continue
+            usados.append(m.span())
+            if niega(frase, m.start(), m.end()):
+                continue
+            antes = frase[: m.start()]
+            de_estribos, de_grapas = "ESTRIBO" in antes, "GRAPA" in antes
+            if not de_estribos and not de_grapas:
+                continue  # un gancho de otras varillas: no es una regla de estribos ni de grapas
+            if de_estribos and de_grapas:
+                lecturas.avisar(
+                    f"{o.donde} da un gancho a {int(m.group(1))}° pero no dice si es de estribos "
+                    "o de grapas; no se usa."
+                )
+                continue
+            diametros, hasta = _tramo_recto(o, mayus, inicio + m.end(), lecturas)
+            cita = _cita(o.texto, inicio + m.start() - 70, max(hasta, inicio + m.end()))
+            regla = "gancho_estribo" if de_estribos else "gancho_grapa"
+            _poner_gancho(o, regla, int(m.group(1)), diametros, cita, lecturas)
+            # «… GANCHOS A 135° Y LAS GRAPAS A 180°»: el segundo gancho, si lo dice.
+            otro = _GANCHO_SEGUNDO.match(frase, m.end())
+            if otro is not None:
+                usados.append(otro.span())
+                if _regla_de_gancho(otro.group("quien")) != regla:
+                    cita2 = _cita(o.texto, inicio + m.start() - 70, inicio + otro.end())
+                    _poner_gancho(
+                        o,
+                        _regla_de_gancho(otro.group("quien")),
+                        int(otro.group(2)),
+                        diametros,
+                        cita2,
+                        lecturas,
+                    )
+        _avisar_angulos_sin_leer(o, frase, usados, lecturas)
+
+
+def _avisar_angulos_sin_leer(
+    o: _Origen, frase: str, usados: list[tuple[int, int]], lecturas: _Lecturas
+) -> None:
+    """Una oración de ganchos con un ángulo que no entra en ninguna frase conocida («… GANCHOS A
+    135° Y LAS GRAPAS TENDRAN 180°») deja el ángulo sin leer: se dice."""
+    if not usados or "GANCHO" not in frase and "DOBLEZ" not in frase:
+        return
+    for m in _ANGULO_EN_TEXTO.finditer(frase):
+        if not any(desde <= m.start() < hasta for desde, hasta in usados):
             lecturas.avisar(
-                f"{o.donde} da dobleces a {angulos[0]}° y {angulos[1]}° pero no dice cuál es de "
-                "estribos y cuál de grapas; no se usa."
+                f"{o.donde} da {int(m.group(1))}° en una oración de ganchos pero no se pudo leer "
+                "a qué gancho corresponde; no se usa."
             )
-            continue
-        angulo_estribo, angulo_grapa = angulos if estribo < grapa else angulos[::-1]
-        diametros, fin = _tramo_recto(o, mayus, m.end(), lecturas)
-        cita = _cita(o.texto, m.start() - 70, max(fin, m.end()))
-        _poner_gancho(o, "gancho_estribo", angulo_estribo, diametros, cita, lecturas)
-        _poner_gancho(o, "gancho_grapa", angulo_grapa, diametros, cita, lecturas)
-    con_par = {m.start() for m in pares}
-    for m in _GANCHO_UNO.finditer(mayus):
-        if m.start() in con_par:
-            continue
-        angulo = int(m.group(1))
-        # El gancho es de lo que nombra su propia oración: «LOS ESTRIBOS … CM. TODAS LAS ESCUADRAS
-        # LLEVARAN GANCHOS A 90°» habla de las escuadras, no de los estribos.
-        ventana = mayus[_oracion(mayus, m.start())[0] : m.start()]
-        de_estribos, de_grapas = "ESTRIBO" in ventana, "GRAPA" in ventana
-        if not de_estribos and not de_grapas:
-            continue  # un gancho de otras varillas: no es una regla de estribos ni de grapas
-        if de_estribos and de_grapas:
-            lecturas.avisar(
-                f"{o.donde} da un gancho a {angulo}° pero no dice si es de estribos o de grapas; "
-                "no se usa."
-            )
-            continue
-        diametros, fin = _tramo_recto(o, mayus, m.end(), lecturas)
-        cita = _cita(o.texto, m.start() - 70, max(fin, m.end()))
-        regla = "gancho_estribo" if de_estribos else "gancho_grapa"
-        _poner_gancho(o, regla, angulo, diametros, cita, lecturas)
 
 
 def _anclajes_y_plantilla_de(o: _Origen, mayus: str, lecturas: _Lecturas) -> None:
@@ -1006,11 +1089,21 @@ def _anclajes_y_plantilla_de(o: _Origen, mayus: str, lecturas: _Lecturas) -> Non
                 else:
                     lecturas.poner(f"anclaje:{familia}", o.dato(_metros(centimetros), cita))
     if "PLANTILLA" in mayus:
-        for patron, a_cm in _PLANTILLAS:
-            hallada = patron.search(mayus)
-            if hallada is None:
+        for inicio, fin in oraciones(mayus):
+            _plantilla_de(o, mayus, inicio, fin, lecturas)
+
+
+def _plantilla_de(o: _Origen, mayus: str, inicio: int, fin: int, lecturas: _Lecturas) -> None:
+    """El espesor de la plantilla que dice una oración: la primera frase conocida que la oración
+    dice en positivo y cuya medida no es de otra cosa («DE 10 CM DE VOLADO»)."""
+    frase = mayus[inicio:fin]
+    for patron, a_cm in _PLANTILLAS:
+        for hallada in patron.finditer(frase):
+            if niega(frase, hallada.start(), hallada.end()):
                 continue
-            cita = _cita(o.texto, hallada.start(), hallada.end())
+            if _NO_ES_EL_ESPESOR.match(frase, hallada.end()):
+                continue
+            cita = _cita(o.texto, inicio + hallada.start(), inicio + hallada.end())
             centimetros = round(_numero(hallada.group("n")) * a_cm, 4)
             if _PLANTILLA_CM[0] <= centimetros <= _PLANTILLA_CM[1]:
                 lecturas.poner("plantilla", o.dato(_metros(centimetros), cita))
@@ -1019,38 +1112,44 @@ def _anclajes_y_plantilla_de(o: _Origen, mayus: str, lecturas: _Lecturas) -> Non
                     f"La plantilla dice {centimetros:g} cm «{cita}», fuera de lo posible "
                     f"({_PLANTILLA_CM[0]:g}–{_PLANTILLA_CM[1]:g} cm); no se usa."
                 )
-            break
+            return
 
 
-_FIN_DE_ORACION = re.compile(r"(?<!\bNO)(?<!\bNUM)\.\s+|;\s+")
+@dataclass(frozen=True)
+class _Sospecha:
+    """Una regla que un texto puede decir y que, si nombra su palabra clave con un número a la
+    vista y no se leyó, se avisa."""
+
+    tema: str
+    reglas: tuple[str, ...]  # las reglas que la leen
+    clave: re.Pattern[str]
+    cerca: tuple[re.Pattern[str], ...] = ()  # lo que se pide cerca de la palabra clave
+    en_su_oracion: tuple[re.Pattern[str], ...] = ()  # lo que se pide en la oración de la clave
+    en_la_nota: tuple[re.Pattern[str], ...] = ()  # lo que se pide en cualquier parte del texto
 
 
-def _oracion(texto: str, posicion: int) -> tuple[int, int]:
-    """Dónde empieza y dónde acaba la oración que contiene ``posicion`` («No. 6» no la corta)."""
-    inicio = 0
-    for m in _FIN_DE_ORACION.finditer(texto):
-        if m.end() <= posicion:
-            inicio = m.end()
-        else:
-            return inicio, max(m.start(), posicion)
-    return inicio, len(texto)
-
-
-def _cerca(
-    texto: str, clave: re.Pattern[str], *pide: re.Pattern[str], por_oracion: bool = False
-) -> tuple[int, int] | None:
-    """Dónde habla el texto de ``clave`` con todo lo que ``pide`` cerca (antes y después de la
-    palabra, o sólo en su oración si ``por_oracion``); ``None`` si no hay ningún lugar así.
-    «SIN TRASLAPES» y «NI SOLDAR» no cuentan: niegan, no fijan un límite."""
-    for m in clave.finditer(texto):
-        antes = texto[: m.start()].split()
-        if antes and antes[-1] in ("SIN", "NI"):
-            continue
+def _cerca(texto: str, sospecha: _Sospecha, *, aceptar_negadas: bool) -> tuple[int, int] | None:
+    """Dónde habla el texto de la palabra clave con todo lo que se pide (cerca, en su oración, en
+    el texto entero); ``None`` si no hay ningún lugar así. Si la otra mitad de un par ya se leyó,
+    «SIN TRASLAPES», «NI SOLDAR», «NO SE PERMITEN TRASLAPES» (que niegan sin dar una varilla) no
+    cuentan: sólo repiten lo que ya se leyó. «NO SE TRASLAPARA VARILLA MAYOR AL #6» sí: da un
+    límite que no se leyó."""
+    if not all(p.search(texto) for p in sospecha.en_la_nota):
+        return None
+    for m in sospecha.clave.finditer(texto):
+        if not aceptar_negadas:
+            inicio, fin = oracion_de(texto, m.start())
+            frase = texto[inicio:fin]
+            desde, hasta = clausula(frase, m.start() - inicio)
+            repite_lo_leido = niega(frase, m.start() - inicio, m.end() - inicio)
+            if repite_lo_leido and not _REFERENCIA_A_VARILLA.search(frase[desde:hasta]):
+                continue
         desde, hasta = max(0, m.start() - _ANTES), min(len(texto), m.end() + _DESPUES)
-        if por_oracion:
-            inicio, fin = _oracion(texto, m.start())
-            desde, hasta = max(desde, inicio), min(hasta, max(fin, m.end()))
-        if all(p.search(texto[desde:hasta]) for p in pide):
+        if all(p.search(texto[desde:hasta]) for p in sospecha.cerca):
+            if sospecha.en_su_oracion:
+                inicio, fin = oracion_de(texto, m.start())
+                if not all(p.search(texto[inicio:fin]) for p in sospecha.en_su_oracion):
+                    continue
             return desde, hasta
     return None
 
@@ -1058,45 +1157,35 @@ def _cerca(
 _HASTA_QUE_VARILLA_SE_TRASLAPA = "hasta qué varilla se traslapa"
 _DESDE_QUE_VARILLA_SE_SUELDA = "desde qué varilla se suelda"
 _GANCHOS = "los ganchos de estribos y grapas"
-# Qué regla se sospecha: (tema, reglas que la leen, palabra clave, lo que se pide cerca de ella,
-# si se pide dentro de su oración). Un gancho sólo es de estribos o grapas si la oración lo dice.
-_SOSPECHAS: tuple[
-    tuple[str, tuple[str, ...], re.Pattern[str], tuple[re.Pattern[str], ...], bool], ...
-] = (
-    (
+_SOSPECHAS = (
+    _Sospecha(
         _HASTA_QUE_VARILLA_SE_TRASLAPA,
         ("traslape",),
         re.compile("TRASLAP"),
         (_LIMITE, _REFERENCIA_A_VARILLA),
-        False,
     ),
-    (
+    _Sospecha(
         _DESDE_QUE_VARILLA_SE_SUELDA,
         ("soldar",),
         re.compile("SOLDAR|SOLDADURA"),
         (_LIMITE, _REFERENCIA_A_VARILLA),
-        False,
     ),
-    (
-        "el primer estribo",
-        ("primer_estribo",),
-        re.compile(r"PRIMER\s+ESTRIBO"),
-        (_ALGUN_NUMERO,),
-        False,
+    _Sospecha(
+        "el primer estribo", ("primer_estribo",), re.compile(r"PRIMER\s+ESTRIBO"), (_ALGUN_NUMERO,)
     ),
-    (
+    # Un gancho sólo es de estribos o grapas si lo dice su oración; el ángulo puede estar en otra.
+    _Sospecha(
         _GANCHOS,
         ("gancho_estribo", "gancho_grapa"),
         re.compile("GANCHO|DOBLEZ"),
-        (_ANGULO_EN_TEXTO, _ESTRIBOS_O_GRAPAS),
-        True,
+        en_su_oracion=(_ESTRIBOS_O_GRAPAS,),
+        en_la_nota=(_ANGULO_EN_TEXTO,),
     ),
-    (
+    _Sospecha(
         "el espesor de la plantilla",
         ("plantilla",),
         re.compile("PLANTILLA"),
         (_LONGITUD_DE_PLANTILLA,),
-        False,
     ),
 )
 # Las dos mitades de un par: si una se leyó y la otra no, se dice cuál falta.
@@ -1106,15 +1195,17 @@ _TEMA_DE = {"traslape": _HASTA_QUE_VARILLA_SE_TRASLAPA, "soldar": _DESDE_QUE_VAR
 
 def _vigilar(o: _Origen, mayus: str, lecturas: _Lecturas) -> None:
     """Una regla que el texto nombra con un número a la vista y que no se leyó se avisa: lo que
-    no se sabe leer no se pierde en silencio.
+    no se sabe leer —o que una negación anula— no se pierde en silencio.
 
     Una nota con una mitad leída (traslape sin soldadura, o al revés) dice cuál falta. Un texto
     que no es una nota numerada (un texto suelto, uno de varias líneas) no se lee como regla de
     traslape, soldadura, primer estribo, ganchos ni recubrimiento: se avisa que lo dice. (La
     plantilla y los anclajes sí se leen en cualquier texto.)"""
     hojas = None if o.es_nota else o.hojas  # un texto suelto dice en qué hojas está
-    for tema, reglas, clave, pide, por_oracion in _SOSPECHAS:
-        lugar = _cerca(mayus, clave, *pide, por_oracion=por_oracion)
+    for sospecha in _SOSPECHAS:
+        tema, reglas = sospecha.tema, sospecha.reglas
+        leida = _MATE.get(reglas[0])
+        lugar = _cerca(mayus, sospecha, aceptar_negadas=leida not in lecturas.leidas)
         if lugar is None:
             continue
         cita = o.texto[lugar[0] : lugar[1]].strip(" ,;:")
@@ -1124,8 +1215,7 @@ def _vigilar(o: _Origen, mayus: str, lecturas: _Lecturas) -> None:
                 hojas,
             )
         elif not any(regla in lecturas.leidas for regla in reglas):
-            leida = _MATE.get(reglas[0])
-            if leida in lecturas.leidas and leida is not None:
+            if leida is not None and leida in lecturas.leidas:
                 lecturas.avisar(
                     f"{o.donde} dice {_TEMA_DE[leida]} pero no se pudo leer {tema} («{cita}»); "
                     "esa mitad no se usa.",

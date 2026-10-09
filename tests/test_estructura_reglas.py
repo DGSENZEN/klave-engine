@@ -8,6 +8,7 @@ from klave_engine.dxf.parser import DxfParser
 from klave_engine.estructura.armado import NUMEROS
 from klave_engine.estructura.asociacion import ancla_texto
 from klave_engine.estructura.notas import leer_notas
+from klave_engine.estructura.oraciones import niega, oraciones
 from klave_engine.estructura.reglas import (
     ENCABEZADOS_VARILLA,
     RECUBRIMIENTO_SUPUESTO,
@@ -2157,7 +2158,7 @@ def test_a_half_read_pair_says_which_half_is_missing(tmp_path):
 def test_the_other_half_missing_is_reported_too(tmp_path):
     r = _con_notas(
         tmp_path,
-        ["4. NO SE TRASLAPARA VARILLA MAYOR AL #6 Y DEL #8 Y DIAMETROS MAYORES SE SOLDARAN"],
+        ["4. NO SE TRASLAPARA VARILLA MAYOR AL #6, DEL #8 Y DIAMETROS MAYORES SE SOLDARAN"],
     )
     assert r.soldar_desde_numero.valor == "8" and r.traslape_max_numero is None
     (aviso,) = r.avisos
@@ -2558,3 +2559,281 @@ def test_para_of_the_standard_reglas_is_a_copy_too():
     de_hoja.recubrimiento_m["zapata"].valor = 9.0
     de_hoja.tabla_varillas.valor["8"].LT1 = 1
     assert r.recubrimiento_m["zapata"].valor == 0.05 and r.tabla_varillas.valor["8"].LT1 is None
+
+
+# --- ronda 3: una regla se lee sólo de una frase conocida que la oración dice en positivo -------
+
+
+def _frases(texto):
+    return [texto[i:f] for i, f in oraciones(texto)]
+
+
+def test_a_period_after_a_unit_or_an_abbreviation_does_not_end_the_sentence_before_a_connector():
+    assert _frases("LOS ESTRIBOS SE COLOCARAN @ 15 CM. CON GANCHOS A 135°") == [
+        "LOS ESTRIBOS SE COLOCARAN @ 15 CM. CON GANCHOS A 135°"
+    ]
+    for una_sola in (
+        'ESTRIBOS Ø3/8" @ 15 CMS. CON GANCHO A 135°',
+        "ESTRIBOS F'Y=4200 KG/CM2. CON GANCHOS A 135°",
+        "LOS ESTRIBOS, VER FIG. 4, TENDRAN GANCHOS A 135°",
+        "ESTRIBOS SEGUN ART. 5 CON GANCHOS A 135°",
+        "ESTRIBOS Nº. 3 CON GANCHOS A 135°",
+        "LOS ESTRIBOS DEL NO. 3 SE COLOCARAN @ 15CM. Y TENDRAN GANCHOS",
+        "PLANTILLA 5 CM DE ESP. DE CONCRETO F'C=100",
+    ):
+        assert _frases(una_sola) == [una_sola], una_sola
+
+
+def test_a_period_after_a_unit_before_a_new_sentence_still_ends_it():
+    texto = "LOS ESTRIBOS SE COLOCARAN @ 10 CM. TODAS LAS ESCUADRAS LLEVARAN GANCHOS A 90°"
+    assert _frases(texto) == [
+        "LOS ESTRIBOS SE COLOCARAN @ 10 CM.",
+        "TODAS LAS ESCUADRAS LLEVARAN GANCHOS A 90°",
+    ]
+    assert _frases("UNA COSA; OTRA COSA. Y UNA TERCERA") == [  # «COSA.» no es unidad ni abreviatura
+        "UNA COSA;",
+        "OTRA COSA.",
+        "Y UNA TERCERA",
+    ]
+    assert _frases("EL ANGULO SERA 135°") == ["EL ANGULO SERA 135°"]
+    assert _frases("") == [""]
+
+
+def test_a_negation_cancels_the_phrase_of_its_own_clause_only():
+    frase = "NO SE PERMITIRA TRASLAPAR NI SOLDAR MAS DEL 50 % DEL REFUERZO, SE TRASLAPA HASTA EL #6"
+    desde = frase.index("HASTA")
+    assert not niega(frase, desde, len(frase))  # la negación es de la cláusula anterior
+    assert niega(frase, frase.index("TRASLAPAR"), frase.index("TRASLAPAR") + 9)
+    assert niega("SIN SOLDADURA EN VARILLAS DEL No. 8", 4, 14)
+    assert not niega("TRASLAPAR HASTA EL No. 6", 0, 24)  # «No.» no es una negación
+    assert not niega("DE 2,5 CM NO", 0, 5)  # la coma de un decimal no corta la cláusula
+
+
+_ESTRIBOS = "TRAMO RECTO DE 10Ø"
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        f"LOS ESTRIBOS DEL No. 3 SE COLOCARAN @ 15 CM. CON GANCHOS A 135° Y {_ESTRIBOS}",
+        f'ESTRIBOS Ø3/8" @ 15 CMS. CON GANCHO A 135° Y {_ESTRIBOS}',
+        f"ESTRIBOS F'Y=4200 KG/CM2. CON GANCHOS A 135° Y {_ESTRIBOS}",
+        f"LOS ESTRIBOS, VER FIG. 4, TENDRAN GANCHOS A 135° Y {_ESTRIBOS}",
+        f"ESTRIBOS SEGUN ART. 5 CON GANCHOS A 135° Y {_ESTRIBOS}",
+        f"ESTRIBOS Nº. 3 CON GANCHOS A 135° Y {_ESTRIBOS}",
+    ],
+)
+def test_stirrup_hooks_after_a_unit_or_abbreviation_period_are_read(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"7. {texto}"])
+    assert r.gancho_estribo.valor == {"angulo": 135, "recto_diametros": 10}
+    assert r.gancho_estribo.fuente == "nota" and r.avisos == []
+
+
+def test_a_hook_whose_angle_is_in_the_next_sentence_is_reported(tmp_path):
+    texto = "LOS ESTRIBOS LLEVARAN GANCHOS EN SUS EXTREMOS. EL ANGULO SERA 135°"
+    r = _con_notas(tmp_path, [f"7. {texto}"])
+    assert r.gancho_estribo.fuente == "supuesto"
+    (aviso,) = r.avisos
+    assert "los ganchos de estribos y grapas" in aviso and "no se pudo leer" in aviso
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "NO SE TRASLAPARAN VARILLAS DEL No. 8 AL No. 12",
+        "NO SE PERMITE TRASLAPAR VARILLAS DEL #8 AL #12",
+        "NI SE TRASLAPARAN VARILLAS DEL No. 8 AL No. 12, SE SOLDARAN",
+        "NO SE PERMITE TRASLAPAR VARILLA HASTA EL #6",
+        "NUNCA SE TRASLAPARA VARILLA HASTA EL #6",
+        "SE PROHIBE TRASLAPAR VARILLA HASTA EL #6",
+    ],
+)
+def test_a_negated_lap_rule_is_never_read_and_is_reported(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert r.traslape_max_numero is None
+    assert any("hasta qué varilla se traslapa" in a and "no se pudo leer" in a for a in r.avisos)
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "LA SOLDADURA NO SE PERMITE EN VARILLAS DEL No. 8 EN ADELANTE",
+        "NO SE PERMITE LA SOLDADURA EN VARILLAS DEL No. 8 EN ADELANTE",
+        "SIN SOLDADURA EN VARILLAS DEL No. 8 EN ADELANTE",
+        "NO SE SOLDARAN VARILLAS DEL No. 3 AL No. 12",
+        "NO SE SOLDARAN LAS VARILLAS DEL #10 EN ADELANTE",
+    ],
+)
+def test_a_negated_weld_rule_is_never_read_and_is_reported(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert r.soldar_desde_numero is None
+    assert any("desde qué varilla se suelda" in a and "no se pudo leer" in a for a in r.avisos)
+
+
+def test_a_negation_in_an_earlier_clause_does_not_cancel_the_next_clause(tmp_path):
+    renglones = [
+        "4. NO SE PERMITIRA TRASLAPAR NI SOLDAR MAS DEL 50% DEL REFUERZO EN UNA MISMA SECCION,",
+        "UNICAMENTE SE PERMITIRA TRASLAPAR VARILLA HASTA EL #6, DEL #8 Y DIAMETROS",
+        "MAYORES SE SOLDARAN",
+    ]
+    r = _con_notas(tmp_path, renglones)
+    assert r.traslape_max_numero.valor == "6" and r.soldar_desde_numero.valor == "8"
+    assert r.avisos == []
+
+
+def test_the_same_negation_in_the_same_clause_cancels_the_weld_that_follows(tmp_path):
+    r = _con_notas(
+        tmp_path,
+        ["4. NO SE TRASLAPARA VARILLA MAYOR AL #6 Y DEL #8 Y DIAMETROS MAYORES SE SOLDARAN"],
+    )
+    assert r.traslape_max_numero is None and r.soldar_desde_numero is None
+    assert len(r.avisos) == 2
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "SE PERMITE TRASLAPAR HASTA 1/2 DEL REFUERZO EN UNA SECCION",
+        "SE PERMITE TRASLAPAR HASTA 3/4 DEL REFUERZO",
+        "SE PERMITE TRASLAPAR VARILLAS HASTA 5/8",
+        "LAS VARILLAS DEL 3/4 EN ADELANTE SE SOLDARAN",
+    ],
+)
+def test_a_fraction_without_a_quote_is_not_an_inch_bar_and_is_reported(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert r.traslape_max_numero is None and r.soldar_desde_numero is None
+    assert any("no se sabe si son pulgadas" in a for a in r.avisos)  # avisos: ver el ledger
+
+
+@pytest.mark.parametrize(
+    ("texto", "numero"),
+    [('HASTA 3/4"', "6"), ("HASTA 3/4 PULG", "6"), ("HASTA 5/8 PULGADAS", "5"), ("HASTA 1''", "8")],
+)
+def test_a_fraction_with_a_quote_or_pulg_is_an_inch_bar(tmp_path, texto, numero):
+    r = _con_notas(tmp_path, [f"4. SE PERMITE TRASLAPAR VARILLAS {texto}"])
+    assert r.traslape_max_numero.valor == numero and r.avisos == []
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "HASTA 2 POR SECCION",
+        "HASTA 3 EN UNA MISMA SECCION",
+        "HASTA 3 VARS. POR SECCION",
+        "HASTA 4 REDONDOS",
+        "HASTA 2 PIEZAS",
+        "HASTA 3 EMPALMES",
+        "HASTA 3 DE LAS 6 VARILLAS",
+        "HASTA 3 DE CADA 6",
+        "HASTA 10Ø",
+    ],
+)
+def test_a_count_after_hasta_is_not_a_bar(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"4. SE PERMITE TRASLAPAR {texto}"])
+    assert r.traslape_max_numero is None and r.avisos == []
+    r = _con_notas(tmp_path, [f"4. LOS TRASLAPES {texto}"])
+    assert r.traslape_max_numero is None and r.avisos == []
+
+
+@pytest.mark.parametrize(
+    ("texto", "traslape"),
+    [
+        ("HASTA EL 6", "6"),
+        ("HASTA EL 6.", "6"),
+        ("HASTA EL 6, INCLUSIVE", "6"),
+        ("HASTA 6 INCLUSIVE", "6"),
+        ("HASTA 6 O MENOR", "6"),
+        ("HASTA 6 Y MENORES", "6"),
+        ("HASTA EL 6)", "6"),
+        ("HASTA EL 6; LAS DEMAS SE SOLDARAN", "6"),
+    ],
+)
+def test_a_bare_bar_number_is_read_when_the_sentence_closes_it(tmp_path, texto, traslape):
+    r = _con_notas(tmp_path, [f"4. SE PERMITE TRASLAPAR VARILLA {texto}"])
+    assert r.traslape_max_numero.valor == traslape
+
+
+def test_stirrups_and_grapas_with_their_own_angle_are_both_read(tmp_path):
+    texto = f"7. LOS ESTRIBOS LLEVARAN GANCHOS A 135° Y LAS GRAPAS A 180° CON {_ESTRIBOS}"
+    r = _con_notas(tmp_path, [texto])
+    assert r.gancho_estribo.valor == {"angulo": 135, "recto_diametros": 10}
+    assert r.gancho_grapa.valor == {"angulo": 180, "recto_diametros": 10}
+    assert r.gancho_estribo.fuente == r.gancho_grapa.fuente == "nota" and r.avisos == []
+
+
+def test_a_second_hook_in_the_same_sentence_that_no_phrase_reads_is_reported(tmp_path):
+    texto = f"7. LOS ESTRIBOS LLEVARAN GANCHOS A 135° Y LAS GRAPAS TENDRAN 180° CON {_ESTRIBOS}"
+    r = _con_notas(tmp_path, [texto])
+    assert r.gancho_estribo.valor == {"angulo": 135, "recto_diametros": 10}
+    assert r.gancho_grapa.fuente == "supuesto"
+    assert any("180°" in a and "no se pudo leer a qué gancho" in a for a in r.avisos)
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "PLANTILLA DE 0.10 M DE ANCHO",
+        "PLANTILLA DE 10 CM DE VOLADO",
+        "PLANTILLA DE 10 CM MAS DE CADA LADO",
+        "PLANTILLA DE 10 CM POR LADO",
+        "PLANTILLA DE 10 CM SOBRE LA ZAPATA",
+    ],
+)
+def test_a_plantilla_measure_followed_by_something_else_is_not_the_thickness(tmp_path, texto):
+    r = leer_reglas(_dibujo(tmp_path, tabla=False, mtexts=[(texto, 5.0, 5.0)]), frames=[])
+    assert r.plantilla_espesor_m is None
+    (aviso,) = r.avisos
+    assert "el espesor de la plantilla" in aviso and "no se pudo leer" in aviso
+
+
+def test_a_plantilla_with_its_thickness_and_its_overhang_reads_the_thickness(tmp_path):
+    texto = "PLANTILLA DE 10 CM DE VOLADO Y 5 CM DE ESPESOR"
+    r = leer_reglas(_dibujo(tmp_path, tabla=False, mtexts=[(texto, 5.0, 5.0)]), frames=[])
+    assert r.plantilla_espesor_m.valor == 0.05 and r.avisos == []
+
+
+def test_a_negated_plantilla_is_not_read(tmp_path):
+    r = leer_reglas(
+        _dibujo(tmp_path, tabla=False, mtexts=[("SIN PLANTILLA DE 5 CM", 5.0, 5.0)]), frames=[]
+    )
+    assert r.plantilla_espesor_m is None and len(r.avisos) == 1
+
+
+def test_a_negated_first_stirrup_is_not_read_and_a_negated_hook_neither(tmp_path):
+    r = _con_notas(tmp_path, ["3. EN TRABES NO SE COLOCARA EL PRIMER ESTRIBO A 6 CMS."])
+    assert r.primer_estribo_m == {}
+    assert any("el primer estribo" in a and "no se pudo leer" in a for a in r.avisos)
+    r = _con_notas(tmp_path, ["7. LOS ESTRIBOS NO LLEVARAN GANCHOS A 135°"])
+    assert r.gancho_estribo.fuente == "supuesto"
+    assert any("los ganchos de estribos y grapas" in a for a in r.avisos)
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "LAS VARILLAS DEL #8 EN ADELANTE SE SOLDARAN A TOPE. NO SE TRASLAPARAN",
+        "SE SOLDARAN LAS VARILLAS DEL No. 8 EN ADELANTE, NO SE PERMITEN TRASLAPES",
+        "LAS VARILLAS DEL #8 EN ADELANTE SE SOLDARAN, SIN TRASLAPES",
+    ],
+)
+def test_a_negation_that_only_repeats_what_was_read_is_not_a_missing_half(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert r.soldar_desde_numero.valor == "8" and r.traslape_max_numero is None
+    assert r.avisos == []
+
+
+def test_the_whole_note_is_looked_at_not_just_the_window_around_the_keyword(tmp_path):
+    relleno = "LA SEPARACION SE MIDE DESDE EL PAÑO DE LOS APOYOS EN TODOS LOS CASOS. " * 4
+    r = _con_notas(tmp_path, [f"7. LOS ESTRIBOS LLEVARAN GANCHOS EN SUS EXTREMOS. {relleno}"])
+    assert not any("ganchos" in a for a in r.avisos)  # sin ángulo en ningún lado: nada que leer
+    r = _con_notas(
+        tmp_path, [f"7. LOS ESTRIBOS LLEVARAN GANCHOS EN SUS EXTREMOS. {relleno}ANGULO 135°"]
+    )
+    assert any("los ganchos de estribos y grapas" in a for a in r.avisos)
+
+
+def test_the_families_of_a_first_stirrup_are_those_of_its_own_sentence(tmp_path):
+    texto = "3. EN COLUMNAS SE USARAN ESTRIBOS CERRADOS. EL PRIMER ESTRIBO IRA A 6 CMS DEL PAÑO."
+    r = _con_notas(tmp_path, [texto])
+    assert r.primer_estribo_m == {}  # «EN COLUMNAS» es de la oración de antes
+    assert any("el primer estribo" in a.lower() and "no dice" in a for a in r.avisos)
