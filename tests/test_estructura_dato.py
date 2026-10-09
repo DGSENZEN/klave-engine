@@ -267,3 +267,20 @@ def test_clave_is_total_for_values_json_cannot_dump():
         ]
     )
     assert d2.copias == 2 and d2.en_conflicto is True
+
+
+def test_the_most_repeated_value_wins_by_the_copies_each_dato_already_carries():
+    # Un dato que ya junta 12 copias pesa más que uno que junta 8, aunque su hoja sea mayor.
+    ocho = Dato(valor="8", fuente="nota", hoja="ES-000", copias=8)
+    doce = Dato(valor="10", fuente="nota", hoja="ES-100", copias=12)
+    d = elegir([ocho, doce])
+    assert d.valor == "10" and d.copias == 12 and d.en_conflicto is True
+    assert [a.valor for a in d.alternativas] == ["8"]
+    assert elegir([doce, ocho]).valor == "10"  # y no depende del orden
+    empate = elegir(
+        [
+            Dato(valor="8", fuente="nota", hoja="ES-100", copias=3),
+            Dato(valor="10", fuente="nota", hoja="ES-000", copias=3),
+        ]
+    )
+    assert empate.valor == "10" and empate.hoja == "ES-000"  # el empate lo desempata la hoja menor

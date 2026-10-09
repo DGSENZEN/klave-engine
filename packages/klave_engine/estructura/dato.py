@@ -81,7 +81,8 @@ def elegir(datos: list[Dato], *, preferir_hoja: str | None = None) -> Dato | Non
     Gana el rango más alto de ``PRECEDENCIA``. Dentro de ese rango los datos se agrupan por
     valor: un solo valor (aunque repetido) no es conflicto y sus ``copias`` se suman; con
     varios valores se marca ``en_conflicto`` y gana el grupo con algún dato de
-    ``preferir_hoja``, si no el más repetido, si no el de la hoja menor. El dato elegido es
+    ``preferir_hoja``, si no el más repetido (cuenta las ``copias`` que cada dato ya trae: un dato
+    de 12 copias pesa más que dos de 1), si no el de la hoja menor. El dato elegido es
     el de ``preferir_hoja`` si el grupo ganador lo trae, si no el primero que llegó.
 
     Todo lo demás queda en ``alternativas``, plano: primero los otros datos recibidos y luego
@@ -101,7 +102,7 @@ def elegir(datos: list[Dato], *, preferir_hoja: str | None = None) -> Dato | Non
         con_preferida = preferir_hoja is not None and any(
             datos[i].hoja == preferir_hoja for i in grupo
         )
-        return (not con_preferida, -len(grupo), datos[grupo[0]].hoja)
+        return (not con_preferida, -sum(datos[i].copias for i in grupo), datos[grupo[0]].hoja)
 
     ganador_grupo = min(grupos.values(), key=orden)
     elegido = next(
