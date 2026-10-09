@@ -66,18 +66,28 @@ def _a_json(objeto: Any) -> Any:
 def _clave(valor: Any) -> str:
     """Clave canónica de un valor: la misma antes y después de pasar por ``estructura.json``.
 
-    Las tuplas se vuelcan como listas, así que ``(20, 40)`` y ``[20, 40]`` son el mismo valor."""
-    return json.dumps(valor, sort_keys=True, default=_a_json)
+    Las tuplas se vuelcan como listas, así que ``(20, 40)`` y ``[20, 40]`` son el mismo valor.
+    Es total: un valor que ``json`` no puede volcar (claves de tipos mezclados, claves que no
+    son texto o número, ciclos) se compara por su ``repr`` en vez de reventar."""
+    try:
+        return json.dumps(valor, sort_keys=True, default=_a_json)
+    except (TypeError, ValueError, RecursionError):
+        return repr(valor)
 
 
 def elegir(datos: list[Dato], *, preferir_hoja: str | None = None) -> Dato | None:
     """Escoge entre varios datos del mismo concepto; ``None`` si no hay ninguno.
 
     Gana el rango más alto de ``PRECEDENCIA``. Dentro de ese rango los datos se agrupan por
-    valor: un solo valor (aunque repetido) no es conflicto y sus ``copias`` se cuentan; con
+    valor: un solo valor (aunque repetido) no es conflicto y sus ``copias`` se suman; con
     varios valores se marca ``en_conflicto`` y gana el grupo con algún dato de
-    ``preferir_hoja``, si no el más repetido, si no el de la hoja menor. Todo lo demás
-    queda en ``alternativas``, plano. No modifica los datos recibidos."""
+    ``preferir_hoja``, si no el más repetido, si no el de la hoja menor. El dato elegido es
+    el de ``preferir_hoja`` si el grupo ganador lo trae, si no el primero que llegó.
+
+    Todo lo demás queda en ``alternativas``, plano: primero los otros datos recibidos y luego
+    lo que el elegido ya traía (la alternativa de un perdedor viaja dentro de él, sin
+    desplegarse). Así elegir de nuevo sobre un dato ya elegido no borra su conflicto, sus
+    copias ni la lectura que perdió. No modifica los datos recibidos."""
     if not datos:
         return None
     mejor = max(PRECEDENCIA[d.fuente] for d in datos)
@@ -94,12 +104,18 @@ def elegir(datos: list[Dato], *, preferir_hoja: str | None = None) -> Dato | Non
         return (not con_preferida, -len(grupo), datos[grupo[0]].hoja)
 
     ganador_grupo = min(grupos.values(), key=orden)
-    elegido = ganador_grupo[0]
-    return datos[elegido].model_copy(
+    elegido = next(
+        (i for i in ganador_grupo if preferir_hoja is not None and datos[i].hoja == preferir_hoja),
+        ganador_grupo[0],
+    )
+    base = datos[elegido]
+    alternativas = [d.model_copy(deep=True) for i, d in enumerate(datos) if i != elegido]
+    alternativas += [a.model_copy(deep=True) for a in base.alternativas]
+    return base.model_copy(
         deep=True,
         update={
-            "alternativas": [d.model_copy(deep=True) for i, d in enumerate(datos) if i != elegido],
-            "en_conflicto": len(grupos) > 1,
-            "copias": len(ganador_grupo),
+            "alternativas": alternativas,
+            "en_conflicto": len(grupos) > 1 or base.en_conflicto,
+            "copias": sum(datos[i].copias for i in ganador_grupo),
         },
     )

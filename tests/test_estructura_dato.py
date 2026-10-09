@@ -95,7 +95,7 @@ def test_alternativas_are_flat_and_include_every_lower_rank():
     assert [x.fuente for x in d.alternativas] == ["ia", "detalle", "detalle"]
 
 
-def test_losers_alternativas_are_not_nested():
+def test_losers_alternativas_are_kept_nested_not_spliced():
     anidado = Dato(
         valor="B", fuente="detalle", hoja="Z", alternativas=[Dato(valor="C", fuente="ia")]
     )
@@ -170,3 +170,100 @@ def test_top_rank_unreadable_with_value_conflict():
         ]
     )
     assert d.en_conflicto is True
+
+
+def _eleccion_en_conflicto():
+    return elegir(
+        [
+            Dato(valor=(20, 30), fuente="detalle", hoja="A"),
+            Dato(valor=(20, 40), fuente="detalle", hoja="B"),
+        ]
+    )
+
+
+def test_re_electing_an_elected_dato_keeps_its_conflict_and_the_losing_reading():
+    e1 = _eleccion_en_conflicto()
+    assert e1.en_conflicto is True and [a.valor for a in e1.alternativas] == [(20, 40)]
+    e2 = elegir([e1])
+    assert e2.valor == (20, 30) and e2.en_conflicto is True and e2.copias == 1
+    assert [a.valor for a in e2.alternativas] == [(20, 40)]
+    assert e2 is not e1 and len(e1.alternativas) == 1  # ni muta ni devuelve el mismo objeto
+
+
+def test_re_electing_with_a_lower_source_keeps_the_conflict_and_lists_both():
+    e1 = _eleccion_en_conflicto()
+    ia = Dato(valor=(1, 1), fuente="ia")
+    e2 = elegir([e1, ia])
+    assert e2.valor == (20, 30) and e2.en_conflicto is True
+    # primero los demás datos recibidos, luego lo que el elegido ya traía, todo plano
+    assert [a.valor for a in e2.alternativas] == [(1, 1), (20, 40)]
+    assert all(a.alternativas == [] for a in e2.alternativas)
+
+
+def test_re_electing_survives_a_json_reload():
+    e1 = _eleccion_en_conflicto()
+    recargado = Dato.model_validate(e1.model_dump(mode="json"))
+    e2 = elegir([recargado, Dato(valor="x", fuente="supuesto")])
+    assert e2.en_conflicto is True
+    assert [list(a.valor) if isinstance(a.valor, list) else a.valor for a in e2.alternativas] == [
+        "x",
+        [20, 40],
+    ]
+
+
+def test_copias_sum_the_incoming_copias_of_the_winning_group():
+    dos = elegir(
+        [
+            Dato(valor="EYG#3@15", fuente="detalle", hoja="A"),
+            Dato(valor="EYG#3@15", fuente="detalle", hoja="A"),
+        ]
+    )
+    assert dos.copias == 2
+    tres = elegir([dos, Dato(valor="EYG#3@15", fuente="detalle", hoja="B")])
+    assert tres.copias == 3 and tres.en_conflicto is False
+    otra = elegir([dos, Dato(valor="EYG#3@15", fuente="detalle", hoja="B"), dos])
+    assert otra.copias == 5
+
+
+def test_winner_takes_the_preferred_hoja_when_a_member_of_its_group_has_it():
+    d = elegir(
+        [
+            Dato(valor=(20, 40), fuente="detalle", hoja="ES-300"),
+            Dato(valor=(20, 40), fuente="detalle", hoja="ES-200"),
+            Dato(valor=(20, 30), fuente="detalle", hoja="ES-100"),
+        ],
+        preferir_hoja="ES-200",
+    )
+    assert d.hoja == "ES-200" and d.valor == (20, 40) and d.copias == 2
+    assert d.en_conflicto is True
+    assert sorted(a.hoja for a in d.alternativas) == ["ES-100", "ES-300"]
+
+
+def test_winner_keeps_the_first_member_when_no_hoja_is_preferred():
+    d = elegir(
+        [
+            Dato(valor=(20, 40), fuente="detalle", hoja="ES-300"),
+            Dato(valor=(20, 40), fuente="detalle", hoja="ES-200"),
+        ]
+    )
+    assert d.hoja == "ES-300" and d.copias == 2
+
+
+def test_clave_is_total_for_values_json_cannot_dump():
+    sucio = {1: "a", "b": 2}  # claves de tipos mezclados: sort_keys falla
+    con_tuplas = {(1, 2): "x"}  # clave que no es str/int/float/bool/None
+    d = elegir(
+        [
+            Dato(valor=sucio, fuente="regla", hoja="A"),
+            Dato(valor={1: "a", "b": 2}, fuente="regla", hoja="B"),
+        ]
+    )
+    assert d.copias == 2 and d.en_conflicto is False
+    d2 = elegir(
+        [
+            Dato(valor=con_tuplas, fuente="regla", hoja="A"),
+            Dato(valor={(1, 2): "x"}, fuente="regla", hoja="B"),
+            Dato(valor={(3, 4): "y"}, fuente="regla", hoja="C"),
+        ]
+    )
+    assert d2.copias == 2 and d2.en_conflicto is True
