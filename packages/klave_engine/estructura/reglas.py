@@ -20,7 +20,13 @@ from pydantic import BaseModel
 from klave_engine.dxf.entities import NormalizedEntity
 from klave_engine.estructura.armado import NUMEROS
 from klave_engine.estructura.dato import Dato, elegir
-from klave_engine.estructura.tablas import Tabla, TextoSinCelda, fila_para_avisar, leer_tablas
+from klave_engine.estructura.tablas import (
+    Tabla,
+    TextoSinCelda,
+    fila_para_avisar,
+    leer_tablas,
+    parece_celda,
+)
 
 CAMPOS_VARILLA = ("LA1", "LA2", "LT1", "LT2", "LG1", "LG2", "LG3", "r")
 ANCLA_VARILLA = "VARILLA"
@@ -149,6 +155,7 @@ def leer_tablas_de_varillas(
         ANCLA_VARILLA,
         hoja_de,
         fila_valida=lambda texto: numero_de_varilla(texto) is not None,
+        fila_probable=lambda texto: _numeros_de(texto) is not None,
         hueco_maximo=hueco_maximo,
     )
 
@@ -177,7 +184,8 @@ def _filas_de(tabla: Tabla) -> tuple[dict[str, FilaVarilla], list[str]]:
         etiqueta = etiquetas[i]
         numero = numero_de_varilla(etiqueta)
         if numero is None:
-            if fila_para_avisar(etiqueta, i < ultimo_valido):  # ignorar no es esconder
+            con_valores = any(parece_celda(v) for c, v in fila.items() if c != ANCLA_VARILLA)
+            if con_valores or fila_para_avisar(etiqueta, i < ultimo_valido):  # no es esconder
                 avisos.append(_aviso_fila_descartada(etiqueta))
             continue  # «No.», «(cm)» y demás: no son un renglón
         valores: dict[str, float | None] = {}

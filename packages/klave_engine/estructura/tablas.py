@@ -41,9 +41,28 @@ _TEXTOS_PARA_EL_PASO = 9
 # Una etiqueta de renglón es corta: «3», «VAR 9», «#3 (3/8")». Una nota o una leyenda no.
 _MAX_PALABRAS_ETIQUETA = 4
 _MAX_LARGO_ETIQUETA = 24
+# Un valor de celda es corto: «115», «115 cm», «1l5». Una frase con cifras (la leyenda de la
+# tabla, la leyenda de la copia de al lado) no es una celda aunque caiga en su línea.
+_MAX_LARGO_CELDA = 16
+_MAX_PALABRAS_CELDA = 3
 # Fuera de la tabla, por la derecha, se mira hasta esto (× la separación entre encabezados).
 _ALCANCE_A_LA_DERECHA = 3
 _CIFRA = re.compile(r"\d")
+
+
+_NUMERO_SUELTO = re.compile(r"[#\s]*\d+(?:[.,/]\d+)*\s*[\"”″']*")
+
+
+def _es_numero_suelto(texto: str) -> bool:
+    """Un texto que es sólo un número («9», «2.50», «#9», «3/16"»): lo que, sin saber más de la
+    tabla, parece el nombre de un renglón."""
+    return _NUMERO_SUELTO.fullmatch(texto) is not None
+
+
+def parece_celda(texto: str) -> bool:
+    """Si un texto puede ser el valor de una celda: corto y con cifras."""
+    corto = len(texto) <= _MAX_LARGO_CELDA and len(texto.split()) <= _MAX_PALABRAS_CELDA
+    return corto and _CIFRA.search(texto) is not None
 
 
 def fila_para_avisar(texto: str, entre_filas_que_si_se_leen: bool) -> bool:
@@ -134,6 +153,7 @@ def leer_tablas(
     hoja_de: Callable[[NormalizedEntity], str],
     *,
     fila_valida: Callable[[str], bool] | None = None,
+    fila_probable: Callable[[str], bool] | None = None,
     hueco_maximo: float = _HUECO_MAXIMO,
 ) -> list[Tabla]:
     """Las tablas cuyo renglón de encabezados trae todos los ``encabezados``.
@@ -171,7 +191,14 @@ def leer_tablas(
     no lo es (un «No.», una unidad) sigue ocupando su lugar —lo que cae junto a él es suyo y
     se descarta con él— pero no es fila ni deja sus celdas a la fila de al lado. Sin él, todo
     texto de la columna ancla es renglón. Una tabla sin renglones ni nada que avisar no se
-    devuelve."""
+    devuelve.
+
+    Un renglón que no se lee se avisa (``fila_descartada``) cuando trae cifras y es corto, o
+    está entre renglones que sí se leen, o —sea cual sea— cuando hay cifras en la línea de sus
+    celdas: una etiqueta larga («VARILLA CORRUGADA DEL No. 5 (5/8 PULG)») con valores al lado
+    es un renglón, no una nota. Después de un hueco, el primer renglón que se anota es uno que
+    se lee, uno que ``fila_probable`` reconoce como del estilo de la tabla (sin ella, un número
+    suelto) o uno con cifras en su línea; una etiqueta suelta sin nada a su lado no."""
     if ancla not in encabezados:
         raise ValueError(f"el ancla {ancla!r} no es uno de los encabezados {encabezados!r}")
 
@@ -220,7 +247,16 @@ def leer_tablas(
         if len(encontrada.fichas) < len(encabezados):
             continue  # un «VARILLA» suelto en el plano, no un renglón de encabezados
         tabla = _leer_una(
-            encontrada, a, encabezados, ancla, todos, hoja, usados, fila_valida, hueco_maximo
+            encontrada,
+            a,
+            encabezados,
+            ancla,
+            todos,
+            hoja,
+            usados,
+            fila_valida,
+            fila_probable or _es_numero_suelto,
+            hueco_maximo,
         )
         if tabla is not None:
             tablas.append(tabla)
@@ -360,6 +396,7 @@ def _leer_una(
     hoja: Callable[[NormalizedEntity], str],
     usados: set[str],
     fila_valida: Callable[[str], bool] | None,
+    fila_probable: Callable[[str], bool],
     hueco_maximo: float,
 ) -> Tabla | None:
     cabecera = encontrada.fichas
@@ -427,6 +464,22 @@ def _leer_una(
     def es_valido(texto: str) -> bool:
         return fila_valida is None or fila_valida(texto)
 
+    def sobre_la_linea(renglon: _Texto, t: _Texto) -> bool:
+        """Si ``t`` está sobre la línea de ``renglon``: media altura del mayor de los dos
+        textos, o 0.3 pasos, lo que sea más (con un pelo de margen por el redondeo)."""
+        tolerancia = max(
+            _TOLERANCIA_LINEA * max(renglon.alto, t.alto), _TOLERANCIA_CELDA_EN_PASOS * paso
+        )
+        return abs(renglon.y - t.y) <= tolerancia * 1.001
+
+    def con_cifras_en_su_linea(renglon: _Texto) -> bool:
+        """Si hay valores (textos cortos con cifras, fuera de la columna ancla) en la línea del
+        renglón: lo que no se lee pero tiene celdas al lado es un renglón, no una nota."""
+        return any(
+            parece_celda(t.texto) and columna(t) != ancla and sobre_la_linea(renglon, t)
+            for t in debajo
+        )
+
     # Después de un hueco la tabla puede seguir: no se lee, pero lo que sigue —renglones que
     # sí lo son— se anota, con la vista hasta ``_ALCANCE_DEL_HUECO_EN_PASOS`` pasos.
     tras_hueco: list[_Texto] = []
@@ -435,28 +488,37 @@ def _leer_una(
         limite = limite_hueco if tras_hueco else _ALCANCE_DEL_HUECO_EN_PASOS * paso
         if ultimo - t.y > limite or _clave(t.texto) == _clave(ancla):
             break
-        # El primer renglón después del hueco debe ser de los que se leen; los que le siguen
-        # también pueden ser una etiqueta que no se lee («VAR 9»). Una nota o una unidad
-        # no es un renglón que falte.
-        if es_valido(t.texto) or (tras_hueco and fila_para_avisar(t.texto, False)):
+        # El primer renglón después del hueco debe ser de los que se leen, uno del estilo de la
+        # tabla («9», «VAR 9») o uno con valores en su línea; los que le siguen también pueden
+        # ser una etiqueta corta con cifras que no se lee. Una etiqueta suelta, una nota o una
+        # unidad no es un renglón que falte.
+        if (
+            es_valido(t.texto)
+            or fila_probable(t.texto)
+            or con_cifras_en_su_linea(t)
+            or (tras_hueco and fila_para_avisar(t.texto, False))
+        ):
             tras_hueco.append(t)
             ultimo = t.y
     if not renglones and not tras_hueco:
         return None
 
     tolerancia_y = paso / 2
-    validos = [r for r in renglones if es_valido(r.texto)]
-    ultima_fila = tras_hueco[-1] if tras_hueco else (validos or renglones or [a])[-1]
+    ultimo_valido = max((i for i, r in enumerate(renglones) if es_valido(r.texto)), default=-1)
+
+    def a_avisar(i: int) -> bool:
+        """Si el renglón ``i``, que no se lee, hay que avisarlo: corto con cifras o entre
+        renglones que sí se leen (``fila_para_avisar``), o con cifras en la línea de sus celdas."""
+        r = renglones[i]
+        return not es_valido(r.texto) and (
+            fila_para_avisar(r.texto, i < ultimo_valido) or con_cifras_en_su_linea(r)
+        )
+
+    # Hasta dónde llega la tabla: el último renglón que se lee o que se avisa.
+    visibles = [r for i, r in enumerate(renglones) if es_valido(r.texto) or a_avisar(i)]
+    ultima_fila = tras_hueco[-1] if tras_hueco else (visibles or renglones or [a])[-1]
     y_fin = ultima_fila.y - tolerancia_y  # más abajo ya no es de la tabla
     fin_de_la_cadena = renglones[-1].y if renglones else y_cabecera
-
-    def sobre_la_linea(renglon: _Texto, t: _Texto) -> bool:
-        """Si ``t`` está sobre la línea de ``renglon``: media altura del mayor de los dos
-        textos, o 0.3 pasos, lo que sea más (con un pelo de margen por el redondeo)."""
-        tolerancia = max(
-            _TOLERANCIA_LINEA * max(renglon.alto, t.alto), _TOLERANCIA_CELDA_EN_PASOS * paso
-        )
-        return abs(renglon.y - t.y) <= tolerancia * 1.001
 
     celdas: list[dict[str, list[_Texto]]] = [{} for _ in renglones]
     propios = {r.id for r in renglones}
@@ -494,10 +556,9 @@ def _leer_una(
 
     filas: list[dict[str, str]] = []
     usadas: list[_Texto] = list(fichas)
-    ultimo_valido = max((i for i, r in enumerate(renglones) if es_valido(r.texto)), default=-1)
     for i, (renglon, contenido) in enumerate(zip(renglones, celdas, strict=True)):
         if not es_valido(renglon.texto):
-            if fila_para_avisar(renglon.texto, i < ultimo_valido):
+            if a_avisar(i):
                 descartada = TextoSinCelda(
                     entidad=renglon.id,
                     texto=renglon.texto,

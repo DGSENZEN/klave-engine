@@ -919,3 +919,91 @@ def test_a_table_stops_where_the_next_copys_header_begins(tmp_path):
     assert [f["MARCA"] for f in primera.filas] == ["K-1", "K-2"]
     assert [f["MARCA"] for f in segunda.filas] == ["K-5", "K-6"]
     assert [f["SECCION"] for f in segunda.filas] == ["K-5-sec", "K-6-sec"]
+
+
+# --- R33: lo que cuelga después de un hueco y la etiqueta larga del último renglón ---------------
+
+_COLA_SIN_VARILLAS = {"5": "9", "6": "11", "8": "VAR 9", "10": "#9", "12": "2.50"}
+
+
+def test_a_tail_of_only_non_bar_rows_after_a_gap_is_reported_by_both_readers(tmp_path):
+    # Tres renglones en blanco y luego cinco renglones con cifras que no son varillas de NUMEROS.
+    dato, contradicciones, avisos = _leidas(
+        tmp_path, hueco_antes=("5", 3), etiquetas=_COLA_SIN_VARILLAS
+    )
+    assert list(dato.valor) == ["2.5", "3", "4"] and contradicciones == []
+    (aviso,) = avisos
+    assert "después de un hueco" in aviso
+    for etiqueta in _COLA_SIN_VARILLAS.values():
+        assert f"«{etiqueta}»" in aviso  # dice cada renglón que no se lee
+
+
+def test_the_tail_of_non_bar_rows_leaves_the_same_traces_in_both_readers(tmp_path):
+    por_lector = {
+        lector: _tablas(
+            tmp_path, hueco_antes=("5", 3), etiquetas=_COLA_SIN_VARILLAS, nota=False, lector=lector
+        )
+        for lector in ("varillas", "general")
+    }
+    for tablas in por_lector.values():
+        (tabla,) = tablas
+        assert {s.motivo for s in tabla.sin_celda} == {"tras_un_hueco"}
+    visto = {
+        lector: sorted((s.texto, s.motivo) for s in tablas[0].sin_celda)
+        for lector, tablas in por_lector.items()
+    }
+    assert visto["varillas"] == visto["general"]
+    assert len(visto["varillas"]) == 5 + 3 * 8 + 2 * 6  # los cinco renglones y todas sus celdas
+
+
+@pytest.mark.parametrize("etiqueta", ["9", "11", "VAR 9", "#9", "2.50", '3/16"'])
+def test_a_lone_number_like_label_after_a_gap_is_reported_with_no_values_at_all(tmp_path, etiqueta):
+    y = _y_de("12") - 4 * PASO  # 4 pasos más abajo: pasa de los 2.5 pasos del hueco
+    extra = [(etiqueta, X_ENCABEZADO["VARILLA"], y)]
+    dato, contradicciones, avisos = _leidas(tmp_path, nota=False, extra=extra)
+    assert len(dato.valor) == 8 and contradicciones == []
+    (aviso,) = avisos
+    assert "después de un hueco" in aviso and f"«{etiqueta}»" in aviso
+
+
+def test_a_label_that_is_not_number_like_after_a_gap_is_reported_when_values_sit_on_its_line(
+    tmp_path,
+):
+    etiquetas = {n: f"BARRA {n}" for n in ("5", "6", "8", "10", "12")}
+    dato, contradicciones, avisos = _leidas(tmp_path, hueco_antes=("5", 3), etiquetas=etiquetas)
+    assert list(dato.valor) == ["2.5", "3", "4"] and contradicciones == []
+    (aviso,) = avisos
+    assert "después de un hueco" in aviso and "«BARRA 5»" in aviso and "«BARRA 12»" in aviso
+
+
+def test_an_unrelated_label_after_a_gap_with_nothing_on_its_line_stays_silent(tmp_path):
+    y = _y_de("12") - 4 * PASO
+    extra = [("A-1", X_ENCABEZADO["VARILLA"], y), ("PLANTA 2", X_ENCABEZADO["VARILLA"], y - PASO)]
+    _, _, avisos = tabla_de_varillas(_tablas(tmp_path, nota=False, extra=extra, lector="varillas"))
+    assert avisos == []
+
+
+_ETIQUETA_LARGA = "VARILLA CORRUGADA DEL No. 5 (5/8 PULG)"
+
+
+def test_a_long_label_with_digits_in_the_last_row_is_reported_with_its_cells(tmp_path):
+    dato, contradicciones, avisos = _leidas(tmp_path, etiquetas={"12": _ETIQUETA_LARGA})
+    assert "12" not in dato.valor and len(dato.valor) == 7  # lo demás de la tabla sí se lee
+    assert contradicciones == []
+    (aviso,) = avisos
+    assert f"«{_ETIQUETA_LARGA}»" in aviso and "no es un número de varilla" in aviso
+
+
+def test_a_label_without_digits_but_with_values_on_its_line_is_reported(tmp_path):
+    dato, contradicciones, avisos = _leidas(tmp_path, etiquetas={"12": "VARILLA CORRUGADA"})
+    assert "12" not in dato.valor and len(dato.valor) == 7 and contradicciones == []
+    (aviso,) = avisos
+    assert "«VARILLA CORRUGADA»" in aviso and "no es un número de varilla" in aviso
+
+
+def test_a_label_without_digits_and_without_values_is_not_a_row_and_stays_silent(tmp_path):
+    # Como la leyenda de Marina: texto largo bajo la tabla con cifras pero nada en su línea.
+    y = _y_de("12") - 0.5 * PASO
+    extra = [("LA1=LONGITUD DE ANCLAJE PARA VARILLAS CON MENOS DE 30 cm", -1.65, y)]
+    _, _, avisos = tabla_de_varillas(_tablas(tmp_path, nota=False, extra=extra, lector="varillas"))
+    assert avisos == []
