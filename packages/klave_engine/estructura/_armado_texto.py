@@ -36,13 +36,13 @@ _DOBLE = (
     r"(?:DOBLE\s+PARRILLA|PARRILLA\s+DOBLE|DOBLEMENTE\s+ARMAD[AO]|AMBOS\s+LECHOS"
     r"|(?:2|DOS)\s*(?:PARRILLAS|LECHOS|CAPAS))(?:\s+DE)?"
 )
-# Cualquier otro multiplicador («DOBLE MALLA», «TRES CAPAS», «ARMADO DOBLE», «DOBLE» solo):
-# nunca se lee, siempre se avisa.
+# Cualquier otro multiplicador («DOBLE MALLA», «TRES CAPAS», «ARMADO DOBLE», «DOBLE»,
+# «DOBLES», «TRIPLE» o «DOBLE-ARMADA» solos): nunca se lee, siempre se avisa.
 _MULTIPLICADOR = (
     r"(?:\d+|DOS|TRES|CUATRO|DOBLES?|TRIPLES?)\s*(?:PARRILLAS?|LECHOS?|CAPAS?|MALLAS?)"
     r"(?:\s+DEL?)?"
     r"|(?:PARRILLAS?|LECHOS?|CAPAS?|MALLAS?|ARMADOS?)\s+(?:DOBLES?|TRIPLES?)"
-    r"|DOBLE(?:MENTE)?(?:\s+ARMAD[AO]S?)?"
+    r"|(?:DOBLE(?:S|MENTE)?|TRIPLES?)(?:[\s-]+ARMAD[AO]S?)?"
 )
 # Los sentidos de una malla; sólo valen pegados a ella. Sueltos, «AS» a secas no cuenta: es
 # el final de una palabra partida por un salto de línea («TODAS L» / «AS ZONAS»).

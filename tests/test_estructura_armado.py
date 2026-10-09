@@ -1280,6 +1280,15 @@ _PIEZAS = [
     "4 VARILLAS #5",
     "E. #3@20",
     "2G+1E#3@15",
+    # Sentidos delante y detrás, con y sin lecho (ronda 5): juntos, nunca se cambian de malla.
+    "A/S #3@20",
+    "EN X #4@20",
+    "#4@20 EN Y",
+    "LS A/S #4@20",
+    "LI EN X #3@15",
+    "AMBOS SENTIDOS #3@15",
+    "#3@15 A/S L.I.",
+    "#4@20 L.S. EN X",
 ]
 _UNIONES_LIMPIAS = [" ", ", ", "+", " | ", " Y ", " ,", " + "]
 
@@ -1301,7 +1310,8 @@ def test_fuzz_known_readings_never_split_nor_invent():
         pegadas = False
         texto = piezas[0]
         for pieza in piezas[1:]:
-            if rng.random() < 0.25:
+            # R24: pegar «E. #3@20» a una palabra hace otra palabra («CORTEE.»), no una cabeza.
+            if rng.random() < 0.25 and not (texto[-1].isalpha() and pieza.startswith("E.")):
                 union, pegadas = "", True
             else:
                 union = rng.choice(_UNIONES_LIMPIAS)
@@ -1545,7 +1555,320 @@ def test_the_render_refuses_a_spacing_the_parser_would_not_read(armado):
         texto_armado(armado)
 
 
-@pytest.mark.parametrize("texto", [".E. #3@20", "XE. #3@20", "(E) #3@20"])
+@pytest.mark.parametrize(
+    "texto",
+    [".E. #3@20", "(E) #3@20", "ESTRIBOS: #3@20", "E: #3@20", "CENTRO@20E. #3@20", "@20E #3@20"],
+)
 def test_a_stirrup_head_glued_to_junk_before_a_mesh_is_reported_whole(texto):
+    # Ronda 5 (R24): «XE. #3@20» salió de esta lista; una palabra que sólo termina en E es
+    # una palabra (``test_a_word_that_merely_ends_in_a_head_letter_is_not_a_head``). Una
+    # cabeza pegada a una cifra o un signo sigue siendo una cabeza.
     a = parsear_armado([texto], "losa")
     assert a.vacio() and a.avisos == [f"sin leer: «{texto}»"]
+
+
+# ------------------------------------------------------------------ ronda de correcciones 5
+# Los sentidos de las mallas tienen una sola convención por texto (delante o detrás), decidida
+# como la de lechos; un lecho y un sentido delante de la malla son una sola convención; los
+# multiplicadores en cualquier flexión se avisan; una palabra de doble lecho que toca varillas
+# o estribos es de ellos; una palabra que sólo termina en E no es cabeza, pero una cabeza de
+# estribo más atrás en la línea dice que el «#n@s» no es una malla.
+
+
+@pytest.mark.parametrize(
+    "textos,esperado",
+    [
+        (["EN X #4@20", "EN Y #4@25"], [("4", 0.20, "x"), ("4", 0.25, "y")]),
+        (["EN X #4@20 EN Y #4@25"], [("4", 0.20, "x"), ("4", 0.25, "y")]),
+        (["A/S #4@20 A/S #3@20"], [("4", 0.20, "ambos"), ("3", 0.20, "ambos")]),
+        (["#4@20", "A/S #3@20"], [("4", 0.20, None), ("3", 0.20, "ambos")]),
+        (["#4@20 A/S #3@20 EN X"], [("4", 0.20, "ambos"), ("3", 0.20, "x")]),
+        (["A/S #4@20 EN X #3@20"], [("4", 0.20, "ambos"), ("3", 0.20, "x")]),
+        (["#4@20", "A/S"], [("4", 0.20, "ambos")]),
+        (["#4@20", "A/S."], [("4", 0.20, "ambos")]),
+        (["#4@20 A/S", "#3@15"], [("4", 0.20, "ambos"), ("3", 0.15, None)]),
+        (["#4@20", "A/S", "#3@15"], [("4", 0.20, "ambos"), ("3", 0.15, None)]),
+        (["#4@20 A/S, #3@15"], [("4", 0.20, "ambos"), ("3", 0.15, None)]),
+        (["A/S #4@20, #3@15"], [("4", 0.20, "ambos"), ("3", 0.15, None)]),
+    ],
+)
+def test_one_direction_convention_per_text(textos, esperado):
+    a = parsear_armado(textos, "zapata")
+    assert [(p.numero, p.separacion_m, p.sentidos) for p in a.parrillas] == esperado
+    assert a.avisos == []
+    _vuelve_igual(a, "zapata")
+
+
+@pytest.mark.parametrize(
+    "textos,citas",
+    [
+        (["EN X #4@20", "EN Y"], ["EN X #4@20 | EN Y"]),
+        (["EN X #4@20 | EN Y"], ["EN X #4@20 | EN Y"]),
+        (["A/S #4@20 EN Y"], ["A/S #4@20 EN Y"]),
+        (["EN X #4@20 A/S"], ["EN X #4@20 A/S"]),
+        (["#4@20 A/S #3@20"], ["#4@20 A/S #3@20"]),
+        (["#4@20 A/S #3@15"], ["#4@20 A/S #3@15"]),
+        (["#4@20 L.S. A/S #3@20 L.I."], ["#4@20 L.S. A/S #3@20 L.I."]),
+        (["A/S #4@20 #3@20 EN Y"], ["A/S #4@20", "#3@20 EN Y"]),
+        (["A/S #4@20", "#3@20 EN Y"], ["A/S #4@20", "#3@20 EN Y"]),
+    ],
+)
+def test_a_direction_two_meshes_could_claim_or_a_mesh_with_two_is_ambiguous(textos, citas):
+    a = parsear_armado(textos, "losa")
+    assert a.parrillas == [] and a.avisos == [
+        f"sentido ambiguo: «{cita}»: no se toma" for cita in citas
+    ]
+
+
+def test_a_direction_on_the_next_line_only_when_that_line_is_just_the_direction():
+    a = parsear_armado(["#4@20", "A/S H=12"], "losa")
+    assert a.parrillas == [] and a.avisos == ["sin leer: «#4@20 | A/S H=12»"]
+
+
+def test_a_mesh_with_a_direction_is_written_apart_from_the_next_one():
+    # «#4@20 A/S #3@15» diría un sentido que las dos mallas pueden reclamar: la coma lo evita.
+    a = Armado(
+        parrillas=[
+            Parrilla(numero="4", separacion_m=0.20, lecho="unico", sentidos="ambos"),
+            Parrilla(numero="3", separacion_m=0.15, lecho="unico", sentidos=None),
+            Parrilla(numero="4", separacion_m=0.25, lecho="unico", sentidos="x"),
+        ]
+    )
+    assert texto_parrillas(a) == "#4@20 A/S, #3@15 #4@25 EN X"
+    _vuelve_igual(a, "losa")
+    b = Armado(
+        parrillas=[
+            Parrilla(numero="4", separacion_m=0.20, lecho="sup", sentidos="ambos"),
+            Parrilla(numero="3", separacion_m=0.15, lecho="inf", sentidos=None),
+        ]
+    )
+    assert texto_parrillas(b) == "LS #4@20 A/S LI #3@15"
+    _vuelve_igual(b, "losa")
+
+
+@pytest.mark.parametrize(
+    "textos,esperado",
+    [
+        (["LS A/S #4@20"], [("sup", "ambos")]),
+        (["L.S. A/S #4@20"], [("sup", "ambos")]),
+        (["LECHO SUPERIOR AMBOS SENTIDOS #4@15"], [("sup", "ambos")]),
+        (["LS A/S #4@20 LI A/S #4@20"], [("sup", "ambos"), ("inf", "ambos")]),
+        (["LS A/S #4@20", "LI EN X #3@20"], [("sup", "ambos"), ("inf", "x")]),
+        (["LS #4@20 A/S LI #4@20"], [("sup", "ambos"), ("inf", None)]),
+        (["LS #4@20 LI A/S #3@20"], [("sup", None), ("inf", "ambos")]),
+        (["#4@20 A/S L.S.", "#3@20 EN X L.I."], [("sup", "ambos"), ("inf", "x")]),
+        (["#4@20 L.S. A/S", "#3@20 L.I. EN X"], [("sup", "ambos"), ("inf", "x")]),
+        (["#4@20 L.S. EN X #3@20 A/S L.I."], [("sup", "x"), ("inf", "ambos")]),
+        (["#4@20 L.S.", "A/S"], [("sup", "ambos")]),
+        (["#4@20 L.S. Y L.I. A/S"], [("sup", "ambos"), ("inf", "ambos")]),
+    ],
+)
+def test_a_layer_and_a_direction_before_or_after_the_mesh_are_one_convention(textos, esperado):
+    a = parsear_armado(textos, "losa")
+    assert [(p.lecho, p.sentidos) for p in a.parrillas] == esperado and a.avisos == []
+    _vuelve_igual(a, "losa")
+
+
+@pytest.mark.parametrize(
+    "textos,familia,avisos",
+    [
+        (["DOBLES #4@20"], "losa", ["sin leer: «DOBLES #4@20»"]),
+        (["TRIPLE #4@20"], "losa", ["sin leer: «TRIPLE #4@20»"]),
+        (["TRIPLES #4@20"], "losa", ["sin leer: «TRIPLES #4@20»"]),
+        (["DOBLE-ARMADA #4@20"], "losa", ["sin leer: «DOBLE-ARMADA #4@20»"]),
+        (["DOBLES 4#8"], "trabe", ["sin leer: «DOBLES 4#8»"]),
+        (["TRIPLE 4#8"], "trabe", ["sin leer: «TRIPLE 4#8»"]),
+        (["4#8", "DOBLES"], "trabe", ["sin leer: «4#8 | DOBLES»"]),
+        (["DOBLES"], "losa", ["multiplicador «DOBLES» sin su malla: no se toma"]),
+    ],
+)
+def test_every_inflection_of_a_bare_multiplier_is_reported(textos, familia, avisos):
+    a = parsear_armado(textos, familia)
+    assert a.vacio() and a.avisos == avisos
+
+
+@pytest.mark.parametrize(
+    "textos,pieza",
+    [
+        (["LS #4@20 LI #4@20 2 LECHOS 4#8"], "2 LECHOS 4#8"),
+        (["LS #4@20 LI #4@20 2 LECHOS E#3@15"], "2 LECHOS E#3@15"),
+        (["LS #4@20 LI #4@20", "2 LECHOS 4#8"], "2 LECHOS 4#8"),
+        (["4#8 2 LECHOS LS #4@20 LI #4@20"], "4#8 2 LECHOS"),
+        (["2 PARRILLAS LS #4@20 LI #4@20 2 CAPAS 4#8"], "2 CAPAS 4#8"),
+    ],
+)
+def test_a_doubling_word_that_touches_bars_or_stirrups_is_theirs_even_after_layered_meshes(
+    textos, pieza
+):
+    # Las mallas dicen «LS» y «LI»: la palabra no les cambia nada y se la ceden a las varillas.
+    a = parsear_armado(textos, "losa")
+    assert [p.lecho for p in a.parrillas] == ["sup", "inf"]
+    assert a.longitudinales == [] and a.estribos == []
+    assert a.avisos == [f"sin leer: «{pieza}»"]
+
+
+@pytest.mark.parametrize(
+    "texto",
+    ["#4@20 2 LECHOS 4#8", "4#8 2 PARRILLAS #4@20", "#4@20 A/S AMBOS LECHOS E#3@15"],
+)
+def test_a_doubling_word_between_a_lone_mesh_and_bars_reads_neither(texto):
+    # Una malla sin lecho sí cambiaría con la palabra: no se sabe de cuál es.
+    a = parsear_armado([texto], "losa")
+    assert a.vacio() and a.avisos == [f"sin leer: «{texto}»"]
+
+
+@pytest.mark.parametrize(
+    "textos", [["4#8", "2 PARRILLAS #4@20"], ["4#8 E#3@15", "2 PARRILLAS #4@20"]]
+)
+def test_a_doubling_word_on_its_mesh_line_is_the_mesh_s_even_after_bars_on_the_line_before(
+    textos,
+):
+    a = parsear_armado(textos, "losa")
+    assert [(p.numero, p.lecho) for p in a.parrillas] == [("4", "sup"), ("4", "inf")]
+    assert [(g.cantidad, g.numero) for g in a.longitudinales] == [(4, "8")] and a.avisos == []
+    _vuelve_igual(a, "losa")
+
+
+def test_a_doubling_word_alone_between_bars_and_a_lone_mesh_reads_neither():
+    a = parsear_armado(["4#8", "2 LECHOS", "#4@20"], "losa")
+    assert a.vacio()
+    assert a.avisos == ["sin leer: «4#8 | 2 LECHOS»", "lecho ambiguo: «#4@20»: no se toma"]
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "(VER DETALLE) #4@20",
+        "ARMADO SEGUN DETALLE: #4@20",
+        "CLARO LIBRE: #4@20",
+        "ZAPATA (TIPO E) #4@20",
+        "XE. #3@20",
+        "ZAPATA E-1 #4@20",
+    ],
+)
+def test_a_word_that_merely_ends_in_a_head_letter_is_not_a_head(texto):
+    a = parsear_armado([texto], "zapata")
+    assert len(a.parrillas) == 1 and a.avisos == []
+
+
+@pytest.mark.parametrize(
+    "textos",
+    [
+        ["ESTRIBOS DOBLES #3@15"],
+        ["8#6", "ESTRIBOS DOBLES #3@15"],
+        ["ESTRIBOS CERRADOS #3@15"],
+        ["EST. DOBLES #3@15"],
+        ["LIGAS DOBLES #3@15"],
+        ["E DOBLES #3@15"],
+        ["E/G DOBLES #3@15"],
+        ["(2)E CERRADOS #3@15"],
+        ["ESTRIBOS: DE ACERO #3@15"],
+    ],
+)
+def test_a_stirrup_head_earlier_on_the_line_means_the_piece_is_not_a_mesh(textos):
+    for familia in ("dado", "castillo"):
+        a = parsear_armado(textos, familia)
+        assert a.parrillas == [] and a.estribos == [], familia
+        assert a.avisos == [f"sin leer: «{textos[-1]}»"], familia
+        barras = [(8, "6")] if len(textos) > 1 else []
+        assert [(g.cantidad, g.numero) for g in a.longitudinales] == barras, familia
+
+
+@pytest.mark.parametrize(
+    "texto,cita",
+    [
+        ("LOSA SENTIDO CORTO #4@20", "SENTIDO CORTO #4@20"),
+        ("CORTEAMBOS SENTIDOS #3@15", "CORTEAMBOS SENTIDOS #3@15"),
+        ("CORTEEN X #3@15", "CORTEEN X #3@15"),
+        ("CORTEA/S #3@15", "CORTEA/S #3@15"),
+    ],
+)
+def test_a_direction_the_parser_cannot_read_before_a_mesh_is_reported_with_it(texto, cita):
+    # La malla no puede leerse sin el sentido que el plano le escribió delante.
+    a = parsear_armado([texto], "losa")
+    assert a.vacio() and a.avisos == [f"sin leer: «{cita}»"]
+
+
+def test_a_stirrup_head_behind_another_piece_does_not_reach_the_mesh():
+    a = parsear_armado(["2E#3@15 #4@20"], "dado")
+    assert [(j.cantidad, j.numero) for j in a.estribos] == [(2, "3")]
+    assert [(p.numero, p.lecho) for p in a.parrillas] == [("4", "unico")] and a.avisos == []
+
+
+@pytest.mark.parametrize(
+    "texto,parrillas,avisos",
+    [
+        ("4#4@20 EN X #3@15", [], ["sin leer: «4#4@20 EN X #3@15»"]),
+        ("#4@20#3@15 A/S #5@20", [], ["sin leer: «#4@20#3@15 A/S #5@20»"]),
+        ("4#4@20 L.S. #3@15 L.I.", [("3", "inf", None)], ["sin leer: «4#4@20 L.S.»"]),
+    ],
+)
+def test_what_sits_next_to_a_glued_mesh_body_never_passes_to_another_mesh(texto, parrillas, avisos):
+    # «4#4@20» no es una malla, pero el sentido o el lecho que tiene al lado podrían ser suyos.
+    a = parsear_armado([texto], "muro")
+    assert [(p.numero, p.lecho, p.sentidos) for p in a.parrillas] == parrillas
+    assert a.avisos == avisos
+
+
+# ---- fuzz de sentidos: mallas distinguibles con su lecho y su sentido, escritas delante o
+# detrás, juntas por espacio, coma o salto de línea. Nunca se le da a una malla el sentido o
+# el lecho de otra; cada malla se lee o se cita en un aviso; y si el texto usa una sola
+# convención sin sentidos que dos mallas puedan reclamar, se lee exactamente.
+
+_ESCRITURAS = {
+    "ambos": ["A/S", "AMBOS SENTIDOS", "A.S."],
+    "x": ["EN X", "SENTIDO X"],
+    "y": ["EN Y"],
+}
+_MARCAS = {"delante": {"sup": "LS", "inf": "LI"}, "detras": {"sup": "L.S.", "inf": "L.I."}}
+
+
+def _mallas_al_azar(rng: random.Random):
+    n = rng.randint(1, 3)
+    cuerpos = rng.sample([(num, cm) for num in ("3", "4", "5") for cm in (10, 15, 20, 25)], n)
+    con_lecho = rng.choice([None, "delante", "detras"])
+    forma = rng.choice(["delante", "detras", "mixta"])
+    union = rng.choice([" ", ", ", " | "])
+    partes, mallas = [], []
+    for i, (num, cm) in enumerate(cuerpos):
+        sentido = rng.choice([None, "ambos", "x", "y"])
+        lecho = ("sup", "inf")[i % 2] if con_lecho else "unico"
+        lado = forma if forma != "mixta" else rng.choice(["delante", "detras"])
+        dicho = rng.choice(_ESCRITURAS[sentido]) if sentido else ""
+        cuerpo = f"#{num}@{cm}"
+        if con_lecho == "delante":
+            marca = _MARCAS["delante"][lecho]
+            texto = (
+                f"{marca} {dicho} {cuerpo}" if lado == "delante" else f"{marca} {cuerpo} {dicho}"
+            )
+        elif con_lecho == "detras":
+            marca = _MARCAS["detras"][lecho]
+            if lado == "delante":
+                texto = f"{dicho} {cuerpo} {marca}"
+            else:
+                texto = rng.choice([f"{cuerpo} {dicho} {marca}", f"{cuerpo} {marca} {dicho}"])
+        else:
+            texto = f"{dicho} {cuerpo}" if lado == "delante" else f"{cuerpo} {dicho}"
+        partes.append(" ".join(texto.split()))
+        mallas.append((num, cm / 100, lecho, sentido))
+    exacto = forma != "mixta" and (union != " " or con_lecho == "delante")
+    return union.join(partes), mallas, exacto
+
+
+def test_fuzz_directions_are_never_given_to_the_wrong_mesh():
+    rng = random.Random(9102026)
+    for _ in range(3000):
+        texto, mallas, exacto = _mallas_al_azar(rng)
+        a = parsear_armado(texto.split(" | "), "losa")
+        leidas = [(p.numero, p.separacion_m, p.lecho, p.sentidos) for p in a.parrillas]
+        # 1. Nada atribuido a otra malla: cada lectura es la de una malla del texto.
+        assert not Counter(leidas) - Counter(mallas), (texto, leidas, a.avisos)
+        # 2. Cada malla se lee o se cita.
+        for num, m, _, _ in mallas:
+            cuerpo = f"#{num}@{round(m * 100)}"
+            leida = any((p.numero, p.separacion_m) == (num, m) for p in a.parrillas)
+            assert leida or any(cuerpo in w for w in a.avisos), (texto, cuerpo, a.avisos)
+        # 3. Una sola convención y ningún sentido que dos mallas puedan reclamar: exacto.
+        if exacto:
+            assert leidas == mallas and a.avisos == [], (texto, leidas, a.avisos)
+        _vuelve_igual(a, "losa")
