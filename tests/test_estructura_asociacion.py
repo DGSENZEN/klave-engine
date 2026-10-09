@@ -41,3 +41,21 @@ def test_vertical_only_alignment_and_mtext_attachment(tmp_path):
     assert ancla_texto(etiqueta) == (5.0, 7.0)
     assert bloque.properties["attachment_point"] == 1
     assert ancla_texto(bloque) == (10.0, 20.0)
+
+
+def test_aligned_and_fit_text_anchor_on_the_start_of_the_baseline(tmp_path):
+    def build(msp):
+        for texto, modo, p1, p2 in (
+            ("ES-1", TextEntityAlignment.ALIGNED, (30.0, 4.0), (34.0, 4.0)),
+            ("ES-2", TextEntityAlignment.FIT, (40.0, 8.0), (43.0, 8.0)),
+        ):
+            msp.add_text(texto, height=0.2).set_placement(p1, p2, align=modo)
+
+    ents = _entities(tmp_path, build)
+    alineado = next(e for e in ents if e.text == "ES-1")
+    ajustado = next(e for e in ents if e.text == "ES-2")
+    # Group 11 is where the baseline ENDS in these two modes: keep it, but anchor on the start.
+    assert alineado.properties["halign"] == 3 and alineado.properties["align_point"] == (34.0, 4.0)
+    assert ancla_texto(alineado) == (30.0, 4.0)
+    assert ajustado.properties["halign"] == 5 and ajustado.properties["align_point"] == (43.0, 8.0)
+    assert ancla_texto(ajustado) == (40.0, 8.0)
