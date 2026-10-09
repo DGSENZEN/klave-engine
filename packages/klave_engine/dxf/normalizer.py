@@ -307,7 +307,19 @@ def normalize_entity(
         rotation = float(entity.dxf.rotation)
         height = float(entity.dxf.height)
         insert = (float(entity.dxf.insert.x), float(entity.dxf.insert.y))
-        properties.update(height=height, insert=insert)
+        # A text with another alignment than left-baseline is placed by its
+        # alignment point (group 11), not by ``insert``; keep both. The bbox
+        # still comes from ``insert`` (other detectors depend on it).
+        align_point: tuple[float, float] | None = None
+        if entity.dxf.hasattr("align_point"):
+            align_point = (float(entity.dxf.align_point.x), float(entity.dxf.align_point.y))
+        properties.update(
+            height=height,
+            insert=insert,
+            halign=int(entity.dxf.get("halign", 0)),
+            valign=int(entity.dxf.get("valign", 0)),
+            align_point=align_point,
+        )
         bbox = _approximate_text_bbox(insert, text, height)
         notes.append("Text bbox approximated from insert point and height")
     elif dxf_type == "MTEXT":
@@ -316,7 +328,11 @@ def normalize_entity(
         rotation = float(entity.dxf.rotation)
         height = float(entity.dxf.char_height)
         insert = (float(entity.dxf.insert.x), float(entity.dxf.insert.y))
-        properties.update(height=height, insert=insert)
+        properties.update(
+            height=height,
+            insert=insert,
+            attachment_point=int(entity.dxf.get("attachment_point", 1)),
+        )
         bbox = _approximate_text_bbox(insert, text, height)
         notes.append("MText bbox approximated from insert point and char height")
     elif dxf_type == "DIMENSION":
