@@ -1317,3 +1317,235 @@ def test_fuzz_known_readings_never_split_nor_invent():
         elif not a.avisos:
             assert {k: leido[k] for k in esperado} == esperado, (texto, familia)
         _vuelve_igual(a, familia)
+
+
+# ------------------------------------------------------------------ ronda de correcciones 4
+# Una palabra de doble lecho es contexto sólo cuando el lector de mallas la usó; en cualquier
+# otro lugar se avisa. Los sentidos van pegados a su malla. Una separación fuera de rango se
+# avisa. Un solo lector de contexto para el hueco, el residuo y lo que precede a la pieza.
+
+
+@pytest.mark.parametrize(
+    "texto,familia",
+    [
+        ("2 LECHOS 4#8", "trabe"),
+        ("2 CAPAS 4#8", "trabe"),
+        ("2 LECHOS, 4#8", "trabe"),
+        ("2 LECHOS + 4#8", "trabe"),
+        ("2 PARRILLAS E#3@15", "castillo"),
+        ("DOBLEMENTE ARMADA 4#8", "losa"),
+    ],
+)
+def test_a_doubling_word_before_bars_or_stirrups_unreads_them(texto, familia):
+    a = parsear_armado([texto], familia)
+    assert a.vacio() and a.avisos == [f"sin leer: «{texto}»"]
+
+
+def test_a_doubling_word_before_bars_leaves_the_stirrups_after_them_alone():
+    a = parsear_armado(["AMBOS LECHOS 3#5 E#3@15"], "trabe")
+    assert a.longitudinales == [] and [(j.numero, j.zonas[0].separacion_m) for j in a.estribos] == [
+        ("3", 0.15)
+    ]
+    assert a.avisos == ["sin leer: «AMBOS LECHOS 3#5»"]
+
+
+@pytest.mark.parametrize(
+    "textos,familia,cita",
+    [
+        (["MURO M-1 #4@20 A/S", "2 PARRILLAS"], "muro", "#4@20 A/S | 2 PARRILLAS"),
+        (["LOSA H=12 #3@20 A/S", "DOBLEMENTE ARMADA"], "losa", "#3@20 A/S | DOBLEMENTE ARMADA"),
+        (["#4@20 A/S", "(2 PARRILLAS)"], "losa", "#4@20 A/S | (2 PARRILLAS)"),
+        (["#4@20 A/S", "PARRILLA DOBLE"], "losa", "#4@20 A/S | PARRILLA DOBLE"),
+        (["#4@20 A/S 2 PARRILLAS"], "losa", "#4@20 A/S 2 PARRILLAS"),
+    ],
+)
+def test_a_doubling_word_after_a_mesh_is_ambiguous(textos, familia, cita):
+    a = parsear_armado(textos, familia)
+    assert a.parrillas == [] and a.avisos == [f"lecho ambiguo: «{cita}»: no se toma"]
+
+
+def test_a_doubling_word_after_bars_on_the_next_line_unreads_them():
+    a = parsear_armado(["4#8", "(2 LECHOS)"], "trabe")
+    assert a.vacio() and a.avisos == ["sin leer: «4#8 | (2 LECHOS)»"]
+
+
+@pytest.mark.parametrize(
+    "texto,cita",
+    [
+        (
+            "LOSA MACIZA DOBLEMENTE ARMADA H=20 LS #4@20 A/S",
+            "DOBLEMENTE ARMADA H=20 LS #4@20 A/S",
+        ),
+        ("2 PARRILLAS LS #4@20", "2 PARRILLAS LS #4@20"),
+        ("2 PARRILLAS #4@20 L.S.", "2 PARRILLAS #4@20 L.S."),
+        ("DOBLE PARRILLA LI #4@20", "DOBLE PARRILLA LI #4@20"),
+        ("AMBOS LECHOS LS #4@20", "AMBOS LECHOS LS #4@20"),
+    ],
+)
+def test_a_doubling_word_with_a_single_layer_is_ambiguous(texto, cita):
+    a = parsear_armado([texto], "losa")
+    assert a.parrillas == [] and a.avisos == [f"lecho ambiguo: «{cita}»: no se toma"]
+
+
+@pytest.mark.parametrize(
+    "textos",
+    [
+        ["LOSA MACIZA DOBLEMENTE ARMADA H=20 LS #4@20 A/S LI #4@20 A/S"],
+        ["LOSA MACIZA DOBLEMENTE ARMADA H=20", "LS #4@20 A/S", "LI #4@20 A/S"],
+        ["2 PARRILLAS LS #4@20 LI #4@20"],
+        ["LS #4@20 A/S", "DOBLEMENTE ARMADA", "LI #4@20 A/S"],
+    ],
+)
+def test_a_doubling_word_consistent_with_both_layers_is_not_reported(textos):
+    a = parsear_armado(textos, "losa")
+    assert [p.lecho for p in a.parrillas] == ["sup", "inf"] and a.avisos == []
+    _vuelve_igual(a, "losa")
+    k = parsear_armado(textos, "castillo")
+    assert k.parrillas == [] and len(k.avisos) == 2
+    assert all(
+        w.startswith("malla «L") and w.endswith("» en un castillo: no se toma") for w in k.avisos
+    )
+
+
+@pytest.mark.parametrize(
+    "textos,sentidos",
+    [
+        (["DOBLEMENTE ARMADA H=20", "#4@20 A/S"], "ambos"),
+        (["2 PARRILLAS", "#4@20"], None),
+        (["2 PARRILLAS DE #4@20"], None),
+        (["DOBLE PARRILLA DE #4@20 A/S"], "ambos"),
+        (["2 CAPAS DE #4@20"], None),
+        (["DOS PARRILLAS DE #4@20"], None),
+        (["PARRILLA DOBLE #4@20 A/S"], "ambos"),
+        (["2 PARRILLAS A/S #4@20"], "ambos"),
+        (["2 PARRILLAS, #4@20"], None),
+    ],
+)
+def test_a_doubling_word_before_its_mesh_doubles_it_also_across_a_line_or_de(textos, sentidos):
+    a = parsear_armado(textos, "losa")
+    assert [(p.numero, p.lecho, p.sentidos) for p in a.parrillas] == [
+        ("4", "sup", sentidos),
+        ("4", "inf", sentidos),
+    ]
+    assert a.avisos == []
+    _vuelve_igual(a, "losa")
+
+
+@pytest.mark.parametrize(
+    "textos,avisos",
+    [
+        (["MALLA DOBLE #4@20"], ["sin leer: «MALLA DOBLE #4@20»"]),
+        (["LOSA DOBLE ARMADO #4@20 A/S"], ["sin leer: «DOBLE ARMADO #4@20 A/S»"]),
+        (["ARMADO DOBLE #4@20"], ["sin leer: «ARMADO DOBLE #4@20»"]),
+        (["#4@20 A/S", "ARMADO DOBLE"], ["sin leer: «#4@20 A/S | ARMADO DOBLE»"]),
+        (["4#8", "DOBLEMENTE"], ["sin leer: «4#8 | DOBLEMENTE»"]),
+        (["DOBLE"], ["multiplicador «DOBLE» sin su malla: no se toma"]),
+        (["2 PARRILLAS"], ["multiplicador «2 PARRILLAS» sin su malla: no se toma"]),
+        (
+            ["LOSA H=12", "DOBLEMENTE ARMADA"],
+            ["multiplicador «DOBLEMENTE ARMADA» sin su malla: no se toma"],
+        ),
+    ],
+)
+def test_any_other_doubling_word_is_never_silent(textos, avisos):
+    a = parsear_armado(textos, "losa")
+    assert a.vacio() and a.avisos == avisos
+
+
+def test_a_trailing_period_is_accepted():
+    a = parsear_armado(["LOSA H=10 #3@20 A/S."], "losa")
+    assert [(p.numero, p.sentidos) for p in a.parrillas] == [("3", "ambos")] and a.avisos == []
+    b = parsear_armado(["4#3 E#2@20."], "dala")
+    assert [(g.cantidad, g.numero) for g in b.longitudinales] == [(4, "3")]
+    assert [j.zonas[0].separacion_m for j in b.estribos] == [0.20] and b.avisos == []
+    assert parsear_armado(["4#3.5"], "castillo").longitudinales == []
+
+
+@pytest.mark.parametrize("texto", ["H=12CM #4@20", "H=12 CM #4@20", "LOSA H=12CM. #4@20 A/S"])
+def test_a_thickness_with_its_unit_is_context(texto):
+    a = parsear_armado([texto], "losa")
+    assert len(a.parrillas) == 1 and a.avisos == []
+
+
+@pytest.mark.parametrize(
+    "textos,sentidos",
+    [
+        (["A/S #4@20"], "ambos"),
+        (["AMBOS SENTIDOS #4@20"], "ambos"),
+        (["EN X #4@20"], "x"),
+        (["#4@20", "A/S"], "ambos"),
+        (["#4@20", "EN Y"], "y"),
+    ],
+)
+def test_a_direction_next_to_its_mesh_attaches_to_it(textos, sentidos):
+    a = parsear_armado(textos, "losa")
+    assert [(p.numero, p.lecho, p.sentidos) for p in a.parrillas] == [("4", "unico", sentidos)]
+    assert a.avisos == []
+    _vuelve_igual(a, "losa")
+
+
+@pytest.mark.parametrize(
+    "textos,familia,avisos",
+    [
+        (["4#8 A/S"], "castillo", ["sin leer: «4#8 A/S»"]),
+        (["E#3@15 EN X"], "castillo", ["sin leer: «E#3@15 EN X»"]),
+        (["E#3@15", "A/S"], "castillo", ["sin leer: «E#3@15 | A/S»"]),
+        (["A/S"], "losa", ["sentido «A/S» sin su malla: no se toma"]),
+        (["A/S H=20 #4@20"], "losa", ["sin leer: «A/S H=20 #4@20»"]),
+    ],
+)
+def test_a_direction_away_from_a_mesh_is_reported(textos, familia, avisos):
+    a = parsear_armado(textos, familia)
+    assert a.vacio() and a.avisos == avisos
+
+
+def test_a_bare_as_from_a_word_split_by_a_line_break_is_not_a_direction():
+    # Marina, nota general: «EN TODAS L» / «AS ZONAS MACIZAS…»; «AS» sólo vale junto a su malla.
+    assert parsear_armado(["EN TODAS L", "AS ZONAS MACIZAS"], "losa").avisos == []
+    a = parsear_armado(["#4@20 AS"], "losa")
+    assert [p.sentidos for p in a.parrillas] == ["ambos"] and a.avisos == []
+
+
+@pytest.mark.parametrize(
+    "texto,familia",
+    [
+        ("#4@203", "losa"),
+        ("#4@4", "losa"),
+        ("E#2@202", "castillo"),
+        ("E#3@2", "castillo"),
+        ("2E#3EXT@10 CENTRO@70", "castillo"),
+    ],
+)
+def test_a_spacing_out_of_range_is_reported(texto, familia):
+    a = parsear_armado([texto], familia)
+    assert a.vacio() and a.avisos == [f"separación fuera de rango: «{texto}»"]
+
+
+@pytest.mark.parametrize(
+    "texto,familia",
+    [("E#3@3", "castillo"), ("E#3@60", "castillo"), ("#4@5", "losa"), ("#4@100", "losa")],
+)
+def test_the_edges_of_the_spacing_range_are_read(texto, familia):
+    a = parsear_armado([texto], familia)
+    assert not a.vacio() and a.avisos == []
+    _vuelve_igual(a, familia)
+
+
+@pytest.mark.parametrize(
+    "armado",
+    [
+        Armado(estribos=[_estribo(zonas=[_todo(0.02)])]),
+        Armado(estribos=[_estribo(zonas=[_todo(0.61)])]),
+        Armado(parrillas=[Parrilla(numero="4", separacion_m=0.04, lecho="unico", sentidos=None)]),
+        Armado(parrillas=[Parrilla(numero="4", separacion_m=1.01, lecho="unico", sentidos=None)]),
+    ],
+)
+def test_the_render_refuses_a_spacing_the_parser_would_not_read(armado):
+    with pytest.raises(ValueError):
+        texto_armado(armado)
+
+
+@pytest.mark.parametrize("texto", [".E. #3@20", "XE. #3@20", "(E) #3@20"])
+def test_a_stirrup_head_glued_to_junk_before_a_mesh_is_reported_whole(texto):
+    a = parsear_armado([texto], "losa")
+    assert a.vacio() and a.avisos == [f"sin leer: «{texto}»"]

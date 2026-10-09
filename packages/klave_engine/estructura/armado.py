@@ -2,10 +2,13 @@
 
 Un texto de armado («4#5+2#4», «2E+1G#3EXT@10» / «CENTRO@15», «LS #4@20 A/S») se lee en
 grupos de varillas longitudinales, juegos de estribos con sus zonas y parrillas. La regla
-es que nada se pierde en silencio: cada ``#`` y cada ``@`` del texto termina dentro de la
-estructura o en ``avisos`` con el pedazo que no se pudo leer. Una malla sólo se toma en
-las familias que llevan parrilla; en un castillo, una columna o una trabe un ``#n@s``
-suelto se avisa, nunca se convierte en malla.
+es que nada se pierde en silencio: cada pieza del texto se lee entera o se avisa entera,
+con lo que la estorba. Una malla sólo se toma en las familias que llevan parrilla; en un
+castillo, una columna o una trabe un ``#n@s`` suelto se avisa, nunca se convierte en malla.
+
+Lo que rodea a una pieza lo decide un solo lector de fichas (``_armado_texto``): el hueco
+después de la pieza, lo que la precede y el residuo final se miran con la misma lista de
+contexto.
 
 Los textos canónicos (``texto_longitudinal``, ``texto_estribos``, ``texto_parrillas``,
 ``texto_armado``) vuelven a dar la misma estructura al leerse otra vez."""
@@ -15,6 +18,20 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from pydantic import BaseModel
+
+from klave_engine.estructura._armado_texto import (
+    AMBOS,
+    ATA,
+    CONSUMIDO,
+    DOBLE_RE,
+    ESTORBA,
+    atado,
+    fichas,
+    fin_del_hueco,
+    hueco_limpio,
+    normalizar,
+    residuo,
+)
 
 # Las llaves de ``costing.steel.BAR_KG_PER_M``, en su orden. Se escriben aquí y no se
 # importan porque ``costing.steel`` leerá el armado con este módulo (un ciclo de
@@ -26,6 +43,7 @@ FAMILIAS_CON_PARRILLA = frozenset(
 )
 
 Forma = Literal["perimetral", "rombo", "interior", "grapa", "liga"]
+Lecho = Literal["sup", "inf", "unico"]
 
 
 class GrupoVarillas(BaseModel):
@@ -62,7 +80,7 @@ class Parrilla(BaseModel):
 
     numero: str
     separacion_m: float
-    lecho: Literal["sup", "inf", "unico"]
+    lecho: Lecho
     sentidos: Literal["ambos", "x", "y"] | None
 
 
@@ -79,21 +97,22 @@ class Armado(BaseModel):
         return not (self.longitudinales or self.estribos or self.parrillas)
 
 
-# ------------------------------------------------------------------ gramática
+# ------------------------------------------------------------------ gramática de las piezas
 # Las expresiones sólo reconocen piezas, y un número es siempre una ficha entera («#32» no
 # es «#3», «@1520» no es «@152»). Si lo que rodea a una pieza la deja a medias lo decide
-# ``_revisar`` sobre el texto real; lo que nadie leyó lo revisa ``_residuo``.
+# ``_revisar`` sobre el texto real; lo que nadie leyó lo revisa ``residuo``.
 
 _NUM = (
     "(?:" + "|".join(re.escape(n) for n in sorted(NUMEROS, key=len, reverse=True)) + r")(?!\d|\.\d)"
 )
-_SEP = r"[1-9]\d{0,2}(?:\.\d{1,2})?(?!\d|\.\d)"  # cm, de 1 a 999.99
+_SEP = r"[1-9]\d{0,2}(?:\.\d{1,2})?(?!\d|\.\d)"  # cm; el rango plausible se revisa aparte
+_RANGO_ESTRIBOS = (3.0, 60.0)  # cm
+_RANGO_MALLAS = (5.0, 100.0)
 _CM = r"(?:\s?CMS?\.?)?(?:\s?C\s*/\s*C)?"  # la unidad y «C/C», pegadas a la separación
 # Opcionalmente a través del salto de línea: «2E#3EXT@10» / «CENTRO@20» son un solo juego.
 _LINEA = r"(?:\s*\|)?\s*"
 _LS = r"(?:LS|L\.S\.?|LECHO\s+SUP\w*\.?)"
 _LI = r"(?:LI|L\.I\.?|LECHO\s+INF\w*\.?)"
-_AMBOS = r"(?:A\s*/\s*S|A\.?S\.?|AMBOS\s+SENTIDOS|AMBAS\s+DIRECCIONES)"
 _CUENTA = r"[1-9]\d?"  # piezas o varillas: de 1 a 99
 _CUENTA_P = rf"(?:\(\s*{_CUENTA}\s*\)|{_CUENTA})"  # «2E» o «(2)E»
 _JUNTA = r"\s*(?:Y|\+|/|-|,|&)\s*"  # «EYG», «2E+1G», «E/G», «2E-1G», «2E,1G», «2E & 1G»
@@ -122,55 +141,29 @@ _ESTRIBOS_RE = re.compile(
     rf"(?:{_LINEA}(?P<ref>VER\s+(?:CORTE|DETALLE)))?"
 )
 
-# El cuerpo de una malla; su lecho («LS», «L.I.», «LECHO SUPERIOR») va aparte, delante o detrás.
+# El cuerpo de una malla con sus sentidos, que van justo delante («A/S #4@20») o justo
+# detrás, también en la línea siguiente («#4@20» / «A/S»). Su lecho («LS», «L.I.», «LECHO
+# SUPERIOR») va aparte, delante o detrás.
+_SALTO_O_ESPACIO = r"(?:\s*\|\s*|\s+)"
 _MALLA_RE = re.compile(
-    rf"#\s*(?P<num>{_NUM})\s*@\s*(?P<sep>{_SEP}){_CM}"
-    rf"(?:\s+(?:EN\s+)?(?P<ambos>{_AMBOS})(?![A-Z0-9])"
-    r"|\s+(?:EN|SENTIDO)\s+(?P<xy>[XY])(?![A-Z0-9]))?"
+    rf"(?:(?<![A-Z])(?:(?:EN\s+)?(?P<ambos0>{AMBOS})|(?:EN|SENTIDO)\s+(?P<xy0>[XY]))\s+)?"
+    rf"(?P<cuerpo>#\s*(?P<num>{_NUM})\s*@\s*(?P<sep>{_SEP}){_CM})"
+    rf"(?:{_SALTO_O_ESPACIO}(?:EN\s+)?(?P<ambos>{AMBOS})(?![A-Z0-9])"
+    rf"|{_SALTO_O_ESPACIO}(?:EN|SENTIDO)\s+(?P<xy>[XY])(?![A-Z0-9]))?"
 )
 _LECHO_RE = re.compile(
     rf"(?<![A-Z.])(?:EN\s+)?(?P<l1>{_LS}|{_LI})"
     rf"(?:\s*(?:Y|E|,|\+)\s*(?P<l2>{_LS}|{_LI}))?(?![A-Z.])"
-    rf"(?:\s*(?P<ambos>{_AMBOS})(?![A-Z0-9]))?"
+    rf"(?:\s*(?P<ambos>{AMBOS})(?![A-Z0-9]))?"
 )
 _ES_LS = re.compile(_LS)
 _SENTIDO_XY: dict[str, Literal["x", "y"]] = {"X": "x", "Y": "y"}
-# Dos lechos con la misma malla, cuando la malla no dice su lecho («2 PARRILLAS #4@20»);
-# es la misma lectura que ``costing.steel.slab_rebar_kg_per_m2`` da a «DOBLEMENTE».
-_DOBLE = (
-    r"(?:DOBLE\s+PARRILLA|DOBLEMENTE\s+ARMAD[AO]|AMBOS\s+LECHOS"
-    r"|2\s*(?:PARRILLAS|LECHOS|CAPAS(?:\s+DE)?))"
-)
-_DOBLE_RE = re.compile(rf"(?<![\w.]){_DOBLE}(?![A-Z])")
-_DOBLE_AL_FINAL_RE = re.compile(rf"(?<![\w.]){_DOBLE}\s*$")
 
 _VARILLAS_RE = re.compile(
     rf"(?<![\d.#@])(?P<n>{_CUENTA})\s*(?:VARILLAS|VARS?\.?|V)?\s*#\s*(?P<num>{_NUM})(?!\s*@)"
 )
 _CIFRA_O_GATO = "0123456789#.@"  # lo que, pegado delante, parte un número (aunque esté leído)
-
-# El contexto que puede ir junto a una pieza sin dejarla a medias: medidas, espesores,
-# marcas, sentidos, referencias y palabras de familia. Siempre se busca en su lugar real.
-_PALABRAS = (
-    r"(?:DALAS?|CADENAS?|CASTILLOS?|COLUMNAS?|CONTRATRABES?|TRABES?|LOSAS?|MUROS?|ZAPATAS?"
-    r"|DADOS?|PILOTES?|CERRAMIENTOS?|ARMEX|REFUERZO)"
-)
-_MARCA = r"[A-Z]{1,4}\s*-\s*\d{1,3}[A-Z]?(?:\.\d{1,2})?"  # K-1, Z-1, CTA-10, K-15A.1
-_CONTEXTO_RE = re.compile(
-    r"(?<![\w.])\d+(?:\.\d+)?\s*[X×]\s*\d+(?:\.\d+)?(?![\w.])"
-    r"|(?<![\w.])H\s*=\s*\d+(?:\.\d+)?(?![\w.])"
-    rf"|(?<![\w.\-]){_MARCA}(?![\w.])"
-    rf"|(?<![A-Z]){_AMBOS}(?![A-Z0-9])"
-    r"|(?<![A-Z])EN\s+[XY](?![A-Z0-9])"
-    r"|(?<![A-Z])VER\s+(?:CORTE|DETALLE)(?![A-Z])"
-    rf"|(?<![A-Z]){_PALABRAS}(?![A-Z])"
-)
-# Una junta une la pieza con la que sigue justo después; nunca queda suelta.
-_JUNTA_RE = re.compile(r"[,+]|Y(?![A-Z0-9])")
-_FRONTERA = " |,+"
-# Una línea que empieza con una junta o con «/» sigue a la anterior.
-_SIGUE_LINEA_RE = re.compile(r"\|\s*(?:[/,\-+]|Y(?![A-Z0-9]))")
-_PEGADO_RE = re.compile(r"[^ ]*$")
+_PEGADO_RE = re.compile(rf"[^ {CONSUMIDO}]*$")
 # Una cuenta suelta delante de una pieza la deja a medias: «4 », «4 VARS », «4 VARILLAS DE »,
 # «4 PZAS », «(4) », «4-», «4VARS », «4 DE », «4 X », «3 PARRILLAS ». No es cuenta el número
 # de una marca («K-1 ») ni el final de una medida («15 X 30 », «H=20 »).
@@ -179,28 +172,22 @@ _CUENTA_ANTES_RE = re.compile(
     r"\s*(?:-|[X×](?![A-Z0-9])|(?:VARILLAS?|VARS?\.?|V|PZAS?\.?|PIEZAS?|PARRILLAS?|LECHOS?"
     r"|CAPAS?|MALLAS?|DEL?)(?:\s+DEL?)?)?\s*$"
 )
-_MULTIPLICADOR_ANTES_RE = re.compile(
-    r"(?<![\w.])(?:DOBLES?|TRIPLES?|DOS|TRES|CUATRO)\s+(?:PARRILLAS?|MALLAS?|LECHOS?|CAPAS?)"
-    r"(?:\s+DEL?)?\s*$"
-)
-# Una cabeza de estribo que no se leyó delante de una malla («ESTRIBOS: #3@20»).
+# Una cabeza de estribo que no se leyó delante de una malla («ESTRIBOS: #3@20»), también
+# pegada a otra cosa («.E. #3@20», «XE. #3@20», «(E) #3@20»): no es una malla.
+_CABEZA = r"(?:E|EST|ESTR|ESTRIBOS?|G|GRAPAS?|LIGAS?|EYG)"
 _CABEZA_ANTES_RE = re.compile(
-    r"(?<![\w.])\d*(?:E|EST|ESTR|ESTRIBOS?|G|GRAPAS?|LIGAS?|EYG)[.:,]?(?:\s+DEL?)?\s*$"
+    rf"(?:(?<![\w.])\d*{_CABEZA}[.:,]?|(?<![^\s|])[^\s|]*?{_CABEZA}[.:)])(?:\s+DEL?)?\s*$"
 )
-_NUMERO_EN_CITA_RE = re.compile(r"[#Ø]\s*(\d+(?:\.\d+)?)")
-_RESIDUO_RE = re.compile(r"[\d#@/]")
-_ANTES_DE_FICHA = " |,+("  # el contexto del residuo es una ficha entera: nunca medio número
-_DESPUES_DE_FICHA = " |,+)"
 # Justo antes de una malla, una palabra de lecho que no se reconoció como marca («A/SLI»)
 # o un plural sin cuenta («… LECHOS», «… PARRILLAS»): la malla no se sabe cuántas son.
 _LECHO_SUELTO_ANTES_RE = re.compile(
     r"(?:L\.?[SI]\.?|LECHO\s+(?:SUP|INF)\w*\.?|(?:[^\s|]+\s+)?(?:PARRILLAS|LECHOS|CAPAS|MALLAS))"
     r"(?:\s+DEL?)?\s*$"
 )
+_NUMERO_EN_CITA_RE = re.compile(r"[#Ø]\s*(\d+(?:\.\d+)?)")
 _FEMENINAS = frozenset(
     {"columna", "trabe", "contratrabe", "dala", "cadena", "losa", "zapata", "pila", "viga"}
 )
-_CONSUMIDO = "\x00"
 
 
 # ------------------------------------------------------------------ lectura
@@ -209,7 +196,9 @@ _CONSUMIDO = "\x00"
 @dataclass
 class _Pieza:
     """Un pedazo del texto que una de las tres pasadas reconoció. Se toma (su estructura entra
-    al armado o su ``aviso`` se emite) sólo si lo que la rodea es contexto."""
+    al armado o su ``aviso`` se emite) sólo si lo que la rodea es contexto. ``extras`` son las
+    fichas que consumió fuera de su tramo (una palabra de doble lecho que concuerda con sus
+    marcas «LS … LI …»)."""
 
     inicio: int
     fin: int
@@ -218,19 +207,15 @@ class _Pieza:
     parrillas: list[Parrilla] = field(default_factory=list)
     varillas: list[GrupoVarillas] = field(default_factory=list)
     aviso: str | None = None  # reconocida pero no se toma: malla fuera de lugar, lecho ambiguo
-
-
-def _normalizar(texto: str) -> tuple[str, str]:
-    """El texto para leer y el texto para citar, de la misma longitud: los dos en mayúsculas
-    y con los espacios juntos; el de leer escribe ``#`` donde el plano puso «Ø» o «%%C», el
-    de citar deja «Ø» para que el aviso diga lo que dice el plano."""
-    t = texto.upper().replace("%%%", "%").replace("%%C", "Ø").replace("⌀", "Ø")
-    t = re.sub(r"\s+", " ", t.replace("\\P", " | ")).strip()
-    return t.replace("Ø", "#"), t
+    extras: list[tuple[int, int]] = field(default_factory=list)
 
 
 def _metros(cm: str) -> float:
     return float(cm) / 100
+
+
+def _en_rango(cm: float, rango: tuple[float, float]) -> bool:
+    return rango[0] <= cm <= rango[1]
 
 
 def _cuantos(cuenta: str | None) -> int:
@@ -269,14 +254,26 @@ def _juegos(m: re.Match[str]) -> list[JuegoEstribos]:
     return [juego("liga", m["n1"])]
 
 
+def _leer_estribos(vista: str, letrero: str) -> list[_Pieza]:
+    """Los juegos de estribos como piezas; una separación fuera de rango avisa el juego entero."""
+    piezas = []
+    for m in _ESTRIBOS_RE.finditer(vista):
+        a, b = m.start(), m.end()
+        separaciones = [float(s) for s in (m["ext"], m["centro"], m["sep"]) if s]
+        if all(_en_rango(s, _RANGO_ESTRIBOS) for s in separaciones):
+            piezas.append(_Pieza(a, b, estribos=_juegos(m)))
+        else:
+            aviso = f"separación fuera de rango: «{letrero[a:b].strip()}»"
+            piezas.append(_Pieza(a, b, aviso=aviso))
+    return piezas
+
+
 def _con_articulo(familia: str) -> str:
     return f"{'una' if familia in _FEMENINAS else 'un'} {familia.replace('_', ' ')}"
 
 
-def _lechos(marca: re.Match[str] | None) -> list[Literal["sup", "inf", "unico"]]:
-    """Los lechos que dice una marca («L.S. Y L.I.» son dos); sin marca, único."""
-    if marca is None:
-        return ["unico"]
+def _lechos(marca: re.Match[str]) -> list[Lecho]:
+    """Los lechos que dice una marca («L.S. Y L.I.» son dos)."""
     return [
         "sup" if _ES_LS.fullmatch(lecho) else "inf" for lecho in (marca["l1"], marca["l2"]) if lecho
     ]
@@ -321,66 +318,94 @@ def _leer_mallas(vista: str, texto: str, letrero: str, familia: str) -> list[_Pi
     """Las mallas del texto con su lecho, como piezas.
 
     El lecho se escribe delante («LS #4@20 A/S LI #4@20 A/S») o detrás («#4@20 L.S. #3@20
-    L.I.»), con una sola convención por texto. Sin marcas, una malla única precedida por
-    «DOBLE PARRILLA», «DOBLEMENTE ARMADA», «AMBOS LECHOS», «2 PARRILLAS», «2 LECHOS» o
-    «2 CAPAS» son dos lechos. Si no queda claro qué lecho va con qué malla ninguna malla se
-    toma: cada una (con las marcas que tiene al lado) se avisa como lecho ambiguo, y una
-    marca suelta como lecho sin su malla."""
+    L.I.»), con una sola convención por texto. Una palabra de doble lecho («DOBLE PARRILLA»,
+    «DOBLEMENTE ARMADA», «AMBOS LECHOS», «2 PARRILLAS», «2 LECHOS», «2 CAPAS») unida por
+    contexto a una malla única y sola, delante de ella, la vuelve dos lechos; unida a mallas
+    que ya dicen «LS» y «LI» concuerda y se consume; en cualquier otro caso ninguna malla se
+    toma: cada una (con las marcas y palabras que tiene al lado) se avisa como lecho ambiguo,
+    y una marca suelta como lecho sin su malla."""
     mallas = [
         m
         for m in _MALLA_RE.finditer(vista)
-        if m.start() == 0 or texto[m.start() - 1] not in _CIFRA_O_GATO
+        if m.start("cuerpo") == 0 or texto[m.start("cuerpo") - 1] not in _CIFRA_O_GATO
     ]
     if not mallas:
         return []
     marcas = list(_LECHO_RE.finditer(vista))
-    dobles = [d for d in _DOBLE_RE.finditer(vista) if d.end() <= mallas[-1].start()]
+    dobles = list(DOBLE_RE.finditer(vista))
 
     def junto(a: int, b: int) -> bool:  # sólo espacios entre a y b, en la misma línea
         return a <= b and vista[a:b].strip(" ") == ""
 
-    def marca_delante(malla: re.Match[str]) -> int | None:
-        return next((k for k, m in enumerate(marcas) if junto(m.end(), malla.start())), None)
+    def marca_junto(malla: re.Match[str], delante: bool) -> int | None:
+        for k, marca in enumerate(marcas):
+            if junto(marca.end(), malla.start()) if delante else junto(malla.end(), marca.start()):
+                return k
+        return None
 
-    def marca_detras(malla: re.Match[str]) -> int | None:
-        return next((k for k, m in enumerate(marcas) if junto(malla.end(), m.start())), None)
+    delante = [marca_junto(m, True) for m in mallas]
+    detras = [marca_junto(m, False) for m in mallas]
 
-    delante = [marca_delante(m) for m in mallas]
-    detras = [marca_detras(m) for m in mallas]
-    # (inicio, fin, lechos, «A/S» de la marca) de cada malla, o None si es ambiguo.
-    tomas: list[tuple[int, int, list[Literal["sup", "inf", "unico"]], bool]] | None
+    # 1. El tramo de cada malla con su marca, y sus lechos (None: el texto no lo deja claro).
+    tramos: list[tuple[int, int]] = []
+    lechos: list[list[Lecho]] | None = []
+    ambos_de_marca = [False] * len(mallas)
     if marcas:
         usadas = _convencion(delante, detras, len(marcas))
-        tomas = None
-        if usadas is not None:
-            tomas = []
-            for malla, k in zip(mallas, usadas, strict=True):
-                assert k is not None
-                marca = marcas[k]
-                inicio, fin = min(malla.start(), marca.start()), max(malla.end(), marca.end())
-                tomas.append((inicio, fin, _lechos(marca), bool(marca["ambos"])))
-    elif dobles and (
-        len(mallas) > 1 or not _solo_contexto(texto, dobles[-1].end(), mallas[0].start())
-    ):
-        tomas = None  # la palabra de doble no se sabe a qué malla va
-    elif dobles:
-        doble, malla = dobles[-1], mallas[0]
-        inicio = doble.start() if junto(doble.end(), malla.start()) else malla.start()
-        tomas = [(inicio, malla.end(), ["sup", "inf"], False)]
-    else:
-        tomas = [(m.start(), m.end(), ["unico"], False) for m in mallas]
-
-    if tomas is None:
-        tramos = []
-        for malla, antes, despues in zip(mallas, delante, detras, strict=True):
+        for i, malla in enumerate(mallas):
             a, b = malla.start(), malla.end()
-            for k in (antes, despues):
-                if k is not None:
-                    a, b = min(a, marcas[k].start()), max(b, marcas[k].end())
+            if usadas is None:
+                for k in (delante[i], detras[i]):
+                    if k is not None:
+                        a, b = min(a, marcas[k].start()), max(b, marcas[k].end())
+                lechos = None
+            else:
+                k = usadas[i]
+                assert k is not None and lechos is not None
+                a, b = min(a, marcas[k].start()), max(b, marcas[k].end())
+                lechos.append(_lechos(marcas[k]))
+                ambos_de_marca[i] = bool(marcas[k]["ambos"])
             tramos.append((a, b))
+    else:
+        tramos = [(m.start(), m.end()) for m in mallas]
+        lechos = [["unico"] for _ in mallas]
+
+    # 2. Cada palabra de doble lecho, atada por contexto a la malla que le sigue o, si no,
+    #    a la que la precede. Las que no se atan a ninguna quedan para el residuo.
+    delante_de: dict[int, list[re.Match[str]]] = {}
+    detras_de: dict[int, list[re.Match[str]]] = {}
+    for d in dobles:
+        k = next((k for k, (a, _) in enumerate(tramos) if a >= d.end()), None)
+        if k is not None and atado(vista, d.end(), tramos[k][0]):
+            delante_de.setdefault(k, []).append(d)
+            continue
+        k = next((k for k, (_, b) in reversed(list(enumerate(tramos))) if b <= d.start()), None)
+        if k is not None and atado(vista, tramos[k][1], d.start()):
+            detras_de.setdefault(k, []).append(d)
+
+    # 3. Qué hacen esas palabras: concuerdan con «LS … LI …», doblan una malla única y sola,
+    #    o vuelven ambiguo el lecho de todas.
+    extras: list[tuple[int, int]] = []
+    if dobles and lechos is not None:
+        cubiertos = {lecho for lista in lechos for lecho in lista}
+        atadas = [d for lista in (*delante_de.values(), *detras_de.values()) for d in lista]
+        if {"sup", "inf"} <= cubiertos:
+            extras = [(d.start(), d.end()) for d in atadas]
+        elif len(tramos) == 1 and lechos[0] == ["unico"] and len(dobles) == 1 and 0 in delante_de:
+            tramos[0] = (dobles[0].start(), tramos[0][1])
+            lechos[0] = ["sup", "inf"]
+        else:
+            lechos = None
+
+    if lechos is None:
+        con_palabras = []
+        for k, (a, b) in enumerate(tramos):
+            for d in delante_de.get(k, []) + detras_de.get(k, []):
+                a, b = min(a, d.start()), max(b, d.end())
+            con_palabras.append((a, b))
         piezas = [
             _Pieza(a, b, malla=True, aviso=f"lecho ambiguo: «{letrero[a:b].strip()}»: no se toma")
-            for a, b in _unir(tramos)
+            for a, b in _unir(con_palabras)
         ]
         al_lado = {k for k in delante + detras if k is not None}
         for k, suelta in enumerate(marcas):
@@ -391,13 +416,21 @@ def _leer_mallas(vista: str, texto: str, letrero: str, familia: str) -> list[_Pi
         return piezas
 
     piezas = []
-    for malla, (a, b, lechos, ambos_de_la_marca) in zip(mallas, tomas, strict=True):
+    for malla, (a, b), lechos_de_malla, ambos in zip(
+        mallas, tramos, lechos, ambos_de_marca, strict=True
+    ):
+        cita = letrero[a:b].strip()
         if familia not in FAMILIAS_CON_PARRILLA:
-            aviso = f"malla «{letrero[a:b].strip()}» en {_con_articulo(familia)}: no se toma"
+            aviso = f"malla «{cita}» en {_con_articulo(familia)}: no se toma"
             piezas.append(_Pieza(a, b, malla=True, aviso=aviso))
             continue
+        if not _en_rango(float(malla["sep"]), _RANGO_MALLAS):
+            piezas.append(_Pieza(a, b, malla=True, aviso=f"separación fuera de rango: «{cita}»"))
+            continue
         sentidos: Literal["ambos", "x", "y"] | None = (
-            "ambos" if malla["ambos"] or ambos_de_la_marca else _SENTIDO_XY.get(malla["xy"] or "")
+            "ambos"
+            if malla["ambos"] or malla["ambos0"] or ambos
+            else _SENTIDO_XY.get(malla["xy"] or malla["xy0"] or "")
         )
         parrillas = [
             Parrilla(
@@ -406,83 +439,62 @@ def _leer_mallas(vista: str, texto: str, letrero: str, familia: str) -> list[_Pi
                 lecho=lecho,
                 sentidos=sentidos,
             )
-            for lecho in lechos
+            for lecho in lechos_de_malla
         ]
         piezas.append(_Pieza(a, b, malla=True, parrillas=parrillas))
+    piezas[0].extras = extras
     return piezas
 
 
-def _solo_contexto(texto: str, a: int, b: int) -> bool:
-    """Entre ``a`` y ``b`` sólo hay espacios y contexto (fichas enteras, en su lugar real)."""
-    pos = a
-    while pos < b:
-        if texto[pos] == " ":
-            pos += 1
-            continue
-        contexto = _CONTEXTO_RE.match(texto, pos)
-        if contexto is None or contexto.end() > b:
-            return False
-        if contexto.end() < len(texto) and texto[contexto.end()] not in _FRONTERA:
-            return False
-        pos = contexto.end()
-    return True
+def _estorbo_delante(
+    texto: str,
+    vista: str,
+    desde: int,
+    p: _Pieza,
+    anterior: _Pieza | None,
+    consumido: list[bool],
+) -> int | None:
+    """Dónde empieza lo que estorba delante de la pieza, o ``None`` si nada la estorba:
+    algo pegado que no sea una junta justo después de la pieza anterior («K-2#4»); una
+    cuenta suelta («4 #4@20»); delante de una malla, una cabeza de estribo o una palabra de
+    lecho que no se leyeron («ESTRIBOS: #3@20», «A/SLI #3@20»); o una palabra que nadie
+    tomó (de doble lecho, multiplicador, sentido) unida a la pieza por contexto."""
+    antes = vista[desde : p.inicio]
+    pegado = _PEGADO_RE.search(antes)
+    assert pegado is not None
+    if pegado.group():
+        junta_valida = (
+            pegado.group() in (",", "+")
+            and anterior is not None
+            and texto[anterior.fin : desde + pegado.start()].strip(" |") == ""
+        )
+        if not junta_valida:
+            return desde + pegado.start()
+    patrones = [_CUENTA_ANTES_RE]
+    if p.malla:
+        patrones += [_CABEZA_ANTES_RE, _LECHO_SUELTO_ANTES_RE]
+    for patron in patrones:
+        cuenta = patron.search(vista, desde, p.inicio)
+        if cuenta is not None:
+            return cuenta.start()
+    estorbo: int | None = None
+    for f in fichas(texto, desde, p.inicio, consumido):
+        if f.tipo in ESTORBA:
+            estorbo = f.inicio
+        elif f.tipo not in ATA and f.tipo != "consumido":
+            estorbo = None
+    return estorbo
 
 
-def _fin_de_linea(texto: str, desde: int) -> int:
-    fin = texto.find("|", desde)
-    return len(texto) if fin < 0 else fin
-
-
-def _fin_del_hueco(texto: str, desde: int, siguiente: _Pieza | None) -> int:
-    """Hasta dónde llega lo que sigue a una pieza: la pieza siguiente o el fin de la línea
-    (una línea que empieza con junta o «/» sigue a la anterior)."""
-    inicio_siguiente = siguiente.inicio if siguiente else len(texto)
-    fin = _fin_de_linea(texto, desde)
-    while fin < inicio_siguiente and _SIGUE_LINEA_RE.match(texto, fin):
-        fin = _fin_de_linea(texto, fin + 1)
-    return min(inicio_siguiente, fin)
-
-
-def _junta_justa(texto: str, fin_junta: int, siguiente: _Pieza | None) -> bool:
-    """Una junta vale si lo único entre ella y la pieza siguiente es espacio o salto de línea."""
-    return siguiente is not None and texto[fin_junta : siguiente.inicio].strip(" |") == ""
-
-
-def _hueco_limpio(texto: str, a: int, b: int, siguiente: _Pieza | None) -> bool:
-    """Lo que hay entre el fin de una pieza (``a``) y ``b`` es sólo contexto, buscado en su
-    lugar real del texto, y a lo más una junta justo antes de la pieza siguiente. Lo que va
-    pegado a la pieza (sin espacio ni junta) nunca es limpio."""
-    if a == b:
-        return True
-    if texto[a] not in _FRONTERA:
-        return False
-    pos = a
-    while pos < b:
-        if texto[pos] in " |":
-            pos += 1
-            continue
-        junta = _JUNTA_RE.match(texto, pos)
-        if junta is not None and junta.end() <= b:
-            return _junta_justa(texto, junta.end(), siguiente)
-        contexto = _CONTEXTO_RE.match(texto, pos)
-        if contexto is None or contexto.end() > b:
-            return False
-        if contexto.end() < len(texto) and texto[contexto.end()] not in _FRONTERA:
-            return False
-        pos = contexto.end()
-    return True
-
-
-def _revisar(texto: str, piezas: list[_Pieza]) -> tuple[list[_Pieza], list[tuple[int, int]]]:
+def _revisar(
+    texto: str, vista: str, piezas: list[_Pieza], consumido: list[bool]
+) -> tuple[list[_Pieza], list[tuple[int, int]]]:
     """Separa las piezas que se toman de los tramos que se avisan enteros.
 
     Una pieza no se toma, y se avisa con lo que la estorba, si:
     - toca a otra pieza sin espacio ni junta (se avisan las dos juntas: «#4@20 A/S#3@20»), o
       entre las dos hay algo que no es contexto (tampoco se sabe de cuál es: «4#3DALA E#2@20»);
-    - lleva algo pegado delante que no sea una junta justo después de la pieza anterior
-      («K-2#4», «H=202E+1G#3»);
-    - la precede una cuenta suelta o un multiplicador («4 #4@20», «4 DE #4@20»), o a una
-      malla una cabeza de estribo o una palabra de lecho que no se leyeron («A/SLI #3@20»);
+    - algo la estorba delante (``_estorbo_delante``);
     - lo que le sigue hasta la pieza siguiente o el fin de la línea no es contexto."""
     buenas: list[_Pieza] = []
     malos: list[tuple[int, int]] = []
@@ -490,106 +502,28 @@ def _revisar(texto: str, piezas: list[_Pieza]) -> tuple[list[_Pieza], list[tuple
     for i, p in enumerate(piezas):
         anterior = piezas[i - 1] if i else None
         siguiente = piezas[i + 1] if i + 1 < len(piezas) else None
+        inicio_siguiente = siguiente.inicio if siguiente else None
         desde = max(anterior.fin if anterior else 0, texto.rfind("|", 0, p.inicio) + 1)
-        antes = texto[desde : p.inicio]
-        hasta = _fin_del_hueco(texto, p.fin, siguiente)
+        hasta = fin_del_hueco(texto, p.fin, inicio_siguiente)
         inicio, fin, mala = p.inicio, p.fin, False
         if arrastre is not None:
             mala, inicio, arrastre = True, arrastre, None
-
         if anterior is not None and anterior.fin == p.inicio:
             mala, inicio = True, anterior.inicio
         if siguiente is not None and siguiente.inicio == p.fin:
             mala, fin = True, siguiente.fin
-        pegado = _PEGADO_RE.search(antes)
-        assert pegado is not None
-        junta_valida = (
-            pegado.group() in (",", "+")
-            and anterior is not None
-            and texto[anterior.fin : desde + pegado.start()].strip(" |") == ""
-        )
-        if pegado.group() and not junta_valida:
-            mala, inicio = True, min(inicio, desde + pegado.start())
-        elif not _DOBLE_AL_FINAL_RE.search(texto, desde, p.inicio):
-            # En su lugar real: el número de «K-1 » o de «15 X 30 » no es una cuenta.
-            patrones = [_CUENTA_ANTES_RE, _MULTIPLICADOR_ANTES_RE]
-            if p.malla:
-                patrones += [_CABEZA_ANTES_RE, _LECHO_SUELTO_ANTES_RE]
-            for patron in patrones:
-                cuenta = patron.search(texto, desde, p.inicio)
-                if cuenta is not None:
-                    mala, inicio = True, min(inicio, cuenta.start())
-                    break
-        if not _hueco_limpio(texto, p.fin, hasta, siguiente):
+        estorbo = _estorbo_delante(texto, vista, desde, p, anterior, consumido)
+        if estorbo is not None:
+            mala, inicio = True, min(inicio, estorbo)
+        if not hueco_limpio(texto, p.fin, hasta, inicio_siguiente, consumido):
             mala, fin = True, max(fin, hasta)
-            if siguiente is not None and hasta == siguiente.inicio:
+            if hasta == inicio_siguiente:
                 arrastre = inicio
         if mala:
             malos.append((inicio, fin))
         else:
             buenas.append(p)
     return buenas, _unir(malos)
-
-
-def _residuo(texto: str, cubierto: list[bool]) -> list[tuple[int, int]]:
-    """Los pedazos que nadie leyó y que no son contexto, con una cifra, «#», «@» o «/»: cada
-    uno es un aviso. Un «#» o «@» suelto se lleva el número que le sigue («@ 20»), un pedazo
-    que le sigue y empieza con «@» se le junta («4#5 @ 20»), y unos milímetros detrás también
-    («#12 MM»)."""
-    libre = [not c for c in cubierto]
-    i, n = 0, len(texto)
-    while i < n:  # el contexto, en su lugar real, dentro de cada tramo sin leer
-        if not libre[i]:
-            i += 1
-            continue
-        j = i
-        while j < n and libre[j]:
-            j += 1
-        for patron in (_CONTEXTO_RE, _DOBLE_RE):
-            for m in patron.finditer(texto, i, j):
-                ficha_entera = (m.start() == 0 or texto[m.start() - 1] in _ANTES_DE_FICHA) and (
-                    m.end() == n or texto[m.end()] in _DESPUES_DE_FICHA
-                )
-                if ficha_entera:
-                    for k in range(m.start(), m.end()):
-                        libre[k] = False
-        i = j
-
-    trozos: list[tuple[int, int]] = []
-    i = 0
-    while i < n:
-        if libre[i] and texto[i] not in " |":
-            j = i
-            while j < n and libre[j] and texto[j] not in " |":
-                j += 1
-            trozos.append((i, j))
-            i = j
-        else:
-            i += 1
-
-    avisos: list[tuple[int, int]] = []
-    k = 0
-    while k < len(trozos):
-        a, b = trozos[k]
-        if not _RESIDUO_RE.search(texto[a:b]):
-            k += 1
-            continue
-        while k + 1 < len(trozos):
-            a2, b2 = trozos[k + 1]
-            siguiente = texto[a2:b2]
-            contiguo = texto[b:a2].strip(" ") == ""
-            se_junta = (
-                (texto[b - 1] in "#@" and siguiente[0].isdigit())
-                or siguiente[0] == "@"
-                or siguiente in ("MM", "MMS")
-            )
-            if not (contiguo and se_junta):
-                break
-            b = b2
-            k += 1
-        avisos.append((a, b))
-        k += 1
-    return avisos
 
 
 def _aviso_sin_leer(cita: str) -> str:
@@ -603,31 +537,31 @@ def parsear_armado(textos: list[str], familia: str) -> Armado:
     """Lee los textos de un armado (en orden, uno por línea) para un elemento de ``familia``.
 
     Tres pasadas reconocen piezas, en este orden: juegos de estribos (con sus zonas, que
-    pueden seguir en la línea siguiente, y su «VER CORTE»), mallas con su lecho (sólo en
-    ``FAMILIAS_CON_PARRILLA``; en otra familia se avisan) y grupos de varillas. Cada pieza se
-    revisa contra lo que la rodea en el texto real (``_revisar``): se lee entera o se avisa
-    entera, nunca a medias. Al final, todo lo que nadie leyó y no es contexto, si lleva una
-    cifra, «#», «@» o «/», se avisa (``_residuo``). Los avisos citan el texto como lo
-    escribió el plano (en mayúsculas)."""
+    pueden seguir en la línea siguiente, y su «VER CORTE»), mallas con su lecho y sentidos
+    (sólo en ``FAMILIAS_CON_PARRILLA``; en otra familia se avisan) y grupos de varillas. Cada
+    pieza se revisa contra lo que la rodea en el texto real (``_revisar``): se lee entera o
+    se avisa entera, nunca a medias. Al final, todo lo que nadie leyó y no es contexto se
+    avisa (``residuo``). Los avisos citan el texto como lo escribió el plano (en mayúsculas)."""
     lineas = [t.strip() for t in textos if t and t.strip()]
-    pares = [p for p in (_normalizar(t) for t in lineas) if p[0]]
+    pares = [p for p in (normalizar(t) for t in lineas) if p[0]]
     texto = " | ".join(leer for leer, _ in pares)
     letrero = " | ".join(citar for _, citar in pares)
     consumido = [False] * len(texto)
     piezas: list[_Pieza] = []
 
     def visible() -> str:
-        return "".join(_CONSUMIDO if consumido[i] else c for i, c in enumerate(texto))
+        return "".join(CONSUMIDO if consumido[i] else c for i, c in enumerate(texto))
 
     def tomar(p: _Pieza) -> None:
         piezas.append(p)
-        for i in range(p.inicio, p.fin):
-            consumido[i] = True
+        for a, b in [(p.inicio, p.fin), *p.extras]:
+            for i in range(a, b):
+                consumido[i] = True
 
     # 1. Juegos de estribos: «EYG#3@15» es estribo y grapa, nunca una malla.
-    for leido in _ESTRIBOS_RE.finditer(visible()):
-        tomar(_Pieza(leido.start(), leido.end(), estribos=_juegos(leido)))
-    # 2. Mallas, sólo donde van, con su lecho.
+    for juego in _leer_estribos(visible(), letrero):
+        tomar(juego)
+    # 2. Mallas, sólo donde van, con su lecho y sus sentidos.
     for malla in _leer_mallas(visible(), texto, letrero, familia):
         tomar(malla)
     # 3. Grupos de varillas: todos, no sólo el primero («4#5+2#4» son dos). Lo que va pegado
@@ -640,7 +574,7 @@ def parsear_armado(textos: list[str], familia: str) -> Armado:
 
     # 4. Cada pieza se toma entera o se avisa entera con lo que la estorba.
     piezas.sort(key=lambda p: p.inicio)
-    buenas, malos = _revisar(texto, piezas)
+    buenas, malos = _revisar(texto, visible(), piezas, consumido)
     avisos: list[tuple[int, str]] = []
     armado = Armado(texto_original=" | ".join(lineas))
     for p in buenas:
@@ -654,10 +588,12 @@ def parsear_armado(textos: list[str], familia: str) -> Armado:
         for i in range(a, b):
             consumido[i] = True
 
-    # 5. Lo que nadie leyó: si no es contexto y lleva una cifra, «#», «@» o «/», se avisa.
-    for a, b in _residuo(texto, consumido):
-        avisos.append((a, _aviso_sin_leer(letrero[a:b].strip(",;: "))))
-
+    # 5. Lo que nadie leyó: si no es contexto, se avisa.
+    for a, b, tipo in residuo(texto, consumido):
+        if tipo == "otro":
+            avisos.append((a, _aviso_sin_leer(letrero[a:b].strip(",;: "))))
+        else:
+            avisos.append((a, f"{tipo} «{letrero[a:b].strip('() ')}» sin su malla: no se toma"))
     armado.avisos = [aviso for _, aviso in sorted(avisos, key=lambda par: par[0])]
     return armado
 
@@ -684,11 +620,12 @@ def _numero(numero: str) -> str:
     return numero
 
 
-def _cm(separacion_m: float | None) -> str:
+def _cm(separacion_m: float | None, rango: tuple[float, float]) -> str:
+    """La separación en cm, dentro del rango que el parser vuelve a leer."""
     if separacion_m is None:
         raise ValueError("zona sin separación: el texto no la puede llevar")
     cm = round(separacion_m * 100, 2)
-    if not 1 <= cm <= 999.99 or abs(separacion_m * 100 - cm) > 1e-6:
+    if not _en_rango(cm, rango) or abs(separacion_m * 100 - cm) > 1e-6:
         raise ValueError(f"separación {separacion_m} m: el texto no la puede llevar")
     return str(int(cm)) if cm == int(cm) else f"{cm:g}"
 
@@ -698,7 +635,7 @@ def _texto_zonas(zonas: list[Zona]) -> str:
     if tramos not in _TRAMOS_ESCRIBIBLES:
         raise ValueError(f"zonas {list(tramos)}: el texto no las puede llevar")
     prefijos = {"todo": "", "extremos": " EXT", "centro": " CENTRO"}
-    return "".join(f"{prefijos[z.tramo]}@{_cm(z.separacion_m)}" for z in zonas)
+    return "".join(f"{prefijos[z.tramo]}@{_cm(z.separacion_m, _RANGO_ESTRIBOS)}" for z in zonas)
 
 
 def _cabeza(j: JuegoEstribos) -> str:
@@ -750,14 +687,15 @@ def texto_estribos(a: Armado) -> str:
 def texto_parrillas(a: Armado) -> str:
     """«LS #4@20 A/S LI #4@20 A/S»; sin lecho cuando es único, sin sufijo si no dice sentidos.
 
-    Siempre con el lecho delante. Mallas con lecho y mallas sin lecho no se pueden escribir
-    juntas (el texto no diría a cuál va cada lecho): ValueError."""
+    Siempre con el lecho delante y los sentidos detrás. Mallas con lecho y mallas sin lecho
+    no se pueden escribir juntas (el texto no diría a cuál va cada lecho): ValueError."""
     if len({p.lecho == "unico" for p in a.parrillas}) > 1:
         raise ValueError("mallas con lecho y sin lecho juntas: el texto no las distingue")
     lechos = {"sup": "LS ", "inf": "LI ", "unico": ""}
     sentidos = {"ambos": " A/S", "x": " EN X", "y": " EN Y", None: ""}
     return " ".join(
-        f"{lechos[p.lecho]}#{_numero(p.numero)}@{_cm(p.separacion_m)}{sentidos[p.sentidos]}"
+        f"{lechos[p.lecho]}#{_numero(p.numero)}@{_cm(p.separacion_m, _RANGO_MALLAS)}"
+        f"{sentidos[p.sentidos]}"
         for p in a.parrillas
     )
 
