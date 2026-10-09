@@ -80,14 +80,15 @@ class Armado(BaseModel):
 
 
 # ------------------------------------------------------------------ gramática
-# Las expresiones sólo reconocen piezas; si lo que sigue a una pieza la deja a medias lo
-# decide la revisión de huecos (``_revisar``), no un lookahead.
+# Las expresiones sólo reconocen piezas, y un número es siempre una ficha entera («#32» no
+# es «#3», «@1520» no es «@152»). Si lo que rodea a una pieza la deja a medias lo decide
+# ``_revisar`` sobre el texto real; lo que nadie leyó lo revisa ``_residuo``.
 
-# Un número de varilla mexicano («#25», «#3/8» o «#12 MM» se leen hasta donde dan y el
-# hueco que sigue los avisa enteros).
-_NUM = "(?:" + "|".join(re.escape(n) for n in sorted(NUMEROS, key=len, reverse=True)) + ")"
-_SEP = r"[1-9]\d{0,2}(?:\.\d{1,2})?"  # cm, de 1 a 999.99
-_CM = r"(?:\s?CMS?\.?)?"  # la unidad, pegada a la separación
+_NUM = (
+    "(?:" + "|".join(re.escape(n) for n in sorted(NUMEROS, key=len, reverse=True)) + r")(?!\d|\.\d)"
+)
+_SEP = r"[1-9]\d{0,2}(?:\.\d{1,2})?(?!\d|\.\d)"  # cm, de 1 a 999.99
+_CM = r"(?:\s?CMS?\.?)?(?:\s?C\s*/\s*C)?"  # la unidad y «C/C», pegadas a la separación
 # Opcionalmente a través del salto de línea: «2E#3EXT@10» / «CENTRO@20» son un solo juego.
 _LINEA = r"(?:\s*\|)?\s*"
 _LS = r"(?:LS|L\.S\.?|LECHO\s+SUP\w*\.?)"
@@ -99,11 +100,12 @@ _JUNTA = r"\s*(?:Y|\+|/|-|,|&)\s*"  # «EYG», «2E+1G», «E/G», «2E-1G», «
 _E = r"E(?:ST(?:RIBOS?|\.)?|\.)?"
 _G = r"G(?:RAPAS?|\.)?"
 
-# La cantidad de un juego no puede ser el número de la varilla anterior («4#3 E#2@15») ni
-# parte de una medida («15X30 E#2@20»): no la precede una letra, un dígito, «#» o «.».
+# La cantidad de un juego no puede ser el número de la varilla anterior («4#3 E#2@15»), una
+# separación («@20E#3») ni parte de una medida («15X30 E#2@20»): no la precede una letra, un
+# dígito, «#», «@» o «.».
 # «nE+mG» y «nG+mE» son el mismo juego de estribos y grapas.
 _ESTRIBOS_RE = re.compile(
-    r"(?<![A-Z0-9#.])(?<!#\s)"
+    r"(?<![A-Z0-9#.@])(?<![#@]\s)"
     rf"(?:(?P<n1>{_CUENTA_P})\s*)?"
     r"(?:"
     rf"(?P<e>{_E})(?:{_JUNTA}(?:(?P<n2>{_CUENTA_P})\s*)?(?P<eg>{_G}))?"
@@ -123,7 +125,7 @@ _ESTRIBOS_RE = re.compile(
 # El cuerpo de una malla; su lecho («LS», «L.I.», «LECHO SUPERIOR») va aparte, delante o detrás.
 _MALLA_RE = re.compile(
     rf"#\s*(?P<num>{_NUM})\s*@\s*(?P<sep>{_SEP}){_CM}"
-    rf"(?:\s*(?:EN\s+)?(?P<ambos>{_AMBOS})(?![A-Z0-9])"
+    rf"(?:\s+(?:EN\s+)?(?P<ambos>{_AMBOS})(?![A-Z0-9])"
     r"|\s+(?:EN|SENTIDO)\s+(?P<xy>[XY])(?![A-Z0-9]))?"
 )
 _LECHO_RE = re.compile(
@@ -133,48 +135,72 @@ _LECHO_RE = re.compile(
 )
 _ES_LS = re.compile(_LS)
 _SENTIDO_XY: dict[str, Literal["x", "y"]] = {"X": "x", "Y": "y"}
+# Dos lechos con la misma malla, cuando la malla no dice su lecho («2 PARRILLAS #4@20»);
+# es la misma lectura que ``costing.steel.slab_rebar_kg_per_m2`` da a «DOBLEMENTE».
+_DOBLE = (
+    r"(?:DOBLE\s+PARRILLA|DOBLEMENTE\s+ARMAD[AO]|AMBOS\s+LECHOS"
+    r"|2\s*(?:PARRILLAS|LECHOS|CAPAS(?:\s+DE)?))"
+)
+_DOBLE_RE = re.compile(rf"(?<![\w.]){_DOBLE}(?![A-Z])")
+_DOBLE_AL_FINAL_RE = re.compile(rf"(?<![\w.]){_DOBLE}\s*$")
 
 _VARILLAS_RE = re.compile(
-    rf"(?<![\d.#])(?P<n>{_CUENTA})\s*(?:VARILLAS|VARS?\.?|V)?\s*#\s*(?P<num>{_NUM})(?!\s*@)"
+    rf"(?<![\d.#@])(?P<n>{_CUENTA})\s*(?:VARILLAS|VARS?\.?|V)?\s*#\s*(?P<num>{_NUM})(?!\s*@)"
 )
+_CIFRA_O_GATO = "0123456789#.@"  # lo que, pegado delante, parte un número (aunque esté leído)
 
-# Lo único que puede ir entre una pieza y la siguiente (o el fin de la línea) sin que la
-# pieza quede a medias: medidas, espesores, sentidos, referencias y palabras de familia.
+# El contexto que puede ir junto a una pieza sin dejarla a medias: medidas, espesores,
+# marcas, sentidos, referencias y palabras de familia. Siempre se busca en su lugar real.
 _PALABRAS = (
     r"(?:DALAS?|CADENAS?|CASTILLOS?|COLUMNAS?|CONTRATRABES?|TRABES?|LOSAS?|MUROS?|ZAPATAS?"
     r"|DADOS?|PILOTES?|CERRAMIENTOS?|ARMEX|REFUERZO)"
 )
+_MARCA = r"[A-Z]{1,4}\s*-\s*\d{1,3}[A-Z]?(?:\.\d{1,2})?"  # K-1, Z-1, CTA-10, K-15A.1
 _CONTEXTO_RE = re.compile(
     r"(?<![\w.])\d+(?:\.\d+)?\s*[X×]\s*\d+(?:\.\d+)?(?![\w.])"
     r"|(?<![\w.])H\s*=\s*\d+(?:\.\d+)?(?![\w.])"
+    rf"|(?<![\w.\-]){_MARCA}(?![\w.])"
     rf"|(?<![A-Z]){_AMBOS}(?![A-Z0-9])"
     r"|(?<![A-Z])EN\s+[XY](?![A-Z0-9])"
     r"|(?<![A-Z])VER\s+(?:CORTE|DETALLE)(?![A-Z])"
     rf"|(?<![A-Z]){_PALABRAS}(?![A-Z])"
 )
-_JUNTAS = (",", "+", "Y")  # una sola, y sólo justo antes de la pieza siguiente
+# Una junta une la pieza con la que sigue justo después; nunca queda suelta.
+_JUNTA_RE = re.compile(r"[,+]|Y(?![A-Z0-9])")
+_FRONTERA = " |,+"
+# Una línea que empieza con una junta o con «/» sigue a la anterior.
+_SIGUE_LINEA_RE = re.compile(r"\|\s*(?:[/,\-+]|Y(?![A-Z0-9]))")
+_PEGADO_RE = re.compile(r"[^ ]*$")
 # Una cuenta suelta delante de una pieza la deja a medias: «4 », «4 VARS », «4 VARILLAS DE »,
-# «4 PZAS », «(4) », «4-», «4VARS ». Una medida no («15X30 », «H=20 »).
+# «4 PZAS », «(4) », «4-», «4VARS », «4 DE », «4 X », «3 PARRILLAS ». No es cuenta el número
+# de una marca («K-1 ») ni el final de una medida («15 X 30 », «H=20 »).
 _CUENTA_ANTES_RE = re.compile(
-    r"(?<![\w.=])(?<!=\s)(?:\(\s*\d+\s*\)|\d+)"
-    r"\s*(?:-|(?:VARILLAS?|VARS?\.?|V|PZAS?\.?|PIEZAS?)(?:\s+DEL?)?)?\s*$"
+    r"(?<![\w.=\-×#@])(?<![=X×]\s)(?:\(\s*\d+\s*\)|\d+)"
+    r"\s*(?:-|[X×](?![A-Z0-9])|(?:VARILLAS?|VARS?\.?|V|PZAS?\.?|PIEZAS?|PARRILLAS?|LECHOS?"
+    r"|CAPAS?|MALLAS?|DEL?)(?:\s+DEL?)?)?\s*$"
+)
+_MULTIPLICADOR_ANTES_RE = re.compile(
+    r"(?<![\w.])(?:DOBLES?|TRIPLES?|DOS|TRES|CUATRO)\s+(?:PARRILLAS?|MALLAS?|LECHOS?|CAPAS?)"
+    r"(?:\s+DEL?)?\s*$"
 )
 # Una cabeza de estribo que no se leyó delante de una malla («ESTRIBOS: #3@20»).
 _CABEZA_ANTES_RE = re.compile(
     r"(?<![\w.])\d*(?:E|EST|ESTR|ESTRIBOS?|G|GRAPAS?|LIGAS?|EYG)[.:,]?(?:\s+DEL?)?\s*$"
 )
-_PEGADO_RE = re.compile(r"[^ ]*$")
-# Una línea que empieza con «/», «,», «-» o «+» sigue a la anterior.
-_SIGUE_LINEA_RE = re.compile(r"\|\s*[/,\-+]")
-
-_NUMERO_EN_TOKEN_RE = re.compile(r"[#Ø]\s*(\d+(?:\.\d+)?)")
-_MM_DESPUES_RE = re.compile(r"\s?MM(?![A-Z])")
+_NUMERO_EN_CITA_RE = re.compile(r"[#Ø]\s*(\d+(?:\.\d+)?)")
+_RESIDUO_RE = re.compile(r"[\d#@/]")
+_ANTES_DE_FICHA = " |,+("  # el contexto del residuo es una ficha entera: nunca medio número
+_DESPUES_DE_FICHA = " |,+)"
+# Justo antes de una malla, una palabra de lecho que no se reconoció como marca («A/SLI»)
+# o un plural sin cuenta («… LECHOS», «… PARRILLAS»): la malla no se sabe cuántas son.
+_LECHO_SUELTO_ANTES_RE = re.compile(
+    r"(?:L\.?[SI]\.?|LECHO\s+(?:SUP|INF)\w*\.?|(?:[^\s|]+\s+)?(?:PARRILLAS|LECHOS|CAPAS|MALLAS))"
+    r"(?:\s+DEL?)?\s*$"
+)
 _FEMENINAS = frozenset(
     {"columna", "trabe", "contratrabe", "dala", "cadena", "losa", "zapata", "pila", "viga"}
 )
 _CONSUMIDO = "\x00"
-_DELIMITADORES = " |" + _CONSUMIDO
-_ALCANCE_TOKEN = 24
 
 
 # ------------------------------------------------------------------ lectura
@@ -291,17 +317,24 @@ def _convencion(
     return usadas
 
 
-def _leer_mallas(vista: str, letrero: str, familia: str) -> list[_Pieza]:
+def _leer_mallas(vista: str, texto: str, letrero: str, familia: str) -> list[_Pieza]:
     """Las mallas del texto con su lecho, como piezas.
 
     El lecho se escribe delante («LS #4@20 A/S LI #4@20 A/S») o detrás («#4@20 L.S. #3@20
-    L.I.»), con una sola convención por texto. Si no queda claro qué lecho va con qué malla
-    ninguna malla se toma: cada una (con las marcas que tiene al lado) se avisa como lecho
-    ambiguo, y una marca suelta como lecho sin su malla."""
-    mallas = list(_MALLA_RE.finditer(vista))
+    L.I.»), con una sola convención por texto. Sin marcas, una malla única precedida por
+    «DOBLE PARRILLA», «DOBLEMENTE ARMADA», «AMBOS LECHOS», «2 PARRILLAS», «2 LECHOS» o
+    «2 CAPAS» son dos lechos. Si no queda claro qué lecho va con qué malla ninguna malla se
+    toma: cada una (con las marcas que tiene al lado) se avisa como lecho ambiguo, y una
+    marca suelta como lecho sin su malla."""
+    mallas = [
+        m
+        for m in _MALLA_RE.finditer(vista)
+        if m.start() == 0 or texto[m.start() - 1] not in _CIFRA_O_GATO
+    ]
     if not mallas:
         return []
     marcas = list(_LECHO_RE.finditer(vista))
+    dobles = [d for d in _DOBLE_RE.finditer(vista) if d.end() <= mallas[-1].start()]
 
     def junto(a: int, b: int) -> bool:  # sólo espacios entre a y b, en la misma línea
         return a <= b and vista[a:b].strip(" ") == ""
@@ -314,9 +347,30 @@ def _leer_mallas(vista: str, letrero: str, familia: str) -> list[_Pieza]:
 
     delante = [marca_delante(m) for m in mallas]
     detras = [marca_detras(m) for m in mallas]
-    usadas = [None] * len(mallas) if not marcas else _convencion(delante, detras, len(marcas))
+    # (inicio, fin, lechos, «A/S» de la marca) de cada malla, o None si es ambiguo.
+    tomas: list[tuple[int, int, list[Literal["sup", "inf", "unico"]], bool]] | None
+    if marcas:
+        usadas = _convencion(delante, detras, len(marcas))
+        tomas = None
+        if usadas is not None:
+            tomas = []
+            for malla, k in zip(mallas, usadas, strict=True):
+                assert k is not None
+                marca = marcas[k]
+                inicio, fin = min(malla.start(), marca.start()), max(malla.end(), marca.end())
+                tomas.append((inicio, fin, _lechos(marca), bool(marca["ambos"])))
+    elif dobles and (
+        len(mallas) > 1 or not _solo_contexto(texto, dobles[-1].end(), mallas[0].start())
+    ):
+        tomas = None  # la palabra de doble no se sabe a qué malla va
+    elif dobles:
+        doble, malla = dobles[-1], mallas[0]
+        inicio = doble.start() if junto(doble.end(), malla.start()) else malla.start()
+        tomas = [(inicio, malla.end(), ["sup", "inf"], False)]
+    else:
+        tomas = [(m.start(), m.end(), ["unico"], False) for m in mallas]
 
-    if usadas is None:
+    if tomas is None:
         tramos = []
         for malla, antes, despues in zip(mallas, delante, detras, strict=True):
             a, b = malla.start(), malla.end()
@@ -337,18 +391,13 @@ def _leer_mallas(vista: str, letrero: str, familia: str) -> list[_Pieza]:
         return piezas
 
     piezas = []
-    for malla, k in zip(mallas, usadas, strict=True):
-        marca = marcas[k] if k is not None else None
-        a = min(malla.start(), marca.start()) if marca else malla.start()
-        b = max(malla.end(), marca.end()) if marca else malla.end()
+    for malla, (a, b, lechos, ambos_de_la_marca) in zip(mallas, tomas, strict=True):
         if familia not in FAMILIAS_CON_PARRILLA:
             aviso = f"malla «{letrero[a:b].strip()}» en {_con_articulo(familia)}: no se toma"
             piezas.append(_Pieza(a, b, malla=True, aviso=aviso))
             continue
         sentidos: Literal["ambos", "x", "y"] | None = (
-            "ambos"
-            if malla["ambos"] or (marca and marca["ambos"])
-            else _SENTIDO_XY.get(malla["xy"] or "")
+            "ambos" if malla["ambos"] or ambos_de_la_marca else _SENTIDO_XY.get(malla["xy"] or "")
         )
         parrillas = [
             Parrilla(
@@ -357,51 +406,124 @@ def _leer_mallas(vista: str, letrero: str, familia: str) -> list[_Pieza]:
                 lecho=lecho,
                 sentidos=sentidos,
             )
-            for lecho in _lechos(marca)
+            for lecho in lechos
         ]
         piezas.append(_Pieza(a, b, malla=True, parrillas=parrillas))
     return piezas
 
 
-def _hueco_limpio(hueco: str, sigue_pieza: bool) -> bool:
-    """Lo que hay entre una pieza y la siguiente (o el fin de la línea) es sólo contexto."""
-    resto = _CONTEXTO_RE.sub(" ", hueco.replace("|", " ")).strip()
-    return resto == "" or (sigue_pieza and resto in _JUNTAS)
+def _solo_contexto(texto: str, a: int, b: int) -> bool:
+    """Entre ``a`` y ``b`` sólo hay espacios y contexto (fichas enteras, en su lugar real)."""
+    pos = a
+    while pos < b:
+        if texto[pos] == " ":
+            pos += 1
+            continue
+        contexto = _CONTEXTO_RE.match(texto, pos)
+        if contexto is None or contexto.end() > b:
+            return False
+        if contexto.end() < len(texto) and texto[contexto.end()] not in _FRONTERA:
+            return False
+        pos = contexto.end()
+    return True
+
+
+def _fin_de_linea(texto: str, desde: int) -> int:
+    fin = texto.find("|", desde)
+    return len(texto) if fin < 0 else fin
+
+
+def _fin_del_hueco(texto: str, desde: int, siguiente: _Pieza | None) -> int:
+    """Hasta dónde llega lo que sigue a una pieza: la pieza siguiente o el fin de la línea
+    (una línea que empieza con junta o «/» sigue a la anterior)."""
+    inicio_siguiente = siguiente.inicio if siguiente else len(texto)
+    fin = _fin_de_linea(texto, desde)
+    while fin < inicio_siguiente and _SIGUE_LINEA_RE.match(texto, fin):
+        fin = _fin_de_linea(texto, fin + 1)
+    return min(inicio_siguiente, fin)
+
+
+def _junta_justa(texto: str, fin_junta: int, siguiente: _Pieza | None) -> bool:
+    """Una junta vale si lo único entre ella y la pieza siguiente es espacio o salto de línea."""
+    return siguiente is not None and texto[fin_junta : siguiente.inicio].strip(" |") == ""
+
+
+def _hueco_limpio(texto: str, a: int, b: int, siguiente: _Pieza | None) -> bool:
+    """Lo que hay entre el fin de una pieza (``a``) y ``b`` es sólo contexto, buscado en su
+    lugar real del texto, y a lo más una junta justo antes de la pieza siguiente. Lo que va
+    pegado a la pieza (sin espacio ni junta) nunca es limpio."""
+    if a == b:
+        return True
+    if texto[a] not in _FRONTERA:
+        return False
+    pos = a
+    while pos < b:
+        if texto[pos] in " |":
+            pos += 1
+            continue
+        junta = _JUNTA_RE.match(texto, pos)
+        if junta is not None and junta.end() <= b:
+            return _junta_justa(texto, junta.end(), siguiente)
+        contexto = _CONTEXTO_RE.match(texto, pos)
+        if contexto is None or contexto.end() > b:
+            return False
+        if contexto.end() < len(texto) and texto[contexto.end()] not in _FRONTERA:
+            return False
+        pos = contexto.end()
+    return True
 
 
 def _revisar(texto: str, piezas: list[_Pieza]) -> tuple[list[_Pieza], list[tuple[int, int]]]:
     """Separa las piezas que se toman de los tramos que se avisan enteros.
 
-    Una pieza no se toma (y se avisa con lo que la estorba) si va pegada a algo que no sea
-    una sola junta («,», «+») tras la pieza anterior («K-2#4», «H=202E+1G#3»), si la
-    precede una cuenta suelta (o, a una malla, una cabeza de estribo que no se leyó), o si
-    lo que le sigue hasta la pieza siguiente o el fin de la línea no es contexto. Una línea
-    que empieza con «/», «,», «-» o «+» cuenta como continuación de la anterior."""
+    Una pieza no se toma, y se avisa con lo que la estorba, si:
+    - toca a otra pieza sin espacio ni junta (se avisan las dos juntas: «#4@20 A/S#3@20»), o
+      entre las dos hay algo que no es contexto (tampoco se sabe de cuál es: «4#3DALA E#2@20»);
+    - lleva algo pegado delante que no sea una junta justo después de la pieza anterior
+      («K-2#4», «H=202E+1G#3»);
+    - la precede una cuenta suelta o un multiplicador («4 #4@20», «4 DE #4@20»), o a una
+      malla una cabeza de estribo o una palabra de lecho que no se leyeron («A/SLI #3@20»);
+    - lo que le sigue hasta la pieza siguiente o el fin de la línea no es contexto."""
     buenas: list[_Pieza] = []
     malos: list[tuple[int, int]] = []
+    arrastre: int | None = None  # basura entre la pieza anterior y ésta: no se lee ninguna
     for i, p in enumerate(piezas):
-        fin_anterior = piezas[i - 1].fin if i else 0
-        inicio_siguiente = piezas[i + 1].inicio if i + 1 < len(piezas) else len(texto)
-        inicio_linea = texto.rfind("|", 0, p.inicio) + 1
-        desde = max(fin_anterior, inicio_linea)
-        fin_linea = texto.find("|", p.fin)
-        fin_linea = len(texto) if fin_linea < 0 else fin_linea
-        while fin_linea < inicio_siguiente and _SIGUE_LINEA_RE.match(texto, fin_linea):
-            otro = texto.find("|", fin_linea + 1)
-            fin_linea = len(texto) if otro < 0 else otro
-        hasta = min(inicio_siguiente, fin_linea)
+        anterior = piezas[i - 1] if i else None
+        siguiente = piezas[i + 1] if i + 1 < len(piezas) else None
+        desde = max(anterior.fin if anterior else 0, texto.rfind("|", 0, p.inicio) + 1)
         antes = texto[desde : p.inicio]
-
+        hasta = _fin_del_hueco(texto, p.fin, siguiente)
         inicio, fin, mala = p.inicio, p.fin, False
-        pegado = _PEGADO_RE.search(antes)  # lo que va junto a la pieza, sin espacio
-        if pegado is not None and pegado.group() not in ("", ",", "+"):
-            mala, inicio = True, desde + pegado.start()
-        elif (cuenta := _CUENTA_ANTES_RE.search(antes)) is not None or (
-            p.malla and (cuenta := _CABEZA_ANTES_RE.search(antes)) is not None
-        ):
-            mala, inicio = True, desde + cuenta.start()
-        if not _hueco_limpio(texto[p.fin : hasta], sigue_pieza=hasta == inicio_siguiente):
-            mala, fin = True, hasta
+        if arrastre is not None:
+            mala, inicio, arrastre = True, arrastre, None
+
+        if anterior is not None and anterior.fin == p.inicio:
+            mala, inicio = True, anterior.inicio
+        if siguiente is not None and siguiente.inicio == p.fin:
+            mala, fin = True, siguiente.fin
+        pegado = _PEGADO_RE.search(antes)
+        assert pegado is not None
+        junta_valida = (
+            pegado.group() in (",", "+")
+            and anterior is not None
+            and texto[anterior.fin : desde + pegado.start()].strip(" |") == ""
+        )
+        if pegado.group() and not junta_valida:
+            mala, inicio = True, min(inicio, desde + pegado.start())
+        elif not _DOBLE_AL_FINAL_RE.search(texto, desde, p.inicio):
+            # En su lugar real: el número de «K-1 » o de «15 X 30 » no es una cuenta.
+            patrones = [_CUENTA_ANTES_RE, _MULTIPLICADOR_ANTES_RE]
+            if p.malla:
+                patrones += [_CABEZA_ANTES_RE, _LECHO_SUELTO_ANTES_RE]
+            for patron in patrones:
+                cuenta = patron.search(texto, desde, p.inicio)
+                if cuenta is not None:
+                    mala, inicio = True, min(inicio, cuenta.start())
+                    break
+        if not _hueco_limpio(texto, p.fin, hasta, siguiente):
+            mala, fin = True, max(fin, hasta)
+            if siguiente is not None and hasta == siguiente.inicio:
+                arrastre = inicio
         if mala:
             malos.append((inicio, fin))
         else:
@@ -409,28 +531,69 @@ def _revisar(texto: str, piezas: list[_Pieza]) -> tuple[list[_Pieza], list[tuple
     return buenas, _unir(malos)
 
 
-def _token(vista: str, i: int) -> tuple[int, int]:
-    """El pedazo sin leer alrededor de la posición ``i``: hasta un espacio, un salto de
-    línea o algo ya leído (con un tope a cada lado). Un ``#`` o ``@`` suelto se lleva el
-    número que le sigue («@ 20»), y unos milímetros detrás también se avisan («#12 MM»)."""
-    a = i
-    while a > 0 and vista[a - 1] not in _DELIMITADORES and i - a < _ALCANCE_TOKEN:
-        a -= 1
-    b = i + 1
-    while True:
-        while b < len(vista) and vista[b] not in _DELIMITADORES and b - i < _ALCANCE_TOKEN:
-            b += 1
-        numero_detras = b + 1 < len(vista) and vista[b] == " " and vista[b + 1].isdigit()
-        if numero_detras and vista[b - 1] in "#@":
-            b += 1
+def _residuo(texto: str, cubierto: list[bool]) -> list[tuple[int, int]]:
+    """Los pedazos que nadie leyó y que no son contexto, con una cifra, «#», «@» o «/»: cada
+    uno es un aviso. Un «#» o «@» suelto se lleva el número que le sigue («@ 20»), un pedazo
+    que le sigue y empieza con «@» se le junta («4#5 @ 20»), y unos milímetros detrás también
+    («#12 MM»)."""
+    libre = [not c for c in cubierto]
+    i, n = 0, len(texto)
+    while i < n:  # el contexto, en su lugar real, dentro de cada tramo sin leer
+        if not libre[i]:
+            i += 1
             continue
-        if (mm := _MM_DESPUES_RE.match(vista, b)) is not None:
-            b = mm.end()
-        return a, b
+        j = i
+        while j < n and libre[j]:
+            j += 1
+        for patron in (_CONTEXTO_RE, _DOBLE_RE):
+            for m in patron.finditer(texto, i, j):
+                ficha_entera = (m.start() == 0 or texto[m.start() - 1] in _ANTES_DE_FICHA) and (
+                    m.end() == n or texto[m.end()] in _DESPUES_DE_FICHA
+                )
+                if ficha_entera:
+                    for k in range(m.start(), m.end()):
+                        libre[k] = False
+        i = j
+
+    trozos: list[tuple[int, int]] = []
+    i = 0
+    while i < n:
+        if libre[i] and texto[i] not in " |":
+            j = i
+            while j < n and libre[j] and texto[j] not in " |":
+                j += 1
+            trozos.append((i, j))
+            i = j
+        else:
+            i += 1
+
+    avisos: list[tuple[int, int]] = []
+    k = 0
+    while k < len(trozos):
+        a, b = trozos[k]
+        if not _RESIDUO_RE.search(texto[a:b]):
+            k += 1
+            continue
+        while k + 1 < len(trozos):
+            a2, b2 = trozos[k + 1]
+            siguiente = texto[a2:b2]
+            contiguo = texto[b:a2].strip(" ") == ""
+            se_junta = (
+                (texto[b - 1] in "#@" and siguiente[0].isdigit())
+                or siguiente[0] == "@"
+                or siguiente in ("MM", "MMS")
+            )
+            if not (contiguo and se_junta):
+                break
+            b = b2
+            k += 1
+        avisos.append((a, b))
+        k += 1
+    return avisos
 
 
 def _aviso_sin_leer(cita: str) -> str:
-    for m in _NUMERO_EN_TOKEN_RE.finditer(cita):
+    for m in _NUMERO_EN_CITA_RE.finditer(cita):
         if m.group(1) not in NUMEROS:
             return f"sin leer: «{cita}»: no hay varilla del #{m.group(1)}"
     return f"sin leer: «{cita}»"
@@ -441,10 +604,11 @@ def parsear_armado(textos: list[str], familia: str) -> Armado:
 
     Tres pasadas reconocen piezas, en este orden: juegos de estribos (con sus zonas, que
     pueden seguir en la línea siguiente, y su «VER CORTE»), mallas con su lecho (sólo en
-    ``FAMILIAS_CON_PARRILLA``; en otra familia se avisan) y grupos de varillas. Después cada
-    pieza se revisa contra lo que la rodea (``_revisar``): se lee entera o se avisa entera,
-    nunca a medias. Al final todo ``#`` o ``@`` que nadie leyó se avisa con su pedazo. Los
-    avisos citan el texto como lo escribió el plano (en mayúsculas)."""
+    ``FAMILIAS_CON_PARRILLA``; en otra familia se avisan) y grupos de varillas. Cada pieza se
+    revisa contra lo que la rodea en el texto real (``_revisar``): se lee entera o se avisa
+    entera, nunca a medias. Al final, todo lo que nadie leyó y no es contexto, si lleva una
+    cifra, «#», «@» o «/», se avisa (``_residuo``). Los avisos citan el texto como lo
+    escribió el plano (en mayúsculas)."""
     lineas = [t.strip() for t in textos if t and t.strip()]
     pares = [p for p in (_normalizar(t) for t in lineas) if p[0]]
     texto = " | ".join(leer for leer, _ in pares)
@@ -464,10 +628,13 @@ def parsear_armado(textos: list[str], familia: str) -> Armado:
     for leido in _ESTRIBOS_RE.finditer(visible()):
         tomar(_Pieza(leido.start(), leido.end(), estribos=_juegos(leido)))
     # 2. Mallas, sólo donde van, con su lecho.
-    for malla in _leer_mallas(visible(), letrero, familia):
+    for malla in _leer_mallas(visible(), texto, letrero, familia):
         tomar(malla)
-    # 3. Grupos de varillas: todos, no sólo el primero («4#5+2#4» son dos).
+    # 3. Grupos de varillas: todos, no sólo el primero («4#5+2#4» son dos). Lo que va pegado
+    #    delante se mira en el texto real: un número ya leído también parte al siguiente.
     for grupo in _VARILLAS_RE.finditer(visible()):
+        if grupo.start() > 0 and texto[grupo.start() - 1] in _CIFRA_O_GATO:
+            continue
         varilla = GrupoVarillas(cantidad=int(grupo["n"]), numero=grupo["num"])
         tomar(_Pieza(grupo.start(), grupo.end(), varillas=[varilla]))
 
@@ -487,15 +654,9 @@ def parsear_armado(textos: list[str], familia: str) -> Armado:
         for i in range(a, b):
             consumido[i] = True
 
-    # 5. Lo que quedó: cada «#» o «@» sin leer se avisa con su pedazo, una vez por pedazo.
-    vista = visible()
-    avisado = [False] * len(texto)
-    for i, c in enumerate(vista):
-        if c in "#@" and not avisado[i]:
-            a, b = _token(vista, i)
-            for k in range(a, b):
-                avisado[k] = True
-            avisos.append((a, _aviso_sin_leer(letrero[a:b].strip(",;: "))))
+    # 5. Lo que nadie leyó: si no es contexto y lleva una cifra, «#», «@» o «/», se avisa.
+    for a, b in _residuo(texto, consumido):
+        avisos.append((a, _aviso_sin_leer(letrero[a:b].strip(",;: "))))
 
     armado.avisos = [aviso for _, aviso in sorted(avisos, key=lambda par: par[0])]
     return armado
