@@ -39,9 +39,11 @@ ALTO = 0.12
 PASO = 0.25
 
 
-def _poner(destino, texto, x, y, alinear=True):
-    t = destino.add_text(texto, height=ALTO)
-    if alinear:  # como Marina: todo el texto centrado, con punto de alineación
+def _poner(destino, texto, x, y, alinear=True, alto=ALTO, en_la_base=False):
+    t = destino.add_text(texto, height=alto)
+    if en_la_base:  # esquina inferior izquierda: ``y`` es la base del texto
+        t.set_placement((x, y))
+    elif alinear:  # como Marina: todo el texto centrado, con punto de alineación
         t.set_placement((x, y), align=TextEntityAlignment.MIDDLE_CENTER)
     else:
         t.set_placement((x, y))
@@ -58,36 +60,66 @@ def _bloque(
     desfase=None,
     extra=(),
     nota=True,
+    etiquetas=None,
+    paso=PASO,
+    alto_encabezado=ALTO,
+    alto_valores=ALTO,
+    alto_numeros=ALTO,
+    numeros_en_la_base=False,
+    desfase_valores=0.0,
 ):
     """El bloque de la tabla de Marina: título, encabezado, ``No.``, ``(cm)``, ocho filas y la
     nota de abajo. Las variantes: ``cambio`` {(varilla, campo): texto}, ``sin`` varillas,
     ``sin_encabezado`` fichas, ``hueco_antes`` (varilla, renglones en blanco), ``desfase``
-    {(varilla, campo): (dx, dy)} y ``extra`` [(texto, x, y)]."""
+    {(varilla, campo): (dx, dy)}, ``extra`` [(texto, x, y)], ``etiquetas`` {varilla: cómo se
+    escribe}, ``paso`` entre renglones, ``alto_encabezado``, ``alto_numeros`` y ``alto_valores``,
+    ``numeros_en_la_base`` (los números de varilla en la esquina inferior izquierda y los
+    valores centrados: la ``y`` de un valor queda media altura arriba de la del número) y
+    ``desfase_valores`` (dy de todos los valores)."""
     cambio = cambio or {}
     desfase = desfase or {}
+    etiquetas = etiquetas or {}
     bloque = doc.blocks.new(nombre)
-    _poner(bloque, "TABLA No.1", -1.5, 0.55, alinear)
-    _poner(bloque, "TABLA DE VARILLAS", 0.0, 0.35, alinear)
+    _poner(bloque, "TABLA No.1", -1.5, 0.55, alinear, alto_encabezado)
+    _poner(bloque, "TABLA DE VARILLAS", 0.0, 0.35, alinear, alto_encabezado)
     for encabezado, x in X_ENCABEZADO.items():
         if encabezado not in sin_encabezado:
-            _poner(bloque, encabezado, x, 0.0, alinear)
-    _poner(bloque, "No.", X_ENCABEZADO["VARILLA"], -PASO, alinear)
-    _poner(bloque, "(cm)", 1.6, -PASO, alinear)
+            _poner(bloque, encabezado, x, 0.0, alinear, alto_encabezado)
+    _poner(bloque, "No.", X_ENCABEZADO["VARILLA"], -paso, alinear, alto_encabezado)
+    _poner(bloque, "(cm)", 1.6, -paso, alinear, alto_encabezado)
     fila = 0
     corrimiento = 0.0
     for numero, valores in MARINA.items():
         if numero in sin:
             continue
         if hueco_antes and numero == hueco_antes[0]:
-            corrimiento = hueco_antes[1] * PASO
+            corrimiento = hueco_antes[1] * paso
         fila += 1
-        y = -PASO - PASO * fila - corrimiento
-        _poner(bloque, numero, X_ENCABEZADO["VARILLA"], y, alinear)
+        y = -paso - paso * fila - corrimiento
+        _poner(
+            bloque,
+            etiquetas.get(numero, numero),
+            X_ENCABEZADO["VARILLA"],
+            y,
+            alinear,
+            alto_numeros,
+            en_la_base=numeros_en_la_base,
+        )
         for campo, valor in zip(CAMPOS, valores, strict=True):
             valor = cambio.get((numero, campo), valor)
             if valor is not None:
                 dx, dy = desfase.get((numero, campo), (0.0, 0.0))
-                _poner(bloque, str(valor), X_ENCABEZADO[campo] + dx, y + dy, alinear)
+                if numeros_en_la_base:
+                    dy += alto_valores / 2
+                dy += desfase_valores
+                _poner(
+                    bloque,
+                    str(valor),
+                    X_ENCABEZADO[campo] + dx,
+                    y + dy,
+                    alinear or numeros_en_la_base,
+                    alto_valores,
+                )
     if nota:  # como en Marina: las leyendas de la tabla, a la izquierda, un poco más abajo
         leyenda = "LA1=LONGITUD DE ANCLAJE PARA VARILLAS CON MENOS DE 30 cm DE CONCRETO"
         bloque.add_text(leyenda, height=0.07).set_placement((-1.9, y - 0.2))
@@ -327,7 +359,38 @@ def test_standard_supuesto_is_a_copy_nobody_can_corrupt():
         ("9", None),
         ("11", None),
         ("03", None),
-        ("3/8", None),
+        ("3/8", "3"),
+        ("VAR 3", "3"),
+        ("VAR. 4", "4"),
+        ("VARILLA #5", "5"),
+        ("var 6", "6"),
+        ("No.3", "3"),
+        ("NO. 4", "4"),
+        ("Nº5", "5"),
+        ("N°6", "6"),
+        ("Ø3", "3"),
+        ("%%C4", "4"),
+        ('3/8"', "3"),
+        ('5/16"', "2.5"),
+        ('1/4"', "2"),
+        ('1/2"', "4"),
+        ('5/8"', "5"),
+        ('3/4"', "6"),
+        ('7/8"', "7"),
+        ('1"', "8"),
+        ('1 1/4"', "10"),
+        ('1-1/2"', "12"),
+        ('#3 (3/8")', "3"),
+        ('3/8" (#3)', "3"),
+        ('#3 = 3/8"', "3"),
+        ('#3 (1/2")', None),  # dice dos varillas distintas: no se escoge
+        ('3/16"', None),
+        ('#3 (3/16")', None),
+        ("VAR 9", None),
+        ("#9", None),
+        ("VAR 3/4/5", None),
+        ("BARRA 3", None),
+        ("TABLA No.1", None),
         ("2.50", None),
     ],
 )
@@ -338,9 +401,9 @@ def test_bar_numbers_are_the_ones_in_numeros(texto, esperado):
 # --- lo que no entra en ninguna celda se avisa, nunca se pierde ------------------------------
 
 
-def _y_de(numero, hueco=0.0):
+def _y_de(numero, hueco=0.0, paso=PASO):
     """La ``y`` de la fila de una varilla en el bloque de prueba."""
-    return -PASO - PASO * (list(MARINA).index(numero) + 1) - hueco
+    return -paso - paso * (list(MARINA).index(numero) + 1) - hueco
 
 
 def _leidas(tmp_path, **kw):
@@ -355,15 +418,15 @@ def _leidas(tmp_path, **kw):
 
 
 def test_a_blank_row_in_the_middle_does_not_swallow_the_rest_silently(tmp_path):
-    # Un renglón en blanco antes de #5: el hueco (0.5) pasa de 2.5 veces el alto (0.3).
-    dato, contradicciones, avisos = _leidas(tmp_path, hueco_antes=("5", 1))
+    # Tres renglones en blanco antes de #5: el hueco (1.0) pasa de 2.5 pasos (0.625).
+    dato, contradicciones, avisos = _leidas(tmp_path, hueco_antes=("5", 3))
     assert list(dato.valor) == ["2.5", "3", "4"]  # lo de antes del hueco sí se lee
     assert contradicciones == []
     (aviso,) = avisos
     assert "después de un hueco" in aviso
     assert "«5»" in aviso and "«6»" in aviso and "«12»" in aviso  # dice qué quedó fuera
 
-    (tabla,) = _tablas(tmp_path, hueco_antes=("5", 1), lector="varillas")
+    (tabla,) = _tablas(tmp_path, hueco_antes=("5", 3), lector="varillas")
     # Cada texto con cifras después del hueco está anotado: 5 números de varilla y sus celdas.
     assert len(tabla.sin_celda) == 5 + 3 * 8 + 2 * 6
     assert {s.motivo for s in tabla.sin_celda} == {"tras_un_hueco"}
@@ -371,7 +434,7 @@ def test_a_blank_row_in_the_middle_does_not_swallow_the_rest_silently(tmp_path):
 
 
 def test_hueco_maximo_decides_how_far_the_table_goes(tmp_path):
-    entidades = _textos(_entidades(tmp_path, hueco_antes=("5", 1)))
+    entidades = _textos(_entidades(tmp_path, hueco_antes=("5", 3)))
     sola = leer_tablas_de_varillas(entidades, _hoja_del_archivo)
     todo = leer_tablas(
         entidades,
@@ -382,6 +445,8 @@ def test_hueco_maximo_decides_how_far_the_table_goes(tmp_path):
         hueco_maximo=5.0,
     )
     assert [len(t.filas) for t in sola] == [3] and [len(t.filas) for t in todo] == [8]
+    por_varillas = leer_tablas_de_varillas(entidades, _hoja_del_archivo, hueco_maximo=5.0)
+    assert [len(t.filas) for t in por_varillas] == [8]
     assert todo[0].sin_celda == []
 
 
@@ -427,7 +492,8 @@ def test_a_row_that_looks_like_a_bar_but_is_not_in_numeros_is_reported(tmp_path,
 
 def test_texts_with_digits_below_the_table_are_not_its_business(tmp_path):
     extra = [("33", X_ENCABEZADO["LA1"], _y_de("12") - 0.6), ("A-1", -1.65, _y_de("12") - 1.5)]
-    _, _, avisos = _leidas(tmp_path, extra=extra)
+    # El lector de varillas sabe qué es un renglón de la tabla; uno general no lo puede saber.
+    _, _, avisos = tabla_de_varillas(_tablas(tmp_path, extra=extra, lector="varillas"))
     assert avisos == []
 
 
@@ -458,6 +524,160 @@ def test_a_value_out_of_range_is_not_used_and_is_reported(tmp_path):
     assert contradicciones == [] and len(avisos) == 2
     assert "#8" in avisos[0] and "LT1" in avisos[0] and "450" in avisos[0]
     assert "#8" in avisos[1] and "LT2" in avisos[1]
+
+
+# --- cómo se escribe el número de varilla ------------------------------------------------------
+
+_FORMAS_DE_ESCRIBIR = {
+    "VAR": "VAR {}",
+    "VAR.": "VAR. {}",
+    "VARILLA": "VARILLA {}",
+    "No.": "No.{}",
+    "NO.": "NO. {}",
+    "Nº": "Nº{}",
+    "Ø": "Ø{}",
+    "%%C": "%%C{}",
+    "#": "#{}",
+}
+_PULGADAS_DE_CADA_UNA = {
+    "2.5": '5/16"',
+    "3": '3/8"',
+    "4": '1/2"',
+    "5": '5/8"',
+    "6": '3/4"',
+    "8": '1"',
+    "10": '1 1/4"',
+    "12": '1 1/2"',
+}
+
+
+def _esperado_de_marina():
+    return {n: tuple(None if v is None else float(v) for v in vs) for n, vs in MARINA.items()}
+
+
+def _como_tuplas(dato):
+    return {n: tuple(getattr(f, c) for c in CAMPOS) for n, f in dato.valor.items()}
+
+
+@pytest.mark.parametrize("forma", list(_FORMAS_DE_ESCRIBIR))
+def test_every_common_labelling_of_a_bar_number_is_read(tmp_path, forma):
+    etiquetas = {n: _FORMAS_DE_ESCRIBIR[forma].format(n) for n in MARINA}
+    dato, contradicciones, avisos = _leidas(tmp_path, etiquetas=etiquetas)
+    assert dato.fuente == "cuadro" and _como_tuplas(dato) == _esperado_de_marina()
+    assert contradicciones == [] and avisos == []
+
+
+def test_bars_written_as_inch_fractions_are_read_as_their_mexican_number(tmp_path):
+    dato, contradicciones, avisos = _leidas(tmp_path, etiquetas=_PULGADAS_DE_CADA_UNA)
+    assert dato.fuente == "cuadro" and _como_tuplas(dato) == _esperado_de_marina()
+    assert contradicciones == [] and avisos == []
+
+
+def test_a_label_that_gives_both_forms_is_read_when_they_agree(tmp_path):
+    etiquetas = {"3": '#3 (3/8")', "4": "#4", "5": "#5"}
+    dato, _, avisos = _leidas(tmp_path, etiquetas=etiquetas)
+    assert _como_tuplas(dato) == _esperado_de_marina() and avisos == []
+
+
+def test_a_label_that_disagrees_with_itself_is_reported_not_guessed(tmp_path):
+    dato, contradicciones, avisos = _leidas(tmp_path, etiquetas={"3": '#3 (1/2")'})
+    assert "3" not in dato.valor and len(dato.valor) == 7
+    assert contradicciones == []
+    (aviso,) = avisos
+    assert '«#3 (1/2")»' in aviso and "#3 y #4" in aviso and "no se lee" in aviso
+
+
+@pytest.mark.parametrize("etiqueta", ["VAR 9", "#9", "2.50", '3/16"', "BARRA 6", "VAR 3/4/5"])
+def test_a_label_with_digits_that_is_not_a_bar_is_reported_mid_table(tmp_path, etiqueta):
+    dato, contradicciones, avisos = _leidas(tmp_path, etiquetas={"6": etiqueta})
+    assert "6" not in dato.valor and len(dato.valor) == 7  # el resto de la tabla sí se lee
+    assert contradicciones == []
+    (aviso,) = avisos
+    assert f"«{etiqueta}»" in aviso and "no es un número de varilla" in aviso
+
+
+def test_a_table_whose_labels_none_is_a_bar_falls_back_to_the_standard_with_avisos(tmp_path):
+    etiquetas = {n: f"BARRA {n}" for n in MARINA}
+    dato, contradicciones, avisos = _leidas(tmp_path, etiquetas=etiquetas)
+    assert dato.fuente == "supuesto" and contradicciones == []
+    assert len(avisos) == 8 and all("no es un número de varilla" in a for a in avisos)
+
+
+def test_a_label_with_digits_at_the_first_row_is_not_lost(tmp_path):
+    dato, _, avisos = _leidas(tmp_path, etiquetas={"2.5": "VAR 9"})
+    assert "2.5" not in dato.valor and len(dato.valor) == 7
+    assert len(avisos) == 1 and "«VAR 9»" in avisos[0]
+
+
+# --- celdas que no están a la altura del número, y tablas con otro paso -------------------------
+
+
+def _como_en_marina(dato, contradicciones, avisos):
+    assert dato.fuente == "cuadro" and _como_tuplas(dato) == _esperado_de_marina()
+    assert contradicciones == [] and avisos == []
+
+
+def test_values_centred_on_a_bar_number_written_at_its_baseline_are_read(tmp_path):
+    # Los números en la esquina inferior izquierda; los valores centrados, media altura arriba.
+    _como_en_marina(*_leidas(tmp_path, numeros_en_la_base=True))
+
+
+def test_values_taller_than_the_bar_numbers_are_read(tmp_path):
+    # Valores 1.5 veces más altos y centrados: su centro queda 0.09 arriba de la base.
+    _como_en_marina(*_leidas(tmp_path, numeros_en_la_base=True, alto_valores=0.18))
+
+
+def test_values_a_little_off_the_line_of_a_tall_pitch_are_read(tmp_path):
+    # 0.07 arriba con un paso de 0.28: dentro de 0.3 pasos (0.084), lejos de la fila vecina.
+    _como_en_marina(*_leidas(tmp_path, paso=0.28, desfase_valores=0.07))
+
+
+def test_a_header_with_smaller_text_than_the_body_is_read(tmp_path):
+    _como_en_marina(*_leidas(tmp_path, alto_encabezado=0.06, alto_valores=0.12, alto_numeros=0.12))
+
+
+def test_a_pitch_of_three_heights_is_read(tmp_path):
+    _como_en_marina(*_leidas(tmp_path, paso=0.36))
+
+
+def test_values_midway_between_two_rows_are_reported_and_the_table_is_not_used(tmp_path):
+    # Todos los valores a medio camino entre dos filas: ninguno cae sobre una línea.
+    dato, contradicciones, avisos = _leidas(tmp_path, desfase_valores=0.125)
+    assert dato.fuente == "supuesto" and contradicciones == []  # no tapa a la estándar con nada
+    assert any("ninguna celda de valores" in a for a in avisos)
+    assert any("no está sobre la línea" in a for a in avisos)  # y dice qué textos no cayeron
+
+
+def test_a_bar_row_without_a_single_value_is_not_kept_as_a_cuadro_row(tmp_path):
+    vacia = {("5", c): None for c in CAMPOS}
+    dato, contradicciones, avisos = _leidas(tmp_path, cambio=vacia)
+    assert "5" not in dato.valor and len(dato.valor) == 7 and dato.fuente == "cuadro"
+    assert contradicciones == []
+    (aviso,) = avisos
+    assert "#5" in aviso and "ningún valor" in aviso
+
+
+def test_a_blank_gap_beyond_the_old_window_is_still_scanned(tmp_path):
+    # Seis renglones en blanco: 1.75 de hueco, más de 3 × 2.5 alturas, menos de 10 pasos.
+    dato, contradicciones, avisos = _leidas(tmp_path, hueco_antes=("5", 6))
+    assert list(dato.valor) == ["2.5", "3", "4"] and contradicciones == []
+    (aviso,) = avisos
+    for varilla in ("5", "6", "8", "10", "12"):
+        assert f"«{varilla}»" in aviso  # se nombran todos los renglones que no se leen
+
+
+def test_every_lost_row_is_named_when_the_pitch_is_tall(tmp_path):
+    dato, _, avisos = _leidas(tmp_path, paso=0.36, hueco_antes=("5", 3))
+    assert list(dato.valor) == ["2.5", "3", "4"]
+    (aviso,) = avisos
+    assert all(f"«{v}»" in aviso for v in ("5", "6", "8", "10", "12"))
+
+
+def test_a_single_blank_row_no_longer_cuts_the_table(tmp_path):
+    # Un renglón en blanco (2 pasos de hueco) cabe en 2.5 pasos: se lee todo.
+    dato, contradicciones, avisos = _leidas(tmp_path, hueco_antes=("5", 1))
+    assert _como_tuplas(dato) == _esperado_de_marina()
+    assert contradicciones == [] and avisos == []
 
 
 # --- el renglón de encabezados --------------------------------------------------------------
@@ -511,6 +731,40 @@ def test_a_damaged_header_does_not_steal_the_tokens_of_the_copy_next_to_it(tmp_p
     assert dato.fuente == "cuadro" and dato.copias == 1 and contradicciones == []
     assert len(avisos) == 1 and "LA2" in avisos[0]
     assert dato.valor["8"].LT1 == 115 and dato.valor["8"].r == 11
+
+
+def test_a_stray_last_token_between_the_last_two_is_reported(tmp_path):
+    # Una «r» suelta entre LG3 y la r de verdad: sin la regla, la r de verdad quedaba fuera.
+    dato, contradicciones, avisos = tabla_de_varillas(
+        _tablas(tmp_path, extra=[("r", 3.5, 0.0)], lector="varillas")
+    )
+    assert dato.fuente == "supuesto" and contradicciones == []
+    (aviso,) = avisos
+    assert "ambiguo" in aviso and "«r»" in aviso and "LG3" in aviso
+
+
+def test_a_stray_last_token_far_to_the_right_is_not_this_tables_header(tmp_path):
+    dato, _, avisos = tabla_de_varillas(
+        _tablas(tmp_path, extra=[("r", 9.0, 0.0)], lector="varillas")
+    )
+    assert dato.fuente == "cuadro" and dato.valor["8"].r == 11 and avisos == []
+
+
+def test_digits_in_a_column_the_header_does_not_name_are_reported(tmp_path):
+    # Un texto a la derecha de la última columna, en la línea de #8 y a menos de tres separaciones.
+    extra = [("123", 5.0, _y_de("8"))]
+    dato, contradicciones, avisos = tabla_de_varillas(
+        _tablas(tmp_path, extra=extra, lector="varillas")
+    )
+    assert dato.fuente == "cuadro" and dato.valor["8"].r == 11 and contradicciones == []
+    (aviso,) = avisos
+    assert "«123»" in aviso and "ninguna columna" in aviso and "#8" in aviso
+
+
+def test_the_next_copys_texts_are_not_a_column_the_header_does_not_name(tmp_path):
+    entidades = _textos(_entidades(tmp_path, copias=2, desplazamiento=(6.0, 0.0)))
+    tablas = leer_tablas_de_varillas(entidades, _hoja_del_archivo)
+    assert [t.sin_celda for t in tablas] == [[], []]
 
 
 def test_side_by_side_tables_are_not_swapped_by_float_noise_in_y(tmp_path):

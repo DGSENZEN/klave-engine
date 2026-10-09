@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from klave_engine.dxf.entities import NormalizedEntity
 from klave_engine.estructura.armado import NUMEROS
 from klave_engine.estructura.dato import Dato, elegir
-from klave_engine.estructura.tablas import Tabla, TextoSinCelda, leer_tablas, parece_numero
+from klave_engine.estructura.tablas import Tabla, TextoSinCelda, fila_para_avisar, leer_tablas
 
 CAMPOS_VARILLA = ("LA1", "LA2", "LT1", "LT2", "LG1", "LG2", "LG3", "r")
 ANCLA_VARILLA = "VARILLA"
@@ -68,25 +68,88 @@ _VACIO = frozenset({"-", "--", "—", "–", "N/A", "NA"})
 _NUMERO_EN_CM = re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:CM)?", re.IGNORECASE)
 
 
-def numero_de_varilla(texto: str) -> str | None:
-    """El número de varilla que dice ``texto`` («2.5», «#3», «10»), o ``None`` si no es uno.
+_LETRAS = "A-Za-zÁÉÍÓÚÜÑáéíóúüñ"
+# Lo que acompaña al número en una etiqueta: «#», «No.», «Nº», «VAR», «VARILLA», «Ø», «%%C».
+_ADORNO_DE_ETIQUETA = re.compile(
+    rf"[#Ø⌀∅]|%%[Cc]|(?<![{_LETRAS}])(?:VARILLAS?|VAR|NO|N[º°])\.?(?![{_LETRAS}])",
+    re.IGNORECASE,
+)
+_SEPARADOR_DE_ETIQUETA = re.compile(r"[()\[\]=:;\-–—]")
+# Un número de varilla escrito de alguna manera: una fracción de pulgada («3/8"», «1 1/4"»),
+# pulgadas enteras («1"») o el número («3», «2.5», «2,5»).
+_ATOMO = re.compile(
+    r"""(?:(?P<entero>\d+)\s+)?(?P<num>\d+)\s*/\s*(?P<den>\d+)\s*["”″']{0,2}
+    |(?P<pulgadas>\d+)\s*["”″']{1,2}
+    |(?P<numero>\d+(?:[.,]\d+)?)""",
+    re.VERBOSE,
+)
+# La varilla de cada fracción de pulgada, con su número mexicano (octavos de pulgada).
+_PULGADAS = {
+    (0, 1, 4): "2",
+    (0, 5, 16): "2.5",
+    (0, 3, 8): "3",
+    (0, 1, 2): "4",
+    (0, 5, 8): "5",
+    (0, 3, 4): "6",
+    (0, 7, 8): "7",
+    (1, 0, 1): "8",
+    (1, 1, 4): "10",
+    (1, 1, 2): "12",
+}
 
-    Sólo valen los de ``NUMEROS``: «No.», «(cm)» y cualquier otra celda de la columna no son
-    un renglón de la tabla."""
-    limpio = texto.strip().removeprefix("#").strip().replace(",", ".")
-    return limpio if limpio in NUMEROS else None
+
+def _numeros_de(texto: str) -> list[str] | None:
+    """Los números de varilla que dice una etiqueta, uno por cada forma en que lo escribe
+    («#3 (3/8")» da dos: ``["3", "3"]``); ``""`` en el lugar de una forma que no es una varilla
+    («3/16"»). ``None`` si la etiqueta trae algo más que un número (palabras, otro texto)."""
+    limpio = _ADORNO_DE_ETIQUETA.sub(" ", texto)
+    limpio = re.sub(r"(\d)\s*-\s*(\d+/\d+)", r"\1 \2", limpio)  # «1-1/4"»
+    limpio = _SEPARADOR_DE_ETIQUETA.sub("|", limpio)
+    if re.sub(r"[\s|]", "", _ATOMO.sub(" ", limpio)):
+        return None
+    numeros: list[str] = []
+    for m in _ATOMO.finditer(limpio):
+        if m["num"]:
+            clave = (int(m["entero"] or 0), int(m["num"]), int(m["den"]))
+            numeros.append(_PULGADAS.get(clave, ""))
+        elif m["pulgadas"]:
+            numeros.append(_PULGADAS.get((int(m["pulgadas"]), 0, 1), ""))
+        else:
+            numeros.append(m["numero"].replace(",", "."))
+    return numeros or None
+
+
+def numero_de_varilla(texto: str) -> str | None:
+    """El número de varilla que dice ``texto``, o ``None`` si no es uno.
+
+    Se leen las maneras comunes de escribirlo: «3», «2.5», «#3», «No. 3», «Nº3», «VAR 3»,
+    «VARILLA 3», «Ø3», «%%C3» y las fracciones de pulgada con su número mexicano («3/8"» es
+    el 3, «1/2"» el 4, «1"» el 8…). Una etiqueta que da dos formas («#3 (3/8")») debe decir lo
+    mismo en las dos. Sólo valen los de ``NUMEROS``: «No.», «(cm)», «9», «2.50», «3/16"» y
+    cualquier otra celda de la columna no son un renglón de la tabla."""
+    numeros = _numeros_de(texto)
+    if not numeros or len(set(numeros)) != 1:
+        return None
+    return numeros[0] if numeros[0] in NUMEROS else None
 
 
 def leer_tablas_de_varillas(
-    textos: list[NormalizedEntity], hoja_de: Callable[[NormalizedEntity], str]
+    textos: list[NormalizedEntity],
+    hoja_de: Callable[[NormalizedEntity], str],
+    *,
+    hueco_maximo: float = 2.5,
 ) -> list[Tabla]:
-    """Las tablas de varillas de ``textos``: sus renglones son sólo números de varilla."""
+    """Las tablas de varillas de ``textos``: sus renglones son sólo números de varilla.
+
+    ``hueco_maximo`` es el de ``leer_tablas``: cuántos pasos entre renglones puede haber en
+    blanco sin que la tabla se corte."""
     return leer_tablas(
         textos,
         ENCABEZADOS_VARILLA,
         ANCLA_VARILLA,
         hoja_de,
         fila_valida=lambda texto: numero_de_varilla(texto) is not None,
+        hueco_maximo=hueco_maximo,
     )
 
 
@@ -106,11 +169,15 @@ def _filas_de(tabla: Tabla) -> tuple[dict[str, FilaVarilla], list[str]]:
     plausible o que se repite. Los avisos no nombran la hoja: ``tabla_de_varillas`` la añade."""
     filas: dict[str, FilaVarilla] = {}
     avisos: list[str] = []
-    for fila in tabla.filas:
-        etiqueta = fila.get(ANCLA_VARILLA, "")
+    etiquetas = [fila.get(ANCLA_VARILLA, "") for fila in tabla.filas]
+    ultimo_valido = max(
+        (i for i, e in enumerate(etiquetas) if numero_de_varilla(e) is not None), default=-1
+    )
+    for i, fila in enumerate(tabla.filas):
+        etiqueta = etiquetas[i]
         numero = numero_de_varilla(etiqueta)
         if numero is None:
-            if parece_numero(etiqueta):  # ignorar no es esconder: «9» y «2.50» se avisan
+            if fila_para_avisar(etiqueta, i < ultimo_valido):  # ignorar no es esconder
                 avisos.append(_aviso_fila_descartada(etiqueta))
             continue  # «No.», «(cm)» y demás: no son un renglón
         valores: dict[str, float | None] = {}
@@ -135,10 +202,22 @@ def _filas_de(tabla: Tabla) -> tuple[dict[str, FilaVarilla], list[str]]:
                 f"la varilla #{numero} aparece dos veces con valores distintos; vale la primera"
             )
         filas.setdefault(numero, leida)
+    # Una fila sin un solo valor legible no es un dato: taparía la estándar con nada.
+    vacias = [n for n, f in filas.items() if all(getattr(f, c) is None for c in CAMPOS_VARILLA)]
+    if filas and len(vacias) == len(filas):
+        avisos.append("ninguna celda de valores de la tabla se pudo leer; no se usa")
+        return {}, avisos
+    for numero in vacias:
+        avisos.append(f"la varilla #{numero} no trae ningún valor legible; no se usa")
+        del filas[numero]
     return filas, avisos
 
 
 def _aviso_fila_descartada(texto: str) -> str:
+    numeros = _numeros_de(texto) or []
+    if "" not in numeros and len(set(numeros)) > 1:
+        dicen = " y ".join(f"#{n}" for n in dict.fromkeys(numeros))
+        return f"la fila «{texto}» dice varillas distintas ({dicen}); no se lee"
     return f"la fila «{texto}» no es un número de varilla; no se lee"
 
 
@@ -171,21 +250,25 @@ def _avisos_sin_celda(sin: list[TextoSinCelda]) -> list[str]:
         elif s.motivo == "fila_descartada":
             avisos.append(_aviso_fila_descartada(s.texto))
     if tras_el_hueco:
-        # En la columna de las varillas sólo cuentan los textos que son o parecen una varilla;
-        # una nota o una unidad que sigue ahí no es un renglón que falte.
+        # Se nombran todos los renglones que no se leen; las celdas, por cuántas son. En la
+        # columna de las varillas sólo cuentan los que son o parecen una varilla: una nota o
+        # una unidad que sigue ahí no es un renglón que falte.
         filas = [
             s.texto
             for s in tras_el_hueco
-            if s.columna == ANCLA_VARILLA and (numero_de_varilla(s.texto) or parece_numero(s.texto))
+            if s.columna == ANCLA_VARILLA
+            and (numero_de_varilla(s.texto) or fila_para_avisar(s.texto, False))
         ]
         celdas = sum(1 for s in tras_el_hueco if s.columna != ANCLA_VARILLA)
-        vistas = ", ".join(f"«{t}»" for t in filas[:8])
-        mas = f" y {len(filas) - 8} más" if len(filas) > 8 else ""
         de_celdas = f" (con {celdas} textos más en sus celdas)" if celdas else ""
-        avisos.append(
-            f"la tabla sigue después de un hueco y esos renglones no se leen: {vistas}{mas}"
-            f"{de_celdas}"
-        )
+        if filas:
+            nombres = ", ".join(f"«{t}»" for t in filas)
+            avisos.append(
+                f"la tabla sigue después de un hueco y esos renglones no se leen: {nombres}"
+                f"{de_celdas}"
+            )
+        else:
+            avisos.append(f"la tabla sigue después de un hueco y {celdas} textos no se leen")
     return avisos
 
 
@@ -263,7 +346,9 @@ def tabla_de_varillas(tablas: list[Tabla]) -> tuple[Dato, list[str], list[str]]:
     ``avisos`` es todo lo demás que no se pudo leer, sin adivinar: una celda que no es un
     número o que no cabe en 1–400 cm (queda vacía), una varilla repetida, un texto con
     cifras dentro de la tabla que no cayó en ninguna celda, la tabla que sigue después de un
-    hueco, una fila que parece varilla y no lo es, un renglón de encabezados que no se pudo
+    hueco, una fila con cifras que no es una varilla de ``NUMEROS`` (o que dice dos varillas
+    distintas), una fila sin un solo valor legible (no se usa, para no tapar a la estándar
+    con nada; si son todas, no se usa la tabla), un renglón de encabezados que no se pudo
     leer (en orden, sin una ficha repetida). La misma frase en varias copias sale una vez, con
     cuántas copias la traen. Aun si ninguna tabla se pudo leer y se devuelve la estándar, los
     avisos dicen qué tabla del plano se dejó."""

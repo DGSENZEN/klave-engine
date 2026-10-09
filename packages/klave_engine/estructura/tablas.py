@@ -27,19 +27,33 @@ from klave_engine.geometry.bbox import BBox, bbox_union_all
 # Un renglón de encabezados (o de celdas) está en una línea si sus textos difieren a lo más
 # esto (× el alto del texto).
 _TOLERANCIA_LINEA = 0.5
-# Una columna ancla sigue mientras el hueco entre renglones no pase de esto (× el alto).
+# Una celda está sobre la línea de su renglón si dista de él a lo más el mayor de: media altura
+# del texto (el del renglón o el de la celda) y esta parte del paso entre renglones.
+_TOLERANCIA_CELDA_EN_PASOS = 0.3
+# Una columna ancla sigue mientras el hueco entre renglones no pase de esto (× el paso entre
+# renglones que se observa, o el alto del texto si no se puede observar).
 _HUECO_MAXIMO = 2.5
-# Después de un corte, un renglón que aparece a esto (× el hueco máximo) todavía se considera
-# parte de la tabla —un renglón en blanco en medio—: no se lee, pero se avisa.
-_ALCANCE_DEL_HUECO = 3
+# Después de un corte, un renglón que aparece hasta a esto (× el paso) todavía se considera
+# parte de la tabla —renglones en blanco en medio—: no se lee, pero se avisa.
+_ALCANCE_DEL_HUECO_EN_PASOS = 10
+# El paso entre renglones se mide con los huecos entre los primeros textos de la columna ancla.
+_TEXTOS_PARA_EL_PASO = 9
+# Una etiqueta de renglón es corta: «3», «VAR 9», «#3 (3/8")». Una nota o una leyenda no.
+_MAX_PALABRAS_ETIQUETA = 4
+_MAX_LARGO_ETIQUETA = 24
+# Fuera de la tabla, por la derecha, se mira hasta esto (× la separación entre encabezados).
+_ALCANCE_A_LA_DERECHA = 3
 _CIFRA = re.compile(r"\d")
-# Lo que parece un número de varilla o de fila escrito de otra manera: «9», «2.50», «#9», «3/8».
-_CASI_NUMERO = re.compile(r"[#\s]*\d[\d.,/\s]*")
 
 
-def parece_numero(texto: str) -> bool:
-    """Si el texto parece un número escrito de otra manera: «9», «2.50», «#9», «3/8»."""
-    return _CASI_NUMERO.fullmatch(texto) is not None
+def fila_para_avisar(texto: str, entre_filas_que_si_se_leen: bool) -> bool:
+    """Si una fila de la columna ancla que no se lee debe avisarse: trae cifras y es corta (una
+    etiqueta: «VAR 9», «#9», «2.50», «3/16"») o está entre filas que sí se leen. Una nota larga
+    debajo de la tabla no."""
+    if not _CIFRA.search(texto):
+        return False
+    corta = len(texto) <= _MAX_LARGO_ETIQUETA and len(texto.split()) <= _MAX_PALABRAS_ETIQUETA
+    return corta or entre_filas_que_si_se_leen
 
 
 Motivo = Literal["fuera_de_columna", "fuera_de_renglon", "tras_un_hueco", "fila_descartada"]
@@ -136,16 +150,22 @@ def leer_tablas(
 
     La columna ancla son los textos bajo ``ancla`` (a lo más media separación entre
     encabezados, y más cerca de ella que de otro encabezado), hacia abajo mientras el hueco
-    entre dos no pase de ``hueco_maximo`` veces el alto del texto; cada uno es un renglón.
-    Una celda es un texto de una línea (o varios en la misma línea, unidos de izquierda a
-    derecha); las celdas de varias líneas todavía no se leen. Cada otro texto debajo del
-    encabezado entra en la celda del encabezado más cercano por ``x`` (a lo más media
-    separación entre encabezados) y del renglón más cercano por ``y`` si está sobre su línea.
+    entre dos no pase de ``hueco_maximo`` veces el paso entre renglones; cada uno es un
+    renglón. El paso es el que se observa entre los primeros textos de la columna (si no hay
+    bastantes, el alto del texto). Una celda es un texto de una línea (o varios en la misma
+    línea, unidos de izquierda a derecha); las celdas de varias líneas todavía no se leen.
+    Cada otro texto debajo del encabezado entra en la celda del encabezado más cercano por
+    ``x`` (a lo más media separación entre encabezados) y del renglón más cercano por ``y`` si
+    está sobre su línea: a lo más media altura de su texto (o del renglón, el mayor) o 0.3
+    veces el paso, lo que sea más.
 
     Lo que no entra en ninguna celda no se descarta en silencio: un texto con cifras dentro
-    de la tabla (bajo el encabezado, hasta media separación después de la última fila) que
-    cae entre columnas, fuera de la línea de toda fila o después de un hueco se anota en
-    ``Tabla.sin_celda``, igual que una fila descartada que parece un número.
+    de la tabla (bajo el encabezado, hasta medio paso después de la última fila, y a la
+    derecha de la última columna hasta tres separaciones) que cae entre columnas, fuera de la
+    línea de toda fila o después de un hueco se anota en ``Tabla.sin_celda``, igual que una
+    fila descartada con cifras. Después de un hueco se mira hasta 10 pasos hacia abajo (o
+    hasta el siguiente encabezado igual al ancla): los renglones que siguen se anotan con sus
+    celdas, aunque no se lean.
 
     ``fila_valida`` dice qué textos de la columna ancla son renglón de verdad. Un texto que
     no lo es (un «No.», una unidad) sigue ocupando su lugar —lo que cae junto a él es suyo y
@@ -183,23 +203,24 @@ def leer_tablas(
     for a in _en_orden_de_lectura(candidatos.get(_clave(ancla), []), hoja):
         if a.id in usados:
             continue
-        cabecera, avisos = _cabecera(a, encabezados, ancla, candidatos, usados, hoja)
-        if avisos:
+        encontrada = _cabecera(a, encabezados, ancla, candidatos, usados, hoja)
+        if encontrada.avisos:
+            fichas = encontrada.fichas.values()
             tablas.append(
                 Tabla(
                     encabezados=list(encabezados),
                     filas=[],
-                    entidades=[t.id for t in cabecera.values()],
+                    entidades=[t.id for t in fichas],
                     hoja=hoja(a.entidad),
-                    bbox=bbox_union_all(t.entidad.bbox for t in cabecera.values()),
-                    avisos=avisos,
+                    bbox=bbox_union_all(t.entidad.bbox for t in fichas),
+                    avisos=encontrada.avisos,
                 )
             )
             continue
-        if len(cabecera) < len(encabezados):
+        if len(encontrada.fichas) < len(encabezados):
             continue  # un «VARILLA» suelto en el plano, no un renglón de encabezados
         tabla = _leer_una(
-            cabecera, a, encabezados, ancla, todos, hoja, usados, fila_valida, hueco_maximo
+            encontrada, a, encabezados, ancla, todos, hoja, usados, fila_valida, hueco_maximo
         )
         if tabla is not None:
             tablas.append(tabla)
@@ -226,6 +247,16 @@ def _en_orden_de_lectura(
     return orden
 
 
+@dataclass
+class _Cabecera:
+    """El renglón de encabezados que parte de un ancla: sus fichas, sus avisos y dónde empieza
+    la tabla vecina de la derecha."""
+
+    fichas: dict[str, _Texto]
+    avisos: list[str]
+    derecha: float
+
+
 def _cabecera(
     a: _Texto,
     encabezados: tuple[str, ...],
@@ -233,11 +264,11 @@ def _cabecera(
     candidatos: dict[str, list[_Texto]],
     usados: set[str],
     hoja: Callable[[NormalizedEntity], str],
-) -> tuple[dict[str, _Texto], list[str]]:
+) -> _Cabecera:
     """El renglón de encabezados que parte de ``a``, en orden de izquierda a derecha.
 
-    Devuelve las fichas elegidas y los avisos. Sin avisos y con todas las fichas, el renglón
-    está completo; sin avisos y con fichas de menos no hubo renglón (``a`` está suelto)."""
+    Sin avisos y con todas las fichas, el renglón está completo; sin avisos y con fichas de
+    menos no hubo renglón (``a`` está suelto)."""
     hoja_a = hoja(a.entidad)
     tolerancia = _TOLERANCIA_LINEA * a.alto
 
@@ -258,7 +289,7 @@ def _cabecera(
         for h in encabezados
         if h != ancla
     }
-    cabecera: dict[str, _Texto] = {ancla: a}
+    fichas: dict[str, _Texto] = {ancla: a}
     avisos: list[str] = []
     i = encabezados.index(ancla)
     # A la derecha del ancla cada ficha es la más cercana a la derecha de la anterior; a la
@@ -273,35 +304,47 @@ def _cabecera(
                 lado = "a la derecha" if signo > 0 else "a la izquierda"
                 avisos.append(
                     f"el renglón de encabezados que empieza en «{ancla}» no se puede leer: "
-                    f"no hay «{h}» {lado} de «{_nombre_de(cabecera, previo)}» en su línea"
+                    f"no hay «{h}» {lado} de «{_nombre_de(fichas, previo)}» en su línea"
                 )
                 break
-            cabecera[h] = previo = posibles[0]
+            fichas[h] = previo = posibles[0]
         if avisos:
             break
     if avisos:
         # Sólo se avisa si el dibujante llegó a escribir al menos la mitad del renglón.
-        presentes = sum(1 for h, ts in en_linea.items() if ts)
+        presentes = sum(1 for ts in en_linea.values() if ts)
         if 2 * presentes < len(en_linea):
-            return {}, []
-        return cabecera, avisos
+            return _Cabecera({}, [], derecha)
+        return _Cabecera(fichas, avisos, derecha)
 
-    # Una ficha que aparece otra vez entre sus vecinas no se puede distinguir: no se adivina.
+    # Una ficha que aparece otra vez junto a la elegida no se puede distinguir: no se adivina.
+    # Entre sus vecinas, y la primera o la última, hasta tres separaciones hacia afuera.
     nombres_en_orden = list(encabezados)
+    xs = sorted(t.x for t in fichas.values())
+    separaciones = [b - a_ for a_, b in zip(xs, xs[1:], strict=False)]
+    alcance = _ALCANCE_A_LA_DERECHA * _mediana(separaciones) if separaciones else math.inf
     for k, h in enumerate(nombres_en_orden):
-        if h == ancla or k == 0 or k == len(nombres_en_orden) - 1:
+        if h == ancla:
             continue
-        izquierda = cabecera[nombres_en_orden[k - 1]].x
-        derecha = cabecera[nombres_en_orden[k + 1]].x
+        elegida = fichas[h]
+        antes = fichas[nombres_en_orden[k - 1]].x if k > 0 else elegida.x - alcance
+        despues = (
+            fichas[nombres_en_orden[k + 1]].x
+            if k < len(nombres_en_orden) - 1
+            else elegida.x + alcance
+        )
         if any(
-            t.id != cabecera[h].id and min(izquierda, derecha) < t.x < max(izquierda, derecha)
+            t.id != elegida.id and min(antes, despues) < t.x < max(antes, despues)
             for t in en_linea[h]
         ):
+            vecinas = " y ".join(
+                f"«{nombres_en_orden[j]}»" for j in (k - 1, k + 1) if 0 <= j < len(nombres_en_orden)
+            )
             avisos.append(
                 f"el renglón de encabezados que empieza en «{ancla}» es ambiguo: «{h}» aparece "
-                f"dos veces entre «{nombres_en_orden[k - 1]}» y «{nombres_en_orden[k + 1]}»"
+                f"dos veces junto a {vecinas}"
             )
-    return cabecera, avisos
+    return _Cabecera(fichas, avisos, derecha)
 
 
 def _nombre_de(cabecera: dict[str, _Texto], texto: _Texto) -> str:
@@ -309,7 +352,7 @@ def _nombre_de(cabecera: dict[str, _Texto], texto: _Texto) -> str:
 
 
 def _leer_una(
-    cabecera: dict[str, _Texto],
+    encontrada: _Cabecera,
     a: _Texto,
     encabezados: tuple[str, ...],
     ancla: str,
@@ -319,69 +362,101 @@ def _leer_una(
     fila_valida: Callable[[str], bool] | None,
     hueco_maximo: float,
 ) -> Tabla | None:
+    cabecera = encontrada.fichas
     fichas = list(cabecera.values())
     alto = _mediana([t.alto for t in fichas])
     y_cabecera = _mediana([t.y for t in fichas])
     xs = sorted(t.x for t in fichas)
     separaciones = [b - a_ for a_, b in zip(xs, xs[1:], strict=False)]
-    tolerancia_x = (_mediana(separaciones) if separaciones else 6 * alto) / 2
+    separacion = _mediana(separaciones) if separaciones else 6 * alto
+    tolerancia_x = separacion / 2
     linea = _TOLERANCIA_LINEA * alto
     cabecera_ids = {t.id for t in fichas}
     hoja_a = hoja(a.entidad)
+    derecho = min(xs[-1] + _ALCANCE_A_LA_DERECHA * separacion, encontrada.derecha - 1e-9)
 
     def columna(t: _Texto) -> str | None:
         """El encabezado más cercano por ``x``, si está a lo más a media separación."""
         nombre, ficha = min(cabecera.items(), key=lambda kv: abs(kv[1].x - t.x))
         return nombre if abs(ficha.x - t.x) <= tolerancia_x else None
 
-    # Todo lo que cuelga de este renglón de encabezados: bajo él y dentro de lo ancho de la
-    # tabla, en su hoja y sin usar.
-    debajo = [
+    # Todo lo que cuelga de este renglón de encabezados: bajo él, en su hoja y sin usar; dentro
+    # de lo ancho de la tabla, o a su derecha hasta donde alcanza la vista.
+    candidatos = [
         t
         for t in todos
         if t.id not in usados
         and t.id not in cabecera_ids
         and t.y < y_cabecera - linea
-        and xs[0] - tolerancia_x <= t.x <= xs[-1] + tolerancia_x
+        and xs[0] - tolerancia_x <= t.x <= max(xs[-1] + tolerancia_x, derecho)
     ]
-    debajo = [t for t in debajo if hoja(t.entidad) == hoja_a]
+    candidatos = [t for t in candidatos if hoja(t.entidad) == hoja_a]
+    debajo = [t for t in candidatos if t.x <= xs[-1] + tolerancia_x]
+    a_la_derecha = [t for t in candidatos if t.x > xs[-1] + tolerancia_x]
 
-    # La columna ancla: hacia abajo mientras los huecos no pasen de ``hueco_maximo`` veces el alto.
+    # El paso entre renglones se observa en los primeros textos de la columna ancla: sus huecos
+    # (sin contar un renglón repetido ni un salto enorme) y su altura mandan, no los del
+    # encabezado, que puede ser más chico.
+    en_ancla = sorted((t for t in debajo if columna(t) == ancla), key=lambda t: (-t.y, t.x))
+    primeros = en_ancla[:_TEXTOS_PARA_EL_PASO]
+    alto_estimado = max(alto, _mediana([t.alto for t in primeros])) if primeros else alto
+    huecos = [p.y - q.y for p, q in zip(primeros, primeros[1:], strict=False)]
+    utiles = [g for g in huecos if _TOLERANCIA_LINEA * alto_estimado < g <= 6 * alto_estimado]
+    paso_observado = _mediana(utiles) if len(utiles) >= 2 else None
+    limite_hueco = hueco_maximo * (paso_observado or alto_estimado)
+
+    # La columna ancla: hacia abajo mientras los huecos no pasen del límite.
     renglones: list[_Texto] = []
     resto: list[_Texto] = []  # lo que sigue en la columna ancla después de un hueco
     previo = y_cabecera
-    en_ancla = sorted((t for t in debajo if columna(t) == ancla), key=lambda t: (-t.y, t.x))
     for k, t in enumerate(en_ancla):
-        if previo - t.y > hueco_maximo * alto:
+        if previo - t.y > limite_hueco:
             resto = en_ancla[k:]
             break
-        if renglones and renglones[-1].y - t.y <= linea:
+        if renglones and renglones[-1].y - t.y <= _TOLERANCIA_LINEA * max(
+            t.alto, renglones[-1].alto
+        ):
             continue  # el mismo renglón escrito dos veces: vale el primero
         if _clave(t.texto) == _clave(ancla):
             break  # el encabezado de otra copia debajo
         renglones.append(t)
         previo = t.y
+    pasos = [p.y - q.y for p, q in zip(renglones, renglones[1:], strict=False)]
+    paso = _mediana(pasos) if pasos else (paso_observado or 2 * alto_estimado)
 
-    # Después de un hueco la tabla puede seguir (un renglón en blanco en medio): no se lee,
-    # pero lo que sigue, a no mucha distancia, se anota.
+    def es_valido(texto: str) -> bool:
+        return fila_valida is None or fila_valida(texto)
+
+    # Después de un hueco la tabla puede seguir: no se lee, pero lo que sigue —renglones que
+    # sí lo son— se anota, con la vista hasta ``_ALCANCE_DEL_HUECO_EN_PASOS`` pasos.
     tras_hueco: list[_Texto] = []
     ultimo = previo
     for t in resto:
-        limite = hueco_maximo * alto * (1 if tras_hueco else _ALCANCE_DEL_HUECO)
+        limite = limite_hueco if tras_hueco else _ALCANCE_DEL_HUECO_EN_PASOS * paso
         if ultimo - t.y > limite or _clave(t.texto) == _clave(ancla):
             break
-        if fila_valida is None or fila_valida(t.texto) or parece_numero(t.texto):
-            tras_hueco.append(t)  # lo demás (una nota, una unidad) no es un renglón que falte
+        # El primer renglón después del hueco debe ser de los que se leen; los que le siguen
+        # también pueden ser una etiqueta que no se lee («VAR 9»). Una nota o una unidad
+        # no es un renglón que falte.
+        if es_valido(t.texto) or (tras_hueco and fila_para_avisar(t.texto, False)):
+            tras_hueco.append(t)
             ultimo = t.y
     if not renglones and not tras_hueco:
         return None
 
-    pasos = [a_.y - b.y for a_, b in zip(renglones, renglones[1:], strict=False)]
-    tolerancia_y = (_mediana(pasos) if pasos else 2 * alto) / 2
-    validos = [r for r in renglones if fila_valida is None or fila_valida(r.texto)]
+    tolerancia_y = paso / 2
+    validos = [r for r in renglones if es_valido(r.texto)]
     ultima_fila = tras_hueco[-1] if tras_hueco else (validos or renglones or [a])[-1]
     y_fin = ultima_fila.y - tolerancia_y  # más abajo ya no es de la tabla
     fin_de_la_cadena = renglones[-1].y if renglones else y_cabecera
+
+    def sobre_la_linea(renglon: _Texto, t: _Texto) -> bool:
+        """Si ``t`` está sobre la línea de ``renglon``: media altura del mayor de los dos
+        textos, o 0.3 pasos, lo que sea más (con un pelo de margen por el redondeo)."""
+        tolerancia = max(
+            _TOLERANCIA_LINEA * max(renglon.alto, t.alto), _TOLERANCIA_CELDA_EN_PASOS * paso
+        )
+        return abs(renglon.y - t.y) <= tolerancia * 1.001
 
     celdas: list[dict[str, list[_Texto]]] = [{} for _ in renglones]
     propios = {r.id for r in renglones}
@@ -409,16 +484,20 @@ def _leer_una(
             anotar(t, "fuera_de_renglon", nombre)  # un renglón repetido en la misma línea
         else:
             i = min(range(len(renglones)), key=lambda k: abs(renglones[k].y - t.y))
-            if abs(renglones[i].y - t.y) <= linea:
+            if sobre_la_linea(renglones[i], t):
                 celdas[i].setdefault(nombre, []).append(t)
             else:
                 anotar(t, "fuera_de_renglon", nombre)
+    for t in a_la_derecha:  # una columna que el encabezado no nombra
+        if t.y >= y_fin:
+            anotar(t, "fuera_de_columna", None)
 
     filas: list[dict[str, str]] = []
     usadas: list[_Texto] = list(fichas)
-    for renglon, contenido in zip(renglones, celdas, strict=True):
-        if fila_valida is not None and not fila_valida(renglon.texto):
-            if parece_numero(renglon.texto):
+    ultimo_valido = max((i for i, r in enumerate(renglones) if es_valido(r.texto)), default=-1)
+    for i, (renglon, contenido) in enumerate(zip(renglones, celdas, strict=True)):
+        if not es_valido(renglon.texto):
+            if fila_para_avisar(renglon.texto, i < ultimo_valido):
                 descartada = TextoSinCelda(
                     entidad=renglon.id,
                     texto=renglon.texto,
