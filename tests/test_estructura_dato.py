@@ -388,9 +388,22 @@ def test_a_hoja_that_says_two_things_keeps_its_conflict():
     assert en_100.valor == "12" and en_100.en_conflicto is False
 
 
-def test_a_supuesto_is_the_same_for_every_hoja():
+def test_a_supuesto_is_the_same_for_every_hoja_but_never_the_same_object():
     d = Dato(valor=0.05, fuente="supuesto")
-    assert para_hoja(d, "ES-000") is d
+    de_hoja = para_hoja(d, "ES-000")
+    assert de_hoja == d and de_hoja is not d
+    de_hoja.valor = 9.0
+    assert d.valor == 0.05  # editar el resultado no toca el original
+
+
+def test_a_hoja_without_a_copy_of_its_own_gets_a_deep_copy_of_the_elected_dato():
+    cimentacion, plantas = _cimentacion_y_plantas()
+    d = elegir([cimentacion, plantas])
+    sin_copia = para_hoja(d, "ES-999")
+    assert sin_copia == d and sin_copia is not d
+    sin_copia.alternativas[0].valor = "x"
+    sin_copia.hojas.append("ES-999")
+    assert d.alternativas[0].valor == "8" and "ES-999" not in d.hojas
 
 
 def test_a_hojas_own_nota_beats_a_detalle_of_another_hoja():

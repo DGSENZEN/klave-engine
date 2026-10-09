@@ -2365,3 +2365,196 @@ def test_the_table_says_which_bars_it_has_no_row_for(tmp_path):
     completa = leer_reglas(_dibujo(tmp_path, tabla_kw={"sin": ("4",)}), frames=[]).tabla_varillas
     assert "#4 de la tabla estándar (supuesto)" in completa.texto
     assert "sin fila para #2 y #7" in completa.texto
+
+
+# --- ronda 2: números pelados, ganchos de otra oración, plantilla en metros, rangos -------------
+
+
+@pytest.mark.parametrize(
+    ("texto", "traslape", "soldar"),
+    [
+        ('SE PERMITE TRASLAPAR VARILLAS HASTA 3/4"', "6", None),
+        ('SE PERMITE TRASLAPAR VARILLAS HASTA EL 1"', "8", None),
+        ('SE PERMITE TRASLAPAR VARILLAS HASTA 1 1/4"', "10", None),
+        ('SE PERMITE TRASLAPAR VARILLA HASTA EL #5 Y DEL 3/4" EN ADELANTE SE SOLDARAN', "5", "6"),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL NUMERO 6", "6", None),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL NUM. 6", "6", None),
+        ("LOS TRASLAPES HASTA VARILLA 6", "6", None),
+        ("SE PERMITE TRASLAPAR VARILLAS DEL No. 3 AL No. 6", "6", None),
+        ("SE PERMITE TRASLAPAR VARILLAS DEL #3 A LA #5", "5", None),
+        ("LAS VARILLAS DEL No. 7 AL No. 12 SE SOLDARAN", None, "7"),
+        ("SE SOLDARAN LAS VARILLAS DEL No. 7 AL No. 12", None, "7"),
+        ("LA SOLDADURA SE USARA EN VARILLAS DEL No. 8 EN ADELANTE", None, "8"),
+    ],
+)
+def test_more_ways_of_writing_a_bar_are_read(tmp_path, texto, traslape, soldar):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert (r.traslape_max_numero and r.traslape_max_numero.valor) == traslape
+    assert (r.soldar_desde_numero and r.soldar_desde_numero.valor) == soldar
+    assert r.avisos == [], r.avisos
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "NO SE PERMITIRA TRASLAPAR HASTA 2 VARILLAS POR SECCION",
+        "SE PERMITE TRASLAPAR HASTA 2 BARRAS POR SECCION",
+        "SE PERMITE TRASLAPAR HASTA 50% DE LAS VARILLAS EN UNA SECCION",
+        "SE PERMITE TRASLAPAR HASTA 40 VECES EL DIAMETRO",
+    ],
+)
+def test_a_bare_number_that_counts_something_else_is_not_a_bar(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert r.traslape_max_numero is None and r.soldar_desde_numero is None
+    assert r.avisos == []  # no fija un límite de varilla: no hay nada que se haya dejado de leer
+
+
+def test_an_inch_fraction_that_is_not_a_bar_is_reported(tmp_path):
+    r = _con_notas(tmp_path, ['4. SE PERMITE TRASLAPAR VARILLAS HASTA 3/16"'])
+    assert r.traslape_max_numero is None
+    assert any('«3/16"»' in a and "no es un número de varilla" in a for a in r.avisos)
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "NO SE TRASLAPARA VARILLA 6 O MAYOR",
+        "NO SE TRASLAPARA VARILLA MAYOR AL NUMERO 6",
+        "NO SE TRASLAPARA VARILLA MAYOR AL NUM. 6",
+        'NO SE TRASLAPARA VARILLA MAYOR AL 3/4"',
+        "NO SE TRASLAPARA VARILLA MAYOR A 5/8 PULG",
+    ],
+)
+def test_other_ways_of_naming_a_bar_make_an_unread_limit_visible(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert r.traslape_max_numero is None
+    (aviso,) = r.avisos
+    assert "hasta qué varilla se traslapa" in aviso and "no se pudo leer" in aviso
+
+
+def test_a_weld_range_that_stops_short_of_the_biggest_bar_is_reported_not_guessed(tmp_path):
+    r = _con_notas(tmp_path, ["4. LAS VARILLAS DEL No. 7 AL No. 10 SE SOLDARAN"])
+    assert r.soldar_desde_numero is None  # no dice qué pasa con la #12
+    (aviso,) = r.avisos
+    assert "desde qué varilla se suelda" in aviso and "no se pudo leer" in aviso
+
+
+def test_a_weld_sentence_with_soldadura_that_is_not_read_is_reported(tmp_path):
+    r = _con_notas(tmp_path, ["4. LA SOLDADURA SE APLICARA A PARTIR DE LA VARILLA No. 8"])
+    assert r.soldar_desde_numero is None
+    (aviso,) = r.avisos
+    assert "desde qué varilla se suelda" in aviso and "No. 8" in aviso
+
+
+def test_a_hook_of_the_next_sentence_is_not_the_stirrups_hook(tmp_path):
+    texto = (
+        "7. LOS ESTRIBOS SE COLOCARAN @ 10 CM. TODAS LAS ESCUADRAS LLEVARAN GANCHOS A 90° "
+        "CON TRAMO RECTO DE 12Ø"
+    )
+    r = _con_notas(tmp_path, [texto])
+    assert r.gancho_estribo.fuente == "supuesto" and r.gancho_grapa.fuente == "supuesto"
+    assert r.gancho_estribo.valor == {"angulo": 135, "recto_diametros": 10}
+    assert r.avisos == []  # un gancho de otras varillas no es una regla de estribos ni de grapas
+
+
+def test_a_hook_of_other_bars_is_silent_even_with_stirrups_in_the_note(tmp_path):
+    renglones = [
+        "7. LAS VARILLAS TERMINADAS EN ESCUADRA LLEVARAN UN GANCHO DE 90° COMO SE INDICA.",
+        "LOS ESTRIBOS SE COLOCARAN CADA 15 CM.",
+    ]
+    r = _con_notas(tmp_path, renglones)
+    assert r.gancho_estribo.fuente == "supuesto" and r.avisos == []
+
+
+def test_a_sentence_with_a_numbered_bar_does_not_end_at_its_abbreviation(tmp_path):
+    texto = "7. LOS ESTRIBOS DEL No. 3 TENDRAN GANCHOS A 135 GRADOS CON TRAMO RECTO DE 10Ø"
+    r = _con_notas(tmp_path, [texto])
+    assert r.gancho_estribo.valor == {"angulo": 135, "recto_diametros": 10}
+    assert r.gancho_estribo.fuente == "nota" and r.avisos == []
+
+
+def test_a_plantilla_measure_that_is_not_its_thickness_is_reported_not_read(tmp_path):
+    for medida in ("0.10 M", "10 CM"):
+        texto = f"PLANTILLA DE CONCRETO POBRE QUE SOBRESALDRA DE {medida}"
+        r = leer_reglas(_dibujo(tmp_path, tabla=False, mtexts=[(texto, 5.0, 5.0)]), frames=[])
+        assert r.plantilla_espesor_m is None, medida
+        (aviso,) = r.avisos
+        assert "el espesor de la plantilla" in aviso and "no se pudo leer" in aviso
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "PLANTILLA DE 0.05 M DE ESPESOR",
+        "PLANTILLA DE CONCRETO POBRE DE 0.05 M DE ESP.",
+        "PLANTILLA DE CONCRETO POBRE, ESPESOR DE 0.05 MTS",
+    ],
+)
+def test_a_plantilla_thickness_in_meters_is_read_when_it_says_so(tmp_path, texto):
+    r = leer_reglas(_dibujo(tmp_path, tabla=False, mtexts=[(texto, 5.0, 5.0)]), frames=[])
+    assert r.plantilla_espesor_m.valor == 0.05 and r.avisos == []
+
+
+def test_marinas_steel_and_materials_texts_stay_silent_with_the_wider_triggers(tmp_path):
+    mtexts = [
+        (
+            "2.- EXCEPTO DONDE SE INDIQUE OTRA COSA, TODOS LOS ELEMENTOS SE SOLDARAN CON "
+            "ELECTRODOS E-70\\P3.- TODAS LAS SOLDADURAS SERAN EJECUTADAS POR OPERARIOS "
+            'CALIFICADOS EN PLACAS DE 3/8" Y 1/2".',
+            5.0,
+            5.0,
+        ),
+        ('EL TAMAÑO MAXIMO DEL AGREGADO SERA 3/4"\\PVARILLAS DEL No.3 EN ADELANTE', 15.0, 5.0),
+    ]
+    r = leer_reglas(_dibujo(tmp_path, tabla=False, mtexts=mtexts), frames=[])
+    assert r.avisos == []
+
+
+def test_the_missing_rows_note_is_in_every_copy_of_the_table(tmp_path):
+    doc = ezdxf.new("R2010")
+    _bloque(doc, "A")
+    _bloque(doc, "B", cambio={("8", "LT1"): 120})
+    msp = doc.modelspace()
+    msp.add_blockref("A", (0.0, 0.0))
+    msp.add_blockref("B", (40.0, 0.0))
+    ruta = tmp_path / "dos.dxf"
+    doc.saveas(ruta)
+    from klave_engine.detection.frames import SheetFrame
+
+    marcos = [
+        SheetFrame(frame_id="a", bbox=(-5, -5, 20, 5), source_file="dos.dxf", code="ES-001"),
+        SheetFrame(frame_id="b", bbox=(30, -5, 60, 5), source_file="dos.dxf", code="ES-002"),
+    ]
+    r = leer_reglas(DxfParser().parse_file(ruta).entities, frames=marcos)
+    for hoja in ("ES-001", "ES-002"):
+        texto = r.para(hoja).tabla_varillas.texto
+        assert "sin fila para #2 y #7: ni el plano ni la estándar las traen" in texto, hoja
+    assert all("sin fila para #2 y #7" in a.texto for a in r.tabla_varillas.alternativas)
+
+
+def test_para_hands_back_copies_even_for_a_sheet_without_a_copy_of_its_own(tmp_path):
+    cimentacion = [("REFUERZO :", MARINA_REFUERZO)]
+    plantas = [("REFUERZO :", MARINA_PB_REFUERZO)]
+    r = leer_reglas(
+        _dibujo(tmp_path, bloques=[(cimentacion, 2), (plantas, 3)]), frames=_marcos_de_los_bloques()
+    )
+    antes = r.model_dump()
+    for hoja in ("ES-999", "ES-001"):
+        de_hoja = r.para(hoja)
+        de_hoja.avisos.append("x")
+        de_hoja.contradicciones.clear()
+        de_hoja.soldar_desde_numero.valor = "99"
+        de_hoja.soldar_desde_numero.alternativas.clear()
+        de_hoja.recubrimiento_m["zapata"].valor = 9.0
+        de_hoja.primer_estribo_m["trabe"].texto = "x"
+        de_hoja.tabla_varillas.valor["8"].LT1 = 1
+        de_hoja.gancho_estribo.hojas.append("zzz")
+        assert r.model_dump() == antes, hoja
+
+
+def test_para_of_the_standard_reglas_is_a_copy_too():
+    r = reglas_estandar()
+    de_hoja = r.para("ES-001")
+    de_hoja.recubrimiento_m["zapata"].valor = 9.0
+    de_hoja.tabla_varillas.valor["8"].LT1 = 1
+    assert r.recubrimiento_m["zapata"].valor == 0.05 and r.tabla_varillas.valor["8"].LT1 is None

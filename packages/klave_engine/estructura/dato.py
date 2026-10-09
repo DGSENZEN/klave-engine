@@ -156,14 +156,15 @@ def para_hoja(dato: Dato, hoja: str) -> Dato:
     ``hojas``) se eligen entre sí —con ``elegir``, preferida ``hoja``— y lo que dicen las demás
     hojas queda en ``alternativas`` sin contar como conflicto: si la hoja se dice una sola vez
     no hay ``en_conflicto``. Una hoja que no tiene copia propia (o un dato sin hojas, como un
-    supuesto) se queda con el dato elegido tal cual, con su conflicto a la vista."""
+    supuesto) se queda con el dato elegido, con su conflicto a la vista. Siempre devuelve un
+    dato nuevo (una copia, si no hay nada que elegir): editarlo no toca ``dato``."""
     todos = miembros(dato)
     del_grupo: dict[str, bool] = {}
     for m in todos:
         clave = _clave(m.valor)
         del_grupo[clave] = del_grupo.get(clave, False) or hoja in hojas_de(m)
     if not any(del_grupo.values()):
-        return dato
+        return dato.model_copy(deep=True)
     propios = [m for m in todos if del_grupo[_clave(m.valor)]]
     otros = [m for m in todos if not del_grupo[_clave(m.valor)]]
     elegido = elegir(propios, preferir_hoja=hoja)
