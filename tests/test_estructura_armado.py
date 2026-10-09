@@ -1,5 +1,6 @@
 """El armado como estructura: cada `#` y cada `@` del texto queda leído o avisado, nunca perdido."""
 
+import random
 import re
 from collections import Counter
 
@@ -153,7 +154,7 @@ MARINA = [
     (["1#4+1#3"], "castillo", [(1, "4"), (1, "3")], []),
     (["REFUERZO 12#6"], "pilote", [(12, "6")], []),
     (["REFUERZO 4#8+4#4"], "pilote", [(4, "8"), (4, "4")], []),
-    (["2 VARILLAS #5 ANCLADA AL MURO"], "castillo", [(2, "5")], []),
+    (["2 VARILLAS #5"], "castillo", [(2, "5")], []),
     (["EYG#2@15"], "castillo", [], [(E, 1, "2", [("todo", 0.15)]), (G, 1, "2", [("todo", 0.15)])]),
     (["EYG#3@20"], "castillo", [], [(E, 1, "3", [("todo", 0.20)]), (G, 1, "3", [("todo", 0.20)])]),
     (["2E#3@15"], "castillo", [], [(E, 2, "3", [("todo", 0.15)])]),
@@ -202,7 +203,6 @@ MARINA_BARRIDO = [
     ("1#8", "castillo"),
     ("10#6", "castillo"),
     ("10#8", "castillo"),
-    ("2 VARILLAS #5 ANCLADA AL MURO O CADENA CON ANCHORFIX 3001 DE SIKA", "castillo"),
     ("2#3", "castillo"),
     ("2#4", "castillo"),
     ("2#6", "castillo"),
@@ -323,10 +323,13 @@ def test_stirrup_and_grapa_spellings():
 
 
 def test_diameter_and_percent_codes_are_normalized():
-    a = parsear_armado(["4%%C5+2Ø4 E%%c3@20 100%%%"], "castillo")
+    a = parsear_armado(["TRASLAPE AL 50%%%", "4%%C5+2Ø4 E%%c3@20"], "castillo")
     assert [(g.cantidad, g.numero) for g in a.longitudinales] == [(4, "5"), (2, "4")]
     assert [(j.numero, j.zonas[0].separacion_m) for j in a.estribos] == [("3", 0.20)]
     assert a.avisos == []
+    # Lo que sigue a una pieza y no es contexto la deja sin leer, y el aviso cita el plano.
+    b = parsear_armado(["E%%c3@20 100%%%"], "castillo")
+    assert b.estribos == [] and b.avisos == ["sin leer: «EØ3@20 100%»"]
 
 
 def test_mtext_paragraph_break_is_a_line_boundary():
@@ -372,7 +375,7 @@ def test_unknown_bar_numbers_are_reported_never_rounded():
         assert texto in a.avisos[0] and f"no hay varilla del {simbolo}" in a.avisos[0], texto
     # Pulgadas no se convierten: «3/8» no es el #3 sin más.
     c = parsear_armado(['4Ø3/8"'], "castillo")
-    assert c.longitudinales == [] and c.avisos and "#3/8" in c.avisos[0]
+    assert c.longitudinales == [] and c.avisos == ['sin leer: «4Ø3/8"»']
     # Un decimal que no es 2.5 tampoco: «#3.5» no se lee como #3.
     d = parsear_armado(["4#3.5"], "castillo")
     assert d.longitudinales == [] and d.avisos
@@ -390,7 +393,7 @@ def test_spacing_with_decimals_and_units():
     b = parsear_armado(["E#3@20 CM"], "castillo")
     assert b.estribos[0].zonas[0].separacion_m == 0.20 and b.avisos == []
     c = parsear_armado(["E#3@0"], "castillo")  # una separación nula no es separación
-    assert c.estribos[0].zonas == [] and c.avisos == ["sin leer: «@0»"]
+    assert c.estribos == [] and c.avisos == ["sin leer: «E#3@0»"]
 
 
 def test_a_count_with_a_spacing_is_neither_bars_nor_mesh():
@@ -405,7 +408,15 @@ def test_a_bar_glued_to_more_text_is_reported_not_trimmed():
     # Marina: «2#5X150 SUPERIOR E» (dos varillas de 150 cm, refuerzo de un hueco): leer sólo
     # «2#5» callaría la longitud y haría pasar el refuerzo por longitudinales del elemento.
     a = parsear_armado(["2#5X150 SUPERIOR E"], "castillo")
-    assert a.longitudinales == [] and a.avisos == ["sin leer: «2#5X150»"]
+    assert a.longitudinales == [] and a.avisos == ["sin leer: «2#5X150 SUPERIOR E»"]
+
+
+def test_a_bar_note_with_prose_after_it_is_reported_whole():
+    # Marina: dos varillas ancladas con epóxico son una nota de anclaje, no el refuerzo
+    # longitudinal de un elemento; lo que sigue al «#5» no es contexto.
+    texto = "2 VARILLAS #5 ANCLADA AL MURO O CADENA CON ANCHORFIX 3001 DE SIKA"
+    a = parsear_armado([texto], "castillo")
+    assert a.vacio() and a.avisos == [f"sin leer: «{texto}»"]
 
 
 def test_trabe_distributions_are_reported_whole():
@@ -479,13 +490,17 @@ def test_renders():
         ],
         parrillas=[
             Parrilla(numero="4", separacion_m=0.20, lecho="sup", sentidos="ambos"),
-            Parrilla(numero="3", separacion_m=0.15, lecho="unico", sentidos=None),
+            Parrilla(numero="3", separacion_m=0.15, lecho="inf", sentidos=None),
         ],
     )
     assert texto_longitudinal(a) == ""
     assert texto_estribos(a) == "1E+2G#3@15 G#2 VER CORTE"
-    assert texto_parrillas(a) == "LS #4@20 A/S #3@15"
-    assert texto_armado(a) == "1E+2G#3@15 G#2 VER CORTE LS #4@20 A/S #3@15"
+    assert texto_parrillas(a) == "LS #4@20 A/S LI #3@15"
+    assert texto_armado(a) == "1E+2G#3@15 G#2 VER CORTE LS #4@20 A/S LI #3@15"
+    unicas = Armado(
+        parrillas=[Parrilla(numero="4", separacion_m=0.2, lecho="unico", sentidos=None)]
+    )
+    assert texto_parrillas(unicas) == "#4@20"
     assert texto_armado(Armado()) == ""
 
 
@@ -536,29 +551,46 @@ def test_the_render_says_the_same_bars_sizes_and_spacings_as_the_drawing(textos,
 @pytest.mark.parametrize(
     "textos,familia,pieza",
     [
-        (["E#3@12/14/16/18"], "castillo", "@12/14/16/18"),
-        (["E#3@15/20"], "castillo", "@15/20"),
-        (["E#3@15,20"], "castillo", "@15,20"),
-        (["E#3@15-20"], "castillo", "@15-20"),
-        (["E#3@12.5/15"], "castillo", "@12.5/15"),
-        (["E#3@6,8@10,10@15"], "trabe", "@6,8@10,10@15"),
+        (["E#3@12/14/16/18"], "castillo", "E#3@12/14/16/18"),
+        (["E#3@15/20"], "castillo", "E#3@15/20"),
+        (["E#3@15,20"], "castillo", "E#3@15,20"),
+        (["E#3@15-20"], "castillo", "E#3@15-20"),
+        (["E#3@12.5/15"], "castillo", "E#3@12.5/15"),
+        (["E#3@6,8@10,10@15"], "trabe", "E#3@6,8@10,10@15"),
+        # Ronda 2: la unidad no abre paso, ni una palabra que empiece con E o G, ni el espacio.
+        (["E#3@15 CM/20"], "castillo", "E#3@15 CM/20"),
+        (["E#3@15 CM,20"], "castillo", "E#3@15 CM,20"),
+        (["E#3@15 CM, 20 CM"], "castillo", "E#3@15 CM, 20 CM"),
+        (["E#3@10,15 EN CENTRO"], "castillo", "E#3@10,15 EN CENTRO"),
+        (["E#3@15,20 EN EXTREMOS"], "castillo", "E#3@15,20 EN EXTREMOS"),
+        (["E#3@15,2 GANCHOS"], "castillo", "E#3@15,2 GANCHOS"),
+        (["E#3@15 /20"], "castillo", "E#3@15 /20"),
+        (["E#3@15 / 20"], "castillo", "E#3@15 / 20"),
+        (["E#3@15 - 20"], "castillo", "E#3@15 - 20"),
+        (["E#3@15 ,20"], "castillo", "E#3@15 ,20"),
+        (["E#3@15 Y 20"], "castillo", "E#3@15 Y 20"),
+        (["E#3@15, 20"], "castillo", "E#3@15, 20"),
+        (["E#3@20 MMS"], "castillo", "E#3@20 MMS"),
+        (["E#3@15", "/20"], "castillo", "E#3@15 | /20"),
     ],
 )
 def test_a_spacing_with_more_after_it_is_reported_whole(textos, familia, pieza):
+    # Leído entero o avisado entero: el juego no se queda con una separación que no es la suya.
     a = parsear_armado(textos, familia)
-    assert [(j.tipo, j.numero, j.zonas) for j in a.estribos] == [(E, "3", [])]
-    assert a.avisos == [f"sin leer: «{pieza}»"]
+    assert a.estribos == [] and a.avisos == [f"sin leer: «{pieza}»"]
 
 
-def test_a_mesh_spacing_with_more_after_it_is_reported_whole():
-    a = parsear_armado(["#4@20/25"], "losa")
-    assert a.parrillas == [] and a.avisos == ["sin leer: «#4@20/25»"]
+@pytest.mark.parametrize("texto", ["#4@20/25", "#4@20 CM/25", "#4@20 /25", "#4@20,15 EN X"])
+def test_a_mesh_spacing_with_more_after_it_is_reported_whole(texto):
+    a = parsear_armado([texto], "losa")
+    assert a.parrillas == [] and a.avisos == [f"sin leer: «{texto}»"]
 
 
-def test_ends_with_more_after_them_are_reported_and_so_is_the_centre():
-    a = parsear_armado(["2E#3EXT@10/12", "CENTRO@15"], "castillo")
-    assert [(j.cantidad, j.numero, j.zonas) for j in a.estribos] == [(2, "3", [])]
-    assert a.avisos == ["sin leer: «EXT@10/12»", "sin leer: «CENTRO@15»"]
+@pytest.mark.parametrize("extremos", ["2E#3EXT@10/12", "2E#3EXT@10 /12"])
+def test_ends_with_more_after_them_are_reported_and_so_is_the_centre(extremos):
+    a = parsear_armado([extremos, "CENTRO@15"], "castillo")
+    assert a.estribos == []
+    assert a.avisos == [f"sin leer: «{extremos}»", "sin leer: «CENTRO@15»"]
 
 
 def test_a_bar_group_after_a_spacing_and_a_comma_is_still_read():
@@ -666,19 +698,27 @@ def test_layers_written_before_each_mesh_on_one_and_two_lines():
         assert a.avisos == [], textos
 
 
-def test_a_layer_left_without_its_mesh_is_reported():
+def test_layers_that_disagree_are_ambiguous_and_no_mesh_is_taken():
+    # Un lecho delante y otro detrás: el texto no dice a qué malla va cada uno.
     a = parsear_armado(["LS #4@20 A/S LI"], "losa")
-    assert [p.lecho for p in a.parrillas] == ["sup"]
-    assert a.avisos == ["lecho «LI» sin su malla: no se toma"]
-    # Las dos convenciones mezcladas: la primera malla decide, la capa que sobra se avisa.
+    assert a.parrillas == [] and a.avisos == ["lecho ambiguo: «LS #4@20 A/S LI»: no se toma"]
     b = parsear_armado(["#4@20 L.S.", "L.I. #3@20"], "losa")
-    assert [(p.numero, p.lecho) for p in b.parrillas] == [("4", "sup"), ("3", "unico")]
-    assert b.avisos == ["lecho «L.I.» sin su malla: no se toma"]
+    assert b.parrillas == []
+    assert b.avisos == [
+        "lecho ambiguo: «#4@20 L.S.»: no se toma",
+        "lecho ambiguo: «L.I. #3@20»: no se toma",
+    ]
+    # Un lecho en una línea sola, sin malla al lado, tampoco se asigna a ciegas.
+    c = parsear_armado(["LS", "#4@20"], "losa")
+    assert c.parrillas == [] and c.avisos == [
+        "lecho «LS» sin su malla: no se toma",
+        "lecho ambiguo: «#4@20»: no se toma",
+    ]
 
 
 def test_a_spaced_symbol_is_reported_with_its_number():
     a = parsear_armado(["E#3 @ 1S"], "castillo")
-    assert a.estribos[0].zonas == [] and a.avisos == ["sin leer: «@ 1S»"]
+    assert a.estribos == [] and a.avisos == ["sin leer: «E#3 @ 1S»"]
     assert parsear_armado(["@ 20"], "castillo").avisos == ["sin leer: «@ 20»"]
     # Sólo se lleva un número, no la palabra siguiente (Marina: «E# SEGÚN CONTRATRABE»).
     assert parsear_armado(["E# SEGÚN CONTRATRABE"], "trabe").avisos == ["sin leer: «E#»"]
@@ -686,12 +726,18 @@ def test_a_spaced_symbol_is_reported_with_its_number():
 
 @pytest.mark.parametrize(
     "texto,pieza",
-    [("4Ø12 mm", "4#12 MM"), ("4Ø 12MM", "4# 12MM"), ("E#3@200 MM", "@200 MM")],
+    [
+        ("4Ø12 mm", "4Ø12 MM"),
+        ("4Ø 12MM", "4Ø 12MM"),
+        ("4 Ø 12 mm", "4 Ø 12 MM"),
+        ("4%%c12 mm", "4Ø12 MM"),
+        ("E#3@200 MM", "E#3@200 MM"),
+        ("E#3@20 MMS", "E#3@20 MMS"),
+    ],
 )
 def test_millimetres_are_reported_never_read_as_a_bar_number_or_a_spacing(texto, pieza):
     a = parsear_armado([texto], "columna")
-    assert a.longitudinales == [] and all(j.zonas == [] for j in a.estribos)
-    assert a.avisos == [f"sin leer: «{pieza}»"]
+    assert a.vacio() and a.avisos == [f"sin leer: «{pieza}»"]
 
 
 def test_counts_of_ten_or_more_render_and_read_back():
@@ -745,3 +791,260 @@ def test_what_is_assigned_later_is_not_text_and_does_not_block_the_render():
         ],
     )
     assert texto_armado(a) == "4#4 E#3 EXT@10"
+
+
+# ------------------------------------------------------------------ ronda de correcciones 2
+# Cada pieza leída mira lo que le sigue hasta la siguiente pieza (o el fin de la línea): si
+# no es contexto conocido, la pieza no se lee y se avisa entera, con lo que la estorbó.
+
+
+@pytest.mark.parametrize(
+    "textos",
+    [
+        ["#4@20", "LS #3@20"],
+        ["#4@20 A/S", "LS #3@20 A/S"],
+        ["#4@20 A/S, LS #3@20 A/S"],
+        ["#4@20", "LI #3@20"],
+        ["LOSA H=10 #4@20 A/S", "LECHO SUPERIOR #3@20"],
+        ["#4@20 LS #3@20"],
+    ],
+)
+def test_a_mesh_without_layer_next_to_one_with_a_layer_is_ambiguous(textos):
+    a = parsear_armado(textos, "losa")
+    assert a.parrillas == [] and a.avisos
+    assert all(w.startswith("lecho ambiguo: «") for w in a.avisos)
+    juntos = " ".join(a.avisos)
+    assert "#4@20" in juntos and "#3@20" in juntos
+
+
+def test_the_mesh_render_never_mixes_layered_and_unlayered_meshes():
+    mezcla = Armado(
+        parrillas=[
+            Parrilla(numero="4", separacion_m=0.20, lecho="unico", sentidos=None),
+            Parrilla(numero="3", separacion_m=0.20, lecho="sup", sentidos=None),
+        ]
+    )
+    with pytest.raises(ValueError):
+        texto_parrillas(mezcla)
+
+
+@pytest.mark.parametrize(
+    "texto,juegos",
+    [
+        ("E/G#3@15", [(E, 1), (G, 1)]),
+        ("2E-1G#3@15", [(E, 2), (G, 1)]),
+        ("2E,1G#3@15", [(E, 2), (G, 1)]),
+        ("2E & 1G#3@15", [(E, 2), (G, 1)]),
+        ("(2)E#3@15", [(E, 2)]),
+        ("(2) E + (1) G #3@15", [(E, 2), (G, 1)]),
+    ],
+)
+def test_stirrup_joiners_and_counts_in_parentheses(texto, juegos):
+    for familia in ("castillo", "losa"):
+        a = parsear_armado([texto], familia)
+        assert [(j.tipo, j.cantidad) for j in a.estribos] == juegos, familia
+        assert all(
+            [(z.tramo, z.separacion_m) for z in j.zonas] == [("todo", 0.15)] for j in a.estribos
+        )
+        assert a.parrillas == [] and a.avisos == [], familia
+        assert _lo_que_dice(texto_armado(a)) == _lo_que_dice(texto)
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "4 VARILLAS DE #4@20",
+        "4 PZAS #4@20",
+        "(4) #4@20",
+        "4-#4@20",
+        "4VARS #4@20",
+        "4 VARS #4@20",
+        "(4) 2#3",
+        "4 PZAS 2#3",
+    ],
+)
+def test_a_bare_count_before_a_mesh_or_a_bar_group_is_reported_with_it(texto):
+    for familia in ("losa", "castillo"):
+        a = parsear_armado([texto], familia)
+        assert a.vacio() and a.avisos == [f"sin leer: «{texto}»"], familia
+
+
+@pytest.mark.parametrize(
+    "texto,pieza",
+    [
+        ("H=202E+1G#3@15", "H=202E+1G#3@15"),
+        ("#4@20 A/SE/G#3@15", "#4@20 A/SE/G#3@15"),
+        ("K-2#4", "K-2#4"),
+        ("(E#3@15)", "(E#3@15)"),
+    ],
+)
+def test_a_piece_glued_to_what_precedes_it_is_reported_with_it(texto, pieza):
+    # La cola de una cabeza pegada a otra cosa no se lee sola («…2E+1G#3» → no «1G#3»).
+    a = parsear_armado([texto], "losa")
+    assert a.vacio() and a.avisos == [f"sin leer: «{pieza}»"]
+
+
+def test_a_joiner_glued_between_two_pieces_is_still_a_joiner():
+    a = parsear_armado(["4#5+2#4,E#3@15"], "castillo")
+    assert [(g.cantidad, g.numero) for g in a.longitudinales] == [(4, "5"), (2, "4")]
+    assert len(a.estribos) == 1 and a.avisos == []
+
+
+def test_a_line_that_starts_with_a_joiner_continues_the_previous_one():
+    a = parsear_armado(["4#5", "+2#4"], "castillo")
+    assert [(g.cantidad, g.numero) for g in a.longitudinales] == [(4, "5"), (2, "4")]
+    assert a.avisos == []
+
+
+def test_the_whitelisted_context_after_a_piece_keeps_it():
+    casos = [
+        (["4#8 VER CORTE"], "pilote"),
+        (["4#3 DALA 15X30"], "dala"),
+        (["LS #4@20 A/S H=12"], "losa"),
+        (["#4@20 EN X"], "zapata"),
+        (["4#3 , E#2@20"], "dala"),
+        (["4#3 Y E#2@20"], "dala"),
+    ]
+    for textos, familia in casos:
+        a = parsear_armado(textos, familia)
+        assert not a.vacio() and a.avisos == [], textos
+
+
+# ---- la propiedad: lo que el parser entrega se escribe y se vuelve a leer igual, sin avisos
+
+
+def _estructura(a: Armado) -> dict:
+    return a.model_dump(exclude={"texto_original", "avisos"})
+
+
+def _vuelve_igual(a: Armado, familia: str) -> None:
+    b = parsear_armado([texto_armado(a)], familia)
+    assert b.avisos == [] and _estructura(b) == _estructura(a), texto_armado(a)
+
+
+def _simbolos(texto: str) -> tuple[int, int]:
+    t = texto.upper().replace("%%C", "#").replace("Ø", "#").replace("⌀", "#")
+    return t.count("#"), t.count("@")
+
+
+def _escritos_juntos(a: Armado) -> tuple[int, int]:
+    """Los «#» y «@» que el render ahorra al escribir un estribo y su grapa juntos («EYG»)."""
+    gatos = arrobas = 0
+    juegos, i = a.estribos, 0
+    while i < len(juegos):
+        j, sig = juegos[i], juegos[i + 1] if i + 1 < len(juegos) else None
+        if (
+            j.tipo == "estribo"
+            and sig is not None
+            and sig.tipo == "grapa"
+            and (sig.numero, sig.zonas, sig.referencia) == (j.numero, j.zonas, j.referencia)
+        ):
+            gatos, arrobas, i = gatos + 1, arrobas + len(j.zonas), i + 2
+        else:
+            i += 1
+    return gatos, arrobas
+
+
+def _todas_las_tablas():
+    casos = _casos_de_marina()
+    casos += [(["LOSA MACIZA DOBLEMENTE ARMADA H=20 LS #4@20 A/S LI #4@20 A/S"], "losa")]
+    casos += [(["#4@20 L.S. #3@20 L.I."], "losa"), (["#4@20 A/S L.S.", "#3@20 L.I."], "losa")]
+    casos += [(["L.S. #4@20 L.I. #3@20"], "losa"), (["#4@20 A/S L.S. Y L.I."], "losa")]
+    casos += [(["LECHO SUPERIOR #4@15 AMBOS SENTIDOS", "LECHO INFERIOR #3@20"], "losa")]
+    casos += [(["#3@20 EN X"], "dado"), (["#4@20 #3@15"], "muro"), (["E#3@15 #4@20"], "muro")]
+    casos += [(["2G+1E#3@15", "10#8+12#6"], "columna"), (["(2)E#3@15 E/G#2@20"], "castillo")]
+    return casos
+
+
+@pytest.mark.parametrize("textos,familia", _todas_las_tablas())
+def test_every_reading_renders_and_reads_back_the_same(textos, familia):
+    _vuelve_igual(parsear_armado(textos, familia), familia)
+
+
+_VOCABULARIO = [
+    "4#5",
+    "2#4",
+    "10#8",
+    "12#6",
+    "1#3",
+    "E#3",
+    "E#3@15",
+    "2E#3@20",
+    "EYG#3@15",
+    "2E+1G#3",
+    "G#3@14",
+    "3E#3",
+    "E#2@20",
+    "#4@20",
+    "#3@15",
+    "#4@20 A/S",
+    "LS",
+    "LI",
+    "L.S.",
+    "L.I.",
+    "LS #4@20 A/S",
+    "LI #3@20",
+    "EXT@10",
+    "CENTRO@20",
+    "@15",
+    "@20",
+    "VER CORTE",
+    "DALA",
+    "15X30",
+    "H=20",
+    "4",
+    "VARS",
+    "CM",
+    "MM",
+    "/20",
+    ",20",
+    "-20",
+    "Y",
+    "+",
+    ",",
+    "Ø5",
+    "%%C4",
+    "(2)E#3@15",
+    "E/G#3@15",
+    "2G+1E#3",
+    "ESTRIBOS DE",
+    "#9",
+    "@1S",
+    "X",
+    "REFUERZO",
+    "A/S",
+    "EN X",
+    "2.5",
+    "#2.5",
+    "4#2.5",
+    "E.",
+    "(4)",
+    "PZAS",
+    "L.S. Y L.I.",
+    "@12.5",
+]
+_UNIONES = [" ", "", ", ", "+", " | ", "  "]
+_FAMILIAS = ["castillo", "losa", "muro", "columna", "trabe", "pilote", "zapata", "dala"]
+
+
+def _textos_al_azar(n: int):
+    rng = random.Random(20261008)
+    for _ in range(n):
+        piezas = [rng.choice(_VOCABULARIO) for _ in range(rng.randint(1, 5))]
+        texto = piezas[0]
+        for pieza in piezas[1:]:
+            texto += rng.choice(_UNIONES) + pieza
+        yield [linea for linea in texto.split(" | ")], rng.choice(_FAMILIAS)
+
+
+def test_fuzz_every_reading_renders_back_and_nothing_disappears():
+    for textos, familia in _textos_al_azar(4000):
+        a = parsear_armado(textos, familia)
+        # 1. Lo leído se escribe y se vuelve a leer igual.
+        _vuelve_igual(a, familia)
+        # 2. Ningún «#» ni «@» desaparece: está en lo escrito o en un aviso.
+        n_gato, n_arroba = _simbolos(" ".join(textos))
+        escrito = _simbolos(texto_armado(a) + " " + " ".join(a.avisos))
+        ahorro = _escritos_juntos(a)
+        assert n_gato <= escrito[0] + ahorro[0], (textos, familia, a.avisos)
+        assert n_arroba <= escrito[1] + ahorro[1], (textos, familia, a.avisos)
