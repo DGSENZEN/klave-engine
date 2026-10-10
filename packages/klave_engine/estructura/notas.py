@@ -75,7 +75,10 @@ class Nota(BaseModel):
     de otro («NOTAS PARA ESCALERAS :» y debajo «Refuerzo:»), y quien lee las reglas decide cuál
     acota. Un renglón más alto que no se reconoce como encabezado, pero que cuelga de uno, va en
     la cadena como un subtítulo; lo que está más allá de un hueco, de una numeración que empieza
-    de nuevo o de un título suelto es de otro bloque y no va.
+    de nuevo o de un título suelto es de otro bloque y no va. Si el bloque de la nota no tiene
+    ningún encabezado propio, ``mas_alla`` trae los que hay más arriba en la columna, pasado el
+    límite (el más cercano primero, una lista por cada manera distinta en que están las copias):
+    no son de la nota, pero quien lee las reglas necesita saber si alguno acota.
     Las copias que no están bajo los mismos encabezados traen una cadena cada manera."""
 
     seccion: str
@@ -87,6 +90,7 @@ class Nota(BaseModel):
     hojas: list[str] = []
     encabezado: str = ""
     cadenas: list[list[str]] = []
+    mas_alla: list[list[str]] = []
 
 
 def limpiar_texto(texto: str) -> str:
@@ -143,6 +147,7 @@ class _Instancia:
     entidades: list[str]
     encabezado: str = ""
     encabezados: tuple[str, ...] = ()  # todos los de arriba en su columna, el más cercano primero
+    mas_alla: tuple[str, ...] = ()  # los de más arriba del límite de su bloque, si no tiene uno
 
 
 def _alto(e: NormalizedEntity) -> float:
@@ -190,7 +195,7 @@ def _notas_de_la_hoja(lineas: list[_Linea], hoja: str) -> list[_Instancia]:
     for primera, cadena in cadenas:
         numero, resto = numeradas[primera] or (0, "")
         partes = [resto, *(lineas[j].texto for j in cadena[1:])]
-        arriba, cadena_de_arriba = _encabezados_de(
+        arriba, cadena_de_arriba, mas_alla = _encabezados_de(
             lineas, primera, encabezados, inicios, consumidas
         )
         encabezado = arriba[0] if arriba else ""
@@ -203,6 +208,7 @@ def _notas_de_la_hoja(lineas: list[_Linea], hoja: str) -> list[_Instancia]:
                 entidades=[lineas[j].id for j in cadena],
                 encabezado=encabezado,
                 encabezados=tuple(cadena_de_arriba),
+                mas_alla=tuple(mas_alla),
             )
         )
     return instancias
@@ -253,7 +259,7 @@ def _encabezados_de(
     encabezados: list[int],
     inicios: dict[int, int],
     consumidas: set[int],
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], list[str]]:
     """Los encabezados arriba del renglón ``i``, en su misma columna, como están escritos: el más
     cercano primero (a igual distancia, el primero en el orden de lectura). Sólo los de su bloque:
     se sube por los textos de la columna y se para donde el bloque de notas acaba y empieza otra
@@ -264,7 +270,8 @@ def _encabezados_de(
     «GENERALIDADES»), salvo que tenga justo encima un encabezado (entonces es su subtítulo). Lo
     que hay más arriba es de otro bloque. Devuelve los encabezados y la cadena de arriba: la
     cadena lleva además esos subtítulos que no se reconocen, en su lugar, para que quien lee las
-    reglas sepa que entre la nota y el encabezado hay algo que no entiende."""
+    reglas sepa que entre la nota y el encabezado hay algo que no entiende. Si el bloque no tiene
+    ningún encabezado propio, devuelve además los que hay pasado el límite, en toda la columna."""
     r = lineas[i]
     ancho = _ALCANCE_DEL_ENCABEZADO * r.alto
     columna = [j for j, c in enumerate(lineas) if c.y > r.y and abs(c.x - r.x) <= ancho]
@@ -278,11 +285,20 @@ def _encabezados_de(
 
     encabezados_de_arriba: list[str] = []
     cadena: list[str] = []
+    mas_alla: list[str] = []
+
+    def pasado_el_limite(desde: int) -> list[str]:
+        # los encabezados de más arriba del límite, sólo si el bloque no tiene uno propio
+        if encabezados_de_arriba:
+            return []
+        return [lineas[x].texto.strip() for x in columna[desde:] if x in es_encabezado]
+
     previa = r
     ultima: int | None = inicios[i]  # el número de la última nota vista desde el último encabezado
     for k, j in enumerate(columna):
         c = lineas[j]
         if hueco(c, previa):
+            mas_alla = pasado_el_limite(k)
             break
         if j in es_encabezado:
             encabezados_de_arriba.append(c.texto.strip())
@@ -290,6 +306,7 @@ def _encabezados_de(
             ultima = None
         elif j in inicios:
             if ultima is not None and inicios[j] >= ultima:
+                mas_alla = pasado_el_limite(k)
                 break
             ultima = inicios[j]
         elif j not in consumidas and c.alto >= _MAS_ALTO * r.alto:
@@ -297,10 +314,11 @@ def _encabezados_de(
             # un encabezado, es el subtítulo de ése y las notas de abajo siguen siendo suyas
             encima = columna[k + 1] if k + 1 < len(columna) else None
             if encima is None or encima not in es_encabezado or hueco(lineas[encima], c):
+                mas_alla = pasado_el_limite(k)
                 break
             cadena.append(c.texto.strip())
         previa = c
-    return encabezados_de_arriba, cadena
+    return encabezados_de_arriba, cadena, mas_alla
 
 
 def leer_notas_con_renglones(
@@ -339,6 +357,7 @@ def leer_notas_con_renglones(
                 hojas=sorted({i.hoja for i in instancias}),
                 encabezado=primera.encabezado,
                 cadenas=[list(c) for c in sorted({i.encabezados for i in instancias})],
+                mas_alla=[list(m) for m in sorted({i.mas_alla for i in instancias if i.mas_alla})],
             )
         )
     notas.sort(key=lambda nota: (nota.seccion, nota.numero, -nota.copias, nota.hoja))

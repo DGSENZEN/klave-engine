@@ -4176,9 +4176,13 @@ def test_two_covers_for_the_same_family_in_one_note_are_not_used(tmp_path):
 
 @pytest.mark.parametrize("nivel", ["ARRIBA DEL N.A.F.", "SOBRE EL N.A.T.", "BAJO EL N.A.M."])
 def test_the_water_table_is_not_a_cancellation(tmp_path, nivel):
+    # un nivel («N.A.F.») no anula la nota; pero «ARRIBA DEL N.A.F.» después del espesor es una
+    # cláusula corta que lo acota (R49): la nota es un aviso que cita el nivel, no una anulación
     texto = f"2. SE COLOCARA PLANTILLA DE CONCRETO POBRE DE 5 CM DE ESPESOR, {nivel}"
     r = _con_notas(tmp_path, [texto], titulo="NOTAS :")
-    assert r.plantilla_espesor_m.valor == 0.05 and r.avisos == []
+    assert r.plantilla_espesor_m is None
+    (aviso,) = r.avisos
+    assert nivel in aviso and "lo niega, lo acota o no se pudo leer" in aviso
 
 
 @pytest.mark.parametrize(
@@ -4377,6 +4381,23 @@ _CLAUSULAS_CON_MARCA = (
     "#ESC",
     "ESC(1)",
     "*(ESCALERAS) *",
+    # R49: cualquier carácter que no sea un espacio
+    "ESCALERAS~",
+    "~ESCALERAS",
+    "ESCALERAS…",
+    "ESCALERAS?",
+    "ESCALERAS!",
+    "E-1 @ E-4",
+    "ESCALERAS @ E-1",
+    "N.P.T.",
+    "P.B.",
+    "P.A.",
+    "ESC. A",
+    "<ESCALERAS>",
+    "ESCALERAS^",
+    "ESCALERAS|RAMPAS",
+    "ESCALERAS_E1",
+    "ESCALERAS§",
 )
 _ENVOLTURAS_DE_LA_CLAUSULA = ("{f}. {c}.", "{f}, {c}.", "{f}; {c}")
 
@@ -4868,20 +4889,23 @@ _BLOQUES_APARTE = [
 def test_each_block_boundary_alone_stops_the_elements_from_the_heading_above(tmp_path, de_abajo):
     r = _con_bloques(tmp_path, _ARRIBA_DE_COLUMNAS, de_abajo)
     assert r.primer_estribo_m == {} and r.avisos
-    # … y la nota de abajo ya no tiene el encabezado de arriba
+    # … y la nota de abajo ya no tiene el encabezado de arriba (que queda más allá del límite)
     entidades = _entidades_de(tmp_path, _apilar(_ARRIBA_DE_COLUMNAS, de_abajo))
     notas, _ = leer_notas(_textos(entidades), lambda e: "ES-001")
     (abajo,) = [n for n in notas if "ESTRIBO" in n.texto]
     assert (abajo.seccion, abajo.encabezado, abajo.cadenas) == ("", "", [[]])
+    assert abajo.mas_alla == [["COLUMNAS :"]]
 
 
 @pytest.mark.parametrize("de_abajo", _BLOQUES_APARTE)
-def test_a_scope_does_not_cross_a_block_boundary(tmp_path, de_abajo):
+def test_a_block_without_a_heading_under_a_scoping_block_is_ambiguous(tmp_path, de_abajo):
+    # R49: un límite de bloque nunca vuelve sin acotar una nota que estaba acotada: el bloque de
+    # abajo no tiene encabezado propio y arriba hay uno que acota, así que no se sabe a qué va
     arriba = ("NOTAS PARA ESCALERAS :", ["1. CONCRETO F'C=250", "2. LAS COTAS RIGEN"], 0.0)
     titulo, renglones, hueco = de_abajo
     abajo = (titulo, [renglones[0].replace(_PE, _L)], hueco)
     r = _con_bloques(tmp_path, arriba, abajo)
-    assert r.traslape_max_numero.valor == "6" and r.avisos == []
+    assert r.traslape_max_numero is None and r.avisos
 
 
 @pytest.mark.parametrize(
@@ -4962,3 +4986,111 @@ def test_a_numbering_that_starts_again_at_the_same_number_also_ends_the_block(tm
         (None, [f"1. {_PE}"], 0.44),
     )
     assert r.primer_estribo_m == {} and r.avisos
+
+
+# --- Task 5c, R49: un límite de bloque nunca vuelve sin acotar una nota acotada -----------------
+
+_UN_HUECO_COMO_UNA_FIGURA = 1.4
+
+
+@pytest.mark.parametrize(
+    "encabezado", ["COLUMNAS :", "NOTAS PARA ESCALERAS :", "VIGAS :", "ESCALERAS :"]
+)
+@pytest.mark.parametrize(
+    ("regla", "frase"),
+    [
+        (_T, _L),
+        (_R, "EL RECUBRIMIENTO SERA DE 4 CM EN TRABES"),
+        (_PL, "SE COLOCARA PLANTILLA DE 8 CM DE ESPESOR"),
+        (_P, "EN TRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM"),
+        (_P, "EL PRIMER ESTRIBO SE COLOCARA A 5 CM"),
+    ],
+)
+def test_notes_after_a_gap_under_a_scoping_heading_are_not_read_as_the_projects(
+    tmp_path, encabezado, regla, frase
+):
+    # el encabezado, un hueco del tamaño de una figura y las notas: el encabezado sigue acotando
+    r = _con_bloques(
+        tmp_path, (encabezado, [], 0.0), (None, [f"1. {frase}"], _UN_HUECO_COMO_UNA_FIGURA)
+    )
+    assert _nada_de_la_nota(r, regla), getattr(r, regla)
+    assert r.avisos
+
+
+@pytest.mark.parametrize(
+    "encabezado", ["REFUERZO :", "NOTAS :", "MATERIALES :", "NOTAS GENERALES DE ESTRUCTURA."]
+)
+def test_notes_after_a_gap_under_a_generic_heading_are_read(tmp_path, encabezado):
+    r = _con_bloques(
+        tmp_path, (encabezado, [], 0.0), (None, [f"1. {_L}"], _UN_HUECO_COMO_UNA_FIGURA)
+    )
+    assert r.traslape_max_numero.valor == "6" and r.avisos == []
+    # … y sin ningún encabezado arriba
+    r = _con_bloques(tmp_path, (None, [f"1. {_L}"], 0.0))
+    assert r.traslape_max_numero.valor == "6" and r.avisos == []
+
+
+def test_a_scoping_heading_anywhere_above_the_boundary_makes_the_block_ambiguous(tmp_path):
+    for arriba in (
+        [("COLUMNAS :", [], 0.0), ("REFUERZO :", [], 0.0)],
+        [("COLUMNAS :", [], 0.0), ("REFUERZO :", ["1. CONCRETO F'C=250"], 0.0)],
+        [("COLUMNAS :", ["1. CONCRETO F'C=250", "2. LAS COTAS RIGEN"], 0.0), ("NOTAS :", [], 0.44)],
+    ):
+        r = _con_bloques(tmp_path, *arriba, (None, [f"1. {_L}"], _UN_HUECO_COMO_UNA_FIGURA))
+        assert r.traslape_max_numero is None and r.avisos, arriba
+
+
+def test_the_general_notes_heading_ends_what_is_looked_for_above_the_boundary(tmp_path):
+    r = _con_bloques(
+        tmp_path,
+        ("NOTAS PARA ESCALERAS :", ["1. CONCRETO F'C=250"], 0.0),
+        ("NOTAS GENERALES DE ESTRUCTURA.", [], 0.44),
+        (None, [f"1. {_L}"], _UN_HUECO_COMO_UNA_FIGURA),
+    )
+    assert r.traslape_max_numero.valor == "6" and r.avisos == []
+
+
+def test_a_block_with_a_heading_of_its_own_keeps_reading_under_a_scoping_block(tmp_path):
+    # C y D del revisor: con encabezado propio la cadena es la del bloque, como antes
+    r = _con_bloques(
+        tmp_path,
+        ("NOTAS PARA ESCALERAS :", ["1. CONCRETO F'C=250"], 0.0),
+        ("NOTAS GENERALES :", [f"1. {_L}"], _UN_HUECO_COMO_UNA_FIGURA),
+    )
+    assert r.traslape_max_numero.valor == "6" and r.avisos == []
+    r = _con_bloques(
+        tmp_path,
+        ("NOTAS DE CIMENTACION", [], 0.0),
+        ("COLUMNAS :", [f"1. {_RC}", f"2. {_PE}"], _UN_HUECO_COMO_UNA_FIGURA),
+    )
+    assert r.recubrimiento_m["columna"].valor == 0.04 and _estribos(r) == {"columna": 0.05}
+
+
+def test_the_first_stirrup_default_never_crosses_a_boundary_even_for_generic_headings(tmp_path):
+    r = _con_bloques(
+        tmp_path, ("TRABES :", [], 0.0), (None, [f"1. {_PE}"], _UN_HUECO_COMO_UNA_FIGURA)
+    )
+    assert r.primer_estribo_m == {} and r.avisos
+
+
+def test_the_unknown_subtitle_under_a_heading_still_belongs_to_it(tmp_path):
+    # la excepción del renglón alto con un encabezado justo encima sigue valiendo
+    r = _con_bloques(tmp_path, ("COLUMNAS :", [], 0.0), ("Detalles", [f"1. {_L}"], 0.0))
+    assert r.traslape_max_numero is None and r.avisos
+
+
+def test_a_note_keeps_the_headings_beyond_a_boundary_only_when_it_has_none_of_its_own(tmp_path):
+    entidades = _entidades_de(
+        tmp_path,
+        _apilar(
+            ("COLUMNAS :", [], 0.0),
+            ("REFUERZO :", [], 0.0),
+            (None, [f"1. {_L}"], _UN_HUECO_COMO_UNA_FIGURA),
+            ("MATERIALES :", [f"1. {_L}", "2. LAS COTAS RIGEN"], 0.44),
+        ),
+    )
+    notas, _ = leer_notas(_textos(entidades), lambda e: "ES-001")
+    sin_encabezado, con_el_suyo = sorted(notas, key=lambda n: n.seccion)[:2]
+    assert (sin_encabezado.seccion, sin_encabezado.cadenas) == ("", [[]])
+    assert sin_encabezado.mas_alla == [["REFUERZO :", "COLUMNAS :"]]
+    assert (con_el_suyo.seccion, con_el_suyo.mas_alla) == ("MATERIALES", [])

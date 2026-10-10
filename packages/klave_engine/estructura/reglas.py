@@ -734,16 +734,16 @@ _EN_UN_LUGAR = re.compile(
 )
 # Una cláusula corta sin leer (hasta cuatro palabras) que no nombra ninguna familia: puede acotar o
 # condicionar la regla y no se sabe cómo («… #6. ESCALERAS.», «…, EDIFICIO B», «…, EJES A-C», «…, SI
-# SON ESCALERAS», «…, COMO MINIMO», «…, MAXIMO»): la nota es un aviso (R44). Cuenta aunque la
-# primera palabra traiga cifras o una marca («T-1», «C-1 Y C-2», «MC-1», «E1», «ESC-1») o la
-# cláusula traiga puntuación suelta («ZONA 'A'», «S/N», «ESCALERAS*», «[ESCALERAS]», «ESCALERAS -»,
-# «ESCALERAS / RAMPAS», «ESCALERAS+RAMPAS», «ESCALERAS & RAMPAS»), paréntesis («ESCALERAS (E-1)»,
-# «ZONA (A)», «ESCALERA E-1 (CUERPO B)») o marcas dentro de la palabra («ESC#1», «ESC=1», «100%»,
-# «Ø») (R46, R48). Las neutrales
-# («RESPECTIVAMENTE», «VER DETALLE 3», «SALVO INDICACION») no llegan aquí.
+# SON ESCALERAS», «…, COMO MINIMO», «…, MAXIMO», «T-1», «ESC#1», «ESCALERAS (E-1)», «E-1 @ E-4»,
+# «ESCALERAS?», «N.P.T.»): la nota es un aviso (R44). Una palabra es cualquier cosa sin espacios que
+# traiga una letra o una cifra: lo que acota puede venir con marcas o puntuación (R46, R48, R49);
+# los símbolos sueltos entre palabras o en las puntas no cuentan como palabra. Las neutrales
+# («RESPECTIVAMENTE», «VER DETALLE 3», «SALVO INDICACION», «F'C=100 KG/CM2») no llegan aquí.
+_SOLO_MARCAS = r"[^\w\s]+"  # un renglón suelto de puros símbolos («-», «@», «*»): no cuenta
+_PALABRA = r"\S*\w\S*"
 _CLAUSULA_CORTA = re.compile(
-    r"""[\[(*#\-"'\s]*[A-Z0-9][A-Z0-9'\-/*"+&\[\]()#Ø=%]*"""
-    r"""(?:\s+[A-Z0-9'\-/*"+&\[\]()#Ø=%]+){0,3}[\])*\-"'\s]*"""
+    rf"(?:{_SOLO_MARCAS}\s+)*{_PALABRA}(?:\s+(?:{_SOLO_MARCAS}\s+)*{_PALABRA}){{0,3}}"
+    rf"(?:\s+{_SOLO_MARCAS})*"
 )
 # Las reglas por familia: otro elemento no las cambia (es de otra familia).
 _POR_FAMILIA = ("recubrimiento", "primer_estribo", "anclaje")
@@ -873,6 +873,8 @@ class _Origen:
     # todos los encabezados de arriba en su columna, el más cercano primero; uno por cada manera
     # distinta en que están las copias de la nota (``Nota.cadenas``)
     cadenas: list[list[str]] = field(default_factory=list)
+    # los encabezados de más arriba de un límite de bloque, si la nota no tiene uno propio
+    mas_alla: list[list[str]] = field(default_factory=list)
 
     def dato(self, valor: Any, cita: str) -> Dato:
         return Dato(
@@ -1341,6 +1343,18 @@ def _alcance_de_la_cadena(cadena: list[str]) -> _Alcance:
     return _Alcance(acota.familias, acota.acota, cimentacion, acota.directo)
 
 
+def _acota_desde_lejos(encabezados: list[str]) -> str:
+    """El primer encabezado que acota de una lista de encabezados de más arriba de un límite de
+    bloque (el más cercano primero), sin pasar de «NOTAS GENERALES DE ESTRUCTURA»; ``""`` si ninguno
+    acota."""
+    for encabezado in encabezados:
+        if _ENCABEZADO_PRINCIPAL.fullmatch(_texto_del_encabezado(encabezado)):
+            break
+        if _alcance_del_encabezado(encabezado, encabezado) is not None:
+            return encabezado
+    return ""
+
+
 def _alcance_de_la_nota(o: _Origen) -> _Alcance:
     """El alcance de una nota: el de cada una de las maneras en que están sus copias bajo
     encabezados. Si una copia está bajo uno que acota y otra no, o acotan a cosas distintas, no se
@@ -1350,6 +1364,12 @@ def _alcance_de_la_nota(o: _Origen) -> _Alcance:
         cadenas = [[propio]]
     alcances = [_alcance_de_la_cadena(c) for c in cadenas]
     cimentacion = next((a.cimentacion for a in alcances if a.cimentacion), "")
+    # Una nota sin encabezado propio, bajo un límite de bloque, con uno que acota más arriba: no
+    # se sabe si es de él (un hueco o una figura entre el encabezado y sus notas); un límite nunca
+    # vuelve sin acotar una nota acotada (R49)
+    lejano = next((h for m in o.mas_alla if (h := _acota_desde_lejos(m))), "")
+    if lejano:
+        return _Alcance(["?"], _sin_puntuacion(lejano), cimentacion, False)
     acotan = [a for a in alcances if a.familias is not None]
     if not acotan:
         return _Alcance(None, "", cimentacion)
@@ -1994,5 +2014,6 @@ def _leer_nota(nota: Nota, lecturas: _Lecturas) -> None:
         seccion=nota.seccion,
         encabezado=nota.encabezado,
         cadenas=nota.cadenas,
+        mas_alla=nota.mas_alla,
     )
     _leer_texto(origen, lecturas)
