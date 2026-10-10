@@ -95,7 +95,9 @@ def _no_frames(e: NormalizedEntity) -> tuple[str, str]:
 
 class Bloqueo(BaseModel):
     """A drawing text that keeps the AI from filling one field of a mark (R64,
-    R68)."""
+    R68). The AI reading carries it (R69), so that no later stage elects the
+    blocked value: the definitions turn it into an unreadable drawing value,
+    with the AI only as an alternative."""
 
     campo: Campo
     texto: str
@@ -135,6 +137,10 @@ class ElementSpec(BaseModel):
     campos_con_texto: list[Campo] = Field(default_factory=list)
     entidades: list[str] = Field(default_factory=list)  # the texts it was read from
     avisos: list[str] = Field(default_factory=list)  # what could not be read, disagreements
+    # An AI reading: the fields it has a value for that the drawing has text for
+    # (R69), and the texts that block each one. That value is never elected.
+    campos_bloqueados: list[Campo] = Field(default_factory=list)
+    bloqueos: list[Bloqueo] = Field(default_factory=list)
 
 
 class TextoConMarca(BaseModel):
@@ -1329,13 +1335,6 @@ def _bloqueos(
     return list(unique.values())
 
 
-def _fields_with_text(
-    inventory: ScheduleInventory, mark: str, known: set[str], config: TextPatternConfig
-) -> set[Campo]:
-    """The fields of ``mark`` the drawing has text for (``_bloqueos``)."""
-    return {b.campo for b in _bloqueos(inventory, mark, known, config)}
-
-
 def merge_external_specs(
     inventory: ScheduleInventory, specs: list[dict], config: TextPatternConfig
 ) -> int:
@@ -1345,8 +1344,10 @@ def merge_external_specs(
     (``_bloqueos``: its readings, any drawing line that names it and no reading
     of it consumed, any rejected text that names it, and the backstop: any
     line with a fragment where the mark occurs). An AI value never covers a
-    drawing text. A mark the drawing does not define takes what the AI says of
-    the other fields (por confirmar).
+    drawing text, and the reading itself carries what was blocked and by which
+    texts (``campos_bloqueados``, ``bloqueos``, R69): kept in ``specs`` with
+    every field, it is never elected for a blocked one. A mark the drawing does
+    not define takes what the AI says of the other fields (por confirmar).
     ``config`` is the project's: the marks are recognised with its tags.
     Returns how many marks were completed."""
     marks = {s.mark for s in inventory.specs if s.source != "ia"} | set(inventory.by_mark)
@@ -1361,12 +1362,21 @@ def merge_external_specs(
         if spec.source == "ia":
             spec.metodo = "ia"
         mark = spec.mark.upper()
-        with_text = _fields_with_text(inventory, mark, known, config)
+        bloqueos = _bloqueos(inventory, mark, known, config)
+        with_text = {b.campo for b in bloqueos}
+        # R69: the reading carries its block, so that no later stage elects a blocked value.
+        spec.campos_bloqueados = [
+            campo
+            for field, campo in _AI_FIELDS
+            if campo is not None and campo in with_text and getattr(spec, field) not in (None, "")
+        ]
+        spec.bloqueos = [b for b in bloqueos if b.campo in spec.campos_bloqueados]
         inventory.specs.append(spec)
         current = inventory.by_mark.get(mark)
         new = current is None
         if current is None:
             current = spec.model_copy(deep=True)
+            current.campos_bloqueados, current.bloqueos = [], []
             for field, _campo in _AI_FIELDS:
                 setattr(current, field, None)
         filled: list[str] = []

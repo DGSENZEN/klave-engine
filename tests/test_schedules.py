@@ -1003,3 +1003,63 @@ def test_merge_takes_the_projects_config():
     assert inspect.signature(merge_external_specs).parameters["config"].default is (
         inspect.Parameter.empty
     )
+
+
+# ----------------------------------- Tarea 8, paso B (R69): el bloqueo viaja con la lectura IA
+
+
+def test_the_ai_reading_carries_its_block(tmp_path):
+    # «K-7 E#3@1S» (sin lector) bloquea los estribos de la IA; la lectura IA se guarda con todos
+    # sus campos y dice cuál no puede elegirse y por qué texto.
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-7 E#3@1S"]), frames=_frame())
+    merge_external_specs(inv, [_ia("K-7", stirrups="E#2@20", section_cm=(15, 15))], C)
+    (ia,) = [s for s in inv.specs if s.source == "ia"]
+    assert (ia.stirrups, ia.section_cm) == ("E#2@20", (15, 15))  # se guarda entera
+    assert ia.campos_bloqueados == ["estribos"]
+    assert {(b.campo, b.texto, b.fuente) for b in ia.bloqueos} == {
+        ("estribos", "K-7 E#3@1S", "nota")
+    }
+    assert {b.por for b in ia.bloqueos} <= {"texto", "rechazo", "respaldo"}
+    # Y viaja en schedules.json.
+    otra = type(inv).model_validate_json(inv.model_dump_json())
+    assert [s.campos_bloqueados for s in otra.specs if s.source == "ia"] == [["estribos"]]
+
+
+def test_a_block_by_a_reading_names_the_reading(tmp_path):
+    inv = build_schedule_inventory(
+        _stack_entities(tmp_path, "K-4", ["6#4", "EYG#3@1S"]), frames=_frame()
+    )
+    merge_external_specs(inv, [_ia("K-4", stirrups="EYG#2@15", rebar="9#9")], C)
+    (ia,) = [s for s in inv.specs if s.source == "ia"]
+    assert ia.campos_bloqueados == ["longitudinales", "estribos"]
+    assert {(b.campo, b.por, b.fuente, b.hoja) for b in ia.bloqueos} == {
+        ("longitudinales", "lectura", "detalle", "ES-400"),
+        ("estribos", "lectura", "detalle", "ES-400"),
+    }
+
+
+def test_a_stack_line_rejection_blocks_from_the_detail(tmp_path):
+    # «6#4» a la misma distancia de K-1 y de K-2: un renglón de pila ambiguo, del detalle.
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    for marca, y in (("K-1", 0.0), ("K-2", 0.40)):
+        msp.add_text(marca, height=0.13).set_placement(
+            (0.0, y), align=TextEntityAlignment.BOTTOM_CENTER
+        )
+    msp.add_text("6#4", height=0.10).set_placement((-0.05, 0.215))
+    doc.saveas(tmp_path / "amb.dxf")
+    inv = build_schedule_inventory(
+        DxfParser().parse_file(tmp_path / "amb.dxf").entities, frames=_frame()
+    )
+    merge_external_specs(inv, [_ia("K-1", rebar="4#3")], C)
+    (ia,) = [s for s in inv.specs if s.source == "ia"]
+    assert [(b.campo, b.por, b.fuente, b.texto) for b in ia.bloqueos] == [
+        ("longitudinales", "rechazo", "detalle", "6#4")
+    ]
+
+
+def test_an_unblocked_ai_reading_carries_no_block(tmp_path):
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-7 4#3"]), frames=_frame())
+    merge_external_specs(inv, [_ia("K-7", stirrups="E#2@20"), _ia("K-8", rebar="6#4")], C)
+    assert all(s.campos_bloqueados == [] and s.bloqueos == [] for s in inv.specs)
+    assert all(s.campos_bloqueados == [] for s in inv.by_mark.values())
