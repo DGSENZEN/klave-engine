@@ -2380,7 +2380,6 @@ def test_the_table_says_which_bars_it_has_no_row_for(tmp_path):
         ('SE PERMITE TRASLAPAR VARILLA HASTA EL #5 Y DEL 3/4" EN ADELANTE SE SOLDARAN', "5", "6"),
         ("SE PERMITE TRASLAPAR VARILLA HASTA EL NUMERO 6", "6", None),
         ("SE PERMITE TRASLAPAR VARILLA HASTA EL NUM. 6", "6", None),
-        ("LOS TRASLAPES HASTA VARILLA 6", "6", None),
         ("SE PERMITE TRASLAPAR VARILLAS DEL No. 3 AL No. 6", "6", None),
         ("SE PERMITE TRASLAPAR VARILLAS DEL #3 A LA #5", "5", None),
         ("LAS VARILLAS DEL No. 7 AL No. 12 SE SOLDARAN", None, "7"),
@@ -2393,6 +2392,15 @@ def test_more_ways_of_writing_a_bar_are_read(tmp_path, texto, traslape, soldar):
     assert (r.traslape_max_numero and r.traslape_max_numero.valor) == traslape
     assert (r.soldar_desde_numero and r.soldar_desde_numero.valor) == soldar
     assert r.avisos == [], r.avisos
+
+
+def test_a_lap_limit_without_a_verb_is_reported_not_read(tmp_path):
+    """R39: «LOS TRASLAPES HASTA VARILLA 6» no tiene verbo, y lo que le falta puede negarlo («LOS
+    TRASLAPES HASTA EL #6 NO SE PERMITEN EN COLUMNAS»): no se lee sola, se avisa."""
+    r = _con_notas(tmp_path, ["4. LOS TRASLAPES HASTA VARILLA 6"])
+    assert r.traslape_max_numero is None
+    (aviso,) = r.avisos
+    assert "hasta qué varilla se traslapa" in aviso and "«LOS TRASLAPES HASTA VARILLA 6»" in aviso
 
 
 @pytest.mark.parametrize(
@@ -2837,3 +2845,522 @@ def test_the_families_of_a_first_stirrup_are_those_of_its_own_sentence(tmp_path)
     r = _con_notas(tmp_path, [texto])
     assert r.primer_estribo_m == {}  # «EN COLUMNAS» es de la oración de antes
     assert any("el primer estribo" in a.lower() and "no dice" in a for a in r.avisos)
+
+
+# --- ronda 4 (R39): una regla se lee sólo si una frase conocida cubre su cláusula entera -------
+#
+# Cada caso dice lo único que vale: la lectura correcta, o ninguna lectura (y, si el texto nombra
+# la regla con un número, un aviso). Un valor equivocado nunca.
+
+
+def _sin_lectura(r, campo):
+    """``True`` si ``campo`` no se leyó de las notas (``None``, vacío o el supuesto)."""
+    valor = getattr(r, campo)
+    if isinstance(valor, dict):
+        return valor == {}
+    return valor is None or valor.fuente == "supuesto"
+
+
+_TEMA = {
+    "traslape_max_numero": "hasta qué varilla se traslapa",
+    "soldar_desde_numero": "desde qué varilla se suelda",
+    "gancho_estribo": "ganchos",
+    "gancho_grapa": "ganchos",
+    "primer_estribo_m": "primer estribo",
+    "plantilla_espesor_m": "plantilla",
+}
+_T, _S, _E = "traslape_max_numero", "soldar_desde_numero", "gancho_estribo"
+_P, _PL = "primer_estribo_m", "plantilla_espesor_m"
+
+
+@pytest.mark.parametrize(
+    ("texto", "campo"),
+    [
+        # 1. la negación va después de la frase, en la misma cláusula
+        ("TRASLAPAR VARILLAS DEL #8 AL #12 NO ESTA PERMITIDO", _T),
+        ("TRASLAPAR VARILLAS DEL #8 AL #12 ESTA PROHIBIDO", _T),
+        ("TRASLAPAR VARILLAS DEL No. 8 AL No. 12 ESTA PROHIBIDO", _T),
+        ("LA SOLDADURA EN VARILLAS DEL #8 EN ADELANTE NO ESTA PERMITIDA", _S),
+        ("LA SOLDADURA EN VARILLAS DEL #8 EN ADELANTE QUEDA PROHIBIDA", _S),
+        ("LA SOLDADURA DE VARILLAS DEL No. 8 EN ADELANTE QUEDA PROHIBIDA", _S),
+        ("LOS ESTRIBOS CON GANCHOS A 90° NO SE ACEPTARAN", _E),
+        ("ESTRIBOS CON GANCHOS A 90° NO SE PERMITEN, USAR 135°", _E),
+        ("LOS TRASLAPES HASTA EL #6 NO SE PERMITEN EN COLUMNAS", _T),
+        ("PLANTILLA DE 5 CM NO REQUERIDA", _PL),
+        ("EL PRIMER ESTRIBO EN TRABES A 6 CM NO ES OBLIGATORIO", _P),
+        # 2. una negación de una cláusula anterior manda sobre la que no tiene verbo propio
+        ("NO SE PERMITIRA, EN NINGUN CASO, TRASLAPAR VARILLAS DEL #8 AL #12", _T),
+        ("QUEDA PROHIBIDO, SALVO INDICACION, TRASLAPAR VARILLA HASTA EL #6", _T),
+        ("NO SE PERMITIRA: TRASLAPAR VARILLAS DEL #8 AL #12", _T),
+        ("PROHIBIDO: SE TRASLAPARAN VARILLAS DEL #8 AL #12", _T),
+        ("EN NINGUN CASO, SE TRASLAPARAN VARILLAS DEL #8 AL #12", _T),
+        ("NO SE PERMITIRA, LAS VARILLAS DEL #8 EN ADELANTE SE SOLDARAN", _S),
+        # 6. «evitar» no es permitir, ni un verbo en infinitivo dice una regla
+        ("SE EVITARA TRASLAPAR VARILLAS DEL #8 AL #12", _T),
+        ("EVITAR TRASLAPAR VARILLA HASTA EL #6", _T),
+        ("TRASLAPAR VARILLAS HASTA EL No. 6 Y SOLDAR DEL No. 8 EN ADELANTE", _T),
+        ("TRASLAPAR VARILLAS HASTA EL No. 6 Y SOLDAR DEL No. 8 EN ADELANTE", _S),
+        # un alcance que la cláusula no dice entera (otra familia, una excepción, otro límite)
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6, EXCEPTO EN COLUMNAS", _T),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6, EN COLUMNAS HASTA EL #5", _T),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6 Y EN COLUMNAS HASTA EL #5", _T),
+        ("PARA TRASLAPES EN COLUMNAS, SE PERMITE TRASLAPAR VARILLA HASTA EL #5", _T),
+        ("SE PERMITE TRASLAPAR, EXCEPTO EN COLUMNAS, VARILLA HASTA EL #6", _T),
+        ("LOS TRASLAPES NO SE PERMITEN EN COLUMNAS, SE PERMITE TRASLAPAR VARILLA HASTA EL #6", _T),
+        ("SE PERMITE TRASLAPAR HASTA EL 8 EN TRABES, SE PERMITE TRASLAPAR VARILLA HASTA EL #6", _T),
+        ("EN COLUMNAS, LOS ESTRIBOS LLEVARAN GANCHOS A 90°", _E),
+        ("LOS ESTRIBOS LLEVARAN GANCHOS A 135°, LOS DE COLUMNAS A 90°", _E),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6 Y NO MAYORES", _T),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6, NO MAYORES", _T),
+        # 7. una frase que cruza una coma no se lee
+        ("LA SOLDADURA SERA CON ELECTRODO E70, LOS TRASLAPES EN VARILLAS DEL #3 EN ADELANTE", _S),
+        ("LA SOLDADURA SERA CON ELECTRODO E70, LOS TRASLAPES EN VARILLAS DEL #3 EN ADELANTE", _T),
+        # una oración colgada que sigue cambia lo que dice la de antes
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6. NO EN COLUMNAS.", _T),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6. EXCEPTO EN COLUMNAS.", _T),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6. EN COLUMNAS SOLO HASTA EL #5.", _T),
+        ("ESTRIBOS CON GANCHOS A 90°. NO SE ACEPTARAN.", _E),
+        ("LOS ESTRIBOS LLEVARAN GANCHOS A 135° CON TRAMO RECTO DE 10Ø. EN COLUMNAS A 90°.", _E),
+        ("PLANTILLA DE 5 CM DE ESPESOR. EN MUROS 10 CM.", _PL),
+        ("EN TRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM. NO SE ACEPTARA.", _P),
+        ("LAS VARILLAS DEL #8 EN ADELANTE SE SOLDARAN; EN COLUMNAS DEL #10 EN ADELANTE", _S),
+        # la misma regla dicha otra vez de un modo que no se lee: no se usa ninguna
+        (
+            "SE PERMITE TRASLAPAR VARILLA HASTA EL #6. EN COLUMNAS SOLO SE TRASLAPARA HASTA EL #5.",
+            _T,
+        ),
+        (
+            "LAS VARILLAS DEL #8 EN ADELANTE SE SOLDARAN. EN COLUMNAS LA SOLDADURA SERA "
+            "DESDE EL #10.",
+            _S,
+        ),
+        (
+            "LOS ESTRIBOS LLEVARAN GANCHOS A 135°. EN COLUMNAS LOS ESTRIBOS TENDRAN GANCHOS A 90°.",
+            _E,
+        ),
+        (
+            "SE PERMITE TRASLAPAR VARILLA HASTA EL #6. LOS ESTRIBOS SERAN DEL #3. EN COLUMNAS "
+            "HASTA EL #5.",
+            _T,
+        ),
+        (
+            "EN TRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM. EL PRIMER ESTRIBO EN COLUMNAS "
+            "A 10 CM.",
+            _P,
+        ),
+        ("PLANTILLA DE 5 CM DE ESPESOR. SOBRE LA PLANTILLA SE COLARA UN FIRME DE 10 CM.", _PL),
+    ],
+)
+def test_a_rule_that_is_negated_or_not_said_whole_is_never_read_and_is_reported(
+    tmp_path, texto, campo
+):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert _sin_lectura(r, campo), getattr(r, campo)
+    assert any(_TEMA[campo] in a for a in r.avisos), r.avisos
+
+
+def test_a_plantilla_that_is_negated_is_not_read_in_a_loose_text_either(tmp_path):
+    r = leer_reglas(
+        _dibujo(tmp_path, tabla=False, mtexts=[("PLANTILLA DE 5 CM NO REQUERIDA", 5.0, 5.0)]),
+        frames=[],
+    )
+    assert r.plantilla_espesor_m is None
+    (aviso,) = r.avisos
+    assert "el espesor de la plantilla" in aviso
+
+
+_NOTA_4_DE_MARINA = (
+    "4. NO SE PERMITIRA TRASLAPAR NI SOLDAR MAS DEL 50%%% DEL REFUERZO EN UNA MISMA SECCION, "
+    "UNICAMENTE SE PERMITIRA TRASLAPAR VARILLA HASTA EL {tope}, DEL {desde} Y DIAMETROS "
+    "MAYORES SE SOLDARAN COMO LO INDICA LA FIG-D."
+)
+
+
+@pytest.mark.parametrize(("tope", "desde"), [("#6", "#8"), ("#8", "#10")])
+def test_both_real_wordings_of_marinas_note_4_read_lap_and_weld(tmp_path, tope, desde):
+    r = _con_notas(tmp_path, [_NOTA_4_DE_MARINA.format(tope=tope, desde=desde)])
+    assert r.traslape_max_numero.valor == tope[1:] and r.soldar_desde_numero.valor == desde[1:]
+    assert r.avisos == []
+
+
+def test_the_foundation_note_of_prueba_1_reads_its_plantilla(tmp_path):
+    texto = (
+        "2. TODA CIMENTACION SE DESPLANTARA SOBRE UNA PLANTILLA DE CONCRETO f'c = 100 kg/cm2 Y "
+        "5.0 cm. DE ESPESOR A LAS PROFUNDIDADES INDICADAS."
+    )
+    r = _con_notas(tmp_path, [texto], titulo="NOTAS :")
+    assert r.plantilla_espesor_m.valor == 0.05 and r.plantilla_espesor_m.fuente == "nota"
+    assert r.avisos == []
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "LOS ESTRIBOS SE COLOCARAN @ 10 CM. EN LAS ESCUADRAS SE USARAN GANCHOS A 90°",
+        "ESTRIBOS DEL #3 @ 20 CM. EN DALAS LAS VARILLAS LLEVARAN GANCHOS A 90°",
+        "LOS ESTRIBOS SE COLOCARAN @ 10 CM. A LAS VARILLAS DE ESQUINA SE LES HARAN GANCHOS A 90°",
+        "LOS ESTRIBOS SE COLOCARAN @ 10 CM. Y LAS ESCUADRAS LLEVARAN GANCHOS A 90°",
+    ],
+)
+def test_the_hook_of_a_sentence_after_a_unit_period_is_not_the_stirrups(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"7. {texto}"])
+    assert r.gancho_estribo.fuente == "supuesto" and r.gancho_grapa.fuente == "supuesto"
+
+
+def test_a_sentence_after_a_unit_period_gives_the_first_stirrup_to_its_own_family(tmp_path):
+    texto = "EN COLUMNAS LOS ESTRIBOS IRAN @ 15 CM. EN TRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM"
+    r = _con_notas(tmp_path, [f"3. {texto}"])
+    assert {f: d.valor for f, d in r.primer_estribo_m.items()} == {
+        "trabe": 0.05,
+        "contratrabe": 0.05,
+    }
+
+
+def test_a_first_stirrup_keeps_its_family_and_reports_the_value_of_another_one(tmp_path):
+    texto = "3. EN TRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM. EN COLUMNAS A 10 CM."
+    r = _con_notas(tmp_path, [texto])
+    assert {f: d.valor for f, d in r.primer_estribo_m.items()} == {
+        "trabe": 0.05,
+        "contratrabe": 0.05,
+    }
+    (aviso,) = r.avisos
+    assert "el primer estribo" in aviso and "«EN COLUMNAS A 10 CM.»" in aviso
+
+
+def test_a_new_sentence_after_a_unit_period_starts_where_its_own_subject_does():
+    assert len(_frases("LOS ESTRIBOS SE COLOCARAN @ 10 CM. EN LAS ESCUADRAS SE USARAN")) == 2
+    assert len(_frases("LOS ESTRIBOS SE COLOCARAN @ 10 CM. A LAS VARILLAS DE ESQUINA")) == 2
+    assert len(_frases("LOS ESTRIBOS SE COLOCARAN @ 10 CM. Y LAS ESCUADRAS LLEVARAN")) == 2
+    assert len(_frases("LOS ESTRIBOS IRAN @ 15 CM. EN TRABES EL PRIMER ESTRIBO")) == 2
+    # «… @ 15CM. Y TENDRAN GANCHOS» no trae sujeto propio: sigue la misma oración.
+    assert len(_frases("LOS ESTRIBOS DEL NO. 3 SE COLOCARAN @ 15CM. Y TENDRAN GANCHOS")) == 1
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "SE PERMITE TRASLAPAR HASTA 2 O 3 VARILLAS POR SECCION",
+        "SE PERMITE TRASLAPAR HASTA 2 A LA VEZ",
+        "SE PERMITE TRASLAPAR HASTA 2, EN UNA MISMA SECCION",
+        "SE PERMITE TRASLAPAR HASTA 3 Y NO MAS VARILLAS EN UNA SECCION",
+        "SE PERMITE TRASLAPAR HASTA 3 DE ELLAS",
+        "SE PERMITE TRASLAPAR HASTA 4 AL MISMO TIEMPO",
+        "SE PERMITE TRASLAPAR HASTA 6",
+        "SE PERMITE TRASLAPAR HASTA EL 50 % DEL REFUERZO",
+        "SE PERMITE TRASLAPAR HASTA EL 50 POR CIENTO DEL REFUERZO",
+        "LOS TRASLAPES SE PERMITEN HASTA 2 VARILLAS POR SECCION",
+    ],
+)
+def test_a_count_is_never_a_bar(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert r.traslape_max_numero is None and r.soldar_desde_numero is None
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "PLANTILLA DE 10 CM A CADA LADO",
+        "PLANTILLA DE 10 CM A CADA LADO DE LA ZAPATA",
+        "PLANTILLA DE 10 CM EN CADA LADO",
+        "PLANTILLA 10 CM MAYOR QUE LA ZAPATA",
+        "PLANTILLA DE 10 CM ALREDEDOR DE LA ZAPATA",
+        "PLANTILLA DE 10 CM MAS ANCHA QUE LA ZAPATA",
+        "SOBRE LA PLANTILLA SE COLARA UN FIRME CON 10 CM DE ESPESOR",
+        "PLANTILLA DE CONCRETO POBRE Y FIRME DE 10 CM DE ESPESOR",
+        "PLANTILLA DE CONCRETO POBRE, LOSA DE 10 CM DE ESPESOR",
+        "PLANTILLA DE 5 CM Y 10 CM DE ESPESOR",
+        "NO SE REQUIERE PLANTILLA DE 5 CM",
+    ],
+)
+def test_a_plantilla_measure_that_is_not_its_thickness_is_reported_never_read(tmp_path, texto):
+    r = leer_reglas(_dibujo(tmp_path, tabla=False, mtexts=[(texto, 5.0, 5.0)]), frames=[])
+    assert r.plantilla_espesor_m is None, texto
+    assert any("el espesor de la plantilla" in a for a in r.avisos), r.avisos
+    r = _con_notas(tmp_path, [f"2. {texto}"], titulo="NOTAS :")
+    assert r.plantilla_espesor_m is None, texto
+    assert any("el espesor de la plantilla" in a for a in r.avisos), r.avisos
+
+
+def test_an_unquoted_mixed_fraction_is_reported_not_read(tmp_path):
+    r = _con_notas(tmp_path, ["4. SE PERMITE TRASLAPAR VARILLAS HASTA 1 1/4"])
+    assert r.traslape_max_numero is None
+    assert any("«1 1/4» no se sabe si son pulgadas" in a for a in r.avisos), r.avisos
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "LOS ESTRIBOS LLEVARAN GANCHOS A 135° Y LOS ESTRIBOS A 90°",
+        "LOS ESTRIBOS LLEVARAN GANCHOS A 135° Y LOS ESTRIBOS DE COLUMNA A 90°",
+    ],
+)
+def test_a_second_angle_for_the_same_hook_is_never_dropped_silently(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"7. {texto}"])
+    assert r.gancho_estribo.fuente == "supuesto"
+    assert any("los ganchos de estribos y grapas" in a for a in r.avisos), r.avisos
+
+
+def test_a_lap_with_a_weld_that_is_denied_reads_the_lap_and_says_nothing_more(tmp_path):
+    r = _con_notas(tmp_path, ["4. SE TRASLAPARAN HASTA EL #6 Y NO SE SOLDARA NINGUNA"])
+    assert r.traslape_max_numero.valor == "6" and r.soldar_desde_numero is None
+    assert r.avisos == []
+
+
+@pytest.mark.parametrize(
+    ("texto", "traslape", "soldar"),
+    [
+        ("SE TRASLAPARAN VARILLAS HASTA EL No 6", "6", None),
+        ("SE PERMITE TRASLAPAR VARILLAS HASTA EL No.6", "6", None),
+        ("SE TRASLAPARAN VARILLAS HASTA EL NO. 6, DEL NO. 8 EN ADELANTE SE SOLDARAN", "6", "8"),
+        (
+            "SOLO SE TRASLAPARA VARILLA DEL No. 3 AL No. 6, DEL No. 8 EN ADELANTE SE SOLDARA",
+            "6",
+            "8",
+        ),
+        ("NO SE PERMITE SOLDAR; SE TRASLAPARA HASTA EL #6", "6", None),
+        ("SE TRASLAPARAN VARILLAS HASTA No. 6, LAS DE No. 8 O MAYORES SE SOLDARAN", "6", "8"),
+        ("DE LA No. 8 EN ADELANTE SE SOLDARA; HASTA LA No. 6 SE TRASLAPARA", "6", "8"),
+        ("EL TRASLAPE SERA SEGUN TABLA, DEL No. 6 EN ADELANTE SE SOLDARA", None, "6"),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6 COMO LO INDICA LA FIG-D", "6", None),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6 (VER TABLA No. 1)", "6", None),
+        ("SE PERMITE TRASLAPAR, VER DETALLE 3, VARILLA HASTA EL #6", "6", None),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6. VER DETALLE 3.", "6", None),
+        ('SE PERMITE TRASLAPAR VARILLAS HASTA EL No. 6 (3/4")', "6", None),
+        ("SALVO INDICACION, SE PERMITE TRASLAPAR VARILLA HASTA EL #6", "6", None),
+        ("SIN EMBARGO SE PERMITE TRASLAPAR VARILLA HASTA EL #6", "6", None),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6 Y DEL #8 EN ADELANTE SE SOLDARAN", "6", "8"),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6 Y LAS DEMAS SE SOLDARAN", "6", None),
+        (
+            "NO SE PERMITIRA TRASLAPAR VARILLA MAYOR AL #6, SE SOLDARAN LAS DEL #8 EN ADELANTE",
+            None,
+            "8",
+        ),
+    ],
+)
+def test_phrasings_whose_every_clause_is_understood_are_read(tmp_path, texto, traslape, soldar):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert (r.traslape_max_numero and r.traslape_max_numero.valor) == traslape
+    assert (r.soldar_desde_numero and r.soldar_desde_numero.valor) == soldar
+
+
+def test_an_inch_equivalence_that_says_another_bar_is_reported(tmp_path):
+    r = _con_notas(tmp_path, ['4. SE PERMITE TRASLAPAR VARILLA HASTA EL #6 (3/8")'])
+    assert r.traslape_max_numero is None
+    assert any("no son la misma varilla" in a for a in r.avisos), r.avisos
+
+
+def test_hooks_with_their_own_angle_each_and_one_denied(tmp_path):
+    texto = "7. LAS GRAPAS LLEVARAN GANCHOS A 180° Y LOS ESTRIBOS A 135° CON TRAMO RECTO DE 10Ø"
+    r = _con_notas(tmp_path, [texto])
+    assert r.gancho_estribo.valor == {"angulo": 135, "recto_diametros": 10}
+    assert r.gancho_grapa.valor == {"angulo": 180, "recto_diametros": 10}
+    texto = "7. LOS ESTRIBOS LLEVARAN GANCHOS A 135° Y LAS GRAPAS NO LLEVARAN GANCHOS A 180°"
+    r = _con_notas(tmp_path, [texto])
+    assert r.gancho_estribo.valor["angulo"] == 135 and r.gancho_grapa.fuente == "supuesto"
+    assert any("180°" in a for a in r.avisos)
+    r = _con_notas(tmp_path, ["7. LOS ESTRIBOS NO LLEVARAN GANCHOS A 90° Y LAS GRAPAS A 180°"])
+    assert r.gancho_estribo.fuente == "supuesto" and r.gancho_grapa.fuente == "supuesto"
+    assert any("los ganchos de estribos y grapas" in a for a in r.avisos)
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "EL RECUBRIMIENTO NO SERA DE 5 CM EN TRABES",
+        "EL RECUBRIMIENTO SERA 5.0 CM EN COLUMNAS, NO EN TRABES",
+        "EL RECUBRIMIENTO SERA 5.0 CM EN COLUMNAS EXCEPTO TRABES",
+        "EL RECUBRIMIENTO SERA 5.0 CM EN COLUMNAS NI 4 CM EN TRABES",
+    ],
+)
+def test_a_cover_that_a_note_denies_or_excepts_is_not_read(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"4. {texto}"], titulo="NOTAS :")
+    assert r.recubrimiento_m["trabe"].fuente == "supuesto"
+    assert r.avisos
+
+
+def test_a_cover_in_another_unit_is_not_given_to_the_measure_before_it(tmp_path):
+    r = _con_notas(
+        tmp_path, ["4. EL RECUBRIMIENTO SERA 4 CM EN TRABES Y 0.05 M EN COLUMNAS"], titulo="NOTAS :"
+    )
+    assert r.recubrimiento_m["trabe"].valor == 0.04 and r.recubrimiento_m["trabe"].fuente == "nota"
+    assert r.recubrimiento_m["columna"].fuente == "supuesto"  # no los 4 cm de las trabes
+    (aviso,) = r.avisos
+    assert "0.05 M EN COLUMNAS" in aviso
+    r = _con_notas(tmp_path, ["4. EL RECUBRIMIENTO SERA DE 0.05 M EN TRABES"], titulo="NOTAS :")
+    assert r.recubrimiento_m["trabe"].fuente == "supuesto"
+    (aviso,) = r.avisos
+    assert "recubrimiento" in aviso
+
+
+def test_a_plantilla_in_meters_after_its_material_is_not_read_without_its_thickness(tmp_path):
+    """«PLANTILLA DE CONCRETO POBRE DE 0.10 M» puede ser lo que sobresale, no el espesor: en metros
+    sólo se lee pegada a la palabra o con «ESPESOR»."""
+    texto = "PLANTILLA DE CONCRETO POBRE DE 0.10 M"
+    r = leer_reglas(_dibujo(tmp_path, tabla=False, mtexts=[(texto, 5.0, 5.0)]), frames=[])
+    assert r.plantilla_espesor_m is None
+    (aviso,) = r.avisos
+    assert "el espesor de la plantilla" in aviso
+
+
+def test_a_negation_well_before_a_cover_still_cancels_it(tmp_path):
+    r = _con_notas(tmp_path, ["4. EL RECUBRIMIENTO NUNCA SERA DE 5 CM EN TRABES"], titulo="NOTAS :")
+    assert r.recubrimiento_m["trabe"].fuente == "supuesto"
+    (aviso,) = r.avisos
+    assert "niega o acota" in aviso
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "SE PERMITE TRASLAPAR VARILLA HASTA EL #6 VER DETALLE NUNCA",
+        "SE PERMITE TRASLAPAR VARILLA HASTA EL #6 (NO MAYOR)",
+    ],
+)
+def test_a_negation_inside_what_follows_a_bar_is_never_read(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert r.traslape_max_numero is None and r.avisos
+
+
+@pytest.mark.parametrize(
+    "texto",
+    ["LAS VARILLAS DEL #8 SE SOLDARAN", "SOLDAR VARILLAS SEGUN AWS D1.4 DEL No. 8"],
+)
+def test_a_weld_that_names_a_bar_without_a_limit_word_is_reported(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert r.soldar_desde_numero is None
+    (aviso,) = r.avisos
+    assert "desde qué varilla se suelda" in aviso
+
+
+@pytest.mark.parametrize(
+    ("palabras", "tipo", "escrito"),
+    [
+        ("HASTA EL #6", "num", "6"),
+        ("HASTA NO. 6", "num", "6"),  # «No. 6» en mayúsculas sin acentos
+        ("HASTA EL 6", "num", "6"),
+        ("HASTA LA VARILLA 6", "num", "6"),
+        ("HASTA 6", "pelado", "6"),
+        ('HASTA 3/4"', "pulg", '3/4"'),
+        ("HASTA 5/8 PULG", "pulg", "5/8 PULG"),
+        ("HASTA 3/4", "fraccion", "3/4"),
+        ("HASTA 1 1/4", "fraccion", "1 1/4"),
+    ],
+)
+def test_a_bar_in_a_phrase_is_what_its_words_say(palabras, tipo, escrito):
+    import re
+
+    from klave_engine.estructura.frases import _HASTA, varilla_de
+
+    m = re.fullmatch(_HASTA, palabras)
+    v = varilla_de(m, "b", con_cola=False)
+    assert (v.tipo, v.escrito) == (tipo, escrito)
+
+
+def test_a_known_phrase_is_read_only_when_it_covers_its_whole_clause():
+    from klave_engine.estructura.frases import leer_frases
+
+    def reglas(texto):
+        lectura = leer_frases(texto, {"traslape", "soldar"})
+        return [(f.regla, lectura.texto[f.inicio : f.fin]) for f in lectura.validas()]
+
+    assert reglas("SE PERMITE TRASLAPAR VARILLA HASTA EL #6") == [
+        ("traslape", "SE PERMITE TRASLAPAR VARILLA HASTA EL #6")
+    ]
+    assert reglas("SE PERMITE TRASLAPAR VARILLA HASTA EL #6 EN TRABES") == []
+    assert reglas("NO SE PERMITE TRASLAPAR VARILLA HASTA EL #6") == []
+    assert reglas("SE PERMITE TRASLAPAR VARILLA HASTA EL #6, DEL #8 EN ADELANTE SE SOLDARAN") == [
+        ("traslape", "SE PERMITE TRASLAPAR VARILLA HASTA EL #6"),
+        ("soldar", "DEL #8 EN ADELANTE SE SOLDARAN"),
+    ]
+
+
+# --- el generador adversario: frases × negaciones × conteos × contexto -------------------------
+
+_FORMAS_DEL_6 = ("#6", "No. 6", "NUMERO 6", '3/4"')
+_FORMAS_DEL_8 = ("#8", "No. 8", "NUM. 8", '1"')
+_BASES = (
+    # (regla, texto con {B}, formas de la varilla, lo que se lee)
+    (_T, "SE PERMITE TRASLAPAR VARILLA HASTA EL {B}", _FORMAS_DEL_6, "6"),
+    (_T, "UNICAMENTE SE PERMITIRA TRASLAPAR VARILLA HASTA EL {B}", _FORMAS_DEL_6, "6"),
+    (_T, "SE TRASLAPARAN LAS VARILLAS HASTA EL {B}", _FORMAS_DEL_6, "6"),
+    (_T, "SE PERMITE TRASLAPAR VARILLAS DEL #3 AL {B}", _FORMAS_DEL_6, "6"),
+    (_S, "DEL {B} Y DIAMETROS MAYORES SE SOLDARAN", _FORMAS_DEL_8, "8"),
+    (_S, "LAS VARILLAS DEL {B} EN ADELANTE SE SOLDARAN", _FORMAS_DEL_8, "8"),
+    (_S, "A PARTIR DEL {B} SE SOLDARAN LAS VARILLAS", _FORMAS_DEL_8, "8"),
+    (_S, "SE SOLDARAN LAS VARILLAS DEL {B} EN ADELANTE", _FORMAS_DEL_8, "8"),
+)
+_CONTEXTOS = (
+    "{f} COMO LO INDICA LA FIG-D",
+    "{f}, VER DETALLE 3",
+    "{f} (VER TABLA No. 1)",
+    "SALVO INDICACION, {f}",
+)
+_NEGACIONES = (
+    "NO {f}",
+    "NUNCA {f}",
+    "{f} NO ESTA PERMITIDO",
+    "{f}, NO ESTA PERMITIDO",
+    "{f} QUEDA PROHIBIDO",
+    "NO SE PERMITIRA, {f}",
+    "PROHIBIDO: {f}",
+    "QUEDA PROHIBIDO, SALVO INDICACION, {f}",
+    "EN NINGUN CASO, {f}",
+    "{f}, EXCEPTO EN COLUMNAS",
+    "EN COLUMNAS, {f}",
+    "{f}, NO EN COLUMNAS",
+    "{f}. NO SE ACEPTARA.",
+    "{f}. EXCEPTO EN COLUMNAS.",
+)
+_CONTEOS = (
+    "2 VARILLAS POR SECCION",
+    "2 O 3 VARILLAS POR SECCION",
+    "3 BARRAS",
+    "2 A LA VEZ",
+    "4 AL MISMO TIEMPO",
+    "3 DE LAS 6 VARILLAS",
+    "50 % DEL REFUERZO",
+    "40 VECES EL DIAMETRO",
+    "10Ø",
+    "6",
+)
+_OTRAS_REGLAS = (
+    (_E, "LOS ESTRIBOS LLEVARAN GANCHOS A 90° CON TRAMO RECTO DE 6Ø"),
+    (_P, "EN TRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM"),
+    (_PL, "SE COLOCARA PLANTILLA DE 8 CM DE ESPESOR"),
+)
+
+
+def _variantes():
+    for regla, base, formas, valor in _BASES:
+        for forma in formas:
+            frase = base.format(B=forma)
+            yield pytest.param(frase, regla, valor, id=frase)
+            for contexto in _CONTEXTOS:
+                texto = contexto.format(f=frase)
+                yield pytest.param(texto, regla, valor, id=texto)
+        frase = base.format(B=formas[0])
+        for negacion in _NEGACIONES:
+            texto = negacion.format(f=frase)
+            yield pytest.param(texto, regla, None, id=texto)
+    for prefijo in (
+        "SE PERMITE TRASLAPAR HASTA",
+        "SE TRASLAPARAN HASTA",
+        "LOS TRASLAPES SE HARAN HASTA",
+    ):
+        for conteo in _CONTEOS:
+            texto = f"{prefijo} {conteo}"
+            yield pytest.param(texto, _T, None, id=texto)
+    for regla, frase in _OTRAS_REGLAS:
+        for negacion in _NEGACIONES:
+            texto = negacion.format(f=frase)
+            yield pytest.param(texto, regla, None, id=texto)
+
+
+@pytest.mark.parametrize(("texto", "campo", "valor"), list(_variantes()))
+def test_adversarial_variants_read_right_or_not_at_all(tmp_path, texto, campo, valor):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    if valor is None:
+        assert _sin_lectura(r, campo), getattr(r, campo)
+    else:
+        assert getattr(r, campo).valor == valor
+        assert r.avisos == [], r.avisos
