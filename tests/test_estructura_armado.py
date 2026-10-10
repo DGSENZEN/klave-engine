@@ -1872,3 +1872,177 @@ def test_fuzz_directions_are_never_given_to_the_wrong_mesh():
         if exacto:
             assert leidas == mallas and a.avisos == [], (texto, leidas, a.avisos)
         _vuelve_igual(a, "losa")
+
+
+# ------------------------------------------------- Task 7, paso previo A (R26–R29, el breaker)
+# Una cabeza de estribo que empieza una ficha (tras «(», «[» o «"») y sigue con algo que no es
+# letra es una cabeza (R26); un sentido que la malla no tomó como suyo la estorba (R27); una cabeza
+# al final de un renglón hace del primer «#n@s» del siguiente un juego de estribos o los avisa a
+# los dos (R28); «TRIPLEMENTE ARMADA», «AMBAS CARAS» y «DUPLICADA» son multiplicadores (R29).
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "(ESTRIBOS CERRADOS) #3@15",
+        "(ESTRIBO TIPO U) #3@15",
+        "ESTRIBOS(CERRADOS) #3@15",
+        "GRAPAS(DOBLES) #3@15",
+        "ESTRIBOS; #3@15",
+        "ESTRIBOS- #3@15",
+        "[ESTRIBOS] #3@15",
+        "E(DOBLE) #3@15",
+        "EST(DOBLE) #3@15",
+        "ESTRIBOS(DOBLE) #3@15",
+        "(ESTRIBOS DE ALAMBRE) #3@15",
+        "ESTRIBOS(2) #3@15",
+        "LIGAS(2) #3@15",
+        '"ESTRIBOS" #3@15',
+        "ESTR. #3@15",
+        "(G) #3@15",
+        "LIGA(S) #3@15",
+    ],
+)
+def test_a_token_that_starts_with_a_stirrup_head_means_the_piece_is_not_a_mesh(texto):
+    for familia in ("dado", "castillo"):
+        a = parsear_armado([texto], familia)
+        assert a.vacio(), (familia, texto_armado(a))
+        assert a.avisos == [f"sin leer: «{texto}»"], familia
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "E-1 #4@20",
+        "ZAPATA E-1 #4@20",
+        "ZAPATA G-2A #4@20",
+        "ZAPATA (TIPO E) #4@20",
+        "ZAPATA (TIPO G) #4@20",
+        "CLARO LIBRE: #4@20",
+        "XE. #3@20",
+        "(VER DETALLE) #4@20",
+        "ESTRUCTURAL #4@20",
+    ],
+)
+def test_a_mark_or_a_word_that_only_starts_or_ends_like_a_head_is_not_a_head(texto):
+    a = parsear_armado([texto], "zapata")
+    assert len(a.parrillas) == 1 and a.estribos == [] and a.avisos == [], a.avisos
+
+
+def test_a_mark_in_parentheses_is_not_a_head():
+    # Entre paréntesis la marca no es contexto (se avisa sola, como antes), pero no es una
+    # cabeza: la malla se lee.
+    a = parsear_armado(["(E-1) #4@20"], "zapata")
+    assert len(a.parrillas) == 1 and a.avisos == ["sin leer: «(E-1)»"]
+
+
+@pytest.mark.parametrize(
+    "textos,avisos",
+    [
+        (["EN X: #4@20", "EN Y: #4@25"], ["sin leer: «EN X: #4@20»", "sin leer: «EN Y: #4@25»"]),
+        (
+            ["EN X.- #4@20", "EN Y.- #4@25"],
+            ["sin leer: «EN X.- #4@20»", "sin leer: «EN Y.- #4@25»"],
+        ),
+        (["EN X: #4@20"], ["sin leer: «EN X: #4@20»"]),
+        (["(EN X) #4@20"], ["sin leer: «(EN X) #4@20»"]),
+        (["(A.S.) #4@20"], ["sin leer: «(A.S.) #4@20»"]),
+        (["A.S.: #4@20"], ["sin leer: «A.S.: #4@20»"]),
+        (["[EN X] #4@20"], ["sin leer: «[EN X] #4@20»"]),
+        (["EN X; #4@20"], ["sin leer: «EN X; #4@20»"]),
+        (["AMBOS SENTIDOS: #4@20"], ["sin leer: «AMBOS SENTIDOS: #4@20»"]),
+    ],
+)
+def test_a_direction_the_mesh_did_not_take_blocks_it(textos, avisos):
+    # Lo que el plano dice del sentido nunca se pierde: o la malla lo toma, o no se lee.
+    a = parsear_armado(textos, "zapata")
+    assert a.vacio() and a.avisos == avisos
+
+
+@pytest.mark.parametrize(
+    "textos,familia,long,estr",
+    [
+        (["ESTRIBOS", "#3@15"], "dado", [], [(E, 1, "3", [("todo", 0.15)])]),
+        (
+            ["EYG", "#3@15"],
+            "dado",
+            [],
+            [(E, 1, "3", [("todo", 0.15)]), (G, 1, "3", [("todo", 0.15)])],
+        ),
+        (["E", "#3@15"], "dado", [], [(E, 1, "3", [("todo", 0.15)])]),
+        (["8#6 ESTRIBOS", "#3@15"], "dado", [(8, "6")], [(E, 1, "3", [("todo", 0.15)])]),
+        (["ESTRIBOS", "#3@15"], "castillo", [], [(E, 1, "3", [("todo", 0.15)])]),
+        (
+            ["2E", "#3EXT@10", "CENTRO@20"],
+            "columna",
+            [],
+            [(E, 2, "3", [("extremos", 0.1), ("centro", 0.2)])],
+        ),
+    ],
+)
+def test_a_stirrup_head_ending_a_line_makes_the_next_spacing_a_stirrup_set(
+    textos, familia, long, estr
+):
+    a = parsear_armado(textos, familia)
+    assert a.parrillas == [] and a.avisos == [], a.avisos
+    assert [(g.cantidad, g.numero) for g in a.longitudinales] == long
+    assert [
+        (j.tipo, j.cantidad, j.numero, [(z.tramo, z.separacion_m) for z in j.zonas])
+        for j in a.estribos
+    ] == estr
+    _vuelve_igual(a, familia)
+
+
+@pytest.mark.parametrize(
+    "textos,cita",
+    [
+        (["ESTRIBOS:", "#3@15"], "ESTRIBOS: | #3@15"),
+        (["(ESTRIBOS)", "#3@15"], "(ESTRIBOS) | #3@15"),
+        (["ESTRIBOS CERRADOS", "#3@15"], "ESTRIBOS CERRADOS | #3@15"),
+        (["ESTRIBOS(2)", "#3@15"], "ESTRIBOS(2) | #3@15"),
+        (["ESTRIBOS", "LOSA #3@15"], "ESTRIBOS | LOSA #3@15"),
+    ],
+)
+def test_a_stirrup_head_on_the_line_before_a_mesh_that_is_not_its_set_reports_both(textos, cita):
+    for familia in ("dado", "castillo"):
+        a = parsear_armado(textos, familia)
+        assert a.vacio(), (familia, texto_armado(a))
+        assert a.avisos == [f"sin leer: «{cita}»"], familia
+
+
+def test_a_stirrup_head_on_the_line_before_bars_does_not_reach_the_mesh_after_them():
+    # El primer «#n@s» del renglón siguiente va detrás de unas varillas: la cabeza es de ellas.
+    a = parsear_armado(["4#3 E#2@15", "#4@20"], "dado")
+    assert [(g.cantidad, g.numero) for g in a.longitudinales] == [(4, "3")]
+    assert [(j.numero, j.zonas[0].separacion_m) for j in a.estribos] == [("2", 0.15)]
+    assert [(p.numero, p.separacion_m) for p in a.parrillas] == [("4", 0.2)] and a.avisos == []
+
+
+@pytest.mark.parametrize(
+    "texto",
+    ["TRIPLEMENTE ARMADA #4@20", "TRIPLEMENTE #4@20", "AMBAS CARAS #4@20", "DUPLICADA #4@20"],
+)
+def test_more_multiplier_words_before_a_mesh_are_reported(texto):
+    a = parsear_armado([texto], "zapata")
+    assert a.vacio() and a.avisos == [f"sin leer: «{texto}»"]
+
+
+@pytest.mark.parametrize("texto", ["AMBAS CARAS", "DUPLICADA", "TRIPLEMENTE ARMADA"])
+def test_a_lone_multiplier_word_is_reported(texto):
+    assert parsear_armado([texto], "zapata").avisos == [
+        f"multiplicador «{texto}» sin su malla: no se toma"
+    ]
+
+
+@pytest.mark.parametrize(
+    "textos,familia,canonico",
+    [
+        (["4#5+2#4"], "castillo", "4#5+2#4"),
+        (["EYG#3@15"], "castillo", "EYG#3@15"),
+        (["2E#3@15"], "castillo", "2E#3@15"),
+        (["2E+1G#3EXT@10", "CENTRO@15"], "castillo", "2E+1G#3 EXT@10 CENTRO@15"),
+        (["2E#3EXT@10", "CENTRO@20"], "columna", "2E#3 EXT@10 CENTRO@20"),
+    ],
+)
+def test_the_canonical_renders_stay(textos, familia, canonico):
+    assert texto_armado(parsear_armado(textos, familia)) == canonico

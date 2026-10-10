@@ -132,7 +132,8 @@ _ESTRIBOS_RE = re.compile(
     r"|(?P<l>LIGAS?)"
     r")"
     r"(?:\s+DEL?)?"
-    rf"\s*#\s*(?P<num>{_NUM})"
+    # La cabeza puede acabar su renglón y el «#n» empezar el siguiente («ESTRIBOS» / «#3@15»).
+    rf"{_LINEA}#\s*(?P<num>{_NUM})"
     r"(?:"
     rf"{_LINEA}EXT(?:REMOS?)?\.?\s*@\s*(?P<ext>{_SEP}){_CM}"
     rf"(?:{_LINEA}(?:Y\s+)?CENTRO\s*@\s*(?P<centro>{_SEP}){_CM})?"
@@ -179,6 +180,15 @@ _CABEZA_EN_LINEA_RE = re.compile(
     rf"(?<![^\s|])(?:\(\s*{_CABEZA_FICHA}\s*\)|[.:]*{_CABEZA_FICHA}[.:,]*"
     rf"|[^\s|]*[^A-Z\s|(]{_CABEZA}[.:)]*)(?=[\s|,+]|$)"
 )
+# R26: también es cabeza la ficha que EMPIEZA (tras «(», «[» o «"») con una cabeza seguida de
+# algo que no es letra: «(ESTRIBOS CERRADOS)», «ESTRIBOS(2)», «E(DOBLE)», «ESTRIBOS;»,
+# «[ESTRIBOS]», «"ESTRIBOS"». No lo es una marca («E-1», «G-2A»), ni una E o una G suelta que
+# cierra el paréntesis de otra palabra («(TIPO E)», R24).
+_CABEZA_AL_INICIO_RE = re.compile(
+    rf"(?<![^\s|])(?P<abre>[(\[\"]?)(?P<cabeza>{_CUENTA_DE_CABEZA}{_CABEZA})(?![A-Z])"
+    r"(?P<resto>[^\s|]*)"
+)
+_MARCA_SOLA_RE = re.compile(r"[A-Z]{1,4}-\d{1,3}[A-Z]?(?:\.\d{1,2})?[.,;:)\]\"]*")
 # Antes de una malla, en la misma línea y sin otra pieza en medio, un sentido que no se
 # reconoció como tal («SENTIDO CORTO #4@20», «CORTEAMBOS SENTIDOS #3@15»), o pegado a otra
 # cosa justo delante («XEN X #4@20», «CORTEA/S #4@20»): la malla no sabe su sentido.
@@ -629,6 +639,24 @@ def _leer_mallas(vista: str, texto: str, letrero: str, familia: str) -> list[_Pi
     return piezas
 
 
+def _cabeza_en(vista: str, desde: int, hasta: int) -> int | None:
+    """Dónde empieza la primera cabeza de estribo que nadie leyó entre ``desde`` y ``hasta``
+    (ver ``_CABEZA_EN_LINEA_RE`` y ``_CABEZA_AL_INICIO_RE``), o ``None``."""
+    inicios = []
+    vieja = _CABEZA_EN_LINEA_RE.search(vista, desde, hasta)
+    if vieja is not None:
+        inicios.append(vieja.start())
+    for m in _CABEZA_AL_INICIO_RE.finditer(vista, desde, hasta):
+        ficha = m["cabeza"] + m["resto"]
+        if _MARCA_SOLA_RE.fullmatch(ficha):
+            continue  # una marca: «E-1», «(G-2)»
+        if not m["abre"] and m["cabeza"] in ("E", "G") and m["resto"][:1] in (")", "]"):
+            continue  # la letra que cierra el paréntesis de otra palabra: «(TIPO E)»
+        inicios.append(m.start())
+        break
+    return min(inicios) if inicios else None
+
+
 def _estorbo_delante(
     texto: str,
     vista: str,
@@ -640,10 +668,12 @@ def _estorbo_delante(
     """Dónde empieza lo que estorba delante de la pieza, o ``None`` si nada la estorba:
     algo pegado que no sea una junta justo después de la pieza anterior («K-2#4»); una
     cuenta suelta («4 #4@20»); delante de una malla, una palabra de lecho que no se leyó
-    («A/SLI #3@20»), o una cabeza de estribo o un sentido sin leer más atrás en la línea
-    («ESTRIBOS DOBLES #3@15», «SENTIDO CORTO #4@20»); o una palabra que nadie tomó (de doble
-    lecho, multiplicador, sentido) unida a la pieza por contexto. Si estorban varias, la que
-    empieza antes."""
+    («A/SLI #3@20»), una cabeza de estribo o un sentido sin leer más atrás en la línea
+    («ESTRIBOS DOBLES #3@15», «(ESTRIBOS) #3@15», «SENTIDO CORTO #4@20»), un sentido que la
+    malla no tomó como suyo («EN X: #4@20», R27) o, si es la primera pieza de su renglón, una
+    cabeza de estribo sin leer en el renglón de antes después de su última pieza («ESTRIBOS:» /
+    «#3@15», R28); o una palabra que nadie tomó (de doble lecho, multiplicador, sentido) unida
+    a la pieza por contexto. Si estorban varias, la que empieza antes."""
     antes = vista[desde : p.inicio]
     pegado = _PEGADO_RE.search(antes)
     assert pegado is not None
@@ -657,12 +687,30 @@ def _estorbo_delante(
             return desde + pegado.start()
     patrones = [_CUENTA_ANTES_RE]
     if p.malla:
-        patrones += [_LECHO_SUELTO_ANTES_RE, _CABEZA_EN_LINEA_RE, _SENTIDO_SUELTO_RE]
+        patrones += [_LECHO_SUELTO_ANTES_RE, _SENTIDO_SUELTO_RE]
     estorbos = []
     for patron in patrones:
         estorbo = patron.search(vista, desde, p.inicio)
         if estorbo is not None:
             estorbos.append(estorbo.start())
+    if p.malla:
+        sentido = _SENTIDO_RE.search(vista, desde, p.inicio)
+        if sentido is not None:  # R27, desde el principio de su ficha: «(EN X) #4@20»
+            inicio = sentido.start()
+            while inicio > desde and vista[inicio - 1] not in f" |{CONSUMIDO}":
+                inicio -= 1
+            estorbos.append(inicio)
+        cabeza = _cabeza_en(vista, desde, p.inicio)
+        if cabeza is not None:
+            estorbos.append(cabeza)
+        inicio_linea = texto.rfind("|", 0, p.inicio) + 1
+        if inicio_linea > 0 and desde == inicio_linea:
+            # R28: la primera pieza de su renglón, con una cabeza sin leer al final del de antes
+            # (después de su última pieza): no se sabe si es una malla o los estribos de ella.
+            previa = max(anterior.fin if anterior else 0, texto.rfind("|", 0, inicio_linea - 1) + 1)
+            cabeza = _cabeza_en(vista, previa, inicio_linea - 1)
+            if cabeza is not None:
+                estorbos.append(cabeza)
     palabra: int | None = None
     for f in fichas(texto, desde, p.inicio, consumido):
         if f.tipo in ESTORBA:
