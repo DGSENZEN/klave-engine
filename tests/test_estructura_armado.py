@@ -2210,3 +2210,26 @@ def test_only_the_objects_fragment_is_reported(textos, longitudinales):
 def test_a_pointer_after_the_stirrups_is_their_reference(texto, armado):
     a = parsear_armado([texto], "castillo")
     assert texto_armado(a) == armado and a.avisos == []
+
+
+@pytest.mark.parametrize(
+    "texto,armado,referencias",
+    [
+        # R102: un puntero se guarda como referencia donde esté, también tras las varillas.
+        ("4#3 VER DET. K-2", "4#3 VER DETALLE", ["VER DETALLE"]),
+        ("4#5+2#4 VER CORTE", "4#5+2#4 VER CORTE", [None, "VER CORTE"]),
+        ("4#3 VER CORTE 2#4", "4#3 VER CORTE 2#4", ["VER CORTE", None]),
+        ("REFUERZO 12#6", "12#6", [None]),
+    ],
+)
+def test_a_pointer_after_the_bars_is_their_reference(texto, armado, referencias):
+    a = parsear_armado([texto], "castillo")
+    assert texto_armado(a) == armado and a.avisos == []
+    assert [g.referencia for g in a.longitudinales] == referencias
+    _vuelve_igual(a, "castillo")
+
+
+def test_a_bar_reference_glued_to_the_number_is_reported():
+    # Como cualquier contexto, la referencia no se come el final de un número.
+    a = parsear_armado(["4#8VER CORTE"], "pilote")
+    assert a.longitudinales == [] and a.avisos == ["sin leer: «4#8VER CORTE»"]

@@ -40,6 +40,7 @@ from klave_engine.estructura._armado_texto import normalizar
 from klave_engine.estructura.armado import (
     FAMILIAS_CON_PARRILLA,
     Armado,
+    clase_de_tramo,
     fragmentos_ajenos,
     parsear_armado,
     sin_cuentas_de_varillas,
@@ -78,7 +79,9 @@ from klave_engine.geometry.bbox import (
     bbox_height,
 )
 
-_SECTION_RE = re.compile(r"(?<![\dxX×])(\d{1,3})\s*[xX×]\s*(\d{1,3})(?![\dxX×])")
+# A section: two whole sides. A side with decimals («20X40.5») is not a section this reader can
+# take: it is quoted, never rounded (R104).
+_SECTION_RE = re.compile(r"(?<![\dxX×.])(\d{1,3})\s*[xX×]\s*(\d{1,3})(?![\dxX×]|\.\d)")
 _BLOCK_RE = re.compile(r"\d{1,3}\s*[xX×]\s*\d{1,3}\s*[xX×]\s*\d{1,3}")
 
 _FAMILY_KEYWORDS: list[tuple[str, re.Pattern[str]]] = [
@@ -527,6 +530,7 @@ def _reading(
     family: str,
     section_of_the_element: bool = True,
     sin_marca: str | None = None,
+    residuos: Collection[str] = (),
 ) -> dict:
     """One reading of an armado text (one string per line) for an element of
     ``family``: its section, its parsed armado and the canonical renders, the
@@ -534,7 +538,11 @@ def _reading(
     the fields its fragments show (R76, R86), so nobody fills them from
     elsewhere. A note's own mark (``sin_marca``, however it is written: «T1-1»,
     «K 7», «K-1-A») and its number («3.-») are not armado: the parser does not
-    see them, so they are never reported as unread."""
+    see them, so they are never reported as unread. Lossless (R104): every
+    armado span of the text (``tramos_de_armado``) is read or quoted in an
+    aviso — the parser's pieces always are; a section or a length the reading
+    did not take («HUECOS DE HASTA 15X20»), and what the mark grammar left as
+    unread bars (``residuos``, R103: «… E#2@20 V-4»), are quoted here."""
     section, avisos, has_section = _read_section(" | ".join(textos), family)  # never across lines
     if not section_of_the_element:
         section, avisos, has_section = None, [], False
@@ -556,8 +564,10 @@ def _reading(
     nombradas = set().union(*(marcas_nombradas(t, config) for t in textos))
     if sin_marca is not None:
         nombradas.add(forma_de_marca(sin_marca, config))
+    perdidos = _sin_leer_ni_citar(textos, family, section, avisos, residuos, section_of_the_element)
+    avisos += [aviso for aviso, _cita in perdidos]
     sin_leer: set[Campo] = set()
-    for aviso in armado.avisos:
+    for aviso in [*armado.avisos, *(f"«{cita}»" for _aviso, cita in perdidos)]:
         citas = re.findall(r"«([^»]*)»", aviso)
         for cita in citas or [aviso]:
             sin_leer.update(campos_de_fragmento(cita, family, nombradas))
@@ -581,6 +591,70 @@ def _reading(
         "campos_con_texto": campos,
         "avisos": avisos,
     }
+
+
+def _plano(texto: str) -> str:
+    """Un texto en mayúsculas y con los espacios juntos, como cita el parser."""
+    return " ".join(texto.upper().split())
+
+
+def _escrito(residuo: str, textos: list[str]) -> str | None:
+    """Cómo escribe el texto un residuo de la gramática («V-4» puede ser «V 4», «V–4»): la última
+    vez que aparece (acaba el texto, R103)."""
+    partes = re.fullmatch(r"([A-Z]+)-?(\d+)([A-Z]?)", residuo)
+    if partes is None:
+        return None
+    patron = rf"(?<![A-Z0-9]){partes[1]}\s*[{re.escape(GUIONES)}]?\s*0*{int(partes[2])}{partes[3]}"
+    vistos = list(re.finditer(patron + r"(?![A-Z0-9])", _plano(" ".join(textos))))
+    return vistos[-1].group(0) if vistos else None
+
+
+def _sin_leer_ni_citar(
+    textos: list[str],
+    family: str,
+    section: tuple[int, int] | None,
+    avisos: list[str],
+    residuos: Collection[str],
+    section_of_the_element: bool,
+) -> list[tuple[str, str]]:
+    """What a reading leaves neither read nor quoted (R104), as (aviso, quote): a
+    section span that is not the section read («HUECOS DE HASTA 15X20», a
+    section the reader does not take) and a length nobody quoted; the parser's
+    pieces are always read or quoted by the parser itself. And what the mark
+    grammar left as unread bars after another mark's armado («… E#2@20 V-4»,
+    R103): the parser takes «V-4» as a mark, so it never quotes it."""
+    citas = [_plano(c) for aviso in avisos for c in re.findall(r"«([^»]*)»", aviso)]
+    perdidos: list[tuple[str, str]] = []
+
+    def citado(tramo: str) -> bool:
+        return any(tramo in c or c in tramo for c in citas if c)
+
+    for residuo in residuos:
+        escrito = _escrito(residuo, textos)
+        if escrito is not None and not citado(escrito):
+            perdidos.append((f"sin leer: «{escrito}»: ¿la marca {residuo} o varillas?", escrito))
+            citas.append(escrito)
+    for linea in textos:
+        citar, tramos = tramos_de_armado(linea)
+        for a, b in tramos:
+            tramo = _plano(citar[a:b])
+            clase = clase_de_tramo(tramo)
+            if clase == "pieza" or citado(tramo):
+                continue
+            medidas = _SECTION_RE.search(tramo)
+            if clase == "seccion" and section is not None and medidas is not None:
+                leida = (int(medidas.group(1)), int(medidas.group(2)))
+                if family in FAMILIAS_QUE_SE_ORDENAN:
+                    leida = (min(leida), max(leida))
+                if leida == section and not _BLOCK_RE.search(tramo):
+                    continue  # la sección leída (o una copia suya)
+            if clase == "seccion" and not section_of_the_element:
+                aviso = f"«{tramo}»: no es la sección del elemento (hueco, paso…): no se toma"
+            else:
+                aviso = f"sin leer: «{tramo}»"
+            perdidos.append((aviso, tramo))
+            citas.append(tramo)
+    return perdidos
 
 
 def _sin_la_marca(texto: str, marca: str) -> str:
@@ -739,7 +813,7 @@ def _parse_annotations(
                     entidades=[text.entity_id],
                     source_text=content[:120],
                     confidence=0.8,
-                    **_reading([content], family, sin_marca=mark),
+                    **_reading([content], family, sin_marca=mark, residuos=lectura.residuos),
                 )
             )
         elif family is not None:
@@ -1296,6 +1370,59 @@ def _family_notes_that_name_a_mark(
     return kept, rechazos + nuevos
 
 
+def _lo_que_nadie_leyo(
+    texts: list[NormalizedEntity],
+    specs: list[ElementSpec],
+    rechazos: list[Rechazo],
+    config: TextPatternConfig,
+    sheet: Sheet,
+) -> list[Rechazo]:
+    """R104, the lossless audit after every reader: each line of a drawing text
+    (an MTEXT, line by line) with an armado span (``tramos_de_armado``: a bar
+    group, a stirrup set, a mesh, a section, a length) is consumed by a reading
+    — which reads or quotes each span (``_reading``) — or is in ``rechazos``.
+    Anything else gets a rejection here: «sin_lector» with the marks it names
+    (the grammar's, or its title's; «varias_marcas» for a list, as the
+    association says), «sin_dueno» if it names none («1. 30X30 8#6», a section
+    alone on a stack line, «3.- 4#3 E#2@20 VER CORTE C-2»: a pointer names
+    nobody)."""
+    consumidas = {e for s in specs if s.source != "ia" for e in s.entidades}
+    rechazadas: dict[str, list[str]] = {}
+    for r in rechazos:
+        rechazadas.setdefault(r.entidad_id, []).append(_plano(r.texto))
+    nuevos: list[Rechazo] = []
+    for text in texts:
+        if text.entity_id in consumidas:
+            continue
+        for linea in (text.text or "").split("\n"):
+            linea = linea.strip()
+            if not linea or not tramos_de_armado(linea)[1]:
+                continue
+            plana = _plano(linea)
+            if any(plana in r for r in rechazadas.get(text.entity_id, [])):
+                continue
+            lectura = leer_marcas(linea, config)
+            marcas = lectura.piezas or titulos(linea, config)
+            motivo: Literal["sin_lector", "varias_marcas", "sin_dueno"] = (
+                "varias_marcas"
+                if lectura.tipo == "varias"
+                else "sin_lector"
+                if marcas
+                else "sin_dueno"
+            )
+            nuevos.append(
+                Rechazo(
+                    entidad_id=text.entity_id,
+                    texto=linea,
+                    hoja=sheet(text)[0],
+                    motivo=motivo,
+                    marcas=list(marcas),
+                )
+            )
+            rechazadas.setdefault(text.entity_id, []).append(plana)
+    return nuevos
+
+
 def build_schedule_inventory(
     entities: list[NormalizedEntity],
     config: TextPatternConfig | None = None,
@@ -1345,6 +1472,7 @@ def build_schedule_inventory(
     for reader in extra_readers or []:
         specs += reader(entities)
     specs, rechazos = _family_notes_that_name_a_mark(specs, rechazos, texts, config)
+    rechazos = rechazos + _lo_que_nadie_leyo(texts, specs, rechazos, config, sheet)
     inventory = ScheduleInventory(
         specs=specs,
         tables_found=tables,

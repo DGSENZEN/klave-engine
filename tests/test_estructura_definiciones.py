@@ -975,3 +975,35 @@ def test_a_bar_word_after_the_armado_keeps_the_ai_bars_out(tmp_path):
     assert k1.longitudinales.ilegible and [a.fuente for a in k1.longitudinales.alternativas] == [
         "ia"
     ]
+
+
+# ------------------------------------------------------------- tarea 8b, paso A (R102–R105)
+
+
+@pytest.mark.parametrize("nota", ["K-1 15X15 E#2@20 V 4", "K-1 15X15 E#2@20 V-4"])
+def test_a_trailing_bar_word_leaves_the_bars_unread(tmp_path, nota):
+    # R103: al final, en cualquier escritura, son varillas sin leer de K-1: ilegibles, y la IA
+    # sólo queda como alternativa.
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    merge_external_specs(inv, [_ia("K-1", rebar="6#6")], C)
+    k1 = construir_definiciones(inv, C)[0]["K-1"].longitudinales
+    assert k1.ilegible and k1.valor is None and [a.fuente for a in k1.alternativas] == ["ia"]
+
+
+@pytest.mark.parametrize(
+    "notas",
+    [
+        ["E#2@15 VER CORTE C-2 8#6 E#3@20"],
+        ["VER CORTE C-2 30X30 8#6 E#2@15"],
+        ["K-1 15X15 4#3 E#2@15 VER CORTE C-2 30X30 8#6"],
+    ],
+)
+def test_what_heads_feeds_the_mark_it_names(tmp_path, notas):
+    # R102: lo que encabeza nombra a C-2 y no se lee: sus campos son ilegibles y la IA de C-2
+    # (50×50, 8#8) sólo es alternativa.
+    inv = build_schedule_inventory(_notas(tmp_path, notas), frames=_frame())
+    merge_external_specs(inv, [_ia("C-2", family="columna", section_cm=(50, 50), rebar="8#8")], C)
+    c2 = construir_definiciones(inv, C)[0]["C-2"]
+    for campo in ("longitudinales",) if "VER CORTE C-2 8#6" in notas[0] else ("seccion_cm",):
+        d = getattr(c2, campo)
+        assert d.ilegible and d.fuente == "nota" and [a.fuente for a in d.alternativas] == ["ia"]

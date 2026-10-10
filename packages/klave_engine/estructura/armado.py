@@ -50,11 +50,13 @@ Lecho = Literal["sup", "inf", "unico"]
 
 
 class GrupoVarillas(BaseModel):
-    """«4#5»: cuántas varillas y de qué número."""
+    """«4#5»: cuántas varillas y de qué número; «4#3 VER DETALLE»: con la referencia que le sigue
+    (R102: un puntero se guarda donde esté, tras los estribos o tras las varillas)."""
 
     cantidad: int
     numero: str
     posicion: Literal["esquina", "cara", "lecho_sup", "lecho_inf", "ambos"] | None = None
+    referencia: str | None = None  # «VER CORTE»: las varillas se remiten a otro dibujo
 
 
 class Zona(BaseModel):
@@ -159,12 +161,14 @@ _ES_LS = re.compile(_LS)
 _SENTIDO_XY: dict[str, Literal["x", "y"]] = {"X": "x", "Y": "y"}
 
 # «4#5», «4 VARS #5», «4V#4», «4 VARILLAS DEL #3», «8 PZAS #6», «4-#3», «4) #3» (R93: el «4-» es
-# la cuenta) y, con la palabra delante, «V4#4», «VAR 4#4» (PRUEBA-1: «V4#4 E#3»).
+# la cuenta) y, con la palabra delante, «V4#4», «VAR 4#4» (PRUEBA-1: «V4#4 E#3»); con la
+# referencia que le sigue, como un juego de estribos («4#3 VER DET.», R102).
 _VARILLAS_RE = re.compile(
     rf"(?:(?<![A-Z0-9.#@])(?:VARS?\.?|V)\s*(?P<v>{_CUENTA})"
     rf"|(?<![\d.#@])(?P<n>{_CUENTA})\s*(?:[-)]\s*)?"
     r"(?:(?:VARILLAS|VARS?\.?|PZAS?\.?|PIEZAS|V)(?:\s+DEL?)?)?)"
     rf"\s*#\s*(?P<num>{_NUM})(?!\s*@)"
+    r"(?:(?:\s*\|\s*|\s+)(?P<ref>VER\s+(?:CORTE|DETALLE|DET\.?)))?"
 )
 _CIFRA_O_GATO = "0123456789#.@"  # lo que, pegado delante, parte un número (aunque esté leído)
 _PEGADO_RE = re.compile(rf"[^ {CONSUMIDO}]*$")
@@ -261,13 +265,18 @@ def _zonas(m: re.Match[str]) -> list[Zona]:
     return []
 
 
+def _referencia(escrita: str | None) -> str | None:
+    """Una referencia como se escribe en el armado: «VER CORTE» o «VER DETALLE» («VER DET.» se
+    escribe «VER DETALLE», R99): una de ``_REFERENCIAS``."""
+    if not escrita:
+        return None
+    return "VER CORTE" if "CORTE" in escrita else "VER DETALLE"
+
+
 def _juegos(m: re.Match[str]) -> list[JuegoEstribos]:
     """Los juegos de una cabeza leída; un juego mixto queda siempre estribo y luego grapa."""
     numero = m["num"]
-    # «VER DET.» se escribe «VER DETALLE» (R99): una referencia de ``_REFERENCIAS``.
-    referencia = None
-    if m["ref"]:
-        referencia = "VER CORTE" if "CORTE" in m["ref"] else "VER DETALLE"
+    referencia = _referencia(m["ref"])
 
     def juego(tipo: Literal["estribo", "grapa", "liga"], cuenta: str | None) -> JuegoEstribos:
         return JuegoEstribos(
@@ -878,7 +887,11 @@ def _piezas(textos: list[str], familia: str) -> _Piezas:
     #    delante se mira en el texto real: un número ya leído también parte al siguiente.
     grupos = _grupos(visible(), texto)
     for grupo in grupos:
-        varilla = GrupoVarillas(cantidad=int(grupo["n"] or grupo["v"]), numero=grupo["num"])
+        varilla = GrupoVarillas(
+            cantidad=int(grupo["n"] or grupo["v"]),
+            numero=grupo["num"],
+            referencia=_referencia(grupo["ref"]),
+        )
         tomar(_Pieza(grupo.start(), grupo.end(), varillas=[varilla]))
 
     # 4. Lo que es de un objeto (R100) queda fuera, con su palabra: no estorba a sus vecinas
@@ -950,6 +963,18 @@ def tramos_de_armado(texto: str) -> tuple[str, list[tuple[int, int]]]:
         for a, b in enteros
         if (a == 0 or citar[a - 1] in _INICIO_DE_FICHA) and citar[a : a + 1] not in ("#", "Ø", "@")
     )
+
+
+def clase_de_tramo(tramo: str) -> Literal["seccion", "longitud", "pieza"]:
+    """Qué es un tramo de ``tramos_de_armado`` (como lo cita el parser): una sección o las tres
+    medidas de una pieza, una longitud, o una pieza que el parser reconoce (un grupo de varillas, un
+    juego de estribos, una malla), que siempre se lee o se avisa. Una sección y una longitud son
+    contexto para el parser: las lee (o no) quien lee el texto (R104)."""
+    if _SECCION_EN_TEXTO.fullmatch(tramo.strip()):
+        return "seccion"
+    if _LONGITUD_EN_TEXTO.fullmatch(tramo.strip()):
+        return "longitud"
+    return "pieza"
 
 
 def sin_armado(texto: str) -> str:
@@ -1112,8 +1137,18 @@ def _cabeza(j: JuegoEstribos) -> str:
 
 
 def texto_longitudinal(a: Armado) -> str:
-    """«4#5+2#4»."""
-    return "+".join(f"{_cuenta(g.cantidad)}#{_numero(g.numero)}" for g in a.longitudinales)
+    """«4#5+2#4»; un grupo con referencia la lleva detrás («4#3 VER DETALLE», R102), y el grupo
+    siguiente va tras un espacio."""
+    texto = ""
+    for i, g in enumerate(a.longitudinales):
+        if i:
+            texto += " " if a.longitudinales[i - 1].referencia is not None else "+"
+        texto += f"{_cuenta(g.cantidad)}#{_numero(g.numero)}"
+        if g.referencia is not None:
+            if g.referencia not in _REFERENCIAS:
+                raise ValueError(f"referencia «{g.referencia}»: el texto no la puede llevar")
+            texto += f" {g.referencia}"
+    return texto
 
 
 def texto_estribos(a: Armado) -> str:

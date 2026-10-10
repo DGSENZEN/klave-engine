@@ -1503,3 +1503,150 @@ def test_a_bar_word_mark_after_the_armado_claims_the_bars(tmp_path):
     assert "longitudinales" in s.campos_con_texto and inv.rechazos == []
     merge_external_specs(inv, [_ia("K-1", rebar="6#6")], C)
     assert inv.by_mark["K-1"].rebar is None
+
+
+# ------------------------------------------------------------- tarea 8b, paso A (R102–R105)
+
+
+def _ias(*marcas):
+    """La IA con un valor en cada campo de cada marca: lo que el plano dice nunca debe dejarla
+    entrar."""
+    return [
+        _ia(m, section_cm=(50, 50), rebar="8#8", stirrups="E#4@30", family=family_of_mark(m))
+        for m in marcas
+    ]
+
+
+@pytest.mark.parametrize(
+    "nota",
+    [
+        "K-1 4#3 E#2@20 V-4: 20X40 4#5 E#3@15",
+        "K-1 4#3 E#2@20, V-4: 4#5",
+        "K-1 4#3 E#2@20 V-4= 4#5",
+        "K-1 4#3 E#2@20 (V-4) 4#5",
+        "K-1 4#3 E#2@20 V-4 - 4#5",
+        "K-1 4#3 E#2@20 V-4 CON 4#5",
+        "K-1 4#3 E#2@20 V-4 LECHO SUP. 2#5",
+    ],
+)
+def test_another_bar_word_mark_with_anything_after_it_is_named(tmp_path, nota):
+    # R103: «V-4» tras el armado de K-1 y con algo detrás es la marca V-4: la nota es de varias
+    # marcas, nada se lee y ni K-1 ni V-4 toman nada de la IA en lo que el texto dice.
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    assert [s for s in inv.specs] == []
+    assert [(r.motivo, r.marcas) for r in inv.rechazos] == [("varias_marcas", ["K-1", "V-4"])]
+    merge_external_specs(inv, _ias("K-1", "V-4"), C)
+    for marca in ("K-1", "V-4"):
+        k = inv.by_mark.get(marca)
+        assert k is None or (k.rebar, k.stirrups) == (None, None)
+
+
+@pytest.mark.parametrize("nota", ["K-1 15X15 E#2@20 V-4", "K-1 15X15 E#2@20 V 4"])
+def test_a_bar_word_mark_that_ends_the_text_claims_the_bars(tmp_path, nota):
+    # R103: «V-4» o «V 4» al final, tras el armado de K-1: varillas sin leer, en cualquier
+    # escritura (antes la de guion se perdía y la IA llenaba las varillas de K-1).
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    (s,) = inv.specs
+    assert (s.mark, s.section_cm) == ("K-1", (15, 15)) and inv.rechazos == []
+    assert "longitudinales" in s.campos_con_texto
+    assert any("V-4" in a or "V 4" in a for a in s.avisos)
+    merge_external_specs(inv, _ias("K-1"), C)
+    assert inv.by_mark["K-1"].rebar is None
+
+
+@pytest.mark.parametrize(
+    "texto,mtext",
+    [
+        ("3.- 4#3 E#2@20 VER CORTE C-2", False),
+        ("1. 8#6 VER CORTE C-2", False),
+        ("1. 30X30 8#6", False),
+        ("NOTAS:\n1.- 4#3 E#2@20 VER CORTE C-2", True),
+    ],
+)
+def test_a_text_nobody_reads_is_always_reported(tmp_path, texto, mtext):
+    # R104: un texto con armado que ninguna lectura toma ni nadie rechaza se rechaza al final:
+    # sin dueño (un puntero no nombra a nadie). Antes se perdía en silencio.
+    doc = ezdxf.new("R2010")
+    if mtext:
+        doc.modelspace().add_mtext(texto.replace("\n", "\\P"), dxfattribs={"char_height": 0.2})
+    else:
+        doc.modelspace().add_text(texto, height=0.2)
+    doc.saveas(tmp_path / "nota.dxf")
+    inv = build_schedule_inventory(
+        DxfParser().parse_file(tmp_path / "nota.dxf").entities, frames=_frame()
+    )
+    linea = texto.split("\n")[-1]
+    assert [(r.motivo, r.texto, r.marcas) for r in inv.rechazos] == [("sin_dueno", linea, [])]
+    merge_external_specs(inv, _ias("C-2"), C)
+    assert inv.by_mark["C-2"].rebar == "8#8"  # la marca apuntada ni se bloquea ni toma nada
+
+
+def test_a_section_alone_on_a_stack_line_is_reported(tmp_path):
+    # R104: «15X15» sobre la pila de K-1 no lo lee nadie: se dice (antes se perdía).
+    ents = _pila(tmp_path, "K-1", ["15X15", "4#3", "E#2@20"])
+    inv = build_schedule_inventory(ents, frames=_frame())
+    (k1,) = inv.specs
+    assert (k1.rebar, k1.stirrups) == ("4#3", "E#2@20")
+    assert [(r.motivo, r.texto) for r in inv.rechazos] == [("sin_dueno", "15X15")]
+
+
+def test_armado_after_a_pointed_mark_is_never_the_owners(tmp_path):
+    # R102: «E#2@15 VER CORTE C-2 8#6 E#3@20» en la pila de K-1 encabeza: nombra a C-2 y no se lee
+    # (antes K-1 tomaba 4#3+8#6). La pila se corta ahí: el «4#3» de arriba queda sin dueño.
+    inv = build_schedule_inventory(
+        _pila(tmp_path, "K-1", ["4#3", "E#2@15 VER CORTE C-2 8#6 E#3@20"]), frames=_frame()
+    )
+    assert not [s for s in inv.specs if s.rebar and "8#6" in s.rebar]
+    assert sorted((r.motivo, r.texto, tuple(r.marcas)) for r in inv.rechazos) == [
+        ("sin_dueno", "4#3", ()),
+        ("sin_lector", "E#2@15 VER CORTE C-2 8#6 E#3@20", ("C-2",)),
+    ]
+
+
+def test_a_note_with_armado_after_its_pointer_names_both_marks(tmp_path):
+    # R102: la nota de K-1 con «VER CORTE C-2 30X30 8#6» detrás es de K-1 y de C-2: no se lee, y
+    # la sección de C-2 la dice el plano («C-2 30X30»), nunca la IA.
+    inv = build_schedule_inventory(
+        _notas(tmp_path, ["K-1 15X15 4#3 E#2@15 VER CORTE C-2 30X30 8#6", "C-2 30X30"]),
+        frames=_frame(),
+    )
+    assert [(r.motivo, r.marcas) for r in inv.rechazos] == [("varias_marcas", ["K-1", "C-2"])]
+    assert not [s for s in inv.specs if s.mark == "K-1"]
+    merge_external_specs(inv, _ias("K-1", "C-2"), C)
+    assert inv.by_mark["C-2"].section_cm == (30, 30)
+    assert (inv.by_mark["C-2"].rebar, inv.by_mark.get("K-1")) == (None, None)
+
+
+@pytest.mark.parametrize("como", ["nota", "pila", "numerada"])
+def test_a_leading_pointer_heads_in_every_context(tmp_path, como):
+    # R102: «VER CORTE C-2 30X30 8#6 E#2@15» al principio encabeza: nombra a C-2 y no se lee, sea
+    # una nota suelta, un renglón de la pila de K-1 o una nota numerada (antes, según el caso,
+    # nadie lo leía, lo leía K-1 o se perdía).
+    texto = "VER CORTE C-2 30X30 8#6 E#2@15"
+    if como == "pila":
+        ents = _pila(tmp_path, "K-1", [texto])
+    else:
+        ents = _notas(tmp_path, [f"1.- {texto}" if como == "numerada" else texto])
+    inv = build_schedule_inventory(ents, frames=_frame())
+    assert [s for s in inv.specs] == []
+    assert [(r.motivo, r.marcas) for r in inv.rechazos] == [("sin_lector", ["C-2"])]
+    merge_external_specs(inv, _ias("C-2"), C)
+    assert inv.by_mark.get("C-2") is None  # la IA de C-2 no llena nada: el plano lo dice
+
+
+@pytest.mark.parametrize(
+    "renglones,varillas,estribos",
+    [
+        (["4#3 VER DET. K-2", "E#2@15"], "4#3 VER DETALLE", "E#2@15"),  # R102: se guarda
+        (["4#3", "2E#3 VER CORTE"], "4#3", "2E#3 VER CORTE"),  # Marina
+        (["4#3", "E#2@15 VER CORTE C-2"], "4#3", "E#2@15 VER CORTE"),
+    ],
+)
+def test_a_trailing_pointer_keeps_its_reference_wherever_it_sits(
+    tmp_path, renglones, varillas, estribos
+):
+    inv = build_schedule_inventory(_pila(tmp_path, "K-1", renglones), frames=_frame())
+    (k1,) = inv.specs
+    assert (k1.rebar, k1.stirrups, inv.rechazos) == (varillas, estribos, [])
+    merge_external_specs(inv, _ias("K-2", "C-2"), C)
+    assert inv.by_mark["K-2"].rebar == "8#8" and inv.by_mark["C-2"].rebar == "8#8"

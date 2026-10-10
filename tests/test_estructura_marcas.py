@@ -7,6 +7,7 @@ from klave_engine.estructura.marcas import (
     leer_marcas,
     marca_en_rango,
     marcas_nombradas,
+    sin_referencias,
     titulos,
 )
 
@@ -232,7 +233,8 @@ def test_a_title_with_armado_names_every_mark(texto, tipo, piezas, titulo):
     "texto,nombradas",
     [
         ("T-1 30X60 E#3@15 LS V 3", {"T-1"}),  # R96: «V 3» no es una marca en este texto
-        ("T-1 20X40 V 4 LS V 3 LI E#3@15", {"T-1"}),  # R101: «V 4» tras el armado de T-1
+        # R103 (antes R101): «V 4» tras el armado de T-1 no acaba el texto: es la marca V-4.
+        ("T-1 20X40 V 4 LS V 3 LI E#3@15", {"T-1", "V-4"}),
         ("K-1 A K-4 4#3", {"K-1", "K-4"}),
         ("K-7E#3@20", {"K-7", "K-7E"}),
         ("E#2@15 VER CORTE C-2", {"C-2"}),
@@ -271,3 +273,97 @@ def test_a_bar_word_mark_after_another_marks_armado_is_not_a_mark(texto, tipo, p
 )
 def test_only_a_heading_is_a_title(texto, marcas):
     assert titulos(texto, C) == marcas
+
+
+# ------------------------------------------------------------------ tarea 8b, paso A (R102–R105)
+
+
+@pytest.mark.parametrize(
+    "texto,tipo,piezas,titulo",
+    [
+        # R102: un puntero es una referencia al final, sin más que su marca y puntuación detrás:
+        # remite y no nombra a nadie; el texto es de su dueño.
+        ("E#2@15 VER CORTE C-2", "ninguna", [], False),
+        ("E#2@15 VER CORTE C-2.", "ninguna", [], False),
+        ("4#3 VER DET. K-2", "ninguna", [], False),
+        ("E#2@15 VER CORTES C-1 Y C-2", "ninguna", [], False),  # remite a una lista
+        ("3.- 4#3 E#2@20 VER CORTE C-2", "ninguna", [], False),
+        ("K-1 15X15 4#3 E#2@15 VER CORTE C-2", "unica", ["K-1"], False),
+        # Con algo detrás (armado, una palabra) encabeza: nombra todas sus marcas y no se lee.
+        ("E#2@15 VER CORTE C-2 8#6 E#3@20", "unica", ["C-2"], True),
+        ("K-1 15X15 4#3 E#2@15 VER CORTE C-2 30X30 8#6", "varias", ["K-1", "C-2"], True),
+        ("K-1 4#3 VER CORTE C-2 E#2@15", "varias", ["K-1", "C-2"], True),
+        ("E#2@15 VER CORTE C-2 EN PLANTA", "unica", ["C-2"], True),
+        # Al principio, también «VER»: encabeza.
+        ("VER CORTE C-2 30X30 8#6 E#2@15", "unica", ["C-2"], True),
+        ("1.- VER CORTE C-2 30X30 8#6 E#2@15", "unica", ["C-2"], True),
+        ("VER CORTE C-2 30X30", "unica", ["C-2"], True),  # una sección también es armado (R91)
+        # Lo que ya era así.
+        ("CORTE K-1 Y K-2 E#3@1S", "varias", ["K-1", "K-2"], True),
+        ("CORTE K-1 4#3 VER DET. K-2", "unica", ["K-1"], True),
+        ("VER CORTE C-2", "ninguna", [], False),  # sin armado no hay nada que leer
+        ("2E#3 VER CORTE", "ninguna", [], False),  # Marina: «VER CORTE» sin marca
+    ],
+)
+def test_a_reference_is_a_pointer_only_at_the_end(texto, tipo, piezas, titulo):
+    lectura = leer_marcas(texto, C)
+    assert (lectura.tipo, lectura.piezas, lectura.titulo) == (tipo, piezas, titulo)
+
+
+@pytest.mark.parametrize(
+    "texto,limpio",
+    [
+        # R102, R104: el respaldo de la IA ve las marcas de lo que encabeza; sólo un puntero se
+        # quita.
+        ("E#2@15 VER CORTE C-2 8#6 E#3@20", "E#2@15 VER CORTE C-2 8#6 E#3@20"),
+        ("VER CORTE C-2 30X30 8#6", "VER CORTE C-2 30X30 8#6"),
+        ("E#2@15 VER CORTE C-2", "E#2@15"),
+        ("VER CORTE C-2", ""),
+    ],
+)
+def test_only_a_pointer_is_taken_out(texto, limpio):
+    assert " ".join(sin_referencias(texto, C).split()) == limpio
+
+
+@pytest.mark.parametrize(
+    "texto,tipo,piezas,residuos",
+    [
+        # R103: «V n», «V-n» tras el armado de otra marca son varillas sin leer sólo si acaban el
+        # texto, en cualquier escritura.
+        ("K-1 15X15 E#2@20 V 4", "unica", ["K-1"], ["V-4"]),
+        ("K-1 15X15 E#2@20 V-4", "unica", ["K-1"], ["V-4"]),
+        ("K-1 15X15 E#2@20 V-4.", "unica", ["K-1"], ["V-4"]),
+        ("K-1 15X15 E#2@20 VAR 4", "unica", ["K-1"], []),  # «VAR 4» nunca es una marca
+        # Si les sigue algo, es la marca V-4 (como en 094ba41).
+        ("K-1 4#3 E#2@20 V-4: 20X40 4#5 E#3@15", "varias", ["K-1", "V-4"], []),
+        ("K-1 4#3 E#2@20, V-4: 4#5", "varias", ["K-1", "V-4"], []),
+        ("K-1 4#3 E#2@20 V-4= 4#5", "varias", ["K-1", "V-4"], []),
+        ("K-1 4#3 E#2@20 (V-4) 4#5", "varias", ["K-1", "V-4"], []),
+        ("K-1 4#3 E#2@20 V-4 - 4#5", "varias", ["K-1", "V-4"], []),
+        ("K-1 4#3 E#2@20 V-4 CON 4#5", "varias", ["K-1", "V-4"], []),
+        ("K-1 4#3 E#2@20 V-4 LECHO SUP. 2#5", "varias", ["K-1", "V-4"], []),
+        ("K-1 15X15 E#2@20 CON V 4", "unica", ["K-1"], []),  # «V 4» ni se junta (R96)
+        ("V4#4", "ninguna", [], []),  # cuatro varillas del #4
+    ],
+)
+def test_a_bar_word_mark_is_residue_only_at_the_end(texto, tipo, piezas, residuos):
+    lectura = leer_marcas(texto, C)
+    assert (lectura.tipo, lectura.piezas, lectura.residuos) == (tipo, piezas, residuos)
+
+
+@pytest.mark.parametrize(
+    "texto,piezas",
+    [
+        # R105: la escala, el nombre y el número del corte no cuentan en la ventana.
+        ("CORTE A-A ESC 1:20 K-1 15X20 4#3", ["K-1"]),
+        ("CORTE B'-B' ESCALA 1:25 K-1 4#3", ["K-1"]),
+        ("CORTE 1-1 ESC. 1:50 K-1 4#3", ["K-1"]),
+        ("DET. No. 5 A-A K-1 4#3", ["K-1"]),
+        ("DETALLE N° 3 ESC 1:20 DE K-1 15X15 4#3", ["K-1"]),
+        ("CORTE: K-1 15X20 4#3", ["K-1"]),
+    ],
+)
+def test_the_heading_window_skips_scale_and_cut_tokens(texto, piezas):
+    lectura = leer_marcas(texto, C)
+    assert (lectura.piezas, lectura.titulo) == (piezas, True)
+    assert titulos(texto, C) == piezas
