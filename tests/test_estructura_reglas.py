@@ -2145,25 +2145,28 @@ def test_a_rule_a_note_names_with_a_number_and_that_is_not_read_is_reported(tmp_
 
 
 def test_a_half_read_pair_says_which_half_is_missing(tmp_path):
+    """R40: la mitad que no se lee es parte de la nota; la nota no se usa, y el aviso dice las dos
+    reglas y qué no se leyó (antes se usaba la mitad leída y se avisaba de la otra)."""
     r = _con_notas(
         tmp_path,
         ["4. SE PERMITE TRASLAPAR VARILLA HASTA EL #6. LAS DE MAS DE LA No. 8 SE SOLDARAN"],
     )
-    assert r.traslape_max_numero.valor == "6" and r.soldar_desde_numero is None
+    assert r.traslape_max_numero is None and r.soldar_desde_numero is None
     (aviso,) = r.avisos
     assert "hasta qué varilla se traslapa" in aviso and "desde qué varilla se suelda" in aviso
-    assert "mitad" in aviso
+    assert "«LAS DE MAS DE LA No. 8 SE SOLDARAN»" in aviso and "no se usa nada" in aviso
 
 
 def test_the_other_half_missing_is_reported_too(tmp_path):
+    """R40: la cláusula negada que no se lee es parte de la nota: no se usa la que sí se leyó."""
     r = _con_notas(
         tmp_path,
         ["4. NO SE TRASLAPARA VARILLA MAYOR AL #6, DEL #8 Y DIAMETROS MAYORES SE SOLDARAN"],
     )
-    assert r.soldar_desde_numero.valor == "8" and r.traslape_max_numero is None
+    assert r.soldar_desde_numero is None and r.traslape_max_numero is None
     (aviso,) = r.avisos
     assert "desde qué varilla se suelda" in aviso and "hasta qué varilla se traslapa" in aviso
-    assert "mitad" in aviso
+    assert "«NO SE TRASLAPARA VARILLA MAYOR AL #6»" in aviso
 
 
 def test_a_single_angle_hook_is_read_for_the_element_it_names(tmp_path):
@@ -2347,7 +2350,8 @@ def test_the_same_value_twice_in_one_note_counts_one_copy(tmp_path):
 def test_the_same_value_in_two_different_notes_counts_both(tmp_path):
     renglones = [
         "4. EL RECUBRIMIENTO MINIMO SERA 5.0 CM EN COLUMNAS",
-        "5. EL RECUBRIMIENTO DE LAS COLUMNAS DE ORILLA SERA 5.0 CM EN COLUMNAS",
+        # R40: «DE LAS COLUMNAS DE ORILLA» acotaría la nota; otra redacción que no acota.
+        "5. EL RECUBRIMIENTO LIBRE DE LAS VARILLAS SERA 5.0 CM EN COLUMNAS",
     ]
     r = leer_reglas(
         _dibujo(tmp_path, tabla=False, bloques=[([("NOTAS :", renglones)], 1)]), frames=[]
@@ -2770,11 +2774,13 @@ def test_stirrups_and_grapas_with_their_own_angle_are_both_read(tmp_path):
 
 
 def test_a_second_hook_in_the_same_sentence_that_no_phrase_reads_is_reported(tmp_path):
+    """R40: la parte que no se lee («LAS GRAPAS TENDRAN 180°…») es de la misma nota: no se usa
+    ningún gancho de ella, y el aviso dice cuál parte no se leyó."""
     texto = f"7. LOS ESTRIBOS LLEVARAN GANCHOS A 135° Y LAS GRAPAS TENDRAN 180° CON {_ESTRIBOS}"
     r = _con_notas(tmp_path, [texto])
-    assert r.gancho_estribo.valor == {"angulo": 135, "recto_diametros": 10}
-    assert r.gancho_grapa.fuente == "supuesto"
-    assert any("180°" in a and "no se pudo leer a qué gancho" in a for a in r.avisos)
+    assert r.gancho_estribo.fuente == "supuesto" and r.gancho_grapa.fuente == "supuesto"
+    (aviso,) = r.avisos
+    assert "«LAS GRAPAS TENDRAN 180° CON TRAMO RECTO DE 10Ø»" in aviso
 
 
 @pytest.mark.parametrize(
@@ -3117,7 +3123,6 @@ def test_a_lap_with_a_weld_that_is_denied_reads_the_lap_and_says_nothing_more(tm
             "6",
             "8",
         ),
-        ("NO SE PERMITE SOLDAR; SE TRASLAPARA HASTA EL #6", "6", None),
         ("SE TRASLAPARAN VARILLAS HASTA No. 6, LAS DE No. 8 O MAYORES SE SOLDARAN", "6", "8"),
         ("DE LA No. 8 EN ADELANTE SE SOLDARA; HASTA LA No. 6 SE TRASLAPARA", "6", "8"),
         ("EL TRASLAPE SERA SEGUN TABLA, DEL No. 6 EN ADELANTE SE SOLDARA", None, "6"),
@@ -3130,11 +3135,6 @@ def test_a_lap_with_a_weld_that_is_denied_reads_the_lap_and_says_nothing_more(tm
         ("SIN EMBARGO SE PERMITE TRASLAPAR VARILLA HASTA EL #6", "6", None),
         ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6 Y DEL #8 EN ADELANTE SE SOLDARAN", "6", "8"),
         ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6 Y LAS DEMAS SE SOLDARAN", "6", None),
-        (
-            "NO SE PERMITIRA TRASLAPAR VARILLA MAYOR AL #6, SE SOLDARAN LAS DEL #8 EN ADELANTE",
-            None,
-            "8",
-        ),
     ],
 )
 def test_phrasings_whose_every_clause_is_understood_are_read(tmp_path, texto, traslape, soldar):
@@ -3155,8 +3155,8 @@ def test_hooks_with_their_own_angle_each_and_one_denied(tmp_path):
     assert r.gancho_estribo.valor == {"angulo": 135, "recto_diametros": 10}
     assert r.gancho_grapa.valor == {"angulo": 180, "recto_diametros": 10}
     texto = "7. LOS ESTRIBOS LLEVARAN GANCHOS A 135° Y LAS GRAPAS NO LLEVARAN GANCHOS A 180°"
-    r = _con_notas(tmp_path, [texto])
-    assert r.gancho_estribo.valor["angulo"] == 135 and r.gancho_grapa.fuente == "supuesto"
+    r = _con_notas(tmp_path, [texto])  # R40: la parte negada es de la nota: no se usa nada
+    assert r.gancho_estribo.fuente == "supuesto" and r.gancho_grapa.fuente == "supuesto"
     assert any("180°" in a for a in r.avisos)
     r = _con_notas(tmp_path, ["7. LOS ESTRIBOS NO LLEVARAN GANCHOS A 90° Y LAS GRAPAS A 180°"])
     assert r.gancho_estribo.fuente == "supuesto" and r.gancho_grapa.fuente == "supuesto"
@@ -3178,20 +3178,6 @@ def test_a_cover_that_a_note_denies_or_excepts_is_not_read(tmp_path, texto):
     assert r.avisos
 
 
-def test_a_cover_in_another_unit_is_not_given_to_the_measure_before_it(tmp_path):
-    r = _con_notas(
-        tmp_path, ["4. EL RECUBRIMIENTO SERA 4 CM EN TRABES Y 0.05 M EN COLUMNAS"], titulo="NOTAS :"
-    )
-    assert r.recubrimiento_m["trabe"].valor == 0.04 and r.recubrimiento_m["trabe"].fuente == "nota"
-    assert r.recubrimiento_m["columna"].fuente == "supuesto"  # no los 4 cm de las trabes
-    (aviso,) = r.avisos
-    assert "0.05 M EN COLUMNAS" in aviso
-    r = _con_notas(tmp_path, ["4. EL RECUBRIMIENTO SERA DE 0.05 M EN TRABES"], titulo="NOTAS :")
-    assert r.recubrimiento_m["trabe"].fuente == "supuesto"
-    (aviso,) = r.avisos
-    assert "recubrimiento" in aviso
-
-
 def test_a_plantilla_in_meters_after_its_material_is_not_read_without_its_thickness(tmp_path):
     """«PLANTILLA DE CONCRETO POBRE DE 0.10 M» puede ser lo que sobresale, no el espesor: en metros
     sólo se lee pegada a la palabra o con «ESPESOR»."""
@@ -3206,7 +3192,7 @@ def test_a_negation_well_before_a_cover_still_cancels_it(tmp_path):
     r = _con_notas(tmp_path, ["4. EL RECUBRIMIENTO NUNCA SERA DE 5 CM EN TRABES"], titulo="NOTAS :")
     assert r.recubrimiento_m["trabe"].fuente == "supuesto"
     (aviso,) = r.avisos
-    assert "niega o acota" in aviso
+    assert "el recubrimiento" in aviso and "no se pudo leer" in aviso
 
 
 @pytest.mark.parametrize(
@@ -3364,3 +3350,237 @@ def test_adversarial_variants_read_right_or_not_at_all(tmp_path, texto, campo, v
     else:
         assert getattr(r, campo).valor == valor
         assert r.avisos == [], r.avisos
+
+
+# --- ronda 5 (R40): la nota entera — sus lecturas valen sólo si nada de ella las niega, las acota
+# o se quedó sin leer -----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("texto", "campo"),
+    [
+        # 1. lo que manda sobre la frase está antes de un «;» o de un «.»
+        ("PROHIBIDO; SE TRASLAPARAN VARILLAS HASTA EL #6", _T),
+        ("PROHIBIDO. SE TRASLAPARAN VARILLAS HASTA EL #6", _T),
+        ("NO SE PERMITIRA; SE TRASLAPARAN VARILLAS HASTA EL #6", _T),
+        ("QUEDA PROHIBIDO; SALVO INDICACION, SE TRASLAPARAN VARILLAS HASTA EL #6", _T),
+        ("EN NINGUN CASO; SE TRASLAPARAN VARILLAS HASTA EL #6", _T),
+        ("EN COLUMNAS; DEL #8 EN ADELANTE SE SOLDARAN", _S),
+        ("PARA COLUMNAS. DEL #8 EN ADELANTE SE SOLDARAN", _S),
+        (
+            "EN COLUMNAS: LOS ESTRIBOS SERAN DEL #3; SE PERMITE TRASLAPAR VARILLA HASTA EL #6; LAS "
+            "VARILLAS DEL #8 EN ADELANTE SE SOLDARAN.",
+            _T,
+        ),
+        (
+            "EN COLUMNAS: LOS ESTRIBOS SERAN DEL #3; SE PERMITE TRASLAPAR VARILLA HASTA EL #6; LAS "
+            "VARILLAS DEL #8 EN ADELANTE SE SOLDARAN.",
+            _S,
+        ),
+        ("NO SE PERMITIRA: SOLDAR EN CAMPO; SE TRASLAPARAN VARILLAS HASTA EL #6.", _T),
+        ("NO SE PERMITE SOLDAR; SE TRASLAPARA HASTA EL #6", _T),
+        ("NO SE PERMITIRA TRASLAPAR VARILLA MAYOR AL #6, SE SOLDARAN LAS DEL #8 EN ADELANTE", _S),
+        # 2. un diámetro no es un número de varilla (puede ser en milímetros)
+        ("SE TRASLAPARAN VARILLAS HASTA DIAMETRO 12", _T),
+        ("SE TRASLAPARAN VARILLAS HASTA DIAMETRO 6", _T),
+        ("SE TRASLAPARAN VARILLAS HASTA DIAMETRO 12 MM", _T),
+        ("SE TRASLAPARAN VARILLAS HASTA 12 MM", _T),
+        # 3. una excepción para un elemento, dicha con la otra regla
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6, EN COLUMNAS SE SOLDARAN", _T),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6 Y EN COLUMNAS SE SOLDARAN", _T),
+        (
+            "SE PERMITE TRASLAPAR VARILLA HASTA EL #6. EN COLUMNAS SE SOLDARAN TODAS LAS VARILLAS.",
+            _T,
+        ),
+        ("DEL #8 EN ADELANTE SE SOLDARAN, EN COLUMNAS SE TRASLAPARAN TODAS", _S),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6, NO ASI EN COLUMNAS DONDE SE SOLDARAN", _T),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6. NO SE PERMITEN TRASLAPES EN COLUMNAS.", _T),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6. EN COLUMNAS NO SE PERMITEN TRASLAPES.", _T),
+        ("DEL #8 EN ADELANTE SE SOLDARAN. EN COLUMNAS NO SE PERMITE SOLDAR.", _S),
+        # 4. lo que amplía o recorta a qué varillas va la regla
+        ("SE TRASLAPARAN LAS VARILLAS HASTA EL #4 Y LAS DE MAYOR DIAMETRO TAMBIEN", _T),
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6, Y MAYORES TAMBIEN", _T),
+        ("LAS VARILLAS DEL #8 EN ADELANTE SE SOLDARAN, ASI COMO LAS MENORES", _S),
+        ("LAS VARILLAS DEL #8 EN ADELANTE SE SOLDARAN Y LAS DEMAS TAMBIEN", _S),
+        (
+            "EN TRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM. EN CONTRATRABES EL PRIMER ESTRIBO SE "
+            "COLOCARA A MEDIA SEPARACION.",
+            _P,
+        ),
+        # una nota anulada
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6 (NOTA CANCELADA)", _T),
+        ("NOTA ANULADA. SE PERMITE TRASLAPAR VARILLA HASTA EL #6", _T),
+        ("N/A: SE PERMITE TRASLAPAR VARILLA HASTA EL #6", _T),
+        # 6. un rango cuyo extremo de abajo no es una varilla
+        ("SE TRASLAPARAN VARILLAS DEL 1 AL 6", _T),
+    ],
+)
+def test_a_note_whose_rule_is_scoped_negated_or_not_read_whole_is_one_aviso(tmp_path, texto, campo):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert _sin_lectura(r, campo), getattr(r, campo)
+    assert r.avisos, texto
+
+
+def test_the_aviso_of_a_note_that_is_not_used_quotes_it_and_says_why(tmp_path):
+    texto = "SE PERMITE TRASLAPAR VARILLA HASTA EL #6. NO SE PERMITEN TRASLAPES EN COLUMNAS."
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    (aviso,) = r.avisos
+    assert aviso.startswith("La nota 4 de REFUERZO dice hasta qué varilla se traslapa")
+    assert "«NO SE PERMITEN TRASLAPES EN COLUMNAS»" in aviso and "no se usa nada" in aviso
+    assert texto in aviso
+
+
+@pytest.mark.parametrize(
+    ("encabezado", "renglon", "campo"),
+    [
+        ("COLUMNAS :", "1. SE PERMITE TRASLAPAR VARILLA HASTA EL #6", _T),
+        ("NOTAS PARA LOSAS :", "1. LAS VARILLAS DEL #8 EN ADELANTE SE SOLDARAN", _S),
+        ("COLUMNAS :", "1. EN TRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM", _P),
+    ],
+)
+def test_a_heading_that_names_an_element_scopes_its_notes(tmp_path, encabezado, renglon, campo):
+    r = _con_notas(tmp_path, [renglon], titulo=encabezado)
+    assert _sin_lectura(r, campo), getattr(r, campo)
+    assert r.avisos
+
+
+def test_a_per_family_rule_under_a_heading_is_read_for_that_family(tmp_path):
+    r = _con_notas(
+        tmp_path, ["1. EL PRIMER ESTRIBO SE COLOCARA A 5 CM DEL PAÑO"], titulo="COLUMNAS :"
+    )
+    assert {f: d.valor for f, d in r.primer_estribo_m.items()} == {"columna": 0.05}
+    assert r.avisos == []
+
+
+@pytest.mark.parametrize(
+    ("texto", "esperado"),
+    [
+        ("EL RECUBRIMIENTO SERA 5 CM EN TRABES DE CIMENTACION", {"contratrabe": 0.05}),
+        ("EL RECUBRIMIENTO SERA 5 CM EN LOSA DE CIMENTACION", {"losa_cimentacion": 0.05}),
+        (
+            "EL RECUBRIMIENTO SERA 4 CM EN TRABES Y 0.05 M EN COLUMNAS",
+            {"trabe": 0.04, "columna": 0.05},
+        ),
+        ("EL RECUBRIMIENTO SERA DE 0.05 M EN TRABES", {"trabe": 0.05}),
+    ],
+)
+def test_covers_of_foundation_beams_and_slabs_and_in_meters_are_read(tmp_path, texto, esperado):
+    r = _con_notas(tmp_path, [f"4. {texto}"], titulo="NOTAS :")
+    leidos = {k: d.valor for k, d in r.recubrimiento_m.items() if d.fuente == "nota"}
+    assert leidos == esperado and r.avisos == []
+
+
+@pytest.mark.parametrize(
+    ("texto", "nunca"),
+    [
+        ("EL RECUBRIMIENTO SERA 5 CM EN COLUMNAS DE CIMENTACION", "columna"),
+        ("EL RECUBRIMIENTO SERA 4 CM EN TRABES, COLUMNAS 3 CM", "columna"),
+        ("EL RECUBRIMIENTO SERA 4 CM EN TRABES; COLUMNAS: 5 CM", "columna"),
+        ("EL RECUBRIMIENTO SERA 4 CM EN TRABES. EN LOSAS 2 CM.", "losa"),
+        ("EL RECUBRIMIENTO SERA 4 CM EN TRABES Y DE CINCO CENTIMETROS EN COLUMNAS", "columna"),
+        ("EL RECUBRIMIENTO SERA 4 CM EN TRABES Y LA MITAD EN LOSAS", "losa"),
+        ("EL RECUBRIMIENTO SERA 4 CM EN TRABES Y DEL DOBLE EN COLUMNAS", "columna"),
+        ("EL RECUBRIMIENTO SERA 4 CM EN TRABES MAS 1 CM EN COLUMNAS", "columna"),
+    ],
+)
+def test_a_cover_is_never_given_to_an_element_it_was_not_said_for(tmp_path, texto, nunca):
+    r = _con_notas(tmp_path, [f"4. {texto}"], titulo="NOTAS :")
+    assert r.recubrimiento_m[nunca].fuente == "supuesto"
+    assert r.avisos
+
+
+def test_an_anchorage_into_an_element_is_not_that_elements_anchorage(tmp_path):
+    r = leer_reglas(
+        _dibujo(tmp_path, tabla=False, mtexts=[("60 CM DE ANCLAJE EN DALA", 5.0, 5.0)]), frames=[]
+    )
+    assert r.anclajes_declarados_m == {} and r.avisos
+    r = leer_reglas(
+        _dibujo(tmp_path, tabla=False, mtexts=[("ANCLAJE DE DALA 60 CM", 5.0, 5.0)]), frames=[]
+    )
+    assert r.anclajes_declarados_m["dala"].valor == 0.6
+
+
+@pytest.mark.parametrize(
+    "texto",
+    ["LAS VARILLAS DE 8 EN ADELANTE SE SOLDARAN", "LAS VARILLAS DE 8 Y MAYORES SE SOLDARAN"],
+)
+def test_bars_of_a_number_named_as_bars_are_read(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert r.soldar_desde_numero.valor == "8" and r.avisos == []
+
+
+@pytest.mark.parametrize("texto", ["PLANTILLA DE 5", "PLANTILLA DE 0.05"])
+def test_a_plantilla_without_a_unit_is_reported(tmp_path, texto):
+    r = leer_reglas(_dibujo(tmp_path, tabla=False, mtexts=[(texto, 5.0, 5.0)]), frames=[])
+    assert r.plantilla_espesor_m is None and r.avisos
+    r = _con_notas(tmp_path, [f"2. {texto}"], titulo="NOTAS :")
+    assert r.plantilla_espesor_m is None and r.avisos
+
+
+def test_a_figure_key_after_its_abbreviation_does_not_end_the_sentence(tmp_path):
+    assert len(_frases("LOS ESTRIBOS SEGUN FIG. B LLEVARAN GANCHOS A 90°")) == 1
+    r = _con_notas(
+        tmp_path, ["7. LOS ESTRIBOS SEGUN FIG. B LLEVARAN GANCHOS A 90° Y TRAMO RECTO DE 6Ø"]
+    )
+    assert r.gancho_estribo.valor == {"angulo": 90, "recto_diametros": 6}
+
+
+_ENVOLTURAS = (
+    "PROHIBIDO; {f}",
+    "PROHIBIDO. {f}",
+    "NO SE PERMITIRA; {f}",
+    "QUEDA PROHIBIDO; SALVO INDICACION, {f}",
+    "EN NINGUN CASO; {f}",
+    "EN COLUMNAS; {f}",
+    "PARA COLUMNAS. {f}",
+    "EN COLUMNAS: LOS ESTRIBOS SERAN DEL #3; {f}",
+    "NO SE PERMITIRA: SOLDAR EN CAMPO; {f}",
+    "{f}; NO EN COLUMNAS",
+)
+_NUEVE_BASES = (
+    *((regla, base.format(B=formas[0])) for regla, base, formas, _ in _BASES),
+    (_E, "LOS ESTRIBOS LLEVARAN GANCHOS A 90° CON TRAMO RECTO DE 6Ø"),
+)
+
+
+@pytest.mark.parametrize(
+    ("texto", "campo"),
+    [
+        pytest.param(envoltura.format(f=frase), regla, id=envoltura.format(f=frase))
+        for regla, frase in _NUEVE_BASES
+        for envoltura in _ENVOLTURAS
+    ],
+)
+def test_a_governing_clause_before_a_semicolon_or_a_period_is_never_read_globally(
+    tmp_path, texto, campo
+):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert _sin_lectura(r, campo), getattr(r, campo)
+
+
+@pytest.mark.parametrize(
+    ("texto", "campo"),
+    [
+        # una regla por familia: otra oración que nombra una familia que se leyó la cambia
+        ("EN TRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM. EN CONTRATRABES SEGUN EL DETALLE.", _P),
+        # … y en su misma oración, el valor de otra familia que no se lee
+        ("EN TRABES, EL PRIMER ESTRIBO SE COLOCARA A 5 CM, EN COLUMNAS A 10 CM", _P),
+        # lo que sólo acompaña a la otra regla no vale sin ella
+        ("SE PERMITE TRASLAPAR VARILLA HASTA EL #6. NO SE TRASLAPARAN.", _T),
+        ("LAS VARILLAS DEL #8 EN ADELANTE SE SOLDARAN. NO SE SOLDARA NINGUNA.", _S),
+    ],
+)
+def test_a_per_family_rule_or_a_companion_that_the_note_contradicts_is_not_used(
+    tmp_path, texto, campo
+):
+    r = _con_notas(tmp_path, [f"3. {texto}"])
+    assert _sin_lectura(r, campo), getattr(r, campo)
+    assert r.avisos
+
+
+def test_a_cover_that_another_sentence_says_more_about_is_not_used(tmp_path):
+    texto = (
+        "4. EL RECUBRIMIENTO SERA 4 CM EN TRABES. EN TRABES DE BORDE CONSULTAR AL ESTRUCTURISTA."
+    )
+    r = _con_notas(tmp_path, [texto], titulo="NOTAS :")
+    assert r.recubrimiento_m["trabe"].fuente == "supuesto" and r.avisos

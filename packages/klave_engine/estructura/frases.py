@@ -30,9 +30,18 @@ Además, una frase sólo vale si nada de su oración la cambia:
   NO EN COLUMNAS.»); para el primer estribo, que va por familia, un número de otra familia en esa
   oración no la cambia («… EN TRABES … A 5 CM. EN COLUMNAS A 10 CM.»: se avisa aparte).
 
-Lo que no se lee queda en ``Lectura.resto`` para que quien lee avise de lo que nombra una regla con
-un número y no se entendió (``reglas._vigilar``). Todo trabaja sobre el texto en mayúsculas y sin
-acentos, que tiene el mismo largo que el original: un lugar en uno es el mismo en el otro."""
+Los recubrimientos son una lista cerrada de renglones «N CM EN <elementos>» tras lo que los
+presenta («EL RECUBRIMIENTO MINIMO LIBRE, NO SERA MENOR QUE … NI MENOR A:»); un elemento de la lista
+es uno conocido o una palabra que no se reconoce (se avisa), nada más («Y LA MITAD EN LOSAS» no
+cabe). Hay además frases que se saben leer pero no dan una regla: la proporción por sección de
+Marina («NO SE PERMITIRA TRASLAPAR NI SOLDAR MAS DEL 50% …»), «SE COLOCARA PLANTILLA DE CONCRETO
+POBRE», «EL TRASLAPE SERA SEGUN TABLA», y lo que acompaña a la otra mitad que sí se leyó («SIN
+TRASLAPES» junto a lo que se suelda, «NO SE SOLDARA NINGUNA» junto a lo que se traslapa).
+
+Lo que no se lee queda en ``Lectura.resto``. Quien lee decide con la nota entera si sus lecturas
+valen (``reglas._lo_que_la_cambia``) y avisa de lo que nombra una regla con un número y no se
+entendió (``reglas._vigilar``). Todo trabaja sobre el texto en mayúsculas y sin acentos, que tiene
+el mismo largo que el original: un lugar en uno es el mismo en el otro."""
 
 import re
 from collections.abc import Iterable
@@ -62,7 +71,7 @@ _COMILLAS = '"”″'
 def _barra(nombre: str) -> str:
     return (
         rf"(?P<{nombre}>"
-        r"(?:(?:EL|LA)\s+)?(?:(?:VARILLAS?|DIAMETRO)\s+)?"
+        r"(?:(?:EL|LA)\s+)?(?:VARILLAS?\s+)?"
         r"(?:#\s*|(?:NO|N[º°])\.?\s*|NUMERO\s+|NUM\.?\s*)?"
         r"\d+(?:(?:\s+|\s*-\s*)\d+\s*/\s*\d+|\s*/\s*\d+|[.,]\d+)?"
         rf"(?:\s*(?:[{_COMILLAS}]|''|PULG(?:ADAS?)?\b\.?))?"
@@ -93,7 +102,7 @@ _SE_SUELDA = r"(?:SE\s+SOLDA(?:RA|RAN|N)?|(?:SE\s+)?(?:DEBERAN?|PODRAN?)\s+SOLDA
 _A_TOPE = r"(?:\s+A\s+TOPE)?"
 # Un límite: «HASTA EL #6», «VARILLA HASTA 6 INCLUSIVE» (``pre_b`` dice si lo antecede el nombre).
 _HASTA = rf"(?P<pre_b>(?:VARILLAS?\s+)?HASTA)\s+{_barra('b')}{_COLA}"
-_DESDE_UN = rf"(?P<pre_b>DEL|DE)\s+{_barra('b')}"
+_DESDE_UN = rf"(?P<pre_b>(?:VARILLAS?\s+)?(?:DEL|DE))\s+{_barra('b')}"
 _RANGO = rf"(?P<pre_a>DEL|DE)\s+{_barra('a')}\s+(?P<pre_b>AL|A)\s+{_barra('b')}"
 
 _FAMILIA = r"(?:CONTRATRABES?|TRABES?|COLUMNAS?|CASTILLOS?|DALAS?|CADENAS?|CERRAMIENTOS?)"
@@ -168,6 +177,49 @@ _SE_COLOCA_PLANTILLA = (
 _ESPESOR = r"(?P<esp>\s+(?:DE\s+)?(?:ESPESOR|ESP\b\.?))"
 
 
+# Los recubrimientos: «5.0 CM EN ELEMENTOS ESTRUCTURALES DE CIMENTACION», «4.0 CM EN TRABES Y
+# LOSAS», «3.0 A 5.0 CM EN CASTILLOS, CADENAS, DALAS Y CERRAMIENTOS», «COLUMNAS: 5 CM». Un elemento
+# de la lista es uno conocido o una palabra que no se reconoce (se avisa); nada más cabe en ella.
+MIEMBRO_CONOCIDO = (
+    r"ELEMENTOS\s+(?:ESTRUCTURALES\s+)?DE\s+CIMENTACION|LOSAS?\s+DE\s+CIMENTACION"
+    r"|(?:TRABES?|VIGAS?)\s+DE\s+CIMENTACION"
+    r"|(?:ZAPATAS?|DADOS?|PILOTES?|CONTRATRABES?)(?:\s+DE\s+CIMENTACION)?|CIMENTACION"
+    r"|TRABES?|COLUMNAS?|LOSAS?|MUROS?\s+DE\s+(?:CONCRETO|CONTENCION)|CASTILLOS?|CADENAS?"
+    r"|DALAS?|CERRAMIENTOS?"
+)
+_NO_ES_UN_MIEMBRO = (
+    r"(?:EN|DE|DEL|LA|LAS|LOS|EL|Y|E|O|CON|SIN|MAS|MENOS|NO|NI|A|AL|POR|PARA|CMS?|MTS?|LIBRES?"
+    r"|SERAN?|QUE|SALVO|EXCEPTO|TAMBIEN|COMO|MITAD|DOBLE)\b"
+)
+_MIEMBRO = (
+    rf"(?:(?:LOS|LAS)\s+)?(?:{MIEMBRO_CONOCIDO}"
+    rf"|(?!{_NO_ES_UN_MIEMBRO})[A-Z]{{3,}}(?:\s+DE\s+(?!{_NO_ES_UN_MIEMBRO})[A-Z]{{3,}})?)"
+)
+MIEMBROS = rf"{_MIEMBRO}(?:\s*,\s*{_MIEMBRO}|\s+(?:Y|E)\s+{_MIEMBRO})*"
+# Una medida de recubrimiento: «5.0 CM», «3.0 A 5.0 CM», «0.05 M».
+MEDIDA = rf"(?P<n>{_NUM})(?:\s*A\s*(?P<m>{_NUM}))?\s*(?P<u>CMS?|MTS?|M)\b\.?"
+_MEDIDA_SIN_NOMBRES = rf"{_NUM}(?:\s*A\s*{_NUM})?\s*(?:CMS?|MTS?|M)\b\.?"
+# Un renglón de la lista: la medida y luego sus elementos («4.0 CM EN TRABES Y LOSAS»). (El
+# elemento antes de la medida, «COLUMNAS 3 CM», no se lee: tras una lista con comas no se sabe de
+# qué elementos es cada medida.)
+EN_SUS_ELEMENTOS = r"\s+(?:LIBRES?\s+)?EN\s+"
+_UN_RECUBRIMIENTO = rf"{_MEDIDA_SIN_NOMBRES}{EN_SUS_ELEMENTOS}{MIEMBROS}"
+_RECUBRIMIENTOS = (
+    rf"(?P<items>{_UN_RECUBRIMIENTO}"
+    rf"(?:(?:\s*,\s*|\s+(?:Y|E)(?:\s+TAMBIEN)?\s+|\s+){_UN_RECUBRIMIENTO})*)"
+)
+# «EL RECUBRIMIENTO MINIMO LIBRE, NO SERA MENOR QUE EL DIAMETRO DEL REFUERZO LONGITUDINAL NI
+# MENOR A:», «RECUBRIMIENTO LIBRE:», «EL RECUBRIMIENTO MINIMO SERA»: lo que va antes de la lista.
+# («NO SERA MENOR QUE» dice el mínimo: no niega.)
+_ANTES_DEL_RECUBRIMIENTO = (
+    r"(?:EL\s+)?RECUBRIMIENTO(?:\s+MINIMO)?(?:\s+LIBRE)?"
+    r"(?:\s+DEL?\s+(?:LAS\s+|LOS\s+)?(?:VARILLAS|REFUERZO))?\s*,?\s*"
+    r"(?:SERA(?:\s+DE)?|DE|NO\s+SERA\s+MENOR\s+(?:QUE|DE|A)"
+    r"(?:\s+EL\s+DIAMETRO\s+DEL\s+REFUERZO(?:\s+LONGITUDINAL)?\s*,?\s*NI\s+MENOR\s+(?:A|DE|QUE))?)?"
+    r"\s*[:,]?\s*"
+)
+
+
 @dataclass(frozen=True)
 class FraseConocida:
     """Una frase que se sabe leer: la regla que dice y su patrón, que tiene que cubrir el trozo
@@ -205,12 +257,12 @@ FRASES_CONOCIDAS: tuple[FraseConocida, ...] = (
     # --- soldadura: desde qué varilla se suelda --------------------------------------------
     _p(
         "soldar",
-        rf"{_ADV}(?:(?:LAS|LOS)\s+)?(?:VARILLAS\s+)?{_DESDE_UN}\s+(?:Y|O)\s+"
+        rf"{_ADV}(?:(?:LAS|LOS)\s+)?{_DESDE_UN}\s+(?:Y|O)\s+"
         rf"(?:(?:DIAMETROS|VARILLAS)\s+)?MAYORES\s+{_SE_SUELDA}{_A_TOPE}",
     ),
     _p(
         "soldar",
-        rf"{_ADV}(?:(?:LAS|LOS)\s+)?(?:VARILLAS\s+)?{_DESDE_UN}\s+EN\s+ADELANTE\s+{_SE_SUELDA}"
+        rf"{_ADV}(?:(?:LAS|LOS)\s+)?{_DESDE_UN}\s+EN\s+ADELANTE\s+{_SE_SUELDA}"
         rf"{_A_TOPE}",
     ),
     _p(
@@ -220,12 +272,12 @@ FRASES_CONOCIDAS: tuple[FraseConocida, ...] = (
     ),
     _p(
         "soldar",
-        rf"{_ADV}{_SE_SUELDA}\s+(?:(?:LAS|LOS)\s+)?(?:VARILLAS?\s+)?{_DESDE_UN}\s+EN\s+ADELANTE",
+        rf"{_ADV}{_SE_SUELDA}\s+(?:(?:LAS|LOS)\s+)?{_DESDE_UN}\s+EN\s+ADELANTE",
     ),
     _p(
         "soldar",
         rf"{_ADV}LA\s+SOLDADURA\s+(?:SE\s+(?:USARA|APLICARA|HARA|EMPLEARA|UTILIZARA|REQUERIRA)"
-        rf"|SERA\s+OBLIGATORIA)\s+EN\s+(?:(?:LAS|LOS)\s+)?VARILLAS?\s+{_DESDE_UN}\s+EN\s+ADELANTE",
+        rf"|SERA\s+OBLIGATORIA)\s+EN\s+(?:(?:LAS|LOS)\s+)?{_DESDE_UN}\s+EN\s+ADELANTE",
     ),
     # «VARILLAS DEL No. 7 AL No. 12 SE SOLDARAN»: desde el de abajo, si el de arriba es el #12.
     _p(
@@ -302,15 +354,47 @@ FRASES_CONOCIDAS: tuple[FraseConocida, ...] = (
         rf"{_SE_COLOCA_PLANTILLA}PLANTILLA(?P<mat>{_DE_CONCRETO})\s+Y\s+"
         rf"(?P<n>{_NUM})\s*{_UNIDAD}(?P<esp>\s+DE\s+(?:ESPESOR|ESP\b\.?)){_BAJO}",
     ),
+    # --- recubrimientos: la lista de medidas y elementos, con lo de antes o sin ello ----------
+    _p("recubrimiento", rf"{_ANTES_DEL_RECUBRIMIENTO}{_RECUBRIMIENTOS}"),
+    _p("recubrimiento_lista", _RECUBRIMIENTOS),
+    # --- lo que no da una regla pero se sabe leer -------------------------------------------
+    # La proporción de traslapes o soldaduras por sección (la nota 4 de Marina): no da una varilla.
+    _p(
+        "inerte",
+        r"NO\s+SE\s+(?:PERMITIRA|PERMITE|DEBERA)\s+(?:TRASLAPAR|SOLDAR|ACOPLAR)"
+        r"(?:\s+(?:NI|O)\s+(?:TRASLAPAR|SOLDAR|ACOPLAR))*\s+MAS\s+DEL?\s+\d+\s*%\s+DEL\s+"
+        r"REFUERZO(?:\s+LONGITUDINAL)?\s+EN\s+UNA\s+(?:MISMA|SOLA)\s+SECCION",
+    ),
+    # La longitud del traslape que da la tabla: no dice hasta qué varilla.
+    _p(
+        "inerte",
+        r"(?:LA\s+LONGITUD\s+DEL?\s+)?(?:EL\s+)?TRASLAPE\s+SERA\s+(?:SEGUN|DE\s+ACUERDO\s+(?:CON|A))\s+"
+        r"(?:LA\s+)?TABLA(?:\s+DE\s+VARILLAS|\s+(?:NO|N[º°])\.?\s*\d+)?",
+    ),
+    # Dónde va la plantilla, sin su espesor: «BAJO LA CIMENTACION SE COLOCARA PLANTILLA DE CONCRETO
+    # POBRE» (el espesor lo dice otra cláusula, o no lo dice).
+    _p("inerte", rf"{_SE_COLOCA_PLANTILLA}PLANTILLA{_MATERIAL}{_BAJO}"),
+    # Lo que repite la otra mitad de una regla que la nota sí da, sin dar una varilla: «SIN
+    # TRASLAPES» junto a lo que se suelda, «NO SE SOLDARA NINGUNA» o «LAS DEMAS SE SOLDARAN» junto a
+    # lo que se traslapa.
+    _p(
+        "acompana_soldar",
+        r"SIN\s+TRASLAPES?|NO\s+SE\s+TRASLAPARAN|NO\s+SE\s+PERMIT(?:EN|IRAN)\s+TRASLAPES",
+    ),
+    _p(
+        "acompana_traslape",
+        r"NO\s+SE\s+SOLDARAN?(?:\s+NINGUNA(?:\s+VARILLA)?)?|SIN\s+SOLDADURA"
+        r"|(?:Y\s+)?LAS\s+DEMAS\s+SE\s+SOLDARAN",
+    ),
     # --- anclajes que el plano declara ------------------------------------------------------
     _p(
         "anclaje",
-        rf"(?P<n>{_NUM})\s*CMS?\.?\s+(?:DE\s+)?ANCLAJE\s+(?:DE|EN)\s+(?:(?:LOS|LAS|EL|LA)\s+)?"
+        rf"(?P<n>{_NUM})\s*CMS?\.?\s+(?:DE\s+)?ANCLAJE\s+DE\s+(?:(?:LOS|LAS|EL|LA)\s+)?"
         r"(?P<p>[A-Z]+)",
     ),
     _p(
         "anclaje",
-        r"ANCLAJE\s+(?:DE|EN)\s+(?:(?:LOS|LAS|EL|LA)\s+)?(?P<p>[A-Z]+)\s*[:=]?\s*"
+        r"ANCLAJE\s+DE\s+(?:(?:LOS|LAS|EL|LA)\s+)?(?P<p>[A-Z]+)\s*[:=]?\s*"
         rf"(?P<n>{_NUM})\s*CMS?\b\.?",
     ),
 )
@@ -334,7 +418,7 @@ class Varilla:
 
 
 _TOKEN = re.compile(
-    r"(?P<art>(?:EL|LA)\s+)?(?P<nombre>(?:VARILLAS?|DIAMETRO)\s+)?(?P<cuerpo>.+?)"
+    r"(?P<art>(?:EL|LA)\s+)?(?P<nombre>VARILLAS?\s+)?(?P<cuerpo>.+?)"
     r"(?:\s*\((?P<eq>[^()]*)\))?"
 )
 _MARCA = re.compile(r"(?:#\s*|(?:NO|N[º°])\.?\s*|NUMERO\s+|NUM\.?\s*)")
@@ -343,8 +427,9 @@ _CON_PULGADAS = re.compile(rf"[{_COMILLAS}]|''|PULG")
 
 def varilla_de(m: re.Match[str], nombre: str, *, con_cola: bool = False) -> Varilla:
     """La varilla del grupo ``nombre`` de una frase. Un número sin marca vale si lo dice un
-    artículo o el nombre («EL 6», «VARILLA 6»), si lo antecede una contracción («DEL 6», «AL 6») o
-    si el límite nombra a la varilla y la cierra («VARILLA HASTA 6 INCLUSIVE»)."""
+    artículo o el nombre («EL 6», «VARILLA 6», «VARILLAS DE 8»), si lo antecede una contracción
+    («DEL 6», «AL 6») o si el límite nombra a la varilla y la cierra («VARILLA HASTA 6
+    INCLUSIVE»). «DIAMETRO 12» no es una varilla: puede ser en milímetros."""
     token = " ".join(m.group(nombre).split())
     partes = _TOKEN.fullmatch(token)
     assert partes is not None
@@ -363,7 +448,7 @@ def varilla_de(m: re.Match[str], nombre: str, *, con_cola: bool = False) -> Vari
         partes["art"] is not None
         or partes["nombre"] is not None
         or re.search(r"\b(?:DEL|AL)$", previo) is not None
-        or (con_cola and previo.startswith("VARILLA"))
+        or (previo.startswith("VARILLA") and (con_cola or previo.endswith("DE")))
     )
     return Varilla(cuerpo, "num" if pelado_permitido else "pelado", "", equivalencia)
 
@@ -391,12 +476,21 @@ TEMAS = {
     "tramo": set(),
     "plantilla": {"plantilla"},
     "anclaje": set(),
+    "recubrimiento": {"recubrimiento"},
+    "recubrimiento_lista": {"recubrimiento"},
+    "inerte": set(),
+    "acompana_soldar": set(),
+    "acompana_traslape": set(),
 }
+# Las reglas que van por familia: otro elemento u otro número no las cambia (es de otra familia).
+POR_FAMILIA = frozenset({"primer_estribo", "recubrimiento", "recubrimiento_lista"})
+# Lo que no da una regla: vale aunque niegue, si la otra mitad que acompaña se leyó.
+_ACOMPANA = {"acompana_soldar": ("soldar", "soldar_rango"), "acompana_traslape": ("traslape",)}
 # Una excepción a lo que se dice: «SALVO…», «EXCEPTO…», «… PERO…».
 EXCEPCION = re.compile(
     r"\b(?:SALVO|EXCEPTO|EXCEPCION|EXCEPTUANDO|EXCLUYENDO|MENOS\s+EN|PERO|AUNQUE)\b"
 )
-_ELEMENTO = re.compile(
+ELEMENTO = re.compile(
     r"\b(?:CONTRATRABES?|TRABES?|COLUMNAS?|CASTILLOS?|DALAS?|CADENAS?|CERRAMIENTOS?|ZAPATAS?"
     r"|DADOS?|PILOTES?|LOSAS?|MUROS?|NUDOS?)\b"
 )
@@ -580,6 +674,8 @@ def _coordinadas(
         izquierda = _buscar(texto, pieza.inicio, y.start(), permitidas, sola=False)
         if izquierda is None or NEGACION.search(texto, pieza.inicio, y.start()):
             continue
+        if izquierda.regla.startswith("recubrimiento"):
+            continue  # la lista de recubrimientos ya trae sus «Y»: lo que sigue es de la lista
         derecha = Pieza(y.end(), pieza.fin, pieza.separador)
         frase = _buscar(texto, derecha.inicio, derecha.fin, permitidas, sola=False)
         partes: list[tuple[Pieza, Frase | None]] = [
@@ -640,7 +736,7 @@ def _cambia(trozo: str, temas: set[str], *, por_familia: bool = False) -> bool:
     return bool(
         (NEGACION.search(trozo) and not suyos)
         or EXCEPCION.search(trozo)
-        or (not por_familia and (numeros_libres(trozo) or _ELEMENTO.search(trozo)) and de_lo_mismo)
+        or (not por_familia and (numeros_libres(trozo) or ELEMENTO.search(trozo)) and de_lo_mismo)
     )
 
 
@@ -650,13 +746,18 @@ def _colgada(texto: str, oracion: Oracion) -> bool:
     return not (temas_de(texto[oracion.inicio : oracion.fin]) - {"recubrimiento"})
 
 
-def _vale(
-    texto: str, f: Frase, oracion: Oracion, cubiertas: set[int], siguiente: Oracion | None
-) -> bool:
+def _vale(lectura: Lectura, f: Frase, cubiertas: set[int], siguiente: Oracion | None) -> bool:
     """Si nada de la oración cambia la frase ``f`` (ver el docstring del módulo). ``siguiente``
     es la oración que la sigue cuando no nombra ninguna regla: también puede cambiarla."""
-    if NEGACION.search(texto, f.inicio, f.fin):
+    texto = lectura.texto
+    if f.regla == "inerte":
+        return True
+    if f.regla in _ACOMPANA:
+        return bool(lectura.validas(*_ACOMPANA[f.regla]))
+    # La de los recubrimientos trae «NO SERA MENOR QUE»: su lista cerrada no puede negar nada.
+    if not f.regla.startswith("recubrimiento") and NEGACION.search(texto, f.inicio, f.fin):
         return False
+    oracion = lectura.oraciones[f.oracion]
     piezas = oracion.piezas
     temas = _temas_de_la_frase(f)
     # El tramo recto es el complemento del gancho de su oración: lo de antes es del gancho.
@@ -673,20 +774,22 @@ def _vale(
             or _ACOTA.match(trozo)
             or EXCEPCION.search(trozo)
             or (NEGACION.search(trozo) and pieza.separador == ":")
-            or _ELEMENTO.search(trozo)
+            or ELEMENTO.search(trozo)
             or (numeros_libres(trozo) and suyos & temas)
         ):
             return False
+    # Para una regla por familia, otro número o elemento es de otra familia: sólo cuenta si la
+    # niega o la exceptúa (lo demás lo mira la nota entera).
+    por_familia = f.regla in POR_FAMILIA
     for i in range(f.hasta + 1, len(piezas)):
         trozo = texto[piezas[i].inicio : piezas[i].fin]
-        if i not in cubiertas and not es_neutra(trozo) and _cambia(trozo, temas):
-            return False
+        if i not in cubiertas and not es_neutra(trozo):
+            if _cambia(trozo, temas, por_familia=por_familia):
+                return False
     # Una oración colgada que sigue la cambia igual que una cláusula: «… HASTA EL #6. NO EN
-    # COLUMNAS.», «… CON GANCHOS A 90°. NO SE ACEPTARAN.». (Para el primer estribo, que va por
-    # familia, otro número es el de otra familia: sólo cuenta si la niega o la exceptúa.)
+    # COLUMNAS.», «… CON GANCHOS A 90°. NO SE ACEPTARAN.».
     for pieza in siguiente.piezas if siguiente is not None and f.regla != "tramo" else []:
         trozo = texto[pieza.inicio : pieza.fin]
-        por_familia = f.regla == "primer_estribo"
         if not es_neutra(trozo) and _cambia(trozo, temas, por_familia=por_familia):
             return False
     return True
@@ -720,7 +823,6 @@ def validar(lectura: Lectura) -> None:
         for f in lectura.frases:
             if not f.valida:
                 continue
-            oracion = lectura.oraciones[f.oracion]
             cubiertas = {
                 i
                 for g in lectura.frases
@@ -730,7 +832,7 @@ def validar(lectura: Lectura) -> None:
             k = f.oracion + 1
             colgada = k < len(lectura.oraciones) and lectura.oraciones[k].colgada
             siguiente = lectura.oraciones[k] if colgada else None
-            if not _vale(texto, f, oracion, cubiertas, siguiente):
+            if not _vale(lectura, f, cubiertas, siguiente):
                 f.valida = False
                 cambio = True
     lectura.resto = en_blanco(texto, lectura.validas())

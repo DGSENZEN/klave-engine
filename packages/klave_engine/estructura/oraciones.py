@@ -13,10 +13,11 @@ mal. Las funciones trabajan sobre texto en mayúsculas y sin acentos
 import re
 from dataclasses import dataclass
 
+# El punto de estas abreviaturas nunca acaba la oración: lo que sigue es su clave o su número
+# («FIG. B», «VER DET. 3», «ART. 5», «No. 6»).
+_SIEMPRE_SIGUEN = frozenset("NO N° Nº NUM FIG FIGS DET ART VAR VARS".split())
 # Un punto detrás de esto es de una abreviatura o de una unidad, y la oración puede seguir.
-_ABREVIATURAS = frozenset(
-    "NO N° Nº NUM FIG ART DET ESP APROX PULG SEC TAB INC VS VAR VARS DIAM EST MIN MAX".split()
-)
+_ABREVIATURAS = frozenset("ESP APROX PULG SEC TAB INC VS DIAM EST MIN MAX".split())
 _UNIDADES = frozenset("CM CMS CM2 KG/CM2 KG M MT MTS MM M2 M3".split())
 _UNIDAD_PEGADA = re.compile(r"\d(?:CMS?|CM2|KG/CM2|MTS?|MM|M2|M3|M)$")
 # Tras el punto de una unidad o abreviatura, esto sigue la misma oración: «15 CM. CON GANCHOS»,
@@ -42,7 +43,10 @@ def _palabras_alrededor(texto: str, fin: re.Match[str]) -> tuple[str, list[str]]
 
 def _tras_una_medida(anterior: str) -> bool:
     return bool(
-        anterior in _ABREVIATURAS or anterior in _UNIDADES or _UNIDAD_PEGADA.search(anterior)
+        anterior in _SIEMPRE_SIGUEN
+        or anterior in _ABREVIATURAS
+        or anterior in _UNIDADES
+        or _UNIDAD_PEGADA.search(anterior)
     )
 
 
@@ -52,6 +56,8 @@ def _sigue_la_oracion(texto: str, fin: re.Match[str]) -> bool:
     if alrededor is None:
         return False
     anterior, despues = alrededor
+    if anterior in _SIEMPRE_SIGUEN:
+        return True
     if not _tras_una_medida(anterior):
         return False
     siguiente = despues[0].strip(_PUNTUACION)
@@ -64,10 +70,11 @@ def _sigue_la_oracion(texto: str, fin: re.Match[str]) -> bool:
 
 def oraciones(texto: str) -> list[tuple[int, int]]:
     """Dónde empieza y dónde acaba cada oración de ``texto`` (el punto va dentro; el espacio que
-    lo sigue, no). Se corta en «. » y en «; », salvo el punto de una unidad o abreviatura seguido
-    de una cifra, de «CON», «SEGUN», «DE» o «DEL», o de «Y» con un verbo sin sujeto propio («@ 15
-    CM. CON GANCHOS» y «@ 15CM. Y TENDRAN GANCHOS» son una sola oración; «@ 10 CM. TODAS LAS
-    ESCUADRAS» y «@ 10 CM. EN LAS ESCUADRAS» son dos)."""
+    lo sigue, no). Se corta en «. » y en «; », salvo el punto de «FIG.», «DET.», «ART.», «No.»
+    (nunca) y el de una unidad o abreviatura seguido de una cifra, de «CON», «SEGUN», «DE» o
+    «DEL», o de «Y» con un verbo sin sujeto propio («@ 15 CM. CON GANCHOS» y «@ 15CM. Y TENDRAN
+    GANCHOS» son una sola oración; «@ 10 CM. TODAS LAS ESCUADRAS» y «@ 10 CM. EN LAS ESCUADRAS»
+    son dos)."""
     inicios = [0]
     fines: list[int] = []
     for m in _FIN.finditer(texto):
