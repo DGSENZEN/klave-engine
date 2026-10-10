@@ -641,7 +641,7 @@ _REFERENCIA_A_VARILLA = re.compile(
     rf"|\b\d+(?:\s+\d+)?\s*/\s*\d+\s*(?:[{_COMILLAS}]|PULG)|\b\d+\s*[{_COMILLAS}]"
     # un diámetro o un calibre: «DIAMETRO 12», «DIAM. 12», «Ø 12», «DE 12 MM», «CALIBRE 6», «CAL. 6»
     r"|\bDIAM(?:ETROS?)?\.?\s*(?:DE\s+)?\d+|[Ø⌀]\s*\d+|\bDE\s+\d+(?:[.,]\d+)?\s*MM\b"
-    r"|\bCALIBRES?\s+(?:DEL?\s+)?\d+|\bCAL\.\s*\d+"
+    r"|\bCAL(?:IBRES?)?\.?\s*(?:DEL?\s+)?(?:#\s*)?\d+"
     # milímetros tras un límite: «HASTA 19MM», «MAYORES A 19 MM», «MENOR O IGUAL A 19 MM»
     r"|\b(?:HASTA|DESDE|A\s+PARTIR\s+DE|(?:MAYOR|MENOR|IGUAL)(?:ES)?\s+(?:A|DE|QUE))\s+"
     r"(?:(?:EL|LA|LOS|LAS)\s+(?:DE\s+)?)?\d+(?:[.,]\d+)?\s*MM\b"
@@ -686,14 +686,21 @@ _ANTES, _DESPUES = 100, 140
 # el nivel de aguas freáticas, ni «SUSTITUYE A LA NOTA 3», que dice que ésta es la que vale.)
 _ANULADA = re.compile(
     r"(?<![A-Z.])N\s*/\s*A(?![A-Z])"
-    r"|(?<![A-Z.])N\.\s*A(?![.A-Z])|(?<![A-Z.])N\.\s*A\.(?![A-Z])(?!\s*[A-Z]\.)|\bNA\b"
+    # «N.A.» suelto anula, siga lo que siga; pegado a otra letra es un nivel: «N.A.F.», «N.A.T.»
+    r"|(?<![A-Z.])N\.\s*A(?![.A-Z])|(?<![A-Z.])N\.\s*A\.(?![A-Z])|\bNA\b"
     r"|\b(?:ANULAD[AO]S?|CANCELAD[AO]S?|SUPRIMID[AO]S?|ELIMINAD[AO]S?|DEROGAD[AO]S?"
     r"|OBSOLET[AO]S?|SUSTITUID[AO]S?|REEMPLAZAD[AO]S?|INVALID[AO]S?|OMITID[AO]S?|DESCARTAD[AO]S?"
     r"|REVOCAD[AO]S?|TACHAD[AO]S?|BORRAD[AO]S?|NUL[AO]S?"
     r"|SE\s+(?:CANCELAN?|SUPRIMEN?|ANULAN?|ELIMINAN?|OMITEN?|DEROGAN?|SUSTITUYEN?|REEMPLAZAN?"
     r"|REVOCAN?|BORRAN?|TACHAN?)"
-    r"|QUE\s+LA\s+(?:SUSTITUYE|REEMPLAZA|ANULA|CANCELA|DEROGA)"
-    r"|CANCELAR|SUPRIMIR|ANULAR|OMITIR|ELIMINAR|BORRAR|REVOCAR"
+    # en pasado: «SE SUSTITUYO POR LA NOTA 9», «SE CANCELO»
+    r"|SE\s+(?:CANCEL|ANUL|ELIMIN|DEROG|REVOC|BORR|TACH|SUSTITUY|REEMPLAZ)O"
+    r"|SE\s+(?:SUPRIMI|OMITI)O"
+    # «LA NOTA 9 LA SUSTITUYE», «VER NOTA 9 QUE LA SUSTITUYE», «… QUE SUSTITUYE A ESTA»
+    r"|LA\s+(?:SUSTITUYE|REEMPLAZA|ANULA|CANCELA|DEROGA)"
+    r"|(?:SUSTITUYE|REEMPLAZA|ANULA|CANCELA|DEROGA)N?\s+A\s+EST[AE](?:\s+NOTA)?"
+    r"|CANCELAR|SUPRIMIR|ANULAR|OMITIR|ELIMINAR|BORRAR|REVOCAR|SUSTITUIR|REEMPLAZAR"
+    r"|CAMBI(?:A|AN|AR|O|ARA)\s+POR"
     r"|SIN\s+EFECTO|SIN\s+VALIDEZ|NO\s+APLICA|NO\s+VALIDA|YA\s+NO\s+(?:APLICA|VALE))\b"
 )
 # Lo que extiende o recorta a qué varillas o elementos va una regla, o la deja sujeta a algo: «… Y
@@ -723,6 +730,11 @@ _EN_UN_LUGAR = re.compile(
     r"|(?:FUERA|DENTRO|LEJOS|CERCA)\s+DE)\s+"
     r"(?:(?:EL|LA|LOS|LAS)\s+)?[A-Z]+(?:\s+(?:(?:DE|DEL|Y|E)\s+)?[A-Z]+){0,2}"
 )
+# Una cláusula corta sin leer (hasta cuatro palabras, sin cifra al empezar) que no nombra ninguna
+# familia: puede acotar o condicionar la regla y no se sabe cómo («… #6. ESCALERAS.», «…, EDIFICIO
+# B», «…, EJES A-C», «…, SI SON ESCALERAS», «…, COMO MINIMO», «…, MAXIMO»): la nota es un aviso
+# (R44). Las neutrales («RESPECTIVAMENTE», «VER DETALLE 3», «SALVO INDICACION») no llegan aquí.
+_CLAUSULA_CORTA = re.compile(r"[A-Z][A-Z'\-]*(?:\s+[A-Z0-9][A-Z0-9'\-]*){0,3}")
 # Las reglas por familia: otro elemento no las cambia (es de otra familia).
 _POR_FAMILIA = ("recubrimiento", "primer_estribo", "anclaje")
 # Las familias de la cimentación: bajo un encabezado de cimentación («NOTAS DE CIMENTACION :») sólo
@@ -1216,7 +1228,7 @@ _NOTAS_DE_ALGO = re.compile(
 # empiezan como sigue una oración (no «NO SERA MENOR DE:», que es el renglón de una nota).
 _TITULO_SUELTO = re.compile(
     r"(?!(?:EN|DE|DEL|LA|LAS|EL|LOS|A|AL|Y|E|O|NO|NI|SE|CON|POR|PARA|QUE|SIN|SI|COMO|SU|SUS)\b)"
-    r"[A-Z]+(?:\s+[A-Z]+){0,3}"
+    r"[A-Z]+(?:\s+[A-Z0-9][A-Z0-9\-]*){0,3}"
 )
 
 
@@ -1292,7 +1304,8 @@ def _lo_que_la_cambia(
         de la estructura o un lugar la acota siempre. Bajo un encabezado de cimentación sólo se
         leen las familias de la cimentación;
     (d) ninguna cláusula sin leer trae un número (un valor sobreentendido: «… #6. LUEGO HASTA EL
-        #5»);
+        #5») ni es una cláusula corta que no nombra una familia («… #6. ESCALERAS.», «…, EDIFICIO
+        B», «…, COMO MINIMO»: R44);
     (e) la nota no dice dos valores de una regla («HASTA EL #6 … HASTA EL #8») ni traslapa una
         varilla que manda soldar («HASTA EL #8, DEL #8 EN ADELANTE SE SOLDARAN»).
     Los encabezados generales («NOTAS GENERALES…», «REFUERZO», «MATERIALES»,
@@ -1335,8 +1348,10 @@ def _lo_que_la_cambia(
                 or (numeros and k in por_familia_en)
             ):
                 return cita, _LA_NIEGA
-        elif numeros or _EN_UN_LUGAR.fullmatch(trozo.strip(" .,;:()")):
-            return cita, _LA_NIEGA
+        else:
+            limpio = trozo.strip(" .,;:()")
+            if numeros or _EN_UN_LUGAR.fullmatch(limpio) or _CLAUSULA_CORTA.fullmatch(limpio):
+                return cita, _LA_NIEGA
     return None
 
 

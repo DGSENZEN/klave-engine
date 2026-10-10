@@ -3768,7 +3768,6 @@ def test_a_bar_number_after_no_is_still_a_bar():
     ("texto", "campo", "valor"),
     [
         ("EL RECUBRIMIENTO SERA DE 4 CM EN TRABES, EN LOSAS LA MITAD", "recubrimiento", 0.04),
-        ("EL RECUBRIMIENTO SERA DE 4 CM EN TRABES. COLUMNAS: CINCO.", "recubrimiento", 0.04),
         (
             "EL RECUBRIMIENTO SERA DE 4 CM EN TRABES. EN COLUMNAS SERA DE CINCO CENTIMETROS.",
             "recubrimiento",
@@ -3933,6 +3932,25 @@ _MAS_ANULACIONES = (
     "{f}. VER NOTA 9 QUE LA REEMPLAZA.",
     "{f}. (BORRAR)",
     "{f}. TACHADA.",
+    # ronda 2: en pasado, «LA NOTA 9 LA SUSTITUYE», en infinitivo, «QUE SUSTITUYE A ESTA»,
+    # «CAMBIA POR»
+    "{f}. SE SUSTITUYO POR LA NOTA 9.",
+    "{f}. SE REEMPLAZÓ POR LA NOTA 9.",
+    "{f}. LA NOTA 9 LA SUSTITUYE.",
+    "{f}. LA NOTA 9 LA REEMPLAZA.",
+    "{f}. SUSTITUIR POR NOTA 9.",
+    "{f}. REEMPLAZAR POR NOTA 9.",
+    "{f}. HAY QUE SUSTITUIR ESTA NOTA POR LA NUEVA.",
+    "{f}. HAY QUE REEMPLAZAR ESTA NOTA POR LA NUEVA.",
+    "{f}. VER NOTA 9 QUE SUSTITUYE A ESTA.",
+    "{f}. CAMBIA POR LA NOTA 9.",
+    "{f}. SE CANCELO.",
+    # ronda 2: «N.A.» suelto, siga lo que siga
+    "{f}. N.A. A.",
+    "{f}. N.A. B.",
+    "{f}. N.A. P.",
+    "{f}. N.A. S.P.",
+    "{f}. N.A. Y.",
 )
 
 
@@ -4047,6 +4065,8 @@ def test_under_a_foundation_heading_a_family_that_is_not_foundation_is_reported_
             {"zapata": 0.05, "contratrabe": 0.05},
         ),
         ("EN CONTRATRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM", _P, {"contratrabe": 0.05}),
+        # los muros de contención son de la cimentación (R42; los muros MC de Marina)
+        ("EL RECUBRIMIENTO SERA DE 5 CM EN MUROS DE CONTENCION", _R, {"muro_concreto": 0.05}),
         ("SE COLOCARA PLANTILLA DE CONCRETO POBRE DE 5 CM DE ESPESOR", _PL, 0.05),
         (_L, _T, "6"),
     ],
@@ -4122,6 +4142,10 @@ def test_concrete_walls_at_the_end_of_a_list_are_still_read(tmp_path):
         "SOLDARAN.",
         "SE TRASLAPARAN VARILLAS HASTA EL #4 Y LAS DEMAS SE SOLDARAN, DEL #8 EN ADELANTE SE "
         "SOLDARAN",
+        # ronda 2: «LAS DEMAS SE SOLDARAN» contra «NO SE SOLDARA NINGUNA» o «SIN SOLDADURA»
+        "SE PERMITE TRASLAPAR VARILLA HASTA EL #6 Y LAS DEMAS SE SOLDARAN. NO SE SOLDARA NINGUNA.",
+        "SE PERMITE TRASLAPAR VARILLA HASTA EL #6, NO SE SOLDARA NINGUNA. LAS DEMAS SE SOLDARAN.",
+        "SE PERMITE TRASLAPAR VARILLA HASTA EL #6 Y LAS DEMAS SE SOLDARAN. SIN SOLDADURA.",
         # otro límite para la misma regla, o uno que se encima con el de la otra
         "SE TRASLAPARAN VARILLAS HASTA EL #6. SE PERMITE TRASLAPAR VARILLA HASTA EL #8.",
         "DEL #8 EN ADELANTE SE SOLDARAN. A PARTIR DEL #10 SE SOLDARAN LAS VARILLAS.",
@@ -4142,13 +4166,17 @@ def test_two_covers_for_the_same_family_in_one_note_are_not_used(tmp_path):
     assert _nada_de_la_nota(r, _R) and r.avisos
 
 
-def test_the_water_table_is_not_a_cancellation(tmp_path):
-    texto = "2. SE COLOCARA PLANTILLA DE CONCRETO POBRE DE 5 CM DE ESPESOR, ARRIBA DEL N.A.F."
+@pytest.mark.parametrize("nivel", ["ARRIBA DEL N.A.F.", "SOBRE EL N.A.T.", "BAJO EL N.A.M."])
+def test_the_water_table_is_not_a_cancellation(tmp_path, nivel):
+    texto = f"2. SE COLOCARA PLANTILLA DE CONCRETO POBRE DE 5 CM DE ESPESOR, {nivel}"
     r = _con_notas(tmp_path, [texto], titulo="NOTAS :")
     assert r.plantilla_espesor_m.valor == 0.05 and r.avisos == []
 
 
-@pytest.mark.parametrize("anulacion", ["N.A.", "N.A", "N. A.", "(N.A.)", "N/A", "NA."])
+@pytest.mark.parametrize(
+    "anulacion",
+    ["N.A.", "N.A", "N. A.", "(N.A.)", "N/A", "NA.", "N.A. A.", "N.A. S.P.", "N.A. Y."],
+)
 def test_not_applicable_still_cancels_the_note(tmp_path, anulacion):
     r = _con_notas(tmp_path, [f"4. {_L}. {anulacion}"])
     assert r.traslape_max_numero is None and r.avisos
@@ -4159,6 +4187,7 @@ def test_not_applicable_still_cancels_the_note(tmp_path, anulacion):
     [
         "SE TRASLAPARAN VARILLAS HASTA 19MM",
         "SE TRASLAPARAN VARILLAS HASTA CAL. 6",
+        "SE TRASLAPARAN VARILLAS HASTA EL CAL 6",
         "LAS VARILLAS MAYORES A 19 MM SE SOLDARAN",
         "SE TRASLAPARAN VARILLAS DE DIAMETRO MENOR O IGUAL A 19 MM",
         "SE PERMITE TRASLAPAR VARILLA HASTA EL No . 6",
@@ -4182,3 +4211,114 @@ def test_a_first_stirrup_said_apart_for_contratrabes_wins_over_the_one_of_trabes
         "contratrabe": 0.06,
     }
     assert r.avisos == [] and r.contradicciones == []
+
+
+# --- Task 5b, ronda de arreglos 2 (R44): una cláusula corta sin leer acota o condiciona la regla;
+# encabezados con cifras, en minúsculas o «NOTAS PARA …» sin puntuación ----------------------------
+
+# R44: una cláusula corta sin leer que no nombra una familia: la nota es un aviso.
+_CLAUSULAS_CORTAS = (
+    "{f}. ESCALERAS.",
+    "{f}; ESCALERAS",
+    "{f}, EDIFICIO B.",
+    "{f}, ZONA B.",
+    "{f}, EJES A-C.",
+    "{f}. HOJA ES-100.",
+    "{f}, SI SON ESCALERAS.",
+    "{f}, POR SER ESCALERAS.",
+    "{f}, COMO MINIMO.",
+    "{f}, MINIMO.",
+    "{f}, MAXIMO.",
+    "{f}, TIPICO.",
+    "{f}, PROMEDIO.",
+    "{f}, SEGUN.",
+    "{f}, SIEMPRE.",
+    "{f}, VALIDO.",
+)
+
+
+@pytest.mark.parametrize(
+    ("texto", "campo"),
+    [
+        pytest.param(envoltura.format(f=frase), regla, id=envoltura.format(f=frase))
+        for regla, frase in _BASES_DE_LA_RONDA
+        for envoltura in _CLAUSULAS_CORTAS
+    ]
+    + [
+        # tras una coma y sin más, la palabra suelta es otra cláusula; en una lista de
+        # recubrimientos es un elemento que no se reconoce (ver la prueba de abajo)
+        pytest.param(f"{frase}, ESCALERAS.", regla, id=f"{frase}, ESCALERAS.")
+        for regla, frase in _BASES_DE_LA_RONDA
+        if regla != _R
+    ],
+)
+def test_a_short_unread_clause_never_lets_a_reading_through(tmp_path, texto, campo):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert _nada_de_la_nota(r, campo), getattr(r, campo)
+    assert r.avisos
+
+
+def test_a_bare_word_in_a_cover_list_is_an_element_that_is_not_known_and_is_reported(tmp_path):
+    r = _con_notas(tmp_path, ["4. EL RECUBRIMIENTO SERA DE 4 CM EN TRABES, ESCALERAS."])
+    assert r.recubrimiento_m["trabe"].valor == 0.04
+    (aviso,) = r.avisos
+    assert "«ESCALERAS»" in aviso and "no se reconoce como un elemento" in aviso
+
+
+def test_what_another_family_says_with_a_short_clause_now_fails_the_note(tmp_path):
+    # Antes (B) la trabe se leía y «COLUMNAS: CINCO» se avisaba aparte; con R44 «CINCO» es una
+    # cláusula corta sin leer que no nombra ninguna familia y la nota entera es un aviso: se pierde
+    # el 0.04 de las trabes, que era correcto (aceptado: un valor que falta es mejor que uno malo).
+    r = _con_notas(tmp_path, ["4. EL RECUBRIMIENTO SERA DE 4 CM EN TRABES. COLUMNAS: CINCO."])
+    assert _nada_de_la_nota(r, _R) and r.avisos
+
+
+@pytest.mark.parametrize("referencia", ["SUSTITUYE A LA NOTA 3.", "DEROGA A LA NOTA 3."])
+def test_a_note_that_replaces_another_one_is_read(tmp_path, referencia):
+    r = _con_notas(tmp_path, [f"4. {_L}. {referencia}"])
+    assert r.traslape_max_numero.valor == "6" and r.avisos == []
+
+
+@pytest.mark.parametrize(
+    "encabezado",
+    [
+        "NOTAS PARA ESCALERA E-1:",
+        "Notas para escaleras:",
+        "NOTAS PARA ESCALERAS",
+        "notas de precolados",
+        "Escalera E-1 :",
+    ],
+)
+def test_a_heading_with_digits_in_any_case_or_notas_para_without_punctuation_scopes(
+    tmp_path, encabezado
+):
+    r = _con_notas(tmp_path, [f"1. {_L}"], titulo=encabezado)
+    assert r.traslape_max_numero is None and r.avisos
+
+
+@pytest.mark.parametrize(
+    "encabezado", ["Notas de cimentación", "NOTAS DE CIMENTACION", "Notas generales:"]
+)
+def test_a_general_or_foundation_heading_in_any_case_is_read_as_such(tmp_path, encabezado):
+    r = _con_notas(tmp_path, [f"1. {_L}"], titulo=encabezado)
+    assert r.traslape_max_numero.valor == "6" and r.avisos == []
+    if "imentaci" in encabezado:
+        r = _con_notas(tmp_path, ["1. EL RECUBRIMIENTO SERA DE 4 CM EN TRABES"], titulo=encabezado)
+        assert _nada_de_la_nota(r, _R) and r.avisos
+
+
+@pytest.mark.parametrize("encabezado", ["ESCALERAS", "Escaleras.", "NOTA DE LOSAS ALIGERADAS"])
+def test_a_bare_title_without_a_colon_is_not_a_heading(tmp_path, encabezado):
+    entidades = _lineas(tmp_path, [f"1. {_L}"], heading=encabezado)
+    notas, _ = leer_notas(_textos(entidades), lambda e: "ES-001")
+    assert [(n.seccion, n.numero) for n in notas] == [("", 1)]
+    r = _con_notas(tmp_path, [f"1. {_L}"], titulo=encabezado)
+    assert r.traslape_max_numero.valor == "6" and r.avisos == []
+
+
+def test_a_heading_keeps_its_digits_and_hyphens(tmp_path):
+    entidades = _lineas(tmp_path, [f"1. {_L}"], heading="NOTAS PARA ESCALERA E-1:")
+    notas, _ = leer_notas(_textos(entidades), lambda e: "ES-001")
+    assert [(n.seccion, n.encabezado) for n in notas] == [
+        ("NOTAS PARA ESCALERA E-1", "NOTAS PARA ESCALERA E-1:")
+    ]

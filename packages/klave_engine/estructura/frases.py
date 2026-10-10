@@ -499,6 +499,9 @@ _ACOMPANA = {
     "acompana_soldar": (("soldar", "soldar_rango"), ("traslape",)),
     "acompana_traslape": (("traslape",), ("soldar", "soldar_rango")),
 }
+# Lo que acompaña diciendo que el resto se suelda («Y LAS DEMAS SE SOLDARAN») contra lo que dice
+# que no se suelda ninguna («NO SE SOLDARA NINGUNA», «SIN SOLDADURA»): juntas, la nota se desmiente.
+_LAS_DEMAS = re.compile(r"\bDEMAS\b")
 # Una excepción a lo que se dice: «SALVO…», «EXCEPTO…», «… PERO…».
 EXCEPCION = re.compile(
     r"\b(?:SALVO|EXCEPTO|EXCEPCION|EXCEPTUANDO|EXCLUYENDO|MENOS\s+EN|PERO|AUNQUE)\b"
@@ -769,7 +772,12 @@ def _vale(lectura: Lectura, f: Frase, cubiertas: set[int], siguiente: Oracion | 
         return True
     if f.regla in _ACOMPANA:
         otra, suya = _ACOMPANA[f.regla]
-        return bool(lectura.validas(*otra)) and not lectura.validas(*suya)
+        demas = _LAS_DEMAS.search(f.m.group(0)) is not None
+        contraria = any(
+            g.regla == f.regla and (_LAS_DEMAS.search(g.m.group(0)) is not None) != demas
+            for g in lectura.frases
+        )
+        return bool(lectura.validas(*otra)) and not lectura.validas(*suya) and not contraria
     # La de los recubrimientos trae «NO SERA MENOR QUE»: su lista cerrada no puede negar nada.
     if not f.regla.startswith("recubrimiento") and NEGACION.search(texto, f.inicio, f.fin):
         return False

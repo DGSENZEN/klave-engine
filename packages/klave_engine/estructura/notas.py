@@ -42,7 +42,18 @@ _PALABRAS_QUE_UNEN = 2
 _TRAMOS_MAXIMOS = 4
 
 _NUMERADA = re.compile(r"(\d{1,2})[.\-)]+(?:\s+(.*))?")
-_ENCABEZADO = re.compile(r"[A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ ]{2,}\s*[:.]")
+_LETRA = "A-Za-zÁÉÍÓÚÑÜáéíóúñü"
+# Un encabezado: un renglón en mayúsculas, sólo letras, que acaba en «:» o «.» («REFUERZO :»,
+# «NOTAS GENERALES DE ESTRUCTURA.»); con «:» al final, en cualquier caja y con cifras o guiones
+# («NOTAS PARA ESCALERA E-1:», «Notas para escaleras:»); y «NOTAS PARA|DE|EN …» aunque no lleve
+# puntuación («NOTAS DE CIMENTACION» de PRUEBA-1). Un título suelto sin «:» o con «.» en minúsculas
+# no: se parece al último renglón de una nota partida. («NOTA DE LOSAS ALIGERADAS», en singular y
+# sin puntuación, tampoco: en Marina titula la nota de losas de cada hoja, que no son copias.)
+_ENCABEZADO = re.compile(
+    r"[A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ ]{2,}\s*[:.]"
+    rf"|[{_LETRA}][{_LETRA}0-9 \-]{{2,}}\s*:"
+    rf"|(?i:NOTAS(?:\s+GENERALES)?\s+(?:PARA|DE|DEL|EN)\s+[{_LETRA}0-9 \-]+?)\s*[:.]?"
+)
 _CODIGOS_DE_ACAD = re.compile(r"%%(?:%|[cCdDpPuUoO]|\d{3})")
 _CODIGOS_DE_MTEXT = re.compile(r"\\[Pp~]|\\[A-Za-z][^;\\]*;|[{}]")
 _ACAD = {"%": "%", "c": "Ø", "d": "°", "p": "±", "u": "", "o": ""}
@@ -285,9 +296,11 @@ def leer_notas(
     diferencia en ``x``) o con sangría (hasta cuatro altos) y con un hueco libre de a lo más 1.5
     altos, hasta el siguiente renglón numerado o un texto bastante más alto. La sección es el
     encabezado (``NOTAS GENERALES DE ESTRUCTURA.``, ``REFUERZO :``) más cercano arriba en su
-    columna; sin él, ``""``. Un encabezado es un renglón en mayúsculas que termina en «:» o «.»
-    y que no es continuación de una nota (``REFUERZO LONGITUDINAL NI MENOR A:`` bajo una nota
-    abierta es de la nota). Los códigos de AutoCAD se leen (``%%%`` es «%»).
+    columna; sin él, ``""``. Un encabezado es un renglón que no es continuación de una nota
+    (``REFUERZO LONGITUDINAL NI MENOR A:`` bajo una nota abierta es de la nota) y que está en
+    mayúsculas y termina en «:» o «.», o termina en «:» (en cualquier caja, con cifras o guiones:
+    ``NOTAS PARA ESCALERA E-1:``), o empieza con ``NOTAS PARA|DE|EN`` aunque no lleve puntuación.
+    Los códigos de AutoCAD se leen (``%%%`` es «%»).
 
     Las copias iguales (misma sección, número y texto) se juntan en una ``Nota`` con ``copias`` y
     ``hojas``. Si la misma nota de un bloque con título dice cosas distintas en distintas hojas
