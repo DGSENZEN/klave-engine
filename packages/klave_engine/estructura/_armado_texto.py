@@ -87,13 +87,46 @@ class Ficha:
 _A_GUION = str.maketrans({g: "-" for g in "\u2010\u2011\u2012\u2013\u2014\u2015\u2212"})
 
 
+# El número de una varilla escrito con palabras (R87): «No. 3», «N° 3», «NO.3», «NUM. 3» es
+# «#3», nunca la cuenta de unos estribos.
+_NUMERO_CON_PALABRA = re.compile(
+    r"(?<![A-Z])(?:N[°º]\.?|NO\.|N[UÚ]M\.?)\s*(\d{1,2}(?:\.5)?)(?![\d/])"
+)
+# Una varilla en pulgadas, sólo en octavos exactos y donde va el número de la varilla: tras una
+# cuenta y la palabra de la varilla («4 VARS 3/8"») o tras la cabeza de unos estribos («E 1/4 @
+# 15»). Otra medida no se traduce: el parser la avisa.
+_PULGADAS = {"1/4": "2", "3/8": "3", "1/2": "4", "5/8": "5", "3/4": "6", "7/8": "7", "1": "8"}
+_EN_PULGADAS = re.compile(
+    r"((?<![\w.#@])\d{1,2}\s*(?:VARILLAS|VARS?\.?|V)\s*(?:DEL?\s+)?"
+    r"|(?<![A-Z0-9])(?:\d{1,2}\s*)?(?:EYG|E|G|EST\.?|ESTRIBOS?|GRAPAS?)\s*)"
+    r"(?:(1/4|3/8|1/2|5/8|3/4|7/8)(?:\s*(?:\"|''|PULG\.?))?|(1)\s*(?:\"|''|PULG\.?))(?![\d/])"
+)
+
+
+def _con_el_mismo_largo(m: re.Match[str], escrito: str) -> str:
+    """``escrito`` («#3») en el lugar de lo que encontró ``m``, rellenado con espacios: el texto
+    para leer y el de citar tienen que medir lo mismo."""
+    return escrito + " " * (len(m.group(0)) - len(escrito))
+
+
 def normalizar(texto: str) -> tuple[str, str]:
     """El texto para leer y el texto para citar, de la misma longitud: los dos en mayúsculas
-    y con los espacios juntos; el de leer escribe ``#`` donde el plano puso «Ø» o «%%C» y «-»
-    donde puso un guion de Unicode, el de citar deja lo que dice el plano."""
+    y con los espacios juntos; el de leer escribe ``#`` donde el plano puso «Ø» o «%%C», «-»
+    donde puso un guion de Unicode y el número de la varilla donde lo escribió con palabras
+    («No. 3» → «#3») o en octavos de pulgada («3/8"» → «#3», R87); el de citar deja lo que dice
+    el plano."""
     t = texto.upper().replace("%%%", "%").replace("%%C", "Ø").replace("⌀", "Ø")
     t = re.sub(r"\s+", " ", t.replace("\\P", " | ")).strip()
-    return t.replace("Ø", "#").translate(_A_GUION), t
+    leer = t.replace("Ø", "#").translate(_A_GUION)
+    leer = _NUMERO_CON_PALABRA.sub(lambda m: _con_el_mismo_largo(m, f"#{m.group(1)}"), leer)
+
+    def pulgadas(m: re.Match[str]) -> str:
+        numero = _PULGADAS[m.group(2) or m.group(3)]
+        varilla = m.group(0)[len(m.group(1)) :]
+        return m.group(1) + f"#{numero}" + " " * (len(varilla) - len(numero) - 1)
+
+    leer = _EN_PULGADAS.sub(pulgadas, leer)
+    return leer, t
 
 
 def fichas(texto: str, a: int, b: int, consumido: list[bool] | None = None) -> list[Ficha]:

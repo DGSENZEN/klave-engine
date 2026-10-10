@@ -1137,3 +1137,75 @@ def test_fragment_lines_are_kept_by_sheet_and_only_with_a_letter(tmp_path):
     (hoja,) = inv.textos_con_fragmento
     assert hoja.hoja == "ES-400" and [x.texto for x in hoja.lineas] == ["EYG#3@15"]
     assert hoja.lineas[0].campos == ["estribos"]
+
+
+# --------------------------------------------------- Tarea 8, ronda 2 (R86–R89)
+
+
+@pytest.mark.parametrize(
+    "nota,estribos",
+    [
+        ('K-1 15X15 4 VARS 5/16" E 1/4 @ 15', "E#2@15"),  # «5/16"» nadie la reconoce
+        ("K-1 15X15 4 VARS DE 3 E#2@15", None),  # nada se lee: todo queda reclamado
+    ],
+)
+def test_an_unrecognised_digit_claims_every_field_of_the_family(tmp_path, nota, estribos):
+    # R86: no se estrecha lo que reclama un texto mientras quede una cifra sin reconocer: la IA
+    # (6#4, E#3@10) no llena nada de lo que el texto podría decir.
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    merge_external_specs(inv, [_ia("K-1", rebar="6#4", stirrups="E#3@10")], C)
+    k1 = inv.by_mark["K-1"]
+    assert (k1.rebar, k1.stirrups) == (None, estribos)
+
+
+@pytest.mark.parametrize(
+    "nota,longitudinales,estribos",
+    [
+        ('K-1 15X15 4 VARS 3/8" E 1/4 @ 15', "4#3", "E#2@15"),  # R87: octavos de pulgada
+        ("K-2 15X20 4 VAR. No. 3 E#2@15", "4#3", "E#2@15"),  # antes «3E#2@15», en silencio
+    ],
+)
+def test_a_note_with_bars_in_words_or_eighths_is_read(tmp_path, nota, longitudinales, estribos):
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    (s,) = inv.specs
+    assert (s.rebar, s.stirrups, s.avisos) == (longitudinales, estribos, [])
+    merge_external_specs(inv, [_ia(s.mark, rebar="6#4")], C)
+    assert inv.by_mark[s.mark].rebar == longitudinales
+
+
+def test_a_generic_familys_section_keeps_its_written_order(tmp_path):
+    # R88: TE-A es «elemento» por su prefijo; su 40×20 no se ordena al leerse.
+    inv = build_schedule_inventory(_notas(tmp_path, ["TE-A 40X20 4#4"]), frames=_frame())
+    assert [s.section_cm for s in inv.specs] == [(40, 20)]
+
+
+@pytest.mark.parametrize("nota", ["T1-1 25X50 2#5", "K15A 15X15 4#3", "K-1-A 15X20 4#4"])
+def test_a_notes_own_mark_is_never_unread_armado(tmp_path, nota):
+    # El parser no conocía estas formas de marca y las avisaba «sin leer «T1-1»».
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    (s,) = inv.specs
+    assert s.avisos == [] and s.armado.texto_original == nota
+
+
+def test_an_ai_mark_with_a_unicode_dash_shares_the_drawings_key(tmp_path):
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-7 20X30"]), frames=_frame())
+    merge_external_specs(inv, [_ia("K‑7", rebar="4#3")], C)
+    assert set(inv.by_mark) == {"K-7"} and inv.by_mark["K-7"].rebar == "4#3"
+
+
+@pytest.mark.parametrize(
+    "nota,marca_ia",
+    [
+        ("K-15 A 20X20 4#3 E#3@20", "K-15A"),  # R85: «20X20» no cierra un rango
+        ("K-1 A 15X20 4#3", "K-1A"),
+        ("C-1 A 20X20 8#5", "C-1A"),
+    ],
+)
+def test_a_spaced_suffix_before_a_section_is_ambiguous(tmp_path, nota, marca_ia):
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    assert inv.specs == [] and inv.rechazos[0].motivo == "sin_lector"
+    merge_external_specs(
+        inv, [_ia(marca_ia, section_cm=(25, 25), rebar="6#6", stirrups="E#2@10")], C
+    )
+    k = inv.by_mark.get(marca_ia)
+    assert k is None or (k.section_cm, k.rebar) == (None, None)

@@ -593,18 +593,81 @@ def test_a_letter_variant_never_feeds_its_base_mark(tmp_path, con_ia):
         (["K-1 A K-4 15X20 4#3"], "K-4", "seccion_cm", "nota"),  # extremo de un rango
         (["3.- K-7 E#3@1S"], "K-7", "estribos", "nota"),  # nota numerada
         (["TRABE-T 1 E#3@1S"], "T-1", "estribos", "nota"),  # texto de otra familia
-        (["K-7 15X15", "K-07 E#3@1S"], "K-7", "estribos", "nota"),  # sólo el respaldo
-        (["K-7 15X15", "K-07 E#3@1S"], "K-07", "estribos", "nota"),
+        (["K-07 E#3@1S"], "K-07", "estribos", "nota"),
     ],
 )
 def test_an_unread_drawing_text_is_an_unreadable_value_without_ai(
     tmp_path, notas, marca, campo, fuente
 ):
     # R77: el plano dice algo de la marca y nadie lo leyó: es un dato ilegible de su campo, con
-    # IA o sin ella; una marca que sólo nombra un texto rechazado tiene su definición.
-    inv = build_schedule_inventory(_notas(tmp_path, notas), frames=_frame())
+    # IA o sin ella. R85: la marca la nombra también otro texto (aquí, su etiqueta en planta).
+    inv = build_schedule_inventory(_notas(tmp_path, [*notas, marca]), frames=_frame())
     dato = getattr(construir_definiciones(inv, C)[0][marca], campo)
     assert dato.ilegible and dato.valor is None and dato.fuente == fuente
+
+
+@pytest.mark.parametrize(
+    "nota,fantasmas",
+    [
+        ("K-9 E#3@1S", ["K-9"]),
+        ("C-1 A 20 CM E#3@1S", ["C-20", "C-1", "C-1A"]),  # R85: «20 CM» no es el fin de un rango
+        ("CASTILLOS K-1 A 3.00 M MAX 15X15 4#3 E#2@20", ["K-3", "K-1"]),
+    ],
+)
+def test_a_mark_named_only_by_rejected_texts_has_no_definition(tmp_path, nota, fantasmas):
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    defs = construir_definiciones(inv, C)[0]
+    assert not [m for m in fantasmas if m in defs]
+
+
+def test_a_range_end_with_a_unit_feeds_no_mark_read_elsewhere(tmp_path):
+    # R85: «K-1 A 3.00 M …» no le da copias ilegibles a una K-3 que se lee en otra parte.
+    inv = build_schedule_inventory(
+        _notas(tmp_path, ["CASTILLOS K-1 A 3.00 M MAX 15X15 4#3 E#2@20", "K-3 15X30 6#3"]),
+        frames=_frame(),
+    )
+    k3 = construir_definiciones(inv, C)[0]["K-3"]
+    assert all(_limpio(getattr(k3, c)) for c in ("seccion_cm", "longitudinales"))
+    assert k3.estribos is None
+
+
+@pytest.mark.parametrize("con_ia", [False, True])
+def test_a_mark_named_only_in_a_rejected_text_is_still_a_drawing_mark(tmp_path, con_ia):
+    # R84: «T1-1 E#3@1S» nombra a T1-1, marca del plano aunque nadie la lea: no es de T-11, y
+    # «T-11 20X40 4#3», leída para T-11, no es de T1-1.
+    inv = _notas_en_hojas(
+        tmp_path,
+        [("T-11 20X40 4#3", "ES-100"), ("T1-1 E#3@1S", "ES-100"), ("T1-1", "ES-200")],
+    )
+    if con_ia:
+        merge_external_specs(inv, [_ia("T-11", stirrups="E#2@25", family="trabe")], C)
+    defs = construir_definiciones(inv, C)[0]
+    t11 = defs["T-11"]
+    assert (t11.estribos is None) != con_ia and _limpio(t11.seccion_cm)
+    assert t11.estribos is None or t11.estribos.fuente == "ia"  # «T1-1 E#3@1S» no es de T-11
+    t1 = defs["T1-1"]
+    assert t1.seccion_cm is None and t1.longitudinales is None and t1.estribos.ilegible
+
+
+def test_an_own_value_is_not_in_conflict_with_another_marks_unread_text(tmp_path):
+    inv = _notas_en_hojas(
+        tmp_path,
+        [("T-11 20X40 4#3 E#2@20", "ES-100"), ("T1-1 E#3@1S", "ES-100"), ("T1-1", "ES-200")],
+    )
+    assert _limpio(construir_definiciones(inv, C)[0]["T-11"].estribos)
+
+
+@pytest.mark.parametrize("con_ia", [False, True])
+def test_a_longer_mark_named_only_in_a_rejected_text_never_blocks_the_shorter(tmp_path, con_ia):
+    # R84: «K-2A E#3@1S» es de K-2A; K-2 no tiene estribos ilegibles y la IA se los llena.
+    inv = build_schedule_inventory(
+        _notas(tmp_path, ["K-2 15X20 4#3", "K-2A E#3@1S"]), frames=_frame()
+    )
+    if con_ia:
+        merge_external_specs(inv, [_ia("K-2", stirrups="E#2@15")], C)
+        assert inv.by_mark["K-2"].stirrups == "E#2@15"
+    k2 = construir_definiciones(inv, C)[0]["K-2"]
+    assert (k2.estribos is None) != con_ia and (k2.estribos is None or not k2.estribos.ilegible)
 
 
 def test_an_ambiguous_stack_line_is_unreadable_for_both_labels(tmp_path):
@@ -744,3 +807,28 @@ def test_a_cut_reference_without_a_count_has_no_assumed_shapes():
     out, avisos = asignar_formas(a.estribos, a.longitudinales)
     assert out[0].formas == [] and out[0].formas_fuente is None
     assert len(avisos) == 1 and "VER CORTE" in avisos[0]
+
+
+def test_an_ai_family_never_reorients_a_section_read_as_written(tmp_path):
+    # R88: «TE-A 40X20» se lee tal cual; con la familia «trabe» de la IA sigue siendo 40×20.
+    inv = build_schedule_inventory(_notas(tmp_path, ["TE-A 40X20 4#4"]), frames=_frame())
+    merge_external_specs(inv, [_ia("TE-A", stirrups="E#3@20", family="trabe")], C)
+    te = construir_definiciones(inv, C)[0]["TE-A"]
+    assert te.familia == "trabe" and _limpio(te.seccion_cm) and te.seccion_cm.valor == (40, 20)
+
+
+def test_the_same_blocking_text_counts_once_whatever_the_order():
+    # R89: el bloqueo que trae la IA y el que se calcula para el mismo texto son uno.
+    from klave_engine.detection.schedules import Bloqueo
+    from klave_engine.estructura.definiciones import _sin_leer
+
+    comun = {"campo": "estribos", "texto": "K-7 E#3@1S", "entidades": ["e1"], "fuente": "nota"}
+    duda = Bloqueo(**comun, por="respaldo", inequivoco=False)
+    suyo = Bloqueo(**comun, por="texto", inequivoco=True)
+    for orden in ([duda, suyo], [suyo, duda]):
+        datos = {
+            c: [] for c in ("seccion_cm", "longitud_m", "longitudinales", "estribos", "parrillas")
+        }
+        avisos: list[str] = []
+        _sin_leer(orden, [], datos, avisos)
+        assert [d.ilegible for d in datos["estribos"]] == [True] and avisos == []

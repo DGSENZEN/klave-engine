@@ -52,11 +52,14 @@ from klave_engine.estructura.asociacion import (
 )
 from klave_engine.estructura.marcas import (
     GUIONES,
+    MARCA_RE,
+    con_guion,
     es_rango,
     extremos_de_rango,
     leer_marcas,
     marca_en_rango,
     marca_normalizada,
+    marca_sola,
     titulos,
 )
 from klave_engine.geometry.bbox import (
@@ -88,9 +91,10 @@ Metodo = Literal["fila", "pila", "cotas", "geometria", "llamada", "nota", "ia"]
 Campo = Literal["seccion", "longitudinales", "estribos", "parrillas", "longitud"]
 CAMPOS: tuple[Campo, ...] = ("seccion", "longitudinales", "estribos", "parrillas", "longitud")
 _CAMPOS_DE_ARMADO: tuple[Campo, ...] = ("longitudinales", "estribos", "parrillas")
-# The beam families keep a section as b×h, oriented as written or as drawn (R75);
-# a castillo, a columna or a pilote may be compared with its sides sorted.
-FAMILIAS_DE_VIGA = frozenset({"trabe", "contratrabe", "dala", "cerramiento"})
+# A section keeps the order it was written or drawn in (a beam's b×h, R75): only a
+# castillo, a columna or a pilote is compared with its sides sorted (R88). An
+# unknown or generic family keeps the written order.
+FAMILIAS_QUE_SE_ORDENAN = frozenset({"castillo", "columna", "pilote"})
 # A text's sheet: its name (``hoja``) and its unique key (``hoja_llave``).
 Sheet = Callable[[NormalizedEntity], tuple[str, str]]
 
@@ -211,6 +215,10 @@ class ScheduleInventory(BaseModel):
     # Every drawing line with an armado, section or length fragment and a
     # letter, mark or not (R68), by sheet.
     textos_con_fragmento: list[HojaConFragmentos] = Field(default_factory=list)
+    # Every mark a drawing text names without ambiguity (the grammar's «unica»),
+    # in its one spelling, with how many texts name it: readings, rejected
+    # texts, cuadro rows and every label, the placements' too (R84).
+    marcas_del_plano: dict[str, int] = Field(default_factory=dict)
 
     def lineas_con_fragmento(self) -> list[tuple[HojaConFragmentos, LineaConFragmento]]:
         return [(hoja, linea) for hoja in self.textos_con_fragmento for linea in hoja.lineas]
@@ -286,8 +294,9 @@ def _read_section(
 ) -> tuple[tuple[int, int] | None, list[str], bool]:
     """The section written in ``text`` (the first NNxNN with both sides in
     8–400 cm), the avisos for what was not taken (a side out of range, a second
-    different section) and whether the text has a section at all. A beam's
-    section is b×h as written (R75); any other, its sides sorted."""
+    different section) and whether the text has a section at all. The section
+    keeps its written order (a beam's b×h, R75, R88); only a castillo's, a
+    columna's or a pilote's sides are sorted."""
     blocked = [m.span() for m in _BLOCK_RE.finditer(text)]
     section: tuple[int, int] | None = None
     avisos: list[str] = []
@@ -297,7 +306,7 @@ def _read_section(
             continue
         found = True
         a, b = int(m.group(1)), int(m.group(2))
-        leida = (a, b) if family in FAMILIAS_DE_VIGA else (min(a, b), max(a, b))
+        leida = (min(a, b), max(a, b)) if family in FAMILIAS_QUE_SE_ORDENAN else (a, b)
         if not (_MIN_SIDE_CM <= a <= _MAX_SIDE_CM and _MIN_SIDE_CM <= b <= _MAX_SIDE_CM):
             avisos.append(f"sección fuera de rango: «{m.group(0)}»: no se toma")
         elif section is None:
@@ -314,7 +323,7 @@ def _read_section(
 # «#n@s» or «@s» is a mesh in a family that has one, stirrups otherwise; a
 # length («L=8.00», «LONG. 8», «LONGITUD … 8 M») is the length.
 _CABEZA_DE_ESTRIBOS = re.compile(
-    r"(?<![A-Z0-9])(?:\(?\d{1,2}\)?\s*)?(?:EYG|E|G|EST|ESTR|ESTRIBOS?|GRAPAS?|LIGAS?)"
+    r"(?<![A-Z0-9#@.])(?:\(?\d{1,2}\)?\s*)?(?:EYG|E|G|EST|ESTR|ESTRIBOS?|GRAPAS?|LIGAS?)"
     r"(?:\s*[Y+/&,-]\s*(?:\d{1,2}\s*)?(?:E|G))?\.?\s*[#Ø]|(?:CENTRO|EXT)\.?\s*@",
 )
 _CUENTA_DE_VARILLAS = re.compile(
@@ -333,13 +342,50 @@ _LONGITUD = re.compile(
 _VARILLA = re.compile(r"[#Ø]\s*\d")
 
 
+# What a recognised fragment consumes (R86): a section or a piece's three
+# measures, a stirrup set, a bar group, a mesh, a spacing, a length, a mark, the
+# number of a numbered note. A digit left over is something nobody recognised.
+_CONSUMIDOS = (
+    _BLOCK_RE,
+    re.compile(r"(?<![\dxX×])\d{1,3}\s*[xX×]\s*\d{1,3}(?:\s*CMS?\.?)?"),
+    _JUEGO_DE_ESTRIBOS,
+    re.compile(
+        r"(?<![#@.\d])\d{1,2}\s*(?:(?:VARILLAS|VARS?\.?|V)(?:\s+DEL?)?)?\s*[#Ø]\s*\d{1,2}(?:\.5)?"
+        r"|(?<![A-Z0-9])(?:VARS?\.?|V)\s*\d{1,2}\s*[#Ø]\s*\d{1,2}(?:\.5)?"
+    ),
+    re.compile(r"[#Ø]\s*\d{1,2}(?:\.5)?\s*@\s*\d+(?:\.\d+)?(?:\s*CMS?\.?)?"),
+    # A spacing, alone or after how many stirrups go at it («@20», «8@15,1@6»).
+    re.compile(r"(?:(?<![#Ø.\d])\d{1,2}\s*)?@\s*\d+(?:\.\d+)?(?:\s*CMS?\.?)?"),
+    re.compile(
+        r"\bL\s*=\s*\d+(?:[.,]\d+)?(?:\s*(?:M|MTS?|CMS?)\b)?"
+        r"|\bLONG\.?\s*=?\s*\d+(?:[.,]\d+)?(?:\s*(?:M|MTS?)\b)?"
+        r"|\bLONGITUD\b[^|\n]*?\d+(?:[.,]\d+)?\s*(?:M|MTS?|METROS)\b"
+    ),
+    MARCA_RE,
+    re.compile(r"^\s*\d{1,2}[.\-)]+"),
+)
+
+
+def _sin_lo_reconocido(t: str) -> str:
+    """``t`` without its recognised fragments and its marks (whole tokens the
+    mark grammar reads, configured tags included)."""
+    for patron in _CONSUMIDOS:
+        t = patron.sub(" ", t)
+    return " ".join(
+        ficha
+        for ficha in t.split()
+        if marca_sola(ficha.strip(':;,()="'), TextPatternConfig()) is None
+    )
+
+
 def campos_de_fragmento(texto: str, family: str | None = None) -> list[Campo]:
     """The fields a drawing text claims, by what its fragments show (R76): a
-    section, a stirrup head, a bar count, a spacing, a length. A bare spacing
-    or a bar number that shows no field claims the fields ``family`` can have
-    (a castillo never has parrillas); without a family, every field it might
-    be."""
-    t = normalizar(texto)[1]
+    section, a stirrup head, a bar count, a spacing, a length. Only when every
+    digit of the text is in a fragment it recognises (a section, a bar group, a
+    stirrup set, a mesh, a spacing, a length, a mark, a note number) does it
+    claim just those fields (R86); otherwise it claims every field ``family``
+    can have (a castillo never has parrillas; without a family, every field)."""
+    t = normalizar(texto)[0]
     con_parrilla = family is None or family in FAMILIAS_CON_PARRILLA
     campos: list[Campo] = []
     if _read_section(t)[2]:
@@ -355,11 +401,13 @@ def campos_de_fragmento(texto: str, family: str | None = None) -> list[Campo]:
             campos.append("parrillas")
     if _LONGITUD.search(t):
         campos.append("longitud")
-    if not [c for c in campos if c != "seccion" and c != "longitud"] and _VARILLA.search(t):
-        # Un número de varilla que no dice de qué campo es: los que la familia puede tener.
-        campos += ["longitudinales", "estribos"]
+    if re.search(r"\d", _sin_lo_reconocido(t)):
+        # Algo con cifras que nadie reconoce: puede ser de cualquier campo de la familia.
+        campos += ["seccion", "longitudinales", "estribos"]
         if con_parrilla:
             campos.append("parrillas")
+        if family in (None, "pilote"):
+            campos.append("longitud")
     return [c for c in CAMPOS if c in campos]
 
 
@@ -402,16 +450,32 @@ def _render(render: Callable[[Armado], str], armado: Armado, avisos: list[str]) 
         return None
 
 
-def _reading(textos: list[str], family: str, section_of_the_element: bool = True) -> dict:
+def _reading(
+    textos: list[str],
+    family: str,
+    section_of_the_element: bool = True,
+    sin_marca: str | None = None,
+) -> dict:
     """One reading of an armado text (one string per line) for an element of
     ``family``: its section, its parsed armado and the canonical renders, the
-    fields whose text is there and every aviso. Text that could not be read
-    leaves every armado field marked as present: nobody can tell which one it
-    was meant for, so nobody fills them from elsewhere."""
+    fields whose text is there and every aviso. What could not be read claims
+    the fields its fragments show (R76, R86), so nobody fills them from
+    elsewhere. A note's own mark (``sin_marca``, however it is written: «T1-1»,
+    «K 7», «K-1-A») and its number («3.-») are not armado: the parser does not
+    see them, so they are never reported as unread."""
     section, avisos, has_section = _read_section(" | ".join(textos), family)  # never across lines
     if not section_of_the_element:
         section, avisos, has_section = None, [], False
-    armado = parsear_armado(textos, family)
+    a_leer = textos
+    if sin_marca is not None:
+        patron = _patron_suelto(sin_marca)
+        a_leer = [
+            _NUMERO_DE_NOTA.sub(_en_blanco, patron.sub(_en_blanco, t) if patron else t)
+            for t in textos
+        ]
+    armado = parsear_armado(a_leer, family)
+    if a_leer is not textos:
+        armado.texto_original = " | ".join(t.strip() for t in textos if t and t.strip())
     avisos = avisos + list(armado.avisos)
     rebar = _render(texto_longitudinal, armado, avisos)
     stirrups = _render(texto_estribos, armado, avisos)
@@ -442,6 +506,13 @@ def _reading(textos: list[str], family: str, section_of_the_element: bool = True
         "campos_con_texto": campos,
         "avisos": avisos,
     }
+
+
+_NUMERO_DE_NOTA = re.compile(r"^\s*\d{1,2}[.\-)]+")
+
+
+def _en_blanco(m: re.Match[str]) -> str:
+    return " " * len(m.group(0))
 
 
 def _has_something(reading: dict, content: str) -> bool:
@@ -555,7 +626,7 @@ def _parse_annotations(
                     entidades=[text.entity_id],
                     source_text=content[:120],
                     confidence=0.8,
-                    **_reading([content], family),
+                    **_reading([content], family, sin_marca=mark),
                 )
             )
         elif family is not None:
@@ -952,10 +1023,10 @@ def _same_sheet(a: ElementSpec, b: ElementSpec) -> bool:
 
 
 def _value_text(value: object, family: str | None = None) -> str:
-    """How a value is compared and quoted: a section by its two sides, smaller
-    first, except a beam's, which is b×h as read (R75)."""
+    """How a value is compared and quoted: a section as read (a beam's b×h,
+    R75), a castillo's, a columna's or a pilote's by its sides, smaller first."""
     if isinstance(value, tuple):
-        a, b = value if family in FAMILIAS_DE_VIGA else sorted(value)
+        a, b = sorted(value) if family in FAMILIAS_QUE_SE_ORDENAN else value
         return f"{a}x{b}"
     return str(value)
 
@@ -1050,6 +1121,24 @@ def _texts_naming_marks(
                 )
             )
     return found, list(hojas.values())
+
+
+def _marcas_del_plano(texts: list[NormalizedEntity], config: TextPatternConfig) -> dict[str, int]:
+    """Every mark a drawing text names without ambiguity — the whole text or one
+    of its MTEXT lines read as «unica» by the mark grammar — in its one spelling,
+    with how many texts name it (R84). A placement's label is a drawing text,
+    so the placements' marks are here too."""
+    cuenta: Counter[str] = Counter()
+    for text in texts:
+        contenido = text.text or ""
+        lineas = [contenido, *contenido.split("\n")] if "\n" in contenido else [contenido]
+        nombradas = set()
+        for linea in lineas:
+            lectura = leer_marcas(linea, config)
+            if lectura.tipo == "unica" and lectura.marca is not None:
+                nombradas.add(_normal(lectura.marca, config))
+        cuenta.update(nombradas)
+    return dict(sorted(cuenta.items()))
 
 
 def _family_notes_that_name_a_mark(
@@ -1155,6 +1244,7 @@ def build_schedule_inventory(
     inventory.textos_con_marca, inventory.textos_con_fragmento = _texts_naming_marks(
         texts, config, sheet
     )
+    inventory.marcas_del_plano = _marcas_del_plano(texts, config)
 
     grouped: dict[str, list[ElementSpec]] = {}
     for spec in specs:
@@ -1279,18 +1369,31 @@ def _normal(mark: str, config: TextPatternConfig) -> str:
 
 
 def marcas_del_dibujo(inventory: ScheduleInventory, config: TextPatternConfig) -> set[str]:
-    """The marks the drawing reads (its readings, not the AI's), in their one spelling."""
-    return {_normal(s.mark, config) for s in inventory.specs if s.source != "ia"}
+    """The marks of the drawing (R84), in their one spelling: those its readings
+    read, and every mark a drawing text names without ambiguity — a rejected
+    text, a cuadro row, a label, a placement's label (``marcas_del_plano``)."""
+    return {_normal(s.mark, config) for s in inventory.specs if s.source != "ia"} | set(
+        inventory.marcas_del_plano
+    )
+
+
+_CEROS = re.compile(r"(?<!\d)0+(?=\d)")
+
+
+def _llave_sin_ceros(mark: str) -> str:
+    """The loose key without the leading zeros of its numbers (K-07 ≡ K-7, R68)."""
+    return _CEROS.sub("", _loose_key(mark))
 
 
 def misma_marca(a: str, b: str, dibujo: set[str], config: TextPatternConfig) -> bool:
     """Whether two marks are the same one for the AI block: the same spelling
-    («K7», «K-7», «K 7», «K–7»), or the same loose key (R65: «T1-1» and «T-11»)
-    when they are not both distinct marks the drawing reads (R74)."""
+    («K7», «K-7», «K 7», «K–7»), or the same loose key without leading zeros
+    (R65, R68: «T1-1» and «T-11», «K-07» and «K-7») when they are not both
+    distinct marks of the drawing (R74, R84)."""
     na, nb = _normal(a, config), _normal(b, config)
     if na == nb:
         return True
-    if _loose_key(a) != _loose_key(b):
+    if _llave_sin_ceros(a) != _llave_sin_ceros(b):
         return False
     return not (na in dibujo and nb in dibujo)
 
@@ -1580,7 +1683,8 @@ def merge_external_specs(
             continue
         if spec.source == "ia":
             spec.metodo = "ia"
-        mark = spec.mark.upper()
+        # An AI mark written with a Unicode dash («K‑7») is the same key as the drawing's.
+        mark = con_guion(spec.mark).upper()
         bloqueos = bloqueos_de(inventory, mark, config, known, family=spec.family)
         with_text = {b.campo for b in bloqueos}
         # R69: the reading carries its block, so that no later stage elects a blocked value.
@@ -1594,7 +1698,7 @@ def merge_external_specs(
         current = inventory.by_mark.get(mark)
         new = current is None
         if current is None:
-            current = spec.model_copy(deep=True)
+            current = spec.model_copy(deep=True, update={"mark": mark})
             current.campos_bloqueados, current.bloqueos = [], []
             for field, _campo in _AI_FIELDS:
                 setattr(current, field, None)

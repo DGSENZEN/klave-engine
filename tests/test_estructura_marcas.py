@@ -158,3 +158,22 @@ def test_range_ends_and_between(rango, extremos, dentro, fuera):
 )
 def test_the_marks_a_title_names(texto, marcas):
     assert titulos(texto, C) == marcas
+
+
+@pytest.mark.parametrize(
+    "texto,tipo,piezas",
+    [
+        # R85: el fin de un rango o de una lista es una marca o un entero sin unidad, sin «X»,
+        # «#», «@» ni decimales; si no, la letra suelta es ambigua (R78).
+        ("K-15 A 20X20 4#3 E#3@20", "ambigua", ["K-15", "K-15A", "K-15-A"]),
+        ("K-1 A 15X20", "ambigua", ["K-1", "K-1A", "K-1-A"]),
+        ("CASTILLOS K-1 A 3.00 M MAX 15X15 4#3 E#2@20", "ambigua", ["K-1", "K-1A", "K-1-A"]),
+        ("C-1 A 20 CM E#3@1S", "ambigua", ["C-1", "C-1A", "C-1-A"]),
+        ("K-1 A 4", "varias", ["K-1 A 4"]),
+        ("K-1 A 4A", "varias", ["K-1 A 4A"]),
+        ("K-1, 2 Y 3 15X20 4#3", "varias", ["K-1", "K-2", "K-3"]),
+    ],
+)
+def test_a_range_end_is_a_mark_or_a_bare_integer(texto, tipo, piezas):
+    lectura = leer_marcas(texto, C)
+    assert (lectura.tipo, lectura.piezas) == (tipo, piezas)

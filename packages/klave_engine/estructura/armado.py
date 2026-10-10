@@ -155,10 +155,11 @@ _SENTIDO_RE = re.compile(
 _ES_LS = re.compile(_LS)
 _SENTIDO_XY: dict[str, Literal["x", "y"]] = {"X": "x", "Y": "y"}
 
-# «4#5», «4 VARS #5», «4V#4» y, con la palabra delante, «V4#4», «VAR 4#4» (PRUEBA-1: «V4#4 E#3»).
+# «4#5», «4 VARS #5», «4V#4», «4 VARILLAS DEL #3» y, con la palabra delante, «V4#4», «VAR 4#4»
+# (PRUEBA-1: «V4#4 E#3»).
 _VARILLAS_RE = re.compile(
     rf"(?:(?<![A-Z0-9.#@])(?:VARS?\.?|V)\s*(?P<v>{_CUENTA})"
-    rf"|(?<![\d.#@])(?P<n>{_CUENTA})\s*(?:VARILLAS|VARS?\.?|V)?)"
+    rf"|(?<![\d.#@])(?P<n>{_CUENTA})\s*(?:(?:VARILLAS|VARS?\.?|V)(?:\s+DEL?)?)?)"
     rf"\s*#\s*(?P<num>{_NUM})(?!\s*@)"
 )
 _CIFRA_O_GATO = "0123456789#.@"  # lo que, pegado delante, parte un número (aunque esté leído)

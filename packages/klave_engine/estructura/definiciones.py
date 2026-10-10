@@ -24,6 +24,7 @@ from typing import Any, get_args
 from pydantic import BaseModel, Field
 
 from klave_engine.detection.schedules import (
+    FAMILIAS_QUE_SE_ORDENAN,
     Bloqueo,
     Campo,
     ElementSpec,
@@ -136,9 +137,9 @@ def fuente_de_lectura(spec: ElementSpec) -> Fuente:
         ) from None
 
 
-# Las familias cuya sección se puede comparar con sus lados ordenados; una viga (trabe,
-# contratrabe, dala, cerramiento) es b×h como la leyó quien sabe orientarla (R75).
-_SE_ORDENA = frozenset({"castillo", "columna", "pilote"})
+# Las familias cuya sección se compara con sus lados ordenados (castillo, columna, pilote); las
+# demás —una viga es b×h— quedan como las leyó quien sabe orientarlas (R75, R88).
+_SE_ORDENA = FAMILIAS_QUE_SE_ORDENAN
 
 
 def _seccion(valor: tuple[int, int], familia: str) -> tuple[int, int]:
@@ -194,8 +195,14 @@ def _nombradas_sin_leer(inv: ScheduleInventory, config: TextPatternConfig) -> li
     """Las marcas que nombra sin ambigüedad un texto rechazado (R77): su única marca («K-9
     E#3@1S», «CORTE K-1 …»), los miembros de su lista y los extremos de su rango («K-1 Y K-2 …»,
     «K-1 A K-4 …»), las etiquetas entre las que dudó un renglón de pila o las de una etiqueta de
-    varias marcas. Las candidatas de una marca pegada («K-7E#3@20») no: no se sabe si existen."""
+    varias marcas. Las candidatas de una marca pegada («K-7E#3@20») no: no se sabe si existen.
+
+    Una marca que sólo nombran textos rechazados no tiene definición (R85: nada de marcas
+    fantasma, «C-1 A 20 CM» no es C-20): la tiene si también la nombra sin ambigüedad otro texto
+    del plano (una lectura, una etiqueta, la de una colocación: ``marcas_del_plano``)."""
     nombradas: list[str] = []
+    # Cuántos textos rechazados nombran a cada marca como su única marca: no cuentan como «otro».
+    solo_en_rechazos: dict[str, set[str]] = {}
     for r in inv.rechazos:
         if r.motivo not in ("ambigua", "varias_marcas", "sin_lector"):
             continue
@@ -205,6 +212,9 @@ def _nombradas_sin_leer(inv: ScheduleInventory, config: TextPatternConfig) -> li
             piezas = list(r.marcas)  # un renglón de pila: lo que nombran sus etiquetas
         elif lectura.tipo == "unica" and lectura.marca is not None:
             piezas = [lectura.marca]
+            solo_en_rechazos.setdefault(normalizar_marca(lectura.marca, config), set()).add(
+                r.entidad_id
+            )
         elif lectura.tipo == "varias":
             piezas = lectura.piezas
         elif lectura.tipo == "ninguna":
@@ -213,7 +223,14 @@ def _nombradas_sin_leer(inv: ScheduleInventory, config: TextPatternConfig) -> li
             piezas = []  # ambigua: sólo candidatas
         for pieza in piezas:
             nombradas += extremos_de_rango(pieza, config) if es_rango(pieza, config) else [pieza]
-    return list(dict.fromkeys(nombradas))
+    leidas = {normalizar_marca(s.mark, config) for s in inv.specs if s.source != "ia"}
+
+    def en_otro_texto(marca: str) -> bool:
+        normal = normalizar_marca(marca, config)
+        textos = inv.marcas_del_plano.get(normal, 0)
+        return normal in leidas or textos > len(solo_en_rechazos.get(normal, set()))
+
+    return [m for m in dict.fromkeys(nombradas) if en_otro_texto(m)]
 
 
 def _hojas_con_el_mismo_codigo(inv: ScheduleInventory) -> dict[str, list[str]]:
@@ -349,12 +366,23 @@ def _sin_leer(
     llave suelta) es un dato sólo si la marca no tiene uno propio en ese campo; si lo tiene, es
     un aviso (R74). Una lectura de la marca misma ya tiene su dato."""
     propias = {tuple(s.entidades) for s in lecturas}
-    vistos: set[tuple[str, tuple[str, ...], str]] = set()
-    dudosos: list[Bloqueo] = []
+    # R89: un mismo texto (el bloqueo que trae la lectura IA y el que se calcula aquí) es uno:
+    # se junta por campo y entidad, y es inequívoco si alguna de sus copias lo es.
+    por_texto: dict[tuple[str, tuple[str, ...]], Bloqueo] = {}
     for b in bloqueos:
         if b.por == "lectura" and tuple(b.entidades) in propias:
             continue
-        if b.inequivoco and b.por != "lectura":
+        llave = (b.campo, tuple(b.entidades))
+        previo = por_texto.get(llave)
+        suyo = b.inequivoco and b.por != "lectura"
+        if previo is None:
+            por_texto[llave] = b.model_copy(update={"inequivoco": suyo})
+        elif suyo and not previo.inequivoco:
+            por_texto[llave] = previo.model_copy(update={"inequivoco": True})
+    vistos: set[tuple[str, tuple[str, ...], str]] = set()
+    dudosos: list[Bloqueo] = []
+    for b in sorted(por_texto.values(), key=lambda b: (b.campo, b.entidades, b.texto)):
+        if b.inequivoco:
             _ilegible(b, datos, vistos)
         else:
             dudosos.append(b)
@@ -372,7 +400,7 @@ def _sin_leer(
 def _ilegible(
     b: Bloqueo, datos: dict[str, list[Dato]], vistos: set[tuple[str, tuple[str, ...], str]]
 ) -> None:
-    llave = (b.campo, tuple(b.entidades), b.texto)
+    llave = (b.campo, tuple(b.entidades), "")
     if llave in vistos:
         return
     vistos.add(llave)

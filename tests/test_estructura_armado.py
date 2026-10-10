@@ -2112,3 +2112,37 @@ def test_a_letter_after_a_word_is_not_a_stirrup_head(textos, familia, cita):
 def test_a_head_after_a_mark_a_piece_or_alone_is_still_read(textos, estribos):
     a = parsear_armado(textos, "castillo")
     assert texto_estribos(a) == estribos and a.avisos == []
+
+
+# ------------------------------------------------- Tarea 8, ronda 2 (R87): el número con palabras
+
+
+@pytest.mark.parametrize(
+    "textos,familia,armado",
+    [
+        (["4 VAR. No. 3 E#2@15"], "castillo", "4#3 E#2@15"),  # antes «3E#2@15»: tres juegos
+        (["4 VARS. N° 3", "E#2@15"], "castillo", "4#3 E#2@15"),
+        (["4 VARILLAS DEL No. 3"], "castillo", "4#3"),
+        (["4 VARILLAS DEL NUM. 4"], "castillo", "4#4"),
+        (['K-1 15X15 4 VARS 3/8" E 1/4 @ 15'], "castillo", "4#3 E#2@15"),
+        (['4 VARS 1/2"', "E 3/8 @ 20"], "castillo", "4#4 E#3@20"),
+        (['4 VARS 1"'], "castillo", "4#8"),
+        (["N° 4 @ 20"], "losa", "#4@20"),
+    ],
+)
+def test_a_bar_number_in_words_or_in_eighths_is_its_number(textos, familia, armado):
+    a = parsear_armado(textos, familia)
+    assert texto_armado(a) == armado and a.avisos == []
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        '4 VARS 5/16" E#2@15',  # no es un octavo exacto: se avisa
+        "4 VARS 1",  # «1» sin pulgadas no es una varilla
+        "NO.3",  # un número sin cuenta
+    ],
+)
+def test_a_bar_number_that_is_not_an_exact_eighth_is_reported(texto):
+    a = parsear_armado([texto], "castillo")
+    assert a.avisos and not [g for g in a.longitudinales if g.cantidad == 4]
