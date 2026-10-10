@@ -1314,21 +1314,28 @@ def _sin_puntuacion(encabezado: str) -> str:
 
 def _alcance_de_la_cadena(cadena: list[str]) -> _Alcance:
     """El alcance bajo una cadena de encabezados (el más cercano primero). Un encabezado acota
-    hasta que otro del mismo nivel o de uno más alto lo cierra: un subencabezado general
-    («Refuerzo:», «Notas:», «Proyecto:», «Obra:», «Observaciones:», «Traslapes:», «NOTAS DE
-    REFUERZO», «NOTAS DEL PROYECTO», «REFUERZO :», «NOTAS :») nunca lo cierra; sí otro que acota
-    (el más cercano manda) o el de las generales de todo el proyecto (``_ENCABEZADO_PRINCIPAL``).
-    Un encabezado de cimentación también sigue valiendo bajo los generales de abajo."""
+    hasta que «NOTAS GENERALES DE ESTRUCTURA» (``_ENCABEZADO_PRINCIPAL``) lo cierra: un
+    subencabezado general («Refuerzo:», «Notas:», «Proyecto:», «Obra:», «Observaciones:»,
+    «Traslapes:», «NOTAS DE REFUERZO», «NOTAS DEL PROYECTO», «REFUERZO :», «NOTAS :») nunca lo
+    cierra. Un encabezado que acota bajo otro que acota («NOTAS PARA ESCALERAS :» y debajo
+    «COLUMNAS :») es ambiguo —pueden ser las columnas de la escalera, o dos bloques seguidos—: no se
+    sabe a qué acota y las notas de abajo son un aviso (R47). Un encabezado de cimentación también
+    sigue valiendo bajo los generales y los que acotan que tiene debajo."""
     cimentacion = ""
+    acota: _Alcance | None = None
     for k, encabezado in enumerate(cadena):
         if _ENCABEZADO_PRINCIPAL.fullmatch(_texto_del_encabezado(encabezado)):
             break
         familias = _alcance_del_encabezado(encabezado, encabezado)
         if familias is not None:
-            return _Alcance(familias, _sin_puntuacion(encabezado), cimentacion, k == 0)
-        if not cimentacion and _es_de_cimentacion(encabezado):
+            if acota is not None:  # uno que acota bajo otro que acota
+                return _Alcance(["?"], acota.acota, cimentacion, False)
+            acota = _Alcance(familias, _sin_puntuacion(encabezado), "", k == 0)
+        elif not cimentacion and _es_de_cimentacion(encabezado):
             cimentacion = _sin_puntuacion(encabezado)
-    return _Alcance(None, "", cimentacion)
+    if acota is None:
+        return _Alcance(None, "", cimentacion)
+    return _Alcance(acota.familias, acota.acota, cimentacion, acota.directo)
 
 
 def _alcance_de_la_nota(o: _Origen) -> _Alcance:
@@ -1379,8 +1386,9 @@ def _lo_que_la_cambia(
         «PARA COLUMNAS», «EN VIGAS», «EN NERVADURAS», «EN AZOTEA», «EN ESCALERAS», «EN LA
         CISTERNA», «APLICA A ESCALERAS», «NO ASI EN …», un encabezado como «COLUMNAS :», «NOTAS
         PARA LOSAS :», «NOTAS PARA ESCALERAS :» o «ESCALERAS :»; sigue acotando bajo un
-        subencabezado general como «Refuerzo:» o «NOTAS :», hasta que otro que acota o «NOTAS
-        GENERALES DE ESTRUCTURA» lo cierra: ``_alcance_de_la_cadena``). Una regla por familia
+        subencabezado general como «Refuerzo:» o «NOTAS :» hasta que «NOTAS GENERALES DE
+        ESTRUCTURA» lo cierra, y uno que acota bajo otro que acota es ambiguo y se avisa:
+        ``_alcance_de_la_cadena``). Una regla por familia
         (recubrimiento, primer estribo, anclaje) se lee sólo para las familias que dice (o las del
         encabezado): otra familia conocida en otra oración es de otra familia (se avisa aparte); en
         su misma oración, con una cifra, o nombrando una familia que se leyó, la cambia; una parte

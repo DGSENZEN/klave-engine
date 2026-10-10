@@ -4515,20 +4515,6 @@ def test_a_top_level_general_heading_ends_the_scope(tmp_path):
         assert r.traslape_max_numero.valor == "6" and r.avisos == [], encabezados
 
 
-def test_a_new_scoping_heading_replaces_the_scope_of_the_one_above(tmp_path):
-    r = _con_encabezados(
-        tmp_path,
-        ["NOTAS PARA ESCALERAS :", "COLUMNAS :", "Refuerzo:"],
-        ["1. EL RECUBRIMIENTO SERA DE 5 CM EN COLUMNAS"],
-    )
-    assert (
-        r.recubrimiento_m["columna"].valor == 0.05 and r.recubrimiento_m["columna"].fuente == "nota"
-    )
-    # … y lo que acota ahora es «COLUMNAS»: una regla de todo el proyecto no se lee
-    r = _con_encabezados(tmp_path, ["NOTAS PARA ESCALERAS :", "COLUMNAS :"], [f"1. {_L}"])
-    assert r.traslape_max_numero is None and r.avisos
-
-
 def test_no_heading_above_means_no_scope(tmp_path):
     r = _con_encabezados(tmp_path, ["Refuerzo:", "Notas:"], [f"1. {_L}"])
     assert r.traslape_max_numero.valor == "6" and r.avisos == []
@@ -4631,3 +4617,99 @@ def test_copies_of_a_note_under_different_scopes_are_not_read(tmp_path, arriba_a
         tmp_path, arriba_a, arriba_b, "1. EL RECUBRIMIENTO SERA DE 5 CM EN COLUMNAS"
     )
     assert _nada_de_la_nota(r, _R) and r.avisos
+
+
+# --- Task 5c, R47: un encabezado que acota bajo otro que acota es ambiguo («NOTAS PARA ESCALERAS :»
+# y debajo «COLUMNAS :» pueden ser las columnas de la escalera): las notas de abajo son un aviso ---
+
+_ENCABEZADOS_QUE_ACOTAN_ANIDADOS = (
+    ("NOTAS PARA ESCALERAS :", "COLUMNAS :"),
+    ("COLUMNAS :", "NOTAS PARA ESCALERAS :"),
+    ("ESCALERAS :", "NOTAS PARA TRABES :"),
+    ("NOTAS PARA TRABES :", "ESCALERAS :"),
+    ("COLUMNAS :", "TRABES :"),
+    ("TRABES :", "COLUMNAS :"),
+    ("ESCALERAS :", "CISTERNA :"),
+)
+# la regla, su frase y el elemento que el encabezado de adentro acotaría si estuviera solo
+_LO_QUE_EL_ENCABEZADO_DE_ADENTRO_LEERIA = (
+    (_R, "EL RECUBRIMIENTO SERA DE 5 CM EN COLUMNAS"),
+    (_R, "EL RECUBRIMIENTO SERA DE 4 CM EN TRABES"),
+    (_P, "EN TRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM"),
+    (_P, "EL PRIMER ESTRIBO SE COLOCARA A 5 CM"),
+    *_NUEVE_BASES,
+)
+
+
+@pytest.mark.parametrize(
+    ("arriba", "regla", "frase"),
+    [
+        pytest.param(arriba, regla, frase, id=f"{' > '.join(arriba)} > {frase}")
+        for arriba in _ENCABEZADOS_QUE_ACOTAN_ANIDADOS
+        for regla, frase in _LO_QUE_EL_ENCABEZADO_DE_ADENTRO_LEERIA
+    ],
+)
+def test_a_scoping_heading_nested_under_another_one_is_ambiguous_and_reported(
+    tmp_path, arriba, regla, frase
+):
+    r = _con_encabezados(tmp_path, list(arriba), [f"1. {frase}"])
+    assert _nada_de_la_nota(r, regla), getattr(r, regla)
+    assert r.avisos
+
+
+@pytest.mark.parametrize("entre", [[], ["Refuerzo:"], ["Notas:", "NOTAS DE REFUERZO"]])
+def test_a_general_subheading_between_two_scoping_headings_changes_nothing(tmp_path, entre):
+    for arriba in (
+        ["NOTAS PARA ESCALERAS :", *entre, "COLUMNAS :"],
+        ["COLUMNAS :", *entre, "ESCALERAS :"],
+    ):
+        r = _con_encabezados(tmp_path, arriba, ["1. EL RECUBRIMIENTO SERA DE 5 CM EN COLUMNAS"])
+        assert _nada_de_la_nota(r, _R) and r.avisos, arriba
+
+
+def test_the_aviso_of_a_nested_scoping_heading_names_the_inner_one(tmp_path):
+    r = _con_encabezados(
+        tmp_path,
+        ["NOTAS PARA ESCALERAS :", "COLUMNAS :"],
+        ["1. EL RECUBRIMIENTO SERA DE 5 CM EN COLUMNAS"],
+    )
+    (aviso,) = r.avisos
+    assert "COLUMNAS" in aviso and "lo niega, lo acota o no se pudo leer" in aviso
+
+
+@pytest.mark.parametrize(
+    "arriba",
+    [
+        ["NOTAS GENERALES DE ESTRUCTURA.", "COLUMNAS :"],
+        ["NOTAS GENERALES DE ESTRUCTURA.", "REFUERZO :", "COLUMNAS :"],
+        ["NOTAS GENERALES DE ESTRUCTURA.", "MATERIALES :", "REFUERZO :", "COLUMNAS :"],
+        ["Refuerzo:", "COLUMNAS :"],
+        # «NOTAS GENERALES DE ESTRUCTURA» cierra lo que acotaba uno de más arriba
+        ["NOTAS PARA ESCALERAS :", "NOTAS GENERALES DE ESTRUCTURA.", "COLUMNAS :"],
+        ["ESCALERAS :", "NOTAS GENERALES DE ESTRUCTURA.", "REFUERZO :", "COLUMNAS :"],
+    ],
+)
+def test_a_scoping_heading_under_the_general_notes_heading_still_reads_per_family(tmp_path, arriba):
+    r = _con_encabezados(tmp_path, arriba, ["1. EL RECUBRIMIENTO SERA DE 5 CM EN COLUMNAS"])
+    assert r.recubrimiento_m["columna"].valor == 0.05
+    assert r.recubrimiento_m["columna"].fuente == "nota" and r.avisos == []
+    # … y acota: una regla de todo el proyecto no se lee, un recubrimiento de otro elemento tampoco
+    r = _con_encabezados(tmp_path, arriba, [f"1. {_L}"])
+    assert r.traslape_max_numero is None and r.avisos
+    r = _con_encabezados(tmp_path, arriba, ["1. EL RECUBRIMIENTO SERA DE 4 CM EN TRABES"])
+    assert _nada_de_la_nota(r, _R) and r.avisos
+
+
+def test_a_first_stirrup_under_a_scoping_heading_under_the_general_notes_still_takes_its_elements(
+    tmp_path,
+):
+    r = _con_encabezados(
+        tmp_path,
+        ["NOTAS GENERALES DE ESTRUCTURA.", "TRABES :"],
+        ["1. EL PRIMER ESTRIBO SE COLOCARA A 5 CM"],
+    )
+    assert {f: d.valor for f, d in r.primer_estribo_m.items()} == {
+        "trabe": 0.05,
+        "contratrabe": 0.05,
+    }
+    assert r.avisos == []
