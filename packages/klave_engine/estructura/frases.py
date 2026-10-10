@@ -529,6 +529,10 @@ _NEUTRA = re.compile(
     r"|EN\s+TODOS\s+LOS\s+CASOS|RESPECTIVAMENTE|NOTA|IMPORTANTE|OBSERVACION(?:ES)?"
     rf"|(?:COMO\s+(?:LO\s+|SE\s+)?(?:INDICAN?|MUESTRAN?|ILUSTRAN?|ESPECIFICAN?)\s+(?:EN\s+)?"
     rf"(?:LA|EL|LOS|LAS)\s+|(?:VER|SEGUN)\s+(?:(?:LA|EL)\s+)?){_DONDE}"
+    # la resistencia del concreto o del acero (el «F'C=100 KG/CM2» de la plantilla de Marina): no
+    # dice una regla ni acota ninguna
+    r"|(?:CONCRETO\s+(?:POBRE\s+)?)?F'?[CY]\s*=\s*\d+(?:[.,]\d+)?"
+    r"\s*(?:KGF?\s*/\s*CM\s*(?:2|\^2)|MPA)?"
     r")\.?"
 )
 # Un número que no puede ser una varilla, un ángulo ni una medida de la regla: un porcentaje,

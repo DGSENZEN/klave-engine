@@ -737,10 +737,13 @@ _EN_UN_LUGAR = re.compile(
 # SON ESCALERAS», «…, COMO MINIMO», «…, MAXIMO»): la nota es un aviso (R44). Cuenta aunque la
 # primera palabra traiga cifras o una marca («T-1», «C-1 Y C-2», «MC-1», «E1», «ESC-1») o la
 # cláusula traiga puntuación suelta («ZONA 'A'», «S/N», «ESCALERAS*», «[ESCALERAS]», «ESCALERAS -»,
-# «ESCALERAS / RAMPAS», «ESCALERAS+RAMPAS», «ESCALERAS & RAMPAS») (R46). Las neutrales
+# «ESCALERAS / RAMPAS», «ESCALERAS+RAMPAS», «ESCALERAS & RAMPAS»), paréntesis («ESCALERAS (E-1)»,
+# «ZONA (A)», «ESCALERA E-1 (CUERPO B)») o marcas dentro de la palabra («ESC#1», «ESC=1», «100%»,
+# «Ø») (R46, R48). Las neutrales
 # («RESPECTIVAMENTE», «VER DETALLE 3», «SALVO INDICACION») no llegan aquí.
 _CLAUSULA_CORTA = re.compile(
-    r"""[\[*\-"'\s]*[A-Z0-9][A-Z0-9'\-/*"+&\[\]]*(?:\s+[A-Z0-9'\-/*"+&\[\]]+){0,3}[\]*\-"'\s]*"""
+    r"""[\[(*#\-"'\s]*[A-Z0-9][A-Z0-9'\-/*"+&\[\]()#Ø=%]*"""
+    r"""(?:\s+[A-Z0-9'\-/*"+&\[\]()#Ø=%]+){0,3}[\])*\-"'\s]*"""
 )
 # Las reglas por familia: otro elemento no las cambia (es de otra familia).
 _POR_FAMILIA = ("recubrimiento", "primer_estribo", "anclaje")
