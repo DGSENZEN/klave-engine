@@ -583,3 +583,61 @@ def test_two_sheets_sharing_a_code_are_named_apart_in_an_aviso(tmp_path):
     inv = build_schedule_inventory(_entities(tmp_path, build), frames=frames)
     (aviso,) = [a for a in inv.by_mark["K-9"].avisos if "no coinciden" in a]
     assert "ES-200 [a de specs.dxf]" in aviso and "ES-200 [b de specs.dxf]" in aviso
+
+
+# --------------------------------------- Task 7, ronda 3 (R65): un reconocedor, llave suelta
+
+
+@pytest.mark.parametrize(
+    "nota,marcas",
+    [
+        ("TRABE T 1 E#3@1S", ["T-1"]),
+        ("TRABE T - 1 E#3@1S", ["T-1"]),
+        ("3.- K 7 E#3@1S", ["K-7"]),
+        ("TRABE:T-1 E#3@1S", ["T-1"]),
+        ("TRABE T-1=T-2 E#3@1S", ["T-1", "T-2"]),
+        ("TRABE T-1+T-2 E#3@1S", ["T-1", "T-2"]),
+        ("TRABE T-1&T-2 E#3@1S", ["T-1", "T-2"]),
+    ],
+)
+def test_one_recogniser_for_the_ia_block(tmp_path, nota, marcas):
+    # R65.1: lo que ``marcas_en_nota`` reconoce también cubre (antes la IA llenaba esas marcas;
+    # con «T-1=T-2», T-2 se resolvía pegada a T-1).
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    merge_external_specs(inv, [_ia(m, stirrups="E#2@20", rebar="6#4") for m in marcas])
+    assert not [m for m in marcas if m in inv.by_mark]
+
+
+@pytest.mark.parametrize("nota,marca_ia", [("TRABE K7E#3@1S", "K7"), ("TRABE T1-1E#3@1S", "T1-1")])
+def test_a_glued_mark_written_without_hyphen_is_blocked(tmp_path, nota, marca_ia):
+    # R65.3 (sonda G1b): la ficha pegada se guarda tal cual y con guion, y se compara con las
+    # marcas conocidas por su llave suelta.
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    merge_external_specs(inv, [_ia(marca_ia, stirrups="E#9@25")])
+    assert marca_ia not in inv.by_mark
+
+
+def test_an_ia_mark_written_differently_still_meets_the_drawing_mark(tmp_path):
+    # R65.2: el plano dice «K-7», la IA «K7»: es la misma marca para el bloqueo (nunca para
+    # juntar lecturas ni la vista por marca).
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-7 E#3@1S", "K-7 20X30"]), frames=_frame())
+    merge_external_specs(inv, [_ia("K7", stirrups="E#2@20", section_cm=(15, 15))])
+    assert "K7" not in inv.by_mark and inv.by_mark["K-7"].stirrups is None
+
+
+def test_the_loose_key_never_reaches_a_different_mark(tmp_path):
+    # Controles: «K-15E#3@20» no es de K-1; «K-7 4#3», leído por K-7, no le tapa sus estribos a
+    # la IA de «K7»; una marca sin relación no queda cubierta.
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-15E#3@20", "K-7 4#3"]), frames=_frame())
+    merge_external_specs(
+        inv,
+        [
+            _ia("K-1", stirrups="E#2@20"),
+            _ia("K-15", stirrups="E#2@20"),
+            _ia("K7", stirrups="E#2@20"),
+            _ia("K-8", rebar="6#4"),
+        ],
+    )
+    assert inv.by_mark["K-1"].stirrups == "E#2@20" and "K-15" not in inv.by_mark
+    assert inv.by_mark["K7"].stirrups == "E#2@20" and inv.by_mark["K-7"].rebar == "4#3"
+    assert inv.by_mark["K-8"].rebar == "6#4"

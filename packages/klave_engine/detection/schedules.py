@@ -877,9 +877,9 @@ def _texts_naming_marks(
     texts: list[NormalizedEntity], config: TextPatternConfig, sheet: Sheet
 ) -> list[TextoConMarca]:
     """Every line of every drawing text (model space and block contents, every
-    sheet, MTEXT line by line) that names marks (``fichas_de_marca`` and the
-    ranges of ``marcas_en_nota``; references excluded) and holds an armado- or
-    section-shaped fragment (R64)."""
+    sheet, MTEXT line by line) that names marks (``fichas_de_marca`` and
+    ``marcas_en_nota``, ranges included; references excluded) and holds an
+    armado- or section-shaped fragment (R64, R65)."""
     found: list[TextoConMarca] = []
     for text in texts:
         for line in (text.text or "").split("\n"):
@@ -891,9 +891,12 @@ def _texts_naming_marks(
                 campos.extend(_CAMPOS_DE_ARMADO)
             if not campos:
                 continue
-            # Each mark-shaped token, plus the ranges as written («K-1 A 4» names K-2, K-3).
-            ranges = [m for m in marcas_en_nota(line, config) if nombra_varias([m])]
-            marks = list(dict.fromkeys(fichas_de_marca(line, config) + ranges))
+            # One recogniser (R65): each mark-shaped token (glued ones raw and hyphenated)
+            # and every mark ``marcas_en_nota`` finds («T 1», «TRABE:T-1», «T-1=T-2»), with
+            # its ranges as written («K-1 A 4» names K-2, K-3).
+            marks = list(
+                dict.fromkeys(fichas_de_marca(line, config) + marcas_en_nota(line, config))
+            )
             if not marks:
                 continue
             hoja, llave = sheet(text)
@@ -1073,22 +1076,38 @@ _AI_FIELDS: tuple[tuple[str, Campo | None], ...] = (
 _RECHAZOS_CON_MARCA = frozenset({"ambigua", "varias_marcas", "sin_lector"})
 
 
+_PUNTO_ENTRE_LETRA_Y_CIFRA = re.compile(r"(?<=[A-Z])\.(?=\d)|(?<=\d)\.(?=[A-Z])")
+
+
+def _loose_key(mark: str) -> str:
+    """A mark as the AI block compares it (R65), on both sides, AI marks
+    included: uppercase, without hyphens or spaces, without a dot between a
+    letter and a digit. «K7», «K-7» and «K 7» are one key; «T1-1» and «T-11»
+    too (they over-block each other: the safe direction). Only for blocking:
+    readings and ``by_mark`` keep their marks as written."""
+    return re.sub(r"[\s\-]+", "", _PUNTO_ENTRE_LETRA_Y_CIFRA.sub("", mark.upper()))
+
+
 def _names(piece: str, mark: str, known: set[str]) -> bool:
-    """Whether a mark as a text writes it names ``mark``. A range names both
-    endpoints always, and every mark between same-letter endpoints
+    """Whether a mark as a text writes it names ``mark``, both by their loose
+    key (``known`` holds the loose keys of the known marks). A range names
+    both endpoints always, and every mark between same-letter endpoints
     («K-1 A K-4» → K-2A, K-3); a mixed-letter range («K-1 A C-4») only its
-    endpoints. A glued form that is not a known mark («K-7E#3@20») is the
-    longest known mark it starts with, when what is left starts with a letter
-    or a sign (so «K-15AE#3» is K-15A, never K-1)."""
+    endpoints. A glued form that is not a known mark («K-7E#3@20», «K7E#3»)
+    is the longest known mark it starts with, when what is left starts with a
+    letter or a sign (so «K-15AE#3» is K-15A, never K-1)."""
+    key = _loose_key(mark)
     if nombra_varias([piece]):
-        return mark in extremos_de_rango(piece) or marca_en_rango(piece, mark)
-    piece = piece.upper()
-    if piece == mark:
+        if any(_loose_key(end) == key for end in extremos_de_rango(piece)):
+            return True
+        return marca_en_rango(piece, mark)
+    written = _loose_key(piece)
+    if written == key:
         return True
-    if piece in known:
+    if written in known:
         return False
-    prefixes = [k for k in known if piece.startswith(k) and _glued_rest(piece[len(k) :])]
-    return bool(prefixes) and max(prefixes, key=len) == mark
+    prefixes = [k for k in known if written.startswith(k) and _glued_rest(written[len(k) :])]
+    return bool(prefixes) and len(key) == max(len(k) for k in prefixes) and key in prefixes
 
 
 def _glued_rest(rest: str) -> bool:
@@ -1105,8 +1124,10 @@ def _fields_with_text(inventory: ScheduleInventory, mark: str, known: set[str]) 
       ``mark`` consumed that text;
     - every armado field (and the section, if it has one) of a rejected text
       that names it: ambiguous between marks, of several marks, unread.
-    Glued forms and ranges are resolved by ``_names``."""
-    readings = [s for s in inventory.specs if s.mark.upper() == mark and s.source != "ia"]
+    Marks are compared by their loose key (R65): a reading of «K-7» counts for an
+    AI «K7». Glued forms and ranges are resolved by ``_names``."""
+    key = _loose_key(mark)
+    readings = [s for s in inventory.specs if _loose_key(s.mark) == key and s.source != "ia"]
     campos: set[Campo] = {campo for s in readings for campo in s.campos_con_texto}
     consumed = {e for s in readings for e in s.entidades}
     for t in inventory.textos_con_marca:
@@ -1129,8 +1150,9 @@ def merge_external_specs(inventory: ScheduleInventory, specs: list[dict]) -> int
     never covers a drawing text. A mark the drawing does not define takes what
     the AI says of the other fields (por confirmar). Returns how many marks
     were completed."""
-    known = {s.mark.upper() for s in inventory.specs if s.source != "ia"} | set(inventory.by_mark)
-    known |= {str(raw.get("mark") or "").strip().upper() for raw in specs} - {""}
+    marks = {s.mark for s in inventory.specs if s.source != "ia"} | set(inventory.by_mark)
+    marks |= {str(raw.get("mark") or "").strip() for raw in specs} - {""}
+    known = {_loose_key(m) for m in marks}
     added = 0
     for raw in specs:
         try:

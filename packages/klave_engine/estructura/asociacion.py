@@ -400,8 +400,9 @@ _SEPARA_FICHAS = re.compile(r"[\s,;/()\[\]«»\"']+")
 def fichas_de_marca(texto: str, config: TextPatternConfig) -> list[str]:
     """Cada ficha de un texto (sin sus referencias) que es una marca o empieza con una: la
     etiqueta de la configuración tal cual («T1-1»), la marca escrita como ``marca_en_texto``
-    («K-7», «K-15A.1») o, pegada a otra cosa, la marca con lo que trae («K-7E#3@20»), que se
-    resuelve después contra las marcas que se conocen. En orden y sin repetir."""
+    («K-7», «K-15A.1») o, pegada a otra cosa, la ficha tal cual y la marca con su guion y lo que
+    trae («K7E#3@20» y «K-7E#3@20»), que se resuelven después contra las marcas que se conocen.
+    En orden y sin repetir."""
     piezas: list[str] = []
     for ficha in _SEPARA_FICHAS.split(sin_referencias(texto).upper()):
         ficha = ficha.strip(".:-")
@@ -416,6 +417,8 @@ def fichas_de_marca(texto: str, config: TextPatternConfig) -> list[str]:
             continue
         pegada = _MARCA_PEGADA.fullmatch(ficha)
         if pegada is not None and not pegada.group(3)[0].isdigit():
+            # Tal cual («K7E#3», «T1-1E#3») y con su guion («K-7E#3»): quien la resuelva decide.
+            piezas.append(ficha)
             piezas.append(f"{pegada.group(1)}-{int(pegada.group(2))}{pegada.group(3)}")
     return list(dict.fromkeys(piezas))
 
