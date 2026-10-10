@@ -778,13 +778,66 @@ def _no_mas_lejos(hueco: float, t: _Texto, hueco_de: float, de: _Texto) -> bool:
     return hueco <= hueco_de or _casi_igual(hueco, hueco_de, t.alto) or _a_su_lado(t, de)
 
 
-def _compite(t: _Texto, etiqueta: _Texto, siguiente: _Texto, etiquetas: list[_Texto]) -> bool:
+def _en_su_columna(e: _Texto, t: _Texto, indice: _Indice, libres: set[str]) -> bool:
+    """Si la etiqueta ``e`` alcanza ``t`` por su columna, de un lado o del otro: su primer renglón
+    (el más pegado a lo más a 1.5 altos de ella, en su ensanche, primero el que tiene encima) y
+    cada siguiente limpio (el más pegado a lo más a 1.5 altos del anterior, encimado con él en al
+    menos la mitad del más angosto y en su ensanche), hasta un hueco o un texto que no es renglón
+    (otra etiqueta, una nota…). Una columna que se abre en dos sigue por el más cerca de su
+    centro: es la lectura más estrecha, la que menos le concede a ``e`` (R60)."""
+    for sentido in (+1, -1):
+        previo: _Texto | None = None
+        visto = {e.id}
+        while True:
+            if previo is None:
+                siguiente = _paso(
+                    indice,
+                    e.y1 if sentido > 0 else e.y0,
+                    sentido,
+                    _HUECO_DE_ETIQUETA * e.alto,
+                    e.alto,
+                    e.cx,
+                    visto,
+                    lambda x: _en_la_etiqueta(e, x),
+                    lambda x: _se_enciman(x, e),
+                )
+            else:
+                siguiente = _paso(
+                    indice,
+                    previo.y1 if sentido > 0 else previo.y0,
+                    sentido,
+                    _HUECO_ENTRE_RENGLONES * previo.alto,
+                    previo.alto,
+                    e.cx,
+                    visto,
+                    _sigue(e, previo, libres),
+                )
+            if siguiente is None or siguiente.id not in libres:
+                break
+            if siguiente.id == t.id:
+                # Su primer renglón no: una etiqueta junto a la columna, a la altura de ``t``, no
+                # sabe más de él que la que lee la pila (la familia p2near de R60).
+                return previo is not None
+            visto.add(siguiente.id)
+            previo = siguiente
+    return False
+
+
+def _compite(
+    t: _Texto,
+    etiqueta: _Texto,
+    siguiente: _Texto,
+    etiquetas: list[_Texto],
+    indice: _Indice,
+    libres: set[str],
+) -> bool:
     """Si ``t``, al lado de ``siguiente`` (lo que sigue limpio a la pila), puede ser el renglón de
     la pila y ``siguiente`` el de la columna de al lado: le queda al centro de la etiqueta igual o
     más cerca que él o, si más lejos, ninguna otra etiqueta más cerca de ``t`` lo tiene en su
-    ensanche (R59). Sólo así es de la columna de al lado: en los cuadros de Marina, el
-    «2E#3EXT@10» de K-11 entra al ensanche de K-12 junto al de K-12, y K-11, más cerca, lo tiene
-    en el suyo."""
+    ensanche (R59) y lo alcanza por su columna (R60: una etiqueta lejana que sólo lo tiene de lado
+    en su ensanche no sabe de quién es). Sólo así es de la columna de al lado: en los cuadros de
+    Marina, el «2E#3EXT@10» de K-11 entra al ensanche de K-12 junto al de K-12, y K-11, más cerca,
+    lo tiene en el suyo y lo alcanza (es el segundo renglón de su pila)."""
     if _lejania(etiqueta.cx, t) <= _lejania(etiqueta.cx, siguiente) + _EMPATE_ABSOLUTO * t.alto:
         return True
     return not any(
@@ -792,6 +845,7 @@ def _compite(t: _Texto, etiqueta: _Texto, siguiente: _Texto, etiquetas: list[_Te
         and e.marca != etiqueta.marca
         and _en_la_etiqueta(e, t)
         and _lejania(e.cx, t) < _lejania(etiqueta.cx, t)
+        and _en_su_columna(e, t, indice, libres)
         for e in etiquetas
     )
 
@@ -1045,7 +1099,10 @@ def _alcance(
             if siguiente is None
             or (
                 _no_mas_lejos(h, t, hueco_siguiente, siguiente)
-                and (not _a_su_lado(t, siguiente) or _compite(t, etiqueta, siguiente, etiquetas))
+                and (
+                    not _a_su_lado(t, siguiente)
+                    or _compite(t, etiqueta, siguiente, etiquetas, indice, libres)
+                )
             )
         ]
         if (

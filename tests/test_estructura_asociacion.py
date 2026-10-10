@@ -1259,16 +1259,17 @@ def test_a_label_facing_a_foreign_stack_top_takes_nothing(tmp_path, dy, g2, limp
     assert {a.marca for a in asoc} == ({"K-3", "K-4", "K-5"} if limpias else set())
     # R57: «4#3» de K-2 cae en la etiqueta ensanchada de K-1 justo encima de su tope «6#4» sin
     # encimarse con él: la pila de K-1 no acaba limpia ahí y «4#3» sigue siendo un reclamo suyo.
-    # «E#2@20» también, si la pila de K-2 empieza más arriba que «6#4»; si no, va a su lado y le
-    # queda más lejos del centro de K-1 que «6#4»: es de la columna de al lado y nadie lo lee.
-    encima = dy + 0.13 + g2 > 0.52
+    # «E#2@20» también: si la pila de K-2 empieza más arriba que «6#4», por R57; si no, va a su
+    # lado y le queda más lejos del centro de K-1 que «6#4», pero K-2 no lo alcanza por su columna
+    # (su primer renglón es «EYG#3@15», el de K-1), así que no es de la columna de al lado (R60):
+    # antes de R60 nadie lo reclamaba (sin dueño); ahora lo reclaman las dos.
     k1k2 = ("K-1", "K-2")
     assert sorted((r.motivo, r.texto, tuple(r.marcas)) for r in rech) == sorted(
         [
             ("ambigua", "6#4", k1k2),
             ("ambigua", "EYG#3@15", k1k2),
             ("ambigua", "4#3", k1k2),
-            ("ambigua", "E#2@20", k1k2) if encima else ("sin_dueno", "E#2@20", ()),
+            ("ambigua", "E#2@20", k1k2),
         ]
     )
 
@@ -2069,3 +2070,167 @@ def test_a_sweep_of_side_by_side_cuadros(tmp_path, familia, desplazamiento, semi
         revisados += 1
         leidos += len(asoc)
     assert revisados >= 10 and leidos >= 1
+
+
+# ------------------------------------------------- Task 7, paso previo B (R60, el breaker de R59)
+# La salvedad de ``_compite`` (un renglón al lado del que sigue limpio es de la columna de al lado
+# si otra etiqueta más cerca lo tiene en su ensanche) exige además que esa etiqueta lo alcance: que
+# el renglón esté en su columna. Una etiqueta lejana que sólo lo tiene en su ensanche de lado no
+# sabe nada de él (las disposiciones p2far del revisor: K-3 debajo, encima o en el renglón de K-1).
+
+
+def _con_k3_lejana(d2, kx, modo, k3x, k3, suyo, ajeno):
+    """La disposición del revisor (``r59rev/p2far.py``): K-1 con «4#3» al centro y, debajo, su
+    renglón ``suyo`` a la izquierda desde ``d2``, junto al ``ajeno`` (de K-2) alineado a la derecha
+    que sigue limpio a «4#3»; K-2 debajo del ajeno, junto a «4#3» o ausente; y K-3 a la derecha,
+    con ``suyo`` en su ensanche y más cerca de su centro que del de K-1, pero sin alcanzarlo: en
+    otro renglón (debajo o encima, con su pila) o en el de K-1 (sin pila o con la pila hacia
+    arriba)."""
+    textos = [
+        ("K-1", 0.0, 0.0, 0.13, _CEN, None),
+        ("4#3", 0.0, -0.22, 0.10, _CEN, "K-1"),
+        (suyo, d2, -0.40, 0.10, _IZQ, "K-1"),
+        (ajeno, d2 - 0.03, -0.40, 0.10, _DER, "K-2"),
+    ]
+    if modo == "debajo":
+        textos.append(("K-2", kx, -0.40 - 0.05 - 0.13, 0.13, _CEN, None))
+    elif modo == "junto":
+        textos.append(("K-2", kx, -0.25, 0.13, _CEN, None))
+    if k3 == "debajo":
+        textos += [("K-3", k3x, -1.1, 0.13, _CEN, None), ("8#6", k3x, -1.32, 0.10, _CEN, "K-3")]
+    elif k3 == "renglon_sin_pila":
+        textos.append(("K-3", k3x, 0.0, 0.13, _CEN, None))
+    elif k3 == "renglon_arriba":
+        textos += [("K-3", k3x, 0.0, 0.13, _CEN, None), ("8#6", k3x, 0.18, 0.10, _CEN, "K-3")]
+    else:
+        textos += [("K-3", k3x, 1.0, 0.13, _CEN, None), ("8#6", k3x, 1.18, 0.10, _CEN, "K-3")]
+    return textos
+
+
+def test_a_far_label_that_has_the_line_only_in_its_band_does_not_end_the_column(tmp_path):
+    """R60, la reproducción en banda del revisor: K-3 lejos, debajo, tiene «2E#3EXT@10» de K-1
+    en su ensanche y más cerca de su centro, pero no lo alcanza. Antes K-1 leía «4#3» y el «6#4»
+    de K-2 limpio, y su propio renglón quedaba sin dueño."""
+    textos = [
+        ("K-1", 0.0, 0.0, 0.13, _CEN, None),
+        ("4#3", 0.0, -0.22, 0.10, _CEN, "K-1"),
+        ("2E#3EXT@10", 0.08, -0.40, 0.10, _IZQ, "K-1"),
+        ("6#4", 0.05, -0.40, 0.10, _DER, "K-2"),
+        ("K-2", -0.5, -0.83, 0.13, _CEN, None),
+        ("K-3", 0.7, -1.3, 0.13, _CEN, None),
+        ("8#6", 0.7, -1.52, 0.10, _CEN, "K-3"),
+    ]
+    asoc, _ = _leer_y_revisar(tmp_path, textos)
+    assert [(a.marca, a.textos) for a in asoc] == [("K-3", ["8#6"])]
+
+
+@pytest.mark.parametrize("k3", ["debajo", "renglon_sin_pila", "renglon_arriba", "encima"])
+def test_the_reviewer_far_label_layouts_never_read_a_foreign_or_partial_stack(tmp_path, k3):
+    """R60: las 1,296 disposiciones de ``r59rev/p2far.py`` (324 por posición de K-3): 0 ajenas, 0
+    a medias (antes, 600 con las dos)."""
+    revisadas = 0
+    for d2 in (0.03, 0.08, 0.15):
+        for kx in (-0.55, -0.85):
+            for modo in ("debajo", "junto", "sin_k2"):
+                for k3x in (0.7, 0.9, 1.2):
+                    for suyo in (
+                        "2E#3EXT@10 EN EXTREMOS",
+                        "2E#3EXT@10",
+                        "E#4@10 Y E#3@20 EN NUDOS",
+                    ):
+                        for ajeno in ("6#4", "CENTRO@20"):
+                            _leer_y_revisar(
+                                tmp_path, _con_k3_lejana(d2, kx, modo, k3x, k3, suyo, ajeno)
+                            )
+                            revisadas += 1
+    assert revisadas == 324
+
+
+@pytest.mark.parametrize("con_k3", [False, True])
+def test_the_reviewer_far_label_below_or_above_k2_never_reads_a_foreign_or_partial_stack(
+    tmp_path, con_k3
+):
+    """R60: las 192 disposiciones de ``r59rev/p2far4.py``: K-2 debajo, con el renglón ajeno en su
+    ensanche pero fuera de su alcance, y K-3 debajo o encima con su pila (antes, 48 de las 96 con
+    K-3 leían una pila ajena y otra a medias)."""
+    revisadas = 0
+    for d2 in (0.03, 0.08, 0.15):
+        for hueco in (0.22, 0.3):
+            for suyo in ("2E#3EXT@10", "E#4@10 Y E#3@20 EN NUDOS"):
+                for ajeno in ("6#4", "CENTRO@20"):
+                    for k3x in (0.7, 0.9):
+                        for k3y in (-1.3, 1.0):
+                            textos = [
+                                ("K-1", 0.0, 0.0, 0.13, _CEN, None),
+                                ("4#3", 0.0, -0.22, 0.10, _CEN, "K-1"),
+                                (suyo, d2, -0.40, 0.10, _IZQ, "K-1"),
+                                (ajeno, d2 - 0.03, -0.40, 0.10, _DER, "K-2"),
+                                ("K-2", -0.5, -0.40 - hueco - 0.13, 0.13, _CEN, None),
+                            ]
+                            if con_k3:
+                                y8 = k3y - 0.22 if k3y < 0 else k3y + 0.18
+                                textos += [
+                                    ("K-3", k3x, k3y, 0.13, _CEN, None),
+                                    ("8#6", k3x, y8, 0.10, _CEN, "K-3"),
+                                ]
+                            _leer_y_revisar(tmp_path, textos)
+                            revisadas += 1
+    assert revisadas == 96
+
+
+@pytest.mark.parametrize("k3dy", [-0.12, -0.05, 0.12])
+def test_a_label_whose_first_line_would_be_the_line_does_not_end_the_column(tmp_path, k3dy):
+    """R60 (más allá de p2far): K-3 junto a la columna de K-1, a la altura de su segundo renglón,
+    con ese renglón a su alcance (justo debajo o justo encima de ella), con o sin pila del otro
+    lado. Que lo tenga como su primer renglón no dice de quién es: la etiqueta que lee la pila
+    está igual de cerca. Sólo cuenta si lo alcanza más allá de su primer renglón, como K-11 en
+    Marina. Antes (f950d13) 128 de estas 288 disposiciones leían una pila ajena y otra a medias."""
+    for d2 in (0.03, 0.15):
+        for modo in ("debajo", "junto", "sin_k2"):
+            for k3x in (0.6, 1.0):
+                for pila in (False, True):
+                    for suyo in ("2E#3EXT@10", "E#4@10 Y E#3@20 EN NUDOS"):
+                        for ajeno in ("6#4", "CENTRO@20"):
+                            textos = [
+                                ("K-1", 0.0, 0.0, 0.13, _CEN, None),
+                                ("4#3", 0.0, -0.22, 0.10, _CEN, "K-1"),
+                                (suyo, d2, -0.40, 0.10, _IZQ, "K-1"),
+                                (ajeno, d2 - 0.03, -0.40, 0.10, _DER, "K-2"),
+                            ]
+                            if modo == "debajo":
+                                textos.append(("K-2", -0.55, -0.58, 0.13, _CEN, None))
+                            elif modo == "junto":
+                                textos.append(("K-2", -0.55, -0.25, 0.13, _CEN, None))
+                            y3 = -0.40 + k3dy - 0.13 if k3dy < 0 else -0.30 + k3dy
+                            textos.append(("K-3", k3x, y3, 0.13, _CEN, None))
+                            if pila:
+                                y8 = y3 - 0.22 if k3dy < 0 else y3 + 0.18
+                                textos.append(("8#6", k3x, y8, 0.10, _CEN, "K-3"))
+                            _leer_y_revisar(tmp_path, textos)
+
+
+def test_a_label_above_the_line_with_its_own_line_below_it_does_not_end_the_column(tmp_path):
+    """R60: K-3 justo encima de ``suyo`` (el segundo renglón de K-1) y su propio renglón debajo
+    de él, centrado bajo K-3 y fuera del ensanche de K-1: la columna de K-3 pasa por ``suyo``
+    como su primer renglón y sigue. Tampoco eso dice de quién es: contar ese primer renglón leía
+    K-3 ← [suyo, el suyo] en las 96 disposiciones; así quedan todas en duda."""
+    for k3dy in (0.05, 0.12):
+        for modo in ("debajo", "junto", "sin_k2"):
+            for k3x in (0.8, 1.0):
+                for ajeno in ("6#4", "CENTRO@20"):
+                    for propio in ("8#6", "E#2@15"):
+                        for hueco in (0.05, 0.10):
+                            textos = [
+                                ("K-1", 0.0, 0.0, 0.13, _CEN, None),
+                                ("4#3", 0.0, -0.22, 0.10, _CEN, "K-1"),
+                                ("2E#3EXT@10 EN EXTREMOS", 0.03, -0.40, 0.10, _IZQ, "K-1"),
+                                (ajeno, 0.0, -0.40, 0.10, _DER, "K-2"),
+                                (propio, k3x, -0.50 - hueco, 0.10, _CEN, "K-3"),
+                                ("K-3", k3x, -0.30 + k3dy, 0.13, _CEN, None),
+                            ]
+                            if modo == "debajo":
+                                textos.append(("K-2", -0.55, -0.58, 0.13, _CEN, None))
+                            elif modo == "junto":
+                                textos.append(("K-2", -0.55, -0.25, 0.13, _CEN, None))
+                            asoc, _ = _leer_y_revisar(tmp_path, textos)
+                            assert all(a.marca != "K-3" for a in asoc)
