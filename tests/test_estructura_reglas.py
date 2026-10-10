@@ -7,7 +7,7 @@ from ezdxf.enums import TextEntityAlignment
 from klave_engine.dxf.parser import DxfParser
 from klave_engine.estructura.armado import NUMEROS
 from klave_engine.estructura.asociacion import ancla_texto
-from klave_engine.estructura.notas import leer_notas
+from klave_engine.estructura.notas import LIMITE_DE_BLOQUE, leer_notas
 from klave_engine.estructura.oraciones import niega, oraciones
 from klave_engine.estructura.reglas import (
     ENCABEZADOS_VARILLA,
@@ -4777,7 +4777,8 @@ def _apilar(*bloques, paso=0.22):
             lineas.append((titulo, y, 0.14))
             y -= paso * 1.2
         for renglon in renglones:
-            lineas.append((renglon, y, 0.10))
+            texto, dx = (renglon, 0.0) if isinstance(renglon, str) else renglon
+            lineas.append((texto, y, 0.10, dx))
             y -= paso
     return lineas
 
@@ -4785,8 +4786,8 @@ def _apilar(*bloques, paso=0.22):
 def _entidades_de(tmp_path, lineas):
     doc = ezdxf.new("R2010")
     msp = doc.modelspace()
-    for texto, y, alto in lineas:
-        msp.add_text(texto, height=alto).set_placement((0.0, y))
+    for texto, y, alto, *dx in lineas:
+        msp.add_text(texto, height=alto).set_placement((dx[0] if dx else 0.0, y))
     ruta = tmp_path / "columna.dxf"
     doc.saveas(ruta)
     return DxfParser().parse_file(ruta).entities
@@ -4835,18 +4836,19 @@ def test_the_reviewers_far_block_cases(tmp_path):
         r = con(columnas, [(titulo, [f"2. {_PE}"])])
         assert r.recubrimiento_m["columna"].valor == 0.04 and r.primer_estribo_m == {}
         assert r.avisos
-    # un bloque general que sigue a uno que acota no es de lo que acota el de arriba
+    # R50: el alcance sólo crece hacia abajo; un encabezado general de otro bloque no cierra lo que
+    # acota uno de arriba (sí «NOTAS GENERALES DE ESTRUCTURA», el de las generales del proyecto)
     escaleras = [("NOTAS PARA ESCALERAS :", ["1. CONCRETO F'C=250"])]
     r = con(escaleras, [("NOTAS GENERALES :", [f"1. {_L}"])])
-    assert r.traslape_max_numero.valor == "6" and r.avisos == []
+    assert r.traslape_max_numero is None and r.avisos
     r = con(escaleras, [("NOTAS GENERALES DE ESTRUCTURA", [f"1. {_L}"])])
     assert r.traslape_max_numero.valor == "6" and r.avisos == []
-    # un encabezado que acota, en un bloque lejos de otro que acota, acota por su cuenta
+    # … y uno que acota bajo otro que acota es ambiguo (R47), lejos o cerca
     r = con(escaleras, [("COLUMNAS :", [f"1. {_RC}", f"2. {_PE}"])])
-    assert r.recubrimiento_m["columna"].valor == 0.04 and _estribos(r) == {"columna": 0.05}
-    assert r.avisos == []
+    assert _nada_de_la_nota(r, _R) and r.primer_estribo_m == {} and r.avisos
+    # … y un encabezado de cimentación de arriba sigue restringiendo a las familias de abajo
     r = con([("NOTAS DE CIMENTACION", [])], [("COLUMNAS :", [f"1. {_RC}", f"2. {_PE}"])])
-    assert r.recubrimiento_m["columna"].valor == 0.04 and _estribos(r) == {"columna": 0.05}
+    assert _nada_de_la_nota(r, _R) and r.primer_estribo_m == {} and r.avisos
     # … y uno de cimentación lo sigue siendo para las notas de su bloque
     r = con([("COLUMNAS :", [])], [("NOTAS DE CIMENTACION", [f"1. {_RC}", f"2. {_PE}"])])
     assert _nada_de_la_nota(r, _R) and r.primer_estribo_m == {} and r.avisos
@@ -4889,12 +4891,13 @@ _BLOQUES_APARTE = [
 def test_each_block_boundary_alone_stops_the_elements_from_the_heading_above(tmp_path, de_abajo):
     r = _con_bloques(tmp_path, _ARRIBA_DE_COLUMNAS, de_abajo)
     assert r.primer_estribo_m == {} and r.avisos
-    # … y la nota de abajo ya no tiene el encabezado de arriba (que queda más allá del límite)
+    # … y la nota de abajo no tiene encabezado propio: el de arriba queda más allá del límite, en
+    # la cadena, donde sigue acotando (R50)
     entidades = _entidades_de(tmp_path, _apilar(_ARRIBA_DE_COLUMNAS, de_abajo))
     notas, _ = leer_notas(_textos(entidades), lambda e: "ES-001")
     (abajo,) = [n for n in notas if "ESTRIBO" in n.texto]
-    assert (abajo.seccion, abajo.encabezado, abajo.cadenas) == ("", "", [[]])
-    assert abajo.mas_alla == [["COLUMNAS :"]]
+    assert (abajo.seccion, abajo.encabezado) == ("", "")
+    assert abajo.cadenas == [[LIMITE_DE_BLOQUE, "COLUMNAS :"]]
 
 
 @pytest.mark.parametrize("de_abajo", _BLOQUES_APARTE)
@@ -4994,7 +4997,7 @@ _UN_HUECO_COMO_UNA_FIGURA = 1.4
 
 
 @pytest.mark.parametrize(
-    "encabezado", ["COLUMNAS :", "NOTAS PARA ESCALERAS :", "VIGAS :", "ESCALERAS :"]
+    "encabezado", ["COLUMNAS :", "NOTAS PARA ESCALERAS :", "CISTERNA :", "ESCALERAS :"]
 )
 @pytest.mark.parametrize(
     ("regla", "frase"),
@@ -5050,20 +5053,21 @@ def test_the_general_notes_heading_ends_what_is_looked_for_above_the_boundary(tm
     assert r.traslape_max_numero.valor == "6" and r.avisos == []
 
 
-def test_a_block_with_a_heading_of_its_own_keeps_reading_under_a_scoping_block(tmp_path):
-    # C y D del revisor: con encabezado propio la cadena es la del bloque, como antes
+def test_a_block_with_a_heading_of_its_own_still_sits_under_the_scoping_block_above(tmp_path):
+    # R50 sustituye lo de R49 (C y D del revisor leían): un encabezado general de otro bloque no
+    # cierra lo que acota el de arriba, y uno de cimentación sigue restringiendo
     r = _con_bloques(
         tmp_path,
         ("NOTAS PARA ESCALERAS :", ["1. CONCRETO F'C=250"], 0.0),
         ("NOTAS GENERALES :", [f"1. {_L}"], _UN_HUECO_COMO_UNA_FIGURA),
     )
-    assert r.traslape_max_numero.valor == "6" and r.avisos == []
+    assert r.traslape_max_numero is None and r.avisos
     r = _con_bloques(
         tmp_path,
         ("NOTAS DE CIMENTACION", [], 0.0),
         ("COLUMNAS :", [f"1. {_RC}", f"2. {_PE}"], _UN_HUECO_COMO_UNA_FIGURA),
     )
-    assert r.recubrimiento_m["columna"].valor == 0.04 and _estribos(r) == {"columna": 0.05}
+    assert _nada_de_la_nota(r, _R) and r.primer_estribo_m == {} and r.avisos
 
 
 def test_the_first_stirrup_default_never_crosses_a_boundary_even_for_generic_headings(tmp_path):
@@ -5079,7 +5083,7 @@ def test_the_unknown_subtitle_under_a_heading_still_belongs_to_it(tmp_path):
     assert r.traslape_max_numero is None and r.avisos
 
 
-def test_a_note_keeps_the_headings_beyond_a_boundary_only_when_it_has_none_of_its_own(tmp_path):
+def test_a_note_keeps_every_heading_above_it_with_a_mark_where_its_block_ends(tmp_path):
     entidades = _entidades_de(
         tmp_path,
         _apilar(
@@ -5091,6 +5095,239 @@ def test_a_note_keeps_the_headings_beyond_a_boundary_only_when_it_has_none_of_it
     )
     notas, _ = leer_notas(_textos(entidades), lambda e: "ES-001")
     sin_encabezado, con_el_suyo = sorted(notas, key=lambda n: n.seccion)[:2]
-    assert (sin_encabezado.seccion, sin_encabezado.cadenas) == ("", [[]])
-    assert sin_encabezado.mas_alla == [["REFUERZO :", "COLUMNAS :"]]
-    assert (con_el_suyo.seccion, con_el_suyo.mas_alla) == ("MATERIALES", [])
+    assert (sin_encabezado.seccion, sin_encabezado.encabezado) == ("", "")
+    assert sin_encabezado.cadenas == [[LIMITE_DE_BLOQUE, "REFUERZO :", "COLUMNAS :"]]
+    # el que tiene encabezado propio lo tiene en su bloque y los de arriba más allá de la marca
+    assert con_el_suyo.seccion == "MATERIALES"
+    assert con_el_suyo.cadenas[0][0] == "MATERIALES :"
+
+
+# --- Task 5c, R50: el alcance sólo crece hacia abajo ---------------------------------------------
+# Todo encabezado que acota y todo encabezado de cimentación de arriba, hasta «NOTAS GENERALES DE
+# ESTRUCTURA», vale para una nota aunque haya un hueco, una numeración que empieza de nuevo, un
+# título, un renglón suelto o un encabezado general en medio. Los límites sólo niegan los elementos
+# que un primer estribo sin elementos tomaría del encabezado.
+
+_ACERO_CON_SUBLISTA = [
+    "1. EL ACERO SERA:",
+    "1) FY=4200 KG/CM2 EN VARILLAS.",
+    "2) FY=6000 KG/CM2 EN MALLAS.",
+]
+_ZAPATAS = "1. LAS ZAPATAS SE DESPLANTARAN A 1.20 M."
+_CONCRETO = "1. EL CONCRETO SERA F'C=250 KG/CM2."
+_TRASLAPE_3 = f"3. {_L}."
+_CUBRE_TRABES = "EL RECUBRIMIENTO SERA DE 5 CM EN TRABES"
+_CUBRE_COLUMNAS = "EL RECUBRIMIENTO SERA DE 4 CM EN COLUMNAS"
+_FRAGMENTO = ("EN UNA MISMA SECCION.", 0.6)
+
+# (nombre del caso del revisor, bloques, regla que no se debe leer)
+_CASOS_DE_ALCANCE_QUE_CRECE = [
+    pytest.param(
+        [
+            ("NOTAS DE CIMENTACION :", [_ZAPATAS], 0.0),
+            (None, [f"2. {_CUBRE_TRABES}"], _UN_HUECO_COMO_UNA_FIGURA),
+        ],
+        _R,
+        id="F1 cimentacion + hueco, recubrimiento de trabes",
+    ),
+    pytest.param(
+        [
+            ("NOTAS DE CIMENTACION :", [_ZAPATAS], 0.0),
+            (None, ["2. EL RECUBRIMIENTO LIBRE EN TRABES Y COLUMNAS SERA DE 5 CM."], 1.4),
+        ],
+        _R,
+        id="F1b cimentacion + hueco, trabes y columnas",
+    ),
+    pytest.param(
+        [
+            ("NOTAS DE CIMENTACION :", [_ZAPATAS, "2. EL CONCRETO SERA F'C=250 KG/CM2."], 0.0),
+            (None, [f"1. {_CUBRE_TRABES}"], 0.0),
+        ],
+        _R,
+        id="F6 cimentacion + la numeracion empieza de nuevo",
+    ),
+    pytest.param(
+        [
+            ("NOTAS DE CIMENTACION :", ["1. EL CONCRETO DE LAS ZAPATAS SERA F'C=250 KG/CM2."], 0.0),
+            ("Recubrimientos", [f"2. {_CUBRE_TRABES}"], 0.0),
+        ],
+        _R,
+        id="F7 cimentacion + un titulo que no se reconoce",
+    ),
+    pytest.param(
+        [
+            ("NOTAS DE CIMENTACION :", [_ZAPATAS], 0.0),
+            ("REFUERZO :", [f"1. {_CUBRE_TRABES}"], _UN_HUECO_COMO_UNA_FIGURA),
+        ],
+        _R,
+        id="F8 cimentacion + hueco + un encabezado general",
+    ),
+    pytest.param(
+        [
+            ("NOTAS DE CIMENTACION :", [_ZAPATAS], 0.0),
+            (
+                None,
+                ["2. EL PRIMER ESTRIBO SE COLOCARA A 5 CM EN TRABES"],
+                _UN_HUECO_COMO_UNA_FIGURA,
+            ),
+        ],
+        _P,
+        id="F9 cimentacion + hueco, primer estribo de trabes",
+    ),
+    pytest.param(
+        [
+            (
+                "NOTAS DE CIMENTACION :",
+                [
+                    "1. EL CONCRETO DE LAS ZAPATAS SERA F'C=250 KG/CM2.",
+                    *_ACERO_CON_SUBLISTA[:1],
+                    *_ACERO_CON_SUBLISTA[1:],
+                    f"3. {_CUBRE_COLUMNAS}",
+                ],
+                0.0,
+            ),
+        ],
+        _R,
+        id="F2 cimentacion + una sublista que empieza de nuevo",
+    ),
+    pytest.param(
+        [("NOTAS PARA ESCALERAS :", [_CONCRETO, *_ACERO_CON_SUBLISTA, _TRASLAPE_3], 0.0)],
+        _T,
+        id="F2s escaleras + una sublista que empieza de nuevo",
+    ),
+    pytest.param(
+        [
+            ("NOTAS PARA ESCALERAS :", [_CONCRETO], 0.0),
+            (
+                None,
+                ["2. NO SE TRASLAPARA MAS DEL 50% DEL ACERO", _FRAGMENTO, _TRASLAPE_3],
+                _UN_HUECO_COMO_UNA_FIGURA,
+            ),
+        ],
+        _T,
+        id="F3 escaleras + hueco + un renglon suelto en mayusculas",
+    ),
+    pytest.param(
+        [
+            (
+                "NOTAS PARA ESCALERAS :",
+                [
+                    *_ACERO_CON_SUBLISTA,
+                    "2. NO SE TRASLAPARA MAS DEL 50% DEL ACERO",
+                    _FRAGMENTO,
+                    _TRASLAPE_3,
+                ],
+                0.0,
+            )
+        ],
+        _T,
+        id="F3b escaleras + una sublista + un renglon suelto en mayusculas",
+    ),
+    pytest.param(
+        [
+            (
+                "COLUMNAS :",
+                [
+                    *_ACERO_CON_SUBLISTA,
+                    "2. NO SE TRASLAPARA MAS DEL 50% DEL ACERO",
+                    _FRAGMENTO,
+                    "3. EL RECUBRIMIENTO LIBRE SERA DE 4 CM.",
+                    f"4. {_L}.",
+                ],
+                0.0,
+            )
+        ],
+        _T,
+        id="F3c columnas + una sublista + un renglon suelto en mayusculas",
+    ),
+    pytest.param(
+        [
+            ("NOTAS PARA ESCALERAS :", [_CONCRETO], 0.0),
+            (None, ["DETALLE TIPO.", f"2. {_L}."], _UN_HUECO_COMO_UNA_FIGURA),
+        ],
+        _T,
+        id="F4 escaleras + hueco + un pie de figura en mayusculas",
+    ),
+    pytest.param(
+        [
+            ("NOTAS PARA ESCALERAS :", [_CONCRETO], 0.0),
+            ("REFUERZO :", [f"1. {_L}."], _UN_HUECO_COMO_UNA_FIGURA),
+        ],
+        _T,
+        id="F5 escaleras + hueco + un encabezado general",
+    ),
+]
+
+
+@pytest.mark.parametrize(("bloques", "regla"), _CASOS_DE_ALCANCE_QUE_CRECE)
+def test_a_scope_only_grows_downwards_whatever_comes_in_between(tmp_path, bloques, regla):
+    r = _con_bloques(tmp_path, *bloques)
+    assert _nada_de_la_nota(r, regla), getattr(r, regla)
+    assert r.avisos
+
+
+def test_the_controls_of_the_scope_cases_still_read_or_report_as_before(tmp_path):
+    # F1c: la cimentación sin hueco ya era un aviso; sin un encabezado de arriba se lee
+    r = _con_bloques(tmp_path, ("NOTAS DE CIMENTACION :", [_ZAPATAS, f"2. {_CUBRE_TRABES}"], 0.0))
+    assert _nada_de_la_nota(r, _R) and r.avisos
+    r = _con_bloques(tmp_path, (None, [_ZAPATAS, f"2. {_CUBRE_TRABES}"], 0.0))
+    assert r.recubrimiento_m["trabe"].valor == 0.05 and r.avisos == []
+    # un encabezado general solo, con hueco o con sublista, no cambia nada
+    r = _con_bloques(tmp_path, ("REFUERZO :", [_CONCRETO, *_ACERO_CON_SUBLISTA, _TRASLAPE_3], 0.0))
+    assert r.traslape_max_numero.valor == "6" and r.avisos == []
+
+
+def test_the_foundation_restriction_survives_a_boundary_for_the_stirrup_default_too(tmp_path):
+    r = _con_bloques(
+        tmp_path,
+        ("NOTAS DE CIMENTACION :", [_ZAPATAS], 0.0),
+        ("TRABES :", [f"1. {_PE}"], _UN_HUECO_COMO_UNA_FIGURA),
+    )
+    assert r.primer_estribo_m == {} and r.avisos
+
+
+# --- Task 5c, R50-4: una cláusula que no es corta no puede tardar --------------------------------
+
+
+def test_a_long_clause_that_cannot_match_is_rejected_fast():
+    import time
+
+    from klave_engine.estructura.reglas import _CLAUSULA_CORTA
+
+    for clausula in (
+        " ".join(["ESCALERAS" * 6 + "XXXXXX"] * 6),
+        " ".join(["A" * 60 + "!"] * 6),
+        " ".join(["~" * 60] * 6 + ["A"]),
+        " ".join(["A1-" * 20] * 5),
+        ("A" * 5000) + " " + ("B" * 5000) + " C D E",
+    ):
+        t = time.perf_counter()
+        _CLAUSULA_CORTA.fullmatch(clausula)
+        assert time.perf_counter() - t < 0.1, clausula[:40]
+
+
+def test_a_pathological_note_is_read_fast(tmp_path):
+    import time
+
+    larga = " ".join(["ESCALERAS" * 6 + "XXXXXX"] * 6)
+    t = time.perf_counter()
+    r = _con_notas(tmp_path, [f"4. {_L}. {larga}."])
+    assert time.perf_counter() - t < 2.0
+    assert r.traslape_max_numero.valor == "6"
+
+
+def test_a_rule_for_a_family_inside_the_scope_is_read_after_a_gap(tmp_path):
+    # el alcance es el de los elementos del encabezado: «COLUMNAS :» deja leer lo de columnas
+    r = _con_bloques(
+        tmp_path,
+        ("COLUMNAS :", [], 0.0),
+        (None, [f"1. {_RC}"], _UN_HUECO_COMO_UNA_FIGURA),
+    )
+    assert r.recubrimiento_m["columna"].valor == 0.04 and r.avisos == []
+    # … pero ni lo de otro elemento ni una regla de todo el proyecto
+    r = _con_bloques(
+        tmp_path,
+        ("COLUMNAS :", [], 0.0),
+        (None, ["1. EL RECUBRIMIENTO SERA DE 4 CM EN TRABES"], _UN_HUECO_COMO_UNA_FIGURA),
+    )
+    assert _nada_de_la_nota(r, _R) and r.avisos

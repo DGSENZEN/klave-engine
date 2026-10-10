@@ -53,6 +53,7 @@ from klave_engine.estructura.frases import (
     varilla_de,
 )
 from klave_engine.estructura.notas import (
+    LIMITE_DE_BLOQUE,
     Nota,
     donde_estan,
     leer_notas_con_renglones,
@@ -740,7 +741,7 @@ _EN_UN_LUGAR = re.compile(
 # los símbolos sueltos entre palabras o en las puntas no cuentan como palabra. Las neutrales
 # («RESPECTIVAMENTE», «VER DETALLE 3», «SALVO INDICACION», «F'C=100 KG/CM2») no llegan aquí.
 _SOLO_MARCAS = r"[^\w\s]+"  # un renglón suelto de puros símbolos («-», «@», «*»): no cuenta
-_PALABRA = r"\S*\w\S*"
+_PALABRA = r"(?=\S*\w)\S+"  # sin espacios y con una letra o una cifra (en tiempo lineal)
 _CLAUSULA_CORTA = re.compile(
     rf"(?:{_SOLO_MARCAS}\s+)*{_PALABRA}(?:\s+(?:{_SOLO_MARCAS}\s+)*{_PALABRA}){{0,3}}"
     rf"(?:\s+{_SOLO_MARCAS})*"
@@ -873,8 +874,6 @@ class _Origen:
     # todos los encabezados de arriba en su columna, el más cercano primero; uno por cada manera
     # distinta en que están las copias de la nota (``Nota.cadenas``)
     cadenas: list[list[str]] = field(default_factory=list)
-    # los encabezados de más arriba de un límite de bloque, si la nota no tiene uno propio
-    mas_alla: list[list[str]] = field(default_factory=list)
 
     def dato(self, valor: Any, cita: str) -> Dato:
         return Dato(
@@ -1325,10 +1324,16 @@ def _alcance_de_la_cadena(cadena: list[str]) -> _Alcance:
     cierra. Un encabezado que acota bajo otro que acota («NOTAS PARA ESCALERAS :» y debajo
     «COLUMNAS :») es ambiguo —pueden ser las columnas de la escalera, o dos bloques seguidos—: no se
     sabe a qué acota y las notas de abajo son un aviso (R47). Un encabezado de cimentación también
-    sigue valiendo bajo los generales y los que acotan que tiene debajo."""
+    sigue valiendo bajo los generales y los que acotan que tiene debajo. El alcance sólo crece
+    hacia abajo (R50): un hueco, una numeración que empieza de nuevo, un título o un renglón suelto
+    en medio no lo cierran; ``LIMITE_DE_BLOQUE`` (donde acaba el bloque de la nota) sólo quita el
+    ``directo``: el encabezado que acota deja de ser el de las notas de abajo y no da los
+    elementos de un primer estribo sin elementos."""
     cimentacion = ""
     acota: _Alcance | None = None
     for k, encabezado in enumerate(cadena):
+        if encabezado == LIMITE_DE_BLOQUE:
+            continue
         if _ENCABEZADO_PRINCIPAL.fullmatch(_texto_del_encabezado(encabezado)):
             break
         familias = _alcance_del_encabezado(encabezado, encabezado)
@@ -1343,18 +1348,6 @@ def _alcance_de_la_cadena(cadena: list[str]) -> _Alcance:
     return _Alcance(acota.familias, acota.acota, cimentacion, acota.directo)
 
 
-def _acota_desde_lejos(encabezados: list[str]) -> str:
-    """El primer encabezado que acota de una lista de encabezados de más arriba de un límite de
-    bloque (el más cercano primero), sin pasar de «NOTAS GENERALES DE ESTRUCTURA»; ``""`` si ninguno
-    acota."""
-    for encabezado in encabezados:
-        if _ENCABEZADO_PRINCIPAL.fullmatch(_texto_del_encabezado(encabezado)):
-            break
-        if _alcance_del_encabezado(encabezado, encabezado) is not None:
-            return encabezado
-    return ""
-
-
 def _alcance_de_la_nota(o: _Origen) -> _Alcance:
     """El alcance de una nota: el de cada una de las maneras en que están sus copias bajo
     encabezados. Si una copia está bajo uno que acota y otra no, o acotan a cosas distintas, no se
@@ -1364,12 +1357,6 @@ def _alcance_de_la_nota(o: _Origen) -> _Alcance:
         cadenas = [[propio]]
     alcances = [_alcance_de_la_cadena(c) for c in cadenas]
     cimentacion = next((a.cimentacion for a in alcances if a.cimentacion), "")
-    # Una nota sin encabezado propio, bajo un límite de bloque, con uno que acota más arriba: no
-    # se sabe si es de él (un hueco o una figura entre el encabezado y sus notas); un límite nunca
-    # vuelve sin acotar una nota acotada (R49)
-    lejano = next((h for m in o.mas_alla if (h := _acota_desde_lejos(m))), "")
-    if lejano:
-        return _Alcance(["?"], _sin_puntuacion(lejano), cimentacion, False)
     acotan = [a for a in alcances if a.familias is not None]
     if not acotan:
         return _Alcance(None, "", cimentacion)
@@ -2014,6 +2001,5 @@ def _leer_nota(nota: Nota, lecturas: _Lecturas) -> None:
         seccion=nota.seccion,
         encabezado=nota.encabezado,
         cadenas=nota.cadenas,
-        mas_alla=nota.mas_alla,
     )
     _leer_texto(origen, lecturas)

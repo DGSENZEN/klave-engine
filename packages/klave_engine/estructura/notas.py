@@ -36,6 +36,9 @@ _ALCANCE_DEL_ENCABEZADO = 8.0
 # Un bloque de notas acaba (y lo de arriba ya no es de él) donde hay un hueco de más de tantos
 # renglones entre dos textos de la columna.
 _RENGLONES_DE_HUECO = 3.0
+# La marca que va en ``Nota.cadenas`` donde acaba el bloque de la nota (los encabezados de antes de
+# la marca son de su bloque; los de después, de arriba de él). No es el texto de ningún renglón.
+LIMITE_DE_BLOQUE = "—— límite de bloque ——"
 # Dos redacciones de una nota son versiones de la misma si se parecen a lo menos así; las que no
 # se parecen son dos notas distintas que comparten número, no una contradicción.
 _PARECIDO_MINIMO = 0.6
@@ -70,16 +73,16 @@ class Nota(BaseModel):
     misma nota son dos ``Nota`` con el mismo ``seccion`` y ``numero``. ``encabezado`` es el
     renglón del encabezado como está escrito («REFUERZO :», «EN UNA MISMA SECCION.»): un «:» al
     final dice que es un título; un «.», que puede ser el final de un renglón partido.
-    ``cadenas`` son todos los encabezados que hay arriba de la nota en su bloque, el más cercano
-    primero (``encabezado`` es el primero que se reconoce): uno bajo otro son un encabezado dentro
-    de otro («NOTAS PARA ESCALERAS :» y debajo «Refuerzo:»), y quien lee las reglas decide cuál
-    acota. Un renglón más alto que no se reconoce como encabezado, pero que cuelga de uno, va en
-    la cadena como un subtítulo; lo que está más allá de un hueco, de una numeración que empieza
-    de nuevo o de un título suelto es de otro bloque y no va. Si el bloque de la nota no tiene
-    ningún encabezado propio, ``mas_alla`` trae los que hay más arriba en la columna, pasado el
-    límite (el más cercano primero, una lista por cada manera distinta en que están las copias):
-    no son de la nota, pero quien lee las reglas necesita saber si alguno acota.
-    Las copias que no están bajo los mismos encabezados traen una cadena cada manera."""
+    ``cadenas`` son todos los encabezados que hay arriba de la nota en su columna, el más cercano
+    primero: uno bajo otro son un encabezado dentro de otro («NOTAS PARA ESCALERAS :» y debajo
+    «Refuerzo:»), y quien lee las reglas decide cuál acota (el alcance sólo crece hacia abajo: un
+    hueco, una numeración que empieza de nuevo, un título o un encabezado general en medio no lo
+    cierran). Donde acaba el bloque de la nota (``_encabezados_de``) va ``LIMITE_DE_BLOQUE``: los
+    encabezados de antes de la marca son de su bloque (``encabezado`` es el primero), los de
+    después están más arriba; sin encabezado propio la marca va primero y ``seccion`` es ``""``.
+    Un renglón más alto que no se reconoce como encabezado, pero que cuelga de uno, va en la
+    cadena como un subtítulo. Las copias que no están bajo los mismos encabezados traen una cadena
+    cada manera."""
 
     seccion: str
     numero: int
@@ -90,7 +93,6 @@ class Nota(BaseModel):
     hojas: list[str] = []
     encabezado: str = ""
     cadenas: list[list[str]] = []
-    mas_alla: list[list[str]] = []
 
 
 def limpiar_texto(texto: str) -> str:
@@ -147,7 +149,6 @@ class _Instancia:
     entidades: list[str]
     encabezado: str = ""
     encabezados: tuple[str, ...] = ()  # todos los de arriba en su columna, el más cercano primero
-    mas_alla: tuple[str, ...] = ()  # los de más arriba del límite de su bloque, si no tiene uno
 
 
 def _alto(e: NormalizedEntity) -> float:
@@ -195,7 +196,7 @@ def _notas_de_la_hoja(lineas: list[_Linea], hoja: str) -> list[_Instancia]:
     for primera, cadena in cadenas:
         numero, resto = numeradas[primera] or (0, "")
         partes = [resto, *(lineas[j].texto for j in cadena[1:])]
-        arriba, cadena_de_arriba, mas_alla = _encabezados_de(
+        arriba, cadena_de_arriba = _encabezados_de(
             lineas, primera, encabezados, inicios, consumidas
         )
         encabezado = arriba[0] if arriba else ""
@@ -208,7 +209,6 @@ def _notas_de_la_hoja(lineas: list[_Linea], hoja: str) -> list[_Instancia]:
                 entidades=[lineas[j].id for j in cadena],
                 encabezado=encabezado,
                 encabezados=tuple(cadena_de_arriba),
-                mas_alla=tuple(mas_alla),
             )
         )
     return instancias
@@ -259,19 +259,20 @@ def _encabezados_de(
     encabezados: list[int],
     inicios: dict[int, int],
     consumidas: set[int],
-) -> tuple[list[str], list[str], list[str]]:
+) -> tuple[list[str], list[str]]:
     """Los encabezados arriba del renglón ``i``, en su misma columna, como están escritos: el más
-    cercano primero (a igual distancia, el primero en el orden de lectura). Sólo los de su bloque:
-    se sube por los textos de la columna y se para donde el bloque de notas acaba y empieza otra
-    cosa. Eso es (1) un hueco de más de ``_RENGLONES_DE_HUECO`` renglones entre dos textos; (2) la
-    numeración que empieza de nuevo sin un encabezado que se reconozca en medio (una nota ``1.``
-    bajo notas de números mayores o iguales); (3) un renglón más alto que el texto de las notas
-    que no es un encabezado que se reconozca ni parte de una nota (un título: «Notas generales»,
-    «GENERALIDADES»), salvo que tenga justo encima un encabezado (entonces es su subtítulo). Lo
-    que hay más arriba es de otro bloque. Devuelve los encabezados y la cadena de arriba: la
-    cadena lleva además esos subtítulos que no se reconocen, en su lugar, para que quien lee las
-    reglas sepa que entre la nota y el encabezado hay algo que no entiende. Si el bloque no tiene
-    ningún encabezado propio, devuelve además los que hay pasado el límite, en toda la columna."""
+    cercano primero (a igual distancia, el primero en el orden de lectura). Devuelve (1) los de su
+    bloque y (2) la cadena de todos los de arriba, con ``LIMITE_DE_BLOQUE`` donde el bloque acaba.
+
+    Se sube por los textos de la columna y el bloque de notas acaba donde empieza otra cosa:
+    (1) un hueco de más de ``_RENGLONES_DE_HUECO`` renglones entre dos textos; (2) la numeración
+    que empieza de nuevo sin un encabezado que se reconozca en medio (una nota ``1.`` bajo notas
+    de números mayores o iguales); (3) un renglón más alto que el texto de las notas que no es un
+    encabezado que se reconozca ni parte de una nota (un título: «Notas generales»,
+    «GENERALIDADES»), salvo que tenga justo encima un encabezado (entonces es su subtítulo y va en
+    la cadena, para que quien lee las reglas sepa que entre la nota y el encabezado hay algo que
+    no entiende). Más allá del límite se siguen juntando los encabezados que se reconocen: el
+    límite sólo dice que la nota no es la que está justo bajo ellos."""
     r = lineas[i]
     ancho = _ALCANCE_DEL_ENCABEZADO * r.alto
     columna = [j for j, c in enumerate(lineas) if c.y > r.y and abs(c.x - r.x) <= ancho]
@@ -283,42 +284,33 @@ def _encabezados_de(
             arriba.alto, abajo.alto
         )
 
-    encabezados_de_arriba: list[str] = []
+    del_bloque: list[str] = []
     cadena: list[str] = []
-    mas_alla: list[str] = []
-
-    def pasado_el_limite(desde: int) -> list[str]:
-        # los encabezados de más arriba del límite, sólo si el bloque no tiene uno propio
-        if encabezados_de_arriba:
-            return []
-        return [lineas[x].texto.strip() for x in columna[desde:] if x in es_encabezado]
-
     previa = r
     ultima: int | None = inicios[i]  # el número de la última nota vista desde el último encabezado
     for k, j in enumerate(columna):
         c = lineas[j]
-        if hueco(c, previa):
-            mas_alla = pasado_el_limite(k)
+        termina = hueco(c, previa)
+        if not termina and j not in es_encabezado:
+            if j in inicios:
+                termina = ultima is not None and inicios[j] >= ultima
+                ultima = inicios[j]
+            elif j not in consumidas and c.alto >= _MAS_ALTO * r.alto:
+                encima = columna[k + 1] if k + 1 < len(columna) else None
+                if encima is None or encima not in es_encabezado or hueco(lineas[encima], c):
+                    termina = True
+                else:
+                    cadena.append(c.texto.strip())
+        if termina:
+            cadena.append(LIMITE_DE_BLOQUE)
+            cadena.extend(lineas[x].texto.strip() for x in columna[k:] if x in es_encabezado)
             break
         if j in es_encabezado:
-            encabezados_de_arriba.append(c.texto.strip())
+            del_bloque.append(c.texto.strip())
             cadena.append(c.texto.strip())
             ultima = None
-        elif j in inicios:
-            if ultima is not None and inicios[j] >= ultima:
-                mas_alla = pasado_el_limite(k)
-                break
-            ultima = inicios[j]
-        elif j not in consumidas and c.alto >= _MAS_ALTO * r.alto:
-            # un título que no se reconoce acaba el bloque; pero si lo que tiene justo encima es
-            # un encabezado, es el subtítulo de ése y las notas de abajo siguen siendo suyas
-            encima = columna[k + 1] if k + 1 < len(columna) else None
-            if encima is None or encima not in es_encabezado or hueco(lineas[encima], c):
-                mas_alla = pasado_el_limite(k)
-                break
-            cadena.append(c.texto.strip())
         previa = c
-    return encabezados_de_arriba, cadena, mas_alla
+    return del_bloque, cadena
 
 
 def leer_notas_con_renglones(
@@ -357,7 +349,6 @@ def leer_notas_con_renglones(
                 hojas=sorted({i.hoja for i in instancias}),
                 encabezado=primera.encabezado,
                 cadenas=[list(c) for c in sorted({i.encabezados for i in instancias})],
-                mas_alla=[list(m) for m in sorted({i.mas_alla for i in instancias if i.mas_alla})],
             )
         )
     notas.sort(key=lambda nota: (nota.seccion, nota.numero, -nota.copias, nota.hoja))
