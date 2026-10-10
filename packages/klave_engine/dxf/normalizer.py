@@ -43,6 +43,9 @@ MAX_FLATTEN_POINTS = 200
 
 
 _DISPLAY_NUMBER = re.compile(r"-?\d+(?:[.,]\d+)?")
+# The paragraph alignment an MTEXT sets inline (``\pxqc;`` = centred in its column).
+# Lowercase only: ``\P`` is a paragraph break, not a paragraph property.
+_MTEXT_PARAGRAPH_ALIGN = re.compile(r"\\p[^;\\]*?q([lrcjd])")
 
 
 def _dimension_display_text(entity: Any) -> str | None:
@@ -333,6 +336,14 @@ def normalize_entity(
             insert=insert,
             attachment_point=int(entity.dxf.get("attachment_point", 1)),
         )
+        # Where the text really sits: paragraphs centred in a wide column are drawn far
+        # from the insert point, so keep the column width and the paragraph alignment.
+        column_width = float(entity.dxf.get("width", 0.0) or 0.0)
+        if column_width > 0:
+            properties["column_width"] = column_width
+        paragraph = _MTEXT_PARAGRAPH_ALIGN.search(str(entity.text))
+        if paragraph is not None:
+            properties["paragraph_align"] = paragraph.group(1).lower()
         bbox = _approximate_text_bbox(insert, text, height)
         notes.append("MText bbox approximated from insert point and char height")
     elif dxf_type == "DIMENSION":

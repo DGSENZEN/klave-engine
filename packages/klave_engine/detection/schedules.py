@@ -19,8 +19,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from klave_engine.detection.results import Detection, DetectionType
-from klave_engine.detection.text_patterns import TextPatternConfig, match_category
+from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
+from klave_engine.estructura.asociacion import marca_en_texto
 from klave_engine.geometry.bbox import (
     BBox,
     bbox_center,
@@ -34,7 +35,6 @@ _BLOCK_RE = re.compile(r"\d{1,3}\s*[xX×]\s*\d{1,3}\s*[xX×]\s*\d{1,3}")
 _REBAR_RE = re.compile(r"(\d{1,2})\s*(?:V|VAR|VARS|VARILLAS)?\s*#\s*(\d)(?!\s*@)", re.I)
 _STIRRUP_RE = re.compile(r"E\s*#?\s*(\d)\s*@\s*(\d{1,3})", re.I)
 _MESH_RE = re.compile(r"(?<![E\d])#\s*(\d)\s*@\s*(\d{1,3})", re.I)
-_MARK_RE = re.compile(r"\b([KCT]|COL|CT|CTA|TB|ZC|ZCM|Z|D)\s*-?\s*(\d{1,2})([A-Z]?)\b")
 
 _FAMILY_KEYWORDS: list[tuple[str, re.Pattern[str]]] = [
     ("dala", re.compile(r"\bDALA|\bCADENA\b", re.I)),
@@ -193,16 +193,6 @@ def _family_in_text(text: str) -> str | None:
     return None
 
 
-def _mark_in_text(text: str, config: TextPatternConfig) -> str | None:
-    stripped = text.strip().upper()
-    if match_category(stripped, config, "column_tag") or match_category(
-        stripped, config, "beam_tag"
-    ):
-        return stripped
-    m = _MARK_RE.search(stripped)
-    return f"{m.group(1)}-{int(m.group(2))}{m.group(3)}" if m else None
-
-
 def _spec_from_text(
     text: str,
 ) -> tuple[tuple[int, int] | None, str | None, str | None, str | None]:
@@ -273,11 +263,11 @@ def _parse_tables(
             mark = None
             for title, value in cells.items():
                 if re.search(r"MARCA|CLAVE|TIPO|CASTILLO|COLUMNA|TRABE", title):
-                    mark = _mark_in_text(value, config)
+                    mark = marca_en_texto(value, config)
                     break
             if mark is None:
                 for value in cells.values():
-                    mark = _mark_in_text(value, config)
+                    mark = marca_en_texto(value, config)
                     if mark:
                         break
             if mark is None:
@@ -330,7 +320,7 @@ def _parse_annotations(
         section, rebar, stirrups, mesh = _spec_from_text(content)
         if section is None and rebar is None and mesh is None:
             continue
-        mark = _mark_in_text(content, config)
+        mark = marca_en_texto(content, config)
         family = _family_in_text(content)
         if mark is not None:
             specs.append(
@@ -358,7 +348,7 @@ def _parse_annotations(
     # Bare marks next to a bare spec: the detail drawing convention.
     for text in texts:
         content = (text.text or "").strip()
-        mark = _mark_in_text(content, config)
+        mark = marca_en_texto(content, config)
         if mark is None or len(content) > 8:
             continue
         height = bbox_height(text.bbox) or 1.0
@@ -431,7 +421,7 @@ def _sections_from_detail_geometry(
         if not text.is_textual or not text.text:
             continue
         content = text.text.strip()
-        mark = _mark_in_text(content, config)
+        mark = marca_en_texto(content, config)
         if mark is None or len(content) > 8:
             continue
         center = bbox_center(text.bbox)
@@ -490,7 +480,7 @@ def _sections_from_section_callouts(
     marks = []
     for t in texts:
         content = (t.text or "").strip()
-        mark = _mark_in_text(content, config)
+        mark = marca_en_texto(content, config)
         if mark is None or len(content) > 8:
             continue
         box = box_of(t)
@@ -585,7 +575,7 @@ def _sections_from_detail_cotas(
         if not text.is_textual or not text.text:
             continue
         content = text.text.strip()
-        mark = _mark_in_text(content, config)
+        mark = marca_en_texto(content, config)
         if mark is None or len(content) > 8:
             continue
         center = bbox_center(text.bbox)
