@@ -93,17 +93,20 @@ _PREFIJO_DE_ETIQUETA = re.compile(r"^(?:CASTILLO|COLUMNA)\s+")
 _LARGO_DE_ETIQUETA = 10
 # Una etiqueta de varias marcas («K-1 Y K-2», «K-1, K-2», «K-1=K-2», «K-1/K-2», «K-1 A K-4»,
 # «K-1 – K-4», «K-1 HASTA K-4»): lo que queda entre sus marcas son sólo separadores.
-_ENTRE_MARCAS = re.compile(r"(?:\s|[,;/=&+\-–]|\b(?:Y|E|A|AL|HASTA)\b)*")
+_ENTRE_MARCAS = re.compile(r"(?:\s|[,;/=&+\-–—]|\b(?:Y|E|A|AL|HASTA)\b)*")
 _LARGO_DE_VARIAS = 40
 _JUNTAS = " Y "  # cómo se escribe la «marca» de una etiqueta de varias
 # Un rango («K-1 A K-4», «K-1 AL K-4», «K-1 - K-4», «K-1 – K-4», «K-1 HASTA K-4», «DE K-1 A K-4»,
 # «K-1 A 4», «K-1 A K-2 A K-3») se reporta como está escrito: no se adivinan las marcas de en
 # medio (ni si las hay).
-_CONECTOR_DE_RANGO = re.compile(r"\b(?:AL|A|HASTA)\b|[-–]")
+_CONECTOR_DE_RANGO = re.compile(r"\b(?:AL|A|HASTA)\b|[-–—]")
 _ABRE_RANGO = re.compile(r"(?:DE|DEL|DESDE)\s+")
 # El fin de un rango escrito sólo con su número («K-1 A 4»), tras un conector entre espacios.
-_FIN_DE_RANGO = re.compile(r"\s+(?:AL|A|HASTA|-|–)\s+(\d{1,2}[A-Z]?(?:\.\d)?)\b")
-_RANGO = re.compile(r"\S (?:AL|A|HASTA|-|–) \S")
+_FIN_DE_RANGO = re.compile(r"\s+(?:AL|A|HASTA|-|–|—)\s+(\d{1,2}[A-Z]?(?:\.\d)?)\b")
+_RANGO = re.compile(r"\S (?:AL|A|HASTA|-|–|—) \S")
+# Dos marcas unidas sólo por un guion, sin espacios («K-1-K-3», «T-1–T-2»): también un rango
+# (R66), si la de la derecha es una marca entera con su letra («T1-1», «K-1-A» son una sola).
+_SOLO_GUION = re.compile(r"\s*[-–—]\s*")
 # Lo que remite a otra parte del plano no reclama una marca: «E#2@15 VER CORTE C-2» es un
 # renglón de armado, no una nota de C-2.
 _REFERENCIA = re.compile(
@@ -183,19 +186,78 @@ _LARGO_DE_LLAMADA = 2.0
 _MISMO_GIRO = 1
 
 
+def _es_etiqueta(texto: str, config: TextPatternConfig) -> bool:
+    return bool(
+        match_category(texto, config, "column_tag") or match_category(texto, config, "beam_tag")
+    )
+
+
+_FICHA_DESDE_LA_MARCA = re.compile(r"[A-Z0-9.\-]+")
+
+
+def _mas_larga(limpio: str, m: re.Match[str], config: TextPatternConfig) -> str | None:
+    """La etiqueta de la configuración más larga que empieza donde ``m`` y es más larga que ella
+    («T1-1» donde ``_MARCA_RE`` sólo ve «T1»), o ``None``."""
+    ficha = _FICHA_DESDE_LA_MARCA.match(limpio, m.start())
+    if ficha is None:
+        return None
+    for fin in range(ficha.end(), m.end(), -1):
+        if _es_etiqueta(limpio[m.start() : fin], config):
+            return limpio[m.start() : fin]
+    return None
+
+
 def marca_en_texto(texto: str, config: TextPatternConfig) -> str | None:
     """La marca que nombra ``texto``: el texto entero si es una etiqueta de columna o de trabe de
-    la configuración; si no, la primera marca que aparece en él, escrita ``K-15A.1``."""
+    la configuración; si no, la primera marca que aparece en él, la más larga (R66: «T1-1 4#3» es
+    T1-1, no T1): una etiqueta de la configuración tal cual o la marca escrita ``K-15A.1``."""
     limpio = texto.strip().upper()
-    if match_category(limpio, config, "column_tag") or match_category(limpio, config, "beam_tag"):
+    if _es_etiqueta(limpio, config):
         return limpio
     m = _MARCA_RE.search(limpio)
     if m is None:
         return None
+    larga = _mas_larga(limpio, m, config)
+    if larga is not None:
+        return larga
     if m.group(5):
         return f"{m.group(1)}-X"
     variante = f".{m.group(4)}" if m.group(4) else ""
     return f"{m.group(1)}-{int(m.group(2))}{m.group(3)}{variante}"
+
+
+def _halladas(limpio: str, config: TextPatternConfig) -> list[tuple[int, int, str | None]]:
+    """Las marcas de un texto, cada una la más larga (``_mas_larga``), con el texto de la marca
+    cuando es una etiqueta alargada; y el número que cierra un rango escrito sin la letra («K-1 A
+    4»), con ``None``. Ordenadas y sin encimarse."""
+    halladas: list[tuple[int, int, str | None]] = []
+    fin = 0
+    for m in _MARCA_RE.finditer(limpio):
+        if m.start() < fin:
+            continue  # dentro de una marca alargada
+        larga = _mas_larga(limpio, m, config)
+        fin = m.start() + len(larga) if larga is not None else m.end()
+        halladas.append((m.start(), fin, larga))
+    for _, b, _texto in list(halladas):
+        numero = _FIN_DE_RANGO.match(limpio, b)
+        if numero is not None and not any(
+            a < numero.end(1) and numero.start(1) < c for a, c, _t in halladas
+        ):
+            halladas.append((numero.start(1), numero.end(1), None))
+    return sorted(halladas)
+
+
+def _rango_pegado(texto: str, config: TextPatternConfig | None = None) -> bool:
+    """Si ``texto`` son dos o más marcas unidas sólo por guiones («K-1-K-3», «T-1–T-2»)."""
+    limpio = " ".join(texto.upper().split())
+    marcas = [h for h in _halladas(limpio, config or TextPatternConfig()) if h[1] > h[0]]
+    marcas = [h for h in marcas if _MARCA_RE.match(limpio, h[0])]
+    if len(marcas) < 2 or marcas[0][0] != 0 or marcas[-1][1] != len(limpio):
+        return False
+    return all(
+        _SOLO_GUION.fullmatch(limpio[a[1] : b[0]]) is not None
+        for a, b in zip(marcas, marcas[1:], strict=False)
+    )
 
 
 class Asociacion(BaseModel):
@@ -265,15 +327,10 @@ def _varias_marcas(texto: str, config: TextPatternConfig) -> list[str] | None:
     limpio = _PREFIJO_DE_ETIQUETA.sub("", " ".join(texto.split()).upper())
     if len(limpio) > _LARGO_DE_VARIAS:
         return None
-    # Cada marca, y el número que cierra un rango escrito sin la letra («K-1 A 4»).
-    halladas = [m.span() for m in _MARCA_RE.finditer(limpio)]
-    for _, fin in list(halladas):
-        numero = _FIN_DE_RANGO.match(limpio, fin)
-        if numero is not None and not any(
-            a < numero.end(1) and numero.start(1) < b for a, b in halladas
-        ):
-            halladas.append(numero.span(1))
-    halladas.sort()
+    # Cada marca (la más larga), y el número que cierra un rango escrito sin la letra («K-1 A 4»).
+    con_texto = _halladas(limpio, config)
+    largas = {(a, b): t for a, b, t in con_texto}
+    halladas = [(a, b) for a, b, _t in con_texto]
     if len(halladas) < 2:
         return None
     entre = [limpio[a[1] : b[0]] for a, b in zip(halladas, halladas[1:], strict=False)]
@@ -294,6 +351,9 @@ def _varias_marcas(texto: str, config: TextPatternConfig) -> list[str] | None:
     for k, grupo in enumerate(grupos):
         if len(grupo) == 1:
             a, b = grupo[0]
+            if largas[(a, b)] is not None:
+                piezas.append(largas[(a, b)] or "")
+                continue
             if not _MARCA_RE.fullmatch(limpio[a:b]):
                 return None  # un número suelto no es una marca
             piezas.append(marca_en_texto(limpio[a:b], config) or limpio[a:b])
@@ -309,8 +369,9 @@ def _marcas_de(marca: str) -> list[str]:
 
 
 def _es_de_varias(marca: str) -> bool:
-    """Si la etiqueta nombra más de una marca: una lista o un rango."""
-    return _JUNTAS in marca or _RANGO.search(marca) is not None
+    """Si la etiqueta nombra más de una marca: una lista o un rango (también sin espacios,
+    «K-1-K-3»)."""
+    return _JUNTAS in marca or _RANGO.search(marca) is not None or _rango_pegado(marca)
 
 
 def sin_referencias(texto: str) -> str:
@@ -351,14 +412,9 @@ def marcas_en_nota(texto: str, config: TextPatternConfig) -> list[str]:
     normalizada (``marca_en_texto``) y un rango como se escribió («K-1 A K-4», «K-1 A 4», «DE
     K-1 A K-4», «K-1 HASTA K-4»): no se adivinan las marcas de en medio."""
     limpio = " ".join(sin_referencias(texto).upper().split())
-    halladas = [m.span() for m in _MARCA_RE.finditer(limpio)]
-    for _, fin in list(halladas):
-        numero = _FIN_DE_RANGO.match(limpio, fin)
-        if numero is not None and not any(
-            a < numero.end(1) and numero.start(1) < b for a, b in halladas
-        ):
-            halladas.append(numero.span(1))
-    halladas.sort()
+    con_texto = _halladas(limpio, config)
+    largas = {(a, b): t for a, b, t in con_texto}
+    halladas = [(a, b) for a, b, _t in con_texto]
     if not halladas:
         return []
     grupos: list[list[tuple[int, int]]] = [[halladas[0]]]
@@ -374,6 +430,8 @@ def marcas_en_nota(texto: str, config: TextPatternConfig) -> list[str]:
         if len(grupo) > 1:
             abre = re.search(r"(?:DE|DEL|DESDE)\s+$", limpio[:a])
             piezas.append(limpio[abre.start() if abre else a : b])
+        elif largas[(a, b)] is not None:
+            piezas.append(largas[(a, b)] or "")
         elif _MARCA_RE.fullmatch(limpio[a:b]):
             piezas.append(marca_en_texto(limpio[a:b], config) or limpio[a:b])
     return list(dict.fromkeys(piezas))
@@ -427,17 +485,30 @@ def extremos_de_rango(rango: str) -> list[str]:
     """Las marcas de los extremos de un rango escrito («K-1 A K-4» → [K-1, K-4], «K-1 A 4» →
     [K-1, K-4], «K-1 A C-4» → [K-1, C-4]); vacía si no es un rango."""
     limpio = " ".join(rango.upper().split())
-    halladas = list(_MARCA_RE.finditer(limpio))
-    if not halladas or not _RANGO.search(limpio):
+    if not _es_rango(limpio):
         return []
-    extremos = [_escrita(halladas[0])]
-    if len(halladas) > 1:
-        extremos.append(_escrita(halladas[-1]))
+    marcas: list[str] = []
+    primera: re.Match[str] | None = None
+    for a, _b, larga in _halladas(limpio, TextPatternConfig()):
+        m = _MARCA_RE.match(limpio, a)
+        if m is None:
+            continue  # el número que cierra «K-1 A 4»: va abajo
+        primera = primera or m
+        marcas.append(larga or _escrita(m))
+    if primera is None:
+        return []
+    extremos = [marcas[0]]
+    if len(marcas) > 1:
+        extremos.append(marcas[-1])
     else:
-        final = _FIN_DE_RANGO.search(limpio, halladas[0].end())
+        final = _FIN_DE_RANGO.search(limpio, primera.end())
         if final is not None:
-            extremos.append(f"{halladas[0].group(1)}-{final.group(1)}")
+            extremos.append(f"{primera.group(1)}-{final.group(1)}")
     return list(dict.fromkeys(extremos))
+
+
+def _es_rango(limpio: str) -> bool:
+    return _RANGO.search(limpio) is not None or _rango_pegado(limpio)
 
 
 def _numero_de_marca(marca: str) -> tuple[str, int] | None:
@@ -454,7 +525,7 @@ def marca_en_rango(rango: str, marca: str) -> bool:
     limpio = " ".join(rango.upper().split())
     extremos = [m for m in _MARCA_RE.finditer(limpio) if m.group(2) is not None]
     propia = _numero_de_marca(marca)
-    if not extremos or propia is None or not _RANGO.search(limpio):
+    if not extremos or propia is None or not _es_rango(limpio):
         return False
     letra, desde = extremos[0].group(1), int(extremos[0].group(2))
     final = _FIN_DE_RANGO.search(limpio, extremos[0].end())

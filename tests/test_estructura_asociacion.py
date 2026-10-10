@@ -2333,3 +2333,26 @@ def test_cuadro_rows_name_their_cuadro(tmp_path):
 def test_the_note_shape_shortcut_never_changes_the_answer(texto, lee):
     # Task 7, ronda 2: sin «NNxNN» ni «#n» (o «Ø n», «%%C n») no se llama al parser.
     assert lo_lee_una_nota(texto) is lee
+
+
+@pytest.mark.parametrize(
+    "texto,marca",
+    [
+        ("T1-1 4#3", "T1-1"),
+        ("T2-7 20X40", "T2-7"),
+        ("K-15A.1 4#3", "K-15A.1"),
+        ("K15A 4#3", "K-15A"),
+    ],
+)
+def test_the_longest_mark_in_a_text(texto, marca):
+    # R66.c: la etiqueta más larga de la configuración («T1-1»), no lo que ve ``_MARCA_RE`` («T1»).
+    assert marca_en_texto(texto, TextPatternConfig()) == marca
+
+
+@pytest.mark.parametrize(
+    "rango,dentro,fuera",
+    [("K-1-K-3", "K-2", "K-4"), ("K-1–K-3", "K-3", "C-2"), ("T-1—T-4", "T-3", "T-5")],
+)
+def test_an_unspaced_range(rango, dentro, fuera):
+    assert marcas_en_nota(f"{rango} 4#3", TextPatternConfig()) == [rango]
+    assert marca_en_rango(rango, dentro) and not marca_en_rango(rango, fuera)

@@ -1077,15 +1077,17 @@ _RECHAZOS_CON_MARCA = frozenset({"ambigua", "varias_marcas", "sin_lector"})
 
 
 _PUNTO_ENTRE_LETRA_Y_CIFRA = re.compile(r"(?<=[A-Z])\.(?=\d)|(?<=\d)\.(?=[A-Z])")
+_GUIONES_Y_ESPACIOS = re.compile(r"[\s\-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]+")
 
 
 def _loose_key(mark: str) -> str:
     """A mark as the AI block compares it (R65), on both sides, AI marks
-    included: uppercase, without hyphens or spaces, without a dot between a
-    letter and a digit. «K7», «K-7» and «K 7» are one key; «T1-1» and «T-11»
-    too (they over-block each other: the safe direction). Only for blocking:
-    readings and ``by_mark`` keep their marks as written."""
-    return re.sub(r"[\s\-]+", "", _PUNTO_ENTRE_LETRA_Y_CIFRA.sub("", mark.upper()))
+    included: uppercase, without hyphens (any Unicode dash: «–», «‑», «—», R66)
+    or spaces, without a dot between a letter and a digit. «K7», «K-7» and
+    «K 7» are one key; «T1-1» and «T-11» too (they over-block each other: the
+    safe direction). Only for blocking: readings and ``by_mark`` keep their
+    marks as written."""
+    return _GUIONES_Y_ESPACIOS.sub("", _PUNTO_ENTRE_LETRA_Y_CIFRA.sub("", mark.upper()))
 
 
 def _names(piece: str, mark: str, known: set[str]) -> bool:
@@ -1094,8 +1096,8 @@ def _names(piece: str, mark: str, known: set[str]) -> bool:
     both endpoints always, and every mark between same-letter endpoints
     («K-1 A K-4» → K-2A, K-3); a mixed-letter range («K-1 A C-4») only its
     endpoints. A glued form that is not a known mark («K-7E#3@20», «K7E#3»)
-    is the longest known mark it starts with, when what is left starts with a
-    letter or a sign (so «K-15AE#3» is K-15A, never K-1)."""
+    names every known mark it starts with, when what is left starts with a
+    letter or a sign (so «K-15AE#3» is K-15A, never K-1) — R66."""
     key = _loose_key(mark)
     if nombra_varias([piece]):
         if any(_loose_key(end) == key for end in extremos_de_rango(piece)):
@@ -1106,8 +1108,9 @@ def _names(piece: str, mark: str, known: set[str]) -> bool:
         return True
     if written in known:
         return False
-    prefixes = [k for k in known if written.startswith(k) and _glued_rest(written[len(k) :])]
-    return bool(prefixes) and len(key) == max(len(k) for k in prefixes) and key in prefixes
+    # R66: a glued token blocks every known mark it validly starts with (default-deny when it
+    # is ambiguous: «K7E#3» with K7 and K7E both known blocks both).
+    return written.startswith(key) and _glued_rest(written[len(key) :]) and key in known
 
 
 def _glued_rest(rest: str) -> bool:

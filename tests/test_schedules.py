@@ -641,3 +641,70 @@ def test_the_loose_key_never_reaches_a_different_mark(tmp_path):
     assert inv.by_mark["K-1"].stirrups == "E#2@20" and "K-15" not in inv.by_mark
     assert inv.by_mark["K7"].stirrups == "E#2@20" and inv.by_mark["K-7"].rebar == "4#3"
     assert inv.by_mark["K-8"].rebar == "6#4"
+
+
+# --------------------------------------- Task 7, ronda 4 (R66): prefijos, rangos pegados, T1-1
+
+
+def test_a_glued_token_blocks_every_known_prefix(tmp_path):
+    # Sonda U6d: una marca de la IA más larga («K7E») no le quita a K-7 el texto pegado; antes la
+    # IA escribía 9#9 y E#9@99 en K-7.
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-7E#3@20", "K-7 20X30"]), frames=_frame())
+    merge_external_specs(
+        inv,
+        [_ia("K-7", rebar="9#9", stirrups="E#9@99"), _ia("K7E", rebar="9#9", stirrups="E#9@99")],
+    )
+    k7 = inv.by_mark["K-7"]
+    assert (k7.rebar, k7.stirrups, k7.section_cm) == (None, None, (20, 30))
+    assert "K7E" not in inv.by_mark
+
+
+def test_a_glued_token_without_hyphen_blocks_every_known_prefix(tmp_path):
+    inv = build_schedule_inventory(_notas(tmp_path, ["TRABE K7E#3@1S"]), frames=_frame())
+    merge_external_specs(inv, [_ia("K7", stirrups="E#9@99"), _ia("K7E", stirrups="E#9@99")])
+    assert "K7" not in inv.by_mark and "K7E" not in inv.by_mark
+
+
+@pytest.mark.parametrize(
+    "nota,cubiertas,libres",
+    [
+        ("K-1-K-3 E#3@1S", ["K-1", "K-2", "K-3"], ["K-4"]),
+        ("K-1–K-3 E#3@1S", ["K-1", "K-2", "K-3"], ["K-4"]),
+        ("K-1—K-3 E#3@1S", ["K-1", "K-2", "K-3"], ["K-4"]),
+        ("TRABE T-1-T-2 E#3@1S", ["T-1", "T-2"], ["T-3"]),
+    ],
+)
+def test_a_range_written_without_spaces_is_a_range(tmp_path, nota, cubiertas, libres):
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    merge_external_specs(inv, [_ia(m, stirrups="E#9@99") for m in cubiertas + libres])
+    assert not [m for m in cubiertas if m in inv.by_mark]
+    assert all(inv.by_mark[m].stirrups == "E#9@99" for m in libres)
+
+
+@pytest.mark.parametrize(
+    "nota,rango",
+    [
+        ("K-1-K-3 15X20 4#3", "K-1-K-3"),
+        ("K-1–K-3 15X20 4#3", "K-1–K-3"),
+        ("T-1-T-2 20X40 2#6", "T-1-T-2"),
+    ],
+)
+def test_the_note_reader_reports_an_unspaced_range(tmp_path, nota, rango):
+    # R66.b: nunca se lee como de K-1 (ni de una marca «K-1-K» con sufijo).
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    assert [s.mark for s in inv.specs] == []
+    assert [(r.motivo, r.marcas) for r in inv.rechazos] == [("varias_marcas", [rango])]
+
+
+@pytest.mark.parametrize("nota,marca", [("T1-1 4#3", "T1-1"), ("K-1-A 4#3", "K-1")])
+def test_a_single_mark_is_never_a_range(tmp_path, nota, marca):
+    # R66.c: «T1-1 4#3» es de T1-1 (antes caía en «T1»); «K-1-A» sigue siendo una sola marca.
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    assert [s.mark for s in inv.specs] == [marca] and inv.rechazos == []
+    assert inv.by_mark[marca].rebar == "4#3"
+
+
+def test_an_ia_mark_written_with_a_unicode_dash_meets_the_drawing_mark(tmp_path):
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-7 E#3@1S", "K-7 20X30"]), frames=_frame())
+    merge_external_specs(inv, [_ia("K–7", stirrups="E#2@20"), _ia("K‑7", rebar="6#4")])
+    assert "K–7" not in inv.by_mark and "K‑7" not in inv.by_mark
