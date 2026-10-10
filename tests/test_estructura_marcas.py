@@ -6,6 +6,7 @@ from klave_engine.estructura.marcas import (
     extremos_de_rango,
     leer_marcas,
     marca_en_rango,
+    marcas_nombradas,
     titulos,
 )
 
@@ -33,7 +34,7 @@ C = TextPatternConfig()
         ("K-1 15X20 4#3 IGUAL A K-2", "unica", ["K-1"]),  # una referencia no es otra marca
         # Una cuenta de varillas no es una marca.
         ("P 4#3", "ninguna", []),
-        ("E#2@15 VER CORTE C-2", "ninguna", []),
+        ("E#2@15 VER CORTE C-2", "unica", ["C-2"]),  # R97: con armado, la referencia la nombra
         ("2E#3EXT@10", "ninguna", []),
         ("CENTRO@20", "ninguna", []),
         # Listas y rangos, con o sin espacios: se reportan como se escribieron.
@@ -103,8 +104,8 @@ C = TextPatternConfig()
         ("K‑7 4#3", "unica", ["K-7"]),
         ("K-1 Y K–2 4#3", "varias", ["K-1", "K-2"]),
         # R68.8: la referencia se lleva su única marca (no se lee; el respaldo la bloquea).
-        ("CORTE K-1 15X20 4#3", "ninguna", []),
-        ("DET. K-1 4#3", "ninguna", []),
+        ("CORTE K-1 15X20 4#3", "unica", ["K-1"]),  # R97: el título nombra su marca (no se lee)
+        ("DET. K-1 4#3", "unica", ["K-1"]),
         # R78: una letra suelta tras una marca: ¿su sufijo? Ambigua; no la cabeza de unos
         # estribos ni el conector de un rango o una lista.
         ("K-15 A 4#3 E#3@20", "ambigua", ["K-15", "K-15A", "K-15-A"]),
@@ -195,3 +196,39 @@ def test_a_range_end_is_a_mark_or_a_bare_integer(texto, tipo, piezas):
 def test_the_grammar_defers_to_the_parsers_vocabulary(texto, tipo, piezas):
     lectura = leer_marcas(texto, C)
     assert (lectura.tipo, lectura.piezas) == (tipo, piezas)
+
+
+@pytest.mark.parametrize(
+    "texto,tipo,piezas,titulo",
+    [
+        ("CORTE K-1 Y K-2 E#3@1S", "varias", ["K-1", "K-2"], True),  # R97: todas, no sólo K-2
+        ("CORTE K-1 15X20 4#3", "unica", ["K-1"], True),
+        ("DET. K-2A E#3@1S", "unica", ["K-2A"], True),
+        ("DETALLE K 1 4#3", "unica", ["K-1"], True),  # escrita con espacio
+        ("SECCIÓN K-1 15X20 4#3", "unica", ["K-1"], True),
+        ("K-1 15X15 4#3 VER CORTE C-2", "varias", ["K-1", "C-2"], True),
+        ("VER CORTE C-2", "ninguna", [], False),  # sin armado: una referencia que no nombra
+        ("VER DETALLE K-2", "ninguna", [], False),
+        ("2E#3 VER CORTE", "ninguna", [], False),  # Marina: «VER CORTE» sin marca
+        ("CORTE A-A 4#3", "ninguna", [], False),  # el título de un corte que no es una marca
+        ("K-1 15X20 4#3", "unica", ["K-1"], False),
+    ],
+)
+def test_a_title_with_armado_names_every_mark(texto, tipo, piezas, titulo):
+    lectura = leer_marcas(texto, C)
+    assert (lectura.tipo, lectura.piezas, lectura.titulo) == (tipo, piezas, titulo)
+
+
+@pytest.mark.parametrize(
+    "texto,nombradas",
+    [
+        ("T-1 30X60 E#3@15 LS V 3", {"T-1"}),  # R96: «V 3» no es una marca en este texto
+        ("T-1 20X40 V 4 LS V 3 LI E#3@15", {"T-1", "V-4"}),
+        ("K-1 A K-4 4#3", {"K-1", "K-4"}),
+        ("K-7E#3@20", {"K-7", "K-7E"}),
+        ("E#2@15 VER CORTE C-2", {"C-2"}),
+        ("CASTILLOS E#2@20", set()),
+    ],
+)
+def test_the_marks_a_whole_text_names(texto, nombradas):
+    assert marcas_nombradas(texto, C) == nombradas

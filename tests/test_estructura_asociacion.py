@@ -1103,7 +1103,8 @@ def test_texts_that_name_a_mark_are_read_or_reported(tmp_path):
         msp = doc.modelspace()
         k1 = msp.add_text("K-1", height=0.13)
         k1.set_placement((0.0, 0.0), align=TextEntityAlignment.BOTTOM_CENTER)
-        # «VER CORTE C-2» remite a otra parte: no reclama C-2, el renglón es de la pila de K-1.
+        # R97: «VER CORTE C-2» con armado nombra C-2: el renglón no es de la pila de K-1 (lo
+        # reporta la lectura de notas, «sin_lector» de C-2), y la pila queda cortada.
         msp.add_text("E#2@15 VER CORTE C-2", height=0.10).set_placement((-0.2, 0.18))
         msp.add_text("4#3", height=0.10).set_placement((-0.2, 0.36))
         for x, texto in [
@@ -1114,7 +1115,7 @@ def test_texts_that_name_a_mark_are_read_or_reported(tmp_path):
             (20, "CASTILLOS E#2@20 EN TODOS"),
             (30, "COLUMNAS: ESTRIBOS #3@15"),  # la nota lo lee como malla (y avisa)
             (35, "K-3 #4@20"),  # una malla con su marca: la nota la lee
-            (40, "2E#3@15 VER P-1"),  # un renglón suelto que remite a P-1
+            (40, "2E#3@15 VER P-1"),  # R97: remite a P-1 con armado: la nombra, nadie lo lee
             (50, "K-1 15x20 4#3 E#2@20"),  # lo lee la nota: sección y varillas
             (60, "CASTILLOS 15X15 4#3 E#2@20"),  # nota de familia leída
         ]:
@@ -1122,11 +1123,12 @@ def test_texts_that_name_a_mark_are_read_or_reported(tmp_path):
 
     ents = _dxf(tmp_path, build)
     asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
-    assert {a.marca: a.textos for a in asoc} == {"K-1": ["4#3", "E#2@15 VER CORTE C-2"]}
+    assert {a.marca: a.textos for a in asoc} == {}
     # R91: «CASTILLOS E#2@20 EN TODOS» tiene armado que el parser reconoce: es la nota de la
     # familia, que la lectura de notas toma y avisa lo que no lee (como «2 VARILLAS #5 …»).
     assert sorted((r.motivo, r.texto, tuple(r.marcas)) for r in rech) == [
-        ("sin_dueno", "2E#3@15 VER P-1", ()),
+        ("sin_dueno", "4#3", ()),
+        ("sin_lector", "2E#3@15 VER P-1", ("P-1",)),
         ("sin_lector", "K-9 E#3@1S", ("K-9",)),
     ]
 
@@ -2278,7 +2280,8 @@ def test_a_label_above_the_line_with_its_own_line_below_it_does_not_end_the_colu
         ("K-1 A 4 15X20 4#3", ["K-1 A 4"]),
         ("K-1 HASTA K-4 4#3", ["K-1 HASTA K-4"]),
         ("K-1 15X20 4#3 IGUAL A K-2", ["K-1"]),  # una referencia no es otra marca
-        ("E#2@15 VER CORTE C-2", []),
+        ("E#2@15 VER CORTE C-2", ["C-2"]),  # R97: una referencia con armado nombra su marca
+        ("VER CORTE C-2", []),  # sin armado, no nombra a nadie
     ],
 )
 def test_the_marks_a_note_names(texto, marcas):

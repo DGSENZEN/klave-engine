@@ -9,6 +9,8 @@ from klave_engine.detection.results import DetectionType, make_detection
 from klave_engine.detection.schedules import (
     apply_schedule,
     build_schedule_inventory,
+    campos_de_fragmento,
+    family_of_mark,
     mark_cuadro_detections,
     merge_external_specs,
 )
@@ -1120,12 +1122,14 @@ def test_a_numbered_or_other_family_text_naming_a_mark_is_rejected(tmp_path, not
     assert [r.motivo for r in inv.rechazos] == ["sin_lector"] and inv.rechazos[0].marcas
 
 
-def test_an_unreadable_castillo_text_never_claims_parrillas(tmp_path):
-    # R76: «K-7 #3@1S» en un castillo dice estribos (una separación), nunca parrillas.
+def test_an_unreadable_castillo_mesh_claims_parrillas_and_stirrups(tmp_path):
+    # R95: «K-7 #3@1S» es una malla, aunque un castillo no las lleve: reclama parrillas (el campo
+    # queda bloqueado y el texto avisado). Sin cabeza puede ser también sus estribos (R76): los
+    # dos. Las varillas no: el texto no las dice.
     inv = build_schedule_inventory(_notas(tmp_path, ["K-7 #3@1S"]), frames=_frame())
     merge_external_specs(inv, [_ia("K-7", mesh="#4@20", stirrups="E#2@20", rebar="4#3")], C)
     k7 = inv.by_mark["K-7"]
-    assert (k7.mesh, k7.stirrups, k7.rebar) == ("#4@20", None, "4#3")
+    assert (k7.mesh, k7.stirrups, k7.rebar) == (None, None, "4#3")
 
 
 def test_fragment_lines_are_kept_by_sheet_and_only_with_a_letter(tmp_path):
@@ -1267,3 +1271,137 @@ def test_an_unread_eighth_is_quoted_as_written(tmp_path):
     inv = build_schedule_inventory(_notas(tmp_path, ["K-1 15X15 NO. 3"]), frames=_frame())
     (s,) = inv.specs
     assert any("NO. 3" in a for a in s.avisos) and "longitudinales" in s.campos_con_texto
+
+
+# ------------------------------------------------------------------ ronda 4 de la tarea 8
+
+
+@pytest.mark.parametrize(
+    "marca,familia",
+    [("ZA-3", "zapata"), ("ZCM-100", "zapata"), ("Z-100A", "zapata"), ("ZC-2", "zapata"),
+     ("Z-1", "zapata"), ("P-4", "pilote"), ("K-1", "castillo")],
+)  # fmt: skip
+def test_every_mark_a_detector_places_has_its_family(marca, familia):
+    # R95: los prefijos de cimentación son los de los detectores (``text_patterns``).
+    assert family_of_mark(marca) == familia
+
+
+@pytest.mark.parametrize(
+    "nota,marca",
+    [
+        ("ZA-3 120X150 #4@20", "ZA-3"),
+        ("ZA-3 #4@20", "ZA-3"),
+        ("ZCM-100 #4@20", "ZCM-100"),
+        ("Z-1 #4@20", "Z-1"),  # una familia que ya tenía su malla la sigue leyendo
+    ],
+)
+def test_a_footing_mesh_is_read_and_the_ai_never_wins(tmp_path, nota, marca):
+    # R95: ZA-3 es una zapata: su malla se lee, y la de la IA no la cubre.
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    merge_external_specs(inv, [_ia(marca, family="zapata", mesh="#5@15")], C)
+    k = inv.by_mark[marca]
+    assert (k.family, k.mesh) == ("zapata", "#4@20")
+
+
+@pytest.mark.parametrize(
+    "texto,familia,campos",
+    [
+        ("#4@20", "elemento", ["estribos", "parrillas"]),  # R95: antes sólo «estribos»
+        ("#4@20", "castillo", ["estribos", "parrillas"]),  # sin cabeza: malla o estribos
+        ("#4@20", "zapata", ["parrillas"]),  # una familia con mallas: sólo la malla
+        ("#4@20", None, ["estribos", "parrillas"]),
+        ("@20", "castillo", ["estribos"]),  # una separación sola no es una malla
+        ("E#3@20", "castillo", ["estribos"]),
+    ],
+)
+def test_a_mesh_claims_parrillas_in_any_family(texto, familia, campos):
+    assert campos_de_fragmento(texto, familia) == campos
+
+
+def test_a_castillo_mesh_keeps_the_ai_mesh_out(tmp_path):
+    # R95: «#2@20» en un castillo se avisa y reclama parrillas (y estribos): ni la malla ni los
+    # estribos de la IA lo cubren.
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-1 15X15 4#3 #2@20"]), frames=_frame())
+    merge_external_specs(inv, [_ia("K-1", mesh="#5@15", stirrups="E#2@15")], C)
+    k = inv.by_mark["K-1"]
+    assert (k.rebar, k.mesh, k.stirrups) == ("4#3", None, None)
+
+
+@pytest.mark.parametrize(
+    "nota",
+    [
+        "T-1 30X60 E#3@15 LS V 3",  # «V 3» es una cuenta de varillas, no la marca V-3
+        "K-1 15X15 E#2@20 CON V 4",
+    ],
+)
+def test_a_bar_word_in_the_residue_is_never_a_mark_alone(tmp_path, nota):
+    # R96: lo que no se leyó tiene cifras: reclama las varillas, y la IA no las llena.
+    marca = nota.split()[0]
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    (s,) = inv.specs
+    assert s.avisos and "longitudinales" in s.campos_con_texto
+    merge_external_specs(inv, [_ia(marca, rebar="6#6")], C)
+    assert inv.by_mark[marca].rebar is None
+
+
+def test_a_bar_word_glued_to_its_count_is_still_read(tmp_path):
+    # R96 (y c9c2fa9): «V4#4» pegado son 4 varillas del #4.
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-1 15X15 V4#4 E#2@20"]), frames=_frame())
+    (s,) = inv.specs
+    assert (s.mark, s.rebar, s.stirrups, s.avisos) == ("K-1", "4#4", "E#2@20", [])
+
+
+_ESTRIBOS_IA = {"stirrups": "E#2@25"}
+_SECCION_Y_VARILLAS_IA = {"rebar": "6#6", "section_cm": (25, 25)}
+
+
+@pytest.mark.parametrize(
+    "nota,motivo,marcas,ia",
+    [
+        ("CORTE K-1 Y K-2 E#3@1S", "varias_marcas", ["K-1", "K-2"], _ESTRIBOS_IA),
+        ("CORTE K-1 Y K-2 E#3@20", "varias_marcas", ["K-1", "K-2"], _ESTRIBOS_IA),  # legible
+        ("CORTE K-1 15X20 4#3", "sin_lector", ["K-1"], _SECCION_Y_VARILLAS_IA),
+        ("SECCION K-1 15X20 4#3", "sin_lector", ["K-1"], _SECCION_Y_VARILLAS_IA),
+        ("E#2@15 VER DETALLE K-2", "sin_lector", ["K-2"], _ESTRIBOS_IA),
+    ],
+)
+def test_a_title_with_armado_names_every_mark_after_it(tmp_path, nota, motivo, marcas, ia):
+    # R97: el título de un corte o una referencia con armado nombra todas sus marcas; no se lee
+    # y la IA de ninguna llena lo que dice.
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    assert inv.specs == []
+    assert [(r.motivo, r.marcas) for r in inv.rechazos] == [(motivo, marcas)]
+    merge_external_specs(inv, [_ia(m, **ia) for m in marcas], C)
+    assert not [m for m in marcas if _ia_lleno(inv, m)]
+
+
+def test_a_bare_pointer_names_no_mark(tmp_path):
+    # R97: «VER CORTE C-2» sin armado no nombra a C-2: su nota se lee y nada la bloquea.
+    inv = build_schedule_inventory(
+        _notas(tmp_path, ["VER CORTE C-2", "C-2 30X30 8#6 E#3@20"]), frames=_frame()
+    )
+    assert inv.rechazos == []
+    merge_external_specs(inv, [_ia("C-2", family="columna", section_cm=(40, 40))], C)
+    k = inv.by_mark["C-2"]
+    assert (k.rebar, k.stirrups, k.section_cm) == ("8#6", "E#3@20", (30, 30))
+
+
+@pytest.mark.parametrize(
+    "nota",
+    ["C-1 PLACA BASE 35X35 CON ANCLAS 4 PZAS #6", "C-1 ANCLAS 4 VARS #6"],
+)
+def test_anchor_bars_are_not_the_elements_armado(tmp_path, nota):
+    # R98: las varillas (y la sección) de una placa o de unas anclas no son de la columna: se
+    # avisan, reclaman su campo y la IA no lo llena.
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    assert not [s for s in inv.specs if s.rebar or s.section_cm]
+    merge_external_specs(inv, [_ia("C-1", family="columna", rebar="8#8")], C)
+    k = inv.by_mark.get("C-1")
+    assert k is None or k.rebar is None
+
+
+def test_bars_without_an_anchor_word_are_read(tmp_path):
+    # R98: sin la palabra de un objeto, «4#6» son las varillas de la columna.
+    inv = build_schedule_inventory(_notas(tmp_path, ["C-1 30X30 4#6"]), frames=_frame())
+    (s,) = inv.specs
+    assert (s.mark, s.section_cm, s.rebar, s.avisos) == ("C-1", (30, 30), "4#6", [])

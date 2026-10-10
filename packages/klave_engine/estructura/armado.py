@@ -30,6 +30,7 @@ from klave_engine.estructura._armado_texto import (
     fin_del_hueco,
     hueco_limpio,
     normalizar,
+    objeto_ajeno,
     residuo,
     traducciones,
 )
@@ -987,6 +988,12 @@ def parsear_armado(textos: list[str], familia: str) -> Armado:
 
     armado = Armado(texto_original=" | ".join(lineas))
     for p in buenas:
+        ajeno = objeto_ajeno(texto, p.inicio, p.fin) if p.varillas else None
+        if ajeno is not None:
+            # R98: varillas en una cláusula de anclas, pernos, placas…: son de ese objeto.
+            a, b = entero(*ajeno)
+            avisos.append((a, f"«{letrero[a:b].strip()}»: no es armado del elemento"))
+            continue
         if p.aviso is not None:
             avisos.append((p.inicio, p.aviso))
         armado.estribos += p.estribos

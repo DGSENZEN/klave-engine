@@ -5,11 +5,14 @@ from functools import lru_cache
 
 from pydantic import BaseModel, Field
 
-# The marks the foundation detectors place (R94): one source for the detectors and
-# for the mark grammar (``estructura.marcas``), which reads every mark a detector
-# can place. Z-1, ZC-2, ZA-3, ZCM-100, Z-100A: zapatas; P-4: pilotes.
-FOOTING_MARK_PATTERN = r"^Z(?:C|A|CM)?-?\d{1,3}[A-Z]?$"
-PILE_MARK_PATTERN = r"^P-?\d{1,2}[A-Z]?$"
+# The marks the foundation detectors place (R94): one source for the detectors, for
+# the mark grammar (``estructura.marcas``), which reads every mark a detector can
+# place, and for the family of a mark (``schedules.family_of_mark``, R95). Z-1,
+# ZC-2, ZA-3, ZCM-100, Z-100A: zapatas; P-4: pilotes.
+FOOTING_MARK_PREFIXES = ("ZCM", "ZC", "ZA", "Z")
+PILE_MARK_PREFIXES = ("P",)
+FOOTING_MARK_PATTERN = rf"^(?:{'|'.join(FOOTING_MARK_PREFIXES)})-?\d{{1,3}}[A-Z]?$"
+PILE_MARK_PATTERN = rf"^(?:{'|'.join(PILE_MARK_PREFIXES)})-?\d{{1,2}}[A-Z]?$"
 
 
 class TextPatternConfig(BaseModel):

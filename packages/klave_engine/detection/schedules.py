@@ -22,7 +22,7 @@ on the drawing but could not be read.
 
 import re
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from functools import lru_cache
 from typing import Literal
 
@@ -30,9 +30,13 @@ from pydantic import BaseModel, Field
 
 from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.results import Detection, DetectionType
-from klave_engine.detection.text_patterns import TextPatternConfig
+from klave_engine.detection.text_patterns import (
+    FOOTING_MARK_PREFIXES,
+    PILE_MARK_PREFIXES,
+    TextPatternConfig,
+)
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
-from klave_engine.estructura._armado_texto import normalizar
+from klave_engine.estructura._armado_texto import normalizar, objeto_ajeno
 from klave_engine.estructura.armado import (
     FAMILIAS_CON_PARRILLA,
     Armado,
@@ -57,9 +61,12 @@ from klave_engine.estructura.marcas import (
     con_guion,
     es_rango,
     extremos_de_rango,
+    forma_de_marca,
     leer_marcas,
     marca_en_rango,
     marca_normalizada,
+    marcas_de_ficha,
+    marcas_nombradas,
     titulos,
 )
 from klave_engine.geometry.bbox import (
@@ -296,7 +303,9 @@ def _read_section(
     8–400 cm), the avisos for what was not taken (a side out of range, a second
     different section) and whether the text has a section at all. The section
     keeps its written order (a beam's b×h, R75, R88); only a castillo's, a
-    columna's or a pilote's sides are sorted."""
+    columna's or a pilote's sides are sorted. A section in a clause about an
+    anchor, a plate, a bolt… («PLACA BASE 35X35») is that object's, not the
+    element's: it is reported, never taken (R98), and the field stays claimed."""
     blocked = [m.span() for m in _BLOCK_RE.finditer(text)]
     section: tuple[int, int] | None = None
     avisos: list[str] = []
@@ -305,6 +314,11 @@ def _read_section(
         if any(s <= m.start() < e for s, e in blocked):
             continue
         found = True
+        ajeno = objeto_ajeno(text, m.start(), m.end())
+        if ajeno is not None:
+            cita = text[ajeno[0] : ajeno[1]].strip()
+            avisos.append(f"«{cita}»: no es la sección del elemento: no se toma")
+            continue
         a, b = int(m.group(1)), int(m.group(2))
         leida = (min(a, b), max(a, b)) if family in FAMILIAS_QUE_SE_ORDENAN else (a, b)
         if not (_MIN_SIDE_CM <= a <= _MAX_SIDE_CM and _MIN_SIDE_CM <= b <= _MAX_SIDE_CM):
@@ -320,22 +334,30 @@ def _read_section(
 
 # What a fragment of a drawing text says (R76): a stirrup or grapa head before
 # «#», or a zoned spacing, is stirrups; a count before «#» is bars; a bare
-# «#n@s» or «@s» is a mesh in a family that has one, stirrups otherwise; a
-# length («L=8.00», «LONG. 8», «LONGITUD … 8 M») is the length.
+# «#n@s» is a mesh, whoever's it is (R95), and in a family without meshes it
+# may also be stirrups written without their head; a bare «@s» is a mesh's
+# spacing in a family that has one, stirrups otherwise; a length («L=8.00»,
+# «LONG. 8», «LONGITUD … 8 M») is the length.
 _CABEZA_DE_ESTRIBOS = re.compile(
     r"(?<![A-Z0-9#@.])(?:\(?\d{1,2}\)?\s*)?(?:EYG|E|G|EST|ESTR|ESTRIBOS?|GRAPAS?|LIGAS?)"
     r"(?:\s*[Y+/&,-]\s*(?:\d{1,2}\s*)?(?:E|G))?\.?\s*[#Ø]|(?:CENTRO|EXT)\.?\s*@",
 )
-_CUENTA_DE_VARILLAS = re.compile(
-    r"(?<![#@.\d])\d{1,2}\s*(?:VARILLAS|VARS?\.?|V)?\s*[#Ø]\s*\d(?!\d|\s*@)"
-    r"|(?<![A-Z0-9])(?:VARS?\.?|V)\s*\d{1,2}\s*[#Ø]\s*\d"
+# A bar group as the parser writes it (R87, R91, R93): a count, «-» or «)» after it, the word of
+# the bar («VARILLAS», «VARS.», «PZAS», «PIEZAS», «V») with or without «DEL», and «#n»; or the
+# word in front («V4#4», «VAR 4#4»).
+_CUENTA = (
+    r"(?<![#@.\d])\d{1,2}\s*(?:[-)]\s*)?"
+    r"(?:(?:VARILLAS|VARS?\.?|PZAS?\.?|PIEZAS|V)(?:\s+DEL?)?)?\s*[#Ø]\s*"
 )
+_CUENTA_DELANTE = r"(?<![A-Z0-9])(?:VARS?\.?|V)\s*\d{1,2}\s*[#Ø]\s*"
+_CUENTA_DE_VARILLAS = re.compile(rf"{_CUENTA}\d(?!\d|\s*@)|{_CUENTA_DELANTE}\d")
 # A stirrup set whole: its head, its bar and its spacings («E#3@1S», «2E#3EXT@10 CENTRO@20»).
 _JUEGO_DE_ESTRIBOS = re.compile(
     rf"(?:{_CABEZA_DE_ESTRIBOS.pattern})\s*\d*(?:\.\d+)?"
     r"(?:[\s|]*(?:(?:EXT\w*|CENTRO)\.?\s*)?@\s*\w+)*"
 )
 _SEPARACION = re.compile(r"[#Ø]\s*\d+(?:\.\d+)?\s*@|@\s*\d")
+_MALLA_EN_TEXTO = re.compile(r"[#Ø]\s*\d+(?:\.\d+)?\s*@\s*\d+(?:\.\d+)?")
 _LONGITUD = re.compile(
     r"\bL\s*=\s*\d|\bLONG\.?\s*=?\s*\d|\bLONGITUD\b[^|\n]*?\d+(?:[.,]\d+)?\s*(?:M|MTS?|METROS)\b"
 )
@@ -354,10 +376,7 @@ _CONSUMIDOS = (
     _BLOCK_RE,
     re.compile(r"(?<![\dxX×])\d{1,3}\s*[xX×]\s*\d{1,3}(?:\s*CMS?\.?)?"),
     _JUEGO_DE_ESTRIBOS,
-    re.compile(
-        r"(?<![#@.\d])\d{1,2}\s*(?:(?:VARILLAS|VARS?\.?|V)(?:\s+DEL?)?)?\s*[#Ø]\s*\d{1,2}(?:\.5)?"
-        r"|(?<![A-Z0-9])(?:VARS?\.?|V)\s*\d{1,2}\s*[#Ø]\s*\d{1,2}(?:\.5)?"
-    ),
+    re.compile(rf"{_CUENTA}\d{{1,2}}(?:\.5)?|{_CUENTA_DELANTE}\d{{1,2}}(?:\.5)?"),
     re.compile(r"[#Ø]\s*\d{1,2}(?:\.5)?\s*@\s*\d+(?:\.\d+)?(?:\s*CMS?\.?)?"),
     # A spacing, alone or after how many stirrups go at it («@20», «8@15,1@6»).
     re.compile(r"(?:(?<![#Ø.\d])\d{1,2}\s*)?@\s*\d+(?:\.\d+)?(?:\s*CMS?\.?)?"),
@@ -370,33 +389,65 @@ _CONSUMIDOS = (
 )
 
 
-def _sin_lo_reconocido(t: str) -> str:
-    """``t`` without its recognised fragments and its marks (whole tokens the
-    mark grammar reads, configured tags included)."""
+def _sin_lo_reconocido(t: str, marcas: Collection[str]) -> str:
+    """``t`` without its recognised fragments and without the marks the mark
+    grammar names in the whole text (``marcas``, in their one spelling,
+    ``forma_de_marca``). A token is never read alone (R96): «V 3» is a mark
+    only if the whole text names V-3; in «… LS V 3» it is three bars, a digit
+    nobody read. The named marks go first, so no fragment takes their digits
+    («T-2 E#3@1S»: the 2 is T-2's, not a count of stirrups); what is left of a
+    glued one after the fragments («K-7E» of «K-7E#3@20») goes after."""
+    config = TextPatternConfig()
+
+    def en_blanco(m: re.Match[str], ficha: str) -> str:
+        return " " * len(m.group(0)) if _nombrada(ficha, marcas, config) else m.group(0)
+
+    t = _ESPACIADA.sub(lambda m: en_blanco(m, f"{m[1]}-{m[2]}"), t)
+    t = _FICHA.sub(lambda m: en_blanco(m, m.group(0)), t)
     for patron in _CONSUMIDOS:
         t = patron.sub(" ", t)
-    # Las marcas, las que lee la gramática de marcas (R91: «T1-1», «K 7», «TL 1», «K-1-A»).
     t = _con_marcas_juntas(t)
-    config = TextPatternConfig()
     fichas = [f for f in re.split(r'[\s:;,()="]+', t) if f]
-    return " ".join(f for f in fichas if not leer_marcas(f, config).nombra)
+    return " ".join(f for f in fichas if not _nombrada(f, marcas, config))
+
+
+def _nombrada(ficha: str, marcas: Collection[str], config: TextPatternConfig) -> bool:
+    """Si la ficha es una de las marcas que nombra el texto entero, o varias de ellas unidas
+    («T-1+T-2», «K-1-K-3»): nunca se lee sola (R96)."""
+    ficha = ficha.rstrip(GUIONES + ".")
+    if forma_de_marca(ficha, config) in marcas:
+        return True
+    partes = marcas_de_ficha(ficha, config)
+    return bool(partes) and all(p in marcas for p in partes)
+
+
+# A mark written with a space («K 7», «TRABE T 1», «TL 1») and a token, as the residue sees them.
+_ESPACIADA = re.compile(r"(?<![A-Z0-9])([A-Z]{1,4})\s*-?\s+(\d{1,3}[A-Z]?)(?=$|[\s:;,()=\"])")
+_FICHA = re.compile(r'[^\s:;,()="]+')
 
 
 def _con_marcas_juntas(t: str) -> str:
-    """Las marcas escritas con espacio («K 7», «TRABE T 1», «TL 1») escritas juntas, para que la
-    gramática las reconozca como una ficha al buscar cifras sin reconocer."""
-    return re.sub(
-        r"(?<![A-Z0-9])([A-Z]{1,4})\s*-?\s+(\d{1,3}[A-Z]?)(?=$|[\s:;,()=\"])", r"\1-\2", t
-    )
+    """Las marcas escritas con espacio («K 7», «TRABE T 1», «TL 1») escritas juntas: una ficha que
+    se compara con las que nombra el texto entero."""
+    return _ESPACIADA.sub(r"\1-\2", t)
 
 
-def campos_de_fragmento(texto: str, family: str | None = None) -> list[Campo]:
+def campos_de_fragmento(
+    texto: str, family: str | None = None, marcas: Collection[str] | None = None
+) -> list[Campo]:
     """The fields a drawing text claims, by what its fragments show (R76): a
-    section, a stirrup head, a bar count, a spacing, a length. Only when every
-    digit of the text is in a fragment it recognises (a section, a bar group, a
-    stirrup set, a mesh, a spacing, a length, a mark, a note number) does it
-    claim just those fields (R86); otherwise it claims every field ``family``
-    can have (a castillo never has parrillas; without a family, every field)."""
+    section, a stirrup head, a bar count, a mesh, a spacing, a length. Only when
+    every digit of the text is in a fragment it recognises (a section, a bar
+    group, a stirrup set, a mesh, a spacing, a length, a mark the whole text
+    names, a note number) does it claim just those fields (R86); otherwise it
+    claims every field ``family`` can have (a castillo never has parrillas;
+    without a family, every field). A mesh claims parrillas even in a family
+    that has none (R95): the field is blocked and the text reported, never
+    moved to another field. ``marcas`` are the marks the whole text names
+    (``marcas_nombradas``); for a piece of a text (an aviso's quote), the
+    caller passes the whole text's (R96)."""
+    if marcas is None:
+        marcas = marcas_nombradas(texto, TextPatternConfig())
     t = normalizar(texto)[0]
     con_parrilla = family is None or family in FAMILIAS_CON_PARRILLA
     campos: list[Campo] = []
@@ -407,13 +458,19 @@ def campos_de_fragmento(texto: str, family: str | None = None) -> list[Campo]:
     if _CABEZA_DE_ESTRIBOS.search(t):
         campos.append("estribos")
     sin_cabeza = _JUEGO_DE_ESTRIBOS.sub(" ", t)
-    if _SEPARACION.search(sin_cabeza):
+    if _MALLA_EN_TEXTO.search(sin_cabeza):
+        # «#n@s» sin cabeza: una malla (R95). En una familia que no lleva mallas pueden ser
+        # también sus estribos escritos sin cabeza («K-1 15X15 4#3 #2@20»): reclama los dos.
+        campos.append("parrillas")
+        if family not in FAMILIAS_CON_PARRILLA:
+            campos.append("estribos")
+    if _SEPARACION.search(_MALLA_EN_TEXTO.sub(" ", sin_cabeza)):
         campos.append("parrillas" if family in FAMILIAS_CON_PARRILLA else "estribos")
         if family is None:
             campos.append("parrillas")
     if _LONGITUD.search(t):
         campos.append("longitud")
-    if re.search(r"\d", _sin_lo_reconocido(t)):
+    if re.search(r"\d", _sin_lo_reconocido(t, marcas)):
         # Algo con cifras que nadie reconoce: puede ser de cualquier campo de la familia.
         campos += ["seccion", "longitudinales", "estribos"]
         if con_parrilla:
@@ -423,28 +480,31 @@ def campos_de_fragmento(texto: str, family: str | None = None) -> list[Campo]:
     return [c for c in CAMPOS if c in campos]
 
 
+# The family of a mark by its prefix. The foundation prefixes are the detectors' own
+# (``text_patterns``, R95): every mark a detector places has its family (ZA-3 is a zapata).
+_FAMILIA_DE_PREFIJO: dict[str, str] = {
+    "K": "castillo",
+    "C": "columna",
+    "COL": "columna",
+    "T": "trabe",
+    "TB": "trabe",
+    "CT": "contratrabe",
+    "CTA": "contratrabe",
+    "D": "dala",
+    "DL": "dala",
+    "DAL": "dala",
+    "CE": "dala",
+    "CR": "cerramiento",
+    "MC": "muro_concreto",
+    **dict.fromkeys(FOOTING_MARK_PREFIXES, "zapata"),
+    **dict.fromkeys(PILE_MARK_PREFIXES, "pilote"),
+}
+
+
 def family_of_mark(mark: str) -> str:
     prefix = re.match(r"[A-Z]+", mark.upper())
     head = prefix.group(0) if prefix else ""
-    return {
-        "K": "castillo",
-        "C": "columna",
-        "COL": "columna",
-        "T": "trabe",
-        "TB": "trabe",
-        "CT": "contratrabe",
-        "CTA": "contratrabe",
-        "Z": "zapata",
-        "ZC": "zapata",
-        "ZCM": "zapata",
-        "D": "dala",
-        "DL": "dala",
-        "DAL": "dala",
-        "CE": "dala",
-        "CR": "cerramiento",
-        "MC": "muro_concreto",
-        "P": "pilote",
-    }.get(head, "elemento")
+    return _FAMILIA_DE_PREFIJO.get(head, "elemento")
 
 
 def _family_in_text(text: str) -> str | None:
@@ -490,11 +550,17 @@ def _reading(
     mesh = _render(texto_parrillas, armado, avisos)
     # What could not be read claims the fields its fragments show (R76); a residue with digits
     # nobody recognises claims every field the family can have, the section too (R86, R92).
+    # A quote is a piece of the text: its tokens are marks only if the whole text names them
+    # (R96), never read alone.
+    config = TextPatternConfig()
+    nombradas = set().union(*(marcas_nombradas(t, config) for t in textos))
+    if sin_marca is not None:
+        nombradas.add(forma_de_marca(sin_marca, config))
     sin_leer: set[Campo] = set()
     for aviso in armado.avisos:
         citas = re.findall(r"«([^»]*)»", aviso)
         for cita in citas or [aviso]:
-            sin_leer.update(campos_de_fragmento(cita, family))
+            sin_leer.update(campos_de_fragmento(cita, family, nombradas))
     campos: list[Campo] = []
     if has_section or "seccion" in sin_leer:
         campos.append("seccion")
@@ -607,7 +673,9 @@ def _parse_annotations(
     section, bars, a mesh or stirrups the parser reads (``lo_lee_una_nota``:
     the association reports the others as «sin lector»). Its mark comes from
     the one mark grammar (``leer_marcas``, R67), keyed as a label would be: a
-    mark inside a reference ("VER CORTE C-2") is not the note's; a note naming
+    mark inside a bare reference ("VER CORTE C-2") is not the note's; in a text
+    with armado, a title or a reference names its marks and the text is not
+    read («CORTE K-1 15X20 4#3»: a «sin_lector» rejection of K-1, R97); a note naming
     several marks («K-1 Y K-2 15X20 4#3», «K-1 A K-4 …», «K-1-K-3 …») is a
     «varias_marcas» rejection with the marks as written (R63); a note whose
     mark is glued to something («T2-20X40», «K-7E#3@20 15X20», «K-1-3 4#3») is
@@ -644,6 +712,19 @@ def _parse_annotations(
         if mark is not None:
             if not lee:
                 continue  # nombra su marca y nadie lo lee: «sin_lector» de la asociación
+            if lectura.titulo:
+                # R97: el título de un corte («CORTE K-1 15X20 4#3») o una referencia con armado
+                # nombra su marca, pero no se lee: es un rechazo con la marca que nombra.
+                rechazos.append(
+                    Rechazo(
+                        entidad_id=text.entity_id,
+                        texto=(text.text or "").strip(),
+                        hoja=hoja,
+                        motivo="sin_lector",
+                        marcas=lectura.piezas,
+                    )
+                )
+                continue
             family = family or family_of_mark(mark)
             specs.append(
                 ElementSpec(

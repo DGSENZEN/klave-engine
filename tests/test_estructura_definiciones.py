@@ -859,8 +859,12 @@ def test_a_text_that_names_another_mark_never_feeds_this_one(tmp_path, otro, con
     for campo in ("seccion_cm", "longitudinales"):
         assert _limpio(getattr(t11, campo))
     assert t11.estribos is None or not t11.estribos.ilegible
-    if con_ia and "E#3" in otro:
+    if con_ia and "E#3" in otro and not otro.startswith("CORTE"):
         assert t11.estribos is None and any("no se toma" in a for a in t11.avisos)
+    if con_ia and otro.startswith("CORTE"):
+        # R97: el título nombra T1-1 («unica»): T1-1 es una marca del plano, distinta de T-11
+        # (R84), y su texto no le dice nada a T-11: la IA de T-11 se toma.
+        assert t11.estribos is not None and t11.estribos.fuente == "ia"
 
 
 def test_a_title_of_a_longer_mark_never_feeds_the_shorter(tmp_path):
@@ -884,3 +888,52 @@ def test_an_unread_residue_claims_what_it_could_be(tmp_path, nota, campo):
     k1 = construir_definiciones(inv, C)[0]["K-1"]
     dato = getattr(k1, campo)
     assert dato.ilegible and [a.fuente for a in dato.alternativas] == ["ia"]
+
+
+@pytest.mark.parametrize(
+    "nota,marca,familia",
+    [
+        ("T-1 30X60 E#3@15 LS V 3", "T-1", "trabe"),
+        ("K-1 15X15 E#2@20 CON V 4", "K-1", "castillo"),
+        ("T-1 20X40 V 4 LS V 3 LI E#3@15", "T-1", "trabe"),  # rechazado: nombra T-1 y V-4
+    ],
+)
+def test_an_unread_bar_count_keeps_the_ai_bars_out(tmp_path, nota, marca, familia):
+    # R96: «V 3», «V 4» son varillas sin leer en el texto entero: las varillas son ilegibles.
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    merge_external_specs(inv, [_ia(marca, family=familia, rebar="6#6")], C)
+    d = construir_definiciones(inv, C)[0][marca].longitudinales
+    assert d.ilegible and d.fuente == "nota" and [a.fuente for a in d.alternativas] == ["ia"]
+
+
+def test_a_cut_title_of_two_marks_feeds_both(tmp_path):
+    # R97: «CORTE K-1 Y K-2 E#3@1S» nombra a K-1 y a K-2: los estribos de las dos son ilegibles
+    # (antes K-1, el del título, quedaba fuera y la IA lo llenaba).
+    inv = build_schedule_inventory(_notas(tmp_path, ["CORTE K-1 Y K-2 E#3@1S"]), frames=_frame())
+    merge_external_specs(inv, [_ia(m, stirrups="E#2@20") for m in ("K-1", "K-2")], C)
+    defs, _ = construir_definiciones(inv, C)
+    for m in ("K-1", "K-2"):
+        e = defs[m].estribos
+        assert e.ilegible and e.texto == "CORTE K-1 Y K-2 E#3@1S"
+
+
+def test_a_footing_mesh_is_never_the_ais(tmp_path):
+    # R95: ZA-3 es zapata: su malla es la del plano.
+    inv = build_schedule_inventory(_notas(tmp_path, ["ZA-3 120X150 #4@20"]), frames=_frame())
+    merge_external_specs(inv, [_ia("ZA-3", family="zapata", mesh="#5@15")], C)
+    za = construir_definiciones(inv, C)[0]["ZA-3"]
+    assert za.familia == "zapata" and za.parrillas.fuente == "nota"
+    assert [(p.numero, p.separacion_m) for p in za.parrillas.valor] == [("4", 0.2)]
+
+
+def test_anchor_bars_never_become_the_columns(tmp_path):
+    # R98: ni las varillas ni la sección de la placa son de C-1; la IA tampoco las llena.
+    inv = build_schedule_inventory(
+        _notas(tmp_path, ["C-1 PLACA BASE 35X35 CON ANCLAS 4 PZAS #6"]), frames=_frame()
+    )
+    merge_external_specs(inv, [_ia("C-1", family="columna", rebar="8#8", section_cm=(40, 40))], C)
+    c1 = construir_definiciones(inv, C)[0]["C-1"]
+    for campo in ("seccion_cm", "longitudinales"):
+        d = getattr(c1, campo)
+        assert d.ilegible and d.valor is None and [a.fuente for a in d.alternativas] == ["ia"]
+    assert any("no es armado del elemento" in a for a in c1.avisos)

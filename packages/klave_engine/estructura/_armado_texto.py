@@ -109,6 +109,34 @@ def _con_el_mismo_largo(m: re.Match[str], escrito: str) -> str:
     return escrito + " " * (len(m.group(0)) - len(escrito))
 
 
+# R98: lo que no es armado del elemento. Una cláusula que habla de anclas, anclajes, pernos,
+# tornillos, placas, taquetes o barrenos: sus varillas («PLACA BASE … CON ANCLAS 4 PZAS #6») y su
+# sección («PLACA BASE 35X35») son de ese objeto, no del elemento.
+OBJETO_AJENO_RE = re.compile(
+    r"(?<![A-Z])(?:ANCLA(?:S|JES?)?|PERNOS?|TORNILLOS?|PLACAS?|TAQUETES?|BARRENOS?)(?![A-Z])",
+    re.I,
+)
+# Lo que separa dos cláusulas: el salto de línea, «;» y la coma que no va entre dos cifras (la de
+# «8@15,1@6» o «2,50» no separa nada).
+_ENTRE_CLAUSULAS = re.compile(r"[|;\n]|,(?!\d)|(?<!\d),")
+
+
+def objeto_ajeno(texto: str, a: int, b: int) -> tuple[int, int] | None:
+    """Si la cláusula de ``texto[a:b]`` habla de un objeto que no es armado del elemento (R98,
+    ``OBJETO_AJENO_RE``): el tramo de ``texto[a:b]`` junto con la palabra de ese objeto (la última
+    antes de él, o si no la primera después), para citarlo; si no, ``None``."""
+    separadores = list(_ENTRE_CLAUSULAS.finditer(texto))
+    inicio = max((m.end() for m in separadores if m.end() <= a), default=0)
+    fin = min((m.start() for m in separadores if m.start() >= b), default=len(texto))
+    antes = [m for m in OBJETO_AJENO_RE.finditer(texto, inicio, a) if m.end() <= a]
+    if antes:
+        return antes[-1].start(), b
+    despues = [m for m in OBJETO_AJENO_RE.finditer(texto, b, fin)]
+    if despues:
+        return a, despues[0].end()
+    return None
+
+
 def traducciones(texto: str) -> list[tuple[int, int]]:
     """Dónde ``normalizar`` escribió un número de varilla en lugar de lo que dice el plano («No.
     3», «3/8"»), en las posiciones del texto normalizado: lo que se cite de ahí se cita entero,

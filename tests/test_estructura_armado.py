@@ -2146,3 +2146,48 @@ def test_a_bar_number_in_words_or_in_eighths_is_its_number(textos, familia, arma
 def test_a_bar_number_that_is_not_an_exact_eighth_is_reported(texto):
     a = parsear_armado([texto], "castillo")
     assert a.avisos and not [g for g in a.longitudinales if g.cantidad == 4]
+
+
+@pytest.mark.parametrize(
+    "texto,cita",
+    [
+        ("PLACA BASE 35X35 CON ANCLAS 4 PZAS #6", "ANCLAS 4 PZAS #6"),
+        ("ANCLAS 4 VARS #6", "ANCLAS 4 VARS #6"),
+        ("PLACA DE 30X30 CON 4#4", "PLACA DE 30X30 CON 4#4"),
+        ("BARRENOS PARA 4#4", "BARRENOS PARA 4#4"),
+        ("ANCLAJE 4#4", "ANCLAJE 4#4"),
+        ("PERNOS: 4#5", "PERNOS: 4#5"),
+        ("TORNILLOS 2#4", "TORNILLOS 2#4"),
+        ("TAQUETES 4#3", "TAQUETES 4#3"),
+        ('ANCLAS 4 VARS 3/4"', 'ANCLAS 4 VARS 3/4"'),  # la cita es lo escrito (R92)
+    ],
+)
+def test_bars_of_an_anchor_or_a_plate_are_reported(texto, cita):
+    # R98: unas varillas en una cláusula de anclas, pernos, placas… son de ese objeto: se avisan
+    # (antes, con la palabra delante, se leían como las de la columna).
+    a = parsear_armado([texto], "columna")
+    assert a.longitudinales == []
+    assert f"«{cita}»: no es armado del elemento" in a.avisos
+
+
+@pytest.mark.parametrize(
+    "texto", ["4#6 PARA ANCLAJE", "4 PERNOS #6", "4#5 CON TORNILLOS", "4#3 EN TAQUETES"]
+)
+def test_bars_before_an_anchor_word_were_already_reported(texto):
+    a = parsear_armado([texto], "columna")
+    assert a.longitudinales == [] and a.avisos
+
+
+@pytest.mark.parametrize(
+    "textos,longitudinales",
+    [
+        (["8#6 E#3@20; ANCLAS 4#6"], "8#6"),  # otra cláusula: las de la columna se leen
+        (["8#6 E#3@20, ANCLAS 4#6"], "8#6"),
+        (["8#6 E#3@20", "ANCLAS 4#6"], "8#6"),  # otro renglón
+        (["4#6"], "4#6"),  # sin objeto
+        (["4#6 E#3@20 EN TODA LA ALTURA"], "4#6"),
+    ],
+)
+def test_only_the_anchor_clause_is_reported(textos, longitudinales):
+    a = parsear_armado(textos, "columna")
+    assert texto_longitudinal(a) == longitudinales
