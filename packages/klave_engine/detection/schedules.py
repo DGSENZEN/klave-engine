@@ -3,69 +3,102 @@ its informal cousins.
 
 A structural sheet says what a mark *is* in one of three places, in
 descending authority: a text table (MARCA | SECCIÓN | ARMADO | ESTRIBOS),
-a detail where the mark sits next to "15x20  4#3  E#2@20", or a general
-note ("ARMEX 15X30"). This module reads all three into one inventory keyed
-by mark — with the source recorded — and stamps the matching detections
-with their section so the takeoff uses the sheet's own numbers instead of
-a typical value.
+a detail where the mark sits under its stack of armado lines ("8#6" /
+"2E#3EXT@10" / "CENTRO@20"), or a general note ("ARMEX 15X30"). This module
+reads all of them into one inventory keyed by mark and stamps the matching
+detections with their section so the takeoff uses the sheet's own numbers
+instead of a typical value.
+
+Every reading keeps its source: the sheet it was read on (``hoja``), how
+(``metodo``), the entities it came from, which fields had text and what
+could not be read (``avisos``). Which text belongs to which mark is decided
+by ``estructura.asociacion`` (stacks and cuadro rows), and every armado text
+is read by the lossless parser of ``estructura.armado``: «EYG#3@15» is a
+stirrup and a grapa, «4#5+2#4» is two groups, and what cannot be read is
+said, never dropped. Readings from different sheets are kept apart (Task 8
+compares them), and an AI reading never fills a field whose text exists
+on the drawing but could not be read.
 """
 
 import re
-import statistics
 from collections import Counter
 from collections.abc import Callable
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.results import Detection, DetectionType
 from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
-from klave_engine.estructura.asociacion import marca_en_texto
+from klave_engine.estructura.armado import (
+    Armado,
+    parsear_armado,
+    texto_estribos,
+    texto_longitudinal,
+    texto_parrillas,
+)
+from klave_engine.estructura.asociacion import (
+    ARMADO_RE,
+    Rechazo,
+    asociar,
+    hoja_de,
+    lo_lee_una_nota,
+    marca_en_texto,
+    sin_referencias,
+)
 from klave_engine.geometry.bbox import (
     BBox,
     bbox_center,
     bbox_contains_point,
     bbox_height,
-    point_to_bbox_distance,
 )
 
 _SECTION_RE = re.compile(r"(?<![\dxX×])(\d{1,3})\s*[xX×]\s*(\d{1,3})(?![\dxX×])")
 _BLOCK_RE = re.compile(r"\d{1,3}\s*[xX×]\s*\d{1,3}\s*[xX×]\s*\d{1,3}")
-_REBAR_RE = re.compile(r"(\d{1,2})\s*(?:V|VAR|VARS|VARILLAS)?\s*#\s*(\d)(?!\s*@)", re.I)
-_STIRRUP_RE = re.compile(r"E\s*#?\s*(\d)\s*@\s*(\d{1,3})", re.I)
-_MESH_RE = re.compile(r"(?<![E\d])#\s*(\d)\s*@\s*(\d{1,3})", re.I)
 
 _FAMILY_KEYWORDS: list[tuple[str, re.Pattern[str]]] = [
-    ("dala", re.compile(r"\bDALA|\bCADENA\b", re.I)),
+    ("dala", re.compile(r"\bDALA|\bCADENAS?\b", re.I)),
     ("contratrabe", re.compile(r"\bCONTRATRABE", re.I)),
-    ("trabe", re.compile(r"\bTRABE|\bVIGA\b", re.I)),
+    ("trabe", re.compile(r"\bTRABE|\bVIGAS?\b", re.I)),
     ("castillo", re.compile(r"\bCASTILLO|\bARMEX\b", re.I)),
     ("columna", re.compile(r"\bCOLUMNA", re.I)),
     ("zapata", re.compile(r"\bZAPATA", re.I)),
     ("muro", re.compile(r"\bMURO", re.I)),
 ]
-_HEADER_KEYWORDS = re.compile(
-    r"MARCA|CLAVE|TIPO|CASTILLO|COLUMNA|SECC|DIMENS|ARMADO|REFUERZO|VARILLA|ESTRIBO", re.I
-)
 _MIN_SIDE_CM, _MAX_SIDE_CM = 8, 400  # up to a 4 m zapata; a castillo starts at 8 cm
 _SOURCE_RANK = {"cuadro": 3, "detalle": 2, "nota": 1, "ia": 0}
 
 Source = Literal["cuadro", "detalle", "nota", "ia"]
+# How a reading was made: a cuadro row, a mark's stack of armado lines, the
+# cotas or the drawn section of a detail, a section callout, a note, the AI.
+Metodo = Literal["fila", "pila", "cotas", "geometria", "llamada", "nota", "ia"]
+Campo = Literal["seccion", "longitudinales", "estribos", "parrillas"]
+CAMPOS: tuple[Campo, ...] = ("seccion", "longitudinales", "estribos", "parrillas")
 
 
 class ElementSpec(BaseModel):
     mark: str  # "K-1", or the family name for family-level notes
     family: str
     section_cm: tuple[int, int] | None = None
-    rebar: str | None = None  # longitudinal, e.g. "4#3"
-    stirrups: str | None = None  # e.g. "#2@20"
-    mesh: str | None = None  # parrilla / malla, e.g. "#4@20" (no E)
+    rebar: str | None = None  # longitudinal, canonical: "4#5+2#4" (every group)
+    stirrups: str | None = None  # canonical: "EYG#3@15", "2E#3 EXT@10 CENTRO@20"
+    mesh: str | None = None  # parrillas, canonical: "LS #4@20 A/S LI #4@20 A/S"
     # Declared length in m (pilotes): from the notes, the cuadro or the AI.
     length_m: float | None = None
     source: Source
     source_text: str
     confidence: float
+    # The reading itself, with its source (no confidence of its own):
+    armado: Armado | None = None  # the parsed armado (rebar/stirrups/mesh are its renders)
+    hoja: str = ""  # the sheet (frame code) it was read on; its file without frames
+    metodo: Metodo = "nota"
+    # The fields whose text the drawing has for this reading, read or not: an
+    # AI reading never fills one of them (a text that failed to parse is an
+    # aviso, not an empty field).
+    campos_con_texto: list[Campo] = Field(default_factory=list)
+    entidades: list[str] = Field(default_factory=list)  # the texts it was read from
+    avisos: list[str] = Field(default_factory=list)  # what could not be read, disagreements
 
 
 class ScheduleInventory(BaseModel):
@@ -82,6 +115,9 @@ class ScheduleInventory(BaseModel):
     # Text entities that are the marks of a cuadro drawn on a planta sheet:
     # they name a type, they are not an element to count.
     cuadro_mark_entities: list[str] = Field(default_factory=list)
+    # Armado texts the association could not give to a mark (ambiguous, unowned,
+    # another family's…): reported, never read in silence.
+    rechazos: list[Rechazo] = Field(default_factory=list)
 
 
 _FC_FAMILIES: list[tuple[str, re.Pattern[str]]] = [
@@ -148,41 +184,52 @@ def parse_pile_length(texts: list[str]) -> float | None:
 
 # ------------------------------------------------------------------ parsing
 
-def _parse_section(text: str) -> tuple[int, int] | None:
+
+def _read_section(text: str) -> tuple[tuple[int, int] | None, list[str], bool]:
+    """The section written in ``text`` (the first NNxNN with both sides in
+    8–400 cm), the avisos for what was not taken (a side out of range, a second
+    different section) and whether the text has a section at all."""
     blocked = [m.span() for m in _BLOCK_RE.finditer(text)]
+    section: tuple[int, int] | None = None
+    avisos: list[str] = []
+    found = False
     for m in _SECTION_RE.finditer(text):
         if any(s <= m.start() < e for s, e in blocked):
             continue
+        found = True
         a, b = int(m.group(1)), int(m.group(2))
-        if _MIN_SIDE_CM <= a <= _MAX_SIDE_CM and _MIN_SIDE_CM <= b <= _MAX_SIDE_CM:
-            return (min(a, b), max(a, b))
-    return None
-
-
-def _parse_rebar(text: str) -> tuple[str | None, str | None, str | None]:
-    stirrups = None
-    stirrup_match = _STIRRUP_RE.search(text)
-    if stirrup_match:
-        stirrups = f"#{stirrup_match.group(1)}@{stirrup_match.group(2)}"
-        text = text[: stirrup_match.start()] + text[stirrup_match.end():]
-    mesh = None
-    mesh_match = _MESH_RE.search(text)
-    if mesh_match:
-        mesh = f"#{mesh_match.group(1)}@{mesh_match.group(2)}"
-        text = text[: mesh_match.start()] + text[mesh_match.end():]
-    rebar_match = _REBAR_RE.search(text)
-    rebar = f"{int(rebar_match.group(1))}#{rebar_match.group(2)}" if rebar_match else None
-    return rebar, stirrups, mesh
+        if not (_MIN_SIDE_CM <= a <= _MAX_SIDE_CM and _MIN_SIDE_CM <= b <= _MAX_SIDE_CM):
+            avisos.append(f"sección fuera de rango: «{m.group(0)}»: no se toma")
+        elif section is None:
+            section = (min(a, b), max(a, b))
+        elif (min(a, b), max(a, b)) != section:
+            avisos.append(
+                f"otra sección en el mismo texto: «{m.group(0)}»; se toma {section[0]}x{section[1]}"
+            )
+    return section, avisos, found
 
 
 def family_of_mark(mark: str) -> str:
     prefix = re.match(r"[A-Z]+", mark.upper())
     head = prefix.group(0) if prefix else ""
     return {
-        "K": "castillo", "C": "columna", "COL": "columna", "T": "trabe", "TB": "trabe",
-        "CT": "contratrabe", "CTA": "contratrabe", "Z": "zapata", "ZC": "zapata",
-        "ZCM": "zapata", "D": "dala", "DL": "dala", "DAL": "dala", "CE": "dala",
-        "CR": "cerramiento", "MC": "muro_concreto", "P": "pilote",
+        "K": "castillo",
+        "C": "columna",
+        "COL": "columna",
+        "T": "trabe",
+        "TB": "trabe",
+        "CT": "contratrabe",
+        "CTA": "contratrabe",
+        "Z": "zapata",
+        "ZC": "zapata",
+        "ZCM": "zapata",
+        "D": "dala",
+        "DL": "dala",
+        "DAL": "dala",
+        "CE": "dala",
+        "CR": "cerramiento",
+        "MC": "muro_concreto",
+        "P": "pilote",
     }.get(head, "elemento")
 
 
@@ -193,107 +240,93 @@ def _family_in_text(text: str) -> str | None:
     return None
 
 
-def _spec_from_text(
-    text: str,
-) -> tuple[tuple[int, int] | None, str | None, str | None, str | None]:
-    return _parse_section(text), *_parse_rebar(text)
+def _render(render: Callable[[Armado], str], armado: Armado, avisos: list[str]) -> str | None:
+    try:
+        return render(armado) or None
+    except ValueError as error:  # a parsed armado always renders; say so if it ever does not
+        avisos.append(f"no se pudo escribir el armado leído: {error}")
+        return None
 
 
-# -------------------------------------------------------------------- tables
+def _reading(textos: list[str], family: str, section_of_the_element: bool = True) -> dict:
+    """One reading of an armado text (one string per line) for an element of
+    ``family``: its section, its parsed armado and the canonical renders, the
+    fields whose text is there and every aviso. Text that could not be read
+    leaves every armado field marked as present: nobody can tell which one it
+    was meant for, so nobody fills them from elsewhere."""
+    section, avisos, has_section = _read_section(" | ".join(textos))  # never across lines
+    if not section_of_the_element:
+        section, avisos, has_section = None, [], False
+    armado = parsear_armado(textos, family)
+    avisos = avisos + list(armado.avisos)
+    rebar = _render(texto_longitudinal, armado, avisos)
+    stirrups = _render(texto_estribos, armado, avisos)
+    mesh = _render(texto_parrillas, armado, avisos)
+    unread = bool(armado.avisos)
+    campos: list[Campo] = []
+    if has_section:
+        campos.append("seccion")
+    if armado.longitudinales or unread:
+        campos.append("longitudinales")
+    if armado.estribos or unread:
+        campos.append("estribos")
+    if armado.parrillas or unread:
+        campos.append("parrillas")
+    return {
+        "section_cm": section,
+        "rebar": rebar,
+        "stirrups": stirrups,
+        "mesh": mesh,
+        "armado": armado,
+        "campos_con_texto": campos,
+        "avisos": avisos,
+    }
 
-def _rows(texts: list[NormalizedEntity]) -> list[list[NormalizedEntity]]:
-    heights = [bbox_height(t.bbox) for t in texts if bbox_height(t.bbox) > 0]
-    if not heights:
-        return []
-    tolerance = statistics.median(heights) * 0.6
-    ordered = sorted(texts, key=lambda t: -bbox_center(t.bbox)[1])
-    rows: list[list[NormalizedEntity]] = []
-    for text in ordered:
-        y = bbox_center(text.bbox)[1]
-        if rows and abs(bbox_center(rows[-1][0].bbox)[1] - y) <= tolerance:
-            rows[-1].append(text)
-        else:
-            rows.append([text])
-    for row in rows:
-        row.sort(key=lambda t: bbox_center(t.bbox)[0])
-    return rows
+
+def _has_something(reading: dict, content: str) -> bool:
+    """A family note is a reading when it gave a section or armado, or when an
+    armado-shaped text in it could not be read (a note about holes whose only
+    numbers are its own numbering is not an armado reading)."""
+    if reading["section_cm"] is not None or not reading["armado"].vacio():
+        return True
+    return bool(reading["avisos"]) and ARMADO_RE.search(content) is not None
 
 
-def _parse_tables(
-    texts: list[NormalizedEntity], config: TextPatternConfig
-) -> tuple[list[ElementSpec], int]:
-    rows = _rows(texts)
+# ------------------------------------------- cuadro rows, stacks and notes
+
+
+def _read_associations(
+    entities: list[NormalizedEntity],
+    frames: list[SheetFrame],
+    config: TextPatternConfig,
+) -> tuple[list[ElementSpec], list[str], list[Rechazo], int]:
+    """The cuadro rows and the stacks ``estructura.asociacion`` gives each
+    mark, read through the parser: (specs, the labels that define a mark,
+    the rejections, how many sheets have cuadro rows). A label that owns a
+    stack or a row is a definition, never a placement."""
+    asociaciones, rechazos = asociar(entities, frames, config)
     specs: list[ElementSpec] = []
-    tables = 0
-    index = 0
-    while index < len(rows):
-        header = rows[index]
-        keyword_cells = [
-            cell for cell in header if cell.text and _HEADER_KEYWORDS.search(cell.text)
-        ]
-        # A header is a row of short column titles, not a line of notes.
-        short = all(len((cell.text or "").split()) <= 3 for cell in header)
-        if len(header) < 3 or len(keyword_cells) < 2 or not short:
-            index += 1
-            continue
-        columns = [(bbox_center(cell.bbox)[0], (cell.text or "").upper()) for cell in header]
-        xs = sorted(x for x, _t in columns)
-        gaps = [b - a for a, b in zip(xs, xs[1:], strict=False)]
-        spacing = statistics.median(gaps) if gaps else 1.0
-        max_offset = 0.5 * spacing
-        row_height = statistics.median(bbox_height(c.bbox) for c in header) or 1.0
-        table_rows = 0
-        cursor = index + 1
-        previous_y = bbox_center(header[0].bbox)[1]
-        while cursor < len(rows):
-            row = rows[cursor]
-            y = bbox_center(row[0].bbox)[1]
-            if previous_y - y > row_height * 4:
-                break
-            previous_y = y
-            cells: dict[str, str] = {}
-            for cell in row:
-                x = bbox_center(cell.bbox)[0]
-                col_x, title = min(columns, key=lambda col: abs(col[0] - x))
-                if abs(col_x - x) > max_offset:
-                    continue  # not under a header column: not this table
-                cells[title] = ((cells.get(title, "") + " " + (cell.text or "")).strip())
-            if not cells:
-                break
-            mark = None
-            for title, value in cells.items():
-                if re.search(r"MARCA|CLAVE|TIPO|CASTILLO|COLUMNA|TRABE", title):
-                    mark = marca_en_texto(value, config)
-                    break
-            if mark is None:
-                for value in cells.values():
-                    mark = marca_en_texto(value, config)
-                    if mark:
-                        break
-            if mark is None:
-                break
-            joined = " ".join(cells.values())
-            section, rebar, stirrups, mesh = _spec_from_text(joined)
-            # A schedule row states a section, or at least bars and stirrups.
-            if section is None and not (rebar and stirrups) and mesh is None:
-                cursor += 1
-                continue
-            table_rows += 1
-            specs.append(
-                ElementSpec(
-                    mark=mark, family=family_of_mark(mark), section_cm=section,
-                    rebar=rebar, stirrups=stirrups, mesh=mesh, source="cuadro",
-                    source_text=joined[:120], confidence=0.95,
-                )
+    labels: list[str] = []
+    for a in asociaciones:
+        family = family_of_mark(a.marca)
+        row = a.via == "fila"
+        specs.append(
+            ElementSpec(
+                mark=a.marca,
+                family=family,
+                source="cuadro" if row else "detalle",
+                metodo=a.via,
+                hoja=a.hoja,
+                entidades=list(a.entidades),
+                source_text=f"{a.marca} · {' / '.join(a.textos)}",
+                confidence=0.95 if row else 0.75,
+                **_reading(a.textos, family),
             )
-            cursor += 1
-        if table_rows:
-            tables += 1
-        index = max(cursor, index + 1)
-    return specs, tables
+        )
+        labels.append(a.etiqueta_id)
+    tables = len({a.hoja for a in asociaciones if a.via == "fila"})
+    return specs, labels, rechazos, tables
 
-
-# ------------------------------------------------------------- details/notes
 
 _NOT_A_SECTION = re.compile(r"HUECO|PASO|ABERTURA|HASTA|M[AÁ]X|PERFORACI|PLACA|ANCLA", re.I)
 
@@ -304,69 +337,58 @@ def _section_is_the_elements(content: str) -> bool:
     match = _SECTION_RE.search(content)
     if match is None:
         return False
-    before = content[max(0, match.start() - 40):match.start()]
+    before = content[max(0, match.start() - 40) : match.start()]
     return not _NOT_A_SECTION.search(before)
 
 
 def _parse_annotations(
-    texts: list[NormalizedEntity], config: TextPatternConfig
+    texts: list[NormalizedEntity],
+    config: TextPatternConfig,
+    hoja: Callable[[NormalizedEntity], str],
 ) -> list[ElementSpec]:
+    """Notes: a text that names its mark ("K-1 15x20 4#3 E#2@20") or its
+    family ("DALA 15x30 4#3,E#2@20", "ARMEX 15X30"), read when it has a
+    section, bars or a mesh (``lo_lee_una_nota``: the association reports the
+    others as «sin lector»). A mark inside a reference ("VER CORTE C-2") is
+    not the note's. Bare armado lines are the association's, not a note's."""
     specs: list[ElementSpec] = []
-    spec_texts = []
     for text in texts:
         content = " ".join((text.text or "").split())
-        if not content:
+        if not content or not lo_lee_una_nota(content):
             continue
-        section, rebar, stirrups, mesh = _spec_from_text(content)
-        if section is None and rebar is None and mesh is None:
-            continue
-        mark = marca_en_texto(content, config)
+        mark = marca_en_texto(sin_referencias(content), config)
         family = _family_in_text(content)
         if mark is not None:
+            family = family or family_of_mark(mark)
             specs.append(
                 ElementSpec(
-                    mark=mark, family=family or family_of_mark(mark), section_cm=section,
-                    rebar=rebar, stirrups=stirrups, mesh=mesh, source="nota",
-                    source_text=content[:120], confidence=0.8,
+                    mark=mark,
+                    family=family,
+                    source="nota",
+                    metodo="nota",
+                    hoja=hoja(text),
+                    entidades=[text.entity_id],
+                    source_text=content[:120],
+                    confidence=0.8,
+                    **_reading([content], family),
                 )
             )
         elif family is not None:
-            if section is not None and not _section_is_the_elements(content):
-                section = None  # "HUECOS DE HASTA 15X20 … CONTRATRABE": a hole, not a section
-            if section is None and rebar is None and mesh is None:
+            # "HUECOS DE HASTA 15X20 … CONTRATRABE": a hole, not the element's section.
+            reading = _reading([content], family, _section_is_the_elements(content))
+            if not _has_something(reading, content):
                 continue
             specs.append(
                 ElementSpec(
-                    mark=family.upper(), family=family, section_cm=section, rebar=rebar,
-                    stirrups=stirrups, mesh=mesh, source="nota", source_text=content[:120],
+                    mark=family.upper(),
+                    family=family,
+                    source="nota",
+                    metodo="nota",
+                    hoja=hoja(text),
+                    entidades=[text.entity_id],
+                    source_text=content[:120],
                     confidence=0.6,
-                )
-            )
-        else:
-            spec_texts.append((text, section, rebar, stirrups, mesh, content))
-
-    # Bare marks next to a bare spec: the detail drawing convention.
-    for text in texts:
-        content = (text.text or "").strip()
-        mark = marca_en_texto(content, config)
-        if mark is None or len(content) > 8:
-            continue
-        height = bbox_height(text.bbox) or 1.0
-        radius = height * 6
-        cx, cy = bbox_center(text.bbox)
-        best = None
-        for spec_text, section, rebar, stirrups, mesh, source_text in spec_texts:
-            # Distance to the annotation's box: a long spec line starts next
-            # to the mark even though its centre sits far to the right.
-            distance = point_to_bbox_distance((cx, cy), spec_text.bbox)
-            if distance <= radius and (best is None or distance < best[0]):
-                best = (distance, section, rebar, stirrups, mesh, source_text)
-        if best is not None:
-            specs.append(
-                ElementSpec(
-                    mark=mark, family=family_of_mark(mark), section_cm=best[1],
-                    rebar=best[2], stirrups=best[3], mesh=best[4], source="detalle",
-                    source_text=f"{content} · {best[5]}"[:120], confidence=0.75,
+                    **reading,
                 )
             )
     return specs
@@ -386,14 +408,15 @@ def _sections_from_detail_geometry(
     config: TextPatternConfig,
     unit_to_m: float,
     detail_boxes: list[BBox],
+    hoja: Callable[[NormalizedEntity], str],
 ) -> list[ElementSpec]:
     """The detail convention without a cuadro: the mark sits right above a
     section drawn at real size (30×80 cm rectangle with its cotas). Only
     inside detail frames — a mark in a plan view has castillos beside it."""
     closed = [
-        e for e in entities
-        if e.entity_type == EntityType.polyline and e.is_closed
-        and len(e.points or []) in (4, 5)
+        e
+        for e in entities
+        if e.entity_type == EntityType.polyline and e.is_closed and len(e.points or []) in (4, 5)
     ]
     rects: list[tuple[NormalizedEntity, float, float]] = []
     for e in closed:
@@ -408,9 +431,12 @@ def _sections_from_detail_geometry(
         x0, y0, x1, y1 = e.bbox
         lo, hi = _STIRRUP_OFFSET_M[0] / unit_to_m, _STIRRUP_OFFSET_M[1] / unit_to_m
         has_stirrup = any(
-            lo <= o.bbox[0] - x0 <= hi and lo <= o.bbox[1] - y0 <= hi
-            and lo <= x1 - o.bbox[2] <= hi and lo <= y1 - o.bbox[3] <= hi
-            for o in closed if o is not e
+            lo <= o.bbox[0] - x0 <= hi
+            and lo <= o.bbox[1] - y0 <= hi
+            and lo <= x1 - o.bbox[2] <= hi
+            and lo <= y1 - o.bbox[3] <= hi
+            for o in closed
+            if o is not e
         )
         if has_stirrup:
             rects.append((e, w, h))
@@ -445,8 +471,16 @@ def _sections_from_detail_geometry(
         a, b = round(best[1] * 100), round(best[2] * 100)
         specs.append(
             ElementSpec(
-                mark=mark, family=family_of_mark(mark), section_cm=(a, b), source="detalle",
-                source_text=f"{content} · sección dibujada {a}x{b} cm", confidence=0.7,
+                mark=mark,
+                family=family_of_mark(mark),
+                section_cm=(a, b),
+                source="detalle",
+                metodo="geometria",
+                hoja=hoja(text),
+                entidades=[text.entity_id],
+                campos_con_texto=["seccion"],
+                source_text=f"{content} · sección dibujada {a}x{b} cm",
+                confidence=0.7,
             )
         )
     return specs
@@ -457,7 +491,10 @@ _BARE_SECTION_RE = re.compile(r"^(\d{2,3})\s*[xX×]\s*(\d{2,3})$")
 
 
 def _sections_from_section_callouts(
-    texts: list[NormalizedEntity], config: TextPatternConfig, detail_boxes: list[BBox]
+    texts: list[NormalizedEntity],
+    config: TextPatternConfig,
+    detail_boxes: list[BBox],
+    hoja: Callable[[NormalizedEntity], str],
 ) -> list[ElementSpec]:
     """Elevation details: the mark titles the drawing at its top-left and the
     section cuts are called out along it as "SECCIÓN 1" over "30X80". A bare
@@ -485,8 +522,11 @@ def _sections_from_section_callouts(
             continue
         box = box_of(t)
         if box is not None:
-            marks.append((mark, bbox_center(t.bbox), box))
-    found: dict[str, list[tuple[int, tuple[int, int]]]] = {}
+            marks.append((mark, bbox_center(t.bbox), box, t))
+    # Per mark and sheet: the cuts of one sheet are one reading, never mixed with another's.
+    found: dict[tuple[str, str], list[tuple[int, tuple[int, int]]]] = {}
+    title_of: dict[tuple[str, str], NormalizedEntity] = {}
+    cut_texts: dict[tuple[str, str], list[str]] = {}
     for t in texts:
         content = " ".join((t.text or "").split())
         match = _BARE_SECTION_RE.match(content)
@@ -503,8 +543,8 @@ def _sections_from_section_callouts(
         )
         if label[0] is None or label[0] > 8 * height:
             continue  # a bare NNxNN without a SECCIÓN label is something else
-        best: tuple[float, str] | None = None
-        for mark, (mx, my), mbox in marks:
+        best: tuple[float, str, NormalizedEntity] | None = None
+        for mark, (mx, my), mbox, title in marks:
             if mbox != box:
                 continue
             dx, dy = cx - mx, my - cy
@@ -512,21 +552,39 @@ def _sections_from_section_callouts(
                 continue
             score = dx + 2 * dy
             if best is None or score < best[0]:
-                best = (score, mark)
+                best = (score, mark, title)
         if best is None:
             continue
-        found.setdefault(best[1], []).append(
+        key = (best[1], hoja(best[2]))
+        found.setdefault(key, []).append(
             (int(label[1]), (int(match.group(1)), int(match.group(2))))
         )
+        title_of.setdefault(key, best[2])
+        cut_texts.setdefault(key, []).append(t.entity_id)
     specs: list[ElementSpec] = []
-    for mark, cuts in found.items():
+    for (mark, sheet), cuts in found.items():
         cuts.sort()
         largest = max(cuts, key=lambda c: c[1][0] * c[1][1])[1]
         listed = ", ".join(f"sección {n} {a}x{b}" for n, (a, b) in cuts)
+        aviso = (
+            [f"varios cortes con secciones distintas ({listed}): se toma la mayor"]
+            if len({c[1] for c in cuts}) > 1
+            else []
+        )
+        title = title_of[(mark, sheet)]
         specs.append(
             ElementSpec(
-                mark=mark, family=family_of_mark(mark), section_cm=largest, source="detalle",
-                source_text=f"{mark} · {listed} (se toma la mayor)"[:120], confidence=0.65,
+                mark=mark,
+                family=family_of_mark(mark),
+                section_cm=largest,
+                source="detalle",
+                metodo="llamada",
+                hoja=sheet,
+                entidades=[title.entity_id, *cut_texts[(mark, sheet)]],
+                campos_con_texto=["seccion"],
+                avisos=aviso,
+                source_text=f"{mark} · {listed} (se toma la mayor)"[:120],
+                confidence=0.65,
             )
         )
     return specs
@@ -561,6 +619,7 @@ def _sections_from_detail_cotas(
     detail_boxes: list[BBox],
     widths_by_family: dict[str, int],
     cuadro_marks: list[str] | None = None,
+    hoja: Callable[[NormalizedEntity], str] = lambda e: e.source_file,
 ) -> list[ElementSpec]:
     """The section drawing beside a mark in a detail carries its cotas: a
     vertical one is the peralte, a horizontal one the width. With only the
@@ -586,9 +645,15 @@ def _sections_from_detail_cotas(
             # A plan tag never has that; its neighbours are castillos.
             armado_radius = 0.8 / unit_to_m
             has_armado = any(
-                t.is_textual and t.text and _ARMADO_TEXT_RE.search(t.text)
-                and ((bbox_center(t.bbox)[0] - center[0]) ** 2
-                     + (bbox_center(t.bbox)[1] - center[1]) ** 2) ** 0.5 <= armado_radius
+                t.is_textual
+                and t.text
+                and _ARMADO_TEXT_RE.search(t.text)
+                and (
+                    (bbox_center(t.bbox)[0] - center[0]) ** 2
+                    + (bbox_center(t.bbox)[1] - center[1]) ** 2
+                )
+                ** 0.5
+                <= armado_radius
                 for t in entities
             )
             if not has_armado:
@@ -612,8 +677,10 @@ def _sections_from_detail_cotas(
             elif not vertical and _COTA_WIDTH_CM[0] <= value <= _COTA_WIDTH_CM[1]:
                 if width is None or distance < width[0]:
                     width = (distance, value)
+        avisos: list[str] = []
         if depth is None and width is not None and not in_detail:
             depth = width  # a square castillo drawn with one cota
+            avisos.append(f"una sola cota ({round(width[1])} cm): se supone sección cuadrada")
         if depth is None:
             continue
         family = family_of_mark(mark)
@@ -627,32 +694,103 @@ def _sections_from_detail_cotas(
                 f"{content} · peralte {section[1]} acotado en el detalle; ancho "
                 f"{section[0]} como las demás secciones de {family} del plano"
             )
+            avisos.append(
+                f"ancho {section[0]} supuesto: el de las demás secciones de {family} del plano"
+            )
             confidence = 0.55
         else:
             continue
         specs.append(
             ElementSpec(
-                mark=mark, family=family, section_cm=section, source="detalle",
-                source_text=note[:120], confidence=confidence,
+                mark=mark,
+                family=family,
+                section_cm=section,
+                source="detalle",
+                metodo="cotas",
+                hoja=hoja(text),
+                entidades=[text.entity_id],
+                campos_con_texto=["seccion"],
+                avisos=avisos,
+                source_text=note[:120],
+                confidence=confidence,
             )
         )
     return specs
 
 
+# The armado fields of a spec: the field name, its canonical string and its list in ``Armado``.
+_ARMADO_FIELDS: tuple[tuple[Campo, str, str], ...] = (
+    ("longitudinales", "rebar", "longitudinales"),
+    ("estribos", "stirrups", "estribos"),
+    ("parrillas", "mesh", "parrillas"),
+)
+
+
+def _union(*lists: list) -> list:
+    return list(dict.fromkeys(item for items in lists for item in items))
+
+
 def _merge_fields(chosen: ElementSpec, others: list[ElementSpec]) -> ElementSpec:
-    """Same-rank specs complete each other: the drawn section plus the
-    armado written beside the mark."""
-    merged = chosen.model_copy()
+    """Same-rank readings of the same sheet complete each other (the drawn
+    section plus the armado written beside the mark). The caller passes only
+    readings of ``chosen``'s sheet: readings from different sheets are never
+    merged. Returns a copy; the readings themselves are never touched."""
+    merged = chosen.model_copy(deep=True)
     for other in others:
         if merged.section_cm is None and other.section_cm is not None:
             merged.section_cm = other.section_cm
-        if merged.rebar is None and other.rebar is not None:
-            merged.rebar = other.rebar
-        if merged.stirrups is None and other.stirrups is not None:
-            merged.stirrups = other.stirrups
-        if merged.mesh is None and other.mesh is not None:
-            merged.mesh = other.mesh
+        for _campo, attr, lista in _ARMADO_FIELDS:
+            if getattr(merged, attr) is not None or getattr(other, attr) is None:
+                continue
+            setattr(merged, attr, getattr(other, attr))
+            if other.armado is not None:
+                if merged.armado is None:
+                    merged.armado = Armado(texto_original=other.armado.texto_original)
+                copia = [x.model_copy() for x in getattr(other.armado, lista)]
+                setattr(merged.armado, lista, copia)
+        merged.campos_con_texto = [
+            c for c in CAMPOS if c in set(merged.campos_con_texto) | set(other.campos_con_texto)
+        ]
+        merged.entidades = _union(merged.entidades, other.entidades)
+        merged.avisos = _union(merged.avisos, other.avisos)
     return merged
+
+
+def _value_text(value: object) -> str:
+    """How a value is compared and quoted: a section by its two sides, smaller
+    first (the cotas give width × depth, the notes either way)."""
+    if isinstance(value, tuple):
+        a, b = sorted(value)
+        return f"{a}x{b}"
+    return str(value)
+
+
+def _disagreements(readings: list[ElementSpec], used: ElementSpec) -> list[str]:
+    """Where the same-rank readings of a mark do not agree with each other or
+    with the value the by-mark view uses — another sheet says something else,
+    or says what this sheet leaves empty. Never resolved in silence."""
+    avisos = []
+    for field, name in (
+        ("section_cm", "sección"),
+        ("rebar", "longitudinales"),
+        ("stirrups", "estribos"),
+        ("mesh", "parrillas"),
+    ):
+        said: dict[str, set[str]] = {}
+        for r in readings:
+            value = getattr(r, field)
+            if value is not None:
+                said.setdefault(_value_text(value), set()).add(r.hoja or "sin hoja")
+        current = getattr(used, field)
+        if not said or (len(said) == 1 and current is not None):
+            continue
+        listed = ", ".join(f"«{v}» ({', '.join(sorted(h))})" for v, h in said.items())
+        here = f"«{_value_text(current)}»" if current is not None else "nada"
+        avisos.append(
+            f"{name}: las lecturas no coinciden — {listed}; aquí se usa {here} "
+            f"(hoja {used.hoja or 'sin hoja'})"
+        )
+    return avisos
 
 
 def build_schedule_inventory(
@@ -661,17 +799,28 @@ def build_schedule_inventory(
     unit_to_m: float | None = None,
     detail_boxes: list[BBox] | None = None,
     extra_readers: list[Callable[[list[NormalizedEntity]], list[ElementSpec]]] | None = None,
+    frames: list[SheetFrame] | None = None,
 ) -> ScheduleInventory:
+    """Every reading of the sheet's specifications, with its source, and the
+    by-mark / by-family view the takeoff reads. ``frames`` names the sheets
+    (and, when ``detail_boxes`` is not given, the detail frames are its
+    «excluded» frames); without frames each file is one sheet."""
     config = config or TextPatternConfig()
+    frames = frames or []
+    if detail_boxes is None and frames:
+        detail_boxes = [f.bbox for f in frames if f.kind == "excluded"]
+    hoja = hoja_de(frames)
     texts = [e for e in entities if e.is_textual and e.text]
-    table_specs, tables = _parse_tables(texts, config)
-    specs = table_specs + _parse_annotations(texts, config)
+    specs, labels, rechazos, tables = _read_associations(entities, frames, config)
+    specs += _parse_annotations(texts, config, hoja)
     inventory_cuadro_marks: list[str] = []
     if unit_to_m and detail_boxes:
-        specs += _sections_from_detail_geometry(entities, config, unit_to_m, detail_boxes)
+        specs += _sections_from_detail_geometry(entities, config, unit_to_m, detail_boxes, hoja)
     if detail_boxes or unit_to_m:
         callouts = (
-            _sections_from_section_callouts(texts, config, detail_boxes) if detail_boxes else []
+            _sections_from_section_callouts(texts, config, detail_boxes, hoja)
+            if detail_boxes
+            else []
         )
         specs += callouts
         if unit_to_m:
@@ -682,7 +831,7 @@ def build_schedule_inventory(
             usual = {f: c.most_common(1)[0][0] for f, c in widths.items()}
             cuadro_marks: list[str] = []
             specs += _sections_from_detail_cotas(
-                entities, config, unit_to_m, detail_boxes or [], usual, cuadro_marks
+                entities, config, unit_to_m, detail_boxes or [], usual, cuadro_marks, hoja
             )
             inventory_cuadro_marks = cuadro_marks
     # Lectores por disciplina (cuadro de cancelería, tablero eléctrico…):
@@ -695,12 +844,16 @@ def build_schedule_inventory(
         tables_found=tables,
         concrete_fc=parse_concrete_fc([t.text or "" for t in texts]),
         pile_length_m=parse_pile_length([t.text or "" for t in texts]),
-        cuadro_mark_entities=inventory_cuadro_marks,
+        # Both feed it: a label that owns a stack or a cuadro row, and a mark
+        # drawn with armado beside it in a planta (the cotas reader).
+        cuadro_mark_entities=_union(labels, inventory_cuadro_marks),
+        rechazos=rechazos,
     )
 
     grouped: dict[str, list[ElementSpec]] = {}
     for spec in specs:
         grouped.setdefault(spec.mark.upper(), []).append(spec)
+    disagreeing: list[str] = []
     for mark, candidates in grouped.items():
         best_rank = max(_SOURCE_RANK[s.source] for s in candidates)
         top = [s for s in candidates if _SOURCE_RANK[s.source] == best_rank]
@@ -709,7 +862,12 @@ def build_schedule_inventory(
             (s for s in top if sections and s.section_cm == sections.most_common(1)[0][0]),
             top[0],
         )
-        chosen = _merge_fields(chosen, [s for s in top if s is not chosen])
+        same_sheet = [s for s in top if s is not chosen and s.hoja == chosen.hoja]
+        chosen = _merge_fields(chosen, same_sheet)
+        disagreements = _disagreements(top, chosen)
+        if disagreements:
+            chosen.avisos = _union(chosen.avisos, disagreements)
+            disagreeing.append(mark)
         if any(s.source != "nota" or s.mark != s.family.upper() for s in candidates):
             inventory.by_mark[mark] = chosen
         else:
@@ -718,8 +876,36 @@ def build_schedule_inventory(
         if spec.mark == spec.family.upper():
             inventory.by_family[spec.family] = inventory.by_mark.pop(spec.mark)
 
-    if tables:
-        inventory.notes.append(f"{tables} cuadro(s) de elementos leído(s) del plano.")
+    stacks = [s for s in specs if s.metodo == "pila"]
+    rows = [s for s in specs if s.metodo == "fila"]
+    if rows:
+        inventory.notes.append(
+            f"{len(rows)} fila(s) de cuadro de elementos leída(s) en {tables} hoja(s)."
+        )
+    if stacks:
+        inventory.notes.append(
+            f"{len(stacks)} pila(s) de armado leída(s) junto a su marca en "
+            f"{len({s.hoja for s in stacks})} hoja(s)."
+        )
+    unread = [s for s in specs if s.avisos and s.metodo in ("fila", "pila", "nota")]
+    if unread:
+        inventory.notes.append(
+            f"{len(unread)} lectura(s) con texto que no se pudo leer entero (se avisa en cada una)."
+        )
+    if rechazos:
+        motivos = Counter(r.motivo for r in rechazos)
+        inventory.notes.append(
+            "Textos de armado que no se pegaron a una marca: "
+            + ", ".join(f"{n} {_MOTIVOS[motivo]}" for motivo, n in sorted(motivos.items()))
+            + "."
+        )
+    if disagreeing:
+        inventory.notes.append(
+            "Lecturas que no coinciden (se comparan en la lectura estructural): "
+            + ", ".join(sorted(disagreeing)[:12])
+            + (f" y {len(disagreeing) - 12} más" if len(disagreeing) > 12 else "")
+            + "."
+        )
     if inventory.by_mark:
         marks = ", ".join(sorted(inventory.by_mark)[:8])
         inventory.notes.append(f"Especificaciones por marca: {marks}.")
@@ -742,39 +928,68 @@ def build_schedule_inventory(
     return inventory
 
 
+_MOTIVOS = {
+    "ambigua": "ambiguos",
+    "otra_familia": "de otra familia",
+    "sin_lector": "sin lector",
+    "varias_marcas": "de etiquetas con varias marcas",
+    "sin_dueno": "sin dueño",
+}
+
+
+# The by-mark field an AI reading may fill, and the field of the drawing's text
+# that keeps it from doing so.
+_AI_FIELDS: tuple[tuple[str, Campo | None], ...] = (
+    ("section_cm", "seccion"),
+    ("rebar", "longitudinales"),
+    ("stirrups", "estribos"),
+    ("mesh", "parrillas"),
+    ("length_m", None),
+)
+
+
 def merge_external_specs(inventory: ScheduleInventory, specs: list[dict]) -> int:
-    """Specs read elsewhere (the AI reading of the sheet images) fill what the
-    rules did not read: a mark without a section or armado takes them, a
-    mark the rules already specified keeps the rules. Returns how many marks
-    were completed."""
+    """Specs read elsewhere (the AI reading of the sheet images): every one is
+    kept as a reading (``source="ia"``), and it fills a by-mark field only when
+    the view has nothing there and no drawing reading of that mark has text for
+    that field — an AI value never covers a text the parser could not read. A
+    mark the drawing does not define at all takes the AI reading (por
+    confirmar). Returns how many marks were completed."""
     added = 0
     for raw in specs:
         try:
             spec = ElementSpec.model_validate(raw)
         except ValueError:
             continue
+        if spec.source == "ia":
+            spec.metodo = "ia"
+        inventory.specs.append(spec)
         mark = spec.mark.upper()
         current = inventory.by_mark.get(mark)
         if current is None:
-            inventory.by_mark[mark] = spec
-            inventory.specs.append(spec)
+            inventory.by_mark[mark] = spec.model_copy(deep=True)
             added += 1
             continue
-        filled = False
-        if current.section_cm is None and spec.section_cm is not None:
-            current.section_cm = spec.section_cm
-            filled = True
-        if current.rebar is None and spec.rebar:
-            current.rebar = spec.rebar
-            filled = True
-        if current.stirrups is None and spec.stirrups:
-            current.stirrups = spec.stirrups
-            filled = True
-        if current.length_m is None and spec.length_m:
-            current.length_m = spec.length_m
-            filled = True
+        with_text = {
+            campo
+            for s in inventory.specs
+            if s.mark.upper() == mark and s.source != "ia"
+            for campo in s.campos_con_texto
+        }
+        filled: list[str] = []
+        for field, campo in _AI_FIELDS:
+            if getattr(current, field) is not None or getattr(spec, field) in (None, ""):
+                continue
+            if campo is not None and campo in with_text:
+                continue  # the drawing has text for it: read, or reported as unread
+            setattr(current, field, getattr(spec, field))
+            filled.append(field)
         if filled:
             current.source_text = f"{current.source_text} + {spec.source_text}"[:120]
+            current.avisos = _union(
+                current.avisos,
+                [f"{', '.join(filled)} de la lectura IA, por confirmar: «{spec.source_text}»"],
+            )
             added += 1
     if added:
         inventory.notes.append(
@@ -833,7 +1048,9 @@ def apply_schedule(
         if spec.stirrups:
             props["spec_stirrups"] = spec.stirrups
         origin = {
-            "cuadro": "cuadro del plano", "detalle": "detalle", "nota": "nota",
+            "cuadro": "cuadro del plano",
+            "detalle": "detalle",
+            "nota": "nota",
             "ia": "lectura IA de la imagen de la hoja (por confirmar)",
         }[spec.source]
         detection.evidence.notes.append(

@@ -66,7 +66,10 @@ __all__ = [
     "Rechazo",
     "ancla_texto",
     "asociar",
+    "hoja_de",
+    "lo_lee_una_nota",
     "marca_en_texto",
+    "sin_referencias",
 ]
 
 # Un texto con forma de armado: una varilla (``#4``), una separación (``@20``) o el renglón que
@@ -102,14 +105,15 @@ _REFERENCIA = re.compile(
     r"|\b(?:CORTE|DETALLE|DET\.)\s+[^\s,;]+",
     re.I,
 )
-# Lo que una nota sí lee de un texto (``detection.schedules._parse_annotations``): una sección
-# (15x20, sin las piezas de 3 medidas) o varillas longitudinales (4#3, 6 VAR #4, V12#5).
+# Lo que hace que la lectura de notas (``detection.schedules._parse_annotations``) tome un texto:
+# una sección (15x20, sin las piezas de 3 medidas), varillas longitudinales (4#3, 6 VAR #4, V12#5)
+# o una malla. Lo que trae se lee después con el parser del armado; esto sólo decide si se lee.
 _SECCION = re.compile(r"(?<![\dxX×])(\d{1,3})\s*[xX×]\s*(\d{1,3})(?![\dxX×])")
 _PIEZA = re.compile(r"\d{1,3}\s*[xX×]\s*\d{1,3}\s*[xX×]\s*\d{1,3}")
 _LONGITUDINALES = re.compile(r"(\d{1,2})\s*(?:V|VAR|VARS|VARILLAS)?\s*#\s*(\d)(?!\s*@)", re.I)
 _MALLA = re.compile(r"(?<![E\d])#\s*(\d)\s*@\s*(\d{1,3})", re.I)
-# Los estribos, como los quita ``schedules._parse_rebar`` antes de buscar malla y varillas
-# («E #3@20», con espacio, no es una malla).
+# Los estribos, que se quitan antes de buscar malla y varillas («E #3@20», con espacio, no es una
+# malla).
 _ESTRIBOS = re.compile(r"E\s*#?\s*(\d)\s*@\s*(\d{1,3})", re.I)
 _LADO_DE_SECCION_CM = (8, 400)
 
@@ -297,10 +301,16 @@ def _es_de_varias(marca: str) -> bool:
     return _JUNTAS in marca or _RANGO.search(marca) is not None
 
 
-def _lo_lee_una_nota(texto: str) -> bool:
-    """Si la lectura de notas toma algo de ``texto``: una sección (dos lados de 8 a 400 cm),
-    varillas longitudinales o una malla («K-3 #4@20»). Un texto con sólo estribos («K-7 E#3@20»)
-    no lo lee nadie."""
+def sin_referencias(texto: str) -> str:
+    """El texto sin lo que remite a otra parte del plano («VER CORTE C-2», «SEGÚN DETALLE K-1»):
+    la marca de una referencia no es la de quien lo dice."""
+    return _REFERENCIA.sub(" ", texto)
+
+
+def lo_lee_una_nota(texto: str) -> bool:
+    """Si la lectura de notas (``detection.schedules``) toma ``texto``: tiene una sección (dos
+    lados de 8 a 400 cm), varillas longitudinales o una malla («K-3 #4@20»). Un texto con sólo
+    estribos («K-7 E#3@20») no lo lee nadie: es un rechazo «sin_lector»."""
     piezas = [m.span() for m in _PIEZA.finditer(texto)]
     for m in _SECCION.finditer(texto):
         if any(a <= m.start() < b for a, b in piezas):
@@ -308,8 +318,7 @@ def _lo_lee_una_nota(texto: str) -> bool:
         lados = int(m.group(1)), int(m.group(2))
         if all(_LADO_DE_SECCION_CM[0] <= lado <= _LADO_DE_SECCION_CM[1] for lado in lados):
             return True
-    # Como ``schedules._parse_rebar``: primero se quitan los estribos y en lo que queda se busca
-    # una malla o varillas.
+    # Primero se quitan los estribos y en lo que queda se busca una malla o varillas.
     estribos = _ESTRIBOS.search(texto)
     if estribos is not None:
         texto = texto[: estribos.start()] + texto[estribos.end() :]
@@ -339,11 +348,11 @@ def _clase(
     mayusculas = texto.upper()
     if _OTRA_FAMILIA.search(mayusculas):
         return "ajena", None
-    if marca_en_texto(_REFERENCIA.sub(" ", texto), config) is not None:
+    if marca_en_texto(sin_referencias(texto), config) is not None:
         # «K-1 15x20 4#3 E#2@20» dice de quién es y lo lee la nota; «K-7 E#3@20», no.
-        return ("anotacion" if _lo_lee_una_nota(texto) else "sin_lector"), None
+        return ("anotacion" if lo_lee_una_nota(texto) else "sin_lector"), None
     if _NOTA_DE_FAMILIA.search(mayusculas):
-        return ("familia" if _lo_lee_una_nota(texto) else "sin_lector"), None
+        return ("familia" if lo_lee_una_nota(texto) else "sin_lector"), None
     return "linea", None
 
 
@@ -468,6 +477,13 @@ def _lineas(entities: list[NormalizedEntity], textos: list[NormalizedEntity]) ->
 
 
 # ------------------------------------------------------------------------------------ hojas
+
+
+def hoja_de(frames: list[SheetFrame]) -> Callable[[NormalizedEntity], str]:
+    """La hoja de un texto como la nombra la asociación: el código del marco más chico de su
+    archivo que contiene su ancla (o su id si no tiene código); sin marco, su archivo."""
+    llave_y_hoja = _hoja_de(frames)
+    return lambda e: llave_y_hoja(e)[1]
 
 
 def _hoja_de(frames: list[SheetFrame]) -> Callable[[NormalizedEntity], tuple[tuple, str]]:
@@ -1695,7 +1711,8 @@ def _asociar_hoja(
             de_filas.add(etiqueta.id)
             de_filas.update(c.id for c in celdas)
             duenos += [c.e for c in celdas]
-            if any(ARMADO_RE.search(c.texto) for c in celdas):
+            # Una fila con armado, o sólo con su sección («K-2 | 20X30»): también define la marca.
+            if any(ARMADO_RE.search(c.texto) or _SECCION.search(c.texto) for c in celdas):
                 asociaciones.append(_asociacion(etiqueta, marca, hoja, celdas, "fila"))
         reparto = _pilas(locales, de_filas)
         for renglon_id, marcas in reparto.ambiguos.items():

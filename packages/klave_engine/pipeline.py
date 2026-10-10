@@ -467,7 +467,7 @@ def run_full_pipeline(
         result.entities,
         detector_config.text_patterns,
         unit_to_m=units.to_meters(),
-        detail_boxes=[f.bbox for f in frames if f.kind == "excluded"],
+        frames=frames,
     )
     ai_reads = load_ai_reads(control_dir)
     if ai_reads.readings:

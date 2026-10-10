@@ -712,6 +712,27 @@ def test_cuadro_rows_are_owned_by_their_mark(tmp_path):
     assert rech == []
 
 
+def test_a_cuadro_row_with_only_its_section_is_a_row_too(tmp_path):
+    # Task 7: una fila con sólo su sección («K-2 | 20X30») también define su marca; antes sólo se
+    # daban las filas con armado y la sección de K-2 no la leía nadie.
+    def build(doc):
+        msp = doc.modelspace()
+        for x, titulo in ((0.0, "MARCA"), (0.5, "SECCION"), (1.2, "ARMADO")):
+            msp.add_text(titulo, height=0.1).set_placement((x, 0.18))
+        for y, fila in ((0.0, ("K-1", "15X20", "4#3")), (-0.18, ("K-2", "20X30", None))):
+            for x, texto in zip((0.0, 0.5, 1.2), fila, strict=True):
+                if texto:
+                    msp.add_text(texto, height=0.1).set_placement((x, y))
+
+    ents = _dxf(tmp_path, build)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    assert {a.marca: (a.via, a.textos) for a in asoc} == {
+        "K-1": ("fila", ["15X20", "4#3"]),
+        "K-2": ("fila", ["20X30"]),
+    }
+    assert rech == []
+
+
 def test_a_row_of_legends_is_not_a_cuadro(tmp_path):
     # PRUEBA-1: las leyendas «K-0 / CASTILLO AHOGADO», «K-1 / CASTILLO»… a una misma altura a lo
     # largo de la hoja no son los títulos de un cuadro, ni lo de abajo sus filas.
