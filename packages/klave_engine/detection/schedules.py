@@ -36,10 +36,11 @@ from klave_engine.detection.text_patterns import (
     TextPatternConfig,
 )
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
-from klave_engine.estructura._armado_texto import normalizar, objeto_ajeno
+from klave_engine.estructura._armado_texto import normalizar
 from klave_engine.estructura.armado import (
     FAMILIAS_CON_PARRILLA,
     Armado,
+    fragmentos_ajenos,
     parsear_armado,
     sin_cuentas_de_varillas,
     texto_estribos,
@@ -67,6 +68,7 @@ from klave_engine.estructura.marcas import (
     marca_normalizada,
     marcas_de_ficha,
     marcas_nombradas,
+    sin_referencias,
     titulos,
 )
 from klave_engine.geometry.bbox import (
@@ -303,10 +305,11 @@ def _read_section(
     8–400 cm), the avisos for what was not taken (a side out of range, a second
     different section) and whether the text has a section at all. The section
     keeps its written order (a beam's b×h, R75, R88); only a castillo's, a
-    columna's or a pilote's sides are sorted. A section in a clause about an
-    anchor, a plate, a bolt… («PLACA BASE 35X35») is that object's, not the
-    element's: it is reported, never taken (R98), and the field stays claimed."""
+    columna's or a pilote's sides are sorted. The section of an object («PLACA
+    BASE 35X35», R100) is that object's, not the element's: it is never taken,
+    the field stays claimed, and the parser reports it with its object."""
     blocked = [m.span() for m in _BLOCK_RE.finditer(text)]
+    ajenos = fragmentos_ajenos(text)
     section: tuple[int, int] | None = None
     avisos: list[str] = []
     found = False
@@ -314,10 +317,7 @@ def _read_section(
         if any(s <= m.start() < e for s, e in blocked):
             continue
         found = True
-        ajeno = objeto_ajeno(text, m.start(), m.end())
-        if ajeno is not None:
-            cita = text[ajeno[0] : ajeno[1]].strip()
-            avisos.append(f"«{cita}»: no es la sección del elemento: no se toma")
+        if any(a <= m.start() and m.end() <= b for a, b in ajenos):
             continue
         a, b = int(m.group(1)), int(m.group(2))
         leida = (min(a, b), max(a, b)) if family in FAMILIAS_QUE_SE_ORDENAN else (a, b)
@@ -650,7 +650,9 @@ def _read_associations(
     return specs, labels, rechazos, tables
 
 
-_NOT_A_SECTION = re.compile(r"HUECO|PASO|ABERTURA|HASTA|M[AÁ]X|PERFORACI|PLACA|ANCLA", re.I)
+# A hole's size is not the element's section. An object's («PLACA BASE 35X35») is R100's: the
+# parser reports it with its object, and the element's section beside it is still read.
+_NOT_A_SECTION = re.compile(r"HUECO|PASO|ABERTURA|HASTA|M[AÁ]X|PERFORACI", re.I)
 
 
 def _section_is_the_elements(content: str) -> bool:
@@ -673,8 +675,8 @@ def _parse_annotations(
     section, bars, a mesh or stirrups the parser reads (``lo_lee_una_nota``:
     the association reports the others as «sin lector»). Its mark comes from
     the one mark grammar (``leer_marcas``, R67), keyed as a label would be: a
-    mark inside a bare reference ("VER CORTE C-2") is not the note's; in a text
-    with armado, a title or a reference names its marks and the text is not
+    mark inside a reference ("… VER CORTE C-2") is not the note's, nor anyone's
+    (R99); in a text with armado, a heading names its marks and the text is not
     read («CORTE K-1 15X20 4#3»: a «sin_lector» rejection of K-1, R97); a note naming
     several marks («K-1 Y K-2 15X20 4#3», «K-1 A K-4 …», «K-1-K-3 …») is a
     «varias_marcas» rejection with the marks as written (R63); a note whose
@@ -1637,13 +1639,15 @@ def _patron_suelto(mark: str) -> re.Pattern[str] | None:
 
 @lru_cache(maxsize=65536)
 def _sin_cuentas(line: str) -> str:
-    return sin_cuentas_de_varillas(line)
+    return sin_cuentas_de_varillas(sin_referencias(line))
 
 
 def _aparece(mark: str, line: str) -> bool:
     """Whether ``mark`` occurs in ``line`` under the backstop's loose
     comparison (``_patron_suelto``). A bar count is never a mark: «V4 #4», «P
-    4#3» are looked at without their bar groups (``sin_cuentas_de_varillas``)."""
+    4#3» are looked at without their bar groups (``sin_cuentas_de_varillas``).
+    A pointer names nothing (R99): «E#2@15 VER CORTE C-2» is looked at without
+    it, so it never blocks C-2."""
     patron = _patron_suelto(mark)
     return patron is not None and patron.search(_sin_cuentas(line)) is not None
 

@@ -25,12 +25,13 @@ from klave_engine.estructura._armado_texto import (
     CONSUMIDO,
     DOBLE_RE,
     ESTORBA,
+    OBJETO_AJENO_RE,
     atado,
+    de_objetos,
     fichas,
     fin_del_hueco,
     hueco_limpio,
     normalizar,
-    objeto_ajeno,
     residuo,
     traducciones,
 )
@@ -141,7 +142,7 @@ _ESTRIBOS_RE = re.compile(
     rf"(?:{_LINEA}(?:Y\s+)?CENTRO\s*@\s*(?P<centro>{_SEP}){_CM})?"
     rf"|{_LINEA}@\s*(?P<sep>{_SEP}){_CM}"
     r")?"
-    rf"(?:{_LINEA}(?P<ref>VER\s+(?:CORTE|DETALLE)))?"
+    rf"(?:{_LINEA}(?P<ref>VER\s+(?:CORTE|DETALLE|DET\.?)))?"
 )
 
 # El cuerpo de una malla. Su lecho («LS», «L.I.», «LECHO SUPERIOR») y sus sentidos («A/S»,
@@ -263,7 +264,10 @@ def _zonas(m: re.Match[str]) -> list[Zona]:
 def _juegos(m: re.Match[str]) -> list[JuegoEstribos]:
     """Los juegos de una cabeza leída; un juego mixto queda siempre estribo y luego grapa."""
     numero = m["num"]
-    referencia = " ".join(m["ref"].split()) if m["ref"] else None
+    # «VER DET.» se escribe «VER DETALLE» (R99): una referencia de ``_REFERENCIAS``.
+    referencia = None
+    if m["ref"]:
+        referencia = "VER CORTE" if "CORTE" in m["ref"] else "VER DETALLE"
 
     def juego(tipo: Literal["estribo", "grapa", "liga"], cuenta: str | None) -> JuegoEstribos:
         return JuegoEstribos(
@@ -838,6 +842,7 @@ class _Piezas:
     grupos: list[re.Match[str]]  # los grupos de varillas reconocidos, se tomen o no
     reconocidas: list[_Pieza]  # toda pieza reconocida (juego, malla, grupo), se tome o no
     traducidas: list[tuple[int, int]]  # lo que ``normalizar`` escribió como «#n» (R87)
+    ajenos: list[tuple[int, int]]  # lo que es de un objeto (R100): anclas, placas…
 
 
 def _piezas(textos: list[str], familia: str) -> _Piezas:
@@ -876,12 +881,19 @@ def _piezas(textos: list[str], familia: str) -> _Piezas:
         varilla = GrupoVarillas(cantidad=int(grupo["n"] or grupo["v"]), numero=grupo["num"])
         tomar(_Pieza(grupo.start(), grupo.end(), varillas=[varilla]))
 
-    # 4. Cada pieza se toma entera o se avisa entera con lo que la estorba.
+    # 4. Lo que es de un objeto (R100) queda fuera, con su palabra: no estorba a sus vecinas
+    #    («30X30 8#6 E#3@20 PLACA BASE 35X35»: los estribos son de la columna).
     piezas.sort(key=lambda p: p.inicio)
     reconocidas = list(piezas)
-    buenas, malos = _revisar(texto, visible(), piezas, consumido)
+    ajenos = _de_objetos(texto, reconocidas)
+    for a, b in ajenos:
+        for i in range(a, b):
+            consumido[i] = True
+    propias = [p for p in piezas if not any(a <= p.inicio and p.fin <= b for a, b in ajenos)]
+    # 5. Cada pieza se toma entera o se avisa entera con lo que la estorba.
+    buenas, malos = _revisar(texto, visible(), propias, consumido)
     return _Piezas(
-        lineas, texto, letrero, consumido, buenas, malos, grupos, reconocidas, traducidas
+        lineas, texto, letrero, consumido, buenas, malos, grupos, reconocidas, traducidas, ajenos
     )
 
 
@@ -956,6 +968,29 @@ def sin_cuentas_de_varillas(texto: str) -> str:
     return sin_armado(texto)
 
 
+def _de_objetos(texto: str, piezas: list[_Pieza]) -> list[tuple[int, int]]:
+    """Los tramos de ``texto`` que son de un objeto (R100, ``de_objetos``): sus fragmentos son las
+    piezas que el parser reconoce y las secciones."""
+    if OBJETO_AJENO_RE.search(texto) is None:
+        return []
+    fragmentos = [
+        (p.inicio, p.fin, "malla" if p.malla else "varillas" if p.varillas else "estribos")
+        for p in piezas
+    ]
+    fragmentos += [(*m.span(), "seccion") for m in _SECCION_EN_TEXTO.finditer(texto)]
+    return de_objetos(texto, fragmentos)
+
+
+def fragmentos_ajenos(texto: str) -> list[tuple[int, int]]:
+    """Los tramos de ``texto`` que son de un objeto y no del elemento (R100): «PLACA BASE 35X35»,
+    «ANCLAS 4 PZAS #6», «4 ANCLAS #6». Para que una sección de ellos no se tome como la del
+    elemento (el parser los avisa)."""
+    if not re.search(r"\d", texto) or OBJETO_AJENO_RE.search(texto) is None:
+        return []
+    corrido = len(texto) - len(texto.lstrip())
+    return [(a + corrido, b + corrido) for a, b in _piezas([texto], "castillo").ajenos]
+
+
 def tiene_armado(texto: str) -> bool:
     """Si el parser reconoce armado en ``texto``, se lea o se avise (R91): un juego de estribos,
     una malla o un grupo de varillas, también escrito con palabras o en pulgadas («4 VARS. N°
@@ -987,23 +1022,35 @@ def parsear_armado(textos: list[str], familia: str) -> Armado:
         return a, b
 
     armado = Armado(texto_original=" | ".join(lineas))
+    # R100: lo que es de un objeto (anclas, pernos, placas…), con su palabra: se avisa entero y
+    # nada de él se lee; lo demás del texto, sí.
+    ajenos = [entero(a, b) for a, b in leida.ajenos]
+    for a, b in ajenos:
+        avisos.append((a, f"«{letrero[a:b].strip()}»: no es armado del elemento"))
+        for i in range(a, b):
+            consumido[i] = True
+
+    def sin_lo_ajeno(a: int, b: int) -> list[tuple[int, int]]:
+        """El tramo ``a:b`` sin lo que es de un objeto (ya avisado): los pedazos con cifras (lo
+        que queda entre dos objetos, «CON», es sólo contexto)."""
+        tramos = [(a, b)]
+        for oa, ob in ajenos:
+            tramos = [
+                t for x, y in tramos for t in ((x, min(y, oa)), (max(x, ob), y)) if t[0] < t[1]
+            ]
+        return [(x, y) for x, y in tramos if re.search(r"[\d#@Ø]", letrero[x:y])]
+
     for p in buenas:
-        ajeno = objeto_ajeno(texto, p.inicio, p.fin) if p.varillas else None
-        if ajeno is not None:
-            # R98: varillas en una cláusula de anclas, pernos, placas…: son de ese objeto.
-            a, b = entero(*ajeno)
-            avisos.append((a, f"«{letrero[a:b].strip()}»: no es armado del elemento"))
-            continue
         if p.aviso is not None:
             avisos.append((p.inicio, p.aviso))
         armado.estribos += p.estribos
         armado.parrillas += p.parrillas
         armado.longitudinales += p.varillas
-    for a, b in malos:
-        a, b = entero(a, b)
-        avisos.append((a, _aviso_sin_leer(letrero[a:b].strip())))
-        for i in range(a, b):
-            consumido[i] = True
+    for mala in malos:
+        for a, b in sin_lo_ajeno(*entero(*mala)):
+            avisos.append((a, _aviso_sin_leer(letrero[a:b].strip())))
+            for i in range(a, b):
+                consumido[i] = True
 
     # 5. Lo que nadie leyó: si no es contexto, se avisa.
     for a, b, tipo in residuo(texto, consumido):

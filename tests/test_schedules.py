@@ -1362,12 +1362,15 @@ _SECCION_Y_VARILLAS_IA = {"rebar": "6#6", "section_cm": (25, 25)}
         ("CORTE K-1 Y K-2 E#3@20", "varias_marcas", ["K-1", "K-2"], _ESTRIBOS_IA),  # legible
         ("CORTE K-1 15X20 4#3", "sin_lector", ["K-1"], _SECCION_Y_VARILLAS_IA),
         ("SECCION K-1 15X20 4#3", "sin_lector", ["K-1"], _SECCION_Y_VARILLAS_IA),
-        ("E#2@15 VER DETALLE K-2", "sin_lector", ["K-2"], _ESTRIBOS_IA),
+        ("CORTE A-A K-1 15X20 4#3", "sin_lector", ["K-1"], _SECCION_Y_VARILLAS_IA),  # R99
+        ("DET. 5 K-1 4#3", "sin_lector", ["K-1"], _SECCION_Y_VARILLAS_IA),
+        ("DETALLE DE K-1 15X15 4#3", "sin_lector", ["K-1"], _SECCION_Y_VARILLAS_IA),
+        ("3.- CORTE K-1 Y K-2 E#3@20", "varias_marcas", ["K-1", "K-2"], _ESTRIBOS_IA),
     ],
 )
 def test_a_title_with_armado_names_every_mark_after_it(tmp_path, nota, motivo, marcas, ia):
-    # R97: el título de un corte o una referencia con armado nombra todas sus marcas; no se lee
-    # y la IA de ninguna llena lo que dice.
+    # R97, R99: el encabezado de un corte con armado nombra todas sus marcas; no se lee y la IA
+    # de ninguna llena lo que dice.
     inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
     assert inv.specs == []
     assert [(r.motivo, r.marcas) for r in inv.rechazos] == [(motivo, marcas)]
@@ -1391,8 +1394,8 @@ def test_a_bare_pointer_names_no_mark(tmp_path):
     ["C-1 PLACA BASE 35X35 CON ANCLAS 4 PZAS #6", "C-1 ANCLAS 4 VARS #6"],
 )
 def test_anchor_bars_are_not_the_elements_armado(tmp_path, nota):
-    # R98: las varillas (y la sección) de una placa o de unas anclas no son de la columna: se
-    # avisan, reclaman su campo y la IA no lo llena.
+    # R98, R100: las varillas (y la sección) de una placa o de unas anclas no son de la columna:
+    # se avisan, reclaman su campo y la IA no lo llena.
     inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
     assert not [s for s in inv.specs if s.rebar or s.section_cm]
     merge_external_specs(inv, [_ia("C-1", family="columna", rebar="8#8")], C)
@@ -1405,3 +1408,98 @@ def test_bars_without_an_anchor_word_are_read(tmp_path):
     inv = build_schedule_inventory(_notas(tmp_path, ["C-1 30X30 4#6"]), frames=_frame())
     (s,) = inv.specs
     assert (s.mark, s.section_cm, s.rebar, s.avisos) == ("C-1", (30, 30), "4#6", [])
+
+
+# ------------------------------------------------------------------ ronda 5 de la tarea 8
+
+
+def _pila(tmp_path, etiqueta, renglones):
+    """Una pila: la etiqueta y sus renglones encima, como en un detalle."""
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    msp.add_text(etiqueta, height=0.13).set_placement(
+        (0.0, 0.0), align=TextEntityAlignment.BOTTOM_CENTER
+    )
+    for i, texto in enumerate(reversed(renglones)):
+        msp.add_text(texto, height=0.10).set_placement((-0.2, 0.18 * (i + 1)))
+    doc.saveas(tmp_path / "pila.dxf")
+    return DxfParser().parse_file(tmp_path / "pila.dxf").entities
+
+
+@pytest.mark.parametrize(
+    "etiqueta,renglones,estribos,apuntada",
+    [
+        ("K-1", ["4#3", "E#2@15 VER CORTE C-2"], "E#2@15 VER CORTE", "C-2"),
+        ("K-1", ["4#3", "E#2@15", "2E#3 VER CORTE C-2"], "E#2@15 2E#3 VER CORTE", "C-2"),
+        ("K-2", ["4#4", "E#2@15 VER DET. K-2A"], "E#2@15 VER DETALLE", "K-2A"),
+    ],
+)
+def test_a_trailing_pointer_reads_for_its_owner(tmp_path, etiqueta, renglones, estribos, apuntada):
+    # R99: una referencia tras el armado remite: el renglón es de la pila de su dueño, que lo lee
+    # con su referencia; la marca a la que apunta no queda bloqueada ni ilegible.
+    inv = build_schedule_inventory(_pila(tmp_path, etiqueta, renglones), frames=_frame())
+    assert inv.rechazos == []
+    merge_external_specs(
+        inv,
+        [_ia(etiqueta, stirrups="E#2@25"), _ia(apuntada, stirrups="E#4@30", rebar="9#9")],
+        C,
+    )
+    assert inv.by_mark[etiqueta].stirrups == estribos
+    assert (inv.by_mark[apuntada].stirrups, inv.by_mark[apuntada].rebar) == ("E#4@30", "9#9")
+
+
+def test_a_trailing_pointer_in_a_note_never_touches_the_pointed_mark(tmp_path):
+    # R99: «… VER CORTE C-2» en la nota de K-1 no le da nada a C-2, ni lo bloquea.
+    inv = build_schedule_inventory(
+        _notas(tmp_path, ["K-1 15X15 4#3 E#2@15 VER CORTE C-2", "C-2 30X30 8#6 E#3@20"]),
+        frames=_frame(),
+    )
+    k1, c2 = inv.by_mark["K-1"], inv.by_mark["C-2"]
+    assert (k1.section_cm, k1.rebar, k1.stirrups) == ((15, 15), "4#3", "E#2@15 VER CORTE")
+    assert (c2.section_cm, c2.rebar, c2.stirrups) == ((30, 30), "8#6", "E#3@20")
+    assert inv.rechazos == []
+
+
+@pytest.mark.parametrize(
+    "nota,leido",
+    [
+        ("C-1 30X30 8#6 E#3@20 PLACA BASE 35X35", ((30, 30), "8#6", "E#3@20")),  # R100
+        # «CON» entre los dos objetos no es contexto: los estribos se avisan (R18), no se pierden.
+        ("C-1 30X30 8#6 E#3@20 PLACA BASE 35X35 CON ANCLAS 4 PZAS #6", ((30, 30), "8#6", None)),
+        (
+            "C-1 40X40 8#6 E#3@10 ANCLAJE 60 CM",
+            ((40, 40), "8#6", None),
+        ),  # el anclaje es de la varilla
+        ("C-1 4#3 E#2@20 HASTA PLACA", (None, "4#3", None)),  # «PLACA» sin fragmento: nada suyo
+    ],
+)
+def test_an_object_owns_only_its_fragment(tmp_path, nota, leido):
+    # R100: lo de la placa o las anclas se avisa; lo demás es de la columna y se lee.
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    (s,) = inv.specs
+    assert (s.section_cm, s.rebar, s.stirrups) == leido
+    objeto = "PLACA BASE" in nota or "ANCLAS" in nota
+    assert any("no es armado del elemento" in a for a in s.avisos) == objeto
+
+
+def test_a_family_note_reports_its_plate(tmp_path):
+    # R100: «COLUMNAS PLACA BASE 35X35 E#3@20»: la placa se avisa (antes se perdía sin aviso) y
+    # los estribos de las columnas se leen.
+    inv = build_schedule_inventory(
+        _notas(tmp_path, ["COLUMNAS PLACA BASE 35X35 E#3@20"]), frames=_frame()
+    )
+    (s,) = inv.specs
+    assert (s.mark, s.section_cm, s.stirrups) == ("COLUMNA", None, "E#3@20")
+    assert "«PLACA BASE 35X35»: no es armado del elemento" in s.avisos
+    assert "seccion" in s.campos_con_texto
+
+
+def test_a_bar_word_mark_after_the_armado_claims_the_bars(tmp_path):
+    # R101: «K-1 15X15 E#2@20 V 4» es de K-1 (no de varias marcas): su sección se lee, y «V 4»
+    # queda sin leer y reclama las varillas, que la IA no llena.
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-1 15X15 E#2@20 V 4"]), frames=_frame())
+    (s,) = inv.specs
+    assert (s.mark, s.section_cm) == ("K-1", (15, 15))
+    assert "longitudinales" in s.campos_con_texto and inv.rechazos == []
+    merge_external_specs(inv, [_ia("K-1", rebar="6#6")], C)
+    assert inv.by_mark["K-1"].rebar is None

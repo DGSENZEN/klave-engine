@@ -937,3 +937,41 @@ def test_anchor_bars_never_become_the_columns(tmp_path):
         d = getattr(c1, campo)
         assert d.ilegible and d.valor is None and [a.fuente for a in d.alternativas] == ["ia"]
     assert any("no es armado del elemento" in a for a in c1.avisos)
+
+
+@pytest.mark.parametrize(
+    "notas,marca",
+    [
+        (["K-1 15X15 4#3 E#2@15 VER CORTE C-2", "C-2 30X30 8#6 E#3@20"], "C-2"),  # R99
+        (["CORTE K-1 4#3 VER DET. K-2", "K-2 15X20 4#4 E#2@20"], "K-2"),
+    ],
+)
+def test_a_pointer_never_feeds_the_pointed_mark(tmp_path, notas, marca):
+    # R99: una referencia tras el armado remite: no nombra a la marca apuntada, que queda limpia.
+    inv = build_schedule_inventory(_notas(tmp_path, notas), frames=_frame())
+    d = construir_definiciones(inv, C)[0][marca]
+    for campo in ("seccion_cm", "longitudinales", "estribos"):
+        assert _limpio(getattr(d, campo)) and len(getattr(d, campo).alternativas) == 0
+
+
+def test_a_heading_with_a_pointer_is_its_marks_only(tmp_path):
+    # R99: «CORTE K-1 4#3 VER DET. K-2» es de K-1 (no se lee): sus varillas son ilegibles.
+    inv = build_schedule_inventory(
+        _notas(tmp_path, ["CORTE K-1 4#3 VER DET. K-2"]), frames=_frame()
+    )
+    merge_external_specs(inv, [_ia("K-1", rebar="6#6")], C)
+    k1 = construir_definiciones(inv, C)[0]["K-1"].longitudinales
+    assert k1.ilegible and k1.texto == "CORTE K-1 4#3 VER DET. K-2"
+
+
+def test_a_bar_word_after_the_armado_keeps_the_ai_bars_out(tmp_path):
+    # R101: «V 4» tras el armado de K-1 no es la marca V-4: K-1 se lee y sus varillas son ilegibles.
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-1 15X15 E#2@20 V 4"]), frames=_frame())
+    merge_external_specs(inv, [_ia("K-1", rebar="6#6")], C)
+    defs, _ = construir_definiciones(inv, C)
+    assert "V-4" not in defs
+    k1 = defs["K-1"]
+    assert k1.seccion_cm.valor == (15, 15) and k1.seccion_cm.fuente == "nota"
+    assert k1.longitudinales.ilegible and [a.fuente for a in k1.longitudinales.alternativas] == [
+        "ia"
+    ]

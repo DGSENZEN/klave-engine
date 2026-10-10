@@ -24,10 +24,13 @@ una letra («3.-K 7», «"K 7"», «TRABE-T 1»: R68.3). Cualquier letra empieza
 también las de las etiquetas de la configuración («TL-1E#3@20» → TL-1, TL-1E: R68.4). La E o la
 G de una cabeza de estribo antes de «#» no es la letra de una variante («K-7-E #3@20» y «K-7E
 #3@20» son ambiguas entre K-7 y la marca con la letra: R68.5). «K-1, 2 Y 3» son K-1, K-2 y K-3
-(R68.6). Los guiones de Unicode son guiones («K–7» es K-7: R68.7). En un texto con armado, la
-palabra de un título o de una referencia («CORTE», «DET.», «DETALLE», «SECCIÓN», «VER») nombra
-todas las marcas que le siguen y el texto no se lee (``titulo``, R97): «CORTE K-1 Y K-2 E#3@1S» es
-de K-1 y de K-2; sin armado («VER CORTE C-2») no nombra a nadie.
+(R68.6). Los guiones de Unicode son guiones («K–7» es K-7: R68.7). Sólo un encabezado nombra
+marcas (R97, R99): la palabra de un título («CORTE», «DET.», «DETALLE», «SECCIÓN») al principio
+del texto, tras su número de nota si lo lleva, con el nombre o el número del corte que quiera
+antes de la marca («CORTE A-A K-1», «DET. 5 K-1», «DETALLE DE K-1»). En un texto con armado nombra
+todas las marcas que le siguen y el texto no se lee (``titulo``): «CORTE K-1 Y K-2 E#3@1S» es de
+K-1 y de K-2. Una referencia en otra parte («E#2@15 VER CORTE C-2», «… VER DET. K-2A») remite: no
+nombra a nadie, y el texto es de su dueño.
 
 Las etiquetas de la configuración (``column_tag``, ``beam_tag``) se escriben como el plano
 («K15A», «T1-1»); las demás marcas como ``K-15A.1``: la misma llave en todos los lectores.
@@ -128,27 +131,25 @@ _PARTES = re.compile(rf"(?P<pre>(?:.*\D)?)(?P<num>\d{{1,3}})(?P<suf>{_G}?[A-Z]?)
 # una variante («K-7-E #3@20», «K-7E #3@20», R68.5).
 _CABEZA_DE_ESTRIBO = "EG"
 
-# Lo que remite a otra parte del plano no nombra una marca («VER CORTE C-2»), salvo en un texto
-# con armado, donde la palabra de un título o de una referencia nombra su marca (R97).
+# Lo que remite a otra parte del plano no nombra una marca («VER CORTE C-2», «4#3 VER DET. K-2A»,
+# R99); sólo un encabezado la nombra (``_ENCABEZADO``).
 _REFERENCIA = re.compile(
     r"\b(?:VER|V[EÉ]ASE|SEG[UÚ]N|IGUAL\s+A)\b\.?(?:\s+(?:EL|LA|LOS|LAS))?"
     r"(?:\s+(?:CORTE|DETALLE|DET\.?|SECCI[OÓ]N|PLANO|NOTA|CUADRO)\b\.?)?\s*[^\s,;]*"
     r"|\b(?:CORTE|DETALLE|DET\.)\s+[^\s,;]+",
     re.I,
 )
-# El título de un dibujo que nombra su marca («CORTE K-1 15X20 4#3», «DET. K-1 4#3»): una
-# referencia, no se lee, pero dice de quién es.
-_TITULO = re.compile(r"\b(?:CORTE|DETALLE|DET\.)\s+([^\s,;]+)", re.I)
-# R97: la palabra de un título o de una referencia («CORTE», «DET.», «DETALLE», «SECCIÓN», «VER»,
-# «VER CORTE», «VER EL DETALLE»). En un texto con armado, las marcas que le siguen son todas
-# suyas: «CORTE K-1 Y K-2 E#3@1S» nombra K-1 y K-2, y no se lee.
-_PALABRA_DE_TITULO = re.compile(
-    r"(?<![A-Z])(?:VER(?:\s+(?:EL|LA|LOS|LAS))?"
-    r"(?:\s+(?:CORTES?|DETALLES?|DET\.?|SECCI[OÓ]N(?:ES)?)(?![A-Z]))?"
-    r"|CORTES?|DETALLES?|DET\.?|SECCI[OÓ]N(?:ES)?)(?![A-Z])\.?",
+# R99: el encabezado de un texto, la palabra de un título al principio (tras el número de la nota,
+# si lo lleva). Entre ella y la marca puede ir el nombre o el número del corte («CORTE A-A K-1»,
+# «DET. 5 K-1», «DETALLE DE K-1»): hasta ``_ANTES_DE_LA_MARCA`` fichas sin armado. «VER» no
+# encabeza: remite.
+_ENCABEZADO = re.compile(
+    r"^\s*(?:\d{1,2}(?:\.-?|-|\))\s*)?"
+    r"(?P<palabra>(?:CORTES?|DETALLES?|DET\.?|SECCI[OÓ]N(?:ES)?)(?![A-Z])\.?)",
     re.I,
 )
 _FICHA_SIGUIENTE = re.compile(r'\s*([^\s,;:()="]+)')
+_ANTES_DE_LA_MARCA = 3
 # Algo de armado escrito con «#» o «@» (como ``asociacion.ARMADO_RE``).
 _CON_GATO = re.compile(r"[#Ø]\s*\d|@\s*\d")
 
@@ -376,6 +377,26 @@ def _leer_ficha(
     return [_Pieza(inicio, fin, "ambigua", piezas=list(dict.fromkeys(candidatas)), texto=ficha)]
 
 
+_PALABRAS_DE_VARILLA = frozenset({"V", "VAR", "VARS"})
+
+
+def _de_varilla(p: _Pieza) -> bool:
+    prefijo = re.match(r"[A-Z]+", p.marca or "")
+    return prefijo is not None and prefijo.group(0) in _PALABRAS_DE_VARILLA
+
+
+def _cuenta_tras_armado(p: _Pieza, piezas: list[_Pieza], limpio: str) -> bool:
+    """Si ``p`` es una marca de letra de varilla («V-4») que sigue al armado de otra marca
+    («K-1 15X15 E#2@20 V 4») y no lleva armado propio detrás (R101)."""
+    if p.tipo != "marca" or not _de_varilla(p):
+        return False
+    otras = [q for q in piezas if q.tipo == "marca" and q.fin <= p.inicio and not _de_varilla(q)]
+    if not any(CONSUMIDO in limpio[q.fin : p.inicio] for q in otras):
+        return False
+    despues = limpio[p.fin :].lstrip()
+    return not despues.startswith((CONSUMIDO, "#", "Ø"))
+
+
 def _acaba_en_marca(texto: str, config: TextPatternConfig) -> bool:
     """Si la última ficha de ``texto`` es una marca o varias unidas («K-1», «K-1-K-3»)."""
     previa = re.split(r'[\s:;,()="]', texto)[-1]
@@ -420,16 +441,19 @@ def _con_espaciadas(limpio: str, config: TextPatternConfig) -> str:
 
 
 def titulos(texto: str, config: TextPatternConfig) -> list[str]:
-    """Las marcas que nombra un texto sólo en el título de un dibujo («CORTE K-1 15X20 4#3», «DET.
-    K-1 4#3», R68.8): es una referencia y no se lee, pero dice de quién es. Una referencia que
-    remite a otra parte («VER CORTE C-2») no es un título."""
+    """Las marcas que nombra el encabezado de un texto, el título de un dibujo («CORTE K-1 15X20
+    4#3», «DET. K-1 4#3», «CORTE A-A K-1», R68.8, R99): no se lee, pero dice de quién es; un rango,
+    por sus extremos. Una referencia que remite a otra parte («VER CORTE C-2», «4#3 CORTE K-1»)
+    no es un título."""
+    limpio = texto.upper()
+    encabezado = _encabezado(limpio, config)
+    if encabezado is None:
+        return []
+    a, b = encabezado
+    lectura = _leer_sin_titulos(limpio[:a] + " " * (b - a) + limpio[b:], config)
     marcas: list[str] = []
-    for m in _REFERENCIA.finditer(texto.upper()):
-        titulo = _TITULO.fullmatch(m.group(0))
-        if titulo is not None:
-            marca = marca_sola(titulo.group(1).rstrip("."), config)
-            if marca is not None:
-                marcas.append(marca)
+    for pieza in lectura.piezas:
+        marcas += extremos_de_rango(pieza, config) if es_rango(pieza, config) else [pieza]
     return list(dict.fromkeys(marcas))
 
 
@@ -449,39 +473,51 @@ def leer_marcas(texto: str, config: TextPatternConfig) -> LecturaDeMarcas:
     return replace(leida, piezas=list(leida.piezas), pegadas=list(leida.pegadas))
 
 
-def _palabras_de_titulo(texto: str, config: TextPatternConfig) -> list[tuple[int, int]]:
-    """Dónde va cada palabra de título o de referencia (``_PALABRA_DE_TITULO``) a la que le sigue
-    una marca: una sola, varias unidas («K-1-K-3») o una escrita con espacios («CORTE K 1»)."""
-    tramos: list[tuple[int, int]] = []
-    for m in _PALABRA_DE_TITULO.finditer(texto):
-        siguiente = _FICHA_SIGUIENTE.match(texto, m.end())
-        if siguiente is None:
-            continue
-        ficha = con_guion(siguiente.group(1).upper()).rstrip(".")
-        resto = texto[m.end() :].lstrip().upper()
-        espaciada = _ESPACIADA.match(resto)
-        etiqueta = _ETIQUETA_ESPACIADA.match(resto)
-        if (
-            marca_sola(ficha, config) is not None
-            or _segmentar(ficha, config) is not None
-            or espaciada is not None
-            or (etiqueta is not None and es_etiqueta(f"{etiqueta[1]}-{etiqueta[2]}", config))
-        ):
-            tramos.append(m.span())
-    return tramos
+def _empieza_con_marca(resto: str, config: TextPatternConfig) -> bool:
+    """Si ``resto`` empieza con una marca: una sola, varias unidas («K-1-K-3») o una escrita con
+    espacios («K 1», «TL 1»)."""
+    siguiente = _FICHA_SIGUIENTE.match(resto)
+    if siguiente is None:
+        return False
+    ficha = con_guion(siguiente.group(1).upper()).rstrip(".")
+    resto = resto.lstrip().upper()
+    espaciada = _ESPACIADA.match(resto)
+    etiqueta = _ETIQUETA_ESPACIADA.match(resto)
+    return (
+        marca_sola(ficha, config) is not None
+        or _segmentar(ficha, config) is not None
+        or espaciada is not None
+        or (etiqueta is not None and es_etiqueta(f"{etiqueta[1]}-{etiqueta[2]}", config))
+    )
+
+
+def _encabezado(texto: str, config: TextPatternConfig) -> tuple[int, int] | None:
+    """El tramo del encabezado de ``texto`` (R99): la palabra del título y lo que va entre ella y
+    la primera marca (el nombre o el número del corte, «DE»), si a eso le sigue una marca; si no,
+    ``None``. El número de la nota no es del encabezado."""
+    m = _ENCABEZADO.match(texto)
+    if m is None:
+        return None
+    inicio, pos = m.start("palabra"), m.end()
+    for _ in range(_ANTES_DE_LA_MARCA + 1):
+        if _empieza_con_marca(texto[pos:], config):
+            return inicio, pos
+        siguiente = _FICHA_SIGUIENTE.match(texto, pos)
+        if siguiente is None or re.search(r"[#Ø@]|\d\s*[xX×]\s*\d", siguiente.group(1)):
+            return None  # se acabó el texto, o empieza el armado: no hay marca
+        pos = siguiente.end()
+    return None
 
 
 def _leer_marcas(texto: str, config: TextPatternConfig) -> LecturaDeMarcas:
-    # R97: en un texto con armado, la palabra de un título o de una referencia seguida de marcas
-    # no las quita: se quita sólo la palabra, y las marcas que le siguen se nombran todas (una:
-    # «unica»; varias: «varias»), con ``titulo``: no se lee. Sin armado («VER CORTE C-2») es una
-    # referencia que no nombra a nadie.
-    tramos = _palabras_de_titulo(texto, config) if _PALABRA_DE_TITULO.search(texto) else []
-    if tramos and (_CON_GATO.search(texto) or tiene_armado(texto)):
-        letras = list(texto)
-        for a, b in tramos:
-            letras[a:b] = " " * (b - a)
-        lectura = _leer_sin_titulos("".join(letras), config)
+    # R97, R99: en un texto con armado, el encabezado («CORTE K-1 …») no se quita con su marca: se
+    # quita sólo él, y las marcas que le siguen se nombran todas (una: «unica»; varias: «varias»),
+    # con ``titulo``: no se lee. Sin armado es el título de un dibujo (``titulos``); una
+    # referencia en otra parte del texto remite y no nombra a nadie.
+    encabezado = _encabezado(texto, config) if _ENCABEZADO.match(texto) else None
+    if encabezado is not None and (_CON_GATO.search(texto) or tiene_armado(texto)):
+        a, b = encabezado
+        lectura = _leer_sin_titulos(texto[:a] + " " * (b - a) + texto[b:], config)
         if lectura.nombra:
             return replace(lectura, titulo=True)
     return _leer_sin_titulos(texto, config)
@@ -494,6 +530,10 @@ def _leer_sin_titulos(texto: str, config: TextPatternConfig) -> LecturaDeMarcas:
     piezas: list[_Pieza] = []
     for inicio, fin, ficha in _fichas(limpio):
         piezas += _leer_ficha(ficha, inicio, config, limpio[fin:])
+    # R101: una marca cuya letra es también la palabra de la varilla («V 4», «V-4») tras el armado
+    # de otra marca, sin armado propio detrás: ¿la marca V-4 o cuatro varillas? No hace el texto
+    # de varias: no se nombra, y sus cifras quedan sin leer (reclaman las varillas).
+    piezas = [p for p in piezas if not _cuenta_tras_armado(p, piezas, limpio)]
     # Una letra suelta tras una marca limpia («K-15 A 4#3», R78): ¿su sufijo (K-15A, K-15-A) o
     # no? No se sabe: ambigua. No si es la cabeza de unos estribos («K-8 E #3@20») o el conector
     # de un rango o una lista («K-1 A K-4», «K-1 A 4», «K-1 Y K-2»).

@@ -2153,9 +2153,8 @@ def test_a_bar_number_that_is_not_an_exact_eighth_is_reported(texto):
     [
         ("PLACA BASE 35X35 CON ANCLAS 4 PZAS #6", "ANCLAS 4 PZAS #6"),
         ("ANCLAS 4 VARS #6", "ANCLAS 4 VARS #6"),
-        ("PLACA DE 30X30 CON 4#4", "PLACA DE 30X30 CON 4#4"),
-        ("BARRENOS PARA 4#4", "BARRENOS PARA 4#4"),
-        ("ANCLAJE 4#4", "ANCLAJE 4#4"),
+        ("4 ANCLAS #6", "4 ANCLAS #6"),  # R100: cuenta, objeto y varilla
+        ("PLACA DE APOYO 2#4 #3@20", "PLACA DE APOYO 2#4 #3@20"),  # R100: la malla también
         ("PERNOS: 4#5", "PERNOS: 4#5"),
         ("TORNILLOS 2#4", "TORNILLOS 2#4"),
         ("TAQUETES 4#3", "TAQUETES 4#3"),
@@ -2163,10 +2162,10 @@ def test_a_bar_number_that_is_not_an_exact_eighth_is_reported(texto):
     ],
 )
 def test_bars_of_an_anchor_or_a_plate_are_reported(texto, cita):
-    # R98: unas varillas en una cláusula de anclas, pernos, placas… son de ese objeto: se avisan
-    # (antes, con la palabra delante, se leían como las de la columna).
-    a = parsear_armado([texto], "columna")
-    assert a.longitudinales == []
+    # R98, R100: el fragmento pegado a unas anclas, pernos, placas… es de ese objeto: se avisa
+    # (antes, con la palabra delante, se leía como el de la columna).
+    a = parsear_armado([texto], "muro_concreto")
+    assert a.longitudinales == [] and a.parrillas == []
     assert f"«{cita}»: no es armado del elemento" in a.avisos
 
 
@@ -2181,13 +2180,33 @@ def test_bars_before_an_anchor_word_were_already_reported(texto):
 @pytest.mark.parametrize(
     "textos,longitudinales",
     [
-        (["8#6 E#3@20; ANCLAS 4#6"], "8#6"),  # otra cláusula: las de la columna se leen
+        (["8#6 E#3@20; ANCLAS 4#6"], "8#6"),  # las de la columna se leen
         (["8#6 E#3@20, ANCLAS 4#6"], "8#6"),
         (["8#6 E#3@20", "ANCLAS 4#6"], "8#6"),  # otro renglón
         (["4#6"], "4#6"),  # sin objeto
         (["4#6 E#3@20 EN TODA LA ALTURA"], "4#6"),
+        (["PLACA DE 30X30 CON 4#4"], "4#4"),  # R100: la placa es dueña sólo de su medida
+        (["BARRENOS PARA 4#4"], "4#4"),  # nada pegado a los barrenos
+        (["ANCLAJE 4#4"], "4#4"),  # el anclaje es de la varilla, no un objeto
+        (["30X30 8#6 E#3@20 PLACA BASE 35X35"], "8#6"),
+        (["LONGITUD DE ANCLAJE 40 DIAM. 4#5"], "4#5"),
     ],
 )
-def test_only_the_anchor_clause_is_reported(textos, longitudinales):
+def test_only_the_objects_fragment_is_reported(textos, longitudinales):
     a = parsear_armado(textos, "columna")
     assert texto_longitudinal(a) == longitudinales
+    assert all("ANCLAJE" not in x for x in a.avisos if "no es armado" in x)
+
+
+@pytest.mark.parametrize(
+    "texto,armado",
+    [
+        ("E#2@15 VER CORTE C-2", "E#2@15 VER CORTE"),  # R99: la referencia es del juego
+        ("2E#3 VER CORTE C-2", "2E#3 VER CORTE"),
+        ("E#2@15 VER DET. K-2A", "E#2@15 VER DETALLE"),  # «VER DET.» se escribe «VER DETALLE»
+        ("2E#3 VER CORTE", "2E#3 VER CORTE"),  # Marina
+    ],
+)
+def test_a_pointer_after_the_stirrups_is_their_reference(texto, armado):
+    a = parsear_armado([texto], "castillo")
+    assert texto_armado(a) == armado and a.avisos == []

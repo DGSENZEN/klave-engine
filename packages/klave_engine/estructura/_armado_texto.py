@@ -26,7 +26,7 @@ _CONTEXTO = (
     rf"\d+(?:\.\d+)?\s*[X×]\s*\d+(?:\.\d+)?{_UNIDAD}"
     rf"|H\s*=\s*\d+(?:\.\d+)?{_UNIDAD}"
     rf"|{_MARCA}"
-    r"|VER\s+(?:CORTE|DETALLE)"
+    r"|VER\s+(?:CORTE|DETALLE|DET\.?)"
     rf"|{_PALABRAS}"
 )
 # Dos lechos con la misma malla, cuando la malla no dice su lecho («2 PARRILLAS #4@20»); es
@@ -109,32 +109,56 @@ def _con_el_mismo_largo(m: re.Match[str], escrito: str) -> str:
     return escrito + " " * (len(m.group(0)) - len(escrito))
 
 
-# R98: lo que no es armado del elemento. Una cláusula que habla de anclas, anclajes, pernos,
-# tornillos, placas, taquetes o barrenos: sus varillas («PLACA BASE … CON ANCLAS 4 PZAS #6») y su
-# sección («PLACA BASE 35X35») son de ese objeto, no del elemento.
+# R100: lo que no es armado del elemento. Un objeto (anclas, pernos, tornillos, placas, taquetes,
+# barrenos; no el anclaje, que es de la varilla) es dueño sólo del fragmento pegado a él: la
+# palabra, sus modificadores («BASE», «DE», «DE APOYO») y lo que le sigue sin nada en medio
+# («PLACA BASE 35X35», «PLACA DE APOYO 2#4 #3@20», «ANCLAS 4 PZAS #6»), o una cuenta, el objeto y
+# una varilla («4 ANCLAS #6»). Lo demás del texto es del elemento.
 OBJETO_AJENO_RE = re.compile(
-    r"(?<![A-Z])(?:ANCLA(?:S|JES?)?|PERNOS?|TORNILLOS?|PLACAS?|TAQUETES?|BARRENOS?)(?![A-Z])",
+    r"(?<![A-Z])(?:ANCLAS?|PERNOS?|TORNILLOS?|PLACAS?|TAQUETES?|BARRENOS?)(?![A-Z])", re.I
+)
+_MODIFICADORES_RE = re.compile(r"(?:\s+(?:BASE|DE|DEL|APOYO)(?![A-Z]))*\s*:?\s*", re.I)
+_CUENTA_OBJETO_VARILLA_RE = re.compile(
+    rf"(?<![\d.#@])\d{{1,2}}\s+{OBJETO_AJENO_RE.pattern}\s+(?:DE\s+)?"
+    r"(?:[#Ø]\s*\d{1,2}(?:\.5)?(?![\d.])|\d/\d{1,2}\s*\")",
     re.I,
 )
-# Lo que separa dos cláusulas: el salto de línea, «;» y la coma que no va entre dos cifras (la de
-# «8@15,1@6» o «2,50» no separa nada).
-_ENTRE_CLAUSULAS = re.compile(r"[|;\n]|,(?!\d)|(?<!\d),")
 
 
-def objeto_ajeno(texto: str, a: int, b: int) -> tuple[int, int] | None:
-    """Si la cláusula de ``texto[a:b]`` habla de un objeto que no es armado del elemento (R98,
-    ``OBJETO_AJENO_RE``): el tramo de ``texto[a:b]`` junto con la palabra de ese objeto (la última
-    antes de él, o si no la primera después), para citarlo; si no, ``None``."""
-    separadores = list(_ENTRE_CLAUSULAS.finditer(texto))
-    inicio = max((m.end() for m in separadores if m.end() <= a), default=0)
-    fin = min((m.start() for m in separadores if m.start() >= b), default=len(texto))
-    antes = [m for m in OBJETO_AJENO_RE.finditer(texto, inicio, a) if m.end() <= a]
-    if antes:
-        return antes[-1].start(), b
-    despues = [m for m in OBJETO_AJENO_RE.finditer(texto, b, fin)]
-    if despues:
-        return a, despues[0].end()
-    return None
+def de_objetos(texto: str, fragmentos: list[tuple[int, int, str]]) -> list[tuple[int, int]]:
+    """Los tramos de ``texto`` que son de un objeto y no del elemento (R100): la palabra del objeto
+    con sus modificadores y el fragmento que le sigue (``fragmentos``: (inicio, fin, clase) de las
+    piezas y las secciones que el parser reconoce en ``texto``; clase «seccion», «varillas»,
+    «malla» o «estribos»). Una sección es su medida y ahí acaba («PLACA BASE 35X35 E#3@20»: los
+    estribos son del elemento); unas varillas o una malla siguen con las varillas y mallas que
+    van detrás separadas sólo por espacios («PLACA DE APOYO 2#4 #3@20»). Unos estribos nunca son
+    de un objeto. Y cada «cuenta, objeto y varilla» («4 ANCLAS #6»)."""
+    por_inicio: dict[int, tuple[int, str]] = {}
+    for a, b, clase in fragmentos:
+        if a not in por_inicio or b > por_inicio[a][0]:
+            por_inicio[a] = (b, clase)
+    tramos: list[tuple[int, int]] = []
+    for objeto in OBJETO_AJENO_RE.finditer(texto):
+        modificadores = _MODIFICADORES_RE.match(texto, objeto.end())
+        pos = modificadores.end() if modificadores is not None else objeto.end()
+        fin: int | None = None
+        while pos in por_inicio and por_inicio[pos][1] != "estribos":
+            fin, clase = por_inicio[pos]
+            if clase == "seccion":
+                break
+            pos = fin
+            while pos < len(texto) and texto[pos] == " ":
+                pos += 1
+        if fin is not None:
+            tramos.append((objeto.start(), fin))
+    tramos += [m.span() for m in _CUENTA_OBJETO_VARILLA_RE.finditer(texto)]
+    unidos: list[tuple[int, int]] = []
+    for a, b in sorted(tramos):
+        if unidos and a < unidos[-1][1]:
+            unidos[-1] = (unidos[-1][0], max(unidos[-1][1], b))
+        else:
+            unidos.append((a, b))
+    return unidos
 
 
 def traducciones(texto: str) -> list[tuple[int, int]]:
