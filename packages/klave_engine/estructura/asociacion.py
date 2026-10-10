@@ -29,9 +29,15 @@ allá de la etiqueta que la corta sigue siendo un reclamo de la dueña de la col
 corta metida en la columna puede quedárselo, y cualquier otra marca que lo alcance empata. Una
 columna que se junta con otra (su siguiente renglón sigue igual o más pegado a uno de al lado) o se
 abre en dos queda en duda igual que una cortada, y dos o más etiquetas que se toman cada una la pila
-que otra alcanza, en rueda, no se toman (R56). Lo que no se pudo pegar sale
-como rechazo: ambiguo, de otra familia, sin lector (dice de quién es pero ningún lector lo lee),
-de una etiqueta con varias marcas o sin dueño: nada se queda sin leer en silencio."""
+que otra alcanza, en rueda, no se toman (R56). También queda en duda la pila que no se sigue limpio:
+un renglón en la etiqueta ensanchada a la altura del siguiente (o entre la etiqueta y el primero)
+que no se encima con el de junto en la mitad del más angosto, como en una pila con renglones
+alineados unos a la izquierda, otros a la derecha o al centro, o un primer renglón junto a otra
+etiqueta más pegada que no le queda enfrente; ése y lo que puede seguirlo siguen siendo reclamos
+de la columna (R57): nunca un final limpio que deje el resto a otra etiqueta ni una pila a medias.
+Lo que no se pudo pegar sale como rechazo: ambiguo, de otra familia, sin lector (dice de quién es
+pero ningún lector lo lee), de una etiqueta con varias marcas o sin dueño: nada se queda sin leer
+en silencio."""
 
 import bisect
 import math
@@ -71,15 +77,19 @@ _MARCA_RE = re.compile(
 )
 _PREFIJO_DE_ETIQUETA = re.compile(r"^(?:CASTILLO|COLUMNA)\s+")
 _LARGO_DE_ETIQUETA = 10
-# Una etiqueta de varias marcas («K-1 Y K-2», «K-1, K-2», «K-1=K-2», «K-1/K-2», «K-1 A K-4»): lo
-# que queda entre sus marcas son sólo separadores.
-_ENTRE_MARCAS = re.compile(r"(?:\s|[,;/=&+\-]|\b(?:Y|E|A|AL)\b)*")
+# Una etiqueta de varias marcas («K-1 Y K-2», «K-1, K-2», «K-1=K-2», «K-1/K-2», «K-1 A K-4»,
+# «K-1 – K-4», «K-1 HASTA K-4»): lo que queda entre sus marcas son sólo separadores.
+_ENTRE_MARCAS = re.compile(r"(?:\s|[,;/=&+\-–]|\b(?:Y|E|A|AL|HASTA)\b)*")
 _LARGO_DE_VARIAS = 40
 _JUNTAS = " Y "  # cómo se escribe la «marca» de una etiqueta de varias
-# Un rango («K-1 A K-4», «K-1 AL K-4», «K-1 - K-4») se reporta como está escrito: no se adivinan
-# las marcas de en medio (ni si las hay).
-_CONECTOR_DE_RANGO = re.compile(r"\b(?:AL|A)\b|[-–]")
-_RANGO = re.compile(r"\S (?:AL|A|-|–) \S")
+# Un rango («K-1 A K-4», «K-1 AL K-4», «K-1 - K-4», «K-1 – K-4», «K-1 HASTA K-4», «DE K-1 A K-4»,
+# «K-1 A 4», «K-1 A K-2 A K-3») se reporta como está escrito: no se adivinan las marcas de en
+# medio (ni si las hay).
+_CONECTOR_DE_RANGO = re.compile(r"\b(?:AL|A|HASTA)\b|[-–]")
+_ABRE_RANGO = re.compile(r"(?:DE|DEL|DESDE)\s+")
+# El fin de un rango escrito sólo con su número («K-1 A 4»), tras un conector entre espacios.
+_FIN_DE_RANGO = re.compile(r"\s+(?:AL|A|HASTA|-|–)\s+(\d{1,2}[A-Z]?(?:\.\d)?)\b")
+_RANGO = re.compile(r"\S (?:AL|A|HASTA|-|–) \S")
 # Lo que remite a otra parte del plano no reclama una marca: «E#2@15 VER CORTE C-2» es un
 # renglón de armado, no una nota de C-2.
 _REFERENCIA = re.compile(
@@ -235,26 +245,41 @@ def _varias_marcas(texto: str, config: TextPatternConfig) -> list[str] | None:
     limpio = _PREFIJO_DE_ETIQUETA.sub("", " ".join(texto.split()).upper())
     if len(limpio) > _LARGO_DE_VARIAS:
         return None
-    halladas = list(_MARCA_RE.finditer(limpio))
+    # Cada marca, y el número que cierra un rango escrito sin la letra («K-1 A 4»).
+    halladas = [m.span() for m in _MARCA_RE.finditer(limpio)]
+    for _, fin in list(halladas):
+        numero = _FIN_DE_RANGO.match(limpio, fin)
+        if numero is not None and not any(
+            a < numero.end(1) and numero.start(1) < b for a, b in halladas
+        ):
+            halladas.append(numero.span(1))
+    halladas.sort()
     if len(halladas) < 2:
         return None
-    resto = [limpio[: halladas[0].start()]]
-    resto += [limpio[a.end() : b.start()] for a, b in zip(halladas, halladas[1:], strict=False)]
-    resto.append(limpio[halladas[-1].end() :])
-    if not all(_ENTRE_MARCAS.fullmatch(r) for r in resto):
+    entre = [limpio[a[1] : b[0]] for a, b in zip(halladas, halladas[1:], strict=False)]
+    antes, despues = limpio[: halladas[0][0]], limpio[halladas[-1][1] :]
+    if not all(_ENTRE_MARCAS.fullmatch(r) for r in [*entre, despues]):
         return None
-    marcas = [marca_en_texto(m.group(0), config) or m.group(0) for m in halladas]
-    entre = resto[1:-1]  # lo que separa cada marca de la siguiente
-    piezas: list[str] = []
-    k = 0
-    while k < len(marcas):
-        rango = _CONECTOR_DE_RANGO.search(entre[k]) if k + 1 < len(marcas) else None
-        if rango is not None:
-            piezas.append(f"{marcas[k]} {rango.group(0)} {marcas[k + 1]}")
-            k += 2
+    # Las marcas seguidas de un conector de rango van juntas: el rango, como se escribió.
+    grupos: list[list[tuple[int, int]]] = [[halladas[0]]]
+    for separa, marca in zip(entre, halladas[1:], strict=True):
+        if _CONECTOR_DE_RANGO.search(separa):
+            grupos[-1].append(marca)
         else:
-            piezas.append(marcas[k])
-            k += 1
+            grupos.append([marca])
+    abre = _ABRE_RANGO.fullmatch(antes)
+    if not _ENTRE_MARCAS.fullmatch(antes) and (abre is None or len(grupos[0]) < 2):
+        return None  # «DE K-1 A K-4» abre un rango; nada más va delante
+    piezas: list[str] = []
+    for k, grupo in enumerate(grupos):
+        if len(grupo) == 1:
+            a, b = grupo[0]
+            if not _MARCA_RE.fullmatch(limpio[a:b]):
+                return None  # un número suelto no es una marca
+            piezas.append(marca_en_texto(limpio[a:b], config) or limpio[a:b])
+        else:
+            desde = 0 if k == 0 and abre is not None else grupo[0][0]
+            piezas.append(limpio[desde : grupo[-1][1]])
     return list(dict.fromkeys(piezas))
 
 
@@ -681,7 +706,8 @@ class _Alcance:
     # cada una con su pila. Una que sólo la tiene enfrente de lado (la punta de un renglón largo)
     # no corta limpio: la pila queda en duda y lo de más allá no es suyo sin oposición.
     corte_limpio: bool = True
-    # Dos columnas que se juntan en un renglón que sigue igual de pegado a las dos.
+    # La pila no se sabe dónde acaba: dos columnas que se juntan en un renglón que sigue igual de
+    # pegado a las dos, una que se abre en dos (R56) o una que no se sigue limpio (R57).
     fusion: bool = False
 
     @property
@@ -700,6 +726,103 @@ def _sigue(etiqueta: _Texto, previo: _Texto, libres: set[str]) -> Callable[[_Tex
         return _en_la_etiqueta(etiqueta, t, previo.alto) and _traslapa(t, previo.x0, previo.x1)
 
     return admite
+
+
+def _a_su_alcance(previo: _Texto, sentido: int, donde: _Indice) -> list[tuple[float, _Texto]]:
+    """Los textos de ``donde`` a lo más a 1.5 altos de ``previo`` hacia ``sentido`` (sin los que
+    van a su lado), con su hueco."""
+    alcance = _HUECO_ENTRE_RENGLONES * previo.alto
+    borde = previo.y1 if sentido > 0 else previo.y0
+    cerca: list[tuple[float, _Texto]] = []
+    for t in donde.cerca(borde, sentido, alcance, _TRASLAPE * previo.alto):
+        hueco = _hueco(borde, t, sentido)
+        if -_TRASLAPE * min(previo.alto, t.alto) <= hueco <= alcance:
+            cerca.append((max(hueco, 0.0), t))
+    return sorted(cerca, key=lambda ht: (ht[0], ht[1].id))
+
+
+def _dudas(
+    etiqueta: _Texto,
+    previo: _Texto,
+    sentido: int,
+    renglones: _Indice,
+    libres: set[str],
+    fuera: set[str],
+) -> list[tuple[float, _Texto]]:
+    """Los renglones que podrían seguir a ``previo`` en la pila pero no lo siguen limpio (R57),
+    con su hueco, del más pegado al más lejano: a lo más a 1.5 altos de él y en la etiqueta
+    ensanchada, pero sin encimarse con él en la mitad del más angosto (una pila con renglones
+    alineados unos a la izquierda y otros a la derecha, o al centro). Uno fuera del ensanche no:
+    tampoco se seguiría alineado (``_sigue``), así que no es de esta pila de ningún modo (el
+    renglón largo de una columna que apenas llega a la de al lado no la pone en duda)."""
+    limpio = _sigue(etiqueta, previo, libres)
+    return [
+        (hueco, t)
+        for hueco, t in _a_su_alcance(previo, sentido, renglones)
+        if t.id not in fuera and t.id in libres and not limpio(t) and _en_la_etiqueta(etiqueta, t)
+    ]
+
+
+def _a_su_lado(a: _Texto, b: _Texto) -> bool:
+    """Dos textos en el mismo renglón: se enciman de alto."""
+    return min(a.y1, b.y1) > max(a.y0, b.y0)
+
+
+def _no_mas_lejos(hueco: float, t: _Texto, hueco_de: float, de: _Texto) -> bool:
+    """Si ``t`` (a ``hueco``) no queda más allá de ``de`` (a ``hueco_de``): más pegado, igual de
+    pegado o a su lado."""
+    return hueco <= hueco_de or _casi_igual(hueco, hueco_de, t.alto) or _a_su_lado(t, de)
+
+
+def _compite(t: _Texto, etiqueta: _Texto, siguiente: _Texto) -> bool:
+    """Si ``t``, al lado de ``siguiente`` (lo que sigue limpio a la pila), le queda al centro de
+    la etiqueta igual o más cerca que él: puede ser el renglón de la pila y ``siguiente`` el de
+    la columna de al lado. Uno más alejado es de la columna de al lado (en los cuadros de Marina,
+    el «2E#3EXT@10» de K-11 entra al ensanche de K-12 junto al de K-12, que le pasa por el
+    centro)."""
+    return _lejania(etiqueta.cx, t) <= _lejania(etiqueta.cx, siguiente) + (
+        _EMPATE_ABSOLUTO * t.alto
+    )
+
+
+def _inundar(
+    etiqueta: _Texto,
+    semillas: list[_Texto],
+    sentido: int,
+    indice: _Indice,
+    libres: set[str],
+    fuera: set[str],
+) -> list[_Texto]:
+    """Lo que puede seguir una columna que ya no se sigue limpio (R57), desde ``semillas``: cada
+    renglón a lo más a 1.5 altos de uno ya juntado y en la etiqueta ensanchada, y así, hasta un
+    texto que no es renglón (otra etiqueta, una nota…) en medio. No es de la pila: sigue siendo un
+    reclamo de ella, para que nadie se lleve sin oposición lo que puede ser suyo."""
+    juntados = {*fuera, *(t.id for t in semillas)}
+    salida = list(semillas)
+    pendientes = list(semillas)
+    while pendientes:
+        previo = pendientes.pop()
+        cerca = [
+            (hueco, t)
+            for hueco, t in _a_su_alcance(previo, sentido, indice)
+            if t.id != etiqueta.id
+            and (
+                _en_la_etiqueta(etiqueta, t)
+                if t.id in libres
+                else _en_la_etiqueta(etiqueta, t, previo.alto)
+                and _traslapa(t, previo.x0, previo.x1)
+            )
+        ]
+        topes = [(h, t) for h, t in cerca if t.id not in libres]
+        for hueco, t in cerca:
+            if t.id not in libres or t.id in juntados:
+                continue
+            if not all(_no_mas_lejos(hueco, t, h, tope) for h, tope in topes):
+                continue  # detrás de otra etiqueta, una nota…
+            juntados.add(t.id)
+            salida.append(t)
+            pendientes.append(t)
+    return salida
 
 
 def _en_el_pasillo(
@@ -788,15 +911,51 @@ def _alcance(
         primero,
         sobre_la_etiqueta,
     )
-    if actual is None or actual.id not in libres:
-        return None  # nada, u otra cosa (otra etiqueta, una nota, una celda) en su lugar
+    if actual is None:
+        return None  # nada a su alcance
+    tapada = actual.id not in libres
+    if tapada:
+        # Lo más pegado es otra cosa (otra etiqueta, una nota, una celda). Lo que está detrás de
+        # ella no es de esta etiqueta; pero un renglón que podría ser el primero y que eso no
+        # tiene enfrente (no se le encima de lado: está junto a él, no entre los dos) no queda
+        # tapado (R57): la pila queda en duda y el renglón es un reclamo suyo, nunca el primero
+        # limpio de otra etiqueta.
+        libre = _paso(
+            renglones,
+            borde,
+            sentido,
+            _HUECO_DE_ETIQUETA * etiqueta.alto,
+            etiqueta.alto,
+            etiqueta.cx,
+            {etiqueta.id},
+            primero,
+            sobre_la_etiqueta,
+        )
+        if libre is None or _tapado(libre, etiqueta, borde, sentido, indice, libres, primero):
+            return None
+        actual = libre
     pila = _Alcance(
         etiqueta,
         sentido,
         max(_hueco(borde, actual, sentido), 0.0),
         [actual],
         frontal=sobre_la_etiqueta(actual),
+        fusion=tapada,
     )
+    # R57 en el primer renglón: entre la etiqueta y él, otro renglón que podría ir antes en la
+    # columna sin seguirlo limpio (por eso ``actual`` pasó por extremo). La pila queda en duda y
+    # ése sigue siendo un reclamo suyo.
+    antes_del_primero = [
+        g
+        for _, g in _a_su_alcance(actual, -sentido, renglones)
+        if g.id != actual.id
+        and _hueco(borde, g, sentido) >= -_TRASLAPE * min(etiqueta.alto, g.alto)
+        and _en_la_etiqueta(etiqueta, g)
+        and _en_el_pasillo(actual, g, etiquetas) is None
+    ]
+    if antes_del_primero:
+        pila.fusion = True
+        pila.despues.extend(antes_del_primero)
     # Tras un corte, la columna se sigue leyendo igual, pero en ``despues``.
     destino = pila.renglones
     while True:
@@ -823,8 +982,34 @@ def _alcance(
                 empatados=empatados,
             )
 
+        def inundar(semillas: list[_Texto], fuera: set[str] = fuera) -> None:
+            pila.despues.extend(_inundar(etiqueta, semillas, sentido, indice, libres, fuera))
+
         empatados: list[_Texto] = []
         siguiente = buscar(indice, empatados=empatados)
+        dudas = _dudas(etiqueta, previo, sentido, renglones, libres, fuera)
+        hueco_siguiente = 0.0 if siguiente is None else max(_hueco(previo, siguiente, sentido), 0.0)
+        antes = [
+            t
+            for h, t in dudas
+            if siguiente is None
+            or (
+                _no_mas_lejos(h, t, hueco_siguiente, siguiente)
+                and (not _a_su_lado(t, siguiente) or _compite(t, etiqueta, siguiente))
+            )
+        ]
+        if antes:
+            # R57: un renglón que podría seguir la pila y no la sigue limpio (cae en la etiqueta
+            # ensanchada, pero de lado se encima poco o nada con el anterior). No se sabe si la
+            # pila acaba aquí: queda en duda, y ese renglón y lo que puede seguirlo siguen siendo
+            # reclamos suyos; nunca un final limpio que deje el resto como el primer renglón de
+            # otra etiqueta. Aunque otra etiqueta tenga ese renglón enfrente: tomarlo como un
+            # corte limpio deja pilas a medias (una etiqueta junto a una pila escalonada).
+            if destino is pila.renglones:
+                pila.fusion = True
+            limpio = [siguiente] if siguiente is not None and siguiente.id in libres else []
+            inundar([*antes, *limpio])
+            break
         if siguiente is None:
             break
         lado_a_lado = [
@@ -891,6 +1076,30 @@ def _alcance(
     return pila
 
 
+def _tapado(
+    t: _Texto,
+    etiqueta: _Texto,
+    borde: float,
+    sentido: int,
+    indice: _Indice,
+    libres: set[str],
+    admite: Callable[[_Texto], bool],
+) -> bool:
+    """Si entre ``etiqueta`` y el renglón ``t`` hay otra cosa (otra etiqueta, una nota…) que le
+    queda enfrente: a lo más igual de pegada a la etiqueta que él y encimada de lado con él."""
+    hueco_t = max(_hueco(borde, t, sentido), 0.0)
+    alcance = _HUECO_DE_ETIQUETA * etiqueta.alto
+    for b in indice.cerca(borde, sentido, alcance, _TRASLAPE * etiqueta.alto):
+        if b.id in libres or b.id == etiqueta.id or not admite(b):
+            continue
+        hueco_b = _hueco(borde, b, sentido)
+        if hueco_b < -_TRASLAPE * min(etiqueta.alto, b.alto):
+            continue
+        if _no_mas_lejos(max(hueco_b, 0.0), b, hueco_t, t) and _traslapa(b, t.x0, t.x1):
+            return True
+    return False
+
+
 def _es_copia(a: _Texto, b: _Texto) -> bool:
     """El mismo texto dibujado dos veces encima de sí mismo."""
     return a.texto == b.texto and math.hypot(a.x0 - b.x0, a.y0 - b.y0) <= _DUPLICADO * a.alto
@@ -947,9 +1156,10 @@ def _repartir(
     enfrente o, si las dos, la más pegada (si empatan, la de arriba), y si otra marca también la
     alcanza o la tiene enfrente apenas fuera de su alcance, o va contra la costumbre, la etiqueta
     es ambigua. Una pila cortada por otra etiqueta que no se queda con lo de más allá, que se abre
-    en dos o se junta con otra, o que otra etiqueta tiene enfrente apenas fuera de su alcance,
-    también. Lo de más allá de un corte o de donde la columna se junta con otra sigue siendo un
-    reclamo de la dueña de la columna, que empata con cualquiera menos con la que la corta metida
+    en dos, se junta con otra o no se sigue limpio (R57), o que otra etiqueta tiene enfrente apenas
+    fuera de su alcance, también. Lo de más allá de un corte o de donde la columna se junta con otra
+    o deja de seguirse limpio sigue siendo un reclamo de la dueña de la columna, que empata con
+    cualquiera menos con la que la corta metida
     en la columna; una pila que deja sin pila a otra etiqueta que alcanzaba alguno de sus renglones
     no se toma, ni las de etiquetas que se alcanzan la pila una a otra en rueda. Lo ambiguo se
     rechaza entero: nunca una pila a medias ni la de otra marca."""

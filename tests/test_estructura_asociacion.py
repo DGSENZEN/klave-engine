@@ -879,19 +879,37 @@ def _ids(ents, marca_de_texto):
     return propios
 
 
-@pytest.mark.parametrize("x,y", [(0.85, 0.50), (0.85, 0.45), (0.9, 0.5), (-0.5, 0.5), (0.7, 0.55)])
-def test_staggered_neighbours_keep_their_own_stacks(tmp_path, x, y):
+@pytest.mark.parametrize(
+    "x,y,leidas",
+    [
+        (0.85, 0.50, True),
+        (0.85, 0.45, True),
+        (0.9, 0.5, True),
+        # R57: el primer renglón de la otra pila cae en la etiqueta ensanchada a 0.08 (0.03) del
+        # tope de ésta y se encima con él en menos de la mitad del más angosto: puede ser el que
+        # sigue en una pila con renglones alineados distinto. La pila no acaba limpia ahí.
+        (-0.5, 0.5, False),
+        (0.7, 0.55, False),
+    ],
+)
+def test_staggered_neighbours_keep_their_own_stacks(tmp_path, x, y, leidas):
     # K-12 (primer hueco 0.025) y K-11 (0.056) escalonados: la pila de K-12 no sube por la
     # columna de K-11 ni K-11 toma la mitad de la de K-12 desde un lado.
     e1, r1 = _con("K-12", 0.0, 0.0, K12)
     e2, r2 = _con("K-11", x, y, K11)
     ents = _pilas_libres(tmp_path, e1 + e2, r1 + r2)
     asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
-    assert {a.marca: a.textos for a in asoc} == {
-        "K-11": ["8#6", "2E#3EXT@10", "CENTRO@20"],
-        "K-12": ["4#6+4#4", "2E#3EXT@10", "CENTRO@15"],
-    }
-    assert rech == []
+    if leidas:
+        assert {a.marca: a.textos for a in asoc} == {
+            "K-11": ["8#6", "2E#3EXT@10", "CENTRO@20"],
+            "K-12": ["4#6+4#4", "2E#3EXT@10", "CENTRO@15"],
+        }
+        assert rech == []
+    else:
+        assert asoc == []
+        assert sorted((r.texto, r.motivo, tuple(r.marcas)) for r in rech) == sorted(
+            (t, "ambigua", ("K-11", "K-12")) for t, _, _ in K11 + K12
+        )
 
 
 @pytest.mark.parametrize("dx,dy", [(0.6, 0.0), (0.6, 0.02), (0.55, 0.03), (0.7, 0.03)])
@@ -1239,12 +1257,20 @@ def test_a_label_facing_a_foreign_stack_top_takes_nothing(tmp_path, dy, g2, limp
     asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
     _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
     assert {a.marca for a in asoc} == ({"K-3", "K-4", "K-5"} if limpias else set())
-    assert sorted((r.motivo, r.texto, tuple(r.marcas)) for r in rech) == [
-        ("ambigua", "6#4", ("K-1", "K-2")),
-        ("ambigua", "EYG#3@15", ("K-1", "K-2")),
-        ("sin_dueno", "4#3", ()),
-        ("sin_dueno", "E#2@20", ()),
-    ]
+    # R57: «4#3» de K-2 cae en la etiqueta ensanchada de K-1 justo encima de su tope «6#4» sin
+    # encimarse con él: la pila de K-1 no acaba limpia ahí y «4#3» sigue siendo un reclamo suyo.
+    # «E#2@20» también, si la pila de K-2 empieza más arriba que «6#4»; si no, va a su lado y le
+    # queda más lejos del centro de K-1 que «6#4»: es de la columna de al lado y nadie lo lee.
+    encima = dy + 0.13 + g2 > 0.52
+    k1k2 = ("K-1", "K-2")
+    assert sorted((r.motivo, r.texto, tuple(r.marcas)) for r in rech) == sorted(
+        [
+            ("ambigua", "6#4", k1k2),
+            ("ambigua", "EYG#3@15", k1k2),
+            ("ambigua", "4#3", k1k2),
+            ("ambigua", "E#2@20", k1k2) if encima else ("sin_dueno", "E#2@20", ()),
+        ]
+    )
 
 
 def _columna_de_tres(k2gap, junta, con_k1=True):
@@ -1326,6 +1352,11 @@ def test_a_label_beside_a_stack_never_takes_part_of_it(tmp_path, x2, y2, propia)
         ("K-1 A K-4", ("K-1 A K-4",)),
         ("K-1 AL K-4", ("K-1 AL K-4",)),
         ("K-1 Y K-5 A K-7", ("K-1", "K-5 A K-7")),
+        ("K-1 – K-4", ("K-1 – K-4",)),
+        ("K-1 A 4", ("K-1 A 4",)),
+        ("DE K-1 A K-4", ("DE K-1 A K-4",)),
+        ("K-1 HASTA K-4", ("K-1 HASTA K-4",)),
+        ("K-1 A K-2 A K-3", ("K-1 A K-2 A K-3",)),
     ],
 )
 @pytest.mark.parametrize("hueco", [0.02, 0.04])
@@ -1546,3 +1577,267 @@ def test_a_long_line_into_the_next_column_never_splits_or_swaps_stacks(tmp_path,
     assert ents is not None  # todas eran legibles
     asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
     _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+
+
+# ------------------------- R57: pilas con renglones alineados distinto (izquierda/derecha/centro)
+
+
+def _con_alineacion(tmp_path, textos):
+    """Textos (texto, x, y, alto, alineación), en ese orden."""
+
+    def build(doc):
+        msp = doc.modelspace()
+        for texto, x, y, alto, alineacion in textos:
+            msp.add_text(texto, height=alto).set_placement((x, y), align=alineacion)
+
+    return _dxf(tmp_path, build)
+
+
+_IZQ, _DER, _CEN = (
+    TextEntityAlignment.BOTTOM_LEFT,
+    TextEntityAlignment.BOTTOM_RIGHT,
+    TextEntityAlignment.BOTTOM_CENTER,
+)
+# Las reproducciones mínimas del revisor (R57): la pila de K-1, un renglón alineado a la derecha y
+# el siguiente a la izquierda (se enciman 0.50 de 1.53, menos de la mitad del más angosto), con K-2
+# sin pila encima de la punta del segundo; y la de K-3, renglones al centro y a la izquierda, con
+# K-1 sin pila debajo.
+MEZCLADA_A = [
+    ("K-1", 0.0, 0.0, 0.13, _CEN),
+    ("4#6+4#4+2#5 CORR.", 0.25, -0.22, 0.10, _DER),
+    ("E#4@10 Y E#3@20 EN NUDOS", -0.25, -0.40, 0.10, _IZQ),
+    ("K-2", 1.3, -0.12, 0.13, _CEN),
+]
+MEZCLADA_B = [
+    ("K-3", 0.0, 1.0, 0.13, _CEN),
+    ("EYG#3@15", 0.0, 0.78, 0.10, _CEN),
+    ("6#4", 0.15, 0.60, 0.10, _CEN),
+    ("4#3", -0.17, 0.42, 0.10, _IZQ),
+    ("CENTRO@15 RESTO", -0.17, 0.24, 0.10, _IZQ),
+    ("K-1", -0.1, 0.0, 0.13, _CEN),
+]
+
+
+@pytest.mark.parametrize(
+    "textos,marcas",
+    [(MEZCLADA_A, ("K-1", "K-2")), (MEZCLADA_B, ("K-1", "K-3"))],
+    ids=["der-izq", "centro-izq"],
+)
+def test_a_stack_with_mixed_alignment_is_never_split(tmp_path, textos, marcas):
+    """R57: el siguiente renglón de una pila cae en la etiqueta ensanchada a la altura de seguirla
+    pero se encima con el anterior en menos de la mitad del más angosto. Antes la columna acababa
+    ahí sin duda y el resto era el primer renglón limpio de la etiqueta vecina (A: K-1 ← sólo
+    «4#6+4#4+2#5 CORR.», K-2 ← «E#4@10…»; B: K-3 y K-1 se partían la pila de K-3). Ahora la pila
+    queda en duda y lo que sigue es reclamo suyo: todo ambiguo, nada a medias ni ajeno."""
+    ents = _con_alineacion(tmp_path, textos)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    assert asoc == []
+    assert sorted((r.texto, r.motivo, tuple(r.marcas)) for r in rech) == sorted(
+        (t, "ambigua", marcas) for t, *_ in textos if not t.startswith("K-")
+    )
+
+
+@pytest.mark.parametrize("con_k1", [True, False])
+def test_a_label_beside_the_first_line_does_not_hide_it(tmp_path, con_k1):
+    """R57 (zigzag a ±0.48, semilla 64970): la pila de K-2 baja con «6#4» a la derecha y «8#6» a
+    la izquierda (no se enciman). K-1, sin pila, queda junto a «6#4» y más pegada a K-2 que él,
+    pero no enfrente de él (no se le encima de lado): no lo tapa. Antes K-2 no alcanzaba nada y K-1
+    tomaba «8#6» limpio; sin K-1, K-2 leía sólo «6#4». Ahora la pila de K-2 queda en duda y es
+    reclamo suyo: nada se lee y lo que K-1 también alcanza es ambiguo."""
+    textos = [
+        ("K-2", 0.5475, 0.012, 0.13, _CEN),
+        ("6#4", 1.087, -0.214, 0.10, _DER),
+        ("8#6", 0.067, -0.39, 0.10, _IZQ),
+    ]
+    if con_k1:
+        textos.append(("K-1", 0.0185, -0.23, 0.13, _CEN))
+    ents = _con_alineacion(tmp_path, textos)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    assert asoc == []
+    motivo, marcas = ("ambigua", ("K-1", "K-2")) if con_k1 else ("sin_dueno", ())
+    assert sorted((r.texto, r.motivo, tuple(r.marcas)) for r in rech) == [
+        ("6#4", motivo, marcas),
+        ("8#6", motivo, marcas),
+    ]
+
+
+def test_the_same_stack_with_one_alignment_reads_whole(tmp_path):
+    """El caso A del revisor con los dos renglones alineados a la derecha: se siguen limpio y K-1
+    lee su pila entera; K-2 no alcanza nada que sea de una pila en duda."""
+    textos = [MEZCLADA_A[0], MEZCLADA_A[1], (*MEZCLADA_A[2][:1], 0.25, -0.40, 0.10, _DER)]
+    ents = _con_alineacion(tmp_path, [*textos, MEZCLADA_A[3]])
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    assert {a.marca: a.textos for a in asoc} == {
+        "K-1": ["4#6+4#4+2#5 CORR.", "E#4@10 Y E#3@20 EN NUDOS"]
+    }
+    assert rech == []
+
+
+_CORTOS = ["4#3", "6#4", "8#6", "12#8", "E#2@15", "E#4@10", "EYG#3@15", "CENTRO@20"]
+_MEDIOS = ["2E#3EXT@10", "4#6+4#4", "E#3@20 Y E#2@15", "CENTRO@15 RESTO"]
+_LARGOS = [
+    "4#6+4#4+2#5 CORR.",
+    "2E#3EXT@10 EN EXTREMOS",
+    "12#8+8#6 EN 2 LECHOS",
+    "EYG#3@15 EN TODA LA ALTURA",
+    "E#4@10 Y E#3@20 EN NUDOS",
+]
+_ALINEACIONES = {"izq": _IZQ, "der": _DER, "cen": _CEN}
+
+
+def _cuadro_mezclado(tmp_path, semilla, familia, desplazamiento=0.25, fija=False):
+    """Las familias del revisor para R57, con su mismo orden de sorteos. «zigzag»: una rejilla de
+    marcas, cada pila con renglones cortos, medios y largos alineados a la izquierda, a la derecha
+    o al centro de su etiqueta (± ``desplazamiento``), alternados o al azar; «ambos»: escaleras de
+    etiqueta y pila (encima o debajo) con escaleras vecinas cerca, así que una etiqueta tiene
+    renglones largos, suyos o ajenos, de los dos lados. Una de cada cinco etiquetas sin pila. Con
+    ``fija``, una sola alineación por pila. ``(None, …)`` si dos textos quedan a menos de 0.02."""
+    rnd = random.Random(semilla)
+
+    def renglones(n):
+        salida = []
+        for _ in range(n):
+            u = rnd.random()
+            salida.append(rnd.choice(_LARGOS if u < 0.35 else _MEDIOS if u < 0.65 else _CORTOS))
+        return salida
+
+    def pila(marca, x, y_etiqueta, abajo, hueco, textos, alineaciones):
+        salida = []
+        for k, texto in enumerate(textos):
+            rel = k * 0.18 * rnd.uniform(0.95, 1.05)
+            yy = (y_etiqueta - hueco - 0.10 - rel) if abajo else (y_etiqueta + 0.13 + hueco + rel)
+            alineacion = alineaciones[k % len(alineaciones)]
+            dx = {"izq": -desplazamiento, "der": desplazamiento, "cen": 0.0}[alineacion]
+            salida.append((texto, x + dx + rnd.uniform(-0.06, 0.06), yy, 0.10, alineacion, marca))
+        return salida
+
+    textos: list[tuple] = []
+    n = 0
+    if familia == "zigzag":
+        sx, sy = rnd.uniform(0.5, 1.4), rnd.uniform(0.7, 1.4)
+        mezcla = rnd.random() < 0.5
+        abajo_siempre = rnd.random() < 0.5
+        for j in range(rnd.randint(1, 3)):
+            for i in range(rnd.randint(2, 4)):
+                n += 1
+                marca = f"K-{n}"
+                x = i * sx + rnd.uniform(-0.15, 0.15)
+                y = j * sy + rnd.uniform(-0.25, 0.25)
+                textos.append((marca, x, y, 0.13, None, marca))
+                abajo = (rnd.random() < 0.5) if mezcla else abajo_siempre
+                if rnd.random() < 0.2:
+                    continue
+                suyos = renglones(rnd.randint(2, 4))
+                if rnd.random() < 0.5:
+                    alineaciones = ["izq", "der"] if rnd.random() < 0.5 else ["der", "izq"]
+                else:
+                    alineaciones = [rnd.choice(list(_ALINEACIONES)) for _ in suyos]
+                if fija:
+                    alineaciones = alineaciones[:1]
+                hueco = rnd.uniform(0.02, 0.16)
+                textos += pila(marca, x, y, abajo, hueco, suyos, alineaciones)
+    else:
+        sx = rnd.uniform(0.45, 1.0)
+        for i in range(rnd.randint(2, 3)):
+            x0 = i * sx + rnd.uniform(-0.1, 0.1)
+            y = rnd.uniform(-0.2, 0.2)
+            for _ in range(rnd.randint(2, 3)):
+                n += 1
+                marca = f"K-{n}"
+                abajo = rnd.random() < 0.5
+                sin_pila = rnd.random() < 0.2
+                suyos = renglones(rnd.randint(2, 3))
+                alineaciones = [rnd.choice(list(_ALINEACIONES)) for _ in suyos]
+                if fija:
+                    alineaciones = alineaciones[:1]
+                hueco, separa = rnd.uniform(0.02, 0.16), rnd.uniform(0.02, 0.3)
+                alto = (len(suyos) - 1) * 0.18 + 0.10
+                x = x0 + rnd.uniform(-0.1, 0.1)
+                if abajo:
+                    y_etiqueta = y - separa - 0.13
+                    textos.append((marca, x, y_etiqueta, 0.13, None, marca))
+                    if not sin_pila:
+                        textos += pila(marca, x, y_etiqueta, True, hueco, suyos, alineaciones)
+                        y = y_etiqueta - hueco - alto
+                    else:
+                        y = y_etiqueta
+                else:
+                    if not sin_pila:
+                        y_etiqueta = y - separa - alto - hueco - 0.13
+                        textos += pila(marca, x, y_etiqueta, False, hueco, suyos, alineaciones)
+                    else:
+                        y_etiqueta = y - separa - 0.13
+                    textos.append((marca, x, y_etiqueta, 0.13, None, marca))
+                    y = y_etiqueta
+    ents = _con_alineacion(
+        tmp_path, [(t, x, y, alto, _ALINEACIONES.get(al, _CEN)) for t, x, y, alto, al, _ in textos]
+    )
+    de_quien = {
+        (t, round(x, 3), round(y, 3)): marca for t, x, y, _, al, marca in textos if al is not None
+    }
+    return (None if _se_tocan(ents) else ents), de_quien
+
+
+# Las semillas en que el revisor encontró una pila ajena o a medias en 398034d (0–3,000).
+SEMILLAS_ZIGZAG = (
+    [4, 22, 46, 68, 77, 86, 95, 138, 144, 150, 156, 168, 170, 174, 238, 301, 387, 431, 446, 475]
+    + [584, 591, 633, 686, 761, 772, 795, 799, 804, 806, 824, 825, 837, 872, 879, 891, 903, 917]
+    + [961, 985, 1012, 1084, 1127, 1137, 1148, 1163, 1169, 1176, 1186, 1216, 1249, 1278, 1371]
+    + [1468, 1512, 1558, 1576, 1577, 1646, 1668, 1669, 1687, 1707, 1748, 1811, 1860, 1863, 1868]
+    + [1875, 1924, 1940, 1986, 2025, 2060, 2088, 2090, 2091, 2120, 2148, 2149, 2156, 2203, 2217]
+    + [2224, 2233, 2280, 2294, 2304, 2311, 2348, 2360, 2417, 2446, 2460, 2481, 2510, 2534, 2539]
+    + [2540, 2551, 2559, 2582, 2598, 2614, 2642, 2683, 2704, 2762, 2763, 2822, 2848, 2859, 2860]
+    + [2865, 2930, 2937, 2964, 2975, 2988, 2995]
+)
+SEMILLAS_AMBOS = [56, 78, 364, 394, 682, 702, 1814, 1896, 1924, 2083, 2197, 2450, 2601, 2796, 2977]
+
+
+@pytest.mark.parametrize(
+    "familia,semilla,desplazamiento",
+    [("zigzag", s, 0.25) for s in SEMILLAS_ZIGZAG]
+    + [("ambos", s, 0.25) for s in SEMILLAS_AMBOS]
+    # Renglones a ±0.48 de su etiqueta: el más pegado a ella no queda encima de ella, así que el
+    # primero que se toma es otro, y aquél queda entre los dos sin seguirlo limpio.
+    + [("zigzag", 1110, 0.48)]
+    # Una etiqueta sin pila junto al primer renglón de otra (no enfrente) ya no la deja sin pila
+    # para luego tomarse lo de abajo (64970) ni deja que otra suba por la pila completa (61049).
+    + [("zigzag", 64970, 0.48), ("ambos", 61049, 0.40)]
+    # Lo que puede seguir una pila en duda sigue siendo reclamo suyo hasta donde llegue, no sólo
+    # el renglón donde se perdió: si no, otra etiqueta se lleva el de más allá (60506).
+    + [("zigzag", 60506, 0.25)],
+)
+def test_mixed_alignment_cuadros_never_read_a_foreign_or_partial_stack(
+    tmp_path, familia, semilla, desplazamiento
+):
+    ents, de_quien = _cuadro_mezclado(tmp_path, semilla, familia, desplazamiento)
+    assert ents is not None  # todas eran legibles
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+
+
+@pytest.mark.parametrize(
+    "familia,desplazamiento,fija,desde,semillas",
+    [
+        ("zigzag", 0.25, False, 5000, 300),
+        ("zigzag", 0.25, True, 5000, 200),
+        ("zigzag", 0.48, False, 5000, 200),
+        ("ambos", 0.25, False, 5000, 400),
+        ("ambos", 0.48, False, 5000, 400),
+    ],
+)
+def test_a_sweep_of_mixed_alignment_cuadros(
+    tmp_path, familia, desplazamiento, fija, desde, semillas
+):
+    """Una barrida acotada de las familias de R57 (con una sola alineación por pila como
+    control, y con los renglones más lejos de su etiqueta): ninguna pila ajena ni a medias, todo
+    renglón leído o rechazado, y se lee algo."""
+    legibles = leidos = 0
+    for semilla in range(desde, desde + semillas):
+        ents, de_quien = _cuadro_mezclado(tmp_path, semilla, familia, desplazamiento, fija)
+        if ents is None:
+            continue
+        asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+        _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+        legibles += 1
+        leidos += len(asoc)
+    assert legibles >= 10 and leidos >= 1
