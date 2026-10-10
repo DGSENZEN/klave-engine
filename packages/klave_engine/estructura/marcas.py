@@ -154,6 +154,33 @@ def marca_sola(ficha: str, config: TextPatternConfig) -> str | None:
     return None
 
 
+def marca_normalizada(texto: str, config: TextPatternConfig) -> str | None:
+    """La forma única de ``texto`` si es una sola marca, escrita como sea: en mayúsculas, sin
+    espacios, con «-» por cualquier guion, las letras de su prefijo, «-» y lo demás tal cual
+    («K15A.1», «k-15a.1», «K 15A.1» → K-15A.1; «C 1» → C-1; «K1» → K-1; «TL1» → TL-1; «K1-A» →
+    K-1-A). Sólo junta maneras de escribir la misma marca: «K-1», «K-1A», «K-15A», «K-15A.1» y
+    «K-1-A» son marcas distintas, «T1-1» no es «T-11» y los ceros de su número se dejan como se
+    escribieron (K-07 es K-07). ``None`` si no es una marca."""
+    ficha = con_guion("".join(texto.upper().split()))
+    compacta = _COMPACTA.fullmatch(ficha)
+    if compacta is not None:
+        if compacta.group(5):
+            return f"{compacta.group(1)}-X"
+        variante = f".{compacta.group(4)}" if compacta.group(4) else ""
+        return f"{compacta.group(1)}-{compacta.group(2)}{compacta.group(3)}{variante}"
+    con_letra = _CON_LETRA.fullmatch(ficha)
+    if con_letra is not None:
+        return f"{con_letra.group(1)}-{con_letra.group(2)}-{con_letra.group(3)}"
+    if es_etiqueta(ficha, config):
+        # Una etiqueta de la configuración que ya lleva su guion queda como está («T1-1», «TE-A»);
+        # si no, el guion va tras las letras de su prefijo («TL1» → TL-1).
+        prefijo = re.match(r"[A-Z]+", ficha)
+        if "-" in ficha or prefijo is None or prefijo.end() == len(ficha):
+            return ficha
+        return f"{ficha[: prefijo.end()]}-{ficha[prefijo.end() :]}"
+    return None
+
+
 @dataclass
 class LecturaDeMarcas:
     """Lo que la gramática lee de un texto (ver el docstring del módulo)."""

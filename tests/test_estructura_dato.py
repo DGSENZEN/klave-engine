@@ -413,3 +413,14 @@ def test_a_hojas_own_nota_beats_a_detalle_of_another_hoja():
     assert d.valor == 0.08  # globalmente un detalle manda sobre una nota
     assert para_hoja(d, "ES-000").valor == 0.05  # pero cada hoja manda sobre lo suyo
     assert para_hoja(d, "ES-100").valor == 0.08
+
+
+def test_a_conflict_inside_the_winning_group_is_kept_whatever_the_order():
+    # R13: ``e1`` ya trae un conflicto y vale lo mismo que ``limpio``; antes sólo se veía si
+    # ``e1`` llegaba primero.
+    e1 = _eleccion_en_conflicto()
+    limpio = Dato(valor=(20, 30), fuente="detalle", hoja="C")
+    assert e1.valor == limpio.valor and e1.en_conflicto
+    assert elegir([limpio, e1]).en_conflicto is True
+    assert elegir([e1, limpio]).en_conflicto is True
+    assert elegir([limpio, Dato(valor=(20, 30), fuente="detalle", hoja="D")]).en_conflicto is False

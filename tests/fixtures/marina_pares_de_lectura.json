@@ -1,0 +1,10 @@
+{
+ "_origen": "marina_lote_04_estructural_d1cd5ec8 (02 ESTRUCTURAL L.04 - 26.01.15), pipeline completo con su ai_reads.json real (82 lecturas IA), 2026-10-10: las lecturas de schedules.json por fuente/método",
+ "pares": {
+  "detalle/cotas": 243,
+  "detalle/llamada": 5,
+  "detalle/pila": 142,
+  "ia/ia": 82,
+  "nota/nota": 4
+ }
+}

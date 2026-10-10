@@ -99,7 +99,9 @@ def elegir(datos: list[Dato], *, preferir_hoja: str | None = None) -> Dato | Non
     Todo lo demás queda en ``alternativas``, plano: primero los otros datos recibidos y luego
     lo que el elegido ya traía (la alternativa de un perdedor viaja dentro de él, sin
     desplegarse). Así elegir de nuevo sobre un dato ya elegido no borra su conflicto, sus
-    copias ni la lectura que perdió. No modifica los datos recibidos."""
+    copias ni la lectura que perdió. El resultado está ``en_conflicto`` si hay más de un valor
+    o si algún dato del grupo ganador ya lo estaba, llegue en el orden que llegue (R13). No
+    modifica los datos recibidos."""
     if not datos:
         return None
     mejor = max(PRECEDENCIA[d.fuente] for d in datos)
@@ -126,7 +128,9 @@ def elegir(datos: list[Dato], *, preferir_hoja: str | None = None) -> Dato | Non
         deep=True,
         update={
             "alternativas": alternativas,
-            "en_conflicto": len(grupos) > 1 or base.en_conflicto,
+            # R13: un conflicto que ya traía cualquier dato del grupo ganador sigue a la vista,
+            # sea cual sea el orden en que llegaron (no sólo el del elegido).
+            "en_conflicto": len(grupos) > 1 or any(datos[i].en_conflicto for i in ganador_grupo),
             "copias": sum(datos[i].copias for i in ganador_grupo),
             "hojas": hojas,
         },
