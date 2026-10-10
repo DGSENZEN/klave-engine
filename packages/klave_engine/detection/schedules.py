@@ -517,6 +517,39 @@ def _family_in_text(text: str) -> str | None:
     return None
 
 
+# The number of a note before its first word («1.-», «3)», «2.»).
+_NUMERO_AL_INICIO = re.compile(r"^\s*\d{1,2}(?:\.-?|-|\))\s*")
+
+
+def _family_subject(text: str) -> tuple[str | None, list[str]]:
+    """The family a family note is about (R83) and every family the text names.
+    The family word must be the subject: the text's first word, after an
+    optional note number («CADENA DE ENRASE 15x25 …», «1.- CASTILLOS 15X15 …»),
+    or a family word followed by «:» («DALA: 15X20 …»); and no word of another
+    family may appear elsewhere. A family word in another place («2 VARILLAS #5
+    ANCLADA AL MURO O CADENA …», «ANCLAR A LA TRABE CON 2#4», «ARMEX 15X30
+    CADENA DE BORDE») gives no subject: the text is no family's note."""
+    upper = text.upper()
+    words: list[tuple[int, int, str]] = []
+    for family, pattern in _FAMILY_KEYWORDS:
+        for m in pattern.finditer(upper):
+            end = m.end()
+            while end < len(upper) and upper[end].isalpha():
+                end += 1  # «CASTILLOS», «DALAS»: la palabra entera
+            words.append((m.start(), end, family))
+    words.sort()
+    families = list(dict.fromkeys(family for _a, _b, family in words))
+    number = _NUMERO_AL_INICIO.match(upper)
+    head = number.end() if number else len(upper) - len(upper.lstrip())
+    subject = next(
+        (family for start, end, family in words if start == head or re.match(r"\s*:", upper[end:])),
+        None,
+    )
+    if subject is None or any(family != subject for family in families):
+        return None, families
+    return subject, families
+
+
 def _render(render: Callable[[Armado], str], armado: Armado, avisos: list[str]) -> str | None:
     try:
         return render(armado) or None
@@ -817,6 +850,21 @@ def _parse_annotations(
                 )
             )
         elif family is not None:
+            # R83: a family note needs its family word as the subject; a family word in
+            # another place («… ANCLADA AL MURO O CADENA …») is not a family reading. It is
+            # reported, never dropped.
+            family, families = _family_subject(content)
+            if family is None:
+                rechazos.append(
+                    Rechazo(
+                        entidad_id=text.entity_id,
+                        texto=(text.text or "").strip(),
+                        hoja=hoja,
+                        motivo="sin_lector",
+                        familias=families,
+                    )
+                )
+                continue
             # "HUECOS DE HASTA 15X20 … CONTRATRABE": a hole, not the element's section.
             reading = _reading([content], family, _section_is_the_elements(content))
             if not _has_something(reading, content):

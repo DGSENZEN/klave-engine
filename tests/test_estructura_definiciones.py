@@ -1007,3 +1007,22 @@ def test_what_heads_feeds_the_mark_it_names(tmp_path, notas):
     for campo in ("longitudinales",) if "VER CORTE C-2 8#6" in notas[0] else ("seccion_cm",):
         d = getattr(c2, campo)
         assert d.ilegible and d.fuente == "nota" and [a.fuente for a in d.alternativas] == ["ia"]
+
+
+def test_an_anchorage_note_is_not_the_dalas(tmp_path):
+    # R83: la nota del anclaje con SIKA no es de las dalas: la de la cadena de enrase se elige
+    # limpia, sin copias ilegibles ni conflicto (antes las dos hacían «en_conflicto» cada campo).
+    inv = build_schedule_inventory(
+        _notas(
+            tmp_path,
+            [
+                "CADENA DE ENRASE 15x25 4#3 E#2@15",
+                "2 VARILLAS #5 ANCLADA AL MURO O CADENA CON ANCHORFIX 3001 DE SIKA",
+            ],
+        ),
+        frames=_frame(),
+    )
+    dala = construir_definiciones(inv, C)[1]["dala"]
+    for campo in ("seccion_cm", "longitudinales", "estribos"):
+        d = getattr(dala, campo)
+        assert not d.en_conflicto and not d.ilegible and d.alternativas == []

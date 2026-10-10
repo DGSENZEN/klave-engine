@@ -203,6 +203,9 @@ class Rechazo(BaseModel):
     # sin_dueno: nada lo lee.
     motivo: Literal["ambigua", "otra_familia", "sin_lector", "varias_marcas", "sin_dueno"]
     marcas: list[str] = Field(default_factory=list)
+    # Las familias que nombra un texto con armado que no es la nota de ninguna: su palabra no es
+    # el sujeto («2 VARILLAS #5 ANCLADA AL MURO O CADENA …» → dala, muro; R83).
+    familias: list[str] = Field(default_factory=list)
 
 
 # ------------------------------------------------------------------------- qué es cada texto

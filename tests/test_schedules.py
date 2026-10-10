@@ -327,8 +327,9 @@ def test_readings_from_other_sheets_never_complete_each_other(tmp_path):
 
 def test_a_family_note_without_armado_is_not_an_armado_reading(tmp_path):
     # La nota de huecos de Marina: su sección no es la del elemento y sus únicos números son su
-    # numeración; no es una lectura (antes tampoco). Una nota de familia con un armado que no se
-    # pudo leer sí lo es, con su aviso.
+    # numeración; no es una lectura (antes tampoco). R83: el anclaje «2 VARILLAS #5 ANCLADA AL MURO
+    # O CADENA» tampoco es la nota de una familia (antes lo era de las dalas, por «CADENA»): ninguna
+    # palabra de familia es su sujeto. Las dos se dicen, nunca se pierden.
     def build(msp):
         msp.add_text(
             "1.-EL REFUERZO PARA HUECOS DE HASTA 15X20CMS 2.-COLOCAR EL PASO A LA MITAD "
@@ -338,9 +339,11 @@ def test_a_family_note_without_armado_is_not_an_armado_reading(tmp_path):
         msp.add_text("2 VARILLAS #5 ANCLADA AL MURO O CADENA", height=0.2).set_placement((0, 9))
 
     inv = build_schedule_inventory(_entities(tmp_path, build), frames=_frame())
-    assert "contratrabe" not in inv.by_family
-    (dala,) = [s for s in inv.specs if s.family == "dala"]
-    assert dala.rebar is None and dala.avisos and "longitudinales" in dala.campos_con_texto
+    assert inv.specs == [] and inv.by_family == {}
+    assert sorted((r.motivo, r.familias) for r in inv.rechazos) == [
+        ("sin_lector", ["contratrabe"]),
+        ("sin_lector", ["muro", "dala"]),
+    ]
 
 
 def _texto(entity_id, text, x, y, height=0.1):
@@ -1650,3 +1653,38 @@ def test_a_trailing_pointer_keeps_its_reference_wherever_it_sits(
     assert (k1.rebar, k1.stirrups, inv.rechazos) == (varillas, estribos, [])
     merge_external_specs(inv, _ias("K-2", "C-2"), C)
     assert inv.by_mark["K-2"].rebar == "8#8" and inv.by_mark["C-2"].rebar == "8#8"
+
+
+# ------------------------------------------------------------------ tarea 8b, R83
+
+
+@pytest.mark.parametrize(
+    "nota,familia,familias",
+    [
+        # R83: la palabra de la familia es el sujeto (la primera, tras el número de la nota, o
+        # seguida de «:»): es la nota de esa familia.
+        ("DALA: 15X20 4#3 E#2@20", "dala", None),
+        ("1.- CASTILLOS 15X15 4#3 E#2@20", "castillo", None),
+        ("CADENA DE ENRASE 15x25 4#3 E#2@15", "dala", None),  # Marina, ES-101
+        # En otro lugar no lo es: se rechaza con sus familias, nunca se pierde.
+        (
+            "2 VARILLAS #5 ANCLADA AL MURO O CADENA CON ANCHORFIX 3001 DE SIKA",
+            None,
+            ["muro", "dala"],
+        ),
+        ("ANCLAR A LA TRABE CON 2#4", None, ["trabe"]),
+        ("ARMEX 15X30 CADENA DE BORDE", None, ["castillo", "dala"]),  # dos familias
+        ("4V#4 E#3@20CMS CADENA DE DESPLANTE", None, ["dala"]),  # PRUEBA-1
+    ],
+)
+def test_a_family_note_needs_its_family_word_as_the_subject(tmp_path, nota, familia, familias):
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    if familia is not None:
+        (s,) = inv.specs
+        assert (s.mark, s.family, s.source) == (familia.upper(), familia, "nota")
+        assert inv.rechazos == []
+    else:
+        assert inv.specs == []
+        assert [(r.motivo, r.texto, r.marcas, r.familias) for r in inv.rechazos] == [
+            ("sin_lector", nota, [], familias)
+        ]
