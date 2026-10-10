@@ -42,14 +42,15 @@ from klave_engine.estructura.asociacion import (
     ARMADO_RE,
     Rechazo,
     asociar,
-    extremos_de_rango,
-    fichas_de_marca,
     hoja_y_llave,
     lo_lee_una_nota,
-    marca_en_rango,
     marca_en_texto,
-    marcas_en_nota,
-    nombra_varias,
+)
+from klave_engine.estructura.marcas import (
+    es_rango,
+    extremos_de_rango,
+    leer_marcas,
+    marca_en_rango,
 )
 from klave_engine.geometry.bbox import (
     BBox,
@@ -384,10 +385,13 @@ def _parse_annotations(
     """Notes: a text that names its mark ("K-1 15x20 4#3 E#2@20") or its
     family ("DALA 15x30 4#3,E#2@20", "ARMEX 15X30"), read when it has a
     section, bars, a mesh or stirrups the parser reads (``lo_lee_una_nota``:
-    the association reports the others as «sin lector»). A mark inside a
-    reference ("VER CORTE C-2") is not the note's. A note naming several marks
-    («K-1 Y K-2 15X20 4#3», «K-1 A K-4 …») is not read: it is a «varias_marcas»
-    rejection with the marks as written (R63, like a stack under such a label).
+    the association reports the others as «sin lector»). Its mark comes from
+    the one mark grammar (``leer_marcas``, R67), keyed as a label would be: a
+    mark inside a reference ("VER CORTE C-2") is not the note's; a note naming
+    several marks («K-1 Y K-2 15X20 4#3», «K-1 A K-4 …», «K-1-K-3 …») is a
+    «varias_marcas» rejection with the marks as written (R63); a note whose
+    mark is glued to something («T2-20X40», «K-7E#3@20 15X20», «K-1-3 4#3») is
+    not read either: it is a «sin_lector» rejection naming every candidate.
     Bare armado lines are the association's, not a note's."""
     specs: list[ElementSpec] = []
     rechazos: list[Rechazo] = []
@@ -396,19 +400,19 @@ def _parse_annotations(
         if not content or not lo_lee_una_nota(content):
             continue
         hoja, llave = sheet(text)
-        marks = marcas_en_nota(content, config)
-        if nombra_varias(marks):
+        lectura = leer_marcas(content, config)
+        if lectura.tipo in ("varias", "ambigua"):
             rechazos.append(
                 Rechazo(
                     entidad_id=text.entity_id,
                     texto=(text.text or "").strip(),
                     hoja=hoja,
-                    motivo="varias_marcas",
-                    marcas=marks,
+                    motivo="varias_marcas" if lectura.tipo == "varias" else "sin_lector",
+                    marcas=lectura.piezas,
                 )
             )
             continue
-        mark = marks[0] if marks else None
+        mark = lectura.marca
         family = _family_in_text(content)
         if mark is not None:
             family = family or family_of_mark(mark)
@@ -877,9 +881,10 @@ def _texts_naming_marks(
     texts: list[NormalizedEntity], config: TextPatternConfig, sheet: Sheet
 ) -> list[TextoConMarca]:
     """Every line of every drawing text (model space and block contents, every
-    sheet, MTEXT line by line) that names marks (``fichas_de_marca`` and
-    ``marcas_en_nota``, ranges included; references excluded) and holds an
-    armado- or section-shaped fragment (R64, R65)."""
+    sheet, MTEXT line by line) that names marks — the one mark grammar
+    (``leer_marcas``, R67): its marks and ranges, every candidate of a glued
+    mark and the glued token itself — and holds an armado- or section-shaped
+    fragment (R64)."""
     found: list[TextoConMarca] = []
     for text in texts:
         for line in (text.text or "").split("\n"):
@@ -891,12 +896,8 @@ def _texts_naming_marks(
                 campos.extend(_CAMPOS_DE_ARMADO)
             if not campos:
                 continue
-            # One recogniser (R65): each mark-shaped token (glued ones raw and hyphenated)
-            # and every mark ``marcas_en_nota`` finds («T 1», «TRABE:T-1», «T-1=T-2»), with
-            # its ranges as written («K-1 A 4» names K-2, K-3).
-            marks = list(
-                dict.fromkeys(fichas_de_marca(line, config) + marcas_en_nota(line, config))
-            )
+            lectura = leer_marcas(line, config)
+            marks = list(dict.fromkeys(lectura.piezas + lectura.pegadas))
             if not marks:
                 continue
             hoja, llave = sheet(text)
@@ -1090,7 +1091,7 @@ def _loose_key(mark: str) -> str:
     return _GUIONES_Y_ESPACIOS.sub("", _PUNTO_ENTRE_LETRA_Y_CIFRA.sub("", mark.upper()))
 
 
-def _names(piece: str, mark: str, known: set[str]) -> bool:
+def _names(piece: str, mark: str, known: set[str], config: TextPatternConfig) -> bool:
     """Whether a mark as a text writes it names ``mark``, both by their loose
     key (``known`` holds the loose keys of the known marks). A range names
     both endpoints always, and every mark between same-letter endpoints
@@ -1099,10 +1100,10 @@ def _names(piece: str, mark: str, known: set[str]) -> bool:
     names every known mark it starts with, when what is left starts with a
     letter or a sign (so «K-15AE#3» is K-15A, never K-1) — R66."""
     key = _loose_key(mark)
-    if nombra_varias([piece]):
-        if any(_loose_key(end) == key for end in extremos_de_rango(piece)):
+    if es_rango(piece, config):
+        if any(_loose_key(end) == key for end in extremos_de_rango(piece, config)):
             return True
-        return marca_en_rango(piece, mark)
+        return marca_en_rango(piece, mark, config)
     written = _loose_key(piece)
     if written == key:
         return True
@@ -1119,7 +1120,9 @@ def _glued_rest(rest: str) -> bool:
     return bool(rest) and not rest[0].isdigit() and rest[0] != "."
 
 
-def _fields_with_text(inventory: ScheduleInventory, mark: str, known: set[str]) -> set[Campo]:
+def _fields_with_text(
+    inventory: ScheduleInventory, mark: str, known: set[str], config: TextPatternConfig
+) -> set[Campo]:
     """The fields of ``mark`` the drawing has text for (R64, default-deny):
     - those of its readings, read or not;
     - every field a drawing line that names it has a fragment for (armado →
@@ -1134,17 +1137,21 @@ def _fields_with_text(inventory: ScheduleInventory, mark: str, known: set[str]) 
     campos: set[Campo] = {campo for s in readings for campo in s.campos_con_texto}
     consumed = {e for s in readings for e in s.entidades}
     for t in inventory.textos_con_marca:
-        if t.entidad_id not in consumed and any(_names(p, mark, known) for p in t.marcas):
+        if t.entidad_id not in consumed and any(_names(p, mark, known, config) for p in t.marcas):
             campos.update(t.campos)
     for r in inventory.rechazos:
-        if r.motivo in _RECHAZOS_CON_MARCA and any(_names(p, mark, known) for p in r.marcas):
+        if r.motivo in _RECHAZOS_CON_MARCA and any(
+            _names(p, mark, known, config) for p in r.marcas
+        ):
             campos.update(_CAMPOS_DE_ARMADO)
             if _read_section(r.texto)[2]:
                 campos.add("seccion")
     return campos
 
 
-def merge_external_specs(inventory: ScheduleInventory, specs: list[dict]) -> int:
+def merge_external_specs(
+    inventory: ScheduleInventory, specs: list[dict], config: TextPatternConfig | None = None
+) -> int:
     """Specs read elsewhere (the AI reading of the sheet images): every one is
     kept as a reading (``source="ia"``), and it fills a by-mark field only when
     the view has nothing there and the drawing has no text for that field
@@ -1166,7 +1173,7 @@ def merge_external_specs(inventory: ScheduleInventory, specs: list[dict]) -> int
             spec.metodo = "ia"
         inventory.specs.append(spec)
         mark = spec.mark.upper()
-        with_text = _fields_with_text(inventory, mark, known)
+        with_text = _fields_with_text(inventory, mark, known, config or TextPatternConfig())
         current = inventory.by_mark.get(mark)
         new = current is None
         if current is None:

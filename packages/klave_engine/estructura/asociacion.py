@@ -55,9 +55,19 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from klave_engine.detection.frames import SheetFrame
-from klave_engine.detection.text_patterns import TextPatternConfig, match_category
+from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.estructura.armado import parsear_armado
+from klave_engine.estructura.marcas import (
+    MARCA_RE,
+    es_rango,
+    extremos_de_rango,
+    leer_marcas,
+    marca_en_rango,
+    marca_sola,
+    sin_referencias,
+)
+from klave_engine.estructura.marcas import escrita as _escrita
 from klave_engine.estructura.notas import leer_notas_con_renglones
 from klave_engine.estructura.textos import alto_de_texto, ancla_texto, caja_de_texto
 
@@ -71,7 +81,7 @@ __all__ = [
     "hoja_y_llave",
     "lo_lee_una_nota",
     "extremos_de_rango",
-    "fichas_de_marca",
+    "leer_marcas",
     "marca_en_rango",
     "marca_en_texto",
     "marcas_en_nota",
@@ -83,38 +93,10 @@ __all__ = [
 # sigue una zona de estribos (``CENTRO@20``, ``EXT @10``); «CENTRO DE CARGA» no.
 ARMADO_RE = re.compile(r"#\s*\d|@\s*\d|^\s*CENTRO\s*@|^\s*EXT\s*@", re.I)
 
-# Una marca: K-1, C-3, T-2, COL-1, CTA-3, Z-1, D-4B, P-4, MC-1, CE-1, CR-2, con su sufijo de
-# variante (``K-15A.1`` es otra marca que ``K-15A``), o el tipo «X» con su guion (``K-X``, ``D-X``).
-_MARCA_RE = re.compile(
-    r"\b(K|C|T|COL|CT|CTA|TB|ZC|ZCM|Z|D|P|MC|CE|CR)"
-    r"(?:\s*-?\s*(\d{1,2})([A-Z]?)(?:\.(\d))?|-(X))\b"
-)
 _PREFIJO_DE_ETIQUETA = re.compile(r"^(?:CASTILLO|COLUMNA)\s+")
 _LARGO_DE_ETIQUETA = 10
-# Una etiqueta de varias marcas («K-1 Y K-2», «K-1, K-2», «K-1=K-2», «K-1/K-2», «K-1 A K-4»,
-# «K-1 – K-4», «K-1 HASTA K-4»): lo que queda entre sus marcas son sólo separadores.
-_ENTRE_MARCAS = re.compile(r"(?:\s|[,;/=&+\-–—]|\b(?:Y|E|A|AL|HASTA)\b)*")
 _LARGO_DE_VARIAS = 40
 _JUNTAS = " Y "  # cómo se escribe la «marca» de una etiqueta de varias
-# Un rango («K-1 A K-4», «K-1 AL K-4», «K-1 - K-4», «K-1 – K-4», «K-1 HASTA K-4», «DE K-1 A K-4»,
-# «K-1 A 4», «K-1 A K-2 A K-3») se reporta como está escrito: no se adivinan las marcas de en
-# medio (ni si las hay).
-_CONECTOR_DE_RANGO = re.compile(r"\b(?:AL|A|HASTA)\b|[-–—]")
-_ABRE_RANGO = re.compile(r"(?:DE|DEL|DESDE)\s+")
-# El fin de un rango escrito sólo con su número («K-1 A 4»), tras un conector entre espacios.
-_FIN_DE_RANGO = re.compile(r"\s+(?:AL|A|HASTA|-|–|—)\s+(\d{1,2}[A-Z]?(?:\.\d)?)\b")
-_RANGO = re.compile(r"\S (?:AL|A|HASTA|-|–|—) \S")
-# Dos marcas unidas sólo por un guion, sin espacios («K-1-K-3», «T-1–T-2»): también un rango
-# (R66), si la de la derecha es una marca entera con su letra («T1-1», «K-1-A» son una sola).
-_SOLO_GUION = re.compile(r"\s*[-–—]\s*")
-# Lo que remite a otra parte del plano no reclama una marca: «E#2@15 VER CORTE C-2» es un
-# renglón de armado, no una nota de C-2.
-_REFERENCIA = re.compile(
-    r"\b(?:VER|V[EÉ]ASE|SEG[UÚ]N|IGUAL\s+A)\b\.?(?:\s+(?:EL|LA|LOS|LAS))?"
-    r"(?:\s+(?:CORTE|DETALLE|DET\.?|SECCI[OÓ]N|PLANO|NOTA|CUADRO)\b\.?)?\s*[^\s,;]*"
-    r"|\b(?:CORTE|DETALLE|DET\.)\s+[^\s,;]+",
-    re.I,
-)
 # Lo que hace que la lectura de notas (``detection.schedules._parse_annotations``) tome un texto:
 # una sección (15x20, sin las piezas de 3 medidas), varillas longitudinales (4#3, 6 VAR #4, V12#5)
 # o una malla. Lo que trae se lee después con el parser del armado; esto sólo decide si se lee.
@@ -186,78 +168,16 @@ _LARGO_DE_LLAMADA = 2.0
 _MISMO_GIRO = 1
 
 
-def _es_etiqueta(texto: str, config: TextPatternConfig) -> bool:
-    return bool(
-        match_category(texto, config, "column_tag") or match_category(texto, config, "beam_tag")
-    )
-
-
-_FICHA_DESDE_LA_MARCA = re.compile(r"[A-Z0-9.\-]+")
-
-
-def _mas_larga(limpio: str, m: re.Match[str], config: TextPatternConfig) -> str | None:
-    """La etiqueta de la configuración más larga que empieza donde ``m`` y es más larga que ella
-    («T1-1» donde ``_MARCA_RE`` sólo ve «T1»), o ``None``."""
-    ficha = _FICHA_DESDE_LA_MARCA.match(limpio, m.start())
-    if ficha is None:
-        return None
-    for fin in range(ficha.end(), m.end(), -1):
-        if _es_etiqueta(limpio[m.start() : fin], config):
-            return limpio[m.start() : fin]
-    return None
-
-
 def marca_en_texto(texto: str, config: TextPatternConfig) -> str | None:
-    """La marca que nombra ``texto``: el texto entero si es una etiqueta de columna o de trabe de
-    la configuración; si no, la primera marca que aparece en él, la más larga (R66: «T1-1 4#3» es
-    T1-1, no T1): una etiqueta de la configuración tal cual o la marca escrita ``K-15A.1``."""
+    """La marca que nombra ``texto`` cuando nombra una sola sin ambigüedad (R67, ``leer_marcas``):
+    el texto entero si es una etiqueta de la configuración; si no, la marca acotada («T1-1 4#3» →
+    T1-1, «K15A 4#3» → K15A, como la escribe la etiqueta). Una lista, un rango o una marca pegada
+    a otra cosa no dan marca."""
     limpio = texto.strip().upper()
-    if _es_etiqueta(limpio, config):
+    if marca_sola(limpio, config) == limpio:
         return limpio
-    m = _MARCA_RE.search(limpio)
-    if m is None:
-        return None
-    larga = _mas_larga(limpio, m, config)
-    if larga is not None:
-        return larga
-    if m.group(5):
-        return f"{m.group(1)}-X"
-    variante = f".{m.group(4)}" if m.group(4) else ""
-    return f"{m.group(1)}-{int(m.group(2))}{m.group(3)}{variante}"
-
-
-def _halladas(limpio: str, config: TextPatternConfig) -> list[tuple[int, int, str | None]]:
-    """Las marcas de un texto, cada una la más larga (``_mas_larga``), con el texto de la marca
-    cuando es una etiqueta alargada; y el número que cierra un rango escrito sin la letra («K-1 A
-    4»), con ``None``. Ordenadas y sin encimarse."""
-    halladas: list[tuple[int, int, str | None]] = []
-    fin = 0
-    for m in _MARCA_RE.finditer(limpio):
-        if m.start() < fin:
-            continue  # dentro de una marca alargada
-        larga = _mas_larga(limpio, m, config)
-        fin = m.start() + len(larga) if larga is not None else m.end()
-        halladas.append((m.start(), fin, larga))
-    for _, b, _texto in list(halladas):
-        numero = _FIN_DE_RANGO.match(limpio, b)
-        if numero is not None and not any(
-            a < numero.end(1) and numero.start(1) < c for a, c, _t in halladas
-        ):
-            halladas.append((numero.start(1), numero.end(1), None))
-    return sorted(halladas)
-
-
-def _rango_pegado(texto: str, config: TextPatternConfig | None = None) -> bool:
-    """Si ``texto`` son dos o más marcas unidas sólo por guiones («K-1-K-3», «T-1–T-2»)."""
-    limpio = " ".join(texto.upper().split())
-    marcas = [h for h in _halladas(limpio, config or TextPatternConfig()) if h[1] > h[0]]
-    marcas = [h for h in marcas if _MARCA_RE.match(limpio, h[0])]
-    if len(marcas) < 2 or marcas[0][0] != 0 or marcas[-1][1] != len(limpio):
-        return False
-    return all(
-        _SOLO_GUION.fullmatch(limpio[a[1] : b[0]]) is not None
-        for a, b in zip(marcas, marcas[1:], strict=False)
-    )
+    lectura = leer_marcas(limpio, config)
+    return lectura.marca if lectura.tipo == "unica" else None
 
 
 class Asociacion(BaseModel):
@@ -309,58 +229,27 @@ _Clase = Literal[
 
 def _marca_de_etiqueta(texto: str, config: TextPatternConfig) -> str | None:
     """La marca si el texto entero (a lo más 10 caracteres, sin «CASTILLO »/«COLUMNA » delante)
-    es una marca: una etiqueta de cuadro o de planta."""
+    es una marca: una etiqueta de cuadro o de planta (``marca_sola``, o escrita con espacios, «K
+    1»)."""
     limpio = _PREFIJO_DE_ETIQUETA.sub("", " ".join(texto.split()).upper())
     if not limpio or len(limpio) > _LARGO_DE_ETIQUETA:
         return None
-    if (
-        match_category(limpio, config, "column_tag")
-        or match_category(limpio, config, "beam_tag")
-        or _MARCA_RE.fullmatch(limpio)
-    ):
-        return marca_en_texto(limpio, config)
-    return None
+    sola = marca_sola(limpio, config)
+    if sola is not None:
+        return sola
+    espaciada = MARCA_RE.fullmatch(limpio)
+    return _escrita(espaciada) if espaciada is not None else None
 
 
 def _varias_marcas(texto: str, config: TextPatternConfig) -> list[str] | None:
-    """Las marcas de una etiqueta que nombra dos o más («K-1 Y K-2» → [K-1, K-2]), o ``None``."""
+    """Las marcas de una etiqueta que nombra dos o más y nada más («K-1 Y K-2» → [K-1, K-2], «K-1
+    A K-4», «K-1-K-3» como se escribieron), o ``None``. Una con una marca pegada a algo no es
+    etiqueta."""
     limpio = _PREFIJO_DE_ETIQUETA.sub("", " ".join(texto.split()).upper())
     if len(limpio) > _LARGO_DE_VARIAS:
         return None
-    # Cada marca (la más larga), y el número que cierra un rango escrito sin la letra («K-1 A 4»).
-    con_texto = _halladas(limpio, config)
-    largas = {(a, b): t for a, b, t in con_texto}
-    halladas = [(a, b) for a, b, _t in con_texto]
-    if len(halladas) < 2:
-        return None
-    entre = [limpio[a[1] : b[0]] for a, b in zip(halladas, halladas[1:], strict=False)]
-    antes, despues = limpio[: halladas[0][0]], limpio[halladas[-1][1] :]
-    if not all(_ENTRE_MARCAS.fullmatch(r) for r in [*entre, despues]):
-        return None
-    # Las marcas seguidas de un conector de rango van juntas: el rango, como se escribió.
-    grupos: list[list[tuple[int, int]]] = [[halladas[0]]]
-    for separa, marca in zip(entre, halladas[1:], strict=True):
-        if _CONECTOR_DE_RANGO.search(separa):
-            grupos[-1].append(marca)
-        else:
-            grupos.append([marca])
-    abre = _ABRE_RANGO.fullmatch(antes)
-    if not _ENTRE_MARCAS.fullmatch(antes) and (abre is None or len(grupos[0]) < 2):
-        return None  # «DE K-1 A K-4» abre un rango; nada más va delante
-    piezas: list[str] = []
-    for k, grupo in enumerate(grupos):
-        if len(grupo) == 1:
-            a, b = grupo[0]
-            if largas[(a, b)] is not None:
-                piezas.append(largas[(a, b)] or "")
-                continue
-            if not _MARCA_RE.fullmatch(limpio[a:b]):
-                return None  # un número suelto no es una marca
-            piezas.append(marca_en_texto(limpio[a:b], config) or limpio[a:b])
-        else:
-            desde = 0 if k == 0 and abre is not None else grupo[0][0]
-            piezas.append(limpio[desde : grupo[-1][1]])
-    return list(dict.fromkeys(piezas))
+    lectura = leer_marcas(limpio, config)
+    return lectura.piezas if lectura.tipo == "varias" and lectura.solo_marcas else None
 
 
 def _marcas_de(marca: str) -> list[str]:
@@ -368,16 +257,10 @@ def _marcas_de(marca: str) -> list[str]:
     return marca.split(_JUNTAS)
 
 
-def _es_de_varias(marca: str) -> bool:
+def _es_de_varias(marca: str, config: TextPatternConfig) -> bool:
     """Si la etiqueta nombra más de una marca: una lista o un rango (también sin espacios,
     «K-1-K-3»)."""
-    return _JUNTAS in marca or _RANGO.search(marca) is not None or _rango_pegado(marca)
-
-
-def sin_referencias(texto: str) -> str:
-    """El texto sin lo que remite a otra parte del plano («VER CORTE C-2», «SEGÚN DETALLE K-1»):
-    la marca de una referencia no es la de quien lo dice."""
-    return _REFERENCIA.sub(" ", texto)
+    return _JUNTAS in marca or es_rango(marca, config)
 
 
 def lo_lee_una_nota(texto: str) -> bool:
@@ -408,134 +291,14 @@ def lo_lee_una_nota(texto: str) -> bool:
 
 
 def marcas_en_nota(texto: str, config: TextPatternConfig) -> list[str]:
-    """Las marcas que nombra un texto sin contar sus referencias, en orden y sin repetir: cada una
-    normalizada (``marca_en_texto``) y un rango como se escribió («K-1 A K-4», «K-1 A 4», «DE
-    K-1 A K-4», «K-1 HASTA K-4»): no se adivinan las marcas de en medio."""
-    limpio = " ".join(sin_referencias(texto).upper().split())
-    con_texto = _halladas(limpio, config)
-    largas = {(a, b): t for a, b, t in con_texto}
-    halladas = [(a, b) for a, b, _t in con_texto]
-    if not halladas:
-        return []
-    grupos: list[list[tuple[int, int]]] = [[halladas[0]]]
-    for anterior, actual in zip(halladas, halladas[1:], strict=False):
-        entre = limpio[anterior[1] : actual[0]]
-        if _ENTRE_MARCAS.fullmatch(entre) and _CONECTOR_DE_RANGO.search(entre):
-            grupos[-1].append(actual)
-        else:
-            grupos.append([actual])
-    piezas: list[str] = []
-    for grupo in grupos:
-        a, b = grupo[0][0], grupo[-1][1]
-        if len(grupo) > 1:
-            abre = re.search(r"(?:DE|DEL|DESDE)\s+$", limpio[:a])
-            piezas.append(limpio[abre.start() if abre else a : b])
-        elif largas[(a, b)] is not None:
-            piezas.append(largas[(a, b)] or "")
-        elif _MARCA_RE.fullmatch(limpio[a:b]):
-            piezas.append(marca_en_texto(limpio[a:b], config) or limpio[a:b])
-    return list(dict.fromkeys(piezas))
+    """Lo que nombra un texto según la gramática de marcas (``leer_marcas``): su marca, o sus marcas
+    y rangos como se escribieron, o, si alguna va pegada a algo, todas sus candidatas."""
+    return leer_marcas(texto, config).piezas
 
 
-def nombra_varias(marcas: list[str]) -> bool:
+def nombra_varias(marcas: list[str], config: TextPatternConfig | None = None) -> bool:
     """Si lo que nombra un texto (``marcas_en_nota``) es más de una marca: una lista o un rango."""
-    return len(marcas) > 1 or any(_es_de_varias(m) for m in marcas)
-
-
-def _escrita(m: re.Match[str]) -> str:
-    """Una marca de ``_MARCA_RE`` escrita como ``marca_en_texto`` (``K-15A.1``, ``D-X``)."""
-    if m.group(5):
-        return f"{m.group(1)}-X"
-    variante = f".{m.group(4)}" if m.group(4) else ""
-    return f"{m.group(1)}-{int(m.group(2))}{m.group(3)}{variante}"
-
-
-# Una marca al principio de una ficha, con lo que trae pegado («K-7E#3@20», «K7E#3», «K-15AE»).
-_MARCA_PEGADA = re.compile(r"(K|C|T|COL|CT|CTA|TB|ZC|ZCM|Z|D|P|MC|CE|CR)-?(\d{1,2})(\S+)")
-_SEPARA_FICHAS = re.compile(r"[\s,;/()\[\]«»\"']+")
-
-
-def fichas_de_marca(texto: str, config: TextPatternConfig) -> list[str]:
-    """Cada ficha de un texto (sin sus referencias) que es una marca o empieza con una: la
-    etiqueta de la configuración tal cual («T1-1»), la marca escrita como ``marca_en_texto``
-    («K-7», «K-15A.1») o, pegada a otra cosa, la ficha tal cual y la marca con su guion y lo que
-    trae («K7E#3@20» y «K-7E#3@20»), que se resuelven después contra las marcas que se conocen.
-    En orden y sin repetir."""
-    piezas: list[str] = []
-    for ficha in _SEPARA_FICHAS.split(sin_referencias(texto).upper()):
-        ficha = ficha.strip(".:-")
-        if not ficha:
-            continue
-        if match_category(ficha, config, "column_tag") or match_category(ficha, config, "beam_tag"):
-            piezas.append(ficha)
-            continue
-        entera = _MARCA_RE.fullmatch(ficha)
-        if entera is not None:
-            piezas.append(_escrita(entera))
-            continue
-        pegada = _MARCA_PEGADA.fullmatch(ficha)
-        if pegada is not None and not pegada.group(3)[0].isdigit():
-            # Tal cual («K7E#3», «T1-1E#3») y con su guion («K-7E#3»): quien la resuelva decide.
-            piezas.append(ficha)
-            piezas.append(f"{pegada.group(1)}-{int(pegada.group(2))}{pegada.group(3)}")
-    return list(dict.fromkeys(piezas))
-
-
-def extremos_de_rango(rango: str) -> list[str]:
-    """Las marcas de los extremos de un rango escrito («K-1 A K-4» → [K-1, K-4], «K-1 A 4» →
-    [K-1, K-4], «K-1 A C-4» → [K-1, C-4]); vacía si no es un rango."""
-    limpio = " ".join(rango.upper().split())
-    if not _es_rango(limpio):
-        return []
-    marcas: list[str] = []
-    primera: re.Match[str] | None = None
-    for a, _b, larga in _halladas(limpio, TextPatternConfig()):
-        m = _MARCA_RE.match(limpio, a)
-        if m is None:
-            continue  # el número que cierra «K-1 A 4»: va abajo
-        primera = primera or m
-        marcas.append(larga or _escrita(m))
-    if primera is None:
-        return []
-    extremos = [marcas[0]]
-    if len(marcas) > 1:
-        extremos.append(marcas[-1])
-    else:
-        final = _FIN_DE_RANGO.search(limpio, primera.end())
-        if final is not None:
-            extremos.append(f"{primera.group(1)}-{final.group(1)}")
-    return list(dict.fromkeys(extremos))
-
-
-def _es_rango(limpio: str) -> bool:
-    return _RANGO.search(limpio) is not None or _rango_pegado(limpio)
-
-
-def _numero_de_marca(marca: str) -> tuple[str, int] | None:
-    m = _MARCA_RE.fullmatch(" ".join(marca.upper().split()))
-    if m is None or m.group(2) is None:
-        return None
-    return m.group(1), int(m.group(2))
-
-
-def marca_en_rango(rango: str, marca: str) -> bool:
-    """Si ``marca`` cabe en un rango escrito («K-1 A K-4» o «K-1 A 4» → K-1, K-2A, K-3, K-4…):
-    misma letra y número entre los dos extremos. Sirve para no dejar que otra lectura cubra lo
-    que el plano dice para todo el rango; nunca para leerlo."""
-    limpio = " ".join(rango.upper().split())
-    extremos = [m for m in _MARCA_RE.finditer(limpio) if m.group(2) is not None]
-    propia = _numero_de_marca(marca)
-    if not extremos or propia is None or not _es_rango(limpio):
-        return False
-    letra, desde = extremos[0].group(1), int(extremos[0].group(2))
-    final = _FIN_DE_RANGO.search(limpio, extremos[0].end())
-    if len(extremos) > 1 and extremos[-1].group(1) == letra:
-        hasta = int(extremos[-1].group(2))
-    elif final is not None:
-        hasta = int(re.sub(r"\D.*", "", final.group(1)))
-    else:
-        return False
-    return propia[0] == letra and min(desde, hasta) <= propia[1] <= max(desde, hasta)
+    return len(marcas) > 1 or any(es_rango(m, config or TextPatternConfig()) for m in marcas)
 
 
 def _clase(
@@ -561,8 +324,9 @@ def _clase(
     mayusculas = texto.upper()
     if _OTRA_FAMILIA.search(mayusculas):
         return "ajena", None
-    if marca_en_texto(sin_referencias(texto), config) is not None:
-        # «K-1 15x20 4#3 E#2@20» dice de quién es y lo lee la nota; «K-7 E#3@20», no.
+    if leer_marcas(texto, config).nombra:
+        # «K-1 15x20 4#3 E#2@20» dice de quién es y lo lee la nota (si la nombra sin ambigüedad);
+        # «K-7 E#3@1S», no. Una marca pegada a algo o varias también dicen de quién es.
         return ("anotacion" if lo_lee_una_nota(texto) else "sin_lector"), None
     if _NOTA_DE_FAMILIA.search(mayusculas):
         return ("familia" if lo_lee_una_nota(texto) else "sin_lector"), None
@@ -769,7 +533,7 @@ def _es_cabeza(tramo: list[_Texto], config: TextPatternConfig) -> bool:
         return False
     if sum(1 for c in tramo if _TITULO_DE_CUADRO.search(c.texto)) < 2:
         return False
-    return not any(ARMADO_RE.search(c.texto) or marca_en_texto(c.texto, config) for c in tramo)
+    return not any(ARMADO_RE.search(c.texto) or leer_marcas(c.texto, config).nombra for c in tramo)
 
 
 def _filas_de_cuadros(
@@ -829,18 +593,21 @@ def _filas_bajo(
 def _marca_de_la_fila(
     celdas: dict[str, list[_Texto]], config: TextPatternConfig
 ) -> tuple[_Texto | None, str | None]:
+    """La celda y la marca de una fila: la de la columna de marcas o, si no, la primera celda que
+    nombra una. Sólo una marca sin ambigüedad (R67): una celda con varias o con una marca pegada a
+    algo no da marca, y la fila no se lee."""
     for titulo, cs in celdas.items():
         if _COLUMNA_DE_MARCA.search(titulo):
-            marca = marca_en_texto(" ".join(c.texto for c in cs), config)
-            if marca is None:
+            lectura = leer_marcas(" ".join(c.texto for c in cs), config)
+            if lectura.tipo != "unica":
                 break
-            duena = next((c for c in cs if marca_en_texto(c.texto, config)), cs[0])
-            return duena, marca
+            duena = next((c for c in cs if leer_marcas(c.texto, config).nombra), cs[0])
+            return duena, lectura.marca
     for cs in celdas.values():
         for c in cs:
-            marca = marca_en_texto(c.texto, config)
-            if marca is not None:
-                return c, marca
+            lectura = leer_marcas(c.texto, config)
+            if lectura.nombra:
+                return (c, lectura.marca) if lectura.tipo == "unica" else (None, None)
     return None, None
 
 
@@ -1963,7 +1730,7 @@ def _asociar_hoja(
             )
         topes: dict[str, set[str]] = defaultdict(set)
         for alcance, propios in reparto.tomadas:
-            if _es_de_varias(alcance.marca):
+            if _es_de_varias(alcance.marca, config):
                 # La pila de una etiqueta de varias marcas: nadie más se la lleva, y se dice.
                 for r in propios:
                     rechazados.add(r.id)

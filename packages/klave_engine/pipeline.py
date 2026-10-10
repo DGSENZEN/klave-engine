@@ -471,7 +471,7 @@ def run_full_pipeline(
     )
     ai_reads = load_ai_reads(control_dir)
     if ai_reads.readings:
-        merge_external_specs(schedule, ai_element_specs(ai_reads))
+        merge_external_specs(schedule, ai_element_specs(ai_reads), detector_config.text_patterns)
         for reading in ai_reads.readings:
             for family, fc in reading.read.concrete_fc.items():
                 schedule.concrete_fc.setdefault(family.lower(), int(fc))

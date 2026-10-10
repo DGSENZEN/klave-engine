@@ -2341,11 +2341,12 @@ def test_the_note_shape_shortcut_never_changes_the_answer(texto, lee):
         ("T1-1 4#3", "T1-1"),
         ("T2-7 20X40", "T2-7"),
         ("K-15A.1 4#3", "K-15A.1"),
-        ("K15A 4#3", "K-15A"),
+        ("K15A 4#3", "K15A"),
     ],
 )
 def test_the_longest_mark_in_a_text(texto, marca):
     # R66.c: la etiqueta más larga de la configuración («T1-1»), no lo que ve ``_MARCA_RE`` («T1»).
+    # R67: con la misma llave que la etiqueta («K15A» como se escribió; antes «K-15A»).
     assert marca_en_texto(texto, TextPatternConfig()) == marca
 
 
