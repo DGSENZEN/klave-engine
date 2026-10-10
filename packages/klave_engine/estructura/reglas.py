@@ -13,8 +13,9 @@ varilla se traslapa y desde cuál se suelda, el primer estribo; los textos suelt
 declarados y la plantilla. Cada regla es un ``Dato`` con su fuente; lo que el plano no dice es
 ``supuesto`` (o no hay). Las copias que dicen lo mismo se cuentan; las que no, se marcan y se
 dicen, y gana la lectura más repetida: nunca se escoge en silencio. Una nota sólo da sus reglas si
-nada de ella las niega, las acota a un elemento o se quedó sin leer (``_lo_que_la_cambia``); si
-no, la nota entera es un aviso: un valor equivocado es peor que uno que falta.
+nada de ella las niega, las acota a un elemento o a un lugar, se quedó sin leer o la desmiente
+(``_lo_que_la_cambia``); si no, la nota entera es un aviso: un valor equivocado es peor que uno
+que falta.
 
 Dos listas distintas salen de aquí y no se mezclan: las contradicciones son el plano contra sí
 mismo (copias de la tabla o de una nota que se desmienten, una nota contra la tabla); los avisos
@@ -562,11 +563,12 @@ _PALABRAS_DE_COBERTURA: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = tu
     )
 )
 # El primer estribo se pone en las vigas y, si la nota lo dice, en otros elementos; «trabes»
-# incluye a las contratrabes.
+# incluye a las contratrabes (salvo que la misma nota diga el de las contratrabes aparte).
+_CONTRATRABES_DICHAS = r"(?:CONTRATRABES?|TRABES?|VIGAS?)\s+DE\s+CIMENTACION|CONTRATRABES?"
 _PALABRAS_DE_ESTRIBO: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = tuple(
     (re.compile(patron), familias)
     for patron, familias in (
-        (r"(?:CONTRATRABES?|TRABES?|VIGAS?)\s+DE\s+CIMENTACION|CONTRATRABES?", ("contratrabe",)),
+        (_CONTRATRABES_DICHAS, ("contratrabe",)),
         (r"TRABES?|VIGAS?", ("trabe", "contratrabe")),
         (r"COLUMNAS?", ("columna",)),
         (r"CASTILLOS?", ("castillo",)),
@@ -628,6 +630,8 @@ _VARILLA_MARCADA = re.compile(
     r"|\bDEL\s+\d{1,2}(?:[.,]\d)?\b(?!\s*(?:%|CMS?\b|VECES|[.,]?\d))"
     # «TRASLAPES HASTA VARILLA 6», «LAS VARILLAS DE 8 EN ADELANTE»
     r"|\bVARILLAS?\s+(?:DE\s+)?\d{1,2}(?:[.,]\d)?\b(?!\s*(?:%|CMS?\b|VECES|[.,]?\d))"
+    # la marca con un espacio o un «:» de más: «No . 6», «No.: 6»
+    rf"|{_SIN_TABLA_NI_FIGURA}\bN[O°º](?:\s+\.|\.?\s*:)\s*\d{{1,2}}(?:[.,]\d)?\b"
 )
 # Lo demás que puede ser una varilla, pero también otra cosa (una placa de 3/8", una cuenta, un
 # diámetro en milímetros): sólo con un límite cerca.
@@ -635,9 +639,12 @@ _REFERENCIA_A_VARILLA = re.compile(
     rf"{_VARILLA_MARCADA.pattern}"
     # en pulgadas: «3/4"», «1"», «5/8 PULG»
     rf"|\b\d+(?:\s+\d+)?\s*/\s*\d+\s*(?:[{_COMILLAS}]|PULG)|\b\d+\s*[{_COMILLAS}]"
-    # un diámetro o un calibre: «DIAMETRO 12», «DIAM. 12», «Ø 12», «DE 12 MM», «CALIBRE 6»
+    # un diámetro o un calibre: «DIAMETRO 12», «DIAM. 12», «Ø 12», «DE 12 MM», «CALIBRE 6», «CAL. 6»
     r"|\bDIAM(?:ETROS?)?\.?\s*(?:DE\s+)?\d+|[Ø⌀]\s*\d+|\bDE\s+\d+(?:[.,]\d+)?\s*MM\b"
-    r"|\bCALIBRES?\s+(?:DEL?\s+)?\d+"
+    r"|\bCALIBRES?\s+(?:DEL?\s+)?\d+|\bCAL\.\s*\d+"
+    # milímetros tras un límite: «HASTA 19MM», «MAYORES A 19 MM», «MENOR O IGUAL A 19 MM»
+    r"|\b(?:HASTA|DESDE|A\s+PARTIR\s+DE|(?:MAYOR|MENOR|IGUAL)(?:ES)?\s+(?:A|DE|QUE))\s+"
+    r"(?:(?:EL|LA|LOS|LAS)\s+(?:DE\s+)?)?\d+(?:[.,]\d+)?\s*MM\b"
     # un número pelado o una fracción sin unidad donde va una varilla
     r"|\b(?:HASTA|DESDE|A\s+PARTIR\s+DE(?:L|\s+LA)?|AL)\s+(?:(?:EL|LA)\s+)?(?:VARILLAS?\s+)?"
     rf"\d{{1,2}}(?:[.,]\d)?\b{_NO_ES_UNA_VARILLA_PELADA}"
@@ -674,26 +681,55 @@ _ANCLAJE_CON_MEDIDA = re.compile(
 _ANTES, _DESPUES = 100, 140
 
 # --- la nota entera -----------------------------------------------------------------------------
-# Lo que anula una nota entera: «N/A», «(NOTA CANCELADA)», «ANULADA», «SUPRIMIDA», «ELIMINADA»…
+# Lo que anula una nota entera: «N/A», «N.A.», «(NOTA CANCELADA)», «ANULADA», «NULA», «SE
+# SUSTITUYE POR LA NOTA 9», «VER NOTA 9 QUE LA SUSTITUYE», «ELIMINAR», «(BORRAR)»… (No el «N.A.F.»,
+# el nivel de aguas freáticas, ni «SUSTITUYE A LA NOTA 3», que dice que ésta es la que vale.)
 _ANULADA = re.compile(
-    r"(?<![A-Z.])N\s*/\s*A(?![A-Z])|(?<![A-Z.])N\.\s*A\.?(?![A-Z])|\bNA\b"
+    r"(?<![A-Z.])N\s*/\s*A(?![A-Z])"
+    r"|(?<![A-Z.])N\.\s*A(?![.A-Z])|(?<![A-Z.])N\.\s*A\.(?![A-Z])(?!\s*[A-Z]\.)|\bNA\b"
     r"|\b(?:ANULAD[AO]S?|CANCELAD[AO]S?|SUPRIMID[AO]S?|ELIMINAD[AO]S?|DEROGAD[AO]S?"
     r"|OBSOLET[AO]S?|SUSTITUID[AO]S?|REEMPLAZAD[AO]S?|INVALID[AO]S?|OMITID[AO]S?|DESCARTAD[AO]S?"
-    r"|SE\s+(?:CANCELAN?|SUPRIMEN?|ANULAN?|ELIMINAN?|OMITEN?|DEROGAN?)|CANCELAR|SUPRIMIR|ANULAR"
-    r"|OMITIR|SIN\s+EFECTO|SIN\s+VALIDEZ|NO\s+APLICA|NO\s+VALIDA|YA\s+NO\s+(?:APLICA|VALE))\b"
+    r"|REVOCAD[AO]S?|TACHAD[AO]S?|BORRAD[AO]S?|NUL[AO]S?"
+    r"|SE\s+(?:CANCELAN?|SUPRIMEN?|ANULAN?|ELIMINAN?|OMITEN?|DEROGAN?|SUSTITUYEN?|REEMPLAZAN?"
+    r"|REVOCAN?|BORRAN?|TACHAN?)"
+    r"|QUE\s+LA\s+(?:SUSTITUYE|REEMPLAZA|ANULA|CANCELA|DEROGA)"
+    r"|CANCELAR|SUPRIMIR|ANULAR|OMITIR|ELIMINAR|BORRAR|REVOCAR"
+    r"|SIN\s+EFECTO|SIN\s+VALIDEZ|NO\s+APLICA|NO\s+VALIDA|YA\s+NO\s+(?:APLICA|VALE))\b"
 )
-# Lo que extiende o recorta a qué varillas o elementos va una regla: «… Y MAYORES TAMBIEN», «ASI
-# COMO LAS MENORES», «Y LAS DEMAS», «SOLO EN…».
+# Lo que extiende o recorta a qué varillas o elementos va una regla, o la deja sujeta a algo: «… Y
+# MAYORES TAMBIEN», «ASI COMO LAS MENORES», «Y LAS DEMAS», «SOLO EN…», «ESTA NOTA APLICA EN…»,
+# «EXCLUSIVO DE…», «CUANDO SE TRATE DE…», «PREVIA AUTORIZACION…», «OPCIONALMENTE», «ESTE LIMITE
+# PUEDE AUMENTARSE».
 _AMPLIA_O_RECORTA = re.compile(
     r"\b(?:MAYOR(?:ES)?|MENOR(?:ES)?|DEMAS|TAMBIEN|ASI\s+COMO|TODAS?|TODOS|RESTO"
-    r"|SOLO|SOLAMENTE|UNICAMENTE|EXCLUSIVAMENTE|IGUAL(?:MENTE)?|LO\s+MISMO|SUPERIORES|INFERIORES)\b"
+    r"|SOLO|SOLAMENTE|UNICAMENTE|EXCLUSIVAMENTE|IGUAL(?:MENTE)?|LO\s+MISMO|SUPERIORES|INFERIORES"
+    r"|APLICA(?:N|BLES?|RA|RAN)?|CORRESPONDEN?|EXCLUSIV[OA]S?|VALID[OA]S?\s+(?:PARA|EN)"
+    r"|REFERID[OA]S?\s+A|CUANDO|TRATANDOSE|PREVIA|OPCIONAL(?:MENTE)?|PREFERENCIA|PREFERENTEMENTE"
+    r"|SEGUN\s+SE\s+REQUIERA|VICEVERSA"
+    r"|PUEDEN?\s+(?:AUMENTAR|REDUCIR|DISMINUIR|MODIFICAR|CAMBIAR|AMPLIAR)(?:SE)?)\b"
 )
 # Las palabras con que una cláusula dice una regla (las del aviso de lo que no se leyó).
 _PALABRA_DE_REGLA = re.compile(
     r"TRASLAP|SOLDA|GANCHO|DOBLE[ZC]|PRIMER\s+ESTRIBO|PLANTILLA|RECUBRIMIENTO|ANCLAJE"
 )
+# Una cláusula sin verbo que dice dónde va la regla con un lugar que no es un elemento conocido
+# («EN ESCALERAS», «EN LA CISTERNA», «EN MENSULAS Y CAPITELES», «PARA ESCALERAS», «APLICA A
+# ESCALERAS», «FUERA DE ZONAS CONFINADAS», «SOBRE LA CISTERNA», «ENTRE EJES A Y C»): la acota
+# igual que «EN COLUMNAS». Sólo así de corta: «EN CASO DE USAR PAQUETES DE VARILLAS SERA …» (la nota
+# de recubrimientos de Marina) no es un lugar.
+_EN_UN_LUGAR = re.compile(
+    r"(?:(?:SOLO|UNICAMENTE|SOLAMENTE)\s+)?"
+    r"(?:EN|PARA|SOBRE|BAJO|ENTRE|APLICA(?:BLE)?\s+(?:A|EN|PARA)"
+    r"|(?:FUERA|DENTRO|LEJOS|CERCA)\s+DE)\s+"
+    r"(?:(?:EL|LA|LOS|LAS)\s+)?[A-Z]+(?:\s+(?:(?:DE|DEL|Y|E)\s+)?[A-Z]+){0,2}"
+)
 # Las reglas por familia: otro elemento no las cambia (es de otra familia).
 _POR_FAMILIA = ("recubrimiento", "primer_estribo", "anclaje")
+# Las familias de la cimentación: bajo un encabezado de cimentación («NOTAS DE CIMENTACION :») sólo
+# éstas se leen; «TRABES», «COLUMNAS», «LOSAS» ahí pueden ser las de la cimentación (R42).
+_FAMILIAS_DE_CIMENTACION = frozenset(
+    {"zapata", "dado", "pilote", "contratrabe", "losa_cimentacion", "muro_concreto"}
+)
 _TEMA_DE_LA_REGLA = {
     "traslape": "hasta qué varilla se traslapa",
     "soldar": "desde qué varilla se suelda",
@@ -811,6 +847,7 @@ class _Origen:
     donde: str  # cómo se nombra en un aviso: «La nota 4 de REFUERZO»
     es_nota: bool = True
     seccion: str = ""
+    encabezado: str = ""  # el renglón del encabezado como está escrito («REFUERZO :»)
 
     def dato(self, valor: Any, cita: str) -> Dato:
         return Dato(
@@ -860,25 +897,45 @@ _COLA_DE_LA_LISTA = re.compile(r"(?:\s*,|\s+(?:Y|E)(?:\s+TAMBIEN)?)?\s*$")
 
 _DE_CIMENTACION_AL_FINAL = re.compile(r"\s+DE\s+CIMENTACION$")
 _TODA_LA_CIMENTACION = re.compile(r"(?:ELEMENTOS\s+(?:ESTRUCTURALES\s+)?DE\s+)?CIMENTACION")
+# El «DE …» que califica a un elemento («LOSAS DE AZOTEA»): el de los muros dice qué muro es.
+_CALIFICATIVO = re.compile(r"\s(DE\s+\S.*)$")
+_UN_DE = re.compile(r"\bDE\b")
+_MUROS_DE = re.compile(r"MUROS?\s+DE\s+(?:CONCRETO|CONTENCION)")
 
 
-def _de_cimentacion_ambiguo(miembros: list[str]) -> bool:
-    """«TRABES Y LOSAS DE CIMENTACION»: no se sabe si «DE CIMENTACION» es de todos o del último."""
+def _partir_miembros(texto: str) -> list[str]:
+    """Los elementos de una lista («LAS TRABES, LOSAS Y ZAPATAS»), sin su artículo."""
+    return [
+        re.sub(r"^(?:LOS|LAS)\s+", "", m.strip()) for m in _SEPARA_MIEMBROS.split(texto.strip())
+    ]
+
+
+def _calificativo_ambiguo(miembros: list[str]) -> str | None:
+    """El «DE …» que no se sabe si es de toda la lista o sólo de un elemento: «TRABES Y LOSAS DE
+    CIMENTACION» (o un «X DE CIMENTACION» junto a otros elementos sueltos), «TRABES Y LOSAS DE
+    AZOTEA» (el último calificado y otros sin calificar). ``None`` si la lista no tiene esa duda."""
+    if len(miembros) < 2:
+        return None
     con = [m for m in miembros if _DE_CIMENTACION_AL_FINAL.search(m)]
-    sin = [m for m in miembros if m not in con and not _TODA_LA_CIMENTACION.fullmatch(m)]
-    return bool(con and sin)
+    if con and any(m not in con and not _TODA_LA_CIMENTACION.fullmatch(m) for m in miembros):
+        return "DE CIMENTACION"
+    ultimo = _CALIFICATIVO.search(miembros[-1])
+    if ultimo is None or _MUROS_DE.fullmatch(miembros[-1]):
+        return None
+    if any(not _UN_DE.search(m) for m in miembros[:-1]):
+        return ultimo.group(1)
+    return None
 
 
 def _miembros(texto: str) -> tuple[list[str], list[str]]:
     """Las familias que nombra una lista de elementos («TRABES Y LOSAS») y los que no se
-    reconocen (``ALBERCAS``). Una lista que mezcla «X DE CIMENTACION» con otros elementos es
-    ambigua: no da familias y toda ella va a los que no se reconocen."""
+    reconocen (``ALBERCAS``). Una lista cuyo «DE …» puede ser de todos o sólo de uno («TRABES Y
+    LOSAS DE CIMENTACION», «TRABES Y LOSAS DE AZOTEA») es ambigua: no da familias y toda ella va a
+    los que no se reconocen."""
     familias: list[str] = []
     desconocidos: list[str] = []
-    miembros = [
-        re.sub(r"^(?:LOS|LAS)\s+", "", m.strip()) for m in _SEPARA_MIEMBROS.split(texto.strip())
-    ]
-    if _de_cimentacion_ambiguo(miembros):
+    miembros = _partir_miembros(texto)
+    if _calificativo_ambiguo(miembros) is not None:
         return [], [" ".join(texto.split())]
     for miembro in miembros:
         suyas = next((f for p, f in _MIEMBROS_DE_COBERTURA if p.fullmatch(miembro)), None)
@@ -904,6 +961,13 @@ def _recubrimientos(o: _Origen, lectura: Lectura, lecturas: _Lecturas) -> None:
             cita = _cita(
                 o.texto, inicio + m.start(), inicio + m.end() + en.end() + len(texto_miembros)
             )
+            calificativo = _calificativo_ambiguo(_partir_miembros(texto_miembros))
+            if calificativo is not None:
+                lecturas.avisar(
+                    f"{o.donde} da un recubrimiento de {m['n']} cm en «{texto_miembros.strip()}», "
+                    f"pero no se sabe si «{calificativo}» es de todos o sólo del último; no se usa."
+                )
+                continue
             familias, desconocidos = _miembros(texto_miembros)
             a_cm = 100.0 if m["u"].startswith("M") else 1.0
             bajo = round(_numero(m["n"]) * a_cm, 4)
@@ -986,13 +1050,42 @@ def _traslape_y_soldadura(o: _Origen, lectura: Lectura, lecturas: _Lecturas) -> 
 
 def _primer_estribo(o: _Origen, lectura: Lectura, lecturas: _Lecturas) -> None:
     """El primer estribo de cada familia que la frase nombra (o, si no nombra ninguna, las del
-    encabezado de la nota: «COLUMNAS :»)."""
+    encabezado de la nota: «COLUMNAS :»). Una lista cuyo «DE CIMENTACION» puede ser de todos o
+    sólo del último («EN COLUMNAS Y TRABES DE CIMENTACION») no se lee y se avisa, como en los
+    recubrimientos y en los encabezados. «TRABES» incluye a las contratrabes, salvo que la nota
+    dé aparte el de las contratrabes («EN TRABES … A 5 CM. EN CONTRATRABES … A 6 CM»)."""
+
+    def grupos_de(f: Frase) -> list[str]:
+        return [g for g in (f.m["fam"], f.m.groupdict().get("fam2")) if g]
+
+    aparte = any(
+        re.search(_CONTRATRABES_DICHAS, " ".join(grupos_de(f)))
+        for f in lectura.validas("primer_estribo")
+    )
     for f in lectura.validas("primer_estribo"):
         centimetros = _numero(f.m["n"])
         cita = _cita(o.texto, f.inicio, f.fin)
-        texto_familias = " ".join(g for g in (f.m["fam"], f.m.groupdict().get("fam2")) if g)
-        familias, _ = _familias_en(texto_familias, _PALABRAS_DE_ESTRIBO)
-        alcance = _alcance_del_encabezado(o.seccion)
+        grupos = grupos_de(f)
+        dudoso = next(
+            (
+                (g, calificativo)
+                for g in grupos
+                if (calificativo := _calificativo_ambiguo(_partir_miembros(g))) is not None
+            ),
+            None,
+        )
+        if dudoso is not None:
+            lista, calificativo = dudoso
+            lista = " ".join(lista.split())
+            lecturas.avisar(
+                f"{o.donde} da el primer estribo a {centimetros:g} cm en «{lista}», pero no se "
+                f"sabe si «{calificativo}» es de todos o sólo del último; no se usa."
+            )
+            continue
+        familias, _ = _familias_en(" ".join(grupos), _PALABRAS_DE_ESTRIBO)
+        if aparte and not re.search(_CONTRATRABES_DICHAS, " ".join(grupos)):
+            familias = [familia for familia in familias if familia != "contratrabe"]
+        alcance = _alcance_del_encabezado(o.seccion, o.encabezado)
         if not familias and alcance and "?" not in alcance:
             familias = list(
                 dict.fromkeys([*alcance, *(["contratrabe"] if "trabe" in alcance else [])])
@@ -1093,76 +1186,171 @@ _ENCABEZADO_DE_ELEMENTOS = re.compile(
     r"(?:(?:NOTAS?|ESPECIFICACIONES)(?:\s+GENERALES)?\s+(?:PARA|DE|EN)\s+(?:(?:LAS|LOS)\s+)?)?"
     rf"(?P<lista>{MIEMBROS})"
 )
+# Los encabezados que no acotan a nada: una lista cerrada («NOTAS GENERALES DE ESTRUCTURA»,
+# «REFUERZO», «MATERIALES», «ESPECIFICACIONES…», «CONCRETO», «ACERO», «GENERALES»…).
+# (También los temas de las reglas: «TRASLAPES :», «ANCLAJES Y TRASLAPES :», «RECUBRIMIENTOS :».)
+_UNO_GENERAL = (
+    r"(?:(?:LA|EL|LOS|LAS)\s+)?(?:ESTRUCTURAS?|ESTRUCTURALES|CONCRETO(?:\s+REFORZADO)?"
+    r"|ACERO(?:\s+DE\s+REFUERZO)?|REFUERZOS?|MATERIALES|CONSTRUCCION|PROYECTO|OBRA"
+    r"|TRASLAPES?|ANCLAJES?|RECUBRIMIENTOS?|GANCHOS?|DOBLECES|SOLDADURAS?)"
+)
+_LO_GENERAL = rf"{_UNO_GENERAL}(?:\s*(?:,|\bY\b|\bE\b)\s*{_UNO_GENERAL})*"
+_ENCABEZADO_GENERAL = re.compile(
+    r"(?:NOTAS?|ESPECIFICACION(?:ES)?)(?:\s+(?:GENERALES|ESTRUCTURALES))?"
+    rf"(?:\s+(?:DE|DEL|PARA|EN)\s+{_LO_GENERAL})?"
+    rf"|GENERALES|OBSERVACIONES|{_LO_GENERAL}"
+)
+# Los de la cimentación: «NOTAS DE CIMENTACION», «CIMENTACION», «NOTAS PARA ELEMENTOS DE
+# CIMENTACION». Valen para las reglas de todo el proyecto, pero en ellos «TRABES», «COLUMNAS» o
+# «LOSAS» pueden ser las de la cimentación (R42): una regla por familia sólo se lee para las
+# familias de la cimentación.
+_ENCABEZADO_DE_CIMENTACION = re.compile(
+    r"(?:(?:NOTAS?|ESPECIFICACION(?:ES)?)(?:\s+GENERALES)?\s+(?:DE|DEL|PARA|EN)\s+"
+    r"(?:(?:LA|LOS)\s+)?(?:ELEMENTOS\s+(?:ESTRUCTURALES\s+)?DE\s+(?:LA\s+)?)?)?CIMENTACION(?:ES)?"
+)
+# «NOTAS PARA ESCALERAS», «NOTAS DE PRECOLADOS»: notas de algo que no es general.
+_NOTAS_DE_ALGO = re.compile(
+    r"(?:NOTAS?|ESPECIFICACION(?:ES)?)(?:\s+GENERALES)?\s+(?:DE|DEL|PARA|EN)\s+\S.*"
+)
+# Un título suelto con «:» («ESCALERAS :», «TANQUE ELEVADO :»): de una a cuatro palabras que no
+# empiezan como sigue una oración (no «NO SERA MENOR DE:», que es el renglón de una nota).
+_TITULO_SUELTO = re.compile(
+    r"(?!(?:EN|DE|DEL|LA|LAS|EL|LOS|A|AL|Y|E|O|NO|NI|SE|CON|POR|PARA|QUE|SIN|SI|COMO|SU|SUS)\b)"
+    r"[A-Z]+(?:\s+[A-Z]+){0,3}"
+)
 
 
-def _alcance_del_encabezado(seccion: str) -> list[str] | None:
-    """Las familias a las que acota un encabezado; ``None`` si no nombra ningún elemento (los
-    generales: «NOTAS GENERALES…», «REFUERZO», «MATERIALES», «ESPECIFICACIONES…», «NOTAS DE
-    CIMENTACION»); ``["?"]`` si nombra uno que no se sabe leer."""
-    texto = " ".join(mayusculas_sin_acentos(seccion).split()).strip(" :.")
-    if not ELEMENTO.search(texto):
+def _texto_del_encabezado(seccion: str) -> str:
+    return " ".join(mayusculas_sin_acentos(seccion).split()).strip(" :.")
+
+
+def _alcance_del_encabezado(seccion: str, encabezado: str = "") -> list[str] | None:
+    """Las familias a las que acota un encabezado; ``None`` si no acota (los generales, de una
+    lista cerrada: «NOTAS GENERALES…», «REFUERZO», «MATERIALES», «ESPECIFICACIONES…», «CONCRETO»,
+    «ACERO», los de la cimentación —ver ``_es_de_cimentacion``—, y el final de un renglón partido
+    que se tomó por encabezado: «EN UNA MISMA SECCION.»); ``["?"]`` si acota a algo que no se
+    sabe leer: un elemento calificado («TRABES PRECOLADAS»), una parte de la estructura
+    («SUPERESTRUCTURA»), las notas de otra cosa («NOTAS PARA ESCALERAS») o un título suelto con
+    «:» que no es general ni un elemento («ESCALERAS :», «TANQUE ELEVADO :»). ``encabezado`` es el
+    renglón como está escrito: sólo su «:» dice que un título suelto es un título."""
+    texto = _texto_del_encabezado(seccion)
+    if not texto:
         return None
-    m = _ENCABEZADO_DE_ELEMENTOS.fullmatch(texto)
-    if m is None:
+    if ELEMENTO.search(texto):
+        m = _ENCABEZADO_DE_ELEMENTOS.fullmatch(texto)
+        if m is None:
+            return ["?"]
+        familias, desconocidos = _miembros(m["lista"])
+        return familias if familias and not desconocidos else ["?"]
+    if _ENCABEZADO_GENERAL.fullmatch(texto) or _ENCABEZADO_DE_CIMENTACION.fullmatch(texto):
+        return None
+    if _NOTAS_DE_ALGO.fullmatch(texto):
         return ["?"]
-    familias, desconocidos = _miembros(m["lista"])
-    return familias if familias and not desconocidos else ["?"]
+    if (encabezado or seccion).rstrip().endswith(":") and _TITULO_SUELTO.fullmatch(texto):
+        return ["?"]
+    return None
+
+
+def _es_de_cimentacion(seccion: str) -> bool:
+    """Si el encabezado es de la cimentación («NOTAS DE CIMENTACION», «CIMENTACION», «NOTAS PARA
+    ELEMENTOS DE CIMENTACION»)."""
+    return _ENCABEZADO_DE_CIMENTACION.fullmatch(_texto_del_encabezado(seccion)) is not None
 
 
 def _familias_que_nombra(texto: str) -> set[str]:
-    """Las familias que un texto nombra (``?`` si nombra un elemento que no es de ninguna)."""
-    familias = set(_familias_en(texto, _PALABRAS_DE_COBERTURA)[0])
-    return familias or ({"?"} if ELEMENTO.search(texto) else set())
+    """Las familias que un texto nombra, con ``?`` si nombra además un elemento o una parte de la
+    estructura que no es de ninguna («EN AZOTEA», «EN LOSAS Y AZOTEAS», «EN TRABES DE AZOTEA»)."""
+    nombres, restante = _familias_en(texto, _PALABRAS_DE_COBERTURA)
+    return set(nombres) | ({"?"} if ELEMENTO.search(restante) else set())
 
 
-def _lo_que_la_cambia(o: _Origen, lectura: Lectura, reglas: set[str]) -> str | None:
-    """Lo que hace que las lecturas de un texto no valgan, o ``None`` si valen todas.
+# Por qué no valen las lecturas de una nota: lo que la niega, la acota o no se leyó, o dos
+# lecturas suyas que se desmienten.
+_LA_NIEGA = "lo niega, lo acota o no se pudo leer"
+_NO_DICEN_LO_MISMO = "no dicen lo mismo"
 
-    Las lecturas (``reglas``: «traslape», «recubrimiento:trabe»…) valen sólo si:
+
+def _lo_que_la_cambia(
+    o: _Origen, lectura: Lectura, de_la_nota: _Lecturas
+) -> tuple[str, str] | None:
+    """Lo que hace que las lecturas de un texto no valgan y por qué, o ``None`` si valen todas.
+
+    Las lecturas (``de_la_nota``: «traslape», «recubrimiento:trabe»…) valen sólo si:
     (a) cada cláusula que nombra una regla se leyó entera (o es una frase que se sabe que no da
-        una regla: la proporción por sección de Marina, «SIN TRASLAPES» junto a lo que se suelda);
-    (b) ninguna niega, anula o exceptúa («NO …», «N/A», «(NOTA CANCELADA)», «SALVO …») ni amplía o
-        recorta a qué varillas va («… Y MAYORES TAMBIEN», «ASI COMO LAS MENORES»);
-    (c) nada la acota a un elemento o a una parte de la estructura («EN COLUMNAS», «PARA
-        COLUMNAS», «EN VIGAS», «EN NERVADURAS», «EN AZOTEA», «NO ASI EN …», un encabezado como
-        «COLUMNAS :», «NOTAS PARA LOSAS :» o «NOTAS PARA TRABES DE CIMENTACION :»; uno que no se
-        sabe leer, «NOTAS PARA TRABES PRECOLADAS :», tampoco deja). Una regla por familia
+        una regla: la proporción por sección de Marina, «SIN TRASLAPES» junto a lo que se suelda
+        cuando la nota no dice hasta qué varilla se traslapa);
+    (b) ninguna niega, anula o exceptúa («NO …», «N/A», «(NOTA CANCELADA)», «NULA», «SE SUSTITUYE
+        POR LA NOTA 9», «SALVO …») ni amplía o recorta a qué varillas va («… Y MAYORES TAMBIEN»,
+        «ASI COMO LAS MENORES»);
+    (c) nada la acota a un elemento, a una parte de la estructura o a un lugar («EN COLUMNAS»,
+        «PARA COLUMNAS», «EN VIGAS», «EN NERVADURAS», «EN AZOTEA», «EN ESCALERAS», «EN LA
+        CISTERNA», «APLICA A ESCALERAS», «NO ASI EN …», un encabezado como «COLUMNAS :», «NOTAS
+        PARA LOSAS :», «NOTAS PARA ESCALERAS :» o «ESCALERAS :»). Una regla por familia
         (recubrimiento, primer estribo, anclaje) se lee sólo para las familias que dice (o las del
-        encabezado): otro elemento en otra oración es de otra familia (se avisa aparte); en su
-        misma oración, con una cifra, o nombrando una familia que se leyó, la cambia;
+        encabezado): otra familia conocida en otra oración es de otra familia (se avisa aparte); en
+        su misma oración, con una cifra, o nombrando una familia que se leyó, la cambia; una parte
+        de la estructura o un lugar la acota siempre. Bajo un encabezado de cimentación sólo se
+        leen las familias de la cimentación;
     (d) ninguna cláusula sin leer trae un número (un valor sobreentendido: «… #6. LUEGO HASTA EL
-        #5»).
+        #5»);
+    (e) la nota no dice dos valores de una regla («HASTA EL #6 … HASTA EL #8») ni traslapa una
+        varilla que manda soldar («HASTA EL #8, DEL #8 EN ADELANTE SE SOLDARAN»).
     Los encabezados generales («NOTAS GENERALES…», «REFUERZO», «MATERIALES»,
-    «ESPECIFICACIONES…», «NOTAS DE CIMENTACION») no nombran ningún elemento: no acotan
-    (``_alcance_del_encabezado``)."""
+    «ESPECIFICACIONES…») no acotan (``_alcance_del_encabezado``)."""
+    reglas = set(de_la_nota.por_regla)
     globales = any(r.split(":")[0] not in _POR_FAMILIA for r in reglas)
     leidas = {r.split(":")[1] for r in reglas if ":" in r}
     texto = lectura.texto
     anulada = _ANULADA.search(texto)
     if anulada:
-        return o.texto[anulada.start() : anulada.end()]
-    alcance = _alcance_del_encabezado(o.seccion)
+        return o.texto[anulada.start() : anulada.end()], _LA_NIEGA
+    alcance = _alcance_del_encabezado(o.seccion, o.encabezado)
     if alcance is not None and (
         globales or "?" in alcance or leidas - _con_sus_contratrabes(set(alcance))
     ):
-        return o.seccion
+        return o.seccion, _LA_NIEGA
+    if _es_de_cimentacion(o.seccion) and leidas - _FAMILIAS_DE_CIMENTACION:
+        return o.seccion, _LA_NIEGA
+    contradiccion = _se_desmiente(de_la_nota)
+    if contradiccion is not None:
+        return contradiccion, _NO_DICEN_LO_MISMO
     por_familia_en = {f.oracion for f in lectura.validas("primer_estribo", "recubrimiento")}
     por_familia_en |= {f.oracion for f in lectura.validas("recubrimiento_lista")}
     for k, pieza, trozo in _piezas_sin_leer(lectura):
+        cita = o.texto[pieza.inicio : pieza.fin]
         if (
             _PALABRA_DE_REGLA.search(trozo)
             or NEGACION.search(trozo)
             or EXCEPCION.search(trozo)
             or _AMPLIA_O_RECORTA.search(trozo)
         ):
-            return o.texto[pieza.inicio : pieza.fin]
+            return cita, _LA_NIEGA
         nombradas = _familias_que_nombra(trozo)
         numeros = numeros_libres(trozo)
         if nombradas:
-            if globales or nombradas & leidas or (numeros and k in por_familia_en):
-                return o.texto[pieza.inicio : pieza.fin]
-        elif numeros:
-            return o.texto[pieza.inicio : pieza.fin]
+            if (
+                globales
+                or "?" in nombradas
+                or nombradas & leidas
+                or (numeros and k in por_familia_en)
+            ):
+                return cita, _LA_NIEGA
+        elif numeros or _EN_UN_LUGAR.fullmatch(trozo.strip(" .,;:()")):
+            return cita, _LA_NIEGA
+    return None
+
+
+def _se_desmiente(de_la_nota: _Lecturas) -> str | None:
+    """Dos lecturas de la nota que se desmienten, citadas: dos valores de una misma regla, o un
+    traslape que llega a una varilla que la nota manda soldar."""
+    for lecturas in de_la_nota.por_regla.values():
+        if len({repr(lectura.dato.valor) for lectura in lecturas}) > 1:
+            return "» y «".join(dict.fromkeys(lectura.dato.texto for lectura in lecturas))
+    traslapes = de_la_nota.por_regla.get("traslape", [])
+    for soldar in de_la_nota.por_regla.get("soldar", []):
+        for traslape in traslapes:
+            if float(soldar.dato.valor) <= float(traslape.dato.valor):
+                return f"{traslape.dato.texto}» y «{soldar.dato.texto}"
     return None
 
 
@@ -1185,17 +1373,22 @@ def _con_sus_contratrabes(familias: set[str]) -> set[str]:
 
 
 def _avisar_la_nota(
-    o: _Origen, lectura: Lectura, reglas: set[str], por: str, lecturas: _Lecturas
+    o: _Origen,
+    lectura: Lectura,
+    reglas: set[str],
+    por: tuple[str, str],
+    lecturas: _Lecturas,
 ) -> None:
     """Un solo aviso por una nota cuyas lecturas no valen: qué dice y qué lo impide."""
     temas = [_TEMA_DE_LA_REGLA[r.split(":")[0]] for r in sorted(reglas)]
     temas += [_TEMA_DE_LA_REGLA[r] for p, r in _TEMA_DE_LA_PALABRA if p.search(lectura.texto)]
     todo = " ".join(o.texto.split())
     cita = todo if len(todo) <= 250 else f"{todo[:249]}…"
-    lo_que = " ".join(por.split()).strip(" .")
+    lo_que, por_que = por
+    lo_que = " ".join(lo_que.split()).strip(" .")
     lecturas.avisar(
         f"{o.donde} dice {_listar(list(dict.fromkeys(temas)))}, pero «{lo_que}» "
-        f"lo niega, lo acota o no se pudo leer; no se usa nada de lo que dice («{cita}»).",
+        f"{por_que}; no se usa nada de lo que dice («{cita}»).",
         o.hojas_del_aviso,
     )
 
@@ -1429,7 +1622,7 @@ def _leer_texto(o: _Origen, lecturas: _Lecturas) -> None:
     _ganchos(o, lectura, de_la_nota)
     _plantilla_y_anclajes(o, lectura, de_la_nota)
     reglas = set(de_la_nota.por_regla)
-    por = _lo_que_la_cambia(o, lectura, reglas) if reglas else None
+    por = _lo_que_la_cambia(o, lectura, de_la_nota) if reglas else None
     if por is not None:
         _avisar_la_nota(o, lectura, reglas, por, lecturas)
         return
@@ -1688,5 +1881,6 @@ def _leer_nota(nota: Nota, lecturas: _Lecturas) -> None:
         nota.copias,
         donde,
         seccion=nota.seccion,
+        encabezado=nota.encabezado,
     )
     _leer_texto(origen, lecturas)

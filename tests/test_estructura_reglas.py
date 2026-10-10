@@ -3811,3 +3811,374 @@ def test_the_same_for_another_family_extends_the_rule_and_the_note_is_reported(t
 def test_the_first_stirrup_of_foundation_beams_is_the_contratrabes(tmp_path, texto, esperado):
     r = _con_notas(tmp_path, [f"3. {texto}"])
     assert {f: d.valor for f, d in r.primer_estribo_m.items()} == esperado and r.avisos == []
+
+
+# --- Task 5b, ronda de arreglos 1 (R42, R43): «DE CIMENTACION» coordinado en el primer estribo,
+# una parte de la estructura o un lugar que no se conoce acota, los encabezados de cimentación,
+# más anulaciones, la lista con el último calificado, lo que la nota contradice, el N.A.F. y más
+# diámetros ------------------------------------------------------------------------------------
+
+_R = "recubrimiento_m"
+
+
+def _nada_de_la_nota(r, campo):
+    """``True`` si ``campo`` no trae nada de las notas (los recubrimientos: todos supuestos)."""
+    if campo == _R:
+        return all(d.fuente == "supuesto" for d in r.recubrimiento_m.values())
+    return _sin_lectura(r, campo)
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "EN COLUMNAS Y TRABES DE CIMENTACION EL PRIMER ESTRIBO SE COLOCARA A 5 CM",
+        "EL PRIMER ESTRIBO EN COLUMNAS Y TRABES DE CIMENTACION SE COLOCARA A 5 CM",
+        "EL PRIMER ESTRIBO DE LAS COLUMNAS Y VIGAS DE CIMENTACION SE COLOCARA A 5 CM",
+        "EN TRABES Y VIGAS DE CIMENTACION EL PRIMER ESTRIBO SE COLOCARA A 5 CM",
+        "EN DALAS Y TRABES DE CIMENTACION EL PRIMER ESTRIBO SE COLOCARA A 5 CM",
+        "EN CASTILLOS Y CONTRATRABES DE CIMENTACION EL PRIMER ESTRIBO SE COLOCARA A 5 CM",
+    ],
+)
+def test_a_first_stirrup_for_a_coordinated_de_cimentacion_is_ambiguous_and_reported(
+    tmp_path, texto
+):
+    r = _con_notas(tmp_path, [f"3. {texto}"])
+    assert r.primer_estribo_m == {}
+    (aviso,) = r.avisos
+    assert "DE CIMENTACION" in aviso and "no se usa" in aviso
+
+
+@pytest.mark.parametrize(
+    ("texto", "esperado"),
+    [
+        (
+            "EN COLUMNAS Y CONTRATRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM",
+            {"columna": 0.05, "contratrabe": 0.05},
+        ),
+        (
+            "EN COLUMNAS Y VIGAS EL PRIMER ESTRIBO SE COLOCARA A 5 CM",
+            {"columna": 0.05, "trabe": 0.05, "contratrabe": 0.05},
+        ),
+    ],
+)
+def test_a_first_stirrup_for_a_plain_list_of_families_is_read(tmp_path, texto, esperado):
+    r = _con_notas(tmp_path, [f"3. {texto}"])
+    assert {f: d.valor for f, d in r.primer_estribo_m.items()} == esperado and r.avisos == []
+
+
+# Las bases: las nueve de la nota entera, la plantilla y las dos por familia.
+_BASES_DE_LA_RONDA = (
+    *_NUEVE_BASES,
+    (_PL, "SE COLOCARA PLANTILLA DE 8 CM DE ESPESOR"),
+    (_P, "EN TRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM"),
+    (_R, "EL RECUBRIMIENTO SERA DE 4 CM EN TRABES"),
+)
+# 2. Una parte de la estructura detrás de una regla por familia la acota («, EN AZOTEA.»).
+_PARTES_DE_LA_ESTRUCTURA = (
+    "{f}, EN AZOTEA.",
+    "{f}, EN LA AZOTEA.",
+    "{f}, EN ENTREPISOS.",
+    "{f}, EN LA SUPERESTRUCTURA.",
+    "{f}, EN NERVADURAS.",
+    "{f}, EN MARCOS.",
+    "{f}, EN PILAS.",
+    "{f}, EN ELEMENTOS SECUNDARIOS.",
+    "{f}, PARA LA SUPERESTRUCTURA.",
+    "{f}. EN AZOTEA.",
+    "{f}, DE ENTREPISO.",
+    "{f}, EN LOSAS Y AZOTEAS.",
+)
+# 3. Un lugar que no es un elemento conocido también acota (R43: «EN|PARA|APLICA A» y 1–3
+# palabras, sin verbo).
+_LUGARES_QUE_NO_SE_CONOCEN = (
+    "{f}, EN ESCALERAS.",
+    "{f}. EN ESCALERAS.",
+    "{f}, EN LA CISTERNA.",
+    "{f}, EN TANQUES.",
+    "{f}, EN MENSULAS Y CAPITELES",
+    "{f}, EN VIGUETAS",
+    "{f}, EN LOS PRIMEROS NIVELES.",
+    "{f}, EN PLANTA BAJA.",
+    "{f}, PARA ESCALERAS.",
+    "{f}. APLICA A ESCALERAS.",
+    "{f}, UNICAMENTE PARA LA CISTERNA.",
+    "{f}, EN EL TERCIO MEDIO DEL CLARO.",
+    "{f}, FUERA DE ZONAS CONFINADAS.",
+    "{f}, SOBRE LA CISTERNA.",
+    "{f}, BAJO LA CISTERNA.",
+    "{f}, ENTRE EJES A Y C.",
+    # lo que dice a qué aplica, o la deja sujeta a algo
+    "{f}, EXCLUSIVO DE ESCALERAS.",
+    "{f}, VALIDO PARA ESCALERAS.",
+    "{f}, ESTA NOTA APLICA EN ESCALERAS.",
+    "{f}, CORRESPONDE A ESCALERAS.",
+    "{f}, REFERIDO A ESCALERAS.",
+    "{f}, CUANDO SE TRATE DE ESCALERAS.",
+    "{f}, TRATANDOSE DE ESCALERAS.",
+    "{f}, PREVIA AUTORIZACION DEL DIRECTOR.",
+    "{f}, SEGUN SE REQUIERA.",
+    "{f}, OPCIONALMENTE.",
+    "{f}, DE PREFERENCIA.",
+    "{f}. ESTE LIMITE PUEDE AUMENTARSE.",
+)
+# 5. Más maneras de anular una nota.
+_MAS_ANULACIONES = (
+    "{f}. SE SUSTITUYE POR LA NOTA 9.",
+    "{f}. SE REEMPLAZA POR LA NOTA 9.",
+    "{f}. ELIMINAR.",
+    "{f}. NULA.",
+    "{f}. NOTA NULA.",
+    "{f}. REVOCADA.",
+    "{f}. VER NOTA 9 QUE LA SUSTITUYE.",
+    "{f}. VER NOTA 9 QUE LA REEMPLAZA.",
+    "{f}. (BORRAR)",
+    "{f}. TACHADA.",
+)
+
+
+@pytest.mark.parametrize(
+    ("texto", "campo"),
+    [
+        pytest.param(envoltura.format(f=frase), regla, id=envoltura.format(f=frase))
+        for regla, frase in _BASES_DE_LA_RONDA
+        for envoltura in (*_PARTES_DE_LA_ESTRUCTURA, *_LUGARES_QUE_NO_SE_CONOCEN, *_MAS_ANULACIONES)
+    ],
+)
+def test_a_part_of_the_structure_an_unknown_place_or_a_cancellation_never_lets_a_reading_through(
+    tmp_path, texto, campo
+):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert _nada_de_la_nota(r, campo), getattr(r, campo)
+    assert r.avisos
+
+
+@pytest.mark.parametrize(
+    ("encabezado", "regla", "frase"),
+    [
+        pytest.param(encabezado, regla, frase, id=f"{encabezado} {frase}")
+        for regla, frase in _BASES_DE_LA_RONDA
+        for encabezado in (
+            "NOTAS PARA ESCALERAS :",
+            "ESCALERAS :",
+            "CISTERNA :",
+            "TANQUE ELEVADO :",
+            "PRECOLADOS :",
+            "ESTRUCTURA METALICA :",
+            "NOTAS DE PRECOLADOS :",
+            # las notas de algo acotan aunque acaben en punto
+            "NOTAS PARA ESCALERAS.",
+            "NOTAS DE PRECOLADOS.",
+        )
+    ],
+)
+def test_a_heading_that_is_neither_generic_nor_a_known_element_scopes_its_notes(
+    tmp_path, encabezado, regla, frase
+):
+    r = _con_notas(tmp_path, [f"1. {frase}"], titulo=encabezado)
+    assert _nada_de_la_nota(r, regla), getattr(r, regla)
+    assert r.avisos
+
+
+@pytest.mark.parametrize(
+    "encabezado",
+    [
+        "NOTAS :",
+        "NOTAS GENERALES :",
+        "NOTAS GENERALES DE ESTRUCTURA.",
+        "MATERIALES :",
+        "ESPECIFICACIONES :",
+        "ESPECIFICACIONES GENERALES :",
+        "GENERALES :",
+        "CONCRETO :",
+        "ACERO :",
+        "NOTAS DE CIMENTACION :",
+        "CIMENTACION :",
+        "NOTAS PARA ELEMENTOS DE CIMENTACION :",
+        # los temas de las reglas
+        "TRASLAPES :",
+        "ANCLAJES Y TRASLAPES :",
+        "RECUBRIMIENTOS :",
+        "ACERO DE REFUERZO :",
+        # el final de un renglón partido que se tomó por encabezado (PRUEBA-1)
+        "EN UNA MISMA SECCION.",
+        "TOTAL TRANSVERSAL DE LA PIEZA.",
+    ],
+)
+def test_a_generic_heading_or_the_end_of_a_wrapped_line_does_not_scope(tmp_path, encabezado):
+    r = _con_notas(tmp_path, [f"1. {_L}"], titulo=encabezado)
+    assert r.traslape_max_numero.valor == "6" and r.avisos == []
+
+
+_DE_CIMENTACION = (
+    "NOTAS DE CIMENTACION :",
+    "CIMENTACION :",
+    "NOTAS PARA ELEMENTOS DE CIMENTACION :",
+)
+
+
+@pytest.mark.parametrize("encabezado", _DE_CIMENTACION)
+@pytest.mark.parametrize(
+    ("renglon", "campo"),
+    [
+        ("EL RECUBRIMIENTO SERA DE 4 CM EN TRABES", _R),
+        ("EL RECUBRIMIENTO SERA DE 4 CM EN COLUMNAS", _R),
+        ("EL RECUBRIMIENTO SERA DE 5 CM EN ZAPATAS Y 4 CM EN TRABES", _R),
+        ("EL RECUBRIMIENTO SERA DE 3 CM EN CASTILLOS Y DALAS", _R),
+        ("EL RECUBRIMIENTO SERA DE 4 CM EN LOSAS", _R),
+        ("EN TRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM", _P),
+        ("EN COLUMNAS EL PRIMER ESTRIBO SE COLOCARA A 5 CM", _P),
+    ],
+)
+def test_under_a_foundation_heading_a_family_that_is_not_foundation_is_reported_not_read(
+    tmp_path, encabezado, renglon, campo
+):
+    r = _con_notas(tmp_path, [f"1. {renglon}"], titulo=encabezado)
+    assert _nada_de_la_nota(r, campo), getattr(r, campo)
+    assert r.avisos
+
+
+@pytest.mark.parametrize("encabezado", _DE_CIMENTACION)
+@pytest.mark.parametrize(
+    ("renglon", "campo", "esperado"),
+    [
+        (
+            "EL RECUBRIMIENTO SERA DE 5 CM EN ZAPATAS Y CONTRATRABES",
+            _R,
+            {"zapata": 0.05, "contratrabe": 0.05},
+        ),
+        ("EN CONTRATRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM", _P, {"contratrabe": 0.05}),
+        ("SE COLOCARA PLANTILLA DE CONCRETO POBRE DE 5 CM DE ESPESOR", _PL, 0.05),
+        (_L, _T, "6"),
+    ],
+)
+def test_under_a_foundation_heading_foundation_families_and_project_rules_are_read(
+    tmp_path, encabezado, renglon, campo, esperado
+):
+    r = _con_notas(tmp_path, [f"1. {renglon}"], titulo=encabezado)
+    if campo == _R:
+        leido = {k: d.valor for k, d in r.recubrimiento_m.items() if d.fuente == "nota"}
+    elif campo == _P:
+        leido = {k: d.valor for k, d in r.primer_estribo_m.items()}
+    else:
+        leido = getattr(r, campo).valor
+    assert leido == esperado and r.avisos == []
+
+
+def test_marinas_cover_note_under_its_general_heading_keeps_every_cover(tmp_path):
+    r = leer_reglas(_marina_notes_and_table(tmp_path), frames=[])
+    leidos = {k: d.valor for k, d in r.recubrimiento_m.items() if d.fuente == "nota"}
+    assert leidos == {
+        "zapata": 0.05,
+        "dado": 0.05,
+        "pilote": 0.05,
+        "contratrabe": 0.05,
+        "losa_cimentacion": 0.05,
+        "columna": 0.05,
+        "trabe": 0.04,
+        "losa": 0.04,
+        "castillo": 0.03,
+        "dala": 0.03,
+        "cerramiento": 0.03,
+    }
+
+
+@pytest.mark.parametrize(
+    "lista",
+    [
+        "TRABES Y LOSAS DE AZOTEA",
+        "TRABES Y LOSAS DE ENTREPISO",
+        "TRABES Y LOSAS DE SOTANO",
+        "LOSAS Y TRABES DE AZOTEA",
+        "COLUMNAS, TRABES Y LOSAS DE AZOTEA",
+    ],
+)
+def test_a_qualifier_on_the_last_of_a_list_may_be_of_all_of_them_and_is_reported(tmp_path, lista):
+    r = _con_notas(tmp_path, [f"4. EL RECUBRIMIENTO SERA DE 4 CM EN {lista}"], titulo="NOTAS :")
+    assert _nada_de_la_nota(r, _R), r.recubrimiento_m
+    assert r.avisos
+
+
+def test_concrete_walls_at_the_end_of_a_list_are_still_read(tmp_path):
+    r = _con_notas(
+        tmp_path,
+        ["4. EL RECUBRIMIENTO SERA DE 4 CM EN TRABES Y MUROS DE CONCRETO"],
+        titulo="NOTAS :",
+    )
+    leidos = {k: d.valor for k, d in r.recubrimiento_m.items() if d.fuente == "nota"}
+    assert leidos == {"trabe": 0.04, "muro_concreto": 0.04} and r.avisos == []
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        # lo que acompaña a la otra mitad no vale si la nota también lee lo que niega
+        "SE TRASLAPARAN VARILLAS HASTA EL #6, DEL #8 EN ADELANTE SE SOLDARAN, NO SE SOLDARA "
+        "NINGUNA",
+        "SE TRASLAPARAN VARILLAS HASTA EL #6. DEL #8 EN ADELANTE SE SOLDARAN. NO SE SOLDARA "
+        "NINGUNA.",
+        "DEL #8 EN ADELANTE SE SOLDARAN, SE TRASLAPARAN VARILLAS HASTA EL #6, SIN TRASLAPES",
+        "SE TRASLAPARAN VARILLAS HASTA EL #6, SIN SOLDADURA. DEL #8 EN ADELANTE SE SOLDARAN.",
+        "SE TRASLAPARAN VARILLAS HASTA EL #6 Y LAS DEMAS SE SOLDARAN. DEL #10 EN ADELANTE SE "
+        "SOLDARAN.",
+        "SE TRASLAPARAN VARILLAS HASTA EL #4 Y LAS DEMAS SE SOLDARAN, DEL #8 EN ADELANTE SE "
+        "SOLDARAN",
+        # otro límite para la misma regla, o uno que se encima con el de la otra
+        "SE TRASLAPARAN VARILLAS HASTA EL #6. SE PERMITE TRASLAPAR VARILLA HASTA EL #8.",
+        "DEL #8 EN ADELANTE SE SOLDARAN. A PARTIR DEL #10 SE SOLDARAN LAS VARILLAS.",
+        "SE TRASLAPARAN VARILLAS HASTA EL #8, DEL #8 EN ADELANTE SE SOLDARAN",
+        "SE TRASLAPARAN VARILLAS HASTA EL #8, DEL #6 EN ADELANTE SE SOLDARAN",
+    ],
+)
+def test_a_note_that_contradicts_what_it_reads_is_not_used(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert r.traslape_max_numero is None and r.soldar_desde_numero is None
+    assert r.avisos
+
+
+def test_two_covers_for_the_same_family_in_one_note_are_not_used(tmp_path):
+    r = _con_notas(
+        tmp_path, ["4. EL RECUBRIMIENTO SERA DE 4 CM EN TRABES Y 5 CM EN TRABES"], titulo="NOTAS :"
+    )
+    assert _nada_de_la_nota(r, _R) and r.avisos
+
+
+def test_the_water_table_is_not_a_cancellation(tmp_path):
+    texto = "2. SE COLOCARA PLANTILLA DE CONCRETO POBRE DE 5 CM DE ESPESOR, ARRIBA DEL N.A.F."
+    r = _con_notas(tmp_path, [texto], titulo="NOTAS :")
+    assert r.plantilla_espesor_m.valor == 0.05 and r.avisos == []
+
+
+@pytest.mark.parametrize("anulacion", ["N.A.", "N.A", "N. A.", "(N.A.)", "N/A", "NA."])
+def test_not_applicable_still_cancels_the_note(tmp_path, anulacion):
+    r = _con_notas(tmp_path, [f"4. {_L}. {anulacion}"])
+    assert r.traslape_max_numero is None and r.avisos
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "SE TRASLAPARAN VARILLAS HASTA 19MM",
+        "SE TRASLAPARAN VARILLAS HASTA CAL. 6",
+        "LAS VARILLAS MAYORES A 19 MM SE SOLDARAN",
+        "SE TRASLAPARAN VARILLAS DE DIAMETRO MENOR O IGUAL A 19 MM",
+        "SE PERMITE TRASLAPAR VARILLA HASTA EL No . 6",
+        "SE PERMITE TRASLAPAR VARILLA HASTA EL No.: 6",
+    ],
+)
+def test_more_diameters_and_odd_bar_marks_are_reported_never_dropped(tmp_path, texto):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert r.traslape_max_numero is None and r.soldar_desde_numero is None
+    assert r.avisos
+
+
+def test_a_first_stirrup_said_apart_for_contratrabes_wins_over_the_one_of_trabes(tmp_path):
+    texto = (
+        "3. EN TRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM. EN CONTRATRABES EL PRIMER ESTRIBO SE "
+        "COLOCARA A 6 CM."
+    )
+    r = _con_notas(tmp_path, [texto])
+    assert {f: d.valor for f, d in r.primer_estribo_m.items()} == {
+        "trabe": 0.05,
+        "contratrabe": 0.06,
+    }
+    assert r.avisos == [] and r.contradicciones == []

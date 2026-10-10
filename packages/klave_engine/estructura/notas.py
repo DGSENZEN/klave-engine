@@ -53,7 +53,9 @@ class Nota(BaseModel):
 
     ``hoja`` y ``entidades`` son los de la primera copia (la de la hoja menor); ``copias`` cuenta
     las veces que el plano la trae igual y ``hojas`` dice dónde. Dos redacciones distintas de la
-    misma nota son dos ``Nota`` con el mismo ``seccion`` y ``numero``."""
+    misma nota son dos ``Nota`` con el mismo ``seccion`` y ``numero``. ``encabezado`` es el
+    renglón del encabezado como está escrito («REFUERZO :», «EN UNA MISMA SECCION.»): un «:» al
+    final dice que es un título; un «.», que puede ser el final de un renglón partido."""
 
     seccion: str
     numero: int
@@ -62,6 +64,7 @@ class Nota(BaseModel):
     entidades: list[str]
     copias: int = 1
     hojas: list[str] = []
+    encabezado: str = ""
 
 
 def limpiar_texto(texto: str) -> str:
@@ -116,6 +119,7 @@ class _Instancia:
     texto: str
     hoja: str
     entidades: list[str]
+    encabezado: str = ""
 
 
 def _alto(e: NormalizedEntity) -> float:
@@ -162,14 +166,15 @@ def _notas_de_la_hoja(lineas: list[_Linea], hoja: str) -> list[_Instancia]:
     for primera, cadena in cadenas:
         numero, resto = numeradas[primera] or (0, "")
         partes = [resto, *(lineas[j].texto for j in cadena[1:])]
-        seccion = _seccion_de(lineas, primera, encabezados)
+        encabezado = _encabezado_de(lineas, primera, encabezados)
         instancias.append(
             _Instancia(
-                seccion=seccion,
+                seccion=encabezado.rstrip(" :.").strip(),
                 numero=numero,
                 texto=" ".join(p for p in partes if p),
                 hoja=hoja,
                 entidades=[lineas[j].id for j in cadena],
+                encabezado=encabezado,
             )
         )
     return instancias
@@ -214,8 +219,8 @@ def _siguiente(
     return j
 
 
-def _seccion_de(lineas: list[_Linea], i: int, encabezados: list[int]) -> str:
-    """El encabezado más cercano arriba del renglón, en su misma columna."""
+def _encabezado_de(lineas: list[_Linea], i: int, encabezados: list[int]) -> str:
+    """El encabezado más cercano arriba del renglón, en su misma columna, como está escrito."""
     r = lineas[i]
     mejor: tuple[float, int] | None = None
     for h in encabezados:
@@ -226,7 +231,7 @@ def _seccion_de(lineas: list[_Linea], i: int, encabezados: list[int]) -> str:
             mejor = (e.y - r.y, h)
     if mejor is None:
         return ""
-    return lineas[mejor[1]].texto.rstrip(" :.").strip()
+    return lineas[mejor[1]].texto.strip()
 
 
 def leer_notas_con_renglones(
@@ -263,6 +268,7 @@ def leer_notas_con_renglones(
                 entidades=primera.entidades,
                 copias=len(instancias),
                 hojas=sorted({i.hoja for i in instancias}),
+                encabezado=primera.encabezado,
             )
         )
     notas.sort(key=lambda nota: (nota.seccion, nota.numero, -nota.copias, nota.hoja))

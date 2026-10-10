@@ -36,7 +36,8 @@ es uno conocido o una palabra que no se reconoce (se avisa), nada más («Y LA M
 cabe). Hay además frases que se saben leer pero no dan una regla: la proporción por sección de
 Marina («NO SE PERMITIRA TRASLAPAR NI SOLDAR MAS DEL 50% …»), «SE COLOCARA PLANTILLA DE CONCRETO
 POBRE», «EL TRASLAPE SERA SEGUN TABLA», y lo que acompaña a la otra mitad que sí se leyó («SIN
-TRASLAPES» junto a lo que se suelda, «NO SE SOLDARA NINGUNA» junto a lo que se traslapa).
+TRASLAPES» junto a lo que se suelda, «NO SE SOLDARA NINGUNA» junto a lo que se traslapa), si la
+nota no lee también lo que eso niega (entonces se desmiente).
 
 Lo que no se lee queda en ``Lectura.resto``. Quien lee decide con la nota entera si sus lecturas
 valen (``reglas._lo_que_la_cambia``) y avisa de lo que nombra una regla con un número y no se
@@ -190,9 +191,13 @@ MIEMBRO_CONOCIDO = (
     r"|TRABES?|VIGAS?|COLUMNAS?|LOSAS?|MUROS?\s+DE\s+(?:CONCRETO|CONTENCION)|CASTILLOS?|CADENAS?"
     r"|DALAS?|CERRAMIENTOS?"
 )
+# (Ni lo que acota o condiciona la regla: «4 CM EN TRABES, OPCIONALMENTE» no nombra un elemento.)
 _NO_ES_UN_MIEMBRO = (
     r"(?:EN|DE|DEL|LA|LAS|LOS|EL|Y|E|O|CON|SIN|MAS|MENOS|NO|NI|A|AL|POR|PARA|CMS?|MTS?|LIBRES?"
-    r"|SERAN?|QUE|SALVO|EXCEPTO|TAMBIEN|COMO|MITAD|DOBLE)\b"
+    r"|SERAN?|QUE|SALVO|EXCEPTO|TAMBIEN|COMO|MITAD|DOBLE|SOLO|SOLAMENTE|UNICAMENTE|EXCLUSIV\w*"
+    r"|OPCIONAL\w*|PREFEREN\w*|IGUAL\w*|TODOS?|TODAS?|DEMAS|RESTO|MAYOR(?:ES)?|MENOR(?:ES)?"
+    r"|SUPERIORES|INFERIORES|CUANDO|PREVIA|APLICA\w*|VALID\w*|CORRESPONDE\w*|REFERID\w*"
+    r"|TRATANDOSE|VICEVERSA|SEGUN|SIEMPRE|MINIMOS?|MAXIMOS?|PROMEDIO|TIPICOS?)\b"
 )
 _MIEMBRO = (
     rf"(?:(?:LOS|LAS)\s+)?(?:{MIEMBRO_CONOCIDO}"
@@ -487,8 +492,13 @@ TEMAS = {
 }
 # Las reglas que van por familia: otro elemento u otro número no las cambia (es de otra familia).
 POR_FAMILIA = frozenset({"primer_estribo", "recubrimiento", "recubrimiento_lista"})
-# Lo que no da una regla: vale aunque niegue, si la otra mitad que acompaña se leyó.
-_ACOMPANA = {"acompana_soldar": ("soldar", "soldar_rango"), "acompana_traslape": ("traslape",)}
+# Lo que no da una regla: vale aunque niegue, si la otra mitad que acompaña se leyó y la nota no
+# lee también la regla que niega o recorta («… HASTA EL #6, DEL #8 EN ADELANTE SE SOLDARAN, NO SE
+# SOLDARA NINGUNA» se desmiente). (la que acompaña, la suya)
+_ACOMPANA = {
+    "acompana_soldar": (("soldar", "soldar_rango"), ("traslape",)),
+    "acompana_traslape": (("traslape",), ("soldar", "soldar_rango")),
+}
 # Una excepción a lo que se dice: «SALVO…», «EXCEPTO…», «… PERO…».
 EXCEPCION = re.compile(
     r"\b(?:SALVO|EXCEPTO|EXCEPCION|EXCEPTUANDO|EXCLUYENDO|MENOS\s+EN|PERO|AUNQUE)\b"
@@ -758,7 +768,8 @@ def _vale(lectura: Lectura, f: Frase, cubiertas: set[int], siguiente: Oracion | 
     if f.regla == "inerte":
         return True
     if f.regla in _ACOMPANA:
-        return bool(lectura.validas(*_ACOMPANA[f.regla]))
+        otra, suya = _ACOMPANA[f.regla]
+        return bool(lectura.validas(*otra)) and not lectura.validas(*suya)
     # La de los recubrimientos trae «NO SERA MENOR QUE»: su lista cerrada no puede negar nada.
     if not f.regla.startswith("recubrimiento") and NEGACION.search(texto, f.inicio, f.fin):
         return False
