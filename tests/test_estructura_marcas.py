@@ -105,6 +105,20 @@ C = TextPatternConfig()
         # R68.8: la referencia se lleva su única marca (no se lee; el respaldo la bloquea).
         ("CORTE K-1 15X20 4#3", "ninguna", []),
         ("DET. K-1 4#3", "ninguna", []),
+        # R78: una letra suelta tras una marca: ¿su sufijo? Ambigua; no la cabeza de unos
+        # estribos ni el conector de un rango o una lista.
+        ("K-15 A 4#3 E#3@20", "ambigua", ["K-15", "K-15A", "K-15-A"]),
+        ("K-1 A 4#3 E#3@20", "ambigua", ["K-1", "K-1A", "K-1-A"]),
+        ("K-15 ARMADO #3", "unica", ["K-15"]),
+        ("K-8 E #3@20", "unica", ["K-8"]),
+        ("K-1 A K-4 4#3", "varias", ["K-1 A K-4"]),
+        # R79: las etiquetas de la configuración escritas con espacio.
+        ("TRABE TL 1 20X40 4#3", "unica", ["TL-1"]),
+        ("TRABE TE A E#3@20 20X40", "unica", ["TE-A"]),
+        ("V 1 4#4", "unica", ["V-1"]),
+        ("TE ARMADO #4@20", "ninguna", []),
+        # R80: «V-4 #4»: ¿la marca V-4 o una cuenta de varillas?
+        ("V-4 #4 E#3@20", "ambigua", ["V-4"]),
     ],
 )
 def test_the_mark_grammar(texto, tipo, piezas):

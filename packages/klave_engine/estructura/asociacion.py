@@ -1769,6 +1769,33 @@ def _asociar_hoja(
     return asociaciones, rechazos
 
 
+def _nota_que_nombra(e: NormalizedEntity, hoja: str, config: TextPatternConfig) -> list[Rechazo]:
+    """Una nota numerada o un texto de otra familia que nombra una marca y trae armado o una
+    sección que la nota no lee («3.- K-7 E#3@1S», «TRABE-T 1 E#3@1S», R77): nadie lo lee, pero
+    dice de quién es. Un rechazo «sin_lector» por renglón con su marca; ninguno si la nota lo lee
+    («3.- K-7 15X20»)."""
+    texto = " ".join((e.text or "").split())
+    if lo_lee_una_nota(texto):
+        return []
+    rechazos: list[Rechazo] = []
+    for renglon in (e.text or "").split("\n"):
+        renglon = renglon.strip()
+        if ARMADO_RE.search(renglon) is None and _SECCION.search(renglon) is None:
+            continue
+        marcas = marcas_en_nota(renglon, config) or titulos(renglon, config)
+        if marcas:
+            rechazos.append(
+                Rechazo(
+                    entidad_id=e.entity_id,
+                    texto=renglon,
+                    hoja=hoja,
+                    motivo="sin_lector",
+                    marcas=marcas,
+                )
+            )
+    return rechazos
+
+
 def _sin_dueno(
     grupo: list[NormalizedEntity],
     hoja: str,
@@ -1788,6 +1815,9 @@ def _sin_dueno(
     huerfanos: list[Rechazo] = []
     for e in grupo:
         clase = clases[e.entity_id][0]
+        if clase in ("nota", "ajena") and e.entity_id not in de_alguien:
+            huerfanos += _nota_que_nombra(e, hoja, config)
+            continue
         if clase not in ("linea", "llamada", "sin_lector"):
             continue
         if e.entity_id in de_alguien or e.entity_id in rechazados:

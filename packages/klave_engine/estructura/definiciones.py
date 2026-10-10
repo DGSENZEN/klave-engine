@@ -24,11 +24,15 @@ from typing import Any, get_args
 from pydantic import BaseModel, Field
 
 from klave_engine.detection.schedules import (
+    Bloqueo,
     Campo,
     ElementSpec,
     Metodo,
     ScheduleInventory,
     Source,
+    _loose_key,
+    bloqueos_de,
+    family_of_mark,
 )
 from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.estructura.armado import (
@@ -39,7 +43,13 @@ from klave_engine.estructura.armado import (
     parsear_armado,
 )
 from klave_engine.estructura.dato import PRECEDENCIA, Dato, Fuente, elegir
-from klave_engine.estructura.marcas import marca_normalizada
+from klave_engine.estructura.marcas import (
+    es_rango,
+    extremos_de_rango,
+    leer_marcas,
+    marca_normalizada,
+    titulos,
+)
 
 # De qué fuente es una lectura, por quién la dio (``source``) y cómo (``metodo``). Todo par que
 # los lectores producen está aquí; uno que no, revienta (nunca se supone una fuente):
@@ -80,13 +90,15 @@ _DE_CAMPO: dict[Campo, str] = {
     "longitudinales": "longitudinales",
     "estribos": "estribos",
     "parrillas": "parrillas",
+    "longitud": "longitud_m",
 }
 
 
 class Definicion(BaseModel):
     """Lo que el plano dice de una marca (o de una familia, para las notas de familia), campo por
-    campo. ``seccion_cm`` va con sus dos lados, el menor primero (los lectores no coinciden en
-    cuál es el ancho: las notas y los cuadros dan los lados ordenados); ``longitudinales``,
+    campo. ``seccion_cm`` va como b×h en una viga (trabe, contratrabe, dala, cerramiento: como la
+    escribió o la dibujó el plano, R75) y con sus lados ordenados, el menor primero, en un
+    castillo, una columna o un pilote; ``longitudinales``,
     ``estribos`` y ``parrillas`` llevan la lista de ``GrupoVarillas``, ``JuegoEstribos`` y
     ``Parrilla``. ``hojas`` son las hojas donde el plano la define."""
 
@@ -124,14 +136,20 @@ def fuente_de_lectura(spec: ElementSpec) -> Fuente:
         ) from None
 
 
-def _seccion(valor: tuple[int, int]) -> tuple[int, int]:
-    a, b = sorted(valor)
+# Las familias cuya sección se puede comparar con sus lados ordenados; una viga (trabe,
+# contratrabe, dala, cerramiento) es b×h como la leyó quien sabe orientarla (R75).
+_SE_ORDENA = frozenset({"castillo", "columna", "pilote"})
+
+
+def _seccion(valor: tuple[int, int], familia: str) -> tuple[int, int]:
+    a, b = sorted(valor) if familia in _SE_ORDENA else valor
     return (a, b)
 
 
 def _es_de_familia(spec: ElementSpec) -> bool:
-    """Una nota de familia («DALA 15X30 4#3 E#2@20»): su marca es el nombre de su familia."""
-    return spec.source == "nota" and spec.mark == spec.family.upper()
+    """Una nota de familia («DALA 15X30 4#3 E#2@20»), o una lectura IA cuya marca es el nombre de
+    su familia (R80): es de toda la familia, no de una marca."""
+    return spec.source in ("nota", "ia") and spec.mark.strip().upper() == spec.family.upper()
 
 
 def construir_definiciones(
@@ -140,7 +158,8 @@ def construir_definiciones(
     """Las definiciones del plano: (por marca, por familia). Las lecturas se juntan por
     ``normalizar_marca`` y las notas de familia por su familia; cada campo es el ``Dato`` que
     ``elegir`` escoge entre las lecturas (sin hoja preferida: la de cada colocación la decide la
-    Tarea 9 con ``para_hoja``)."""
+    Tarea 9 con ``para_hoja``). Una marca que el plano nombra sin ambigüedad en un texto que nadie
+    leyó también tiene su definición, con ese campo ilegible (R77)."""
     config = config or TextPatternConfig()
     por_marca: dict[str, list[ElementSpec]] = {}
     por_familia: dict[str, list[ElementSpec]] = {}
@@ -149,13 +168,52 @@ def construir_definiciones(
             por_familia.setdefault(spec.family, []).append(spec)
         else:
             por_marca.setdefault(normalizar_marca(spec.mark, config), []).append(spec)
+    nombradas = _nombradas_sin_leer(inv, config)
+    for marca in nombradas:
+        por_marca.setdefault(normalizar_marca(marca, config), [])
+    known = (
+        {_loose_key(s.mark) for s in inv.specs}
+        | {_loose_key(m) for m in inv.by_mark}
+        | {_loose_key(m) for m in nombradas}
+    )
     repetidas = _hojas_con_el_mismo_codigo(inv)
-    marcas = {marca: _definir(marca, specs, inv, repetidas) for marca, specs in por_marca.items()}
+    marcas = {
+        marca: _definir(marca, specs, inv, config, known, repetidas)
+        for marca, specs in por_marca.items()
+    }
     familias = {
-        familia: _definir(familia.upper(), specs, inv, repetidas, familia=familia)
+        familia: _definir(
+            familia.upper(), specs, inv, config, known, repetidas, familia=familia, de_familia=True
+        )
         for familia, specs in por_familia.items()
     }
     return marcas, familias
+
+
+def _nombradas_sin_leer(inv: ScheduleInventory, config: TextPatternConfig) -> list[str]:
+    """Las marcas que nombra sin ambigüedad un texto rechazado (R77): su única marca («K-9
+    E#3@1S», «CORTE K-1 …»), los miembros de su lista y los extremos de su rango («K-1 Y K-2 …»,
+    «K-1 A K-4 …»), las etiquetas entre las que dudó un renglón de pila o las de una etiqueta de
+    varias marcas. Las candidatas de una marca pegada («K-7E#3@20») no: no se sabe si existen."""
+    nombradas: list[str] = []
+    for r in inv.rechazos:
+        if r.motivo not in ("ambigua", "varias_marcas", "sin_lector"):
+            continue
+        lectura = leer_marcas(r.texto, config)
+        titulos_del_texto = titulos(r.texto, config)
+        if not lectura.nombra and not titulos_del_texto:
+            piezas = list(r.marcas)  # un renglón de pila: lo que nombran sus etiquetas
+        elif lectura.tipo == "unica" and lectura.marca is not None:
+            piezas = [lectura.marca]
+        elif lectura.tipo == "varias":
+            piezas = lectura.piezas
+        elif lectura.tipo == "ninguna":
+            piezas = titulos_del_texto
+        else:
+            piezas = []  # ambigua: sólo candidatas
+        for pieza in piezas:
+            nombradas += extremos_de_rango(pieza, config) if es_rango(pieza, config) else [pieza]
+    return list(dict.fromkeys(nombradas))
 
 
 def _hojas_con_el_mismo_codigo(inv: ScheduleInventory) -> dict[str, list[str]]:
@@ -165,9 +223,9 @@ def _hojas_con_el_mismo_codigo(inv: ScheduleInventory) -> dict[str, list[str]]:
     for spec in inv.specs:
         if spec.hoja and spec.hoja_llave:
             llaves.setdefault(spec.hoja, set()).add(spec.hoja_llave)
-    for linea in inv.textos_con_fragmento:
-        if linea.hoja and linea.hoja_llave:
-            llaves.setdefault(linea.hoja, set()).add(linea.hoja_llave)
+    for hoja in inv.textos_con_fragmento:
+        if hoja.hoja and hoja.hoja_llave:
+            llaves.setdefault(hoja.hoja, set()).add(hoja.hoja_llave)
     return {hoja: sorted(ks) for hoja, ks in llaves.items() if len(ks) > 1}
 
 
@@ -180,13 +238,16 @@ def _definir(
     marca: str,
     specs: list[ElementSpec],
     inv: ScheduleInventory,
+    config: TextPatternConfig,
+    known: set[str],
     repetidas: dict[str, list[str]],
     familia: str | None = None,
+    de_familia: bool = False,
 ) -> Definicion:
     lecturas = [s for s in specs if s.source != "ia"]
     de_ia = [s for s in specs if s.source == "ia"]
     avisos: list[str] = []
-    familia = familia or _familia(lecturas, de_ia, avisos)
+    familia = familia or _familia(marca, lecturas, de_ia, avisos)
     datos: dict[str, list[Dato]] = {campo: [] for campo in _NOMBRE}
 
     # Las lecturas del plano: un dato por campo, ilegible si el texto está pero no se leyó.
@@ -194,7 +255,7 @@ def _definir(
     for s in lecturas:
         fuente = fuente_de_lectura(s)
         if s.section_cm is not None:
-            datos["seccion_cm"].append(_dato(s, fuente, _seccion(s.section_cm)))
+            datos["seccion_cm"].append(_dato(s, fuente, _seccion(s.section_cm, familia)))
         elif "seccion" in s.campos_con_texto:
             datos["seccion_cm"].append(_dato(s, fuente, None, ilegible=True))
         armado = s.armado if s.armado is not None else _armado_de_textos(s, familia, avisos)
@@ -206,6 +267,8 @@ def _definir(
                 datos[campo].append(_dato(s, fuente, None, ilegible=True))
         if s.length_m is not None:
             datos["longitud_m"].append(_dato(s, fuente, s.length_m))
+        elif "longitud" in s.campos_con_texto:
+            datos["longitud_m"].append(_dato(s, fuente, None, ilegible=True))
         for aviso in s.avisos:
             de_lecturas.setdefault(aviso, []).append(s.hoja or "sin hoja")
     avisos += [f"{a} ({', '.join(dict.fromkeys(h))})" for a, h in de_lecturas.items()]
@@ -220,39 +283,44 @@ def _definir(
             )
         )
 
+    # Lo que el plano dice de la marca y nadie leyó (R77, R74), con IA o sin ella.
+    bloqueos = [] if de_familia else bloqueos_de(inv, marca, config, known, family=familia)
+    bloqueos += [b for s in de_ia for b in s.bloqueos if b.campo in s.campos_bloqueados]
+    _sin_leer(bloqueos, lecturas, datos, avisos)
+
     # La IA: detrás del plano, y nunca en un campo que el plano tiene escrito (R69).
-    ya: set[tuple[str, tuple[str, ...], str]] = set()
     for s in de_ia:
+        hoja_ia = s.hoja
         if s.section_cm is not None:
-            datos["seccion_cm"].append(_dato(s, "ia", _seccion(s.section_cm)))
-        for campo, attr, _de_texto in _ARMADO:
+            datos["seccion_cm"].append(_dato(s, "ia", _seccion(s.section_cm, familia)))
+        for _campo, attr, _de_texto in _ARMADO:
             escrito = getattr(s, attr)
-            if not escrito:
-                continue
-            leido = parsear_armado([escrito], familia)
-            valor = getattr(leido, campo)
-            if not valor or leido.avisos:
-                avisos.append(
-                    f"{_NOMBRE[campo]}: la lectura IA «{escrito}» no se lee como "
-                    f"{_NOMBRE[campo]}: no se toma"
-                )
-                continue
-            datos[campo].append(_dato(s, "ia", valor, texto=f"{s.source_text} · «{escrito}»"))
+            if escrito:
+                _de_la_ia(s, escrito, familia, datos, avisos)
         if s.length_m is not None:
             datos["longitud_m"].append(_dato(s, "ia", s.length_m))
-        for campo, dato, aviso in _lo_que_bloquea(s, lecturas, ya):
-            if dato is not None:
-                datos[campo].append(dato)
-            avisos.append(aviso)
+        for c in s.campos_bloqueados:
+            if not any(d.fuente != "ia" for d in datos[_DE_CAMPO[c]]):
+                raise ValueError(
+                    f"{marca}: el plano bloquea «{c}» a la lectura IA de la hoja {hoja_ia} "
+                    "pero la definición no tiene ningún dato del plano en ese campo"
+                )
 
     campos = {campo: elegir(lista, preferir_hoja=None) for campo, lista in datos.items()}
     for campo, dato in campos.items():
-        # Por construcción un campo bloqueado tiene un dato del plano: la IA nunca gana ahí.
-        if dato is not None and dato.fuente == "ia":
-            assert not any(_DE_CAMPO[c] == campo for s in de_ia for c in s.campos_bloqueados), (
-                f"{marca}: la IA elegida en {campo}, que el plano bloquea"
+        if dato is not None and dato.ilegible and any(a.fuente == "ia" for a in dato.alternativas):
+            avisos.append(
+                f"{_NOMBRE[campo]}: el plano tiene texto para esta marca que no se leyó "
+                f"(«{dato.texto}»); la lectura IA queda sólo como alternativa, por confirmar"
             )
-    hojas = sorted({s.hoja for s in lecturas if s.hoja})
+        if dato is None or dato.fuente != "ia":
+            continue
+        if any(_DE_CAMPO[c] == campo for s in de_ia for c in s.campos_bloqueados):
+            raise ValueError(f"{marca}: la IA elegida en {campo}, que el plano bloquea")
+    hojas = sorted(
+        {s.hoja for s in lecturas if s.hoja}
+        | {d.hoja for lista in datos.values() for d in lista if d.fuente != "ia" and d.hoja}
+    )
     for hoja in sorted(set(hojas) & set(repetidas)):
         marcos = ", ".join(_nombre_de_marco(llave) for llave in repetidas[hoja])
         avisos.append(
@@ -266,6 +334,75 @@ def _definir(
         avisos=list(dict.fromkeys(avisos)),
         **campos,
     )
+
+
+def _sin_leer(
+    bloqueos: list[Bloqueo],
+    lecturas: list[ElementSpec],
+    datos: dict[str, list[Dato]],
+    avisos: list[str],
+) -> None:
+    """Los textos del plano que dicen algo de la marca y no se leyeron, como datos ilegibles de
+    su campo (R77). Un texto que nombra la marca y ninguna otra (su nota, su título, su lista) es
+    suyo: siempre es un dato. Uno que puede ser de otra marca (un renglón de pila entre dos
+    etiquetas, una candidata, una coincidencia suelta, una lectura de otra marca con la misma
+    llave suelta) es un dato sólo si la marca no tiene uno propio en ese campo; si lo tiene, es
+    un aviso (R74). Una lectura de la marca misma ya tiene su dato."""
+    propias = {tuple(s.entidades) for s in lecturas}
+    vistos: set[tuple[str, tuple[str, ...], str]] = set()
+    dudosos: list[Bloqueo] = []
+    for b in bloqueos:
+        if b.por == "lectura" and tuple(b.entidades) in propias:
+            continue
+        if b.inequivoco and b.por != "lectura":
+            _ilegible(b, datos, vistos)
+        else:
+            dudosos.append(b)
+    for b in dudosos:
+        campo = _DE_CAMPO[b.campo]
+        if any(d.fuente != "ia" for d in datos[campo]):
+            avisos.append(
+                f"{_NOMBRE[campo]}: un texto que puede ser de esta marca o de otra no se leyó "
+                f"(«{b.texto}», {b.hoja or 'sin hoja'}); se usa lo que dicen sus lecturas"
+            )
+        else:
+            _ilegible(b, datos, vistos)
+
+
+def _ilegible(
+    b: Bloqueo, datos: dict[str, list[Dato]], vistos: set[tuple[str, tuple[str, ...], str]]
+) -> None:
+    llave = (b.campo, tuple(b.entidades), b.texto)
+    if llave in vistos:
+        return
+    vistos.add(llave)
+    datos[_DE_CAMPO[b.campo]].append(
+        Dato(
+            valor=None,
+            ilegible=True,
+            fuente=b.fuente,
+            hoja=b.hoja,
+            texto=b.texto,
+            entidades=list(b.entidades),
+        )
+    )
+
+
+def _de_la_ia(
+    s: ElementSpec, escrito: str, familia: str, datos: dict[str, list[Dato]], avisos: list[str]
+) -> None:
+    """Un texto de la lectura IA, leído entero con el parser (R80): cada cosa que da va a su
+    campo, diga la IA lo que diga («4#3 E#2@15» como varillas trae también sus estribos); lo que
+    no se lee se dice, nunca se tira callado."""
+    leido = parsear_armado([escrito], familia)
+    tomados = [campo for campo, _attr, _t in _ARMADO if getattr(leido, campo)]
+    for campo in tomados:
+        datos[campo].append(
+            _dato(s, "ia", getattr(leido, campo), texto=f"{s.source_text} · «{escrito}»")
+        )
+    if leido.avisos or not tomados:
+        motivo = "; ".join(leido.avisos) or "no da varillas, estribos ni parrillas"
+        avisos.append(f"la lectura IA «{escrito}» no se lee entera: {motivo}")
 
 
 def _dato(
@@ -283,49 +420,6 @@ def _dato(
     )
 
 
-def _lo_que_bloquea(
-    ia: ElementSpec,
-    lecturas: list[ElementSpec],
-    ya: set[tuple[str, tuple[str, ...], str]],
-) -> list[tuple[str, Dato | None, str]]:
-    """Por cada campo que el plano le bloquea a la lectura IA ``ia`` (R69): un dato ilegible del
-    plano por cada texto que lo bloquea y que no es ya una lectura de esta definición con ese
-    campo (ésa tiene su propio dato, leído o ilegible), y el aviso del campo. Devuelve (campo de
-    la definición, dato o ``None``, aviso)."""
-    salida: list[tuple[str, Dato | None, str]] = []
-    for campo in ia.campos_bloqueados:
-        propias = {tuple(s.entidades) for s in lecturas if campo in s.campos_con_texto}
-        nuevos: list[Dato] = []
-        for b in ia.bloqueos:
-            llave = (campo, tuple(b.entidades), b.texto)
-            if b.campo != campo or (b.por == "lectura" and tuple(b.entidades) in propias):
-                continue
-            if llave not in ya:
-                ya.add(llave)
-                nuevos.append(
-                    Dato(
-                        valor=None,
-                        ilegible=True,
-                        fuente=b.fuente,
-                        hoja=b.hoja,
-                        texto=b.texto,
-                        entidades=list(b.entidades),
-                    )
-                )
-        textos = list(dict.fromkeys(b.texto for b in ia.bloqueos if b.campo == campo))
-        if len(textos) > 3:
-            textos = [*textos[:3], f"y {len(textos) - 3} más"]
-        aviso = (
-            f"{_NOMBRE[_DE_CAMPO[campo]]}: el plano tiene texto para esta marca "
-            f"({', '.join(textos)}); la lectura IA «{ia.source_text}» queda sólo como "
-            "alternativa, por confirmar"
-        )
-        salida += [(_DE_CAMPO[campo], dato, aviso) for dato in nuevos] or [
-            (_DE_CAMPO[campo], None, aviso)
-        ]
-    return salida
-
-
 def _armado_de_textos(spec: ElementSpec, familia: str, avisos: list[str]) -> Armado | None:
     """El armado de una lectura del plano que no trae el suyo estructurado (un lector por
     disciplina): sus textos canónicos, leídos con el parser."""
@@ -337,22 +431,28 @@ def _armado_de_textos(spec: ElementSpec, familia: str, avisos: list[str]) -> Arm
     return armado
 
 
-def _familia(lecturas: list[ElementSpec], de_ia: list[ElementSpec], avisos: list[str]) -> str:
-    """La familia de una marca: la de su lectura del plano de más rango (la IA sólo si el plano
-    no la lee). Si las lecturas no coinciden se dice cuáles, nunca se escoge callado. «elemento»
-    (no se sabe) no es una familia."""
+def _familia(
+    marca: str, lecturas: list[ElementSpec], de_ia: list[ElementSpec], avisos: list[str]
+) -> str:
+    """La familia de una marca: la de su lectura del plano de más rango; si el plano no la lee o
+    sólo dice «elemento» (no se sabe), la que dice la IA, y se avisa (R80); si nadie la lee, la de
+    su prefijo. Si las lecturas no coinciden se dice cuáles, nunca se escoge callado."""
     dichas: dict[str, list[str]] = {}
     for s in [*lecturas, *de_ia]:
         if s.family and s.family != "elemento":
             quien = "IA" if s.source == "ia" else (s.hoja or "sin hoja")
             dichas.setdefault(s.family, []).append(quien)
-    candidatas = sorted(
-        lecturas or de_ia,
-        key=lambda s: -PRECEDENCIA[fuente_de_lectura(s)],
-    )
-    elegida = next((s.family for s in candidatas if s.family != "elemento"), None)
+    del_plano = sorted(lecturas, key=lambda s: -PRECEDENCIA[fuente_de_lectura(s)])
+    elegida = next((s.family for s in del_plano if s.family != "elemento"), None)
     if elegida is None:
-        elegida = (lecturas or de_ia)[0].family if (lecturas or de_ia) else "elemento"
+        de_la_ia = next((s.family for s in de_ia if s.family != "elemento"), None)
+        if de_la_ia is not None and lecturas:
+            avisos.append(
+                f"familia: el plano no la dice («elemento»); se toma la de la IA: {de_la_ia}"
+            )
+        elegida = de_la_ia
+    if elegida is None:
+        elegida = family_of_mark(marca)
     if len(dichas) > 1:
         lista = ", ".join(f"{f} ({', '.join(dict.fromkeys(q))})" for f, q in sorted(dichas.items()))
         avisos.append(f"familia: las lecturas no coinciden — {lista}; se toma {elegida}")
@@ -377,6 +477,13 @@ def asignar_formas(
         salida.append(j)
         if j.formas_fuente is not None:
             continue  # lo dice el plano
+        if j.referencia is not None and j.cantidad == 1:
+            # «E#3 VER CORTE»: sin cuenta de piezas, las formas están en el corte (R80).
+            avisos.append(
+                f"{_juego(j)}: sin formas supuestas (el plano remite a «{j.referencia}» y no "
+                "dice cuántas piezas); las dirá el corte dibujado"
+            )
+            continue
         formas = _formas(j, total)
         if formas is None:
             avisos.append(_sin_formas(j, total))
@@ -419,4 +526,5 @@ def _sin_formas(j: JuegoEstribos, total: int) -> str:
 
 
 # Que las fuentes de ``Source`` tengan todas su lugar en el mapa (una nueva revienta aquí).
-assert {s for s, _ in FUENTE_DE_LECTURA} == set(get_args(Source))
+if {s for s, _ in FUENTE_DE_LECTURA} != set(get_args(Source)):
+    raise ValueError("FUENTE_DE_LECTURA no cubre todas las fuentes de las lecturas")

@@ -424,3 +424,19 @@ def test_a_conflict_inside_the_winning_group_is_kept_whatever_the_order():
     assert elegir([limpio, e1]).en_conflicto is True
     assert elegir([e1, limpio]).en_conflicto is True
     assert elegir([limpio, Dato(valor=(20, 30), fuente="detalle", hoja="D")]).en_conflicto is False
+
+
+def test_a_read_value_beats_unreadable_copies_of_the_same_rank():
+    # R76: tres copias ilegibles no le ganan a una leída; el conflicto y las ilegibles se ven.
+    leida = Dato(valor="E#2@15", fuente="detalle", hoja="ES-000")
+    ilegibles = [
+        Dato(valor=None, ilegible=True, fuente="detalle", hoja=h) for h in ("ES-100", "ES-200")
+    ]
+    for datos in ([leida, *ilegibles], [*ilegibles, leida]):
+        d = elegir(datos)
+        assert (d.valor, d.ilegible, d.en_conflicto) == ("E#2@15", False, True)
+        assert [a.ilegible for a in d.alternativas] == [True, True]
+    # Una hoja que pide lo suyo se queda con lo suyo, aunque no se pueda leer.
+    assert elegir([leida, *ilegibles], preferir_hoja="ES-100").ilegible is True
+    # Sólo ilegibles: el dato es ilegible.
+    assert elegir(ilegibles).ilegible is True

@@ -91,7 +91,9 @@ def elegir(datos: list[Dato], *, preferir_hoja: str | None = None) -> Dato | Non
     Gana el rango más alto de ``PRECEDENCIA``. Dentro de ese rango los datos se agrupan por
     valor: un solo valor (aunque repetido) no es conflicto y sus ``copias`` se suman; con
     varios valores se marca ``en_conflicto`` y gana el grupo con algún dato de
-    ``preferir_hoja`` (un dato la tiene si es su ``hoja`` o está en sus ``hojas``), si no el
+    ``preferir_hoja`` (un dato la tiene si es su ``hoja`` o está en sus ``hojas``), si no uno
+    con un valor leído antes que uno de datos ilegibles (R76: un texto que no se pudo leer no
+    vota contra uno leído; queda en ``alternativas`` con el conflicto a la vista), si no el
     más repetido (cuenta las ``copias`` que cada dato ya trae: un dato de 12 copias pesa más
     que dos de 1), si no el de la hoja menor. El dato elegido es el de ``preferir_hoja`` si el
     grupo ganador lo trae, si no el primero que llegó; sus ``hojas`` son las de todo el grupo.
@@ -114,9 +116,16 @@ def elegir(datos: list[Dato], *, preferir_hoja: str | None = None) -> Dato | Non
     def tiene_la_preferida(i: int) -> bool:
         return preferir_hoja is not None and preferir_hoja in hojas_de(datos[i])
 
-    def orden(grupo: list[int]) -> tuple[bool, int, str]:
+    def orden(grupo: list[int]) -> tuple[bool, bool, int, str]:
         con_preferida = any(tiene_la_preferida(i) for i in grupo)
-        return (not con_preferida, -sum(datos[i].copias for i in grupo), datos[grupo[0]].hoja)
+        # R76: un valor leído gana a las copias que no se pudieron leer (el conflicto se ve).
+        ilegible = all(datos[i].ilegible for i in grupo)
+        return (
+            not con_preferida,
+            ilegible,
+            -sum(datos[i].copias for i in grupo),
+            datos[grupo[0]].hoja,
+        )
 
     ganador_grupo = min(grupos.values(), key=orden)
     elegido = next((i for i in ganador_grupo if tiene_la_preferida(i)), ganador_grupo[0])

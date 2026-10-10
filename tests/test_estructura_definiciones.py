@@ -508,3 +508,239 @@ def test_a_set_that_refers_to_a_cut_gets_assumed_shapes_and_says_so():
     out, avisos = asignar_formas(a.estribos, a.longitudinales)
     assert out[0].formas == ["perimetral", "rombo"] and out[0].formas_fuente == "supuesto"
     assert len(avisos) == 1 and "VER CORTE" in avisos[0]
+
+
+# ------------------------------------------------------- Tarea 8, ronda 1 (R74–R80)
+
+
+def _notas_en_hojas(tmp_path, textos, nombre="hojas.dxf"):
+    """Notas en hojas: ``textos`` es [(texto, hoja)] con la hoja ES-000, ES-100 o ES-200, cada una
+    un marco de 100 de ancho."""
+    x = {"ES-000": 0.0, "ES-100": 100.0, "ES-200": 200.0}
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    for i, (texto, hoja) in enumerate(textos):
+        msp.add_text(texto, height=0.2).set_placement((x[hoja], i * 5.0))
+    doc.saveas(tmp_path / nombre)
+    marcos = [
+        SheetFrame(frame_id=h, bbox=(x0 - 40.0, -40.0, x0 + 40.0, 80.0), code=h)
+        for h, x0 in x.items()
+    ]
+    return build_schedule_inventory(
+        DxfParser().parse_file(tmp_path / nombre).entities, frames=marcos
+    )
+
+
+def _limpio(dato):
+    return dato is not None and not dato.ilegible and not dato.en_conflicto
+
+
+@pytest.mark.parametrize("con_ia", [False, True])
+def test_a_longer_drawing_mark_never_feeds_a_shorter_one(tmp_path, con_ia):
+    # C1-A (R74): «K-2A …» en dos hojas no le da datos ilegibles a K-2, ni le gana sus campos.
+    inv = _notas_en_hojas(
+        tmp_path,
+        [
+            ("K-2 15X20 4#3 E#2@15", "ES-100"),
+            ("K-2A 20X20 4#4 E#2@15", "ES-100"),
+            ("K-2A 20X20 4#4 E#2@15", "ES-200"),
+        ],
+    )
+    if con_ia:
+        merge_external_specs(inv, [_ia("K-2", rebar="6#6"), _ia("K-2A", rebar="6#6")], C)
+    k2 = construir_definiciones(inv, C)[0]["K-2"]
+    assert all(_limpio(getattr(k2, c)) for c in ("seccion_cm", "longitudinales", "estribos"))
+    assert (k2.seccion_cm.valor, k2.longitudinales.valor[0].cantidad) == ((15, 20), 4)
+    assert not [a for a in k2.avisos if "K-2A" in a]
+
+
+@pytest.mark.parametrize("con_ia", [False, True])
+def test_two_drawing_marks_with_the_same_loose_key_stay_apart(tmp_path, con_ia):
+    # C1-B (R74): T-11 y T1-1 son marcas del plano distintas; la de T1-1 no es de T-11.
+    inv = _notas_en_hojas(
+        tmp_path,
+        [("T-11 20X40 4#3", "ES-100"), ("T1-1 25X50 2#5", "ES-100"), ("T1-1 25X50 2#5", "ES-200")],
+    )
+    if con_ia:
+        merge_external_specs(inv, [_ia("T-11", rebar="6#6", family="trabe")], C)
+    defs = construir_definiciones(inv, C)[0]
+    t11 = defs["T-11"]
+    assert _limpio(t11.seccion_cm) and t11.seccion_cm.valor == (20, 40)
+    assert _limpio(t11.longitudinales) and t11.longitudinales.fuente == "nota"
+    assert defs["T1-1"].seccion_cm.valor == (25, 50)
+
+
+@pytest.mark.parametrize("con_ia", [False, True])
+def test_a_letter_variant_never_feeds_its_base_mark(tmp_path, con_ia):
+    # C1-C (R74): «K-1-A …» no pone a K-1 en conflicto.
+    inv = _notas_en_hojas(tmp_path, [("K-1 15X15 4#3", "ES-100"), ("K-1-A 15X20 4#4", "ES-100")])
+    if con_ia:
+        merge_external_specs(
+            inv, [_ia("K-1", stirrups="E#2@15", section_cm=(20, 20), rebar="6#6")], C
+        )
+    k1 = construir_definiciones(inv, C)[0]["K-1"]
+    assert _limpio(k1.seccion_cm) and _limpio(k1.longitudinales)
+    assert (k1.estribos is None) != con_ia
+
+
+@pytest.mark.parametrize(
+    "notas,marca,campo,fuente",
+    [
+        (["K-9 E#3@1S"], "K-9", "estribos", "nota"),  # sin lector
+        (["CORTE K-1 15X20 4#3"], "K-1", "seccion_cm", "nota"),  # título
+        (["CORTE K-1 15X20 4#3"], "K-1", "longitudinales", "nota"),
+        (["K-1 Y K-2 15X20 4#3"], "K-2", "longitudinales", "nota"),  # varias marcas
+        (["K-1 A K-4 15X20 4#3"], "K-4", "seccion_cm", "nota"),  # extremo de un rango
+        (["3.- K-7 E#3@1S"], "K-7", "estribos", "nota"),  # nota numerada
+        (["TRABE-T 1 E#3@1S"], "T-1", "estribos", "nota"),  # texto de otra familia
+        (["K-7 15X15", "K-07 E#3@1S"], "K-7", "estribos", "nota"),  # sólo el respaldo
+        (["K-7 15X15", "K-07 E#3@1S"], "K-07", "estribos", "nota"),
+    ],
+)
+def test_an_unread_drawing_text_is_an_unreadable_value_without_ai(
+    tmp_path, notas, marca, campo, fuente
+):
+    # R77: el plano dice algo de la marca y nadie lo leyó: es un dato ilegible de su campo, con
+    # IA o sin ella; una marca que sólo nombra un texto rechazado tiene su definición.
+    inv = build_schedule_inventory(_notas(tmp_path, notas), frames=_frame())
+    dato = getattr(construir_definiciones(inv, C)[0][marca], campo)
+    assert dato.ilegible and dato.valor is None and dato.fuente == fuente
+
+
+def test_an_ambiguous_stack_line_is_unreadable_for_both_labels(tmp_path):
+    from ezdxf.enums import TextEntityAlignment
+
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    for marca, y in (("K-1", 0.0), ("K-2", 0.40)):
+        msp.add_text(marca, height=0.13).set_placement(
+            (0.0, y), align=TextEntityAlignment.BOTTOM_CENTER
+        )
+    msp.add_text("6#4", height=0.10).set_placement((-0.05, 0.215))
+    doc.saveas(tmp_path / "amb.dxf")
+    inv = build_schedule_inventory(
+        DxfParser().parse_file(tmp_path / "amb.dxf").entities, frames=_frame()
+    )
+    defs = construir_definiciones(inv, C)[0]
+    for marca in ("K-1", "K-2"):
+        d = defs[marca].longitudinales
+        assert (d.ilegible, d.fuente, d.texto) == (True, "detalle", "6#4")
+        assert defs[marca].estribos is None  # «6#4» son varillas: sólo dice longitudinales
+
+
+def test_an_ambiguous_text_is_only_an_aviso_where_the_mark_has_its_own_value(tmp_path):
+    # R74: «6#4» entre K-1 y K-2, y K-1 lee sus varillas en otra hoja: para K-1 es un aviso.
+    from ezdxf.enums import TextEntityAlignment
+
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    for marca, y in (("K-1", 0.0), ("K-2", 0.40)):
+        msp.add_text(marca, height=0.13).set_placement(
+            (0.0, y), align=TextEntityAlignment.BOTTOM_CENTER
+        )
+    msp.add_text("6#4", height=0.10).set_placement((-0.05, 0.215))
+    msp.add_text("K-1 4#3", height=0.2).set_placement((100.0, 0.0))
+    doc.saveas(tmp_path / "amb2.dxf")
+    frames = [
+        SheetFrame(frame_id="a", bbox=(-50.0, -50.0, 50.0, 50.0), code="ES-400"),
+        SheetFrame(frame_id="b", bbox=(50.0, -50.0, 150.0, 50.0), code="ES-200"),
+    ]
+    inv = build_schedule_inventory(
+        DxfParser().parse_file(tmp_path / "amb2.dxf").entities, frames=frames
+    )
+    defs = construir_definiciones(inv, C)[0]
+    assert _limpio(defs["K-1"].longitudinales) and defs["K-1"].longitudinales.valor[0].cantidad == 4
+    assert any("puede ser de esta marca o de otra" in a for a in defs["K-1"].avisos)
+    assert defs["K-2"].longitudinales.ilegible
+
+
+def test_a_read_value_beats_unreadable_copies(tmp_path):
+    # R76: una hoja que se lee y dos que no: gana la leída, el conflicto y las ilegibles se ven;
+    # lo ilegible sólo reclama los estribos (sus varillas sí se leyeron).
+    inv = _notas_en_hojas(
+        tmp_path,
+        [
+            ("K-9 15X20 4#3 E#2@15", "ES-000"),
+            ("K-9 15X20 4#3 E#2@1S", "ES-100"),
+            ("K-9 15X20 4#3 E#2@1S", "ES-200"),
+        ],
+    )
+    k9 = construir_definiciones(inv, C)[0]["K-9"]
+    e = k9.estribos
+    assert (e.ilegible, e.en_conflicto, e.hoja) == (False, True, "ES-000")
+    assert [a.ilegible for a in e.alternativas] == [True, True]
+    assert _limpio(k9.longitudinales) and k9.parrillas is None
+
+
+@pytest.mark.parametrize(
+    "spec,valor",
+    [
+        (("T1-1", "detalle", "cotas", (40, 20), "trabe"), (40, 20)),  # una trabe plana: b×h
+        (("K-7", "detalle", "cotas", (55, 20), "castillo"), (20, 55)),  # un castillo: ordenada
+    ],
+)
+def test_a_beam_keeps_its_bxh(spec, valor):
+    marca, source, metodo, section, family = spec
+    defs, _ = construir_definiciones(
+        _inv([_spec(marca, source, metodo, "ES-101", section=section, family=family)])
+    )
+    assert defs[marca].seccion_cm.valor == valor
+
+
+def test_a_beam_section_is_read_as_written_and_orientations_conflict(tmp_path):
+    # R75: «T-1 40X20» es 40×20 tal cual; contra unas cotas de 20×40 es un conflicto.
+    inv = _notas_en_hojas(tmp_path, [("T-1 40X20 4#3", "ES-100"), ("K-1 20X15 4#3", "ES-100")])
+    assert [s.section_cm for s in inv.specs if s.mark == "T-1"] == [(40, 20)]
+    assert [s.section_cm for s in inv.specs if s.mark == "K-1"] == [(15, 20)]
+    inv.specs.append(_spec("T-1", "nota", "nota", "ES-200", section=(20, 40), family="trabe"))
+    t1 = construir_definiciones(inv, C)[0]["T-1"].seccion_cm
+    assert t1.en_conflicto and {t1.valor, t1.alternativas[0].valor} == {(40, 20), (20, 40)}
+
+
+def test_an_ai_mark_that_is_a_family_name_is_the_familys():
+    # R80: la IA «DALA» es de la familia, no una marca fantasma.
+    inv = _inv([_spec("DALA", "ia", "ia", "ES-101", family="dala", stirrups="E#2@20")])
+    defs, familias = construir_definiciones(inv)
+    assert "DALA" not in defs and familias["dala"].estribos.fuente == "ia"
+
+
+def test_an_unknown_family_takes_the_ais_and_says_so():
+    inv = _inv(
+        [
+            _spec("TE-A", "nota", "nota", "ES-007", section=(20, 40), family="elemento"),
+            _spec("TE-A", "ia", "ia", "ES-007", family="trabe", stirrups="E#3@20"),
+        ]
+    )
+    te = construir_definiciones(inv)[0]["TE-A"]
+    assert te.familia == "trabe" and any("se toma la de la IA" in a for a in te.avisos)
+
+
+def test_an_ai_string_is_read_whole():
+    # R80: «4#3 E#2@15» como varillas trae también sus estribos; nada se tira callado.
+    inv = _inv([_spec("K-30", "ia", "ia", "ES-200", rebar="4#3 E#2@15")])
+    k = construir_definiciones(inv)[0]["K-30"]
+    assert k.longitudinales.valor[0].cantidad == 4 and k.estribos.valor[0].numero == "2"
+    inv = _inv([_spec("MC-1", "ia", "ia", "ES-002", rebar="#4@20", family="muro_concreto")])
+    mc = construir_definiciones(inv)[0]["MC-1"]
+    assert mc.parrillas.fuente == "ia" and mc.longitudinales is None
+
+
+def test_an_ai_dato_carries_its_sheet():
+    inv = _inv([_spec("K-30", "ia", "ia", "ES-200", rebar="4#3")])
+    assert construir_definiciones(inv)[0]["K-30"].longitudinales.hoja == "ES-200"
+
+
+def test_a_written_length_blocks_the_ais(tmp_path):
+    # R80: la longitud es un campo; «P-4 L=8.00 M» la dice (sin leerse) y la IA no la llena.
+    inv = build_schedule_inventory(_notas(tmp_path, ["P-4 L=8.00 M"]), frames=_frame())
+    merge_external_specs(inv, [_ia("P-4", length_m=12.0, family="pilote")], C)
+    assert "P-4" not in inv.by_mark or inv.by_mark["P-4"].length_m is None
+    largo = construir_definiciones(inv, C)[0]["P-4"].longitud_m
+    assert largo.ilegible and largo.alternativas[0].valor == 12.0
+
+
+def test_a_cut_reference_without_a_count_has_no_assumed_shapes():
+    a = parsear_armado(["12#6", "E#3 VER CORTE"], "pilote")
+    out, avisos = asignar_formas(a.estribos, a.longitudinales)
+    assert out[0].formas == [] and out[0].formas_fuente is None
+    assert len(avisos) == 1 and "VER CORTE" in avisos[0]

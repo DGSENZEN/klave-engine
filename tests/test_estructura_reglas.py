@@ -5331,3 +5331,29 @@ def test_a_rule_for_a_family_inside_the_scope_is_read_after_a_gap(tmp_path):
         (None, ["1. EL RECUBRIMIENTO SERA DE 4 CM EN TRABES"], _UN_HUECO_COMO_UNA_FIGURA),
     )
     assert _nada_de_la_nota(r, _R) and r.avisos
+
+
+def test_two_frames_sharing_a_code_are_said_not_merged_in_silence(tmp_path):
+    # R80: las reglas nombran cada hoja por su código; dos marcos con el mismo no se separan y
+    # se dice (como en las definiciones).
+    from klave_engine.detection.frames import SheetFrame
+
+    entidades = _dibujo(
+        tmp_path,
+        bloques=[
+            ([("REFUERZO :", MARINA_REFUERZO)], 1),
+            ([("REFUERZO :", MARINA_PB_REFUERZO)], 1),
+        ],
+    )
+    marcos = [
+        SheetFrame(frame_id="a", bbox=(40, 10, 140, 60), source_file="marina.dxf", code="ES-000"),
+        SheetFrame(frame_id="b", bbox=(40, -60, 140, -10), source_file="marina.dxf", code="ES-000"),
+    ]
+    r = leer_reglas(entidades, frames=marcos)
+    (aviso,) = [a for a in r.avisos if "marcos distintos" in a]
+    assert "a de marina.dxf" in aviso and "b de marina.dxf" in aviso
+    assert r.para("ES-000").traslape_max_numero.en_conflicto is True
+    sin_choque = leer_reglas(
+        entidades, frames=[marcos[0], marcos[1].model_copy(update={"code": "ES-100"})]
+    )
+    assert not [a for a in sin_choque.avisos if "marcos distintos" in a]

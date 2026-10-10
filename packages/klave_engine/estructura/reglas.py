@@ -1748,6 +1748,26 @@ def _leer_texto(o: _Origen, lecturas: _Lecturas) -> None:
     lecturas.unir(de_la_nota)
 
 
+def _codigos_repetidos(frames: list[SheetFrame]) -> list[str]:
+    """Los códigos de hoja que llevan dos o más marcos distintos: las reglas nombran cada hoja
+    por su código, y el de esos marcos no los separa (``para(hoja)`` los junta). Se dice."""
+    marcos: dict[str, list[SheetFrame]] = {}
+    for marco in frames:
+        marcos.setdefault(marco.code or marco.frame_id, []).append(marco)
+    avisos = []
+    for codigo, mismos in sorted(marcos.items()):
+        if len(mismos) > 1:
+            nombres = ", ".join(
+                f"{m.frame_id} de {(m.source_file or 'sin archivo').rsplit('/', 1)[-1]}"
+                for m in mismos
+            )
+            avisos.append(
+                f"hoja «{codigo}»: {len(mismos)} marcos distintos llevan ese código ({nombres});"
+                " sus reglas quedan bajo el mismo nombre y no se pueden separar por hoja"
+            )
+    return avisos
+
+
 def _hoja_de_marcos(frames: list[SheetFrame]) -> Callable[[NormalizedEntity], str]:
     """La hoja de una entidad: el código del marco que la contiene (en su archivo); sin marco, el
     archivo."""
@@ -1984,7 +2004,7 @@ def leer_reglas(entities: list[NormalizedEntity], frames: list[SheetFrame]) -> R
             *de_las_notas,
             *conflictos,
         ],
-        avisos=list(dict.fromkeys([*avisos, *lecturas.avisos()])),
+        avisos=list(dict.fromkeys([*avisos, *lecturas.avisos(), *_codigos_repetidos(frames)])),
     )
 
 

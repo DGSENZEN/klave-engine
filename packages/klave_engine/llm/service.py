@@ -253,6 +253,8 @@ def ai_element_specs(reads: AiReads) -> list[dict]:
                     "length_m": element.length_m,
                     "mesh": None,
                     "source": "ia",
+                    # La hoja que leyó la IA, con el mismo código que las lecturas del plano.
+                    "hoja": reading.frame_code or "",
                     "source_text": (
                         f"IA · hoja {reading.frame_code}: "
                         f"{element.note or element.section_cm or ''}"

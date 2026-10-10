@@ -34,6 +34,7 @@ Esta gramática decide qué se lee. El bloqueo de la IA no depende sólo de ella
 comparación suelta, y bloquea lo que la gramática no alcanzó."""
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from typing import Literal
@@ -71,6 +72,19 @@ _ESPACIADA = re.compile(
     rf"(?<![A-Z])({_PREFIJOS})(?:\s+{_G}?\s*|\s*{_G}\s+)(\d{{1,2}})([A-Z]?)"
     r'(?=$|[\s:;,()="/+&]|\.(?:\s|$))'
 )
+# Una etiqueta de la configuración escrita con espacios («TL 1», «V 1», «TE A», R79): sus letras,
+# un espacio o un guion, y su número o su letra suelta. Sólo cuenta si escrita con guion es una
+# etiqueta de la configuración.
+_ETIQUETA_ESPACIADA = re.compile(
+    rf"(?<![A-Z])([A-Z]{{1,4}})(?:\s+{_G}?\s*|\s*{_G}\s+)(\d{{1,3}}[A-Z]?|[A-Z])"
+    r'(?=$|[\s:;,()="/+&]|\.(?:\s|$))'
+)
+# Una letra suelta tras una marca («K-15 A 4#3», R78): puede ser su sufijo (K-15A) o no.
+_LETRA_SUELTA = re.compile(r"\s+([A-Z])(?=$|[\s:;,()=\"])")
+# Lo que sigue a esa letra y la hace un conector («K-1 A K-4», «K-1 A 4», «K-1 Y K-2»).
+_TRAS_CONECTOR = re.compile(rf"\s+(?:\d|[A-Z]{{1,5}}\s*{_G}?\s*\d)")
+# Una palabra de varilla delante del número («V-4 #4»: ¿la marca V-4 o 4 varillas del #4?, R80).
+_PALABRA_DE_VARILLA = re.compile(r"(?:VARS?|V)\W")
 # Donde empieza algo con forma de marca dentro de una ficha: letras que no van pegadas a otra
 # letra o cifra y a las que les sigue un guion o una cifra. Cualquier letra: también las
 # etiquetas de la configuración («TL-1E#3@20», «V-1E#3@20», R68.4).
@@ -293,6 +307,9 @@ def _leer_ficha(
         base = _cabeza_tras(ficha, despues, config)
         if base is not None:
             return [_Pieza(inicio, fin, "ambigua", piezas=[base, sola], texto=ficha)]
+        if _PALABRA_DE_VARILLA.match(con_guion(ficha)) and re.match(r"\s*[#Ø]\s*\d", despues):
+            # «V-4 #4»: la marca V-4 o una cuenta de varillas (R80).
+            return [_Pieza(inicio, fin, "ambigua", piezas=[sola], texto=ficha)]
         return [_Pieza(inicio, fin, "marca", marca=sola, texto=ficha)]
     partes = _segmentar(ficha, config)
     if partes is not None:
@@ -330,24 +347,38 @@ def _acaba_en_marca(texto: str, config: TextPatternConfig) -> bool:
 
 
 def _con_espaciadas(limpio: str, config: TextPatternConfig) -> str:
-    """Cada marca escrita con espacios («K 7», «T - 1») escrita «K-7». Si la pega a lo de
+    """Cada marca escrita con espacios («K 7», «T - 1»; y una etiqueta de la configuración, «TL
+    1», «V 1», «TE A», R79) escrita «K-7». Si la pega a lo de
     delante algo que no es un espacio ni acota una ficha («3.-K 7», «TRABE-T 1»), se aparta con
     un espacio: es su propia ficha. No si lo de delante es otra marca unida por un guion, «/»,
     «+» o «&» («K-1/K 7», «K-1-K 3»): es una lista o un rango."""
-    partes: list[str] = []
-    pos = 0
-    for m in _ESPACIADA.finditer(limpio):
-        partes.append(limpio[pos : m.start()])
-        hecho = "".join(partes)
-        marca = f"{m.group(1)}-{int(m.group(2))}{m.group(3)}"
-        previo = hecho[-1:]
-        une = previo in _UNE_EN_FICHA and _acaba_en_marca(hecho[:-1], config)
-        if previo and not previo.isspace() and not _ACOTA.match(previo) and not une:
-            marca = " " + marca
-        partes.append(marca)
-        pos = m.end()
-    partes.append(limpio[pos:])
-    return "".join(partes)
+
+    def juntar(
+        texto: str, patron: re.Pattern[str], marca_de: Callable[[re.Match[str]], str | None]
+    ) -> str:
+        partes: list[str] = []
+        pos = 0
+        for m in patron.finditer(texto):
+            marca = marca_de(m)
+            if marca is None:
+                continue
+            partes.append(texto[pos : m.start()])
+            hecho = "".join(partes)
+            previo = hecho[-1:]
+            une = previo in _UNE_EN_FICHA and _acaba_en_marca(hecho[:-1], config)
+            if previo and not previo.isspace() and not _ACOTA.match(previo) and not une:
+                marca = " " + marca
+            partes.append(marca)
+            pos = m.end()
+        partes.append(texto[pos:])
+        return "".join(partes)
+
+    def etiqueta(m: re.Match[str]) -> str | None:
+        escrita = f"{m.group(1)}-{m.group(2)}"
+        return escrita if es_etiqueta(escrita, config) else None
+
+    limpio = juntar(limpio, _ESPACIADA, lambda m: f"{m.group(1)}-{int(m.group(2))}{m.group(3)}")
+    return juntar(limpio, _ETIQUETA_ESPACIADA, etiqueta)
 
 
 def titulos(texto: str, config: TextPatternConfig) -> list[str]:
@@ -387,6 +418,28 @@ def _leer_marcas(texto: str, config: TextPatternConfig) -> LecturaDeMarcas:
     piezas: list[_Pieza] = []
     for inicio, fin, ficha in _fichas(limpio):
         piezas += _leer_ficha(ficha, inicio, config, limpio[fin:])
+    # Una letra suelta tras una marca limpia («K-15 A 4#3», R78): ¿su sufijo (K-15A, K-15-A) o
+    # no? No se sabe: ambigua. No si es la cabeza de unos estribos («K-8 E #3@20») o el conector
+    # de un rango o una lista («K-1 A K-4», «K-1 A 4», «K-1 Y K-2»).
+    for i, p in enumerate(piezas):
+        letra = _LETRA_SUELTA.match(limpio, p.fin) if p.tipo == "marca" else None
+        if letra is None or p.marca is None:
+            continue
+        despues = limpio[letra.end() :]
+        if letra.group(1) in _CABEZA_DE_ESTRIBO and re.match(r"\s*[#Ø]", despues):
+            continue
+        if _TRAS_CONECTOR.match(despues):
+            continue
+        sufijos = [marca_sola(p.texto + letra.group(1), config)]
+        sufijos.append(marca_sola(f"{con_guion(p.texto)}-{letra.group(1)}", config))
+        candidatas = [p.marca, *(c for c in sufijos if c is not None)]
+        piezas[i] = _Pieza(
+            p.inicio,
+            letra.end(),
+            "ambigua",
+            piezas=list(dict.fromkeys(candidatas)),
+            texto=f"{p.texto} {letra.group(1)}",
+        )
     # Una lista escrita sólo con números tras una marca limpia («K-1, 2 Y 3»): otras marcas.
     for p in [p for p in piezas if p.tipo == "marca"]:
         base, pos = p.marca or "", p.fin

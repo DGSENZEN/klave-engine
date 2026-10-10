@@ -888,7 +888,8 @@ def sin_cuentas_de_varillas(texto: str) -> str:
     if _CON_VARILLA.search(texto) is None:
         return citar
     leida = _piezas([texto], "castillo")
-    assert len(leida.texto) == len(citar)  # «leer» y «citar» tienen la misma longitud
+    if len(leida.texto) != len(citar):  # «leer» y «citar» tienen siempre la misma longitud
+        raise ValueError(f"el texto para leer y el de citar no miden lo mismo: «{texto}»")
     tramos = [(g.start(), g.end()) for g in leida.grupos if g["v"] is not None]
     tramos += [(p.inicio, p.fin) for p in leida.buenas if p.varillas]
     letras = list(citar)

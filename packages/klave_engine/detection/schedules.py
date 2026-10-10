@@ -32,7 +32,9 @@ from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.results import Detection, DetectionType
 from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
+from klave_engine.estructura._armado_texto import normalizar
 from klave_engine.estructura.armado import (
+    FAMILIAS_CON_PARRILLA,
     Armado,
     parsear_armado,
     sin_cuentas_de_varillas,
@@ -54,6 +56,7 @@ from klave_engine.estructura.marcas import (
     extremos_de_rango,
     leer_marcas,
     marca_en_rango,
+    marca_normalizada,
     titulos,
 )
 from klave_engine.geometry.bbox import (
@@ -82,9 +85,12 @@ Source = Literal["cuadro", "detalle", "nota", "ia"]
 # How a reading was made: a cuadro row, a mark's stack of armado lines, the
 # cotas or the drawn section of a detail, a section callout, a note, the AI.
 Metodo = Literal["fila", "pila", "cotas", "geometria", "llamada", "nota", "ia"]
-Campo = Literal["seccion", "longitudinales", "estribos", "parrillas"]
-CAMPOS: tuple[Campo, ...] = ("seccion", "longitudinales", "estribos", "parrillas")
+Campo = Literal["seccion", "longitudinales", "estribos", "parrillas", "longitud"]
+CAMPOS: tuple[Campo, ...] = ("seccion", "longitudinales", "estribos", "parrillas", "longitud")
 _CAMPOS_DE_ARMADO: tuple[Campo, ...] = ("longitudinales", "estribos", "parrillas")
+# The beam families keep a section as b×h, oriented as written or as drawn (R75);
+# a castillo, a columna or a pilote may be compared with its sides sorted.
+FAMILIAS_DE_VIGA = frozenset({"trabe", "contratrabe", "dala", "cerramiento"})
 # A text's sheet: its name (``hoja``) and its unique key (``hoja_llave``).
 Sheet = Callable[[NormalizedEntity], tuple[str, str]]
 
@@ -111,6 +117,10 @@ class Bloqueo(BaseModel):
     # mark (R64), a rejected text that names it, or a line where the mark occurs
     # under the loose comparison of the backstop (R68).
     por: Literal["lectura", "texto", "rechazo", "respaldo"]
+    # The text names this mark and no other (its reading, «K-7 E#3@1S», a title
+    # «CORTE K-7 …», a list that names it); otherwise it is ambiguous: it may be
+    # another mark's (R74).
+    inequivoco: bool = True
 
 
 class ElementSpec(BaseModel):
@@ -159,16 +169,23 @@ class TextoConMarca(BaseModel):
     campos: list[Campo]  # «seccion» for a section, the three armado fields for armado
 
 
-class TextoConFragmento(BaseModel):
-    """A line of a drawing text that holds an armado- or section-shaped
-    fragment (R68): the backstop of the AI block looks in it for every known
-    mark under a loose comparison, whatever the mark grammar read in it."""
+class LineaConFragmento(BaseModel):
+    """A line of a drawing text that holds an armado-, section- or
+    length-shaped fragment and a letter (R68, R80): the backstop of the AI
+    block looks in it for every known mark under a loose comparison, whatever
+    the mark grammar read in it. A line without a letter names no mark."""
 
     entidad_id: str
     texto: str
+    campos: list[Campo]  # the fields its fragments show (``campos_de_fragmento``)
+
+
+class HojaConFragmentos(BaseModel):
+    """The fragment lines of one sheet: its name and unique key, once."""
+
     hoja: str
     hoja_llave: str
-    campos: list[Campo]
+    lineas: list[LineaConFragmento] = Field(default_factory=list)
 
 
 class ScheduleInventory(BaseModel):
@@ -191,8 +208,12 @@ class ScheduleInventory(BaseModel):
     # Every drawing line that names marks and holds armado or a section (R64):
     # the AI never covers what they say, whoever reads them.
     textos_con_marca: list[TextoConMarca] = Field(default_factory=list)
-    # Every drawing line with an armado or section fragment, mark or not (R68).
-    textos_con_fragmento: list[TextoConFragmento] = Field(default_factory=list)
+    # Every drawing line with an armado, section or length fragment and a
+    # letter, mark or not (R68), by sheet.
+    textos_con_fragmento: list[HojaConFragmentos] = Field(default_factory=list)
+
+    def lineas_con_fragmento(self) -> list[tuple[HojaConFragmentos, LineaConFragmento]]:
+        return [(hoja, linea) for hoja in self.textos_con_fragmento for linea in hoja.lineas]
 
 
 _FC_FAMILIES: list[tuple[str, re.Pattern[str]]] = [
@@ -260,10 +281,13 @@ def parse_pile_length(texts: list[str]) -> float | None:
 # ------------------------------------------------------------------ parsing
 
 
-def _read_section(text: str) -> tuple[tuple[int, int] | None, list[str], bool]:
+def _read_section(
+    text: str, family: str | None = None
+) -> tuple[tuple[int, int] | None, list[str], bool]:
     """The section written in ``text`` (the first NNxNN with both sides in
     8–400 cm), the avisos for what was not taken (a side out of range, a second
-    different section) and whether the text has a section at all."""
+    different section) and whether the text has a section at all. A beam's
+    section is b×h as written (R75); any other, its sides sorted."""
     blocked = [m.span() for m in _BLOCK_RE.finditer(text)]
     section: tuple[int, int] | None = None
     avisos: list[str] = []
@@ -273,15 +297,70 @@ def _read_section(text: str) -> tuple[tuple[int, int] | None, list[str], bool]:
             continue
         found = True
         a, b = int(m.group(1)), int(m.group(2))
+        leida = (a, b) if family in FAMILIAS_DE_VIGA else (min(a, b), max(a, b))
         if not (_MIN_SIDE_CM <= a <= _MAX_SIDE_CM and _MIN_SIDE_CM <= b <= _MAX_SIDE_CM):
             avisos.append(f"sección fuera de rango: «{m.group(0)}»: no se toma")
         elif section is None:
-            section = (min(a, b), max(a, b))
-        elif (min(a, b), max(a, b)) != section:
+            section = leida
+        elif leida != section:
             avisos.append(
                 f"otra sección en el mismo texto: «{m.group(0)}»; se toma {section[0]}x{section[1]}"
             )
     return section, avisos, found
+
+
+# What a fragment of a drawing text says (R76): a stirrup or grapa head before
+# «#», or a zoned spacing, is stirrups; a count before «#» is bars; a bare
+# «#n@s» or «@s» is a mesh in a family that has one, stirrups otherwise; a
+# length («L=8.00», «LONG. 8», «LONGITUD … 8 M») is the length.
+_CABEZA_DE_ESTRIBOS = re.compile(
+    r"(?<![A-Z0-9])(?:\(?\d{1,2}\)?\s*)?(?:EYG|E|G|EST|ESTR|ESTRIBOS?|GRAPAS?|LIGAS?)"
+    r"(?:\s*[Y+/&,-]\s*(?:\d{1,2}\s*)?(?:E|G))?\.?\s*[#Ø]|(?:CENTRO|EXT)\.?\s*@",
+)
+_CUENTA_DE_VARILLAS = re.compile(
+    r"(?<![#@.\d])\d{1,2}\s*(?:VARILLAS|VARS?\.?|V)?\s*[#Ø]\s*\d(?!\d|\s*@)"
+    r"|(?<![A-Z0-9])(?:VARS?\.?|V)\s*\d{1,2}\s*[#Ø]\s*\d"
+)
+# A stirrup set whole: its head, its bar and its spacings («E#3@1S», «2E#3EXT@10 CENTRO@20»).
+_JUEGO_DE_ESTRIBOS = re.compile(
+    rf"(?:{_CABEZA_DE_ESTRIBOS.pattern})\s*\d*(?:\.\d+)?"
+    r"(?:[\s|]*(?:(?:EXT\w*|CENTRO)\.?\s*)?@\s*\w+)*"
+)
+_SEPARACION = re.compile(r"[#Ø]\s*\d+(?:\.\d+)?\s*@|@\s*\d")
+_LONGITUD = re.compile(
+    r"\bL\s*=\s*\d|\bLONG\.?\s*=?\s*\d|\bLONGITUD\b[^|\n]*?\d+(?:[.,]\d+)?\s*(?:M|MTS?|METROS)\b"
+)
+_VARILLA = re.compile(r"[#Ø]\s*\d")
+
+
+def campos_de_fragmento(texto: str, family: str | None = None) -> list[Campo]:
+    """The fields a drawing text claims, by what its fragments show (R76): a
+    section, a stirrup head, a bar count, a spacing, a length. A bare spacing
+    or a bar number that shows no field claims the fields ``family`` can have
+    (a castillo never has parrillas); without a family, every field it might
+    be."""
+    t = normalizar(texto)[1]
+    con_parrilla = family is None or family in FAMILIAS_CON_PARRILLA
+    campos: list[Campo] = []
+    if _read_section(t)[2]:
+        campos.append("seccion")
+    if _CUENTA_DE_VARILLAS.search(t):
+        campos.append("longitudinales")
+    if _CABEZA_DE_ESTRIBOS.search(t):
+        campos.append("estribos")
+    sin_cabeza = _JUEGO_DE_ESTRIBOS.sub(" ", t)
+    if _SEPARACION.search(sin_cabeza):
+        campos.append("parrillas" if family in FAMILIAS_CON_PARRILLA else "estribos")
+        if family is None:
+            campos.append("parrillas")
+    if _LONGITUD.search(t):
+        campos.append("longitud")
+    if not [c for c in campos if c != "seccion" and c != "longitud"] and _VARILLA.search(t):
+        # Un número de varilla que no dice de qué campo es: los que la familia puede tener.
+        campos += ["longitudinales", "estribos"]
+        if con_parrilla:
+            campos.append("parrillas")
+    return [c for c in CAMPOS if c in campos]
 
 
 def family_of_mark(mark: str) -> str:
@@ -329,7 +408,7 @@ def _reading(textos: list[str], family: str, section_of_the_element: bool = True
     fields whose text is there and every aviso. Text that could not be read
     leaves every armado field marked as present: nobody can tell which one it
     was meant for, so nobody fills them from elsewhere."""
-    section, avisos, has_section = _read_section(" | ".join(textos))  # never across lines
+    section, avisos, has_section = _read_section(" | ".join(textos), family)  # never across lines
     if not section_of_the_element:
         section, avisos, has_section = None, [], False
     armado = parsear_armado(textos, family)
@@ -337,16 +416,23 @@ def _reading(textos: list[str], family: str, section_of_the_element: bool = True
     rebar = _render(texto_longitudinal, armado, avisos)
     stirrups = _render(texto_estribos, armado, avisos)
     mesh = _render(texto_parrillas, armado, avisos)
-    unread = bool(armado.avisos)
+    # What could not be read claims only the fields its fragments show (R76).
+    sin_leer: set[Campo] = set()
+    for aviso in armado.avisos:
+        citas = re.findall(r"«([^»]*)»", aviso)
+        for cita in citas or [aviso]:
+            sin_leer.update(c for c in campos_de_fragmento(cita, family) if c != "seccion")
     campos: list[Campo] = []
     if has_section:
         campos.append("seccion")
-    if armado.longitudinales or unread:
+    if armado.longitudinales or "longitudinales" in sin_leer:
         campos.append("longitudinales")
-    if armado.estribos or unread:
+    if armado.estribos or "estribos" in sin_leer:
         campos.append("estribos")
-    if armado.parrillas or unread:
+    if armado.parrillas or "parrillas" in sin_leer:
         campos.append("parrillas")
+    if _LONGITUD.search(" | ".join(textos)):
+        campos.append("longitud")  # nadie lee una longitud escrita: se dice
     return {
         "section_cm": section,
         "rebar": rebar,
@@ -865,11 +951,11 @@ def _same_sheet(a: ElementSpec, b: ElementSpec) -> bool:
     return (a.hoja_llave or a.hoja) == (b.hoja_llave or b.hoja)
 
 
-def _value_text(value: object) -> str:
+def _value_text(value: object, family: str | None = None) -> str:
     """How a value is compared and quoted: a section by its two sides, smaller
-    first (the cotas give width × depth, the notes either way)."""
+    first, except a beam's, which is b×h as read (R75)."""
     if isinstance(value, tuple):
-        a, b = sorted(value)
+        a, b = value if family in FAMILIAS_DE_VIGA else sorted(value)
         return f"{a}x{b}"
     return str(value)
 
@@ -889,12 +975,14 @@ def _disagreements(readings: list[ElementSpec], used: ElementSpec) -> list[str]:
         for r in readings:
             value = getattr(r, field)
             if value is not None:
-                said.setdefault(_value_text(value), set()).add(_sheet_name(r, readings))
+                said.setdefault(_value_text(value, used.family), set()).add(
+                    _sheet_name(r, readings)
+                )
         current = getattr(used, field)
         if not said or (len(said) == 1 and current is not None):
             continue
         listed = ", ".join(f"«{v}» ({', '.join(sorted(h))})" for v, h in said.items())
-        here = f"«{_value_text(current)}»" if current is not None else "nada"
+        here = f"«{_value_text(current, used.family)}»" if current is not None else "nada"
         avisos.append(
             f"{name}: las lecturas no coinciden — {listed}; aquí se usa {here} "
             f"(hoja {_sheet_name(used, readings)})"
@@ -921,33 +1009,31 @@ _FORMA_DE_ARMADO = re.compile(r"(?:#|Ø|⌀|%%C)\s*\d|@\s*\d|^\s*(?:CENTRO|EXT)\
 
 def _texts_naming_marks(
     texts: list[NormalizedEntity], config: TextPatternConfig, sheet: Sheet
-) -> tuple[list[TextoConMarca], list[TextoConFragmento]]:
+) -> tuple[list[TextoConMarca], list[HojaConFragmentos]]:
     """Every line of every drawing text (model space and block contents, every
-    sheet, MTEXT line by line) that holds an armado- or section-shaped
-    fragment (R68), and among them those that name marks — the one mark
-    grammar (``leer_marcas``, R67): its marks and ranges, every candidate of a
-    glued mark and the glued token itself (R64)."""
+    sheet, MTEXT line by line) that holds an armado-, section- or
+    length-shaped fragment and a letter (R68, R80: a line without a letter
+    names no mark), by sheet; and among them those that name marks — the one
+    mark grammar (``leer_marcas``, R67): its marks and ranges, every candidate
+    of a glued mark and the glued token itself (R64). Each line keeps the
+    fields its fragments show (``campos_de_fragmento``)."""
     found: list[TextoConMarca] = []
-    lines: list[TextoConFragmento] = []
+    hojas: dict[str, HojaConFragmentos] = {}
     for text in texts:
         for line in (text.text or "").split("\n"):
             line = line.strip()
-            campos: list[Campo] = []
-            if _read_section(line)[2]:
-                campos.append("seccion")
-            if _FORMA_DE_ARMADO.search(line):
-                campos.extend(_CAMPOS_DE_ARMADO)
-            if not campos:
+            if not (
+                _FORMA_DE_ARMADO.search(line)
+                or _read_section(line)[2]
+                or _LONGITUD.search(line.upper())
+            ):
                 continue
+            if re.search(r"[A-Z]", normalizar(line)[1]) is None:
+                continue
+            campos = campos_de_fragmento(line)
             hoja, llave = sheet(text)
-            lines.append(
-                TextoConFragmento(
-                    entidad_id=text.entity_id,
-                    texto=line,
-                    hoja=hoja,
-                    hoja_llave=llave,
-                    campos=campos,
-                )
+            hojas.setdefault(llave, HojaConFragmentos(hoja=hoja, hoja_llave=llave)).lineas.append(
+                LineaConFragmento(entidad_id=text.entity_id, texto=line, campos=campos)
             )
             lectura = leer_marcas(line, config)
             marks = list(dict.fromkeys(lectura.piezas + lectura.pegadas))
@@ -963,7 +1049,48 @@ def _texts_naming_marks(
                     campos=campos,
                 )
             )
-    return found, lines
+    return found, list(hojas.values())
+
+
+def _family_notes_that_name_a_mark(
+    specs: list[ElementSpec],
+    rechazos: list[Rechazo],
+    texts: list[NormalizedEntity],
+    config: TextPatternConfig,
+) -> tuple[list[ElementSpec], list[Rechazo]]:
+    """A family note («DALA 15X30 4#3 E#2@20») is the whole family's only when
+    it names no mark (R79): a text in which a mark the drawing reads occurs —
+    by the grammar (a title «CORTE K-1 …») or by the backstop's loose
+    comparison — is not read as the family's. It is a «sin_lector» rejection
+    naming those marks."""
+    marks = {s.mark for s in specs if not (s.source == "nota" and s.mark == s.family.upper())}
+    by_id = {t.entity_id: t for t in texts}
+    kept: list[ElementSpec] = []
+    nuevos: list[Rechazo] = []
+    for spec in specs:
+        if not (spec.source == "nota" and spec.mark == spec.family.upper()):
+            kept.append(spec)
+            continue
+        entidad = by_id.get(spec.entidades[0]) if spec.entidades else None
+        texto = (entidad.text or "") if entidad is not None else spec.source_text
+        nombradas = titulos(texto, config) + [
+            m for m in sorted(marks) if any(_aparece(m, line) for line in texto.split("\n"))
+        ]
+        if not nombradas:
+            kept.append(spec)
+            continue
+        if any(r.entidad_id in spec.entidades for r in rechazos):
+            continue  # ya la reporta la asociación («sin_lector»: un título)
+        nuevos.append(
+            Rechazo(
+                entidad_id=spec.entidades[0] if spec.entidades else "",
+                texto=texto.strip(),
+                hoja=spec.hoja,
+                motivo="sin_lector",
+                marcas=list(dict.fromkeys(nombradas)),
+            )
+        )
+    return kept, rechazos + nuevos
 
 
 def build_schedule_inventory(
@@ -1014,6 +1141,7 @@ def build_schedule_inventory(
     # «cuadro», porque la tabla del plano es la autoridad de su disciplina.
     for reader in extra_readers or []:
         specs += reader(entities)
+    specs, rechazos = _family_notes_that_name_a_mark(specs, rechazos, texts, config)
     inventory = ScheduleInventory(
         specs=specs,
         tables_found=tables,
@@ -1122,7 +1250,7 @@ _AI_FIELDS: tuple[tuple[str, Campo | None], ...] = (
     ("rebar", "longitudinales"),
     ("stirrups", "estribos"),
     ("mesh", "parrillas"),
-    ("length_m", None),
+    ("length_m", "longitud"),
 )
 
 
@@ -1145,27 +1273,79 @@ def _loose_key(mark: str) -> str:
     return _GUIONES_Y_ESPACIOS.sub("", _PUNTO_ENTRE_LETRA_Y_CIFRA.sub("", mark.upper()))
 
 
-def _names(piece: str, mark: str, known: set[str], config: TextPatternConfig) -> bool:
-    """Whether a mark as a text writes it names ``mark``, both by their loose
-    key (``known`` holds the loose keys of the known marks). A range names
-    both endpoints always, and every mark between same-letter endpoints
-    («K-1 A K-4» → K-2A, K-3); a mixed-letter range («K-1 A C-4») only its
-    endpoints. A glued form that is not a known mark («K-7E#3@20», «K7E#3»)
-    names every known mark it starts with, when what is left starts with a
-    letter or a sign (so «K-15AE#3» is K-15A, never K-1) — R66."""
-    key = _loose_key(mark)
+def _normal(mark: str, config: TextPatternConfig) -> str:
+    """A mark's one spelling (``marcas.marca_normalizada``); what is not a mark, as written."""
+    return marca_normalizada(mark, config) or " ".join(mark.upper().split())
+
+
+def marcas_del_dibujo(inventory: ScheduleInventory, config: TextPatternConfig) -> set[str]:
+    """The marks the drawing reads (its readings, not the AI's), in their one spelling."""
+    return {_normal(s.mark, config) for s in inventory.specs if s.source != "ia"}
+
+
+def misma_marca(a: str, b: str, dibujo: set[str], config: TextPatternConfig) -> bool:
+    """Whether two marks are the same one for the AI block: the same spelling
+    («K7», «K-7», «K 7», «K–7»), or the same loose key (R65: «T1-1» and «T-11»)
+    when they are not both distinct marks the drawing reads (R74)."""
+    na, nb = _normal(a, config), _normal(b, config)
+    if na == nb:
+        return True
+    if _loose_key(a) != _loose_key(b):
+        return False
+    return not (na in dibujo and nb in dibujo)
+
+
+def _names(
+    piece: str, mark: str, known: set[str], config: TextPatternConfig, dibujo: set[str]
+) -> bool:
+    """Whether a mark as a text writes it names ``mark`` (``misma_marca``;
+    ``known`` holds the loose keys of the known marks). A range names both
+    endpoints always, and every mark between same-letter endpoints («K-1 A
+    K-4» → K-2A, K-3); a mixed-letter range («K-1 A C-4») only its endpoints.
+    A glued form that is not a known mark («K-7E#3@20», «K7E#3») names every
+    known mark it starts with, when what is left starts with a letter or a sign
+    (so «K-15AE#3» is K-15A, never K-1) — R66."""
     if es_rango(piece, config):
-        if any(_loose_key(end) == key for end in extremos_de_rango(piece, config)):
+        if any(misma_marca(end, mark, dibujo, config) for end in extremos_de_rango(piece, config)):
             return True
         return marca_en_rango(piece, mark, config)
-    written = _loose_key(piece)
-    if written == key:
+    if misma_marca(piece, mark, dibujo, config):
         return True
+    written, key = _loose_key(piece), _loose_key(mark)
     if written in known:
         return False
     # R66: a glued token blocks every known mark it validly starts with (default-deny when it
     # is ambiguous: «K7E#3» with K7 and K7E both known blocks both).
     return written.startswith(key) and _glued_rest(written[len(key) :]) and key in known
+
+
+def _una_marca(texto: str, config: TextPatternConfig) -> str | None:
+    """The one mark a text names without ambiguity (the grammar's «unica», or a
+    single title «CORTE K-1 …»), or ``None``."""
+    lectura = leer_marcas(texto, config)
+    if lectura.tipo == "unica":
+        return lectura.marca
+    if lectura.tipo == "ninguna":
+        nombradas = titulos(texto, config)
+        return nombradas[0] if len(nombradas) == 1 else None
+    return None
+
+
+def _inequivoco(texto: str, mark: str, config: TextPatternConfig, dibujo: set[str]) -> bool:
+    """Whether a text names ``mark`` and no other in its place: its one mark, a
+    member of its list or an end of its range. A mark between the ends of a
+    range, a candidate of a glued mark, a loose match: ambiguous (R74)."""
+    una = _una_marca(texto, config)
+    if una is not None:
+        return misma_marca(una, mark, dibujo, config)
+    lectura = leer_marcas(texto, config)
+    if lectura.tipo != "varias":
+        return False
+    for pieza in lectura.piezas:
+        extremos = extremos_de_rango(pieza, config) if es_rango(pieza, config) else [pieza]
+        if any(misma_marca(e, mark, dibujo, config) for e in extremos):
+            return True
+    return False
 
 
 def _glued_rest(rest: str) -> bool:
@@ -1197,6 +1377,8 @@ def _patron_suelto(mark: str) -> re.Pattern[str] | None:
     tipos: list[str] = []
     separado: list[bool] = []
     partes: list[str] = []
+    cortes: list[int] = []  # where each atom (with what joins it to the previous one) starts
+    trozos: list[str] = []
     antes = False
     for m in _ATOMO.finditer(mark.upper()):
         trozo = m.group(0)
@@ -1204,6 +1386,8 @@ def _patron_suelto(mark: str) -> re.Pattern[str] | None:
             antes = True
             continue
         tipo = "cifras" if trozo.isdigit() else "letras" if trozo.isalpha() else "otro"
+        cortes.append(len(partes))
+        trozos.append(trozo)
         if tipos:
             previo = tipos[-1]
             if previo == "letras" and tipo == "cifras" or "otro" in (previo, tipo):
@@ -1221,7 +1405,19 @@ def _patron_suelto(mark: str) -> re.Pattern[str] | None:
     pegada = len(tipos) > 1 and tipos[-2] == "cifras" and not separado[-1]
     if tipos[-1] == "letras" and not pegada:
         derecha += r"(?![^\W\d_])"
-    return re.compile(r"(?<![^\W_])" + "".join(partes) + derecha)
+    patron = "".join(partes) + derecha
+    if len(tipos) > 1 and tipos[-2] == "cifras" and tipos[-1] == "letras" and len(trozos[-1]) == 1:
+        # R78: the mark's own letter written apart, standing alone («K-15 A 4#3», «K-1 A 4#3»);
+        # never the connector of a range or a list («K-1 A K-4», «K-1 A 4») nor a stirrup head
+        # («K-8 E #3@20»).
+        letra = trozos[-1]
+        aparte = (
+            "".join(partes[: cortes[-1]])
+            + rf"\s+{letra}(?![^\W_])(?!\s+(?:\d|[A-Z]{{1,5}}{_SEPARA}*\d))"
+            + (r"(?!\s*[#Ø])" if letra in "EG" else "")
+        )
+        patron = f"(?:{patron}|{aparte})"
+    return re.compile(r"(?<![^\W_])" + patron)
 
 
 @lru_cache(maxsize=65536)
@@ -1234,31 +1430,39 @@ def _aparece(mark: str, line: str) -> bool:
     comparison (``_patron_suelto``). A bar count is never a mark: «V4 #4», «P
     4#3» are looked at without their bar groups (``sin_cuentas_de_varillas``)."""
     patron = _patron_suelto(mark)
-    if patron is None or patron.search(line.upper()) is None:
-        return False
-    return patron.search(_sin_cuentas(line)) is not None
+    return patron is not None and patron.search(_sin_cuentas(line)) is not None
 
 
-def _bloqueos(
-    inventory: ScheduleInventory, mark: str, known: set[str], config: TextPatternConfig
+def bloqueos_de(
+    inventory: ScheduleInventory,
+    mark: str,
+    config: TextPatternConfig,
+    known: set[str] | None = None,
+    family: str | None = None,
 ) -> list[Bloqueo]:
-    """The drawing texts that keep the AI from filling a field of ``mark``
-    (default-deny), each with the field it blocks:
+    """The drawing texts that say something about a field of ``mark``, read or
+    not (default-deny), each with the field it claims (``campos_de_fragmento``,
+    with the mark's ``family``: a castillo has no parrillas, R76):
     - its readings, read or not (their ``campos_con_texto``);
     - every line the mark grammar says names it (R64), unless a reading of
-      ``mark`` consumed that text: an armado fragment blocks the three armado
-      fields, a section «seccion»;
-    - every armado field (and the section, if it has one) of a rejected text
-      that names it: ambiguous between marks, of several marks, unread;
+      ``mark`` consumed that text;
+    - every rejected text that names it: ambiguous between marks, of several
+      marks, unread;
     - the backstop (R68), independent of the grammar: every line with a
       fragment where the mark occurs under a loose comparison
-      (``_patron_suelto``), unless a reading of ``mark`` consumed it. Whatever
-      spelling the grammar misses is blocked, never filled by the AI.
-    Marks are compared by their loose key (R65): a reading of «K-7» counts for
-    an AI «K7». Glued forms and ranges are resolved by ``_names``."""
-    key = _loose_key(mark)
+      (``_patron_suelto``), unless a reading of ``mark`` consumed it.
+    A text that names one other mark the drawing reads («K-2A 20X20 4#4» for
+    K-2, «K-1-A 15X20» for K-1, «T1-1 …» for T-11) never says anything of
+    ``mark`` (R74). Each block says whether the text names ``mark`` and no
+    other (``inequivoco``). Marks are compared by ``misma_marca``."""
+    family = family or family_of_mark(mark)
+    dibujo = marcas_del_dibujo(inventory, config)
+    if known is None:
+        known = {_loose_key(s.mark) for s in inventory.specs} | {
+            _loose_key(m) for m in inventory.by_mark
+        }
     drawing = [s for s in inventory.specs if s.source != "ia"]
-    readings = [s for s in drawing if _loose_key(s.mark) == key]
+    readings = [s for s in drawing if misma_marca(s.mark, mark, dibujo, config)]
     consumed = {e for s in readings for e in s.entidades}
     # A text a reading of any mark consumed sits in that reading's cuadro or detail.
     where: dict[str, Literal["cuadro", "detalle", "nota"]] = {}
@@ -1266,6 +1470,16 @@ def _bloqueos(
         if s.source in ("cuadro", "detalle", "nota"):
             for e in s.entidades:
                 where.setdefault(e, s.source)  # type: ignore[arg-type]
+
+    def de_otra(texto: str) -> bool:
+        """R74: the text names one other mark the drawing reads."""
+        una = _una_marca(texto, config)
+        return (
+            una is not None
+            and _normal(una, config) in dibujo
+            and not misma_marca(una, mark, dibujo, config)
+        )
+
     found: list[Bloqueo] = []
     for s in readings:
         fuente = s.source if s.source in ("cuadro", "detalle") else "nota"
@@ -1282,7 +1496,9 @@ def _bloqueos(
             for campo in s.campos_con_texto
         ]
     for t in inventory.textos_con_marca:
-        if t.entidad_id not in consumed and any(_names(p, mark, known, config) for p in t.marcas):
+        if t.entidad_id in consumed or de_otra(t.texto):
+            continue
+        if any(_names(p, mark, known, config, dibujo) for p in t.marcas):
             found += [
                 Bloqueo(
                     campo=campo,
@@ -1292,16 +1508,14 @@ def _bloqueos(
                     hoja_llave=t.hoja_llave,
                     fuente=where.get(t.entidad_id, "nota"),
                     por="texto",
+                    inequivoco=_inequivoco(t.texto, mark, config, dibujo),
                 )
-                for campo in t.campos
+                for campo in campos_de_fragmento(t.texto, family)
             ]
     for r in inventory.rechazos:
-        if r.motivo in _RECHAZOS_CON_MARCA and any(
-            _names(p, mark, known, config) for p in r.marcas
-        ):
-            campos: list[Campo] = list(_CAMPOS_DE_ARMADO)
-            if _read_section(r.texto)[2]:
-                campos.insert(0, "seccion")
+        if r.motivo not in _RECHAZOS_CON_MARCA or r.entidad_id in consumed or de_otra(r.texto):
+            continue
+        if any(_names(p, mark, known, config, dibujo) for p in r.marcas):
             # A note names its marks; a stack line of a label (ambiguous, of several marks) not.
             nota = leer_marcas(r.texto, config).nombra or bool(titulos(r.texto, config))
             found += [
@@ -1312,23 +1526,28 @@ def _bloqueos(
                     hoja=r.hoja,
                     fuente="nota" if nota else "detalle",
                     por="rechazo",
+                    inequivoco=nota and _inequivoco(r.texto, mark, config, dibujo),
                 )
-                for campo in campos
+                for campo in campos_de_fragmento(r.texto, family)
             ]
-    for f in inventory.textos_con_fragmento:
-        if f.entidad_id not in consumed and _aparece(mark, f.texto):
-            found += [
-                Bloqueo(
-                    campo=campo,
-                    texto=f.texto,
-                    entidades=[f.entidad_id],
-                    hoja=f.hoja,
-                    hoja_llave=f.hoja_llave,
-                    fuente=where.get(f.entidad_id, "nota"),
-                    por="respaldo",
-                )
-                for campo in f.campos
-            ]
+    for hoja, linea in inventory.lineas_con_fragmento():
+        if linea.entidad_id in consumed or not _aparece(mark, linea.texto):
+            continue
+        if de_otra(linea.texto):
+            continue
+        found += [
+            Bloqueo(
+                campo=campo,
+                texto=linea.texto,
+                entidades=[linea.entidad_id],
+                hoja=hoja.hoja,
+                hoja_llave=hoja.hoja_llave,
+                fuente=where.get(linea.entidad_id, "nota"),
+                por="respaldo",
+                inequivoco=_inequivoco(linea.texto, mark, config, dibujo),
+            )
+            for campo in campos_de_fragmento(linea.texto, family)
+        ]
     unique: dict[tuple[str, tuple[str, ...], str], Bloqueo] = {}
     for b in found:
         unique.setdefault((b.campo, tuple(b.entidades), b.texto), b)
@@ -1341,7 +1560,7 @@ def merge_external_specs(
     """Specs read elsewhere (the AI reading of the sheet images): every one is
     kept as a reading (``source="ia"``), and it fills a by-mark field only when
     the view has nothing there and the drawing has no text for that field
-    (``_bloqueos``: its readings, any drawing line that names it and no reading
+    (``bloqueos_de``: its readings, any drawing line that names it and no reading
     of it consumed, any rejected text that names it, and the backstop: any
     line with a fragment where the mark occurs). An AI value never covers a
     drawing text, and the reading itself carries what was blocked and by which
@@ -1362,7 +1581,7 @@ def merge_external_specs(
         if spec.source == "ia":
             spec.metodo = "ia"
         mark = spec.mark.upper()
-        bloqueos = _bloqueos(inventory, mark, known, config)
+        bloqueos = bloqueos_de(inventory, mark, config, known, family=spec.family)
         with_text = {b.campo for b in bloqueos}
         # R69: the reading carries its block, so that no later stage elects a blocked value.
         spec.campos_bloqueados = [
