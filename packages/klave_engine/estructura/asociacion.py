@@ -66,6 +66,7 @@ from klave_engine.estructura.marcas import (
     marca_en_rango,
     marca_sola,
     sin_referencias,
+    titulos,
 )
 from klave_engine.estructura.marcas import escrita as _escrita
 from klave_engine.estructura.notas import leer_notas_con_renglones
@@ -328,6 +329,10 @@ def _clase(
         # «K-1 15x20 4#3 E#2@20» dice de quién es y lo lee la nota (si la nombra sin ambigüedad);
         # «K-7 E#3@1S», no. Una marca pegada a algo o varias también dicen de quién es.
         return ("anotacion" if lo_lee_una_nota(texto) else "sin_lector"), None
+    if titulos(texto, config):
+        # «CORTE K-1 15X20 4#3»: el título de otro dibujo dice de quién es; nadie lo lee y nunca
+        # entra a la pila de otra marca (R68.8).
+        return "sin_lector", None
     if _NOTA_DE_FAMILIA.search(mayusculas):
         return ("familia" if lo_lee_una_nota(texto) else "sin_lector"), None
     return "linea", None
@@ -1799,7 +1804,7 @@ def _sin_dueno(
                     texto=texto,
                     hoja=hoja,
                     motivo="sin_lector",
-                    marcas=marcas_en_nota(texto, config),
+                    marcas=marcas_en_nota(texto, config) or titulos(texto, config),
                 )
             )
         else:

@@ -23,6 +23,7 @@ on the drawing but could not be read.
 import re
 from collections import Counter
 from collections.abc import Callable
+from functools import lru_cache
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -34,6 +35,7 @@ from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.estructura.armado import (
     Armado,
     parsear_armado,
+    sin_cuentas_de_varillas,
     texto_estribos,
     texto_longitudinal,
     texto_parrillas,
@@ -47,10 +49,12 @@ from klave_engine.estructura.asociacion import (
     marca_en_texto,
 )
 from klave_engine.estructura.marcas import (
+    GUIONES,
     es_rango,
     extremos_de_rango,
     leer_marcas,
     marca_en_rango,
+    titulos,
 )
 from klave_engine.geometry.bbox import (
     BBox,
@@ -87,6 +91,24 @@ Sheet = Callable[[NormalizedEntity], tuple[str, str]]
 
 def _no_frames(e: NormalizedEntity) -> tuple[str, str]:
     return e.source_file, f"{e.source_file}#"
+
+
+class Bloqueo(BaseModel):
+    """A drawing text that keeps the AI from filling one field of a mark (R64,
+    R68)."""
+
+    campo: Campo
+    texto: str
+    entidades: list[str] = Field(default_factory=list)
+    hoja: str = ""
+    hoja_llave: str = ""
+    # Where the text sits: a cuadro or a detail when a reading of the drawing
+    # consumed it (or it is a stack line), a note otherwise.
+    fuente: Literal["cuadro", "detalle", "nota"]
+    # How it blocks: a reading of the mark (read or not), a line that names the
+    # mark (R64), a rejected text that names it, or a line where the mark occurs
+    # under the loose comparison of the backstop (R68).
+    por: Literal["lectura", "texto", "rechazo", "respaldo"]
 
 
 class ElementSpec(BaseModel):
@@ -131,6 +153,18 @@ class TextoConMarca(BaseModel):
     campos: list[Campo]  # «seccion» for a section, the three armado fields for armado
 
 
+class TextoConFragmento(BaseModel):
+    """A line of a drawing text that holds an armado- or section-shaped
+    fragment (R68): the backstop of the AI block looks in it for every known
+    mark under a loose comparison, whatever the mark grammar read in it."""
+
+    entidad_id: str
+    texto: str
+    hoja: str
+    hoja_llave: str
+    campos: list[Campo]
+
+
 class ScheduleInventory(BaseModel):
     specs: list[ElementSpec] = Field(default_factory=list)
     by_mark: dict[str, ElementSpec] = Field(default_factory=dict)
@@ -151,6 +185,8 @@ class ScheduleInventory(BaseModel):
     # Every drawing line that names marks and holds armado or a section (R64):
     # the AI never covers what they say, whoever reads them.
     textos_con_marca: list[TextoConMarca] = Field(default_factory=list)
+    # Every drawing line with an armado or section fragment, mark or not (R68).
+    textos_con_fragmento: list[TextoConFragmento] = Field(default_factory=list)
 
 
 _FC_FAMILIES: list[tuple[str, re.Pattern[str]]] = [
@@ -879,13 +915,14 @@ _FORMA_DE_ARMADO = re.compile(r"(?:#|Ø|⌀|%%C)\s*\d|@\s*\d|^\s*(?:CENTRO|EXT)\
 
 def _texts_naming_marks(
     texts: list[NormalizedEntity], config: TextPatternConfig, sheet: Sheet
-) -> list[TextoConMarca]:
+) -> tuple[list[TextoConMarca], list[TextoConFragmento]]:
     """Every line of every drawing text (model space and block contents, every
-    sheet, MTEXT line by line) that names marks — the one mark grammar
-    (``leer_marcas``, R67): its marks and ranges, every candidate of a glued
-    mark and the glued token itself — and holds an armado- or section-shaped
-    fragment (R64)."""
+    sheet, MTEXT line by line) that holds an armado- or section-shaped
+    fragment (R68), and among them those that name marks — the one mark
+    grammar (``leer_marcas``, R67): its marks and ranges, every candidate of a
+    glued mark and the glued token itself (R64)."""
     found: list[TextoConMarca] = []
+    lines: list[TextoConFragmento] = []
     for text in texts:
         for line in (text.text or "").split("\n"):
             line = line.strip()
@@ -896,11 +933,20 @@ def _texts_naming_marks(
                 campos.extend(_CAMPOS_DE_ARMADO)
             if not campos:
                 continue
+            hoja, llave = sheet(text)
+            lines.append(
+                TextoConFragmento(
+                    entidad_id=text.entity_id,
+                    texto=line,
+                    hoja=hoja,
+                    hoja_llave=llave,
+                    campos=campos,
+                )
+            )
             lectura = leer_marcas(line, config)
             marks = list(dict.fromkeys(lectura.piezas + lectura.pegadas))
             if not marks:
                 continue
-            hoja, llave = sheet(text)
             found.append(
                 TextoConMarca(
                     entidad_id=text.entity_id,
@@ -911,7 +957,7 @@ def _texts_naming_marks(
                     campos=campos,
                 )
             )
-    return found
+    return found, lines
 
 
 def build_schedule_inventory(
@@ -971,7 +1017,9 @@ def build_schedule_inventory(
         # drawn with armado beside it in a planta (the cotas reader).
         cuadro_mark_entities=_union(labels, inventory_cuadro_marks),
         rechazos=rechazos,
-        textos_con_marca=_texts_naming_marks(texts, config, sheet),
+    )
+    inventory.textos_con_marca, inventory.textos_con_fragmento = _texts_naming_marks(
+        texts, config, sheet
     )
 
     grouped: dict[str, list[ElementSpec]] = {}
@@ -1120,46 +1168,187 @@ def _glued_rest(rest: str) -> bool:
     return bool(rest) and not rest[0].isdigit() and rest[0] != "."
 
 
-def _fields_with_text(
+# R68: how the backstop sees a mark in a line. Between a mark's prefix letters
+# and its number any spaces and dashes (ASCII or Unicode) are ignored («K 7»,
+# «K–7», «K7» are K-7); where the mark has a dash between two numbers or before
+# a letter of its own («T1-1», «K-1-A», «TE-A») the line must have a dash too;
+# a letter glued to the number («K-15A») stays glued.
+_SEPARA = rf"[\s{re.escape(GUIONES)}]"
+_UN_GUION = rf"\s*[{re.escape(GUIONES)}]\s*"
+_ATOMO = re.compile(rf"[^\W\d_]+|\d+|{_SEPARA}+|.")
+
+
+@lru_cache(maxsize=4096)
+def _patron_suelto(mark: str) -> re.Pattern[str] | None:
+    """The loose pattern of ``mark`` for the backstop (R68): uppercase, the
+    separators above, leading zeros of a number ignored (K-07 is K-7); on the
+    left, the start or a character that is neither a letter nor a digit (a
+    hyphen after a word counts: «TRABE-T 1»); on the right, never another digit
+    or a decimal (K-1 is never in K-15 or K-1.1). A letter may follow a number
+    (K-7 is in «K-7E#3@20») or a letter glued to it (K-15A is in
+    «K-15AE#3@20»), never a mark that ends in a letter of its own («TE-A» is
+    not in «TE-AB»)."""
+    tipos: list[str] = []
+    separado: list[bool] = []
+    partes: list[str] = []
+    antes = False
+    for m in _ATOMO.finditer(mark.upper()):
+        trozo = m.group(0)
+        if re.fullmatch(_SEPARA + "+", trozo):
+            antes = True
+            continue
+        tipo = "cifras" if trozo.isdigit() else "letras" if trozo.isalpha() else "otro"
+        if tipos:
+            previo = tipos[-1]
+            if previo == "letras" and tipo == "cifras" or "otro" in (previo, tipo):
+                partes.append(f"{_SEPARA}*")
+            elif antes or previo == tipo:
+                partes.append(_UN_GUION)
+            # a letter glued to the number stays glued
+        partes.append(rf"0*{int(trozo)}" if tipo == "cifras" else re.escape(trozo))
+        tipos.append(tipo)
+        separado.append(antes)
+        antes = False
+    if not tipos:
+        return None
+    derecha = r"(?!\d|\.\d)"
+    pegada = len(tipos) > 1 and tipos[-2] == "cifras" and not separado[-1]
+    if tipos[-1] == "letras" and not pegada:
+        derecha += r"(?![^\W\d_])"
+    return re.compile(r"(?<![^\W_])" + "".join(partes) + derecha)
+
+
+@lru_cache(maxsize=65536)
+def _sin_cuentas(line: str) -> str:
+    return sin_cuentas_de_varillas(line)
+
+
+def _aparece(mark: str, line: str) -> bool:
+    """Whether ``mark`` occurs in ``line`` under the backstop's loose
+    comparison (``_patron_suelto``). A bar count is never a mark: «V4 #4», «P
+    4#3» are looked at without their bar groups (``sin_cuentas_de_varillas``)."""
+    patron = _patron_suelto(mark)
+    if patron is None or patron.search(line.upper()) is None:
+        return False
+    return patron.search(_sin_cuentas(line)) is not None
+
+
+def _bloqueos(
     inventory: ScheduleInventory, mark: str, known: set[str], config: TextPatternConfig
-) -> set[Campo]:
-    """The fields of ``mark`` the drawing has text for (R64, default-deny):
-    - those of its readings, read or not;
-    - every field a drawing line that names it has a fragment for (armado →
-      the three armado fields, a section → «seccion»), unless a reading of
-      ``mark`` consumed that text;
+) -> list[Bloqueo]:
+    """The drawing texts that keep the AI from filling a field of ``mark``
+    (default-deny), each with the field it blocks:
+    - its readings, read or not (their ``campos_con_texto``);
+    - every line the mark grammar says names it (R64), unless a reading of
+      ``mark`` consumed that text: an armado fragment blocks the three armado
+      fields, a section «seccion»;
     - every armado field (and the section, if it has one) of a rejected text
-      that names it: ambiguous between marks, of several marks, unread.
-    Marks are compared by their loose key (R65): a reading of «K-7» counts for an
-    AI «K7». Glued forms and ranges are resolved by ``_names``."""
+      that names it: ambiguous between marks, of several marks, unread;
+    - the backstop (R68), independent of the grammar: every line with a
+      fragment where the mark occurs under a loose comparison
+      (``_patron_suelto``), unless a reading of ``mark`` consumed it. Whatever
+      spelling the grammar misses is blocked, never filled by the AI.
+    Marks are compared by their loose key (R65): a reading of «K-7» counts for
+    an AI «K7». Glued forms and ranges are resolved by ``_names``."""
     key = _loose_key(mark)
-    readings = [s for s in inventory.specs if _loose_key(s.mark) == key and s.source != "ia"]
-    campos: set[Campo] = {campo for s in readings for campo in s.campos_con_texto}
+    drawing = [s for s in inventory.specs if s.source != "ia"]
+    readings = [s for s in drawing if _loose_key(s.mark) == key]
     consumed = {e for s in readings for e in s.entidades}
+    # A text a reading of any mark consumed sits in that reading's cuadro or detail.
+    where: dict[str, Literal["cuadro", "detalle", "nota"]] = {}
+    for s in drawing:
+        if s.source in ("cuadro", "detalle", "nota"):
+            for e in s.entidades:
+                where.setdefault(e, s.source)  # type: ignore[arg-type]
+    found: list[Bloqueo] = []
+    for s in readings:
+        fuente = s.source if s.source in ("cuadro", "detalle") else "nota"
+        found += [
+            Bloqueo(
+                campo=campo,
+                texto=s.source_text,
+                entidades=list(s.entidades),
+                hoja=s.hoja,
+                hoja_llave=s.hoja_llave,
+                fuente=fuente,
+                por="lectura",
+            )
+            for campo in s.campos_con_texto
+        ]
     for t in inventory.textos_con_marca:
         if t.entidad_id not in consumed and any(_names(p, mark, known, config) for p in t.marcas):
-            campos.update(t.campos)
+            found += [
+                Bloqueo(
+                    campo=campo,
+                    texto=t.texto,
+                    entidades=[t.entidad_id],
+                    hoja=t.hoja,
+                    hoja_llave=t.hoja_llave,
+                    fuente=where.get(t.entidad_id, "nota"),
+                    por="texto",
+                )
+                for campo in t.campos
+            ]
     for r in inventory.rechazos:
         if r.motivo in _RECHAZOS_CON_MARCA and any(
             _names(p, mark, known, config) for p in r.marcas
         ):
-            campos.update(_CAMPOS_DE_ARMADO)
+            campos: list[Campo] = list(_CAMPOS_DE_ARMADO)
             if _read_section(r.texto)[2]:
-                campos.add("seccion")
-    return campos
+                campos.insert(0, "seccion")
+            # A note names its marks; a stack line of a label (ambiguous, of several marks) not.
+            nota = leer_marcas(r.texto, config).nombra or bool(titulos(r.texto, config))
+            found += [
+                Bloqueo(
+                    campo=campo,
+                    texto=r.texto,
+                    entidades=[r.entidad_id],
+                    hoja=r.hoja,
+                    fuente="nota" if nota else "detalle",
+                    por="rechazo",
+                )
+                for campo in campos
+            ]
+    for f in inventory.textos_con_fragmento:
+        if f.entidad_id not in consumed and _aparece(mark, f.texto):
+            found += [
+                Bloqueo(
+                    campo=campo,
+                    texto=f.texto,
+                    entidades=[f.entidad_id],
+                    hoja=f.hoja,
+                    hoja_llave=f.hoja_llave,
+                    fuente=where.get(f.entidad_id, "nota"),
+                    por="respaldo",
+                )
+                for campo in f.campos
+            ]
+    unique: dict[tuple[str, tuple[str, ...], str], Bloqueo] = {}
+    for b in found:
+        unique.setdefault((b.campo, tuple(b.entidades), b.texto), b)
+    return list(unique.values())
+
+
+def _fields_with_text(
+    inventory: ScheduleInventory, mark: str, known: set[str], config: TextPatternConfig
+) -> set[Campo]:
+    """The fields of ``mark`` the drawing has text for (``_bloqueos``)."""
+    return {b.campo for b in _bloqueos(inventory, mark, known, config)}
 
 
 def merge_external_specs(
-    inventory: ScheduleInventory, specs: list[dict], config: TextPatternConfig | None = None
+    inventory: ScheduleInventory, specs: list[dict], config: TextPatternConfig
 ) -> int:
     """Specs read elsewhere (the AI reading of the sheet images): every one is
     kept as a reading (``source="ia"``), and it fills a by-mark field only when
     the view has nothing there and the drawing has no text for that field
-    (``_fields_with_text``: its readings, any drawing line that names it and
-    no reading of it consumed, any rejected text that names it). An AI value
-    never covers a drawing text. A mark the drawing does not define takes what
-    the AI says of the other fields (por confirmar). Returns how many marks
-    were completed."""
+    (``_bloqueos``: its readings, any drawing line that names it and no reading
+    of it consumed, any rejected text that names it, and the backstop: any
+    line with a fragment where the mark occurs). An AI value never covers a
+    drawing text. A mark the drawing does not define takes what the AI says of
+    the other fields (por confirmar).
+    ``config`` is the project's: the marks are recognised with its tags.
+    Returns how many marks were completed."""
     marks = {s.mark for s in inventory.specs if s.source != "ia"} | set(inventory.by_mark)
     marks |= {str(raw.get("mark") or "").strip() for raw in specs} - {""}
     known = {_loose_key(m) for m in marks}
@@ -1171,9 +1360,9 @@ def merge_external_specs(
             continue
         if spec.source == "ia":
             spec.metodo = "ia"
-        inventory.specs.append(spec)
         mark = spec.mark.upper()
-        with_text = _fields_with_text(inventory, mark, known, config or TextPatternConfig())
+        with_text = _fields_with_text(inventory, mark, known, config)
+        inventory.specs.append(spec)
         current = inventory.by_mark.get(mark)
         new = current is None
         if current is None:

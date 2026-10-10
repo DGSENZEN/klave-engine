@@ -83,13 +83,17 @@ class Ficha:
     fin: int
 
 
+# Los guiones de Unicode («K–7», «K‑7», «K—7»): el de leer los escribe «-» (R68.7).
+_A_GUION = str.maketrans({g: "-" for g in "\u2010\u2011\u2012\u2013\u2014\u2015\u2212"})
+
+
 def normalizar(texto: str) -> tuple[str, str]:
     """El texto para leer y el texto para citar, de la misma longitud: los dos en mayúsculas
-    y con los espacios juntos; el de leer escribe ``#`` donde el plano puso «Ø» o «%%C», el
-    de citar deja «Ø» para que el aviso diga lo que dice el plano."""
+    y con los espacios juntos; el de leer escribe ``#`` donde el plano puso «Ø» o «%%C» y «-»
+    donde puso un guion de Unicode, el de citar deja lo que dice el plano."""
     t = texto.upper().replace("%%%", "%").replace("%%C", "Ø").replace("⌀", "Ø")
     t = re.sub(r"\s+", " ", t.replace("\\P", " | ")).strip()
-    return t.replace("Ø", "#"), t
+    return t.replace("Ø", "#").translate(_A_GUION), t
 
 
 def fichas(texto: str, a: int, b: int, consumido: list[bool] | None = None) -> list[Ficha]:

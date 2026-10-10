@@ -821,15 +821,21 @@ def _aviso_sin_leer(cita: str) -> str:
     return f"sin leer: «{cita}»"
 
 
-def parsear_armado(textos: list[str], familia: str) -> Armado:
-    """Lee los textos de un armado (en orden, uno por línea) para un elemento de ``familia``.
+@dataclass
+class _Piezas:
+    """Lo que las tres pasadas reconocieron en un texto y lo que ``_revisar`` dejó tomar."""
 
-    Tres pasadas reconocen piezas, en este orden: juegos de estribos (con sus zonas, que
-    pueden seguir en la línea siguiente, y su «VER CORTE»), mallas con su lecho y sentidos
-    (sólo en ``FAMILIAS_CON_PARRILLA``; en otra familia se avisan) y grupos de varillas. Cada
-    pieza se revisa contra lo que la rodea en el texto real (``_revisar``): se lee entera o
-    se avisa entera, nunca a medias. Al final, todo lo que nadie leyó y no es contexto se
-    avisa (``residuo``). Los avisos citan el texto como lo escribió el plano (en mayúsculas)."""
+    lineas: list[str]
+    texto: str  # para leer: «Ø» escrito «#», las líneas unidas por « | »
+    letrero: str  # para citar, de la misma longitud
+    consumido: list[bool]
+    buenas: list[_Pieza]
+    malos: list[tuple[int, int]]
+    grupos: list[re.Match[str]]  # los grupos de varillas reconocidos, se tomen o no
+
+
+def _piezas(textos: list[str], familia: str) -> _Piezas:
+    """Las pasadas 1 a 4 de ``parsear_armado``: reconocer las piezas y revisarlas."""
     lineas = [t.strip() for t in textos if t and t.strip()]
     pares = [p for p in (normalizar(t) for t in lineas) if p[0]]
     texto = " | ".join(leer for leer, _ in pares)
@@ -854,13 +860,55 @@ def parsear_armado(textos: list[str], familia: str) -> Armado:
         tomar(malla)
     # 3. Grupos de varillas: todos, no sólo el primero («4#5+2#4» son dos). Lo que va pegado
     #    delante se mira en el texto real: un número ya leído también parte al siguiente.
-    for grupo in _grupos(visible(), texto):
+    grupos = _grupos(visible(), texto)
+    for grupo in grupos:
         varilla = GrupoVarillas(cantidad=int(grupo["n"] or grupo["v"]), numero=grupo["num"])
         tomar(_Pieza(grupo.start(), grupo.end(), varillas=[varilla]))
 
     # 4. Cada pieza se toma entera o se avisa entera con lo que la estorba.
     piezas.sort(key=lambda p: p.inicio)
     buenas, malos = _revisar(texto, visible(), piezas, consumido)
+    return _Piezas(lineas, texto, letrero, consumido, buenas, malos, grupos)
+
+
+_CON_VARILLA = re.compile(r"[#Ø⌀]|%%C", re.I)
+
+
+def sin_cuentas_de_varillas(texto: str) -> str:
+    """``texto`` como lo cita el parser (``normalizar``: en mayúsculas, con los espacios juntos
+    y «Ø» donde el plano puso «%%C» o «⌀») con cada cuenta de varillas cambiada por
+    ``CONSUMIDO`` (R68): una cuenta de varillas nunca es una marca.
+
+    Es cuenta lo que el parser toma como un grupo de varillas («4#3»; «P 4#3» y «K 7 #3» son 4#3
+    y 7#3) y todo grupo escrito con la palabra de la varilla delante («V4 #4», «V12 #5», «VAR
+    4#4»), aunque lo que lo rodea no deje leerlo. Un grupo sin palabra delante que el parser no
+    toma no se cambia: en «K-7 #3» el «7» es de la marca. Sin «#» (ni «Ø», «⌀», «%%C») no hay
+    cuenta y el parser no corre."""
+    citar = normalizar(texto.strip())[1]
+    if _CON_VARILLA.search(texto) is None:
+        return citar
+    leida = _piezas([texto], "castillo")
+    assert len(leida.texto) == len(citar)  # «leer» y «citar» tienen la misma longitud
+    tramos = [(g.start(), g.end()) for g in leida.grupos if g["v"] is not None]
+    tramos += [(p.inicio, p.fin) for p in leida.buenas if p.varillas]
+    letras = list(citar)
+    for a, b in tramos:
+        letras[a:b] = CONSUMIDO * (b - a)
+    return "".join(letras)
+
+
+def parsear_armado(textos: list[str], familia: str) -> Armado:
+    """Lee los textos de un armado (en orden, uno por línea) para un elemento de ``familia``.
+
+    Tres pasadas reconocen piezas, en este orden: juegos de estribos (con sus zonas, que
+    pueden seguir en la línea siguiente, y su «VER CORTE»), mallas con su lecho y sentidos
+    (sólo en ``FAMILIAS_CON_PARRILLA``; en otra familia se avisan) y grupos de varillas. Cada
+    pieza se revisa contra lo que la rodea en el texto real (``_revisar``): se lee entera o
+    se avisa entera, nunca a medias. Al final, todo lo que nadie leyó y no es contexto se
+    avisa (``residuo``). Los avisos citan el texto como lo escribió el plano (en mayúsculas)."""
+    leida = _piezas(textos, familia)
+    lineas, texto, letrero = leida.lineas, leida.texto, leida.letrero
+    consumido, buenas, malos = leida.consumido, leida.buenas, leida.malos
     avisos: list[tuple[int, str]] = []
     armado = Armado(texto_original=" | ".join(lineas))
     for p in buenas:

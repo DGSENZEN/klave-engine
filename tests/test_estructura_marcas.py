@@ -2,7 +2,12 @@
 
 import pytest
 from klave_engine.detection.text_patterns import TextPatternConfig
-from klave_engine.estructura.marcas import extremos_de_rango, leer_marcas, marca_en_rango
+from klave_engine.estructura.marcas import (
+    extremos_de_rango,
+    leer_marcas,
+    marca_en_rango,
+    titulos,
+)
 
 C = TextPatternConfig()
 
@@ -61,6 +66,45 @@ C = TextPatternConfig()
         ("C-1-P 4#3", "ambigua", ["C-1"]),
         ("K-1-CE 4#3", "ambigua", ["K-1"]),
         ("4#3-K-7", "ambigua", ["K-7"]),
+        # R68.2: una cuenta de varillas no es una marca (la que el parser lee como grupo, y la
+        # que lleva la palabra de la varilla delante). V-1 sin «#» tras su número sí lo es.
+        ("V4 #4", "ninguna", []),
+        ("V12 #5", "ninguna", []),
+        ("V12 #5 E#3 @20CMS", "ninguna", []),
+        ("DALA 15X20 V4 #4 E#2@20", "ninguna", []),
+        ("V4#4 E#3", "ninguna", []),
+        ("CR-1 V4 #4 E#3 @20CMS", "unica", ["CR-1"]),
+        ("K 7 #3", "ninguna", []),  # el parser lee 7#3
+        ("K-1, 4#3", "unica", ["K-1"]),  # ni una lista
+        ("V-1 4#4", "unica", ["V-1"]),
+        ("V-1 15X20", "unica", ["V-1"]),
+        ("K-7 #3", "unica", ["K-7"]),  # «7 #3» no es un grupo que el parser tome
+        # R68.3: delante de una marca con espacios, cualquier cosa que no sea una letra.
+        ("3.-K 7 15X20 4#3", "unica", ["K-7"]),
+        ("1.-K 7 E#3@1S", "unica", ["K-7"]),
+        ('"K 7" E#3@1S', "unica", ["K-7"]),
+        ("TRABE-T 1 E#3@1S", "unica", ["T-1"]),
+        ("K-1/K 7 4#3", "varias", ["K-1", "K-7"]),
+        ("K-1-K 3 4#3", "varias", ["K-1-K-3"]),
+        # R68.4: las etiquetas de la configuración también empiezan una marca pegada.
+        ("TL-1E#3@20 20X40", "ambigua", ["TL-1", "TL-1E"]),
+        ("V-1E#3@20 20X40", "ambigua", ["V-1"]),
+        # R68.5: la letra de una cabeza de estribo antes de «#» no es la de una variante.
+        ("K-7-E #3@20 15X20", "ambigua", ["K-7", "K-7-E"]),
+        ("T-1-E #3@20 20X40", "ambigua", ["T-1", "T-1-E"]),
+        ("K-7E #3@20", "ambigua", ["K-7", "K-7E"]),
+        ("K-1-E 4#3", "unica", ["K-1-E"]),
+        # R68.6: una lista escrita sólo con números.
+        ("K-1, 2 Y 3 15X20 4#3", "varias", ["K-1", "K-2", "K-3"]),
+        ("K-1 Y 2 15X20", "varias", ["K-1", "K-2"]),
+        ("T1-1 Y 2 4#3", "varias", ["T1-1", "T1-2"]),
+        # R68.7: los guiones de Unicode son guiones.
+        ("K–7 4#3", "unica", ["K-7"]),
+        ("K‑7 4#3", "unica", ["K-7"]),
+        ("K-1 Y K–2 4#3", "varias", ["K-1", "K-2"]),
+        # R68.8: la referencia se lleva su única marca (no se lee; el respaldo la bloquea).
+        ("CORTE K-1 15X20 4#3", "ninguna", []),
+        ("DET. K-1 4#3", "ninguna", []),
     ],
 )
 def test_the_mark_grammar(texto, tipo, piezas):
@@ -85,3 +129,18 @@ def test_range_ends_and_between(rango, extremos, dentro, fuera):
     assert extremos_de_rango(rango, C) == extremos
     assert all(marca_en_rango(rango, m, C) for m in dentro)
     assert not any(marca_en_rango(rango, m, C) for m in fuera)
+
+
+@pytest.mark.parametrize(
+    "texto,marcas",
+    [
+        ("CORTE K-1 15X20 4#3", ["K-1"]),
+        ("DET. K-1 4#3", ["K-1"]),
+        ("DETALLE T1-1 20X40", ["T1-1"]),
+        ("E#2@15 VER CORTE C-2", []),  # remite a otra parte: no es un título
+        ("2E#3 VER CORTE", []),
+        ("K-1 4#3", []),
+    ],
+)
+def test_the_marks_a_title_names(texto, marcas):
+    assert titulos(texto, C) == marcas

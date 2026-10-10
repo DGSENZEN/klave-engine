@@ -16,11 +16,22 @@ clase de cada texto de la asociación y el bloqueo de la lectura IA. ``leer_marc
   → K-1 A K-3).
 - ``ninguna``.
 
-Una cuenta de varillas no es una marca: una letra, un espacio y unas cifras pegadas a «#» («P
-4#3») son 4 varillas del #3; «K 7 E#3@1S» sí es K-7 (a las cifras les sigue un espacio).
+Una cuenta de varillas no es una marca (R68.2): lo que el parser del armado toma como un grupo
+de varillas («P 4#3», «K 7 #3») y lo escrito con la palabra de la varilla delante («V4 #4», «V12
+#5») se quita antes de buscar marcas (``sin_cuentas_de_varillas``); «K 7 E#3@1S» sí es K-7 y
+«V-1 4#4» es V-1. Una marca escrita con espacios puede llevar delante cualquier cosa que no sea
+una letra («3.-K 7», «"K 7"», «TRABE-T 1»: R68.3). Cualquier letra empieza una marca pegada,
+también las de las etiquetas de la configuración («TL-1E#3@20» → TL-1, TL-1E: R68.4). La E o la
+G de una cabeza de estribo antes de «#» no es la letra de una variante («K-7-E #3@20» y «K-7E
+#3@20» son ambiguas entre K-7 y la marca con la letra: R68.5). «K-1, 2 Y 3» son K-1, K-2 y K-3
+(R68.6). Los guiones de Unicode son guiones («K–7» es K-7: R68.7).
 
 Las etiquetas de la configuración (``column_tag``, ``beam_tag``) se escriben como el plano
-(«K15A», «T1-1»); las demás marcas como ``K-15A.1``: la misma llave en todos los lectores."""
+(«K15A», «T1-1»); las demás marcas como ``K-15A.1``: la misma llave en todos los lectores.
+
+Esta gramática decide qué se lee. El bloqueo de la IA no depende sólo de ella: un respaldo
+(``detection.schedules``, R68.1) busca cada marca conocida en cada texto con armado, con una
+comparación suelta, y bloquea lo que la gramática no alcanzó."""
 
 import re
 from dataclasses import dataclass, field, replace
@@ -28,40 +39,63 @@ from functools import lru_cache
 from typing import Literal
 
 from klave_engine.detection.text_patterns import TextPatternConfig
+from klave_engine.estructura.armado import sin_cuentas_de_varillas
 
 _PREFIJOS = "K|C|T|COL|CT|CTA|TB|ZC|ZCM|Z|D|P|MC|CE|CR"
 
+# Los guiones con que se escribe una marca: el ASCII y los de Unicode («K–7», «K‑7», «K—7»,
+# R68.7). Dentro de una marca todos son «-».
+GUIONES = "-\u2010\u2011\u2012\u2013\u2014\u2015\u2212"
+_G = f"[{re.escape(GUIONES)}]"
+_A_GUION = str.maketrans({g: "-" for g in GUIONES})
+
+
+def con_guion(texto: str) -> str:
+    """``texto`` con cada guion de Unicode escrito «-»."""
+    return texto.translate(_A_GUION)
+
+
 # Una marca dentro de un texto: K-1, C-3, T-2, COL-1, CTA-3, Z-1, D-4B, P-4, MC-1, CE-1, CR-2, con
 # su sufijo de variante (``K-15A.1`` es otra marca que ``K-15A``), o el tipo «X» (``K-X``, ``D-X``).
-MARCA_RE = re.compile(rf"\b({_PREFIJOS})(?:\s*-?\s*(\d{{1,2}})([A-Z]?)(?:\.(\d))?|-(X))\b")
+MARCA_RE = re.compile(rf"\b({_PREFIJOS})(?:\s*{_G}?\s*(\d{{1,2}})([A-Z]?)(?:\.(\d))?|{_G}(X))\b")
 # Una ficha que es toda una marca, sin espacios.
-_COMPACTA = re.compile(rf"({_PREFIJOS})(?:-?(\d{{1,2}})([A-Z]?)(?:\.(\d))?|-(X))")
+_COMPACTA = re.compile(rf"({_PREFIJOS})(?:{_G}?(\d{{1,2}})([A-Z]?)(?:\.(\d))?|{_G}(X))")
 # «K-1-A»: la letra de la variante tras un guion. No una letra que empieza otra marca («P-5-P»,
 # «T-1-T», «C-1-P»: lo que sigue puede ser otra marca a medias) ni la X del tipo.
-_CON_LETRA = re.compile(rf"({_PREFIJOS})-?(\d{{1,2}})-([ABE-JL-OQ-SU-WY])")
-# Una marca escrita con espacios («K 7», «T - 1», «K- 7»): sus cifras no van pegadas a «#» (eso
-# es una cuenta de varillas, «P 4#3»).
+_CON_LETRA = re.compile(rf"({_PREFIJOS}){_G}?(\d{{1,2}}){_G}([ABE-JL-OQ-SU-WY])")
+# Una marca escrita con espacios («K 7», «T - 1», «K- 7»). Delante, cualquier cosa que no sea
+# una letra («3.-K 7», «"K 7"», «TRABE-T 1», «K-1/K 7», R68.3); detrás, el fin, un espacio, «:
+# ; , ( ) = "», lo que une una lista («/ + &») o un «.» final. Sus cifras no van pegadas a «#»
+# (eso es una cuenta de varillas, «P 4#3»; las cuentas ya no están: ``sin_cuentas_de_varillas``).
 _ESPACIADA = re.compile(
-    rf"(?<![^\s:;,()=])({_PREFIJOS})(?:\s+-?\s*|\s*-\s+)(\d{{1,2}})([A-Z]?)"
-    r"(?=$|[\s:;,()=]|\.(?:\s|$))"
+    rf"(?<![A-Z])({_PREFIJOS})(?:\s+{_G}?\s*|\s*{_G}\s+)(\d{{1,2}})([A-Z]?)"
+    r'(?=$|[\s:;,()="/+&]|\.(?:\s|$))'
 )
-# Donde empieza algo con forma de marca dentro de una ficha: la letra no va pegada a otra letra
-# o cifra y le sigue un guion o una cifra.
-_INICIO_DE_MARCA = re.compile(rf"(?<![A-Z0-9])(?:{_PREFIJOS})(?=[-\d])")
-_ACOTA = re.compile(r"[:;,()=]")
+# Donde empieza algo con forma de marca dentro de una ficha: letras que no van pegadas a otra
+# letra o cifra y a las que les sigue un guion o una cifra. Cualquier letra: también las
+# etiquetas de la configuración («TL-1E#3@20», «V-1E#3@20», R68.4).
+_INICIO_DE_MARCA = re.compile(rf"(?<![A-Z0-9])[A-Z]+(?={_G}|\d)")
+# Lo que acota una ficha.
+_ACOTA = re.compile(r'[:;,()="]')
 # Lo que une las marcas de una ficha: un guion (rango) o «+», «&», «/» (lista).
-_UNE_EN_FICHA = "-–—+&/"
-_GUION = "-–—"
+_UNE_EN_FICHA = GUIONES + "+&/"
+_GUION = GUIONES
 
 # Entre las marcas de una lista o un rango escrito con espacios.
-ENTRE_MARCAS = re.compile(r"(?:\s|[,;/=&+\-–—]|\b(?:Y|E|A|AL|HASTA)\b)*")
-CONECTOR_DE_RANGO = re.compile(r"\b(?:AL|A|HASTA)\b|[-–—]")
+ENTRE_MARCAS = re.compile(rf"(?:\s|[,;/=&+]|{_G}|\b(?:Y|E|A|AL|HASTA)\b)*")
+CONECTOR_DE_RANGO = re.compile(rf"\b(?:AL|A|HASTA)\b|{_G}")
 _ABRE_RANGO = re.compile(r"(?:DE|DEL|DESDE)\s+$")
 # El fin de un rango escrito sólo con su número («K-1 A 4»), tras un conector entre espacios.
-_FIN_DE_RANGO = re.compile(r"\s+(?:AL|A|HASTA|-|–|—)\s+(\d{1,2}[A-Z]?)(?=$|[\s:;,()=.])")
-_RANGO_CON_ESPACIOS = re.compile(r"\S (?:AL|A|HASTA|-|–|—) \S")
+_FIN_DE_RANGO = re.compile(rf"\s+(?:AL|A|HASTA|{_G})\s+(\d{{1,2}}[A-Z]?)(?=$|[\s:;,()=.])")
+# Lo que sigue a una marca en una lista escrita sólo con números («K-1, 2 Y 3», «T1-1 Y 2»,
+# R68.6): cada número es otra marca, la primera con su último número cambiado.
+_SIGUE_LISTA = re.compile(r"(?:\s*[,&+]\s*|\s+Y\s+)(\d{1,2}[A-Z]?)(?=$|[\s:;,()=.])")
+_RANGO_CON_ESPACIOS = re.compile(rf"\S (?:AL|A|HASTA|{_G}) \S")
 # Una marca partida en lo de antes de su último número, el número y lo de después.
-_PARTES = re.compile(r"(?P<pre>(?:.*\D)?)(?P<num>\d{1,3})(?P<suf>-?[A-Z]?)")
+_PARTES = re.compile(rf"(?P<pre>(?:.*\D)?)(?P<num>\d{{1,3}})(?P<suf>{_G}?[A-Z]?)")
+# La letra de una cabeza de estribo o de grapa: tras una marca y antes de «#» no es la letra de
+# una variante («K-7-E #3@20», «K-7E #3@20», R68.5).
+_CABEZA_DE_ESTRIBO = "EG"
 
 # Lo que remite a otra parte del plano no nombra una marca: «E#2@15 VER CORTE C-2».
 _REFERENCIA = re.compile(
@@ -70,6 +104,9 @@ _REFERENCIA = re.compile(
     r"|\b(?:CORTE|DETALLE|DET\.)\s+[^\s,;]+",
     re.I,
 )
+# El título de un dibujo que nombra su marca («CORTE K-1 15X20 4#3», «DET. K-1 4#3»): una
+# referencia, no se lee, pero dice de quién es.
+_TITULO = re.compile(r"\b(?:CORTE|DETALLE|DET\.)\s+([^\s,;]+)", re.I)
 
 
 def sin_referencias(texto: str) -> str:
@@ -105,6 +142,7 @@ def marca_sola(ficha: str, config: TextPatternConfig) -> str | None:
     («K-1-A»); si no, ``None``."""
     if not ficha:
         return None
+    ficha = con_guion(ficha)
     if es_etiqueta(ficha, config):
         return ficha
     compacta = _COMPACTA.fullmatch(ficha)
@@ -207,10 +245,27 @@ def _prefijos(ficha: str, inicio: int, config: TextPatternConfig) -> list[str]:
     return candidatas
 
 
-def _leer_ficha(ficha: str, inicio: int, config: TextPatternConfig) -> list[_Pieza]:
+def _cabeza_tras(ficha: str, despues: str, config: TextPatternConfig) -> str | None:
+    """Si ``ficha`` es una marca que acaba en la letra de una cabeza de estribo o de grapa, con o
+    sin guion, y lo que sigue empieza con «#» («K-7-E #3@20», «K-7E #3@20», R68.5): la marca sin
+    esa letra (K-7). No se sabe si es la marca K-7-E o K-7 con sus estribos. Si no, ``None``."""
+    if ficha[-1:] not in _CABEZA_DE_ESTRIBO or re.match(r"\s*[#Ø]", despues) is None:
+        return None
+    base = con_guion(ficha[:-1]).rstrip("-")
+    if not base[-1:].isdigit():
+        return None
+    return marca_sola(base, config)
+
+
+def _leer_ficha(
+    ficha: str, inicio: int, config: TextPatternConfig, despues: str = ""
+) -> list[_Pieza]:
     fin = inicio + len(ficha)
     sola = marca_sola(ficha, config)
     if sola is not None:
+        base = _cabeza_tras(ficha, despues, config)
+        if base is not None:
+            return [_Pieza(inicio, fin, "ambigua", piezas=[base, sola], texto=ficha)]
         return [_Pieza(inicio, fin, "marca", marca=sola, texto=ficha)]
     partes = _segmentar(ficha, config)
     if partes is not None:
@@ -229,7 +284,7 @@ def _leer_ficha(ficha: str, inicio: int, config: TextPatternConfig) -> list[_Pie
     candidatas: list[str] = []
     for m in _INICIO_DE_MARCA.finditer(ficha):
         candidatas += _prefijos(ficha, m.start(), config)
-    rango = re.fullmatch(r"(.+)[-–—](\d{1,2})", ficha)
+    rango = re.fullmatch(rf"(.+){_G}(\d{{1,2}})", ficha)
     if rango is not None:
         primera = marca_sola(rango.group(1), config)
         if primera is not None:
@@ -237,6 +292,49 @@ def _leer_ficha(ficha: str, inicio: int, config: TextPatternConfig) -> list[_Pie
     if not candidatas:
         return []
     return [_Pieza(inicio, fin, "ambigua", piezas=list(dict.fromkeys(candidatas)), texto=ficha)]
+
+
+def _acaba_en_marca(texto: str, config: TextPatternConfig) -> bool:
+    """Si la última ficha de ``texto`` es una marca o varias unidas («K-1», «K-1-K-3»)."""
+    previa = re.split(r'[\s:;,()="]', texto)[-1]
+    return bool(previa) and (
+        marca_sola(previa, config) is not None or _segmentar(previa, config) is not None
+    )
+
+
+def _con_espaciadas(limpio: str, config: TextPatternConfig) -> str:
+    """Cada marca escrita con espacios («K 7», «T - 1») escrita «K-7». Si la pega a lo de
+    delante algo que no es un espacio ni acota una ficha («3.-K 7», «TRABE-T 1»), se aparta con
+    un espacio: es su propia ficha. No si lo de delante es otra marca unida por un guion, «/»,
+    «+» o «&» («K-1/K 7», «K-1-K 3»): es una lista o un rango."""
+    partes: list[str] = []
+    pos = 0
+    for m in _ESPACIADA.finditer(limpio):
+        partes.append(limpio[pos : m.start()])
+        hecho = "".join(partes)
+        marca = f"{m.group(1)}-{int(m.group(2))}{m.group(3)}"
+        previo = hecho[-1:]
+        une = previo in _UNE_EN_FICHA and _acaba_en_marca(hecho[:-1], config)
+        if previo and not previo.isspace() and not _ACOTA.match(previo) and not une:
+            marca = " " + marca
+        partes.append(marca)
+        pos = m.end()
+    partes.append(limpio[pos:])
+    return "".join(partes)
+
+
+def titulos(texto: str, config: TextPatternConfig) -> list[str]:
+    """Las marcas que nombra un texto sólo en el título de un dibujo («CORTE K-1 15X20 4#3», «DET.
+    K-1 4#3», R68.8): es una referencia y no se lee, pero dice de quién es. Una referencia que
+    remite a otra parte («VER CORTE C-2») no es un título."""
+    marcas: list[str] = []
+    for m in _REFERENCIA.finditer(texto.upper()):
+        titulo = _TITULO.fullmatch(m.group(0))
+        if titulo is not None:
+            marca = marca_sola(titulo.group(1).rstrip("."), config)
+            if marca is not None:
+                marcas.append(marca)
+    return list(dict.fromkeys(marcas))
 
 
 _LEIDAS: dict[tuple[str, tuple[str, ...], tuple[str, ...]], LecturaDeMarcas] = {}
@@ -256,11 +354,21 @@ def leer_marcas(texto: str, config: TextPatternConfig) -> LecturaDeMarcas:
 
 
 def _leer_marcas(texto: str, config: TextPatternConfig) -> LecturaDeMarcas:
-    limpio = " ".join(sin_referencias(texto).upper().split())
-    limpio = _ESPACIADA.sub(lambda m: f"{m.group(1)}-{int(m.group(2))}{m.group(3)}", limpio)
+    # Las cuentas de varillas no son marcas («V4 #4», «P 4#3»: R68.2): se quitan primero, con lo
+    # que el parser del armado toma como un grupo de varillas.
+    limpio = _con_espaciadas(sin_cuentas_de_varillas(sin_referencias(texto)), config)
     piezas: list[_Pieza] = []
-    for inicio, _fin, ficha in _fichas(limpio):
-        piezas += _leer_ficha(ficha, inicio, config)
+    for inicio, fin, ficha in _fichas(limpio):
+        piezas += _leer_ficha(ficha, inicio, config, limpio[fin:])
+    # Una lista escrita sólo con números tras una marca limpia («K-1, 2 Y 3»): otras marcas.
+    for p in [p for p in piezas if p.tipo == "marca"]:
+        base, pos = p.marca or "", p.fin
+        while (sigue := _SIGUE_LISTA.match(limpio, pos)) is not None and not any(
+            q.inicio < sigue.end(1) and sigue.start(1) < q.fin for q in piezas
+        ):
+            marca = _con_ultimo_numero(base, sigue.group(1))
+            piezas.append(_Pieza(sigue.start(1), sigue.end(1), "marca", marca=marca, texto=marca))
+            pos = sigue.end(1)
     # El número que cierra un rango escrito sin su letra («K-1 A 4»), tras una marca limpia.
     for p in [p for p in piezas if p.tipo == "marca"]:
         numero = _FIN_DE_RANGO.match(limpio, p.fin)
@@ -337,8 +445,7 @@ def extremos_de_rango(rango: str, config: TextPatternConfig | None = None) -> li
     3» → T1-3); «K-1 A C-4» → [K-1, C-4]. Vacía si no es un rango. Con la configuración del
     proyecto (sus etiquetas, «T1-1»); sin ella, la de siempre."""
     config = config or TextPatternConfig()
-    limpio = " ".join(rango.upper().split())
-    limpio = _ESPACIADA.sub(lambda m: f"{m.group(1)}-{int(m.group(2))}{m.group(3)}", limpio)
+    limpio = _con_espaciadas(" ".join(rango.upper().split()), config)
     marcas: list[str] = []
     fin: str | None = None
     pegado = False
@@ -375,7 +482,7 @@ def _partes(marca: str) -> tuple[str, int] | None:
     partes = _PARTES.fullmatch(" ".join(marca.upper().split()))
     if partes is None or not partes["pre"]:
         return None
-    return re.sub(r"[\s\-–—‑.]", "", partes["pre"]), int(partes["num"])
+    return re.sub(rf"[\s{re.escape(GUIONES)}.]", "", partes["pre"]), int(partes["num"])
 
 
 def marca_en_rango(rango: str, marca: str, config: TextPatternConfig | None = None) -> bool:
@@ -387,7 +494,7 @@ def marca_en_rango(rango: str, marca: str, config: TextPatternConfig | None = No
     extremos = extremos_de_rango(rango, config)
     if not extremos:
         return False
-    propia = " ".join(marca.upper().split())
+    propia = con_guion(" ".join(marca.upper().split()))
     if propia in extremos:
         return True
     desde, hasta, cual = _partes(extremos[0]), _partes(extremos[-1]), _partes(propia)

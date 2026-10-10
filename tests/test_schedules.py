@@ -12,8 +12,11 @@ from klave_engine.detection.schedules import (
     mark_cuadro_detections,
     merge_external_specs,
 )
+from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.dxf.entities import EntityType, EvidencePacket, NormalizedEntity
 from klave_engine.dxf.parser import DxfParser
+
+C = TextPatternConfig()
 
 
 def _entities(tmp_path, build):
@@ -184,6 +187,7 @@ def test_ia_never_covers_an_unreadable_text(tmp_path):
                 "confidence": 0.5,
             }
         ],
+        C,
     )
     assert inv.by_mark["K-4"].stirrups is None
     assert any(s.source == "ia" and s.mark == "K-4" for s in inv.specs)  # kept as a reading
@@ -203,6 +207,7 @@ def test_ia_fills_only_where_no_text(tmp_path):
                 "confidence": 0.5,
             }
         ],
+        C,
     )
     assert inv.by_mark["K-4"].stirrups == "E#2@15"
     ia = next(s for s in inv.specs if s.source == "ia")
@@ -397,7 +402,7 @@ def test_a_marked_stirrups_only_note_is_read(tmp_path):
     inv = build_schedule_inventory(_notas(tmp_path, ["K-7 E#3@20", "K-7 20X30"]), frames=_frame())
     k7 = inv.by_mark["K-7"]
     assert (k7.section_cm, k7.stirrups) == ((20, 30), "E#3@20") and inv.rechazos == []
-    merge_external_specs(inv, [_ia("K-7", stirrups="E#2@20")])
+    merge_external_specs(inv, [_ia("K-7", stirrups="E#2@20")], C)
     assert inv.by_mark["K-7"].stirrups == "E#3@20"
 
 
@@ -405,7 +410,7 @@ def test_ia_never_covers_a_text_nobody_reads(tmp_path):
     # «sin lector»: el texto nombra a K-7 pero sus estribos no se leen; la IA no los cubre.
     inv = build_schedule_inventory(_notas(tmp_path, ["K-7 E#3@1S", "K-7 20X30"]), frames=_frame())
     assert [(r.motivo, r.marcas) for r in inv.rechazos] == [("sin_lector", ["K-7"])]
-    merge_external_specs(inv, [_ia("K-7", stirrups="E#2@20", rebar="4#3")])
+    merge_external_specs(inv, [_ia("K-7", stirrups="E#2@20", rebar="4#3")], C)
     k7 = inv.by_mark["K-7"]
     assert (k7.stirrups, k7.rebar) == (None, None) and k7.section_cm == (20, 30)
     assert any("la lectura IA no lo llena" in a for a in k7.avisos)
@@ -414,11 +419,11 @@ def test_ia_never_covers_a_text_nobody_reads(tmp_path):
 
 def test_ia_never_covers_a_text_nobody_reads_for_a_mark_without_readings(tmp_path):
     inv = build_schedule_inventory(_notas(tmp_path, ["K-9 E#3@1S"]), frames=_frame())
-    merge_external_specs(inv, [_ia("K-9", stirrups="E#2@20", section_cm=(15, 15))])
+    merge_external_specs(inv, [_ia("K-9", stirrups="E#2@20", section_cm=(15, 15))], C)
     k9 = inv.by_mark["K-9"]
     assert (k9.section_cm, k9.stirrups, k9.source) == ((15, 15), None, "ia")
     inv2 = build_schedule_inventory(_notas(tmp_path, ["K-9 E#3@1S"], "b.dxf"), frames=_frame())
-    merge_external_specs(inv2, [_ia("K-9", stirrups="E#2@20")])
+    merge_external_specs(inv2, [_ia("K-9", stirrups="E#2@20")], C)
     assert "K-9" not in inv2.by_mark  # nada que la IA pueda decir de K-9
 
 
@@ -436,7 +441,7 @@ def test_ia_never_covers_an_ambiguous_text(tmp_path):
         DxfParser().parse_file(tmp_path / "amb.dxf").entities, frames=_frame()
     )
     assert [(r.motivo, sorted(r.marcas)) for r in inv.rechazos] == [("ambigua", ["K-1", "K-2"])]
-    merge_external_specs(inv, [_ia("K-1", rebar="4#3", section_cm=(15, 15))])
+    merge_external_specs(inv, [_ia("K-1", rebar="4#3", section_cm=(15, 15))], C)
     assert (inv.by_mark["K-1"].rebar, inv.by_mark["K-1"].section_cm) == (None, (15, 15))
 
 
@@ -449,7 +454,9 @@ def test_ia_never_covers_the_stack_of_several_marks(tmp_path, etiqueta, marca_ia
         _stack_entities(tmp_path, etiqueta, ["4#3", "E#2@15"]), frames=_frame()
     )
     assert {(r.motivo, tuple(r.marcas)) for r in inv.rechazos} == {("varias_marcas", tuple(marcas))}
-    merge_external_specs(inv, [_ia(marca_ia, rebar="6#4", stirrups="E#2@20", section_cm=(15, 15))])
+    merge_external_specs(
+        inv, [_ia(marca_ia, rebar="6#4", stirrups="E#2@20", section_cm=(15, 15))], C
+    )
     k = inv.by_mark[marca_ia]
     assert (k.rebar, k.stirrups, k.section_cm) == (None, None, (15, 15))
 
@@ -472,7 +479,7 @@ def test_a_note_naming_several_marks_is_reported_not_read(tmp_path, nota, marcas
     assert [(r.motivo, r.marcas, r.texto) for r in inv.rechazos] == [
         ("varias_marcas", marcas, nota)
     ]
-    merge_external_specs(inv, [_ia("K-2", rebar="6#4", section_cm=(20, 20))])
+    merge_external_specs(inv, [_ia("K-2", rebar="6#4", section_cm=(20, 20))], C)
     assert "K-2" not in inv.by_mark  # sección y armado: los dice la nota
 
 
@@ -531,33 +538,33 @@ def test_ia_never_covers_a_text_that_names_its_mark_whatever_its_class(tmp_path,
     # dejaba rechazo y la IA llenaba la marca.
     inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
     assert [(t.entidad_id != "", t.marcas) for t in inv.textos_con_marca] == [(True, [marca])]
-    merge_external_specs(inv, [_ia(marca, stirrups="E#2@20", rebar="6#4")])
+    merge_external_specs(inv, [_ia(marca, stirrups="E#2@20", rebar="6#4")], C)
     assert marca not in inv.by_mark
 
 
 def test_ia_never_covers_a_glued_mark(tmp_path):
     # «K-7E#3@20»: la marca pegada es K-7 (la marca conocida más larga con que empieza).
     inv = build_schedule_inventory(_notas(tmp_path, ["K-7E#3@20", "K-7 20X30"]), frames=_frame())
-    merge_external_specs(inv, [_ia("K-7", stirrups="E#2@20", rebar="6#4")])
+    merge_external_specs(inv, [_ia("K-7", stirrups="E#2@20", rebar="6#4")], C)
     k7 = inv.by_mark["K-7"]
     assert (k7.section_cm, k7.stirrups, k7.rebar) == ((20, 30), None, None)
     # Sin otra lectura de K-7, la marca la conoce la propia IA.
     inv2 = build_schedule_inventory(_notas(tmp_path, ["K-7E#3@20"], "b.dxf"), frames=_frame())
-    merge_external_specs(inv2, [_ia("K-7", stirrups="E#2@20")])
+    merge_external_specs(inv2, [_ia("K-7", stirrups="E#2@20")], C)
     assert "K-7" not in inv2.by_mark
 
 
 def test_a_glued_form_is_never_a_shorter_mark(tmp_path):
     # «K-15AE#3@20» no es de K-1 (lo que sobra, «5AE», no empieza con letra).
     inv = build_schedule_inventory(_notas(tmp_path, ["K-15AE#3@20"]), frames=_frame())
-    merge_external_specs(inv, [_ia("K-1", stirrups="E#2@20"), _ia("K-15A", stirrups="E#2@20")])
+    merge_external_specs(inv, [_ia("K-1", stirrups="E#2@20"), _ia("K-15A", stirrups="E#2@20")], C)
     assert inv.by_mark["K-1"].stirrups == "E#2@20" and "K-15A" not in inv.by_mark
 
 
 def test_ia_never_covers_the_endpoints_of_a_mixed_letter_range(tmp_path):
     inv = build_schedule_inventory(_notas(tmp_path, ["K-1 A C-4 15X20 4#3"]), frames=_frame())
     merge_external_specs(
-        inv, [_ia(m, rebar="6#4", section_cm=(20, 20)) for m in ("K-1", "C-4", "K-2", "C-2")]
+        inv, [_ia(m, rebar="6#4", section_cm=(20, 20)) for m in ("K-1", "C-4", "K-2", "C-2")], C
     )
     assert "K-1" not in inv.by_mark and "C-4" not in inv.by_mark
     # Entre letras distintas no se sabe qué hay en medio: sólo los extremos quedan cubiertos.
@@ -566,7 +573,7 @@ def test_ia_never_covers_the_endpoints_of_a_mixed_letter_range(tmp_path):
 
 def test_a_text_read_by_the_mark_does_not_block_it_nor_an_unrelated_mark(tmp_path):
     inv = build_schedule_inventory(_notas(tmp_path, ["K-7 4#3"]), frames=_frame())
-    merge_external_specs(inv, [_ia("K-7", stirrups="E#2@20"), _ia("K-8", rebar="6#4")])
+    merge_external_specs(inv, [_ia("K-7", stirrups="E#2@20"), _ia("K-8", rebar="6#4")], C)
     assert inv.by_mark["K-7"].stirrups == "E#2@20"  # «K-7 4#3» lo leyó K-7 y no dice estribos
     assert inv.by_mark["K-8"].rebar == "6#4"
 
@@ -604,7 +611,7 @@ def test_one_recogniser_for_the_ia_block(tmp_path, nota, marcas):
     # R65.1: lo que ``marcas_en_nota`` reconoce también cubre (antes la IA llenaba esas marcas;
     # con «T-1=T-2», T-2 se resolvía pegada a T-1).
     inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
-    merge_external_specs(inv, [_ia(m, stirrups="E#2@20", rebar="6#4") for m in marcas])
+    merge_external_specs(inv, [_ia(m, stirrups="E#2@20", rebar="6#4") for m in marcas], C)
     assert not [m for m in marcas if m in inv.by_mark]
 
 
@@ -613,7 +620,7 @@ def test_a_glued_mark_written_without_hyphen_is_blocked(tmp_path, nota, marca_ia
     # R65.3 (sonda G1b): la ficha pegada se guarda tal cual y con guion, y se compara con las
     # marcas conocidas por su llave suelta.
     inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
-    merge_external_specs(inv, [_ia(marca_ia, stirrups="E#9@25")])
+    merge_external_specs(inv, [_ia(marca_ia, stirrups="E#9@25")], C)
     assert marca_ia not in inv.by_mark
 
 
@@ -621,7 +628,7 @@ def test_an_ia_mark_written_differently_still_meets_the_drawing_mark(tmp_path):
     # R65.2: el plano dice «K-7», la IA «K7»: es la misma marca para el bloqueo (nunca para
     # juntar lecturas ni la vista por marca).
     inv = build_schedule_inventory(_notas(tmp_path, ["K-7 E#3@1S", "K-7 20X30"]), frames=_frame())
-    merge_external_specs(inv, [_ia("K7", stirrups="E#2@20", section_cm=(15, 15))])
+    merge_external_specs(inv, [_ia("K7", stirrups="E#2@20", section_cm=(15, 15))], C)
     assert "K7" not in inv.by_mark and inv.by_mark["K-7"].stirrups is None
 
 
@@ -637,6 +644,7 @@ def test_the_loose_key_never_reaches_a_different_mark(tmp_path):
             _ia("K7", stirrups="E#2@20"),
             _ia("K-8", rebar="6#4"),
         ],
+        C,
     )
     assert inv.by_mark["K-1"].stirrups == "E#2@20" and "K-15" not in inv.by_mark
     assert inv.by_mark["K7"].stirrups == "E#2@20" and inv.by_mark["K-7"].rebar == "4#3"
@@ -653,6 +661,7 @@ def test_a_glued_token_blocks_every_known_prefix(tmp_path):
     merge_external_specs(
         inv,
         [_ia("K-7", rebar="9#9", stirrups="E#9@99"), _ia("K7E", rebar="9#9", stirrups="E#9@99")],
+        C,
     )
     k7 = inv.by_mark["K-7"]
     assert (k7.rebar, k7.stirrups, k7.section_cm) == (None, None, (20, 30))
@@ -661,7 +670,7 @@ def test_a_glued_token_blocks_every_known_prefix(tmp_path):
 
 def test_a_glued_token_without_hyphen_blocks_every_known_prefix(tmp_path):
     inv = build_schedule_inventory(_notas(tmp_path, ["TRABE K7E#3@1S"]), frames=_frame())
-    merge_external_specs(inv, [_ia("K7", stirrups="E#9@99"), _ia("K7E", stirrups="E#9@99")])
+    merge_external_specs(inv, [_ia("K7", stirrups="E#9@99"), _ia("K7E", stirrups="E#9@99")], C)
     assert "K7" not in inv.by_mark and "K7E" not in inv.by_mark
 
 
@@ -676,7 +685,7 @@ def test_a_glued_token_without_hyphen_blocks_every_known_prefix(tmp_path):
 )
 def test_a_range_written_without_spaces_is_a_range(tmp_path, nota, cubiertas, libres):
     inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
-    merge_external_specs(inv, [_ia(m, stirrups="E#9@99") for m in cubiertas + libres])
+    merge_external_specs(inv, [_ia(m, stirrups="E#9@99") for m in cubiertas + libres], C)
     assert not [m for m in cubiertas if m in inv.by_mark]
     assert all(inv.by_mark[m].stirrups == "E#9@99" for m in libres)
 
@@ -707,7 +716,7 @@ def test_a_single_mark_is_never_a_range(tmp_path, nota, marca):
 
 def test_an_ia_mark_written_with_a_unicode_dash_meets_the_drawing_mark(tmp_path):
     inv = build_schedule_inventory(_notas(tmp_path, ["K-7 E#3@1S", "K-7 20X30"]), frames=_frame())
-    merge_external_specs(inv, [_ia("K–7", stirrups="E#2@20"), _ia("K‑7", rebar="6#4")])
+    merge_external_specs(inv, [_ia("K–7", stirrups="E#2@20"), _ia("K‑7", rebar="6#4")], C)
     assert "K–7" not in inv.by_mark and "K‑7" not in inv.by_mark
 
 
@@ -724,7 +733,7 @@ def test_a_section_glued_to_a_mark_is_not_a_phantom_mark(tmp_path):
     assert _sin_fantasmas(inv, "T2-20X", "T2-20")
     assert inv.by_mark["T2"].section_cm is None and inv.by_mark["T2"].rebar == "4#3"
     assert [(r.motivo, r.marcas) for r in inv.rechazos] == [("sin_lector", ["T2", "T2-20"])]
-    merge_external_specs(inv, [_ia("T2", section_cm=(99, 99))])
+    merge_external_specs(inv, [_ia("T2", section_cm=(99, 99))], C)
     assert inv.by_mark["T2"].section_cm is None
 
 
@@ -741,7 +750,7 @@ def test_a_glued_mark_is_never_read(tmp_path, nota, fantasma, marca):
     inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
     assert _sin_fantasmas(inv, fantasma, marca)
     assert inv.rechazos[0].motivo == "sin_lector" and marca in inv.rechazos[0].marcas
-    merge_external_specs(inv, [_ia(marca, stirrups="E#9@99", section_cm=(99, 99))])
+    merge_external_specs(inv, [_ia(marca, stirrups="E#9@99", section_cm=(99, 99))], C)
     k = inv.by_mark.get(marca)
     # Lo que la nota dice (armado y, si la trae, la sección) no lo llena la IA.
     assert k is None or (k.stirrups is None and ("X" in nota) == (k.section_cm is None))
@@ -751,7 +760,7 @@ def test_a_mark_followed_by_a_number_is_a_range_candidate(tmp_path):
     # «K-1-3 4#3»: ni de K-1 ni de nadie; K-1, K-2 y K-3 quedan cubiertas.
     inv = build_schedule_inventory(_notas(tmp_path, ["K-1-3 4#3"]), frames=_frame())
     assert inv.specs == []
-    merge_external_specs(inv, [_ia(m, rebar="9#9") for m in ("K-1", "K-2", "K-3", "K-4")])
+    merge_external_specs(inv, [_ia(m, rebar="9#9") for m in ("K-1", "K-2", "K-3", "K-4")], C)
     assert [m for m in ("K-1", "K-2", "K-3") if m in inv.by_mark] == []
     assert inv.by_mark["K-4"].rebar == "9#9"
 
@@ -761,7 +770,7 @@ def test_a_letter_variant_then_a_mark_is_a_range(tmp_path):
     assert inv.specs == [] and [(r.motivo, r.marcas) for r in inv.rechazos] == [
         ("varias_marcas", ["K-1-A-K-3"])
     ]
-    merge_external_specs(inv, [_ia("K-2", rebar="9#9")])
+    merge_external_specs(inv, [_ia("K-2", rebar="9#9")], C)
     assert "K-2" not in inv.by_mark
 
 
@@ -771,7 +780,7 @@ def test_a_letter_variant_then_a_mark_is_a_range(tmp_path):
 )
 def test_ranges_of_compound_marks(tmp_path, nota, cubierta):
     inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
-    merge_external_specs(inv, [_ia(cubierta, rebar="9#9"), _ia("T-3", rebar="9#9")])
+    merge_external_specs(inv, [_ia(cubierta, rebar="9#9"), _ia("T-3", rebar="9#9")], C)
     assert cubierta not in inv.by_mark
     assert inv.by_mark["T-3"].rebar == "9#9"  # «T1-1 A 3» es T1-3, nunca T-3
 
@@ -788,7 +797,7 @@ def test_ranges_of_compound_marks(tmp_path, nota, cubierta):
 def test_a_bar_count_is_never_a_mark(tmp_path, nota, cubierta, cuenta):
     inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
     assert inv.specs == []
-    merge_external_specs(inv, [_ia(cubierta, rebar="9#9"), _ia(cuenta, rebar="9#9")])
+    merge_external_specs(inv, [_ia(cubierta, rebar="9#9"), _ia(cuenta, rebar="9#9")], C)
     assert cubierta not in inv.by_mark and inv.by_mark[cuenta].rebar == "9#9"
 
 
@@ -798,3 +807,199 @@ def test_a_note_reaches_the_element_of_its_label(tmp_path):
     tag = make_detection("d1", DetectionType.column_tag, "K15A", (0, 0, 1, 1), 0.8, [], "m", [])
     assert apply_schedule([tag], inv, meters_factor=1.0) == 1
     assert (tag.properties["section_cm"], tag.properties["spec_rebar"]) == ("15x15", "4#3")
+
+
+# ------------------------------------- Tarea 8, paso A (R68): la gramática cerrada y el respaldo
+
+
+def _ia_lleno(inv, marca):
+    """Lo que la IA llenó de ``marca`` en la vista por marca (vacío si nada)."""
+    k = inv.by_mark.get(marca)
+    if k is None:
+        return {}
+    campos = ("section_cm", "rebar", "stirrups")
+    return {c: getattr(k, c) for c in campos if getattr(k, c) is not None and k.source == "ia"}
+
+
+@pytest.mark.parametrize(
+    "nota,marca_ia",
+    [
+        ("K-7 E#3@1S", "K-07"),  # ceros a la izquierda: K-07 es K-7 para el bloqueo
+        ("TRABE V 1 E#3@1S", "V-1"),  # una etiqueta escrita con espacio, que la gramática no ve
+        ("TRABE TL 1 E#3@1S", "TL-1"),
+        ("CORTE K-1 15X20 4#3", "K-1"),  # R68.8: la referencia se traga su única marca
+        ("DET. K-1 4#3", "K-1"),
+    ],
+)
+def test_the_backstop_blocks_what_the_grammar_misses(tmp_path, nota, marca_ia):
+    # R68.1: el respaldo no depende de la gramática; todo hueco de ésta queda «bloqueado y
+    # avisado», nunca lo llena la IA.
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    merge_external_specs(
+        inv, [_ia(marca_ia, rebar="9#9", stirrups="E#9@99", section_cm=(99, 99))], C
+    )
+    k = inv.by_mark.get(marca_ia)
+    assert k is None or (k.rebar, k.stirrups) == (None, None)
+    assert k is None or ("X" in nota) == (k.section_cm is None)
+
+
+@pytest.mark.parametrize(
+    "nota,marca_ia",
+    [
+        ("K-70 4#3", "K-7"),  # otra marca, más larga
+        ("K-15E#3@20", "K-1"),
+        ("K-15AE#3@20", "K-1"),
+        ("K-1.1 4#3", "K-1"),
+        ("TE ARMADO #4@20", "TE-A"),  # una palabra, no la marca TE-A
+        ("P 4#3", "P-4"),  # una cuenta de varillas
+        ("K 7#3", "K-7"),
+        ("K-7 4#3 15X20", "K-1"),
+    ],
+)
+def test_the_backstop_never_reaches_a_different_mark(tmp_path, nota, marca_ia):
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    merge_external_specs(inv, [_ia(marca_ia, stirrups="E#9@99")], C)
+    assert inv.by_mark[marca_ia].stirrups == "E#9@99"
+
+
+def test_the_backstop_spares_a_text_the_mark_itself_read(tmp_path):
+    # La excepción de siempre: «K-7 4#3» lo leyó K-7 y no dice estribos; la IA los llena. K-8 no
+    # tiene nada que ver.
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-7 4#3"]), frames=_frame())
+    merge_external_specs(inv, [_ia("K-7", stirrups="E#2@20"), _ia("K-8", rebar="6#4")], C)
+    assert inv.by_mark["K-7"].stirrups == "E#2@20" and inv.by_mark["K-8"].rebar == "6#4"
+
+
+def test_a_bar_count_in_a_stack_stays_its_marks(tmp_path):
+    # R68.2: «V4 #4» es una cuenta de varillas, no la etiqueta V4; la pila es de CR-1, como en
+    # 700ffe0, y la IA no le llena las varillas.
+    inv = build_schedule_inventory(
+        _stack_entities(tmp_path, "CR-1", ["V4 #4", "E#3 @20CMS"]), frames=_frame()
+    )
+    cr1 = inv.by_mark["CR-1"]
+    assert (cr1.rebar, cr1.stirrups, cr1.metodo) == ("4#4", "E#3@20", "pila")
+    assert not [s for s in inv.specs if s.mark == "V4"] and inv.rechazos == []
+    merge_external_specs(inv, [_ia("CR-1", rebar="9#9"), _ia("V4", stirrups="E#9@99")], C)
+    assert inv.by_mark["CR-1"].rebar == "4#4"
+    assert inv.by_mark["V4"].stirrups == "E#9@99"  # una cuenta nunca cubre a una marca
+
+
+@pytest.mark.parametrize(
+    "nota,marca,longitudinales,estribos",
+    [
+        ("CR-1 V4 #4 E#3 @20CMS", "CR-1", "4#4", "E#3@20"),  # no son varias marcas
+        ("V-1 4#4", "V-1", "4#4", None),  # sin «#» tras el número, V-1 es la marca
+    ],
+)
+def test_a_bar_count_is_not_a_second_mark(tmp_path, nota, marca, longitudinales, estribos):
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    assert [s.mark for s in inv.specs] == [marca] and inv.rechazos == []
+    assert (inv.by_mark[marca].rebar, inv.by_mark[marca].stirrups) == (longitudinales, estribos)
+
+
+@pytest.mark.parametrize("nota", ["V12 #5 E#3 @20CMS", "V4 #4", "V12 #5"])
+def test_a_bar_count_alone_names_no_mark(tmp_path, nota):
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    assert [s.mark for s in inv.specs if s.mark.startswith("V")] == []
+
+
+def test_a_family_note_with_a_bar_count_is_the_familys(tmp_path):
+    inv = build_schedule_inventory(_notas(tmp_path, ["DALA 15X20 V4 #4 E#2@20"]), frames=_frame())
+    assert [(s.mark, s.rebar, s.stirrups) for s in inv.specs] == [("DALA", "4#4", "E#2@20")]
+
+
+@pytest.mark.parametrize(
+    "nota,marca,seccion",
+    [
+        ("3.-K 7 15X20 4#3", "K-7", (15, 20)),  # R68.3: leída como en 700ffe0
+        ("1.-K 7 15X20", "K-7", (15, 20)),
+        ('"K 7" 15X20', "K-7", (15, 20)),
+    ],
+)
+def test_a_spaced_mark_after_any_non_letter_is_read(tmp_path, nota, marca, seccion):
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    assert [(s.mark, s.section_cm) for s in inv.specs] == [(marca, seccion)]
+
+
+@pytest.mark.parametrize(
+    "nota,marcas",
+    [
+        ("1.-K 7 E#3@1S", ["K-7"]),
+        ('"K 7" E#3@1S', ["K-7"]),
+        ("TRABE-T 1 E#3@1S", ["T-1"]),  # de otra familia: no es rechazo, pero nombra a T-1
+        ("K-1/K 7 E#3@1S", ["K-1", "K-7"]),
+    ],
+)
+def test_a_spaced_mark_after_any_non_letter_is_blocked(tmp_path, nota, marcas):
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    assert [t.marcas for t in inv.textos_con_marca] == [marcas]
+    merge_external_specs(inv, [_ia(m, stirrups="E#9@99") for m in marcas], C)
+    assert not [m for m in marcas if m in inv.by_mark]
+
+
+@pytest.mark.parametrize(
+    "notas,marca_ia,campos",
+    [
+        (["TL-1E#3@20 20X40", "TL-1 4#3"], "TL-1", ("stirrups", "section_cm")),  # R68.4
+        (["V-1E#3@20 20X40", "V-1 4#4"], "V-1", ("stirrups", "section_cm")),
+        (["K-7-E #3@20 15X20"], "K-7", ("stirrups", "section_cm")),  # R68.5
+        (["T-1-E #3@20 20X40"], "T-1", ("stirrups", "section_cm")),
+        (["K-7E #3@20"], "K-7", ("stirrups",)),  # sin guion, lo mismo
+    ],
+)
+def test_a_glued_or_headed_mark_is_ambiguous_and_blocked(tmp_path, notas, marca_ia, campos):
+    inv = build_schedule_inventory(_notas(tmp_path, notas), frames=_frame())
+    (rechazo,) = inv.rechazos
+    assert rechazo.motivo == "sin_lector" and marca_ia in rechazo.marcas
+    assert not [s for s in inv.specs if s.mark in rechazo.marcas and s.mark != marca_ia]
+    merge_external_specs(
+        inv, [_ia(marca_ia, stirrups="E#9@99", section_cm=(99, 99), rebar="9#9")], C
+    )
+    k = inv.by_mark.get(marca_ia)
+    assert k is None or all(getattr(k, c) is None for c in campos)
+
+
+def test_a_letter_variant_without_a_stirrup_after_it_is_its_mark(tmp_path):
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-1-E 4#3"]), frames=_frame())
+    assert [s.mark for s in inv.specs] == ["K-1-E"] and inv.rechazos == []
+
+
+@pytest.mark.parametrize(
+    "nota,marcas,libre",
+    [
+        ("K-1, 2 Y 3 15X20 4#3", ["K-1", "K-2", "K-3"], "K-4"),  # R68.6
+        ("K-1 Y 2 15X20 4#3", ["K-1", "K-2"], "K-3"),
+        ("T1-1 Y 2 4#3", ["T1-1", "T1-2"], "T1-3"),
+        ("K-1 Y K–2 4#3", ["K-1", "K-2"], "K-3"),  # R68.7
+    ],
+)
+def test_a_shorthand_list_is_several_marks(tmp_path, nota, marcas, libre):
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    assert inv.specs == []
+    assert [(r.motivo, r.marcas) for r in inv.rechazos] == [("varias_marcas", marcas)]
+    merge_external_specs(inv, [_ia(m, rebar="9#9") for m in [*marcas, libre]], C)
+    assert not [m for m in marcas if m in inv.by_mark] and inv.by_mark[libre].rebar == "9#9"
+
+
+def test_a_unicode_dash_in_a_drawing_mark_is_a_hyphen(tmp_path):
+    inv = build_schedule_inventory(_notas(tmp_path, ["K–7 4#3"]), frames=_frame())
+    assert [(s.mark, s.rebar) for s in inv.specs] == [("K-7", "4#3")]
+
+
+def test_a_title_is_not_a_stack_line_of_another_mark(tmp_path):
+    # R68.8: «CORTE K-1 15X20 4#3» bajo la etiqueta de K-2 no es de K-2 (antes la pila de K-2
+    # lo leía): dice de quién es y nadie lo lee.
+    inv = build_schedule_inventory(
+        _stack_entities(tmp_path, "K-2", ["CORTE K-1 15X20 4#3"]), frames=_frame()
+    )
+    assert not [s for s in inv.specs if s.mark == "K-2"]
+    assert [(r.motivo, r.marcas) for r in inv.rechazos] == [("sin_lector", ["K-1"])]
+
+
+def test_merge_takes_the_projects_config():
+    # R68.9: sin configuración por omisión callada; las marcas se reconocen con las del proyecto.
+    import inspect
+
+    assert inspect.signature(merge_external_specs).parameters["config"].default is (
+        inspect.Parameter.empty
+    )
