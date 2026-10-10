@@ -27,7 +27,7 @@ estándar)."""
 import re
 from collections import defaultdict
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel
@@ -696,9 +696,11 @@ _ANULADA = re.compile(
     # en pasado: «SE SUSTITUYO POR LA NOTA 9», «SE CANCELO»
     r"|SE\s+(?:CANCEL|ANUL|ELIMIN|DEROG|REVOC|BORR|TACH|SUSTITUY|REEMPLAZ)O"
     r"|SE\s+(?:SUPRIMI|OMITI)O"
-    # «LA NOTA 9 LA SUSTITUYE», «VER NOTA 9 QUE LA SUSTITUYE», «… QUE SUSTITUYE A ESTA»
+    # «LA NOTA 9 LA SUSTITUYE», «VER NOTA 9 QUE LA SUSTITUYE|SUSTITUYO», «… QUE SUSTITUYE A ESTA»,
+    # «LA NOTA 9 SUSTITUYE ESTA» (la que sustituye a otra, «SUSTITUYE A LA NOTA 3», sí vale)
     r"|LA\s+(?:SUSTITUYE|REEMPLAZA|ANULA|CANCELA|DEROGA)"
-    r"|(?:SUSTITUYE|REEMPLAZA|ANULA|CANCELA|DEROGA)N?\s+A\s+EST[AE](?:\s+NOTA)?"
+    r"|QUE\s+LA\s+(?:SUSTITUY|REEMPLAZ|ANUL|CANCEL|DEROG)[OÓ]"
+    r"|(?:SUSTITUYE|REEMPLAZA|ANULA|CANCELA|DEROGA)N?\s+(?:A\s+)?EST[AE](?:\s+NOTA)?"
     r"|CANCELAR|SUPRIMIR|ANULAR|OMITIR|ELIMINAR|BORRAR|REVOCAR|SUSTITUIR|REEMPLAZAR"
     r"|CAMBI(?:A|AN|AR|O|ARA)\s+POR"
     r"|SIN\s+EFECTO|SIN\s+VALIDEZ|NO\s+APLICA|NO\s+VALIDA|YA\s+NO\s+(?:APLICA|VALE))\b"
@@ -730,11 +732,16 @@ _EN_UN_LUGAR = re.compile(
     r"|(?:FUERA|DENTRO|LEJOS|CERCA)\s+DE)\s+"
     r"(?:(?:EL|LA|LOS|LAS)\s+)?[A-Z]+(?:\s+(?:(?:DE|DEL|Y|E)\s+)?[A-Z]+){0,2}"
 )
-# Una cláusula corta sin leer (hasta cuatro palabras, sin cifra al empezar) que no nombra ninguna
-# familia: puede acotar o condicionar la regla y no se sabe cómo («… #6. ESCALERAS.», «…, EDIFICIO
-# B», «…, EJES A-C», «…, SI SON ESCALERAS», «…, COMO MINIMO», «…, MAXIMO»): la nota es un aviso
-# (R44). Las neutrales («RESPECTIVAMENTE», «VER DETALLE 3», «SALVO INDICACION») no llegan aquí.
-_CLAUSULA_CORTA = re.compile(r"[A-Z][A-Z'\-]*(?:\s+[A-Z0-9][A-Z0-9'\-]*){0,3}")
+# Una cláusula corta sin leer (hasta cuatro palabras) que no nombra ninguna familia: puede acotar o
+# condicionar la regla y no se sabe cómo («… #6. ESCALERAS.», «…, EDIFICIO B», «…, EJES A-C», «…, SI
+# SON ESCALERAS», «…, COMO MINIMO», «…, MAXIMO»): la nota es un aviso (R44). Cuenta aunque la
+# primera palabra traiga cifras o una marca («T-1», «C-1 Y C-2», «MC-1», «E1», «ESC-1») o la
+# cláusula traiga puntuación suelta («ZONA 'A'», «S/N», «ESCALERAS*», «[ESCALERAS]», «ESCALERAS -»,
+# «ESCALERAS / RAMPAS», «ESCALERAS+RAMPAS», «ESCALERAS & RAMPAS») (R46). Las neutrales
+# («RESPECTIVAMENTE», «VER DETALLE 3», «SALVO INDICACION») no llegan aquí.
+_CLAUSULA_CORTA = re.compile(
+    r"""[\[*\-"'\s]*[A-Z0-9][A-Z0-9'\-/*"+&\[\]]*(?:\s+[A-Z0-9'\-/*"+&\[\]]+){0,3}[\]*\-"'\s]*"""
+)
 # Las reglas por familia: otro elemento no las cambia (es de otra familia).
 _POR_FAMILIA = ("recubrimiento", "primer_estribo", "anclaje")
 # Las familias de la cimentación: bajo un encabezado de cimentación («NOTAS DE CIMENTACION :») sólo
@@ -860,6 +867,9 @@ class _Origen:
     es_nota: bool = True
     seccion: str = ""
     encabezado: str = ""  # el renglón del encabezado como está escrito («REFUERZO :»)
+    # todos los encabezados de arriba en su columna, el más cercano primero; uno por cada manera
+    # distinta en que están las copias de la nota (``Nota.cadenas``)
+    cadenas: list[list[str]] = field(default_factory=list)
 
     def dato(self, valor: Any, cita: str) -> Dato:
         return Dato(
@@ -1097,7 +1107,8 @@ def _primer_estribo(o: _Origen, lectura: Lectura, lecturas: _Lecturas) -> None:
         familias, _ = _familias_en(" ".join(grupos), _PALABRAS_DE_ESTRIBO)
         if aparte and not re.search(_CONTRATRABES_DICHAS, " ".join(grupos)):
             familias = [familia for familia in familias if familia != "contratrabe"]
-        alcance = _alcance_del_encabezado(o.seccion, o.encabezado)
+        de_arriba = _alcance_de_la_nota(o)
+        alcance = de_arriba.familias if de_arriba.directo else None
         if not familias and alcance and "?" not in alcance:
             familias = list(
                 dict.fromkeys([*alcance, *(["contratrabe"] if "trabe" in alcance else [])])
@@ -1269,6 +1280,76 @@ def _es_de_cimentacion(seccion: str) -> bool:
     return _ENCABEZADO_DE_CIMENTACION.fullmatch(_texto_del_encabezado(seccion)) is not None
 
 
+# El encabezado de las generales de todo el proyecto («NOTAS GENERALES DE ESTRUCTURA.»): lo que
+# acotaba un encabezado de arriba acaba aquí. Sólo éste, a propósito: «NOTAS GENERALES :»,
+# «NOTAS DE CIMENTACION» o «NOTAS DEL PROYECTO» pueden ser un subencabezado de las notas de
+# arriba, y si lo fueran y se tomaran por un cierre se leería en silencio como del proyecto lo que
+# es de otra cosa (R46).
+_ENCABEZADO_PRINCIPAL = re.compile(
+    r"(?:NOTAS?|ESPECIFICACION(?:ES)?)\s+GENERALES"
+    r"\s+(?:(?:DE|DEL|PARA|EN)\s+(?:LA\s+)?ESTRUCTURAS?|ESTRUCTURALES)"
+)
+
+
+@dataclass(frozen=True)
+class _Alcance:
+    """A qué acota una nota su lugar bajo los encabezados: ``familias`` (``None`` si nada la
+    acota; ``["?"]`` si a algo que no se sabe leer), ``acota`` el encabezado que la acota, y
+    ``cimentacion`` el encabezado de cimentación bajo el que está, si lo hay (sin los «:» y «.»
+    del final, como ``Nota.seccion``)."""
+
+    familias: list[str] | None = None
+    acota: str = ""
+    cimentacion: str = ""
+    # si el encabezado que acota es el que está justo arriba de la nota: sólo entonces lo que
+    # nombra vale como los elementos de una regla por familia que no dice a cuáles va («EL PRIMER
+    # ESTRIBO A 5 CM» bajo «COLUMNAS :»); bajo un subencabezado general no se sabe si éste es
+    # parte del bloque de arriba o un bloque general que sigue, y la nota se avisa
+    directo: bool = True
+
+
+def _sin_puntuacion(encabezado: str) -> str:
+    return encabezado.rstrip(" :.").strip()
+
+
+def _alcance_de_la_cadena(cadena: list[str]) -> _Alcance:
+    """El alcance bajo una cadena de encabezados (el más cercano primero). Un encabezado acota
+    hasta que otro del mismo nivel o de uno más alto lo cierra: un subencabezado general
+    («Refuerzo:», «Notas:», «Proyecto:», «Obra:», «Observaciones:», «Traslapes:», «NOTAS DE
+    REFUERZO», «NOTAS DEL PROYECTO», «REFUERZO :», «NOTAS :») nunca lo cierra; sí otro que acota
+    (el más cercano manda) o el de las generales de todo el proyecto (``_ENCABEZADO_PRINCIPAL``).
+    Un encabezado de cimentación también sigue valiendo bajo los generales de abajo."""
+    cimentacion = ""
+    for k, encabezado in enumerate(cadena):
+        if _ENCABEZADO_PRINCIPAL.fullmatch(_texto_del_encabezado(encabezado)):
+            break
+        familias = _alcance_del_encabezado(encabezado, encabezado)
+        if familias is not None:
+            return _Alcance(familias, _sin_puntuacion(encabezado), cimentacion, k == 0)
+        if not cimentacion and _es_de_cimentacion(encabezado):
+            cimentacion = _sin_puntuacion(encabezado)
+    return _Alcance(None, "", cimentacion)
+
+
+def _alcance_de_la_nota(o: _Origen) -> _Alcance:
+    """El alcance de una nota: el de cada una de las maneras en que están sus copias bajo
+    encabezados. Si una copia está bajo uno que acota y otra no, o acotan a cosas distintas, no se
+    sabe a qué acota: ``["?"]``."""
+    cadenas = [c for c in o.cadenas if c]
+    if not cadenas and (propio := o.encabezado or o.seccion):
+        cadenas = [[propio]]
+    alcances = [_alcance_de_la_cadena(c) for c in cadenas]
+    cimentacion = next((a.cimentacion for a in alcances if a.cimentacion), "")
+    acotan = [a for a in alcances if a.familias is not None]
+    if not acotan:
+        return _Alcance(None, "", cimentacion)
+    primera = acotan[0]
+    distintas = {tuple(a.familias or ()) for a in acotan}
+    if len(acotan) < len(alcances) or len(distintas) > 1:
+        return _Alcance(["?"], primera.acota, cimentacion)
+    return _Alcance(primera.familias, primera.acota, cimentacion, all(a.directo for a in acotan))
+
+
 def _familias_que_nombra(texto: str) -> set[str]:
     """Las familias que un texto nombra, con ``?`` si nombra además un elemento o una parte de la
     estructura que no es de ninguna («EN AZOTEA», «EN LOSAS Y AZOTEAS», «EN TRABES DE AZOTEA»)."""
@@ -1297,7 +1378,9 @@ def _lo_que_la_cambia(
     (c) nada la acota a un elemento, a una parte de la estructura o a un lugar («EN COLUMNAS»,
         «PARA COLUMNAS», «EN VIGAS», «EN NERVADURAS», «EN AZOTEA», «EN ESCALERAS», «EN LA
         CISTERNA», «APLICA A ESCALERAS», «NO ASI EN …», un encabezado como «COLUMNAS :», «NOTAS
-        PARA LOSAS :», «NOTAS PARA ESCALERAS :» o «ESCALERAS :»). Una regla por familia
+        PARA LOSAS :», «NOTAS PARA ESCALERAS :» o «ESCALERAS :»; sigue acotando bajo un
+        subencabezado general como «Refuerzo:» o «NOTAS :», hasta que otro que acota o «NOTAS
+        GENERALES DE ESTRUCTURA» lo cierra: ``_alcance_de_la_cadena``). Una regla por familia
         (recubrimiento, primer estribo, anclaje) se lee sólo para las familias que dice (o las del
         encabezado): otra familia conocida en otra oración es de otra familia (se avisa aparte); en
         su misma oración, con una cifra, o nombrando una familia que se leyó, la cambia; una parte
@@ -1309,7 +1392,8 @@ def _lo_que_la_cambia(
     (e) la nota no dice dos valores de una regla («HASTA EL #6 … HASTA EL #8») ni traslapa una
         varilla que manda soldar («HASTA EL #8, DEL #8 EN ADELANTE SE SOLDARAN»).
     Los encabezados generales («NOTAS GENERALES…», «REFUERZO», «MATERIALES»,
-    «ESPECIFICACIONES…») no acotan (``_alcance_del_encabezado``)."""
+    «ESPECIFICACIONES…») no acotan por sí solos (``_alcance_del_encabezado``), pero tampoco
+    cierran lo que acota un encabezado de arriba (``_alcance_de_la_nota``)."""
     reglas = set(de_la_nota.por_regla)
     globales = any(r.split(":")[0] not in _POR_FAMILIA for r in reglas)
     leidas = {r.split(":")[1] for r in reglas if ":" in r}
@@ -1317,13 +1401,14 @@ def _lo_que_la_cambia(
     anulada = _ANULADA.search(texto)
     if anulada:
         return o.texto[anulada.start() : anulada.end()], _LA_NIEGA
-    alcance = _alcance_del_encabezado(o.seccion, o.encabezado)
+    de_arriba = _alcance_de_la_nota(o)
+    alcance = de_arriba.familias
     if alcance is not None and (
         globales or "?" in alcance or leidas - _con_sus_contratrabes(set(alcance))
     ):
-        return o.seccion, _LA_NIEGA
-    if _es_de_cimentacion(o.seccion) and leidas - _FAMILIAS_DE_CIMENTACION:
-        return o.seccion, _LA_NIEGA
+        return de_arriba.acota or o.seccion, _LA_NIEGA
+    if de_arriba.cimentacion and leidas - _FAMILIAS_DE_CIMENTACION:
+        return de_arriba.cimentacion, _LA_NIEGA
     contradiccion = _se_desmiente(de_la_nota)
     if contradiccion is not None:
         return contradiccion, _NO_DICEN_LO_MISMO
@@ -1897,5 +1982,6 @@ def _leer_nota(nota: Nota, lecturas: _Lecturas) -> None:
         donde,
         seccion=nota.seccion,
         encabezado=nota.encabezado,
+        cadenas=nota.cadenas,
     )
     _leer_texto(origen, lecturas)

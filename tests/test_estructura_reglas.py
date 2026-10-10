@@ -4322,3 +4322,312 @@ def test_a_heading_keeps_its_digits_and_hyphens(tmp_path):
     assert [(n.seccion, n.encabezado) for n in notas] == [
         ("NOTAS PARA ESCALERA E-1", "NOTAS PARA ESCALERA E-1:")
     ]
+
+
+# --- Task 5c (R46): una cláusula corta con marca o puntuación tampoco deja pasar la regla, una
+# anulación sin «SE», y un encabezado que acota sigue acotando bajo los subencabezados generales --
+
+# 1. Una cláusula corta cuya primera palabra trae cifras («T-1», «E1», «MC-1») o que trae
+# puntuación («S/N», «ESCALERAS*», «[ESCALERAS]», «ESCALERAS / RAMPAS», «ZONA 'A'»): acota o
+# condiciona la regla igual que «ESCALERAS».
+_CLAUSULAS_CON_MARCA = (
+    "T-1",
+    "C-1 Y C-2",
+    "MC-1",
+    "Z-1",
+    "E1",
+    "N-1",
+    "E-1",
+    "ESC-1",
+    "ZONA 'A'",
+    "S/N",
+    "ESCALERAS*",
+    "[ESCALERAS]",
+    "ESCALERAS -",
+    "- ESCALERAS",
+    "ESCALERAS / RAMPAS",
+    "ESCALERAS+RAMPAS",
+    "ESCALERAS & RAMPAS",
+    # de cuatro palabras y con la marca al empezar o al acabar; y con la cifra al empezar
+    "- EDIFICIO B NIVEL 3",
+    "EDIFICIO B NIVEL 3 -",
+    "*EDIFICIO B NIVEL 3*",
+    "3ER NIVEL",
+    "1A",
+)
+_ENVOLTURAS_DE_LA_CLAUSULA = ("{f}. {c}.", "{f}, {c}.", "{f}; {c}")
+
+
+@pytest.mark.parametrize(
+    ("texto", "campo"),
+    [
+        pytest.param(
+            envoltura.format(f=frase, c=clausula), regla, id=envoltura.format(f=frase, c=clausula)
+        )
+        for regla, frase in [
+            *_BASES_DE_LA_RONDA,
+            (_R, "EL RECUBRIMIENTO LIBRE SERA DE 4 CM EN TRABES"),
+        ]
+        for envoltura in _ENVOLTURAS_DE_LA_CLAUSULA
+        for clausula in _CLAUSULAS_CON_MARCA
+    ],
+)
+def test_a_short_unread_clause_with_a_mark_or_punctuation_never_lets_a_reading_through(
+    tmp_path, texto, campo
+):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert _nada_de_la_nota(r, campo), getattr(r, campo)
+    assert r.avisos
+
+
+@pytest.mark.parametrize("neutra", ["VER DETALLE 3", "RESPECTIVAMENTE"])
+def test_a_neutral_short_clause_is_still_read_past(tmp_path, neutra):
+    r = _con_notas(tmp_path, [f"4. {_L}, {neutra}."])
+    assert r.traslape_max_numero.valor == "6" and r.avisos == []
+    # en una lista de recubrimientos «RESPECTIVAMENTE» sobra y se avisa, pero el valor se lee
+    r = _con_notas(tmp_path, [f"4. EL RECUBRIMIENTO LIBRE SERA DE 4 CM EN TRABES, {neutra}."])
+    assert r.recubrimiento_m["trabe"].valor == 0.04 and r.recubrimiento_m["trabe"].fuente == "nota"
+
+
+# 2. Una nota que se anula sin decir «SE …»: «VER NOTA 9 QUE LA SUSTITUYO», «LA NOTA 9 SUSTITUYE
+# ESTA».
+_ANULACIONES_SIN_SE = (
+    "{f}. VER NOTA 9 QUE LA SUSTITUYO.",
+    "{f}. VER NOTA 9 QUE LA SUSTITUYÓ.",
+    "{f}. VER NOTA 9 QUE LA REEMPLAZO.",
+    "{f}. VER NOTA 9 QUE LA ANULO.",
+    "{f}. VER NOTA 9 QUE LA CANCELO.",
+    "{f}. VER NOTA 9 QUE LA DEROGO.",
+    "{f}. LA NOTA 9 SUSTITUYE ESTA.",
+    "{f}. LA NOTA 9 REEMPLAZA ESTA.",
+    "{f}. LA NOTA 9 ANULA ESTA.",
+    "{f}. LA NOTA 9 CANCELA ESTA.",
+    "{f}. LA NOTA 9 DEROGA ESTA.",
+    "{f}. LA NOTA 9 SUSTITUYE A ESTA.",
+    "{f}. LA NOTA 9 CANCELA A ESTA.",
+)
+
+
+@pytest.mark.parametrize(
+    ("texto", "campo"),
+    [
+        pytest.param(envoltura.format(f=frase), regla, id=envoltura.format(f=frase))
+        for regla, frase in _BASES_DE_LA_RONDA
+        for envoltura in _ANULACIONES_SIN_SE
+    ],
+)
+def test_a_note_cancelled_by_another_one_without_se_never_lets_a_reading_through(
+    tmp_path, texto, campo
+):
+    r = _con_notas(tmp_path, [f"4. {texto}"])
+    assert _nada_de_la_nota(r, campo), getattr(r, campo)
+    assert r.avisos
+
+
+@pytest.mark.parametrize(
+    "referencia",
+    [
+        "SUSTITUYE A LA NOTA 3.",
+        "DEROGA A LA NOTA 3.",
+        "REEMPLAZA A LA NOTA 3.",
+        "CANCELA A LA NOTA 3.",
+        "ANULA A LA NOTA 3.",
+        "ESTA NOTA SUSTITUYE A LA NOTA 3.",
+        "ESTA NOTA REEMPLAZA A LA NOTA 3.",
+    ],
+)
+def test_a_note_that_replaces_another_one_is_still_read(tmp_path, referencia):
+    r = _con_notas(tmp_path, [f"4. {_L}. {referencia}"])
+    assert r.traslape_max_numero.valor == "6" and r.avisos == []
+
+
+# 3. Un encabezado que acota sigue acotando bajo un subencabezado general.
+_SUBENCABEZADOS_GENERALES = (
+    "Refuerzo:",
+    "Notas:",
+    "Proyecto:",
+    "Obra:",
+    "Observaciones:",
+    "Traslapes:",
+    "NOTAS DE REFUERZO",
+    "NOTAS DEL PROYECTO",
+    "REFUERZO :",
+    "NOTAS :",
+)
+_ENCABEZADOS_QUE_ACOTAN_5C = ("NOTAS PARA ESCALERAS :", "ESCALERAS :", "COLUMNAS :")
+
+
+def _con_encabezados(tmp_path, encabezados, renglones):
+    """``renglones`` bajo el último de ``encabezados``: van uno bajo otro en la misma columna."""
+    grupos = [(h, []) for h in encabezados[:-1]] + [(encabezados[-1], renglones)]
+    return leer_reglas(_dibujo(tmp_path, tabla=False, bloques=[(grupos, 1)]), frames=[])
+
+
+@pytest.mark.parametrize(
+    ("alto", "bajo", "regla", "frase"),
+    [
+        pytest.param(alto, bajo, regla, frase, id=f"{alto} > {bajo} > {frase}")
+        for regla, frase in _BASES_DE_LA_RONDA
+        for alto in _ENCABEZADOS_QUE_ACOTAN_5C
+        for bajo in _SUBENCABEZADOS_GENERALES
+    ],
+)
+def test_a_general_subheading_never_clears_an_outer_scoping_heading(
+    tmp_path, alto, bajo, regla, frase
+):
+    r = _con_encabezados(tmp_path, [alto, bajo], [f"1. {frase}"])
+    assert _nada_de_la_nota(r, regla), getattr(r, regla)
+    assert r.avisos
+
+
+@pytest.mark.parametrize(
+    "bajos", [("Refuerzo:", "NOTAS DE REFUERZO"), ("Notas:", "Obra:", "Proyecto:")]
+)
+def test_several_general_subheadings_still_keep_the_outer_scope(tmp_path, bajos):
+    r = _con_encabezados(tmp_path, ["NOTAS PARA ESCALERAS :", *bajos], [f"1. {_L}"])
+    assert r.traslape_max_numero is None and r.avisos
+
+
+def test_the_outer_scope_is_still_the_scope_the_rule_is_read_in(tmp_path):
+    # «COLUMNAS :» sigue acotando bajo «Refuerzo:»: un recubrimiento de columnas se lee; un primer
+    # estribo que dice sus elementos, también, dentro de lo que el encabezado acota.
+    r = _con_encabezados(
+        tmp_path, ["COLUMNAS :", "Refuerzo:"], ["1. EL RECUBRIMIENTO SERA DE 5 CM EN COLUMNAS"]
+    )
+    assert (
+        r.recubrimiento_m["columna"].valor == 0.05 and r.recubrimiento_m["columna"].fuente == "nota"
+    )
+    r = _con_encabezados(
+        tmp_path, ["TRABES :", "Refuerzo:"], ["1. EN TRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM"]
+    )
+    assert sorted(r.primer_estribo_m) == ["contratrabe", "trabe"] and r.avisos == []
+
+
+def test_a_top_level_general_heading_ends_the_scope(tmp_path):
+    # El reinicio: «NOTAS GENERALES DE ESTRUCTURA» (el encabezado de las generales de todo el
+    # proyecto) cierra lo que acotaba un encabezado de arriba.
+    for encabezados in (
+        ["NOTAS PARA ESCALERAS :", "NOTAS GENERALES DE ESTRUCTURA."],
+        ["NOTAS PARA ESCALERAS :", "NOTAS GENERALES DE ESTRUCTURA.", "REFUERZO :"],
+        ["ESCALERAS :", "Notas generales de estructura", "MATERIALES :", "REFUERZO :"],
+    ):
+        r = _con_encabezados(tmp_path, encabezados, [f"1. {_L}"])
+        assert r.traslape_max_numero.valor == "6" and r.avisos == [], encabezados
+
+
+def test_a_new_scoping_heading_replaces_the_scope_of_the_one_above(tmp_path):
+    r = _con_encabezados(
+        tmp_path,
+        ["NOTAS PARA ESCALERAS :", "COLUMNAS :", "Refuerzo:"],
+        ["1. EL RECUBRIMIENTO SERA DE 5 CM EN COLUMNAS"],
+    )
+    assert (
+        r.recubrimiento_m["columna"].valor == 0.05 and r.recubrimiento_m["columna"].fuente == "nota"
+    )
+    # … y lo que acota ahora es «COLUMNAS»: una regla de todo el proyecto no se lee
+    r = _con_encabezados(tmp_path, ["NOTAS PARA ESCALERAS :", "COLUMNAS :"], [f"1. {_L}"])
+    assert r.traslape_max_numero is None and r.avisos
+
+
+def test_no_heading_above_means_no_scope(tmp_path):
+    r = _con_encabezados(tmp_path, ["Refuerzo:", "Notas:"], [f"1. {_L}"])
+    assert r.traslape_max_numero.valor == "6" and r.avisos == []
+
+
+@pytest.mark.parametrize("bajo", ["Refuerzo:", "Notas:", "REFUERZO :"])
+def test_a_foundation_heading_keeps_its_restriction_under_a_general_subheading(tmp_path, bajo):
+    r = _con_encabezados(
+        tmp_path, ["NOTAS DE CIMENTACION", bajo], ["1. EL RECUBRIMIENTO SERA DE 4 CM EN TRABES"]
+    )
+    assert _nada_de_la_nota(r, _R) and r.avisos
+    r = _con_encabezados(tmp_path, ["NOTAS DE CIMENTACION", bajo], [f"1. {_L}"])
+    assert r.traslape_max_numero.valor == "6" and r.avisos == []
+
+
+def test_a_note_under_a_scoped_block_in_one_sheet_and_a_general_one_in_another_is_reported(
+    tmp_path,
+):
+    # La misma nota, igual, en dos columnas: bajo «ESCALERAS :» en una y sin encabezado de arriba
+    # en la otra. Una `Nota` con las dos maneras; la que acota manda (nunca se lee en silencio).
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    for k, grupos in enumerate(
+        (
+            [("REFUERZO :", [f"1. {_L}"])],
+            [("ESCALERAS :", []), ("REFUERZO :", [f"1. {_L}"])],
+        )
+    ):
+        bloque = doc.blocks.new(f"NOTAS_{k}")
+        _escribir_notas(bloque, grupos)
+        msp.add_blockref(f"NOTAS_{k}", (50.0 + 100.0 * k, 40.0))
+    ruta = tmp_path / "dos.dxf"
+    doc.saveas(ruta)
+    entidades = DxfParser().parse_file(ruta).entities
+    notas, contradicciones = leer_notas(_textos(entidades), lambda e: "ES-001")
+    (nota,) = notas
+    assert nota.copias == 2 and contradicciones == []
+    assert sorted(nota.cadenas) == [["REFUERZO :"], ["REFUERZO :", "ESCALERAS :"]]
+    r = leer_reglas(entidades, frames=[])
+    assert r.traslape_max_numero is None and r.avisos
+
+
+def test_a_note_keeps_the_headings_above_it_nearest_first(tmp_path):
+    entidades = _notas_dxf(tmp_path, [("NOTAS PARA ESCALERAS :", []), ("Refuerzo:", [f"1. {_L}"])])
+    (nota,) = leer_notas(_textos(entidades), lambda e: "ES-001")[0]
+    assert (nota.seccion, nota.encabezado) == ("Refuerzo", "Refuerzo:")
+    assert nota.cadenas == [["Refuerzo:", "NOTAS PARA ESCALERAS :"]]
+
+
+def test_a_first_stirrup_without_elements_does_not_take_them_from_a_heading_above_a_subheading(
+    tmp_path,
+):
+    # Directamente bajo «TRABES :» el primer estribo sin elementos es el de las trabes; bajo un
+    # subencabezado general no se sabe si éste sigue siendo ese bloque o es uno general que viene
+    # después: no se toman los elementos del encabezado de arriba, la nota es un aviso.
+    renglon = ["1. EL PRIMER ESTRIBO SE COLOCARA A 5 CM"]
+    r = _con_encabezados(tmp_path, ["TRABES :"], renglon)
+    assert {f: d.valor for f, d in r.primer_estribo_m.items()} == {
+        "trabe": 0.05,
+        "contratrabe": 0.05,
+    }
+    for sub in ("Refuerzo:", "Notas:", "REFUERZO :"):
+        r = _con_encabezados(tmp_path, ["TRABES :", sub], renglon)
+        assert r.primer_estribo_m == {} and r.avisos
+        # … pero uno que dice sus elementos se lee, dentro de lo que el encabezado acota
+        r = _con_encabezados(
+            tmp_path, ["TRABES :", sub], ["1. EN TRABES EL PRIMER ESTRIBO SE COLOCARA A 5 CM"]
+        )
+        assert sorted(r.primer_estribo_m) == ["contratrabe", "trabe"] and r.avisos == []
+
+
+def _con_dos_columnas(tmp_path, encabezados_a, encabezados_b, renglon):
+    """La misma nota, igual, en dos columnas, ambas bajo «REFUERZO :» y cada una con sus
+    encabezados de arriba."""
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    for k, arriba in enumerate((encabezados_a, encabezados_b)):
+        grupos = [(h, []) for h in arriba] + [("REFUERZO :", [renglon])]
+        bloque = doc.blocks.new(f"NOTAS_{k}")
+        _escribir_notas(bloque, grupos)
+        msp.add_blockref(f"NOTAS_{k}", (50.0 + 100.0 * k, 40.0))
+    ruta = tmp_path / "dos.dxf"
+    doc.saveas(ruta)
+    return leer_reglas(DxfParser().parse_file(ruta).entities, frames=[])
+
+
+@pytest.mark.parametrize(
+    ("arriba_a", "arriba_b"),
+    [
+        # una copia está bajo un encabezado que acota y la otra no
+        (["COLUMNAS :"], []),
+        # cada una está bajo uno que acota a otra cosa
+        (["COLUMNAS :"], ["TRABES :"]),
+    ],
+)
+def test_copies_of_a_note_under_different_scopes_are_not_read(tmp_path, arriba_a, arriba_b):
+    # El recubrimiento de columnas es de la nota; lo que no se sabe es si una de las copias lo
+    # acota a otra cosa: no se lee.
+    r = _con_dos_columnas(
+        tmp_path, arriba_a, arriba_b, "1. EL RECUBRIMIENTO SERA DE 5 CM EN COLUMNAS"
+    )
+    assert _nada_de_la_nota(r, _R) and r.avisos

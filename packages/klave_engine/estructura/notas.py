@@ -66,7 +66,11 @@ class Nota(BaseModel):
     las veces que el plano la trae igual y ``hojas`` dice dónde. Dos redacciones distintas de la
     misma nota son dos ``Nota`` con el mismo ``seccion`` y ``numero``. ``encabezado`` es el
     renglón del encabezado como está escrito («REFUERZO :», «EN UNA MISMA SECCION.»): un «:» al
-    final dice que es un título; un «.», que puede ser el final de un renglón partido."""
+    final dice que es un título; un «.», que puede ser el final de un renglón partido.
+    ``cadenas`` son todos los encabezados que hay arriba de la nota en su columna, el más cercano
+    primero (``encabezado`` es el primero): uno bajo otro son un encabezado dentro de otro
+    («NOTAS PARA ESCALERAS :» y debajo «Refuerzo:»), y quien lee las reglas decide cuál acota.
+    Las copias que no están bajo los mismos encabezados traen una cadena cada manera."""
 
     seccion: str
     numero: int
@@ -76,6 +80,7 @@ class Nota(BaseModel):
     copias: int = 1
     hojas: list[str] = []
     encabezado: str = ""
+    cadenas: list[list[str]] = []
 
 
 def limpiar_texto(texto: str) -> str:
@@ -131,6 +136,7 @@ class _Instancia:
     hoja: str
     entidades: list[str]
     encabezado: str = ""
+    encabezados: tuple[str, ...] = ()  # todos los de arriba en su columna, el más cercano primero
 
 
 def _alto(e: NormalizedEntity) -> float:
@@ -177,7 +183,8 @@ def _notas_de_la_hoja(lineas: list[_Linea], hoja: str) -> list[_Instancia]:
     for primera, cadena in cadenas:
         numero, resto = numeradas[primera] or (0, "")
         partes = [resto, *(lineas[j].texto for j in cadena[1:])]
-        encabezado = _encabezado_de(lineas, primera, encabezados)
+        arriba = _encabezados_de(lineas, primera, encabezados)
+        encabezado = arriba[0] if arriba else ""
         instancias.append(
             _Instancia(
                 seccion=encabezado.rstrip(" :.").strip(),
@@ -186,6 +193,7 @@ def _notas_de_la_hoja(lineas: list[_Linea], hoja: str) -> list[_Instancia]:
                 hoja=hoja,
                 entidades=[lineas[j].id for j in cadena],
                 encabezado=encabezado,
+                encabezados=tuple(arriba),
             )
         )
     return instancias
@@ -230,19 +238,17 @@ def _siguiente(
     return j
 
 
-def _encabezado_de(lineas: list[_Linea], i: int, encabezados: list[int]) -> str:
-    """El encabezado más cercano arriba del renglón, en su misma columna, como está escrito."""
+def _encabezados_de(lineas: list[_Linea], i: int, encabezados: list[int]) -> list[str]:
+    """Los encabezados arriba del renglón, en su misma columna, como están escritos: el más
+    cercano primero (a igual distancia, el primero en el orden de lectura)."""
     r = lineas[i]
-    mejor: tuple[float, int] | None = None
-    for h in encabezados:
-        e = lineas[h]
-        if e.y <= r.y or abs(e.x - r.x) > _ALCANCE_DEL_ENCABEZADO * r.alto:
-            continue
-        if mejor is None or e.y - r.y < mejor[0]:
-            mejor = (e.y - r.y, h)
-    if mejor is None:
-        return ""
-    return lineas[mejor[1]].texto.strip()
+    arriba = [
+        h
+        for h in encabezados
+        if lineas[h].y > r.y and abs(lineas[h].x - r.x) <= _ALCANCE_DEL_ENCABEZADO * r.alto
+    ]
+    arriba.sort(key=lambda h: lineas[h].y - r.y)  # estable
+    return [lineas[h].texto.strip() for h in arriba]
 
 
 def leer_notas_con_renglones(
@@ -280,6 +286,7 @@ def leer_notas_con_renglones(
                 copias=len(instancias),
                 hojas=sorted({i.hoja for i in instancias}),
                 encabezado=primera.encabezado,
+                cadenas=[list(c) for c in sorted({i.encabezados for i in instancias})],
             )
         )
     notas.sort(key=lambda nota: (nota.seccion, nota.numero, -nota.copias, nota.hoja))
@@ -296,7 +303,8 @@ def leer_notas(
     diferencia en ``x``) o con sangría (hasta cuatro altos) y con un hueco libre de a lo más 1.5
     altos, hasta el siguiente renglón numerado o un texto bastante más alto. La sección es el
     encabezado (``NOTAS GENERALES DE ESTRUCTURA.``, ``REFUERZO :``) más cercano arriba en su
-    columna; sin él, ``""``. Un encabezado es un renglón que no es continuación de una nota
+    columna; sin él, ``""`` (todos los de arriba, el más cercano primero, están en
+    ``Nota.cadenas``). Un encabezado es un renglón que no es continuación de una nota
     (``REFUERZO LONGITUDINAL NI MENOR A:`` bajo una nota abierta es de la nota) y que está en
     mayúsculas y termina en «:» o «.», o termina en «:» (en cualquier caja, con cifras o guiones:
     ``NOTAS PARA ESCALERA E-1:``), o empieza con ``NOTAS PARA|DE|EN`` aunque no lleve puntuación.
