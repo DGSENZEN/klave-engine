@@ -2075,3 +2075,40 @@ def test_a_count_after_the_bar_word_is_a_bar_group(textos, long, estr):
 def test_a_bar_word_glued_to_something_else_is_still_reported(texto):
     a = parsear_armado([texto], "cerramiento")
     assert a.longitudinales == [] and a.avisos == [f"sin leer: «{texto}»"]
+
+
+# ------------------------------------------------- Task 7, ronda 1: una E tras una palabra
+
+
+@pytest.mark.parametrize(
+    "textos,familia,cita",
+    [
+        (["TIPO E", "#4@20"], "zapata", "E | #4@20"),
+        (["EJE E", "#4@20"], "dado", "E | #4@20"),
+        (["TIPO E #4@20"], "zapata", "E #4@20"),
+        (["ZAPATA TIPO G #4@20"], "zapata", "G #4@20"),
+        (["TIPO E", "#3@15"], "castillo", "E | #3@15"),
+    ],
+)
+def test_a_letter_after_a_word_is_not_a_stirrup_head(textos, familia, cita):
+    # Como «(TIPO E)» (R24): la E de «TIPO E» es de la palabra, no un estribo; lo que sigue no se
+    # lee como estribo ni como malla: se avisa.
+    a = parsear_armado(textos, familia)
+    assert a.vacio() and a.avisos == [f"sin leer: «{cita}»"]
+
+
+@pytest.mark.parametrize(
+    "textos,estribos",
+    [
+        (["K-7 E#3@20"], "E#3@20"),  # el número de la marca no es la cuenta del juego
+        (["K-3 EYG#3@15"], "EYG#3@15"),
+        (["K-8 E #3@20"], "E#3@20"),  # tras una marca sí es cabeza
+        (["4#3 E #2@20"], "E#2@20"),  # tras una pieza también
+        (["4#3 Y E #2@20"], "E#2@20"),
+        (["E", "#3@15"], "E#3@15"),  # sola en su renglón (R28)
+        (["CASTILLO E#2@20"], "E#2@20"),  # pegada a su «#»
+    ],
+)
+def test_a_head_after_a_mark_a_piece_or_alone_is_still_read(textos, estribos):
+    a = parsear_armado(textos, "castillo")
+    assert texto_estribos(a) == estribos and a.avisos == []

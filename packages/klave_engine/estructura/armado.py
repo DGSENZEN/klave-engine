@@ -120,11 +120,11 @@ _E = r"E(?:ST(?:RIBOS?|\.)?|\.)?"
 _G = r"G(?:RAPAS?|\.)?"
 
 # La cantidad de un juego no puede ser el número de la varilla anterior («4#3 E#2@15»), una
-# separación («@20E#3») ni parte de una medida («15X30 E#2@20»): no la precede una letra, un
-# dígito, «#», «@» o «.».
+# separación («@20E#3»), parte de una medida («15X30 E#2@20») ni el número de una marca («K-7
+# E#3@20»): no la precede una letra, un dígito, «#», «@», «.» o «-».
 # «nE+mG» y «nG+mE» son el mismo juego de estribos y grapas.
 _ESTRIBOS_RE = re.compile(
-    r"(?<![A-Z0-9#.@])(?<![#@]\s)"
+    r"(?<![A-Z0-9#.@\-])(?<![#@]\s)"
     rf"(?:(?P<n1>{_CUENTA_P})\s*)?"
     r"(?:"
     rf"(?P<e>{_E})(?:{_JUNTA}(?:(?P<n2>{_CUENTA_P})\s*)?(?P<eg>{_G}))?"
@@ -277,10 +277,32 @@ def _juegos(m: re.Match[str]) -> list[JuegoEstribos]:
     return [juego("liga", m["n1"])]
 
 
+_PALABRA_RE = re.compile(r"[A-Z]+[.:]?")
+
+
+def _letra_tras_palabra(vista: str, m: re.Match[str]) -> bool:
+    """Una E o una G sola, separada de su «#» por un espacio o un salto de línea y con una palabra
+    antes en su renglón («TIPO E #4@20», «EJE E» / «#4@20»): es una letra de esa palabra, no una
+    cabeza de estribo (como «(TIPO E)», R24). Tras una pieza o una marca («4#3 E #2@20», «K-8 E
+    #3@20») o sola en su renglón («E» / «#3@15», R28) sí es cabeza."""
+    cabeza = "e" if m["e"] else "g" if m["g"] else None
+    if cabeza is None or m["n1"] or m["eg"] or m["ge"] or len(m[cabeza]) != 1:
+        return False
+    if vista[m.end(cabeza) : m.end(cabeza) + 1] not in (" ", "|"):
+        return False
+    inicio_linea = vista.rfind("|", 0, m.start()) + 1
+    antes = vista[inicio_linea : m.start()].split()
+    return bool(antes) and antes[-1] != "Y" and _PALABRA_RE.fullmatch(antes[-1]) is not None
+
+
 def _leer_estribos(vista: str, letrero: str) -> list[_Pieza]:
-    """Los juegos de estribos como piezas; una separación fuera de rango avisa el juego entero."""
+    """Los juegos de estribos como piezas; una separación fuera de rango avisa el juego entero.
+    Una E o G que es la letra de una palabra (``_letra_tras_palabra``) no es un juego: lo que le
+    sigue se lee o se avisa por su cuenta, nunca como estribo."""
     piezas = []
     for m in _ESTRIBOS_RE.finditer(vista):
+        if _letra_tras_palabra(vista, m):
+            continue
         a, b = m.start(), m.end()
         separaciones = [float(s) for s in (m["ext"], m["centro"], m["sep"]) if s]
         if all(_en_rango(s, _RANGO_ESTRIBOS) for s in separaciones):

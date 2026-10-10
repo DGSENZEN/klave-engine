@@ -42,10 +42,12 @@ from klave_engine.estructura.asociacion import (
     ARMADO_RE,
     Rechazo,
     asociar,
-    hoja_de,
+    hoja_y_llave,
     lo_lee_una_nota,
+    marca_en_rango,
     marca_en_texto,
-    sin_referencias,
+    marcas_en_nota,
+    nombra_varias,
 )
 from klave_engine.geometry.bbox import (
     BBox,
@@ -75,6 +77,12 @@ Source = Literal["cuadro", "detalle", "nota", "ia"]
 Metodo = Literal["fila", "pila", "cotas", "geometria", "llamada", "nota", "ia"]
 Campo = Literal["seccion", "longitudinales", "estribos", "parrillas"]
 CAMPOS: tuple[Campo, ...] = ("seccion", "longitudinales", "estribos", "parrillas")
+# A text's sheet: its name (``hoja``) and its unique key (``hoja_llave``).
+Sheet = Callable[[NormalizedEntity], tuple[str, str]]
+
+
+def _no_frames(e: NormalizedEntity) -> tuple[str, str]:
+    return e.source_file, f"{e.source_file}#"
 
 
 class ElementSpec(BaseModel):
@@ -92,6 +100,8 @@ class ElementSpec(BaseModel):
     # The reading itself, with its source (no confidence of its own):
     armado: Armado | None = None  # the parsed armado (rebar/stirrups/mesh are its renders)
     hoja: str = ""  # the sheet (frame code) it was read on; its file without frames
+    # The sheet's unique key (file and frame): two frames sharing a code are two sheets.
+    hoja_llave: str = ""
     metodo: Metodo = "nota"
     # The fields whose text the drawing has for this reading, read or not: an
     # AI reading never fills one of them (a text that failed to parse is an
@@ -302,9 +312,11 @@ def _read_associations(
 ) -> tuple[list[ElementSpec], list[str], list[Rechazo], int]:
     """The cuadro rows and the stacks ``estructura.asociacion`` gives each
     mark, read through the parser: (specs, the labels that define a mark,
-    the rejections, how many sheets have cuadro rows). A label that owns a
+    the rejections, how many cuadros had rows read). A label that owns a
     stack or a row is a definition, never a placement."""
     asociaciones, rechazos = asociar(entities, frames, config)
+    sheet = hoja_y_llave(frames)
+    by_id = {e.entity_id: e for e in entities}
     specs: list[ElementSpec] = []
     labels: list[str] = []
     for a in asociaciones:
@@ -317,6 +329,7 @@ def _read_associations(
                 source="cuadro" if row else "detalle",
                 metodo=a.via,
                 hoja=a.hoja,
+                hoja_llave=sheet(by_id[a.etiqueta_id])[1],
                 entidades=list(a.entidades),
                 source_text=f"{a.marca} · {' / '.join(a.textos)}",
                 confidence=0.95 if row else 0.75,
@@ -324,7 +337,7 @@ def _read_associations(
             )
         )
         labels.append(a.etiqueta_id)
-    tables = len({a.hoja for a in asociaciones if a.via == "fila"})
+    tables = len({a.cuadro for a in asociaciones if a.via == "fila"})
     return specs, labels, rechazos, tables
 
 
@@ -344,19 +357,36 @@ def _section_is_the_elements(content: str) -> bool:
 def _parse_annotations(
     texts: list[NormalizedEntity],
     config: TextPatternConfig,
-    hoja: Callable[[NormalizedEntity], str],
-) -> list[ElementSpec]:
+    sheet: Sheet,
+) -> tuple[list[ElementSpec], list[Rechazo]]:
     """Notes: a text that names its mark ("K-1 15x20 4#3 E#2@20") or its
     family ("DALA 15x30 4#3,E#2@20", "ARMEX 15X30"), read when it has a
-    section, bars or a mesh (``lo_lee_una_nota``: the association reports the
-    others as «sin lector»). A mark inside a reference ("VER CORTE C-2") is
-    not the note's. Bare armado lines are the association's, not a note's."""
+    section, bars, a mesh or stirrups the parser reads (``lo_lee_una_nota``:
+    the association reports the others as «sin lector»). A mark inside a
+    reference ("VER CORTE C-2") is not the note's. A note naming several marks
+    («K-1 Y K-2 15X20 4#3», «K-1 A K-4 …») is not read: it is a «varias_marcas»
+    rejection with the marks as written (R63, like a stack under such a label).
+    Bare armado lines are the association's, not a note's."""
     specs: list[ElementSpec] = []
+    rechazos: list[Rechazo] = []
     for text in texts:
         content = " ".join((text.text or "").split())
         if not content or not lo_lee_una_nota(content):
             continue
-        mark = marca_en_texto(sin_referencias(content), config)
+        hoja, llave = sheet(text)
+        marks = marcas_en_nota(content, config)
+        if nombra_varias(marks):
+            rechazos.append(
+                Rechazo(
+                    entidad_id=text.entity_id,
+                    texto=(text.text or "").strip(),
+                    hoja=hoja,
+                    motivo="varias_marcas",
+                    marcas=marks,
+                )
+            )
+            continue
+        mark = marks[0] if marks else None
         family = _family_in_text(content)
         if mark is not None:
             family = family or family_of_mark(mark)
@@ -366,7 +396,8 @@ def _parse_annotations(
                     family=family,
                     source="nota",
                     metodo="nota",
-                    hoja=hoja(text),
+                    hoja=hoja,
+                    hoja_llave=llave,
                     entidades=[text.entity_id],
                     source_text=content[:120],
                     confidence=0.8,
@@ -384,14 +415,15 @@ def _parse_annotations(
                     family=family,
                     source="nota",
                     metodo="nota",
-                    hoja=hoja(text),
+                    hoja=hoja,
+                    hoja_llave=llave,
                     entidades=[text.entity_id],
                     source_text=content[:120],
                     confidence=0.6,
                     **reading,
                 )
             )
-    return specs
+    return specs, rechazos
 
 
 # ------------------------------------------------------------------ assembly
@@ -408,7 +440,7 @@ def _sections_from_detail_geometry(
     config: TextPatternConfig,
     unit_to_m: float,
     detail_boxes: list[BBox],
-    hoja: Callable[[NormalizedEntity], str],
+    sheet: Sheet,
 ) -> list[ElementSpec]:
     """The detail convention without a cuadro: the mark sits right above a
     section drawn at real size (30×80 cm rectangle with its cotas). Only
@@ -476,7 +508,8 @@ def _sections_from_detail_geometry(
                 section_cm=(a, b),
                 source="detalle",
                 metodo="geometria",
-                hoja=hoja(text),
+                hoja=sheet(text)[0],
+                hoja_llave=sheet(text)[1],
                 entidades=[text.entity_id],
                 campos_con_texto=["seccion"],
                 source_text=f"{content} · sección dibujada {a}x{b} cm",
@@ -494,7 +527,7 @@ def _sections_from_section_callouts(
     texts: list[NormalizedEntity],
     config: TextPatternConfig,
     detail_boxes: list[BBox],
-    hoja: Callable[[NormalizedEntity], str],
+    sheet: Sheet,
 ) -> list[ElementSpec]:
     """Elevation details: the mark titles the drawing at its top-left and the
     section cuts are called out along it as "SECCIÓN 1" over "30X80". A bare
@@ -555,14 +588,14 @@ def _sections_from_section_callouts(
                 best = (score, mark, title)
         if best is None:
             continue
-        key = (best[1], hoja(best[2]))
+        key = (best[1], sheet(best[2])[1])
         found.setdefault(key, []).append(
             (int(label[1]), (int(match.group(1)), int(match.group(2))))
         )
         title_of.setdefault(key, best[2])
         cut_texts.setdefault(key, []).append(t.entity_id)
     specs: list[ElementSpec] = []
-    for (mark, sheet), cuts in found.items():
+    for (mark, llave), cuts in found.items():
         cuts.sort()
         largest = max(cuts, key=lambda c: c[1][0] * c[1][1])[1]
         listed = ", ".join(f"sección {n} {a}x{b}" for n, (a, b) in cuts)
@@ -571,7 +604,7 @@ def _sections_from_section_callouts(
             if len({c[1] for c in cuts}) > 1
             else []
         )
-        title = title_of[(mark, sheet)]
+        title = title_of[(mark, llave)]
         specs.append(
             ElementSpec(
                 mark=mark,
@@ -579,8 +612,9 @@ def _sections_from_section_callouts(
                 section_cm=largest,
                 source="detalle",
                 metodo="llamada",
-                hoja=sheet,
-                entidades=[title.entity_id, *cut_texts[(mark, sheet)]],
+                hoja=sheet(title)[0],
+                hoja_llave=llave,
+                entidades=[title.entity_id, *cut_texts[(mark, llave)]],
                 campos_con_texto=["seccion"],
                 avisos=aviso,
                 source_text=f"{mark} · {listed} (se toma la mayor)"[:120],
@@ -619,7 +653,7 @@ def _sections_from_detail_cotas(
     detail_boxes: list[BBox],
     widths_by_family: dict[str, int],
     cuadro_marks: list[str] | None = None,
-    hoja: Callable[[NormalizedEntity], str] = lambda e: e.source_file,
+    sheet: Sheet = _no_frames,
 ) -> list[ElementSpec]:
     """The section drawing beside a mark in a detail carries its cotas: a
     vertical one is the peralte, a horizontal one the width. With only the
@@ -707,7 +741,8 @@ def _sections_from_detail_cotas(
                 section_cm=section,
                 source="detalle",
                 metodo="cotas",
-                hoja=hoja(text),
+                hoja=sheet(text)[0],
+                hoja_llave=sheet(text)[1],
                 entidades=[text.entity_id],
                 campos_con_texto=["seccion"],
                 avisos=avisos,
@@ -754,6 +789,12 @@ def _merge_fields(chosen: ElementSpec, others: list[ElementSpec]) -> ElementSpec
         merged.entidades = _union(merged.entidades, other.entidades)
         merged.avisos = _union(merged.avisos, other.avisos)
     return merged
+
+
+def _same_sheet(a: ElementSpec, b: ElementSpec) -> bool:
+    """Two readings of the same sheet: by its unique key (a reader that does
+    not set one falls back to the sheet's name)."""
+    return (a.hoja_llave or a.hoja) == (b.hoja_llave or b.hoja)
 
 
 def _value_text(value: object) -> str:
@@ -809,16 +850,18 @@ def build_schedule_inventory(
     frames = frames or []
     if detail_boxes is None and frames:
         detail_boxes = [f.bbox for f in frames if f.kind == "excluded"]
-    hoja = hoja_de(frames)
+    sheet = hoja_y_llave(frames)
     texts = [e for e in entities if e.is_textual and e.text]
     specs, labels, rechazos, tables = _read_associations(entities, frames, config)
-    specs += _parse_annotations(texts, config, hoja)
+    notes, rechazos_de_notas = _parse_annotations(texts, config, sheet)
+    specs += notes
+    rechazos = rechazos + rechazos_de_notas
     inventory_cuadro_marks: list[str] = []
     if unit_to_m and detail_boxes:
-        specs += _sections_from_detail_geometry(entities, config, unit_to_m, detail_boxes, hoja)
+        specs += _sections_from_detail_geometry(entities, config, unit_to_m, detail_boxes, sheet)
     if detail_boxes or unit_to_m:
         callouts = (
-            _sections_from_section_callouts(texts, config, detail_boxes, hoja)
+            _sections_from_section_callouts(texts, config, detail_boxes, sheet)
             if detail_boxes
             else []
         )
@@ -831,7 +874,7 @@ def build_schedule_inventory(
             usual = {f: c.most_common(1)[0][0] for f, c in widths.items()}
             cuadro_marks: list[str] = []
             specs += _sections_from_detail_cotas(
-                entities, config, unit_to_m, detail_boxes or [], usual, cuadro_marks, hoja
+                entities, config, unit_to_m, detail_boxes or [], usual, cuadro_marks, sheet
             )
             inventory_cuadro_marks = cuadro_marks
     # Lectores por disciplina (cuadro de cancelería, tablero eléctrico…):
@@ -862,7 +905,7 @@ def build_schedule_inventory(
             (s for s in top if sections and s.section_cm == sections.most_common(1)[0][0]),
             top[0],
         )
-        same_sheet = [s for s in top if s is not chosen and s.hoja == chosen.hoja]
+        same_sheet = [s for s in top if s is not chosen and _same_sheet(s, chosen)]
         chosen = _merge_fields(chosen, same_sheet)
         disagreements = _disagreements(top, chosen)
         if disagreements:
@@ -880,7 +923,7 @@ def build_schedule_inventory(
     rows = [s for s in specs if s.metodo == "fila"]
     if rows:
         inventory.notes.append(
-            f"{len(rows)} fila(s) de cuadro de elementos leída(s) en {tables} hoja(s)."
+            f"{tables} cuadro(s) de elementos leído(s) del plano ({len(rows)} fila(s))."
         )
     if stacks:
         inventory.notes.append(
@@ -948,13 +991,43 @@ _AI_FIELDS: tuple[tuple[str, Campo | None], ...] = (
 )
 
 
+# The rejections that know whose text they are: a text two marks may claim, the
+# stack or note of several marks, a text that names its mark but nobody reads.
+_RECHAZOS_CON_MARCA = frozenset({"ambigua", "varias_marcas", "sin_lector"})
+_CAMPOS_DE_ARMADO: tuple[Campo, ...] = ("longitudinales", "estribos", "parrillas")
+
+
+def _rejection_names(r: Rechazo, mark: str) -> bool:
+    return any(m.upper() == mark or marca_en_rango(m, mark) for m in r.marcas)
+
+
+def _fields_with_text(inventory: ScheduleInventory, mark: str) -> set[Campo]:
+    """The fields of ``mark`` the drawing has text for: those of its readings
+    (read or not), and every armado field of a rejected text that names it — a
+    text nobody could give to it is still the drawing speaking of it (plus the
+    section when that text has one)."""
+    campos: set[Campo] = {
+        campo
+        for s in inventory.specs
+        if s.mark.upper() == mark and s.source != "ia"
+        for campo in s.campos_con_texto
+    }
+    for r in inventory.rechazos:
+        if r.motivo in _RECHAZOS_CON_MARCA and _rejection_names(r, mark):
+            campos.update(_CAMPOS_DE_ARMADO)
+            if _read_section(r.texto)[2]:
+                campos.add("seccion")
+    return campos
+
+
 def merge_external_specs(inventory: ScheduleInventory, specs: list[dict]) -> int:
     """Specs read elsewhere (the AI reading of the sheet images): every one is
     kept as a reading (``source="ia"``), and it fills a by-mark field only when
-    the view has nothing there and no drawing reading of that mark has text for
-    that field — an AI value never covers a text the parser could not read. A
-    mark the drawing does not define at all takes the AI reading (por
-    confirmar). Returns how many marks were completed."""
+    the view has nothing there and the drawing has no text for that field —
+    neither in a reading of the mark (read or not) nor in a rejected text that
+    names it. An AI value never covers a drawing text. A mark the drawing does
+    not define takes what the AI says of the other fields (por confirmar).
+    Returns how many marks were completed."""
     added = 0
     for raw in specs:
         try:
@@ -965,25 +1038,36 @@ def merge_external_specs(inventory: ScheduleInventory, specs: list[dict]) -> int
             spec.metodo = "ia"
         inventory.specs.append(spec)
         mark = spec.mark.upper()
+        with_text = _fields_with_text(inventory, mark)
         current = inventory.by_mark.get(mark)
+        new = current is None
         if current is None:
-            inventory.by_mark[mark] = spec.model_copy(deep=True)
-            added += 1
-            continue
-        with_text = {
-            campo
-            for s in inventory.specs
-            if s.mark.upper() == mark and s.source != "ia"
-            for campo in s.campos_con_texto
-        }
+            current = spec.model_copy(deep=True)
+            for field, _campo in _AI_FIELDS:
+                setattr(current, field, None)
         filled: list[str] = []
+        blocked: list[str] = []
         for field, campo in _AI_FIELDS:
             if getattr(current, field) is not None or getattr(spec, field) in (None, ""):
                 continue
             if campo is not None and campo in with_text:
-                continue  # the drawing has text for it: read, or reported as unread
+                blocked.append(field)  # the drawing has text for it: read, or reported
+                continue
             setattr(current, field, getattr(spec, field))
             filled.append(field)
+        if blocked:
+            current.avisos = _union(
+                current.avisos,
+                [
+                    f"{', '.join(blocked)}: el plano tiene texto (sin leer o sin marca segura); "
+                    f"la lectura IA no lo llena"
+                ],
+            )
+        if new:
+            if filled:
+                inventory.by_mark[mark] = current
+                added += 1
+            continue  # with nothing filled there is nothing the AI may say about this mark
         if filled:
             current.source_text = f"{current.source_text} + {spec.source_text}"[:120]
             current.avisos = _union(

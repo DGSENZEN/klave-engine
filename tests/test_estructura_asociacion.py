@@ -11,7 +11,14 @@ from ezdxf.enums import TextEntityAlignment
 from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.dxf.parser import DxfParser
-from klave_engine.estructura.asociacion import ARMADO_RE, ancla_texto, asociar, marca_en_texto
+from klave_engine.estructura.asociacion import (
+    ARMADO_RE,
+    ancla_texto,
+    asociar,
+    marca_en_rango,
+    marca_en_texto,
+    marcas_en_nota,
+)
 from klave_engine.estructura.textos import caja_de_texto
 
 
@@ -1099,8 +1106,10 @@ def test_texts_that_name_a_mark_are_read_or_reported(tmp_path):
         msp.add_text("E#2@15 VER CORTE C-2", height=0.10).set_placement((-0.2, 0.18))
         msp.add_text("4#3", height=0.10).set_placement((-0.2, 0.36))
         for x, texto in [
-            (10, "K-7 E#3@20"),  # sólo estribos: la nota no lo lee
-            (15, "K-8 E #3@20"),  # también con espacio: es estribo, no malla
+            # Sólo estribos: desde Task 7 (ronda 1) la nota los lee, con espacio también.
+            (10, "K-7 E#3@20"),
+            (15, "K-8 E #3@20"),
+            (17, "K-9 E#3@1S"),  # unos estribos que nadie lee: sin lector, con su marca
             (20, "CASTILLOS E#2@20 EN TODOS"),
             (30, "COLUMNAS: ESTRIBOS #3@15"),  # la nota lo lee como malla (y avisa)
             (35, "K-3 #4@20"),  # una malla con su marca: la nota la lee
@@ -1113,11 +1122,10 @@ def test_texts_that_name_a_mark_are_read_or_reported(tmp_path):
     ents = _dxf(tmp_path, build)
     asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
     assert {a.marca: a.textos for a in asoc} == {"K-1": ["4#3", "E#2@15 VER CORTE C-2"]}
-    assert sorted((r.motivo, r.texto) for r in rech) == [
-        ("sin_dueno", "2E#3@15 VER P-1"),
-        ("sin_lector", "CASTILLOS E#2@20 EN TODOS"),
-        ("sin_lector", "K-7 E#3@20"),
-        ("sin_lector", "K-8 E #3@20"),
+    assert sorted((r.motivo, r.texto, tuple(r.marcas)) for r in rech) == [
+        ("sin_dueno", "2E#3@15 VER P-1", ()),
+        ("sin_lector", "CASTILLOS E#2@20 EN TODOS", ()),
+        ("sin_lector", "K-9 E#3@1S", ("K-9",)),
     ]
 
 
@@ -2255,3 +2263,56 @@ def test_a_label_above_the_line_with_its_own_line_below_it_does_not_end_the_colu
                                 textos.append(("K-2", -0.55, -0.25, 0.13, _CEN, None))
                             asoc, _ = _leer_y_revisar(tmp_path, textos)
                             assert all(a.marca != "K-3" for a in asoc)
+
+
+@pytest.mark.parametrize(
+    "texto,marcas",
+    [
+        ("K-1 15X20 4#3 E#2@20", ["K-1"]),
+        ("K-1 Y K-2 15X20 4#3 E#2@20", ["K-1", "K-2"]),
+        ("K-1, K-2 15X20 4#3", ["K-1", "K-2"]),
+        ("K-1 A K-4 15X20 4#3", ["K-1 A K-4"]),
+        ("DE K-1 A K-4 15X20 4#3", ["DE K-1 A K-4"]),
+        ("K-1 A 4 15X20 4#3", ["K-1 A 4"]),
+        ("K-1 HASTA K-4 4#3", ["K-1 HASTA K-4"]),
+        ("K-1 15X20 4#3 IGUAL A K-2", ["K-1"]),  # una referencia no es otra marca
+        ("E#2@15 VER CORTE C-2", []),
+    ],
+)
+def test_the_marks_a_note_names(texto, marcas):
+    # Task 7 (ronda 1, R63): una nota con varias marcas no se lee; se reporta como se escribió.
+    assert marcas_en_nota(texto, TextPatternConfig()) == marcas
+
+
+@pytest.mark.parametrize(
+    "rango,marca,dentro",
+    [
+        ("K-1 A K-4", "K-2A", True),
+        ("K-1 A K-4", "K-4", True),
+        ("K-1 A K-4", "K-5", False),
+        ("K-1 A 4", "K-3", True),
+        ("DE K-10 A K-12", "K-11", True),
+        ("K-1 A K-4", "C-2", False),
+        ("K-1", "K-1", False),  # una marca sola no es un rango
+    ],
+)
+def test_a_mark_inside_a_written_range(rango, marca, dentro):
+    assert marca_en_rango(rango, marca) is dentro
+
+
+def test_cuadro_rows_name_their_cuadro(tmp_path):
+    def build(doc):
+        msp = doc.modelspace()
+        for y0 in (0.0, 5.0):
+            for x, titulo in ((0.0, "MARCA"), (0.5, "SECCION"), (1.2, "ARMADO")):
+                msp.add_text(titulo, height=0.1).set_placement((x, y0 + 0.18))
+            for x, texto in zip((0.0, 0.5, 1.2), (f"K-{int(y0) + 1}", "15X20", "4#3"), strict=True):
+                msp.add_text(texto, height=0.1).set_placement((x, y0))
+
+    ents = _dxf(tmp_path, build)
+    asoc, _ = asociar(ents, _one_frame(ents), TextPatternConfig())
+    assert (
+        len(asoc) == 2
+        and len({a.cuadro for a in asoc}) == 2
+        and None not in {a.cuadro for a in asoc}
+    )

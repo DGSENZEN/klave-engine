@@ -57,6 +57,7 @@ from pydantic import BaseModel, Field
 from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.text_patterns import TextPatternConfig, match_category
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
+from klave_engine.estructura.armado import parsear_armado
 from klave_engine.estructura.notas import leer_notas_con_renglones
 from klave_engine.estructura.textos import alto_de_texto, ancla_texto, caja_de_texto
 
@@ -67,8 +68,12 @@ __all__ = [
     "ancla_texto",
     "asociar",
     "hoja_de",
+    "hoja_y_llave",
     "lo_lee_una_nota",
+    "marca_en_rango",
     "marca_en_texto",
+    "marcas_en_nota",
+    "nombra_varias",
     "sin_referencias",
 ]
 
@@ -200,6 +205,8 @@ class Asociacion(BaseModel):
     textos: list[str]
     entidades: list[str]  # la entidad de cada elemento de ``textos`` (se repite en un MTEXT)
     via: Literal["pila", "fila"]
+    # De una fila: el cuadro al que pertenece (la primera celda de su renglón de títulos).
+    cuadro: str | None = None
 
 
 class Rechazo(BaseModel):
@@ -211,9 +218,10 @@ class Rechazo(BaseModel):
     hoja: str
     # ambigua: dos o más marcas lo pueden reclamar y no se puede decidir de cuál es (``marcas``);
     # otra_familia: está en la pila de una marca pero nombra otra familia; sin_lector: nombra su
-    # marca o su familia pero ningún lector lo lee (sólo estribos, p. ej.); varias_marcas: es de
-    # la pila de una etiqueta con varias marcas («K-1 Y K-2» → [K-1, K-2]) o un rango («K-1 A K-4»
-    # → [«K-1 A K-4»], como se escribió), que E0 no lee; sin_dueno: nada lo lee.
+    # marca (en ``marcas``) o su familia pero ningún lector lo lee («K-7 E#3@1S»); varias_marcas:
+    # es de la pila de una etiqueta con varias marcas («K-1 Y K-2» → [K-1, K-2]) o un rango («K-1
+    # A K-4» → [«K-1 A K-4»], como se escribió), o una nota que nombra varias, que E0 no lee;
+    # sin_dueno: nada lo lee.
     motivo: Literal["ambigua", "otra_familia", "sin_lector", "varias_marcas", "sin_dueno"]
     marcas: list[str] = Field(default_factory=list)
 
@@ -309,8 +317,9 @@ def sin_referencias(texto: str) -> str:
 
 def lo_lee_una_nota(texto: str) -> bool:
     """Si la lectura de notas (``detection.schedules``) toma ``texto``: tiene una sección (dos
-    lados de 8 a 400 cm), varillas longitudinales o una malla («K-3 #4@20»). Un texto con sólo
-    estribos («K-7 E#3@20») no lo lee nadie: es un rechazo «sin_lector»."""
+    lados de 8 a 400 cm), varillas longitudinales, una malla («K-3 #4@20») o un juego de
+    estribos que el parser lee («K-7 E#3@20»). Lo que no («K-7 E#3@1S», «K-7 @20») no lo lee
+    nadie: es un rechazo «sin_lector», con la marca que nombra."""
     piezas = [m.span() for m in _PIEZA.finditer(texto)]
     for m in _SECCION.finditer(texto):
         if any(a <= m.start() < b for a, b in piezas):
@@ -320,9 +329,78 @@ def lo_lee_una_nota(texto: str) -> bool:
             return True
     # Primero se quitan los estribos y en lo que queda se busca una malla o varillas.
     estribos = _ESTRIBOS.search(texto)
+    resto = texto
     if estribos is not None:
-        texto = texto[: estribos.start()] + texto[estribos.end() :]
-    return _MALLA.search(texto) is not None or _LONGITUDINALES.search(texto) is not None
+        resto = texto[: estribos.start()] + texto[estribos.end() :]
+    if _MALLA.search(resto) is not None or _LONGITUDINALES.search(resto) is not None:
+        return True
+    # Sólo estribos: los lee la nota si el parser los lee (la familia no cambia los estribos).
+    return bool(parsear_armado([texto], "castillo").estribos)
+
+
+def marcas_en_nota(texto: str, config: TextPatternConfig) -> list[str]:
+    """Las marcas que nombra un texto sin contar sus referencias, en orden y sin repetir: cada una
+    normalizada (``marca_en_texto``) y un rango como se escribió («K-1 A K-4», «K-1 A 4», «DE
+    K-1 A K-4», «K-1 HASTA K-4»): no se adivinan las marcas de en medio."""
+    limpio = " ".join(sin_referencias(texto).upper().split())
+    halladas = [m.span() for m in _MARCA_RE.finditer(limpio)]
+    for _, fin in list(halladas):
+        numero = _FIN_DE_RANGO.match(limpio, fin)
+        if numero is not None and not any(
+            a < numero.end(1) and numero.start(1) < b for a, b in halladas
+        ):
+            halladas.append(numero.span(1))
+    halladas.sort()
+    if not halladas:
+        return []
+    grupos: list[list[tuple[int, int]]] = [[halladas[0]]]
+    for anterior, actual in zip(halladas, halladas[1:], strict=False):
+        entre = limpio[anterior[1] : actual[0]]
+        if _ENTRE_MARCAS.fullmatch(entre) and _CONECTOR_DE_RANGO.search(entre):
+            grupos[-1].append(actual)
+        else:
+            grupos.append([actual])
+    piezas: list[str] = []
+    for grupo in grupos:
+        a, b = grupo[0][0], grupo[-1][1]
+        if len(grupo) > 1:
+            abre = re.search(r"(?:DE|DEL|DESDE)\s+$", limpio[:a])
+            piezas.append(limpio[abre.start() if abre else a : b])
+        elif _MARCA_RE.fullmatch(limpio[a:b]):
+            piezas.append(marca_en_texto(limpio[a:b], config) or limpio[a:b])
+    return list(dict.fromkeys(piezas))
+
+
+def nombra_varias(marcas: list[str]) -> bool:
+    """Si lo que nombra un texto (``marcas_en_nota``) es más de una marca: una lista o un rango."""
+    return len(marcas) > 1 or any(_es_de_varias(m) for m in marcas)
+
+
+def _numero_de_marca(marca: str) -> tuple[str, int] | None:
+    m = _MARCA_RE.fullmatch(" ".join(marca.upper().split()))
+    if m is None or m.group(2) is None:
+        return None
+    return m.group(1), int(m.group(2))
+
+
+def marca_en_rango(rango: str, marca: str) -> bool:
+    """Si ``marca`` cabe en un rango escrito («K-1 A K-4» o «K-1 A 4» → K-1, K-2A, K-3, K-4…):
+    misma letra y número entre los dos extremos. Sirve para no dejar que otra lectura cubra lo
+    que el plano dice para todo el rango; nunca para leerlo."""
+    limpio = " ".join(rango.upper().split())
+    extremos = [m for m in _MARCA_RE.finditer(limpio) if m.group(2) is not None]
+    propia = _numero_de_marca(marca)
+    if not extremos or propia is None or not _RANGO.search(limpio):
+        return False
+    letra, desde = extremos[0].group(1), int(extremos[0].group(2))
+    final = _FIN_DE_RANGO.search(limpio, extremos[0].end())
+    if len(extremos) > 1 and extremos[-1].group(1) == letra:
+        hasta = int(extremos[-1].group(2))
+    elif final is not None:
+        hasta = int(re.sub(r"\D.*", "", final.group(1)))
+    else:
+        return False
+    return propia[0] == letra and min(desde, hasta) <= propia[1] <= max(desde, hasta)
 
 
 def _clase(
@@ -486,6 +564,18 @@ def hoja_de(frames: list[SheetFrame]) -> Callable[[NormalizedEntity], str]:
     return lambda e: llave_y_hoja(e)[1]
 
 
+def hoja_y_llave(frames: list[SheetFrame]) -> Callable[[NormalizedEntity], tuple[str, str]]:
+    """La hoja de un texto (su nombre, ``hoja_de``) y una llave única de ella (archivo y marco):
+    dos marcos con el mismo código, o dos archivos sin marcos, son hojas distintas."""
+    llave_y_hoja = _hoja_de(frames)
+
+    def hoja(e: NormalizedEntity) -> tuple[str, str]:
+        (archivo, marco), nombre = llave_y_hoja(e)
+        return nombre, f"{archivo}#{marco or ''}"
+
+    return hoja
+
+
 def _hoja_de(frames: list[SheetFrame]) -> Callable[[NormalizedEntity], tuple[tuple, str]]:
     """La hoja de un texto: el marco más chico de su archivo que contiene su ancla (su código, o
     su id si no tiene); sin marco, el archivo. Devuelve también una llave única de esa hoja."""
@@ -549,8 +639,9 @@ def _es_cabeza(tramo: list[_Texto], config: TextPatternConfig) -> bool:
 
 def _filas_de_cuadros(
     textos: list[_Texto], config: TextPatternConfig
-) -> list[tuple[_Texto, str, list[_Texto]]]:
-    """Las filas de los cuadros con títulos: ``(celda de la marca, marca, demás celdas)``.
+) -> list[tuple[_Texto, str, list[_Texto], str]]:
+    """Las filas de los cuadros con títulos: ``(celda de la marca, marca, demás celdas, cuadro)``,
+    donde ``cuadro`` es la primera celda de su renglón de títulos.
 
     Como ``detection.schedules``: un renglón de títulos abre el cuadro; cada renglón de abajo pone
     sus textos en la columna cuyo título le queda más cerca (a lo más media separación de
@@ -558,11 +649,14 @@ def _filas_de_cuadros(
     primera que aparezca); el cuadro acaba en un renglón sin marca o tras un hueco de más de
     cuatro renglones."""
     renglones = _renglones(textos)
-    filas: list[tuple[_Texto, str, list[_Texto]]] = []
+    filas: list[tuple[_Texto, str, list[_Texto], str]] = []
     for i, renglon in enumerate(renglones):
         for cabeza in _tramos(renglon):
             if _es_cabeza(cabeza, config):
-                filas += _filas_bajo(cabeza, renglones[i + 1 :], config)
+                filas += [
+                    (etiqueta, marca, celdas, cabeza[0].id)
+                    for etiqueta, marca, celdas in _filas_bajo(cabeza, renglones[i + 1 :], config)
+                ]
     return filas
 
 
@@ -1667,7 +1761,12 @@ def asociar(
 
 
 def _asociacion(
-    etiqueta: _Texto, marca: str, hoja: str, textos: list[_Texto], via: Literal["pila", "fila"]
+    etiqueta: _Texto,
+    marca: str,
+    hoja: str,
+    textos: list[_Texto],
+    via: Literal["pila", "fila"],
+    cuadro: str | None = None,
 ) -> Asociacion:
     renglones = [(t.id, r) for t in textos for r in t.renglones]
     return Asociacion(
@@ -1677,6 +1776,7 @@ def _asociacion(
         textos=[r for _, r in renglones],
         entidades=[i for i, _ in renglones],
         via=via,
+        cuadro=cuadro,
     )
 
 
@@ -1707,13 +1807,13 @@ def _asociar_hoja(
         locales = por_giro[giro]
         por_id = {t.id: t for t in locales}
         de_filas: set[str] = set()
-        for etiqueta, marca, celdas in _filas_de_cuadros(locales, config):
+        for etiqueta, marca, celdas, cuadro in _filas_de_cuadros(locales, config):
             de_filas.add(etiqueta.id)
             de_filas.update(c.id for c in celdas)
             duenos += [c.e for c in celdas]
             # Una fila con armado, o sólo con su sección («K-2 | 20X30»): también define la marca.
             if any(ARMADO_RE.search(c.texto) or _SECCION.search(c.texto) for c in celdas):
-                asociaciones.append(_asociacion(etiqueta, marca, hoja, celdas, "fila"))
+                asociaciones.append(_asociacion(etiqueta, marca, hoja, celdas, "fila", cuadro))
         reparto = _pilas(locales, de_filas)
         for renglon_id, marcas in reparto.ambiguos.items():
             rechazados.add(renglon_id)
@@ -1758,7 +1858,7 @@ def _asociar_hoja(
                 )
             )
 
-    rechazos += _sin_dueno(grupo, hoja, clases, duenos, rechazados)
+    rechazos += _sin_dueno(grupo, hoja, clases, duenos, rechazados, config)
     return asociaciones, rechazos
 
 
@@ -1768,10 +1868,12 @@ def _sin_dueno(
     clases: dict[str, tuple[_Clase, str | None]],
     duenos: list[NormalizedEntity],
     rechazados: set[str],
+    config: TextPatternConfig,
 ) -> list[Rechazo]:
     """Los textos de armado que nadie lee: los renglones sin pila ni fila (sin dueño) y los que
-    nombran su marca o su familia sin nada que la nota lea (sin lector). Un texto dibujado dos
-    veces encima de sí mismo es del dueño de su copia."""
+    nombran su marca o su familia sin nada que la nota lea (sin lector, con las marcas que nombra:
+    nadie más puede cubrir lo que el plano dice de ellas). Un texto dibujado dos veces encima de
+    sí mismo es del dueño de su copia."""
     de_alguien = {e.entity_id for e in duenos}
     copias: dict[str, list[tuple[float, float]]] = defaultdict(list)
     for e in duenos:
@@ -1788,8 +1890,18 @@ def _sin_dueno(
         limite = _DUPLICADO * alto_de_texto(e)
         if any(math.hypot(x - cx, y - cy) <= limite for cx, cy in copias.get(texto, [])):
             continue
-        motivo: Literal["sin_lector", "sin_dueno"] = (
-            "sin_lector" if clase == "sin_lector" else "sin_dueno"
-        )
-        huerfanos.append(Rechazo(entidad_id=e.entity_id, texto=texto, hoja=hoja, motivo=motivo))
+        if clase == "sin_lector":
+            huerfanos.append(
+                Rechazo(
+                    entidad_id=e.entity_id,
+                    texto=texto,
+                    hoja=hoja,
+                    motivo="sin_lector",
+                    marcas=marcas_en_nota(texto, config),
+                )
+            )
+        else:
+            huerfanos.append(
+                Rechazo(entidad_id=e.entity_id, texto=texto, hoja=hoja, motivo="sin_dueno")
+            )
     return huerfanos

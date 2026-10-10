@@ -3,6 +3,7 @@
 import ezdxf
 import pytest
 from ezdxf.enums import TextEntityAlignment
+from klave_engine.costing.sintesis import firma
 from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.results import DetectionType, make_detection
 from klave_engine.detection.schedules import (
@@ -371,3 +372,151 @@ def test_section_callouts_of_two_sheets_are_two_readings():
     lecturas = {(s.hoja, s.metodo, s.section_cm) for s in inv.specs if s.mark == "CTA-16"}
     assert lecturas == {("ES-500", "llamada", (30, 80)), ("ES-501", "llamada", (30, 100))}
     assert any("no coinciden" in a for a in inv.by_mark["CTA-16"].avisos)
+
+
+# ------------------------------------------------- Task 7, ronda 1
+
+
+def _ia(mark, **campos):
+    return {"mark": mark, "family": "castillo", "source": "ia", "source_text": "IA",
+            "confidence": 0.5, **campos}  # fmt: skip
+
+
+def _notas(tmp_path, textos, nombre="notas.dxf"):
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    for i, texto in enumerate(textos):
+        msp.add_text(texto, height=0.2).set_placement((0, i * 5.0))
+    path = tmp_path / nombre
+    doc.saveas(path)
+    return DxfParser().parse_file(path).entities
+
+
+def test_a_marked_stirrups_only_note_is_read(tmp_path):
+    # Antes «K-7 E#3@20» era «sin lector» y la IA llenaba los estribos de K-7 con los suyos.
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-7 E#3@20", "K-7 20X30"]), frames=_frame())
+    k7 = inv.by_mark["K-7"]
+    assert (k7.section_cm, k7.stirrups) == ((20, 30), "E#3@20") and inv.rechazos == []
+    merge_external_specs(inv, [_ia("K-7", stirrups="E#2@20")])
+    assert inv.by_mark["K-7"].stirrups == "E#3@20"
+
+
+def test_ia_never_covers_a_text_nobody_reads(tmp_path):
+    # «sin lector»: el texto nombra a K-7 pero sus estribos no se leen; la IA no los cubre.
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-7 E#3@1S", "K-7 20X30"]), frames=_frame())
+    assert [(r.motivo, r.marcas) for r in inv.rechazos] == [("sin_lector", ["K-7"])]
+    merge_external_specs(inv, [_ia("K-7", stirrups="E#2@20", rebar="4#3")])
+    k7 = inv.by_mark["K-7"]
+    assert (k7.stirrups, k7.rebar) == (None, None) and k7.section_cm == (20, 30)
+    assert any("la lectura IA no lo llena" in a for a in k7.avisos)
+    assert any(s.source == "ia" and s.mark == "K-7" for s in inv.specs)
+
+
+def test_ia_never_covers_a_text_nobody_reads_for_a_mark_without_readings(tmp_path):
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-9 E#3@1S"]), frames=_frame())
+    merge_external_specs(inv, [_ia("K-9", stirrups="E#2@20", section_cm=(15, 15))])
+    k9 = inv.by_mark["K-9"]
+    assert (k9.section_cm, k9.stirrups, k9.source) == ((15, 15), None, "ia")
+    inv2 = build_schedule_inventory(_notas(tmp_path, ["K-9 E#3@1S"], "b.dxf"), frames=_frame())
+    merge_external_specs(inv2, [_ia("K-9", stirrups="E#2@20")])
+    assert "K-9" not in inv2.by_mark  # nada que la IA pueda decir de K-9
+
+
+def test_ia_never_covers_an_ambiguous_text(tmp_path):
+    # «6#4» a la misma distancia de K-1 (debajo) y de K-2 (encima): ambiguo entre las dos.
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    for marca, y in (("K-1", 0.0), ("K-2", 0.40)):
+        msp.add_text(marca, height=0.13).set_placement(
+            (0.0, y), align=TextEntityAlignment.BOTTOM_CENTER
+        )
+    msp.add_text("6#4", height=0.10).set_placement((-0.05, 0.215))
+    doc.saveas(tmp_path / "amb.dxf")
+    inv = build_schedule_inventory(
+        DxfParser().parse_file(tmp_path / "amb.dxf").entities, frames=_frame()
+    )
+    assert [(r.motivo, sorted(r.marcas)) for r in inv.rechazos] == [("ambigua", ["K-1", "K-2"])]
+    merge_external_specs(inv, [_ia("K-1", rebar="4#3", section_cm=(15, 15))])
+    assert (inv.by_mark["K-1"].rebar, inv.by_mark["K-1"].section_cm) == (None, (15, 15))
+
+
+@pytest.mark.parametrize(
+    "etiqueta,marca_ia,marcas",
+    [("K-1 Y K-2", "K-2", ["K-1", "K-2"]), ("K-1 A K-4", "K-3", ["K-1 A K-4"])],
+)
+def test_ia_never_covers_the_stack_of_several_marks(tmp_path, etiqueta, marca_ia, marcas):
+    inv = build_schedule_inventory(
+        _stack_entities(tmp_path, etiqueta, ["4#3", "E#2@15"]), frames=_frame()
+    )
+    assert {(r.motivo, tuple(r.marcas)) for r in inv.rechazos} == {("varias_marcas", tuple(marcas))}
+    merge_external_specs(inv, [_ia(marca_ia, rebar="6#4", stirrups="E#2@20", section_cm=(15, 15))])
+    k = inv.by_mark[marca_ia]
+    assert (k.rebar, k.stirrups, k.section_cm) == (None, None, (15, 15))
+
+
+@pytest.mark.parametrize(
+    "nota,marcas",
+    [
+        ("K-1 Y K-2 15X20 4#3 E#2@20", ["K-1", "K-2"]),
+        ("K-1, K-2 15X20 4#3", ["K-1", "K-2"]),
+        ("K-1 A K-4 15X20 4#3", ["K-1 A K-4"]),
+        ("DE K-1 A K-4 15X20 4#3", ["DE K-1 A K-4"]),
+        ("K-1 A 4 15X20 4#3", ["K-1 A 4"]),
+    ],
+)
+def test_a_note_naming_several_marks_is_reported_not_read(tmp_path, nota, marcas):
+    # R63: como la pila de una etiqueta de varias marcas, la nota no se lee (antes se leía como
+    # de K-1 sola, sin aviso) y sus marcas quedan cubiertas: la IA no llena lo que la nota dice.
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    assert not [s for s in inv.specs if s.mark.startswith("K-")]
+    assert [(r.motivo, r.marcas, r.texto) for r in inv.rechazos] == [
+        ("varias_marcas", marcas, nota)
+    ]
+    merge_external_specs(inv, [_ia("K-2", rebar="6#4", section_cm=(20, 20))])
+    assert "K-2" not in inv.by_mark  # sección y armado: los dice la nota
+
+
+def test_two_frames_with_the_same_code_are_two_sheets(tmp_path):
+    def build(msp):
+        msp.add_text("K-9 20X40", height=0.2).set_placement((0, 0))
+        msp.add_text("K-9 4#3", height=0.2).set_placement((100, 0))
+
+    frames = [
+        SheetFrame(frame_id="a", bbox=(-50.0, -50.0, 50.0, 50.0), code="ES-200"),
+        SheetFrame(frame_id="b", bbox=(50.0, -50.0, 150.0, 50.0), code="ES-200"),
+    ]
+    inv = build_schedule_inventory(_entities(tmp_path, build), frames=frames)
+    lecturas = [s for s in inv.specs if s.mark == "K-9"]
+    assert {s.hoja for s in lecturas} == {"ES-200"} and len({s.hoja_llave for s in lecturas}) == 2
+    assert inv.by_mark["K-9"].rebar is None  # otra hoja, aunque se llame igual: no se junta
+
+
+def test_two_files_without_frames_are_two_sheets(tmp_path):
+    ents = _notas(tmp_path, ["K-9 20X40"], "a.dxf") + _notas(tmp_path, ["K-9 4#3"], "b.dxf")
+    inv = build_schedule_inventory(ents)
+    assert len({s.hoja for s in inv.specs if s.mark == "K-9"}) == 2
+    assert (inv.by_mark["K-9"].section_cm, inv.by_mark["K-9"].rebar) == ((20, 40), None)
+
+
+def test_tables_found_counts_cuadros(tmp_path):
+    def build(msp):
+        for y0 in (0.0, 20.0):
+            for col, title in enumerate(["MARCA", "SECCION", "ARMADO", "ESTRIBOS"]):
+                msp.add_text(title, height=0.25).set_placement((col * 3, y0 + 10))
+            marca = "K-1" if y0 == 0.0 else "K-2"
+            for col, value in enumerate([marca, "15x20", "4#3", "E#2@20"]):
+                msp.add_text(value, height=0.25).set_placement((col * 3, y0 + 9.5))
+
+    inv = build_schedule_inventory(_entities(tmp_path, build), frames=_frame())
+    assert inv.tables_found == 2  # dos cuadros en una sola hoja
+    assert "2 cuadro(s) de elementos leído(s) del plano (2 fila(s))." in inv.notes
+
+
+def test_every_bar_group_reaches_the_variant_key(tmp_path):
+    # De la pila a la firma de la variante: «4#5+2#4» entero (antes llegaba «4#5»).
+    ents = _stack_entities(tmp_path, "K-6", ["20x30 4#5+2#4", "2E#3@15"])
+    inv = build_schedule_inventory(ents)
+    tag = make_detection("d1", DetectionType.column_tag, "K-6", (0, 0, 1, 1), 0.8, [], "m", [])
+    assert apply_schedule([tag], inv, meters_factor=1.0) == 1
+    assert tag.properties["spec_rebar"] == "4#5+2#4"
+    assert firma(tag, 1.0)["armado"] == "4#5+2#4"
