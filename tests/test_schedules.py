@@ -1209,3 +1209,61 @@ def test_a_spaced_suffix_before_a_section_is_ambiguous(tmp_path, nota, marca_ia)
     )
     k = inv.by_mark.get(marca_ia)
     assert k is None or (k.section_cm, k.rebar) == (None, None)
+
+
+# --------------------------------------------------- Tarea 8, ronda 3 (R91–R94)
+
+
+@pytest.mark.parametrize(
+    "nota,marca,longitudinales,estribos",
+    [
+        ("C-1, 8 PZAS #6 E#3@20", "C-1", "8#6", "E#3@20"),  # R91: no es [C-1, C-8]
+        ('K-1, 4 VARS 3/8" E 1/4" @ 15', "K-1", "4#3", "E#2@15"),  # R91: no es [K-1, K-4]
+        ("K-1 4 VARS. N° 3", "K-1", "4#3", None),  # R91: una nota sin «#» se lee
+        ("K-1 4 VARILLAS DEL No. 3", "K-1", "4#3", None),
+        ('K-1 4 VARS 3/8"', "K-1", "4#3", None),
+        ("V-4 20X40 V4#4 E#3@15", "V-4", "4#4", "E#3@15"),  # R93: no se borra «V4» de «V4#4»
+        ("ZA-3 4#4 E#3@20", "ZA-3", "4#4", "E#3@20"),  # R94: una marca de zapata del detector
+        ("Z-100A 4#3", "Z-100A", "4#3", None),
+    ],
+)
+def test_a_note_in_the_parsers_vocabulary_is_read(tmp_path, nota, marca, longitudinales, estribos):
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    assert [(s.mark, s.rebar, s.stirrups) for s in inv.specs] == [(marca, longitudinales, estribos)]
+    assert inv.rechazos == []
+    merge_external_specs(inv, [_ia(marca, rebar="6#6")], C)
+    assert inv.by_mark[marca].rebar == longitudinales
+
+
+def test_a_range_end_followed_by_a_word_is_not_a_range(tmp_path):
+    # R91: «K-1 A 40 CENTIMETROS» no es el rango K-1…K-40.
+    inv = build_schedule_inventory(
+        _notas(tmp_path, ["K-1 A 40 CENTIMETROS E#3@1S"]), frames=_frame()
+    )
+    assert [r.marcas for r in inv.rechazos] == [["K-1", "K-1A", "K-1-A"]]
+
+
+@pytest.mark.parametrize("nota", ["K-1 4-#3", "K-1 4) #3"])
+def test_a_count_with_a_dash_is_not_a_note_number(tmp_path, nota):
+    # R93: en «K-1 4-#3» el «4-» es la cuenta de la varilla, no el número de una nota que se borra.
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    assert [(s.mark, s.rebar, s.avisos) for s in inv.specs] == [("K-1", "4#3", [])]
+    merge_external_specs(inv, [_ia("K-1", rebar="6#6")], C)
+    assert inv.by_mark["K-1"].rebar == "4#3"
+
+
+@pytest.mark.parametrize("nota", ["T1-1: E#3@1S", "T1-1 (E#3@1S)"])
+def test_a_compound_mark_is_consumed_by_the_grammar(tmp_path, nota):
+    # R91: «T1-1» es una marca (la de la gramática, no la de ``MARCA_RE``): el texto sólo dice
+    # estribos.
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    merge_external_specs(inv, [_ia("T1-1", rebar="6#6", stirrups="E#2@20", family="trabe")], C)
+    k = inv.by_mark["T1-1"]
+    assert (k.rebar, k.stirrups) == ("6#6", None)
+
+
+def test_an_unread_eighth_is_quoted_as_written(tmp_path):
+    # R92: la cita es lo que dice el plano, nunca lo que el parser se escribió («#3» por «NO. 3»).
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-1 15X15 NO. 3"]), frames=_frame())
+    (s,) = inv.specs
+    assert any("NO. 3" in a for a in s.avisos) and "longitudinales" in s.campos_con_texto

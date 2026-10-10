@@ -5,6 +5,12 @@ from functools import lru_cache
 
 from pydantic import BaseModel, Field
 
+# The marks the foundation detectors place (R94): one source for the detectors and
+# for the mark grammar (``estructura.marcas``), which reads every mark a detector
+# can place. Z-1, ZC-2, ZA-3, ZCM-100, Z-100A: zapatas; P-4: pilotes.
+FOOTING_MARK_PATTERN = r"^Z(?:C|A|CM)?-?\d{1,3}[A-Z]?$"
+PILE_MARK_PATTERN = r"^P-?\d{1,2}[A-Z]?$"
+
 
 class TextPatternConfig(BaseModel):
     """Default patterns cover both English and Spanish (Mexican) conventions:

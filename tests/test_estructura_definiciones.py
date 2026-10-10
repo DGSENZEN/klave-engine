@@ -202,8 +202,9 @@ def test_a_block_by_another_marks_reading_keeps_the_ai_out(tmp_path):
     merge_external_specs(inv, [_ia("T-11", rebar="6#4", family="trabe")], C)
     defs, _ = construir_definiciones(inv, C)
     assert defs["T1-1"].longitudinales.valor[0].cantidad == 4
-    t11 = defs["T-11"].longitudinales
-    assert t11.ilegible and t11.fuente == "nota" and t11.alternativas[0].fuente == "ia"
+    # R90: el texto de T1-1 no nombra a T-11: no le da un dato ilegible; sólo deja fuera a la IA.
+    assert defs["T-11"].longitudinales is None
+    assert any("no se toma" in a and "T1-1 4#3" in a for a in defs["T-11"].avisos)
 
 
 def test_a_rejected_stack_line_blocks_from_the_detail(tmp_path):
@@ -832,3 +833,54 @@ def test_the_same_blocking_text_counts_once_whatever_the_order():
         avisos: list[str] = []
         _sin_leer(orden, [], datos, avisos)
         assert [d.ilegible for d in datos["estribos"]] == [True] and avisos == []
+
+
+# ------------------------------------------------------- Tarea 8, ronda 3 (R90–R94)
+
+
+@pytest.mark.parametrize(
+    "otro",
+    [
+        "CORTE T1-1 E#3@1S",  # un título
+        "T1-1 Y T1-2 E#3@1S",  # una lista
+        "T1-1 A T1-3 30X60 4#5",  # un rango
+    ],
+)
+@pytest.mark.parametrize("con_ia", [False, True])
+def test_a_text_that_names_another_mark_never_feeds_this_one(tmp_path, otro, con_ia):
+    # R90: sólo la gramática dice de quién es un texto; la llave suelta (T-11 ≈ T1-1) sólo
+    # bloquea a la IA, nunca da un dato ilegible ni un conflicto en otra marca.
+    inv = _notas_en_hojas(tmp_path, [("T-11 20X40 4#3", "ES-100"), (otro, "ES-100")])
+    if con_ia:
+        merge_external_specs(
+            inv, [_ia("T-11", stirrups="E#2@20", section_cm=(25, 25), family="trabe")], C
+        )
+    t11 = construir_definiciones(inv, C)[0]["T-11"]
+    for campo in ("seccion_cm", "longitudinales"):
+        assert _limpio(getattr(t11, campo))
+    assert t11.estribos is None or not t11.estribos.ilegible
+    if con_ia and "E#3" in otro:
+        assert t11.estribos is None and any("no se toma" in a for a in t11.avisos)
+
+
+def test_a_title_of_a_longer_mark_never_feeds_the_shorter(tmp_path):
+    inv = build_schedule_inventory(
+        _notas(tmp_path, ["K-2 15X20 4#3", "DET. K-2A E#3@1S"]), frames=_frame()
+    )
+    k2 = construir_definiciones(inv, C)[0]["K-2"]
+    assert k2.estribos is None and _limpio(k2.seccion_cm)
+
+
+@pytest.mark.parametrize(
+    "nota,campo",
+    [
+        ("K-1 DE 15 CM 4#3 E#2@20", "seccion_cm"),  # R92: «DE 15 CM» puede ser la sección
+        ("K-1 15X15 N° 3 E#2@15", "longitudinales"),  # R92: la cita es «N° 3», entera
+    ],
+)
+def test_an_unread_residue_claims_what_it_could_be(tmp_path, nota, campo):
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    merge_external_specs(inv, [_ia("K-1", section_cm=(25, 25), rebar="6#4")], C)
+    k1 = construir_definiciones(inv, C)[0]["K-1"]
+    dato = getattr(k1, campo)
+    assert dato.ilegible and [a.fuente for a in dato.alternativas] == ["ia"]

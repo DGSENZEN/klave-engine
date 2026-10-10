@@ -39,8 +39,13 @@ from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from typing import Literal
 
-from klave_engine.detection.text_patterns import TextPatternConfig
-from klave_engine.estructura.armado import sin_cuentas_de_varillas
+from klave_engine.detection.text_patterns import (
+    FOOTING_MARK_PATTERN,
+    PILE_MARK_PATTERN,
+    TextPatternConfig,
+)
+from klave_engine.estructura._armado_texto import CONSUMIDO
+from klave_engine.estructura.armado import sin_armado
 
 _PREFIJOS = "K|C|T|COL|CT|CTA|TB|ZC|ZCM|Z|D|P|MC|CE|CR"
 
@@ -82,16 +87,16 @@ _ETIQUETA_ESPACIADA = re.compile(
 # Una letra suelta tras una marca («K-15 A 4#3», R78): puede ser su sufijo (K-15A) o no.
 _LETRA_SUELTA = re.compile(r"\s+([A-Z])(?=$|[\s:;,()=\"])")
 # Lo que sigue a esa letra y la hace un conector («K-1 A K-4», «K-1 A 4», «K-1 Y K-2»).
-# El número que cierra un rango o sigue una lista («K-1 A 4», «K-1, 2 Y 3», R85): un entero sin
-# unidad (M, MTS, CM), sin «X», «#», «@», «Ø» ni decimales detrás («K-1 A 3.00 M», «C-1 A 20 CM»,
-# «K-15 A 20X20» no son rangos). Un sufijo de letra («4A») sí, nunca la M de los metros.
+# El número que cierra un rango o sigue una lista («K-1 A 4», «K-1, 2 Y 3», R85, R91): un entero
+# (con la letra de su variante, nunca la M de los metros) al que le sigue el fin, una puntuación,
+# un conector u otra pieza con cifras (armado, ya enmascarado por el parser, o una sección);
+# nunca una palabra («8 PZAS», «4 VARS», «20 CM», «40 CENTIMETROS», «3 ML») ni un decimal.
 _NUMERO_DE_MARCA = (
     r"(\d{1,2}(?:[A-LN-Z](?![A-Z]))?)"
-    r"(?!\d|[.,]\d|\s*(?:M|MTS?|CMS?|METROS)\b|\s*[X×#@Ø])"
+    r"(?=\s*$|\s*[:;()=&+/]|\s*,(?!\d)|\.(?:\s|$)|\s+(?:Y|E|A|AL|HASTA)\b"
+    rf"|\s*{_G}|\s+[^\sA-Z]*\d|\s*{CONSUMIDO})"
 )
-_TRAS_CONECTOR = re.compile(
-    rf"\s+(?:{_NUMERO_DE_MARCA}(?=$|[\s:;,()=.])|[A-Z]{{1,5}}\s*{_G}?\s*\d)"
-)
+_TRAS_CONECTOR = re.compile(rf"\s+(?:{_NUMERO_DE_MARCA}|[A-Z]{{1,5}}\s*{_G}?\s*\d)")
 # Una palabra de varilla delante del número («V-4 #4»: ¿la marca V-4 o 4 varillas del #4?, R80).
 _PALABRA_DE_VARILLA = re.compile(r"(?:VARS?|V)\W")
 # Donde empieza algo con forma de marca dentro de una ficha: letras que no van pegadas a otra
@@ -109,10 +114,10 @@ ENTRE_MARCAS = re.compile(rf"(?:\s|[,;/=&+]|{_G}|\b(?:Y|E|A|AL|HASTA)\b)*")
 CONECTOR_DE_RANGO = re.compile(rf"\b(?:AL|A|HASTA)\b|{_G}")
 _ABRE_RANGO = re.compile(r"(?:DE|DEL|DESDE)\s+$")
 # El fin de un rango escrito sólo con su número («K-1 A 4»), tras un conector entre espacios.
-_FIN_DE_RANGO = re.compile(rf"\s+(?:AL|A|HASTA|{_G})\s+{_NUMERO_DE_MARCA}(?=$|[\s:;,()=.])")
+_FIN_DE_RANGO = re.compile(rf"\s+(?:AL|A|HASTA|{_G})\s+{_NUMERO_DE_MARCA}")
 # Lo que sigue a una marca en una lista escrita sólo con números («K-1, 2 Y 3», «T1-1 Y 2»,
 # R68.6): cada número es otra marca, la primera con su último número cambiado.
-_SIGUE_LISTA = re.compile(rf"(?:\s*[,&+]\s*|\s+Y\s+){_NUMERO_DE_MARCA}(?=$|[\s:;,()=.])")
+_SIGUE_LISTA = re.compile(rf"(?:\s*[,&+]\s*|\s+Y\s+){_NUMERO_DE_MARCA}")
 _RANGO_CON_ESPACIOS = re.compile(rf"\S (?:AL|A|HASTA|{_G}) \S")
 # Una marca partida en lo de antes de su último número, el número y lo de después.
 _PARTES = re.compile(rf"(?P<pre>(?:.*\D)?)(?P<num>\d{{1,3}})(?P<suf>{_G}?[A-Z]?)")
@@ -140,11 +145,16 @@ def sin_referencias(texto: str) -> str:
 
 @lru_cache(maxsize=64)
 def _patrones(columnas: tuple[str, ...], trabes: tuple[str, ...]) -> tuple[re.Pattern[str], ...]:
-    return tuple(re.compile(p) for p in (*columnas, *trabes))
+    # R94: las marcas que ponen los detectores, todas: columnas y trabes de la configuración, y
+    # las zapatas y los pilotes de los detectores de cimentación (ZA-3, Z-100A, ZCM-100, P-4).
+    return tuple(
+        re.compile(p) for p in (*columnas, *trabes, FOOTING_MARK_PATTERN, PILE_MARK_PATTERN)
+    )
 
 
 def es_etiqueta(texto: str, config: TextPatternConfig) -> bool:
-    """Si ``texto`` entero es una etiqueta de columna o de trabe de la configuración (como
+    """Si ``texto`` entero es una marca que un detector puede poner: una etiqueta de columna o de
+    trabe de la configuración, o la marca de una zapata o de un pilote (R94; como
     ``match_category``: sus patrones anclados, sobre el texto sin espacios a los lados)."""
     limpio = texto.strip()
     patrones = _patrones(tuple(config.column_tag), tuple(config.beam_tag))
@@ -423,7 +433,7 @@ def leer_marcas(texto: str, config: TextPatternConfig) -> LecturaDeMarcas:
 def _leer_marcas(texto: str, config: TextPatternConfig) -> LecturaDeMarcas:
     # Las cuentas de varillas no son marcas («V4 #4», «P 4#3»: R68.2): se quitan primero, con lo
     # que el parser del armado toma como un grupo de varillas.
-    limpio = _con_espaciadas(sin_cuentas_de_varillas(sin_referencias(texto)), config)
+    limpio = _con_espaciadas(sin_armado(sin_referencias(texto)), config)
     piezas: list[_Pieza] = []
     for inicio, fin, ficha in _fichas(limpio):
         piezas += _leer_ficha(ficha, inicio, config, limpio[fin:])

@@ -177,3 +177,21 @@ def test_the_marks_a_title_names(texto, marcas):
 def test_a_range_end_is_a_mark_or_a_bare_integer(texto, tipo, piezas):
     lectura = leer_marcas(texto, C)
     assert (lectura.tipo, lectura.piezas) == (tipo, piezas)
+
+
+@pytest.mark.parametrize(
+    "texto,tipo,piezas",
+    [
+        ("C-1, 8 PZAS #6 E#3@20", "unica", ["C-1"]),  # R91
+        ('K-1, 4 VARS 3/8" E 1/4" @ 15', "unica", ["K-1"]),
+        ("K-1 A 40 CENTIMETROS", "ambigua", ["K-1", "K-1A", "K-1-A"]),
+        ("K-1 A 3 ML", "ambigua", ["K-1", "K-1A", "K-1-A"]),
+        ("ZA-3 120X150 #4@20", "unica", ["ZA-3"]),  # R94
+        ("ZCM-100 #4@15", "unica", ["ZCM-100"]),
+        ("TRABE T 1 E#3@1S", "unica", ["T-1"]),  # la cifra de una marca con espacio no es cuenta
+        ("K 7 #3", "ninguna", []),  # pero «7 #3» sí es una cuenta de varillas
+    ],
+)
+def test_the_grammar_defers_to_the_parsers_vocabulary(texto, tipo, piezas):
+    lectura = leer_marcas(texto, C)
+    assert (lectura.tipo, lectura.piezas) == (tipo, piezas)

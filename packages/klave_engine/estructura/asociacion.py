@@ -57,7 +57,7 @@ from pydantic import BaseModel, Field
 from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
-from klave_engine.estructura.armado import parsear_armado
+from klave_engine.estructura.armado import parsear_armado, tiene_armado
 from klave_engine.estructura.marcas import (
     MARCA_RE,
     es_rango,
@@ -99,18 +99,10 @@ _LARGO_DE_ETIQUETA = 10
 _LARGO_DE_VARIAS = 40
 _JUNTAS = " Y "  # cómo se escribe la «marca» de una etiqueta de varias
 # Lo que hace que la lectura de notas (``detection.schedules._parse_annotations``) tome un texto:
-# una sección (15x20, sin las piezas de 3 medidas), varillas longitudinales (4#3, 6 VAR #4, V12#5)
-# o una malla. Lo que trae se lee después con el parser del armado; esto sólo decide si se lee.
+# una sección (15x20, sin las piezas de 3 medidas) o lo que el parser del armado lee en él.
 _SECCION = re.compile(r"(?<![\dxX×])(\d{1,3})\s*[xX×]\s*(\d{1,3})(?![\dxX×])")
 _PIEZA = re.compile(r"\d{1,3}\s*[xX×]\s*\d{1,3}\s*[xX×]\s*\d{1,3}")
-_LONGITUDINALES = re.compile(r"(\d{1,2})\s*(?:V|VAR|VARS|VARILLAS)?\s*#\s*(\d)(?!\s*@)", re.I)
-_MALLA = re.compile(r"(?<![E\d])#\s*(\d)\s*@\s*(\d{1,3})", re.I)
-# Los estribos, que se quitan antes de buscar malla y varillas («E #3@20», con espacio, no es una
-# malla).
-_ESTRIBOS = re.compile(r"E\s*#?\s*(\d)\s*@\s*(\d{1,3})", re.I)
 _LADO_DE_SECCION_CM = (8, 400)
-# Un número de varilla como lo escribe el plano (el parser lee «Ø» y «%%C» como «#»).
-_VARILLA_EN_TEXTO = re.compile(r"(?:#|Ø|⌀|%%C)\s*\d", re.I)
 
 # Un texto que nombra otra familia es de la lectura de esa familia (la losa, el muro, la nota de
 # dalas): nunca entra a una pila, nunca es huérfano y una pila nunca sigue más allá de él.
@@ -266,13 +258,12 @@ def _es_de_varias(marca: str, config: TextPatternConfig) -> bool:
 
 def lo_lee_una_nota(texto: str) -> bool:
     """Si la lectura de notas (``detection.schedules``) toma ``texto``: tiene una sección (dos
-    lados de 8 a 400 cm), varillas longitudinales, una malla («K-3 #4@20») o un juego de
-    estribos que el parser lee («K-7 E#3@20»). Lo que no («K-7 E#3@1S», «K-7 @20») no lo lee
-    nadie: es un rechazo «sin_lector», con la marca que nombra."""
-    if _SECCION.search(texto) is None and _VARILLA_EN_TEXTO.search(texto) is None:
-        # Sin una medida NNxNN ni un «#n» (o «Ø n», «%%C n») no hay sección, varillas, malla ni
-        # estribos que leer: lo de abajo daría falso igual, sólo que más lento.
-        return False
+    lados de 8 a 400 cm) o el parser del armado lee en ella varillas, una malla o un juego de
+    estribos, como los escriba («K-1 4#3», «K-3 #4@20», «K-7 E#3@20», «K-1 4 VARS. N° 3», «K-1 4
+    VARS 3/8"»: R91, un solo vocabulario). Lo que el parser reconoce y no lee («K-7 E#3@1S») no
+    lo lee nadie: es un rechazo «sin_lector», con la marca que nombra."""
+    if not re.search(r"\d", texto):
+        return False  # sin cifras no hay sección ni armado: no se llama al parser
     piezas = [m.span() for m in _PIEZA.finditer(texto)]
     for m in _SECCION.finditer(texto):
         if any(a <= m.start() < b for a, b in piezas):
@@ -280,15 +271,9 @@ def lo_lee_una_nota(texto: str) -> bool:
         lados = int(m.group(1)), int(m.group(2))
         if all(_LADO_DE_SECCION_CM[0] <= lado <= _LADO_DE_SECCION_CM[1] for lado in lados):
             return True
-    # Primero se quitan los estribos y en lo que queda se busca una malla o varillas.
-    estribos = _ESTRIBOS.search(texto)
-    resto = texto
-    if estribos is not None:
-        resto = texto[: estribos.start()] + texto[estribos.end() :]
-    if _MALLA.search(resto) is not None or _LONGITUDINALES.search(resto) is not None:
-        return True
-    # Sólo estribos: los lee la nota si el parser los lee (la familia no cambia los estribos).
-    return bool(parsear_armado([texto], "castillo").estribos)
+    # Las mallas se leen en una familia que las lleva; varillas y estribos, en cualquiera.
+    armado = parsear_armado([texto], "muro")
+    return bool(armado.longitudinales or armado.estribos or armado.parrillas)
 
 
 def marcas_en_nota(texto: str, config: TextPatternConfig) -> list[str]:
@@ -318,7 +303,8 @@ def _clase(
         # Reclama su pila como cualquier etiqueta (que ninguna vecina se la lleve), aunque E0
         # no lea definiciones de varias marcas.
         return "etiqueta", _JUNTAS.join(varias)
-    if ARMADO_RE.search(texto) is None:
+    if ARMADO_RE.search(texto) is None and not tiene_armado(texto):
+        # R91: armado es lo que el parser reconoce, con «#» o sin él («K-1 4 VARS 3/8"»).
         return "nada", None
     if e.entity_id in de_notas or _NOTA_NUMERADA.search(texto):
         return "nota", None
@@ -334,7 +320,9 @@ def _clase(
         # entra a la pila de otra marca (R68.8).
         return "sin_lector", None
     if _NOTA_DE_FAMILIA.search(mayusculas):
-        return ("familia" if lo_lee_una_nota(texto) else "sin_lector"), None
+        # La nota de familia la lee (o la reporta con su aviso) la lectura de notas.
+        lee = lo_lee_una_nota(texto) or tiene_armado(texto)
+        return ("familia" if lee else "sin_lector"), None
     return "linea", None
 
 
@@ -1780,7 +1768,11 @@ def _nota_que_nombra(e: NormalizedEntity, hoja: str, config: TextPatternConfig) 
     rechazos: list[Rechazo] = []
     for renglon in (e.text or "").split("\n"):
         renglon = renglon.strip()
-        if ARMADO_RE.search(renglon) is None and _SECCION.search(renglon) is None:
+        if (
+            ARMADO_RE.search(renglon) is None
+            and _SECCION.search(renglon) is None
+            and not tiene_armado(renglon)
+        ):
             continue
         marcas = marcas_en_nota(renglon, config) or titulos(renglon, config)
         if marcas:
@@ -1828,12 +1820,14 @@ def _sin_dueno(
         if any(math.hypot(x - cx, y - cy) <= limite for cx, cy in copias.get(texto, [])):
             continue
         if clase == "sin_lector":
+            varias = leer_marcas(texto, config).tipo == "varias"
             huerfanos.append(
                 Rechazo(
                     entidad_id=e.entity_id,
                     texto=texto,
                     hoja=hoja,
-                    motivo="sin_lector",
+                    # Una nota de varias marcas se reporta como tal (R63), se pueda leer o no.
+                    motivo="varias_marcas" if varias else "sin_lector",
                     marcas=marcas_en_nota(texto, config) or titulos(texto, config),
                 )
             )

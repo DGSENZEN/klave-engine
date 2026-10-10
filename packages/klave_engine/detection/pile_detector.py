@@ -13,11 +13,12 @@ from pydantic import BaseModel, Field
 from klave_engine.common.ids import IdGenerator
 from klave_engine.detection.footing_detector import layer_matches
 from klave_engine.detection.results import DetectionType, DetectorOutput, make_detection
+from klave_engine.detection.text_patterns import PILE_MARK_PATTERN
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.geometry.bbox import bbox_center
 from klave_engine.geometry.spatial_index import SpatialIndex
 
-_PILE_MARK_RE = re.compile(r"^P-?\d{1,2}[A-Z]?$")
+_PILE_MARK_RE = re.compile(PILE_MARK_PATTERN)
 
 
 class PileDetectorConfig(BaseModel):

@@ -33,6 +33,7 @@ from klave_engine.detection.schedules import (
     Source,
     _loose_key,
     bloqueos_de,
+    campos_de_fragmento,
     family_of_mark,
 )
 from klave_engine.detection.text_patterns import TextPatternConfig
@@ -48,6 +49,7 @@ from klave_engine.estructura.marcas import (
     es_rango,
     extremos_de_rango,
     leer_marcas,
+    marca_en_rango,
     marca_normalizada,
     titulos,
 )
@@ -300,28 +302,41 @@ def _definir(
             )
         )
 
-    # Lo que el plano dice de la marca y nadie leyó (R77, R74), con IA o sin ella.
-    bloqueos = [] if de_familia else bloqueos_de(inv, marca, config, known, family=familia)
-    bloqueos += [b for s in de_ia for b in s.bloqueos if b.campo in s.campos_bloqueados]
-    _sin_leer(bloqueos, lecturas, datos, avisos)
+    # Lo que el plano dice de la marca y nadie leyó, sólo de los textos que la nombran con la
+    # gramática de marcas (R90): con IA o sin ella.
+    if not de_familia:
+        _sin_leer(_textos_que_la_nombran(inv, marca, familia, config), lecturas, datos, avisos)
 
-    # La IA: detrás del plano, y nunca en un campo que el plano tiene escrito (R69).
+    # La IA: detrás del plano, y nunca en un campo que el plano tiene escrito (R69). Lo que la
+    # bloquea sin nombrar la marca (la llave suelta, el respaldo) no da datos (R90): sólo la deja
+    # fuera, y se dice.
+    bloqueos = [] if de_familia else bloqueos_de(inv, marca, config, known, family=familia)
+    bloqueos += [b for s in de_ia for b in s.bloqueos]
+    bloqueados: dict[str, list[Bloqueo]] = {}
+    for b in bloqueos:
+        bloqueados.setdefault(_DE_CAMPO[b.campo], []).append(b)
     for s in de_ia:
-        hoja_ia = s.hoja
+        de_esta: dict[str, list[Dato]] = {campo: [] for campo in _NOMBRE}
         if s.section_cm is not None:
-            datos["seccion_cm"].append(_dato(s, "ia", _seccion(s.section_cm, familia)))
+            de_esta["seccion_cm"].append(_dato(s, "ia", _seccion(s.section_cm, familia)))
         for _campo, attr, _de_texto in _ARMADO:
             escrito = getattr(s, attr)
             if escrito:
-                _de_la_ia(s, escrito, familia, datos, avisos)
+                _de_la_ia(s, escrito, familia, de_esta, avisos)
         if s.length_m is not None:
-            datos["longitud_m"].append(_dato(s, "ia", s.length_m))
-        for c in s.campos_bloqueados:
-            if not any(d.fuente != "ia" for d in datos[_DE_CAMPO[c]]):
-                raise ValueError(
-                    f"{marca}: el plano bloquea «{c}» a la lectura IA de la hoja {hoja_ia} "
-                    "pero la definición no tiene ningún dato del plano en ese campo"
+            de_esta["longitud_m"].append(_dato(s, "ia", s.length_m))
+        for campo, lista in de_esta.items():
+            if not lista:
+                continue
+            del_plano = any(d.fuente != "ia" for d in datos[campo])
+            if campo in bloqueados and not del_plano:
+                textos = ", ".join(dict.fromkeys(f"«{b.texto}»" for b in bloqueados[campo]))
+                avisos.append(
+                    f"{_NOMBRE[campo]}: la lectura IA «{s.source_text}» no se toma: el plano "
+                    f"tiene texto que puede ser de esta marca ({textos})"
                 )
+                continue
+            datos[campo] += lista
 
     campos = {campo: elegir(lista, preferir_hoja=None) for campo, lista in datos.items()}
     for campo, dato in campos.items():
@@ -332,7 +347,7 @@ def _definir(
             )
         if dato is None or dato.fuente != "ia":
             continue
-        if any(_DE_CAMPO[c] == campo for s in de_ia for c in s.campos_bloqueados):
+        if campo in bloqueados:
             raise ValueError(f"{marca}: la IA elegida en {campo}, que el plano bloquea")
     hojas = sorted(
         {s.hoja for s in lecturas if s.hoja}
@@ -351,6 +366,99 @@ def _definir(
         avisos=list(dict.fromkeys(avisos)),
         **campos,
     )
+
+
+def _textos_que_la_nombran(
+    inv: ScheduleInventory, marca: str, familia: str, config: TextPatternConfig
+) -> list[Bloqueo]:
+    """Los textos del plano que no se leyeron y que la gramática de marcas dice que nombran a
+    ``marca`` (R90: comparada por ``normalizar_marca``, nunca por la llave suelta ni por el
+    respaldo), cada uno con los campos que reclama. Su única marca, un miembro de su lista o un
+    extremo de su rango, su título: es suyo (inequívoco). Una candidata de una marca pegada, una
+    marca entre los extremos de un rango, una de las etiquetas entre las que dudó un renglón de
+    pila: puede ser de otra (ambiguo). Un texto que una lectura de la marca leyó no cuenta: ésa
+    ya tiene su dato."""
+    leidos = {
+        e
+        for s in inv.specs
+        if s.source != "ia" and normalizar_marca(s.mark, config) == marca
+        for e in s.entidades
+    }
+    lectura_de = {
+        e: s.source
+        for s in inv.specs
+        if s.source in ("cuadro", "detalle", "nota")
+        for e in s.entidades
+    }
+    textos: list[tuple[str, str, str, list[str], str]] = []  # (entidad, texto, hoja, marcas, de)
+    for r in inv.rechazos:
+        if r.motivo in ("ambigua", "varias_marcas", "sin_lector"):
+            textos.append((r.entidad_id, r.texto, r.hoja, list(r.marcas), r.motivo))
+    for t in inv.textos_con_marca:
+        textos.append((t.entidad_id, t.texto, t.hoja, list(t.marcas), "texto"))
+    salida: list[Bloqueo] = []
+    vistos: set[tuple[str, str]] = set()
+    for entidad, texto, hoja, marcas, de in textos:
+        if entidad in leidos or (entidad, texto) in vistos:
+            continue
+        vistos.add((entidad, texto))
+        nombre = _como_la_nombra(texto, marcas, de, marca, config)
+        if nombre is None:
+            continue
+        nota = leer_marcas(texto, config).nombra or bool(titulos(texto, config))
+        fuente = lectura_de.get(entidad) or ("nota" if nota else "detalle")
+        salida += [
+            Bloqueo(
+                campo=campo,
+                texto=texto,
+                entidades=[entidad],
+                hoja=hoja,
+                fuente=fuente,  # type: ignore[arg-type]
+                por="rechazo" if de != "texto" else "texto",
+                inequivoco=nombre,
+            )
+            for campo in campos_de_fragmento(texto, familia)
+        ]
+    return salida
+
+
+def _como_la_nombra(
+    texto: str, marcas: list[str], de: str, marca: str, config: TextPatternConfig
+) -> bool | None:
+    """Cómo nombra un texto a ``marca`` según la gramática: ``True`` sin ambigüedad (su única
+    marca, un miembro de su lista, un extremo de su rango, su título), ``False`` como una de
+    varias candidatas, ``None`` si no la nombra."""
+
+    def normales(piezas: list[str]) -> set[str]:
+        return {normalizar_marca(p, config) for p in piezas}
+
+    lectura = leer_marcas(texto, config)
+    if lectura.tipo == "unica" and lectura.marca is not None:
+        return True if normalizar_marca(lectura.marca, config) == marca else None
+    if lectura.tipo == "varias":
+        explicitas: list[str] = []
+        for pieza in lectura.piezas:
+            explicitas += extremos_de_rango(pieza, config) if es_rango(pieza, config) else [pieza]
+        if marca in normales(explicitas):
+            return True
+        entre = any(
+            es_rango(p, config) and marca_en_rango(p, marca, config) for p in lectura.piezas
+        )
+        return False if entre else None
+    if lectura.tipo == "ambigua":
+        return False if marca in normales(lectura.piezas) else None
+    titulos_del_texto = titulos(texto, config)
+    if titulos_del_texto:
+        if marca not in normales(titulos_del_texto):
+            return None
+        return len(titulos_del_texto) == 1
+    # Un renglón de pila que no nombra marcas: las de sus etiquetas (la asociación las leyó con
+    # la misma gramática). Entre dos etiquetas dudó: ambiguo; la de varias marcas: suyo.
+    if de == "texto" or marca not in normales(
+        [e for p in marcas for e in (extremos_de_rango(p, config) if es_rango(p, config) else [p])]
+    ):
+        return None
+    return de == "varias_marcas"
 
 
 def _sin_leer(

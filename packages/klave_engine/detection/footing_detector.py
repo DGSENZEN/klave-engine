@@ -19,13 +19,14 @@ from klave_engine.detection.results import (
     layer_matches,
     make_detection,
 )
+from klave_engine.detection.text_patterns import FOOTING_MARK_PATTERN
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.geometry.bbox import bbox_center, bbox_distance
 from klave_engine.geometry.measurements import polygon_area, rectangularity
 from klave_engine.geometry.spatial_index import SpatialIndex
 
 # Z-1, ZC-2, ZA-3, ZCM-1: zapata marks as the cuadro de zapatas names them.
-_ZAPATA_MARK_RE = re.compile(r"^Z(?:C|A|CM)?-?\d{1,3}[A-Z]?$")
+_ZAPATA_MARK_RE = re.compile(FOOTING_MARK_PATTERN)
 
 
 class FootingDetectorConfig(BaseModel):

@@ -1123,9 +1123,10 @@ def test_texts_that_name_a_mark_are_read_or_reported(tmp_path):
     ents = _dxf(tmp_path, build)
     asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
     assert {a.marca: a.textos for a in asoc} == {"K-1": ["4#3", "E#2@15 VER CORTE C-2"]}
+    # R91: «CASTILLOS E#2@20 EN TODOS» tiene armado que el parser reconoce: es la nota de la
+    # familia, que la lectura de notas toma y avisa lo que no lee (como «2 VARILLAS #5 …»).
     assert sorted((r.motivo, r.texto, tuple(r.marcas)) for r in rech) == [
         ("sin_dueno", "2E#3@15 VER P-1", ()),
-        ("sin_lector", "CASTILLOS E#2@20 EN TODOS", ()),
         ("sin_lector", "K-9 E#3@1S", ("K-9",)),
     ]
 

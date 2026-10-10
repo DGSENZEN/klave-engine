@@ -31,6 +31,7 @@ from klave_engine.estructura._armado_texto import (
     hueco_limpio,
     normalizar,
     residuo,
+    traducciones,
 )
 
 # Las llaves de ``costing.steel.BAR_KG_PER_M``, en su orden. Se escriben aquí y no se
@@ -155,11 +156,12 @@ _SENTIDO_RE = re.compile(
 _ES_LS = re.compile(_LS)
 _SENTIDO_XY: dict[str, Literal["x", "y"]] = {"X": "x", "Y": "y"}
 
-# «4#5», «4 VARS #5», «4V#4», «4 VARILLAS DEL #3» y, con la palabra delante, «V4#4», «VAR 4#4»
-# (PRUEBA-1: «V4#4 E#3»).
+# «4#5», «4 VARS #5», «4V#4», «4 VARILLAS DEL #3», «8 PZAS #6», «4-#3», «4) #3» (R93: el «4-» es
+# la cuenta) y, con la palabra delante, «V4#4», «VAR 4#4» (PRUEBA-1: «V4#4 E#3»).
 _VARILLAS_RE = re.compile(
     rf"(?:(?<![A-Z0-9.#@])(?:VARS?\.?|V)\s*(?P<v>{_CUENTA})"
-    rf"|(?<![\d.#@])(?P<n>{_CUENTA})\s*(?:(?:VARILLAS|VARS?\.?|V)(?:\s+DEL?)?)?)"
+    rf"|(?<![\d.#@])(?P<n>{_CUENTA})\s*(?:[-)]\s*)?"
+    r"(?:(?:VARILLAS|VARS?\.?|PZAS?\.?|PIEZAS|V)(?:\s+DEL?)?)?)"
     rf"\s*#\s*(?P<num>{_NUM})(?!\s*@)"
 )
 _CIFRA_O_GATO = "0123456789#.@"  # lo que, pegado delante, parte un número (aunque esté leído)
@@ -833,14 +835,21 @@ class _Piezas:
     buenas: list[_Pieza]
     malos: list[tuple[int, int]]
     grupos: list[re.Match[str]]  # los grupos de varillas reconocidos, se tomen o no
+    reconocidas: list[_Pieza]  # toda pieza reconocida (juego, malla, grupo), se tome o no
+    traducidas: list[tuple[int, int]]  # lo que ``normalizar`` escribió como «#n» (R87)
 
 
 def _piezas(textos: list[str], familia: str) -> _Piezas:
     """Las pasadas 1 a 4 de ``parsear_armado``: reconocer las piezas y revisarlas."""
     lineas = [t.strip() for t in textos if t and t.strip()]
-    pares = [p for p in (normalizar(t) for t in lineas) if p[0]]
-    texto = " | ".join(leer for leer, _ in pares)
-    letrero = " | ".join(citar for _, citar in pares)
+    pares = [(p, linea) for linea in lineas if (p := normalizar(linea))[0]]
+    texto = " | ".join(leer for (leer, _), _l in pares)
+    letrero = " | ".join(citar for (_, citar), _l in pares)
+    traducidas: list[tuple[int, int]] = []
+    desde = 0
+    for (leer, _), linea in pares:
+        traducidas += [(desde + a, desde + b) for a, b in traducciones(linea)]
+        desde += len(leer) + 3
     consumido = [False] * len(texto)
     piezas: list[_Pieza] = []
 
@@ -868,35 +877,91 @@ def _piezas(textos: list[str], familia: str) -> _Piezas:
 
     # 4. Cada pieza se toma entera o se avisa entera con lo que la estorba.
     piezas.sort(key=lambda p: p.inicio)
+    reconocidas = list(piezas)
     buenas, malos = _revisar(texto, visible(), piezas, consumido)
-    return _Piezas(lineas, texto, letrero, consumido, buenas, malos, grupos)
+    return _Piezas(
+        lineas, texto, letrero, consumido, buenas, malos, grupos, reconocidas, traducidas
+    )
 
 
-_CON_VARILLA = re.compile(r"[#Ø⌀]|%%C", re.I)
+# Una sección o las tres medidas de una pieza («15X20», «20 X 40 CMS», «15X20X40») y una longitud
+# («L=8.00 M», «LONG. 8», «LONGITUD DE 12.00 M»): el parser las tiene por contexto (R91).
+_SECCION_EN_TEXTO = re.compile(
+    r"(?<![\dxX×])\d{1,3}(?:\.\d+)?\s*[xX×]\s*\d{1,3}(?:\.\d+)?"
+    r"(?:\s*[xX×]\s*\d{1,3}(?:\.\d+)?)?(?:\s*CMS?\.?)?"
+)
+_LONGITUD_EN_TEXTO = re.compile(
+    r"\bL\s*=\s*\d+(?:[.,]\d+)?(?:\s*(?:M|MTS?|CMS?)\b)?"
+    r"|\bLONG\.?\s*=?\s*\d+(?:[.,]\d+)?(?:\s*(?:M|MTS?)\b)?"
+    r"|\bLONGITUD\b[^|\n]*?\d+(?:[.,]\d+)?\s*(?:M|MTS?|METROS)\b"
+)
+_INICIO_DE_FICHA = ' |:;,()="' + CONSUMIDO
+_CUENTA_SUELTA = re.compile(r"\d{1,2}\s+")
+_PREFIJO_SUELTO = re.compile(r"(?:^|[\s:;,()=\".\-/+&])[A-Z]{1,4}(?:\s*-\s*|\s+)$")
 
 
-def sin_cuentas_de_varillas(texto: str) -> str:
-    """``texto`` como lo cita el parser (``normalizar``: en mayúsculas, con los espacios juntos
-    y «Ø» donde el plano puso «%%C» o «⌀») con cada cuenta de varillas cambiada por
-    ``CONSUMIDO`` (R68): una cuenta de varillas nunca es una marca.
-
-    Es cuenta lo que el parser toma como un grupo de varillas («4#3»; «P 4#3» y «K 7 #3» son 4#3
-    y 7#3) y todo grupo escrito con la palabra de la varilla delante («V4 #4», «V12 #5», «VAR
-    4#4»), aunque lo que lo rodea no deje leerlo. Un grupo sin palabra delante que el parser no
-    toma no se cambia: en «K-7 #3» el «7» es de la marca. Sin «#» (ni «Ø», «⌀», «%%C») no hay
-    cuenta y el parser no corre."""
+def tramos_de_armado(texto: str) -> tuple[str, list[tuple[int, int]]]:
+    """``texto`` como lo cita el parser (``normalizar``) y los tramos que el parser reconoce como
+    armado, se lean o se avisen (R91): cada juego de estribos, malla o grupo de varillas que
+    reconoce (con las frases de R87: «4 VARS 3/8"», «N° 3», «8 PZAS #6»), cada sección y cada
+    longitud. Sólo los que empiezan una ficha: el «7 #3» de «K-7 #3» o el «20X40» de «T2-20X40»
+    van pegados a una marca y no son suyos. Sin cifras no hay armado y el parser no corre."""
     citar = normalizar(texto.strip())[1]
-    if _CON_VARILLA.search(texto) is None:
-        return citar
+    if not re.search(r"\d", citar):
+        return citar, []
     leida = _piezas([texto], "castillo")
     if len(leida.texto) != len(citar):  # «leer» y «citar» tienen siempre la misma longitud
         raise ValueError(f"el texto para leer y el de citar no miden lo mismo: «{texto}»")
-    tramos = [(g.start(), g.end()) for g in leida.grupos if g["v"] is not None]
-    tramos += [(p.inicio, p.fin) for p in leida.buenas if p.varillas]
+    tramos = []
+    for p in leida.reconocidas:
+        inicio = p.inicio
+        cuenta = _CUENTA_SUELTA.match(leida.texto, p.inicio)
+        cabeza = cuenta is not None and leida.texto[cuenta.end() : cuenta.end() + 1].isalpha()
+        if cuenta and cabeza and _PREFIJO_SUELTO.search(leida.texto, 0, p.inicio):
+            # «K 7 E#3@1S», «TRABE T 1 E#3@1S»: la cifra tras unas letras sueltas puede ser el
+            # número de una marca escrita con espacio; el juego empieza en su cabeza.
+            inicio = cuenta.end()
+        tramos.append((inicio, p.fin))
+    tramos += [m.span() for m in _SECCION_EN_TEXTO.finditer(leida.texto)]
+    tramos += [m.span() for m in _LONGITUD_EN_TEXTO.finditer(leida.texto)]
+    enteros = []
+    for a, b in tramos:
+        for ta, tb in leida.traducidas:  # «3/8"» o «N° 3» van enteros
+            if ta < b and a < tb:
+                a, b = min(a, ta), max(b, tb)
+        enteros.append((a, b))
+    # Lo que empieza con «#» o «@» («#3@20», «@15») nunca se confunde con una marca: queda a la
+    # vista (la E de «K-7-E #3@20» sigue siendo la cabeza de unos estribos).
+    return citar, sorted(
+        (a, b)
+        for a, b in enteros
+        if (a == 0 or citar[a - 1] in _INICIO_DE_FICHA) and citar[a : a + 1] not in ("#", "Ø", "@")
+    )
+
+
+def sin_armado(texto: str) -> str:
+    """``texto`` como lo cita el parser con cada tramo de armado (``tramos_de_armado``) cambiado
+    por ``CONSUMIDO`` (R68, R91): una cuenta de varillas, un juego de estribos, una sección o una
+    longitud nunca son una marca («V4 #4», «P 4#3», «K 7 #3», «4 VARS 3/8"», «8 PZAS #6»)."""
+    citar, tramos = tramos_de_armado(texto)
     letras = list(citar)
     for a, b in tramos:
         letras[a:b] = CONSUMIDO * (b - a)
     return "".join(letras)
+
+
+def sin_cuentas_de_varillas(texto: str) -> str:
+    """Lo mismo que ``sin_armado`` (el nombre de R68)."""
+    return sin_armado(texto)
+
+
+def tiene_armado(texto: str) -> bool:
+    """Si el parser reconoce armado en ``texto``, se lea o se avise (R91): un juego de estribos,
+    una malla o un grupo de varillas, también escrito con palabras o en pulgadas («4 VARS. N°
+    3», «4 VARS 3/8"»). Un texto así es candidato a nota, tenga «#» o no."""
+    if not re.search(r"\d", texto):
+        return False
+    return bool(_piezas([texto], "castillo").reconocidas)
 
 
 def parsear_armado(textos: list[str], familia: str) -> Armado:
@@ -912,6 +977,14 @@ def parsear_armado(textos: list[str], familia: str) -> Armado:
     lineas, texto, letrero = leida.lineas, leida.texto, leida.letrero
     consumido, buenas, malos = leida.consumido, leida.buenas, leida.malos
     avisos: list[tuple[int, str]] = []
+
+    def entero(a: int, b: int) -> tuple[int, int]:
+        """Un tramo que toca algo que ``normalizar`` escribió como «#n» lo cita entero (R92)."""
+        for ta, tb in leida.traducidas:
+            if ta < b and a < tb:
+                a, b = min(a, ta), max(b, tb)
+        return a, b
+
     armado = Armado(texto_original=" | ".join(lineas))
     for p in buenas:
         if p.aviso is not None:
@@ -920,12 +993,14 @@ def parsear_armado(textos: list[str], familia: str) -> Armado:
         armado.parrillas += p.parrillas
         armado.longitudinales += p.varillas
     for a, b in malos:
+        a, b = entero(a, b)
         avisos.append((a, _aviso_sin_leer(letrero[a:b].strip())))
         for i in range(a, b):
             consumido[i] = True
 
     # 5. Lo que nadie leyó: si no es contexto, se avisa.
     for a, b, tipo in residuo(texto, consumido):
+        a, b = entero(a, b)
         if tipo == "otro":
             avisos.append((a, _aviso_sin_leer(letrero[a:b].strip(",;: "))))
         else:

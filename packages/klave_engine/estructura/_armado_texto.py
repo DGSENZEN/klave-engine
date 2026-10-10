@@ -109,6 +109,19 @@ def _con_el_mismo_largo(m: re.Match[str], escrito: str) -> str:
     return escrito + " " * (len(m.group(0)) - len(escrito))
 
 
+def traducciones(texto: str) -> list[tuple[int, int]]:
+    """Dónde ``normalizar`` escribió un número de varilla en lugar de lo que dice el plano («No.
+    3», «3/8"»), en las posiciones del texto normalizado: lo que se cite de ahí se cita entero,
+    como lo escribió el plano (R92)."""
+    t = texto.upper().replace("%%%", "%").replace("%%C", "Ø").replace("⌀", "Ø")
+    t = re.sub(r"\s+", " ", t.replace("\\P", " | ")).strip()
+    leer = t.replace("Ø", "#").translate(_A_GUION)
+    tramos = [m.span() for m in _NUMERO_CON_PALABRA.finditer(leer)]
+    leer = _NUMERO_CON_PALABRA.sub(lambda m: _con_el_mismo_largo(m, f"#{m.group(1)}"), leer)
+    tramos += [(m.start() + len(m.group(1)), m.end()) for m in _EN_PULGADAS.finditer(leer)]
+    return sorted(tramos)
+
+
 def normalizar(texto: str) -> tuple[str, str]:
     """El texto para leer y el texto para citar, de la misma longitud: los dos en mayúsculas
     y con los espacios juntos; el de leer escribe ``#`` donde el plano puso «Ø» o «%%C», «-»

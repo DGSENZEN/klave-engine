@@ -41,6 +41,8 @@ from klave_engine.estructura.armado import (
     texto_estribos,
     texto_longitudinal,
     texto_parrillas,
+    tiene_armado,
+    tramos_de_armado,
 )
 from klave_engine.estructura.asociacion import (
     ARMADO_RE,
@@ -52,14 +54,12 @@ from klave_engine.estructura.asociacion import (
 )
 from klave_engine.estructura.marcas import (
     GUIONES,
-    MARCA_RE,
     con_guion,
     es_rango,
     extremos_de_rango,
     leer_marcas,
     marca_en_rango,
     marca_normalizada,
-    marca_sola,
     titulos,
 )
 from klave_engine.geometry.bbox import (
@@ -342,6 +342,11 @@ _LONGITUD = re.compile(
 _VARILLA = re.compile(r"[#Ø]\s*\d")
 
 
+# The number of a numbered note («3.-», «1.-», «2)»): never a count right before a bar
+# («4-#3», «4) #3» are 4 bars, R93).
+_NUMERO_DE_NOTA = re.compile(r"^\s*\d{1,2}(?:\.-?|-|\))(?!\s*[#Ø\d])")
+
+
 # What a recognised fragment consumes (R86): a section or a piece's three
 # measures, a stirrup set, a bar group, a mesh, a spacing, a length, a mark, the
 # number of a numbered note. A digit left over is something nobody recognised.
@@ -361,8 +366,7 @@ _CONSUMIDOS = (
         r"|\bLONG\.?\s*=?\s*\d+(?:[.,]\d+)?(?:\s*(?:M|MTS?)\b)?"
         r"|\bLONGITUD\b[^|\n]*?\d+(?:[.,]\d+)?\s*(?:M|MTS?|METROS)\b"
     ),
-    MARCA_RE,
-    re.compile(r"^\s*\d{1,2}[.\-)]+"),
+    _NUMERO_DE_NOTA,
 )
 
 
@@ -371,10 +375,18 @@ def _sin_lo_reconocido(t: str) -> str:
     mark grammar reads, configured tags included)."""
     for patron in _CONSUMIDOS:
         t = patron.sub(" ", t)
-    return " ".join(
-        ficha
-        for ficha in t.split()
-        if marca_sola(ficha.strip(':;,()="'), TextPatternConfig()) is None
+    # Las marcas, las que lee la gramática de marcas (R91: «T1-1», «K 7», «TL 1», «K-1-A»).
+    t = _con_marcas_juntas(t)
+    config = TextPatternConfig()
+    fichas = [f for f in re.split(r'[\s:;,()="]+', t) if f]
+    return " ".join(f for f in fichas if not leer_marcas(f, config).nombra)
+
+
+def _con_marcas_juntas(t: str) -> str:
+    """Las marcas escritas con espacio («K 7», «TRABE T 1», «TL 1») escritas juntas, para que la
+    gramática las reconozca como una ficha al buscar cifras sin reconocer."""
+    return re.sub(
+        r"(?<![A-Z0-9])([A-Z]{1,4})\s*-?\s+(\d{1,3}[A-Z]?)(?=$|[\s:;,()=\"])", r"\1-\2", t
     )
 
 
@@ -468,11 +480,7 @@ def _reading(
         section, avisos, has_section = None, [], False
     a_leer = textos
     if sin_marca is not None:
-        patron = _patron_suelto(sin_marca)
-        a_leer = [
-            _NUMERO_DE_NOTA.sub(_en_blanco, patron.sub(_en_blanco, t) if patron else t)
-            for t in textos
-        ]
+        a_leer = [_sin_la_marca(t, sin_marca) for t in textos]
     armado = parsear_armado(a_leer, family)
     if a_leer is not textos:
         armado.texto_original = " | ".join(t.strip() for t in textos if t and t.strip())
@@ -480,14 +488,15 @@ def _reading(
     rebar = _render(texto_longitudinal, armado, avisos)
     stirrups = _render(texto_estribos, armado, avisos)
     mesh = _render(texto_parrillas, armado, avisos)
-    # What could not be read claims only the fields its fragments show (R76).
+    # What could not be read claims the fields its fragments show (R76); a residue with digits
+    # nobody recognises claims every field the family can have, the section too (R86, R92).
     sin_leer: set[Campo] = set()
     for aviso in armado.avisos:
         citas = re.findall(r"«([^»]*)»", aviso)
         for cita in citas or [aviso]:
-            sin_leer.update(c for c in campos_de_fragmento(cita, family) if c != "seccion")
+            sin_leer.update(campos_de_fragmento(cita, family))
     campos: list[Campo] = []
-    if has_section:
+    if has_section or "seccion" in sin_leer:
         campos.append("seccion")
     if armado.longitudinales or "longitudinales" in sin_leer:
         campos.append("longitudinales")
@@ -508,11 +517,21 @@ def _reading(
     }
 
 
-_NUMERO_DE_NOTA = re.compile(r"^\s*\d{1,2}[.\-)]+")
-
-
-def _en_blanco(m: re.Match[str]) -> str:
-    return " " * len(m.group(0))
+def _sin_la_marca(texto: str, marca: str) -> str:
+    """``texto`` (as the parser quotes it) without the note's number and its own mark: only
+    the grammar's occurrence of the mark — the first one outside the armado the parser
+    recognises —, never another («V-4 20X40 V4#4»: V4#4 is 4 bars #4), R93."""
+    citar, tramos = tramos_de_armado(texto)
+    nota = _NUMERO_DE_NOTA.match(citar)
+    patron = _patron_suelto(marca)
+    if patron is not None:
+        for m in patron.finditer(citar):
+            if not any(a <= m.start() < b for a, b in tramos):
+                citar = citar[: m.start()] + " " * (m.end() - m.start()) + citar[m.end() :]
+                break
+    if nota is not None:
+        citar = " " * nota.end() + citar[nota.end() :]
+    return citar
 
 
 def _has_something(reading: dict, content: str) -> bool:
@@ -521,7 +540,9 @@ def _has_something(reading: dict, content: str) -> bool:
     numbers are its own numbering is not an armado reading)."""
     if reading["section_cm"] is not None or not reading["armado"].vacio():
         return True
-    return bool(reading["avisos"]) and ARMADO_RE.search(content) is not None
+    return bool(reading["avisos"]) and (
+        ARMADO_RE.search(content) is not None or tiene_armado(content)
+    )
 
 
 # ------------------------------------------- cuadro rows, stacks and notes
@@ -596,11 +617,18 @@ def _parse_annotations(
     rechazos: list[Rechazo] = []
     for text in texts:
         content = " ".join((text.text or "").split())
-        if not content or not lo_lee_una_nota(content):
+        if not content:
+            continue
+        lee = lo_lee_una_nota(content)
+        # R91: un texto con armado que el parser reconoce es candidato a nota, tenga «#» o no.
+        if not lee and not tiene_armado(content):
             continue
         hoja, llave = sheet(text)
         lectura = leer_marcas(content, config)
         if lectura.tipo in ("varias", "ambigua"):
+            if not lee:
+                continue  # la asociación lo reporta: no se lee
+
             rechazos.append(
                 Rechazo(
                     entidad_id=text.entity_id,
@@ -614,6 +642,8 @@ def _parse_annotations(
         mark = lectura.marca
         family = _family_in_text(content)
         if mark is not None:
+            if not lee:
+                continue  # nombra su marca y nadie lo lee: «sin_lector» de la asociación
             family = family or family_of_mark(mark)
             specs.append(
                 ElementSpec(
@@ -1097,6 +1127,7 @@ def _texts_naming_marks(
                 _FORMA_DE_ARMADO.search(line)
                 or _read_section(line)[2]
                 or _LONGITUD.search(line.upper())
+                or tiene_armado(line)  # R91: «K-1 4 VARS 3/8"», sin «#»
             ):
                 continue
             if re.search(r"[A-Z]", normalizar(line)[1]) is None:
