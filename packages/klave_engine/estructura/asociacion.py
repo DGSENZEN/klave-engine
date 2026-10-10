@@ -1,35 +1,39 @@
 """Asociación de la lectura estructural: a qué pieza pertenece cada texto del plano.
 
-``ancla_texto`` da el punto donde el dibujante puso cada texto. ``asociar`` decide, sólo con la
-geometría del dibujo, de qué marca es cada renglón de armado de un cuadro o de un detalle
-(``8#6``, ``2E#3EXT@10`` y ``CENTRO@20`` son de ``K-11``):
+``asociar`` decide, sólo con la geometría del dibujo, de qué marca es cada renglón de armado de un
+cuadro o de un detalle (``8#6``, ``2E#3EXT@10`` y ``CENTRO@20`` son de ``K-11``):
 
 - **Por pila** (lo medido en Marina): la etiqueta de la marca va pegada a una columna de renglones
-  de armado, encima (Marina) o debajo (otras oficinas). El primer renglón empieza a lo más a 1.5
-  altos de etiqueta de ella y cae, de lado, en lo que ocupa la etiqueta ensanchada 3 altos de
-  renglón; cada renglón siguiente está a lo más a 1.5 altos de renglón del anterior y se encima de
-  lado con los de la pila. La pila acaba en un hueco mayor o en un texto que no puede ser suyo:
-  otra etiqueta, una nota de familia, una nota numerada, un texto que nombra su propia marca, la
-  celda de un cuadro o una llamada (un texto con directriz es de lo que ésta señala). Cada
-  etiqueta tiene a lo más una pila: la del lado más pegado (si empatan, la de arriba); lo del
-  otro lado queda libre.
+  de armado, encima (Marina) o debajo (otras oficinas). El primer renglón es el extremo de su
+  columna (no tiene otro renglón pegado entre él y la etiqueta), empieza a lo más a 1.5 altos de
+  etiqueta de ella y cae, de lado, en lo que ocupa la etiqueta ensanchada 3 altos de renglón;
+  cada renglón siguiente está a lo más a 1.5 altos de renglón del anterior, se encima con él en al
+  menos la mitad del más angosto y sigue dentro de la etiqueta ensanchada: una pila nunca se pasa
+  a la columna de al lado. Acaba en un hueco mayor o en un texto que no puede ser suyo: otra
+  etiqueta, una nota numerada, un texto que nombra su propia marca, una nota de familia, un texto
+  de otra familia, la celda de un cuadro o una llamada (un texto con directriz es de lo que ésta
+  señala).
 - **Por fila**: en un cuadro con títulos (MARCA | SECCIÓN | ARMADO | ESTRIBOS), las celdas de un
   renglón son de la marca de ese renglón.
 
-Todo es por hoja (el marco que contiene el ancla del texto; sin marco, su archivo) y exclusivo:
-un renglón que alcanzan dos marcas con huecos a menos de 10 % uno del otro es ambiguo y no es de
-ninguna; si no, es de la más pegada. Un texto que nombra otra familia (LOSA, DALA, TRABE, MURO…)
-nunca entra a una pila: es de la lectura de esa familia. Todo texto con forma de armado que no es
-de nadie (ni de una pila, ni de una fila, ni de una nota numerada, ni de una nota de familia, ni
-nombra su propia marca) sale como «sin dueño»: nada se queda sin leer en silencio."""
+Todo es por hoja (el marco que contiene el ancla del texto; sin marco, su archivo) y exclusivo.
+Cada etiqueta alcanza a lo más una columna de cada lado y las dos cuentan como reclamo: un
+renglón que dos marcas alcanzan con huecos parecidos (10 % del mismo lado, 25 % de lados
+opuestos) es ambiguo y no es de ninguna; si no, es de la más pegada, salvo que la geometría deje
+dudas (ver ``_repartir``). Una etiqueta con columnas de los dos lados se queda con la que tiene
+enfrente o la más pegada (si empatan, la de arriba), pero si ésa también la alcanza otra marca,
+la etiqueta es ambigua: su lectura depende de cómo se reparta todo el grupo y no se adivina. Una
+pila se toma entera o no se toma. Lo que no se pudo pegar sale como rechazo: ambiguo, cedido (la
+pila que alcanzaba la etiqueta es de otra marca), de otra familia, sin lector (dice de quién es
+pero ningún lector lo lee) o sin dueño: nada se queda sin leer en silencio."""
 
 import bisect
 import math
 import re
 import statistics
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -37,14 +41,21 @@ from pydantic import BaseModel, Field
 from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.text_patterns import TextPatternConfig, match_category
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
+from klave_engine.estructura.notas import leer_notas_con_renglones
+from klave_engine.estructura.textos import alto_de_texto, ancla_texto, caja_de_texto
 
-# En «alineado» (3) y «ajustado» (5) el código 11 es donde TERMINA la línea base:
-# el texto arranca en el ``insert``, así que ése es su ancla.
-_HALIGN_CON_FINAL_EN_EL_PUNTO = (3, 5)
+__all__ = [
+    "ARMADO_RE",
+    "Asociacion",
+    "Rechazo",
+    "ancla_texto",
+    "asociar",
+    "marca_en_texto",
+]
 
 # Un texto con forma de armado: una varilla (``#4``), una separación (``@20``) o el renglón que
-# sigue una zona de estribos (``CENTRO@20``, ``EXT…``).
-ARMADO_RE = re.compile(r"#\s*\d|@\s*\d|^\s*CENTRO\b|^\s*EXT\b", re.I)
+# sigue una zona de estribos (``CENTRO@20``, ``EXT @10``); «CENTRO DE CARGA» no.
+ARMADO_RE = re.compile(r"#\s*\d|@\s*\d|^\s*CENTRO\s*@|^\s*EXT\s*@", re.I)
 
 # Una marca: K-1, C-3, T-2, COL-1, CTA-3, Z-1, D-4B, P-4, MC-1, CE-1, CR-2, con su sufijo de
 # variante (``K-15A.1`` es otra marca que ``K-15A``), o el tipo «X» con su guion (``K-X``, ``D-X``).
@@ -54,12 +65,26 @@ _MARCA_RE = re.compile(
 )
 _PREFIJO_DE_ETIQUETA = re.compile(r"^(?:CASTILLO|COLUMNA)\s+")
 _LARGO_DE_ETIQUETA = 10
+# Lo que remite a otra parte del plano no reclama una marca: «E#2@15 VER CORTE C-2» es un
+# renglón de armado, no una nota de C-2.
+_REFERENCIA = re.compile(
+    r"\b(?:VER|V[EÉ]ASE|SEG[UÚ]N|IGUAL\s+A)\b\.?(?:\s+(?:EL|LA|LOS|LAS))?"
+    r"(?:\s+(?:CORTE|DETALLE|DET\.?|SECCI[OÓ]N|PLANO|NOTA|CUADRO)\b\.?)?\s*[^\s,;]*"
+    r"|\b(?:CORTE|DETALLE|DET\.)\s+[^\s,;]+",
+    re.I,
+)
+# Lo que una nota sí lee de un texto (``detection.schedules._parse_annotations``): una sección
+# (15x20, sin las piezas de 3 medidas) o varillas longitudinales (4#3, 6 VAR #4, V12#5).
+_SECCION = re.compile(r"(?<![\dxX×])(\d{1,3})\s*[xX×]\s*(\d{1,3})(?![\dxX×])")
+_PIEZA = re.compile(r"\d{1,3}\s*[xX×]\s*\d{1,3}\s*[xX×]\s*\d{1,3}")
+_LONGITUDINALES = re.compile(r"(\d{1,2})\s*(?:V|VAR|VARS|VARILLAS)?\s*#\s*(\d)(?!\s*@)", re.I)
+_LADO_DE_SECCION_CM = (8, 400)
 
 # Un texto que nombra otra familia es de la lectura de esa familia (la losa, el muro, la nota de
-# dalas): nunca entra a la pila de una marca y, si la para, se reporta.
+# dalas): nunca entra a una pila, nunca es huérfano y una pila nunca sigue más allá de él.
 _OTRA_FAMILIA = re.compile(r"\b(?:LOSA|DALA|CADENA|CONTRATRABE|TRABE|VIGA|MURO|ZAPATA)")
-# Las notas de familia de castillos y columnas («CASTILLOS 15X15 4#3 E#2@20») tampoco: son de
-# toda la familia, no de una marca.
+# Las notas de familia de castillos y columnas («CASTILLOS 15X15 4#3 E#2@20») tampoco entran a
+# una pila: son de toda la familia, no de una marca.
 _NOTA_DE_FAMILIA = re.compile(r"\b(?:CASTILLO|ARMEX|COLUMNA)")
 # Un renglón numerado («4.- SE PERMITE…», «5) …»), en cualquier línea de un MTEXT.
 _NOTA_NUMERADA = re.compile(r"^\s*\d{1,2}[.\-)]+(?:\s|$)", re.M)
@@ -76,21 +101,29 @@ _TRAMO = 15.0  # un hueco de más altos entre dos textos del renglón: ya es otr
 
 # La pila. El primer renglón a lo más a 1.5 altos de etiqueta; los siguientes, a lo más a 1.5
 # altos de renglón del anterior (Marina: 0.7–0.8 en castillos y columnas; 1.3 en el cuadro de
-# pilotes, que deja más aire); de lado, la etiqueta se ensancha 3 altos de renglón.
+# pilotes, que deja más aire); de lado, la etiqueta se ensancha 3 altos de renglón y cada renglón
+# se encima con el anterior en al menos la mitad del más angosto (en Marina, siempre entero).
 _HUECO_DE_ETIQUETA = 1.5
 _HUECO_ENTRE_RENGLONES = 1.5
 _ENSANCHE = 3.0
+_ENCIMA_MINIMO = 0.5
 # Dos huecos son el mismo si difieren a lo más 10 % (o una décima de alto, para los que casi
-# tocan): entre dos etiquetas, el renglón es ambiguo; entre dos lados de una etiqueta, gana arriba.
+# tocan); desde lados opuestos de la columna, 25 % (R54): una etiqueta pegada abajo de la pila de
+# otra fila compite con la de esa pila.
 _EMPATE = 0.10
+_EMPATE_OPUESTO = 0.25
 _EMPATE_ABSOLUTO = 0.1
+# La costumbre de un cuadro (etiqueta debajo o encima de su pila) se sabe con al menos dos pilas
+# sin disputa y 80 % de ellas del mismo lado.
+_COSTUMBRE_MINIMA = 2
+_COSTUMBRE_PARTE = 0.8
 # Un texto está «encima» de otro aunque se le meta hasta una décima de alto.
 _TRASLAPE = 0.1
-# El ancho de un carácter, × el alto, para los textos cuyo ancho no viene en el dibujo (ROMANS en
-# Marina mide 0.83–1.03, mediana 0.92; los centrados traen su ancho real).
-_ANCHO_POR_CARACTER = 0.9
-# El paso entre renglones de un MTEXT, × el alto (el interlineado normal de AutoCAD).
-_PASO_DE_MTEXT = 5.0 / 3.0
+# Una pila de enfrente apenas fuera del alcance (hasta el doble) y a menos del doble del hueco de
+# la que sí alcanza hace dudar de ésta.
+_CASI = 2.0
+# Una etiqueta está metida entre dos renglones si al menos la mitad de su alto cae en el hueco.
+_EN_EL_PASILLO = 0.5
 # Dos textos iguales a menos de esto (× el alto) son el mismo texto dibujado dos veces.
 _DUPLICADO = 0.25
 # Una llamada: un texto del que sale una directriz (una línea abierta que pasa a menos de 0.6
@@ -100,30 +133,8 @@ _DUPLICADO = 0.25
 # renglón de sus pilas.
 _PUNTA_DE_LLAMADA = 0.6
 _LARGO_DE_LLAMADA = 2.0
-
-
-def ancla_texto(e: NormalizedEntity) -> tuple[float, float]:
-    """El punto donde el dibujante puso el texto, no la esquina de su caja.
-
-    Un TEXT con alineación distinta de «izquierda-base» se coloca por su punto
-    de alineación (código 11): el ``insert`` de esos textos queda en otro lado.
-    Excepto «alineado» y «ajustado», donde el código 11 es el final de la línea
-    base y el ancla sigue siendo el ``insert``. Si no hay alineación, el ancla
-    es el ``insert``; sin él, la esquina inferior izquierda de la caja."""
-    propiedades = e.properties
-    halign = propiedades.get("halign", 0)
-    if (
-        e.entity_type == EntityType.text
-        and halign not in _HALIGN_CON_FINAL_EN_EL_PUNTO
-        and (halign != 0 or propiedades.get("valign", 0) != 0)
-    ):
-        punto = propiedades.get("align_point")
-        if punto is not None:
-            return (float(punto[0]), float(punto[1]))
-    insercion = propiedades.get("insert")
-    if insercion is not None:
-        return (float(insercion[0]), float(insercion[1]))
-    return (e.bbox[0], e.bbox[1])
+# Textos girados hasta 1° de diferencia se leen en la misma dirección.
+_MISMO_GIRO = 1
 
 
 def marca_en_texto(texto: str, config: TextPatternConfig) -> str | None:
@@ -147,26 +158,42 @@ class Asociacion(BaseModel):
     etiqueta_id: str  # el texto de la marca: una etiqueta que es definición, no colocación
     marca: str
     hoja: str
-    textos: list[str]  # de arriba abajo (los de una fila, de izquierda a derecha)
-    entidades: list[str]  # en el orden de ``textos``
+    # Un renglón por elemento, de arriba abajo (los de una fila, de izquierda a derecha); un
+    # MTEXT de varios renglones da uno por renglón.
+    textos: list[str]
+    entidades: list[str]  # la entidad de cada elemento de ``textos`` (se repite en un MTEXT)
     via: Literal["pila", "fila"]
 
 
 class Rechazo(BaseModel):
-    """Un texto con forma de armado que no se pegó a ninguna marca, y por qué."""
+    """Un texto con forma de armado que no se pegó a ninguna marca, o una etiqueta que se quedó
+    sin la pila que alcanzaba; y por qué."""
 
     entidad_id: str
     texto: str
     hoja: str
-    # ambigua: dos marcas lo alcanzan igual; otra_familia: está en la pila de una marca pero
-    # nombra otra familia; sin_dueno: nada lo lee.
-    motivo: Literal["ambigua", "otra_familia", "sin_dueno"]
+    # ambigua: dos marcas lo alcanzan parecido, o la etiqueta que lo alcanza tiene columnas de
+    # los dos lados y otra marca le disputa una; otra_familia: está en la pila de una marca pero
+    # nombra otra familia; sin_lector: nombra su marca o su familia pero ningún lector lo lee
+    # (sólo estribos, p. ej.); sin_dueno: nada lo lee; cedida: la entidad es una etiqueta y la
+    # pila que alcanzaba es de otra marca (``marcas``: la suya y las que se la quedaron).
+    motivo: Literal["ambigua", "otra_familia", "sin_lector", "sin_dueno", "cedida"]
     marcas: list[str] = Field(default_factory=list)
 
 
 # ------------------------------------------------------------------------- qué es cada texto
 
-_Clase = Literal["etiqueta", "linea", "llamada", "ajena", "familia", "nota", "anotacion", "nada"]
+_Clase = Literal[
+    "etiqueta",
+    "linea",
+    "llamada",
+    "ajena",
+    "familia",
+    "nota",
+    "anotacion",
+    "sin_lector",
+    "nada",
+]
 
 
 def _marca_de_etiqueta(texto: str, config: TextPatternConfig) -> str | None:
@@ -184,12 +211,26 @@ def _marca_de_etiqueta(texto: str, config: TextPatternConfig) -> str | None:
     return None
 
 
+def _lo_lee_una_nota(texto: str) -> bool:
+    """Si la lectura de notas toma algo de ``texto``: una sección (dos lados de 8 a 400 cm) o
+    varillas longitudinales. Un texto con sólo estribos («K-7 E#3@20») no lo lee nadie."""
+    piezas = [m.span() for m in _PIEZA.finditer(texto)]
+    for m in _SECCION.finditer(texto):
+        if any(a <= m.start() < b for a, b in piezas):
+            continue
+        lados = int(m.group(1)), int(m.group(2))
+        if all(_LADO_DE_SECCION_CM[0] <= lado <= _LADO_DE_SECCION_CM[1] for lado in lados):
+            return True
+    return _LONGITUDINALES.search(texto) is not None
+
+
 def _clase(
     e: NormalizedEntity, config: TextPatternConfig, de_notas: set[str]
 ) -> tuple[_Clase, str | None]:
     """Qué es un texto para la asociación: una etiqueta (con su marca), un renglón de armado que
-    puede ir en una pila, o un texto de armado que ya tiene dueño (una nota numerada, uno que
-    nombra su marca, uno de otra familia, una nota de castillos o columnas); lo demás, nada."""
+    puede ir en una pila, o un texto de armado que tiene otro dueño (una nota numerada, uno que
+    nombra su marca, uno de otra familia, una nota de castillos o columnas) o que dice de quién
+    es pero nadie lo lee; lo demás, nada."""
     texto = e.text or ""
     marca = _marca_de_etiqueta(texto, config)
     if marca is not None:
@@ -198,96 +239,18 @@ def _clase(
         return "nada", None
     if e.entity_id in de_notas or _NOTA_NUMERADA.search(texto):
         return "nota", None
-    if marca_en_texto(texto, config) is not None:
-        return "anotacion", None  # «K-1 15x20 4#3 E#2@20»: dice de quién es
     mayusculas = texto.upper()
     if _OTRA_FAMILIA.search(mayusculas):
         return "ajena", None
+    if marca_en_texto(_REFERENCIA.sub(" ", texto), config) is not None:
+        # «K-1 15x20 4#3 E#2@20» dice de quién es y lo lee la nota; «K-7 E#3@20», no.
+        return ("anotacion" if _lo_lee_una_nota(texto) else "sin_lector"), None
     if _NOTA_DE_FAMILIA.search(mayusculas):
-        return "familia", None
+        return ("familia" if _lo_lee_una_nota(texto) else "sin_lector"), None
     return "linea", None
 
 
 # ----------------------------------------------------------------------- dónde está cada texto
-
-
-def _ancho_dibujado(e: NormalizedEntity, giro: float) -> float | None:
-    """El ancho de un TEXT alineado tal como lo calculó el CAD: la distancia, a lo largo del
-    renglón, de su ``insert`` (inicio de la línea base) a su punto de alineación."""
-    p = e.properties
-    halign = p.get("halign") or 0
-    insercion, punto = p.get("insert"), p.get("align_point")
-    if e.entity_type != EntityType.text or not halign or insercion is None or punto is None:
-        return None
-    avance = (float(punto[0]) - float(insercion[0])) * math.cos(giro) + (
-        float(punto[1]) - float(insercion[1])
-    ) * math.sin(giro)
-    if avance <= 1e-9:
-        return None  # sin el insert calculado (p. ej. un DXF de ezdxf): no se sabe
-    return 2.0 * avance if halign in (1, 4) else avance
-
-
-def _alto(e: NormalizedEntity) -> float:
-    alto = e.properties.get("height")
-    if not isinstance(alto, int | float) or alto <= 0:
-        alto = e.bbox[3] - e.bbox[1]
-    return float(alto) if alto > 0 else 1e-6
-
-
-def _forma_de_mtext(
-    e: NormalizedEntity, texto: str, alto: float
-) -> tuple[float, float, float, float, float]:
-    """La caja de un MTEXT: su punto de inserción es una esquina, un lado o el centro de la
-    caja (``attachment_point``); con columna (``column_width``), los párrafos van a la
-    izquierda, al centro o a la derecha de ella (``paragraph_align``; si no la dice, según el
-    punto de inserción) y los renglones largos se parten."""
-    p = e.properties
-    punto = int(p.get("attachment_point") or 1)
-    punto = punto if 1 <= punto <= 9 else 1
-    columna, fila = (punto - 1) % 3, (punto - 1) // 3
-    renglones = [r.strip() for r in texto.split("\n")] or [""]
-    por_caracter = _ANCHO_POR_CARACTER * alto
-    ancho = por_caracter * max(len(r) for r in renglones)
-    cuantos = len(renglones)
-    ancho_de_columna = float(p.get("column_width") or 0.0)
-    if ancho_de_columna > 0:
-        cuantos = sum(
-            max(1, math.ceil(por_caracter * len(r) / ancho_de_columna)) for r in renglones
-        )
-        ancho = min(ancho, ancho_de_columna)
-        inicio = (0.0, -ancho_de_columna / 2, -ancho_de_columna)[columna]
-        alineacion = p.get("paragraph_align") or "lcr"[columna]
-        if alineacion == "c":
-            dx0 = inicio + (ancho_de_columna - ancho) / 2
-        elif alineacion == "r":
-            dx0 = inicio + ancho_de_columna - ancho
-        elif alineacion in ("j", "d"):
-            dx0, ancho = inicio, ancho_de_columna  # justificado: ocupa la columna
-        else:
-            dx0 = inicio
-    else:
-        dx0 = (0.0, -ancho / 2, -ancho)[columna]
-    total = alto + (cuantos - 1) * _PASO_DE_MTEXT * alto
-    dy0 = (-total, -total / 2, 0.0)[fila]
-    return dx0, dx0 + ancho, dy0, dy0 + total, alto
-
-
-def _forma(e: NormalizedEntity, giro: float) -> tuple[float, float, float, float, float]:
-    """La caja del texto respecto a su ancla, en la dirección del renglón:
-    ``(dx0, dx1, dy0, dy1, alto de un renglón)``."""
-    alto = _alto(e)
-    texto = e.text or ""
-    if e.entity_type == EntityType.mtext:
-        return _forma_de_mtext(e, texto, alto)
-    p = e.properties
-    halign, valign = p.get("halign") or 0, p.get("valign") or 0
-    ancho = _ancho_dibujado(e, giro) or _ANCHO_POR_CARACTER * alto * len(texto.strip())
-    dx0 = {1: -ancho / 2, 2: -ancho, 4: -ancho / 2}.get(halign, 0.0)
-    if halign == 4:
-        dy0 = -alto / 2  # «medio»: centrado en las dos direcciones
-    else:
-        dy0 = {2: -alto / 2, 3: -alto}.get(valign, 0.0)
-    return dx0, dx0 + ancho, dy0, dy0 + alto, alto
 
 
 @dataclass(eq=False)
@@ -310,17 +273,34 @@ class _Texto:
         return (self.e.text or "").strip()
 
     @property
+    def renglones(self) -> list[str]:
+        return [r.strip() for r in self.texto.split("\n") if r.strip()]
+
+    @property
     def cx(self) -> float:
         return (self.x0 + self.x1) / 2
 
-    @property
-    def cy(self) -> float:
-        return (self.y0 + self.y1) / 2
 
-
-def _giro(e: NormalizedEntity) -> int:
-    """La dirección del renglón en grados enteros (0 a 359)."""
-    return round((e.rotation or 0.0) % 360.0) % 360
+def _giros(textos: list[NormalizedEntity]) -> dict[str, int]:
+    """La dirección de cada texto en grados enteros; las que difieren en a lo más 1° (0° y 359°
+    también) se juntan en la más común de su grupo."""
+    redondeo = {e.entity_id: round((e.rotation or 0.0) % 360.0) % 360 for e in textos}
+    cuantos = Counter(redondeo.values())
+    valores = sorted(cuantos)
+    grupos: list[list[int]] = []
+    for v in valores:
+        if grupos and v - grupos[-1][-1] <= _MISMO_GIRO:
+            grupos[-1].append(v)
+        else:
+            grupos.append([v])
+    if len(grupos) > 1 and grupos[0][0] + 360 - grupos[-1][-1] <= _MISMO_GIRO:
+        grupos[0] = grupos.pop() + grupos[0]
+    representante = {}
+    for grupo in grupos:
+        comun = max(grupo, key=lambda g: (cuantos[g], -g))
+        for v in grupo:
+            representante[v] = comun
+    return {i: representante[g] for i, g in redondeo.items()}
 
 
 def _texto_local(e: NormalizedEntity, giro: int, clase: _Clase, marca: str | None) -> _Texto:
@@ -329,7 +309,7 @@ def _texto_local(e: NormalizedEntity, giro: int, clase: _Clase, marca: str | Non
     c, s = math.cos(angulo), math.sin(angulo)
     ax, ay = ancla_texto(e)
     lx, ly = ax * c + ay * s, -ax * s + ay * c
-    dx0, dx1, dy0, dy1, alto = _forma(e, angulo)
+    dx0, dx1, dy0, dy1, alto = caja_de_texto(e, angulo)
     return _Texto(e, clase, marca, lx + dx0, lx + dx1, ly + dy0, ly + dy1, alto)
 
 
@@ -359,11 +339,8 @@ class _Lineas:
         c, s = math.cos(angulo), math.sin(angulo)
         punta = _PUNTA_DE_LLAMADA * t.alto
 
-        def local(x: float, y: float) -> tuple[float, float]:
-            return x * c + y * s, -x * s + y * c
-
         def lejania(x: float, y: float) -> float:
-            lx, ly = local(x, y)
+            lx, ly = x * c + y * s, -x * s + y * c
             return math.hypot(max(t.x0 - lx, 0.0, lx - t.x1), max(t.y0 - ly, 0.0, ly - t.y1))
 
         esquinas = [
@@ -388,7 +365,7 @@ class _Lineas:
 
 
 def _lineas(entities: list[NormalizedEntity], textos: list[NormalizedEntity]) -> _Lineas:
-    altos = [_alto(e) for e in textos]
+    altos = [alto_de_texto(e) for e in textos]
     celda = 4.0 * statistics.median(altos) if altos else 1.0
     return _Lineas(entities, max(celda, 1e-6))
 
@@ -419,9 +396,13 @@ def _renglones(textos: list[_Texto]) -> list[list[_Texto]]:
     if not altos:
         return []
     tolerancia = statistics.median(altos) * _MISMO_RENGLON
+
+    def centro(t: _Texto) -> float:
+        return (t.y0 + t.y1) / 2
+
     renglones: list[list[_Texto]] = []
-    for t in sorted(textos, key=lambda t: (-t.cy, t.cx)):
-        if renglones and abs(renglones[-1][0].cy - t.cy) <= tolerancia:
+    for t in sorted(textos, key=lambda t: (-centro(t), t.cx)):
+        if renglones and abs(centro(renglones[-1][0]) - centro(t)) <= tolerancia:
             renglones[-1].append(t)
         else:
             renglones.append([t])
@@ -479,10 +460,11 @@ def _filas_bajo(
     xs = sorted(x for x, _ in columnas)
     holgura = 0.5 * statistics.median(b - a for a, b in zip(xs, xs[1:], strict=False))
     alto = statistics.median(c.alto for c in cabeza) or 1.0
-    y_previa = statistics.median(c.cy for c in cabeza)
+    y_previa = statistics.median((c.y0 + c.y1) / 2 for c in cabeza)
     filas: list[tuple[_Texto, str, list[_Texto]]] = []
     for renglon in abajo:
-        if y_previa - renglon[0].cy > alto * _FIN_DEL_CUADRO:
+        y = (renglon[0].y0 + renglon[0].y1) / 2
+        if y_previa - y > alto * _FIN_DEL_CUADRO:
             break
         celdas: dict[str, list[_Texto]] = {}
         for c in renglon:
@@ -491,7 +473,7 @@ def _filas_bajo(
                 celdas.setdefault(titulo, []).append(c)
         if not celdas:
             continue  # lo de este renglón está en otra parte de la hoja
-        y_previa = renglon[0].cy
+        y_previa = y
         etiqueta, marca = _marca_de_la_fila(celdas, config)
         if etiqueta is None or marca is None:
             break
@@ -524,7 +506,7 @@ def _marca_de_la_fila(
 
 
 class _Indice:
-    """Los textos que una pila puede tocar, ordenados para buscar por altura."""
+    """Textos ordenados para buscar por altura."""
 
     def __init__(self, textos: list[_Texto]) -> None:
         self.por_base = sorted(textos, key=lambda t: t.y0)
@@ -542,8 +524,14 @@ class _Indice:
         return self.por_tope[a:b]
 
 
-def _casi_igual(a: float, b: float, alto: float) -> bool:
-    return abs(a - b) <= max(_EMPATE * max(a, b), _EMPATE_ABSOLUTO * alto)
+def _hueco(desde: _Texto | float, t: _Texto, sentido: int) -> float:
+    if isinstance(desde, _Texto):
+        desde = desde.y1 if sentido > 0 else desde.y0
+    return t.y0 - desde if sentido > 0 else desde - t.y1
+
+
+def _casi_igual(a: float, b: float, alto: float, tolerancia: float = _EMPATE) -> bool:
+    return abs(a - b) <= max(tolerancia * max(a, b), _EMPATE_ABSOLUTO * alto)
 
 
 def _lejania(centro: float, t: _Texto) -> float:
@@ -552,145 +540,579 @@ def _lejania(centro: float, t: _Texto) -> float:
     return min(abs(t.x0 - centro), abs(t.x1 - centro))
 
 
+def _traslapa(t: _Texto, x0: float, x1: float) -> bool:
+    return t.x1 >= x0 and t.x0 <= x1
+
+
+def _se_enciman(a: _Texto, b: _Texto) -> bool:
+    """Dos renglones de la misma columna: se enciman de lado en al menos la mitad del más
+    angosto."""
+    comun = min(a.x1, b.x1) - max(a.x0, b.x0)
+    return comun >= _ENCIMA_MINIMO * min(a.x1 - a.x0, b.x1 - b.x0)
+
+
+def _en_la_etiqueta(etiqueta: _Texto, t: _Texto, alto: float | None = None) -> bool:
+    """Si ``t`` cae, de lado, en la etiqueta ensanchada 3 altos de renglón (los de ``t``, o
+    ``alto`` si es menor: una etiqueta vecina no se ensancha con su letra más alta)."""
+    margen = _ENSANCHE * (t.alto if alto is None else min(t.alto, alto))
+    return _traslapa(t, etiqueta.x0 - margen, etiqueta.x1 + margen)
+
+
 def _paso(
     indice: _Indice,
     borde: float,
     sentido: int,
-    banda: tuple[float, float],
     alcance: float,
     alto: float,
-    ensanche: float,
     centro: float,
     fuera: set[str],
-) -> tuple[float, _Texto] | None:
-    """El texto más pegado a ``borde`` en ``sentido`` (+1 arriba, -1 abajo) dentro del
-    ``alcance`` que se encima de lado con ``banda`` (ensanchada ``ensanche`` altos del texto).
-    Entre los que quedan igual de pegados, el que está más cerca del centro de la etiqueta."""
-    holgura = _TRASLAPE * alto
+    admite: Callable[[_Texto], bool],
+    prefiere: Callable[[_Texto], bool] | None = None,
+    empatados: list[_Texto] | None = None,
+) -> _Texto | None:
+    """El texto admitido más pegado a ``borde`` en ``sentido`` (+1 arriba, -1 abajo), a lo más a
+    ``alcance``; si alguno cumple ``prefiere``, sólo entre ésos; entre los que quedan igual de
+    pegados, el más cerca del centro de la etiqueta. En ``empatados`` deja todos los admitidos."""
     encontrados: list[tuple[float, _Texto]] = []
-    for t in indice.cerca(borde, sentido, alcance, holgura):
+    for t in indice.cerca(borde, sentido, alcance, _TRASLAPE * alto):
         if t.id in fuera:
             continue
-        hueco = t.y0 - borde if sentido > 0 else borde - t.y1
-        if hueco < -_TRASLAPE * min(alto, t.alto) or hueco > alcance:
-            continue
-        margen = ensanche * t.alto
-        if t.x1 < banda[0] - margen or t.x0 > banda[1] + margen:
+        hueco = _hueco(borde, t, sentido)
+        if hueco < -_TRASLAPE * min(alto, t.alto) or hueco > alcance or not admite(t):
             continue
         encontrados.append((max(hueco, 0.0), t))
+    if prefiere is not None and any(prefiere(t) for _, t in encontrados):
+        encontrados = [(h, t) for h, t in encontrados if prefiere(t)]
     if not encontrados:
         return None
     menor = min(h for h, _ in encontrados)
     pegados = [(h, t) for h, t in encontrados if _casi_igual(h, menor, t.alto)]
-    return min(pegados, key=lambda ht: (_lejania(centro, ht[1]), ht[0], ht[1].x0, ht[1].id))
+    if empatados is not None:
+        empatados.extend(t for _, t in encontrados)
+    return min(pegados, key=lambda ht: (_lejania(centro, ht[1]), ht[0], ht[1].x0, ht[1].id))[1]
 
 
 @dataclass(eq=False)
-class _Pila:
+class _Alcance:
+    """Lo que una etiqueta alcanza de un lado: una columna de renglones, de ella hacia afuera."""
+
     etiqueta: _Texto
     sentido: int
     hueco: float  # de la etiqueta al primer renglón
     renglones: list[_Texto]
+    frontal: bool = True  # su primer renglón está sobre la etiqueta misma, no sólo en su ensanche
     tope: _Texto | None = None  # un texto de otra familia que la paró
-    ganados: list[_Texto] = field(default_factory=list)
+    # Otra etiqueta metida entre dos renglones de la columna (``mas_alla`` es el que sigue): si
+    # ésa no lo alcanza, la pila no se sabe dónde acaba.
+    cortada: _Texto | None = None
+    mas_alla: _Texto | None = None
+    # Dos columnas que se juntan en un renglón que sigue igual de pegado a las dos.
+    fusion: bool = False
+
+    @property
+    def marca(self) -> str:
+        return self.etiqueta.marca or ""
 
 
-def _pila(etiqueta: _Texto, sentido: int, indice: _Indice, libres: set[str]) -> _Pila | None:
-    """La pila de ``etiqueta`` hacia ``sentido``: el renglón más pegado y los que le siguen."""
+def _sigue(etiqueta: _Texto, previo: _Texto, libres: set[str]) -> Callable[[_Texto], bool]:
+    """Lo que puede seguir a ``previo`` en la pila, siempre dentro de la etiqueta ensanchada: un
+    renglón encimado con ``previo`` en al menos la mitad del más angosto (no se pasa a la columna
+    de al lado), o cualquier otro texto que se le encime de lado, que la para."""
+
+    def admite(t: _Texto) -> bool:
+        if t.id in libres:
+            return _en_la_etiqueta(etiqueta, t) and _se_enciman(previo, t)
+        return _en_la_etiqueta(etiqueta, t, previo.alto) and _traslapa(t, previo.x0, previo.x1)
+
+    return admite
+
+
+def _en_el_pasillo(
+    a: _Texto,
+    b: _Texto,
+    etiquetas: list[_Texto],
+    columna: _Texto | None = None,
+) -> _Texto | None:
+    """Una etiqueta (no ``columna``) metida entre dos renglones vecinos de una columna: al menos
+    la mitad de su alto en el hueco entre ellos y, de lado, encimada con alguno de los dos
+    en al menos la mitad del más angosto (y en la etiqueta ``columna`` ensanchada, si se da: la de
+    la pila que se está leyendo)."""
+    abajo, arriba = (a, b) if a.y0 <= b.y0 else (b, a)
+    piso, techo = abajo.y1, arriba.y0
+    if techo <= piso:
+        return None
+    for e in etiquetas:
+        if columna is not None and e.id == columna.id:
+            continue
+        if min(e.y1, techo) - max(e.y0, piso) < _EN_EL_PASILLO * (e.y1 - e.y0):
+            continue
+        if not (_se_enciman(e, a) or _se_enciman(e, b)):
+            continue
+        if columna is not None and not _en_la_etiqueta(columna, e, min(a.alto, b.alto)):
+            continue
+        return e
+    return None
+
+
+def _de_frente(t: _Texto, sentido: int, etiquetas: list[_Texto], propia: _Texto) -> _Texto | None:
+    """Otra etiqueta que tiene a ``t`` justo enfrente, del lado de donde viene la pila (debajo de
+    él si la pila sube): encimada con él y a su alcance. ``t`` es el extremo de la pila de ésa."""
+    for e in etiquetas:
+        if e.id == propia.id or e.marca == propia.marca or not _se_enciman(t, e):
+            continue
+        hueco = _hueco(e, t, sentido)  # de la etiqueta a ``t``, hacia donde va la pila
+        if -_TRASLAPE * min(e.alto, t.alto) <= hueco <= _HUECO_DE_ETIQUETA * e.alto:
+            return e
+    return None
+
+
+def _alcance(
+    etiqueta: _Texto,
+    sentido: int,
+    indice: _Indice,
+    renglones: _Indice,
+    libres: set[str],
+    etiquetas: list[_Texto],
+) -> _Alcance | None:
+    """La columna que ``etiqueta`` alcanza hacia ``sentido``: su extremo más pegado y los
+    renglones que le siguen en la misma columna, hasta un hueco o un texto que no es suyo."""
+
+    def extremo(t: _Texto) -> bool:
+        """Que entre ``t`` y la etiqueta no haya otro renglón de su columna: una etiqueta junto a
+        la mitad de una pila ajena no la toma desde ahí. Un renglón separado de ``t`` por una
+        etiqueta metida entre los dos es de otra pila, y la etiqueta que tiene a ``t`` justo
+        enfrente (encimada con él) lo alcanza aunque al lado de ella siga otra pila."""
+        if _se_enciman(t, etiqueta):
+            return True
+        alcance = _HUECO_ENTRE_RENGLONES * t.alto
+        return not any(
+            g.id != t.id
+            and _TRASLAPE * -min(t.alto, g.alto) <= _hueco(t, g, -sentido) <= alcance
+            and _se_enciman(t, g)
+            and _en_el_pasillo(t, g, etiquetas) is None
+            for g in renglones.cerca(
+                t.y0 if sentido > 0 else t.y1, -sentido, alcance, _TRASLAPE * t.alto
+            )
+        )
+
+    def primero(t: _Texto) -> bool:
+        return _en_la_etiqueta(etiqueta, t) and (t.id not in libres or extremo(t))
+
+    def sobre_la_etiqueta(t: _Texto) -> bool:
+        # El ensanche es holgura para los anchos estimados: lo que cae sobre la etiqueta misma
+        # (encimado en al menos la mitad del más angosto) va primero: el renglón del vecino que
+        # apenas entra al ensanche no le gana al suyo.
+        return _se_enciman(t, etiqueta)
+
     borde = etiqueta.y1 if sentido > 0 else etiqueta.y0
-    primero = _paso(
+    actual = _paso(
         indice,
         borde,
         sentido,
-        (etiqueta.x0, etiqueta.x1),
         _HUECO_DE_ETIQUETA * etiqueta.alto,
         etiqueta.alto,
-        _ENSANCHE,
         etiqueta.cx,
         {etiqueta.id},
+        primero,
+        sobre_la_etiqueta,
     )
-    if primero is None or primero[1].id not in libres:
+    if actual is None or actual.id not in libres:
         return None  # nada, u otra cosa (otra etiqueta, una nota, una celda) en su lugar
-    hueco, actual = primero
-    pila = _Pila(etiqueta, sentido, hueco, [actual])
-    banda = (actual.x0, actual.x1)
-    borde = actual.y1 if sentido > 0 else actual.y0
+    pila = _Alcance(
+        etiqueta,
+        sentido,
+        max(_hueco(borde, actual, sentido), 0.0),
+        [actual],
+        frontal=sobre_la_etiqueta(actual),
+    )
     while True:
-        siguiente = _paso(
-            indice,
-            borde,
-            sentido,
-            banda,
-            _HUECO_ENTRE_RENGLONES * actual.alto,
-            actual.alto,
-            0.0,
-            etiqueta.cx,
-            {etiqueta.id, *(r.id for r in pila.renglones)},
-        )
+        previo = actual
+
+        def buscar(
+            donde: _Indice, previo: _Texto = previo, empatados: list[_Texto] | None = None
+        ) -> _Texto | None:
+            return _paso(
+                donde,
+                previo.y1 if sentido > 0 else previo.y0,
+                sentido,
+                _HUECO_ENTRE_RENGLONES * previo.alto,
+                previo.alto,
+                etiqueta.cx,
+                {etiqueta.id, *(r.id for r in pila.renglones)},
+                _sigue(etiqueta, previo, libres),
+                empatados=empatados,
+            )
+
+        empatados: list[_Texto] = []
+        siguiente = buscar(indice, empatados=empatados)
         if siguiente is None:
             break
-        actual = siguiente[1]
-        if actual.id not in libres:
-            if actual.clase == "ajena":
-                pila.tope = actual
+        if siguiente.id in libres and any(
+            t.id in libres
+            and t.id != siguiente.id
+            and not _es_copia(t, siguiente)
+            and min(t.y1, siguiente.y1) > max(t.y0, siguiente.y0)
+            for t in empatados
+        ):
+            # Dos renglones que siguen al anterior, uno al lado del otro: la columna se abre en
+            # dos y no se sabe por cuál sigue.
+            pila.fusion = True
             break
-        pila.renglones.append(actual)
-        banda = (min(banda[0], actual.x0), max(banda[1], actual.x1))
-        borde = max(borde, actual.y1) if sentido > 0 else min(borde, actual.y0)
+        if siguiente.id not in libres:
+            if siguiente.clase == "ajena":
+                pila.tope = siguiente
+            elif siguiente.clase == "etiqueta":
+                pila.mas_alla = buscar(renglones)  # la columna sigue más allá de ella
+                pila.cortada = siguiente if pila.mas_alla is not None else None
+            break
+        pasillo = _en_el_pasillo(previo, siguiente, etiquetas, etiqueta) or _de_frente(
+            siguiente, sentido, etiquetas, etiqueta
+        )
+        if pasillo is not None:
+            pila.cortada, pila.mas_alla = pasillo, siguiente
+            break
+        otro = _otro_previo(siguiente, previo, sentido, renglones, pila.renglones)
+        if otro is not None:
+            # ``siguiente`` también sigue a otro renglón de al lado: es de la columna del más
+            # pegado de los dos; si lo están igual, no se sabe de cuál es.
+            del_otro = max(_hueco(otro, siguiente, sentido), 0.0)
+            del_previo = max(_hueco(previo, siguiente, sentido), 0.0)
+            empate = _casi_igual(del_otro, del_previo, siguiente.alto)
+            if empate or del_otro < del_previo:
+                pila.fusion = empate
+                break
+        pila.renglones.append(siguiente)
+        actual = siguiente
     return pila
 
 
-def _elegir_lado(arriba: _Pila | None, abajo: _Pila | None) -> _Pila | None:
-    """Una etiqueta tiene una pila: la del lado más pegado; si empatan, la de arriba."""
-    if arriba is None or abajo is None:
-        return arriba or abajo
-    alto = min(arriba.renglones[0].alto, abajo.renglones[0].alto)
-    if arriba.hueco <= abajo.hueco or _casi_igual(arriba.hueco, abajo.hueco, alto):
-        return arriba
-    return abajo
+def _es_copia(a: _Texto, b: _Texto) -> bool:
+    """El mismo texto dibujado dos veces encima de sí mismo."""
+    return a.texto == b.texto and math.hypot(a.x0 - b.x0, a.y0 - b.y0) <= _DUPLICADO * a.alto
 
 
-def _pilas(textos: list[_Texto], de_filas: set[str]) -> tuple[list[_Pila], dict[str, list[str]]]:
-    """Las pilas de un grupo de textos con la misma dirección, ya sin renglones compartidos.
+def _otro_previo(
+    t: _Texto, previo: _Texto, sentido: int, renglones: _Indice, propios: list[_Texto]
+) -> _Texto | None:
+    """Otro renglón (no de la pila) que ``t`` también podría seguir en una columna: del lado de
+    donde viene la pila, a lo más a 1.5 altos de ``t`` y encimado con él en al menos la mitad del
+    más angosto. El más pegado de ellos."""
+    ya = {r.id for r in propios} | {previo.id}
+    borde = t.y0 if sentido > 0 else t.y1
+    mejores = [
+        (_hueco(q, t, sentido), q)
+        for q in renglones.cerca(borde, -sentido, _HUECO_ENTRE_RENGLONES * t.alto, 0.0)
+        if q.id not in ya
+        and q.id != t.id
+        and -_TRASLAPE * min(q.alto, t.alto)
+        <= _hueco(q, t, sentido)
+        <= _HUECO_ENTRE_RENGLONES * q.alto
+        and _se_enciman(q, t)
+    ]
+    return min(mejores, key=lambda hq: (hq[0], hq[1].id))[1] if mejores else None
 
-    Devuelve las pilas (con ``ganados``: sus renglones, de la etiqueta hacia afuera, hasta el
-    primero que no ganó) y los renglones ambiguos con las marcas que los alcanzan."""
+
+@dataclass
+class _Reparto:
+    """Lo que queda de las pilas de un grupo de textos: las tomadas (con los renglones que se
+    quedaron), los renglones ambiguos con las marcas que los alcanzan, y las etiquetas que se
+    quedaron sin la pila que alcanzaban porque es de otra marca."""
+
+    tomadas: list[tuple[_Alcance, list[_Texto]]]
+    ambiguos: dict[str, set[str]]
+    cedidas: dict[str, set[str]]
+
+
+def _repartir(
+    etiquetas: list[_Texto],
+    alcances: dict[str, list[_Alcance]],
+    casi: dict[str, float],
+    casi_de: dict[str, set[str]],
+) -> _Reparto:
+    """Quién se queda cada renglón; ante la duda, nadie.
+
+    Todo lo que una etiqueta alcanza, de los dos lados, es un reclamo. En cada renglón, la marca
+    más pegada lo gana; lo empatan (y nadie lo gana) dos marcas con huecos parecidos (10 % del
+    mismo lado, 25 % de lados opuestos), o cuando la más pegada va contra la costumbre del cuadro,
+    sólo lo alcanza con el ensanche frente a una que lo tiene enfrente, tiene del otro lado una
+    pila apenas fuera de su alcance, o está en la punta opuesta de una columna que para la otra es
+    la única que tiene enfrente; también una etiqueta y la que se le mete en la columna.
+
+    Un lado de una etiqueta está vivo si no pierde su primer renglón ante una marca que se lo
+    queda (si la que se lo ganó al final no lo toma, vuelve a estar en disputa). Con un lado vivo,
+    la etiqueta toma la pila entera sólo si gana todos sus renglones; con dos, la que tiene
+    enfrente o, si las dos, la más pegada (si empatan, la de arriba), y si otra marca también la
+    alcanza o la tiene enfrente apenas fuera de su alcance, o va contra la costumbre, la etiqueta
+    es ambigua. Una pila cortada por otra etiqueta que no se queda con lo de más allá, que se abre
+    en dos o se junta con otra, o que otra etiqueta tiene enfrente apenas fuera de su alcance,
+    también. Lo ambiguo se rechaza entero: nunca una pila a medias ni la de otra marca."""
+    reclamos: dict[str, list[_Alcance]] = defaultdict(list)
+    for lista in alcances.values():
+        for a in lista:
+            for r in a.renglones:
+                reclamos[r.id].append(a)
+
+    def ajenos(a: _Alcance) -> set[str]:
+        return {b.marca for r in a.renglones for b in reclamos[r.id] if b.marca != a.marca}
+
+    # La costumbre del cuadro: de qué lado de su pila van las etiquetas cuya pila nadie disputa
+    # (al menos dos y 80 % del mismo lado). Una etiqueta que va contra ella no le gana una pila
+    # disputada a una que la sigue, por más pegada que esté: eso queda ambiguo.
+    lados: Counter[int] = Counter()
+    for lista in alcances.values():
+        sin_disputa = [a for a in lista if not ajenos(a)]
+        if len(sin_disputa) == 1:
+            lados[sin_disputa[0].sentido] += 1
+    costumbre = next(
+        (
+            lado
+            for lado, n in lados.items()
+            if n >= _COSTUMBRE_MINIMA and n >= _COSTUMBRE_PARTE * sum(lados.values())
+        ),
+        None,
+    )
+
+    # Una etiqueta metida en la columna de otra: lo que las dos alcanzan de esa columna no es de
+    # ninguna, por más pegada que esté la de en medio.
+    cortes = {
+        frozenset((a.etiqueta.id, a.cortada.id))
+        for lista in alcances.values()
+        for a in lista
+        if a.cortada is not None
+    }
+
+    def _sin_rival_mas_pegado(x: _Alcance) -> bool:
+        """Que ninguna otra marca alcance el primer renglón de ``x`` claramente más pegada."""
+        primero = x.renglones[0]
+        return not any(
+            b.marca != x.marca
+            and b.hueco < x.hueco
+            and not _casi_igual(
+                b.hueco,
+                x.hueco,
+                primero.alto,
+                _EMPATE if b.sentido == x.sentido else _EMPATE_OPUESTO,
+            )
+            for b in reclamos[primero.id]
+        )
+
+    def estado(a: _Alcance, r: _Texto) -> str:
+        resultado = "gana"
+        for b in reclamos[r.id]:
+            if b.marca == a.marca:
+                continue
+            tolerancia = _EMPATE if b.sentido == a.sentido else _EMPATE_OPUESTO
+            if _casi_igual(a.hueco, b.hueco, r.alto, tolerancia) or (
+                frozenset((a.etiqueta.id, b.etiqueta.id)) in cortes
+            ):
+                resultado = "empata"
+                continue
+            cerca, lejos = (b, a) if b.hueco < a.hueco else (a, b)
+            if costumbre is not None and cerca.sentido != costumbre == lejos.sentido:
+                resultado = "empata"  # la más pegada va contra la costumbre del cuadro
+            elif lejos.frontal and not cerca.frontal:
+                resultado = "empata"  # la más pegada sólo la alcanza con el ensanche
+            elif cerca.etiqueta.id in casi and lejos.etiqueta.id not in casi:
+                # La más pegada tiene enfrente, del otro lado y apenas fuera de su alcance, otra
+                # pila que puede ser la suya.
+                resultado = "empata"
+            elif cerca.sentido != lejos.sentido and not any(
+                x is not lejos and x.frontal and _sin_rival_mas_pegado(x)
+                for x in alcances[lejos.etiqueta.id]
+            ):
+                # Una columna entre dos etiquetas, una en cada punta, y para la más lejana es la
+                # única pila que tiene enfrente: pueden ser dos pilas juntas, o la de cualquiera
+                # de las dos. No se adivina por cuál está más pegada.
+                resultado = "empata"
+            elif cerca is b:
+                return "pierde"
+        return resultado
+
+    def resolver(
+        revividos: set[tuple[str, int]],
+    ) -> tuple[list[tuple[_Alcance, list[_Texto]]], dict[str, _Alcance], dict[str, set[str]]]:
+        tomadas: list[tuple[_Alcance, list[_Texto]]] = []
+        dudosas: dict[str, set[str]] = {}  # etiqueta → las marcas de su grupo en disputa
+        for etiqueta in etiquetas:
+            vivos = [
+                a
+                for a in alcances[etiqueta.id]
+                if (etiqueta.id, a.sentido) in revividos or estado(a, a.renglones[0]) != "pierde"
+            ]
+            if not vivos:
+                continue
+            elegido = vivos[0]
+            if (
+                len(alcances[etiqueta.id]) == 1
+                and etiqueta.id in casi
+                and (not elegido.frontal or casi[etiqueta.id] <= _CASI * elegido.hueco)
+            ):
+                # Del otro lado tiene enfrente una pila apenas fuera de su alcance, casi tan
+                # cerca como la que alcanza (o la que alcanza sólo le queda de lado): su pila
+                # puede ser aquélla.
+                dudosas[etiqueta.id] = {elegido.marca} | ajenos(elegido)
+                continue
+            frente = {
+                m for r in elegido.renglones for m in casi_de.get(r.id, ()) if m != elegido.marca
+            }
+            if len(vivos) == 1 and frente:
+                # Otra etiqueta tiene esta pila enfrente, apenas fuera de su alcance: puede ser
+                # la suya.
+                dudosas[etiqueta.id] = {elegido.marca} | frente | ajenos(elegido)
+                continue
+            if len(vivos) == 2:
+                arriba, abajo = sorted(vivos, key=lambda a: -a.sentido)
+                alto = min(arriba.renglones[0].alto, abajo.renglones[0].alto)
+                if arriba.frontal != abajo.frontal:
+                    # La que está enfrente de la etiqueta, no la que sólo alcanza de lado.
+                    elegido = arriba if arriba.frontal else abajo
+                else:
+                    elegido = (
+                        arriba
+                        if arriba.hueco <= abajo.hueco
+                        or _casi_igual(arriba.hueco, abajo.hueco, alto)
+                        else abajo
+                    )
+                # La disputan otras marcas que la alcanzan, o que la tienen enfrente apenas
+                # fuera de su alcance (puede ser su pila).
+                disputa = ajenos(elegido) | {
+                    m
+                    for r in elegido.renglones
+                    for m in casi_de.get(r.id, ())
+                    if m != elegido.marca
+                }
+                if disputa:
+                    dudosas[etiqueta.id] = (
+                        disputa | {elegido.marca} | ajenos(arriba) | ajenos(abajo)
+                    )
+                    continue
+                if costumbre is not None and elegido.sentido != costumbre:
+                    # Entre sus dos lados, la más pegada va contra la costumbre del cuadro.
+                    dudosas[etiqueta.id] = {elegido.marca} | ajenos(arriba) | ajenos(abajo)
+                    continue
+            if elegido.fusion:
+                dudosas[etiqueta.id] = {elegido.marca} | ajenos(elegido)
+                continue
+            cortada, mas_alla = elegido.cortada, elegido.mas_alla
+            if (
+                cortada is not None
+                and mas_alla is not None
+                and not any(mas_alla in a.renglones for a in alcances.get(cortada.id, []))
+            ):
+                # Otra etiqueta metida en la columna que no se queda con lo de más allá: no se
+                # sabe dónde acaba esta pila.
+                dudosas[etiqueta.id] = {elegido.marca, cortada.marca or ""}
+                continue
+            if all(estado(elegido, r) == "gana" for r in elegido.renglones):
+                tomadas.append((elegido, list(elegido.renglones)))
+            else:
+                # Nunca a medias: si otra marca le gana o le empata algún renglón de su pila, la
+                # pila entera queda en duda.
+                dudosas[etiqueta.id] = {elegido.marca} | ajenos(elegido)
+
+        # La misma marca dibujada dos veces encima de sí misma: el renglón es de una sola.
+        dueno: dict[str, _Alcance] = {}
+        finales: list[tuple[_Alcance, list[_Texto]]] = []
+        for a, prefijo in sorted(tomadas, key=lambda ap: (ap[0].hueco, ap[0].etiqueta.id)):
+            propios: list[_Texto] = []
+            for r in prefijo:
+                if r.id in dueno:
+                    break
+                propios.append(r)
+            for r in propios:
+                dueno[r.id] = a
+            if propios:
+                finales.append((a, propios))
+        return finales, dueno, dudosas
+
+    # Un lado que perdió su primer renglón contra una marca que al final no se lo quedó (porque
+    # quedó ambigua o tomó su otro lado) no está muerto: sigue en disputa, y la etiqueta vuelve a
+    # tener dos lados. Se repite hasta que nada cambia (cada vuelta sólo agrega dudas).
+    revividos: set[tuple[str, int]] = set()
+    while True:
+        finales, dueno, dudosas = resolver(revividos)
+        nuevos = {
+            (etiqueta.id, a.sentido)
+            for etiqueta in etiquetas
+            for a in alcances[etiqueta.id]
+            if (etiqueta.id, a.sentido) not in revividos
+            and estado(a, a.renglones[0]) == "pierde"
+            and a.renglones[0].id not in dueno
+        }
+        if not nuevos:
+            break
+        revividos |= nuevos
+
+    ambiguos: dict[str, set[str]] = {}
+    for renglon_id, quienes in reclamos.items():
+        if renglon_id in dueno:
+            continue
+        marcas = {a.marca for a in quienes}
+        for a in quienes:
+            marcas |= dudosas.get(a.etiqueta.id, set())
+        if len(marcas) > 1:
+            ambiguos[renglon_id] = marcas
+
+    tomada = {a.etiqueta.id: (a, propios) for a, propios in finales}
+    cedidas: dict[str, set[str]] = {}
+    for etiqueta in etiquetas:
+        suya = tomada.get(etiqueta.id)
+        perdidas: set[str] = set()
+        for a in alcances[etiqueta.id]:
+            if suya is not None and a is not suya[0]:
+                continue  # lo del lado que no tomó no es una pila cedida
+            for r in a.renglones:
+                otro = dueno.get(r.id)
+                if otro is not None and otro.marca != etiqueta.marca:
+                    perdidas.add(otro.marca)
+        if perdidas:
+            cedidas[etiqueta.id] = perdidas | {etiqueta.marca or ""}
+    return _Reparto(finales, ambiguos, cedidas)
+
+
+def _pilas(textos: list[_Texto], de_filas: set[str]) -> _Reparto:
+    """Las pilas de un grupo de textos con la misma dirección, ya repartidas."""
     etiquetas = [t for t in textos if t.clase == "etiqueta" and t.id not in de_filas]
     libres = {t.id for t in textos if t.clase == "linea" and t.id not in de_filas}
+    lineas = [t for t in textos if t.id in libres]
     estorban = [t for t in textos if t.clase not in ("nada", "linea") or t.id in de_filas]
-    indice = _Indice([t for t in textos if t.id in libres] + estorban)
+    indice, renglones = _Indice(lineas + estorban), _Indice(lineas)
+    alcances = {
+        e.id: [
+            a
+            for a in (_alcance(e, s, indice, renglones, libres, etiquetas) for s in (+1, -1))
+            if a is not None
+        ]
+        for e in etiquetas
+    }
+    casi: dict[str, float] = {}  # etiqueta de un lado → hueco a la pila de enfrente del otro
+    casi_de: dict[str, set[str]] = defaultdict(set)  # renglón → marcas que lo tienen enfrente
+    for e in etiquetas:
+        lados = {a.sentido for a in alcances[e.id]}
+        for sentido in {+1, -1} - lados:
+            cerca = _casi_alcanza(e, sentido, renglones)
+            if cerca is None:
+                continue
+            casi_de[cerca[1].id].add(e.marca or "")
+            if len(lados) == 1:
+                casi[e.id] = cerca[0]
+    return _repartir(etiquetas, alcances, casi, casi_de)
 
-    pilas: list[_Pila] = []
-    for etiqueta in etiquetas:
-        pila = _elegir_lado(
-            _pila(etiqueta, +1, indice, libres), _pila(etiqueta, -1, indice, libres)
-        )
-        if pila is not None:
-            pilas.append(pila)
 
-    reclamos: dict[str, list[_Pila]] = defaultdict(list)
-    for pila in pilas:
-        for renglon in pila.renglones:
-            reclamos[renglon.id].append(pila)
-    ganador: dict[str, _Pila | None] = {}
-    ambiguos: dict[str, list[str]] = {}
-    for renglon_id, quienes in reclamos.items():
-        menor = min(p.hueco for p in quienes)
-        alto = next(r.alto for r in quienes[0].renglones if r.id == renglon_id)
-        pegadas = [p for p in quienes if _casi_igual(p.hueco, menor, alto)]
-        marcas = sorted({p.etiqueta.marca or "" for p in pegadas})
-        if len(marcas) > 1:
-            ganador[renglon_id] = None
-            ambiguos[renglon_id] = marcas
-        else:
-            # La misma marca dibujada dos veces encima de sí misma no es una ambigüedad.
-            ganador[renglon_id] = min(pegadas, key=lambda p: (p.hueco, p.etiqueta.id))
-    for pila in pilas:
-        for renglon in pila.renglones:
-            if ganador.get(renglon.id) is not pila:
-                break
-            pila.ganados.append(renglon)
-    return pilas, ambiguos
+def _casi_alcanza(
+    etiqueta: _Texto, sentido: int, renglones: _Indice
+) -> tuple[float, _Texto] | None:
+    """El renglón de enfrente de ``etiqueta`` hacia ``sentido`` que queda apenas fuera de su
+    alcance (hasta el doble), con su hueco; o ``None``."""
+    alcance = _HUECO_DE_ETIQUETA * etiqueta.alto
+    borde = etiqueta.y1 if sentido > 0 else etiqueta.y0
+    cercanos = [
+        (_hueco(borde, t, sentido), t)
+        for t in renglones.cerca(borde, sentido, _CASI * alcance, 0.0)
+        if _se_enciman(t, etiqueta)
+    ]
+    cercanos = [(h, t) for h, t in cercanos if alcance < h <= _CASI * alcance]
+    return min(cercanos, key=lambda ht: (ht[0], ht[1].id)) if cercanos else None
 
 
 # --------------------------------------------------------------------------------- asociar
@@ -703,12 +1125,9 @@ def asociar(
 
     Las ``Asociacion`` van por pila (la etiqueta pegada a su columna de renglones) o por fila
     (un renglón de un cuadro con títulos); su ``etiqueta_id`` es una etiqueta de definición, no
-    una colocación. Los ``Rechazo`` son los renglones ambiguos (dos marcas los alcanzan igual),
-    los de otra familia que paraban una pila y todo texto con forma de armado que no es de nadie.
-    Ver el docstring del módulo."""
-    # Evita el ciclo: ``notas`` usa ``ancla_texto`` de aquí.
-    from klave_engine.estructura.notas import leer_notas_con_renglones
-
+    una colocación. Los ``Rechazo`` son los renglones ambiguos, las etiquetas que se quedaron sin
+    la pila que alcanzaban, los de otra familia que paraban una pila y todo texto con forma de
+    armado que no lee nadie. Ver el docstring del módulo."""
     textos = [e for e in entities if e.is_textual and e.text and e.text.strip()]
     hoja_de = _hoja_de(frames)
     hojas: dict[tuple, str] = {}
@@ -733,6 +1152,20 @@ def asociar(
     return asociaciones, rechazos
 
 
+def _asociacion(
+    etiqueta: _Texto, marca: str, hoja: str, textos: list[_Texto], via: Literal["pila", "fila"]
+) -> Asociacion:
+    renglones = [(t.id, r) for t in textos for r in t.renglones]
+    return Asociacion(
+        etiqueta_id=etiqueta.id,
+        marca=marca,
+        hoja=hoja,
+        textos=[r for _, r in renglones],
+        entidades=[i for i, _ in renglones],
+        via=via,
+    )
+
+
 def _asociar_hoja(
     grupo: list[NormalizedEntity],
     hoja: str,
@@ -741,9 +1174,10 @@ def _asociar_hoja(
     lineas: _Lineas,
 ) -> tuple[list[Asociacion], list[Rechazo]]:
     clases = {e.entity_id: _clase(e, config, de_notas) for e in grupo}
+    giros = _giros(grupo)
     por_giro: dict[int, list[_Texto]] = defaultdict(list)
     for e in grupo:
-        giro = _giro(e)
+        giro = giros[e.entity_id]
         clase, marca = clases[e.entity_id]
         t = _texto_local(e, giro, clase, marca)
         if clase == "linea" and lineas.es_llamada(t, giro):
@@ -757,50 +1191,43 @@ def _asociar_hoja(
     rechazados: set[str] = set()
     for giro in sorted(por_giro):
         locales = por_giro[giro]
+        por_id = {t.id: t for t in locales}
         de_filas: set[str] = set()
         for etiqueta, marca, celdas in _filas_de_cuadros(locales, config):
             de_filas.add(etiqueta.id)
             de_filas.update(c.id for c in celdas)
             duenos += [c.e for c in celdas]
             if any(ARMADO_RE.search(c.texto) for c in celdas):
-                asociaciones.append(
-                    Asociacion(
-                        etiqueta_id=etiqueta.id,
-                        marca=marca,
-                        hoja=hoja,
-                        textos=[c.texto for c in celdas],
-                        entidades=[c.id for c in celdas],
-                        via="fila",
-                    )
-                )
-        pilas, ambiguos = _pilas(locales, de_filas)
-        por_id = {t.id: t for t in locales}
-        for renglon_id, marcas in ambiguos.items():
-            t = por_id[renglon_id]
+                asociaciones.append(_asociacion(etiqueta, marca, hoja, celdas, "fila"))
+        reparto = _pilas(locales, de_filas)
+        for renglon_id, marcas in reparto.ambiguos.items():
             rechazados.add(renglon_id)
             rechazos.append(
                 Rechazo(
-                    entidad_id=renglon_id, texto=t.texto, hoja=hoja, motivo="ambigua", marcas=marcas
+                    entidad_id=renglon_id,
+                    texto=por_id[renglon_id].texto,
+                    hoja=hoja,
+                    motivo="ambigua",
+                    marcas=sorted(marcas),
+                )
+            )
+        for etiqueta_id, marcas in reparto.cedidas.items():
+            rechazos.append(
+                Rechazo(
+                    entidad_id=etiqueta_id,
+                    texto=por_id[etiqueta_id].texto,
+                    hoja=hoja,
+                    motivo="cedida",
+                    marcas=sorted(marcas),
                 )
             )
         topes: dict[str, set[str]] = defaultdict(set)
-        for pila in pilas:
-            if not pila.ganados:
-                continue
-            duenos += [r.e for r in pila.ganados]
-            orden = pila.ganados[::-1] if pila.sentido > 0 else pila.ganados
-            asociaciones.append(
-                Asociacion(
-                    etiqueta_id=pila.etiqueta.id,
-                    marca=pila.etiqueta.marca or "",
-                    hoja=hoja,
-                    textos=[r.texto for r in orden],
-                    entidades=[r.id for r in orden],
-                    via="pila",
-                )
-            )
-            if pila.tope is not None and len(pila.ganados) == len(pila.renglones):
-                topes[pila.tope.id].add(pila.etiqueta.marca or "")
+        for alcance, propios in reparto.tomadas:
+            duenos += [r.e for r in propios]
+            orden = propios[::-1] if alcance.sentido > 0 else propios
+            asociaciones.append(_asociacion(alcance.etiqueta, alcance.marca, hoja, orden, "pila"))
+            if alcance.tope is not None and len(propios) == len(alcance.renglones):
+                topes[alcance.tope.id].add(alcance.marca)
         for tope_id, marcas_del_tope in topes.items():
             rechazos.append(
                 Rechazo(
@@ -823,24 +1250,27 @@ def _sin_dueno(
     duenos: list[NormalizedEntity],
     rechazados: set[str],
 ) -> list[Rechazo]:
-    """Los renglones de armado que nadie leyó. Un texto dibujado dos veces encima de sí mismo es
-    del dueño de su copia."""
+    """Los textos de armado que nadie lee: los renglones sin pila ni fila (sin dueño) y los que
+    nombran su marca o su familia sin nada que la nota lea (sin lector). Un texto dibujado dos
+    veces encima de sí mismo es del dueño de su copia."""
     de_alguien = {e.entity_id for e in duenos}
     copias: dict[str, list[tuple[float, float]]] = defaultdict(list)
     for e in duenos:
         copias[(e.text or "").strip()].append(ancla_texto(e))
     huerfanos: list[Rechazo] = []
     for e in grupo:
-        if clases[e.entity_id][0] not in ("linea", "llamada"):
+        clase = clases[e.entity_id][0]
+        if clase not in ("linea", "llamada", "sin_lector"):
             continue
         if e.entity_id in de_alguien or e.entity_id in rechazados:
             continue
         texto = (e.text or "").strip()
         x, y = ancla_texto(e)
-        limite = _DUPLICADO * _alto(e)
+        limite = _DUPLICADO * alto_de_texto(e)
         if any(math.hypot(x - cx, y - cy) <= limite for cx, cy in copias.get(texto, [])):
             continue
-        huerfanos.append(
-            Rechazo(entidad_id=e.entity_id, texto=texto, hoja=hoja, motivo="sin_dueno")
+        motivo: Literal["sin_lector", "sin_dueno"] = (
+            "sin_lector" if clase == "sin_lector" else "sin_dueno"
         )
+        huerfanos.append(Rechazo(entidad_id=e.entity_id, texto=texto, hoja=hoja, motivo=motivo))
     return huerfanos

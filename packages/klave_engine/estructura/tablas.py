@@ -21,7 +21,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from klave_engine.dxf.entities import NormalizedEntity
-from klave_engine.estructura.asociacion import ancla_texto
+from klave_engine.estructura.textos import ancla_texto
 from klave_engine.geometry.bbox import BBox, bbox_union_all
 
 # Un renglón de encabezados (o de celdas) está en una línea si sus textos difieren a lo más

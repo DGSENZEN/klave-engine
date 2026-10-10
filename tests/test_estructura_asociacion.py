@@ -2,6 +2,7 @@
 
 import json
 import math
+import random
 from pathlib import Path
 
 import ezdxf
@@ -483,10 +484,12 @@ def test_marina_columns_and_piles_as_drawn(tmp_path):
         "P-2": ["REFUERZO 4#6+4#4", "2E#3 VER CORTE"],
         "P-3": ["REFUERZO 4#8+4#4", "2E#3 VER CORTE"],
         "P-4": ["REFUERZO 12#6", "2E#3 VER CORTE"],
-        "P-5": ["4#8 + 12#6\n3E#3 VER CORTE"],
+        "P-5": ["4#8 + 12#6", "3E#3 VER CORTE"],  # un MTEXT: un elemento por renglón
         "D-X": ["8#6", "2E#3@10"],
     }
     assert rech == []
+    p5 = next(a for a in asoc if a.marca == "P-5")
+    assert len(p5.entidades) == 2 and len(set(p5.entidades)) == 1  # los dos renglones del MTEXT
 
 
 @pytest.mark.parametrize(
@@ -520,8 +523,10 @@ def test_stack_below_its_label(tmp_path):
     assert asoc[0].textos == ["6#6+4#4", "2E+1G#3EXT@10", "CENTRO@15"] and rech == []
 
 
-def test_a_label_above_a_finished_stack_does_not_take_it(tmp_path):
-    # K-2 alcanza por abajo la pila de K-1 (a 0.10), pero K-1 la tiene más cerca (0.05).
+def test_a_label_floating_above_a_stack_makes_it_ambiguous(tmp_path):
+    # K-2 alcanza por arriba la pila que K-1 alcanza por abajo, y no alcanza otra: la columna
+    # está entre dos etiquetas y puede ser de cualquiera; no se decide por cuál está más pegada
+    # (0.05 contra 0.10).
     ents = _stacks(
         tmp_path,
         [
@@ -530,7 +535,29 @@ def test_a_label_above_a_finished_stack_does_not_take_it(tmp_path):
         ],
     )
     asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
-    assert {a.marca: a.textos for a in asoc} == {"K-1": ["4#3", "E#2@15"]} and rech == []
+    assert asoc == []
+    assert sorted((r.motivo, r.texto, tuple(r.marcas)) for r in rech) == [
+        ("ambigua", "4#3", ("K-1", "K-2")),
+        ("ambigua", "E#2@15", ("K-1", "K-2")),
+    ]
+
+
+def test_a_label_that_loses_its_stack_says_so(tmp_path):
+    # K-1 y K-2 debajo de la misma pila, las dos enfrente de ella: es de K-1 (a 0.03; K-2 a 0.13)
+    # y K-2 se queda sin pila con un rechazo «cedida» que lo dice.
+    ents = _stacks(
+        tmp_path,
+        [
+            ("K-1", (0.0, 0.0), [("4#3", -0.2, 0.33), ("E#2@15", -0.2, 0.16)]),
+            ("K-2", (0.25, -0.10), []),
+        ],
+    )
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    assert {a.marca: a.textos for a in asoc} == {"K-1": ["4#3", "E#2@15"]}
+    k2 = next(e for e in ents if e.text == "K-2")
+    assert [(r.motivo, r.entidad_id, r.marcas) for r in rech] == [
+        ("cedida", k2.entity_id, ["K-1", "K-2"])
+    ]
 
 
 def test_the_stack_ends_at_a_wide_gap(tmp_path):
@@ -554,22 +581,62 @@ def test_the_stack_must_overlap_the_label_horizontally(tmp_path):
     assert asoc == [] and _huerfanos(rech) == ["E#2@15"]
 
 
-def test_a_stack_never_passes_over_another_label(tmp_path):
-    # Una etiqueta chica (K-2) entre dos renglones, dentro del ancho de la pila de K-1: lo que
-    # queda arriba de ella ya no es de K-1 (K-2 no alcanza ninguno de los dos).
+@pytest.mark.parametrize(
+    "x_k2,asociaciones,rechazos",
+    [
+        # Una etiqueta chica (K-2) metida entre dos renglones de la columna de K-1: la pila de
+        # K-1 no pasa sobre ella, y como K-2 tiene enfrente el renglón largo apenas fuera de su
+        # alcance (0.08 contra 0.075), ése puede ser suyo: nada se pega, todo se dice.
+        (
+            0.3,
+            {},
+            [("ambigua", "2E#3EXT@10 CENTRO@20", ("K-1", "K-2")), ("sin_dueno", "4#4", ())],
+        ),
+        # Sobre la punta del renglón largo, fuera de la columna de K-1, K-2 no la corta, pero
+        # sigue teniendo ese renglón enfrente: la pila de K-1 queda en duda entera.
+        (
+            1.5,
+            {},
+            [
+                ("ambigua", "2E#3EXT@10 CENTRO@20", ("K-1", "K-2")),
+                ("ambigua", "4#4", ("K-1", "K-2")),
+            ],
+        ),
+    ],
+)
+def test_a_stack_never_passes_over_another_label(tmp_path, x_k2, asociaciones, rechazos):
     def build(doc):
         msp = doc.modelspace()
         k1 = msp.add_text("K-1", height=0.13)
         k1.set_placement((0.0, 0.0), align=TextEntityAlignment.BOTTOM_CENTER)
         msp.add_text("2E#3EXT@10 CENTRO@20", height=0.10).set_placement((-0.2, 0.18))
         k2 = msp.add_text("K-2", height=0.05)
-        k2.set_placement((1.5, 0.36), align=TextEntityAlignment.BOTTOM_CENTER)
+        k2.set_placement((x_k2, 0.36), align=TextEntityAlignment.BOTTOM_CENTER)
         msp.add_text("4#4", height=0.10).set_placement((-0.2, 0.42))
 
     ents = _dxf(tmp_path, build)
     asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
-    assert {a.marca: a.textos for a in asoc} == {"K-1": ["2E#3EXT@10 CENTRO@20"]}
-    assert _huerfanos(rech) == ["4#4"]
+    assert {a.marca: a.textos for a in asoc} == asociaciones
+    assert sorted((r.motivo, r.texto, tuple(r.marcas)) for r in rech) == rechazos
+
+
+def test_a_stack_cut_by_another_label_is_never_read_in_part(tmp_path):
+    # Una lista donde los renglones se meten a la altura de las etiquetas vecinas: la pila de K-4
+    # topa con la etiqueta de K-3 y su «4#5» sigue al lado de ella. No se lee sólo «E#3@10».
+    etiquetas, renglones, de_quien, y = [], [], {}, 0.0
+    for marca, lineas in LISTA:
+        yy = y
+        for texto in reversed(lineas):
+            renglones.append((texto, -0.2, yy))
+            de_quien[(texto, -0.2, round(yy, 3))] = marca
+            yy += 0.17
+        base = y - 0.05 - 0.13
+        etiquetas.append((marca, 0.0, base))
+        y = base - 0.05 - 0.10
+    ents = _pilas_libres(tmp_path, etiquetas, renglones)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+    assert "K-4" not in {a.marca for a in asoc}
 
 
 def test_another_familys_text_stops_the_stack_and_is_not_an_orphan(tmp_path):
@@ -743,7 +810,342 @@ def test_marca_en_texto(texto, marca):
         ("15X20", False),
         ("2E", False),
         ("italohdez@gmail.com", False),
+        ("CENTRO DE CARGA", False),
+        ("EXTREMOS", False),
+        ("CENTRO @ 20", True),
+        ("EXT @10", True),
     ],
 )
 def test_armado_shaped_text(texto, es_armado):
     assert (ARMADO_RE.search(texto) is not None) is es_armado
+
+
+# ------------------------------------------------- exclusividad: nunca la pila de otra marca
+
+K4 = [("6#4", 0.134, 0.537), ("EYG#3@15", -0.179, 0.353), ("CENTRO@15", -0.179, 0.186)]
+
+
+def _pilas_libres(tmp_path, etiquetas, renglones):
+    """``etiquetas``: (marca, x, y) centradas abajo, alto 0.13; ``renglones``: (texto, x, y)."""
+
+    def build(doc):
+        msp = doc.modelspace()
+        for marca, x, y in etiquetas:
+            t = msp.add_text(marca, height=0.13)
+            t.set_placement((x, y), align=TextEntityAlignment.BOTTOM_CENTER)
+        for texto, x, y in renglones:
+            msp.add_text(texto, height=0.10).set_placement((x, y))
+
+    return _dxf(tmp_path, build)
+
+
+def _con(marca, x, y, offsets):
+    return [(marca, x, y)], [(t, x + dx, y + dy) for t, dx, dy in offsets]
+
+
+def _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien):
+    """Ninguna pila lleva un renglón de otra marca ni se queda con parte de la suya, y todo
+    renglón que no se leyó se rechaza."""
+    propios = _ids(ents, de_quien)
+    _ninguna_ajena(asoc, propios)
+    for a in asoc:
+        assert set(a.entidades) == propios[a.marca], (a.marca, a.textos)
+    leidos = {e for a in asoc for e in a.entidades}
+    rechazados = {r.entidad_id for r in rech}
+    assert {i for ids in propios.values() for i in ids} <= leidos | rechazados
+
+
+def _ninguna_ajena(asoc, propios):
+    """Ninguna pila tiene un renglón que no sea de su marca."""
+    for a in asoc:
+        assert all(e in propios[a.marca] for e in a.entidades), (a.marca, a.textos)
+
+
+def _ids(ents, marca_de_texto):
+    """{marca: ids de sus renglones} a partir de {(texto, x redondeada): marca}."""
+    propios: dict[str, set[str]] = {}
+    for e in ents:
+        if e.is_textual:
+            clave = (e.text, round(ancla_texto(e)[0], 3), round(ancla_texto(e)[1], 3))
+            if clave in marca_de_texto:
+                propios.setdefault(marca_de_texto[clave], set()).add(e.entity_id)
+    return propios
+
+
+@pytest.mark.parametrize("x,y", [(0.85, 0.50), (0.85, 0.45), (0.9, 0.5), (-0.5, 0.5), (0.7, 0.55)])
+def test_staggered_neighbours_keep_their_own_stacks(tmp_path, x, y):
+    # K-12 (primer hueco 0.025) y K-11 (0.056) escalonados: la pila de K-12 no sube por la
+    # columna de K-11 ni K-11 toma la mitad de la de K-12 desde un lado.
+    e1, r1 = _con("K-12", 0.0, 0.0, K12)
+    e2, r2 = _con("K-11", x, y, K11)
+    ents = _pilas_libres(tmp_path, e1 + e2, r1 + r2)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    assert {a.marca: a.textos for a in asoc} == {
+        "K-11": ["8#6", "2E#3EXT@10", "CENTRO@20"],
+        "K-12": ["4#6+4#4", "2E#3EXT@10", "CENTRO@15"],
+    }
+    assert rech == []
+
+
+@pytest.mark.parametrize("dx,dy", [(0.6, 0.0), (0.6, 0.02), (0.55, 0.03), (0.7, 0.03)])
+def test_the_line_over_the_label_itself_goes_first(tmp_path, dx, dy):
+    # Dos etiquetas a 0.6: el renglón de K-2 entra al ensanche de K-1 y está más pegado que el
+    # de K-1, pero el que cae sobre la etiqueta misma va primero.
+    e1, r1 = _con("K-1", 0.0, 0.0, [("4#3", -0.15, 0.36), ("E#2@15", -0.15, 0.18)])
+    e2, r2 = _con("K-2", dx, dy, [("6#4", -0.15, 0.33), ("E#3@15", -0.15, 0.155)])
+    ents = _pilas_libres(tmp_path, e1 + e2, r1 + r2)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    assert {a.marca: a.textos for a in asoc} == {"K-1": ["4#3", "E#2@15"], "K-2": ["6#4", "E#3@15"]}
+    assert rech == []
+
+
+@pytest.mark.parametrize("dy", [0.0, 0.03, 0.05, 0.08])
+def test_a_long_line_does_not_bridge_into_the_next_column(tmp_path, dy):
+    # El renglón largo de K-10 («2E+1G#3EXT@10») llega 0.02 a la columna de K-9: ni K-10 toma
+    # el estribo de K-9 ni K-9 sube por el renglón de K-10.
+    k10 = [("6#6+4#4", -0.20, 0.56), ("2E+1G#3EXT@10", -0.45, 0.33), ("CENTRO@15", -0.45, 0.16)]
+    k9 = [("8#6", -0.15, 0.55 + dy), ("2E#3@15", -0.30, 0.37 + dy), ("E#2@20", -0.30, 0.19 + dy)]
+    e1, r1 = _con("K-10", 0.0, 0.0, k10)
+    e2, r2 = _con("K-9", 1.0, 0.0, k9)
+    ents = _pilas_libres(tmp_path, e1 + e2, r1 + r2)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    assert {a.marca: a.textos for a in asoc} == {
+        "K-10": ["6#6+4#4", "2E+1G#3EXT@10", "CENTRO@15"],
+        "K-9": ["8#6", "2E#3@15", "E#2@20"],
+    }
+    assert rech == []
+
+
+LISTA = [
+    ("K-1", ["4#3", "E#2@15"]),
+    ("K-2", ["6#4", "E#3@15"]),
+    ("K-3", ["8#4", "E#3@20"]),
+    ("K-4", ["4#5", "E#3@10"]),
+]
+
+
+def _lista(tmp_path, etiqueta_arriba, propio, al_siguiente, paso=0.17):
+    """Una lista vertical de marcas: cada etiqueta a ``propio`` de su pila (debajo de ella si
+    ``etiqueta_arriba``, encima si no) y a ``al_siguiente`` de la pila del grupo vecino."""
+    etiquetas, renglones, de_quien = [], [], {}
+    y = 0.0
+    for marca, lineas in LISTA:
+        if etiqueta_arriba:
+            etiquetas.append((marca, 0.0, y))
+            yy = y - propio - 0.10
+            for texto in lineas:
+                renglones.append((texto, -0.2, yy))
+                de_quien[(texto, -0.2, round(yy, 3))] = marca
+                yy -= paso
+            y = yy + paso - al_siguiente - 0.13
+        else:
+            yy = y - 0.10
+            for texto in lineas:
+                renglones.append((texto, -0.2, yy))
+                de_quien[(texto, -0.2, round(yy, 3))] = marca
+                yy -= paso
+            base = yy + paso - propio - 0.13
+            etiquetas.append((marca, 0.0, base))
+            y = base - al_siguiente
+    return _pilas_libres(tmp_path, etiquetas, renglones), de_quien
+
+
+@pytest.mark.parametrize(
+    "etiqueta_arriba,propio,al_siguiente",
+    [
+        (True, 0.05, 0.05),  # todo a 0.05: cada pila está igual de cerca de dos etiquetas
+        (True, 0.05, 0.045),
+        (True, 0.06, 0.05),  # la etiqueta, más pegada a la pila de arriba que a la suya
+        (False, 0.06, 0.05),  # lo mismo en la costumbre de Marina
+        (False, 0.07, 0.05),
+    ],
+)
+def test_a_vertical_list_never_shifts_definitions(tmp_path, etiqueta_arriba, propio, al_siguiente):
+    ents, de_quien = _lista(tmp_path, etiqueta_arriba, propio, al_siguiente)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+    assert any(r.motivo == "ambigua" for r in rech)
+
+
+@pytest.mark.parametrize(
+    "etiqueta_arriba,propio,al_siguiente",
+    [(True, 0.05, 0.07), (False, 0.05, 0.08)],
+)
+def test_a_vertical_list_with_clear_gaps_reads_every_mark(
+    tmp_path, etiqueta_arriba, propio, al_siguiente
+):
+    ents, _ = _lista(tmp_path, etiqueta_arriba, propio, al_siguiente)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    assert {a.marca: a.textos for a in asoc} == dict(LISTA) and rech == []
+
+
+def _espejo(offsets):
+    """Los mismos renglones, debajo de la etiqueta (la costumbre de otras oficinas)."""
+    return [(t, dx, 0.13 - dy - 0.10) for t, dx, dy in offsets]
+
+
+def _dos_filas(tmp_path, hueco, marina, al_reves=False):
+    """K-4 con su pila y, en la fila de al lado, la etiqueta de K-11 a ``hueco`` de esa pila
+    (encima de su tope en la costumbre de Marina; debajo de su pie en la otra)."""
+    k4, k11 = (K4, K11) if marina else (_espejo(K4), _espejo(K11))
+    if marina:
+        y11 = max(dy for _, _, dy in k4) + 0.10 + hueco
+    else:
+        y11 = min(dy for _, _, dy in k4) - hueco - 0.13
+    e1, r1 = _con("K-4", 0.0, 0.0, k4)
+    e2, r2 = _con("K-11", 0.0, y11, k11)
+    etiquetas, renglones = (e2 + e1, r2 + r1) if al_reves else (e1 + e2, r1 + r2)
+    ents = _pilas_libres(tmp_path, etiquetas, renglones)
+    de_quien = {
+        (t, round(x, 3), round(y, 3)): m for m, rs in (("K-4", r1), ("K-11", r2)) for t, x, y in rs
+    }
+    return ents, de_quien
+
+
+@pytest.mark.parametrize("hueco", [0.02, 0.03, 0.04, 0.045, 0.06])
+@pytest.mark.parametrize("marina", [True, False])
+@pytest.mark.parametrize("al_reves", [False, True])
+def test_tight_rows_are_ambiguous_never_shifted(tmp_path, hueco, marina, al_reves):
+    """R54: dos filas apretadas — la etiqueta de K-11 a ``hueco`` de la pila de K-4 y a 0.056 de
+    la suya. Nunca se lleva el armado de K-4: o se rechaza todo, o cada una lee la suya."""
+    ents, de_quien = _dos_filas(tmp_path, hueco, marina, al_reves)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+    ambiguos = {r.entidad_id for r in rech if r.motivo == "ambigua"}
+    if hueco <= 0.045:  # K-11 queda más pegada a la pila de K-4 que a la suya
+        assert "K-4" not in {a.marca for a in asoc}
+        assert _ids(ents, de_quien)["K-4"] <= ambiguos
+
+
+@pytest.mark.parametrize("hueco", [0.045, 0.05, 0.06, 0.07])
+def test_r54_opposite_sides_within_25_percent_are_ambiguous(tmp_path, hueco):
+    # Una etiqueta sola (sin pila propia) a ``hueco`` encima de la pila de K-4, que está a 0.056
+    # de la suya: desde lados opuestos, a menos de 25 % es ambiguo.
+    e1, r1 = _con("K-4", 0.0, 0.0, K4)
+    ents = _pilas_libres(tmp_path, e1 + [("K-11", 0.0, 0.637 + hueco)], r1)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    assert asoc == []
+    assert sorted((r.motivo, r.texto, tuple(r.marcas)) for r in rech) == [
+        ("ambigua", t, ("K-11", "K-4")) for t in sorted(t for t, _, _ in K4)
+    ]
+
+
+@pytest.mark.parametrize("marina", [True, False])
+def test_rows_far_enough_apart_read_both(tmp_path, marina):
+    # La etiqueta de la otra fila a 0.15 de la pila: K-4 la tiene más cerca (0.056), así que
+    # el alcance de K-11 hacia ella muere y K-11 se queda con la suya.
+    ents, _ = _dos_filas(tmp_path, 0.15, marina)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    orden = (lambda xs: xs) if marina else (lambda xs: xs[::-1])
+    assert {a.marca: a.textos for a in asoc} == {
+        "K-4": orden(["6#4", "EYG#3@15", "CENTRO@15"]),
+        "K-11": orden(["8#6", "2E#3EXT@10", "CENTRO@20"]),
+    }
+    assert rech == []
+
+
+def test_texts_that_name_a_mark_are_read_or_reported(tmp_path):
+    def build(doc):
+        msp = doc.modelspace()
+        k1 = msp.add_text("K-1", height=0.13)
+        k1.set_placement((0.0, 0.0), align=TextEntityAlignment.BOTTOM_CENTER)
+        # «VER CORTE C-2» remite a otra parte: no reclama C-2, el renglón es de la pila de K-1.
+        msp.add_text("E#2@15 VER CORTE C-2", height=0.10).set_placement((-0.2, 0.18))
+        msp.add_text("4#3", height=0.10).set_placement((-0.2, 0.36))
+        for x, texto in [
+            (10, "K-7 E#3@20"),  # sólo estribos: la nota no lo lee
+            (20, "CASTILLOS E#2@20 EN TODOS"),
+            (30, "COLUMNAS: ESTRIBOS #3@15"),
+            (40, "2E#3@15 VER P-1"),  # un renglón suelto que remite a P-1
+            (50, "K-1 15x20 4#3 E#2@20"),  # lo lee la nota: sección y varillas
+            (60, "CASTILLOS 15X15 4#3 E#2@20"),  # nota de familia leída
+        ]:
+            msp.add_text(texto, height=0.10).set_placement((x, 5.0))
+
+    ents = _dxf(tmp_path, build)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    assert {a.marca: a.textos for a in asoc} == {"K-1": ["4#3", "E#2@15 VER CORTE C-2"]}
+    assert sorted((r.motivo, r.texto) for r in rech) == [
+        ("sin_dueno", "2E#3@15 VER P-1"),
+        ("sin_lector", "CASTILLOS E#2@20 EN TODOS"),
+        ("sin_lector", "COLUMNAS: ESTRIBOS #3@15"),
+        ("sin_lector", "K-7 E#3@20"),
+    ]
+
+
+def test_another_family_in_the_first_position_blocks_that_side(tmp_path):
+    # La etiqueta de losa justo encima de K-4 tapa ese lado: K-4 no salta sobre ella, lo de
+    # arriba queda sin dueño y la losa no es huérfana (es de la losa).
+    ents = _stacks(
+        tmp_path,
+        [("K-4", (0.0, 0.0), [])],
+        loose=[("LOSA H=20 #4@20 A/S", -0.37, 0.18), ("6#4", -0.13, 0.36)],
+    )
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    assert asoc == [] and [(r.motivo, r.texto) for r in rech] == [("sin_dueno", "6#4")]
+
+
+def test_lines_rotated_a_fraction_of_a_degree_read_with_their_label(tmp_path):
+    def build(doc):
+        msp = doc.modelspace()
+        t = msp.add_text("K-11", height=0.13)
+        t.set_placement((0.0, 0.0), align=TextEntityAlignment.BOTTOM_CENTER)
+        for texto, dx, dy in K11:
+            msp.add_text(texto, height=0.10, rotation=0.6).set_placement((dx, dy))
+
+    ents = _dxf(tmp_path, build)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    assert [a.textos for a in asoc] == [["8#6", "2E#3EXT@10", "CENTRO@20"]] and rech == []
+
+
+def test_ancla_texto_lives_in_textos_and_is_re_exported():
+    from klave_engine.estructura import asociacion, textos
+
+    assert asociacion.ancla_texto is textos.ancla_texto
+
+
+# ------------------------------------------- cuadros al azar que antes se leían mal (regresión)
+
+PLANTILLAS = [
+    K11,
+    K12,
+    [("6#4", 0.065, 0.451), ("EYG#3@15", -0.174, 0.268)],
+    [("4#3", -0.1, 0.36), ("E#2@15", -0.2, 0.18)],
+]
+
+
+def _cuadro_al_azar(tmp_path, semilla, mezcla):
+    """Un cuadro de 2 a 18 marcas apretado al azar (la etiqueta debajo de su pila o, en ``mezcla``
+    al azar por marca, encima); devuelve las entidades y de qué marca es cada renglón."""
+    rnd = random.Random(semilla)
+    abajo = rnd.random() < 0.3
+    etiquetas, renglones, de_quien, n = [], [], {}, 0
+    for i in range(rnd.randint(2, 6)):
+        for j in range(rnd.randint(1, 3)):
+            n += 1
+            marca = f"K-{n}"
+            x = i * rnd.uniform(0.45, 1.4) + rnd.uniform(-0.25, 0.25)
+            y = j * rnd.uniform(0.45, 1.2) + rnd.uniform(-0.25, 0.25)
+            etiquetas.append((marca, x, y))
+            escala = rnd.uniform(0.8, 1.3)
+            if mezcla:
+                abajo = rnd.random() < 0.3
+            for texto, dx, dy in rnd.choice(PLANTILLAS):
+                yy = (0.13 - dy * escala - 0.10) if abajo else dy * escala
+                xx = x + dx + rnd.uniform(-0.05, 0.05)
+                renglones.append((texto, xx, y + yy))
+                de_quien[(texto, round(xx, 3), round(y + yy, 3))] = marca
+    return _pilas_libres(tmp_path, etiquetas, renglones), de_quien
+
+
+@pytest.mark.parametrize(
+    "semilla,mezcla",
+    [(s, False) for s in (849, 1276, 3184, 3255, 3325, 3745, 3839, 8512, 9236, 9396, 13492, 15040)]
+    + [(s, True) for s in (307, 636, 1927, 2375, 2718, 3404, 3549, 7660, 8651, 9860, 10547)],
+)
+def test_crowded_random_cuadros_never_read_a_foreign_or_partial_stack(tmp_path, semilla, mezcla):
+    """Cuadros apretados al azar que en el desarrollo daban la pila de otra marca o una a medias:
+    lo que se lee es entero y de su marca; lo demás se rechaza."""
+    ents, de_quien = _cuadro_al_azar(tmp_path, semilla, mezcla)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)

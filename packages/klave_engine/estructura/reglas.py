@@ -35,7 +35,6 @@ from pydantic import BaseModel
 from klave_engine.detection.frames import SheetFrame
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.estructura.armado import NUMEROS
-from klave_engine.estructura.asociacion import ancla_texto
 from klave_engine.estructura.dato import PRECEDENCIA, Dato, Fuente, elegir, para_hoja
 from klave_engine.estructura.frases import (
     ELEMENTO,
@@ -68,6 +67,7 @@ from klave_engine.estructura.tablas import (
     leer_tablas,
     parece_celda,
 )
+from klave_engine.estructura.textos import ancla_texto
 
 CAMPOS_VARILLA = ("LA1", "LA2", "LT1", "LT2", "LG1", "LG2", "LG3", "r")
 ANCLA_VARILLA = "VARILLA"

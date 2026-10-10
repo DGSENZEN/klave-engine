@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel
 
 from klave_engine.dxf.entities import NormalizedEntity
-from klave_engine.estructura.asociacion import ancla_texto
+from klave_engine.estructura.textos import ancla_texto
 
 # Un renglón de la misma nota está debajo del anterior a lo más a esto (× el alto) de hueco
 # libre; alineado a la izquierda (a lo más 1 alto de diferencia) o con sangría (a lo más 4).
