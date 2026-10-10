@@ -2046,3 +2046,32 @@ def test_a_lone_multiplier_word_is_reported(texto):
 )
 def test_the_canonical_renders_stay(textos, familia, canonico):
     assert texto_armado(parsear_armado(textos, familia)) == canonico
+
+
+# ------------------------------------------------- Task 7: «V4#4» (PRUEBA-1, CR-1)
+
+
+@pytest.mark.parametrize(
+    "textos,long,estr",
+    [
+        (["V4#4 E#3", "@20cms"], [(4, "4")], [(E, 1, "3", [("todo", 0.20)])]),
+        (["V12#5"], [(12, "5")], []),
+        (["VAR 4#4"], [(4, "4")], []),
+        (["VARS. 6#3"], [(6, "3")], []),
+    ],
+)
+def test_a_count_after_the_bar_word_is_a_bar_group(textos, long, estr):
+    # «V4#4» es «4V#4» con la V delante: cuatro varillas del #4 (el lector viejo lo leía así).
+    a = parsear_armado(textos, "cerramiento")
+    assert [(g.cantidad, g.numero) for g in a.longitudinales] == long
+    assert [
+        (j.tipo, j.cantidad, j.numero, [(z.tramo, z.separacion_m) for z in j.zonas])
+        for j in a.estribos
+    ] == estr
+    assert a.avisos == []
+
+
+@pytest.mark.parametrize("texto", ["TV4#4", "V4#4@20", "1V4#4"])
+def test_a_bar_word_glued_to_something_else_is_still_reported(texto):
+    a = parsear_armado([texto], "cerramiento")
+    assert a.longitudinales == [] and a.avisos == [f"sin leer: «{texto}»"]

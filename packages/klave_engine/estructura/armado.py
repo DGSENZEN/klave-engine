@@ -155,8 +155,11 @@ _SENTIDO_RE = re.compile(
 _ES_LS = re.compile(_LS)
 _SENTIDO_XY: dict[str, Literal["x", "y"]] = {"X": "x", "Y": "y"}
 
+# «4#5», «4 VARS #5», «4V#4» y, con la palabra delante, «V4#4», «VAR 4#4» (PRUEBA-1: «V4#4 E#3»).
 _VARILLAS_RE = re.compile(
-    rf"(?<![\d.#@])(?P<n>{_CUENTA})\s*(?:VARILLAS|VARS?\.?|V)?\s*#\s*(?P<num>{_NUM})(?!\s*@)"
+    rf"(?:(?<![A-Z0-9.#@])(?:VARS?\.?|V)\s*(?P<v>{_CUENTA})"
+    rf"|(?<![\d.#@])(?P<n>{_CUENTA})\s*(?:VARILLAS|VARS?\.?|V)?)"
+    rf"\s*#\s*(?P<num>{_NUM})(?!\s*@)"
 )
 _CIFRA_O_GATO = "0123456789#.@"  # lo que, pegado delante, parte un número (aunque esté leído)
 _PEGADO_RE = re.compile(rf"[^ {CONSUMIDO}]*$")
@@ -830,7 +833,7 @@ def parsear_armado(textos: list[str], familia: str) -> Armado:
     # 3. Grupos de varillas: todos, no sólo el primero («4#5+2#4» son dos). Lo que va pegado
     #    delante se mira en el texto real: un número ya leído también parte al siguiente.
     for grupo in _grupos(visible(), texto):
-        varilla = GrupoVarillas(cantidad=int(grupo["n"]), numero=grupo["num"])
+        varilla = GrupoVarillas(cantidad=int(grupo["n"] or grupo["v"]), numero=grupo["num"])
         tomar(_Pieza(grupo.start(), grupo.end(), varillas=[varilla]))
 
     # 4. Cada pieza se toma entera o se avisa entera con lo que la estorba.
