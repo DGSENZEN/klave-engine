@@ -25,7 +25,7 @@ estándar)."""
 
 import re
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -41,6 +41,7 @@ from klave_engine.estructura.frases import (
     EN_SUS_ELEMENTOS,
     EXCEPCION,
     MEDIDA,
+    MIEMBROS,
     Frase,
     Lectura,
     en_blanco,
@@ -57,7 +58,7 @@ from klave_engine.estructura.notas import (
     limpiar_texto,
     mayusculas_sin_acentos,
 )
-from klave_engine.estructura.oraciones import NEGACION
+from klave_engine.estructura.oraciones import NEGACION, Pieza
 from klave_engine.estructura.tablas import (
     Tabla,
     TextoSinCelda,
@@ -544,13 +545,14 @@ def reglas_estandar() -> Reglas:
 _PALABRAS_DE_COBERTURA: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = tuple(
     (re.compile(patron), familias)
     for patron, familias in (
+        (r"(?:TRABES?|VIGAS?)\s+DE\s+CIMENTACION", ("contratrabe",)),
         (r"LOSAS?\s+DE\s+CIMENTACION", ("losa_cimentacion",)),
         (r"CIMENTACION", ("zapata", "dado", "pilote", "contratrabe", "losa_cimentacion")),
         (r"ZAPATAS?", ("zapata",)),
         (r"DADOS?", ("dado",)),
         (r"PILOTES?", ("pilote",)),
         (r"CONTRATRABES?", ("contratrabe",)),
-        (r"TRABES?", ("trabe",)),
+        (r"TRABES?|VIGAS?", ("trabe",)),
         (r"COLUMNAS?", ("columna",)),
         (r"LOSAS?", ("losa",)),
         (r"MUROS?\s+DE\s+(?:CONCRETO|CONTENCION)", ("muro_concreto",)),
@@ -564,8 +566,8 @@ _PALABRAS_DE_COBERTURA: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = tu
 _PALABRAS_DE_ESTRIBO: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = tuple(
     (re.compile(patron), familias)
     for patron, familias in (
-        (r"CONTRATRABES?", ("contratrabe",)),
-        (r"TRABES?", ("trabe", "contratrabe")),
+        (r"(?:CONTRATRABES?|TRABES?|VIGAS?)\s+DE\s+CIMENTACION|CONTRATRABES?", ("contratrabe",)),
+        (r"TRABES?|VIGAS?", ("trabe", "contratrabe")),
         (r"COLUMNAS?", ("columna",)),
         (r"CASTILLOS?", ("castillo",)),
         (r"CADENAS?|DALAS?", ("dala",)),
@@ -633,8 +635,9 @@ _REFERENCIA_A_VARILLA = re.compile(
     rf"{_VARILLA_MARCADA.pattern}"
     # en pulgadas: «3/4"», «1"», «5/8 PULG»
     rf"|\b\d+(?:\s+\d+)?\s*/\s*\d+\s*(?:[{_COMILLAS}]|PULG)|\b\d+\s*[{_COMILLAS}]"
-    # un diámetro: «DIAMETRO 12», «DIAMETRO DE 12 MM»
-    r"|\bDIAMETROS?\s+(?:DE\s+)?\d+"
+    # un diámetro o un calibre: «DIAMETRO 12», «DIAM. 12», «Ø 12», «DE 12 MM», «CALIBRE 6»
+    r"|\bDIAM(?:ETROS?)?\.?\s*(?:DE\s+)?\d+|[Ø⌀]\s*\d+|\bDE\s+\d+(?:[.,]\d+)?\s*MM\b"
+    r"|\bCALIBRES?\s+(?:DEL?\s+)?\d+"
     # un número pelado o una fracción sin unidad donde va una varilla
     r"|\b(?:HASTA|DESDE|A\s+PARTIR\s+DE(?:L|\s+LA)?|AL)\s+(?:(?:EL|LA)\s+)?(?:VARILLAS?\s+)?"
     rf"\d{{1,2}}(?:[.,]\d)?\b{_NO_ES_UNA_VARILLA_PELADA}"
@@ -673,14 +676,17 @@ _ANTES, _DESPUES = 100, 140
 # --- la nota entera -----------------------------------------------------------------------------
 # Lo que anula una nota entera: «N/A», «(NOTA CANCELADA)», «ANULADA», «SUPRIMIDA», «ELIMINADA»…
 _ANULADA = re.compile(
-    r"(?<![A-Z])N/A(?![A-Z])|\b(?:ANULAD[AO]S?|CANCELAD[AO]S?|SUPRIMID[AO]S?|ELIMINAD[AO]S?"
-    r"|SIN\s+EFECTO|NO\s+APLICA)\b"
+    r"(?<![A-Z.])N\s*/\s*A(?![A-Z])|(?<![A-Z.])N\.\s*A\.?(?![A-Z])|\bNA\b"
+    r"|\b(?:ANULAD[AO]S?|CANCELAD[AO]S?|SUPRIMID[AO]S?|ELIMINAD[AO]S?|DEROGAD[AO]S?"
+    r"|OBSOLET[AO]S?|SUSTITUID[AO]S?|REEMPLAZAD[AO]S?|INVALID[AO]S?|OMITID[AO]S?|DESCARTAD[AO]S?"
+    r"|SE\s+(?:CANCELAN?|SUPRIMEN?|ANULAN?|ELIMINAN?|OMITEN?|DEROGAN?)|CANCELAR|SUPRIMIR|ANULAR"
+    r"|OMITIR|SIN\s+EFECTO|SIN\s+VALIDEZ|NO\s+APLICA|NO\s+VALIDA|YA\s+NO\s+(?:APLICA|VALE))\b"
 )
 # Lo que extiende o recorta a qué varillas o elementos va una regla: «… Y MAYORES TAMBIEN», «ASI
 # COMO LAS MENORES», «Y LAS DEMAS», «SOLO EN…».
 _AMPLIA_O_RECORTA = re.compile(
-    r"\b(?:MAYOR(?:ES)?|MENOR(?:ES)?|DEMAS|TAMBIEN|ASI\s+COMO|IGUALMENTE|TODAS?|TODOS|RESTO"
-    r"|SOLO|SOLAMENTE|UNICAMENTE)\b"
+    r"\b(?:MAYOR(?:ES)?|MENOR(?:ES)?|DEMAS|TAMBIEN|ASI\s+COMO|TODAS?|TODOS|RESTO"
+    r"|SOLO|SOLAMENTE|UNICAMENTE|EXCLUSIVAMENTE|IGUAL(?:MENTE)?|LO\s+MISMO|SUPERIORES|INFERIORES)\b"
 )
 # Las palabras con que una cláusula dice una regla (las del aviso de lo que no se leyó).
 _PALABRA_DE_REGLA = re.compile(
@@ -838,7 +844,7 @@ _MIEMBROS_DE_COBERTURA: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = tu
         (r"ZAPATAS?(?:\s+DE\s+CIMENTACION)?", ("zapata",)),
         (r"DADOS?(?:\s+DE\s+CIMENTACION)?", ("dado",)),
         (r"PILOTES?(?:\s+DE\s+CIMENTACION)?", ("pilote",)),
-        (r"TRABES?", ("trabe",)),
+        (r"TRABES?|VIGAS?", ("trabe",)),
         (r"COLUMNAS?", ("columna",)),
         (r"LOSAS?", ("losa",)),
         (r"MUROS?\s+DE\s+(?:CONCRETO|CONTENCION)", ("muro_concreto",)),
@@ -852,13 +858,29 @@ _SEPARA_MIEMBROS = re.compile(r"\s*,\s*|\s+(?:Y|E)\s+")
 _COLA_DE_LA_LISTA = re.compile(r"(?:\s*,|\s+(?:Y|E)(?:\s+TAMBIEN)?)?\s*$")
 
 
+_DE_CIMENTACION_AL_FINAL = re.compile(r"\s+DE\s+CIMENTACION$")
+_TODA_LA_CIMENTACION = re.compile(r"(?:ELEMENTOS\s+(?:ESTRUCTURALES\s+)?DE\s+)?CIMENTACION")
+
+
+def _de_cimentacion_ambiguo(miembros: list[str]) -> bool:
+    """«TRABES Y LOSAS DE CIMENTACION»: no se sabe si «DE CIMENTACION» es de todos o del último."""
+    con = [m for m in miembros if _DE_CIMENTACION_AL_FINAL.search(m)]
+    sin = [m for m in miembros if m not in con and not _TODA_LA_CIMENTACION.fullmatch(m)]
+    return bool(con and sin)
+
+
 def _miembros(texto: str) -> tuple[list[str], list[str]]:
     """Las familias que nombra una lista de elementos («TRABES Y LOSAS») y los que no se
-    reconocen (``ALBERCAS``)."""
+    reconocen (``ALBERCAS``). Una lista que mezcla «X DE CIMENTACION» con otros elementos es
+    ambigua: no da familias y toda ella va a los que no se reconocen."""
     familias: list[str] = []
     desconocidos: list[str] = []
-    for miembro in _SEPARA_MIEMBROS.split(texto.strip()):
-        miembro = re.sub(r"^(?:LOS|LAS)\s+", "", miembro.strip())
+    miembros = [
+        re.sub(r"^(?:LOS|LAS)\s+", "", m.strip()) for m in _SEPARA_MIEMBROS.split(texto.strip())
+    ]
+    if _de_cimentacion_ambiguo(miembros):
+        return [], [" ".join(texto.split())]
+    for miembro in miembros:
         suyas = next((f for p, f in _MIEMBROS_DE_COBERTURA if p.fullmatch(miembro)), None)
         if suyas is None:
             desconocidos.append(miembro)
@@ -970,8 +992,11 @@ def _primer_estribo(o: _Origen, lectura: Lectura, lecturas: _Lecturas) -> None:
         cita = _cita(o.texto, f.inicio, f.fin)
         texto_familias = " ".join(g for g in (f.m["fam"], f.m.groupdict().get("fam2")) if g)
         familias, _ = _familias_en(texto_familias, _PALABRAS_DE_ESTRIBO)
-        if not familias:
-            familias, _ = _familias_en(mayusculas_sin_acentos(o.seccion), _PALABRAS_DE_ESTRIBO)
+        alcance = _alcance_del_encabezado(o.seccion)
+        if not familias and alcance and "?" not in alcance:
+            familias = list(
+                dict.fromkeys([*alcance, *(["contratrabe"] if "trabe" in alcance else [])])
+            )
         if not _PRIMER_ESTRIBO_CM[0] <= centimetros <= _PRIMER_ESTRIBO_CM[1]:
             lecturas.avisar(
                 f"{o.donde} da el primer estribo a {centimetros:g} cm, fuera de lo posible "
@@ -1060,6 +1085,30 @@ def _plantilla_y_anclajes(o: _Origen, lectura: Lectura, lecturas: _Lecturas) -> 
 # leer ------------------------------------------------------------------------------------------
 
 
+# Un encabezado que acota sus notas a unos elementos: «COLUMNAS :», «NOTAS PARA LOSAS :», «NOTAS
+# PARA TRABES DE CIMENTACION :». Lo que nombra tiene que ser una lista de elementos conocidos; uno
+# con otra cosa («TRABES PRECOLADAS», «LOSAS DE AZOTEA», «SUPERESTRUCTURA») no se sabe a qué
+# acota.
+_ENCABEZADO_DE_ELEMENTOS = re.compile(
+    r"(?:(?:NOTAS?|ESPECIFICACIONES)(?:\s+GENERALES)?\s+(?:PARA|DE|EN)\s+(?:(?:LAS|LOS)\s+)?)?"
+    rf"(?P<lista>{MIEMBROS})"
+)
+
+
+def _alcance_del_encabezado(seccion: str) -> list[str] | None:
+    """Las familias a las que acota un encabezado; ``None`` si no nombra ningún elemento (los
+    generales: «NOTAS GENERALES…», «REFUERZO», «MATERIALES», «ESPECIFICACIONES…», «NOTAS DE
+    CIMENTACION»); ``["?"]`` si nombra uno que no se sabe leer."""
+    texto = " ".join(mayusculas_sin_acentos(seccion).split()).strip(" :.")
+    if not ELEMENTO.search(texto):
+        return None
+    m = _ENCABEZADO_DE_ELEMENTOS.fullmatch(texto)
+    if m is None:
+        return ["?"]
+    familias, desconocidos = _miembros(m["lista"])
+    return familias if familias and not desconocidos else ["?"]
+
+
 def _familias_que_nombra(texto: str) -> set[str]:
     """Las familias que un texto nombra (``?`` si nombra un elemento que no es de ninguna)."""
     familias = set(_familias_en(texto, _PALABRAS_DE_COBERTURA)[0])
@@ -1074,49 +1123,60 @@ def _lo_que_la_cambia(o: _Origen, lectura: Lectura, reglas: set[str]) -> str | N
         una regla: la proporción por sección de Marina, «SIN TRASLAPES» junto a lo que se suelda);
     (b) ninguna niega, anula o exceptúa («NO …», «N/A», «(NOTA CANCELADA)», «SALVO …») ni amplía o
         recorta a qué varillas va («… Y MAYORES TAMBIEN», «ASI COMO LAS MENORES»);
-    (c) nada la acota a un elemento («EN COLUMNAS», «PARA COLUMNAS», «NO ASI EN …», un encabezado
-        como «COLUMNAS :» o «NOTAS PARA LOSAS :»). Una regla por familia (recubrimiento, primer
-        estribo, anclaje) se lee sólo para las familias que dice: otro elemento en otra oración es
-        de otra familia (se avisa aparte); en su misma oración, con una cifra, o nombrando una
-        familia que se leyó, la cambia;
+    (c) nada la acota a un elemento o a una parte de la estructura («EN COLUMNAS», «PARA
+        COLUMNAS», «EN VIGAS», «EN NERVADURAS», «EN AZOTEA», «NO ASI EN …», un encabezado como
+        «COLUMNAS :», «NOTAS PARA LOSAS :» o «NOTAS PARA TRABES DE CIMENTACION :»; uno que no se
+        sabe leer, «NOTAS PARA TRABES PRECOLADAS :», tampoco deja). Una regla por familia
+        (recubrimiento, primer estribo, anclaje) se lee sólo para las familias que dice (o las del
+        encabezado): otro elemento en otra oración es de otra familia (se avisa aparte); en su
+        misma oración, con una cifra, o nombrando una familia que se leyó, la cambia;
     (d) ninguna cláusula sin leer trae un número (un valor sobreentendido: «… #6. LUEGO HASTA EL
         #5»).
     Los encabezados generales («NOTAS GENERALES…», «REFUERZO», «MATERIALES»,
-    «ESPECIFICACIONES…», «NOTAS DE CIMENTACION») no nombran ningún elemento: no acotan."""
+    «ESPECIFICACIONES…», «NOTAS DE CIMENTACION») no nombran ningún elemento: no acotan
+    (``_alcance_del_encabezado``)."""
     globales = any(r.split(":")[0] not in _POR_FAMILIA for r in reglas)
     leidas = {r.split(":")[1] for r in reglas if ":" in r}
     texto = lectura.texto
     anulada = _ANULADA.search(texto)
     if anulada:
         return o.texto[anulada.start() : anulada.end()]
-    encabezado = _familias_que_nombra(mayusculas_sin_acentos(o.seccion))
-    if encabezado and (globales or leidas - _con_sus_contratrabes(encabezado)):
+    alcance = _alcance_del_encabezado(o.seccion)
+    if alcance is not None and (
+        globales or "?" in alcance or leidas - _con_sus_contratrabes(set(alcance))
+    ):
         return o.seccion
     por_familia_en = {f.oracion for f in lectura.validas("primer_estribo", "recubrimiento")}
     por_familia_en |= {f.oracion for f in lectura.validas("recubrimiento_lista")}
+    for k, pieza, trozo in _piezas_sin_leer(lectura):
+        if (
+            _PALABRA_DE_REGLA.search(trozo)
+            or NEGACION.search(trozo)
+            or EXCEPCION.search(trozo)
+            or _AMPLIA_O_RECORTA.search(trozo)
+        ):
+            return o.texto[pieza.inicio : pieza.fin]
+        nombradas = _familias_que_nombra(trozo)
+        numeros = numeros_libres(trozo)
+        if nombradas:
+            if globales or nombradas & leidas or (numeros and k in por_familia_en):
+                return o.texto[pieza.inicio : pieza.fin]
+        elif numeros:
+            return o.texto[pieza.inicio : pieza.fin]
+    return None
+
+
+def _piezas_sin_leer(lectura: Lectura) -> Iterator[tuple[int, Pieza, str]]:
+    """Las cláusulas (o partes) que ninguna frase cubre y que no son neutrales: su oración, la
+    pieza y su texto."""
     for k, oracion in enumerate(lectura.oraciones):
         cubiertas = {
             i for f in lectura.validas() if f.oracion == k for i in range(f.desde, f.hasta + 1)
         }
         for i, pieza in enumerate(oracion.piezas):
-            trozo = texto[pieza.inicio : pieza.fin]
-            if i in cubiertas or es_neutra(trozo):
-                continue
-            if (
-                _PALABRA_DE_REGLA.search(trozo)
-                or NEGACION.search(trozo)
-                or EXCEPCION.search(trozo)
-                or _AMPLIA_O_RECORTA.search(trozo)
-            ):
-                return o.texto[pieza.inicio : pieza.fin]
-            nombradas = _familias_que_nombra(trozo)
-            numeros = numeros_libres(trozo)
-            if nombradas:
-                if globales or nombradas & leidas or (numeros and k in por_familia_en):
-                    return o.texto[pieza.inicio : pieza.fin]
-            elif numeros:
-                return o.texto[pieza.inicio : pieza.fin]
-    return None
+            trozo = lectura.texto[pieza.inicio : pieza.fin]
+            if i not in cubiertas and not es_neutra(trozo):
+                yield k, pieza, trozo
 
 
 def _con_sus_contratrabes(familias: set[str]) -> set[str]:
@@ -1313,9 +1373,20 @@ def _vigilar(o: _Origen, lectura: Lectura, lecturas: _Lecturas) -> None:
         if regla not in lecturas.leidas or tema in dichos:
             continue
         m = sobra(resto)
-        if m is not None:
+        cita = _lo_no_leido(o, lectura, resto, m.start()) if m is not None else None
+        if cita is None:
+            # Lo de otro elemento que no se leyó, aunque no traiga una cifra («…, LO MISMO EN
+            # COLUMNAS», «. EN COLUMNAS A MEDIA SEPARACION.»).
+            cita = next(
+                (
+                    o.texto[p.inicio : p.fin].strip(" .")
+                    for _, p, trozo in _piezas_sin_leer(lectura)
+                    if _familias_que_nombra(trozo)
+                ),
+                None,
+            )
+        if cita is not None:
             dichos.add(tema)
-            cita = _lo_no_leido(o, lectura, resto, m.start())
             lecturas.avisar(
                 f"{o.donde} dice {tema} y además algo que no se pudo leer («{cita}»); eso no se "
                 "usa.",

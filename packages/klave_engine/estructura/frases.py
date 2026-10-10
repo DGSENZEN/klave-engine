@@ -105,7 +105,10 @@ _HASTA = rf"(?P<pre_b>(?:VARILLAS?\s+)?HASTA)\s+{_barra('b')}{_COLA}"
 _DESDE_UN = rf"(?P<pre_b>(?:VARILLAS?\s+)?(?:DEL|DE))\s+{_barra('b')}"
 _RANGO = rf"(?P<pre_a>DEL|DE)\s+{_barra('a')}\s+(?P<pre_b>AL|A)\s+{_barra('b')}"
 
-_FAMILIA = r"(?:CONTRATRABES?|TRABES?|COLUMNAS?|CASTILLOS?|DALAS?|CADENAS?|CERRAMIENTOS?)"
+_FAMILIA = (
+    r"(?:(?:CONTRATRABES?|TRABES?|VIGAS?)(?:\s+DE\s+CIMENTACION)?|COLUMNAS?|CASTILLOS?|DALAS?"
+    r"|CADENAS?|CERRAMIENTOS?)"
+)
 _FAMILIAS = (
     rf"(?:(?:LAS|LOS)\s+)?{_FAMILIA}(?:\s*(?:,|\bY\b|\bE\b)\s*(?:(?:LAS|LOS)\s+)?{_FAMILIA})*"
 )
@@ -184,7 +187,7 @@ MIEMBRO_CONOCIDO = (
     r"ELEMENTOS\s+(?:ESTRUCTURALES\s+)?DE\s+CIMENTACION|LOSAS?\s+DE\s+CIMENTACION"
     r"|(?:TRABES?|VIGAS?)\s+DE\s+CIMENTACION"
     r"|(?:ZAPATAS?|DADOS?|PILOTES?|CONTRATRABES?)(?:\s+DE\s+CIMENTACION)?|CIMENTACION"
-    r"|TRABES?|COLUMNAS?|LOSAS?|MUROS?\s+DE\s+(?:CONCRETO|CONTENCION)|CASTILLOS?|CADENAS?"
+    r"|TRABES?|VIGAS?|COLUMNAS?|LOSAS?|MUROS?\s+DE\s+(?:CONCRETO|CONTENCION)|CASTILLOS?|CADENAS?"
     r"|DALAS?|CERRAMIENTOS?"
 )
 _NO_ES_UN_MIEMBRO = (
@@ -212,9 +215,9 @@ _RECUBRIMIENTOS = (
 # MENOR A:», «RECUBRIMIENTO LIBRE:», «EL RECUBRIMIENTO MINIMO SERA»: lo que va antes de la lista.
 # («NO SERA MENOR QUE» dice el mínimo: no niega.)
 _ANTES_DEL_RECUBRIMIENTO = (
-    r"(?:EL\s+)?RECUBRIMIENTO(?:\s+MINIMO)?(?:\s+LIBRE)?"
+    r"(?:(?:EL|LOS)\s+)?RECUBRIMIENTOS?(?:\s+MINIMOS?)?(?:\s+LIBRES?)?"
     r"(?:\s+DEL?\s+(?:LAS\s+|LOS\s+)?(?:VARILLAS|REFUERZO))?\s*,?\s*"
-    r"(?:SERA(?:\s+DE)?|DE|NO\s+SERA\s+MENOR\s+(?:QUE|DE|A)"
+    r"(?:SERAN?(?:\s+DE)?|DE|NO\s+SERA\s+MENOR\s+(?:QUE|DE|A)"
     r"(?:\s+EL\s+DIAMETRO\s+DEL\s+REFUERZO(?:\s+LONGITUDINAL)?\s*,?\s*NI\s+MENOR\s+(?:A|DE|QUE))?)?"
     r"\s*[:,]?\s*"
 )
@@ -490,9 +493,11 @@ _ACOMPANA = {"acompana_soldar": ("soldar", "soldar_rango"), "acompana_traslape":
 EXCEPCION = re.compile(
     r"\b(?:SALVO|EXCEPTO|EXCEPCION|EXCEPTUANDO|EXCLUYENDO|MENOS\s+EN|PERO|AUNQUE)\b"
 )
+# Un elemento o una parte de la estructura: en una cláusula o un encabezado, acota la regla.
 ELEMENTO = re.compile(
-    r"\b(?:CONTRATRABES?|TRABES?|COLUMNAS?|CASTILLOS?|DALAS?|CADENAS?|CERRAMIENTOS?|ZAPATAS?"
-    r"|DADOS?|PILOTES?|LOSAS?|MUROS?|NUDOS?)\b"
+    r"\b(?:CONTRATRABES?|TRABES?|VIGAS?|COLUMNAS?|CASTILLOS?|DALAS?|CADENAS?|CERRAMIENTOS?"
+    r"|ZAPATAS?|DADOS?|PILOTES?|LOSAS?|MUROS?|NUDOS?|NERVADURAS?|MARCOS?|PILAS?|ENTREPISOS?"
+    r"|AZOTEAS?|ELEMENTOS?\s+SECUNDARIOS?|SUPERESTRUCTURAS?)\b"
 )
 # Una pieza que empieza así acota lo que sigue («EN COLUMNAS,», «PARA TRASLAPES EN…,», «SI…»).
 _ACOTA = re.compile(
@@ -621,7 +626,7 @@ def _recortar(texto: str, a: int, b: int) -> tuple[int, int]:
 
 
 _ABRE_UNA_PARTE = re.compile(
-    r"(?:NO\b(?!\s*[.\d#])|NI\b|SE\b|DEL\b|DE\s+LA\b|DESDE\b|A\s+PARTIR\b|HASTA\b|LAS\b|LOS\b"
+    r"(?:NO\b(?!\s*\.?\s*[\d#])|NI\b|SE\b|DEL\b|DE\s+LA\b|DESDE\b|A\s+PARTIR\b|HASTA\b|LAS\b|LOS\b"
     r"|LA\b|EL\b|EN\b|PARA\b)"
 )
 _Y = re.compile(r"\s+(?:Y|E)\s+")

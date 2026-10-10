@@ -14,10 +14,11 @@ import re
 from dataclasses import dataclass
 
 # El punto de estas abreviaturas nunca acaba la oración: lo que sigue es su clave o su número
-# («FIG. B», «VER DET. 3», «ART. 5», «No. 6»).
-_SIEMPRE_SIGUEN = frozenset("NO N° Nº NUM FIG FIGS DET ART VAR VARS".split())
+# («FIG. B», «VER DET. 3», «ART. 5»). («No.» sí puede acabarla: «… EN PILAS NO.»; sólo es «número»
+# si lo sigue una cifra.)
+_SIEMPRE_SIGUEN = frozenset("FIG FIGS DET ART VAR VARS".split())
 # Un punto detrás de esto es de una abreviatura o de una unidad, y la oración puede seguir.
-_ABREVIATURAS = frozenset("ESP APROX PULG SEC TAB INC VS DIAM EST MIN MAX".split())
+_ABREVIATURAS = frozenset("NO N° Nº NUM ESP APROX PULG SEC TAB INC VS DIAM EST MIN MAX".split())
 _UNIDADES = frozenset("CM CMS CM2 KG/CM2 KG M MT MTS MM M2 M3".split())
 _UNIDAD_PEGADA = re.compile(r"\d(?:CMS?|CM2|KG/CM2|MTS?|MM|M2|M3|M)$")
 # Tras el punto de una unidad o abreviatura, esto sigue la misma oración: «15 CM. CON GANCHOS»,
@@ -70,8 +71,8 @@ def _sigue_la_oracion(texto: str, fin: re.Match[str]) -> bool:
 
 def oraciones(texto: str) -> list[tuple[int, int]]:
     """Dónde empieza y dónde acaba cada oración de ``texto`` (el punto va dentro; el espacio que
-    lo sigue, no). Se corta en «. » y en «; », salvo el punto de «FIG.», «DET.», «ART.», «No.»
-    (nunca) y el de una unidad o abreviatura seguido de una cifra, de «CON», «SEGUN», «DE» o
+    lo sigue, no). Se corta en «. » y en «; », salvo el punto de «FIG.», «DET.», «ART.» (nunca) y
+    el de una unidad o abreviatura («CM.», «No.») seguido de una cifra, de «CON», «SEGUN», «DE» o
     «DEL», o de «Y» con un verbo sin sujeto propio («@ 15 CM. CON GANCHOS» y «@ 15CM. Y TENDRAN
     GANCHOS» son una sola oración; «@ 10 CM. TODAS LAS ESCUADRAS» y «@ 10 CM. EN LAS ESCUADRAS»
     son dos)."""
@@ -149,9 +150,9 @@ def sin_referencias(texto: str) -> str:
 
 
 # «NO», «NI», «SIN», «NUNCA», «PROHIBIDO», «EVITAR»…; no el «No.» de «No. 6» ni el «NO 6», ni
-# «NO OBSTANTE» o «SIN EMBARGO».
+# «NO OBSTANTE» o «SIN EMBARGO». Un «NO.» al final («… EN PILAS NO.») sí niega.
 NEGACION = re.compile(
-    r"\b(?:NO(?!\s*[.\d#°º])(?!\s+OBSTANTE\b)|NI|SIN(?!\s+EMBARGO\b)|NUNCA|JAMAS|TAMPOCO"
+    r"\b(?:NO(?!\s*\.?\s*[\d#])(?![°º])(?!\s+OBSTANTE\b)|NI|SIN(?!\s+EMBARGO\b)|NUNCA|JAMAS|TAMPOCO"
     r"|NINGUN[OA]?S?|PROHIB\w*|EVIT\w*)\b"
 )
 
