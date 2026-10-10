@@ -12,6 +12,7 @@ from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.dxf.parser import DxfParser
 from klave_engine.estructura.asociacion import ARMADO_RE, ancla_texto, asociar, marca_en_texto
+from klave_engine.estructura.textos import caja_de_texto
 
 
 def _entities(tmp_path, build):
@@ -542,9 +543,11 @@ def test_a_label_floating_above_a_stack_makes_it_ambiguous(tmp_path):
     ]
 
 
-def test_a_label_that_loses_its_stack_says_so(tmp_path):
-    # K-1 y K-2 debajo de la misma pila, las dos enfrente de ella: es de K-1 (a 0.03; K-2 a 0.13)
-    # y K-2 se queda sin pila con un rechazo «cedida» que lo dice.
+def test_a_label_left_without_a_stack_makes_the_winners_ambiguous(tmp_path):
+    """R55: K-1 y K-2 debajo de la misma pila, las dos enfrente de ella; K-1 está más pegada
+    (0.03 contra 0.13), pero darle la pila deja a K-2 sin ninguna. Es la imagen en espejo de la
+    etiqueta que tiene encima, más pegada, la pila de su vecina (la suya queda lejos): la
+    geometría sola no distingue los dos casos, así que la pila se rechaza entera."""
     ents = _stacks(
         tmp_path,
         [
@@ -553,10 +556,10 @@ def test_a_label_that_loses_its_stack_says_so(tmp_path):
         ],
     )
     asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
-    assert {a.marca: a.textos for a in asoc} == {"K-1": ["4#3", "E#2@15"]}
-    k2 = next(e for e in ents if e.text == "K-2")
-    assert [(r.motivo, r.entidad_id, r.marcas) for r in rech] == [
-        ("cedida", k2.entity_id, ["K-1", "K-2"])
+    assert asoc == []
+    assert sorted((r.motivo, r.texto, tuple(r.marcas)) for r in rech) == [
+        ("ambigua", "4#3", ("K-1", "K-2")),
+        ("ambigua", "E#2@15", ("K-1", "K-2")),
     ]
 
 
@@ -586,11 +589,15 @@ def test_the_stack_must_overlap_the_label_horizontally(tmp_path):
     [
         # Una etiqueta chica (K-2) metida entre dos renglones de la columna de K-1: la pila de
         # K-1 no pasa sobre ella, y como K-2 tiene enfrente el renglón largo apenas fuera de su
-        # alcance (0.08 contra 0.075), ése puede ser suyo: nada se pega, todo se dice.
+        # alcance (0.08 contra 0.075), ése puede ser suyo: nada se pega, todo se dice. El «4#4»
+        # de más allá del corte sigue siendo un reclamo de K-1 (R55): ambiguo, no huérfano.
         (
             0.3,
             {},
-            [("ambigua", "2E#3EXT@10 CENTRO@20", ("K-1", "K-2")), ("sin_dueno", "4#4", ())],
+            [
+                ("ambigua", "2E#3EXT@10 CENTRO@20", ("K-1", "K-2")),
+                ("ambigua", "4#4", ("K-1", "K-2")),
+            ],
         ),
         # Sobre la punta del renglón largo, fuera de la columna de K-1, K-2 no la corta, pero
         # sigue teniendo ese renglón enfrente: la pila de K-1 queda en duda entera.
@@ -849,7 +856,7 @@ def _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien):
     propios = _ids(ents, de_quien)
     _ninguna_ajena(asoc, propios)
     for a in asoc:
-        assert set(a.entidades) == propios[a.marca], (a.marca, a.textos)
+        assert set(a.entidades) == propios.get(a.marca, set()), (a.marca, a.textos)
     leidos = {e for a in asoc for e in a.entidades}
     rechazados = {r.entidad_id for r in rech}
     assert {i for ids in propios.values() for i in ids} <= leidos | rechazados
@@ -858,7 +865,7 @@ def _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien):
 def _ninguna_ajena(asoc, propios):
     """Ninguna pila tiene un renglón que no sea de su marca."""
     for a in asoc:
-        assert all(e in propios[a.marca] for e in a.entidades), (a.marca, a.textos)
+        assert all(e in propios.get(a.marca, ()) for e in a.entidades), (a.marca, a.textos)
 
 
 def _ids(ents, marca_de_texto):
@@ -1055,7 +1062,8 @@ def test_texts_that_name_a_mark_are_read_or_reported(tmp_path):
         for x, texto in [
             (10, "K-7 E#3@20"),  # sólo estribos: la nota no lo lee
             (20, "CASTILLOS E#2@20 EN TODOS"),
-            (30, "COLUMNAS: ESTRIBOS #3@15"),
+            (30, "COLUMNAS: ESTRIBOS #3@15"),  # la nota lo lee como malla (y avisa)
+            (35, "K-3 #4@20"),  # una malla con su marca: la nota la lee
             (40, "2E#3@15 VER P-1"),  # un renglón suelto que remite a P-1
             (50, "K-1 15x20 4#3 E#2@20"),  # lo lee la nota: sección y varillas
             (60, "CASTILLOS 15X15 4#3 E#2@20"),  # nota de familia leída
@@ -1068,7 +1076,6 @@ def test_texts_that_name_a_mark_are_read_or_reported(tmp_path):
     assert sorted((r.motivo, r.texto) for r in rech) == [
         ("sin_dueno", "2E#3@15 VER P-1"),
         ("sin_lector", "CASTILLOS E#2@20 EN TODOS"),
-        ("sin_lector", "COLUMNAS: ESTRIBOS #3@15"),
         ("sin_lector", "K-7 E#3@20"),
     ]
 
@@ -1149,3 +1156,278 @@ def test_crowded_random_cuadros_never_read_a_foreign_or_partial_stack(tmp_path, 
     ents, de_quien = _cuadro_al_azar(tmp_path, semilla, mezcla)
     asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
     _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+
+
+# ------------------------------------- R55: lo que se disputa se rechaza, nunca se adivina dueño
+
+
+def _con_dueno(etiquetas, renglones_por_marca):
+    """Etiquetas (marca, x, y) y {marca: [(texto, x, y)]}: los renglones y de quién es cada uno."""
+    renglones = [r for rs in renglones_por_marca.values() for r in rs]
+    de_quien = {
+        (t, round(x, 3), round(y, 3)): m for m, rs in renglones_por_marca.items() for t, x, y in rs
+    }
+    return etiquetas, renglones, de_quien
+
+
+@pytest.mark.parametrize("x3", [0.05, 0.075])
+@pytest.mark.parametrize("y6", [0.70, 0.72, 0.76, 0.80])
+def test_lines_beyond_a_cut_stay_claimed_by_their_columns_owner(tmp_path, x3, y6):
+    """R55 (la semilla 10805 del revisor): la columna de K-2 topa con la etiqueta de K-3 y sigue
+    en «8#6», que K-3 no alcanza. K-6, encima de «8#6» y sin pila propia, lo alcanza, y su columna
+    se corta limpia en K-3 (K-3 sí alcanza lo de abajo). «8#6» sigue siendo un reclamo de K-2: K-6
+    no se lo lleva sin oposición, y lo de abajo es de K-2 o de K-3."""
+    etiquetas, renglones, de_quien = _con_dueno(
+        [("K-2", 0.45, 0.0), ("K-3", x3, 0.47), ("K-6", 0.765, y6)],
+        {"K-2": [("CENTRO@20", 0.0, 0.18), ("2E#3EXT@10", 0.0, 0.35), ("8#6", 0.63, 0.57)]},
+    )
+    ents = _pilas_libres(tmp_path, etiquetas, renglones)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+    assert asoc == []
+    assert sorted((r.motivo, r.texto, tuple(r.marcas)) for r in rech) == [
+        ("ambigua", "2E#3EXT@10", ("K-2", "K-3", "K-6")),
+        ("ambigua", "8#6", ("K-2", "K-3", "K-6")),
+        ("ambigua", "CENTRO@20", ("K-2", "K-3")),
+    ]
+
+
+def _bajo_una_pila_ajena(dy, g2, limpias=False):
+    """K-2 justo debajo del tope de la pila de K-1 («EYG#3@15» le queda enfrente) y su propia
+    pila a ``g2`` encima; con ``limpias``, tres marcas lejos con su pila debajo de la etiqueta
+    (la costumbre del cuadro)."""
+    etiquetas = [("K-1", 0.0, 0.0), ("K-2", 0.5, dy)]
+    base = dy + 0.13 + g2
+    renglones = {
+        "K-1": [("EYG#3@15", -0.2, 0.25), ("6#4", 0.0, 0.42)],
+        "K-2": [("E#2@20", 0.33, base), ("4#3", 0.40, base + 0.17)],
+    }
+    if limpias:
+        for n, x in ((3, 5.0), (4, 7.0), (5, 9.0)):
+            etiquetas.append((f"K-{n}", x, 0.0))
+            renglones[f"K-{n}"] = [("E#2@15", x - 0.2, 0.18), ("4#3", x - 0.1, 0.36)]
+    return _con_dueno(etiquetas, renglones)
+
+
+@pytest.mark.parametrize(
+    "dy,g2,limpias",
+    [(dy, g2, False) for dy in (0.08, 0.10) for g2 in (0.15, 0.20, 0.35)]  # min2 del revisor
+    + [(dy, 0.35, False) for dy in (0.0, 0.02, 0.06)]  # min3
+    + [(dy, 0.35, True) for dy in (0.02, 0.06, 0.10)],  # min3 con la costumbre del cuadro
+)
+def test_a_label_facing_a_foreign_stack_top_takes_nothing(tmp_path, dy, g2, limpias):
+    etiquetas, renglones, de_quien = _bajo_una_pila_ajena(dy, g2, limpias)
+    ents = _pilas_libres(tmp_path, etiquetas, renglones)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+    assert {a.marca for a in asoc} == ({"K-3", "K-4", "K-5"} if limpias else set())
+    assert sorted((r.motivo, r.texto, tuple(r.marcas)) for r in rech) == [
+        ("ambigua", "6#4", ("K-1", "K-2")),
+        ("ambigua", "EYG#3@15", ("K-1", "K-2")),
+        ("sin_dueno", "4#3", ()),
+        ("sin_dueno", "E#2@20", ()),
+    ]
+
+
+def _columna_de_tres(k2gap, junta, con_k1=True):
+    """minC del revisor: tres pilas en una columna; K-1 y K-2 debajo de su pila, K-3 encima de
+    la suya. K-2 casi pegada al tope de la de K-1; la de K-3 casi toca el tope de la de K-2."""
+    etiquetas, renglones = [], {}
+    if con_k1:
+        etiquetas.append(("K-1", 0.0, 0.0))
+        renglones["K-1"] = [
+            ("CENTRO@15", -0.2, 0.17),
+            ("2E#3EXT@10", -0.2, 0.35),
+            ("4#6+4#4", -0.1, 0.53),
+        ]
+    y2 = 0.63 + k2gap
+    etiquetas.append(("K-2", 0.0, y2))
+    renglones["K-2"] = [
+        ("CENTRO@20", -0.2, y2 + 0.23),
+        ("2E#3EXT@10", -0.2, y2 + 0.41),
+        ("8#6", 0.1, y2 + 0.59),
+    ]
+    y3 = y2 + 0.69 + junta
+    renglones["K-3"] = [
+        ("4#6+4#4", -0.1, y3),
+        ("2E#3EXT@10", -0.2, y3 + 0.18),
+        ("CENTRO@15", -0.2, y3 + 0.36),
+    ]
+    etiquetas.append(("K-3", 0.0, y3 + 0.50))
+    return _con_dueno(etiquetas, renglones)
+
+
+@pytest.mark.parametrize(
+    "k2gap,junta,con_k1",
+    [(g, j, True) for g in (0.045, 0.05, 0.055) for j in (0.08, 0.14)] + [(0.05, 0.10, False)],
+)
+def test_a_column_of_stacks_with_mixed_sides_is_rejected_whole(tmp_path, k2gap, junta, con_k1):
+    etiquetas, renglones, de_quien = _columna_de_tres(k2gap, junta, con_k1)
+    ents = _pilas_libres(tmp_path, etiquetas, renglones)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+    assert asoc == []
+    assert {r.motivo for r in rech} == {"ambigua"} and len(rech) == len(renglones)
+
+
+@pytest.mark.parametrize("x2", [0.60, 0.68, 0.75])
+@pytest.mark.parametrize("y2", [-0.115, -0.09])
+@pytest.mark.parametrize("propia", [True, False])
+def test_a_label_beside_a_stack_never_takes_part_of_it(tmp_path, x2, y2, propia):
+    """minP del revisor: K-1 encima de su pila; K-2 (debajo de la suya) al lado de K-1, sobre la
+    punta de su primer renglón y con el segundo, el largo, a su alcance. La pila de K-1 nunca se
+    lee a medias ni la toma K-2; K-2 lee la suya entera o nada."""
+    renglones = {
+        "K-1": [("CENTRO@20", -0.17, -0.21), ("2E#3EXT@10", -0.16, -0.37), ("8#6", 0.15, -0.55)]
+    }
+    if propia:
+        renglones["K-2"] = [
+            ("CENTRO@15", x2 - 0.15, y2 + 0.27),
+            ("2E#3EXT@10", x2 - 0.2, y2 + 0.45),
+            ("4#6+4#4", x2 - 0.1, y2 + 0.63),
+        ]
+    etiquetas, renglones_, de_quien = _con_dueno([("K-1", 0.0, 0.0), ("K-2", x2, y2)], renglones)
+    ents = _pilas_libres(tmp_path, etiquetas, renglones_)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+    assert "K-1" not in {a.marca for a in asoc}
+    de_k1 = _ids(ents, de_quien)["K-1"]
+    assert {(r.entidad_id, r.motivo, tuple(r.marcas)) for r in rech if r.entidad_id in de_k1} == {
+        (i, "ambigua", ("K-1", "K-2")) for i in de_k1
+    }
+
+
+@pytest.mark.parametrize("etiqueta", ["K-1, K-2", "K-1 Y K-2", "K-1=K-2", "K-1/K-2"])
+@pytest.mark.parametrize("hueco", [0.02, 0.04])
+@pytest.mark.parametrize("limpias", [False, True])
+def test_a_label_with_several_marks_claims_its_stack_and_reports_it(
+    tmp_path, etiqueta, hueco, limpias
+):
+    """multi2 del revisor: una etiqueta con varias marcas reclama su pila como cualquier otra (la
+    de K-3, encima, no se la lleva) y esa pila se reporta con las marcas, nunca se le da a una."""
+    etiquetas = [(etiqueta, 0.0, 0.0), ("K-3", 0.0, 0.606 + hueco)]
+    renglones = {
+        etiqueta: [(t, dx, dy) for t, dx, dy in K12],
+        "K-3": [(t, dx, 0.606 + hueco + dy) for t, dx, dy in K11],
+    }
+    if limpias:
+        for n, x in ((5, 5.0), (6, 7.0), (7, 9.0)):
+            etiquetas.append((f"K-{n}", x, 0.0))
+            renglones[f"K-{n}"] = [(t, x + dx, dy) for t, dx, dy in K11]
+    etiquetas, renglones_, de_quien = _con_dueno(etiquetas, renglones)
+    ents = _pilas_libres(tmp_path, etiquetas, renglones_)
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+    leidas = {a.marca for a in asoc} - {"K-5", "K-6", "K-7"}
+    motivos = {(r.motivo, tuple(r.marcas)) for r in rech}
+    if hueco == 0.02:  # K-3 más pegada a la pila de abajo que a la suya: todo en duda
+        assert leidas == set() and motivos == {("ambigua", ("K-1", "K-2", "K-3"))}
+    else:
+        assert leidas == {"K-3"} and motivos == {("varias_marcas", ("K-1", "K-2"))}
+        assert len(rech) == len(K12)
+
+
+# ------------------------------------------- los cuadros al azar del revisor (prueba por semillas)
+
+REVISOR = [*PLANTILLAS, [("12#8", -0.12, 0.36), ("E#4@10", -0.2, 0.18)]]
+
+
+def _cuadro_del_revisor(tmp_path, semilla, mezcla, sin_pila):
+    """El generador del revisor (R55), con su mismo orden de sorteos: 2 a 4 columnas de 1 a 3
+    marcas a 0.4–1.0 por 0.5–1.1, cada pila a 0.02–0.16 de su etiqueta, encima o debajo (40 %,
+    por cuadro o, en ``mezcla``, por marca), a escala 0.85–1.2; en ``sin_pila`` una de cada cinco
+    etiquetas no tiene pila. ``None`` si dos textos quedan a menos de 0.02 (no se lee ni a ojo)."""
+    rnd = random.Random(semilla)
+    de_quien: dict[tuple[str, float, float], str] = {}
+
+    def build(doc):
+        msp = doc.modelspace()
+        abajo = rnd.random() < 0.4
+        sx, sy = rnd.uniform(0.4, 1.0), rnd.uniform(0.5, 1.1)
+        n = 0
+        for i in range(rnd.randint(2, 4)):
+            for j in range(rnd.randint(1, 3)):
+                n += 1
+                x = i * sx + rnd.uniform(-0.2, 0.2)
+                y = j * sy + rnd.uniform(-0.15, 0.15)
+                t = msp.add_text(f"K-{n}", height=0.13)
+                t.set_placement((x, y), align=TextEntityAlignment.BOTTOM_CENTER)
+                if mezcla:
+                    abajo = rnd.random() < 0.4
+                hueco, escala = rnd.uniform(0.02, 0.16), rnd.uniform(0.85, 1.2)
+                pila = rnd.choice(REVISOR)
+                if sin_pila and rnd.random() < 0.2:
+                    pila = []
+                dy0 = min((dy for _, _, dy in pila), default=0.0)
+                for texto, dx, dy in pila:
+                    rel = (dy - dy0) * escala
+                    yy = y + ((-hueco - 0.10 - rel) if abajo else (0.13 + hueco + rel))
+                    xx = x + dx + rnd.uniform(-0.05, 0.05)
+                    msp.add_text(texto, height=0.10).set_placement((xx, yy))
+                    de_quien[(texto, round(xx, 3), round(yy, 3))] = f"K-{n}"
+
+    ents = _dxf(tmp_path, build)
+    cajas = []
+    for e in ents:
+        if e.is_textual:
+            (ax, ay), (dx0, dx1, dy0, dy1, _) = ancla_texto(e), caja_de_texto(e, 0.0)
+            cajas.append((ax + dx0, ax + dx1, ay + dy0, ay + dy1))
+    for i, a in enumerate(cajas):
+        for b in cajas[i + 1 :]:
+            if (
+                a[0] < b[1] + 0.02
+                and b[0] < a[1] + 0.02
+                and a[2] < b[3] + 0.02
+                and b[2] < a[3] + 0.02
+            ):
+                return None
+    return ents, de_quien
+
+
+# Las semillas que el revisor encontró con una pila ajena o a medias antes de R55.
+SEMILLAS_DEL_REVISOR = (
+    [(s, True, True) for s in (48, 147, 491, 600, 734, 4436, 4685, 4769, 5234, 6188, 6217)]
+    + [(s, True, True) for s in (6900, 6933, 7105, 7137, 9763, 9817, 10566, 10647, 10805)]
+    + [(s, True, True) for s in (11164, 11318, 11416, 11601, 11901, 12507, 12568, 13231)]
+    + [(s, True, True) for s in (14919, 16680, 16964, 17293, 18359, 18455, 18504, 18562)]
+    + [(s, True, True) for s in (18929, 19274)]
+    + [(s, False, True) for s in (510, 1079, 1235, 1283, 2133, 2142, 2838, 2868, 3053, 4247)]
+    + [(s, False, True) for s in (4858, 4975, 5027, 5121, 5892, 5995, 6978, 7215, 7766, 7934)]
+    + [(s, False, True) for s in (8177, 8453, 8921, 9360, 10147, 10812, 11551, 12969, 13245)]
+    + [(s, False, True) for s in (14598, 14769, 15218, 15553, 15665, 16486, 17202, 18405)]
+    + [(s, False, True) for s in (19088, 19103)]
+    + [(s, True, False) for s in (5160, 5357, 7864, 8975, 9944, 11221, 11375, 11726, 13180)]
+    + [(s, True, False) for s in (15266, 16165, 16832)]
+)
+
+
+@pytest.mark.parametrize("semilla,mezcla,sin_pila", SEMILLAS_DEL_REVISOR)
+def test_the_reviewers_random_cuadros_never_read_a_foreign_or_partial_stack(
+    tmp_path, semilla, mezcla, sin_pila
+):
+    cuadro = _cuadro_del_revisor(tmp_path, semilla, mezcla, sin_pila)
+    assert cuadro is not None  # todas eran legibles
+    ents, de_quien = cuadro
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+
+
+_BARRIDA = 240  # semillas por familia: unos 30 cuadros legibles, poco más de un segundo
+
+
+@pytest.mark.parametrize("mezcla", [False, True])
+@pytest.mark.parametrize("sin_pila", [False, True])
+def test_a_sweep_of_the_reviewers_random_cuadros(tmp_path, mezcla, sin_pila):
+    """Una barrida acotada de semillas de cada familia del revisor: en ninguna se lee una pila
+    ajena ni una a medias, y se lee algo (la prueba no se vacía sola)."""
+    legibles = leidos = 0
+    for semilla in range(_BARRIDA):
+        cuadro = _cuadro_del_revisor(tmp_path, semilla, mezcla, sin_pila)
+        if cuadro is None:
+            continue
+        ents, de_quien = cuadro
+        asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+        _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+        legibles += 1
+        leidos += len(asoc)
+    assert legibles >= _BARRIDA // 8 and leidos >= legibles

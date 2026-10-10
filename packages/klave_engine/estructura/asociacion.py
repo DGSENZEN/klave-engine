@@ -23,9 +23,12 @@ opuestos) es ambiguo y no es de ninguna; si no, es de la más pegada, salvo que 
 dudas (ver ``_repartir``). Una etiqueta con columnas de los dos lados se queda con la que tiene
 enfrente o la más pegada (si empatan, la de arriba), pero si ésa también la alcanza otra marca,
 la etiqueta es ambigua: su lectura depende de cómo se reparta todo el grupo y no se adivina. Una
-pila se toma entera o no se toma. Lo que no se pudo pegar sale como rechazo: ambiguo, cedido (la
-pila que alcanzaba la etiqueta es de otra marca), de otra familia, sin lector (dice de quién es
-pero ningún lector lo lee) o sin dueño: nada se queda sin leer en silencio."""
+pila se toma entera o no se toma, y si al tomarla deja sin pila a otra etiqueta que la alcanzaba,
+no se toma (R55: la geometría sola no sabe de cuál de las dos es). Lo que sigue de una columna más
+allá de la etiqueta que la corta sigue siendo un reclamo de la dueña de la columna: sólo la que la
+corta puede quedárselo, y cualquier otra marca que lo alcance empata. Lo que no se pudo pegar sale
+como rechazo: ambiguo, de otra familia, sin lector (dice de quién es pero ningún lector lo lee),
+de una etiqueta con varias marcas o sin dueño: nada se queda sin leer en silencio."""
 
 import bisect
 import math
@@ -33,7 +36,7 @@ import re
 import statistics
 from collections import Counter, defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -65,6 +68,11 @@ _MARCA_RE = re.compile(
 )
 _PREFIJO_DE_ETIQUETA = re.compile(r"^(?:CASTILLO|COLUMNA)\s+")
 _LARGO_DE_ETIQUETA = 10
+# Una etiqueta de varias marcas («K-1 Y K-2», «K-1, K-2», «K-1=K-2», «K-1/K-2», «K-1 A K-4»): lo
+# que queda entre sus marcas son sólo separadores.
+_ENTRE_MARCAS = re.compile(r"(?:\s|[,;/=&+\-]|\b(?:Y|E|A|AL)\b)*")
+_LARGO_DE_VARIAS = 40
+_JUNTAS = " Y "  # cómo se escribe la «marca» de una etiqueta de varias
 # Lo que remite a otra parte del plano no reclama una marca: «E#2@15 VER CORTE C-2» es un
 # renglón de armado, no una nota de C-2.
 _REFERENCIA = re.compile(
@@ -78,6 +86,7 @@ _REFERENCIA = re.compile(
 _SECCION = re.compile(r"(?<![\dxX×])(\d{1,3})\s*[xX×]\s*(\d{1,3})(?![\dxX×])")
 _PIEZA = re.compile(r"\d{1,3}\s*[xX×]\s*\d{1,3}\s*[xX×]\s*\d{1,3}")
 _LONGITUDINALES = re.compile(r"(\d{1,2})\s*(?:V|VAR|VARS|VARILLAS)?\s*#\s*(\d)(?!\s*@)", re.I)
+_MALLA = re.compile(r"(?<![E\d])#\s*(\d)\s*@\s*(\d{1,3})", re.I)
 _LADO_DE_SECCION_CM = (8, 400)
 
 # Un texto que nombra otra familia es de la lectura de esa familia (la losa, el muro, la nota de
@@ -172,12 +181,12 @@ class Rechazo(BaseModel):
     entidad_id: str
     texto: str
     hoja: str
-    # ambigua: dos marcas lo alcanzan parecido, o la etiqueta que lo alcanza tiene columnas de
-    # los dos lados y otra marca le disputa una; otra_familia: está en la pila de una marca pero
-    # nombra otra familia; sin_lector: nombra su marca o su familia pero ningún lector lo lee
-    # (sólo estribos, p. ej.); sin_dueno: nada lo lee; cedida: la entidad es una etiqueta y la
-    # pila que alcanzaba es de otra marca (``marcas``: la suya y las que se la quedaron).
-    motivo: Literal["ambigua", "otra_familia", "sin_lector", "sin_dueno", "cedida"]
+    # ambigua: dos o más marcas lo pueden reclamar y no se puede decidir de cuál es (``marcas``);
+    # otra_familia: está en la pila de una marca pero nombra otra familia; sin_lector: nombra su
+    # marca o su familia pero ningún lector lo lee (sólo estribos, p. ej.); varias_marcas: es de
+    # la pila de una etiqueta con varias marcas («K-1 Y K-2»), que E0 no lee; sin_dueno: nada lo
+    # lee.
+    motivo: Literal["ambigua", "otra_familia", "sin_lector", "varias_marcas", "sin_dueno"]
     marcas: list[str] = Field(default_factory=list)
 
 
@@ -211,9 +220,32 @@ def _marca_de_etiqueta(texto: str, config: TextPatternConfig) -> str | None:
     return None
 
 
+def _varias_marcas(texto: str, config: TextPatternConfig) -> list[str] | None:
+    """Las marcas de una etiqueta que nombra dos o más («K-1 Y K-2» → [K-1, K-2]), o ``None``."""
+    limpio = _PREFIJO_DE_ETIQUETA.sub("", " ".join(texto.split()).upper())
+    if len(limpio) > _LARGO_DE_VARIAS:
+        return None
+    halladas = list(_MARCA_RE.finditer(limpio))
+    if len(halladas) < 2:
+        return None
+    resto = [limpio[: halladas[0].start()]]
+    resto += [limpio[a.end() : b.start()] for a, b in zip(halladas, halladas[1:], strict=False)]
+    resto.append(limpio[halladas[-1].end() :])
+    if not all(_ENTRE_MARCAS.fullmatch(r) for r in resto):
+        return None
+    marcas = [marca_en_texto(m.group(0), config) or m.group(0) for m in halladas]
+    return list(dict.fromkeys(marcas))
+
+
+def _marcas_de(marca: str) -> list[str]:
+    """Las marcas de una etiqueta (una, o varias si es de varias)."""
+    return marca.split(_JUNTAS)
+
+
 def _lo_lee_una_nota(texto: str) -> bool:
-    """Si la lectura de notas toma algo de ``texto``: una sección (dos lados de 8 a 400 cm) o
-    varillas longitudinales. Un texto con sólo estribos («K-7 E#3@20») no lo lee nadie."""
+    """Si la lectura de notas toma algo de ``texto``: una sección (dos lados de 8 a 400 cm),
+    varillas longitudinales o una malla («K-3 #4@20»). Un texto con sólo estribos («K-7 E#3@20»)
+    no lo lee nadie."""
     piezas = [m.span() for m in _PIEZA.finditer(texto)]
     for m in _SECCION.finditer(texto):
         if any(a <= m.start() < b for a, b in piezas):
@@ -221,7 +253,7 @@ def _lo_lee_una_nota(texto: str) -> bool:
         lados = int(m.group(1)), int(m.group(2))
         if all(_LADO_DE_SECCION_CM[0] <= lado <= _LADO_DE_SECCION_CM[1] for lado in lados):
             return True
-    return _LONGITUDINALES.search(texto) is not None
+    return _LONGITUDINALES.search(texto) is not None or _MALLA.search(texto) is not None
 
 
 def _clase(
@@ -235,6 +267,11 @@ def _clase(
     marca = _marca_de_etiqueta(texto, config)
     if marca is not None:
         return "etiqueta", marca
+    varias = _varias_marcas(texto, config)
+    if varias is not None:
+        # Reclama su pila como cualquier etiqueta (que ninguna vecina se la lleve), aunque E0
+        # no lea definiciones de varias marcas.
+        return "etiqueta", _JUNTAS.join(varias)
     if ARMADO_RE.search(texto) is None:
         return "nada", None
     if e.entity_id in de_notas or _NOTA_NUMERADA.search(texto):
@@ -606,6 +643,9 @@ class _Alcance:
     # ésa no lo alcanza, la pila no se sabe dónde acaba.
     cortada: _Texto | None = None
     mas_alla: _Texto | None = None
+    # La columna más allá del corte (desde ``mas_alla``): no es de la pila, pero sigue siendo un
+    # reclamo de esta etiqueta; sólo la que la corta puede quedársela.
+    despues: list[_Texto] = field(default_factory=list)
     # Dos columnas que se juntan en un renglón que sigue igual de pegado a las dos.
     fusion: bool = False
 
@@ -679,11 +719,8 @@ def _alcance(
 
     def extremo(t: _Texto) -> bool:
         """Que entre ``t`` y la etiqueta no haya otro renglón de su columna: una etiqueta junto a
-        la mitad de una pila ajena no la toma desde ahí. Un renglón separado de ``t`` por una
-        etiqueta metida entre los dos es de otra pila, y la etiqueta que tiene a ``t`` justo
-        enfrente (encimada con él) lo alcanza aunque al lado de ella siga otra pila."""
-        if _se_enciman(t, etiqueta):
-            return True
+        la mitad de una pila ajena no la toma desde ahí (aunque le quede enfrente). Un renglón
+        separado de ``t`` por una etiqueta metida entre los dos es de otra pila."""
         alcance = _HUECO_ENTRE_RENGLONES * t.alto
         return not any(
             g.id != t.id
@@ -725,11 +762,19 @@ def _alcance(
         [actual],
         frontal=sobre_la_etiqueta(actual),
     )
+    # Tras un corte, la columna se sigue leyendo igual, pero en ``despues``.
+    destino = pila.renglones
     while True:
         previo = actual
+        fuera = {etiqueta.id, *(r.id for r in pila.renglones), *(r.id for r in pila.despues)}
+        if pila.cortada is not None:
+            fuera.add(pila.cortada.id)
 
         def buscar(
-            donde: _Indice, previo: _Texto = previo, empatados: list[_Texto] | None = None
+            donde: _Indice,
+            previo: _Texto = previo,
+            fuera: set[str] = fuera,
+            empatados: list[_Texto] | None = None,
         ) -> _Texto | None:
             return _paso(
                 donde,
@@ -738,7 +783,7 @@ def _alcance(
                 _HUECO_ENTRE_RENGLONES * previo.alto,
                 previo.alto,
                 etiqueta.cx,
-                {etiqueta.id, *(r.id for r in pila.renglones)},
+                fuera,
                 _sigue(etiqueta, previo, libres),
                 empatados=empatados,
             )
@@ -756,22 +801,34 @@ def _alcance(
         ):
             # Dos renglones que siguen al anterior, uno al lado del otro: la columna se abre en
             # dos y no se sabe por cuál sigue.
-            pila.fusion = True
+            pila.fusion = destino is pila.renglones
             break
         if siguiente.id not in libres:
+            if destino is pila.despues:
+                break
             if siguiente.clase == "ajena":
                 pila.tope = siguiente
             elif siguiente.clase == "etiqueta":
                 pila.mas_alla = buscar(renglones)  # la columna sigue más allá de ella
-                pila.cortada = siguiente if pila.mas_alla is not None else None
+                if pila.mas_alla is not None:
+                    pila.cortada = siguiente
+                    destino = pila.despues
+                    destino.append(pila.mas_alla)
+                    actual = pila.mas_alla
+                    continue
             break
         pasillo = _en_el_pasillo(previo, siguiente, etiquetas, etiqueta) or _de_frente(
             siguiente, sentido, etiquetas, etiqueta
         )
         if pasillo is not None:
+            if destino is pila.despues:
+                break
             pila.cortada, pila.mas_alla = pasillo, siguiente
-            break
-        otro = _otro_previo(siguiente, previo, sentido, renglones, pila.renglones)
+            destino = pila.despues
+            destino.append(siguiente)
+            actual = siguiente
+            continue
+        otro = _otro_previo(siguiente, previo, sentido, renglones, pila.renglones + pila.despues)
         if otro is not None:
             # ``siguiente`` también sigue a otro renglón de al lado: es de la columna del más
             # pegado de los dos; si lo están igual, no se sabe de cuál es.
@@ -779,9 +836,9 @@ def _alcance(
             del_previo = max(_hueco(previo, siguiente, sentido), 0.0)
             empate = _casi_igual(del_otro, del_previo, siguiente.alto)
             if empate or del_otro < del_previo:
-                pila.fusion = empate
+                pila.fusion = empate and destino is pila.renglones
                 break
-        pila.renglones.append(siguiente)
+        destino.append(siguiente)
         actual = siguiente
     return pila
 
@@ -814,13 +871,11 @@ def _otro_previo(
 
 @dataclass
 class _Reparto:
-    """Lo que queda de las pilas de un grupo de textos: las tomadas (con los renglones que se
-    quedaron), los renglones ambiguos con las marcas que los alcanzan, y las etiquetas que se
-    quedaron sin la pila que alcanzaban porque es de otra marca."""
+    """Lo que queda de las pilas de un grupo de textos: las tomadas (con sus renglones) y los
+    renglones ambiguos con las marcas que los pueden reclamar."""
 
     tomadas: list[tuple[_Alcance, list[_Texto]]]
     ambiguos: dict[str, set[str]]
-    cedidas: dict[str, set[str]]
 
 
 def _repartir(
@@ -845,15 +900,36 @@ def _repartir(
     alcanza o la tiene enfrente apenas fuera de su alcance, o va contra la costumbre, la etiqueta
     es ambigua. Una pila cortada por otra etiqueta que no se queda con lo de más allá, que se abre
     en dos o se junta con otra, o que otra etiqueta tiene enfrente apenas fuera de su alcance,
-    también. Lo ambiguo se rechaza entero: nunca una pila a medias ni la de otra marca."""
+    también. Lo de más allá de un corte sigue siendo un reclamo de la dueña de la columna, que
+    empata con cualquiera menos con la que la corta; y una pila que deja sin pila a otra etiqueta
+    que alcanzaba alguno de sus renglones no se toma. Lo ambiguo se rechaza entero: nunca una pila
+    a medias ni la de otra marca."""
     reclamos: dict[str, list[_Alcance]] = defaultdict(list)
     for lista in alcances.values():
         for a in lista:
             for r in a.renglones:
                 reclamos[r.id].append(a)
 
+    # Lo que sigue de una columna más allá de la etiqueta que la corta sigue siendo un reclamo de
+    # la dueña de la columna: la que la corta puede quedárselo (una lista de etiquetas, cada una
+    # con su pila); cualquier otra marca que lo alcance empata con ella.
+    sombras: dict[str, list[_Alcance]] = defaultdict(list)
+    for lista in alcances.values():
+        for a in lista:
+            for r in a.despues:
+                sombras[r.id].append(a)
+
+    def sombra(a: _Alcance, r: _Texto) -> set[str]:
+        return {
+            s.marca
+            for s in sombras.get(r.id, ())
+            if s.marca != a.marca and (s.cortada is None or s.cortada.marca != a.marca)
+        }
+
     def ajenos(a: _Alcance) -> set[str]:
-        return {b.marca for r in a.renglones for b in reclamos[r.id] if b.marca != a.marca}
+        return {b.marca for r in a.renglones for b in reclamos[r.id] if b.marca != a.marca} | {
+            m for r in a.renglones for m in sombra(a, r)
+        }
 
     # La costumbre del cuadro: de qué lado de su pila van las etiquetas cuya pila nadie disputa
     # (al menos dos y 80 % del mismo lado). Una etiqueta que va contra ella no le gana una pila
@@ -897,7 +973,7 @@ def _repartir(
         )
 
     def estado(a: _Alcance, r: _Texto) -> str:
-        resultado = "gana"
+        resultado = "empata" if sombra(a, r) else "gana"
         for b in reclamos[r.id]:
             if b.marca == a.marca:
                 continue
@@ -929,11 +1005,13 @@ def _repartir(
         return resultado
 
     def resolver(
-        revividos: set[tuple[str, int]],
+        revividos: set[tuple[str, int]], anuladas: dict[str, set[str]]
     ) -> tuple[list[tuple[_Alcance, list[_Texto]]], dict[str, _Alcance], dict[str, set[str]]]:
         tomadas: list[tuple[_Alcance, list[_Texto]]] = []
-        dudosas: dict[str, set[str]] = {}  # etiqueta → las marcas de su grupo en disputa
+        dudosas: dict[str, set[str]] = dict(anuladas)  # etiqueta → las marcas en disputa
         for etiqueta in etiquetas:
+            if etiqueta.id in anuladas:
+                continue
             vivos = [
                 a
                 for a in alcances[etiqueta.id]
@@ -1027,10 +1105,13 @@ def _repartir(
 
     # Un lado que perdió su primer renglón contra una marca que al final no se lo quedó (porque
     # quedó ambigua o tomó su otro lado) no está muerto: sigue en disputa, y la etiqueta vuelve a
-    # tener dos lados. Se repite hasta que nada cambia (cada vuelta sólo agrega dudas).
+    # tener dos lados. Y una pila que deja sin pila a otra etiqueta que alcanzaba alguno de sus
+    # renglones no se toma (R55): la geometría sola no distingue a la dueña de la que se quedó
+    # sin nada. Se repite hasta que nada cambia (cada vuelta sólo agrega dudas).
     revividos: set[tuple[str, int]] = set()
+    anuladas: dict[str, set[str]] = {}
     while True:
-        finales, dueno, dudosas = resolver(revividos)
+        finales, dueno, dudosas = resolver(revividos, anuladas)
         nuevos = {
             (etiqueta.id, a.sentido)
             for etiqueta in etiquetas
@@ -1039,35 +1120,38 @@ def _repartir(
             and estado(a, a.renglones[0]) == "pierde"
             and a.renglones[0].id not in dueno
         }
-        if not nuevos:
+        con_pila = {a.etiqueta.id for a, _ in finales}
+        nuevas: dict[str, set[str]] = defaultdict(set)
+        for etiqueta in etiquetas:
+            if etiqueta.id in con_pila:
+                continue
+            for a in alcances[etiqueta.id]:
+                for r in a.renglones:
+                    ganadora = dueno.get(r.id)
+                    if ganadora is not None and ganadora.marca != a.marca:
+                        nuevas[ganadora.etiqueta.id] |= {ganadora.marca, a.marca}
+        nuevas = {i: m for i, m in nuevas.items() if not m <= anuladas.get(i, set())}
+        if not nuevos and not nuevas:
             break
         revividos |= nuevos
+        for i, m in nuevas.items():
+            anuladas.setdefault(i, set()).update(m)
 
+    # Un renglón que nadie se queda es ambiguo si lo pueden reclamar dos marcas: las que lo
+    # alcanzan (con las que les disputan su pila) y, más allá de un corte, la dueña de la columna
+    # y la etiqueta que la corta.
     ambiguos: dict[str, set[str]] = {}
-    for renglon_id, quienes in reclamos.items():
+    for renglon_id in [*reclamos, *(r for r in sombras if r not in reclamos)]:
         if renglon_id in dueno:
             continue
-        marcas = {a.marca for a in quienes}
-        for a in quienes:
-            marcas |= dudosas.get(a.etiqueta.id, set())
+        marcas: set[str] = set()
+        for a in reclamos.get(renglon_id, []):
+            marcas |= {a.marca} | dudosas.get(a.etiqueta.id, set())
+        for a in sombras.get(renglon_id, []):
+            marcas |= {a.marca, (a.cortada.marca if a.cortada is not None else None) or a.marca}
         if len(marcas) > 1:
             ambiguos[renglon_id] = marcas
-
-    tomada = {a.etiqueta.id: (a, propios) for a, propios in finales}
-    cedidas: dict[str, set[str]] = {}
-    for etiqueta in etiquetas:
-        suya = tomada.get(etiqueta.id)
-        perdidas: set[str] = set()
-        for a in alcances[etiqueta.id]:
-            if suya is not None and a is not suya[0]:
-                continue  # lo del lado que no tomó no es una pila cedida
-            for r in a.renglones:
-                otro = dueno.get(r.id)
-                if otro is not None and otro.marca != etiqueta.marca:
-                    perdidas.add(otro.marca)
-        if perdidas:
-            cedidas[etiqueta.id] = perdidas | {etiqueta.marca or ""}
-    return _Reparto(finales, ambiguos, cedidas)
+    return _Reparto(finales, ambiguos)
 
 
 def _pilas(textos: list[_Texto], de_filas: set[str]) -> _Reparto:
@@ -1208,21 +1292,25 @@ def _asociar_hoja(
                     texto=por_id[renglon_id].texto,
                     hoja=hoja,
                     motivo="ambigua",
-                    marcas=sorted(marcas),
-                )
-            )
-        for etiqueta_id, marcas in reparto.cedidas.items():
-            rechazos.append(
-                Rechazo(
-                    entidad_id=etiqueta_id,
-                    texto=por_id[etiqueta_id].texto,
-                    hoja=hoja,
-                    motivo="cedida",
-                    marcas=sorted(marcas),
+                    marcas=sorted({m for marca in marcas for m in _marcas_de(marca)}),
                 )
             )
         topes: dict[str, set[str]] = defaultdict(set)
         for alcance, propios in reparto.tomadas:
+            if len(_marcas_de(alcance.marca)) > 1:
+                # La pila de una etiqueta de varias marcas: nadie más se la lleva, y se dice.
+                for r in propios:
+                    rechazados.add(r.id)
+                    rechazos.append(
+                        Rechazo(
+                            entidad_id=r.id,
+                            texto=r.texto,
+                            hoja=hoja,
+                            motivo="varias_marcas",
+                            marcas=_marcas_de(alcance.marca),
+                        )
+                    )
+                continue
             duenos += [r.e for r in propios]
             orden = propios[::-1] if alcance.sentido > 0 else propios
             asociaciones.append(_asociacion(alcance.etiqueta, alcance.marca, hoja, orden, "pila"))
