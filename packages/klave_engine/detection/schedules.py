@@ -42,6 +42,8 @@ from klave_engine.estructura.asociacion import (
     ARMADO_RE,
     Rechazo,
     asociar,
+    extremos_de_rango,
+    fichas_de_marca,
     hoja_y_llave,
     lo_lee_una_nota,
     marca_en_rango,
@@ -77,6 +79,7 @@ Source = Literal["cuadro", "detalle", "nota", "ia"]
 Metodo = Literal["fila", "pila", "cotas", "geometria", "llamada", "nota", "ia"]
 Campo = Literal["seccion", "longitudinales", "estribos", "parrillas"]
 CAMPOS: tuple[Campo, ...] = ("seccion", "longitudinales", "estribos", "parrillas")
+_CAMPOS_DE_ARMADO: tuple[Campo, ...] = ("longitudinales", "estribos", "parrillas")
 # A text's sheet: its name (``hoja``) and its unique key (``hoja_llave``).
 Sheet = Callable[[NormalizedEntity], tuple[str, str]]
 
@@ -111,6 +114,22 @@ class ElementSpec(BaseModel):
     avisos: list[str] = Field(default_factory=list)  # what could not be read, disagreements
 
 
+class TextoConMarca(BaseModel):
+    """A line of a drawing text that names marks and holds an armado- or
+    section-shaped fragment (R64): what the drawing says of those marks, read
+    or not. An AI reading never fills the matching fields of a mark it names,
+    unless a reading of that same mark consumed the text."""
+
+    entidad_id: str
+    texto: str  # the line (an MTEXT gives one per line)
+    hoja: str
+    hoja_llave: str
+    # The marks as the text writes them: normalized marks, a glued form
+    # («K-7E»: resolved later against the known marks) and ranges as written.
+    marcas: list[str]
+    campos: list[Campo]  # «seccion» for a section, the three armado fields for armado
+
+
 class ScheduleInventory(BaseModel):
     specs: list[ElementSpec] = Field(default_factory=list)
     by_mark: dict[str, ElementSpec] = Field(default_factory=dict)
@@ -128,6 +147,9 @@ class ScheduleInventory(BaseModel):
     # Armado texts the association could not give to a mark (ambiguous, unowned,
     # another family's…): reported, never read in silence.
     rechazos: list[Rechazo] = Field(default_factory=list)
+    # Every drawing line that names marks and holds armado or a section (R64):
+    # the AI never covers what they say, whoever reads them.
+    textos_con_marca: list[TextoConMarca] = Field(default_factory=list)
 
 
 _FC_FAMILIES: list[tuple[str, re.Pattern[str]]] = [
@@ -821,7 +843,7 @@ def _disagreements(readings: list[ElementSpec], used: ElementSpec) -> list[str]:
         for r in readings:
             value = getattr(r, field)
             if value is not None:
-                said.setdefault(_value_text(value), set()).add(r.hoja or "sin hoja")
+                said.setdefault(_value_text(value), set()).add(_sheet_name(r, readings))
         current = getattr(used, field)
         if not said or (len(said) == 1 and current is not None):
             continue
@@ -829,9 +851,63 @@ def _disagreements(readings: list[ElementSpec], used: ElementSpec) -> list[str]:
         here = f"«{_value_text(current)}»" if current is not None else "nada"
         avisos.append(
             f"{name}: las lecturas no coinciden — {listed}; aquí se usa {here} "
-            f"(hoja {used.hoja or 'sin hoja'})"
+            f"(hoja {_sheet_name(used, readings)})"
         )
     return avisos
+
+
+def _sheet_name(r: ElementSpec, readings: list[ElementSpec]) -> str:
+    """A sheet as an aviso names it: its code, plus its file and frame when
+    another sheet among ``readings`` has the same code (two frames sharing
+    one, R64-D)."""
+    name = r.hoja or "sin hoja"
+    shared = any(o.hoja == r.hoja and not _same_sheet(o, r) for o in readings)
+    if shared and r.hoja_llave:
+        archivo, _, marco = r.hoja_llave.rpartition("#")
+        return f"{name} [{marco or 'sin marco'} de {archivo.rsplit('/', 1)[-1]}]"
+    return name
+
+
+# An armado-shaped fragment: a bar number («#4», «Ø 4», «%%C4»), a spacing
+# («@20») or the line that continues a zoned stirrup («CENTRO@20»).
+_FORMA_DE_ARMADO = re.compile(r"(?:#|Ø|⌀|%%C)\s*\d|@\s*\d|^\s*(?:CENTRO|EXT)\s*@", re.I | re.M)
+
+
+def _texts_naming_marks(
+    texts: list[NormalizedEntity], config: TextPatternConfig, sheet: Sheet
+) -> list[TextoConMarca]:
+    """Every line of every drawing text (model space and block contents, every
+    sheet, MTEXT line by line) that names marks (``fichas_de_marca`` and the
+    ranges of ``marcas_en_nota``; references excluded) and holds an armado- or
+    section-shaped fragment (R64)."""
+    found: list[TextoConMarca] = []
+    for text in texts:
+        for line in (text.text or "").split("\n"):
+            line = line.strip()
+            campos: list[Campo] = []
+            if _read_section(line)[2]:
+                campos.append("seccion")
+            if _FORMA_DE_ARMADO.search(line):
+                campos.extend(_CAMPOS_DE_ARMADO)
+            if not campos:
+                continue
+            # Each mark-shaped token, plus the ranges as written («K-1 A 4» names K-2, K-3).
+            ranges = [m for m in marcas_en_nota(line, config) if nombra_varias([m])]
+            marks = list(dict.fromkeys(fichas_de_marca(line, config) + ranges))
+            if not marks:
+                continue
+            hoja, llave = sheet(text)
+            found.append(
+                TextoConMarca(
+                    entidad_id=text.entity_id,
+                    texto=line,
+                    hoja=hoja,
+                    hoja_llave=llave,
+                    marcas=marks,
+                    campos=campos,
+                )
+            )
+    return found
 
 
 def build_schedule_inventory(
@@ -891,6 +967,7 @@ def build_schedule_inventory(
         # drawn with armado beside it in a planta (the cotas reader).
         cuadro_mark_entities=_union(labels, inventory_cuadro_marks),
         rechazos=rechazos,
+        textos_con_marca=_texts_naming_marks(texts, config, sheet),
     )
 
     grouped: dict[str, list[ElementSpec]] = {}
@@ -994,26 +1071,49 @@ _AI_FIELDS: tuple[tuple[str, Campo | None], ...] = (
 # The rejections that know whose text they are: a text two marks may claim, the
 # stack or note of several marks, a text that names its mark but nobody reads.
 _RECHAZOS_CON_MARCA = frozenset({"ambigua", "varias_marcas", "sin_lector"})
-_CAMPOS_DE_ARMADO: tuple[Campo, ...] = ("longitudinales", "estribos", "parrillas")
 
 
-def _rejection_names(r: Rechazo, mark: str) -> bool:
-    return any(m.upper() == mark or marca_en_rango(m, mark) for m in r.marcas)
+def _names(piece: str, mark: str, known: set[str]) -> bool:
+    """Whether a mark as a text writes it names ``mark``. A range names both
+    endpoints always, and every mark between same-letter endpoints
+    («K-1 A K-4» → K-2A, K-3); a mixed-letter range («K-1 A C-4») only its
+    endpoints. A glued form that is not a known mark («K-7E#3@20») is the
+    longest known mark it starts with, when what is left starts with a letter
+    or a sign (so «K-15AE#3» is K-15A, never K-1)."""
+    if nombra_varias([piece]):
+        return mark in extremos_de_rango(piece) or marca_en_rango(piece, mark)
+    piece = piece.upper()
+    if piece == mark:
+        return True
+    if piece in known:
+        return False
+    prefixes = [k for k in known if piece.startswith(k) and _glued_rest(piece[len(k) :])]
+    return bool(prefixes) and max(prefixes, key=len) == mark
 
 
-def _fields_with_text(inventory: ScheduleInventory, mark: str) -> set[Campo]:
-    """The fields of ``mark`` the drawing has text for: those of its readings
-    (read or not), and every armado field of a rejected text that names it — a
-    text nobody could give to it is still the drawing speaking of it (plus the
-    section when that text has one)."""
-    campos: set[Campo] = {
-        campo
-        for s in inventory.specs
-        if s.mark.upper() == mark and s.source != "ia"
-        for campo in s.campos_con_texto
-    }
+def _glued_rest(rest: str) -> bool:
+    """What follows a known mark inside a glued token: a letter or a sign («E#3@20», «#3@20»),
+    never a digit or a decimal (that would be another, longer mark)."""
+    return bool(rest) and not rest[0].isdigit() and rest[0] != "."
+
+
+def _fields_with_text(inventory: ScheduleInventory, mark: str, known: set[str]) -> set[Campo]:
+    """The fields of ``mark`` the drawing has text for (R64, default-deny):
+    - those of its readings, read or not;
+    - every field a drawing line that names it has a fragment for (armado →
+      the three armado fields, a section → «seccion»), unless a reading of
+      ``mark`` consumed that text;
+    - every armado field (and the section, if it has one) of a rejected text
+      that names it: ambiguous between marks, of several marks, unread.
+    Glued forms and ranges are resolved by ``_names``."""
+    readings = [s for s in inventory.specs if s.mark.upper() == mark and s.source != "ia"]
+    campos: set[Campo] = {campo for s in readings for campo in s.campos_con_texto}
+    consumed = {e for s in readings for e in s.entidades}
+    for t in inventory.textos_con_marca:
+        if t.entidad_id not in consumed and any(_names(p, mark, known) for p in t.marcas):
+            campos.update(t.campos)
     for r in inventory.rechazos:
-        if r.motivo in _RECHAZOS_CON_MARCA and _rejection_names(r, mark):
+        if r.motivo in _RECHAZOS_CON_MARCA and any(_names(p, mark, known) for p in r.marcas):
             campos.update(_CAMPOS_DE_ARMADO)
             if _read_section(r.texto)[2]:
                 campos.add("seccion")
@@ -1023,11 +1123,14 @@ def _fields_with_text(inventory: ScheduleInventory, mark: str) -> set[Campo]:
 def merge_external_specs(inventory: ScheduleInventory, specs: list[dict]) -> int:
     """Specs read elsewhere (the AI reading of the sheet images): every one is
     kept as a reading (``source="ia"``), and it fills a by-mark field only when
-    the view has nothing there and the drawing has no text for that field —
-    neither in a reading of the mark (read or not) nor in a rejected text that
-    names it. An AI value never covers a drawing text. A mark the drawing does
-    not define takes what the AI says of the other fields (por confirmar).
-    Returns how many marks were completed."""
+    the view has nothing there and the drawing has no text for that field
+    (``_fields_with_text``: its readings, any drawing line that names it and
+    no reading of it consumed, any rejected text that names it). An AI value
+    never covers a drawing text. A mark the drawing does not define takes what
+    the AI says of the other fields (por confirmar). Returns how many marks
+    were completed."""
+    known = {s.mark.upper() for s in inventory.specs if s.source != "ia"} | set(inventory.by_mark)
+    known |= {str(raw.get("mark") or "").strip().upper() for raw in specs} - {""}
     added = 0
     for raw in specs:
         try:
@@ -1038,7 +1141,7 @@ def merge_external_specs(inventory: ScheduleInventory, specs: list[dict]) -> int
             spec.metodo = "ia"
         inventory.specs.append(spec)
         mark = spec.mark.upper()
-        with_text = _fields_with_text(inventory, mark)
+        with_text = _fields_with_text(inventory, mark, known)
         current = inventory.by_mark.get(mark)
         new = current is None
         if current is None:

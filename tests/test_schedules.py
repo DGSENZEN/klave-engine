@@ -520,3 +520,66 @@ def test_every_bar_group_reaches_the_variant_key(tmp_path):
     assert apply_schedule([tag], inv, meters_factor=1.0) == 1
     assert tag.properties["spec_rebar"] == "4#5+2#4"
     assert firma(tag, 1.0)["armado"] == "4#5+2#4"
+
+
+# ------------------------------------------------- Task 7, ronda 2 (R64): la IA, desde el texto
+
+
+@pytest.mark.parametrize("nota,marca", [("TRABE T-1 E#3@1S", "T-1"), ("3.- K-7 E#3@1S", "K-7")])
+def test_ia_never_covers_a_text_that_names_its_mark_whatever_its_class(tmp_path, nota, marca):
+    # Una nota de otra familia («ajena») o numerada que nombra la marca y nadie lee: antes no
+    # dejaba rechazo y la IA llenaba la marca.
+    inv = build_schedule_inventory(_notas(tmp_path, [nota]), frames=_frame())
+    assert [(t.entidad_id != "", t.marcas) for t in inv.textos_con_marca] == [(True, [marca])]
+    merge_external_specs(inv, [_ia(marca, stirrups="E#2@20", rebar="6#4")])
+    assert marca not in inv.by_mark
+
+
+def test_ia_never_covers_a_glued_mark(tmp_path):
+    # «K-7E#3@20»: la marca pegada es K-7 (la marca conocida más larga con que empieza).
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-7E#3@20", "K-7 20X30"]), frames=_frame())
+    merge_external_specs(inv, [_ia("K-7", stirrups="E#2@20", rebar="6#4")])
+    k7 = inv.by_mark["K-7"]
+    assert (k7.section_cm, k7.stirrups, k7.rebar) == ((20, 30), None, None)
+    # Sin otra lectura de K-7, la marca la conoce la propia IA.
+    inv2 = build_schedule_inventory(_notas(tmp_path, ["K-7E#3@20"], "b.dxf"), frames=_frame())
+    merge_external_specs(inv2, [_ia("K-7", stirrups="E#2@20")])
+    assert "K-7" not in inv2.by_mark
+
+
+def test_a_glued_form_is_never_a_shorter_mark(tmp_path):
+    # «K-15AE#3@20» no es de K-1 (lo que sobra, «5AE», no empieza con letra).
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-15AE#3@20"]), frames=_frame())
+    merge_external_specs(inv, [_ia("K-1", stirrups="E#2@20"), _ia("K-15A", stirrups="E#2@20")])
+    assert inv.by_mark["K-1"].stirrups == "E#2@20" and "K-15A" not in inv.by_mark
+
+
+def test_ia_never_covers_the_endpoints_of_a_mixed_letter_range(tmp_path):
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-1 A C-4 15X20 4#3"]), frames=_frame())
+    merge_external_specs(
+        inv, [_ia(m, rebar="6#4", section_cm=(20, 20)) for m in ("K-1", "C-4", "K-2", "C-2")]
+    )
+    assert "K-1" not in inv.by_mark and "C-4" not in inv.by_mark
+    # Entre letras distintas no se sabe qué hay en medio: sólo los extremos quedan cubiertos.
+    assert inv.by_mark["K-2"].rebar == "6#4" and inv.by_mark["C-2"].rebar == "6#4"
+
+
+def test_a_text_read_by_the_mark_does_not_block_it_nor_an_unrelated_mark(tmp_path):
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-7 4#3"]), frames=_frame())
+    merge_external_specs(inv, [_ia("K-7", stirrups="E#2@20"), _ia("K-8", rebar="6#4")])
+    assert inv.by_mark["K-7"].stirrups == "E#2@20"  # «K-7 4#3» lo leyó K-7 y no dice estribos
+    assert inv.by_mark["K-8"].rebar == "6#4"
+
+
+def test_two_sheets_sharing_a_code_are_named_apart_in_an_aviso(tmp_path):
+    def build(msp):
+        msp.add_text("K-9 20X40", height=0.2).set_placement((0, 0))
+        msp.add_text("K-9 20X30", height=0.2).set_placement((100, 0))
+
+    frames = [
+        SheetFrame(frame_id="a", bbox=(-50.0, -50.0, 50.0, 50.0), code="ES-200"),
+        SheetFrame(frame_id="b", bbox=(50.0, -50.0, 150.0, 50.0), code="ES-200"),
+    ]
+    inv = build_schedule_inventory(_entities(tmp_path, build), frames=frames)
+    (aviso,) = [a for a in inv.by_mark["K-9"].avisos if "no coinciden" in a]
+    assert "ES-200 [a de specs.dxf]" in aviso and "ES-200 [b de specs.dxf]" in aviso

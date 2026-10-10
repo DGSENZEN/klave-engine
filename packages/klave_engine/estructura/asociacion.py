@@ -70,6 +70,8 @@ __all__ = [
     "hoja_de",
     "hoja_y_llave",
     "lo_lee_una_nota",
+    "extremos_de_rango",
+    "fichas_de_marca",
     "marca_en_rango",
     "marca_en_texto",
     "marcas_en_nota",
@@ -121,6 +123,8 @@ _MALLA = re.compile(r"(?<![E\d])#\s*(\d)\s*@\s*(\d{1,3})", re.I)
 # malla).
 _ESTRIBOS = re.compile(r"E\s*#?\s*(\d)\s*@\s*(\d{1,3})", re.I)
 _LADO_DE_SECCION_CM = (8, 400)
+# Un número de varilla como lo escribe el plano (el parser lee «Ø» y «%%C» como «#»).
+_VARILLA_EN_TEXTO = re.compile(r"(?:#|Ø|⌀|%%C)\s*\d", re.I)
 
 # Un texto que nombra otra familia es de la lectura de esa familia (la losa, el muro, la nota de
 # dalas): nunca entra a una pila, nunca es huérfano y una pila nunca sigue más allá de él.
@@ -320,6 +324,10 @@ def lo_lee_una_nota(texto: str) -> bool:
     lados de 8 a 400 cm), varillas longitudinales, una malla («K-3 #4@20») o un juego de
     estribos que el parser lee («K-7 E#3@20»). Lo que no («K-7 E#3@1S», «K-7 @20») no lo lee
     nadie: es un rechazo «sin_lector», con la marca que nombra."""
+    if _SECCION.search(texto) is None and _VARILLA_EN_TEXTO.search(texto) is None:
+        # Sin una medida NNxNN ni un «#n» (o «Ø n», «%%C n») no hay sección, varillas, malla ni
+        # estribos que leer: lo de abajo daría falso igual, sólo que más lento.
+        return False
     piezas = [m.span() for m in _PIEZA.finditer(texto)]
     for m in _SECCION.finditer(texto):
         if any(a <= m.start() < b for a, b in piezas):
@@ -374,6 +382,59 @@ def marcas_en_nota(texto: str, config: TextPatternConfig) -> list[str]:
 def nombra_varias(marcas: list[str]) -> bool:
     """Si lo que nombra un texto (``marcas_en_nota``) es más de una marca: una lista o un rango."""
     return len(marcas) > 1 or any(_es_de_varias(m) for m in marcas)
+
+
+def _escrita(m: re.Match[str]) -> str:
+    """Una marca de ``_MARCA_RE`` escrita como ``marca_en_texto`` (``K-15A.1``, ``D-X``)."""
+    if m.group(5):
+        return f"{m.group(1)}-X"
+    variante = f".{m.group(4)}" if m.group(4) else ""
+    return f"{m.group(1)}-{int(m.group(2))}{m.group(3)}{variante}"
+
+
+# Una marca al principio de una ficha, con lo que trae pegado («K-7E#3@20», «K7E#3», «K-15AE»).
+_MARCA_PEGADA = re.compile(r"(K|C|T|COL|CT|CTA|TB|ZC|ZCM|Z|D|P|MC|CE|CR)-?(\d{1,2})(\S+)")
+_SEPARA_FICHAS = re.compile(r"[\s,;/()\[\]«»\"']+")
+
+
+def fichas_de_marca(texto: str, config: TextPatternConfig) -> list[str]:
+    """Cada ficha de un texto (sin sus referencias) que es una marca o empieza con una: la
+    etiqueta de la configuración tal cual («T1-1»), la marca escrita como ``marca_en_texto``
+    («K-7», «K-15A.1») o, pegada a otra cosa, la marca con lo que trae («K-7E#3@20»), que se
+    resuelve después contra las marcas que se conocen. En orden y sin repetir."""
+    piezas: list[str] = []
+    for ficha in _SEPARA_FICHAS.split(sin_referencias(texto).upper()):
+        ficha = ficha.strip(".:-")
+        if not ficha:
+            continue
+        if match_category(ficha, config, "column_tag") or match_category(ficha, config, "beam_tag"):
+            piezas.append(ficha)
+            continue
+        entera = _MARCA_RE.fullmatch(ficha)
+        if entera is not None:
+            piezas.append(_escrita(entera))
+            continue
+        pegada = _MARCA_PEGADA.fullmatch(ficha)
+        if pegada is not None and not pegada.group(3)[0].isdigit():
+            piezas.append(f"{pegada.group(1)}-{int(pegada.group(2))}{pegada.group(3)}")
+    return list(dict.fromkeys(piezas))
+
+
+def extremos_de_rango(rango: str) -> list[str]:
+    """Las marcas de los extremos de un rango escrito («K-1 A K-4» → [K-1, K-4], «K-1 A 4» →
+    [K-1, K-4], «K-1 A C-4» → [K-1, C-4]); vacía si no es un rango."""
+    limpio = " ".join(rango.upper().split())
+    halladas = list(_MARCA_RE.finditer(limpio))
+    if not halladas or not _RANGO.search(limpio):
+        return []
+    extremos = [_escrita(halladas[0])]
+    if len(halladas) > 1:
+        extremos.append(_escrita(halladas[-1]))
+    else:
+        final = _FIN_DE_RANGO.search(limpio, halladas[0].end())
+        if final is not None:
+            extremos.append(f"{halladas[0].group(1)}-{final.group(1)}")
+    return list(dict.fromkeys(extremos))
 
 
 def _numero_de_marca(marca: str) -> tuple[str, int] | None:

@@ -15,6 +15,7 @@ from klave_engine.estructura.asociacion import (
     ARMADO_RE,
     ancla_texto,
     asociar,
+    lo_lee_una_nota,
     marca_en_rango,
     marca_en_texto,
     marcas_en_nota,
@@ -2316,3 +2317,19 @@ def test_cuadro_rows_name_their_cuadro(tmp_path):
         and len({a.cuadro for a in asoc}) == 2
         and None not in {a.cuadro for a in asoc}
     )
+
+
+@pytest.mark.parametrize(
+    "texto,lee",
+    [
+        ("K-7 SIN ARMADO", False),
+        ("K-7 @20", False),
+        ("K-7 EØ3@20", True),  # el parser lee «Ø» como «#»: el atajo no lo pierde
+        ("K-7 E%%C3@20", True),
+        ("K-7 15X20", True),
+        ("K-7 E#3@20", True),
+    ],
+)
+def test_the_note_shape_shortcut_never_changes_the_answer(texto, lee):
+    # Task 7, ronda 2: sin «NNxNN» ni «#n» (o «Ø n», «%%C n») no se llama al parser.
+    assert lo_lee_una_nota(texto) is lee
