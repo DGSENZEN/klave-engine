@@ -35,6 +35,10 @@ que no se encima con el de junto en la mitad del más angosto, como en una pila 
 alineados unos a la izquierda, otros a la derecha o al centro, o un primer renglón junto a otra
 etiqueta más pegada que no le queda enfrente; ése y lo que puede seguirlo siguen siendo reclamos
 de la columna (R57): nunca un final limpio que deje el resto a otra etiqueta ni una pila a medias.
+Un renglón al lado del que sigue limpio sólo es de la columna de al lado si otra etiqueta más cerca
+de él lo tiene en su ensanche; y también dejan la pila en duda otra etiqueta junto a la columna que
+tiene a su alcance el renglón que sigue, y un primer renglón con otro admitido a su lado, ninguno
+sobre la etiqueta (R59).
 Lo que no se pudo pegar sale como rechazo: ambiguo, de otra familia, sin lector (dice de quién es
 pero ningún lector lo lee), de una etiqueta con varias marcas o sin dueño: nada se queda sin leer
 en silencio."""
@@ -774,14 +778,39 @@ def _no_mas_lejos(hueco: float, t: _Texto, hueco_de: float, de: _Texto) -> bool:
     return hueco <= hueco_de or _casi_igual(hueco, hueco_de, t.alto) or _a_su_lado(t, de)
 
 
-def _compite(t: _Texto, etiqueta: _Texto, siguiente: _Texto) -> bool:
-    """Si ``t``, al lado de ``siguiente`` (lo que sigue limpio a la pila), le queda al centro de
-    la etiqueta igual o más cerca que él: puede ser el renglón de la pila y ``siguiente`` el de
-    la columna de al lado. Uno más alejado es de la columna de al lado (en los cuadros de Marina,
-    el «2E#3EXT@10» de K-11 entra al ensanche de K-12 junto al de K-12, que le pasa por el
-    centro)."""
-    return _lejania(etiqueta.cx, t) <= _lejania(etiqueta.cx, siguiente) + (
-        _EMPATE_ABSOLUTO * t.alto
+def _compite(t: _Texto, etiqueta: _Texto, siguiente: _Texto, etiquetas: list[_Texto]) -> bool:
+    """Si ``t``, al lado de ``siguiente`` (lo que sigue limpio a la pila), puede ser el renglón de
+    la pila y ``siguiente`` el de la columna de al lado: le queda al centro de la etiqueta igual o
+    más cerca que él o, si más lejos, ninguna otra etiqueta más cerca de ``t`` lo tiene en su
+    ensanche (R59). Sólo así es de la columna de al lado: en los cuadros de Marina, el
+    «2E#3EXT@10» de K-11 entra al ensanche de K-12 junto al de K-12, y K-11, más cerca, lo tiene
+    en el suyo."""
+    if _lejania(etiqueta.cx, t) <= _lejania(etiqueta.cx, siguiente) + _EMPATE_ABSOLUTO * t.alto:
+        return True
+    return not any(
+        e.id != etiqueta.id
+        and e.marca != etiqueta.marca
+        and _en_la_etiqueta(e, t)
+        and _lejania(e.cx, t) < _lejania(etiqueta.cx, t)
+        for e in etiquetas
+    )
+
+
+def _junto_a_otra(
+    etiqueta: _Texto, previo: _Texto, siguiente: _Texto, sentido: int, etiquetas: list[_Texto]
+) -> bool:
+    """Si otra etiqueta (de otra marca) está junto a ``previo``, a su altura, y tiene a
+    ``siguiente`` en su ensanche y a su alcance: ``siguiente`` puede ser el primer renglón de su
+    pila, que empieza junto a la columna (R59, semilla 61526)."""
+    return any(
+        e.id != etiqueta.id
+        and e.marca != etiqueta.marca
+        and _a_su_lado(e, previo)
+        and _en_la_etiqueta(e, siguiente)
+        and -_TRASLAPE * min(e.alto, siguiente.alto)
+        <= _hueco(e, siguiente, sentido)
+        <= _HUECO_DE_ETIQUETA * e.alto
+        for e in etiquetas
     )
 
 
@@ -900,6 +929,7 @@ def _alcance(
         return _se_enciman(t, etiqueta)
 
     borde = etiqueta.y1 if sentido > 0 else etiqueta.y0
+    primeros: list[_Texto] = []  # todo lo admitido como primer renglón
     actual = _paso(
         indice,
         borde,
@@ -910,6 +940,7 @@ def _alcance(
         {etiqueta.id},
         primero,
         sobre_la_etiqueta,
+        empatados=primeros,
     )
     if actual is None:
         return None  # nada a su alcance
@@ -920,6 +951,7 @@ def _alcance(
         # tiene enfrente (no se le encima de lado: está junto a él, no entre los dos) no queda
         # tapado (R57): la pila queda en duda y el renglón es un reclamo suyo, nunca el primero
         # limpio de otra etiqueta.
+        primeros = []
         libre = _paso(
             renglones,
             borde,
@@ -930,6 +962,7 @@ def _alcance(
             {etiqueta.id},
             primero,
             sobre_la_etiqueta,
+            empatados=primeros,
         )
         if libre is None or _tapado(libre, etiqueta, borde, sentido, indice, libres, primero):
             return None
@@ -956,6 +989,23 @@ def _alcance(
     if antes_del_primero:
         pila.fusion = True
         pila.despues.extend(antes_del_primero)
+    # R59: otro renglón admitido al lado del primero (a su altura) y ninguno de los dos sobre la
+    # etiqueta: no se sabe cuál es el de la pila (la etiqueta toma el más cerca de su centro, y
+    # el otro quedaba como el primero limpio de la vecina, semilla 71455). Duda, y los dos y lo
+    # que puede seguirlos son reclamos suyos.
+    al_lado = [
+        t
+        for t in primeros
+        if t.id in libres
+        and t.id != actual.id
+        and not _es_copia(t, actual)
+        and _a_su_lado(t, actual)
+        and not sobre_la_etiqueta(t)
+    ]
+    if al_lado and not sobre_la_etiqueta(actual):
+        pila.fusion = True
+        ya = {etiqueta.id, actual.id, *(r.id for r in pila.despues)}
+        pila.despues.extend(_inundar(etiqueta, al_lado, sentido, indice, libres, ya))
     # Tras un corte, la columna se sigue leyendo igual, pero en ``despues``.
     destino = pila.renglones
     while True:
@@ -995,9 +1045,18 @@ def _alcance(
             if siguiente is None
             or (
                 _no_mas_lejos(h, t, hueco_siguiente, siguiente)
-                and (not _a_su_lado(t, siguiente) or _compite(t, etiqueta, siguiente))
+                and (not _a_su_lado(t, siguiente) or _compite(t, etiqueta, siguiente, etiquetas))
             )
         ]
+        if (
+            not antes
+            and siguiente is not None
+            and siguiente.id in libres
+            and _junto_a_otra(etiqueta, previo, siguiente, sentido, etiquetas)
+        ):
+            # R59: otra etiqueta junto a ``previo`` tiene ``siguiente`` a su alcance: la columna
+            # puede acabar aquí y seguir como la pila de ella. No se sabe: duda, como R57.
+            antes = [siguiente]
         if antes:
             # R57: un renglón que podría seguir la pila y no la sigue limpio (cae en la etiqueta
             # ensanchada, pero de lado se encima poco o nada con el anterior). No se sabe si la
@@ -1007,7 +1066,7 @@ def _alcance(
             # corte limpio deja pilas a medias (una etiqueta junto a una pila escalonada).
             if destino is pila.renglones:
                 pila.fusion = True
-            limpio = [siguiente] if siguiente is not None and siguiente.id in libres else []
+            limpio = [t for t in [siguiente] if t is not None and t.id in libres and t not in antes]
             inundar([*antes, *limpio])
             break
         if siguiente is None:

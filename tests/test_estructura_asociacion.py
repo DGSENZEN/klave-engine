@@ -1841,3 +1841,231 @@ def test_a_sweep_of_mixed_alignment_cuadros(
         legibles += 1
         leidos += len(asoc)
     assert legibles >= 10 and leidos >= 1
+
+
+# ------------------------------- R59: lo de al lado de la columna (revisión de la ronda 4)
+
+
+def _leer_y_revisar(tmp_path, textos):
+    """Textos (texto, x, y, alto, alineación, dueño); ``dueño`` es ``None`` en las etiquetas.
+    Asocia y revisa que no haya pila ajena ni a medias y que todo renglón se lea o se rechace."""
+    ents = _con_alineacion(tmp_path, [t[:5] for t in textos])
+    de_quien = {(t, round(x, 3), round(y, 3)): m for t, x, y, _, _, m in textos if m is not None}
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+    return asoc, rech
+
+
+def _junto_al_limpio(d2, modo, kx, g, suyo, ajeno):
+    """La disposición del revisor contra ``_compite`` (R59): K-1 con «4#3» al centro y, debajo,
+    su segundo renglón a la izquierda desde ``d2``, al lado de un renglón ajeno («ajeno», de K-2)
+    alineado a la derecha que sí sigue limpio a «4#3» y le queda más cerca al centro de K-1. K-2
+    puede no estar, estar debajo del renglón ajeno o junto a «4#3»."""
+    textos = [
+        ("K-1", 0.0, 0.0, 0.13, _CEN, None),
+        ("4#3", 0.0, -0.22, 0.10, _CEN, "K-1"),
+        (suyo, d2, -0.40, 0.10, _IZQ, "K-1"),
+        (ajeno, d2 - 0.03, -0.40, 0.10, _DER, "K-2"),
+    ]
+    if modo == "debajo":
+        textos.append(("K-2", kx, -0.40 - g - 0.13, 0.13, _CEN, None))
+    elif modo == "junto":
+        textos.append(("K-2", kx, -0.30 + g, 0.13, _CEN, None))
+    return textos
+
+
+_SUYOS = ["E#4@10 Y E#3@20 EN NUDOS", "E#2@15", "2E#3EXT@10"]
+_AJENOS = ["6#4", "CENTRO@20", "12#8+8#6 EN 2 LECHOS"]
+
+
+@pytest.mark.parametrize("modo", ["sin_k2", "debajo", "junto"])
+def test_a_line_beside_the_clean_next_line_is_the_next_columns_only_if_another_label_has_it(
+    tmp_path, modo
+):
+    """R59 (revoca la salvedad b de R58): un renglón al lado del que sigue limpio a la pila y más
+    alejado del centro de la etiqueta sólo es de la columna de al lado si otra etiqueta, más
+    cerca de él, lo tiene en su ensanche. Si no, la pila queda en duda (R57). Antes K-1 leía
+    «4#3» y el renglón de K-2, y el suyo quedaba sin dueño (354 de las 648 del revisor)."""
+    casos = [(d2, 0.0, 0.0) for d2 in (0.03, 0.06, 0.10, 0.15)]
+    if modo != "sin_k2":
+        casos = [(d2, kx, g) for d2 in (0.03, 0.15) for kx in (-0.55, -0.85) for g in (0.03, 0.08)]
+    for n, (d2, kx, g) in enumerate(casos):
+        for suyo in _SUYOS:
+            for ajeno in _AJENOS:
+                carpeta = tmp_path / f"{n}-{suyo}-{ajeno}"
+                carpeta.mkdir()
+                asoc, _ = _leer_y_revisar(carpeta, _junto_al_limpio(d2, modo, kx, g, suyo, ajeno))
+                assert asoc == []
+
+
+# La semilla 61526 del revisor (zigzag ±0.62), sin K-3 ni K-4: K-1 sigue limpio su columna
+# hasta el «4#3» de K-2, que empieza junto a ella (K-2 está al lado del «4#3» de K-1).
+SEMILLA_61526 = [
+    ("K-1", 0.1395, -0.227, 0.13, _CEN, None),
+    ("CENTRO@15 RESTO", -0.491, 0.005, 0.10, _IZQ, "K-1"),
+    ("4#3", 0.704, 0.181, 0.10, _DER, "K-1"),
+    ("K-2", 1.0205, 0.155, 0.13, _CEN, None),
+    ("4#3", 0.346, 0.367, 0.10, _IZQ, "K-2"),
+    ("E#4@10", 0.419, 0.555, 0.10, _IZQ, "K-2"),
+]
+
+
+@pytest.mark.parametrize("textos", [SEMILLA_61526, SEMILLA_61526[:5]], ids=["V0", "V1"])
+def test_a_label_beside_a_clean_column_can_start_its_stack_there(tmp_path, textos):
+    """R59: una etiqueta de otra marca junto al renglón ``previo`` de la columna, a su altura, que
+    tiene ``siguiente`` en su ensanche y a su alcance: la columna puede acabar ahí y seguir como la
+    pila de ella. La pila queda en duda (R57). Antes K-1 se llevaba los renglones de K-2. K-2 no
+    alcanza su pila (su «4#3» sigue limpio al de K-1), así que sólo K-1 la reclama: sin dueño."""
+    asoc, rech = _leer_y_revisar(tmp_path, textos)
+    assert asoc == []
+    assert sorted((r.texto, r.motivo) for r in rech) == sorted(
+        (t, "sin_dueno") for t, *_, dueno in textos if dueno is not None
+    )
+
+
+def test_a_centred_label_beside_a_clean_column_leaves_it_in_doubt(tmp_path):
+    """V3 del revisor, todo centrado: K-1 con «4#3» encima, K-2 junto a «4#3» y «6#4» (de K-2)
+    encima de los dos. Con «6#4» en el ensanche de K-2, nada se lee mal. Sin él (``xc`` muy a la
+    izquierda de K-2) es el límite del modelo: K-2 no puede tenerlo, y «6#4» sigue a K-1."""
+    revisadas = 0
+    for xb in (0.55, 0.65, 0.75, 0.85, 1.0):
+        for xc in (0.0, 0.1, 0.2, 0.3, 0.4, 0.5):
+            if xc + 0.135 < xb - 0.1755 - 0.3:
+                continue  # «6#4» (0.27 de ancho) fuera del ensanche de K-2 (0.351 + 2 × 0.3)
+            carpeta = tmp_path / f"{xb}-{xc}"
+            carpeta.mkdir()
+            textos = [
+                ("K-1", 0.0, 0.0, 0.13, _CEN, None),
+                ("4#3", 0.0, 0.17, 0.10, _CEN, "K-1"),
+                ("K-2", xb, 0.155, 0.13, _CEN, None),
+                ("6#4", xc, 0.35, 0.10, _CEN, "K-2"),
+            ]
+            _leer_y_revisar(carpeta, textos)
+            revisadas += 1
+    assert revisadas == 20
+
+
+def _cuadro_de_lado(tmp_path, semilla, familia, desplazamiento=0.25):
+    """Las familias del revisor para R59, con su mismo orden de sorteos. «lado»: una fila de 2 a 4
+    etiquetas con sus pilas del mismo lado, renglones a la misma altura y alineados a la
+    izquierda, a la derecha o al centro (± ``desplazamiento``); «lado_s»: las etiquetas
+    escalonadas ±0.12; «borde»: una rejilla con cada renglón a 0.15–0.95 de su etiqueta, en el
+    borde de su ensanche o más allá. ``(None, …)`` si dos textos quedan a menos de 0.02."""
+    rnd = random.Random(semilla)
+
+    def texto():
+        u = rnd.random() if familia == "borde" else 0.2 + 0.8 * rnd.random()
+        return rnd.choice(_LARGOS if u < 0.35 else _MEDIOS if u < 0.65 else _CORTOS)
+
+    textos: list[tuple] = []
+    if familia == "borde":
+        n = 0
+        sx, sy = rnd.uniform(0.6, 1.6), rnd.uniform(0.7, 1.4)
+        for j in range(rnd.randint(1, 3)):
+            for i in range(rnd.randint(2, 4)):
+                n += 1
+                marca = f"K-{n}"
+                x = i * sx + rnd.uniform(-0.15, 0.15)
+                y = j * sy + rnd.uniform(-0.25, 0.25)
+                textos.append((marca, x, y, 0.13, None, marca))
+                if rnd.random() < 0.2:
+                    continue
+                abajo = rnd.random() < 0.5
+                hueco = rnd.uniform(0.02, 0.16)
+                for k in range(rnd.randint(2, 4)):
+                    alineacion = rnd.choice(list(_ALINEACIONES))
+                    lejos = rnd.uniform(0.15, 0.95) if alineacion != "cen" else 0.0
+                    dx = {"izq": -lejos, "der": lejos, "cen": 0.0}[alineacion]
+                    dx += rnd.uniform(-0.06, 0.06)
+                    rel = k * 0.18 * rnd.uniform(0.95, 1.05)
+                    yy = (y - hueco - 0.10 - rel) if abajo else (y + 0.13 + hueco + rel)
+                    textos.append((texto(), x + dx, yy, 0.10, alineacion, marca))
+    else:
+        paso = rnd.uniform(0.45, 1.2)
+        abajo = rnd.random() < 0.5
+        hueco = rnd.uniform(0.02, 0.12)
+        renglon = rnd.uniform(0.17, 0.20)
+        for i in range(rnd.randint(2, 4)):
+            marca = f"K-{i + 1}"
+            x = i * paso + rnd.uniform(-0.05, 0.05)
+            y = rnd.uniform(-0.12, 0.12) if familia == "lado_s" else 0.0
+            textos.append((marca, x, y, 0.13, None, marca))
+            if rnd.random() < 0.15:
+                continue
+            for k in range(rnd.randint(2, 4)):
+                alineacion = rnd.choice(list(_ALINEACIONES))
+                dx = {"izq": -desplazamiento, "der": desplazamiento, "cen": 0.0}[alineacion]
+                dx += rnd.uniform(-0.06, 0.06)
+                yy = (y - hueco - 0.10 - k * renglon) if abajo else (y + 0.13 + hueco + k * renglon)
+                textos.append((texto(), x + dx, yy, 0.10, alineacion, marca))
+    ents = _con_alineacion(
+        tmp_path, [(t, x, y, alto, _ALINEACIONES.get(al, _CEN)) for t, x, y, alto, al, _ in textos]
+    )
+    de_quien = {
+        (t, round(x, 3), round(y, 3)): marca for t, x, y, _, al, marca in textos if al is not None
+    }
+    return (None if _se_tocan(ents) else ents), de_quien
+
+
+def _fuera_del_ensanche(ents, de_quien):
+    """Si algún renglón no toca la etiqueta de su dueño ensanchada 3 altos de renglón: fuera del
+    modelo de la pila (la salvedad a de R58, aceptada como su límite)."""
+    cajas = {}
+    for e in ents:
+        if e.is_textual:
+            (ax, ay), (dx0, dx1, _, _, alto) = ancla_texto(e), caja_de_texto(e, 0.0)
+            cajas[e.entity_id] = (e.text, ax, ay, ax + dx0, ax + dx1, alto)
+    etiquetas = {t: (x0, x1) for t, _, _, x0, x1, _ in cajas.values() if t.startswith("K-")}
+    for t, ax, ay, x0, x1, alto in cajas.values():
+        marca = de_quien.get((t, round(ax, 3), round(ay, 3)))
+        if marca is not None:
+            e0, e1 = etiquetas[marca]
+            if x1 < e0 - 3 * alto or x0 > e1 + 3 * alto:
+                return True
+    return False
+
+
+@pytest.mark.parametrize(
+    "familia,semilla,desplazamiento",
+    # El primer renglón de K-2 («8#6», bajo las dos etiquetas y sobre ninguna) va al lado del
+    # renglón largo de K-3, igual de pegado; K-2 tomaba el de K-3 (más cerca de su centro) y K-1
+    # se llevaba «8#6» limpio.
+    [("lado", 71455, 0.55)]
+    # En «borde», con todos los renglones en su ensanche: la columna de K-2 seguía limpio junto a
+    # K-1 hasta el «E#4@10» de K-1, que K-1 tiene a su alcance (82761; la regla de ``previo``).
+    + [("borde", 82761, 0.25)],
+)
+def test_the_side_by_side_seeds_never_read_a_foreign_or_partial_stack(
+    tmp_path, familia, semilla, desplazamiento
+):
+    ents, de_quien = _cuadro_de_lado(tmp_path, semilla, familia, desplazamiento)
+    assert ents is not None
+    asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+    _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+
+
+@pytest.mark.parametrize(
+    "familia,desplazamiento,semillas",
+    [
+        ("lado", 0.25, 200),
+        ("lado", 0.55, 200),
+        ("lado_s", 0.25, 200),
+        ("lado_s", 0.55, 200),
+        ("borde", 0.25, 400),
+    ],
+)
+def test_a_sweep_of_side_by_side_cuadros(tmp_path, familia, desplazamiento, semillas):
+    """Barridas acotadas de las familias de R59: ninguna pila ajena ni a medias, todo renglón
+    leído o rechazado. En «borde» sólo cuentan los cuadros cuyos renglones tocan la etiqueta
+    ensanchada de su dueño: uno que no la toca no es de su pila en el modelo (salvedad a de R58,
+    aceptada), y ahí sí puede leerse una pila a medias."""
+    revisados = leidos = 0
+    for semilla in range(8000, 8000 + semillas):
+        ents, de_quien = _cuadro_de_lado(tmp_path, semilla, familia, desplazamiento)
+        if ents is None or _fuera_del_ensanche(ents, de_quien):
+            continue
+        asoc, rech = asociar(ents, _one_frame(ents), TextPatternConfig())
+        _ni_ajenas_ni_a_medias(ents, asoc, rech, de_quien)
+        revisados += 1
+        leidos += len(asoc)
+    assert revisados >= 10 and leidos >= 1
