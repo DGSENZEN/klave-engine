@@ -2800,24 +2800,26 @@ def _flechas_de_titulos(
 def _senaladas_por_flecha(
     specs: list[ElementSpec], flechas: list[tuple[str, ElementSpec]]
 ) -> list[ElementSpec]:
-    """R124, R128: a title a leader starts or lands at claims each of its marks whose section
-    nothing in the drawing reads: ilegible, «señalada por flecha; se lee en E3», so the AI does
-    not fill what the drawing points at. It is a block on the AI only: it stands only when no
-    reading of the mark but the AI's gives a section and no note of the mark's family does (the
-    family's note reads it: CE-5's 15×25), so it never outranks and erases a value the drawing
-    reads. The title's own claimed readings of that mark, if any, say so; otherwise the claim is
-    added. Where the leader points is E3."""
+    """R124, R128, R132: a title a leader starts or lands at claims each of its marks whose
+    section nothing in the drawing reads: ilegible, «señalada por flecha; se lee en E3», so the
+    AI does not fill what the drawing points at. It is a block on the AI only: it stands only
+    when no reading that names the mark (a note of the mark, a stack, a cuadro row, cotas, a
+    callout; never the AI's) gives a section, so it never outranks and erases a value the
+    drawing reads. A note of the family is not one (R132): it is the family's fallback. The
+    title's own claimed readings of that mark, if any, say so; otherwise the claim is added.
+    Where the leader points is E3."""
     if not flechas:
         return specs
-    leidas = {s.mark for s in specs if s.section_cm is not None and s.source != "ia"}
-    familias = {
-        s.family
+    leidas = {
+        s.mark
         for s in specs
-        if s.source == "nota" and s.mark == s.family.upper() and s.section_cm is not None
+        if s.section_cm is not None
+        and s.source != "ia"
+        and not (s.source == "nota" and s.mark == s.family.upper())
     }
     salida = list(specs)
     for entidad, reclamo in flechas:
-        if reclamo.mark in leidas or reclamo.family in familias:
+        if reclamo.mark in leidas:
             continue
         aviso = reclamo.avisos[0]
         suyas = [

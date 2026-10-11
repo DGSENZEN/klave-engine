@@ -836,30 +836,36 @@ def test_a_title_with_a_leader_and_no_section_read_claims_it(flecha, senalada):
 
 
 @pytest.mark.parametrize(
-    "titulo,familia,senalada",
+    "titulo,nota,familia,senalada",
     [
-        # CE-5 en Marina: su familia (dala, por su prefijo) la lee su nota («CADENA DE ENRASE
-        # 15x25 …»): la flecha no la reclama y la nota no se borra.
-        ("CE-5", "dala", False),
-        # D-3 en Marina: su título dice DADO (R130): la nota de las dalas no es suya; se reclama.
-        ("DADO\nD-3", "dado", True),
+        # CE-1 en Marina: la nota de su familia («CADENA DE ENRASE 15x25 …») no la nombra: es el
+        # respaldo de la familia, no la lee (R132): se reclama y su IA (15x30) no se elige.
+        ("CE-1", "DALA 15X25 4#3 E#2@15", "dala", True),
+        # Una nota que nombra a la marca sí la lee: la flecha no la reclama ni la borra.
+        ("CE-5", "CE-5 15X25 4#3 E#2@15", "dala", False),
+        # D-3 en Marina: su título dice DADO (R130); la nota de las dalas no la nombra.
+        ("DADO\nD-3", "DALA 15X25 4#3 E#2@15", "dado", True),
     ],
 )
-def test_a_leader_claim_never_erases_what_a_family_note_reads(titulo, familia, senalada):
-    # R124, R130 (ronda 5): la reclamación «señalada» sólo bloquea a la IA cuando nada del plano
-    # lee la marca; la nota de su familia la lee.
+def test_only_a_reading_that_names_the_mark_stops_a_leader_claim(titulo, nota, familia, senalada):
+    # R124, R132 (ronda 5): la reclamación «señalada» sólo bloquea a la IA cuando ninguna lectura
+    # que nombra la marca (nota de la marca, pila, renglón de cuadro, cotas, llamada) da su
+    # sección; la nota de la familia nunca cuenta.
     marca = titulo.split()[-1]
     ents = [
         _texto("m", titulo, 0.0, 0.0, alto=0.1),
         _flecha("f", [(-0.6, 0.4), (-0.3, -0.06), (0.4, -0.06)]),
-        _texto("n", "DALA 15X25 4#3 E#2@15", 5.0, 5.0, alto=0.1),
+        _texto("n", nota, 5.0, 5.0, alto=0.1),
         _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
     ]
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
-    assert [s.section_cm for s in inv.specs if s.mark == "DALA"] == [(15, 25)]
+    assert [s.section_cm for s in inv.specs if s.source == "nota"] == [(15, 25)]
     lecturas = [(s.family, s.avisos) for s in _cotas(inv, marca)]
     aviso = ["sección: señalada por flecha; se lee en E3"]
     assert lecturas == ([(familia, aviso)] if senalada else [])
+    merge_external_specs(inv, [_ia(marca, family="dala", section_cm=(15, 30))], C)
+    elegida = inv.by_mark[marca].section_cm if marca in inv.by_mark else None
+    assert elegida == (None if senalada else (15, 25))
 
 
 def test_a_title_with_a_leader_whose_section_is_read_keeps_it():
