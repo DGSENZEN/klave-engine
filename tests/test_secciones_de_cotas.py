@@ -1787,3 +1787,90 @@ def test_armado_on_a_sloped_elevation_outline_is_its_beams():
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
     posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
     assert posibles == {"2#6+1#4": ["TE-A"]}
+
+
+# ------------------------------------------------- Tarea 9, ronda 5: R161, R162, R163
+
+
+@pytest.mark.parametrize("abajo,suyo", [(1.2, True), (1.5, False)])
+def test_the_column_reach_stops_at_1_3_section_heights(abajo, suyo):
+    # R161: bajo su sección (su columna), el armado llega a 1.3 de sus altos, ya no a tres: lo
+    # que va más abajo es de otro alzado (A9852 «2#8+2#6» de T2-6A en Marina, que caía en T2-9).
+    alto = 1.754
+    ents = _t2_10() + [_texto("r", "2#8+2#6", 0.5, -abajo * alto - 0.05, alto=0.1)]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
+    assert posibles["2#8+2#6"] == (["T2-10"] if suyo else [])
+
+
+@pytest.mark.parametrize(
+    "textos",
+    [
+        # El encabezado de un grupo vecino (o el de abajo), a más de 1.5 altos de la sección.
+        [("CADENAS DE ENRASE", 0.6, -5.3)],
+        [("CADENAS INTERMEDIAS", 0.4, -5.6)],
+        # Una nota que nombra la cadena en medio.
+        [("2 VARILLAS #5 ANCLADA AL MURO O CADENA", 0.9, -2.6)],
+        # El subtítulo de un detalle (T2-10 en Marina).
+        [("(A NIVEL DE CERRAMIENTO)", 0.9, -2.4)],
+        # Un renglón de las notas generales.
+        [("1.- LAS CADENAS Y CASTILLOS SERAN DE F'C=150", 1.6, -2.4)],
+        # El encabezado más cercano es de dados; el de cadenas va más lejos.
+        [("DADOS", 0.4, -2.2), ("CADENAS DE ENRASE", 0.6, -3.1)],
+    ],
+)
+def test_only_the_nearest_heading_opening_its_text_states_a_cadena(textos):
+    # R162: una «D-1» sobre el dibujo de CE-1 lee la esquina proyectada sólo si el encabezado de
+    # grupo MÁS CERCANO a su sección abre su texto con «CADENAS»/«CERRAMIENTOS» y está en su
+    # grupo: ni notas, ni subtítulos, ni el grupo de al lado.
+    ents = _ce1(marca="D-1") + [
+        _texto(f"g{n}", texto, x, y, alto=0.16) for n, (texto, x, y) in enumerate(textos)
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    (s,) = _cotas(inv, "D-1")
+    assert s.section_cm is None
+    assert any("esquina proyectada" in a for a in s.avisos)
+
+
+def _t3_8():
+    """T3-8 de Marina (ES-301), con el origen en (251.173, −25.881): a la izquierda de su sección
+    el escalón de la losa nervada con sus dos «60» (uno horizontal a media altura, otro girado de
+    esquina a esquina), y su sección (su «20» de ancho) a la derecha; su título va sobre el
+    escalón."""
+    return [
+        _titulo("t", "T3-8", 1.799, 2.606, alto=0.14),
+        _poligono("escalon", [(0.0, 0.0), (0.0, 1.237), (2.357, 1.237), (2.357, 2.52)], False),
+        _linea("fondo", (0.0, 0.0), (2.357, 0.0)),
+        _cota("h60", (0.0, 1.237), (2.357, 1.237), 60),
+        _cota_lineal("v60", (0.0, 0.0), (2.357, 2.243), 60, 90.0),
+        _poligono("t38", [(3.141, 2.52), (3.141, 0.786), (4.426, 0.786)], False),
+        _cota_lineal("b20", (2.357, 1.237), (3.141, 0.786), 20, 0.0),
+    ]
+
+
+def test_a_claimed_box_needs_the_titles_own_cotas_meeting_at_a_corner():
+    # R163 (T3-8 en Marina): el «60» horizontal del escalón y el «60» girado no se encuentran en
+    # una esquina (su esquina sólo se proyecta): no son la sección reclamada de T3-8, y lo que va
+    # escrito en el escalón no es suyo.
+    ents = _t3_8() + [_texto("r", "4#4", 1.0, 0.6, alto=0.11)]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s.section_cm for s in _cotas(inv, "T3-8")] == [None]
+    posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
+    assert posibles == {"4#4": []}
+
+
+def test_a_notes_panel_beside_a_section_is_no_elevation():
+    # R163: el marco de las notas generales de una hoja (un rectángulo cerrado de 5.68 × 29 que
+    # empieza junto a una sección) no es el alzado de esa sección: lo que va escrito en él no es
+    # suyo. El alzado en rampa de TE-A (su test) lo sigue siendo.
+    ents = [
+        _titulo("t", "TE-A", 0.111, 1.759, alto=0.14),
+        _rectangulo("s", 0.0, 0.0, 0.8, 1.6),
+        _cota("h", (0.0, 0.0), (0.8, 0.0), 20),
+        _cota("v", (0.0, 1.6), (0.0, 0.0), 40),
+        _rectangulo("notas", 1.0, -14.0, 6.68, 15.0),
+        _texto("r", "2#6", 4.0, 8.0, alto=0.1),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
+    assert posibles == {"2#6": []}

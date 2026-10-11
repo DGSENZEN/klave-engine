@@ -1970,18 +1970,43 @@ class _Par:
 # R153: the families whose detail is drawn with a projected corner (the CE pattern: a cadena's
 # depth cota from its corner up to the slab edge beside it). Any other needs a real corner.
 _CON_ESQUINA_PROYECTADA = frozenset({"dala", "cerramiento"})
-# R159: the prefixes that say cadena or cerramiento without doubt (D- does not: a dado on Marina),
-# and the headings of a cadenas or cerramientos detail group.
+# R159: the prefixes that say cadena or cerramiento without doubt (D- does not: a dado on Marina).
 _PREFIJOS_DE_CADENA = frozenset({"CE", "CI", "CR"})
-_ENCABEZADO_DE_CADENA = re.compile(r"\b(?:CADENAS?|DALAS?|CERRAMIENTOS?)\b")
+# R162: a group heading is this many of its section's heights from it, at most («CADENAS DE
+# ENRASE» on Marina: 0.8).
+_ENCABEZADO_CERCA = 1.5
+# R161: along its column, the armado of a section reaches this many of its heights.
+_COLUMNA = 1.3
+
+
+def _encabezado(texto: str) -> str | None:
+    """R162: the family a group heading names — its text opens with a family word (the subject,
+    as in ``_family_subject``: never after a note number, a parenthesis or another word) and no
+    other family's word appears in it («CADENAS DE ENRASE», «CERRAMIENTOS», «DADOS»). A note
+    («… ANCLADA AL MURO O CADENA»), a subtitle («(A NIVEL DE CERRAMIENTO)»), a numbered notes
+    line or a title («DALA D-2»: a mark) names none."""
+    if re.search(r"\d", texto):
+        return None  # a title («DALA D-2») or a note names a mark or a size: no group heading
+    palabras = re.findall(r"[A-ZÁÉÍÓÚÑ]+|\S", texto.upper())
+    if not palabras:
+        return None
+    familias = {
+        familia
+        for palabra in palabras
+        for familia, patron in _PALABRAS_DE_FAMILIA
+        if patron.fullmatch(palabra)
+    }
+    sujeto = next((f for f, patron in _PALABRAS_DE_FAMILIA if patron.fullmatch(palabras[0])), None)
+    return sujeto if sujeto is not None and familias == {sujeto} else None
 
 
 def _cadena_dicha(e: _Etiqueta, caja: BBox, entities: list[NormalizedEntity]) -> bool:
-    """R159: whether the drawing STATES that the title ``e`` is a cadena or a cerramiento — its
-    title's family word; else a prefix that says it without doubt (CE, CI, CR); else, when its
-    prefix says nothing or is ambiguous (D-: dala or dado), the heading of its detail group
-    («CADENAS DE ENRASE», «CERRAMIENTOS») within three times its section's size. A prefix of
-    another family (T, CTA, K…) never is one."""
+    """R159, R162: whether the drawing STATES that the title ``e`` is a cadena or a cerramiento —
+    its title's family word; else a prefix that says it without doubt (CE, CI, CR); else, when its
+    prefix says nothing or is ambiguous (D-: dala or dado), its group's heading: the NEAREST group
+    heading (``_encabezado``) to its section, within ``_ENCABEZADO_CERCA`` of its heights, names a
+    cadena or a cerramiento («CADENAS DE ENRASE»). A prefix of another family (T, CTA, K…) never
+    is one; notes, subtitles and a neighbouring group's heading never are."""
     if e.familia is not None:
         return e.familia in _CON_ESQUINA_PROYECTADA
     prefijo = re.match(r"[A-Z]+", e.marca.upper())
@@ -1992,15 +2017,20 @@ def _cadena_dicha(e: _Etiqueta, caja: BBox, entities: list[NormalizedEntity]) ->
     x0, y0, x1, y1 = caja
     r = 3 * max(x1 - x0, y1 - y0)
     ventana = (x0 - r, y0 - r, x1 + r, y1 + r)
+    encabezados: list[tuple[float, str]] = []
     for t in _cerca_de(entities, [ventana]):
         if not (t.is_textual and t.text) or t.entity_id == e.texto.entity_id:
             continue
-        tx0, ty0, tx1, ty1 = _extension_del_texto(t)  # where it really lies (R120)
-        if tx1 < ventana[0] or tx0 > ventana[2] or ty1 < ventana[1] or ty0 > ventana[3]:
+        familia = _encabezado(t.text)
+        if familia is None:
             continue
-        if _ENCABEZADO_DE_CADENA.search(t.text.upper()):
-            return True
-    return False
+        tx0, ty0, tx1, ty1 = _extension_del_texto(t)  # where it really lies (R120)
+        d = math.hypot(max(x0 - tx1, 0.0, tx0 - x1), max(y0 - ty1, 0.0, ty0 - y1))
+        encabezados.append((d, familia))
+    if not encabezados:
+        return False
+    d, familia = min(encabezados)
+    return familia in _CON_ESQUINA_PROYECTADA and d <= _ENCABEZADO_CERCA * (y1 - y0)
 
 
 def _sobre_lo_dibujado(
@@ -2008,11 +2038,17 @@ def _sobre_lo_dibujado(
     horizontales: dict[int, list[tuple[float, float, float]]],
     verticales: dict[int, list[tuple[float, float, float]]],
     tol: float,
+    holgura: float | None = None,
 ) -> bool:
-    """Whether the point lies on a drawn horizontal or vertical line (R153)."""
-    return any(a - tol <= p[0] <= b + tol for a, b in _linea_en(horizontales, p[1], tol)) or any(
-        a - tol <= p[1] <= b + tol for a, b in _linea_en(verticales, p[0], tol)
-    )
+    """Whether the point lies on a drawn horizontal or vertical line (R153), within ``holgura``
+    (``tol`` by default; ``tol`` is the one the tables are keyed by)."""
+    holgura = tol if holgura is None else holgura
+    for tabla, fijo, libre in ((horizontales, p[1], p[0]), (verticales, p[0], p[1])):
+        for k in range(round((fijo - holgura) / tol) - 1, round((fijo + holgura) / tol) + 2):
+            for f, a, b in tabla.get(k, ()):
+                if abs(f - fijo) <= holgura and a - holgura <= libre <= b + holgura:
+                    return True
+    return False
 
 
 def _esquina_proyectada(
@@ -2327,6 +2363,23 @@ def _se_encima(a: BBox, b: BBox) -> bool:
     return ancho * alto > 0.5 * menor
 
 
+def _se_encuentran(h: _Cota, v: _Cota, junto: float) -> bool:
+    """R163: whether a horizontal and a vertical cota meet at a real corner: a definition point
+    of each is the same point, or one's point lies on the other's own straight segment (a
+    vertical one whose points are one above the other, a horizontal one level)."""
+    if any(math.dist(a, b) <= junto for a in (h.p, h.q) for b in (v.p, v.q)):
+        return True
+
+    def sobre(q: tuple[float, float], c: _Cota) -> bool:
+        i = 0 if c.eje == "y" else 1  # the coordinate that is fixed along the cota
+        if abs(c.p[i] - c.q[i]) > junto or abs(q[i] - c.p[i]) > junto:
+            return False
+        a, b = sorted((c.p[1 - i], c.q[1 - i]))
+        return a - junto <= q[1 - i] <= b + junto
+
+    return any(sobre(q, v) for q in (h.p, h.q)) or any(sobre(q, h) for q in (v.p, v.q))
+
+
 def _rectangulos_de_cotas(
     dims: list[NormalizedEntity],
     segmentos: list[NormalizedEntity],
@@ -2334,11 +2387,14 @@ def _rectangulos_de_cotas(
     tol: float,
     tamano: float,
 ) -> list[_Contorno]:
-    """R158: the rectangles a horizontal and a vertical cota span, never read — the drawing a
-    claimed title's cotas measure where no pair closes it (R106 needs a shared corner and the
-    edges R118 accepts; a beam where a slab meets it has neither): the vertical cota stands at an
-    end of the horizontal one's span (one of its points), the horizontal one lies within the
-    vertical one's span, and at least two of its edges are drawn (``_CUBIERTA`` of each)."""
+    """R158, R163: the rectangles a horizontal and a vertical cota span, never read — the drawing
+    a claimed title's cotas measure where no pair closes it (R106 needs a shared corner and the
+    edges R118 accepts; a beam where a slab meets it has neither). The two cotas meet at a real
+    corner — a definition point of each is the same point, or one's point lies on the other's
+    own straight segment (T3-21's width from its side), within 2 % of the rectangle — never a
+    corner only projected (T3-8's neighbour's «60»s on ES-301); every definition point lies on a
+    drawn line (the section's own edges, or the slab line its depth runs up to); and at least two
+    of its edges are drawn (``_CUBIERTA`` of each)."""
     cotas: list[_Cota] = []
     for d in dims:
         tramo = (d.properties or {}).get("measured_segment")
@@ -2370,6 +2426,12 @@ def _rectangulos_de_cotas(
             if not any(abs(vx - hx) <= tol for vx in (v.p[0], v.q[0]) for hx in (x0, x1)):
                 continue
             if not any(y0 - tol <= hy <= y1 + tol for hy in (h.p[1], h.q[1])):
+                continue
+            junto = max(tol, 0.02 * max(x1 - x0, y1 - y0))
+            if not _se_encuentran(h, v, junto) or not all(
+                _sobre_lo_dibujado(q, horizontales, verticales, tol, junto)
+                for q in (h.p, h.q, v.p, v.q)
+            ):
                 continue
             dibujadas = sum(
                 _cubierta(tabla, fijo, a, b, tol) >= _CUBIERTA
@@ -3482,9 +3544,10 @@ def _junto_a_su_seccion(
     it ends inside, whatever the distance (R154: T4-4's «2#6» and the V from it to two bars of
     the section); else the nearest section its sheet's titles own or claim (R158: a section
     several titles reach, a beam where a slab meets it) within that section's larger side (R140)
-    and three of its heights (R150) — three of its heights along its height band or its column
-    (a beam's elevation beside its section) — with no other heading or title between them (the
-    section's own title is not another); of two equally near (within 10 %) both. A text nearer
+    and three of its heights (R150) — three of its heights along its height band (a beam's
+    elevation beside its section), 1.3 along its column (R161) — with no other heading or title
+    between them (the section's own title is not another); of two equally near (within 10 %)
+    both. A text nearer
     a dimensioned section nobody owns (a «CI» type detail), or whose leader ends inside one, is
     that section's: it stays unowned. So does anything else. Reading it is Task 9c."""
     if not secciones:
@@ -3616,14 +3679,18 @@ def _junto_a_su_seccion(
             dx = max(caja[0] - x1, 0.0, x0 - caja[2])
             dy = max(caja[1] - y1, 0.0, y0 - caja[3])
             d = math.hypot(dx, dy)
-            # Its group (R140, R150, R158): within the section's larger side and three of its
-            # heights; along its height band (a beam's elevation beside its section, with its bars
-            # and stirrups) or its column (the stack under or over it), three of its heights.
-            # Nothing else between.
+            # Its group (R140, R150, R158, R161): within the section's larger side and three of
+            # its heights; along its height band (a beam's elevation beside its section, with its
+            # bars and stirrups), three of its heights; along its column (the stack under or over
+            # it), 1.3 of them. Nothing else between.
             w, h = caja[2] - caja[0], caja[3] - caja[1]
             banda = y1 >= caja[1] - 0.25 * h and y0 <= caja[3] + 0.25 * h
             columna = x1 >= caja[0] - 0.25 * w and x0 <= caja[2] + 0.25 * w
-            alcance = 3 * h if banda or columna else min(max(w, h), 3 * h)
+            alcance = min(max(w, h), 3 * h)
+            if banda:
+                alcance = 3 * h
+            elif columna:
+                alcance = max(alcance, _COLUMNA * h)
             if d <= alcance and not entre(texto, caja, titulo):
                 cerca.append((d, marca))
         if cerca:
@@ -3636,10 +3703,11 @@ def _junto_a_su_seccion(
 def _alzados(
     secciones: list[tuple[str, BBox, str]], entities: list[NormalizedEntity]
 ) -> list[tuple[str, str, list[tuple[float, float]]]]:
-    """R158: the elevation of each beam section drawn as one closed polyline beside it — its near
-    end within the section's larger side of the section's side, overlapping at least half its
-    height there, and running away at least three of its widths (TE-A's ramp on ES-007): the mark,
-    its sheet key and the polygon."""
+    """R158, R163: the elevation of each beam section drawn as one closed polyline beside it — its
+    near end within the section's larger side of the section's side, overlapping at least half its
+    height there and no taller there than 1.5 of its heights (beam-like: never a sheet's notes
+    panel), and running away at least three of its widths (TE-A's ramp on ES-007): the mark, its
+    sheet key and the polygon."""
     if not secciones:
         return []
     ventanas = []
@@ -3661,7 +3729,11 @@ def _alzados(
                 if not -0.05 * w <= hueco <= max(w, h) or abs(lejos - cerca) < 3 * w:
                     continue
                 ys = [y for x, y in puntos if abs(x - cerca) <= 0.05 * w]
-                if ys and min(max(ys), y1) - max(min(ys), y0) >= 0.5 * h:
+                if (
+                    ys
+                    and min(max(ys), y1) - max(min(ys), y0) >= 0.5 * h
+                    and max(ys) - min(ys) <= 1.5 * h
+                ):
                     salida.append((marca, llave, puntos))
     return salida
 
