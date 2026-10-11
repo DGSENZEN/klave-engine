@@ -1639,3 +1639,151 @@ def test_another_titles_non_rectangular_outline_says_nothing_of_this_one():
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
     assert all(s.seccion_no_rectangular for s in _cotas(inv, "K-15A"))
     assert not any(s.seccion_no_rectangular for s in _cotas(inv, "K-15B"))
+
+
+# ------------------------------------------------- Tarea 9, ronda 4: R157, R158, R159
+
+
+def test_a_projected_rectangle_two_titles_reach_is_claimed_by_both():
+    # R157: de quién es el rectángulo se decide entre TODOS los títulos; CE-1 y T-1 se le encima
+    # igual: los dos lo reclaman (R111), ninguno lo lee.
+    ents = [e for e in _ce1() if e.entity_id != "ta"] + [
+        _titulo("a", "CE-1", 0.05, 0.46, alto=0.15),
+        _titulo("b", "T-1", 0.5, 0.46, alto=0.15),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    for marca in ("CE-1", "T-1"):
+        (s,) = _cotas(inv, marca)
+        assert s.section_cm is None, marca
+        assert any("lo alcanza también" in a for a in s.avisos), marca
+
+
+@pytest.mark.parametrize(
+    "marca,encabezado,lee",
+    [
+        ("D-1", None, False),  # D-: dala o dado (R159), sola nunca
+        ("D-1", "CADENAS DE ENRASE", True),  # el encabezado de su grupo la dice
+        ("DALA D-1", None, True),  # la palabra de su título la dice
+        ("CE-1", None, True),  # un prefijo sin duda
+    ],
+)
+def test_a_projected_corner_needs_the_cadena_stated(marca, encabezado, lee):
+    # R159: la esquina proyectada sólo la lee una cadena o un cerramiento DICHOS.
+    ents = _ce1(marca=marca)
+    if encabezado:
+        ents.append(_texto("g", encabezado, 0.6, -2.6, alto=0.16))
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    leida = marca.split()[-1]
+    (s,) = _cotas(inv, leida)
+    if lee:
+        assert s.section_cm == (15, 30)
+    else:
+        assert s.section_cm is None
+        assert any("esquina proyectada" in a for a in s.avisos)
+
+
+def _t3_21():
+    """T3-21 de Marina (ES-302), con el origen en la esquina de abajo a la izquierda de su
+    sección: la losa llega a sus dos lados (sus lados sólo dibujados en parte), la cota de ancho va
+    de un punto de su lado izquierdo a su esquina de abajo, la de alto por su lado izquierdo: no hay
+    par (R106) ni contorno; el título reclama su sección («las cotas cercanas … no se toman»)."""
+    ancho = _cota_lineal("h", (0.0, 0.8), (0.976, 0.0), 20, 0.0)
+    ancho.bbox = (-0.05, -0.3, 1.026, 0.05)  # su línea de cota va bajo la sección
+    return [
+        _titulo("t", "T3-21", -0.017, 2.171, alto=0.14),
+        _linea("arriba", (0.0, 2.0), (1.246, 2.0)),
+        _linea("der", (0.976, 0.0), (0.976, 1.2)),
+        _linea("izq", (0.0, 0.8), (0.0, 2.0)),
+        _linea("abajo", (0.0, 0.0), (0.976, 0.0)),
+        _linea("losa_der", (0.976, 1.2), (1.246, 1.2)),
+        _linea("losa_izq", (-0.27, 0.8), (0.0, 0.8)),
+        _linea("abajo_izq", (-0.27, 0.0), (0.0, 0.0)),
+        ancho,
+        _cota("v", (0.0, 2.0), (0.0, 0.0), 50),
+    ]
+
+
+def test_armado_of_a_beam_where_a_slab_meets_it_blocks_its_ai():
+    # R158 (T3-21 en Marina): su sección queda reclamada sin contorno ni par; el rectángulo que
+    # sus cotas abarcan es su sección reclamada: su «2#6», con su V hacia dos varillas, y el
+    # «E#3@15» bajo ella son suyos y bloquean la IA de su armado.
+    ents = _t3_21() + [
+        _texto("r", "2#6", 1.255, 2.333, alto=0.11),
+        _flecha("f", [(0.854, 1.876), (1.195, 2.254), (0.122, 1.876)]),
+        _texto("e", "E#3@15", 0.454, -0.387, alto=0.11),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    (s,) = _cotas(inv, "T3-21")
+    assert s.section_cm is None
+    posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
+    assert posibles == {"2#6": ["T3-21"], "E#3@15": ["T3-21"]}
+    merge_external_specs(inv, [_ia("T3-21", family="trabe", rebar="3#6", stirrups="E#3@20")], C)
+    d = construir_definiciones(inv, C)[0]["T3-21"]
+    assert d.longitudinales is None and d.estribos is None
+    assert set(d.sin_leer) == {"longitudinales", "estribos"}
+
+
+def test_a_section_two_titles_claim_gives_its_armado_to_both():
+    # R158 (R111): una sección dibujada que alcanzan dos títulos por igual la reclaman los dos;
+    # el armado bajo ella puede ser de cualquiera: bloquea a los dos.
+    ents = [
+        _titulo("a", "T-1", 0.1, 0.3, alto=0.14),
+        _titulo("b", "T-2", 0.55, 0.3, alto=0.14),
+        _rectangulo("s", 0.0, -2.0, 1.0, 0.0),
+        _cota("h", (0.0, -2.0), (1.0, -2.0), 30),
+        _cota("v", (1.0, -2.0), (1.0, 0.0), 60),
+        _texto("r", "3#6", 0.5, -2.35, alto=0.11),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s.section_cm for s in _cotas(inv, "T-1")] == [None]
+    posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
+    assert posibles == {"3#6": ["T-1", "T-2"]}
+
+
+def _t2_10():
+    """T2-10 de Marina (ES-201), con el origen en la esquina de abajo a la izquierda de su sección
+    (1.057 × 1.754, acotada 30x40) y su alzado a la derecha, a la misma altura."""
+    return [
+        _titulo("t", "T2-10", 0.131, 2.082, alto=0.14),
+        _rectangulo("s", 0.0, 0.0, 1.057, 1.754),
+        _cota("h", (0.0, 0.0), (1.057, 0.0), 30),
+        _cota("v", (0.0, 1.754), (0.0, 0.0), 40),
+        _linea("alzado_arriba", (1.756, 1.781), (7.735, 1.781)),
+        _linea("alzado_abajo", (1.756, 0.004), (7.735, 0.004)),
+        _linea("alzado_apoyo", (1.756, 0.004), (1.756, 1.781)),
+    ]
+
+
+def test_armado_on_a_beams_elevation_beside_its_section_blocks_its_ai():
+    # R158, R150 (T2-10 en Marina): «3#4», «2#6» y «@18» van en su alzado, a 3.5 de su sección
+    # (más que su lado mayor, menos que tres altos, en su banda de altura): son de su grupo. Un
+    # texto a la misma distancia fuera de su banda y de su columna, no.
+    ents = _t2_10() + [
+        _texto("a", "3#4", 4.671, 1.577, alto=0.1),
+        _texto("b", "2#6", 4.698, 0.21, alto=0.1),
+        _texto("c", "@18", 4.651, -0.099, alto=0.1),
+        _texto("d", "4#5", 4.0, 4.6, alto=0.1),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
+    assert posibles == {"3#4": ["T2-10"], "2#6": ["T2-10"], "@18": ["T2-10"], "4#5": []}
+    merge_external_specs(inv, [_ia("T2-10", family="trabe", rebar="3#6")], C)
+    d = construir_definiciones(inv, C)[0]["T2-10"]
+    assert d.longitudinales is None and "longitudinales" in d.sin_leer
+
+
+def test_armado_on_a_sloped_elevation_outline_is_its_beams():
+    # R158 (TE-A en Marina, ES-007: una trabe en rampa): su alzado es un paralelogramo cerrado que
+    # empieza junto a su sección y sube; el «2#6+1#4» escrito en él, a más de 6 de la sección, es
+    # suyo.
+    ents = [
+        _titulo("t", "TE-A", 0.111, 1.759, alto=0.14),
+        _rectangulo("s", 0.0, 0.0, 0.8, 1.6),
+        _cota("h", (0.0, 0.0), (0.8, 0.0), 20),
+        _cota("v", (0.0, 1.6), (0.0, 0.0), 40),
+        _poligono("alzado", [(1.529, 0.117), (1.529, 1.6), (12.882, 5.571), (12.882, 4.088)]),
+        _texto("r", "2#6+1#4", 7.107, 3.204, alto=0.1),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
+    assert posibles == {"2#6+1#4": ["TE-A"]}
