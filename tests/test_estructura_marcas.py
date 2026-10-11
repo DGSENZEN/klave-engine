@@ -367,3 +367,27 @@ def test_the_heading_window_skips_scale_and_cut_tokens(texto, piezas):
     lectura = leer_marcas(texto, C)
     assert (lectura.piezas, lectura.titulo) == (piezas, True)
     assert titulos(texto, C) == piezas
+
+
+@pytest.mark.parametrize(
+    "texto,esperados",
+    [
+        ("E#2@15 VER CORTE C-2", ["VER CORTE C-2"]),
+        ("K-1 4#3 E#2@20 (VER CORTE C-2)", ["VER CORTE C-2"]),
+        ("E#2@15 VER CORTES C-1 Y C-2", ["VER CORTES C-1 Y C-2"]),
+        ("VER CORTE C-2 30X30 8#6", []),  # encabezado, no puntero
+        ("VER CORTE C-2", []),  # sin armado no hay nada que remitir
+    ],
+)
+def test_the_pointers_of_a_text(texto, esperados):
+    # R110: los punteros de un texto con armado, como se escribieron.
+    from klave_engine.estructura.marcas import punteros
+
+    assert punteros(texto, C) == esperados
+
+
+@pytest.mark.parametrize("texto", ["a).- CORTE K-1 15X20 4#3", "A) CORTE K-1 15X20 4#3"])
+def test_a_letter_note_number_comes_before_a_heading(texto):
+    # R110: tras un número de nota con letra, «CORTE K-1 …» sigue siendo un encabezado.
+    lectura = leer_marcas(texto, C)
+    assert lectura.titulo and lectura.piezas == ["K-1"]

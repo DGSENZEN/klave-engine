@@ -19,6 +19,7 @@ from klave_engine.estructura.armado import (
     texto_estribos,
     texto_longitudinal,
     texto_parrillas,
+    tramos_de_armado,
 )
 
 E, G = "estribo", "grapa"
@@ -2233,3 +2234,92 @@ def test_a_bar_reference_glued_to_the_number_is_reported():
     # Como cualquier contexto, la referencia no se come el final de un número.
     a = parsear_armado(["4#8VER CORTE"], "pilote")
     assert a.longitudinales == [] and a.avisos == ["sin leer: «4#8VER CORTE»"]
+
+
+# ------------------------------------------------- Tarea 8b, ronda 1: R107, R108, R109, R110
+
+
+@pytest.mark.parametrize(
+    "texto,varillas,estribos",
+    [
+        ("E#2@15 (VER CORTE C-2)", [], [("2", "VER CORTE")]),
+        ("E#2@15 VER CORTES C-1 Y C-2", [], [("2", "VER CORTE")]),
+        ("E#2@15 VER CORTE C-2.", [], [("2", "VER CORTE")]),
+        ("4#3 (VER DET. K-2)", [(4, "VER DETALLE")], []),
+        ("K-1 4#3 E#2@20 (VER CORTE C-2)", [(4, None)], [("2", "VER CORTE")]),
+    ],
+)
+def test_a_pointer_after_a_piece_is_its_reference(texto, varillas, estribos):
+    # R110: entre paréntesis, en plural o con punto, el puntero es la referencia de su pieza (antes
+    # todo el texto quedaba sin leer).
+    a = parsear_armado([texto], "castillo")
+    assert [(g.cantidad, g.referencia) for g in a.longitudinales] == varillas
+    assert [(j.numero, j.referencia) for j in a.estribos] == estribos
+    assert a.avisos == []
+
+
+def test_a_glued_pointer_target_is_not_a_reference():
+    # «VER CORTEK-1»: la marca pegada a la palabra no es su destino; se avisa.
+    assert parsear_armado(["3E#3 VER CORTEK-1 4#4"], "muro").avisos
+
+
+@pytest.mark.parametrize(
+    "texto,lado",
+    [("K-1 20.5X40 4#3", "20.5X40"), ("K-1 20X40,5 4#3", "20X40,5"), ("15X15,4#3", "15X15")],
+)
+def test_a_section_span_keeps_its_decimals(texto, lado):
+    # R109: el tramo de una sección lleva sus decimales, con punto o coma; tras la «X», la coma es
+    # decimal sólo si no le sigue una varilla.
+    citar, tramos = tramos_de_armado(texto)
+    assert lado in [citar[a:b] for a, b in tramos]
+
+
+def test_a_decimal_comma_after_a_section_is_no_count():
+    # R109: el «5» de «20X40,5» es un decimal, no la cuenta de las varillas que le siguen.
+    a = parsear_armado(["K-1 20X40,5 4#3"], "castillo")
+    assert [(g.cantidad, g.numero) for g in a.longitudinales] == [(4, "3")] and a.avisos == []
+
+
+def test_armex_is_reported_never_read():
+    # R107: ARMEX es armado prefabricado: ni una palabra de familia ni varillas.
+    a = parsear_armado(["ARMEX 15X30"], "dala")
+    assert a.vacio() and a.avisos == ["armado prefabricado «ARMEX»: no se lee"]
+
+
+@pytest.mark.parametrize(
+    "texto,lo_ve",
+    [
+        ("1.- #3@20 A/S", True),
+        ("3.- @20", True),
+        ("LOSA ARMADA, PARRILLA SENCILLA CON V#3 @15 CMS AMBOS SENTIDOS", True),
+        ("7.- SE COLOCARA UNA VARILLA ADICIONAL #3 AL CENTRO", True),
+        ("K-1 4#3", True),
+        ("15X20", True),
+        ("NPT +3.50", False),
+        ("CORRUGADAS SE ESPECIFICAN EN LA TABLA No. 1.", False),
+        ("ACERO DE REFUERZO EN VARILLAS DEL No.3", True),
+        ("ESC 1:50", False),
+        ("CASTILLO", False),
+    ],
+)
+def test_the_audit_uses_the_parsers_vocabulary(texto, lo_ve):
+    # R108: la auditoría mira todo texto en el que el parser lee o avisa armado (no sólo los que
+    # tienen un tramo); otra cifra sin armado, no.
+    from klave_engine.estructura.armado import lo_ve_el_parser
+
+    assert lo_ve_el_parser(texto) is lo_ve
+
+
+@pytest.mark.parametrize(
+    "texto,a_la_vista",
+    [
+        ("E#2@15 VER CORTE C-2 8#6 E#3@20", "C-2"),
+        ("K-1 4#3 E#2@20 VER CORTES C-1 Y C-2", "C-1 Y C-2"),
+    ],
+)
+def test_a_pointers_targets_stay_outside_the_armado_spans(texto, a_la_vista):
+    # R110: la pieza se queda con su referencia, no con las marcas a las que remite: la gramática y
+    # el respaldo las siguen viendo (un encabezado sigue nombrando su marca).
+    from klave_engine.estructura.armado import sin_armado
+
+    assert a_la_vista in sin_armado(texto)

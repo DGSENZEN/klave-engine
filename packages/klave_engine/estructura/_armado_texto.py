@@ -16,17 +16,29 @@ AMBOS = r"(?:A\s*/\s*S|A\.?S\.?|AMBOS\s+SENTIDOS|AMBAS\s+DIRECCIONES)"
 
 _FIN_DE_FICHA = rf"(?=[{re.escape(FRONTERA)}]|$)"
 _UNIDAD = r"(?:\s*CMS?\.?)?"
+# Un lado de una sección como se escribe: entero o con decimales, con punto o con coma
+# («20.5X40», «20X40,5», R109). En el último lado la coma es decimal sólo si no le sigue una
+# varilla ni otra medida: «15X15,4#3» es 15X15 y 4#3, «15X15,20X20» son dos secciones.
+LADO = r"\d{1,3}(?:[.,]\d+)?"
+LADO_FINAL = r"\d{1,3}(?:\.\d+|,\d{1,2}(?![\d#Ø]|\s*[xX×]))?"
 _PALABRAS = (
     r"(?:DALAS?|CADENAS?|CASTILLOS?|COLUMNAS?|CONTRATRABES?|TRABES?|LOSAS?|MUROS?|ZAPATAS?"
-    r"|DADOS?|PILOTES?|CERRAMIENTOS?|ARMEX|REFUERZO)"
+    r"|DADOS?|PILOTES?|CERRAMIENTOS?|REFUERZO)"
 )
 _MARCA = r"[A-Z]{1,4}\s*-\s*\d{1,3}[A-Z]?(?:\.\d{1,2})?"  # K-1, Z-1, CTA-10, K-15A.1
+# Una referencia a otro dibujo con las marcas a las que remite y lo que la cierra (R110): «VER
+# CORTE C-2», «(VER CORTE C-2)», «VER CORTES C-1 Y C-2», «VER DET. K-2». Tras una pieza es suya
+# (``armado._VER``); sola, es contexto.
+REFERENCIA = (
+    r"\(?\s*VER\s+(?:CORTES?|DETALLES?|DETS?\.?)"
+    rf"(?:\s+{_MARCA}(?:\s*(?:,|&|\bY\b|\bE\b|\bO\b|\bA\b|\bAL\b)\s*{_MARCA})*)?(?:\s*\))?"
+)
 # Contexto: medidas, espesores, marcas, referencias y palabras de familia.
 _CONTEXTO = (
-    rf"\d+(?:\.\d+)?\s*[X×]\s*\d+(?:\.\d+)?{_UNIDAD}"
+    rf"{LADO}\s*[X×]\s*{LADO_FINAL}{_UNIDAD}"
     rf"|H\s*=\s*\d+(?:\.\d+)?{_UNIDAD}"
+    rf"|{REFERENCIA}"
     rf"|{_MARCA}"
-    r"|VER\s+(?:CORTE|DETALLE|DET\.?)"
     rf"|{_PALABRAS}"
 )
 # Dos lechos con la misma malla, cuando la malla no dice su lecho («2 PARRILLAS #4@20»); es

@@ -57,6 +57,7 @@ from pydantic import BaseModel, Field
 from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
+from klave_engine.estructura._armado_texto import LADO, LADO_FINAL
 from klave_engine.estructura.armado import parsear_armado, tiene_armado
 from klave_engine.estructura.marcas import (
     MARCA_RE,
@@ -100,18 +101,22 @@ _LARGO_DE_VARIAS = 40
 _JUNTAS = " Y "  # cómo se escribe la «marca» de una etiqueta de varias
 # Lo que hace que la lectura de notas (``detection.schedules._parse_annotations``) tome un texto:
 # una sección (15x20, sin las piezas de 3 medidas) o lo que el parser del armado lee en él.
-_SECCION = re.compile(r"(?<![\dxX×])(\d{1,3})\s*[xX×]\s*(\d{1,3})(?![\dxX×])")
-_PIEZA = re.compile(r"\d{1,3}\s*[xX×]\s*\d{1,3}\s*[xX×]\s*\d{1,3}")
+_SECCION = re.compile(rf"(?<![\dxX×.])({LADO})\s*[xX×]\s*({LADO_FINAL})(?![\dxX×]|\.\d)")
+_PIEZA = re.compile(rf"{LADO}\s*[xX×]\s*\d{{1,3}}(?:\.\d+)?\s*[xX×]\s*{LADO_FINAL}")
 _LADO_DE_SECCION_CM = (8, 400)
 
 # Un texto que nombra otra familia es de la lectura de esa familia (la losa, el muro, la nota de
 # dalas): nunca entra a una pila, nunca es huérfano y una pila nunca sigue más allá de él.
 _OTRA_FAMILIA = re.compile(r"\b(?:LOSA|DALA|CADENA|CONTRATRABE|TRABE|VIGA|MURO|ZAPATA)")
 # Las notas de familia de castillos y columnas («CASTILLOS 15X15 4#3 E#2@20») tampoco entran a
-# una pila: son de toda la familia, no de una marca.
-_NOTA_DE_FAMILIA = re.compile(r"\b(?:CASTILLO|ARMEX|COLUMNA)")
-# Un renglón numerado («4.- SE PERMITE…», «5) …»), en cualquier línea de un MTEXT.
-_NOTA_NUMERADA = re.compile(r"^\s*\d{1,2}[.\-)]+(?:\s|$)", re.M)
+# una pila: son de toda la familia, no de una marca. ARMEX es un armado prefabricado, no una
+# familia (R107).
+_NOTA_DE_FAMILIA = re.compile(r"\b(?:CASTILLO|COLUMNA)")
+# Un renglón numerado («4.- SE PERMITE…», «5) …», «a).- …», «B) …», R110), en cualquier línea de un
+# MTEXT.
+_NOTA_NUMERADA = re.compile(
+    r"^\s*(?:\d{1,2}[.\-)]+|[A-Za-z](?:\)[.\-]*|\.-)(?!\s*[#Ø\d]))(?:\s|$)", re.M
+)
 
 # Un cuadro con títulos (como lo lee ``detection.schedules``): un renglón de al menos tres títulos
 # cortos, dos de ellos de cuadro, y debajo un renglón por marca.
@@ -206,6 +211,9 @@ class Rechazo(BaseModel):
     # Las familias que nombra un texto con armado que no es la nota de ninguna: su palabra no es
     # el sujeto («2 VARILLAS #5 ANCLADA AL MURO O CADENA …» → dala, muro; R83).
     familias: list[str] = Field(default_factory=list)
+    # Un texto sin dueño en la columna de una etiqueta, más allá de donde su pila se cortó (R111):
+    # puede ser de esa etiqueta. Bloquea su lectura IA en lo que el texto dice; nunca es un dato.
+    posibles: list[str] = Field(default_factory=list)
 
 
 # ------------------------------------------------------------------------- qué es cada texto
@@ -271,7 +279,7 @@ def lo_lee_una_nota(texto: str) -> bool:
     for m in _SECCION.finditer(texto):
         if any(a <= m.start() < b for a, b in piezas):
             continue
-        lados = int(m.group(1)), int(m.group(2))
+        lados = float(m.group(1).replace(",", ".")), float(m.group(2).replace(",", "."))
         if all(_LADO_DE_SECCION_CM[0] <= lado <= _LADO_DE_SECCION_CM[1] for lado in lados):
             return True
     # Las mallas se leen en una familia que las lleva; varillas y estribos, en cualquiera.
@@ -358,6 +366,10 @@ class _Texto:
     @property
     def cx(self) -> float:
         return (self.x0 + self.x1) / 2
+
+    @property
+    def cy(self) -> float:
+        return (self.y0 + self.y1) / 2
 
 
 def _giros(textos: list[NormalizedEntity]) -> dict[str, int]:
@@ -1625,7 +1637,10 @@ def _casi_alcanza(
 
 
 def asociar(
-    entities: list[NormalizedEntity], frames: list[SheetFrame], config: TextPatternConfig
+    entities: list[NormalizedEntity],
+    frames: list[SheetFrame],
+    config: TextPatternConfig,
+    posibles: dict[str, set[str]] | None = None,
 ) -> tuple[list[Asociacion], list[Rechazo]]:
     """De qué marca es cada texto de armado, hoja por hoja; y lo que no se pudo pegar.
 
@@ -1633,7 +1648,8 @@ def asociar(
     (un renglón de un cuadro con títulos); su ``etiqueta_id`` es una etiqueta de definición, no
     una colocación. Los ``Rechazo`` son los renglones ambiguos, las etiquetas que se quedaron sin
     la pila que alcanzaban, los de otra familia que paraban una pila y todo texto con forma de
-    armado que no lee nadie. Ver el docstring del módulo."""
+    armado que no lee nadie. Ver el docstring del módulo. En ``posibles`` deja, por texto, las
+    etiquetas en cuya columna queda más allá de donde su pila se cortó (R111)."""
     textos = [e for e in entities if e.is_textual and e.text and e.text.strip()]
     hoja_de = _hoja_de(frames)
     hojas: dict[tuple, str] = {}
@@ -1649,8 +1665,9 @@ def asociar(
 
     asociaciones: list[Asociacion] = []
     rechazos: list[Rechazo] = []
+    posibles = posibles if posibles is not None else {}
     for llave, grupo in grupos.items():
-        a, r = _asociar_hoja(grupo, hojas[llave], config, de_notas, lineas)
+        a, r = _asociar_hoja(grupo, hojas[llave], config, de_notas, lineas, posibles)
         asociaciones += a
         rechazos += r
     asociaciones.sort(key=lambda a: (a.hoja, a.marca, a.etiqueta_id))
@@ -1684,6 +1701,7 @@ def _asociar_hoja(
     config: TextPatternConfig,
     de_notas: set[str],
     lineas: _Lineas,
+    posibles: dict[str, set[str]],
 ) -> tuple[list[Asociacion], list[Rechazo]]:
     clases = {e.entity_id: _clase(e, config, de_notas) for e in grupo}
     giros = _giros(grupo)
@@ -1701,6 +1719,7 @@ def _asociar_hoja(
     rechazos: list[Rechazo] = []
     duenos: list[NormalizedEntity] = []
     rechazados: set[str] = set()
+    columnas: list[tuple[list[_Texto], _Texto, list[_Texto], int | None, set[str]]] = []
     for giro in sorted(por_giro):
         locales = por_giro[giro]
         por_id = {t.id: t for t in locales}
@@ -1713,6 +1732,15 @@ def _asociar_hoja(
             if any(ARMADO_RE.search(c.texto) or _SECCION.search(c.texto) for c in celdas):
                 asociaciones.append(_asociacion(etiqueta, marca, hoja, celdas, "fila", cuadro))
         reparto = _pilas(locales, de_filas)
+        pila_de = {a.etiqueta.id: (a.sentido, propios) for a, propios in reparto.tomadas}
+        for t in locales:
+            if (
+                t.clase == "etiqueta"
+                and t.id not in de_filas
+                and not _es_de_varias(t.marca or "", config)
+            ):
+                sentido, propios = pila_de.get(t.id, (None, []))
+                columnas.append((locales, t, propios, sentido, de_filas))
         for renglon_id, marcas in reparto.ambiguos.items():
             rechazados.add(renglon_id)
             rechazos.append(
@@ -1756,8 +1784,67 @@ def _asociar_hoja(
                 )
             )
 
-    rechazos += _sin_dueno(grupo, hoja, clases, duenos, rechazados, config)
-    return asociaciones, rechazos
+    de_alguien = {e.entity_id for e in duenos}
+    for locales, etiqueta, propios, sentido, filas in columnas:
+        for t in _mas_alla_del_corte(locales, etiqueta, propios, sentido, de_alguien | filas):
+            posibles.setdefault(t.id, set()).add(etiqueta.marca or "")
+    sin_dueno = _sin_dueno(grupo, hoja, clases, duenos, rechazados, config)
+    for huerfano in sin_dueno:
+        if huerfano.motivo == "sin_dueno":
+            huerfano.posibles = sorted(posibles.get(huerfano.entidad_id, set()))
+    return asociaciones, rechazos + sin_dueno
+
+
+def _mas_alla_del_corte(
+    textos: list[_Texto],
+    etiqueta: _Texto,
+    pila: list[_Texto],
+    sentido: int | None,
+    de_alguien: set[str],
+) -> list[_Texto]:
+    """R111: los textos con armado o una sección que siguen en la columna de ``etiqueta`` más allá
+    de donde su pila se cortó (de renglón en renglón, a lo más 1.5 altos, encimados de lado con la
+    columna), sin dueño: pueden ser suyos. Sin pila se mira de los dos lados. Para en otra
+    etiqueta, en un texto con dueño, en uno de otra familia o en una nota, y en uno sin armado."""
+    x0 = min([etiqueta.x0, *(r.x0 for r in pila)])
+    x1 = max([etiqueta.x1, *(r.x1 for r in pila)])
+    indice = _Indice(textos)
+    fuera = {etiqueta.id, *(r.id for r in pila)}
+    salida: list[_Texto] = []
+    inicios = (
+        [(sentido, max(pila, key=lambda r: sentido * r.cy))]
+        if pila and sentido
+        else [
+            (+1, etiqueta),
+            (-1, etiqueta),
+        ]
+    )
+    for lado, desde in inicios:
+        actual = desde
+        while True:
+            cerca = [
+                t
+                for _h, t in _a_su_alcance(actual, lado, indice)
+                if t.id not in fuera and _traslapa(t, x0, x1)
+            ]
+            if not cerca:
+                break
+            t = cerca[0]
+            con_armado = (
+                ARMADO_RE.search(t.texto) is not None
+                or _SECCION.search(t.texto) is not None
+                or tiene_armado(t.texto)
+            )
+            if (
+                t.clase in ("etiqueta", "ajena", "familia", "nota")
+                or t.id in de_alguien
+                or not con_armado
+            ):
+                break
+            salida.append(t)
+            fuera.add(t.id)
+            actual = t
+    return salida
 
 
 def _nota_que_nombra(e: NormalizedEntity, hoja: str, config: TextPatternConfig) -> list[Rechazo]:

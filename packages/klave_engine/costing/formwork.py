@@ -66,7 +66,8 @@ def _section_m(props: dict, specs: dict | None, mark: str, family: str,
                default_m: tuple[float, float], factor: float) -> tuple[tuple[float, float], str]:
     declared = props.get("section_cm")
     if isinstance(declared, str) and "x" in declared:
-        a, b = (int(v) for v in declared.split("x"))
+        # A side keeps its decimals (72.5): never truncated (R106, R109).
+        a, b = (float(v) for v in declared.split("x"))
         return (a / 100.0, b / 100.0), "plano"
     if specs:
         spec = (specs.get("by_mark") or {}).get(mark.upper()) or (

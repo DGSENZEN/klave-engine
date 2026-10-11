@@ -25,7 +25,10 @@ from klave_engine.estructura._armado_texto import (
     CONSUMIDO,
     DOBLE_RE,
     ESTORBA,
+    LADO,
+    LADO_FINAL,
     OBJETO_AJENO_RE,
+    REFERENCIA,
     atado,
     de_objetos,
     fichas,
@@ -124,6 +127,11 @@ _JUNTA = r"\s*(?:Y|\+|/|-|,|&)\s*"  # «EYG», «2E+1G», «E/G», «2E-1G», «
 _E = r"E(?:ST(?:RIBOS?|\.)?|\.)?"
 _G = r"G(?:RAPAS?|\.)?"
 
+# Una referencia tras una pieza es suya, con las marcas a las que remite y lo que la cierra
+# (R110): «VER CORTE C-2», «(VER CORTE C-2)», «VER CORTES C-1 Y C-2», «VER DET. K-2.».
+_VER = REFERENCIA
+_PALABRAS_DE_PUNTERO = re.compile(r"VER\s+(?:CORTES?|DETALLES?|DETS?\.?)")
+
 # La cantidad de un juego no puede ser el número de la varilla anterior («4#3 E#2@15»), una
 # separación («@20E#3»), parte de una medida («15X30 E#2@20») ni el número de una marca («K-7
 # E#3@20»): no la precede una letra, un dígito, «#», «@», «.» o «-».
@@ -144,7 +152,7 @@ _ESTRIBOS_RE = re.compile(
     rf"(?:{_LINEA}(?:Y\s+)?CENTRO\s*@\s*(?P<centro>{_SEP}){_CM})?"
     rf"|{_LINEA}@\s*(?P<sep>{_SEP}){_CM}"
     r")?"
-    rf"(?:{_LINEA}(?P<ref>VER\s+(?:CORTE|DETALLE|DET\.?)))?"
+    rf"(?:{_LINEA}(?P<ref>{_VER}))?"
 )
 
 # El cuerpo de una malla. Su lecho («LS», «L.I.», «LECHO SUPERIOR») y sus sentidos («A/S»,
@@ -168,15 +176,17 @@ _VARILLAS_RE = re.compile(
     rf"|(?<![\d.#@])(?P<n>{_CUENTA})\s*(?:[-)]\s*)?"
     r"(?:(?:VARILLAS|VARS?\.?|PZAS?\.?|PIEZAS|V)(?:\s+DEL?)?)?)"
     rf"\s*#\s*(?P<num>{_NUM})(?!\s*@)"
-    r"(?:(?:\s*\|\s*|\s+)(?P<ref>VER\s+(?:CORTE|DETALLE|DET\.?)))?"
+    rf"(?:(?:\s*\|\s*|\s+)(?P<ref>{_VER}))?"
 )
 _CIFRA_O_GATO = "0123456789#.@"  # lo que, pegado delante, parte un número (aunque esté leído)
 _PEGADO_RE = re.compile(rf"[^ {CONSUMIDO}]*$")
 # Una cuenta suelta delante de una pieza la deja a medias: «4 », «4 VARS », «4 VARILLAS DE »,
 # «4 PZAS », «(4) », «4-», «4VARS », «4 DE », «4 X », «3 PARRILLAS ». No es cuenta el número
-# de una marca («K-1 ») ni el final de una medida («15 X 30 », «H=20 »).
+# de una marca («K-1 ») ni el final de una medida («15 X 30 », «H=20 », los decimales de
+# «20X40,5 », R109).
 _CUENTA_ANTES_RE = re.compile(
-    r"(?<![\w.=\-×#@])(?<![=X×]\s)(?:\(\s*\d+\s*\)|\d+)"
+    r"(?<![\w.=\-×#@])(?<![=X×]\s)(?<![X×]\d,)(?<![X×]\d\d,)(?<![X×]\d\d\d,)"
+    r"(?<![X×]\s\d,)(?<![X×]\s\d\d,)(?<![X×]\s\d\d\d,)(?:\(\s*\d+\s*\)|\d+)"
     r"\s*(?:-|[X×](?![A-Z0-9])|(?:VARILLAS?|VARS?\.?|V|PZAS?\.?|PIEZAS?|PARRILLAS?|LECHOS?"
     r"|CAPAS?|MALLAS?|DEL?)(?:\s+DEL?)?)?\s*$"
 )
@@ -913,8 +923,8 @@ def _piezas(textos: list[str], familia: str) -> _Piezas:
 # Una sección o las tres medidas de una pieza («15X20», «20 X 40 CMS», «15X20X40») y una longitud
 # («L=8.00 M», «LONG. 8», «LONGITUD DE 12.00 M»): el parser las tiene por contexto (R91).
 _SECCION_EN_TEXTO = re.compile(
-    r"(?<![\dxX×])\d{1,3}(?:\.\d+)?\s*[xX×]\s*\d{1,3}(?:\.\d+)?"
-    r"(?:\s*[xX×]\s*\d{1,3}(?:\.\d+)?)?(?:\s*CMS?\.?)?"
+    rf"(?<![\dxX×.]){LADO}\s*[xX×]\s*(?:\d{{1,3}}(?:\.\d+)?\s*[xX×]\s*)?{LADO_FINAL}"
+    r"(?:\s*CMS?\.?)?"
 )
 _LONGITUD_EN_TEXTO = re.compile(
     r"\bL\s*=\s*\d+(?:[.,]\d+)?(?:\s*(?:M|MTS?|CMS?)\b)?"
@@ -947,7 +957,13 @@ def tramos_de_armado(texto: str) -> tuple[str, list[tuple[int, int]]]:
             # «K 7 E#3@1S», «TRABE T 1 E#3@1S»: la cifra tras unas letras sueltas puede ser el
             # número de una marca escrita con espacio; el juego empieza en su cabeza.
             inicio = cuenta.end()
-        tramos.append((inicio, p.fin))
+        fin = p.fin
+        destino = _PALABRAS_DE_PUNTERO.search(leida.texto, inicio, p.fin)
+        if destino is not None:
+            # La pieza se queda con su referencia, no con las marcas a las que remite (R110): ésas
+            # quedan a la vista de la gramática de marcas y del respaldo.
+            fin = destino.end()
+        tramos.append((inicio, fin))
     tramos += [m.span() for m in _SECCION_EN_TEXTO.finditer(leida.texto)]
     tramos += [m.span() for m in _LONGITUD_EN_TEXTO.finditer(leida.texto)]
     enteros = []
@@ -1025,6 +1041,39 @@ def tiene_armado(texto: str) -> bool:
     return bool(_piezas([texto], "castillo").reconocidas)
 
 
+_CON_GATO_RE = re.compile(r"#\s*(\d+(?:\.5)?)(?![\d.])|@\s*\d")
+
+
+def _con_gato(texto: str) -> bool:
+    """Si ``texto`` (como lo lee el parser) trae una varilla que existe («#3», también escrita
+    «Ø3» o «No. 3») o una separación («@20»). «TABLA No. 1» no: no hay varilla del #1."""
+    return any(m[1] is None or m[1] in NUMEROS for m in _CON_GATO_RE.finditer(texto))
+
+
+# R107: un armado prefabricado (electrosoldado): no es una familia ni varillas que se lean.
+_ARMEX_RE = re.compile(r"(?<![A-Z])ARMEX(?![A-Z])")
+ARMEX_RE = _ARMEX_RE
+
+
+def lo_ve_el_parser(texto: str) -> bool:
+    """Si el parser lee o avisa algo de armado en ``texto`` (R108): un tramo de
+    ``tramos_de_armado`` (una sección, una longitud), una pieza que reconoce, se lea o se avise
+    (una malla suelta «#3@20» también), o un aviso que cita una varilla que existe o una
+    separación («V#3 @15 CMS AMBOS SENTIDOS», «3.- @20», «… VARILLA ADICIONAL #3»). Otra cifra sin
+    armado («NPT +3.50», «ESC 1:50», «TABLA No. 1») no: el parser la avisa, pero no es armado."""
+    if not re.search(r"\d", texto):
+        return False
+    if tramos_de_armado(texto)[1] or _piezas([texto], "castillo").reconocidas:
+        return True
+    if not _con_gato(normalizar(texto)[0]):
+        return False
+    return any(
+        _con_gato(normalizar(cita)[0])
+        for aviso in parsear_armado([texto], "castillo").avisos
+        for cita in re.findall(r"«([^»]*)»", aviso)
+    )
+
+
 def parsear_armado(textos: list[str], familia: str) -> Armado:
     """Lee los textos de un armado (en orden, uno por línea) para un elemento de ``familia``.
 
@@ -1075,6 +1124,15 @@ def parsear_armado(textos: list[str], familia: str) -> Armado:
         for a, b in sin_lo_ajeno(*entero(*mala)):
             avisos.append((a, _aviso_sin_leer(letrero[a:b].strip())))
             for i in range(a, b):
+                consumido[i] = True
+
+    # R107: ARMEX es armado prefabricado: ni varillas ni estribos que el parser lea; se avisa.
+    for m in _ARMEX_RE.finditer(texto):
+        if not any(consumido[m.start() : m.end()]):
+            avisos.append(
+                (m.start(), f"armado prefabricado «{letrero[m.start() : m.end()]}»: no se lee")
+            )
+            for i in range(m.start(), m.end()):
                 consumido[i] = True
 
     # 5. Lo que nadie leyó: si no es contexto, se avisa.

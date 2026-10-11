@@ -1,8 +1,10 @@
-"""R104: la lectura no pierde nada. Cada texto del plano con un tramo de armado
-(``tramos_de_armado``: varillas, estribos, una malla, una sección, una longitud) lo toma una
-lectura —que lee o cita cada tramo— o está en los rechazos. Se mira en Marina, en PRUEBA-1 (si
-están los dibujos) y en cada sonda de las rondas de las tareas 7 y 8, como nota suelta, como nota
-numerada y como renglón de la pila de una etiqueta."""
+"""R104, R108: la lectura no pierde nada. Cada renglón del plano en el que el parser lee o avisa
+algo de armado (un tramo de ``tramos_de_armado``: varillas, estribos, una malla, una sección, una
+longitud; y lo que lee o avisa sin tramo: una malla suelta «#3@20», «V#3 @15», «@20», un «#3»
+suelto) lo toma una lectura —que lee cada tramo o lo cita entero, en sus fronteras— o está en los
+rechazos. Se mira en Marina, en PRUEBA-1 (si están los dibujos) y en cada sonda de las rondas de
+las tareas 7, 8 y 8b, como nota suelta, como nota numerada y como renglón de la pila de una
+etiqueta."""
 
 import re
 from collections import defaultdict
@@ -21,7 +23,8 @@ from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.dxf.entities import NormalizedEntity
 from klave_engine.dxf.harmonize import harmonize_units
 from klave_engine.dxf.parser import DxfParser
-from klave_engine.estructura.armado import parsear_armado, tramos_de_armado
+from klave_engine.estructura._armado_texto import normalizar
+from klave_engine.estructura.armado import NUMEROS, _piezas, parsear_armado, tramos_de_armado
 
 C = TextPatternConfig()
 _DATOS = Path(__file__).resolve().parents[1] / "data" / "raw"
@@ -29,9 +32,16 @@ _MARINA = _DATOS / "marina-4" / "converted" / "02 ESTRUCTURAL L.04 - 26.01.15.dx
 _PRUEBA_1 = _DATOS / "estructural_l04" / "drawings" / "PRUEBA-1.dxf"
 
 
-_LADO = r"\d+(?:\.\d+)?"
+_LADO = r"\d+(?:[.,]\d+)?"
 _SECCION = re.compile(rf"{_LADO}\s*[X×]\s*{_LADO}(?:\s*[X×]\s*{_LADO})?(?:\s*CMS?\.?)?")
 _LONGITUD = re.compile(r"(?:L\s*=|LONG\.?|LONGITUD\b).*")
+# Lo que tiene forma de armado sin ser un tramo (R108): la continuación de unos estribos por zonas
+# («CENTRO@20»), una varilla o una malla sin cuenta («#3», «#3@20»), una separación («@20»).
+_FORMA = re.compile(
+    r"(?:CENTRO|EXT\w*)\.?\s*@\s*\d+(?:\.\d+)?|[#Ø]\s*\d+(?:\.\d+)?(?:\s*@\s*\d+(?:\.\d+)?)?"
+    r"|@\s*\d+(?:\.\d+)?"
+)
+_ZONA = re.compile(r"(CENTRO|EXT\w*)\.?\s*@\s*(\d+(?:\.\d+)?)")
 
 
 def _plano(texto: str) -> str:
@@ -48,21 +58,102 @@ def _claves(armado) -> set[tuple]:
     )
 
 
-def _leido_o_citado(tramo: str, s: ElementSpec) -> bool:
-    """Si la lectura ``s`` lee el tramo o lo dice en un aviso. Independiente del lector: una
-    sección se compara por sus lados; una pieza, leída sola, con lo que la lectura tiene."""
+class _Tramo(str):
+    """Un tramo del renglón y si empieza y acaba en una frontera de ficha del renglón."""
+
+    izquierda: bool
+    derecha: bool
+
+
+def _citado(t: _Tramo, citas: list[str]) -> bool:
+    """Si una cita trae el tramo entero (R108): nunca un pedazo suyo, nunca una coincidencia fuera
+    de las comillas; y donde el tramo empieza o acaba una ficha del renglón, en la cita también."""
+    izquierda = r"(?<![A-Z0-9])" if t.izquierda else ""
+    derecha = r"(?![A-Z0-9])" if t.derecha else ""
+    patron = re.compile(izquierda + re.escape(_plano(t)) + derecha)
+    return any(patron.search(c) for c in citas)
+
+
+def _leido_o_citado(tramo: _Tramo, s: ElementSpec) -> bool:
+    """Si la lectura ``s`` lee el tramo o lo cita entero en un aviso. Independiente del lector: una
+    sección se compara por sus lados; la continuación de unos estribos, con sus zonas; una pieza,
+    leída sola, con lo que la lectura tiene."""
     t = _plano(tramo)
-    avisos = [_plano(a) for a in s.avisos]
     citas = [_plano(c) for a in s.avisos for c in re.findall(r"«([^»]*)»", a)]
-    if any(t in a for a in avisos) or any(c and c in t for c in citas):
+    if _citado(tramo, citas):
         return True
     if _SECCION.fullmatch(t):
-        lados = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", t)[:2]]
+        lados = [float(n.replace(",", ".")) for n in re.findall(r"\d+(?:[.,]\d+)?", t)[:2]]
         return s.section_cm is not None and sorted(s.section_cm) == sorted(lados)
     if _LONGITUD.fullmatch(t):
         return s.length_m is not None
+    zona = _ZONA.fullmatch(t)
+    if zona is not None and s.armado is not None:
+        tramo_de_zona = "centro" if zona[1] == "CENTRO" else "extremos"
+        return any(
+            z.tramo == tramo_de_zona and abs(z.separacion_m * 100 - float(zona[2])) < 1e-6
+            for j in s.armado.estribos
+            for z in j.zonas
+        )
+    separacion = re.fullmatch(r"@\s*(\d+(?:\.\d+)?)", t)
+    if separacion is not None and s.armado is not None:
+        # Una separación en su propio renglón («E#3» / «@20CMS»): la de unos estribos o una malla.
+        cm = float(separacion[1])
+        return any(
+            abs(z.separacion_m * 100 - cm) < 1e-6 for j in s.armado.estribos for z in j.zonas
+        ) or any(abs(m.separacion_m * 100 - cm) < 1e-6 for m in s.armado.parrillas)
     solo = _claves(parsear_armado([tramo], s.family))
     return bool(solo) and solo <= _claves(s.armado)
+
+
+def _lo_ve_el_parser(linea: str) -> bool:
+    """Si el parser lee o avisa algo de armado en el renglón (R108), mirado aquí sin el lector: un
+    tramo, una pieza que lee, o una cita con «#n», «Øn» o «@n»."""
+    if tramos_de_armado(linea)[1]:
+        return True
+    for familia in ("losa", "castillo"):
+        a = parsear_armado([linea], familia)
+        if a.longitudinales or a.estribos or a.parrillas:
+            return True
+        citas = [c for aviso in a.avisos for c in re.findall(r"«([^»]*)»", aviso)]
+        if any(_varilla_o_separacion(c) for c in citas):
+            return True
+    return False
+
+
+def _varilla_o_separacion(cita: str) -> bool:
+    """Una varilla que existe («#3», «Ø3», «No. 3») o una separación («@20»): «TABLA No. 1» no."""
+    leer = normalizar(cita)[0]
+    return bool(re.search(r"@\s*\d", leer)) or any(
+        n in NUMEROS for n in re.findall(r"#\s*(\d+(?:\.5)?)(?![\d.])", leer)
+    )
+
+
+def _tramos(linea: str) -> list[_Tramo]:
+    """Los tramos de armado del renglón, las piezas que el parser reconoce en él (también las que
+    no empiezan una ficha: el «2#4» de «4#5+2#4») y lo que tiene forma de armado fuera de ellos."""
+    citar, tramos = tramos_de_armado(linea)
+    leida = _piezas([linea], "castillo")
+    piezas = []
+    for p in leida.reconocidas:
+        a, b = p.inicio, p.fin
+        for ta, tb in leida.traducidas:  # «N° 3», «3/8"»: enteros, como los cita el parser
+            if ta < b and a < tb:
+                a, b = min(a, ta), max(b, tb)
+        piezas.append((a, b))
+    cubiertos = [*tramos, *piezas]
+    lados = list(tramos)
+    lados += [(a, b) for a, b in piezas if not any(x <= a and b <= y for x, y in tramos)]
+    for m in _FORMA.finditer(citar):
+        if not any(a <= m.start() < b for a, b in cubiertos):
+            lados.append(m.span())
+    salida = []
+    for a, b in lados:
+        t = _Tramo(citar[a:b])
+        t.izquierda = a == 0 or not citar[a - 1].isalnum()
+        t.derecha = b == len(citar) or not citar[b].isalnum()
+        salida.append(t)
+    return salida
 
 
 def _perdidos(inv: ScheduleInventory, entidades: list[NormalizedEntity]) -> list[str]:
@@ -80,15 +171,17 @@ def _perdidos(inv: ScheduleInventory, entidades: list[NormalizedEntity]) -> list
         if not (e.is_textual and e.text):
             continue
         for linea in e.text.split("\n"):
-            citar, tramos = tramos_de_armado(linea.strip())
-            if not tramos or any(_plano(linea) in r for r in rechazados[e.entity_id]):
+            linea = linea.strip()
+            if not _lo_ve_el_parser(linea):
+                continue
+            if any(_plano(linea) in r for r in rechazados[e.entity_id]):
                 continue
             if not lecturas[e.entity_id]:
-                perdidos.append(f"{e.entity_id} «{linea.strip()}»: ni se lee ni se rechaza")
+                perdidos.append(f"{e.entity_id} «{linea}»: ni se lee ni se rechaza")
                 continue
-            for a, b in tramos:
-                if not any(_leido_o_citado(citar[a:b], s) for s in lecturas[e.entity_id]):
-                    perdidos.append(f"{e.entity_id} «{linea.strip()}»: «{citar[a:b]}» se pierde")
+            for tramo in _tramos(linea):
+                if not any(_leido_o_citado(tramo, s) for s in lecturas[e.entity_id]):
+                    perdidos.append(f"{e.entity_id} «{linea}»: «{tramo}» se pierde")
     return perdidos
 
 
@@ -512,4 +605,29 @@ _SONDAS = [
     "Z-100A 4#3",
     "ZA-3 120X150 #4@20",
     "ZA-3 4#4 E#3@20",
+    # Tarea 8b, ronda 1 (R107–R110): lo que el parser lee o avisa sin tramo, secciones con
+    # decimales, punteros, números de nota con letra, frases de familia y ARMEX.
+    "1.- #3@20 A/S",
+    "3.- @20",
+    "1.- PARRILLA #4@20",
+    "LOSA ARMADA, PARRILLA SENCILLA CON V#3 @15 CMS AMBOS SENTIDOS. F'C=250 KG/CM², Y ESPESOR"
+    " DE e=12CMS",
+    "7.- EN LA CAPA DE COMPRESION SE COLOCARA UNA VARILLA ADICIONAL #3 AL CENTRO DE LAS CAJAS",
+    "L #3 PARA ARMAR, COLOCANDOSE COMO MINIMO UNO AL CENTRO DE CADA CAJA",
+    "K-1 20.5X40 4#3",
+    "K-1 20X40,5 4#3",
+    "20.5X40",
+    "K-1 15X15 VER CORTE C-2",
+    "E#2@15 (VER CORTE C-2)",
+    "E#2@15 VER CORTES C-1 Y C-2",
+    "E#2@15 VER CORTE C-2.",
+    "4#3 (VER DET. K-2)",
+    "a).- K-1 15X20 4#3 E#2@20",
+    "A) DALAS 15X20 4#3 E#2@20",
+    "ANCLAR A LA TRABE: 2#4",
+    "VER PLANO DE DALAS: 4#3 E#2@20",
+    "4V#4 E#3@20CMS\nCADENA DE DESPLANTE",
+    "ARMEX 15X30\nCADENA DE BORDE",
+    "MURO DE BLOCK\n10X20X40 Ò\n15X20X40",
+    "ARMEX 15X30",
 ]

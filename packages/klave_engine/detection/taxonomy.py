@@ -224,6 +224,7 @@ def _measurement_parts(detection: Detection, unit_to_m: float | None) -> list[st
         source_key = str(props.get("section_source") or "")
         source = {
             "cuadro": "según cuadro/detalle del plano",
+            "supuesto": "del plano, con un lado supuesto",
             "cota": "acotada en el plano",
         }.get(source_key, "medida del marcador" if source_key else "medida")
         declared = props.get("section_cm")

@@ -5,8 +5,10 @@ sus cotas son las que tienen sus dos puntos de definición sobre sus aristas."""
 
 import ezdxf
 import pytest
+from klave_engine.detection.results import DetectionType, make_detection
 from klave_engine.detection.schedules import (
     ElementSpec,
+    apply_schedule,
     build_schedule_inventory,
     merge_external_specs,
 )
@@ -156,8 +158,8 @@ def test_a_section_that_is_not_a_rectangle_is_never_one():
 
 def test_one_cota_on_a_square_section_is_an_assumed_square():
     # Una sola cota (15) en una sección dibujada cuadrada: se supone cuadrada, y eso es «supuesto»,
-    # nunca «detalle». En una que no es cuadrada no se supone nada (y sin cota vertical cerca no se
-    # reclama: como el lector viejo, que ahí no leía).
+    # nunca «detalle». En una que no es cuadrada no se supone nada, pero su sección lleva una cota:
+    # la sección es del plano y queda reclamada (R111), la IA no la llena.
     ents = [
         *_castillo("a", "K-1", 0.0, 0.0, ["4#3", "E#2@15"], (-0.375, 0.9, 0.375, 1.65), 15, None),
         *_castillo("b", "K-3", 5.0, 0.0, ["6#3", "E#2@15"], (4.625, 0.9, 5.375, 2.4), 15, None),
@@ -166,7 +168,9 @@ def test_one_cota_on_a_square_section_is_an_assumed_square():
     (k1,) = _cotas(inv, "K-1")
     assert (k1.section_cm, k1.seccion_supuesta) == ((15, 15), True)
     assert "una sola cota (15 cm)" in k1.avisos[0]
-    assert _cotas(inv, "K-3") == []
+    (k3,) = _cotas(inv, "K-3")
+    assert k3.section_cm is None and k3.campos_con_texto == ["seccion"]
+    assert "sólo su ancho (15 cm) está acotado" in k3.avisos[-1]
     d = construir_definiciones(inv, C)[0]["K-1"].seccion_cm
     assert (d.valor, d.fuente) == ((15, 15), "supuesto")
 
@@ -190,18 +194,18 @@ def test_a_beam_keeps_its_width_by_height():
 def test_a_section_drawn_off_its_cotas_is_a_second_reading():
     # K-8 en Marina: cotas 15×60 en un contorno de 0.789 × 2.602 (no está a escala). Se leen las
     # cotas, y la sección como está dibujada queda como otra lectura («geometria»): el desacuerdo
-    # se ve, y la definición elige las cotas.
+    # se ve, y la definición elige las cotas. La sección dibujada lleva sus décimas (R106).
     ents = _castillo("a", "K-8", 0.0, 0.0, ["8#4", "2E#3@20"], (-0.3945, 0.9, 0.3946, 3.5017),
                      15, 60)  # fmt: skip
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0)
     (k8,) = _cotas(inv, "K-8")
     (dibujada,) = _cotas(inv, "K-8", "geometria")
-    assert k8.section_cm == (15, 60) and dibujada.section_cm == (18, 59)
+    assert k8.section_cm == (15, 60) and dibujada.section_cm == (17.9, 59.1)
     assert "no coincide con sus cotas 15x60" in dibujada.avisos[0]
     assert inv.by_mark["K-8"].section_cm == (15, 60)
     d = construir_definiciones(inv, C)[0]["K-8"].seccion_cm
     assert (d.valor, d.fuente, d.en_conflicto) == ((15, 60), "detalle", False)
-    assert [(a.valor, a.fuente) for a in d.alternativas] == [((18, 59), "seccion_dibujada")]
+    assert [(a.valor, a.fuente) for a in d.alternativas] == [((17.9, 59.1), "seccion_dibujada")]
 
 
 def test_without_its_own_section_no_nearby_cota_is_taken():
@@ -272,3 +276,215 @@ def test_a_dimension_keeps_its_definition_points(tmp_path):
     assert [tuple(p) for p in d.properties["measured_segment"]] == [(1.0, 2.0), (3.5, 2.0)]
     x0, y0, x1, y1 = d.bbox
     assert x0 <= 1.0 and x1 >= 3.5 and y0 <= -0.2 and y1 >= 2.0
+
+
+# ------------------------------------------------- Tarea 8b, ronda 1: R106, R111, R112
+
+
+def _arista(entity_id, p, q):
+    """Un trazo suelto (una línea): pasa un poco de las esquinas, así nunca cierra un contorno."""
+    (x0, y0), (x1, y1) = p, q
+    dx, dy = (
+        (0.05 if x1 > x0 else -0.05 if x1 < x0 else 0),
+        (0.05 if y1 > y0 else -0.05 if y1 < y0 else 0),
+    )
+    return _poligono(entity_id, [(x0 - dx, y0 - dy), (x1 + dx, y1 + dy)], cerrado=False)
+
+
+def _detalle_sin_contorno(n, marca, x, y, caja, ancho, peralte, aristas=4):
+    """Un detalle de trabe como en Marina (ES-101…ES-302): el título encima y su sección debajo,
+    dibujada con trazos sueltos (ningún contorno cerrado), con su cota horizontal abajo y la
+    vertical a la izquierda, que comparten la esquina de abajo a la izquierda."""
+    x0, y0, x1, y1 = caja
+    lados = [((x0, y0), (x1, y0)), ((x0, y1), (x1, y1)), ((x0, y0), (x0, y1)), ((x1, y0), (x1, y1))]
+    ents = [_texto(f"{n}m", marca, x, y, alto=0.14)]
+    ents += [_arista(f"{n}a{i}", p, q) for i, (p, q) in enumerate(lados[:aristas])]
+    ents += [_cota(f"{n}h", (x0, y0), (x1, y0), ancho), _cota(f"{n}v", (x0, y1), (x0, y0), peralte)]
+    return ents
+
+
+_DETALLE = [(-10.0, -10.0, 20.0, 10.0)]
+
+
+def test_a_pair_of_cotas_sharing_a_corner_is_the_section_with_its_decimals():
+    # R106 (T2-13 en Marina, ES-202): sin contorno cerrado, el par de cotas que comparte una esquina
+    # y cuyas aristas están dibujadas es la sección, con sus decimales (72.5, nunca 72).
+    ents = _detalle_sin_contorno("a", "T2-13", 0.0, 2.6, (-1.2, 0.0, 1.2, 2.4), 75, 72.5)
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    (t,) = _cotas(inv, "T2-13")
+    assert t.section_cm == (75, 72.5) and t.avisos == []
+    assert "par de cotas 75x72.5" in t.source_text
+    d = construir_definiciones(inv, C)[0]["T2-13"].seccion_cm
+    assert (d.valor, d.fuente) == ((75, 72.5), "detalle")
+
+
+def test_a_pair_with_two_drawn_edges_is_no_section():
+    # R106 (T1-1 en Marina): con sólo dos aristas dibujadas no se sabe si el par es la sección.
+    ents = _detalle_sin_contorno("a", "T1-1", 0.0, 1.0, (-0.5, 0.0, 0.5, 0.75), 40, 20, aristas=2)
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert all(s.section_cm is None for s in _cotas(inv, "T1-1"))
+
+
+def test_a_link_of_a_chain_of_cotas_makes_no_pair():
+    # R106: un lado acotado en cadena (5 + 20 + 5) no es de un par (E3): el eslabón de 5 con el
+    # peralte no es la sección, aunque el estribo dibuje la cuarta arista.
+    ents = _detalle_sin_contorno("a", "T-9", 0.0, 2.2, (-0.6, 0.0, 0.6, 2.0), 30, 50)
+    ents = [e for e in ents if e.entity_id != "ah"]
+    ents += [
+        _cota("h1", (-0.6, 0.0), (-0.4, 0.0), 5),
+        _cota("h2", (-0.4, 0.0), (0.4, 0.0), 20),
+        _cota("h3", (0.4, 0.0), (0.6, 0.0), 5),
+        _arista("estribo", (-0.4, 0.05), (-0.4, 1.95)),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert all(s.section_cm is None for s in _cotas(inv, "T-9"))
+
+
+def test_two_labels_reaching_one_pair_both_claim_it():
+    # R106 con la regla de R81: un rectángulo de par que alcanzan dos etiquetas no es de ninguna;
+    # las dos lo reclaman (R111) y se rechazan «ambigua».
+    ents = _detalle_sin_contorno("a", "T-1", -0.3, 2.6, (-1.2, 0.0, 1.2, 2.4), 60, 60)
+    ents.append(_texto("bm", "T-2", 0.6, 2.6, alto=0.14))
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s.section_cm for s in _cotas(inv, "T-1")] == [None]
+    assert [s.section_cm for s in _cotas(inv, "T-2")] == [None]
+    ambiguas = sorted(r.marcas for r in inv.rechazos if r.motivo == "ambigua")
+    assert ambiguas == [["T-1", "T-2"], ["T-2", "T-1"]]
+
+
+def test_a_pair_inside_a_shape_that_is_not_a_rectangle_is_never_its_section():
+    # R106 (K-15A): una sección dibujada que no es un rectángulo nunca da el de un par de cotas.
+    contorno = [(-1.5, 0.9), (1.5, 0.9), (1.5, 3.65), (0.5, 3.65), (0.5, 2.4), (-1.5, 2.4)]
+    ents = [
+        _texto("m", "K-15A", 0.0, 0.0),
+        _texto("r", "8#6", -0.2, 0.18, alto=0.10, centrado=False),
+        _poligono("c", contorno),
+        _cota("h", (-1.5, 0.9), (1.5, 0.9), 60),
+        _cota("v", (-1.5, 2.4), (-1.5, 0.9), 30),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0)
+    assert [s.section_cm for s in _cotas(inv, "K-15A")] == [None]
+
+
+def test_a_cota_with_decimals_on_an_outline_keeps_them():
+    # R106: 72.5 se queda 72.5 (antes, el redondeo del banco lo hacía 72).
+    ents = [
+        _texto("m", "T-1", 0.0, 2.9, alto=0.14),
+        _rectangulo("c", -1.0, 0.0, 1.0, 2.4),
+        _cota("h", (-1.0, 0.0), (1.0, 0.0), 30),
+        _cota("v", (-1.0, 2.4), (-1.0, 0.0), 72.5),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    (t,) = _cotas(inv, "T-1")
+    assert t.section_cm == (30, 72.5)
+
+
+def test_a_rotated_linear_dimension_measures_along_its_angle():
+    # Una cota lineal a 0° mide en x aunque sus puntos estén a distinta altura: es el ancho.
+    h = _cota("h", (-1.0, 0.0), (1.0, 0.0), 30)
+    h = h.model_copy(
+        update={"properties": {**h.properties, "dimtype": 0, "angle": 0.0,
+                               "measured_segment": [(-1.0, 2.4), (1.0, 0.0)]}}
+    )  # fmt: skip
+    ents = [
+        _texto("m", "T-1", 0.0, 2.9, alto=0.14),
+        _rectangulo("c", -1.0, 0.0, 1.0, 2.4),
+        h,
+        _cota("v", (-1.0, 2.4), (-1.0, 0.0), 60),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    (t,) = _cotas(inv, "T-1")
+    assert t.section_cm == (30, 60)
+
+
+def test_a_dimension_keeps_its_type_and_angle(tmp_path):
+    # R106: el normalizador guarda el tipo de la cota y su ángulo (en qué eje mide).
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    msp.add_linear_dim(base=(0, -0.2), p1=(1.0, 2.0), p2=(3.5, 2.5), angle=0).render()
+    msp.add_linear_dim(base=(-0.3, 0), p1=(0.0, 0.0), p2=(0.5, 2.0), angle=90).render()
+    doc.saveas(tmp_path / "cotas.dxf")
+    dims = [
+        e
+        for e in DxfParser().parse_file(tmp_path / "cotas.dxf").entities
+        if e.entity_type == EntityType.dimension
+    ]
+    assert sorted((d.properties["dimtype"], d.properties["angle"]) for d in dims) == [
+        (0, 0.0),
+        (0, 90.0),
+    ]
+
+
+def test_a_stack_owner_is_a_cotas_candidate_without_armado_near_it():
+    # R111 (P-5 en Marina, ES-000): su pila es un renglón ancho cuyo centro queda a más de 0.8 de
+    # la etiqueta; antes no era candidata y su 70x70 no se leía.
+    ents = [
+        _texto("m", "P-5", 0.0, 0.0),
+        _texto("r", "4#8 + 12#6 CORRIDAS EN TODA SU ALTURA SIN TRASLAPES", -0.3, 0.18, alto=0.10,
+               centrado=False),
+        _rectangulo("c", -0.5, 0.9, 0.5, 1.9),
+        _cota("h", (-0.5, 0.9), (0.5, 0.9), 70),
+        _cota("v", (0.5, 1.9), (0.5, 0.9), 70),
+    ]  # fmt: skip
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0)
+    (p5,) = _cotas(inv, "P-5")
+    assert p5.section_cm == (70, 70)
+
+
+def test_a_shared_outline_is_claimed_by_every_label_that_reaches_it():
+    # R111 (D-3 en Marina): dos etiquetas alcanzan una sección; ninguna la toma y las dos la
+    # reclaman aunque no haya cotas «cercanas»: la IA no la llena (antes, D-3: 25x100 de la IA).
+    ents = [
+        _texto("m1", "D-3", -0.5, 4.3, alto=0.14),
+        _texto("m2", "D-4", 0.5, 4.3, alto=0.14),
+        _rectangulo("c", -1.0, 0.0, 1.0, 4.0),
+        _cota("h", (-1.0, 0.0), (1.0, 0.0), 100),
+        _cota("v", (-1.0, 4.0), (-1.0, 0.0), 200),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    for marca in ("D-3", "D-4"):
+        (s,) = _cotas(inv, marca)
+        assert s.section_cm is None and s.campos_con_texto == ["seccion"]
+    merge_external_specs(inv, [_ia("D-3", family="dala", section_cm=(25, 100))], C)
+    assert "D-3" not in inv.by_mark or inv.by_mark["D-3"].section_cm is None
+
+
+def test_a_drawn_section_close_to_its_cotas_corroborates_silently():
+    # R112: en un cuadro sin escala, la sección dibujada a 2 cm o 10 % de sus cotas las confirma
+    # (antes: otra lectura «geometria», dibujada 21.5x39.2 contra 20x40).
+    ents = _castillo("a", "K-1", 0.0, 0.0, ["4#3", "E#2@15"], (-0.43, 0.9, 0.43, 2.472), 20, 40)
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0)
+    (k1,) = _cotas(inv, "K-1")
+    assert k1.section_cm == (20, 40) and _cotas(inv, "K-1", "geometria") == []
+
+
+def test_an_assumed_side_is_stamped_supuesto_not_cuadro():
+    # R112: una sección con un lado supuesto se estampa «supuesto», nunca «cuadro».
+    ents = _castillo("a", "K-1", 0.0, 0.0, ["4#3", "E#2@15"], (-0.375, 0.9, 0.375, 1.65), 15, None)
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0)
+    k1 = make_detection("d1", DetectionType.column_tag, "K-1", (0, 0, 1, 1), 0.8, [], "m", [])
+    assert apply_schedule([k1], inv, meters_factor=1.0) == 1
+    assert (k1.properties["section_cm"], k1.properties["section_source"]) == ("15x15", "supuesto")
+
+
+def test_a_cota_whose_unit_the_style_does_not_say_is_never_converted():
+    # PRUEBA-1 (CR-1): cotas «15» y «20» con dimlfac 40 en un dibujo en metros (1 unidad mostrada =
+    # 2.5 cm). Antes se leía 37.5x50; su unidad no se sabe: no se toma, la sección queda
+    # reclamada y la IA no la llena.
+    def cota(entity_id, p, q, mostrado):
+        c = _cota(entity_id, p, q, mostrado)
+        props = {**c.properties, "dimlfac": 40.0, "display_text": f"{mostrado:g}"}
+        return c.model_copy(update={"properties": props})
+
+    ents = [
+        _texto("m", "CR-1", 0.0, 2.0, alto=0.22),
+        _rectangulo("c", -0.54, 0.0, 0.54, 1.44),
+        cota("h", (-0.54, 0.0), (0.54, 0.0), 15),
+        cota("v", (-0.54, 1.44), (-0.54, 0.0), 20),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    (cr,) = _cotas(inv, "CR-1")
+    assert cr.section_cm is None and cr.campos_con_texto == ["seccion"]
+    assert "cota «15» con un factor de escala que no dice su unidad (1 unidad = 2.5 cm)" in (
+        " ".join(cr.avisos)
+    )

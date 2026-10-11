@@ -153,7 +153,7 @@ _REFERENCIA = re.compile(
 # ``_ANTES_DE_LA_MARCA`` fichas sin armado, sin contar las que se saltan (``_SE_SALTA``). En un
 # texto con armado también encabeza una referencia al principio («VER CORTE C-2 30X30 8#6», R102);
 # el título de un dibujo (``titulos``), no: «VER CORTE C-2» solo remite.
-_ANTES_DE_LA_PALABRA = r"^\s*(?:\d{1,2}(?:\.-?|-|\))\s*)?"
+_ANTES_DE_LA_PALABRA = r"^\s*(?:(?:\d{1,2}(?:\.-?|-|\))|[A-Za-z](?:\)(?:\.-?)?|\.-))\s*)?"
 _TITULO = re.compile(
     rf"{_ANTES_DE_LA_PALABRA}(?P<palabra>(?:{_PALABRAS_DE_CORTE})(?![A-Z])\.?)", re.I
 )
@@ -226,6 +226,19 @@ def _referencias(texto: str, config: TextPatternConfig) -> list[_Referencia]:
         if puntero:
             hasta = m.start()
     return referencias[::-1]
+
+
+def punteros(texto: str, config: TextPatternConfig | None = None) -> list[str]:
+    """Los punteros de un texto con armado (R102, R110), como se escribieron: «VER CORTE C-2»,
+    «VER CORTES C-1 Y C-2», «VER DET. K-2.». Remiten el armado a otro dibujo: quien lee el texto
+    no toma de otra parte lo que el puntero remite."""
+    if not _con_armado(texto):
+        return []
+    return [
+        texto[r.inicio : r.fin].strip().rstrip(")")
+        for r in _referencias(texto, config or TextPatternConfig())
+        if r.puntero
+    ]
 
 
 def sin_referencias(texto: str, config: TextPatternConfig | None = None) -> str:

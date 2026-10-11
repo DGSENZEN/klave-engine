@@ -59,11 +59,17 @@ from klave_engine.dxf.units import DrawingUnits
 logger = get_logger(__name__)
 
 
-def _typical_column_section(detections: list[Detection]) -> tuple[int, int, int] | None:
+def _lado(cm: float) -> int | float:
+    return int(cm) if cm == int(cm) else cm
+
+
+def _typical_column_section(
+    detections: list[Detection],
+) -> tuple[int | float, int | float, int] | None:
     """The section most columns declare (cuadro or marker), for the columns
     that declare none. Only sections bound to a column mark count — never
     the most frequent NxM of the whole sheet, which may be a zapata."""
-    counts: Counter[tuple[int, int]] = Counter()
+    counts: Counter[tuple[int | float, int | float]] = Counter()
     for det in detections:
         if det.detection_type != DetectionType.column_tag:
             continue
@@ -73,7 +79,8 @@ def _typical_column_section(detections: list[Detection]) -> tuple[int, int, int]
         if not isinstance(declared, str) or "x" not in declared:
             continue
         try:
-            a, b = (int(float(v)) for v in declared.lower().split("x"))
+            # A side keeps its decimals (22.5): never truncated (R109).
+            a, b = (_lado(float(v)) for v in declared.lower().split("x"))
         except ValueError:
             continue
         counts[(min(a, b), max(a, b))] += 1

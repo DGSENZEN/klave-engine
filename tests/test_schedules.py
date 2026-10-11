@@ -57,7 +57,7 @@ def test_detail_annotation_and_family_note(tmp_path):
     def build(msp):
         msp.add_text("C-1", height=0.3).set_placement((0, 0))
         msp.add_text("30x40  8#5  E#3@15", height=0.2).set_placement((1.0, -0.4))
-        msp.add_text("ARMEX 15X30", height=0.2).set_placement((40, 40))  # a general note
+        msp.add_text("CASTILLOS 15X30", height=0.2).set_placement((40, 40))  # a general note
         msp.add_text("DALA 15x30 4#3,E#2@20", height=0.2).set_placement((40, 38))
         msp.add_text("ZAPATA PARRILLA #4@20 AMBOS SENTIDOS", height=0.2).set_placement((40, 36))
 
@@ -75,7 +75,7 @@ def test_detail_annotation_and_family_note(tmp_path):
 def test_apply_stamps_sections_by_authority(tmp_path):
     def build(msp):
         msp.add_text("K-1 15x20 4#3 E#2@20", height=0.2).set_placement((0, 0))
-        msp.add_text("ARMEX 15X30", height=0.2).set_placement((10, 10))
+        msp.add_text("CASTILLOS 15X30", height=0.2).set_placement((10, 10))
 
     inventory = build_schedule_inventory(_entities(tmp_path, build))
     k1 = make_detection("d1", DetectionType.column_tag, "K-1", (0, 0, 1, 1), 0.8, [], "m", [])
@@ -1673,7 +1673,14 @@ def test_a_trailing_pointer_keeps_its_reference_wherever_it_sits(
             ["muro", "dala"],
         ),
         ("ANCLAR A LA TRABE CON 2#4", None, ["trabe"]),
-        ("ARMEX 15X30 CADENA DE BORDE", None, ["castillo", "dala"]),  # dos familias
+        # «WORD:» es sujeto sólo a la cabeza (R110).
+        ("ANCLAR A LA TRABE: 2#4", None, ["trabe"]),
+        ("VER PLANO DE DALAS: 4#3 E#2@20", None, ["dala"]),
+        # Un número de nota con letra es un número de nota (R110).
+        ("A) DALAS 15X20 4#3 E#2@20", "dala", None),
+        ("a).- CASTILLOS 15X15 4#3 E#2@20", "castillo", None),
+        # ARMEX es armado prefabricado, no una familia (R107): sólo la cadena, que no es sujeto.
+        ("ARMEX 15X30 CADENA DE BORDE", None, ["dala"]),
         ("4V#4 E#3@20CMS CADENA DE DESPLANTE", None, ["dala"]),  # PRUEBA-1
     ],
 )
@@ -1688,3 +1695,144 @@ def test_a_family_note_needs_its_family_word_as_the_subject(tmp_path, nota, fami
         assert [(r.motivo, r.texto, r.marcas, r.familias) for r in inv.rechazos] == [
             ("sin_lector", nota, [], familias)
         ]
+
+
+# ------------------------------------------------- Tarea 8b, ronda 1: R107, R109, R110, R111
+
+
+@pytest.mark.parametrize(
+    "texto,seccion,rebar",
+    [
+        ("K-1 20.5X40 4#3", (20.5, 40), "4#3"),  # antes: la sección no se veía y la IA la llenaba
+        ("K-1 20X40,5 4#3", (20, 40.5), "4#3"),  # antes: 20x40 y «5 4#3» sin leer
+    ],
+)
+def test_a_section_with_decimals_is_read_with_them(tmp_path, texto, seccion, rebar):
+    # R109: una sección con decimales (punto o coma) se lee con ellos, nunca truncada.
+    inv = build_schedule_inventory(_notas(tmp_path, [texto]), frames=_frame())
+    (s,) = inv.specs
+    assert (s.section_cm, s.rebar, s.avisos) == (seccion, rebar, [])
+    assert "seccion" in campos_de_fragmento(texto, "castillo")
+    merge_external_specs(inv, [_ia("K-1", section_cm=(40, 40))], C)
+    assert inv.by_mark["K-1"].section_cm == seccion
+
+
+def test_a_pointer_claims_the_bars_and_the_stirrups(tmp_path):
+    # R110: «K-1 15X15 VER CORTE C-2» remite el armado a un corte: las varillas y los estribos son
+    # del plano (por referencia), nunca de la IA; el puntero se guarda.
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-1 15X15 VER CORTE C-2"]), frames=_frame())
+    (s,) = inv.specs
+    assert s.campos_con_texto == ["seccion", "longitudinales", "estribos"]
+    assert s.avisos == ["armado remitido a otro dibujo: «VER CORTE C-2»"]
+    merge_external_specs(inv, [_ia("K-1", rebar="4#4", stirrups="E#3@20")], C)
+    k1 = inv.by_mark["K-1"]
+    assert (k1.section_cm, k1.rebar, k1.stirrups) == ((15, 15), None, None)
+
+
+@pytest.mark.parametrize(
+    "renglon,estribos",
+    [
+        ("E#2@15 (VER CORTE C-2)", "E#2@15 VER CORTE"),
+        ("E#2@15 VER CORTES C-1 Y C-2", "E#2@15 VER CORTE"),
+        ("E#2@15 VER CORTE C-2.", "E#2@15 VER CORTE"),
+    ],
+)
+def test_a_pointer_in_a_stack_keeps_its_reference(tmp_path, renglon, estribos):
+    # R110: el puntero entre paréntesis, en plural o con punto se guarda como referencia; antes el
+    # renglón quedaba sin leer y los estribos ilegibles.
+    inv = build_schedule_inventory(_stack_entities(tmp_path, "K-1", ["4#3", renglon]), C)
+    k1 = inv.by_mark["K-1"]
+    assert (k1.rebar, k1.stirrups, k1.avisos) == ("4#3", estribos, [])
+
+
+def test_a_letter_note_number_is_a_note_number(tmp_path):
+    # R110: «a).-» es el número de la nota, no algo sin leer.
+    inv = build_schedule_inventory(_notas(tmp_path, ["a).- K-1 15X20 4#3 E#2@20"]), frames=_frame())
+    (s,) = inv.specs
+    assert (s.mark, s.section_cm, s.rebar, s.stirrups, s.avisos) == (
+        "K-1",
+        (15, 20),
+        "4#3",
+        "E#2@20",
+        [],
+    )
+
+
+def _mtexto(tmp_path, textos):
+    doc = ezdxf.new("R2010")
+    for i, texto in enumerate(textos):
+        doc.modelspace().add_mtext(
+            texto.replace("\n", "\\P"), dxfattribs={"char_height": 0.2}
+        ).set_location((0, i * 5.0))
+    doc.saveas(tmp_path / "mtexto.dxf")
+    return DxfParser().parse_file(tmp_path / "mtexto.dxf").entities
+
+
+def test_a_family_phrase_line_labels_its_armado(tmp_path):
+    # R107 (PRUEBA-1): un renglón que es sólo el nombre de la familia, sobre o bajo renglones de
+    # armado, es la etiqueta de la familia; antes era un rechazo.
+    inv = build_schedule_inventory(
+        _mtexto(tmp_path, ["4V#4 E#3@20CMS\nCADENA DE DESPLANTE"]), frames=_frame()
+    )
+    (s,) = inv.specs
+    assert (s.mark, s.family, s.rebar, s.stirrups, s.avisos) == (
+        "DALA",
+        "dala",
+        "4#4",
+        "E#3@20",
+        [],
+    )
+    assert inv.rechazos == []
+
+
+def test_armex_is_prefab_armado_not_a_family(tmp_path):
+    # R107: ARMEX no es una familia ni varillas que se lean: se cita y reclama varillas y estribos.
+    inv = build_schedule_inventory(
+        _mtexto(tmp_path, ["ARMEX 15X30\nCADENA DE BORDE"]), frames=_frame()
+    )
+    (s,) = inv.specs
+    assert (s.family, s.section_cm, s.rebar, s.stirrups) == ("dala", (15, 30), None, None)
+    assert s.avisos == ["armado prefabricado «ARMEX»: no se lee"]
+    assert s.campos_con_texto == ["seccion", "longitudinales", "estribos"]
+    assert campos_de_fragmento("ARMEX", "castillo") == ["longitudinales", "estribos"]
+    # Sola, no es la nota de los castillos (antes: castillo 15x30).
+    sola = build_schedule_inventory(_notas(tmp_path, ["ARMEX 15X30"], "sola.dxf"), frames=_frame())
+    assert sola.by_family == {} and [r.motivo for r in sola.rechazos] == ["sin_dueno"]
+
+
+def test_piece_sizes_under_a_family_name_are_not_armado(tmp_path):
+    # R107: «MURO DE BLOCK» sobre medidas de pieza (10X20X40) no es una lectura.
+    inv = build_schedule_inventory(
+        _mtexto(tmp_path, ["MURO DE BLOCK\n10X20X40 Ò\n15X20X40"]), frames=_frame()
+    )
+    assert inv.specs == []
+
+
+@pytest.mark.parametrize(
+    "renglones,bloqueados",
+    [
+        (["4#3", "E#2@15 VER CORTE C-2 8#6 E#3@20"], ["longitudinales"]),
+        (["4#3", "15X15", "E#2@20"], ["seccion", "longitudinales", "estribos"]),
+        (["4#3", "E#2@20", "15X15"], ["seccion", "longitudinales", "estribos"]),
+    ],
+)
+def test_rows_past_a_cut_in_the_column_block_the_labels_ai(tmp_path, renglones, bloqueados):
+    # R111: los renglones sin dueño en la columna de una etiqueta, más allá de donde su pila se
+    # cortó, pueden ser suyos: bloquean su lectura IA en lo que dicen y llevan la etiqueta como
+    # «posible» en su rechazo. Nunca son un dato.
+    inv = build_schedule_inventory(_stack_entities(tmp_path, "K-1", renglones), C)
+    sin_dueno = [r for r in inv.rechazos if r.motivo == "sin_dueno"]
+    assert sin_dueno and all(r.posibles == ["K-1"] for r in sin_dueno)
+    merge_external_specs(inv, [_ia("K-1", section_cm=(40, 40), rebar="4#4", stirrups="E#3@20")], C)
+    ia = next(s for s in inv.specs if s.source == "ia")
+    assert ia.campos_bloqueados == bloqueados
+    assert {b.por for b in ia.bloqueos if b.por == "posible"} == {"posible"}
+
+
+def test_a_lettered_note_line_never_joins_a_stack(tmp_path):
+    # R110: «a).- …» es una nota numerada: nunca un renglón de la pila de la etiqueta de al lado.
+    inv = build_schedule_inventory(
+        _stack_entities(tmp_path, "K-1", ["a).- SE PERMITE TRASLAPAR 4#3"]), C
+    )
+    assert "K-1" not in inv.by_mark
+    assert [(r.motivo, r.posibles) for r in inv.rechazos] == [("sin_dueno", [])]

@@ -367,6 +367,13 @@ def normalize_entity(
             properties["dimlfac"] = float(style.dxf.get("dimlfac", 1.0)) if style else 1.0
         except Exception:
             properties["dimlfac"] = 1.0
+        # What it measures along: a linear dimension (type 0) the distance on its angle
+        # (0 = x, 90 = y) whatever its points; an aligned one (type 1) between its points.
+        try:
+            properties["dimtype"] = int(entity.dimtype)
+            properties["angle"] = float(entity.dxf.get("angle", 0.0) or 0.0)
+        except Exception:
+            pass
         # Extension-line origins: the two points the dimension actually measures.
         span: list[Point] | None = None
         if entity.dxf.hasattr("defpoint2") and entity.dxf.hasattr("defpoint3"):
