@@ -77,6 +77,20 @@ class ViewRegion(BaseModel):
 # Declared levels closer than this are the same level on different sheets.
 SAME_LEVEL_M = 0.6
 
+
+class AlturaDeEntrepiso(BaseModel):
+    """The height of one planta and where it comes from (R73): the distance from its declared
+    level to the next one above (``nivel_arriba_m``), or — the top planta, with nothing declared
+    above it — the height of the planta below, repeated (``repetida``: an assumption, not what
+    the drawing says)."""
+
+    altura_m: float
+    nivel_m: float
+    nivel_arriba_m: float | None = None
+    repetida: bool = False
+    texto: str
+
+
 # El Voronoi de títulos tiene tope: 1.5× la separación mediana entre anclas.
 ANCHOR_ASSIGN_FACTOR = 1.5
 
@@ -108,7 +122,13 @@ class SheetSegmentation(BaseModel):
         declared level above it; the top planta repeats the one below. Only
         when at least two plantas declare their level. Levels closer than
         ``SAME_LEVEL_M`` are one level drawn on several sheets (the arch
-        planta baja and the structural one), never a story."""
+        planta baja and the structural one), never a story. Where each height
+        comes from: ``alturas_de_entrepiso``."""
+        return {vista: a.altura_m for vista, a in self.alturas_de_entrepiso().items()}
+
+    def alturas_de_entrepiso(self) -> dict[str, AlturaDeEntrepiso]:
+        """``story_heights`` with where each height comes from (R73): between two declared
+        levels (named in ``texto``), or repeated from the planta below for the top one."""
         leveled = sorted(
             (v for v in self.structural_plan_views() if v.npt_level is not None),
             key=lambda v: v.npt_level or 0.0,
@@ -122,20 +142,44 @@ class SheetSegmentation(BaseModel):
                 clusters[-1].append(view)
             else:
                 clusters.append([view])
-        heights: dict[str, float] = {}
-        previous: float | None = None
+
+        def nombre(cluster: list[ViewRegion]) -> str:
+            nivel = cluster[0].npt_level or 0.0
+            return f"{nivel:+.2f} ({', '.join(v.title for v in cluster)})"
+
+        heights: dict[str, AlturaDeEntrepiso] = {}
+        previous: AlturaDeEntrepiso | None = None
         for index, cluster in enumerate(clusters):
             base = cluster[0].npt_level or 0.0
             if index + 1 < len(clusters):
-                delta = (clusters[index + 1][0].npt_level or 0.0) - base
+                arriba = clusters[index + 1][0].npt_level or 0.0
+                delta = arriba - base
+                altura = AlturaDeEntrepiso(
+                    altura_m=round(delta, 3),
+                    nivel_m=base,
+                    nivel_arriba_m=arriba,
+                    texto=(
+                        f"entre los niveles declarados {nombre(cluster)} y "
+                        f"{nombre(clusters[index + 1])}: {round(delta, 3):g} m"
+                    ),
+                )
             elif previous is not None:
-                delta = previous
+                delta = previous.altura_m
+                altura = AlturaDeEntrepiso(
+                    altura_m=delta,
+                    nivel_m=base,
+                    repetida=True,
+                    texto=(
+                        f"la planta más alta, {nombre(cluster)}, no tiene un nivel declarado "
+                        f"encima: repite la altura de la de abajo ({previous.texto})"
+                    ),
+                )
             else:
                 continue
             if 1.8 <= delta <= 8.0:
-                previous = round(delta, 3)
+                previous = altura
                 for view in cluster:
-                    heights[view.view_id] = previous
+                    heights[view.view_id] = altura
         return heights
 
     def total_height(self) -> float | None:

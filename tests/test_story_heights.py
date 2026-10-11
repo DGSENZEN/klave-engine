@@ -176,3 +176,18 @@ def test_walls_on_the_azotea_are_pretiles_not_another_story():
     )
     line = {ln.concept_code: ln for ln in boq.lines}["EST-004"]
     assert abs(line.quantity - (10.0 * a.wall_height_m + 20.0 * 0.9)) < 1e-6
+
+
+def test_each_height_says_where_it_comes_from():
+    # R73: entre dos niveles declarados la altura los nombra; la planta más alta, sin nivel
+    # encima, repite la de abajo y lo dice (``repetida``): es un supuesto, no lo que dice el plano.
+    seg = SheetSegmentation(views=_seg(), assignment={}, is_segmented=True,
+                            npt_levels=[1.45, 4.35, 7.95, 11.15])  # fmt: skip
+    alturas = seg.alturas_de_entrepiso()
+    assert {k: a.altura_m for k, a in alturas.items()} == seg.story_heights()
+    assert [k for k, a in alturas.items() if a.repetida] == ["f3"]
+    f1 = alturas["f1"]
+    assert (f1.nivel_m, f1.nivel_arriba_m) == (4.35, 7.95)
+    assert "+4.35" in f1.texto and "+7.95" in f1.texto and "PLANTA BAJA" in f1.texto
+    f3 = alturas["f3"]
+    assert f3.nivel_arriba_m is None and "repite" in f3.texto and "+11.15" in f3.texto
