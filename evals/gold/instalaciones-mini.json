@@ -153,7 +153,8 @@
       "COR-31",
       "COR-32",
       "COR-33",
-      "COR-34"
+      "COR-34",
+      "COR-35"
     ],
     "opening": [
       "VAN-01"
@@ -262,5 +263,5 @@
       "SAN-003"
     ]
   },
-  "notes": ""
+  "notes": "R166: el arranque de 0.15 m del ducto flexible bajo el \u00ab10\"\u00bb es de 10\" (centro real del texto, R146)"
 }
