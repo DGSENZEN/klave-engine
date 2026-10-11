@@ -24,6 +24,8 @@ from typing import Any, get_args
 from pydantic import BaseModel, Field
 
 from klave_engine.detection.schedules import (
+    _SENALADA,
+    FAMILIAS_DE_VIGA,
     FAMILIAS_QUE_SE_ORDENAN,
     Bloqueo,
     Campo,
@@ -287,6 +289,12 @@ def _definir(
     avisos: list[str] = []
     familia = familia or _familia(marca, lecturas, de_ia, avisos)
     datos: dict[str, list[Dato]] = {campo: [] for campo in _NOMBRE}
+    # R155: a leader's claim covers the parrillas too (R139) unless the mark's final family is a
+    # beam's and something states it (its title's family word, a reading, the AI: R125, R130); a
+    # family only its prefix gives exempts nothing.
+    viga_dicha = familia in FAMILIAS_DE_VIGA and (
+        de_familia or any(_dicha(s) and s.family == familia for s in [*lecturas, *de_ia])
+    )
 
     # Las lecturas del plano: un dato por campo, ilegible si el texto está pero no se leyó.
     de_lecturas: dict[str, list[str]] = {}
@@ -302,7 +310,9 @@ def _definir(
             valor = getattr(armado, campo) if armado is not None else []
             if valor:
                 datos[campo].append(_dato(s, fuente, [v.model_copy(deep=True) for v in valor]))
-            elif de_texto in s.campos_con_texto:
+            elif de_texto in s.campos_con_texto and not (
+                campo == "parrillas" and viga_dicha and _por_flecha(s)
+            ):
                 datos[campo].append(_dato(s, fuente, None, ilegible=True))
         if s.length_m is not None:
             datos["longitud_m"].append(_dato(s, fuente, s.length_m))
@@ -593,6 +603,11 @@ def _armado_de_textos(spec: ElementSpec, familia: str, avisos: list[str]) -> Arm
     armado = parsear_armado(textos, familia)
     avisos += [f"{spec.hoja or 'sin hoja'}: {aviso}" for aviso in armado.avisos]
     return armado
+
+
+def _por_flecha(s: ElementSpec) -> bool:
+    """Si la lectura es (o lleva) el reclamo de un título señalado por flecha (R124, R139)."""
+    return any(a.endswith(_SENALADA) for a in s.avisos)
 
 
 def _dicha(s: ElementSpec) -> bool:

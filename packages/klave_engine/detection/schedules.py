@@ -1501,10 +1501,13 @@ def _parece_seccion(c: _Contorno, alto_letra: float, une: float) -> bool:
 
 # R124: the text a title a leader points from claims instead of a section nobody reads.
 _SENALADA = "señalada por flecha; se lee en E3"
+# R150: the nearest outline a title owns is not a rectangle (K-15A's L).
+_NO_RECTANGULAR = "sección: la dibujada no es un rectángulo"
+# The beam families: a leader claim's parrillas are dropped when the definition's final family,
+# stated, is one of them (R150, R155).
+FAMILIAS_DE_VIGA = frozenset({"trabe", "contratrabe", "dala", "cerramiento"})
 # A leader starts or lands this close to a title's text and reaches this far from it (in title
 # heights): the association's thresholds for a «llamada» (R52).
-# The beam families: a leader claim never claims parrillas for them (R150).
-_FAMILIAS_DE_VIGA = frozenset({"trabe", "contratrabe", "dala", "cerramiento"})
 _PUNTA_DE_FLECHA = 0.6
 _LARGO_DE_FLECHA = 2.0
 
@@ -1722,14 +1725,17 @@ def _propio(
             tope = (topes or {}).get(e.texto.entity_id, math.inf)
             return h if 0 < h <= _ALCANCE * e.alto and h < tope else None
 
-        def mas_cercanos(e: _Etiqueta, lado: int) -> tuple[list[_Contorno], float | None, bool]:
+        def mas_cercanos(
+            e: _Etiqueta, lado: int
+        ) -> tuple[list[_Contorno], float | None, _Contorno | None]:
             """The sections nearest the label on ``lado`` that its text lies over: one, or
             several side by side at that distance (of outlines one inside another, the
             largest); or none, with its gap, when the nearest closed outline is not a section
-            (R129: the title does not reach past it)."""
+            (R129: the title does not reach past it) — and that outline when it alone is the
+            nearest and is not a rectangle (K-15A's L, R150)."""
             candidatos = [(h, c) for c in contornos if (h := hueco(e, c, lado)) is not None]
             if not candidatos:
-                return [], None, False
+                return [], None, None
             minimo = min(h for h, _c in candidatos)
             cerca = sorted(
                 (
@@ -1742,17 +1748,18 @@ def _propio(
             )
             if not cerca:
                 une = _UNE * e.alto
-                no_rect = any(
-                    not _es_rectangulo(_esquinas(c.puntos, une), une)
-                    for h, c in candidatos
-                    if h - minimo <= _SOBRE_ARISTA * e.alto
+                junto = [c for h, c in candidatos if h - minimo <= _SOBRE_ARISTA * e.alto]
+                torcido = (
+                    junto[0]
+                    if len(junto) == 1 and not _es_rectangulo(_esquinas(junto[0].puntos, une), une)
+                    else None
                 )
-                return [], minimo, no_rect
+                return [], minimo, torcido
             aparte: list[_Contorno] = []
             for c in cerca:
                 if all(min(c.caja[2], o.caja[2]) - max(c.caja[0], o.caja[0]) <= 0 for o in aparte):
                     aparte.append(c)
-            return aparte, None, False
+            return aparte, None, None
 
         def resolver(lado: int, representantes: list[_Etiqueta]) -> dict[int, _Propio | None]:
             """Each label's outline on ``lado`` (None: it finds none there)."""
@@ -1767,6 +1774,18 @@ def _propio(
                 for c in cercanos[id(r)]:
                     if id(c) not in gana:
                         gana[id(c)] = _por_solape([(_solape(o, c), o) for o in quienes[id(c)]])
+            # R156: a non-rectangular outline says its title's section is not a rectangle only when
+            # it is that title's own, by the rule of a section's (no other label lies over it as
+            # much); one another title shares or wins says nothing of this one.
+            torcidos: dict[int, list[_Etiqueta]] = defaultdict(list)
+            for r in representantes:
+                if (t := vistos[id(r)][2]) is not None:
+                    torcidos[id(t)].append(r)
+            suyo_torcido = {
+                id(r): _por_solape([(_solape(o, t), o) for o in torcidos[id(t)]]) is r
+                for r in representantes
+                if (t := vistos[id(r)][2]) is not None
+            }
             resultado: dict[int, _Propio | None] = {}
             donde = "encima" if lado > 0 else "debajo"
             for r in representantes:
@@ -1777,7 +1796,7 @@ def _propio(
                         f"lo más cercano dibujado {donde} no es una sección: no se toma lo que "
                         "está más allá",
                         tope=tope,
-                        no_rectangular=vistos[id(r)][2],
+                        no_rectangular=suyo_torcido.get(id(r), False),
                     )
                     continue
                 if not cercanos[id(r)]:
@@ -1935,22 +1954,47 @@ class _Par:
     peralte: float | None
     aristas: int
     avisos: list[str] = campo_de_dataclass(default_factory=list)
+    # R153: its corner is one a vertical cota projects (CE-1's «30»), not a drawn one.
+    proyectada: bool = False
+
+
+# R153: the families whose detail is drawn with a projected corner (the CE pattern: a cadena's
+# depth cota from its corner up to the slab edge beside it). Any other needs a real corner.
+_CON_ESQUINA_PROYECTADA = frozenset({"dala", "cerramiento"})
+
+
+def _sobre_lo_dibujado(
+    p: tuple[float, float],
+    horizontales: dict[int, list[tuple[float, float, float]]],
+    verticales: dict[int, list[tuple[float, float, float]]],
+    tol: float,
+) -> bool:
+    """Whether the point lies on a drawn horizontal or vertical line (R153)."""
+    return any(a - tol <= p[0] <= b + tol for a, b in _linea_en(horizontales, p[1], tol)) or any(
+        a - tol <= p[1] <= b + tol for a, b in _linea_en(verticales, p[0], tol)
+    )
 
 
 def _esquina_proyectada(
     punto: tuple[float, float],
+    h: _Cota,
     v: _Cota,
     horizontales: dict[int, list[tuple[float, float, float]]],
-    cotas: list[_Cota],
+    verticales: dict[int, list[tuple[float, float, float]]],
+    cotas_y: list[_Cota],
     tol: float,
 ) -> bool:
-    """R149: whether ``punto`` (a width cota's end) is a corner the vertical cota ``v`` projects
-    — its points not one above the other: one on the section's side (``borde``), the other beside
-    the section at the corner's level (``lejos``, CE-1's «30» up to the slab edge) — and the
-    drawing makes it the section's: (a) a drawn line runs along the edge from the corner to the
-    far point; (b) ``v`` is not the sum of a chain of cotas beside it (an overall cota: «53» =
-    «33» + «20»); (c) no drawn line parallel to the width crosses the side from the corner to
-    ``borde`` strictly between its ends (a beam under a slab: the cota runs to the slab top)."""
+    """R149, R153: whether ``punto`` (an end of the width cota ``h``) is a corner the vertical
+    cota ``v`` projects — its points not one above the other: one on the section's side
+    (``borde``), the other beside the section at the corner's level (``lejos``, CE-1's «30» up to
+    the slab edge) — and the drawing makes it the section's: (a) a drawn line runs along the edge
+    from the corner to the far point; both ends of ``h`` lie on drawn lines, and ``borde`` on THIS
+    section's drawn side, which runs from it toward the corner (R153: a base line shared with the
+    section beside does not lend that section the depth); (b) ``v`` is not the sum of a chain of
+    cotas beside it (an overall cota: «53» = «33» + «20»; R153: every cota of 1 cm or more,
+    ``cotas_y``, is a piece — «53» = «48» + «5»); (c) no drawn line parallel to the width crosses
+    the side from the corner to ``borde`` strictly between its ends (a beam under a slab: the cota
+    runs to the slab top)."""
     for borde, lejos in ((v.p, v.q), (v.q, v.p)):
         esquina = (borde[0], lejos[1])
         if math.dist(punto, esquina) > tol or abs(borde[0] - lejos[0]) <= tol:
@@ -1959,23 +2003,34 @@ def _esquina_proyectada(
         desde, hasta = sorted((esquina[0], lejos[0]))
         if _cubierta(horizontales, esquina[1], desde, hasta, tol) < 1.0 - 1e-6:
             continue
+        # R153: the width cota's ends lie on drawn lines, and ``borde`` on the section's own side.
+        if not all(_sobre_lo_dibujado(q, horizontales, verticales, tol) for q in (h.p, h.q)):
+            continue
+        lo, hi = sorted((borde[1], esquina[1]))
+        if not any(
+            a - tol <= borde[1] <= b + tol and min(b, hi) - max(a, lo) > tol
+            for a, b in _linea_en(verticales, borde[0], tol)
+        ):
+            continue
         # (b) an overall cota is not a section's depth.
         a, b = v.tramo()
         ancho = b - a
         piezas = sorted(
             c.tramo()
-            for c in cotas
+            for c in cotas_y
             if c is not v
-            and c.eje == "y"
+            and c.entidad != v.entidad
             and min(abs(cx - vx) for cx in (c.p[0], c.q[0]) for vx in (v.p[0], v.q[0])) <= ancho
             and c.tramo()[0] >= a - tol
             and c.tramo()[1] <= b + tol
         )
-        actual, pasos = a, 0
+        # Every way the pieces chain from ``a``: «53» = «48» + «5» or «30» + «18» + «5».
+        alcanzados = {a: 0}
         for ca, cb in piezas:
-            if abs(ca - actual) <= tol and cb > actual + tol:
-                actual, pasos = cb, pasos + 1
-        if pasos >= 2 and abs(actual - b) <= tol:
+            pasos = next((n for x, n in alcanzados.items() if abs(ca - x) <= tol), None)
+            if pasos is not None and cb > ca + tol:
+                alcanzados[cb] = max(alcanzados.get(cb, 0), pasos + 1)
+        if any(n >= 2 and abs(x - b) <= tol for x, n in alcanzados.items()):
             continue
         # (c) nothing parallel to the width crosses the side strictly between its ends.
         y0, y1 = sorted((esquina[1], borde[1]))
@@ -2104,8 +2159,11 @@ def _pares_de_cotas(
     its length (lines and polyline sides). A link of a chain of cotas makes no pair (E3); a
     rectangle inside a closed outline is that outline's (a non-rectangular section is never a
     pair's rectangle); a rectangle bigger than ``tamano`` is not a section. Two pairs on the same
-    rectangle with different values give it no section."""
+    rectangle with different values give it no section. A rectangle whose corner only a vertical
+    cota projects (``_esquina_proyectada``, R149) says so (``proyectada``, R153)."""
     cotas: list[_Cota] = []
+    # R153: the pieces an overall cota may be the sum of: every vertical cota of 1 cm or more.
+    cotas_y: list[_Cota] = []
     for d in dims:
         tramo = (d.properties or {}).get("measured_segment")
         if not tramo or len(tramo) != 2:
@@ -2113,7 +2171,11 @@ def _pares_de_cotas(
         p, q = (float(tramo[0][0]), float(tramo[0][1])), (float(tramo[1][0]), float(tramo[1][1]))
         valor = _cota_cm(d, unit_to_m)
         eje = _eje(d, p, q, tol)
-        if valor is None or eje is None or not _COTA_CM[0] <= valor <= _COTA_CM[1]:
+        if valor is None or eje is None:
+            continue
+        if eje == "y" and valor >= 1.0:
+            cotas_y.append(_Cota(eje, p, q, valor, d.entity_id))
+        if not _COTA_CM[0] <= valor <= _COTA_CM[1]:
             continue
         cotas.append(_Cota(eje, p, q, valor, d.entity_id))
     sueltas = [c for c in cotas if not _en_cadena(c, cotas, tol)]
@@ -2140,7 +2202,7 @@ def _pares_de_cotas(
         c.caja for c in contornos if max(c.caja[2] - c.caja[0], c.caja[3] - c.caja[1]) <= tamano
     ]
     rectangulos: dict[
-        tuple[int, int, int, int], tuple[BBox, set[tuple[float, float]], list[str]]
+        tuple[int, int, int, int], tuple[BBox, set[tuple[float, float]], list[str], list[bool]]
     ] = {}
     for h in sueltas:
         if h.eje != "x":
@@ -2153,20 +2215,24 @@ def _pares_de_cotas(
                 for j in (-1, 0, 1)
                 for v in por_punto.get((k[0] + i, k[1] + j), [])
             }.values():
-                if min(math.dist(punto, v.p), math.dist(punto, v.q)) > tol and not (
-                    _esquina_proyectada(punto, v, horizontales, cotas, tol)
+                real = min(math.dist(punto, v.p), math.dist(punto, v.q)) <= tol
+                if not real and not _esquina_proyectada(
+                    punto, h, v, horizontales, verticales, cotas_y, tol
                 ):
                     continue
                 (x0, x1), (y0, y1) = h.tramo(), v.tramo()
                 if x1 - x0 <= tol or y1 - y0 <= tol or max(x1 - x0, y1 - y0) > tamano:
                     continue
                 llave = (round(x0 / tol), round(y0 / tol), round(x1 / tol), round(y1 / tol))
-                caja, valores, ids = rectangulos.setdefault(llave, ((x0, y0, x1, y1), set(), []))
+                caja, valores, ids, reales = rectangulos.setdefault(
+                    llave, ((x0, y0, x1, y1), set(), [], [])
+                )
                 valores.add((h.valor, v.valor))
                 ids += [i for i in (h.entidad, v.entidad) if i not in ids]
+                reales.append(real)
     pares: list[_Par] = []
     claves_h, claves_v = sorted(horizontales), sorted(verticales)
-    for caja, valores, ids in rectangulos.values():
+    for caja, valores, ids, reales in rectangulos.values():
         x0, y0, x1, y1 = caja
         if any(
             c[0] - tol <= x0 and x1 <= c[2] + tol and c[1] - tol <= y0 and y1 <= c[3] + tol
@@ -2197,16 +2263,17 @@ def _pares_de_cotas(
         contorno = _Contorno(
             puntos=[(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)], entidades=ids
         )
+        proyectada = not any(reales)
         if len(valores) > 1:
             distintos = ", ".join(f"{a:g}x{b:g}" for a, b in sorted(valores))
             aviso = (
                 f"sección: pares de cotas distintos en el mismo rectángulo ({distintos}): "
                 "no se toma"
             )
-            pares.append(_Par(contorno, None, None, aristas, [aviso]))
+            pares.append(_Par(contorno, None, None, aristas, [aviso], proyectada))
             continue
         ((ancho, peralte),) = valores
-        pares.append(_Par(contorno, ancho, peralte, aristas))
+        pares.append(_Par(contorno, ancho, peralte, aristas, proyectada=proyectada))
     return pares
 
 
@@ -2243,7 +2310,9 @@ def _sections_from_detail_cotas(
     nearest closed outline, section or not, ends the title's reach (R129). Without
     any closed outline where its section goes, the section is the rectangle of a
     pair of cotas sharing a corner whose edges the drawing draws (R106,
-    ``_pares_de_cotas``), owned by the same side and claim rule. No section from
+    ``_pares_de_cotas``), owned by the same side and claim rule; a corner a cota
+    only projects (R149) is a cadena's or a cerramiento's (R153): another
+    family's title that reaches it claims it unread. No section from
     cotas (no nearest dimension is ever taken) is said and the section claimed, so
     nothing fills it from elsewhere, whenever the label owns a drawn section (R123)
     or one that carries a cota, two labels reach one section (every claimant, R111)
@@ -2333,14 +2402,61 @@ def _sections_from_detail_cotas(
                 lista += sorted(aceptadas)
     if secciones is not None:
         secciones += [(e.marca, caja, e.llave, e.texto.entity_id) for e, caja in duenas]
-        # R150: the dimensioned sections nobody owns (a «CI» type detail), on any sheet.
+        # R150: the dimensioned sections nobody owns (a «CI» type detail), on any sheet — those
+        # around the armado texts too (R154: the «CI» group of ES-400, out of every title's reach).
         poseidas = [caja for _e, caja in duenas]
+        libres += _acotadas_junto_al_armado(entities, dims, unit_to_m)
         secciones += [
             ("", caja, "", "")
             for caja in dict.fromkeys(libres)
-            if not any(_misma_caja(caja, o, 1e-9) for o in poseidas)
+            if not any(_misma_caja(caja, o, 1e-6) for o in poseidas)
         ]
     return specs
+
+
+def solo_armado(texto: str) -> bool:
+    """A text that shows armado and nothing else («4#4», «E#4», «1@6,8@10»): never a note, a size
+    or a section (R140)."""
+    campos = set(campos_de_fragmento(texto))
+    return bool(campos) and campos <= {"longitudinales", "estribos", "parrillas"}
+
+
+def _acotadas_junto_al_armado(
+    entities: list[NormalizedEntity], dims: list[NormalizedEntity], unit_to_m: float
+) -> list[BBox]:
+    """The dimensioned sections drawn near the armado texts (R150, R154): every closed
+    rectangular outline within a title's reach of an armado text, no bigger than a section, with
+    a cota on its edges, and every rectangle of a pair of cotas there (R106: drawn open, the
+    «LOSA FONDO DE ALBERCA» detail of ES-301). Which of them a title owns is the caller's to
+    say."""
+    armados = [t for t in entities if t.is_textual and t.text and solo_armado(t.text)]
+    if not armados:
+        return []
+    alto = statistics.median(bbox_height(t.bbox) or 0.1 / unit_to_m for t in armados)
+    r = 2 * _ALCANCE * alto
+    ventanas = [(t.bbox[0] - r, t.bbox[1] - r, t.bbox[2] + r, t.bbox[3] + r) for t in armados]
+    segmentos = [
+        e
+        for e in _cerca_de(entities, ventanas)
+        if e.entity_type in (EntityType.line, EntityType.polyline) and not e.is_annotation
+    ]
+    une = _UNE * alto
+    salida: list[BBox] = []
+    contornos = _contornos(segmentos, une)
+    cerca = _cerca_de(dims, ventanas)
+    for c in contornos:
+        x0, y0, x1, y1 = c.caja
+        if max(x1 - x0, y1 - y0) > _TAMANO * alto or not _es_rectangulo(
+            _esquinas(c.puntos, une), une
+        ):
+            continue
+        h, v, _avisos = _cotas_de_arista(c, cerca, _SOBRE_ARISTA * alto, unit_to_m)
+        if h or v:
+            salida.append(c.caja)
+    pares = _pares_de_cotas(
+        cerca, segmentos, contornos, unit_to_m, _SOBRE_ARISTA * alto, _TAMANO * alto
+    )
+    return salida + [par.contorno.caja for par in pares]
 
 
 def _etiqueta_de(
@@ -2496,6 +2612,7 @@ def _leer_secciones(
     topes = {i: p.tope for i, p in propios.items() if p.tope is not None and not p.sin_contorno}
     pares: dict[int, _Par] = {}
     de_par: dict[str, _Propio] = {}
+    proyectadas: dict[str, _Propio] = {}
     if sin_contorno:
         # A section reaches up to ``_ALCANCE`` from its label and spans up to ``_TAMANO``: its far
         # edge and cota lie that far.
@@ -2522,10 +2639,47 @@ def _leer_secciones(
             if not any(_misma_caja(par.contorno.caja, o, _UNE * alto) for o in ocupadas or [])
         ]
         pares = {id(par.contorno): par for par in lista}
-        de_par = _propio(sin_contorno, [par.contorno for par in lista], topes=topes)
+
+        def con_su_esquina(c: _Contorno, e: _Etiqueta) -> bool:
+            """R153: a projected corner only for the CE pattern's families (a cadena, a
+            cerramiento); any other title needs a real corner."""
+            familia = e.familia or family_of_mark(e.marca)
+            return not pares[id(c)].proyectada or familia in _CON_ESQUINA_PROYECTADA
+
+        de_par = _propio(sin_contorno, [par.contorno for par in lista], con_su_esquina, topes)
+        if any(par.proyectada for par in lista):
+            # The section another family reaches by a projected corner is still its section,
+            # drawn: claimed, never read (R153), and nothing fills it from elsewhere.
+            todos = _propio(sin_contorno, [par.contorno for par in lista], topes=topes)
+            proyectadas = {
+                i: todos[i]
+                for i, p in de_par.items()
+                if p.tope is not None and (todos[i].contorno or todos[i].otras or todos[i].dudosa)
+            }
 
     specs: list[ElementSpec] = []
     for e in etiquetas:
+        ajena = proyectadas.get(e.texto.entity_id)
+        if ajena is not None:
+            if ajena.contorno is None:
+                specs += _seccion_de_par(e, ajena, pares, sheet, rechazos)
+                continue
+            duenas.append((e, ajena.contorno.caja))
+            suyo = pares[id(ajena.contorno)]
+            valores = (
+                f" {suyo.ancho:g}x{suyo.peralte:g}"
+                if suyo.ancho is not None and suyo.peralte is not None
+                else ""
+            )
+            aviso = (
+                f"sección: el par de cotas{valores} no tiene su esquina dibujada (su cota de alto "
+                "llega a una esquina proyectada, que sólo se acepta en una cadena o un "
+                "cerramiento): no se toma"
+            )
+            specs.append(
+                _lectura_de_cotas(e, sheet, None, [aviso], "par de cotas con esquina proyectada")
+            )
+            continue
         par = de_par.get(e.texto.entity_id)
         if par is not None and (par.contorno is not None or par.otras or par.dudosa):
             if par.contorno is not None:
@@ -2708,8 +2862,7 @@ def _seccion_de_etiqueta(
             else "sección dibujada no encontrada"
         )
         salida = sin_seccion(
-            [f"sección: {suyo.por_que}"]
-            + (["sección: la dibujada no es un rectángulo"] if suyo.no_rectangular else []),
+            [f"sección: {suyo.por_que}"] + ([_NO_RECTANGULAR] if suyo.no_rectangular else []),
             nota,
             reclama=bool(suyo.otras) or suyo.dudosa,
         )
@@ -3060,12 +3213,11 @@ def _flechas_de_titulos(
             aviso = f"sección: {_SENALADA}"
             # R139: the detail the leader points at draws the section AND the armado (CE-1's
             # pointed sections draw 4 bars and a stirrup): both are the drawing's, unread.
-            # A family only the prefix gives may be one with meshes (D-1C: the AI's dado): the
-            # parrillas are claimed too — never for a beam family (R150).
+            # R155: a family only the prefix gives exempts nothing (D-1C: the AI's dado): the
+            # parrillas are claimed too; the definition drops that claim when its final family,
+            # stated, is a beam's (``_definir``).
             campos: list[Campo] = ["seccion", "longitudinales", "estribos"]
-            if e.familia in FAMILIAS_CON_PARRILLA or (
-                e.familia is None and family_of_mark(marca) not in _FAMILIAS_DE_VIGA
-            ):
+            if e.familia in FAMILIAS_CON_PARRILLA or e.familia is None:
                 campos.append("parrillas")
             salida.append(
                 (
@@ -3166,82 +3318,135 @@ def _junto_a_su_seccion(
     texts: list[NormalizedEntity],
     secciones: list[tuple[str, BBox, str, str]],
     sheet: Sheet,
+    entities: list[NormalizedEntity] | None = None,
 ) -> None:
-    """R140, R150: an unowned armado text (``sin_dueno``) in the detail group of a drawn
-    section a title owns — the nearest owned section of its sheet, within its larger side and
-    three of its heights, that it lies under or above or beside (within three of its widths),
-    never across a corner, with no heading or title (its own included) between them, and not
-    nearer a dimensioned section nobody owns (a «CI» type detail: its armado) — may be that
-    title's armado:
-    it carries the title's mark as «posible», which blocks the mark's AI for the fields it shows
-    (``bloqueos_de``). Only a text that shows armado and nothing else counts (a general note, a
-    size, a section never). Two sections equally near (within 10 %) both carry it. Anything else
-    stays unowned. Reading it is Task 9c."""
+    """R140, R150, R154: an unowned armado text (``sin_dueno``) may be the armado of a drawn
+    section a title owns: it carries the title's mark as «posible», which blocks the mark's AI
+    for the fields it shows (``bloqueos_de``). Only a text that shows armado and nothing else
+    counts (a general note, a size, a section never). Its section is the one a drawn leader from
+    it ends inside, whatever the distance (R154: T4-4's «2#6» and the V from it to two bars of
+    the section); else the nearest owned section of its sheet within that section's larger side
+    (R140) and three of its heights (R150), with no other heading or title between them (the
+    section's own title is not another) — of two equally near (within 10 %) both. A text nearer
+    a dimensioned section nobody owns (a «CI» type detail), or whose leader ends inside one, is
+    that section's: it stays unowned. So does anything else. Reading it is Task 9c."""
     if not secciones:
         return
     por_id = {t.entity_id: t for t in texts}
-    armado = {"longitudinales", "estribos", "parrillas"}
-
-    def solo_armado(texto: str) -> bool:
-        campos = set(campos_de_fragmento(texto))
-        return bool(campos) and campos <= armado
+    candidatos = [
+        (r, por_id[r.entidad_id])
+        for r in rechazos
+        if r.motivo == "sin_dueno"
+        and not r.posibles
+        and solo_armado(r.texto)  # only armado («4#4», «E#4», «1@6,8@10»)
+        and r.entidad_id in por_id
+    ]
+    if not candidatos:
+        return
 
     # The texts that may stand between an armado line and a section: headings, titles, notes
-    # (anything with letters that is not itself an armado line), by grid cell.
+    # (anything with letters that is not itself an armado line) and every section's title, by
+    # grid cell, where they really lie (R120: a notes MTEXT is its column, never the unwrapped
+    # paragraph the normalizer's box spans across the sheet).
     altos = [bbox_height(t.bbox) for t in texts if bbox_height(t.bbox) > 0]
     celda = 20 * (statistics.median(altos) if altos else 1.0)
-    rejilla: dict[tuple[int, int], list[NormalizedEntity]] = defaultdict(list)
+    titulos = {titulo for _m, _c, _l, titulo in secciones if titulo}
+    rejilla: dict[tuple[int, int], list[tuple[str, BBox]]] = defaultdict(list)
     for t in texts:
-        if not re.search(r"[A-ZÁÉÍÓÚÑ]{2,}", (t.text or "").upper()) or solo_armado(t.text or ""):
+        letras = re.search(r"[A-ZÁÉÍÓÚÑ]{2,}", (t.text or "").upper())
+        if t.entity_id not in titulos and (not letras or solo_armado(t.text or "")):
             continue
-        x0, y0, x1, y1 = t.bbox
+        x0, y0, x1, y1 = real = _extension_del_texto(t)
         for i in range(math.floor(x0 / celda), math.floor(x1 / celda) + 1):
             for j in range(math.floor(y0 / celda), math.floor(y1 / celda) + 1):
-                rejilla[(i, j)].append(t)
+                rejilla[(i, j)].append((t.entity_id, real))
 
-    def entre(texto: NormalizedEntity, caja: BBox) -> bool:
-        """Whether a heading or title (the section's own too: a text past it is not under the
-        section) lies on the way from ``texto`` to the section ``caja``."""
-        cx, cy = bbox_center(texto.bbox)
+    extension = {t.entity_id: _extension_del_texto(t) for _r, t in candidatos}
+
+    def entre(texto: NormalizedEntity, caja: BBox, suyo: str) -> bool:
+        """Whether a heading or title other than the section's own (``suyo``) lies on the way
+        from ``texto`` to the section ``caja``."""
+        cx, cy = bbox_center(extension[texto.entity_id])
         p = (min(max(cx, caja[0]), caja[2]), min(max(cy, caja[1]), caja[3]))
         vistos: set[str] = set()
         for i in range(math.floor(min(cx, p[0]) / celda), math.floor(max(cx, p[0]) / celda) + 1):
             for j in range(
                 math.floor(min(cy, p[1]) / celda), math.floor(max(cy, p[1]) / celda) + 1
             ):
-                for u in rejilla.get((i, j), []):
-                    if u.entity_id in vistos or u.entity_id == texto.entity_id:
+                for otro, real in rejilla.get((i, j), []):
+                    if otro in vistos or otro in (texto.entity_id, suyo):
                         continue
-                    vistos.add(u.entity_id)
-                    if _distancia_tramo_caja((cx, cy), p, u.bbox) == 0.0:
+                    vistos.add(otro)
+                    if _distancia_tramo_caja((cx, cy), p, real) == 0.0:
                         return True
         return False
 
-    for r in rechazos:
-        if r.motivo != "sin_dueno" or r.posibles or not solo_armado(r.texto):
-            continue  # only armado («4#4», «E#4», «1@6,8@10»): never a note or a section
-        texto = por_id.get(r.entidad_id)
-        if texto is None:
-            continue
+    # R154: the drawn leaders (open lines and polylines, LEADER and MULTILEADER) with a vertex at
+    # an armado text: where their other ends lie.
+    margen = {t.entity_id: _PUNTA_DE_FLECHA * bbox_height(t.bbox) for _r, t in candidatos}
+    ventanas = [
+        (x0 - margen[i], y0 - margen[i], x1 + margen[i], y1 + margen[i])
+        for i, (x0, y0, x1, y1) in extension.items()
+    ]
+    lineas = [
+        [(float(q[0]), float(q[1])) for q in e.points or []]
+        for e in _cerca_de(entities or [], ventanas)
+        if e.entity_type in (EntityType.line, EntityType.polyline)
+        and not e.is_closed
+        and len(e.points or []) >= 2
+    ]
+    por_celda: dict[tuple[int, int], set[int]] = defaultdict(set)
+    for n, puntos in enumerate(lineas):
+        for qx, qy in puntos:
+            por_celda[(math.floor(qx / celda), math.floor(qy / celda))].add(n)
+
+    def puntas(texto: NormalizedEntity) -> list[tuple[float, float]]:
+        """The far ends of the leaders drawn from ``texto``: of a line or polyline with a vertex
+        at the text, its ends other than that vertex."""
+        caja, m = extension[texto.entity_id], margen[texto.entity_id]
+        cerca = {
+            n
+            for i in range(math.floor((caja[0] - m) / celda), math.floor((caja[2] + m) / celda) + 1)
+            for j in range(math.floor((caja[1] - m) / celda), math.floor((caja[3] + m) / celda) + 1)
+            for n in por_celda.get((i, j), ())
+        }
+        salida: list[tuple[float, float]] = []
+        for n in sorted(cerca):
+            puntos = lineas[n]
+            junto = [k for k, q in enumerate(puntos) if _distancia_tramo_caja(q, q, caja) <= m]
+            if junto:
+                salida += [puntos[k] for k in (0, len(puntos) - 1) if k not in junto]
+        return salida
+
+    for r, texto in candidatos:
         llave = sheet(texto)[1]
-        x0, y0, x1, y1 = texto.bbox
-        cerca: list[tuple[float, str]] = []
         holgura = bbox_height(texto.bbox)
-        for marca, caja, suya, _titulo in secciones:
+        dentro = 0.05 * holgura
+        apuntadas = {
+            marca
+            for q in puntas(texto)
+            for marca, caja, suya, _titulo in secciones
+            if suya in (llave, "")
+            and caja[0] + dentro < q[0] < caja[2] - dentro
+            and caja[1] + dentro < q[1] < caja[3] - dentro
+        }
+        if apuntadas:
+            # Its leader ends inside the section: that section's, whatever the distance (one
+            # nobody owns: its own armado, unowned).
+            r.posibles = sorted(m for m in apuntadas if m)
+            continue
+        x0, y0, x1, y1 = extension[texto.entity_id]
+        cerca: list[tuple[float, str]] = []
+        for marca, caja, suya, titulo in secciones:
             if suya not in (llave, ""):
                 continue
-            ancho, alto = caja[2] - caja[0], caja[3] - caja[1]
             dx = max(caja[0] - x1, 0.0, x0 - caja[2])
             dy = max(caja[1] - y1, 0.0, y0 - caja[3])
-            # Its group: within the section's larger side and three of its heights, under or
-            # above it (overlapping its width) or beside it (overlapping its height, within three
-            # of its widths) — never across a corner.
             d = math.hypot(dx, dy)
-            if d > min(max(ancho, alto), 3 * alto):
-                continue
-            debajo = x1 >= caja[0] - holgura and x0 <= caja[2] + holgura
-            al_lado = y1 >= caja[1] - holgura and y0 <= caja[3] + holgura and dx <= 3 * ancho
-            if (debajo or al_lado) and not entre(texto, caja):
+            # Its group (R140, R150): within the section's larger side and three of its heights,
+            # nothing else between.
+            ancho, alto = caja[2] - caja[0], caja[3] - caja[1]
+            if d <= min(max(ancho, alto), 3 * alto) and not entre(texto, caja, titulo):
                 cerca.append((d, marca))
         if cerca:
             minimo = min(d for d, _m in cerca)
@@ -3384,6 +3589,14 @@ def build_schedule_inventory(
             flechas = _flechas_de_titulos(
                 entities, config, detail_boxes or [], sheet, {*cuadro_marks, *labels}
             )
+            # R156: a title a leader starts or lands at has its section where the leader points
+            # (E3): the outline under it is not its own and says nothing of its shape (CTA-15 on
+            # ES-500 over D-4's trapezoid).
+            con_flecha = {entidad for entidad, _reclamo in flechas}
+            for lectura in specs:
+                if lectura.seccion_no_rectangular and set(lectura.entidades[:1]) & con_flecha:
+                    lectura.seccion_no_rectangular = False
+                    lectura.avisos = [a for a in lectura.avisos if a != _NO_RECTANGULAR]
             rechazos = rechazos + de_cotas
             inventory_cuadro_marks = cuadro_marks
     # Lectores por disciplina (cuadro de cancelería, tablero eléctrico…):
@@ -3405,7 +3618,7 @@ def build_schedule_inventory(
     for r in rechazos:  # R116: every rejection past a cut, whoever made it, carries the label
         if not r.posibles and r.entidad_id in posibles:
             r.posibles = sorted(posibles[r.entidad_id])
-    _junto_a_su_seccion(rechazos, texts, secciones_dibujadas, sheet)
+    _junto_a_su_seccion(rechazos, texts, secciones_dibujadas, sheet, entities)
     inventory = ScheduleInventory(
         specs=specs,
         tables_found=tables,
