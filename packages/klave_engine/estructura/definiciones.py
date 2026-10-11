@@ -81,6 +81,8 @@ _ARMADO: tuple[tuple[str, str, Campo], ...] = (
     ("estribos", "stirrups", "estribos"),
     ("parrillas", "mesh", "parrillas"),
 )
+# Los campos de armado de una definición (los que ``sin_leer`` dice).
+_ARMADO_DE_LA_DEFINICION = ("longitudinales", "estribos", "parrillas")
 _NOMBRE = {
     "seccion_cm": "sección",
     "longitud_m": "longitud",
@@ -114,6 +116,11 @@ class Definicion(BaseModel):
     parrillas: Dato | None = None
     hojas: list[str] = Field(default_factory=list)
     avisos: list[str] = Field(default_factory=list)
+    # Los campos vacíos para los que el plano tiene texto que puede ser de esta marca y que nadie
+    # leyó (un renglón sin dueño junto a su sección, R140; una coincidencia suelta; la IA, si la
+    # hay, no se toma, R69): campo → esos textos. Quien use el campo sabe que el plano lo
+    # escribe.
+    sin_leer: dict[str, str] = Field(default_factory=dict)
 
 
 def normalizar_marca(texto: str, config: TextPatternConfig | None = None) -> str:
@@ -377,6 +384,11 @@ def _definir(
         familia=familia,
         hojas=hojas,
         avisos=list(dict.fromkeys(avisos)),
+        sin_leer={
+            campo: ", ".join(dict.fromkeys(f"«{b.texto}»" for b in lista))
+            for campo, lista in bloqueados.items()
+            if campos[campo] is None and campo in _ARMADO_DE_LA_DEFINICION
+        },
         **campos,
     )
 

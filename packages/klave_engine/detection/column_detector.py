@@ -2,6 +2,8 @@
 
 import numpy as np
 from pydantic import BaseModel, Field
+from shapely.geometry import Polygon
+from shapely.ops import unary_union
 
 from klave_engine.common.ids import IdGenerator
 from klave_engine.detection.confidence import (
@@ -42,6 +44,47 @@ def _marker_section(marker: NormalizedEntity) -> tuple[float | None, str]:
         return polygon_area(marker.points), "marcador_poligonal"
     area = bbox_area(marker.bbox)
     return (area if area > 0 else None), "marcador_bbox"
+
+
+def _contorno(marker: NormalizedEntity, index: SpatialIndex) -> dict:
+    """R142: the outline a polygon marker draws with the closed polygons of its layer that touch
+    it (an L-shaped castillo drawn as two rectangles): its area, whether it is an axis rectangle
+    (area / box ≥ 0.98, one piece), its layer and its pieces. Not for circles or blocks."""
+    if not (
+        marker.entity_type == EntityType.polyline
+        and marker.is_closed
+        and marker.points
+        and len(marker.points) >= 3
+    ):
+        return {}
+    propio = Polygon(marker.points)
+    if not propio.is_valid or propio.area <= 0:
+        return {}
+    tol = 1e-3 * max(marker.bbox[2] - marker.bbox[0], marker.bbox[3] - marker.bbox[1])
+    piezas = [marker]
+    for hit in index.entities_near_entity(marker.entity_id, tol):
+        otro = index.get(hit.entity_id)
+        if (
+            otro.entity_type != EntityType.polyline
+            or not otro.is_closed
+            or otro.layer != marker.layer
+            or len(otro.points or []) < 3
+        ):
+            continue
+        forma = Polygon(otro.points or [])
+        if forma.is_valid and forma.area > 0 and forma.distance(propio) <= tol:
+            piezas.append(otro)
+    union = unary_union([Polygon(p.points or []) for p in piezas]).buffer(tol).buffer(-tol)
+    if not isinstance(union, Polygon):
+        union, piezas = propio, [marker]
+    x0, y0, x1, y1 = union.bounds
+    caja = (x1 - x0) * (y1 - y0)
+    return {
+        "contorno_area_du2": round(float(union.area), 6),
+        "contorno_rectangular": bool(caja > 0 and union.area / caja >= 0.98),
+        "contorno_capa": marker.layer,
+        "contorno_entidades": sorted(p.entity_id for p in piezas),
+    }
 
 
 class ColumnDetectorConfig(BaseModel):
@@ -140,6 +183,7 @@ def detect_columns(
                 notes.append(
                     f"Sección medida del marcador: {section:.4f} u.dib.² ({section_source})"
                 )
+            properties.update(_contorno(index.get(marker_id), index))
 
         if layer_matches(entity.layer, config.layer_hints):
             features[SEMANTIC_LAYER] = 1.0

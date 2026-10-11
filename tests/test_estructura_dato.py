@@ -406,12 +406,16 @@ def test_a_hoja_without_a_copy_of_its_own_gets_a_deep_copy_of_the_elected_dato()
     assert d.alternativas[0].valor == "8" and "ES-999" not in d.hojas
 
 
-def test_a_hojas_own_nota_beats_a_detalle_of_another_hoja():
+def test_a_hojas_own_lower_rank_reading_never_displaces_the_winner():
+    # R141 (antes «cada hoja manda sobre lo suyo» a cualquier rango): una lectura de menor rango
+    # de la hoja no desplaza al ganador; queda como alternativa.
     nota = Dato(valor=0.05, fuente="nota", hoja="ES-000")
     detalle = Dato(valor=0.08, fuente="detalle", hoja="ES-100")
     d = elegir([nota, detalle])
     assert d.valor == 0.08  # globalmente un detalle manda sobre una nota
-    assert para_hoja(d, "ES-000").valor == 0.05  # pero cada hoja manda sobre lo suyo
+    en_000 = para_hoja(d, "ES-000")
+    assert (en_000.valor, en_000.fuente) == (0.08, "detalle")
+    assert [(a.valor, a.fuente) for a in en_000.alternativas] == [(0.05, "nota")]
     assert para_hoja(d, "ES-100").valor == 0.08
 
 
@@ -436,7 +440,101 @@ def test_a_read_value_beats_unreadable_copies_of_the_same_rank():
         d = elegir(datos)
         assert (d.valor, d.ilegible, d.en_conflicto) == ("E#2@15", False, True)
         assert [a.ilegible for a in d.alternativas] == [True, True]
-    # Una hoja que pide lo suyo se queda con lo suyo, aunque no se pueda leer.
-    assert elegir([leida, *ilegibles], preferir_hoja="ES-100").ilegible is True
+    # R143: ni pidiendo su hoja una copia ilegible le gana a una leída.
+    pedida = elegir([leida, *ilegibles], preferir_hoja="ES-100")
+    assert (pedida.valor, pedida.ilegible, pedida.en_conflicto) == ("E#2@15", False, True)
     # Sólo ilegibles: el dato es ilegible.
     assert elegir(ilegibles).ilegible is True
+
+
+# ------------------------------------------------------------- Tarea 9, ronda 1: R141, R143
+
+
+def test_a_read_value_beats_an_unreadable_one_of_any_rank():
+    # R143 (amplía R76): un detalle ilegible no se puede pesar; la nota leída gana, el conflicto
+    # se ve y la ilegible queda como alternativa.
+    ilegible = Dato(valor=None, fuente="detalle", hoja="ES-500", ilegible=True, texto="K-1 2OX4O")
+    nota = Dato(valor=(20, 40), fuente="nota", hoja="ES-000", texto="K-1 20X40")
+    for datos in ([ilegible, nota], [nota, ilegible]):
+        d = elegir(datos)
+        assert (d.valor, d.fuente, d.en_conflicto) == ((20, 40), "nota", True)
+        assert [a.ilegible for a in d.alternativas] == [True]
+    # Un ilegible de menor rango no es un desacuerdo.
+    abajo = Dato(valor=None, fuente="nota", hoja="ES-000", ilegible=True)
+    d = elegir([Dato(valor=(20, 40), fuente="detalle", hoja="ES-100"), abajo])
+    assert (d.valor, d.en_conflicto) == ((20, 40), False)
+    # La IA y el supuesto nunca cuentan como leídos: el ilegible del plano les gana.
+    for otro in ("ia", "supuesto"):
+        d = elegir([ilegible, Dato(valor=(15, 30), fuente=otro)])
+        assert d.ilegible is True and d.alternativas[0].fuente == otro
+
+
+def _k5():
+    copias = [
+        Dato(valor=(20, 30), fuente="detalle", hoja=h, texto=f"K-5 · {h}", entidades=[f"e{h}"])
+        for h in ("ES-400", "ES-000", "ES-100", "ES-200", "ES-300")
+    ]
+    ia = [
+        Dato(valor=(15, 40), fuente="ia", hoja="ES-100", texto="IA · ES-100"),
+        Dato(valor=(15, 45), fuente="ia", hoja="ES-200", texto="IA · ES-200"),
+    ]
+    return elegir([*copias, *ia])
+
+
+def test_a_decision_survives_the_per_sheet_resolution():
+    # R141 (I-1): una decisión «humano» aplicada con ``elegir`` sobre la sección de K-5 no la
+    # deshace ninguna hoja: sus lecturas son de menor rango.
+    k5 = _k5()
+    decidida = elegir([Dato(valor=(25, 40), fuente="humano", texto="Revisión"), k5])
+    assert (decidida.valor, decidida.fuente) == ((25, 40), "humano")
+    for hoja in ("ES-000", "ES-100", "ES-400", "ES-999"):
+        d = para_hoja(decidida, hoja)
+        assert (d.valor, d.fuente) == ((25, 40), "humano"), hoja
+
+
+def test_the_ai_never_displaces_the_drawing_on_a_sheet():
+    # R141 (CE-1 en Marina): la sección está señalada por flecha en ES-500 (ilegible) y la IA
+    # leyó 15x30 en ES-100 y 15x20 en ES-200; en ninguna hoja la IA desplaza al plano.
+    d = elegir(
+        [
+            Dato(valor=None, fuente="detalle", hoja="ES-500", ilegible=True, texto="señalada"),
+            Dato(valor=(15, 30), fuente="ia", hoja="ES-100"),
+            Dato(valor=(15, 20), fuente="ia", hoja="ES-200"),
+        ]
+    )
+    for hoja in ("ES-100", "ES-200", "ES-500"):
+        x = para_hoja(d, hoja)
+        assert x.ilegible and x.fuente == "detalle", hoja
+        assert {a.fuente for a in x.alternativas} == {"ia"}
+
+
+def test_a_sheets_unreadable_copy_never_hides_another_sheets_reading():
+    # R141 (K-10 en Marina): ES-400 leyó 15x85; la copia de ES-300 no se pudo leer.
+    d = elegir(
+        [
+            Dato(valor=(15, 85), fuente="detalle", hoja="ES-400"),
+            Dato(valor=None, fuente="detalle", hoja="ES-300", ilegible=True),
+        ]
+    )
+    x = para_hoja(d, "ES-300")
+    assert (x.valor, x.hoja, x.en_conflicto) == ((15, 85), "ES-400", True)
+    assert any(a.ilegible and a.hoja == "ES-300" for a in x.alternativas)
+
+
+def test_the_sheets_own_copy_is_its_provenance():
+    # M-1: la copia de K-5 que dice ES-100 es la de ES-100 (su hoja, su texto, sus entidades), no
+    # la de ES-400 con las hojas de todas juntas.
+    k5 = _k5()
+    assert k5.hoja == "ES-400"
+    for hoja in ("ES-000", "ES-100", "ES-300"):
+        x = para_hoja(k5, hoja)
+        assert (x.valor, x.hoja, x.texto, x.entidades) == (
+            (20, 30),
+            hoja,
+            f"K-5 · {hoja}",
+            [f"e{hoja}"],
+        )
+        assert x.copias == 5 and not x.en_conflicto
+        assert sorted(x.hojas) == ["ES-000", "ES-100", "ES-200", "ES-300", "ES-400"]
+    base = miembros(k5)[0]
+    assert (base.hoja, base.hojas, base.copias) == ("ES-400", [], 1)

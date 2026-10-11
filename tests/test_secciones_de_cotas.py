@@ -11,6 +11,7 @@ from klave_engine.detection.schedules import (
     _extension_del_texto,
     apply_schedule,
     build_schedule_inventory,
+    mark_cuadro_detections,
     merge_external_specs,
 )
 from klave_engine.detection.text_patterns import TextPatternConfig
@@ -706,13 +707,19 @@ def test_d3_and_cta8_under_a_wall_strip_are_pointed_at_by_their_leaders():
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
     for marca in ("D-3", "CTA-8"):
         (s,) = _cotas(inv, marca)
-        assert (s.section_cm, s.campos_con_texto) == (None, ["seccion"])
+        # R139: la flecha reclama también el armado (DADO lleva parrillas; CTA-8 sólo tiene la
+        # familia del prefijo, que puede llevarlas).
+        assert (s.section_cm, s.campos_con_texto) == (None, _ARMADO_SENALADO)
         assert s.avisos == ["sección: señalada por flecha; se lee en E3"]
         assert s.source_text.endswith("señalada por flecha; se lee en E3")
     assert [r for r in inv.rechazos if r.motivo == "ambigua"] == []
     merge_external_specs(inv, [_ia("D-3", family="dala", section_cm=(25, 100))], C)
     assert "D-3" not in inv.by_mark or inv.by_mark["D-3"].section_cm is None
 
+
+# R139: lo que reclama una flecha: la sección y el armado (las parrillas si la familia las lleva
+# o si sólo la dice el prefijo de la marca).
+_ARMADO_SENALADO = ["seccion", "longitudinales", "estribos", "parrillas"]
 
 _OCTAGONO = [(0.03, 0.0), (0.105, 0.0), (0.135, 0.03), (0.135, 0.095), (0.105, 0.125),
              (0.03, 0.125), (0.0, 0.095), (0.0, 0.03)]  # fmt: skip
@@ -832,7 +839,7 @@ def test_a_title_with_a_leader_and_no_section_read_claims_it(flecha, senalada):
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
     lecturas = [(s.section_cm, s.campos_con_texto, s.avisos) for s in _cotas(inv, "D-3")]
     aviso = ["sección: señalada por flecha; se lee en E3"]
-    assert lecturas == ([(None, ["seccion"], aviso)] if senalada else [])
+    assert lecturas == ([(None, _ARMADO_SENALADO, aviso)] if senalada else [])
     merge_external_specs(inv, [_ia("D-3", family="dala", section_cm=(25, 100))], C)
     de_la_ia = inv.by_mark["D-3"].section_cm if "D-3" in inv.by_mark else None
     assert de_la_ia == (None if senalada else (25, 100))
@@ -1055,7 +1062,10 @@ def test_a_prefix_guessed_family_never_drops_a_field(texto, aviso_de_familia):
     merge_external_specs(inv, [ia], C)
     d = construir_definiciones(inv, C)[0]["D-1C"]
     assert (d.familia, d.seccion_cm.valor, d.seccion_cm.ilegible) == ("dado", None, True)
-    assert d.parrillas is not None and d.parrillas.fuente == "ia"
+    # R139: el detalle al que apunta la flecha dibuja también sus parrillas: la IA no las llena,
+    # pero no se tiran: quedan como alternativa.
+    assert d.parrillas is not None and d.parrillas.ilegible and d.parrillas.fuente == "detalle"
+    assert any(a.fuente == "ia" for a in d.parrillas.alternativas)
     if aviso_de_familia:
         assert aviso_de_familia in d.avisos
     else:
@@ -1119,3 +1129,153 @@ def test_only_the_landing_of_a_leader_attaches_to_a_title(lider):
         if s.source_text.endswith("señalada por flecha; se lee en E3")
     )
     assert senaladas == [("D-3", "dado")]
+
+
+# ------------------------------------------------- Tarea 9, ronda 1: R139, R140, R145, M-7
+
+
+def _grupo_de_cadenas(dx=0.0, armado=True):
+    """El grupo «CADENAS DE ENRASE» de Marina (ES-400) dentro de una planta (no hay marco de
+    detalle): títulos de 0.15 encima, sus secciones dibujadas debajo con su cota de ancho arriba
+    y la de alto a la derecha, el armado tres metros abajo y la nota «SIN ESCALA»."""
+    ents = []
+    for n, (marca, x, ancho_m, b) in enumerate(
+        [("CE-1", 0.0, 0.854, 15), ("CE-2", 2.0, 0.971, 20), ("CE-3", 4.0, 1.709, 30)]
+    ):
+        x0 = x + dx
+        x1 = x0 + ancho_m
+        ents += [
+            _titulo(f"t{n}", marca, x0 + 0.16, 0.46, alto=0.15),
+            _rectangulo(f"s{n}", x0, -1.709, x1, 0.0),
+            _cota(f"h{n}", (x0, 0.0), (x1, 0.0), b),
+            _cota(f"v{n}", (x1, -1.709), (x1, 0.0), 30),
+        ]
+        if armado:
+            ents += [
+                _texto(f"r{n}", ["4#3", "6#3", "6#4"][n], x0 + 0.42, -2.47, alto=0.1),
+                _texto(f"e{n}", ["E#2@15", "E#2@15", "E#3@14"][n], x0 + 0.42, -2.67, alto=0.1),
+            ]
+    ents += [
+        _texto("g", "CADENAS DE ENRASE", 2.4, -3.2, alto=0.16),
+        _texto("n", "ACOTACIONES EN CMS, SIN ESCALA", 2.4, -3.5, alto=0.1),
+    ]
+    return ents
+
+
+def _etiqueta_de_viga(entity_id, marca):
+    det = make_detection(
+        f"d_{entity_id}", DetectionType.beam_tag, marca, (0, 0, 0.3, 0.15), 0.9, [entity_id],
+        "t", [], {"estimated_span_length": 1.708},
+    )  # fmt: skip
+    return det
+
+
+def test_a_label_owning_a_dimensioned_section_inside_a_planta_is_a_detail_title():
+    # R145 (C-1): las 22 cadenas y cerramientos de Marina dibujados dentro de las plantas
+    # ES-100…ES-400 no son colocaciones: cada título es dueño de su sección acotada; es una
+    # definición (role=cuadro, «título de detalle») y su sección se lee: 15x30, 20x30, 30x30.
+    ents = _grupo_de_cadenas()
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=[])
+    leidas = {s.mark: s.section_cm for s in inv.specs if s.metodo == "cotas"}
+    assert leidas == {"CE-1": (15, 30), "CE-2": (20, 30), "CE-3": (30, 30)}
+    assert sorted(inv.titulos_de_detalle) == ["t0", "t1", "t2"]
+    assert {"t0", "t1", "t2"} <= set(inv.cuadro_mark_entities)
+    dets = [_etiqueta_de_viga(t, m) for t, m in (("t0", "CE-1"), ("t1", "CE-2"), ("t2", "CE-3"))]
+    assert mark_cuadro_detections(dets, inv) == 3
+    assert all(d.properties["role"] == "cuadro" for d in dets)
+    assert all(d.properties["titulo_de_detalle"] is True for d in dets)
+
+
+def test_a_plan_tag_beside_its_marker_and_a_grid_cota_stays_a_placement():
+    # R145, el pin: una etiqueta de castillo en planta junto a su marcador (sin cotas) y cerca
+    # de la cadena de cotas de los ejes nunca es un título.
+    ents = [
+        _titulo("k", "K-1", 0.0, 0.25, alto=0.1),
+        _rectangulo("m", 0.0, 0.4, 0.15, 0.6),
+        _cota("c1", (-3.0, -0.4), (0.0, -0.4), 300),
+        _cota("c2", (0.0, -0.4), (3.0, -0.4), 300),
+        _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=[])
+    assert inv.titulos_de_detalle == [] and "k" not in inv.cuadro_mark_entities
+    assert [s for s in inv.specs if s.mark == "K-1"] == []
+    det = make_detection("dk", DetectionType.column_tag, "K-1", (0, 0, 1, 1), 0.9, ["k"], "t", [])
+    mark_cuadro_detections([det], inv)
+    assert "role" not in det.properties
+
+
+def test_the_unowned_armado_under_a_titles_section_blocks_its_ai():
+    # R140: el armado escrito bajo la sección de cada título («4#3», «E#2@15»), que nadie lee,
+    # puede ser de ese título: bloquea la IA de su marca en esos campos (la sección ya es suya).
+    ents = _grupo_de_cadenas()
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=[])
+    posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
+    assert posibles["4#3"] == ["CE-1"] and posibles["E#3@14"] == ["CE-3"]
+    ia = _ia("CE-1", family="dala", section_cm=(15, 30), rebar="4#3", stirrups="E#2@15")
+    merge_external_specs(inv, [ia], C)
+    d = construir_definiciones(inv, C)[0]["CE-1"]
+    assert d.longitudinales is None and d.estribos is None
+    assert set(d.sin_leer) == {"longitudinales", "estribos"}
+    assert (d.seccion_cm.valor, d.seccion_cm.fuente) == ((15, 30), "detalle")
+
+
+def test_the_unowned_armado_beside_a_detail_section_blocks_the_ai():
+    # R140 (CTA-1 en Marina, ES-002): la IA leyó 8#4 / E#4; el detalle escribe «4#4» y «E#4»
+    # junto a la sección (35x80 por su par de cotas) y nadie los leyó: la IA no se toma.
+    ents = _detalle_sin_contorno("a", "CTA-1", 0.6, 3.5, (0.0, 0.0, 1.325, 3.136), 35, 80)
+    ents += [
+        _texto("r", "4#4", 1.55, 1.4, alto=0.11, centrado=False),
+        _texto("e", "E#4", 1.55, 0.03, alto=0.11, centrado=False),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s.section_cm for s in _cotas(inv, "CTA-1")] == [(35, 80)]
+    merge_external_specs(inv, [_ia("CTA-1", family="contratrabe", rebar="8#4", stirrups="E#4")], C)
+    d = construir_definiciones(inv, C)[0]["CTA-1"]
+    assert d.longitudinales is None and d.estribos is None
+    assert set(d.sin_leer) == {"longitudinales", "estribos"}
+
+
+def test_a_leader_claim_covers_the_armado_too():
+    # R139 (CE-1 en Marina, ES-500/ES-501): la sección a la que apunta la flecha dibuja también
+    # sus varillas y su estribo: la IA no llena ni la sección ni el armado.
+    ents = [
+        _titulo("m", "CE-1", 0.0, 0.0, alto=0.1),
+        _flecha("f", [(-0.259, 0.317), (-0.009, -0.003), (0.312, -0.003)]),
+        _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    (claim,) = _cotas(inv, "CE-1")
+    assert claim.campos_con_texto == _ARMADO_SENALADO
+    ia = _ia("CE-1", family="dala", section_cm=(15, 30), rebar="4#3", stirrups="E#2@15")
+    merge_external_specs(inv, [ia], C)
+    d = construir_definiciones(inv, C)[0]["CE-1"]
+    for campo in ("seccion_cm", "longitudinales", "estribos"):
+        dato = getattr(d, campo)
+        assert dato.ilegible and dato.fuente == "detalle", campo
+        assert any(a.fuente == "ia" for a in dato.alternativas), campo
+    assert "m" in inv.titulos_de_detalle
+
+
+def test_a_leader_never_closes_a_section_outline():
+    # M-7: tres trazos y una directriz LEADER encima del cuarto lado no son un contorno cerrado:
+    # el título no es dueño de nada ahí y no reclama una sección.
+    lider = _flecha("l", [(1.0, 1.0), (0.0, 1.0)], lider=True)
+    ents = [
+        _texto("m", "T-1", 0.5, 1.2, alto=0.1),
+        _linea("a", (0.0, 1.0), (0.0, 0.0)),
+        _linea("b", (0.0, 0.0), (1.0, 0.0)),
+        _linea("c", (1.0, 0.0), (1.0, 1.0)),
+        lider,
+        _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert _cotas(inv, "T-1") == []
+
+
+def test_the_unowned_armado_under_a_titles_section_is_said_even_without_ai():
+    # R140 (CE-5 en Marina: sin lectura IA): su armado está escrito bajo su sección y nadie lo
+    # leyó; la definición lo dice, para que el elemento no diga «la marca no lo dice».
+    inv = build_schedule_inventory(_grupo_de_cadenas(), C, unit_to_m=1.0, detail_boxes=[])
+    d = construir_definiciones(inv, C)[0]["CE-3"]
+    assert d.longitudinales is None and d.estribos is None
+    assert d.sin_leer == {"longitudinales": "«6#4»", "estribos": "«E#3@14»"}

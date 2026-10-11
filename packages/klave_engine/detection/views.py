@@ -65,6 +65,9 @@ class ViewRegion(BaseModel):
     kind: ViewKind
     level_key: str | None = None  # cimentacion | planta_baja | azotea | nivel_2 …
     npt_level: float | None = None
+    # M-4: every level the planta's texts declare, with how many say it (the most said first):
+    # ``npt_level`` is the first; the others are what it was weighed against.
+    niveles_leidos: list[tuple[float, int]] = Field(default_factory=list)
     # False for plantas of non-structural sheets (cancelería, instalaciones…):
     # they are views for the levantamiento but never levels of the structure.
     structural: bool = True
@@ -144,11 +147,17 @@ class SheetSegmentation(BaseModel):
                 clusters.append([view])
 
         def nombre(cluster: list[ViewRegion]) -> str:
+            """The cluster's level, its plantas and (M-4) how many texts say each level."""
             nivel = cluster[0].npt_level or 0.0
-            return f"{nivel:+.2f} ({', '.join(v.title for v in cluster)})"
+            partes = []
+            for v in cluster:
+                votos = ", ".join(f"{n:+g} ×{c}" for n, c in v.niveles_leidos[:4])
+                partes.append(f"{v.title}: {votos}" if votos else v.title)
+            return f"{nivel:+.2f} ({'; '.join(partes)})"
 
         heights: dict[str, AlturaDeEntrepiso] = {}
         previous: AlturaDeEntrepiso | None = None
+        previous_titulos: list[str] = []
         for index, cluster in enumerate(clusters):
             base = cluster[0].npt_level or 0.0
             if index + 1 < len(clusters):
@@ -165,19 +174,22 @@ class SheetSegmentation(BaseModel):
                 )
             elif previous is not None:
                 delta = previous.altura_m
+                abajo = ", ".join(t for t in previous_titulos)
                 altura = AlturaDeEntrepiso(
                     altura_m=delta,
                     nivel_m=base,
                     repetida=True,
                     texto=(
                         f"la planta más alta, {nombre(cluster)}, no tiene un nivel declarado "
-                        f"encima: repite la altura de la de abajo ({previous.texto})"
+                        f"encima: repite la altura de la planta de abajo, «{abajo}» ({delta:g} m, "
+                        f"de {previous.nivel_m:+.2f} a {previous.nivel_arriba_m or base:+.2f})"
                     ),
                 )
             else:
                 continue
             if 1.8 <= delta <= 8.0:
-                previous = altura
+                if not altura.repetida:
+                    previous, previous_titulos = altura, [v.title for v in cluster]
                 for view in cluster:
                     heights[view.view_id] = altura
         return heights
@@ -293,6 +305,13 @@ def _level_values(texts: list[str]) -> list[float]:
 def _frame_level(entities: list[NormalizedEntity], frame: SheetFrame) -> float | None:
     """The level a planta declares most often inside its frame (texts and
     cajetín/level-marker attributes)."""
+    niveles = _frame_levels(entities, frame)
+    return niveles[0][0] if niveles else None
+
+
+def _frame_levels(entities: list[NormalizedEntity], frame: SheetFrame) -> list[tuple[float, int]]:
+    """Every level a planta declares inside its frame, with how many texts say it: the most said
+    first (ties: the lower level), as ``_frame_level`` picks it."""
     texts: list[str] = []
     for e in entities:
         if e.source_file != frame.source_file and frame.source_file:
@@ -305,12 +324,10 @@ def _frame_level(entities: list[NormalizedEntity], frame: SheetFrame) -> float |
         if isinstance(attributes, dict):
             texts.extend(str(v) for v in attributes.values())
     values = _level_values(texts)
-    if not values:
-        return None
     counts: dict[float, int] = {}
     for v in values:
         counts[v] = counts.get(v, 0) + 1
-    return max(counts, key=lambda v: (counts[v], -v))
+    return sorted(counts.items(), key=lambda vc: (-vc[1], vc[0]))
 
 
 def _npt_levels(entities: list[NormalizedEntity]) -> list[float]:
@@ -369,6 +386,7 @@ def _segment_by_frames(
             kind=kind,
             level_key=frame.level_key if kind == ViewKind.plan else None,
             npt_level=_frame_level(entities, frame) if kind == ViewKind.plan else None,
+            niveles_leidos=_frame_levels(entities, frame) if kind == ViewKind.plan else [],
             structural=reads_as_structure(frame.source_file) if frame.source_file else True,
             anchor=bbox_center(frame.bbox),
             bbox=frame.bbox,

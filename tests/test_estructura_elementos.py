@@ -97,6 +97,7 @@ def _nota_dala():
 
 
 def _construir(dets, seg=None, por_marca=None, por_familia=None, reglas=None, factor=1.0, **kw):
+    kw.setdefault("frames", [])
     return construir_elementos(
         dets, seg, por_marca or {}, por_familia or {}, reglas or reglas_estandar(), factor, 2.7,
         **kw,
@@ -557,3 +558,145 @@ def test_one_line_that_is_the_span_of_several_tags_is_said_on_each():
                    for x in els[d.detection_id].avisos)  # fmt: skip
         assert els[d.detection_id].longitud_m.valor == 14.9
     assert not any(x.startswith("claro compartido") for x in els[c.detection_id].avisos)
+
+
+# ------------------------------------------------------ Tarea 9, ronda 1: R139–R145, M-3, M-4
+
+
+def test_a_decision_applied_through_elegir_survives_each_sheet():
+    # R141 (I-1): la decisión «humano» sobre la sección de K-5 la conserva cada colocación, en
+    # cualquier hoja; ninguna hoja la deshace con su copia del cuadro.
+    copias = [_seccion((20, 30), hoja=h) for h in ("ES-400", "ES-100", "ES-200")]
+    k5 = elegir(copias)
+    decidida = elegir([Dato(valor=(25, 40), fuente="humano", texto="Revisión"), k5])
+    defs = {"K-5": _def("K-5", seccion=decidida)}
+    en_100, en_200 = _tag("K-5", x=10, y=10), _tag("K-5", x=210, y=10)
+    marcos = [
+        SheetFrame(frame_id="f100", bbox=(0, 0, 100, 100), source_file="a.dxf", code="ES-100"),
+        SheetFrame(frame_id="f200", bbox=(200, 0, 300, 100), source_file="a.dxf", code="ES-200"),
+    ]
+    els = _construir([en_100, en_200], None, defs, frames=marcos)
+    assert [(e.hoja, e.seccion_cm.valor, e.seccion_cm.fuente) for e in els] == [
+        ("ES-100", (25, 40), "humano"), ("ES-200", (25, 40), "humano"),
+    ]  # fmt: skip
+    # Y ``resolver`` después de la decisión tampoco la deshace.
+    antes = _construir([en_100], None, {"K-5": _def("K-5", seccion=k5)}, frames=marcos)[0]
+    despues = resolver(antes, defs, {}, reglas_estandar())
+    assert (despues.seccion_cm.valor, despues.seccion_cm.fuente) == ((25, 40), "humano")
+
+
+def test_frames_are_required_when_the_segmentation_has_several_views():
+    # M-3: sin marcos, la hoja de cada vista no se sabe y R72 se apagaría callada.
+    k = _tag("K-4")
+    with pytest.raises(ValueError, match="marcos"):
+        construir_elementos(
+            [k], _seg({k.detection_id: "v_pa"}), _defs("K-4"), {}, reglas_estandar(), 1.0, 2.7
+        )
+
+
+def test_a_detail_title_is_excluded_as_such():
+    # R145: la etiqueta que es título de un detalle (dueña de su sección dibujada) es una
+    # definición: se excluye con su motivo, no como una colocación.
+    t = _tag("CE-1", "dala", role="cuadro", titulo_de_detalle=True)
+    seg = _seg({t.detection_id: "v_pa"})
+    assert _construir([t], seg, {}) == []
+    (x,) = excluidas([t], seg)
+    assert x.motivo == "titulo_de_detalle" and x.texto.startswith("título de detalle")
+
+
+def test_a_blocked_ai_armado_falls_back_to_the_family_note_with_a_duda():
+    # R140 (CTA-1 en Marina): el plano escribe su armado junto a la sección y nadie lo leyó; la IA
+    # no se toma. Con nota de familia, la nota como supuesto y una duda; sin ella, sin armado y la
+    # duda.
+    d = _def("CE-1", familia="dala", seccion=(15, 30))
+    d.sin_leer = {"longitudinales": "«4#3»", "estribos": "«E#2@15»"}
+    ce1 = _tag("CE-1", "dala", estimated_span_length=4.0)
+    seg = _seg({ce1.detection_id: "v_pa"})
+    (con,) = _construir([ce1], seg, {"CE-1": d}, {"dala": _nota_dala()})
+    assert (con.longitudinales.fuente, con.estribos.fuente) == ("supuesto", "supuesto")
+    assert any("el plano lo escribe y no se leyó («4#3»)" in a for a in con.avisos)
+    assert len(con.dudas) == 2
+    (sin,) = _construir([ce1], seg, {"CE-1": d})
+    assert sin.longitudinales is None and sin.estribos is None
+    assert len(sin.dudas) == 2 and all("por leer" in x for x in sin.dudas)
+
+
+def test_a_leader_claimed_armado_falls_back_like_the_section():
+    # R139: la flecha reclama también el armado: el ilegible cae a la nota de la familia como
+    # supuesto, con duda y la ilegible como alternativa.
+    senalada = Dato(valor=None, fuente="detalle", hoja="ES-500", ilegible=True,
+                    texto="CE-1 · señalada por flecha; se lee en E3")  # fmt: skip
+    d = _def("CE-1", familia="dala", seccion=senalada, longitudinales=senalada,
+             estribos=senalada, parrillas=senalada)  # fmt: skip
+    ce1 = _tag("CE-1", "dala", estimated_span_length=4.0)
+    (e,) = _construir([ce1], _seg({ce1.detection_id: "v_pa"}), {"CE-1": d}, {"dala": _nota_dala()})
+    for campo in ("seccion_cm", "longitudinales", "estribos"):
+        dato = getattr(e, campo)
+        assert dato.fuente == "supuesto" and any(a.ilegible for a in dato.alternativas), campo
+    # Una dala no lleva parrillas: lo que la flecha reclama por si acaso no le falta.
+    assert not any(a.startswith("parrillas") for a in e.avisos)
+    assert len(e.dudas) == 3
+
+
+def test_a_non_rectangular_castillo_takes_its_planta_outline_area():
+    # R142 (K-15A en Marina, ES-100/ES-200): su sección no es un rectángulo y nadie la lee; en
+    # planta, su contorno en EST-CASTILLOS (30x60 más 25x20) mide 2300 cm²: se usa medido, con
+    # aviso. El marcador de un dado (EST-DADOS, ES-000) nunca.
+    ilegible = Dato(valor=None, fuente="detalle", hoja="ES-100", ilegible=True,
+                    texto="K-15A · sección dibujada no encontrada")  # fmt: skip
+    defs = {"K-15A": _def("K-15A", seccion=ilegible)}
+    props = {"contorno_area_du2": 0.23, "contorno_rectangular": False,
+             "contorno_entidades": ["p1", "p2"]}  # fmt: skip
+    castillo = _tag("K-15A", contorno_capa="EST-CASTILLOS", **props)
+    dado = _tag("K-15A", x=5.0, contorno_capa="EST-DADOS", **props)
+    seg = _seg({castillo.detection_id: "v_pa", dado.detection_id: "v_pa"})
+    els = {e.detection_id: e for e in _construir([castillo, dado], seg, defs)}
+    e = els[castillo.detection_id]
+    assert (e.seccion_cm.valor, e.seccion_cm.fuente) == ({"area_cm2": 2300.0}, "medido")
+    assert any(a.startswith("sección no rectangular") for a in e.avisos)
+    assert any(a.ilegible for a in e.seccion_cm.alternativas)
+    otro = els[dado.detection_id]
+    assert (otro.seccion_cm.valor, otro.seccion_cm.fuente) == ((15, 20), "supuesto")
+
+
+def test_a_concrete_wall_on_a_foundation_sheet_takes_the_foundation_cover():
+    # R144: la nota de recubrimientos no nombra el muro de concreto; en una hoja de cimentación
+    # toma la cláusula de los elementos de cimentación, como nota; en otra, el supuesto.
+    reglas = reglas_estandar()
+    cubre = dict(reglas.recubrimiento_m)
+    cubre["zapata"] = Dato(valor=0.05, fuente="nota", hoja="ES-100",
+                           texto="5.0 CM EN ELEMENTOS ESTRUCTURALES DE CIMENTACION")  # fmt: skip
+    reglas = reglas.model_copy(update={"recubrimiento_m": cubre})
+    marcos = [
+        SheetFrame(frame_id="f0", bbox=(0, 0, 100, 100), source_file="a.dxf", code="ES-000",
+                   title="CIMENTACIÓN"),
+        SheetFrame(frame_id="f1", bbox=(200, 0, 300, 100), source_file="a.dxf", code="ES-100",
+                   title="ESTRUCTURA DE PLANTA BAJA"),
+    ]  # fmt: skip
+    en_cim = _tag("", "muro_concreto", x=10, y=10, estimated_length=11.5)
+    en_pb = _tag("", "muro_concreto", x=210, y=10, estimated_length=11.5)
+    els = {e.hoja: e for e in _construir([en_cim, en_pb], None, reglas=reglas, frames=marcos)}
+    assert (els["ES-000"].recubrimiento_m.valor, els["ES-000"].recubrimiento_m.fuente) == (
+        0.05, "nota",
+    )  # fmt: skip
+    assert any("hoja de cimentación" in a for a in els["ES-000"].avisos)
+    assert (els["ES-100"].recubrimiento_m.valor, els["ES-100"].recubrimiento_m.fuente) == (
+        0.04, "supuesto",
+    )  # fmt: skip
+
+
+def test_the_height_text_names_the_levels_their_counts_and_the_planta_it_repeats():
+    # M-4 (ES-300 en Marina): la altura de ES-300 descansa en +14.75 de ES-400, que lo dicen 5
+    # textos contra 4 de +14.95; la de ES-400 repite la de ES-300 y la nombra.
+    vistas = [
+        ViewRegion(view_id="f300", title="ES-300 · ROOF GARDEN", kind=ViewKind.plan,
+                   level_key="planta", npt_level=11.55, anchor=(0, 0),
+                   niveles_leidos=[(11.55, 5), (11.81, 3)]),
+        ViewRegion(view_id="f400", title="ES-400 · AZOTEA", kind=ViewKind.plan,
+                   level_key="azotea", npt_level=14.75, anchor=(0, 0),
+                   niveles_leidos=[(14.75, 5), (14.95, 4)]),
+    ]  # fmt: skip
+    alturas = SheetSegmentation(views=vistas, assignment={}, is_segmented=True)
+    a = alturas.alturas_de_entrepiso()
+    assert "+14.75 ×5, +14.95 ×4" in a["f300"].texto and "+11.55 ×5" in a["f300"].texto
+    assert a["f400"].repetida and "«ES-300 · ROOF GARDEN»" in a["f400"].texto

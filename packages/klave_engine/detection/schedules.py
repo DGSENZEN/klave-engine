@@ -249,6 +249,10 @@ class ScheduleInventory(BaseModel):
     # Text entities that are the marks of a cuadro drawn on a planta sheet:
     # they name a type, they are not an element to count.
     cuadro_mark_entities: list[str] = Field(default_factory=list)
+    # R145: of those, the titles of a detail: a label that owns a drawn section with cotas (a
+    # detail drawn inside a planta sheet) or carries a «señalada» leader. A definition, never a
+    # placement.
+    titulos_de_detalle: list[str] = Field(default_factory=list)
     # Armado texts the association could not give to a mark (ambiguous, unowned,
     # another family's…): reported, never read in silence.
     rechazos: list[Rechazo] = Field(default_factory=list)
@@ -2050,7 +2054,10 @@ def _pares_de_cotas(
     por_punto: dict[tuple[int, int], list[_Cota]] = defaultdict(list)
     for c in sueltas:
         if c.eje == "y":
-            for punto in (c.p, c.q):
+            # Its definition points, and the corners they project to when they are not one above
+            # the other (a vertical cota from the section's corner up to the slab's edge beside
+            # it, CE-1 in Marina: «30» from (217.536, −62.316) to (217.896, −60.607)).
+            for punto in dict.fromkeys([c.p, c.q, (c.p[0], c.q[1]), (c.q[0], c.p[1])]):
                 por_punto[(round(punto[0] / tol), round(punto[1] / tol))].append(c)
     horizontales: dict[int, list[tuple[float, float, float]]] = defaultdict(list)
     verticales: dict[int, list[tuple[float, float, float]]] = defaultdict(list)
@@ -2080,7 +2087,8 @@ def _pares_de_cotas(
                 for j in (-1, 0, 1)
                 for v in por_punto.get((k[0] + i, k[1] + j), [])
             }.values():
-                if min(math.dist(punto, v.p), math.dist(punto, v.q)) > tol:
+                esquinas = (v.p, v.q, (v.p[0], v.q[1]), (v.q[0], v.p[1]))
+                if min(math.dist(punto, e) for e in esquinas) > tol:
                     continue
                 (x0, x1), (y0, y1) = h.tramo(), v.tramo()
                 if x1 - x0 <= tol or y1 - y0 <= tol or max(x1 - x0, y1 - y0) > tamano:
@@ -2146,6 +2154,8 @@ def _sections_from_detail_cotas(
     rechazos: list[Rechazo] | None = None,
     duenos: Collection[str] = (),
     dibujadas: Collection[str] = (),
+    titulos: list[str] | None = None,
+    secciones: list[tuple[str, BBox, str]] | None = None,
 ) -> list[ElementSpec]:
     """A cuadro or detail label's section from ITS OWN drawn section (R81): the closed
     outline (polylines and lines joined end to end, block contents included) nearest
@@ -2177,11 +2187,20 @@ def _sections_from_detail_cotas(
     cotas is not claimed here (R123 blocks what fills it from elsewhere, not the
     reading of that drawing). A title a leader starts or lands at whose section is
     read nowhere is claimed «señalada por flecha» (R124, ``flechas``; where it
-    points is E3)."""
+    points is E3).
+
+    R145: a label outside the detail frames with no armado beside it (a plan tag, or the title
+    of a detail drawn inside a planta sheet: «CADENAS DE ENRASE … SIN ESCALA») is tried apart:
+    when it owns a drawn section that carries cotas (an outline with cotas on its edges, or a
+    pair of cotas), on its own sheet's side and not owned by another label, it is a detail
+    TITLE — its reading is kept and its entity goes to ``titulos`` and ``cuadro_marks`` (a
+    definition, never a placement); otherwise nothing of it is kept. ``secciones`` receives,
+    for R140, every owned drawn section: the mark, its box and its sheet key."""
     dims = [e for e in entities if e.entity_type == EntityType.dimension]
     if not dims:
         return []
     etiquetas: list[_Etiqueta] = []
+    tentativas: list[_Etiqueta] = []
     for text in entities:
         if not text.is_textual or not text.text:
             continue
@@ -2209,28 +2228,107 @@ def _sections_from_detail_cotas(
                 for t in entities
             )
             if not has_armado:
+                tentativas.append(_etiqueta_de(text, mark, False, unit_to_m, sheet, config))
                 continue
             if cuadro_marks is not None:
                 cuadro_marks.append(text.entity_id)
-        x0, y0, x1, y1 = _extension_del_texto(text)  # where its text really lies (R120)
-        etiquetas.append(
-            _Etiqueta(
-                texto=text,
-                marca=mark,
-                x=(x0 + x1) / 2,
-                y=(y0 + y1) / 2,
-                alto=bbox_height(text.bbox) or 0.1 / unit_to_m,
-                llave=sheet(text)[1],
-                en_detalle=in_detail,
-                x0=x0,
-                x1=x1,
-                y0=y0,
-                y1=y1,
-                familia=_familia_de_titulo((_titulo(content, config) or ([], None))[1], mark),
-            )
+        etiquetas.append(_etiqueta_de(text, mark, in_detail, unit_to_m, sheet, config))
+    duenas: list[tuple[_Etiqueta, BBox]] = []
+    specs = (
+        _leer_secciones(
+            etiquetas, entities, dims, unit_to_m, widths_by_family, sheet, rechazos, dibujadas,
+            duenas,
         )
+        if etiquetas
+        else []
+    )  # fmt: skip
+    tentativas = _con_cotas_cerca(tentativas, dims)
+    if tentativas:
+        suyas: list[tuple[_Etiqueta, BBox]] = []
+        rechazos_t: list[Rechazo] = []
+        leidas = _leer_secciones(
+            tentativas, entities, dims, unit_to_m, widths_by_family, sheet, rechazos_t,
+            dibujadas, suyas, solo_acotadas=True, ocupadas=[caja for _e, caja in duenas],
+        )  # fmt: skip
+        aceptadas = {e.texto.entity_id for e, _caja in suyas}
+        specs += [x for x in leidas if x.entidades and x.entidades[0] in aceptadas]
+        if rechazos is not None:
+            rechazos += [r for r in rechazos_t if r.entidad_id in aceptadas]
+        duenas += suyas
+        for lista in (titulos, cuadro_marks):
+            if lista is not None:
+                lista += sorted(aceptadas)
+    if secciones is not None:
+        secciones += [(e.marca, caja, e.llave) for e, caja in duenas]
+    return specs
+
+
+def _etiqueta_de(
+    text: NormalizedEntity,
+    mark: str,
+    in_detail: bool,
+    unit_to_m: float,
+    sheet: Sheet,
+    config: TextPatternConfig,
+) -> _Etiqueta:
+    content = (text.text or "").strip()
+    x0, y0, x1, y1 = _extension_del_texto(text)  # where its text really lies (R120)
+    return _Etiqueta(
+        texto=text,
+        marca=mark,
+        x=(x0 + x1) / 2,
+        y=(y0 + y1) / 2,
+        alto=bbox_height(text.bbox) or 0.1 / unit_to_m,
+        llave=sheet(text)[1],
+        en_detalle=in_detail,
+        x0=x0,
+        x1=x1,
+        y0=y0,
+        y1=y1,
+        familia=_familia_de_titulo((_titulo(content, config) or ([], None))[1], mark),
+    )
+
+
+def _con_cotas_cerca(etiquetas: list[_Etiqueta], dims: list[NormalizedEntity]) -> list[_Etiqueta]:
+    """R145: of the labels tried apart, those with a dimension within reach of a section: a
+    plan tag far from every cota is never a detail title."""
     if not etiquetas:
         return []
+    ventanas = [
+        (e.x - r, e.y - r, e.x + r, e.y + r) for e in etiquetas for r in [_ALCANCE * e.alto]
+    ]
+    cerca = _cerca_de(dims, ventanas)
+    return [
+        e
+        for e, v in zip(etiquetas, ventanas, strict=True)
+        if any(
+            d.bbox[0] <= v[2] and d.bbox[2] >= v[0] and d.bbox[1] <= v[3] and d.bbox[3] >= v[1]
+            for d in cerca
+        )
+    ]
+
+
+def _misma_caja(a: BBox, b: BBox, tol: float) -> bool:
+    return all(abs(p - q) <= tol for p, q in zip(a, b, strict=True))
+
+
+def _leer_secciones(
+    etiquetas: list[_Etiqueta],
+    entities: list[NormalizedEntity],
+    dims: list[NormalizedEntity],
+    unit_to_m: float,
+    widths_by_family: dict[str, int],
+    sheet: Sheet,
+    rechazos: list[Rechazo] | None,
+    dibujadas: Collection[str],
+    duenas: list[tuple[_Etiqueta, BBox]],
+    solo_acotadas: bool = False,
+    ocupadas: list[BBox] | None = None,
+) -> list[ElementSpec]:
+    """The readings of ``etiquetas``' sections (see ``_sections_from_detail_cotas``); ``duenas``
+    receives each label that owns a drawn section, with the section's box. ``solo_acotadas``
+    (R145, the labels tried apart): an outline is a section only if it carries cotas on its
+    edges; ``ocupadas`` are the sections other labels own, never these labels'."""
     alto = statistics.median(e.alto for e in etiquetas)
     # Only what lies near a label is joined into outlines.
     ventanas = [
@@ -2238,20 +2336,26 @@ def _sections_from_detail_cotas(
          e.x + 2 * _ALCANCE * e.alto, e.y + 2 * _ALCANCE * e.alto)
         for e in etiquetas
     ]  # fmt: skip
+    # M-7: a leader's lines (LEADER, MULTILEADER) are annotation, never a section's edge.
     segmentos = [
         e
         for e in _cerca_de(entities, ventanas)
-        if e.entity_type in (EntityType.line, EntityType.polyline)
+        if e.entity_type in (EntityType.line, EntityType.polyline) and not e.is_annotation
     ]
-    contornos = _contornos(segmentos, _UNE * alto)
+    contornos = [
+        c
+        for c in _contornos(segmentos, _UNE * alto)
+        if not any(_misma_caja(c.caja, o, _UNE * alto) for o in ocupadas or [])
+    ]
     con_cotas: dict[tuple[int, float], bool] = {}
 
     def es_seccion(c: _Contorno, e: _Etiqueta) -> bool:
         """R123, R129: an outline is a section when it is a rectangle (a trapezoid or a rotated
-        one is not) that looks like one or carries a cota on its edges."""
+        one is not) that looks like one or carries a cota on its edges (R145: for a label tried
+        apart, only one that carries a cota)."""
         if not _es_rectangulo(_esquinas(c.puntos, _UNE * alto), _UNE * alto):
             return False
-        if _parece_seccion(c, e.alto, _UNE * alto):
+        if not solo_acotadas and _parece_seccion(c, e.alto, _UNE * alto):
             return True
         clave = (id(c), e.alto)
         if clave not in con_cotas:
@@ -2284,13 +2388,18 @@ def _sections_from_detail_cotas(
             [
                 e
                 for e in _cerca_de(entities, lejos)
-                if e.entity_type in (EntityType.line, EntityType.polyline)
+                if e.entity_type in (EntityType.line, EntityType.polyline) and not e.is_annotation
             ],
             contornos,
             unit_to_m,
             _SOBRE_ARISTA * alto,
             _TAMANO * alto,
         )
+        lista = [
+            par
+            for par in lista
+            if not any(_misma_caja(par.contorno.caja, o, _UNE * alto) for o in ocupadas or [])
+        ]
         pares = {id(par.contorno): par for par in lista}
         de_par = _propio(sin_contorno, [par.contorno for par in lista], topes=topes)
 
@@ -2298,8 +2407,13 @@ def _sections_from_detail_cotas(
     for e in etiquetas:
         par = de_par.get(e.texto.entity_id)
         if par is not None and (par.contorno is not None or par.otras or par.dudosa):
+            if par.contorno is not None:
+                duenas.append((e, par.contorno.caja))
             specs += _seccion_de_par(e, par, pares, sheet, rechazos)
             continue
+        propio = propios[e.texto.entity_id].contorno
+        if propio is not None:
+            duenas.append((e, propio.caja))
         specs += _seccion_de_etiqueta(
             e,
             propios[e.texto.entity_id],
@@ -2361,8 +2475,10 @@ def _lectura_de_cotas(
     note: str,
     metodo: Metodo = "cotas",
     supuesta: bool = False,
+    campos: list[Campo] | None = None,
 ) -> ElementSpec:
-    """A reading of the section of a cuadro or detail label (``_sections_from_detail_cotas``)."""
+    """A reading of the section of a cuadro or detail label (``_sections_from_detail_cotas``);
+    ``campos`` are the fields the drawing has text (or drawing) for, the section by default."""
     content = (e.texto.text or "").strip()
     hoja, llave = sheet(e.texto)
     return ElementSpec(
@@ -2375,7 +2491,7 @@ def _lectura_de_cotas(
         hoja=hoja,
         hoja_llave=llave,
         entidades=[e.texto.entity_id],
-        campos_con_texto=["seccion"],
+        campos_con_texto=list(campos) if campos is not None else ["seccion"],
         avisos=avisos,
         source_text=f"{content} · {note}"[:120],
         confidence=0.7 if section is not None and not supuesta else 0.55,
@@ -2796,7 +2912,19 @@ def _flechas_de_titulos(
                 familia=_familia_de_titulo(familia, marca),
             )
             aviso = f"sección: {_SENALADA}"
-            salida.append((text.entity_id, _lectura_de_cotas(e, sheet, None, [aviso], _SENALADA)))
+            # R139: the detail the leader points at draws the section AND the armado (CE-1's
+            # pointed sections draw 4 bars and a stirrup): both are the drawing's, unread.
+            # A family only the prefix gives may be one with meshes (D-1C: the AI's dado): the
+            # parrillas are claimed too.
+            campos: list[Campo] = ["seccion", "longitudinales", "estribos"]
+            if e.familia is None or e.familia in FAMILIAS_CON_PARRILLA:
+                campos.append("parrillas")
+            salida.append(
+                (
+                    text.entity_id,
+                    _lectura_de_cotas(e, sheet, None, [aviso], _SENALADA, campos=campos),
+                )
+            )
     return salida
 
 
@@ -2835,6 +2963,10 @@ def _senaladas_por_flecha(
         for s in suyas:
             if aviso not in s.avisos:
                 s.avisos.append(aviso)
+            # R139: the leader claims the armado too.
+            s.campos_con_texto = [
+                c for c in CAMPOS if c in {*s.campos_con_texto, *reclamo.campos_con_texto}
+            ]
         if not suyas:
             salida.append(reclamo)
     return salida
@@ -2879,6 +3011,47 @@ def _family_notes_that_name_a_mark(
             )
         )
     return kept, rechazos + nuevos
+
+
+def _junto_a_su_seccion(
+    rechazos: list[Rechazo],
+    texts: list[NormalizedEntity],
+    secciones: list[tuple[str, BBox, str]],
+    sheet: Sheet,
+) -> None:
+    """R140: an unowned armado text (``sin_dueno``) beside a drawn section a title owns — in its
+    detail group: the nearest owned section of its sheet, within that section's larger side —
+    may be that title's armado: it carries the title's mark as «posible», which blocks the
+    mark's AI for the fields it shows (``bloqueos_de``). Only a text that shows armado and
+    nothing else counts (a general note, a size, a section never). Two sections equally near
+    (within 10 %) both carry it. Reading it is Task 9c."""
+    if not secciones:
+        return
+    por_id = {t.entity_id: t for t in texts}
+    armado = {"longitudinales", "estribos", "parrillas"}
+    for r in rechazos:
+        if r.motivo != "sin_dueno" or r.posibles:
+            continue
+        campos = set(campos_de_fragmento(r.texto))
+        if not campos or not campos <= armado:
+            continue  # only armado («4#4», «E#4», «1@6,8@10»): never a note or a section
+        texto = por_id.get(r.entidad_id)
+        if texto is None:
+            continue
+        llave = sheet(texto)[1]
+        x0, y0, x1, y1 = texto.bbox
+        cerca: list[tuple[float, str]] = []
+        for marca, caja, suya in secciones:
+            if suya != llave:
+                continue
+            dx = max(caja[0] - x1, 0.0, x0 - caja[2])
+            dy = max(caja[1] - y1, 0.0, y0 - caja[3])
+            d = math.hypot(dx, dy)
+            if d <= max(caja[2] - caja[0], caja[3] - caja[1]):
+                cerca.append((d, marca))
+        if cerca:
+            minimo = min(d for d, _m in cerca)
+            r.posibles = sorted({m for d, m in cerca if d <= minimo * 1.1 + 1e-9})
 
 
 def _lo_que_nadie_leyo(
@@ -2972,6 +3145,8 @@ def build_schedule_inventory(
     specs += notes
     rechazos = rechazos + rechazos_de_notas
     inventory_cuadro_marks: list[str] = []
+    titulos_de_detalle: list[str] = []
+    secciones_dibujadas: list[tuple[str, BBox, str]] = []
     dibujadas: set[str] = set()
     flechas: list[tuple[str, ElementSpec]] = []
     if unit_to_m and detail_boxes:
@@ -3006,6 +3181,8 @@ def build_schedule_inventory(
                 de_cotas,
                 set(labels),
                 dibujadas,
+                titulos_de_detalle,
+                secciones_dibujadas,
             )
             # R124, R128: the titles a leader starts or lands at, each mark a candidate claim.
             flechas = _flechas_de_titulos(
@@ -3020,6 +3197,11 @@ def build_schedule_inventory(
         specs += reader(entities)
     specs, rechazos = _family_notes_that_name_a_mark(specs, rechazos, texts, config)
     specs = _senaladas_por_flecha(specs, flechas, config)
+    # R145: a title carrying a «señalada» leader is a detail title too.
+    senaladas = {e for s in specs if s.source_text.endswith(_SENALADA) for e in s.entidades} | {
+        e for s in specs if any(a.endswith(_SENALADA) for a in s.avisos) for e in s.entidades
+    }
+    titulos_de_detalle = sorted({*titulos_de_detalle, *senaladas})
     leidos_por_reglas = leer_reglas(entities, frames).textos_leidos
     rechazos = rechazos + _lo_que_nadie_leyo(
         texts, specs, rechazos, config, sheet, posibles, leidos_por_reglas
@@ -3027,6 +3209,7 @@ def build_schedule_inventory(
     for r in rechazos:  # R116: every rejection past a cut, whoever made it, carries the label
         if not r.posibles and r.entidad_id in posibles:
             r.posibles = sorted(posibles[r.entidad_id])
+    _junto_a_su_seccion(rechazos, texts, secciones_dibujadas, sheet)
     inventory = ScheduleInventory(
         specs=specs,
         tables_found=tables,
@@ -3034,7 +3217,8 @@ def build_schedule_inventory(
         pile_length_m=parse_pile_length([t.text or "" for t in texts]),
         # Both feed it: a label that owns a stack or a cuadro row, and a mark
         # drawn with armado beside it in a planta (the cotas reader).
-        cuadro_mark_entities=_union(labels, inventory_cuadro_marks),
+        cuadro_mark_entities=_union(labels, inventory_cuadro_marks, titulos_de_detalle),
+        titulos_de_detalle=titulos_de_detalle,
         rechazos=rechazos,
         leidos_por_reglas=leidos_por_reglas,
     )
@@ -3584,6 +3768,7 @@ def mark_cuadro_detections(detections: list[Detection], inventory: ScheduleInven
     elements: they keep their evidence but carry role='cuadro' so no
     quantity counts them."""
     cuadro = set(inventory.cuadro_mark_entities)
+    titulos = set(inventory.titulos_de_detalle)
     if not cuadro:
         return 0
     tagged = 0
@@ -3592,6 +3777,9 @@ def mark_cuadro_detections(detections: list[Detection], inventory: ScheduleInven
             continue
         if any(entity_id in cuadro for entity_id in detection.source_entities):
             detection.properties["role"] = "cuadro"
+            if any(entity_id in titulos for entity_id in detection.source_entities):
+                # R145: the title of a detail (its section is drawn, or a leader points at it).
+                detection.properties["titulo_de_detalle"] = True
             detection.evidence.notes.append(
                 "Marca dentro de un cuadro/detalle dibujado en la planta: nombra un tipo, "
                 "no cuenta como elemento."

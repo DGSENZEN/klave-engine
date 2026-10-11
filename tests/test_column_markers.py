@@ -11,7 +11,7 @@ def _ent(entity_id, tipo, bbox, **extra):
         entity_id=entity_id,
         entity_type=tipo,
         source_file="a.dxf",
-        layer="0",
+        layer=extra.pop("layer", "0"),
         bbox=bbox,
         raw_handle=entity_id,
         evidence=EvidencePacket(source="a.dxf", method="t", entity_ids=[entity_id], bbox=bbox),
@@ -40,3 +40,34 @@ def test_the_smallest_marker_wins_a_tie_at_distance_zero(al_reves):
     assert tag.properties["section_area_du2"] == pytest.approx(
         3.141592653589793 * 0.07**2, abs=1e-6
     )
+
+
+def _rect(entity_id, x0, y0, x1, y1, layer="EST-CASTILLOS"):
+    puntos = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+    return _ent(
+        entity_id, EntityType.polyline, (x0, y0, x1, y1), points=puntos,
+        properties={"closed": True}, layer=layer,
+    )  # fmt: skip
+
+
+def test_an_l_shaped_castillo_records_its_whole_outline():
+    # R142 (K-15A en Marina, ES-100/ES-200): el castillo es una L dibujada con dos rectángulos en
+    # EST-CASTILLOS (30x60 y 25x20 pegados); el marcador es el de 30x60 y el contorno, la L entera:
+    # 0.23 m², no rectangular. La sección medida del marcador no cambia.
+    etiqueta = _ent("ent_000009", EntityType.text, (0.35, 0.1, 0.6, 0.2), text="K-15A")
+    a = _rect("ent_000001", 0.0, 0.0, 0.3, 0.6)
+    b = _rect("ent_000002", 0.3, 0.0, 0.55, 0.2)
+    entidades = [etiqueta, a, b]
+    (tag,) = detect_columns(entidades, SpatialIndex(entidades)).detections
+    p = tag.properties
+    assert p["contorno_area_du2"] == pytest.approx(0.23, abs=1e-4)
+    assert p["contorno_rectangular"] is False and p["contorno_capa"] == "EST-CASTILLOS"
+    assert sorted(p["contorno_entidades"]) == ["ent_000001", "ent_000002"]
+
+
+def test_a_rectangular_castillo_outline_is_rectangular():
+    etiqueta = _ent("ent_000009", EntityType.text, (0.2, 0.25, 0.4, 0.35), text="K-1")
+    entidades = [etiqueta, _rect("ent_000001", 0.0, 0.0, 0.15, 0.2)]
+    (tag,) = detect_columns(entidades, SpatialIndex(entidades)).detections
+    assert tag.properties["contorno_rectangular"] is True
+    assert tag.properties["contorno_area_du2"] == pytest.approx(0.03, abs=1e-6)

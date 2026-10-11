@@ -27,6 +27,7 @@ su aviso, nunca 0. El recubrimiento es el de las reglas de la hoja para la famil
 dice la colocación misma (``Colocacion``: lo medido en planta, la altura de su planta, sus avisos)
 no cambia."""
 
+import unicodedata
 from collections.abc import Callable
 from typing import Literal
 
@@ -34,11 +35,12 @@ from pydantic import BaseModel, Field
 
 from klave_engine.costing.referencias import element_id
 from klave_engine.detection.frames import SheetFrame
-from klave_engine.detection.results import Detection
+from klave_engine.detection.results import Detection, layer_matches
 from klave_engine.detection.schedules import FAMILIAS_QUE_SE_ORDENAN
 from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.detection.views import AlturaDeEntrepiso, SheetSegmentation, ViewKind
-from klave_engine.estructura.dato import Dato, elegir, hojas_de, para_hoja
+from klave_engine.estructura.armado import FAMILIAS_CON_PARRILLA
+from klave_engine.estructura.dato import Dato, elegir, hojas_de, miembros, para_hoja
 from klave_engine.estructura.definiciones import Definicion, normalizar_marca
 from klave_engine.estructura.reglas import RECUBRIMIENTO_SUPUESTO, Reglas
 from klave_engine.geometry.bbox import bbox_center
@@ -85,7 +87,13 @@ _CAMPO = {
     "parrillas": "parrillas",
 }
 
-Motivo = Literal["cuadro", "vista_excluida", "planta_no_estructural", "sin_vista"]
+Motivo = Literal[
+    "cuadro", "titulo_de_detalle", "vista_excluida", "planta_no_estructural", "sin_vista"
+]
+# R142: las capas de un castillo o una columna en planta (nunca la de un dado).
+_CAPAS_DE_CASTILLO = ["CASTILLO", "COLUMNA", "COLUMN", "COL", "COLS"]
+# R144: las familias de las que es la cláusula de recubrimiento de la cimentación.
+_DE_CIMENTACION = ("zapata", "dado", "pilote", "contratrabe", "losa_cimentacion")
 
 
 class Colocacion(BaseModel):
@@ -94,6 +102,9 @@ class Colocacion(BaseModel):
     planta y los avisos de la detección (sin marca, claro dudoso, sin unidades)."""
 
     seccion_cm: Dato | None = None
+    # R142: el área del contorno en planta de un castillo o una columna que no es un rectángulo,
+    # en una capa de castillos o columnas (``{"area_cm2": …}``).
+    seccion_no_rectangular: Dato | None = None
     longitud_m: Dato | None = None
     altura_m: Dato | None = None
     avisos: list[str] = Field(default_factory=list)
@@ -162,13 +173,20 @@ def construir_elementos(
     cada elemento es el código del marco de su vista (``frames``), o del marco que lo contiene; sin
     marcos, su archivo. ``config`` son las etiquetas del proyecto con que se normalizaron las marcas
     de las definiciones."""
+    if frames is None and segmentation is not None and len(segmentation.views) > 1:
+        # M-3, R141: sin los marcos no se sabe la hoja de cada vista y la resolución por hoja
+        # (R72) se apagaría callada.
+        raise ValueError(
+            "construir_elementos: la segmentación tiene varias vistas; hacen falta los marcos "
+            "(frames) para saber la hoja de cada elemento"
+        )
     config = config or TextPatternConfig()
     colocadas, _ = _separar(detections, segmentation)
     alturas = segmentation.alturas_de_entrepiso() if segmentation is not None else {}
     asignacion = (
         segmentation.assignment if segmentation is not None and segmentation.is_segmented else {}
     )
-    resolutor = _Resolutor(por_marca, por_familia, reglas)
+    resolutor = _Resolutor(por_marca, por_familia, reglas, frames)
     compartidas = _lineas_compartidas(colocadas)
     elementos: list[Elemento] = []
     for d in colocadas:
@@ -185,6 +203,7 @@ def construir_elementos(
             )
         colocacion = Colocacion(
             seccion_cm=_seccion_medida(d, familia, meters_factor),
+            seccion_no_rectangular=_contorno_no_rectangular(d, familia, meters_factor),
             longitud_m=_longitud_medida(d, familia, meters_factor),
             altura_m=_altura(familia, alturas.get(vista or ""), altura_supuesta_m),
             avisos=avisos,
@@ -208,12 +227,14 @@ def resolver(
     por_marca: dict[str, Definicion],
     por_familia: dict[str, Definicion],
     reglas: Reglas,
+    *,
+    frames: list[SheetFrame] | None = None,
 ) -> Elemento:
     """El elemento vuelto a juntar con las definiciones y las reglas de su hoja (después de una
     decisión, por ejemplo): la definición que le toca, cada campo resuelto para su hoja, el
     recubrimiento de su familia. Lo de la colocación (``Colocacion``) no cambia. Devuelve un
-    elemento nuevo."""
-    return _Resolutor(por_marca, por_familia, reglas).resolver(elemento)
+    elemento nuevo. ``frames`` dice qué hojas son de cimentación (R144)."""
+    return _Resolutor(por_marca, por_familia, reglas, frames).resolver(elemento)
 
 
 # --------------------------------------------------------------------------------- colocaciones
@@ -247,7 +268,13 @@ def _separar(
         )
         motivo: Motivo | None = None
         texto = ""
-        if (d.properties or {}).get("role") == "cuadro":
+        if (d.properties or {}).get("titulo_de_detalle"):
+            motivo = "titulo_de_detalle"
+            texto = (
+                "título de detalle: su sección está dibujada (o la señala una flecha); define la "
+                "marca, no la coloca"
+            )
+        elif (d.properties or {}).get("role") == "cuadro":
             motivo = "cuadro"
             texto = "marca de cuadro o de detalle: define la marca, no la coloca"
         elif segmentada and vista is None:
@@ -325,6 +352,30 @@ def _seccion_medida(d: Detection, familia: str, factor: float | None) -> Dato | 
                     entidades=list(d.source_entities),
                 )
     return None
+
+
+def _contorno_no_rectangular(d: Detection, familia: str, factor: float | None) -> Dato | None:
+    """R142: el área del contorno en planta de un castillo o una columna cuando no es un
+    rectángulo y está en una capa de castillos o columnas (nunca un dado), en cm²."""
+    props = d.properties or {}
+    area = props.get("contorno_area_du2")
+    capa = str(props.get("contorno_capa") or "")
+    if (
+        familia not in _CON_ALTURA
+        or not factor
+        or not isinstance(area, (int, float))
+        or area <= 0
+        or props.get("contorno_rectangular") is not False
+        or not layer_matches(capa, _CAPAS_DE_CASTILLO)
+    ):
+        return None
+    cm2 = round(float(area) * factor * factor * 10_000, 1)
+    return Dato(
+        valor={"area_cm2": cm2},
+        fuente="medido",
+        texto=f"contorno en planta no rectangular (capa {capa}): {cm2:g} cm²",
+        entidades=list(props.get("contorno_entidades") or d.source_entities[1:]),
+    )
 
 
 def _lados(texto: object) -> tuple[float, float] | None:
@@ -437,12 +488,21 @@ class _Resolutor:
     una sola vez (``Reglas.para`` es un trabajo por hoja)."""
 
     def __init__(
-        self, por_marca: dict[str, Definicion], por_familia: dict[str, Definicion], reglas: Reglas
+        self,
+        por_marca: dict[str, Definicion],
+        por_familia: dict[str, Definicion],
+        reglas: Reglas,
+        frames: list[SheetFrame] | None = None,
     ) -> None:
         self.por_marca = por_marca
         self.por_familia = por_familia
         self.reglas = reglas
         self._por_hoja: dict[str, Reglas] = {}
+        # R144: las hojas de cimentación (su título lo dice: «CIMENTACIÓN», «DETALLES DE
+        # CIMENTACIÓN»), por su código como las demás.
+        self.de_cimentacion = {
+            f.code or f.frame_id for f in frames or [] if "CIMENTACION" in _sin_acentos(f.title)
+        }
 
     def reglas_de(self, hoja: str) -> Reglas:
         if hoja not in self._por_hoja:
@@ -490,13 +550,20 @@ class _Resolutor:
         quien = marca or "la colocación sin marca"
         seccion = self._seccion(
             familia, quien, propia, de(propia, "seccion_cm"), de(de_familia, "seccion_cm"),
-            nota("seccion_cm"), col.seccion_cm, avisos, dudas,
+            nota("seccion_cm"), col.seccion_cm, col.seccion_no_rectangular, avisos, dudas,
         )  # fmt: skip
         armado: dict[str, Dato | None] = {}
         for campo in _CAMPOS_DE_ARMADO:
             if propia is not None:
                 armado[campo] = _de_la_marca_o_la_nota(
-                    campo, quien, de(propia, campo), nota(campo), avisos, dudas
+                    campo,
+                    familia,
+                    quien,
+                    de(propia, campo),
+                    nota(campo),
+                    propia.sin_leer.get(campo),
+                    avisos,
+                    dudas,
                 )
             else:
                 armado[campo] = de(de_familia, campo)
@@ -519,7 +586,7 @@ class _Resolutor:
                 "longitudinales": armado["longitudinales"],
                 "estribos": armado["estribos"],
                 "parrillas": armado["parrillas"],
-                "recubrimiento_m": self._recubrimiento(familia, hoja, avisos),
+                "recubrimiento_m": self._recubrimiento(familia, hoja, propia, avisos),
                 "avisos": list(dict.fromkeys(avisos)),
                 "dudas": list(dict.fromkeys(dudas)),
             },
@@ -535,13 +602,26 @@ class _Resolutor:
         de_la_familia: Dato | None,
         nota: Dato | None,
         medida: Dato | None,
+        no_rectangular: Dato | None,
         avisos: list[str],
         dudas: list[str],
     ) -> Dato | None:
         """La sección: la de la definición de la marca (o la de la familia, sin definición de la
         marca); la propia ilegible cae a la nota de la familia, la medida, la supuesta (R113,
-        R134); la que nadie dice, a la medida, la nota de la familia, la supuesta."""
+        R134); la que nadie dice, a la medida, la nota de la familia, la supuesta. Un castillo o
+        una columna cuya sección no se lee y cuyo contorno en planta no es un rectángulo toma el
+        área de ese contorno, medida (R142)."""
         supuesta = SECCION_SUPUESTA_CM.get(familia)
+        sin_leer = de_la_marca is None or de_la_marca.valor is None
+        if no_rectangular is not None and sin_leer:
+            avisos.append(
+                "sección no rectangular: se usa el área de su contorno en planta "
+                f"({no_rectangular.valor['area_cm2']:g} cm²)"
+            )
+            return no_rectangular.model_copy(
+                update={"alternativas": _planas([d for d in (de_la_marca,) if d is not None])},
+                deep=True,
+            )
         if propia is None:
             con_valor = [
                 d for d in (de_la_familia, medida) if d is not None and d.valor is not None
@@ -666,11 +746,36 @@ class _Resolutor:
             avisos.append("longitud: el plano no declara la del pilote; sin longitud")
         return declarada
 
-    def _recubrimiento(self, familia: str, hoja: str, avisos: list[str]) -> Dato | None:
+    def _recubrimiento(
+        self, familia: str, hoja: str, propia: Definicion | None, avisos: list[str]
+    ) -> Dato | None:
         """El recubrimiento de la familia como lo dicen las reglas de la hoja; una familia que las
         reglas no traen toma el supuesto; una que tampoco tiene supuesto se queda sin él, y se
-        dice."""
-        dato = self.reglas_de(hoja).recubrimiento_m.get(familia)
+        dice. Un muro de concreto que el plano no nombra en sus recubrimientos, colocado o
+        detallado en una hoja de cimentación, toma la cláusula de los elementos de cimentación
+        cuando las reglas la leen así (R144)."""
+        reglas = self.reglas_de(hoja)
+        dato = reglas.recubrimiento_m.get(familia)
+        if familia == "muro_concreto" and (dato is None or dato.fuente == "supuesto"):
+            hojas = {hoja, *(propia.hojas if propia is not None else [])}
+            if hojas & self.de_cimentacion:
+                clausula = next(
+                    (
+                        d
+                        for f in _DE_CIMENTACION
+                        if (d := reglas.recubrimiento_m.get(f)) is not None
+                        and d.fuente not in ("supuesto", "ia")
+                        and "CIMENTACION" in _sin_acentos(d.texto)
+                    ),
+                    None,
+                )
+                if clausula is not None:
+                    donde = ", ".join(sorted(hojas & self.de_cimentacion))
+                    avisos.append(
+                        f"recubrimiento: muro en una hoja de cimentación ({donde}); se usa la "
+                        f"cláusula de los elementos de cimentación («{clausula.texto}»)"
+                    )
+                    return clausula.model_copy(deep=True)
         if dato is not None:
             return dato
         valor = RECUBRIMIENTO_SUPUESTO.get(familia)
@@ -698,73 +803,67 @@ def _nota_de_familia(de_familia: Definicion | None, hoja: str) -> Callable[[str]
 
 
 def _de_la_hoja(dato: Dato, hoja: str) -> tuple[Dato, str | None]:
-    """El dato como lo resuelve la hoja del elemento (``para_hoja``, R72), con dos guardas, y el
-    aviso si hizo falta la segunda:
-
-    - R69: lo que la IA dijo y la definición no eligió (el plano tiene texto o sección para la
-      marca) nunca se elige por hoja, aunque sea lo único que diga esa hoja: queda como
-      alternativa. Sólo un dato que ya es de la IA se resuelve entre lecturas de la IA.
-    - R76: una hoja cuyas lecturas no se pudieron leer no tapa el valor que otra hoja sí leyó: se
-      usa ese, con la ilegible de la hoja como alternativa, y se dice."""
-    if dato.fuente == "ia":
-        return para_hoja(dato, hoja), None
-    de_ia = [a for a in dato.alternativas if a.fuente == "ia"]
-    sin_ia = dato.model_copy(
-        update={"alternativas": [a for a in dato.alternativas if a.fuente != "ia"]}
-    )
-    propio = para_hoja(sin_ia, hoja)
-    aviso: str | None = None
-    if propio.valor is None and sin_ia.valor is not None:
-        otras = ", ".join(hojas_de(sin_ia)) or "otra hoja"
-        aviso = (
-            f"lo que dice la hoja {hoja} no se pudo leer («{propio.texto}»); se usa lo que se "
+    """El dato como lo resuelve la hoja del elemento (``para_hoja``, R72 con R141), y el aviso
+    cuando lo que dice esa hoja no se pudo leer y se usa lo que leyó otra."""
+    propio = para_hoja(dato, hoja)
+    suyas = [m for m in miembros(dato) if m.ilegible and hoja in hojas_de(m)]
+    if suyas and propio.valor is not None and hoja not in hojas_de(propio):
+        otras = ", ".join(hojas_de(propio)) or "otra hoja"
+        return propio, (
+            f"lo que dice la hoja {hoja} no se pudo leer («{suyas[0].texto}»); se usa lo que se "
             f"leyó en {otras}"
         )
-        propio = sin_ia.model_copy(deep=True)
-    if de_ia:
-        propio = propio.model_copy(
-            update={
-                "alternativas": [*propio.alternativas, *(a.model_copy(deep=True) for a in de_ia)]
-            }
-        )
-    return propio, aviso
+    return propio, None
 
 
 def _de_la_marca_o_la_nota(
     campo: str,
+    familia: str,
     quien: str,
     de_la_marca: Dato | None,
     nota: Dato | None,
+    bloqueada: str | None,
     avisos: list[str],
     dudas: list[str],
 ) -> Dato | None:
-    """Un campo de armado de una marca definida: el suyo; si no lo dice o no se leyó, el de la
-    nota de su familia como ``supuesto``, con su aviso (y una duda si el plano lo escribe y no se
-    leyó); la ilegible queda como alternativa."""
+    """Un campo de armado de una marca definida: el suyo. Si el plano lo escribe y nadie lo leyó
+    (ilegible: la flecha que señala su detalle, R139, o un texto suyo sin leer; o la IA bloqueada
+    por un texto sin dueño junto a su sección, R140), el de la nota de su familia como
+    ``supuesto``, con aviso y duda, y la ilegible como alternativa; sin nota se queda sin valor
+    (no hay armado supuesto), con aviso y duda (R134). Si sólo no lo dice, el de la nota de la
+    familia como ``supuesto``, con aviso."""
     if de_la_marca is not None and de_la_marca.valor is not None:
         return de_la_marca
-    if nota is None:
-        if de_la_marca is not None and de_la_marca.ilegible:
-            avisos.append(
-                f"{_CAMPO[campo]}: el plano lo escribe y no se leyó («{de_la_marca.texto}»)"
-            )
+    if campo == "parrillas" and familia not in FAMILIAS_CON_PARRILLA:
+        # Una familia sin parrillas: lo que reclama una flecha por si acaso (R139) no le falta.
         return de_la_marca
-    if de_la_marca is not None and de_la_marca.ilegible:
-        avisos.append(
-            f"{_CAMPO[campo]}: el plano lo escribe y no se leyó («{de_la_marca.texto}»); se usa "
-            f"la nota de familia («{nota.texto}»)"
-        )
+    nombre = _CAMPO[campo]
+    escrito = (
+        f"«{de_la_marca.texto}»"
+        if de_la_marca is not None and de_la_marca.ilegible
+        else bloqueada
+        if bloqueada
+        else None
+    )
+    if escrito is not None:
+        por = f"el plano lo escribe y no se leyó ({escrito})"
+        if nota is None:
+            avisos.append(f"{nombre}: {por}; no hay nota de familia: sin {nombre}")
+            dudas.append(f"{nombre} de {quien}: {por}; sin {nombre}, por leer")
+            return de_la_marca
+        avisos.append(f"{nombre}: {por}; se usa la nota de familia («{nota.texto}»)")
         dudas.append(
-            f"{_CAMPO[campo]} de {quien}: el plano lo escribe y no se leyó; se supone el de la "
-            "nota de familia, por confirmar"
+            f"{nombre} de {quien}: {por}; se supone el de la nota de familia, por confirmar"
         )
         return _como_supuesto(
             nota,
             f"el plano lo escribe y no se leyó; se usa la nota de familia: «{nota.texto}»",
-            [de_la_marca, nota],
+            [d for d in (de_la_marca, nota) if d is not None],
         )
+    if nota is None:
+        return de_la_marca
     avisos.append(
-        f"{_CAMPO[campo]}: la definición de la marca no lo dice; se supone el de la nota de "
+        f"{nombre}: la definición de la marca no lo dice; se supone el de la nota de "
         f"familia («{nota.texto}»)"
     )
     return _como_supuesto(
@@ -822,3 +921,9 @@ def _lado(valor: object) -> str:
     if isinstance(valor, (list, tuple)) and len(valor) == 2:
         return f"{_cm(valor[0])}x{_cm(valor[1])}"
     return str(valor)
+
+
+def _sin_acentos(texto: str) -> str:
+    return "".join(
+        c for c in unicodedata.normalize("NFD", texto.upper()) if unicodedata.category(c) != "Mn"
+    )
