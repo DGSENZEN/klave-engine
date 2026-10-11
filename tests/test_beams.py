@@ -61,24 +61,23 @@ _PRESET = BeamDetectorConfig(
 
 def test_a_leader_is_never_the_beam_line(tmp_path):
     # R135 (CE-4 en Marina, ES-300): la directriz de la nota «MURO DE 20 CM» (LEADER en la capa
-    # EST-LOSA NERVADA, 1.606 de largo) pasa a 0.15 de la etiqueta; la línea de la dala (5.85)
-    # está a 0.18. Una directriz es anotación, nunca la línea de una trabe.
+    # EST-LOSA NERVADA, 1.606 de largo) pasa a 0.15 de la etiqueta; la línea de 5.85 está a 0.18.
+    # Una directriz es anotación, nunca la línea de una trabe. (La línea de 5.85 era la vigueta de
+    # EST-LOSA VIG Y BOV; desde R152 una losa nunca es la línea de una viga: aquí, la del muro.)
     def construir(msp):
         msp.add_text("CE-4", height=0.1).set_placement((200.04, -26.903))
         msp.add_leader(
             [(199.0, -27.05), (199.7, -27.6), (200.4, -27.6)],
             dxfattribs={"layer": "EST-LOSA NERVADA"},
         )
-        msp.add_lwpolyline(
-            [(197.0, -26.623), (202.85, -26.623)], dxfattribs={"layer": "EST-LOSA VIG Y BOV"}
-        )
+        msp.add_lwpolyline([(197.0, -26.623), (202.85, -26.623)], dxfattribs={"layer": "MUROS1"})
 
     entidades = _etiqueta_y_lineas(tmp_path, construir)
     lider = next(e for e in entidades if e.properties.get("derived_from") == "LEADER")
     (viga,) = detect_beams(entidades, SpatialIndex(entidades), _PRESET).detections
     assert lider.entity_id not in viga.source_entities
     assert viga.properties["estimated_span_length"] == 5.85
-    assert viga.properties["span_layer"] == "EST-LOSA VIG Y BOV"
+    assert viga.properties["span_layer"] == "MUROS1"
 
 
 def test_a_multileader_line_is_never_the_beam_line(tmp_path):
@@ -445,3 +444,61 @@ def test_two_kinds_of_dala_on_one_wall_are_not_partitioned():
     assert [vigas[k].properties["estimated_span_length"] for k in ("a", "b")] == [4.0, 4.0]
     vigas = _vigas([muro, _texto("a", "CE-1", (1.0, 0.04)), _texto("b", "CE-1", (2.5, 0.04))])
     assert sum(vigas[k].properties["estimated_span_length"] for k in ("a", "b")) == 4.0
+
+
+def test_a_dala_type_tag_on_its_layer_is_a_placement_and_on_a_detail_its_title():
+    # R152 (Marina): «CI», «DA-2» y «DC» en EST-CADENAS Y DALAS son dalas colocadas (de su tipo)
+    # y miden el muro junto a ellas; un «CI» en la capa de detalles es el título de su detalle.
+    muro = _linea("muro", (0.0, 0.0), (4.0, 0.0), layer="MUROS1")
+    from klave_engine.detection.taxonomy import familia_de_viga
+
+    for texto in ("CI", "DA-2", "DC"):
+        vigas = _vigas([muro, _texto("t", texto, (1.0, 0.04))])
+        assert familia_de_viga(texto).value == "dala"
+        assert vigas["t"].properties["estimated_span_length"] == 4.0
+    detalle = _texto("t", "CI", (1.0, 0.04), capa="EST-ESTRUCTURAL DETALLES")
+    assert _vigas([muro, detalle]) == {}
+
+
+def test_a_slabs_joist_is_never_a_beams_line():
+    # R152 (Marina, CI 260C0 en ES-300): el «CI» está sobre una vigueta de 5.85 (EST-LOSA VIG Y
+    # BOV) y junto al muro de 4.45 que mide el CE-1 a su lado, a 0.22: toma el muro.
+    entidades = [
+        _texto("t", "CI", (1.0, 0.0)),
+        _linea("vigueta", (-0.7, 0.05), (5.15, 0.05), layer="EST-LOSA VIG Y BOV"),
+        _linea("muro", (-0.5, 0.27), (3.95, 0.27), layer="MUROS1"),
+    ]
+    viga = _vigas(entidades)["t"]
+    assert viga.source_entities[1] == "muro"
+    assert viga.properties["estimated_span_length"] == 4.45
+
+
+def test_a_beam_whose_other_face_is_drawn_in_pieces_is_measured_end_to_end():
+    # R152 (Marina ES-200, el muro de 18.15 con 10 «CI»): una cara entera y la otra en tramos de
+    # 5.45, 4.40 y 6.80 son una viga; medida en la media de sus puntas (8.70) dejaba fuera a las
+    # etiquetas de sus puntas, con claro 0. De punta a punta: 18.15, y cada etiqueta su parte.
+    entera = _linea("entera", (0.0, 0.0), (18.15, 0.0))
+    tramos = [
+        _linea("p1", (0.0, 0.15), (5.45, 0.15)),
+        _linea("p2", (6.0, 0.15), (10.4, 0.15)),
+        _linea("p3", (11.35, 0.15), (18.15, 0.15)),
+    ]
+    etiquetas = [_texto(f"t{i}", "CI", (x, 0.2 if i % 2 else -0.15)) for i, x in
+                 enumerate((0.3, 3.0, 7.0, 12.0, 17.5))]  # fmt: skip
+    vigas = _vigas([entera, *tramos, *etiquetas])
+    claros = [vigas[f"t{i}"].properties["estimated_span_length"] for i in range(5)]
+    assert min(claros) > 0.5
+    assert sum(claros) == pytest.approx(18.15)
+    assert "de punta a punta (una cara en tramos)" in vigas["t0"].properties["claro_caras"]
+
+
+def test_a_tiny_tramo_of_a_shared_line_is_doubtful():
+    # R152 (Marina ES-200, CI AFFD6 y B00B9): dos etiquetas casi en el mismo punto de una línea
+    # que comparten; el corte entre ellas le deja a una 0.07: se conserva y se dice dudoso.
+    muro = _linea("muro", (0.0, 0.0), (5.0, 0.0))
+    vigas = _vigas([muro, _texto("a", "CI", (-0.05, 0.04)), _texto("b", "CI", (0.0, -0.15))])
+    a, b = vigas["a"].properties, vigas["b"].properties
+    assert a["estimated_span_length"] + b["estimated_span_length"] == pytest.approx(5.0)
+    assert a["estimated_span_length"] < 0.2
+    assert "menos que 2 alturas de su texto" in a["claro_dudoso"]
+    assert "claro_dudoso" not in b

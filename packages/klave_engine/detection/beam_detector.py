@@ -34,7 +34,12 @@ from klave_engine.detection.results import (
     make_detection,
 )
 from klave_engine.detection.taxonomy import familia_de_viga
-from klave_engine.detection.text_patterns import TextPatternConfig, match_category
+from klave_engine.detection.text_patterns import (
+    TextPatternConfig,
+    es_tipo_de_dala,
+    es_tipo_sin_capa,
+    match_category,
+)
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.dxf.text_extent import alto_de_texto, esquinas_de_texto
 from klave_engine.geometry.bbox import Point
@@ -52,7 +57,11 @@ class BeamDetectorConfig(BaseModel):
             "BEAM", "GIRD", "TRABE", "VIGA", "CADENA", "CERRAM", "DALA",
         ]
     )
-    avoid_layer_hints: list[str] = Field(default_factory=lambda: ["GRID", "EJE", "EJES", "AXIS"])
+    # Grid axes, and (R152) a slab's own drawing — its joists, casetones and edges — are never a
+    # beam's line (Marina: a «CI» beside its wall stood on a 5.85 m joist).
+    avoid_layer_hints: list[str] = Field(
+        default_factory=lambda: ["GRID", "EJE", "EJES", "AXIS", "LOSA"]
+    )
     # R146: a run counts as aligned with its tag within this angle.
     alignment_tolerance_deg: float = 15.0
     # R146: runs this much farther than the nearest aligned one are not as near: the layer
@@ -162,6 +171,8 @@ def detect_beams(
             continue
         if match_category(entity.text, text_config, "beam_tag") is None:
             continue
+        if es_tipo_sin_capa(entity.text) and not es_tipo_de_dala(entity.text, entity.layer):
+            continue  # R152: a dala type tag off a dala layer is its detail's title
 
         notes = [f"Text '{entity.text.strip()}' matched beam tag pattern"]
         source_entities = [entity.entity_id]
@@ -376,6 +387,9 @@ class _Viga:
     fin: float
     banda: tuple[float, float]
     marcadas: list[tuple[float, _Marcada]]
+    # R152: a face drawn in pieces (shorter than ``min_face_overlap`` of the longest face) — the
+    # beam is measured end to end, not on the mean of its faces' ends.
+    en_tramos: bool = False
 
 
 def _a_lo_largo(origen: Point, u: Point, p: Point) -> tuple[float, float]:
@@ -426,15 +440,21 @@ def _vigas(grupo: list[_Marcada], config: BeamDetectorConfig) -> list[_Viga]:
                 esquinas = esquinas_de_texto(m.etiqueta)
                 centro = (sum(q[0] for q in esquinas) / 4, sum(q[1] for q in esquinas) / 4)
                 suyas.append((_a_lo_largo(origen, u, centro)[0], m))
+        # Two faces of one beam (much the same length): its axis, the mean of their ends (4.45 and
+        # 4.65: 4.55). A face drawn in pieces between openings beside a whole one (R152: the CI of
+        # ES-200's 18.15 m wall, the other face in pieces of 5.45, 4.40 and 6.80): end to end — the
+        # mean would shorten the beam and leave its end tags outside it.
+        en_tramos = any(t.largo < config.min_face_overlap * base.largo for t in caras)
         vigas.append(
             _Viga(
                 caras,
                 origen,
                 u,
-                sum(inicios) / len(inicios),
-                sum(fines) / len(fines),
+                min(inicios) if en_tramos else sum(inicios) / len(inicios),
+                max(fines) if en_tramos else sum(fines) / len(fines),
                 (min(cruces), max(cruces)),
                 sorted(suyas, key=lambda x: (x[0], x[1].indice)),
+                en_tramos,
             )
         )
     return vigas
@@ -494,9 +514,10 @@ def _partir(
             if t.linea.entity_id not in d.source_entities:
                 d.source_entities.append(t.linea.entity_id)
         if len(viga.tramos) > 1:
+            medida = "de punta a punta (una cara en tramos)" if viga.en_tramos else "su eje"
             aviso_caras = (
                 f"claro de una viga dibujada con {len(viga.tramos)} caras ({', '.join(caras)}): "
-                f"se mide su eje, {largo_total:.3f}"
+                f"se mide {medida}, {largo_total:.3f}"
             )
             props["claro_caras"] = aviso_caras
             d.evidence.notes.append(aviso_caras)
@@ -514,7 +535,24 @@ def _partir(
             )
             props["claro_compartido"] = aviso
             d.evidence.notes.append(aviso)
+            alto = alto_de_texto(m.etiqueta)
+            if b - a < _TRAMO_MINIMO * alto:
+                # R152: two tags almost at one point of the line (Marina ES-200: two «CI» of a
+                # wall drawn across the trabe's line, 0.068 m apart along it) — the cut between
+                # them says nothing of either's length.
+                dudoso = (
+                    f"claro dudoso: su tramo de la línea compartida mide {b - a:.3f}, menos que "
+                    f"{_TRAMO_MINIMO:g} alturas de su texto: otra etiqueta está casi en el mismo "
+                    "punto de la línea"
+                )
+                previo = props.get("claro_dudoso")
+                props["claro_dudoso"] = f"{previo}; {dudoso}" if previo else dudoso
+                d.evidence.notes.append(dudoso)
         _al_maximo(m, output, config)
+
+
+# R152: a tag's own tramo of a shared line shorter than this many of its text heights is doubtful.
+_TRAMO_MINIMO = 2.0
 
 
 def _apoyos_sobre(

@@ -2,6 +2,7 @@
 and by sequence, and per-sheet intersections."""
 
 import ezdxf
+import pytest
 from ezdxf.enums import TextEntityAlignment
 from klave_engine.detection.grid_detector import GridDetectorConfig, detect_grid
 from klave_engine.dxf.parser import DxfParser
@@ -156,3 +157,25 @@ def test_dentro_de_un_marco_el_gap_de_burbuja_se_funde():
     assert len(con_factores_de_marco) == 1
     assert len(con_factores_de_marco[0].fragments) == 2
     assert len(sin_factores) == 2  # las tolerancias de archivo no lo funden
+
+
+
+@pytest.mark.parametrize("capa,etiqueta", [("EST-CADENAS Y DALAS", "H1"), ("0", "CI")])
+def test_a_dala_type_tag_is_never_an_axis_label(tmp_path, capa, etiqueta):
+    # R152 (Marina): 40 «CI» de EST-CADENAS Y DALAS se tomaban como etiquetas de eje. En la capa
+    # de cadenas y dalas es la colocación de una cadena intermedia, nunca un eje; en otra capa el
+    # texto «CI» puede serlo.
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    msp.add_line((0, 0), (100, 0))
+    msp.add_line((0, 50), (100, 50))
+    msp.add_line((0, 0), (0, 50))
+    msp.add_text("CI", height=1.0, dxfattribs={"layer": capa}).set_placement((-3, 0), align=_CENTRO)
+    path = tmp_path / "ci.dxf"
+    doc.saveas(path)
+    output = _detect(path)
+    horizontal = next(
+        d for d in output.detections
+        if d.detection_type.value == "grid_line" and d.bbox[1] == 0.0 and d.bbox[3] == 0.0
+    )  # fmt: skip
+    assert horizontal.label == etiqueta

@@ -553,6 +553,9 @@ _FAMILIA_DE_PREFIJO: dict[str, str] = {
     "DL": "dala",
     "DAL": "dala",
     "CE": "dala",
+    "CI": "dala",  # R152: the type tags of a dala (CI, DC, DA-2)
+    "DC": "dala",
+    "DA": "dala",
     "CR": "cerramiento",
     "MC": "muro_concreto",
     **dict.fromkeys(FOOTING_MARK_PREFIXES, "zapata"),
@@ -1279,12 +1282,18 @@ _NOTA_DE_UNIDAD = re.compile(
     re.IGNORECASE,
 )
 # A cota's group is its title's (the nearest mark label, within the reach of a section from it:
-# ``_ALCANCE + _TAMANO`` of its heights), and the title's group note the unit note nearest to it,
-# within this many of its heights (Marina's detail groups: 22–27; PRUEBA-1's general notes, no
-# detail's group: 51 and more).
-_NOTA_DEL_GRUPO = 40.0
-# Two notes of different units about as near the title (the second within 10 %): its group is
-# not told apart, and its cotas are refused (R151).
+# ``_ALCANCE + _TAMANO`` of its heights). A group's note is written under it, with its heading
+# (Marina: «CERRAMIENTOS» / «ACOTACIONES EN CMS, SIN ESCALA» under CR-1…CR-3; «COLUMNAS
+# METÁLICAS» / «… EN MMS» beside it, under CM-1): the title's note is in the nearest row of unit
+# notes below it, within this many of the note's own heights down and across (Marina: 28 under
+# the CR, 54 under ES-300's CI; PRUEBA-1's general notes lie above its details, and its «EN
+# METROS, EXCEPTO INDICADOS» 140 below T-11), and of that row the one horizontally nearest the
+# title.
+_NOTA_DEL_GRUPO = 60.0
+# Notes in one row: their centres this many note heights apart vertically, at most.
+_MISMA_FILA = 2.0
+# Two notes of different units about as near the title along the row (the second within 10 % or
+# both over it): its group is not told apart, and its cotas are refused (R151).
 _NOTAS_EMPATADAS = 1.10
 
 
@@ -1321,14 +1330,15 @@ def _con_unidad_declarada(
     """R151: a unit note («ACOTACIONES EN CMS, SIN ESCALA») declares the unit of its OWN detail
     group's cotas, and only where the style factor does not fix it (``_fija_su_unidad``). A cota's
     group is its title's — the mark label nearest to it, within a section's reach — and the
-    title's note is the unit note nearest to the title's centre within ``_NOTA_DEL_GRUPO`` of its
-    heights (the note sits under its group's heading, centred like the group: on Marina ES-200
-    the CR-1 cota lies as near the «EN MMS» note of «COLUMNAS METÁLICAS» as to its own «EN CMS»,
-    but its title is 1.16 times nearer its own). One note: its unit (``unidad_declarada``, on a
-    copy of the dimension). Two of different units about as near (``_NOTAS_EMPATADAS``): the cota
-    is refused (``unidades_en_conflicto``) and its section claimed. No note: as the factor says."""
+    title's note is the one written under its group (``_nota_del_grupo``): on Marina ES-200 the
+    CR-1 cota lies as near the «EN MMS» note of «COLUMNAS METÁLICAS» as to its own «EN CMS», and
+    the title of the CI for 15 cm walls is nearer that «EN MMS» than to its own «EN CMS» under
+    «CADENAS INTERMEDIAS»; by rows below each title both find their own. One note: its unit
+    (``unidad_declarada``, on a copy of the dimension). Two of different units about as near
+    (``_NOTAS_EMPATADAS``): the cota is refused (``unidades_en_conflicto``) and its section
+    claimed. No note: as the factor says."""
     notas = [
-        (bbox_center(e.bbox), u)
+        (e.bbox, bbox_center(e.bbox), alto_de_texto(e), u)
         for e in entities
         if e.is_textual and e.text and (u := _unidad_de_nota(e.text)) is not None
     ]
@@ -1362,20 +1372,7 @@ def _con_unidad_declarada(
         if distancia > (_ALCANCE + _TAMANO) * alto:
             continue
         if titulo not in de_titulo:
-            cerca = sorted((math.dist(centro, n), u) for n, u in notas)
-            d0, u0 = cerca[0]
-            rival = next((dn for dn, u in cerca if u != u0), None)
-            if d0 > _NOTA_DEL_GRUPO * alto:
-                de_titulo[titulo] = {}
-            elif rival is not None and rival <= _NOTAS_EMPATADAS * d0:
-                unidades = sorted({u0, *(u for dn, u in cerca if dn <= _NOTAS_EMPATADAS * d0)})
-                de_titulo[titulo] = {
-                    "unidades_en_conflicto": ", ".join(
-                        {1.0: "m", 0.01: "cm", 0.001: "mm"}[u] for u in reversed(unidades)
-                    )
-                }
-            else:
-                de_titulo[titulo] = {"unidad_declarada": u0}
+            de_titulo[titulo] = _nota_del_grupo(centro, notas)
         if de_titulo[titulo]:
             extra[d.entity_id] = de_titulo[titulo]
     if not extra:
@@ -1386,6 +1383,41 @@ def _con_unidad_declarada(
         else d
         for d in dims
     ]
+
+
+def _nota_del_grupo(
+    centro: tuple[float, float], notas: list[tuple[BBox, tuple[float, float], float, float]]
+) -> dict:
+    """R151: what the unit note of a title's group declares: of the unit notes below the title
+    and beside it (each within ``_NOTA_DEL_GRUPO`` of the note's heights, down and across), the
+    nearest row, and of it the note horizontally nearest the title (0 when the title is over it):
+    ``{"unidad_declarada": u}``, or ``{"unidades_en_conflicto": "cm, mm"}`` when two of different
+    units are about as near, or nothing."""
+
+    def de_lado(n: tuple[BBox, tuple[float, float], float, float]) -> float:
+        return max(n[0][0] - centro[0], 0.0, centro[0] - n[0][2])
+
+    debajo = [
+        n
+        for n in notas
+        if n[1][1] < centro[1]
+        and centro[1] - n[1][1] <= _NOTA_DEL_GRUPO * n[2]
+        and de_lado(n) <= _NOTA_DEL_GRUPO * n[2]
+    ]
+    if not debajo:
+        return {}
+    arriba = max(n[1][1] for n in debajo)
+    fila = [n for n in debajo if arriba - n[1][1] <= _MISMA_FILA * n[2]]
+    cerca = sorted((de_lado(n), n[3]) for n in fila)
+    d0, u0 = cerca[0]
+    empatadas = {u for dx, u in cerca if dx <= _NOTAS_EMPATADAS * d0}
+    if len(empatadas) > 1:
+        return {
+            "unidades_en_conflicto": ", ".join(
+                {1.0: "m", 0.01: "cm", 0.001: "mm"}[u] for u in sorted(empatadas, reverse=True)
+            )
+        }
+    return {"unidad_declarada": u0}
 
 
 _COTA_CM = (_MIN_SIDE_CM, _MAX_SIDE_CM)  # a section side read from a cota: 8–400 cm

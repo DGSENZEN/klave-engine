@@ -122,8 +122,8 @@ def familia_de_viga(marca: str) -> Family:
     mark = marca.strip().upper()
     if re.match(r"^CTA?-?\d", mark):
         return Family.contratrabe
-    if re.match(r"^(CE|DL|DAL)-?\d", mark):
-        return Family.dala
+    if re.match(r"^(CE|DL|DAL)-?\d", mark) or re.match(r"^(CI|DC|DA-?\d)", mark):
+        return Family.dala  # R152: the type tags CI, DC, DA-2 too
     if re.match(r"^CR-?\d", mark):
         return Family.cerramiento
     return Family.trabe

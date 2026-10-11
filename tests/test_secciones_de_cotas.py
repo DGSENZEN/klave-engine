@@ -1470,10 +1470,10 @@ def test_a_non_rectangular_drawn_section_is_said_in_the_definition():
 
 @pytest.mark.parametrize("abierta", [False, True])
 def test_armado_under_a_section_nobody_owns_is_that_sections(abierta):
-    # R150 (las «CI» de ES-200 en Marina: su sección acotada no tiene marca, su armado debajo):
-    # aunque la sección de CE-3 esté al lado y al alcance, el armado de la sección sin dueño es
-    # suyo: queda sin dueño, no bloquea la IA de CE-3. R154: también dibujada abierta, con un par
-    # de cotas que comparten su esquina (R106), lejos del alcance de todo título.
+    # R150 (las «CI» de ES-200 en Marina, su armado debajo): aunque la sección de CE-3 esté al lado
+    # y al alcance, el armado de la sección de la CI es de ella, nunca de CE-3. R154: también
+    # dibujada abierta, con un par de cotas que comparten su esquina (R106). R152: la «CI» es la
+    # marca de su tipo (antes, sin marca, su armado quedaba sin dueño).
     seccion = (
         [
             _linea("ci1", (6.6, -1.2), (7.4, -1.2)),
@@ -1495,7 +1495,7 @@ def test_armado_under_a_section_nobody_owns_is_that_sections(abierta):
     )
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=[])
     posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
-    assert posibles["6#3"] == []
+    assert posibles["6#3"] == ["CI"]
 
 
 # ------------------------------------------------- Tarea 9, ronda 3: R153, R154, R155, R156
@@ -1581,8 +1581,9 @@ def test_armado_across_a_corner_of_its_section_blocks_the_ai():
 def test_a_leader_from_armado_into_a_section_gives_it_to_that_title_whatever_the_distance():
     # R154 (T4-4 y T1-2 en Marina: «2#6» y la V que va de él a dos varillas de la sección): un
     # texto de armado con una directriz dibujada que acaba dentro de una sección con dueño es de
-    # ese título, a cualquier distancia (aquí, más allá de tres altos). La que acaba dentro de una
-    # sección acotada sin dueño (una «CI») lo hace de ésa: sin dueño, aunque CE-3 esté al lado.
+    # ese título, a cualquier distancia (aquí, más allá de tres altos). La que acaba dentro de la
+    # sección acotada de una «CI» (marca de su tipo desde R152) es de ella, aunque CE-3 esté al
+    # lado.
     ents = _grupo_de_cadenas(armado=False) + [
         _texto("lejos", "2#6", 0.5, -7.5, alto=0.1),
         _poligono("v", [(0.2, -1.5), (0.40, -7.44), (0.65, -1.5)], cerrado=False),
@@ -1595,7 +1596,7 @@ def test_a_leader_from_armado_into_a_section_gives_it_to_that_title_whatever_the
     ]
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=[])
     posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
-    assert posibles == {"2#6": ["CE-1"], "3#5": []}
+    assert posibles == {"2#6": ["CE-1"], "3#5": ["CI"]}
 
 
 @pytest.mark.parametrize(
@@ -1940,19 +1941,22 @@ _EN_CMS = "ACOTACIONES EN CMS, SIN ESCALA"
     [
         # Su grupo dice «EN CMS»: el «20» de dimlfac 1 es 20 cm (R151).
         ([(_EN_CMS, 0.976, -1.554)], (15, 20), None),
-        # La de su grupo y, más lejos de su título, la «EN MMS» del grupo de al lado (ES-200:
-        # CERRAMIENTOS y COLUMNAS METÁLICAS, 1.16 veces más lejos): la suya.
-        ([(_EN_CMS, 0.976, -1.554), ("ACOTACIONES EN MMS, SIN ESCALA", -2.6, -1.0)], (15, 20),
+        # En la fila de notas bajo su título, la suya y, al lado, la «EN MMS» del grupo vecino
+        # (ES-200: CERRAMIENTOS y COLUMNAS METÁLICAS): la que tiene debajo.
+        ([(_EN_CMS, 0.976, -1.554), ("ACOTACIONES EN MMS, SIN ESCALA", -2.6, -1.554)], (15, 20),
          None),
+        # Una nota más arriba que su título (la de otro grupo encima) no es la suya.
+        ([("ACOTACIONES EN MMS, SIN ESCALA", 0.476, 2.5)], None,
+         "peralte 2000 cm fuera de rango: no se toma"),
         # Sin nota, el estilo manda: 20 m, fuera de rango (como antes).
         ([], None, "peralte 2000 cm fuera de rango: no se toma"),
-        # Una nota a más de 40 alturas de su título no es de su grupo (las notas generales).
-        ([(_EN_CMS, 0.976, -4.2)], None, "peralte 2000 cm fuera de rango: no se toma"),
+        # Una nota a más de 60 de sus alturas bajo el título no es de su grupo.
+        ([(_EN_CMS, 0.976, -5.0)], None, "peralte 2000 cm fuera de rango: no se toma"),
         # «EN MMS»: 20 mm, fuera de rango; el «15» de dimlfac 100 sigue en centímetros.
         ([("ACOTACIONES EN MMS, SIN ESCALA", 0.976, -1.554)], None,
          "peralte 2 cm fuera de rango: no se toma"),
-        # Dos notas que no coinciden casi igual de cerca de su título (menos de 10 %): no se sabe
-        # de qué grupo es; la cota no se toma y la sección se reclama.
+        # Dos notas que no coinciden, las dos bajo su título en la misma fila: no se sabe cuál es
+        # la de su grupo; la cota no se toma y la sección se reclama.
         ([(_EN_CMS, 0.976, -1.554), ("ACOTACIONES EN MMS, SIN ESCALA", -0.2, -1.554)], None,
          "cota «20»: las notas de unidad de su grupo no coinciden (cm, mm): no se toma"),
     ],
