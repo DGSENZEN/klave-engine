@@ -1252,6 +1252,12 @@ _DUPLICADA = 0.25  # the same label drawn twice: one label
 # R120: of two labels over one section (or two sections under one title), the larger overlap wins
 # only by this margin (as R54); otherwise neither.
 _MARGEN = 1.25
+# R123: a title owns only a section at least this share of its text lies over.
+_ENCIMA_MINIMO = 1 / 3
+# R123: an outline without cotas is a section only when it looks like one: four corners, both
+# sides at least this many title heights, and no longer than this many times its width.
+_LADO_MINIMO = 1.5
+_ESBELTEZ_MAXIMA = 8.0
 _CUADRADA = 0.02  # an outline whose sides differ less than this (relative) is drawn square
 # A drawn section agrees with its cotas when each side is within 2 cm or 10 % of its cota (R112):
 # a cuadro not drawn to scale is not a second reading.
@@ -1411,6 +1417,8 @@ class _Etiqueta:
     en_detalle: bool
     x0: float = 0.0
     x1: float = 0.0
+    y0: float = 0.0
+    y1: float = 0.0
 
 
 @dataclass
@@ -1451,6 +1459,85 @@ def _extension_del_texto(text: NormalizedEntity) -> BBox:
     return (min(xs), min(ys), max(xs), max(ys))
 
 
+def _parece_seccion(c: _Contorno, alto_letra: float, une: float) -> bool:
+    """R123: an outline that looks like a section: four corners, both sides at least
+    ``_LADO_MINIMO`` title heights, and its longer side at most ``_ESBELTEZ_MAXIMA`` times the
+    shorter (a sliver, a wall strip, an octagon or a symbol does not)."""
+    x0, y0, x1, y1 = c.caja
+    corto, largo = sorted((x1 - x0, y1 - y0))
+    return (
+        _es_rectangulo(_esquinas(c.puntos, une), une)
+        and corto >= _LADO_MINIMO * alto_letra
+        and largo <= _ESBELTEZ_MAXIMA * corto
+    )
+
+
+# R124: the text a title a leader points from claims instead of a section nobody reads.
+_SENALADA = "señalada por flecha; se lee en E3"
+# A leader starts or lands this close to a title's text and reaches this far from it (in title
+# heights): the association's thresholds for a «llamada» (R52).
+_PUNTA_DE_FLECHA = 0.6
+_LARGO_DE_FLECHA = 2.0
+
+
+class _Abiertas:
+    """The open polylines near the labels, by the grid cells of their ends, to find the leader
+    that starts or lands at a title (R124)."""
+
+    def __init__(self, lineas: list[NormalizedEntity], celda: float) -> None:
+        self.celda = max(celda, 1e-6)
+        self.trazos: list[tuple[NormalizedEntity, list[tuple[float, float]]]] = []
+        self.rejilla: dict[tuple[int, int], list[int]] = defaultdict(list)
+        for linea in lineas:
+            puntos = [(float(q[0]), float(q[1])) for q in linea.points or []]
+            if len(puntos) < 2:
+                continue
+            for x, y in (puntos[0], puntos[-1]):
+                self.rejilla[(int(x // self.celda), int(y // self.celda))].append(len(self.trazos))
+            self.trazos.append((linea, puntos))
+
+    def flecha_de(self, e: _Etiqueta) -> NormalizedEntity | None:
+        """The leader that starts or lands at ``e``'s text, if any: a LEADER (an open polyline
+        from the normalizer) or one drawn as an open polyline of three vertices — a horizontal
+        landing at the title and a slanted segment to what it points at; one end within
+        ``_PUNTA_DE_FLECHA`` heights of the text and a vertex ``_LARGO_DE_FLECHA`` or more away.
+        Where it points is not read (E3)."""
+        punta, tol = _PUNTA_DE_FLECHA * e.alto, _SOBRE_ARISTA * e.alto
+
+        def lejania(q: tuple[float, float]) -> float:
+            return math.hypot(
+                max(e.x0 - q[0], 0.0, q[0] - e.x1), max(e.y0 - q[1], 0.0, q[1] - e.y1)
+            )
+
+        vistos: set[int] = set()
+        for i in range(int((e.x0 - punta) // self.celda), int((e.x1 + punta) // self.celda) + 1):
+            for j in range(
+                int((e.y0 - punta) // self.celda), int((e.y1 + punta) // self.celda) + 1
+            ):
+                for n in self.rejilla.get((i, j), ()):
+                    if n in vistos:
+                        continue
+                    vistos.add(n)
+                    linea, puntos = self.trazos[n]
+                    if linea.properties.get("derived_from") == "LEADER":
+                        extremos = [puntos[0], puntos[-1]]
+                    elif len(puntos) == 3:
+                        extremos = [
+                            c
+                            for a, b, c in (puntos, puntos[::-1])
+                            if abs(c[1] - b[1]) <= tol < abs(c[0] - b[0])
+                            and abs(a[0] - b[0]) > tol
+                            and abs(a[1] - b[1]) > tol
+                        ]
+                    else:
+                        continue
+                    if any(lejania(q) <= punta for q in extremos) and any(
+                        lejania(q) >= _LARGO_DE_FLECHA * e.alto for q in puntos
+                    ):
+                        return linea
+        return None
+
+
 def _solape(e: _Etiqueta, c: _Contorno) -> float:
     """How much of the label's text lies over the outline (R120): the part of its extent within
     the outline's x-range, as a share of the extent — a wide title is not more over a section
@@ -1470,11 +1557,17 @@ def _por_solape(quienes: list[tuple[float, _Q]]) -> _Q | None:
     return None
 
 
-def _propio(etiquetas: list[_Etiqueta], contornos: list[_Contorno]) -> dict[str, _Propio]:
+def _propio(
+    etiquetas: list[_Etiqueta],
+    contornos: list[_Contorno],
+    es_seccion: Callable[[_Contorno, _Etiqueta], bool] | None = None,
+) -> dict[str, _Propio]:
     """Each label's own outline (R81), by its entity id, with why there is none. An outline (or
     pair rectangle) is a label's when the label's text really lies over it (R120: its
-    alignment-aware extent overlaps the outline's x-range; never an anchor or an estimated
-    centre), it is the nearest such outline on the side its sheet's convention puts the section,
+    alignment-aware extent overlaps the outline's x-range by at least ``_ENCIMA_MINIMO`` of the
+    text, R123; never an anchor or an estimated centre), it is a section (``es_seccion``, R123:
+    a sliver, a wall strip, an octagon or a symbol without cotas is not), it is the nearest such
+    outline on the side its sheet's convention puts the section,
     within reach, and no other label lies over it as much: of two labels nearest one outline,
     the larger overlap wins only by ``_MARGEN`` (as R54); otherwise it is both labels' and
     neither's (claimed, ``otras``). A title over two sections side by side at that distance
@@ -1505,12 +1598,14 @@ def _propio(etiquetas: list[_Etiqueta], contornos: list[_Contorno]) -> dict[str,
             de[e.texto.entity_id] = igual
 
         def hueco(e: _Etiqueta, c: _Contorno, lado: int) -> float | None:
-            """The gap from the label to the outline on ``lado``, if its text lies over it."""
+            """The gap from the label to the section on ``lado``, if its text lies over it."""
             x0, y0, x1, y1 = c.caja
-            if _solape(e, c) <= 0 or max(x1 - x0, y1 - y0) > _TAMANO * e.alto:
+            if _solape(e, c) < _ENCIMA_MINIMO or max(x1 - x0, y1 - y0) > _TAMANO * e.alto:
                 return None
             h = y0 - e.y if lado > 0 else e.y - y1
-            return h if 0 < h <= _ALCANCE * e.alto else None
+            if not 0 < h <= _ALCANCE * e.alto:
+                return None
+            return h if es_seccion is None or es_seccion(c, e) else None
 
         def mas_cercanos(e: _Etiqueta, lado: int) -> list[_Contorno]:
             """The outlines nearest the label on ``lado`` that its text lies over: one, or
@@ -1924,33 +2019,37 @@ def _sections_from_detail_cotas(
     rechazos: list[Rechazo] | None = None,
     duenos: Collection[str] = (),
     dibujadas: Collection[str] = (),
+    flechas: list[tuple[str, ElementSpec]] | None = None,
 ) -> list[ElementSpec]:
     """A cuadro or detail label's section from ITS OWN drawn section (R81): the closed
     outline (polylines and lines joined end to end, block contents included) nearest
     the label on the side its sheet's convention puts it (Marina: right above, past
-    its stack), that the label's text really lies over, and that no other label lies
-    over as much (R120, ``_propio``). Its cotas are the dimensions whose definition
-    points lie on the outline's edges: a horizontal one spanning it is the width, a
-    vertical one the depth, as drawn (a beam keeps b×h, R75). The outline's own
-    proportions corroborate them: at the scale that best fits both cotas, a drawn
-    side more than 1 cm off is a second reading (``geometria``: the section as
-    drawn), so the disagreement stays visible. With one cota only, a square outline
-    of a cuadro is taken square, and a missing width is the one the sheet's callouts
-    use for that family — both assumed (``seccion_supuesta``, a «supuesto» value,
-    never a «detalle» one). A non-rectangular outline gives no rectangle: an aviso
-    with its box and area, and a rejection. Without any closed outline where its
-    section goes, the section is the rectangle of a pair of cotas sharing a corner
-    whose edges the drawing draws (R106, ``_pares_de_cotas``), owned by the same
-    side and claim rule. No section from cotas (no nearest dimension is ever taken)
-    is said and the section claimed, so nothing fills it from elsewhere, whenever
-    the label owns a drawn section not smaller than its letters (R122) or one that
-    carries a cota, two labels reach one section (every claimant, R111) or its title
-    lies over two (R120), and where the old nearest-cota reader read one. A label
-    that owns a stack (``duenos``) is a candidate even with no armado near it
-    (R111). A label whose section the drawing draws at real size is read by
-    ``_sections_from_detail_geometry`` (``dibujadas``): its drawn section without
-    cotas is not claimed here (R122 blocks what fills it from elsewhere, not the
-    reading of that drawing)."""
+    its stack), that the label's text really lies over (a third of it at least,
+    R123), and that no other label lies over as much (R120, ``_propio``); an outline
+    without cotas is a section only when it looks like one (R123,
+    ``_parece_seccion``). Its cotas are the dimensions whose definition points lie
+    on the outline's edges: a horizontal one spanning it is the width, a vertical
+    one the depth, as drawn (a beam keeps b×h, R75). The outline's own proportions
+    corroborate them: at the scale that best fits both cotas, a drawn side more than
+    1 cm off is a second reading (``geometria``: the section as drawn), so the
+    disagreement stays visible. With one cota only, a square outline of a cuadro is
+    taken square, and a missing width is the one the sheet's callouts use for that
+    family — both assumed (``seccion_supuesta``, a «supuesto» value, never a
+    «detalle» one). A non-rectangular outline gives no rectangle: an aviso with its
+    box and area, and a rejection. Without any closed outline where its section
+    goes, the section is the rectangle of a pair of cotas sharing a corner whose
+    edges the drawing draws (R106, ``_pares_de_cotas``), owned by the same side and
+    claim rule. No section from cotas (no nearest dimension is ever taken) is said
+    and the section claimed, so nothing fills it from elsewhere, whenever the label
+    owns a drawn section (R123) or one that carries a cota, two labels reach one
+    section (every claimant, R111) or its title lies over two (R120), and where the
+    old nearest-cota reader read one. A label that owns a stack (``duenos``) is a
+    candidate even with no armado near it (R111). A label whose section the drawing
+    draws at real size is read by ``_sections_from_detail_geometry``
+    (``dibujadas``): its drawn section without cotas is not claimed here (R123
+    blocks what fills it from elsewhere, not the reading of that drawing). A title a
+    leader starts or lands at whose section is read nowhere is claimed «señalada por
+    flecha» (R124, ``flechas``; where it points is E3)."""
     dims = [e for e in entities if e.entity_type == EntityType.dimension]
     if not dims:
         return []
@@ -1997,6 +2096,8 @@ def _sections_from_detail_cotas(
                 en_detalle=in_detail,
                 x0=x0,
                 x1=x1,
+                y0=y0,
+                y1=y1,
             )
         )
     if not etiquetas:
@@ -2014,7 +2115,20 @@ def _sections_from_detail_cotas(
         if e.entity_type in (EntityType.line, EntityType.polyline)
     ]
     contornos = _contornos(segmentos, _UNE * alto)
-    propios = _propio(etiquetas, contornos)
+    con_cotas: dict[tuple[int, float], bool] = {}
+
+    def es_seccion(c: _Contorno, e: _Etiqueta) -> bool:
+        """R123: an outline is a section when it looks like one or carries a cota on its
+        edges."""
+        if _parece_seccion(c, e.alto, _UNE * alto):
+            return True
+        clave = (id(c), e.alto)
+        if clave not in con_cotas:
+            h, v, avisos = _cotas_de_arista(c, dims, _SOBRE_ARISTA * e.alto, unit_to_m)
+            con_cotas[clave] = bool(h or v or avisos)
+        return con_cotas[clave]
+
+    propios = _propio(etiquetas, contornos, es_seccion)
     # R106: the labels with no closed outline where their section goes, against the rectangles
     # of pairs of cotas, by the same side and claim rule.
     sin_contorno = [e for e in etiquetas if propios[e.texto.entity_id].sin_contorno]
@@ -2060,6 +2174,21 @@ def _sections_from_detail_cotas(
             alto,
             leida_a_escala=e.texto.entity_id in dibujadas,
         )
+    if flechas is not None:
+        # R124: a title a leader starts or lands at, whose section is not read here, is a
+        # candidate claim (``build_schedule_inventory`` keeps it if nothing reads the mark).
+        con_valor = {i for s in specs if s.section_cm is not None for i in s.entidades}
+        abiertas = _Abiertas(
+            [x for x in segmentos if x.entity_type == EntityType.polyline and not x.is_closed],
+            4 * alto,
+        )
+        for e in etiquetas:
+            if e.texto.entity_id in con_valor or abiertas.flecha_de(e) is None:
+                continue
+            aviso = f"sección: {_SENALADA}"
+            flechas.append(
+                (e.texto.entity_id, _lectura_de_cotas(e, sheet, None, [aviso], _SENALADA))
+            )
     return specs
 
 
@@ -2147,7 +2276,7 @@ def _seccion_de_etiqueta(
     tol = _SOBRE_ARISTA * e.alto
 
     # A section this reader cannot read is claimed and said, so nothing fills it from elsewhere,
-    # when it owns a drawn section (R122), two labels reach it (R111) or its title lies over two
+    # when it owns a drawn section (R123), two labels reach it (R111) or its title lies over two
     # (R120), and where the old nearest-dimension reader took a value (a section-range vertical
     # cota near the label, and a horizontal one, or a cuadro's square, or the family's usual
     # width).
@@ -2204,11 +2333,10 @@ def _seccion_de_etiqueta(
         )
     x0, y0, x1, y1 = propio.caja
     w, h = x1 - x0, y1 - y0
-    # R122: the outline it owns is its section, drawn, even without cotas: claimed. Unless it is
-    # smaller than the label's letters both ways — a symbol, not a section — or the section drawn
-    # at real size is read (``leida_a_escala``).
-    simbolo = w < e.alto and h < e.alto
-    reclama = not simbolo and not leida_a_escala
+    # R123: the outline it owns is its section, drawn, even without cotas: claimed when it looks
+    # like one (``_parece_seccion``; without cotas it is owned only then), unless the section
+    # drawn at real size is read (``leida_a_escala``).
+    reclama = _parece_seccion(propio, e.alto, _UNE * alto) and not leida_a_escala
     esquinas = _esquinas(propio.puntos, _UNE * alto)
     horizontales, verticales, avisos = _cotas_de_arista(propio, dims, tol, unit_to_m)
     con_cota = bool(horizontales or verticales or avisos)  # its own section carries a cota
@@ -2294,12 +2422,9 @@ def _seccion_de_etiqueta(
         if uno is not None
         else "no tiene cotas que se tomen"
         if con_cota
-        else f"no tiene cotas en sus aristas y es más chica que sus letras "
-        f"({w * unit_to_m:.3f} × {h * unit_to_m:.3f} m): un símbolo, no su sección"
-        if simbolo
         else "no tiene cotas en sus aristas"
     )
-    # Its own section is drawn (R122) or carries a cota (R111): the section is the drawing's,
+    # Its own section is drawn (R123) or carries a cota (R111): the section is the drawing's,
     # claimed.
     return sin_seccion(
         [*avisos, f"sección: su sección dibujada {acotado}"],
@@ -2504,6 +2629,32 @@ def _marcas_del_plano(texts: list[NormalizedEntity], config: TextPatternConfig) 
     return dict(sorted(cuenta.items()))
 
 
+def _senaladas_por_flecha(
+    specs: list[ElementSpec], flechas: list[tuple[str, ElementSpec]]
+) -> list[ElementSpec]:
+    """R124: a title a leader starts or lands at, whose mark's section nothing in the drawing
+    reads (no reading of the mark with a section but the AI's; a family note is the family's
+    fallback, not the mark's reading, and does not stop the AI), claims it: ilegible, «señalada
+    por flecha; se lee en E3», so the AI does not fill what the drawing points at. Its own
+    claimed readings, if any, say so; otherwise the claim is added. Where the leader points is
+    E3."""
+    if not flechas:
+        return specs
+    leidas = {s.mark for s in specs if s.section_cm is not None and s.source != "ia"}
+    salida = list(specs)
+    for entidad, reclamo in flechas:
+        if reclamo.mark in leidas:
+            continue
+        aviso = reclamo.avisos[0]
+        suyas = [s for s in salida if s.metodo == "cotas" and entidad in s.entidades]
+        for s in suyas:
+            if aviso not in s.avisos:
+                s.avisos.append(aviso)
+        if not suyas:
+            salida.append(reclamo)
+    return salida
+
+
 def _family_notes_that_name_a_mark(
     specs: list[ElementSpec],
     rechazos: list[Rechazo],
@@ -2637,6 +2788,7 @@ def build_schedule_inventory(
     rechazos = rechazos + rechazos_de_notas
     inventory_cuadro_marks: list[str] = []
     dibujadas: set[str] = set()
+    flechas: list[tuple[str, ElementSpec]] = []
     if unit_to_m and detail_boxes:
         de_geometria = _sections_from_detail_geometry(
             entities, config, unit_to_m, detail_boxes, sheet
@@ -2669,6 +2821,7 @@ def build_schedule_inventory(
                 de_cotas,
                 set(labels),
                 dibujadas,
+                flechas,
             )
             rechazos = rechazos + de_cotas
             inventory_cuadro_marks = cuadro_marks
@@ -2678,6 +2831,7 @@ def build_schedule_inventory(
     for reader in extra_readers or []:
         specs += reader(entities)
     specs, rechazos = _family_notes_that_name_a_mark(specs, rechazos, texts, config)
+    specs = _senaladas_por_flecha(specs, flechas)
     leidos_por_reglas = leer_reglas(entities, frames).textos_leidos
     rechazos = rechazos + _lo_que_nadie_leyo(
         texts, specs, rechazos, config, sheet, posibles, leidos_por_reglas

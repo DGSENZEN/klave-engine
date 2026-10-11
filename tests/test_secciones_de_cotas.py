@@ -569,17 +569,20 @@ def _leidas(inv, *marcas):
 @pytest.mark.parametrize(
     "texto,x,halign,leida",
     [
-        # T3-1 en Marina: su ancla dentro de la sección y su texto encima: es suya.
-        ("T-1", 1.13, 0, (20, 50)),
+        # Su ancla dentro de la sección y su texto encima (79 %): es suya.
+        ("T-1", 1.0, 0, (20, 50)),
         # T2-8 en Marina (ES-201): alineado a la izquierda, su ancla 1.36 altos antes de la sección
-        # (260.966 contra 261.157) y su texto encima de ella (0.145 de 0.336): es suya.
+        # (260.966 contra 261.157) y su texto encima de ella (0.145 de 0.336, 43 %): es suya.
         ("T2-8", 0.2 - 0.191, 0, (20, 50)),
+        # T3-1 en Marina: su ancla dentro, pero sólo 28 % de su texto encima: menos de un tercio,
+        # no es suya (R123).
+        ("T-1", 1.13, 0, None),
         # Su texto empieza 0.4 altos después de la sección: no está encima, no es suya (la holgura
         # de media altura de R115 ya no existe).
         ("T-1", 1.256, 0, None),
-        # Alineado a la derecha en 1.4, pasada la sección: su texto acaba encima de ella (la caja
-        # del normalizador, desde el insert, no la tocaría): es suya.
-        ("T-1", 1.4, 2, (20, 50)),
+        # Alineado a la derecha en 1.3, pasada la sección: su texto acaba encima de ella (60 %; la
+        # caja del normalizador, desde el insert, no la tocaría): es suya.
+        ("T-1", 1.3, 2, (20, 50)),
         # Alineado a la derecha en 0.15, antes de la sección: su texto no la toca (la caja del
         # normalizador sí): no es suya.
         ("T-1", 0.15, 2, None),
@@ -677,15 +680,19 @@ def _titulo_en_columna(entity_id, text, x, y, alto=0.1):
     )  # fmt: skip
 
 
-def test_d3_and_cta8_over_one_strip_claim_it_both():
-    # R120 (D-3 y CTA-8 en Marina, ES-500, corridos 204, -105): los dos títulos van centrados en
-    # su columna (205.02–205.26 y 205.00–205.30), no en su insert (204.46): los dos enteros bajo
-    # la misma tira de 1.925 × 0.049; el contorno chico de 0.300 × 0.049 junto al insert de D-3 no
-    # está bajo su texto. De ninguno: los dos la reclaman y la IA no llena D-3. En la hoja, las
-    # secciones van encima de sus títulos (K-1).
+def test_d3_and_cta8_under_a_wall_strip_are_pointed_at_by_their_leaders():
+    # R123 + R124 (D-3 y CTA-8 en Marina, ES-500, corridos 204, -105): los dos títulos van
+    # centrados en su columna, bajo la misma tira de muro de 1.925 × 0.049; ni ella ni el contorno
+    # de 0.300 × 0.049 son secciones (sin cotas y de 0.049 de alto), así que ya no hay ambigua. De
+    # cada título sale su flecha dibujada (una polilínea de tres vértices: el apoyo horizontal en
+    # el título y el tramo inclinado hacia lo que señala): su sección, que nadie lee, se reclama
+    # «señalada por flecha; se lee en E3» y la IA no llena D-3. En la hoja, las secciones van
+    # encima de sus títulos (K-1).
     ents = [
         _titulo_en_columna("d3", "DADO\nD-3 ", 0.458, -0.14),
         _titulo_en_columna("c8", "CTA-8 ", 0.469, 0.378),
+        _poligono("fd3", [(0.635, 0.049), (0.961, -0.272), (1.282, -0.272)], cerrado=False),
+        _poligono("fc8", [(0.477, 0.496), (0.918, 0.247), (1.240, 0.247)], cerrado=False),
         _rectangulo("tira", 0.574, 0.661, 2.499, 0.710),
         _rectangulo("chico", 0.274, 0.161, 0.574, 0.210),
         _texto("k1", "K-1", 5.0, 0.0, alto=0.1),
@@ -693,35 +700,54 @@ def test_d3_and_cta8_over_one_strip_claim_it_both():
         _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
     ]
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
-    for marca, otra in (("D-3", "CTA-8"), ("CTA-8", "D-3")):
+    for marca in ("D-3", "CTA-8"):
         (s,) = _cotas(inv, marca)
         assert (s.section_cm, s.campos_con_texto) == (None, ["seccion"])
-        assert s.avisos == [f"sección: su sección dibujada la alcanza también {otra}"]
-    assert sorted(sorted(r.marcas) for r in inv.rechazos if r.motivo == "ambigua") == [
-        ["CTA-8", "D-3"], ["CTA-8", "D-3"]
-    ]  # fmt: skip
+        assert s.avisos == ["sección: señalada por flecha; se lee en E3"]
+        assert s.source_text.endswith("señalada por flecha; se lee en E3")
+    assert [r for r in inv.rechazos if r.motivo == "ambigua"] == []
     merge_external_specs(inv, [_ia("D-3", family="dala", section_cm=(25, 100))], C)
     assert "D-3" not in inv.by_mark or inv.by_mark["D-3"].section_cm is None
 
 
+_OCTAGONO = [(0.03, 0.0), (0.105, 0.0), (0.135, 0.03), (0.135, 0.095), (0.105, 0.125),
+             (0.03, 0.125), (0.0, 0.095), (0.0, 0.03)]  # fmt: skip
+
+
+def _caja(x0, y0, x1, y1):
+    return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+
+
 @pytest.mark.parametrize(
-    "caja,reclama",
+    "puntos,alto,reclama",
     [
         # Su sección dibujada, sin cotas: la reclama.
-        ((-1.0, 0.0, 1.0, 2.4), True),
-        # D-3 en Marina (ES-500): un contorno de 0.300 × 0.049, más ancho que sus letras (0.14):
-        # también.
-        ((-0.15, 0.0, 0.15, 0.049), True),
-        # Más chico que sus letras en los dos sentidos: un símbolo, no su sección.
-        ((-0.05, 0.0, 0.05, 0.1), False),
+        (_caja(-1.0, 0.0, 1.0, 2.4), 0.14, True),
+        # Una rendija (T2-12 en ES-500: 0.138 × 0.010): no es sección.
+        (_caja(-0.069, 0.0, 0.069, 0.010), 0.10, False),
+        # Una tira de muro (D-3/CTA-8 en ES-500: 1.925 × 0.049): no es sección.
+        (_caja(-0.9625, 0.0, 0.9625, 0.049), 0.10, False),
+        # El contorno chico junto a D-3 (0.300 × 0.049): no es sección.
+        (_caja(-0.15, 0.0, 0.15, 0.049), 0.14, False),
+        # Un octágono (CE-5, T3-11, T3-13 en ES-500: 0.135 × 0.125, ocho esquinas): no es
+        # sección, ni un rechazo «sin_lector».
+        ([(x - 0.0675, y) for x, y in _OCTAGONO], 0.10, False),
+        # Un cuadrito de 0.10 con letras de 0.09 (T4-2 en ES-500): menos de 1.5 altos.
+        (_caja(-0.05, 0.0, 0.05, 0.10), 0.09, False),
+        # Un rectángulo de 2.0 × 0.22: nueve veces más largo que ancho.
+        (_caja(-1.0, 0.0, 1.0, 0.22), 0.14, False),
     ],
 )
-def test_an_owned_outline_without_cotas_claims_the_section(caja, reclama):
-    # R122: la etiqueta dueña de un contorno cerrado reclama la sección aunque no tenga cotas (el
-    # dibujo dibuja su sección): la IA no la llena. Un contorno del tamaño de un símbolo, no.
+def test_an_owned_outline_without_cotas_claims_only_if_it_looks_like_a_section(
+    puntos, alto, reclama
+):
+    # R123 (reemplaza a R122): un contorno sin cotas es sección, y se reclama aunque no tenga
+    # cotas, sólo si parece una: cuatro esquinas, los dos lados de 1.5 altos del título o más, y
+    # no más de 8 veces más largo que ancho. Si no, la IA sí la llena.
+    tope = max(y for _x, y in puntos)
     ents = [
-        _texto("m", "D-3", 0.0, caja[3] + 0.3, alto=0.14),
-        _rectangulo("c", *caja),
+        _texto("m", "D-3", 0.0, tope + 0.3, alto=alto),
+        _poligono("c", puntos),
         _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
     ]
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
@@ -729,9 +755,112 @@ def test_an_owned_outline_without_cotas_claims_the_section(caja, reclama):
     assert [(s.section_cm, s.campos_con_texto) for s in lecturas] == (
         [(None, ["seccion"])] if reclama else []
     )
+    assert [r.motivo for r in inv.rechazos] == []
     merge_external_specs(inv, [_ia("D-3", family="dala", section_cm=(25, 100))], C)
     de_la_ia = inv.by_mark["D-3"].section_cm if "D-3" in inv.by_mark else None
     assert de_la_ia == (None if reclama else (25, 100))
+
+
+def test_a_wall_strip_between_the_title_and_its_section_is_passed_over():
+    # R123: la tira de muro que queda entre el título y su sección no es sección: el título llega
+    # a la suya, más allá, con sus cotas.
+    ents = [
+        _texto("m", "D-3", 0.0, 0.0, alto=0.1),
+        _rectangulo("tira", -1.0, 0.3, 1.0, 0.349),
+        _rectangulo("c", -0.5, 0.6, 0.5, 1.6),
+        _cota("h", (-0.5, 0.6), (0.5, 0.6), 50),
+        _cota("v", (-0.5, 1.6), (-0.5, 0.6), 100),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert _leidas(inv, "D-3") == {"D-3": [(50, 100)]}
+
+
+@pytest.mark.parametrize("x,suya", [(-0.038, False), (-0.1, True)])
+def test_a_graze_owns_nothing(x, suya):
+    # R123 (D-5 en Marina, ES-006): su título toca la sección dibujada sólo en 15 % de su texto:
+    # no es suya, ni la reclama, y la IA la llena; con 40 %, sí.
+    ents = [
+        _titulo("m", "D-5", x, 0.3),
+        _rectangulo("c", -4.0, -4.0, 0.0, 0.0),
+        _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s.campos_con_texto for s in _cotas(inv, "D-5")] == ([["seccion"]] if suya else [])
+    merge_external_specs(inv, [_ia("D-5", family="dala", section_cm=(25, 100))], C)
+    de_la_ia = inv.by_mark["D-5"].section_cm if "D-5" in inv.by_mark else None
+    assert de_la_ia == (None if suya else (25, 100))
+
+
+def _flecha(entity_id, puntos, lider=False):
+    flecha = _poligono(entity_id, puntos, cerrado=False)
+    if lider:
+        flecha.properties["derived_from"] = "LEADER"
+    return flecha
+
+
+@pytest.mark.parametrize(
+    "flecha,senalada",
+    [
+        # Una flecha dibujada: el apoyo horizontal acaba en el título.
+        (_flecha("f", [(-0.6, 0.4), (-0.3, 0.0), (-0.12, 0.0)]), True),
+        # Una directriz LEADER (el normalizador la da como polilínea abierta).
+        (_flecha("f", [(-0.12, 0.0), (-0.8, 0.5)], lider=True), True),
+        # Una línea suelta de dos vértices que acaba en el título no es una flecha dibujada.
+        (_flecha("f", [(-0.12, 0.0), (-0.8, 0.5)]), False),
+        # Una flecha que acaba lejos del título (a 0.28 de su texto, más de 0.6 altos).
+        (_flecha("f", [(-0.7, 0.4), (-0.5, 0.0), (-0.37, 0.0)]), False),
+    ],
+)
+def test_a_title_with_a_leader_and_no_section_read_claims_it(flecha, senalada):
+    # R124: un título del que sale una flecha (que empieza o se apoya en él) y cuya sección nadie
+    # lee la reclama, ilegible, «señalada por flecha; se lee en E3»: la IA no la llena. A dónde
+    # apunta no se lee (E3).
+    ents = [
+        _texto("m", "D-3", 0.0, 0.0, alto=0.1),
+        flecha,
+        _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    lecturas = [(s.section_cm, s.campos_con_texto, s.avisos) for s in _cotas(inv, "D-3")]
+    aviso = ["sección: señalada por flecha; se lee en E3"]
+    assert lecturas == ([(None, ["seccion"], aviso)] if senalada else [])
+    merge_external_specs(inv, [_ia("D-3", family="dala", section_cm=(25, 100))], C)
+    de_la_ia = inv.by_mark["D-3"].section_cm if "D-3" in inv.by_mark else None
+    assert de_la_ia == (None if senalada else (25, 100))
+
+
+def test_a_family_note_does_not_stop_a_leader_claim():
+    # R124 (D-3 en Marina: «CADENA DE ENRASE 15x25 …» es nota de la familia dala): la nota de la
+    # familia es su respaldo, no una lectura de D-3, y no detiene a la IA; la flecha sí.
+    ents = [
+        _texto("m", "D-3", 0.0, 0.0, alto=0.1),
+        _flecha("f", [(-0.6, 0.4), (-0.3, 0.0), (-0.12, 0.0)]),
+        _texto("n", "DALA 15X25 4#3 E#2@15", 5.0, 5.0, alto=0.1),
+        _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s.section_cm for s in inv.specs if s.mark == "DALA"] == [(15, 25)]
+    assert [s.avisos for s in _cotas(inv, "D-3")] == [
+        ["sección: señalada por flecha; se lee en E3"]
+    ]
+
+
+def test_a_title_with_a_leader_whose_section_is_read_keeps_it():
+    # R124: con su sección leída (sus cotas), la flecha no cambia nada; ni la de otro título de la
+    # misma marca cuya sección nadie lee ahí (la marca está leída): sin conflicto.
+    ents = [
+        _texto("m", "D-3", 0.0, 2.7, alto=0.1),
+        _flecha("f", [(-0.6, 3.1), (-0.3, 2.7), (-0.15, 2.7)]),
+        _rectangulo("c", -0.5, 0.0, 0.5, 2.4),
+        _cota("h", (-0.5, 0.0), (0.5, 0.0), 20),
+        _cota("v", (-0.5, 2.4), (-0.5, 0.0), 50),
+        _texto("m2", "D-3", 6.0, 2.7, alto=0.1),
+        _flecha("f2", [(5.4, 3.1), (5.7, 2.7), (5.85, 2.7)]),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [(s.section_cm, s.avisos) for s in _cotas(inv, "D-3")] == [((20, 50), [])]
+    d = construir_definiciones(inv, C)[0]["D-3"].seccion_cm
+    assert (d.valor, d.en_conflicto) == ((20, 50), False)
 
 
 @pytest.mark.parametrize("pareja", [False, True])
