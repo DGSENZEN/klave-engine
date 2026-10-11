@@ -22,6 +22,7 @@ from klave_engine.detection.results import (
 from klave_engine.detection.text_patterns import FOOTING_MARK_PATTERN
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.geometry.bbox import bbox_center, bbox_distance
+from klave_engine.geometry.forma import Formas
 from klave_engine.geometry.measurements import polygon_area, rectangularity
 from klave_engine.geometry.spatial_index import SpatialIndex
 
@@ -63,6 +64,21 @@ class FootingDetectorConfig(BaseModel):
     column_search_radius: float = 50.0
 
 
+def _distancia_a_la_etiqueta(
+    contorno: NormalizedEntity, columna: Detection, index: SpatialIndex, formas: Formas
+) -> float:
+    """From the footing's outline to the letters of a column tag (its first source entity), or to
+    the tag's box when its text is not in the index."""
+    etiqueta = columna.source_entities[0] if columna.source_entities else None
+    try:
+        texto = index.get(etiqueta) if etiqueta else None
+    except KeyError:
+        texto = None
+    if texto is None:
+        return bbox_distance(contorno.bbox, columna.bbox)
+    return formas.distancia(contorno, texto)
+
+
 def detect_footings(
     entities: list[NormalizedEntity],
     index: SpatialIndex,
@@ -73,6 +89,7 @@ def detect_footings(
     config = config or FootingDetectorConfig()
     detection_ids = detection_ids or IdGenerator("det")
     output = DetectorOutput(detector_name="footing_detector")
+    formas = Formas(entities)
 
     column_detections = [
         d
@@ -170,10 +187,14 @@ def detect_footings(
         if rect >= config.high_rectangularity:
             features[HIGH_RECT] = 1.0
 
+        # R146: the distance from the footing's outline to the letters of the column tag, not
+        # between their boxes (the box only preselects).
         nearby_column: Detection | None = None
         nearest = float("inf")
         for column in column_detections:
-            distance = bbox_distance(entity.bbox, column.bbox)
+            if bbox_distance(entity.bbox, column.bbox) > config.column_search_radius:
+                continue
+            distance = _distancia_a_la_etiqueta(entity, column, index, formas)
             if distance <= config.column_search_radius and distance < nearest:
                 nearby_column, nearest = column, distance
         if nearby_column is not None:

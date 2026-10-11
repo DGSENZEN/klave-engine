@@ -22,6 +22,7 @@ from klave_engine.detection.results import (
 from klave_engine.detection.text_patterns import TextPatternConfig, match_category
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.geometry.bbox import bbox_area, bbox_center
+from klave_engine.geometry.forma import Formas, cerrada_por_geometria
 from klave_engine.geometry.measurements import polygon_area
 from klave_engine.geometry.spatial_index import SpatialIndex
 
@@ -29,7 +30,7 @@ from klave_engine.geometry.spatial_index import SpatialIndex
 def _marker_section(marker: NormalizedEntity) -> tuple[float | None, str]:
     """Real cross-section area of a column marker in drawing units².
 
-    Circle → π r²; closed polyline → polygon area; anything else → bbox area.
+    Circle → π r²; closed polyline or hatch → polygon area; anything else → bbox area.
     """
     if marker.entity_type == EntityType.circle:
         radius = marker.properties.get("radius")
@@ -37,11 +38,14 @@ def _marker_section(marker: NormalizedEntity) -> tuple[float | None, str]:
             return 3.141592653589793 * float(radius) ** 2, "marcador_circular"
     if (
         marker.entity_type == EntityType.polyline
-        and marker.is_closed
+        and cerrada_por_geometria(marker)
         and marker.points
         and len(marker.points) >= 3
     ):
         return polygon_area(marker.points), "marcador_poligonal"
+    if marker.entity_type == EntityType.hatch and len(marker.points or []) >= 3:
+        # A castillo drawn only as its fill (PRUEBA-1: 4 of them): the region it fills.
+        return polygon_area(marker.points or []), "marcador_sombreado"
     area = bbox_area(marker.bbox)
     return (area if area > 0 else None), "marcador_bbox"
 
@@ -55,7 +59,7 @@ def _contorno(
     with a polygon that is another tag's marker (``ajenos``, R150: K-14 beside K-3)."""
     if not (
         marker.entity_type == EntityType.polyline
-        and marker.is_closed
+        and cerrada_por_geometria(marker)
         and marker.points
         and len(marker.points) >= 3
     ):
@@ -70,7 +74,7 @@ def _contorno(
         if (
             otro.entity_id in (ajenos or set())
             or otro.entity_type != EntityType.polyline
-            or not otro.is_closed
+            or not cerrada_por_geometria(otro)
             or otro.layer != marker.layer
             or len(otro.points or []) < 3
         ):
@@ -126,6 +130,7 @@ def detect_columns(
 
     model = model_for("column_tag")
 
+    formas = Formas(entities)
     con_marcador: list[tuple[int, str]] = []  # (the tag's detection, its marker)
     for entity in entities:
         if not entity.is_textual or not entity.text:
@@ -158,26 +163,37 @@ def detect_columns(
                     f"(distance {nearest_grid_distance:.1f})"
                 )
 
-        # Marker geometry: circle/insert/small closed polyline nearby; when found
-        # measure its real cross-section so costing uses the actual section.
-        # R130: the nearest marker; among equally near ones (a tag inside a symbol and its
-        # enclosing block both at distance 0) the smallest, then the first entity id — never
-        # the spatial index's own order. A leader's lines are never a marker (R135).
+        # Marker geometry: a symbol-sized circle, block or closed polyline (closed by its flag
+        # or by its last vertex returning to the first) nearby; when found measure its real
+        # cross-section so costing uses the actual section.
+        # R146: the distance is to what the marker draws (a block's children, a polygon's
+        # region), from the rectangle of the tag's letters; the index's boxes only preselect.
+        # A block bigger than a marker (a whole planta's walls drawn as one block) is never one.
+        # R130: the nearest marker; among equally near ones the smallest, then the first entity
+        # id — never the spatial index's own order. A leader's lines are never a marker (R135).
         marker_id: str | None = None
-        markers: list[tuple[float, float, str]] = []
+        markers: list[tuple[bool, float, float, str]] = []
         for hit in index.entities_near_entity(entity.entity_id, config.geometry_search_radius):
             other = index.get(hit.entity_id)
             if other.is_annotation:
                 continue
-            is_marker = other.entity_type in (EntityType.circle, EntityType.insert) or (
-                other.entity_type == EntityType.polyline
-                and other.is_closed
-                and bbox_area(other.bbox) <= config.max_marker_area
+            is_marker = bbox_area(other.bbox) <= config.max_marker_area and (
+                other.entity_type in (EntityType.circle, EntityType.insert)
+                or (other.entity_type == EntityType.polyline and cerrada_por_geometria(other))
+                or (other.entity_type == EntityType.hatch and len(other.points or []) >= 3)
             )
-            if is_marker:
-                markers.append((hit.distance, bbox_area(other.bbox), other.entity_id))
+            if not is_marker:
+                continue
+            distancia = formas.distancia(entity, other)
+            if distancia <= config.geometry_search_radius:
+                rellenos = other.entity_type == EntityType.hatch
+                markers.append((rellenos, distancia, bbox_area(other.bbox), other.entity_id))
         if markers:
-            marker_id = min(markers)[2]
+            # A fill is the marker only of a castillo drawn with nothing else (PRUEBA-1: 4); a
+            # castillo's outline and its fill are one symbol, and the outline is what R142 reads.
+            if not all(m[0] for m in markers):
+                markers = [m for m in markers if not m[0]]
+            marker_id = min(m[1:] for m in markers)[2]
         if marker_id is not None:
             features[MARKER] = 1.0
             source_entities.append(marker_id)

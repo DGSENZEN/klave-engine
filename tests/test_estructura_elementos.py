@@ -542,22 +542,37 @@ def test_a_sheets_unreadable_copy_never_hides_what_another_sheet_read():
     assert not e.dudas
 
 
-def test_one_line_that_is_the_span_of_several_tags_is_said_on_each():
-    # Marina: varias etiquetas CE-1 sobre la misma línea de MUROS1 de 14.9 toman cada una el
-    # largo entero. La medida no se reparte aquí (es del detector), pero el elemento lo dice.
-    a = _tag("CE-1", "dala", x=0.0, estimated_span_length=14.9)
-    b = _tag("CE-1", "dala", x=5.0, estimated_span_length=14.9)
-    c = _tag("CE-2", "dala", x=9.0, estimated_span_length=3.0)
-    a.source_entities = ["ent_a", "ent_linea"]
-    b.source_entities = ["ent_b", "ent_linea"]
-    c.source_entities = ["ent_c", "ent_otra"]
+def test_the_detectors_word_on_the_span_is_said_on_the_element():
+    # R146: el detector parte entre sus etiquetas la línea que comparten (cada una su tramo, la
+    # línea una vez), mide en su eje la viga dibujada con dos caras o dice por qué no hay claro; el
+    # elemento repite lo que dijo, y su longitud es su tramo.
+    compartida = (
+        "claro compartido: tramo partido entre 2 etiquetas (CE-1) de una línea de 9.100, cortada "
+        "en los apoyos entre ellas; le toca 2.912"
+    )
+    caras = "claro de una viga dibujada con 2 caras (4.45, 4.65): se mide su eje, 4.550"
+    a = _tag("CE-1", "dala", x=0.0, estimated_span_length=2.912, claro_compartido=compartida)
+    b = _tag("CE-1", "dala", x=5.0, estimated_span_length=4.55, claro_caras=caras)
+    sin = "longitud: ninguna línea alineada con la etiqueta (±15°) corre junto a ella; sin claro"
+    c = _tag("CE-2", "dala", x=9.0, sin_claro=sin)
     seg = _seg({d.detection_id: "v_pa" for d in (a, b, c)})
     els = {e.detection_id: e for e in _construir([a, b, c], seg, {}, {"dala": _nota_dala()})}
-    for d in (a, b):
-        assert any(x.startswith("claro compartido: la misma línea es el claro de 2 etiquetas")
-                   for x in els[d.detection_id].avisos)  # fmt: skip
-        assert els[d.detection_id].longitud_m.valor == 14.9
-    assert not any(x.startswith("claro compartido") for x in els[c.detection_id].avisos)
+    assert compartida in els[a.detection_id].avisos
+    assert els[a.detection_id].longitud_m.valor == 2.912
+    assert caras in els[b.detection_id].avisos
+    assert sin in els[c.detection_id].avisos
+    assert els[c.detection_id].longitud_m is None
+
+
+def test_a_doubtful_view_is_said_on_the_element():
+    # R165: la segmentación dice «vista dudosa» de lo que quedó casi igual de cerca de dos títulos
+    # sin dibujo que decida: el elemento lo repite.
+    k = _tag("K-1", x=0.0)
+    seg = _seg({k.detection_id: "v_pa"})
+    aviso = "vista dudosa: casi igual de cerca de «PLANTA ALTA» y de «PLANTA BAJA» (…)"
+    seg.vistas_dudosas = {k.detection_id: aviso}
+    (el,) = _construir([k], seg, {}, {})
+    assert aviso in el.avisos
 
 
 # ------------------------------------------------------ Tarea 9, ronda 1: R139–R145, M-3, M-4

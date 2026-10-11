@@ -85,3 +85,88 @@ def test_another_tags_marker_is_never_part_of_an_outline():
     assert tags["K-14"].properties["contorno_area_du2"] == pytest.approx(0.12, abs=1e-6)
     assert tags["K-14"].properties["contorno_rectangular"] is True
     assert tags["K-3"].properties["contorno_area_du2"] == pytest.approx(0.045, abs=1e-6)
+
+
+# ------------------------------------------------- Tarea 9b, R146: la distancia a lo dibujado
+
+
+def _metros():
+    from klave_engine.detection.column_detector import ColumnDetectorConfig
+
+    return ColumnDetectorConfig(geometry_search_radius=0.6, max_marker_area=1.0)
+
+
+def _texto(entity_id, texto, insert, alto=0.1, punto=3):
+    """Un MTEXT como los K de PRUEBA-1 (insertado arriba a la derecha): su caja, la real."""
+    from klave_engine.dxf.text_extent import extension_de_texto
+
+    e = _ent(entity_id, EntityType.mtext, (*insert, *insert), text=texto,
+             properties={"height": alto, "insert": insert, "attachment_point": punto})  # fmt: skip
+    e.bbox = extension_de_texto(e)
+    return e
+
+
+def _cuadro_abierto(entity_id, x0, y0, lado, layer="castillos"):
+    """Un castillo de PRUEBA-1: cinco vértices, el último sobre el primero, sin la bandera."""
+    puntos = [(x0, y0), (x0 + lado, y0), (x0 + lado, y0 - lado), (x0, y0 - lado), (x0, y0)]
+    return _ent(entity_id, EntityType.polyline, (x0, y0 - lado, x0 + lado, y0), points=puntos,
+                properties={"closed": False}, layer=layer)  # fmt: skip
+
+
+def test_an_enclosing_block_is_never_a_marker():
+    # PRUEBA-1 (K-1 en -5.13, -56.00): la etiqueta está dentro de la caja del bloque que dibuja los
+    # muros de toda la planta (249 m²); su castillo es un cuadro de 0.15 cerrado por sus vértices.
+    # Antes ganaba la caja del bloque (distancia 0) y el castillo se presupuestaba supuesto.
+    etiqueta = _texto("ent_000009", "K-1", (-5.043, -55.945))
+    bloque = _ent("ent_000001", EntityType.insert, (-17.4, -64.84, -2.9, -47.64), block_name="W")
+    bloque.raw_handle = "8254"
+    muro = _ent("ent_000002", EntityType.line, (-6.0, -55.77, -4.0, -55.77),
+                points=[(-6.0, -55.77), (-4.0, -55.77)],
+                properties={"parent_insert": "8254"}, layer="A-WALL")  # fmt: skip
+    castillo = _cuadro_abierto("ent_000003", -5.56, -55.914, 0.15)
+    entidades = [etiqueta, bloque, muro, castillo]
+    (tag,) = detect_columns(entidades, SpatialIndex(entidades), config=_metros()).detections
+    assert tag.source_entities[1] == "ent_000003"
+    assert tag.properties["section_source"] == "marcador_poligonal"
+    assert tag.properties["section_area_du2"] == pytest.approx(0.0225, abs=1e-9)
+
+
+def test_the_distance_to_a_block_is_to_what_it_draws():
+    # Un bloque de símbolo cuya caja contiene la etiqueta pero que dibuja un círculo a 0.5 de ella
+    # no está a distancia 0: el castillo a 0.05 de las letras es el marcador.
+    etiqueta = _texto("ent_000009", "K-2", (1.0, 1.0))
+    simbolo = _ent("ent_000001", EntityType.insert, (0.2, 0.2, 1.1, 1.1), block_name="S")
+    simbolo.raw_handle = "S1"
+    propiedades = {"center": (0.25, 0.25), "radius": 0.05, "parent_insert": "S1"}
+    circulo = _ent("ent_000002", EntityType.circle, (0.2, 0.2, 0.3, 0.3), properties=propiedades)
+    castillo = _cuadro_abierto("ent_000003", 1.05, 0.95, 0.15)
+    entidades = [etiqueta, simbolo, circulo, castillo]
+    (tag,) = detect_columns(entidades, SpatialIndex(entidades), config=_metros()).detections
+    assert tag.source_entities[1] == "ent_000003"
+
+
+def test_a_castillo_drawn_only_as_its_fill_is_its_marker():
+    # PRUEBA-1: 4 castillos se dibujan sólo con su sombreado (sin cuadro ni círculo).
+    etiqueta = _texto("ent_000009", "K-0", (81.741, -58.018))
+    puntos = [(81.80, -57.80), (81.95, -57.80), (81.95, -57.70), (81.80, -57.70)]
+    relleno = _ent("ent_000001", EntityType.hatch, (81.80, -57.80, 81.95, -57.70), points=puntos,
+                   properties={"closed": True}, layer="castillos")  # fmt: skip
+    entidades = [etiqueta, relleno]
+    (tag,) = detect_columns(entidades, SpatialIndex(entidades), config=_metros()).detections
+    assert tag.properties["section_source"] == "marcador_sombreado"
+    assert tag.properties["section_area_du2"] == pytest.approx(0.015, abs=1e-9)
+
+
+def test_a_castillos_outline_beats_its_own_fill():
+    # Marina (129 castillos) y PRUEBA-1: el cuadro del castillo y su sombreado ocupan lo mismo; el
+    # marcador es el cuadro, que es lo que lee R142 (K-15A: su L de 2300 cm²).
+    etiqueta = _ent("ent_000009", EntityType.text, (0.35, 0.1, 0.6, 0.2), text="K-15A")
+    a = _rect("ent_000001", 0.0, 0.0, 0.3, 0.6)
+    b = _rect("ent_000002", 0.3, 0.0, 0.55, 0.2)
+    relleno = _ent("ent_000000", EntityType.hatch, (0.0, 0.0, 0.3, 0.6),
+                   points=[(0.0, 0.0), (0.3, 0.0), (0.3, 0.6), (0.0, 0.6)],
+                   properties={"closed": True}, layer="EST-CASTILLOS")  # fmt: skip
+    entidades = [etiqueta, relleno, a, b]
+    (tag,) = detect_columns(entidades, SpatialIndex(entidades)).detections
+    assert tag.source_entities[1] in ("ent_000001", "ent_000002")  # un cuadro, nunca el relleno
+    assert tag.properties["contorno_area_du2"] == pytest.approx(0.23, abs=1e-6)

@@ -17,6 +17,7 @@ from klave_engine.detection.schedules import (
 from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.dxf.entities import EntityType, EvidencePacket, NormalizedEntity
 from klave_engine.dxf.parser import DxfParser
+from klave_engine.dxf.text_extent import extension_de_texto
 from klave_engine.estructura.definiciones import construir_definiciones, fuente_de_seccion
 
 C = TextPatternConfig()
@@ -110,6 +111,26 @@ def test_the_label_takes_its_own_section_not_the_next_rows_cota():
     assert defs["K-5"].seccion_cm.valor == (20, 30) and defs["K-5"].seccion_cm.fuente == "detalle"
     # Las dos etiquetas son marcas de cuadro (no colocaciones), como antes.
     assert {"am", "bm"} <= set(inv.cuadro_mark_entities)
+
+
+def test_each_group_of_labels_keeps_its_own_side():
+    # R165 (CR-2 en Marina, ES-200): la hoja tiene un cuadro (sus secciones encima de sus
+    # etiquetas) y, lejos, el detalle «CERRAMIENTOS» (su sección debajo de su título). Cada grupo de
+    # etiquetas cercanas tiene su lado: el cuadro no le quita a CR-2 su «una cota 20».
+    ents = []
+    for i, x in enumerate((0.0, 3.0, 6.0)):
+        contorno = (x - 0.5, 0.9, x + 0.5, 2.4)
+        ents += _castillo(f"k{i}", f"K-{i + 1}", x, 0.0, ["4#3", "E#2@15"], contorno, 20, 30)
+    ents += [
+        _texto("cm", "CR-2", 30.0, 0.0),
+        _texto("cr", "4#3", 30.6, 0.0, alto=0.10),
+        _rectangulo("cc", 29.6, -1.3, 30.4, -0.5),
+        _cota("ch", (29.6, -1.3), (30.4, -1.3), 20),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0)
+    assert [s.section_cm for s in _cotas(inv, "K-1")] == [(20, 30)]
+    (cr2,) = _cotas(inv, "CR-2")
+    assert (cr2.section_cm, cr2.source_text) == ((20, 20), "CR-2 · una cota 20")
 
 
 def test_two_labels_reaching_one_section_lose_it():
@@ -555,19 +576,25 @@ def test_slab_lines_running_past_the_corners_make_no_section():
 
 def _titulo(entity_id, text, x, y, alto=0.14, halign=0):
     """Un título alineado a la izquierda: su ancla (``ancla_texto``) es su ``insert``, la punta
-    izquierda de su base; su caja, la que estima el normalizador (siempre desde el ``insert``).
-    Con ``halign`` 2, alineado a la derecha en ``x`` (su punto de alineación; el ``insert``
-    como lo deja un DXF sin calcular, en el mismo punto)."""
-    ancho = 0.6 * len(text) * alto
-    bbox = (x, y, x + ancho, y + alto)
+    izquierda de su base; su caja, la que da el normalizador (R146: donde la pone su alineación,
+    0.9 altos por carácter). Con ``halign`` 2, alineado a la derecha en ``x`` (su punto de
+    alineación; el ``insert`` como lo deja un DXF sin calcular, en el mismo punto)."""
     propiedades = {"height": alto, "insert": (x, y)}
     if halign:
         propiedades |= {"halign": halign, "align_point": (x, y)}
-    return NormalizedEntity(
-        entity_id=entity_id, entity_type=EntityType.text, source_file="a.dxf", layer="T",
-        bbox=bbox, text=text, properties=propiedades, raw_handle=entity_id,
-        evidence=_evidencia(entity_id, bbox),
+    return _con_su_caja(
+        NormalizedEntity(
+            entity_id=entity_id, entity_type=EntityType.text, source_file="a.dxf", layer="T",
+            bbox=(x, y, x, y), text=text, properties=propiedades, raw_handle=entity_id,
+            evidence=_evidencia(entity_id, (x, y, x, y)),
+        )
     )  # fmt: skip
+
+
+def _con_su_caja(texto):
+    """El texto con la caja que le da el normalizador (R146)."""
+    texto.bbox = extension_de_texto(texto)
+    return texto
 
 
 def _leidas(inv, *marcas):
@@ -577,22 +604,22 @@ def _leidas(inv, *marcas):
 @pytest.mark.parametrize(
     "texto,x,halign,leida",
     [
-        # Su ancla dentro de la sección y su texto encima (79 %): es suya.
+        # Su ancla dentro de la sección y su texto encima (53 %): es suya.
         ("T-1", 1.0, 0, (20, 50)),
         # T2-8 en Marina (ES-201): alineado a la izquierda, su ancla 1.36 altos antes de la sección
-        # (260.966 contra 261.157) y su texto encima de ella (0.145 de 0.336, 43 %): es suya.
+        # (260.966 contra 261.157) y su texto encima de ella (0.313 de 0.504, 62 %): es suya.
         ("T2-8", 0.2 - 0.191, 0, (20, 50)),
-        # T3-1 en Marina: su ancla dentro, pero sólo 28 % de su texto encima: menos de un tercio,
+        # T3-1 en Marina: su ancla dentro, pero sólo 19 % de su texto encima: menos de un tercio,
         # no es suya (R123).
         ("T-1", 1.13, 0, None),
         # Su texto empieza 0.4 altos después de la sección: no está encima, no es suya (la holgura
         # de media altura de R115 ya no existe).
         ("T-1", 1.256, 0, None),
-        # Alineado a la derecha en 1.3, pasada la sección: su texto acaba encima de ella (60 %; la
-        # caja del normalizador, desde el insert, no la tocaría): es suya.
+        # Alineado a la derecha en 1.3, pasada la sección: su texto acaba encima de ella (74 %; una
+        # caja desde el insert no la tocaría): es suya.
         ("T-1", 1.3, 2, (20, 50)),
-        # Alineado a la derecha en 0.15, antes de la sección: su texto no la toca (la caja del
-        # normalizador sí): no es suya.
+        # Alineado a la derecha en 0.15, antes de la sección: su texto no la toca (una caja desde
+        # el insert sí): no es suya.
         ("T-1", 0.15, 2, None),
     ],
 )
@@ -609,11 +636,11 @@ def test_ownership_goes_by_the_titles_real_text(texto, x, halign, leida):
 @pytest.mark.parametrize(
     "x_otro,suya",
     [
-        # T-1 entero encima de la sección y T-9 en 0.1 de sus 0.252: es de T-1.
+        # T-1 entero encima de la sección y T-9 en 0.1 de sus 0.378: es de T-1.
         (1.1, True),
-        # T-9 encima en 0.22 de 0.252 (87 %) contra el 100 % de T-1: menos del 25 % de margen:
+        # T-9 encima en 0.329 de 0.378 (87 %) contra el 100 % de T-1: menos del 25 % de margen:
         # de ninguno, reclamada por los dos.
-        (0.98, False),
+        (0.871, False),
     ],
 )
 def test_two_titles_over_one_section_the_clearly_larger_overlap_wins(contorno, x_otro, suya):
@@ -643,14 +670,14 @@ def test_two_titles_over_one_section_the_clearly_larger_overlap_wins(contorno, x
 @pytest.mark.parametrize(
     "x_titulo,vecina,leidas",
     [
-        # Un título ancho (0.9) encima de dos secciones, de la primera 0.6 y de la otra 0.1: es la
-        # primera.
-        (0.6, False, {"T-1": [(20, 50)], "T-2": []}),
-        # Encima de las dos casi igual (0.35 y 0.35): de ninguna; la reclama.
-        (0.85, False, {"T-1": [], "T-2": []}),
+        # Un título ancho (1.35) encima de dos secciones, de la primera 0.9 y de la otra 0.25: es
+        # la primera.
+        (0.3, False, {"T-1": [(20, 50)], "T-2": []}),
+        # Encima de las dos igual (0.575 y 0.575): de ninguna; la reclama.
+        (0.625, False, {"T-1": [], "T-2": []}),
         # Igual, pero la segunda tiene su título entero encima: es de su título, y la primera
         # queda del título ancho.
-        (0.85, True, {"T-1": [(20, 50)], "T-2": [(30, 60)]}),
+        (0.625, True, {"T-1": [(20, 50)], "T-2": [(30, 60)]}),
     ],
 )
 def test_a_wide_title_over_two_sections(x_titulo, vecina, leidas):
@@ -663,7 +690,7 @@ def test_a_wide_title_over_two_sections(x_titulo, vecina, leidas):
         ents.append(_titulo("bm", "T-2", 1.6, 2.6))
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
     assert _leidas(inv, "T-1", "T-2") == leidas
-    if x_titulo == 0.85 and not vecina:
+    if x_titulo == 0.625 and not vecina:
         (t1,) = _cotas(inv, "T-1")
         assert t1.campos_con_texto == ["seccion"]
         assert "su título está sobre dos rectángulos de pares de cotas" in t1.avisos[0]
@@ -671,9 +698,7 @@ def test_a_wide_title_over_two_sections(x_titulo, vecina, leidas):
 
 def _titulo_en_columna(entity_id, text, x, y, alto=0.1):
     """Un MTEXT como los de ES-500 en Marina: insertado arriba a la izquierda, con una columna de
-    1.358 y el párrafo centrado en ella («\\pxqc»); su caja del normalizador, desde el insert."""
-    ancho = 0.6 * len(text) * alto
-    bbox = (x, y, x + ancho, y + alto)
+    1.358 y el párrafo centrado en ella («\\pxqc»); su caja, la del normalizador (R146)."""
     propiedades = {
         "height": alto,
         "insert": (x, y),
@@ -681,10 +706,12 @@ def _titulo_en_columna(entity_id, text, x, y, alto=0.1):
         "column_width": 1.357913709497112,
         "paragraph_align": "c",
     }
-    return NormalizedEntity(
-        entity_id=entity_id, entity_type=EntityType.mtext, source_file="a.dxf", layer="T",
-        bbox=bbox, text=text, properties=propiedades, raw_handle=entity_id,
-        evidence=_evidencia(entity_id, bbox),
+    return _con_su_caja(
+        NormalizedEntity(
+            entity_id=entity_id, entity_type=EntityType.mtext, source_file="a.dxf", layer="T",
+            bbox=(x, y, x, y), text=text, properties=propiedades, raw_handle=entity_id,
+            evidence=_evidencia(entity_id, (x, y, x, y)),
+        )
     )  # fmt: skip
 
 
@@ -791,7 +818,7 @@ def test_a_wall_strip_between_the_title_and_a_section_stops_its_reach():
     assert s.avisos[0].startswith("sección: lo más cercano dibujado encima no es una sección")
 
 
-@pytest.mark.parametrize("x,suya", [(-0.038, False), (-0.1, True)])
+@pytest.mark.parametrize("x,suya", [(-0.057, False), (-0.151, True)])
 def test_a_graze_owns_nothing(x, suya):
     # R123 (D-5 en Marina, ES-006): su título toca la sección dibujada sólo en 15 % de su texto:
     # no es suya, ni la reclama, y la IA la llena; con 40 %, sí.
@@ -1846,6 +1873,19 @@ def _t3_8():
         _poligono("t38", [(3.141, 2.52), (3.141, 0.786), (4.426, 0.786)], False),
         _cota_lineal("b20", (2.357, 1.237), (3.141, 0.786), 20, 0.0),
     ]
+
+
+@pytest.mark.parametrize("x,suya", [(0.8, True), (0.85, False)])
+def test_a_title_over_a_quarter_of_its_claimed_box_gives_it_its_armado(x, suya):
+    # R165 (T3-1 en Marina, ES-301): el rectángulo que reclaman sus cotas sólo atribuye armado,
+    # nunca una lectura: basta un cuarto de su texto real encima (28 % de 0.63); un quinto no.
+    ents = _t3_21()
+    ents[0] = _titulo("t", "T3-21", x, 2.171, alto=0.14)
+    ents.append(_texto("e", "E#3@15", 0.454, -0.387, alto=0.11))
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s.section_cm for s in _cotas(inv, "T3-21")] == [None]
+    posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
+    assert posibles == {"E#3@15": ["T3-21"] if suya else []}
 
 
 def test_a_claimed_box_needs_the_titles_own_cotas_meeting_at_a_corner():

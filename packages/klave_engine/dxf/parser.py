@@ -199,6 +199,7 @@ class DxfParser:
         source_file: str,
         budget: "_ExplosionBudget",
         depth: int,
+        handle: str | None = None,
     ) -> None:
         """Expand a block reference's geometry into normalized entities.
 
@@ -216,7 +217,10 @@ class DxfParser:
         if budget.capped:
             return
         insert_layer = str(insert.dxf.layer)  # type: ignore[attr-defined]
-        insert_handle = str(insert.dxf.handle)  # type: ignore[attr-defined]
+        # A nested block reference has no handle of its own: it is known by its parent's
+        # handle and its place in it («H#i»), so its children point to it (R146: a block's
+        # real geometry is what its children draw).
+        insert_handle = handle or str(insert.dxf.handle)  # type: ignore[attr-defined]
         block_name = str(insert.dxf.name)  # type: ignore[attr-defined]
         emitted = 0
         try:
@@ -255,7 +259,9 @@ class DxfParser:
                     drawing.entities.append(nested)
                     emitted += 1
                     budget.total += 1
-                self._explode_insert(child, drawing, source_file, budget, depth + 1)
+                self._explode_insert(
+                    child, drawing, source_file, budget, depth + 1, f"{insert_handle}#{index}"
+                )
                 continue
             if child.dxftype() in NON_GRAPHICAL_TYPES:
                 continue

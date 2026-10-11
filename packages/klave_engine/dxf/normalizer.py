@@ -1,8 +1,10 @@
 
 """Normalize ezdxf entities into NormalizedEntity records.
 
-Every supported entity gets a bbox. Where an exact bbox is impractical (text),
-a conservative approximation is used and noted in the evidence packet.
+Every supported entity gets a bbox. A text's bbox is its real extent (R146): the anchor its
+alignment or attachment fixes, its lines, its width (the CAD's own for an aligned TEXT, else
+estimated per character) and its rotation — ``klave_engine.dxf.text_extent``; the estimate is
+noted in the evidence packet.
 """
 
 import re
@@ -12,6 +14,7 @@ from ezdxf import bbox as ezdxf_bbox
 
 from klave_engine.common.ids import IdGenerator
 from klave_engine.dxf.entities import EntityType, NormalizedEntity, ParseWarning
+from klave_engine.dxf.text_extent import ANCHO_POR_CARACTER, extension_de_texto
 from klave_engine.geometry.bbox import BBox, Point, bbox_from_points
 from klave_engine.graph.evidence import EvidencePacket
 
@@ -34,13 +37,16 @@ SUPPORTED_DXF_TYPES = {
     "DIMENSION",
 }
 
-# Approximate average glyph width as a fraction of text height.
-TEXT_WIDTH_FACTOR = 0.6
-
 # Curves flatten into at most this many segments; enough for detection and
 # rendering without letting one dense spline dominate the entity budget.
 MAX_FLATTEN_POINTS = 200
 
+
+# What the evidence says of a text's box.
+_TEXT_EXTENT_NOTE = (
+    "Caja del texto: donde lo ponen su alineación y su giro; su ancho, el del CAD en un texto "
+    f"alineado, si no {ANCHO_POR_CARACTER:g} × alto por carácter"
+)
 
 _DISPLAY_NUMBER = re.compile(r"-?\d+(?:[.,]\d+)?")
 # The paragraph alignment an MTEXT sets inline (``\pxqc;`` = centred in its column).
@@ -132,11 +138,6 @@ def _exact_bbox(entity: Any) -> BBox | None:
         float(extents.extmax.x),
         float(extents.extmax.y),
     )
-
-
-def _approximate_text_bbox(insert: Point, text: str, height: float) -> BBox:
-    width = max(height * TEXT_WIDTH_FACTOR * max(len(text), 1), height)
-    return (insert[0], insert[1], insert[0] + width, insert[1] + height)
 
 
 def _shoelace(points: list[Point]) -> float:
@@ -313,8 +314,8 @@ def normalize_entity(
         height = float(entity.dxf.height)
         insert = (float(entity.dxf.insert.x), float(entity.dxf.insert.y))
         # A text with another alignment than left-baseline is placed by its
-        # alignment point (group 11), not by ``insert``; keep both. The bbox
-        # still comes from ``insert`` (other detectors depend on it).
+        # alignment point (group 11), not by ``insert``; keep both: the bbox is
+        # where the text really lies (R146, ``text_extent``).
         align_point: tuple[float, float] | None = None
         if entity.dxf.hasattr("align_point"):
             align_point = (float(entity.dxf.align_point.x), float(entity.dxf.align_point.y))
@@ -325,12 +326,25 @@ def normalize_entity(
             valign=int(entity.dxf.get("valign", 0)),
             align_point=align_point,
         )
-        bbox = _approximate_text_bbox(insert, text, height)
-        notes.append("Text bbox approximated from insert point and height")
+        # What else changes where the glyphs go: the width factor, the slant and the mirror.
+        width_factor = float(entity.dxf.get("width", 1.0) or 1.0)
+        if abs(width_factor - 1.0) > 1e-9:
+            properties["width_factor"] = width_factor
+        oblique = float(entity.dxf.get("oblique", 0.0) or 0.0)
+        if oblique:
+            properties["oblique"] = oblique
+        generation = int(entity.dxf.get("text_generation_flag", 0) or 0)
+        if generation & 2:
+            properties["mirror_x"] = True
+        if generation & 4:
+            properties["mirror_y"] = True
+        notes.append(_TEXT_EXTENT_NOTE)
     elif dxf_type == "MTEXT":
         entity_type = EntityType.mtext
         text = str(entity.plain_text())
-        rotation = float(entity.dxf.rotation)
+        # Its rotation may be stored as a direction vector (group 11), not as group 50: a MTEXT
+        # in a turned block always is (R146).
+        rotation = float(entity.get_rotation())
         height = float(entity.dxf.char_height)
         insert = (float(entity.dxf.insert.x), float(entity.dxf.insert.y))
         properties.update(
@@ -346,8 +360,10 @@ def normalize_entity(
         paragraph = _MTEXT_PARAGRAPH_ALIGN.search(str(entity.text))
         if paragraph is not None:
             properties["paragraph_align"] = paragraph.group(1).lower()
-        bbox = _approximate_text_bbox(insert, text, height)
-        notes.append("MText bbox approximated from insert point and char height")
+        line_spacing = float(entity.dxf.get("line_spacing_factor", 1.0) or 1.0)
+        if abs(line_spacing - 1.0) > 1e-9:
+            properties["line_spacing"] = line_spacing
+        notes.append(_TEXT_EXTENT_NOTE)
     elif dxf_type == "DIMENSION":
         entity_type = EntityType.dimension
         try:
@@ -415,6 +431,23 @@ def normalize_entity(
         if bbox is None:
             bbox = (insert[0], insert[1], insert[0], insert[1])
             notes.append("Insert bbox approximated as insertion point")
+
+    if entity_type in (EntityType.text, EntityType.mtext):
+        # Its real extent, from what the entity says (R146): computed on a provisional record.
+        bbox = extension_de_texto(
+            NormalizedEntity(
+                entity_id="",
+                entity_type=entity_type,
+                source_file=source_file,
+                layer=layer,
+                bbox=(0.0, 0.0, 0.0, 0.0),
+                raw_handle=handle,
+                properties=properties,
+                text=text,
+                rotation=rotation,
+                evidence=EvidencePacket(source=source_file, method="", bbox=None, notes=[]),
+            )
+        )
 
     if bbox is None:
         warnings.append(

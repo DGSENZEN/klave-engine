@@ -42,7 +42,6 @@ from klave_engine.detection.text_patterns import (
     TextPatternConfig,
 )
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
-from klave_engine.dxf.normalizer import TEXT_WIDTH_FACTOR
 from klave_engine.estructura._armado_texto import (
     LADO,
     LADO_FINAL,
@@ -90,10 +89,9 @@ from klave_engine.estructura.marcas import (
 )
 from klave_engine.estructura.reglas import leer_reglas
 from klave_engine.estructura.textos import (
-    ANCHO_POR_CARACTER,
     alto_de_texto,
     ancla_texto,
-    caja_de_texto,
+    extension_de_texto,
 )
 from klave_engine.geometry.bbox import (
     BBox,
@@ -1066,7 +1064,7 @@ def _sections_from_detail_geometry(
         center = bbox_center(text.bbox)
         if not any(bbox_contains_point(box, center) for box in detail_boxes):
             continue
-        height = bbox_height(text.bbox) or 1.0
+        height = _alto_de_renglon(text, 1.0)
         best: tuple[float, float, float] | None = None
         for rect, w, h in rects:
             x0, y0, x1, y1 = rect.bbox
@@ -1151,7 +1149,7 @@ def _sections_from_section_callouts(
         if box is None:
             continue
         cx, cy = bbox_center(t.bbox)
-        height = bbox_height(t.bbox) or 0.1
+        height = _alto_de_renglon(t, 0.1)
         label = min(
             ((abs(lx - cx) + abs(ly - cy), n) for (lx, ly), n in labels),
             default=(None, None),
@@ -1274,6 +1272,8 @@ _DUPLICADA = 0.25  # the same label drawn twice: one label
 _MARGEN = 1.25
 # R123: a title owns only a section at least this share of its text lies over.
 _ENCIMA_MINIMO = 1 / 3
+# R165: the same for a claimed box of cotas (R158), which only attributes armado.
+_ENCIMA_RECLAMADA = 1 / 4
 # R123: an outline without cotas is a section only when it looks like one: four corners, both
 # sides at least this many title heights, and no longer than this many times its width.
 _LADO_MINIMO = 1.5
@@ -1464,29 +1464,22 @@ class _Propio:
     reclamados: list[BBox] = campo_de_dataclass(default_factory=list)
 
 
+def _alto_de_renglon(text: NormalizedEntity, defecto: float) -> float:
+    """The height of one line of a text: its letters' (R146: its box is its real extent — several
+    lines of a MTEXT, a turned text's length — never its height), or its box's for a text built
+    without one; ``defecto`` when neither has any."""
+    alto = text.properties.get("height")
+    if isinstance(alto, int | float) and alto > 0:
+        return float(alto)
+    caja = bbox_height(text.bbox)
+    return caja if caja > 0 else defecto
+
+
 def _extension_del_texto(text: NormalizedEntity) -> BBox:
-    """Where a label's text really lies (R120): the normalizer's box (``TEXT_WIDTH_FACTOR`` per
-    character, or the CAD's own width for an aligned TEXT) placed where its alignment puts it —
-    the normalizer starts every text at its insert — and turned with it."""
-    ax, ay = ancla_texto(text)
-    giro = math.radians(text.rotation or 0.0)
-    dx0, dx1, dy0, dy1, alto = caja_de_texto(text, giro)
-    largo = max((len(r.strip()) for r in (text.text or "").split("\n")), default=0)
-    if largo and math.isclose(dx1 - dx0, ANCHO_POR_CARACTER * alto * largo):
-        # An estimated width: the normalizer's, about the point the alignment keeps in place.
-        p = text.properties
-        fijo = 0.0
-        if text.entity_type == EntityType.mtext and float(p.get("column_width") or 0.0) > 0:
-            # In a column, its paragraph alignment (``_caja_de_mtext``) keeps the text in place.
-            columna = (int(p.get("attachment_point") or 1) - 1) % 3
-            alineacion = p.get("paragraph_align") or "lcr"[columna]
-            fijo = {"l": dx0, "c": (dx0 + dx1) / 2, "r": dx1}.get(alineacion, 0.0)
-        escala = max(TEXT_WIDTH_FACTOR * alto * largo, alto) / (dx1 - dx0)
-        dx0, dx1 = fijo + (dx0 - fijo) * escala, fijo + (dx1 - fijo) * escala
-    c, s = math.cos(giro), math.sin(giro)
-    esquinas = [(ax + u * c - v * s, ay + u * s + v * c) for u in (dx0, dx1) for v in (dy0, dy1)]
-    xs, ys = [q[0] for q in esquinas], [q[1] for q in esquinas]
-    return (min(xs), min(ys), max(xs), max(ys))
+    """Where a label's text really lies (R120): its extent as the normalizer gives it (R146,
+    ``text_extent``) — placed where its alignment puts it and turned with it; a text built
+    without an insert point lies in its box."""
+    return extension_de_texto(text)
 
 
 def _parece_seccion(c: _Contorno, alto_letra: float, une: float) -> bool:
@@ -1682,6 +1675,7 @@ def _propio(
     contornos: list[_Contorno],
     es_seccion: Callable[[_Contorno, _Etiqueta], bool] | None = None,
     topes: dict[str, float] | None = None,
+    encima_minimo: float = _ENCIMA_MINIMO,
 ) -> dict[str, _Propio]:
     """Each label's own outline (R81), by its entity id, with why there is none. An outline (or
     pair rectangle) is a label's when the label's text really lies over it (R120: its
@@ -1722,7 +1716,7 @@ def _propio(
         def hueco(e: _Etiqueta, c: _Contorno, lado: int) -> float | None:
             """The gap from the label to the outline on ``lado``, if its text lies over it."""
             x0, y0, x1, y1 = c.caja
-            if _solape(e, c) < _ENCIMA_MINIMO or max(x1 - x0, y1 - y0) > _TAMANO * e.alto:
+            if _solape(e, c) < encima_minimo or max(x1 - x0, y1 - y0) > _TAMANO * e.alto:
                 return None
             h = y0 - e.y if lado > 0 else e.y - y1
             tope = (topes or {}).get(e.texto.entity_id, math.inf)
@@ -1834,12 +1828,29 @@ def _propio(
             return resultado
 
         por_lado = {lado: resolver(lado, representantes) for lado in (1, -1)}
-        suyas = {
-            lado: sum(1 for p in por_lado[lado].values() if p is not None and p.contorno)
-            for lado in (1, -1)
-        }
-        convencion = 1 if suyas[1] > suyas[-1] else -1 if suyas[-1] > suyas[1] else 0
+
+        def convencion_de(
+            miembros: list[_Etiqueta], lados: dict[int, dict[int, _Propio | None]]
+        ) -> int:
+            suyas = {
+                lado: sum(
+                    1 for r in miembros if (p := lados[lado][id(r)]) is not None and p.contorno
+                )
+                for lado in (1, -1)
+            }
+            return 1 if suyas[1] > suyas[-1] else -1 if suyas[-1] > suyas[1] else 0
+
+        de_la_hoja = convencion_de(representantes, por_lado)
+        # R165: a sheet can hold a cuadro (sections above its labels) and a detail group
+        # (sections under its titles, ES-200's «CERRAMIENTOS»): each group of labels near one
+        # another keeps its own convention; a group whose labels own nothing takes the sheet's.
+        por_grupo: dict[int, int] = {}
+        for grupo_cercano in _grupos_cercanos(representantes):
+            local = convencion_de(grupo_cercano, por_lado)
+            for r in grupo_cercano:
+                por_grupo[id(r)] = local or de_la_hoja
         for r in representantes:
+            convencion = por_grupo[id(r)]
             if convencion:
                 propio = por_lado[convencion][id(r)] or _Propio(
                     None,
@@ -1862,6 +1873,28 @@ def _propio(
                 if de[e.texto.entity_id] is r:
                     salida[e.texto.entity_id] = propio
     return salida
+
+
+def _grupos_cercanos(etiquetas: list[_Etiqueta]) -> list[list[_Etiqueta]]:
+    """The labels of a sheet in groups of labels near one another (each within two reaches,
+    ``2 × _ALCANCE`` heights, of another of its group): a cuadro's row, a detail group."""
+    padre = list(range(len(etiquetas)))
+
+    def raiz(i: int) -> int:
+        while padre[i] != i:
+            padre[i] = padre[padre[i]]
+            i = padre[i]
+        return i
+
+    for i, a in enumerate(etiquetas):
+        for j in range(i + 1, len(etiquetas)):
+            b = etiquetas[j]
+            if math.dist((a.x, a.y), (b.x, b.y)) <= 2 * _ALCANCE * max(a.alto, b.alto):
+                padre[raiz(j)] = raiz(i)
+    grupos: dict[int, list[_Etiqueta]] = defaultdict(list)
+    for i, e in enumerate(etiquetas):
+        grupos[raiz(i)].append(e)
+    return list(grupos.values())
 
 
 def _eje(
@@ -2614,7 +2647,7 @@ def _acotadas_junto_al_armado(
     armados = [t for t in entities if t.is_textual and t.text and solo_armado(t.text)]
     if not armados:
         return []
-    alto = statistics.median(bbox_height(t.bbox) or 0.1 / unit_to_m for t in armados)
+    alto = statistics.median(_alto_de_renglon(t, 0.1 / unit_to_m) for t in armados)
     r = 2 * _ALCANCE * alto
     ventanas = [(t.bbox[0] - r, t.bbox[1] - r, t.bbox[2] + r, t.bbox[3] + r) for t in armados]
     segmentos = [
@@ -2656,7 +2689,7 @@ def _etiqueta_de(
         marca=mark,
         x=(x0 + x1) / 2,
         y=(y0 + y1) / 2,
-        alto=bbox_height(text.bbox) or 0.1 / unit_to_m,
+        alto=_alto_de_renglon(text, 0.1 / unit_to_m),
         llave=sheet(text)[1],
         en_detalle=in_detail,
         x0=x0,
@@ -2911,7 +2944,11 @@ def _leer_secciones(
                 )
                 if not any(_se_encima(c.caja, o) for o in tomadas)
             ]
-            de_cotas = _propio(sueltas, rectangulos, topes=topes)
+            # R165: these boxes only attribute armado (never a reading): a title over the box by a
+            # quarter of its real text is enough (``_ENCIMA_MINIMO`` was measured on the old
+            # 0.6-height-per-character boxes; T3-1 lies 28 % over its own section on ES-301, D-5's
+            # graze 10 %).
+            de_cotas = _propio(sueltas, rectangulos, topes=topes, encima_minimo=_ENCIMA_RECLAMADA)
             reclamadas += [
                 (e, p.contorno.caja)
                 for e in sueltas
@@ -3385,7 +3422,7 @@ def _flechas_de_titulos(
             bbox_contains_point(box, centro) for box in detail_boxes
         ):
             continue
-        alto = bbox_height(text.bbox) or alto_de_texto(text)
+        alto = alto_de_texto(text)
         titulos.append((text, leido[0], leido[1], _extension_del_texto(text), alto))
     if not titulos:
         return []
@@ -3568,7 +3605,7 @@ def _junto_a_su_seccion(
     # (anything with letters that is not itself an armado line) and every section's title, by
     # grid cell, where they really lie (R120: a notes MTEXT is its column, never the unwrapped
     # paragraph the normalizer's box spans across the sheet).
-    altos = [bbox_height(t.bbox) for t in texts if bbox_height(t.bbox) > 0]
+    altos = [h for t in texts if (h := _alto_de_renglon(t, 0.0)) > 0]
     celda = 20 * (statistics.median(altos) if altos else 1.0)
     titulos = {titulo for _m, _c, _l, titulo in secciones if titulo}
     rejilla: dict[tuple[int, int], list[tuple[str, BBox]]] = defaultdict(list)
@@ -3603,7 +3640,7 @@ def _junto_a_su_seccion(
 
     # R154: the drawn leaders (open lines and polylines, LEADER and MULTILEADER) with a vertex at
     # an armado text: where their other ends lie.
-    margen = {t.entity_id: _PUNTA_DE_FLECHA * bbox_height(t.bbox) for _r, t in candidatos}
+    margen = {t.entity_id: _PUNTA_DE_FLECHA * _alto_de_renglon(t, 0.0) for _r, t in candidatos}
     ventanas = [
         (x0 - margen[i], y0 - margen[i], x1 + margen[i], y1 + margen[i])
         for i, (x0, y0, x1, y1) in extension.items()
@@ -3647,7 +3684,7 @@ def _junto_a_su_seccion(
 
     for r, texto in candidatos:
         llave = sheet(texto)[1]
-        holgura = bbox_height(texto.bbox)
+        holgura = _alto_de_renglon(texto, 0.0)
         dentro = 0.05 * holgura
         apuntadas = {
             marca

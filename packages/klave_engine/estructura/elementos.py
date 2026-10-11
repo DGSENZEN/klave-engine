@@ -187,20 +187,14 @@ def construir_elementos(
         segmentation.assignment if segmentation is not None and segmentation.is_segmented else {}
     )
     resolutor = _Resolutor(por_marca, por_familia, reglas, frames)
-    compartidas = _lineas_compartidas(colocadas)
     elementos: list[Elemento] = []
     for d in colocadas:
         vista = asignacion.get(d.detection_id)
         familia = d.family
         marca = normalizar_marca(d.mark, config) if d.mark.strip() else ""
         avisos = _avisos_de_la_deteccion(d, familia, marca, meters_factor)
-        otras = compartidas.get(_linea_del_claro(d) or "", [])
-        if len(otras) > 1:
-            marcas = ", ".join(sorted({o.mark or "sin marca" for o in otras}))
-            avisos.append(
-                f"claro compartido: la misma línea es el claro de {len(otras)} etiquetas "
-                f"({marcas}); cada una la cuenta entera"
-            )
+        if segmentation is not None and d.detection_id in segmentation.vistas_dudosas:
+            avisos.append(segmentation.vistas_dudosas[d.detection_id])  # R165
         colocacion = Colocacion(
             seccion_cm=_seccion_medida(d, familia, meters_factor),
             seccion_no_rectangular=_contorno_no_rectangular(d, familia, meters_factor),
@@ -444,40 +438,28 @@ def _altura(familia: str, entrepiso: AlturaDeEntrepiso | None, supuesta_m: float
     )
 
 
-def _linea_del_claro(d: Detection) -> str | None:
-    """La línea de la que salió el claro de una viga (la segunda entidad de su detección)."""
-    if d.family not in _VIGAS or len(d.source_entities) < 2:
-        return None
-    if not isinstance((d.properties or {}).get("estimated_span_length"), (int, float)):
-        return None
-    return d.source_entities[1]
-
-
-def _lineas_compartidas(colocadas: list[Detection]) -> dict[str, list[Detection]]:
-    """Las vigas por la línea de su claro: una línea que es el claro de varias etiquetas se cuenta
-    entera en cada una (un largo que el detector no reparte); el elemento lo dice."""
-    por_linea: dict[str, list[Detection]] = {}
-    for d in colocadas:
-        linea = _linea_del_claro(d)
-        if linea is not None:
-            por_linea.setdefault(linea, []).append(d)
-    return por_linea
-
-
 def _avisos_de_la_deteccion(
     d: Detection, familia: str, marca: str, factor: float | None
 ) -> list[str]:
     avisos: list[str] = []
     if not marca:
         avisos.append("sin marca: la colocación no tiene marca en planta")
-    dudoso = (d.properties or {}).get("claro_dudoso")
-    if dudoso:
-        avisos.append(str(dudoso))
+    # R146: the detector's word on the span — doubtful, measured on the beam's axis between its
+    # two faces, or its own tramo of a line several tags share.
+    for clave in ("claro_dudoso", "claro_caras", "claro_compartido"):
+        texto = (d.properties or {}).get(clave)
+        if texto:
+            avisos.append(str(texto))
     if familia in _VIGAS:
         if not factor:
             avisos.append("longitud: sin unidades confiables el claro no se mide")
         elif not isinstance((d.properties or {}).get("estimated_span_length"), (int, float)):
-            avisos.append("longitud: ninguna línea de claro junto a la etiqueta; sin longitud")
+            avisos.append(
+                str(
+                    (d.properties or {}).get("sin_claro")
+                    or "longitud: ninguna línea de claro junto a la etiqueta; sin longitud"
+                )
+            )
     return avisos
 
 

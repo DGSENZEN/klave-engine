@@ -108,6 +108,11 @@ class DetectorSuiteConfig(BaseModel):
         config.beam.line_search_radius = m(1.0)
         config.beam.min_beam_length = m(1.5)
         config.beam.max_beam_length = m(15.0)
+        # PRUEBA-1 writes the trabe's mark on the architecture line 0.11–0.12 above the trabe's
+        # own; a wall's other face lies 0.15 away, on the same layer (the nearer one wins).
+        config.beam.layer_tolerance = m(0.15)
+        config.beam.max_face_gap = m(0.35)
+        config.beam.support_tolerance = m(0.05)
         # A 3×3 m panel is a real slab (a small room); cuadros and notes
         # are kept out by the avoid layers and the frame-share guard.
         config.slab.min_area = m(3.0) * m(3.0)
@@ -203,7 +208,7 @@ def run_detectors(
     grid = detect_grid(entities, index, config.grid, config.text_patterns, ids, frames=frames)
     columns = detect_columns(entities, index, grid, config.column, config.text_patterns, ids)
     footings = detect_footings(entities, index, columns, config.footing, ids)
-    beams = detect_beams(entities, index, config.beam, config.text_patterns, ids)
+    beams = detect_beams(entities, index, config.beam, config.text_patterns, ids, supports=columns)
     slabs = detect_slabs(entities, config.slab, ids, frame_boxes(frames or []))
     panels = detect_slab_panels(entities, config.slab_panel, ids, frame_boxes(frames or []))
     if panels.detections:

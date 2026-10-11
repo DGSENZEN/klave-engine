@@ -2,9 +2,12 @@
 and by sequence, and per-sheet intersections."""
 
 import ezdxf
+from ezdxf.enums import TextEntityAlignment
 from klave_engine.detection.grid_detector import GridDetectorConfig, detect_grid
 from klave_engine.dxf.parser import DxfParser
 from klave_engine.geometry.spatial_index import SpatialIndex
+
+_CENTRO = TextEntityAlignment.MIDDLE_CENTER
 
 
 def _detect(path, config=None):
@@ -17,21 +20,23 @@ def _detect(path, config=None):
 def test_fragments_merge_into_labeled_axes(tmp_path):
     doc = ezdxf.new("R2010")
     msp = doc.modelspace()
+    # Bubble labels are centred in their bubble, where the normalizer now places them (R146).
     # Axis A: three fragments broken by bubble gaps, on the grid layer.
     for a, b in ((0, 30), (32, 60), (61, 100)):
         msp.add_line((a, 0), (b, 0), dxfattribs={"layer": "S-GRID"})
-    msp.add_text("A", height=1.0).set_placement((-3, 0))
+    msp.add_text("A", height=1.0).set_placement((-3, 0), align=_CENTRO)
     # An unlabeled axis between A and C.
     msp.add_line((0, 10), (100, 10), dxfattribs={"layer": "S-GRID"})
     msp.add_line((0, 20), (100, 20), dxfattribs={"layer": "S-GRID"})
-    msp.add_text("C", height=1.0).set_placement((-3, 20))
+    msp.add_text("C", height=1.0).set_placement((-3, 20), align=_CENTRO)
     # Vertical axis 1, and axis 2 split by a view-sized gap (two plan views).
     msp.add_line((0, 0), (0, 100), dxfattribs={"layer": "S-GRID"})
-    msp.add_text("1", height=1.0).set_placement((0, -3))
+    msp.add_text("1", height=1.0).set_placement((0, -3), align=_CENTRO)
     msp.add_line((50, 0), (50, 40), dxfattribs={"layer": "S-GRID"})
     msp.add_line((50, 70), (50, 100), dxfattribs={"layer": "S-GRID"})
-    msp.add_text("2", height=1.0).set_placement((50, -3))
-    msp.add_text("2", height=1.0).set_placement((50, 103))  # the second view's bubble
+    msp.add_text("2", height=1.0).set_placement((50, -3), align=_CENTRO)
+    # The second view's bubble.
+    msp.add_text("2", height=1.0).set_placement((50, 103), align=_CENTRO)
     # A long architectural wall line: not an axis on a sheet that has a grid layer.
     msp.add_line((0, 5), (100, 5), dxfattribs={"layer": "A-WALL"})
     path = tmp_path / "grid.dxf"

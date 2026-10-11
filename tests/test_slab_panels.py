@@ -103,3 +103,41 @@ def test_slab_systems_split_into_their_own_concepts(tmp_path):
     expected = 5.7 * 4.7 * 0.20 + (5.7 * 4.7 - 4.0) * 0.12
     assert abs(lines["EST-013"].quantity - expected) < 0.02
     assert "CIM-007" not in lines  # no losa de cimentación on this sheet
+
+
+def _dos_tableros(*solos):
+    """Dos tableros de vigueta y bovedilla de 6 × 5: el de la izquierda con su etiqueta «H=31»;
+    el de la derecha sin etiqueta, con sus espesores escritos solos («H=20»)."""
+
+    def build(msp):
+        for x in (0.0, 6.0, 12.0):
+            _beam(msp, x, 0.0, x, 5.0)
+        for y in (0.0, 5.0):
+            _beam(msp, 0.0, y, 12.0, y)
+        vigueta = {"layer": "EST-LOSA VIG Y BOV"}
+        for x0 in (0.5, 6.5):
+            for i in range(6):
+                msp.add_line((x0, 0.5 + i * 0.7), (x0 + 5.0, 0.5 + i * 0.7), dxfattribs=vigueta)
+        msp.add_text("LOSA DE VIGUETA Y BOVEDILLA H=31", height=0.15).set_placement((1.0, 2.5))
+        for i, texto in enumerate(solos):
+            msp.add_text(texto, height=0.15).set_placement((8.5, 2.0 + i * 0.5))
+
+    return build
+
+
+def test_a_thickness_written_alone_in_a_tablero_is_its_own(tmp_path):
+    # R165 (TAB28 en Marina, ES-400): «H=20» escrito solo dentro del tablero es su espesor; la
+    # etiqueta de la familia más cercana (H=31) es de otro tablero. Dos espesores distintos escritos
+    # solos no dicen cuál: se busca la etiqueta cercana, y se dice.
+    def derecho(*solos):
+        entities = _entities(tmp_path, _dos_tableros(*solos))
+        out = detect_slab_panels(entities, SlabPanelConfig(), IdGenerator("p"))
+        return max(out.detections, key=lambda d: d.bbox[0])
+
+    d = derecho("H=20")
+    assert d.properties["thickness_cm"] == 20
+    assert d.properties["thickness_source"] == "espesor escrito en el tablero"
+    d = derecho("H=20", "H=25")
+    assert d.properties["thickness_cm"] == 31
+    assert any("Espesores distintos escritos dentro del tablero (H=20, H=25)" in n
+               for n in d.evidence.notes)  # fmt: skip
