@@ -153,8 +153,11 @@ def test_a_section_that_is_not_a_rectangle_is_never_one():
     assert k.avisos == [
         "sección: lo más cercano dibujado encima no es una sección: no se toma lo que está más "
         "allá",
+        # R150: y lo dice: su sección dibujada no es un rectángulo.
+        "sección: la dibujada no es un rectángulo",
         "las cotas cercanas (30, 60) no se toman",
     ]
+    assert k.seccion_no_rectangular is True
     assert inv.rechazos == []
     merge_external_specs(inv, [_ia("K-15A", section_cm=(60, 55))], C)
     d = construir_definiciones(inv, C)[0]["K-15A"].seccion_cm
@@ -705,11 +708,11 @@ def test_d3_and_cta8_under_a_wall_strip_are_pointed_at_by_their_leaders():
         _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
     ]
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
-    for marca in ("D-3", "CTA-8"):
+    for marca, campos in (("D-3", _ARMADO_SENALADO), ("CTA-8", _ARMADO_DE_VIGA)):
         (s,) = _cotas(inv, marca)
-        # R139: la flecha reclama también el armado (DADO lleva parrillas; CTA-8 sólo tiene la
-        # familia del prefijo, que puede llevarlas).
-        assert (s.section_cm, s.campos_con_texto) == (None, _ARMADO_SENALADO)
+        # R139: la flecha reclama también el armado (DADO lleva parrillas; una contratrabe, por
+        # su prefijo, es una viga: nunca parrillas, R150).
+        assert (s.section_cm, s.campos_con_texto) == (None, campos)
         assert s.avisos == ["sección: señalada por flecha; se lee en E3"]
         assert s.source_text.endswith("señalada por flecha; se lee en E3")
     assert [r for r in inv.rechazos if r.motivo == "ambigua"] == []
@@ -720,6 +723,8 @@ def test_d3_and_cta8_under_a_wall_strip_are_pointed_at_by_their_leaders():
 # R139: lo que reclama una flecha: la sección y el armado (las parrillas si la familia las lleva
 # o si sólo la dice el prefijo de la marca).
 _ARMADO_SENALADO = ["seccion", "longitudinales", "estribos", "parrillas"]
+# R150: una familia de viga (trabe, contratrabe, dala, cerramiento) nunca reclama parrillas.
+_ARMADO_DE_VIGA = ["seccion", "longitudinales", "estribos"]
 
 _OCTAGONO = [(0.03, 0.0), (0.105, 0.0), (0.135, 0.03), (0.135, 0.095), (0.105, 0.125),
              (0.03, 0.125), (0.0, 0.095), (0.0, 0.03)]  # fmt: skip
@@ -839,7 +844,8 @@ def test_a_title_with_a_leader_and_no_section_read_claims_it(flecha, senalada):
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
     lecturas = [(s.section_cm, s.campos_con_texto, s.avisos) for s in _cotas(inv, "D-3")]
     aviso = ["sección: señalada por flecha; se lee en E3"]
-    assert lecturas == ([(None, _ARMADO_SENALADO, aviso)] if senalada else [])
+    # «D-3» sin palabra de familia: el prefijo dice dala, una viga (R150).
+    assert lecturas == ([(None, _ARMADO_DE_VIGA, aviso)] if senalada else [])
     merge_external_specs(inv, [_ia("D-3", family="dala", section_cm=(25, 100))], C)
     de_la_ia = inv.by_mark["D-3"].section_cm if "D-3" in inv.by_mark else None
     assert de_la_ia == (None if senalada else (25, 100))
@@ -1062,10 +1068,15 @@ def test_a_prefix_guessed_family_never_drops_a_field(texto, aviso_de_familia):
     merge_external_specs(inv, [ia], C)
     d = construir_definiciones(inv, C)[0]["D-1C"]
     assert (d.familia, d.seccion_cm.valor, d.seccion_cm.ilegible) == ("dado", None, True)
-    # R139: el detalle al que apunta la flecha dibuja también sus parrillas: la IA no las llena,
-    # pero no se tiran: quedan como alternativa.
-    assert d.parrillas is not None and d.parrillas.ilegible and d.parrillas.fuente == "detalle"
-    assert any(a.fuente == "ia" for a in d.parrillas.alternativas)
+    assert d.parrillas is not None
+    if texto.startswith("DADO"):
+        # R139: el detalle al que apunta la flecha dibuja también sus parrillas: la IA no las
+        # llena, pero no se tiran: quedan como alternativa.
+        assert d.parrillas.ilegible and d.parrillas.fuente == "detalle"
+        assert any(a.fuente == "ia" for a in d.parrillas.alternativas)
+    else:
+        # Sólo el prefijo (D: dala, una viga) no reclama parrillas (R150): las de la IA quedan.
+        assert d.parrillas.fuente == "ia"
     if aviso_de_familia:
         assert aviso_de_familia in d.avisos
     else:
@@ -1245,7 +1256,7 @@ def test_a_leader_claim_covers_the_armado_too():
     ]
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
     (claim,) = _cotas(inv, "CE-1")
-    assert claim.campos_con_texto == _ARMADO_SENALADO
+    assert claim.campos_con_texto == _ARMADO_DE_VIGA
     ia = _ia("CE-1", family="dala", section_cm=(15, 30), rebar="4#3", stirrups="E#2@15")
     merge_external_specs(inv, [ia], C)
     d = construir_definiciones(inv, C)[0]["CE-1"]
@@ -1279,3 +1290,155 @@ def test_the_unowned_armado_under_a_titles_section_is_said_even_without_ai():
     d = construir_definiciones(inv, C)[0]["CE-3"]
     assert d.longitudinales is None and d.estribos is None
     assert d.sin_leer == {"longitudinales": "«6#4»", "estribos": "«E#3@14»"}
+
+
+# ------------------------------------------------- Tarea 9, ronda 2: R149, R150
+
+
+def _cota_lineal(entity_id, p, q, cm, angulo):
+    """Una cota lineal (dimtype 0) que mide sobre ``angulo`` aunque sus puntos no estén uno sobre
+    otro: la del alto de CE-1, de la esquina de la sección a la losa junto a ella."""
+    cota = _cota(entity_id, p, q, cm)
+    cota.properties |= {"dimtype": 0, "angle": angulo}
+    return cota
+
+
+def _ce1(dx=0.0, arriba_hasta=1.214):
+    """CE-1 (15x30) como en Marina: arriba la línea sigue hasta la losa (``arriba_hasta``), el
+    lado derecho sólo abajo, y su «30» va de su esquina de abajo a la losa (punto lejano)."""
+    return [
+        _titulo("ta", "CE-1", dx + 0.16, 0.46, alto=0.15),
+        _linea("a1", (dx, 0.0), (dx + arriba_hasta, 0.0)),
+        _linea("a2", (dx, -1.709), (dx, 0.0)),
+        _linea("a3", (dx, -1.709), (dx + 0.854, -1.709)),
+        _linea("a4", (dx + 0.854, -1.709), (dx + 0.854, -1.424)),
+        _cota("ah", (dx, 0.0), (dx + 0.854, 0.0), 15),
+        _cota_lineal("av", (dx + 0.854, -1.709), (dx + 1.214, 0.0), 30, 90.0),
+    ]
+
+
+def test_the_projected_corner_keeps_ce1():
+    # R149, el pin: CE-1 se sigue leyendo 15x30 (su arista de arriba llega al punto lejano, su
+    # «30» no es una suma, nada atraviesa su lado).
+    inv = build_schedule_inventory(_ce1(), C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s.section_cm for s in _cotas(inv, "CE-1")] == [(15, 30)]
+
+
+def test_a_section_beside_the_far_point_never_borrows_the_depth():
+    # R149 (a): B (20 de ancho, 25 de alto, sin línea arriba) está al pie del «30» de CE-1; la
+    # esquina que ese «30» proyecta al pie de B no tiene arista dibujada hasta el punto lejano
+    # (entre CE-1 y B no hay línea): B no lee 20x30.
+    ents = _ce1() + [
+        _titulo("tb", "CE-2", 1.4, 0.46, alto=0.15),
+        _linea("b1", (1.214, -1.709), (2.354, -1.709)),
+        _linea("b2", (1.214, -1.709), (1.214, -0.284)),
+        _linea("b3", (2.354, -1.709), (2.354, -0.284)),
+        _cota("bh", (1.214, -1.709), (2.354, -1.709), 20),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert (20, 30) not in [s.section_cm for s in _cotas(inv, "CE-2")]
+    assert [s.section_cm for s in _cotas(inv, "CE-1")] == [(15, 30)]
+
+
+def test_an_overall_cota_is_never_a_sections_depth():
+    # R149 (b) (ES-203 «DET.MB» en Marina): el «53» de conjunto es «33» del muro más «20» de la
+    # dala de remate; con el «35» de ancho no hacen una sección de 35x53.
+    ents = [
+        _titulo("t", "MC-1", 0.1, 0.8, alto=0.12),
+        _linea("l1", (0.0, 0.53), (0.6, 0.53)),
+        _linea("l2", (0.0, 0.0), (0.0, 0.53)),
+        _linea("l3", (0.0, 0.0), (0.35, 0.0)),
+        _linea("l4", (0.35, 0.0), (0.35, 0.53)),
+        _cota("h", (0.0, 0.53), (0.35, 0.53), 35),
+        _cota_lineal("v", (0.35, 0.0), (0.6, 0.53), 53, 90.0),
+        _cota("v1", (0.9, 0.0), (0.9, 0.33), 33),
+        _cota("v2", (0.9, 0.33), (0.9, 0.53), 20),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert (35, 53) not in [s.section_cm for s in _cotas(inv, "MC-1")]
+
+
+def test_a_beam_under_a_slab_never_takes_the_slab_in_its_depth():
+    # R149 (c): la trabe (20 de ancho) cuelga de la losa; el «50» va de su esquina de abajo a la
+    # cara de arriba de la losa, más allá de la trabe, y la cara de abajo de la losa (dibujada
+    # desde dentro de la trabe hacia la derecha: no la cruza de lado a lado, R118 no la ve)
+    # atraviesa el lado de la trabe: no es una sección de 20x50, aunque el «40» esté dibujado.
+    ents = [
+        _titulo("t", "T-1", 0.0, 0.25, alto=0.1),
+        _linea("losa_arriba", (-1.0, 0.0), (1.2, 0.0)),
+        _linea("losa_abajo", (0.1, -0.1), (1.2, -0.1)),
+        _linea("t1", (0.0, -0.5), (0.2, -0.5)),
+        _linea("t2", (0.0, -0.5), (0.0, -0.1)),
+        _linea("t3", (0.2, -0.5), (0.2, -0.1)),
+        _cota("h", (0.0, 0.0), (0.2, 0.0), 20),
+        _cota_lineal("v", (0.2, -0.5), (0.5, 0.0), 50, 90.0),
+        _cota("v40", (-0.3, -0.5), (-0.3, -0.1), 40),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert (20, 50) not in [s.section_cm for s in _cotas(inv, "T-1")]
+
+
+def test_unowned_armado_beyond_its_sections_group_stays_unowned():
+    # R150 (las «CADENAS INTERMEDIAS» de ES-200 en Marina, junto al cuadro de castillos): el
+    # armado de otro detalle, con su encabezado entre él y la sección dueña, o a más de tres altos
+    # de ella, no es de esa marca: queda sin dueño, sin «posible».
+    ents = _grupo_de_cadenas() + [
+        _texto("lejos", "4#5", 0.5, -7.5, alto=0.1),
+        _texto("ci", "CADENAS INTERMEDIAS", 4.6, -2.0, alto=0.16),
+        _texto("tras", "8#4", 4.6, -2.4, alto=0.1),
+        # En diagonal, junto a una esquina y no debajo ni al lado de la sección: de otro grupo
+        # (los «CI» de ES-200 frente a K-X).
+        _texto("diag", "2#5", -0.6, -2.3, alto=0.1),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=[])
+    posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
+    assert posibles["4#5"] == [] and posibles["8#4"] == [] and posibles["2#5"] == []
+    assert posibles["4#3"] == ["CE-1"]
+
+
+def test_a_plan_castillo_whose_marker_carries_a_cota_is_no_detail_title():
+    # R150 (R145 latente): una etiqueta de castillo en planta, del alto de las demás, en su capa,
+    # sobre su marcador acotado y sin encabezado de detalle cerca: sigue siendo una colocación.
+    ents = [
+        _titulo("k", "K-1", 0.0, 0.25, alto=0.1),
+        _titulo("k2", "K-2", 6.0, 0.25, alto=0.1),
+        _titulo("k3", "K-3", 9.0, 0.25, alto=0.1),
+        _rectangulo("m", 0.0, -0.4, 0.2, 0.0),
+        _cota("h", (0.0, 0.0), (0.2, 0.0), 20),
+        _cota("v", (0.2, 0.0), (0.2, -0.4), 40),
+    ]
+    for e in ents:
+        e.layer = "EST-CASTILLOS"
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=[])
+    assert inv.titulos_de_detalle == [] and "k" not in inv.cuadro_mark_entities
+
+
+def test_a_non_rectangular_drawn_section_is_said_in_the_definition():
+    # R150 (K-15A en Marina): lo más cercano dibujado sobre su título es su sección en L, que no
+    # es un rectángulo: la definición lo dice (para usar el área de su contorno en planta, R142).
+    ele = [(0.0, 0.5), (0.6, 0.5), (0.6, 0.9), (0.3, 0.9), (0.3, 1.7), (0.0, 1.7)]
+    ents = [
+        _titulo("m", "K-15A", 0.05, 0.25, alto=0.1),
+        _poligono("l", ele),
+        _cota("h", (0.0, 0.5), (0.6, 0.5), 60),
+        _cota("v", (0.0, 1.7), (0.0, 0.5), 30),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert all(s.seccion_no_rectangular for s in _cotas(inv, "K-15A"))
+    assert construir_definiciones(inv, C)[0]["K-15A"].seccion_no_rectangular
+
+
+def test_armado_under_a_section_nobody_owns_is_that_sections():
+    # R150 (las «CI» de ES-200 en Marina: su sección acotada no tiene marca, su armado debajo):
+    # aunque la sección de CE-3 esté al lado y al alcance, el armado de la sección sin dueño es
+    # suyo: queda sin dueño, no bloquea la IA de CE-3.
+    ents = _grupo_de_cadenas(armado=False) + [
+        _texto("ci", "CI", 7.0, 0.3, alto=0.13),
+        _rectangulo("cis", 6.6, -1.2, 7.4, 0.0),
+        _cota("cih", (6.6, 0.0), (7.4, 0.0), 30),
+        _cota("civ", (7.4, -1.2), (7.4, 0.0), 20),
+        _texto("cir", "6#3", 7.0, -1.45, alto=0.1),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=[])
+    posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
+    assert posibles["6#3"] == []

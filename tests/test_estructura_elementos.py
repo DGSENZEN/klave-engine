@@ -483,13 +483,13 @@ def test_resolver_rejoins_after_a_decision_and_keeps_the_placement():
     k = _tag("K-4", section_source="cota", section_cm="20x20")
     (e,) = _construir([k], _seg({k.detection_id: "v_pa"}), _defs("K-4"))
     decidida = _def("K-4", seccion=Dato(valor=(20, 30), fuente="humano", texto="Revisión"))
-    nuevo = resolver(e, {"K-4": decidida}, {}, reglas_estandar())
+    nuevo = resolver(e, {"K-4": decidida}, {}, reglas_estandar(), frames=[])
     assert isinstance(nuevo, Elemento) and nuevo is not e
     assert (nuevo.seccion_cm.valor, nuevo.seccion_cm.fuente) == ((20, 30), "humano")
     assert nuevo.colocacion == e.colocacion
     assert e.seccion_cm.valor == (15, 20)  # el de antes no cambia
     # Resolver dos veces da lo mismo (los avisos no se acumulan).
-    assert resolver(nuevo, {"K-4": decidida}, {}, reglas_estandar()) == nuevo
+    assert resolver(nuevo, {"K-4": decidida}, {}, reglas_estandar(), frames=[]) == nuevo
 
 
 def _marcos_100_500():
@@ -581,7 +581,7 @@ def test_a_decision_applied_through_elegir_survives_each_sheet():
     ]  # fmt: skip
     # Y ``resolver`` después de la decisión tampoco la deshace.
     antes = _construir([en_100], None, {"K-5": _def("K-5", seccion=k5)}, frames=marcos)[0]
-    despues = resolver(antes, defs, {}, reglas_estandar())
+    despues = resolver(antes, defs, {}, reglas_estandar(), frames=marcos)
     assert (despues.seccion_cm.valor, despues.seccion_cm.fuente) == ((25, 40), "humano")
 
 
@@ -645,6 +645,7 @@ def test_a_non_rectangular_castillo_takes_its_planta_outline_area():
     ilegible = Dato(valor=None, fuente="detalle", hoja="ES-100", ilegible=True,
                     texto="K-15A · sección dibujada no encontrada")  # fmt: skip
     defs = {"K-15A": _def("K-15A", seccion=ilegible)}
+    defs["K-15A"].seccion_no_rectangular = True  # R150: lo dice su definición
     props = {"contorno_area_du2": 0.23, "contorno_rectangular": False,
              "contorno_entidades": ["p1", "p2"]}  # fmt: skip
     castillo = _tag("K-15A", contorno_capa="EST-CASTILLOS", **props)
@@ -700,3 +701,27 @@ def test_the_height_text_names_the_levels_their_counts_and_the_planta_it_repeats
     a = alturas.alturas_de_entrepiso()
     assert "+14.75 ×5, +14.95 ×4" in a["f300"].texto and "+11.55 ×5" in a["f300"].texto
     assert a["f400"].repetida and "«ES-300 · ROOF GARDEN»" in a["f400"].texto
+
+
+# ------------------------------------------------------------- Tarea 9, ronda 2: R150
+
+
+def test_the_planta_outline_area_needs_a_non_rectangular_definition():
+    # R150 (K-14 en Marina, ES-000/ES-100): su marcador de 30x40 toca el de K-3 (15x30); aunque
+    # su sección no se lea, su definición no dice que no sea un rectángulo: nunca toma el área de
+    # un contorno en planta (1650 cm² de los dos juntos), sino su respaldo.
+    ilegible = Dato(valor=None, fuente="detalle", hoja="ES-100", ilegible=True, texto="K-14")
+    defs = {"K-14": _def("K-14", seccion=ilegible)}
+    k14 = _tag("K-14", contorno_capa="EST-CASTILLOS", contorno_area_du2=0.165,
+               contorno_rectangular=False)  # fmt: skip
+    (e,) = _construir([k14], _seg({k14.detection_id: "v_pa"}), defs)
+    assert (e.seccion_cm.valor, e.seccion_cm.fuente) == ((15, 20), "supuesto")
+    assert not any(a.startswith("sección no rectangular") for a in e.avisos)
+
+
+def test_resolver_requires_the_frames():
+    # R150: sin los marcos, la resolución de nuevo perdería R144 (las hojas de cimentación).
+    k = _tag("K-4")
+    (e,) = _construir([k], _seg({k.detection_id: "v_pa"}), _defs("K-4"))
+    with pytest.raises(TypeError):
+        resolver(e, _defs("K-4"), {}, reglas_estandar())  # type: ignore[call-arg]

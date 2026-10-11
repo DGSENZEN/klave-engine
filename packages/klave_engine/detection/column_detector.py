@@ -46,10 +46,13 @@ def _marker_section(marker: NormalizedEntity) -> tuple[float | None, str]:
     return (area if area > 0 else None), "marcador_bbox"
 
 
-def _contorno(marker: NormalizedEntity, index: SpatialIndex) -> dict:
+def _contorno(
+    marker: NormalizedEntity, index: SpatialIndex, ajenos: set[str] | None = None
+) -> dict:
     """R142: the outline a polygon marker draws with the closed polygons of its layer that touch
     it (an L-shaped castillo drawn as two rectangles): its area, whether it is an axis rectangle
-    (area / box ≥ 0.98, one piece), its layer and its pieces. Not for circles or blocks."""
+    (area / box ≥ 0.98, one piece), its layer and its pieces. Not for circles or blocks; never
+    with a polygon that is another tag's marker (``ajenos``, R150: K-14 beside K-3)."""
     if not (
         marker.entity_type == EntityType.polyline
         and marker.is_closed
@@ -65,7 +68,8 @@ def _contorno(marker: NormalizedEntity, index: SpatialIndex) -> dict:
     for hit in index.entities_near_entity(marker.entity_id, tol):
         otro = index.get(hit.entity_id)
         if (
-            otro.entity_type != EntityType.polyline
+            otro.entity_id in (ajenos or set())
+            or otro.entity_type != EntityType.polyline
             or not otro.is_closed
             or otro.layer != marker.layer
             or len(otro.points or []) < 3
@@ -122,6 +126,7 @@ def detect_columns(
 
     model = model_for("column_tag")
 
+    con_marcador: list[tuple[int, str]] = []  # (the tag's detection, its marker)
     for entity in entities:
         if not entity.is_textual or not entity.text:
             continue
@@ -183,7 +188,7 @@ def detect_columns(
                 notes.append(
                     f"Sección medida del marcador: {section:.4f} u.dib.² ({section_source})"
                 )
-            properties.update(_contorno(index.get(marker_id), index))
+            con_marcador.append((len(output.detections), marker_id))
 
         if layer_matches(entity.layer, config.layer_hints):
             features[SEMANTIC_LAYER] = 1.0
@@ -203,5 +208,11 @@ def detect_columns(
                 properties,
                 entity.source_file,
             )
+        )
+    # R142, R150: each polygon marker's outline, without the other tags' markers.
+    marcadores = {marker_id for _i, marker_id in con_marcador}
+    for i, marker_id in con_marcador:
+        output.detections[i].properties.update(
+            _contorno(index.get(marker_id), index, marcadores - {marker_id})
         )
     return output

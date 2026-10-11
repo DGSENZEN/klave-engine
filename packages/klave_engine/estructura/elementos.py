@@ -228,12 +228,13 @@ def resolver(
     por_familia: dict[str, Definicion],
     reglas: Reglas,
     *,
-    frames: list[SheetFrame] | None = None,
+    frames: list[SheetFrame],
 ) -> Elemento:
     """El elemento vuelto a juntar con las definiciones y las reglas de su hoja (después de una
     decisión, por ejemplo): la definición que le toca, cada campo resuelto para su hoja, el
     recubrimiento de su familia. Lo de la colocación (``Colocacion``) no cambia. Devuelve un
-    elemento nuevo. ``frames`` dice qué hojas son de cimentación (R144)."""
+    elemento nuevo. ``frames`` son los marcos de la corrida, siempre (vacío sólo si el plano no
+    los tiene): dicen qué hojas son de cimentación (R144, R150)."""
     return _Resolutor(por_marca, por_familia, reglas, frames).resolver(elemento)
 
 
@@ -613,7 +614,13 @@ class _Resolutor:
         área de ese contorno, medida (R142)."""
         supuesta = SECCION_SUPUESTA_CM.get(familia)
         sin_leer = de_la_marca is None or de_la_marca.valor is None
-        if no_rectangular is not None and sin_leer:
+        # R150: sólo si la definición dice que su sección dibujada no es un rectángulo.
+        if (
+            no_rectangular is not None
+            and sin_leer
+            and propia is not None
+            and propia.seccion_no_rectangular
+        ):
             avisos.append(
                 "sección no rectangular: se usa el área de su contorno en planta "
                 f"({no_rectangular.valor['area_cm2']:g} cm²)"

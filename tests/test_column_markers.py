@@ -71,3 +71,17 @@ def test_a_rectangular_castillo_outline_is_rectangular():
     (tag,) = detect_columns(entidades, SpatialIndex(entidades)).detections
     assert tag.properties["contorno_rectangular"] is True
     assert tag.properties["contorno_area_du2"] == pytest.approx(0.03, abs=1e-6)
+
+
+def test_another_tags_marker_is_never_part_of_an_outline():
+    # R150 (K-14 y K-3 en Marina, ES-000/ES-100): el marcador de K-14 (30x40) toca el de K-3
+    # (15x30); cada contorno es el de su marcador, nunca los dos juntos (0.165 m²).
+    k14 = _ent("ent_000008", EntityType.text, (0.05, 0.45, 0.3, 0.55), text="K-14")
+    k3 = _ent("ent_000009", EntityType.text, (0.35, 0.35, 0.5, 0.45), text="K-3")
+    a = _rect("ent_000001", 0.0, 0.0, 0.3, 0.4)
+    b = _rect("ent_000002", 0.3, 0.0, 0.45, 0.3)
+    entidades = [k14, k3, a, b]
+    tags = {t.label: t for t in detect_columns(entidades, SpatialIndex(entidades)).detections}
+    assert tags["K-14"].properties["contorno_area_du2"] == pytest.approx(0.12, abs=1e-6)
+    assert tags["K-14"].properties["contorno_rectangular"] is True
+    assert tags["K-3"].properties["contorno_area_du2"] == pytest.approx(0.045, abs=1e-6)

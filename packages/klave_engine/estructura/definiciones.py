@@ -121,6 +121,8 @@ class Definicion(BaseModel):
     # hay, no se toma, R69): campo → esos textos. Quien use el campo sabe que el plano lo
     # escribe.
     sin_leer: dict[str, str] = Field(default_factory=dict)
+    # R142, R150: el plano dibuja su sección y no es un rectángulo (K-15A).
+    seccion_no_rectangular: bool = False
 
 
 def normalizar_marca(texto: str, config: TextPatternConfig | None = None) -> str:
@@ -384,6 +386,7 @@ def _definir(
         familia=familia,
         hojas=hojas,
         avisos=list(dict.fromkeys(avisos)),
+        seccion_no_rectangular=any(s.seccion_no_rectangular for s in lecturas),
         sin_leer={
             campo: ", ".join(dict.fromkeys(f"«{b.texto}»" for b in lista))
             for campo, lista in bloqueados.items()
