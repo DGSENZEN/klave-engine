@@ -180,6 +180,7 @@ _VARILLAS_RE = re.compile(
 )
 _CIFRA_O_GATO = "0123456789#.@"  # lo que, pegado delante, parte un número (aunque esté leído)
 _PEGADO_RE = re.compile(rf"[^ {CONSUMIDO}]*$")
+_SECCION_SOLA_RE = re.compile(rf"{LADO}[X×]{LADO_FINAL}")
 # Una cuenta suelta delante de una pieza la deja a medias: «4 », «4 VARS », «4 VARILLAS DE »,
 # «4 PZAS », «(4) », «4-», «4VARS », «4 DE », «4 X », «3 PARRILLAS ». No es cuenta el número
 # de una marca («K-1 ») ni el final de una medida («15 X 30 », «H=20 », los decimales de
@@ -735,7 +736,12 @@ def _estorbo_delante(
             and anterior is not None
             and texto[anterior.fin : desde + pegado.start()].strip(" |") == ""
         )
-        if not junta_valida:
+        # R117: la coma tras una sección, cuando la pieza empieza en sus cifras, las separa
+        # («15X15,4 VARS #3», «15X20,4V#4»).
+        tras_la_seccion = pegado.group().endswith(",") and (
+            _SECCION_SOLA_RE.fullmatch(pegado.group()[:-1]) is not None
+        )
+        if not junta_valida and not tras_la_seccion:
             return desde + pegado.start()
     patrones = [_CUENTA_ANTES_RE]
     if p.malla:

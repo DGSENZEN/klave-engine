@@ -95,3 +95,8 @@ def test_firma_keeps_every_bar_group():
     # Task 7: el armado del plano trae todos sus grupos; la firma (y la clave de la variante)
     # también. Antes «4#5+2#4» llegaba truncado a «4#5».
     assert firma(_columna("c1", "20x30", "4#5+2#4"), 1.0)["armado"] == "4#5+2#4"
+
+
+def test_a_section_with_decimals_keeps_them_in_the_signature():
+    # R119: «20.25x41.55» no se recorta a un decimal.
+    assert firma(_columna("c1", "20.25x41.55"), 1.0)["seccion"] == "20.25x41.55"

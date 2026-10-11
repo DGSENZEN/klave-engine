@@ -128,7 +128,7 @@ def slab_rebar_kg_per_m2(label: str | None) -> tuple[float, str] | None:
 
 def _linear_element_kg(
     length_m: float, rebar: tuple[int, str], stirrups: tuple[str, float] | None,
-    section_cm: tuple[int, int], a: SteelAssumptions, *, anchorage: bool,
+    section_cm: tuple[float, float], a: SteelAssumptions, *, anchorage: bool,
 ) -> tuple[float, float]:
     """(longitudinal kg, stirrup kg) for one prismatic element."""
     count, number = rebar
@@ -198,7 +198,7 @@ def compute_steel(
             for member in members:
                 own_height = story_heights.get(assignment.get(member.detection_id, ""), height)
                 long_kg, stir_kg = _linear_element_kg(
-                    own_height, rebar, stirrups, (int(section[0]), int(section[1])), a,
+                    own_height, rebar, stirrups, (float(section[0]), float(section[1])), a,
                     anchorage=True,
                 )
                 total_long += long_kg
@@ -246,7 +246,7 @@ def compute_steel(
             section = section or d_section
         assert rebar is not None and section is not None
         long_kg, stir_kg = _linear_element_kg(
-            length, rebar, stirrups, (int(section[0]), int(section[1])), a, anchorage=False
+            length, rebar, stirrups, (float(section[0]), float(section[1])), a, anchorage=False
         )
         report.lines.append(
             SteelLine(
@@ -331,7 +331,7 @@ def compute_steel(
                 continue
             stirrups = parse_spacing(spec.get("stirrups")) if spec else None
             long_kg, stir_kg = _linear_element_kg(
-                span, rebar, stirrups, (int(section[0]), int(section[1])), a, anchorage=True
+                span, rebar, stirrups, (float(section[0]), float(section[1])), a, anchorage=True
             )
             total += long_kg + stir_kg
             covered.append(det_id)

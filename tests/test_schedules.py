@@ -1811,7 +1811,9 @@ def test_piece_sizes_under_a_family_name_are_not_armado(tmp_path):
 @pytest.mark.parametrize(
     "renglones,bloqueados",
     [
-        (["4#3", "E#2@15 VER CORTE C-2 8#6 E#3@20"], ["longitudinales"]),
+        # R116: la fila que corta (un «sin_lector» que nombra C-2) también lleva a K-1 como
+        # «posible»: sus estribos ya no son de la IA.
+        (["4#3", "E#2@15 VER CORTE C-2 8#6 E#3@20"], ["longitudinales", "estribos"]),
         (["4#3", "15X15", "E#2@20"], ["seccion", "longitudinales", "estribos"]),
         (["4#3", "E#2@20", "15X15"], ["seccion", "longitudinales", "estribos"]),
     ],
@@ -1822,7 +1824,7 @@ def test_rows_past_a_cut_in_the_column_block_the_labels_ai(tmp_path, renglones, 
     # «posible» en su rechazo. Nunca son un dato.
     inv = build_schedule_inventory(_stack_entities(tmp_path, "K-1", renglones), C)
     sin_dueno = [r for r in inv.rechazos if r.motivo == "sin_dueno"]
-    assert sin_dueno and all(r.posibles == ["K-1"] for r in sin_dueno)
+    assert sin_dueno and all(r.posibles == ["K-1"] for r in inv.rechazos)
     merge_external_specs(inv, [_ia("K-1", section_cm=(40, 40), rebar="4#4", stirrups="E#3@20")], C)
     ia = next(s for s in inv.specs if s.source == "ia")
     assert ia.campos_bloqueados == bloqueados
@@ -1836,3 +1838,40 @@ def test_a_lettered_note_line_never_joins_a_stack(tmp_path):
     )
     assert "K-1" not in inv.by_mark
     assert [(r.motivo, r.posibles) for r in inv.rechazos] == [("sin_dueno", [])]
+
+
+# ------------------------------------------------- Tarea 8b, ronda 2: R116, R117
+
+
+@pytest.mark.parametrize(
+    "texto,seccion,rebar,stirrups",
+    [
+        ("K-1 15X15,4 VARS #3 E#2@20", (15, 15), "4#3", "E#2@20"),
+        ("K-1 15X20,4V#4 E#3@20", (15, 20), "4#4", "E#3@20"),
+        ("K-1 15X15,4 #3", (15, 15), "4#3", None),
+        ("K-1 20X40,5 4#3", (20, 40.5), "4#3", None),  # la coma decimal de R109 sigue
+    ],
+)
+def test_a_comma_that_starts_a_bar_count_separates_it_from_the_section(
+    tmp_path, texto, seccion, rebar, stirrups
+):
+    # R117: antes la coma se comía la cuenta: «15X15,4 VARS #3» daba (15, 15.4).
+    inv = build_schedule_inventory(_notas(tmp_path, [texto]), frames=_frame())
+    (s,) = inv.specs
+    assert (s.section_cm, s.rebar, s.stirrups, s.avisos) == (seccion, rebar, stirrups, [])
+
+
+def test_a_family_note_with_a_comma_count_reads_its_bars(tmp_path):
+    inv = build_schedule_inventory(_notas(tmp_path, ["DALA 15X20,4 VARILLAS #3"]), frames=_frame())
+    (s,) = inv.specs
+    assert (s.family, s.section_cm, s.rebar) == ("dala", (15, 20), "4#3")
+
+
+def test_a_comma_that_is_neither_a_separator_nor_a_decimal_quotes_the_section(tmp_path):
+    # R117: «15X20,4A» no es 15x20.4 ni 15x20 y una cuenta: la sección se cita y se reclama.
+    inv = build_schedule_inventory(_notas(tmp_path, ["K-1 15X20,4A 4#3"]), frames=_frame())
+    (s,) = inv.specs
+    assert s.section_cm is None and "seccion" in s.campos_con_texto
+    assert "sección con una coma que no se sabe leer: «15X20,4A»" in s.avisos
+    merge_external_specs(inv, [_ia("K-1", section_cm=(40, 40))], C)
+    assert inv.by_mark["K-1"].section_cm is None

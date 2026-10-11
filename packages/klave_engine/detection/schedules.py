@@ -20,6 +20,7 @@ compares them), and an AI reading never fills a field whose text exists
 on the drawing but could not be read.
 """
 
+import bisect
 import math
 import re
 import statistics
@@ -27,6 +28,7 @@ from collections import Counter, defaultdict
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from dataclasses import field as campo_de_dataclass
+from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
@@ -40,7 +42,12 @@ from klave_engine.detection.text_patterns import (
     TextPatternConfig,
 )
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
-from klave_engine.estructura._armado_texto import LADO, LADO_FINAL, normalizar
+from klave_engine.estructura._armado_texto import (
+    LADO,
+    LADO_FINAL,
+    SECCION_CON_COMA_DUDOSA,
+    normalizar,
+)
 from klave_engine.estructura.armado import (
     ARMEX_RE,
     FAMILIAS_CON_PARRILLA,
@@ -79,6 +86,8 @@ from klave_engine.estructura.marcas import (
     sin_referencias,
     titulos,
 )
+from klave_engine.estructura.reglas import leer_reglas
+from klave_engine.estructura.textos import ancla_texto
 from klave_engine.geometry.bbox import (
     BBox,
     bbox_center,
@@ -243,6 +252,9 @@ class ScheduleInventory(BaseModel):
     # in its one spelling, with how many texts name it: readings, rejected
     # texts, cuadro rows and every label, the placements' too (R84).
     marcas_del_plano: dict[str, int] = Field(default_factory=dict)
+    # The texts the rules reader (``estructura.reglas.leer_reglas``) read a rule from, with the
+    # lines it read (none: the whole text): consumed, never rejected (R119).
+    leidos_por_reglas: dict[str, list[str]] = Field(default_factory=dict)
 
     def lineas_con_fragmento(self) -> list[tuple[HojaConFragmentos, LineaConFragmento]]:
         return [(hoja, linea) for hoja in self.textos_con_fragmento for linea in hoja.lineas]
@@ -338,6 +350,15 @@ def _read_section(
             continue
         found = True
         if any(a <= m.start() and m.end() <= b for a, b in ajenos):
+            continue
+        dudosa = SECCION_CON_COMA_DUDOSA.match(text, m.end())
+        if dudosa is not None:
+            # R117: a comma after the section that neither starts a fragment nor ends a decimal
+            # («15X20,4A»): which section it is, the text does not say. Quoted and claimed.
+            cola = re.match(r",\S*", text[m.end() :])
+            assert cola is not None
+            citada = f"{m.group(0)}{cola.group(0)}"
+            avisos.append(f"sección con una coma que no se sabe leer: «{citada}»")
             continue
         a, b = _lados(m)
         leida = (min(a, b), max(a, b)) if family in FAMILIAS_QUE_SE_ORDENAN else (a, b)
@@ -1196,10 +1217,11 @@ def _cota_cm(entity: NormalizedEntity, unit_to_m: float) -> float | None:
     display = props.get("display_value")
     if isinstance(display, (int, float)) and display > 0:
         unidad = _unidad_mostrada(props, unit_to_m)
-        return float(display) * unidad * 100.0 if unidad is not None else None
+        # The displayed number as written, only scaled to centimetres: never rounded (R119).
+        return float(_exacto(display) * _exacto(unidad) * 100) if unidad is not None else None
     measurement = props.get("measurement")
     if isinstance(measurement, (int, float)) and measurement > 0:
-        return float(measurement) * unit_to_m * 100.0
+        return float(_exacto(measurement) * _exacto(unit_to_m) * 100)
     return None
 
 
@@ -1226,10 +1248,10 @@ _TAMANO = 35.0  # a section's larger side is at most this: a bigger outline is a
 _UNE = 0.01  # two chain ends this close are one point
 _SOBRE_ARISTA = 0.05  # a dimension's definition point this close to an edge lies on it
 _DUPLICADA = 0.25  # the same label drawn twice: one label
-# A label's centre is estimated from its height and its length (its drawn width depends on the
-# font): a pair's rectangle covers it within this many label heights either way (R106; a closed
-# outline, within ``_SOBRE_ARISTA``: a label drawn beside a section never reaches it).
-_CENTRO = 0.25
+# A label is where the drafter placed it (``ancla_texto``, R115): an outline covers its anchor
+# within ``_SOBRE_ARISTA``; one it misses by up to this many label heights is its own only when
+# no other label can reach it.
+_HOLGURA_SIN_DISPUTA = 0.5
 _CUADRADA = 0.02  # an outline whose sides differ less than this (relative) is drawn square
 # A drawn section agrees with its cotas when each side is within 2 cm or 10 % of its cota (R112):
 # a cuadro not drawn to scale is not a second reading.
@@ -1239,13 +1261,21 @@ _COINCIDE_CM, _COINCIDE_PARTE = 2.0, 0.10
 # half its length.
 _ARISTAS_DIBUJADAS = 3
 _CUBIERTA = 0.5
+# R118: and at least 2 of those drawn edges stop at its corners; no line crosses it edge to edge.
+_ESQUINAS = 2
 
 
 def _cm(valor: float) -> int | float:
-    """A side in centimetres as the drawing gives it: whole, or with its decimals (72.5), never
-    rounded to a whole number (R106)."""
-    v = round(float(valor), 2)
-    return int(v) if v == int(v) else v
+    """A side in centimetres as the drawing gives it: whole, or with its decimals (72.5, 41.55),
+    never rounded (R106, R119)."""
+    v = float(valor)
+    return int(v) if v.is_integer() else v
+
+
+def _exacto(valor: float) -> Decimal:
+    """A number as it was written (``repr``: 41.55 is 41.55), to add and scale cotas without the
+    binary noise of a float (R119)."""
+    return Decimal(repr(float(valor)))
 
 
 @dataclass
@@ -1391,15 +1421,14 @@ class _Propio:
     sin_contorno: bool = False
 
 
-def _propio(
-    etiquetas: list[_Etiqueta], contornos: list[_Contorno], holgura: float = _SOBRE_ARISTA
-) -> dict[str, _Propio]:
+def _propio(etiquetas: list[_Etiqueta], contornos: list[_Contorno]) -> dict[str, _Propio]:
     """Each label's own outline (R81), by its entity id, with why there is none: the nearest
-    closed outline on the side its sheet's convention puts the section that covers the
-    label's centre (within ``holgura`` label heights), within reach. The convention is the
-    side (above or below the label) on which more labels of the sheet find an outline no other
-    label finds. Two labels that find the same outline both lose it: the geometry does not say
-    whose it is."""
+    closed outline (or pair rectangle) on the side its sheet's convention puts the section that
+    covers the label's anchor — where the drafter placed it, ``ancla_texto`` (R115) — within
+    reach. An outline the anchor misses by up to half a label height is the label's only when no
+    other label of the sheet can reach it. The convention is the side (above or below the
+    label) on which more labels of the sheet find an outline no other label finds. Two labels
+    that find the same outline both lose it: the geometry does not say whose it is."""
     por_hoja: dict[str, list[_Etiqueta]] = defaultdict(list)
     for e in etiquetas:
         por_hoja[e.llave].append(e)
@@ -1423,20 +1452,39 @@ def _propio(
                 igual = e
             de[e.texto.entity_id] = igual
 
-        def cercano(e: _Etiqueta, lado: int) -> _Contorno | None:
-            mejor: tuple[float, float, _Contorno] | None = None
+        def hueco(e: _Etiqueta, c: _Contorno, lado: int, holgura: float) -> float | None:
+            """The gap from the label to the outline on ``lado``, if it reaches it."""
+            x0, y0, x1, y1 = c.caja
+            tol = holgura * e.alto
+            if not x0 - tol <= e.x <= x1 + tol or max(x1 - x0, y1 - y0) > _TAMANO * e.alto:
+                return None
+            h = y0 - e.y if lado > 0 else e.y - y1
+            return h if 0 < h <= _ALCANCE * e.alto else None
+
+        # R115: who can reach each outline with the half-height allowance, on either side.
+        alcanzan: dict[int, set[int]] = defaultdict(set)
+        for r in representantes:
             for c in contornos:
-                x0, y0, x1, y1 = c.caja
-                tol = holgura * e.alto
-                if not x0 - tol <= e.x <= x1 + tol or max(x1 - x0, y1 - y0) > _TAMANO * e.alto:
-                    continue
-                hueco = y0 - e.y if lado > 0 else e.y - y1
-                if hueco <= 0 or hueco > _ALCANCE * e.alto:
-                    continue
-                llave = (hueco, -_area(c.puntos))
-                if mejor is None or llave < mejor[:2]:
-                    mejor = (*llave, c)
-            return mejor[2] if mejor is not None else None
+                if any(hueco(r, c, lado, _HOLGURA_SIN_DISPUTA) is not None for lado in (1, -1)):
+                    alcanzan[id(c)].add(id(r))
+
+        def cercano(
+            e: _Etiqueta, lado: int, alcanzan: dict[int, set[int]] = alcanzan
+        ) -> _Contorno | None:
+            for holgura in (_SOBRE_ARISTA, _HOLGURA_SIN_DISPUTA):
+                mejor: tuple[float, float, _Contorno] | None = None
+                for c in contornos:
+                    h = hueco(e, c, lado, holgura)
+                    if h is None:
+                        continue
+                    if holgura == _HOLGURA_SIN_DISPUTA and alcanzan[id(c)] != {id(e)}:
+                        continue  # another label can claim it: no allowance
+                    llave = (h, -_area(c.puntos))
+                    if mejor is None or llave < mejor[:2]:
+                        mejor = (*llave, c)
+                if mejor is not None:
+                    return mejor[2]
+            return None
 
         por_lado: dict[int, dict[int, _Contorno | None]] = {}
         unicas: dict[int, int] = {}
@@ -1535,9 +1583,7 @@ def _lado(
     """A side from the cotas along it: the one that spans it whole, or a chain of cotas
     that tiles it («15 + 55»); with how it was read. Covers and partial cotas are not the
     side."""
-    enteras = sorted(
-        {round(v, 1) for a, b, v in cotas if abs(a - desde) <= tol and abs(b - hasta) <= tol}
-    )
+    enteras = sorted({v for a, b, v in cotas if abs(a - desde) <= tol and abs(b - hasta) <= tol})
     if len(enteras) == 1:
         return enteras[0], ""
     if len(enteras) > 1:
@@ -1550,7 +1596,7 @@ def _lado(
             return None, ""
         cadena.append(tramo[1])
         pos = tramo[0]
-    return sum(cadena), " + ".join(f"{v:g}" for v in cadena)
+    return float(sum(_exacto(v) for v in cadena)), " + ".join(f"{v:g}" for v in cadena)
 
 
 @dataclass
@@ -1620,6 +1666,67 @@ def _cubierta(
     return total / (hasta - desde) if hasta > desde else 0.0
 
 
+def _linea_en(
+    tramos: dict[int, list[tuple[float, float, float]]], fijo: float, tol: float
+) -> list[tuple[float, float]]:
+    """The drawn line at ``fijo``: the collinear segments there joined where they touch."""
+    clave = round(fijo / tol)
+    trozos = sorted(
+        (a, b)
+        for k in (clave - 1, clave, clave + 1)
+        for f, a, b in tramos.get(k, [])
+        if abs(f - fijo) <= tol
+    )
+    linea: list[tuple[float, float]] = []
+    for a, b in trozos:
+        if linea and a <= linea[-1][1] + tol:
+            linea[-1] = (linea[-1][0], max(linea[-1][1], b))
+        else:
+            linea.append((a, b))
+    return linea
+
+
+def _acaba_en_sus_esquinas(
+    tramos: dict[int, list[tuple[float, float, float]]],
+    fijo: float,
+    desde: float,
+    hasta: float,
+    tol: float,
+) -> bool:
+    """R118: the drawn line along an edge stops at the rectangle's corners: it does not run past
+    either of them (a slab's or a wall's line that goes on is no section's edge)."""
+    return not any(
+        (a < desde - tol or b > hasta + tol)
+        for a, b in _linea_en(tramos, fijo, tol)
+        if b >= desde - tol and a <= hasta + tol
+    )
+
+
+def _atraviesa(
+    tramos: dict[int, list[tuple[float, float, float]]],
+    claves: list[int],
+    lo: float,
+    hi: float,
+    desde: float,
+    hasta: float,
+    tol: float,
+) -> bool:
+    """R118: a drawn line strictly between ``lo`` and ``hi`` that goes from one edge of the
+    rectangle to the other (``desde`` to ``hasta``): two regions, not one section. ``claves``:
+    the sorted keys of ``tramos``."""
+    vistas: set[float] = set()
+    for k in claves[bisect.bisect_left(claves, round((lo + tol) / tol)) :]:
+        if k * tol > hi:
+            break
+        for f, _a, _b in tramos[k]:
+            if not lo + tol < f < hi - tol or f in vistas:
+                continue
+            vistas.add(f)
+            if any(a <= desde + tol and b >= hasta - tol for a, b in _linea_en(tramos, f, tol)):
+                return True
+    return False
+
+
 def _pares_de_cotas(
     dims: list[NormalizedEntity],
     segmentos: list[NormalizedEntity],
@@ -1687,9 +1794,10 @@ def _pares_de_cotas(
                     continue
                 llave = (round(x0 / tol), round(y0 / tol), round(x1 / tol), round(y1 / tol))
                 caja, valores, ids = rectangulos.setdefault(llave, ((x0, y0, x1, y1), set(), []))
-                valores.add((round(h.valor, 1), round(v.valor, 1)))
+                valores.add((h.valor, v.valor))
                 ids += [i for i in (h.entidad, v.entidad) if i not in ids]
     pares: list[_Par] = []
+    claves_h, claves_v = sorted(horizontales), sorted(verticales)
     for caja, valores, ids in rectangulos.values():
         x0, y0, x1, y1 = caja
         if any(
@@ -1697,16 +1805,26 @@ def _pares_de_cotas(
             for c in cajas_cerradas
         ):
             continue
-        aristas = sum(
-            _cubierta(tabla, fijo, a, b, tol) >= _CUBIERTA
+        cubiertas = [
+            (tabla, fijo, a, b)
             for tabla, fijo, a, b in (
                 (horizontales, y0, x0, x1),
                 (horizontales, y1, x0, x1),
                 (verticales, x0, y0, y1),
                 (verticales, x1, y0, y1),
             )
-        )
+            if _cubierta(tabla, fijo, a, b, tol) >= _CUBIERTA
+        ]
+        aristas = len(cubiertas)
         if aristas < _ARISTAS_DIBUJADAS:
+            continue
+        # R118: fewer than 2 drawn edges that stop at its corners (continuous slab or wall
+        # lines), or a line across it from edge to edge (two regions): no section.
+        if sum(_acaba_en_sus_esquinas(*arista, tol) for arista in cubiertas) < _ESQUINAS:
+            continue
+        if _atraviesa(horizontales, claves_h, y0, y1, x0, x1, tol) or _atraviesa(
+            verticales, claves_v, x0, x1, y0, y1, tol
+        ):
             continue
         contorno = _Contorno(
             puntos=[(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)], entidades=ids
@@ -1791,12 +1909,13 @@ def _sections_from_detail_cotas(
                 continue
             if cuadro_marks is not None:
                 cuadro_marks.append(text.entity_id)
+        ancla = ancla_texto(text)  # where the drafter placed it, never an estimated centre (R115)
         etiquetas.append(
             _Etiqueta(
                 texto=text,
                 marca=mark,
-                x=center[0],
-                y=center[1],
+                x=ancla[0],
+                y=ancla[1],
                 alto=bbox_height(text.bbox) or 0.1 / unit_to_m,
                 llave=sheet(text)[1],
                 en_detalle=in_detail,
@@ -1844,7 +1963,7 @@ def _sections_from_detail_cotas(
             _TAMANO * alto,
         )
         pares = {id(par.contorno): par for par in lista}
-        de_par = _propio(sin_contorno, [par.contorno for par in lista], _CENTRO)
+        de_par = _propio(sin_contorno, [par.contorno for par in lista])
 
     specs: list[ElementSpec] = []
     for e in etiquetas:
@@ -1963,7 +2082,8 @@ def _seccion_de_etiqueta(
         if not cercanas and not reclama:
             return []
         if cercanas:
-            avisos = [*avisos, f"las cotas cercanas ({', '.join(map(str, cercanas))}) no se toman"]
+            cifras = ", ".join(f"{v:g}" for v in cercanas)
+            avisos = [*avisos, f"las cotas cercanas ({cifras}) no se toman"]
         return [_lectura_de_cotas(e, sheet, None, avisos, nota)]
 
     propio = suyo.contorno
@@ -2320,6 +2440,7 @@ def _lo_que_nadie_leyo(
     config: TextPatternConfig,
     sheet: Sheet,
     posibles: dict[str, set[str]] | None = None,
+    leidos_por_reglas: dict[str, list[str]] | None = None,
 ) -> list[Rechazo]:
     """R104, the lossless audit after every reader: each line of a drawing text
     (an MTEXT, line by line) in which the parser reads or reports armado
@@ -2330,9 +2451,15 @@ def _lo_que_nadie_leyo(
     (the grammar's, or its title's; «varias_marcas» for a list, as the
     association says), «sin_dueno» if it names none («1. 30X30 8#6», a section
     alone on a stack line, «3.- 4#3 E#2@20 VER CORTE C-2»: a pointer names
-    nobody). A «sin_dueno» in a label's column past its stack's cut carries
-    that label as «posible» (``posibles``, R111): it blocks that label's AI."""
+    nobody). A rejection in a label's column past its stack's cut carries that
+    label as «posible» (``posibles``, R111, R116): it blocks that label's AI. A
+    line the rules reader read (``leidos_por_reglas``: a weld or lap note, an fy
+    note) is consumed (R119)."""
     consumidas = {e for s in specs if s.source != "ia" for e in s.entidades}
+    reglas = {
+        entidad: {_plano(r) for r in renglones}
+        for entidad, renglones in (leidos_por_reglas or {}).items()
+    }
     rechazadas: dict[str, list[str]] = {}
     for r in rechazos:
         rechazadas.setdefault(r.entidad_id, []).append(_plano(r.texto))
@@ -2345,6 +2472,9 @@ def _lo_que_nadie_leyo(
             if not linea or not lo_ve_el_parser(linea):
                 continue
             plana = _plano(linea)
+            leidos = reglas.get(text.entity_id)
+            if leidos is not None and (not leidos or plana in leidos):
+                continue  # the rules reader read it (R119)
             if any(plana in r for r in rechazadas.get(text.entity_id, [])):
                 continue
             lectura = leer_marcas(linea, config)
@@ -2363,9 +2493,7 @@ def _lo_que_nadie_leyo(
                     hoja=sheet(text)[0],
                     motivo=motivo,
                     marcas=list(marcas),
-                    posibles=sorted((posibles or {}).get(text.entity_id, set()))
-                    if motivo == "sin_dueno"
-                    else [],
+                    posibles=sorted((posibles or {}).get(text.entity_id, set())),
                 )
             )
             rechazadas.setdefault(text.entity_id, []).append(plana)
@@ -2432,7 +2560,13 @@ def build_schedule_inventory(
     for reader in extra_readers or []:
         specs += reader(entities)
     specs, rechazos = _family_notes_that_name_a_mark(specs, rechazos, texts, config)
-    rechazos = rechazos + _lo_que_nadie_leyo(texts, specs, rechazos, config, sheet, posibles)
+    leidos_por_reglas = leer_reglas(entities, frames).textos_leidos
+    rechazos = rechazos + _lo_que_nadie_leyo(
+        texts, specs, rechazos, config, sheet, posibles, leidos_por_reglas
+    )
+    for r in rechazos:  # R116: every rejection past a cut, whoever made it, carries the label
+        if not r.posibles and r.entidad_id in posibles:
+            r.posibles = sorted(posibles[r.entidad_id])
     inventory = ScheduleInventory(
         specs=specs,
         tables_found=tables,
@@ -2442,6 +2576,7 @@ def build_schedule_inventory(
         # drawn with armado beside it in a planta (the cotas reader).
         cuadro_mark_entities=_union(labels, inventory_cuadro_marks),
         rechazos=rechazos,
+        leidos_por_reglas=leidos_por_reglas,
     )
     inventory.textos_con_marca, inventory.textos_con_fragmento = _texts_naming_marks(
         texts, config, sheet
@@ -2776,8 +2911,8 @@ def bloqueos_de(
       ``mark`` consumed that text;
     - every rejected text that names it: ambiguous between marks, of several
       marks, unread;
-    - every unowned line in the mark's column past its stack's cut (R111,
-      «posible»): a block, never a Dato;
+    - every rejected line (any motive) in the mark's column past its stack's
+      cut (R111, R116, «posible»): a block, never a Dato;
     - the backstop (R68), independent of the grammar: every line with a
       fragment where the mark occurs under a loose comparison
       (``_patron_suelto``), unless a reading of ``mark`` consumed it.
@@ -2861,8 +2996,9 @@ def bloqueos_de(
                 for campo in campos_de_fragmento(r.texto, family)
             ]
     for r in inventory.rechazos:
-        # R111: an unowned line in the mark's column past its stack's cut may be the mark's.
-        if r.motivo != "sin_dueno" or r.entidad_id in consumed:
+        # R111, R116: a rejected line (any motive) in the mark's column past its stack's cut may be
+        # the mark's.
+        if not r.posibles or r.entidad_id in consumed:
             continue
         if any(_names(p, mark, known, config, dibujo) for p in r.posibles):
             found += [

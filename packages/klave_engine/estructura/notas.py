@@ -93,6 +93,8 @@ class Nota(BaseModel):
     hojas: list[str] = []
     encabezado: str = ""
     cadenas: list[list[str]] = []
+    # Los renglones de todas las copias: lo que se lee de la nota se lee en todas (R119).
+    entidades_de_las_copias: list[str] = []
 
 
 def limpiar_texto(texto: str) -> str:
@@ -349,6 +351,7 @@ def leer_notas_con_renglones(
                 hojas=sorted({i.hoja for i in instancias}),
                 encabezado=primera.encabezado,
                 cadenas=[list(c) for c in sorted({i.encabezados for i in instancias})],
+                entidades_de_las_copias=sorted({e for i in instancias for e in i.entidades}),
             )
         )
     notas.sort(key=lambda nota: (nota.seccion, nota.numero, -nota.copias, nota.hoja))

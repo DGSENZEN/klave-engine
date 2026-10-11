@@ -2323,13 +2323,15 @@ def test_a_percentage_is_not_a_bar_number(tmp_path):
     assert r.soldar_desde_numero is None and r.avisos == []
 
 
-def test_a_materials_text_that_mentions_bars_from_a_number_on_stays_silent(tmp_path):
+def test_a_materials_text_that_mentions_bars_from_a_number_on_is_no_weld_rule(tmp_path):
+    # «… VARILLAS DEL No.3 EN ADELANTE …» en la nota de materiales no es una regla de soldadura ni
+    # un aviso: es el fy de las varillas (R119), y se lee.
     mtext = (
         "2.\\t ACERO DE REFUERZO CON F'Y=4200KG/CM2 EN VARILLAS DEL No.3\\PEN ADELANTE Y "
         "F'Y=2530KG/CM2 EN VARILLAS DEL No.2."
     )
     r = leer_reglas(_dibujo(tmp_path, tabla=False, mtexts=[(mtext, 5.0, 5.0)]), frames=[])
-    assert r.avisos == []
+    assert r.avisos == [] and r.soldar_desde_numero is None and r.fy_kg_cm2["3"].valor == 4200
 
 
 # --- los arreglos menores ---------------------------------------------------------------------
@@ -5357,3 +5359,65 @@ def test_two_frames_sharing_a_code_are_said_not_merged_in_silence(tmp_path):
         entidades, frames=[marcos[0], marcos[1].model_copy(update={"code": "ES-100"})]
     )
     assert not [a for a in sin_choque.avisos if "marcos distintos" in a]
+
+
+# --- el fy de las varillas y lo leído (tarea 8b, ronda 2: R119) -------------------------------
+
+_FY_MARINA = (
+    "2.\\t ACERO DE REFUERZO CON F'Y=4200KG/CM2 EN VARILLAS DEL No.3\\PEN ADELANTE Y "
+    "F'Y=2530KG/CM2 EN VARILLAS DEL No.2."
+)
+# ES-000 y otras hojas de Marina: el MTEXT parte «KG/CM2» en dos renglones.
+_FY_MARINA_PARTIDA = (
+    "2.\\t ACERO DE REFUERZO CON F'Y=4200KG/CM2 EN VARILLAS DEL No.3\\PEN ADELANTE Y "
+    "F'Y=2530K\\PG/CM2 EN VARILLAS DEL No.2."
+)
+
+
+def _fy(r):
+    return {n: d.valor for n, d in r.fy_kg_cm2.items()}
+
+
+@pytest.mark.parametrize("mtext", [_FY_MARINA, _FY_MARINA_PARTIDA])
+def test_the_fy_of_each_bar_is_read_from_the_materials_note(tmp_path, mtext):
+    # R119: «DEL No.3 EN ADELANTE» va a todas las varillas desde el #3; el #2 tiene el suyo.
+    r = leer_reglas(_dibujo(tmp_path, tabla=False, mtexts=[(mtext, 5.0, 5.0)]), frames=[])
+    esperado = {n: 4200 for n in NUMEROS if float(n) >= 3} | {"2": 2530}
+    assert _fy(r) == esperado and r.avisos == []
+    assert r.fy_kg_cm2["3"].fuente == "nota" and "F'Y=4200" in r.fy_kg_cm2["3"].texto
+    # Lo leído son los renglones de la nota 2 del MTEXT, no el MTEXT entero.
+    ((_, renglones),) = r.textos_leidos.items()
+    assert renglones[0].startswith("2.") and "No.2." in renglones[-1]
+
+
+@pytest.mark.parametrize(
+    "mtext",
+    [
+        # una cláusula de más: no es la nota conocida entera
+        "2. ACERO DE REFUERZO CON F'Y=4200KG/CM2 EN VARILLAS DEL No.3 EN ADELANTE, SALVO EN "
+        "ESTRIBOS",
+        # una negación
+        "2. ACERO DE REFUERZO CON F'Y=4200KG/CM2 EN VARILLAS DEL No.3 EN ADELANTE, NO EN LOSAS",
+    ],
+)
+def test_an_fy_note_that_is_not_read_whole_is_an_aviso(tmp_path, mtext):
+    r = leer_reglas(_dibujo(tmp_path, tabla=False, mtexts=[(mtext, 5.0, 5.0)]), frames=[])
+    assert r.fy_kg_cm2 == {} and r.textos_leidos == {}
+    assert any("dice el fy de las varillas, pero no se pudo leer entera" in a for a in r.avisos)
+
+
+def test_an_fy_for_all_bars_is_every_bars(tmp_path):
+    # «1) FY=4200 KG/CM2 EN VARILLAS.»: sin número, todas las varillas.
+    r = _con_notas(tmp_path, ["1. EL ACERO SERA:", "1) FY=4200 KG/CM2 EN VARILLAS."], "NOTAS :")
+    assert _fy(r) == dict.fromkeys(NUMEROS, 4200)
+
+
+def test_the_rows_of_a_note_read_as_a_rule_are_consumed_in_every_copy(tmp_path):
+    # R119: la nota de traslapes y soldadura se leyó: sus renglones, de las dos copias, son de
+    # las reglas (nadie más los tiene que leer).
+    r = leer_reglas(
+        _dibujo(tmp_path, tabla=False, bloques=[([("REFUERZO :", MARINA_REFUERZO)], 2)]),
+        frames=[],
+    )
+    assert r.soldar_desde_numero.valor == "8"
+    assert len(r.textos_leidos) >= 2 * 4 and all(v == [] for v in r.textos_leidos.values())

@@ -282,13 +282,14 @@ def test_a_dimension_keeps_its_definition_points(tmp_path):
 
 
 def _arista(entity_id, p, q):
-    """Un trazo suelto (una línea): pasa un poco de las esquinas, así nunca cierra un contorno."""
+    """Un trazo suelto (una línea) que acaba un poco antes de sus esquinas: nunca cierra un
+    contorno, y no sigue más allá de ellas (R118)."""
     (x0, y0), (x1, y1) = p, q
     dx, dy = (
-        (0.05 if x1 > x0 else -0.05 if x1 < x0 else 0),
-        (0.05 if y1 > y0 else -0.05 if y1 < y0 else 0),
+        (0.01 if x1 > x0 else -0.01 if x1 < x0 else 0),
+        (0.01 if y1 > y0 else -0.01 if y1 < y0 else 0),
     )
-    return _poligono(entity_id, [(x0 - dx, y0 - dy), (x1 + dx, y1 + dy)], cerrado=False)
+    return _poligono(entity_id, [(x0 + dx, y0 + dy), (x1 - dx, y1 - dy)], cerrado=False)
 
 
 def _detalle_sin_contorno(n, marca, x, y, caja, ancho, peralte, aristas=4):
@@ -488,3 +489,110 @@ def test_a_cota_whose_unit_the_style_does_not_say_is_never_converted():
     assert "cota «15» con un factor de escala que no dice su unidad (1 unidad = 2.5 cm)" in (
         " ".join(cr.avisos)
     )
+
+
+# ------------------------------------------------- Tarea 8b, ronda 2: R115, R118, R119
+
+
+def _linea(entity_id, p, q):
+    return _poligono(entity_id, [p, q], cerrado=False)
+
+
+def test_two_touching_sections_never_make_a_phantom_rectangle():
+    # R118: A (20x50) y B (20x30) se tocan; la cota de alto de A va en la arista común. El ancho
+    # de B con el alto de A no es una sección: la línea de arriba de B la atraviesa. T-2 lee la
+    # suya, 20x30 (antes, 20x50).
+    ents = [
+        _texto("t1", "T-1", 0.4, 2.3, alto=0.14),
+        _texto("t2", "T-2", 1.2, 2.3, alto=0.14),
+        _linea("a1", (0.0, 0.0), (1.6, 0.0)),
+        _linea("a2", (0.0, 0.0), (0.0, 2.0)),
+        _linea("a3", (0.0, 2.0), (0.8, 2.0)),
+        _linea("a4", (0.8, 0.0), (0.8, 2.0)),
+        _linea("a5", (0.8, 1.2), (1.6, 1.2)),
+        _linea("a6", (1.6, 0.0), (1.6, 1.2)),
+        _cota("ca", (0.0, 2.0), (0.8, 2.0), 20),
+        _cota("cav", (0.8, 2.0), (0.8, 0.0), 50),
+        _cota("cb", (0.8, 0.0), (1.6, 0.0), 20),
+        _cota("cbv", (1.6, 1.2), (1.6, 0.0), 30),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s.section_cm for s in _cotas(inv, "T-1")] == [(20, 50)]
+    assert [s.section_cm for s in _cotas(inv, "T-2")] == [(20, 30)]
+
+
+def test_slab_lines_running_past_the_corners_make_no_section():
+    # R118: una losa (60 de cota, 10 de espesor) cuyas líneas siguen de largo, con una trabe
+    # colgada acotada sólo en cadena (5 + 10 + 5): el rectángulo de 60x10 no es la sección de
+    # T-1 (antes, 60x10).
+    ents = [
+        _texto("t1", "T-1", 1.2, 2.4, alto=0.14),
+        _linea("l1", (-0.8, 2.0), (3.2, 2.0)),
+        _linea("l2", (-0.8, 1.6), (0.8, 1.6)),
+        _linea("l3", (1.6, 1.6), (3.2, 1.6)),
+        _linea("l4", (0.0, 0.0), (0.0, 2.0)),
+        _linea("v1", (0.8, 0.0), (0.8, 1.6)),
+        _linea("v2", (1.6, 0.0), (1.6, 1.6)),
+        _linea("v3", (0.8, 0.0), (1.6, 0.0)),
+        _cota("c60", (0.0, 2.0), (2.4, 2.0), 60),
+        _cota("c10", (0.0, 2.0), (0.0, 1.6), 10),
+        _cota("h1", (0.8, 0.0), (1.0, 0.0), 5),
+        _cota("h2", (1.0, 0.0), (1.4, 0.0), 10),
+        _cota("h3", (1.4, 0.0), (1.6, 0.0), 5),
+        _cota("v40", (1.6, 1.6), (1.6, 0.0), 40),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert all(s.section_cm is None for s in _cotas(inv, "T-1"))
+
+
+def _titulo(entity_id, text, x, y, alto=0.14):
+    """Un título alineado a la izquierda: su ancla (``ancla_texto``) es su ``insert``, la punta
+    izquierda de su base; su caja, la que estima el normalizador."""
+    ancho = 0.6 * len(text) * alto
+    bbox = (x, y, x + ancho, y + alto)
+    return NormalizedEntity(
+        entity_id=entity_id, entity_type=EntityType.text, source_file="a.dxf", layer="T",
+        bbox=bbox, text=text, properties={"height": alto, "insert": (x, y)},
+        raw_handle=entity_id, evidence=_evidencia(entity_id, bbox),
+    )  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "x_ancla,otro,leida",
+    [
+        # T3-1 en Marina: su centro estimado cae 0.41 altos fuera, su ancla dentro: es suya.
+        (1.13, False, (20, 50)),
+        # El ancla 0.4 altos fuera y nadie más la alcanza: es suya.
+        (1.256, False, (20, 50)),
+        # Igual, pero otro título también la alcanza con esa holgura: no es de ninguno.
+        (1.256, True, None),
+        # T2-8 en Marina: el ancla 1.36 altos fuera: no es suya.
+        (1.39, False, None),
+    ],
+)
+def test_ownership_goes_by_the_labels_anchor(x_ancla, otro, leida):
+    # R115: quién es dueño de una sección va por el ancla del título (donde lo puso el
+    # dibujante), nunca por un centro estimado; media altura de holgura sólo sin disputa.
+    ents = _detalle_sin_contorno("a", "T-1", 0.0, 0.0, (0.2, 0.0, 1.2, 2.5), 20, 50)
+    ents[0] = _titulo("am", "T-1", x_ancla, 2.6)
+    if otro:
+        ents.append(_titulo("bm", "T-9", 1.25, 2.62))
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s.section_cm for s in _cotas(inv, "T-1") if s.section_cm] == ([leida] if leida else [])
+
+
+@pytest.mark.parametrize("pareja", [False, True])
+def test_a_cota_is_never_rounded(pareja):
+    # R119: 41.55 es 41.55 (antes, 41.5), en el contorno y en el par de cotas.
+    if pareja:
+        ents = _detalle_sin_contorno("a", "T-1", 0.0, 2.6, (-1.0, 0.0, 1.0, 2.4), 30, 41.55)
+    else:
+        ents = [
+            _texto("m", "T-1", 0.0, 2.9, alto=0.14),
+            _rectangulo("c", -1.0, 0.0, 1.0, 2.4),
+            _cota("h", (-1.0, 0.0), (1.0, 0.0), 30),
+            _cota("v", (-1.0, 2.4), (-1.0, 0.0), 41.55),
+        ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    (t,) = [s for s in _cotas(inv, "T-1") if s.section_cm]
+    assert t.section_cm == (30, 41.55)

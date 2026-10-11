@@ -211,8 +211,9 @@ class Rechazo(BaseModel):
     # Las familias que nombra un texto con armado que no es la nota de ninguna: su palabra no es
     # el sujeto («2 VARILLAS #5 ANCLADA AL MURO O CADENA …» → dala, muro; R83).
     familias: list[str] = Field(default_factory=list)
-    # Un texto sin dueño en la columna de una etiqueta, más allá de donde su pila se cortó (R111):
-    # puede ser de esa etiqueta. Bloquea su lectura IA en lo que el texto dice; nunca es un dato.
+    # Un texto rechazado (por cualquier motivo, R116) en la columna de una etiqueta, más allá de
+    # donde su pila se cortó (R111): puede ser de esa etiqueta. Bloquea su lectura IA en lo que el
+    # texto dice; nunca es un dato.
     posibles: list[str] = Field(default_factory=list)
 
 
@@ -1789,9 +1790,9 @@ def _asociar_hoja(
         for t in _mas_alla_del_corte(locales, etiqueta, propios, sentido, de_alguien | filas):
             posibles.setdefault(t.id, set()).add(etiqueta.marca or "")
     sin_dueno = _sin_dueno(grupo, hoja, clases, duenos, rechazados, config)
-    for huerfano in sin_dueno:
-        if huerfano.motivo == "sin_dueno":
-            huerfano.posibles = sorted(posibles.get(huerfano.entidad_id, set()))
+    # R116: todo rechazo (sea cual sea su motivo) más allá del corte lleva la etiqueta.
+    for rechazo in [*rechazos, *sin_dueno]:
+        rechazo.posibles = sorted(posibles.get(rechazo.entidad_id, set()))
     return asociaciones, rechazos + sin_dueno
 
 

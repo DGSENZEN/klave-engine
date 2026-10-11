@@ -166,6 +166,8 @@ def _perdidos(inv: ScheduleInventory, entidades: list[NormalizedEntity]) -> list
     rechazados: dict[str, list[str]] = defaultdict(list)
     for r in inv.rechazos:
         rechazados[r.entidad_id].append(_plano(r.texto))
+    # Lo que leyó el lector de reglas (una nota de traslapes o de soldadura, la del fy, R119).
+    reglas = {e: {_plano(r) for r in rs} for e, rs in inv.leidos_por_reglas.items()}
     perdidos: list[str] = []
     for e in entidades:
         if not (e.is_textual and e.text):
@@ -175,6 +177,10 @@ def _perdidos(inv: ScheduleInventory, entidades: list[NormalizedEntity]) -> list
             if not _lo_ve_el_parser(linea):
                 continue
             if any(_plano(linea) in r for r in rechazados[e.entity_id]):
+                continue
+            if e.entity_id in reglas and (
+                not reglas[e.entity_id] or _plano(linea) in reglas[e.entity_id]
+            ):
                 continue
             if not lecturas[e.entity_id]:
                 perdidos.append(f"{e.entity_id} «{linea}»: ni se lee ni se rechaza")
@@ -631,3 +637,39 @@ _SONDAS = [
     "MURO DE BLOCK\n10X20X40 Ò\n15X20X40",
     "ARMEX 15X30",
 ]
+
+
+def test_what_the_rules_reader_reads_is_consumed_and_the_rest_reported(tmp_path):
+    # R119: la nota de traslapes y soldadura (renglones sueltos) y la del fy (dentro de un MTEXT)
+    # las lee el lector de reglas: no son «sin_dueno». Las de la capa de compresión (I1) nadie
+    # las lee: siguen siendo rechazos.
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    renglones = [
+        "REFUERZO :",
+        "4. NO SE PERMITIRA TRASLAPAR NI SOLDAR MAS DEL 50%%% DEL REFUERZO",
+        "EN UNA MISMA SECCION, UNICAMENTE SE PERMITIRA TRASLAPAR VARILLA",
+        "HASTA EL #8, DEL #10 Y DIAMETROS MAYORES SE SOLDARAN",
+        "COMO LO INDICA LA FIG-D.",
+    ]
+    for i, r in enumerate(renglones):
+        msp.add_text(r, height=0.14 if i == 0 else 0.10).set_placement((0.0, -0.22 * i))
+    msp.add_mtext(
+        "2.\\t ACERO DE REFUERZO CON F'Y=4200KG/CM2 EN VARILLAS DEL No.3\\PEN ADELANTE Y "
+        "F'Y=2530K\\PG/CM2 EN VARILLAS DEL No.2.",
+        dxfattribs={"char_height": 0.10},
+    ).set_location((20.0, 0.0))
+    msp.add_mtext(
+        "7.- EN LA CAPA DE COMPRESION SE COLOCARA UNA VARILLA ADICIONAL #3 AL CENTRO\\P"
+        "L #3 PARA ARMAR, COLOCANDOSE COMO MINIMO UNO AL CENTRO DE CADA CAJA",
+        dxfattribs={"char_height": 0.10},
+    ).set_location((40.0, 0.0))
+    doc.saveas(tmp_path / "reglas.dxf")
+    entidades = DxfParser().parse_file(tmp_path / "reglas.dxf").entities
+    inv = build_schedule_inventory(entidades)
+    assert sorted(r.texto for r in inv.rechazos) == [
+        "7.- EN LA CAPA DE COMPRESION SE COLOCARA UNA VARILLA ADICIONAL #3 AL CENTRO",
+        "L #3 PARA ARMAR, COLOCANDOSE COMO MINIMO UNO AL CENTRO DE CADA CAJA",
+    ]
+    assert all(r.motivo == "sin_dueno" for r in inv.rechazos)
+    assert _perdidos(inv, entidades) == []

@@ -17,10 +17,25 @@ AMBOS = r"(?:A\s*/\s*S|A\.?S\.?|AMBOS\s+SENTIDOS|AMBAS\s+DIRECCIONES)"
 _FIN_DE_FICHA = rf"(?=[{re.escape(FRONTERA)}]|$)"
 _UNIDAD = r"(?:\s*CMS?\.?)?"
 # Un lado de una sección como se escribe: entero o con decimales, con punto o con coma
-# («20.5X40», «20X40,5», R109). En el último lado la coma es decimal sólo si no le sigue una
-# varilla ni otra medida: «15X15,4#3» es 15X15 y 4#3, «15X15,20X20» son dos secciones.
+# («20.5X40», «20X40,5», R109). Tras la «X», una coma es SEPARADOR cuando lo que le sigue empieza
+# algo que el parser reconoce (R117): un grupo de varillas («15X15,4 #3», «15X20,4V#4», «15X15,4
+# VARS #3»), una cuenta con la palabra de la varilla («4 VARS 3/8"»), un juego de estribos
+# («2E#3»), otra sección («15X15,20X20»). Es DECIMAL sólo si sus cifras acaban en una frontera
+# (espacio, fin, puntuación o «CM») y nada empieza en ellas; lo demás no es ni lo uno ni lo otro
+# (``SECCION_CON_COMA_DUDOSA``: la sección se cita y se reclama).
+FRAGMENTO_TRAS_LA_COMA = (
+    r"(?i:\d{1,3}(?:"
+    r"\s*(?:[-)]\s*)?(?:(?:VARILLAS?|VARS?\.?|PZAS?\.?|PIEZAS?|V)(?:\s+DEL?)?)?\s*(?:[#Ø]|N[°º]|NO\.)"
+    r"|\s*(?:VARILLAS?|VARS?\.?|PZAS?\.?|PIEZAS?)(?![A-Z])"
+    r"|\s*(?:EYG|E|G|EST\.?|ESTR\.?|ESTRIBOS?|GRAPAS?|LIGAS?)\s*[#Ø]"
+    r"|(?:[.,]\d+)?\s*[xX×]\s*\d"
+    r"))"
+)
+_FRONTERA_DEL_DECIMAL = r"(?=$|[\s;:)|,]|\.(?!\d)|(?i:CMS?)\b)"
 LADO = r"\d{1,3}(?:[.,]\d+)?"
-LADO_FINAL = r"\d{1,3}(?:\.\d+|,\d{1,2}(?![\d#Ø]|\s*[xX×]))?"
+LADO_FINAL = rf"\d{{1,3}}(?:\.\d+|,(?!{FRAGMENTO_TRAS_LA_COMA})\d{{1,2}}{_FRONTERA_DEL_DECIMAL})?"
+# La coma que sigue a una sección y no es ni separador ni decimal («15X20,4A»).
+SECCION_CON_COMA_DUDOSA = re.compile(rf",(?!{FRAGMENTO_TRAS_LA_COMA})\d")
 _PALABRAS = (
     r"(?:DALAS?|CADENAS?|CASTILLOS?|COLUMNAS?|CONTRATRABES?|TRABES?|LOSAS?|MUROS?|ZAPATAS?"
     r"|DADOS?|PILOTES?|CERRAMIENTOS?|REFUERZO)"

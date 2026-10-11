@@ -474,8 +474,14 @@ class Reglas(BaseModel):
     primer_estribo_m: dict[str, Dato] = {}
     anclajes_declarados_m: dict[str, Dato] = {}
     plantilla_espesor_m: Dato | None = None
+    # R119: el fy de cada número de varilla que dicen las notas de materiales («ACERO DE REFUERZO
+    # CON F'Y=4200KG/CM2 EN VARILLAS DEL No.3 EN ADELANTE Y F'Y=2530KG/CM2 EN VARILLAS DEL No.2»).
+    fy_kg_cm2: dict[str, Dato] = {}
     contradicciones: list[str] = []
     avisos: list[str] = []
+    # Los textos de los que se leyó una regla, con los renglones leídos (vacío: el texto entero):
+    # nadie más los tiene que leer (R119, la auditoría de ``detection.schedules``).
+    textos_leidos: dict[str, list[str]] = {}
 
     def para(self, hoja: str) -> "Reglas":
         """Las reglas como las resuelve ``hoja``: cada hoja dice sus propias reglas (la de
@@ -506,6 +512,8 @@ class Reglas(BaseModel):
                 "primer_estribo_m": varias(self.primer_estribo_m),
                 "anclajes_declarados_m": varias(self.anclajes_declarados_m),
                 "plantilla_espesor_m": una(self.plantilla_espesor_m),
+                "fy_kg_cm2": varias(self.fy_kg_cm2),
+                "textos_leidos": {k: list(v) for k, v in self.textos_leidos.items()},
             }
         )
 
@@ -788,6 +796,18 @@ class _Lecturas:
         self.por_regla: dict[str, list[_Lectura]] = defaultdict(list)
         self.leidas: set[str] = set()  # reglas que leyó el texto en curso (ver ``_vigilar``)
         self._avisos: dict[str, list[str]] = {}
+        self.textos_leidos: dict[str, list[str]] = {}
+
+    def consumir(self, leidos: dict[str, list[str]]) -> None:
+        """Los textos (y renglones) de los que se leyó una regla."""
+        for entidad, renglones in leidos.items():
+            previo = self.textos_leidos.get(entidad)
+            if previo is None:
+                self.textos_leidos[entidad] = list(renglones)
+            elif previo and renglones:
+                self.textos_leidos[entidad] = list(dict.fromkeys([*previo, *renglones]))
+            else:
+                self.textos_leidos[entidad] = []  # el texto entero
 
     def poner(self, regla: str, dato: Dato) -> None:
         """Una lectura más. La misma lectura (mismo texto, mismo valor) no cuenta dos veces."""
@@ -874,6 +894,9 @@ class _Origen:
     # todos los encabezados de arriba en su columna, el más cercano primero; uno por cada manera
     # distinta en que están las copias de la nota (``Nota.cadenas``)
     cadenas: list[list[str]] = field(default_factory=list)
+    # lo que queda leído si el texto da una regla: los renglones de todas sus copias (una lista
+    # vacía: el texto entero) o, en un MTEXT con varias notas, los renglones de la nota
+    leidos: dict[str, list[str]] = field(default_factory=dict)
 
     def dato(self, valor: Any, cita: str) -> Dato:
         return Dato(
@@ -1746,6 +1769,8 @@ def _leer_texto(o: _Origen, lecturas: _Lecturas) -> None:
         return
     _vigilar(o, lectura, de_la_nota)
     lecturas.unir(de_la_nota)
+    if de_la_nota.por_regla:
+        lecturas.consumir(o.leidos)
 
 
 def _codigos_repetidos(frames: list[SheetFrame]) -> list[str]:
@@ -1940,6 +1965,8 @@ def leer_reglas(entities: list[NormalizedEntity], frames: list[SheetFrame]) -> R
     lecturas = _Lecturas()
     for nota in notas:
         _leer_nota(nota, lecturas)
+    for origen in _notas_en_mtexts(textos, hoja_de):
+        _leer_fy(origen, lecturas)
     for e, texto in _textos_sueltos(entities, consumidas):
         mayus = mayusculas_sin_acentos(texto)
         if _CLAVES_DE_REGLA.search(mayus) is None:
@@ -1998,6 +2025,13 @@ def leer_reglas(entities: list[NormalizedEntity], frames: list[SheetFrame]) -> R
         primer_estribo_m=por_familia("primer_estribo", "el primer estribo"),
         anclajes_declarados_m=por_familia("anclaje", "el anclaje"),
         plantilla_espesor_m=decidir("plantilla", "el espesor de la plantilla", _metros_en_cm),
+        fy_kg_cm2={
+            regla.removeprefix("fy:"): dato
+            for regla in sorted(r for r in por_regla if r.startswith("fy:"))
+            if (dato := decidir(regla, f"el fy del #{regla[3:]}", lambda v: f"{v} kg/cm²"))
+            is not None
+        },
+        textos_leidos=lecturas.textos_leidos,
         contradicciones=[
             *contradicciones,
             *_contradicciones_de_la_soldadura(tabla, del_plano, por_regla.get("soldar", [])),
@@ -2021,5 +2055,116 @@ def _leer_nota(nota: Nota, lecturas: _Lecturas) -> None:
         seccion=nota.seccion,
         encabezado=nota.encabezado,
         cadenas=nota.cadenas,
+        leidos={e: [] for e in nota.entidades_de_las_copias or nota.entidades},
     )
     _leer_texto(origen, lecturas)
+    _leer_fy(origen, lecturas)
+
+
+# --- el fy de las varillas (R119) ---------------------------------------------------------------
+
+# La nota de materiales que dice el fy de las varillas, ENTERA (como el gancho sin verbo, sólo si
+# es la nota entera): «ACERO DE REFUERZO CON F'Y=4200KG/CM2 EN VARILLAS DEL No.3 EN ADELANTE Y
+# F'Y=2530KG/CM2 EN VARILLAS DEL No.2» (Marina; el MTEXT puede partir «KG/CM2» en dos renglones).
+_KG_CM2 = r"(?:K\s*G\s*/\s*C\s*M\s*(?:2|²|\^2)\.?)"
+
+
+def _fy_en_varillas(n: int) -> str:
+    """«F'Y=4200KG/CM2 EN VARILLAS DEL No.3 EN ADELANTE», «FY=4200 KG/CM2 EN VARILLAS» (todas)."""
+    return (
+        rf"F\s*'?\s*Y\s*=\s*(?P<fy{n}>\d{{3,4}})\s*{_KG_CM2}?\s+(?:PARA|EN)\s+(?:LAS\s+)?"
+        r"VARILLAS(?:\s+(?:DEL?\s+)?(?:(?:NO|N[º°])\.?\s*|#\s*|NUMERO\s+|NUM\.?\s*)"
+        rf"(?P<n{n}>\d{{1,2}})(?P<mas{n}>\s+(?:EN\s+ADELANTE|Y\s+MAYORES))?)?"
+    )
+
+
+_NOTA_DE_FY = re.compile(
+    r"(?:(?:EL\s+)?ACERO(?:\s+DE\s+REFUERZO)?\s+(?:SERA\s+)?(?:CON|DE)\s+)?"
+    rf"{_fy_en_varillas(1)}(?:\s*(?:,|\bY\b)\s*(?:CON\s+)?{_fy_en_varillas(2)})?\s*\.?"
+)
+# Una nota que habla del fy de las varillas (y entonces se lee o se avisa).
+_HABLA_DEL_FY = re.compile(r"F\s*'?\s*Y\s*=\s*\d.*VARILLA|VARILLA.*F\s*'?\s*Y\s*=\s*\d")
+# El número de una nota dentro de un MTEXT: «2.\t …», «3.- …».
+_RENGLON_NUMERADO = re.compile(r"^\s*\d{1,2}\s*(?:\.-?|-|\))(?:\s|\\[tT])*")
+
+
+def _leer_fy(o: _Origen, lecturas: _Lecturas) -> None:
+    """El fy por número de varilla de una nota de materiales (R119): la nota entera tiene que
+    ser la frase conocida (``_NOTA_DE_FY``) y no negar nada; «DEL No.3 EN ADELANTE» va a todas
+    las varillas desde el #3. Una nota que habla del fy de las varillas y no se lee así es un
+    aviso, nunca un valor a medias."""
+    texto = " ".join(mayusculas_sin_acentos(o.texto).split())
+    if not _HABLA_DEL_FY.search(texto):
+        return
+    todo = texto if len(texto) <= 250 else f"{texto[:249]}…"
+    m = _NOTA_DE_FY.fullmatch(texto.strip(" ."))
+    if m is None or NEGACION.search(texto):
+        lecturas.avisar(
+            f"{o.donde} dice el fy de las varillas, pero no se pudo leer entera («{todo}»); no "
+            "se usa.",
+            o.hojas_del_aviso,
+        )
+        return
+    valores: dict[str, int] = {}
+    for k in (1, 2):
+        if m[f"fy{k}"] is None:
+            continue
+        numero, fy = m[f"n{k}"] or NUMEROS[0], int(m[f"fy{k}"])
+        if numero not in NUMEROS:
+            lecturas.avisar(
+                f"{o.donde} dice el fy del #{numero}, que no es una varilla; no se usa."
+            )
+            return
+        desde = float(numero)
+        # «DEL No.3 EN ADELANTE»: desde el #3; sin número, «EN VARILLAS»: todas.
+        todas = m[f"mas{k}"] or m[f"n{k}"] is None
+        varillas = [n for n in NUMEROS if float(n) >= desde] if todas else [numero]
+        for n in varillas:
+            if valores.get(n, fy) != fy:
+                lecturas.avisar(
+                    f"{o.donde} da dos fy al #{n} ({valores[n]} y {fy}); no se usa («{todo}»)."
+                )
+                return
+            valores[n] = fy
+    for n, fy in valores.items():
+        lecturas.poner(f"fy:{n}", o.dato(fy, todo))
+    lecturas.consumir(o.leidos)
+
+
+def _notas_en_mtexts(
+    entidades: list[NormalizedEntity], hoja_de: Callable[[NormalizedEntity], str]
+) -> Iterator[_Origen]:
+    """Las notas numeradas que van dentro de un MTEXT de varios renglones («2.\t ACERO …» / «EN
+    ADELANTE …» / «3.\t …»): cada una con sus renglones, hasta la siguiente o un renglón en
+    blanco. (Las notas de renglones sueltos las lee ``leer_notas_con_renglones``.)"""
+    for e in entidades:
+        if not e.is_textual or not e.text or "\n" not in e.text.strip():
+            continue
+        renglones = e.text.split("\n")
+        hoja = hoja_de(e)
+        i = 0
+        while i < len(renglones):
+            numero = _RENGLON_NUMERADO.match(limpiar_texto(renglones[i]))
+            if numero is None:
+                i += 1
+                continue
+            j = i + 1
+            while (
+                j < len(renglones)
+                and limpiar_texto(renglones[j])
+                and _RENGLON_NUMERADO.match(limpiar_texto(renglones[j])) is None
+            ):
+                j += 1
+            suyos = [r.strip() for r in renglones[i:j] if r.strip()]
+            texto = limpiar_texto(" ".join(suyos))[numero.end() :]
+            yield _Origen(
+                texto,
+                "nota",
+                hoja,
+                [hoja],
+                [e.entity_id],
+                1,
+                f"La nota «{limpiar_texto(renglones[i])[:40]}…»",
+                leidos={e.entity_id: suyos},
+            )
+            i = j
