@@ -8,6 +8,7 @@ import pytest
 from klave_engine.detection.results import DetectionType, make_detection
 from klave_engine.detection.schedules import (
     ElementSpec,
+    _extension_del_texto,
     apply_schedule,
     build_schedule_inventory,
     merge_external_specs,
@@ -132,8 +133,9 @@ def test_two_labels_reaching_one_section_lose_it():
 
 
 def test_a_section_that_is_not_a_rectangle_is_never_one():
-    # K-15A en Marina: 60 de ancho, 30 + 25 de alto, la parte de arriba de 20. No se toma un
-    # rectángulo: un aviso con su caja y su área, un rechazo, y la sección reclamada.
+    # K-15A en Marina: 60 de ancho, 30 + 25 de alto, la parte de arriba de 20. R129: un contorno
+    # que no es un rectángulo nunca es sección (ni se toma, ni se reclama por él, ni un rechazo);
+    # detiene al título. Lo reclaman sus cotas cercanas, como al lector viejo: la IA no lo llena.
     contorno = [(-1.5, 0.9), (1.5, 0.9), (1.5, 3.65), (0.5, 3.65), (0.5, 2.4), (-1.5, 2.4)]
     ents = [
         _texto("m", "K-15A", 0.0, 0.0),
@@ -147,10 +149,12 @@ def test_a_section_that_is_not_a_rectangle_is_never_one():
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0)
     (k,) = _cotas(inv, "K-15A")
     assert k.section_cm is None and "seccion" in k.campos_con_texto
-    (aviso,) = k.avisos
-    assert aviso.startswith("sección no rectangular (6 vértices): caja 3.000 × 2.750 m")
-    assert "área 5.7500 m²" in aviso and "cotas en sus aristas: 25, 30, 60" in aviso
-    assert [(r.motivo, r.marcas) for r in inv.rechazos] == [("sin_lector", ["K-15A"])]
+    assert k.avisos == [
+        "sección: lo más cercano dibujado encima no es una sección: no se toma lo que está más "
+        "allá",
+        "las cotas cercanas (30, 60) no se toman",
+    ]
+    assert inv.rechazos == []
     merge_external_specs(inv, [_ia("K-15A", section_cm=(60, 55))], C)
     d = construir_definiciones(inv, C)[0]["K-15A"].seccion_cm
     assert d.ilegible and [a.fuente for a in d.alternativas] == ["ia"]
@@ -761,9 +765,9 @@ def test_an_owned_outline_without_cotas_claims_only_if_it_looks_like_a_section(
     assert de_la_ia == (None if reclama else (25, 100))
 
 
-def test_a_wall_strip_between_the_title_and_its_section_is_passed_over():
-    # R123: la tira de muro que queda entre el título y su sección no es sección: el título llega
-    # a la suya, más allá, con sus cotas.
+def test_a_wall_strip_between_the_title_and_a_section_stops_its_reach():
+    # R129 (reemplaza el «pasa de largo» de R123): la tira de muro entre el título y la sección
+    # dibujada no es sección, pero el título no llega más allá de ella: no toma la de más allá.
     ents = [
         _texto("m", "D-3", 0.0, 0.0, alto=0.1),
         _rectangulo("tira", -1.0, 0.3, 1.0, 0.349),
@@ -772,7 +776,9 @@ def test_a_wall_strip_between_the_title_and_its_section_is_passed_over():
         _cota("v", (-0.5, 1.6), (-0.5, 0.6), 100),
     ]
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
-    assert _leidas(inv, "D-3") == {"D-3": [(50, 100)]}
+    assert _leidas(inv, "D-3") == {"D-3": []}
+    (s,) = _cotas(inv, "D-3")
+    assert s.avisos[0].startswith("sección: lo más cercano dibujado encima no es una sección")
 
 
 @pytest.mark.parametrize("x,suya", [(-0.038, False), (-0.1, True)])
@@ -829,20 +835,31 @@ def test_a_title_with_a_leader_and_no_section_read_claims_it(flecha, senalada):
     assert de_la_ia == (None if senalada else (25, 100))
 
 
-def test_a_family_note_does_not_stop_a_leader_claim():
-    # R124 (D-3 en Marina: «CADENA DE ENRASE 15x25 …» es nota de la familia dala): la nota de la
-    # familia es su respaldo, no una lectura de D-3, y no detiene a la IA; la flecha sí.
+@pytest.mark.parametrize(
+    "titulo,familia,senalada",
+    [
+        # CE-5 en Marina: su familia (dala, por su prefijo) la lee su nota («CADENA DE ENRASE
+        # 15x25 …»): la flecha no la reclama y la nota no se borra.
+        ("CE-5", "dala", False),
+        # D-3 en Marina: su título dice DADO (R130): la nota de las dalas no es suya; se reclama.
+        ("DADO\nD-3", "dado", True),
+    ],
+)
+def test_a_leader_claim_never_erases_what_a_family_note_reads(titulo, familia, senalada):
+    # R124, R130 (ronda 5): la reclamación «señalada» sólo bloquea a la IA cuando nada del plano
+    # lee la marca; la nota de su familia la lee.
+    marca = titulo.split()[-1]
     ents = [
-        _texto("m", "D-3", 0.0, 0.0, alto=0.1),
-        _flecha("f", [(-0.6, 0.4), (-0.3, 0.0), (-0.12, 0.0)]),
+        _texto("m", titulo, 0.0, 0.0, alto=0.1),
+        _flecha("f", [(-0.6, 0.4), (-0.3, -0.06), (0.4, -0.06)]),
         _texto("n", "DALA 15X25 4#3 E#2@15", 5.0, 5.0, alto=0.1),
         _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
     ]
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
     assert [s.section_cm for s in inv.specs if s.mark == "DALA"] == [(15, 25)]
-    assert [s.avisos for s in _cotas(inv, "D-3")] == [
-        ["sección: señalada por flecha; se lee en E3"]
-    ]
+    lecturas = [(s.family, s.avisos) for s in _cotas(inv, marca)]
+    aviso = ["sección: señalada por flecha; se lee en E3"]
+    assert lecturas == ([(familia, aviso)] if senalada else [])
 
 
 def test_a_title_with_a_leader_whose_section_is_read_keeps_it():
@@ -878,3 +895,178 @@ def test_a_cota_is_never_rounded(pareja):
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
     (t,) = [s for s in _cotas(inv, "T-1") if s.section_cm]
     assert t.section_cm == (30, 41.55)
+
+
+# ------------------------------------------------- Tarea 8b, ronda 5: R125, R128, R129, R130
+
+
+def test_a_leader_landing_under_the_whole_title_is_its_leader():
+    # R128 (CE-1 en Marina): la flecha llega por la izquierda y su apoyo corre bajo todo el texto
+    # (0.10 de alto) y acaba 0.7 altos más allá de él; antes sólo se miraba su punta.
+    ents = [
+        _titulo("m", "CE-1", 0.0, 0.0, alto=0.1),
+        _flecha("f", [(-0.259, 0.317), (-0.009, -0.003), (0.312, -0.003)]),
+        _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s.avisos for s in _cotas(inv, "CE-1")] == [
+        ["sección: señalada por flecha; se lee en E3"]
+    ]
+    merge_external_specs(inv, [_ia("CE-1", family="dala", section_cm=(15, 30))], C)
+    assert "CE-1" not in inv.by_mark or inv.by_mark["CE-1"].section_cm is None
+
+
+@pytest.mark.parametrize(
+    "texto,columna,marcas,familia",
+    [
+        # Títulos de más de 8 letras: nunca fueron etiquetas.
+        ("DADO\nD-1A", True, ["D-1A"], "dado"),
+        ("DADO D-1B / O D-1C", False, ["D-1B", "D-1C"], "dado"),
+        ("PILOTE\nP-3", True, ["P-3"], "pilote"),
+        # No es un título (una referencia): ninguna.
+        ("VER DETALLE D-1A", False, [], None),
+    ],
+)
+def test_a_long_title_with_a_leader_claims_each_of_its_marks(texto, columna, marcas, familia):
+    # R128: para la reclamación de R124, un título es un texto hecho sólo de palabras de familia,
+    # marcas y conectores, de cualquier largo; cada marca se reclama, con la familia que su título
+    # dice (R130).
+    titulo = (
+        _titulo_en_columna("m", texto, 0.0, 0.0)
+        if columna
+        else _titulo("m", texto, 0.0, 0.0, alto=0.1)
+    )
+    x0, y0, x1, _y1 = _extension_del_texto(titulo)
+    ents = [
+        titulo,
+        _flecha("f", [(x0 - 0.6, y0 + 0.5), (x0 - 0.3, y0 - 0.02), (x1, y0 - 0.02)]),
+        _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    senaladas = sorted(
+        (s.mark, s.family, s.familia_supuesta)
+        for s in inv.specs
+        if s.source_text.endswith("señalada por flecha; se lee en E3")
+    )
+    assert senaladas == [(m, familia, False) for m in marcas]
+
+
+@pytest.mark.parametrize(
+    "otra",
+    [
+        # Un castillo a escala 1:1 (15×15, letras de 0.14) bajo un contorno de 2.5 × 3.0 acotado
+        # 250/300: antes K-1 leía 250x300.
+        [
+            _rectangulo("grande", -1.25, 0.5, 1.25, 3.5),
+            _cota("h", (-1.25, 0.5), (1.25, 0.5), 250),
+            _cota("v", (-1.25, 3.5), (-1.25, 0.5), 300),
+        ],
+        # Más allá de su símbolo, la sección de K-2 (20×40), cuyo título está en otra parte:
+        # antes K-1 la tomaba.
+        [
+            _rectangulo("k2c", -0.5, 0.6, 0.5, 2.6),
+            _cota("h", (-0.5, 0.6), (0.5, 0.6), 20),
+            _cota("v", (-0.5, 2.6), (-0.5, 0.6), 40),
+            _texto("k2", "K-2", 5.0, 0.0, alto=0.14),
+        ],
+    ],
+)
+def test_a_title_never_reaches_past_its_own_small_section(otra):
+    # R129: su sección propia, chica y sin cotas, no es candidata, pero detiene al título: no
+    # llega a lo acotado que está más allá.
+    ents = [
+        _texto("m", "K-1", 0.0, 0.0, alto=0.14),
+        _rectangulo("chico", -0.075, 0.2, 0.075, 0.35),
+        *otra,
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert _leidas(inv, "K-1") == {"K-1": []}
+
+
+def test_a_trapezoid_is_never_owned_nor_sets_the_sheet_convention():
+    # R129 (CTA-15 y el dado de D-4 en ES-500, corridos): un trapecio con una cota de 120 en su
+    # arista no es sección: CTA-15 no es su dueño (ni un «sin_lector»), y la hoja no voltea su
+    # costumbre por él: K-1, con su sección encima, la sigue leyendo.
+    trapecio = [(0.0494, -2.298), (0.8494, -2.298), (0.8494, -1.098), (0.0494, -0.888)]
+    ents = [
+        _texto("m", "CTA-15", 0.62, -0.70, alto=0.1),
+        _poligono("t", trapecio),
+        _cota("v", (0.8494, -1.098), (0.8494, -2.298), 120),
+        _texto("k", "K-1", 5.0, -2.0, alto=0.14),
+        _rectangulo("kc", 4.8, -1.7, 5.2, -1.1),
+        _cota("kh", (4.8, -1.7), (5.2, -1.7), 20),
+        _cota("kv", (5.2, -1.1), (5.2, -1.7), 30),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s.section_cm for s in _cotas(inv, "CTA-15")] in ([], [None])
+    assert [r.motivo for r in inv.rechazos] == []
+    assert _leidas(inv, "K-1") == {"K-1": [(20, 30)]}
+
+
+def test_a_section_one_and_a_half_letters_wide_is_one_despite_float_noise():
+    # R129: 0.15 contra 1.5 × 0.10 (CE-1 en Marina, su sección dibujada de 0.150 × 0.300): antes
+    # el ruido de coma flotante la dejaba fuera; es sección, se reclama sin cotas.
+    ents = [
+        _titulo("m", "CE-1", 0.0, 0.0, alto=0.1),
+        _rectangulo("c", 0.0, -0.45, 0.15, -0.15),
+        _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [(s.section_cm, s.campos_con_texto) for s in _cotas(inv, "CE-1")] == [
+        (None, ["seccion"])
+    ]
+
+
+@pytest.mark.parametrize(
+    "texto,aviso_de_familia",
+    [
+        # El título dice DADO (R130): la familia es la del plano.
+        ("DADO D-1B / O D-1C", None),
+        # Sin palabra de familia, la del prefijo (dala) es supuesta (R125): gana la de la IA.
+        (
+            "D-1C",
+            "familia: el plano no la dice (sólo el prefijo de la marca: dala); se toma la de la "
+            "IA: dado",
+        ),
+    ],
+)
+def test_a_prefix_guessed_family_never_drops_a_field(texto, aviso_de_familia):
+    # R125, R130 (D-1C en Marina, ES-007): su título señalado por una flecha se reclama, y la IA
+    # (dado, 55×115, parrillas #4@10) no llena la sección; pero sus parrillas no se tiran por una
+    # familia que sólo dice el prefijo: quedan como dato de la IA.
+    titulo = _titulo("m", texto, 0.0, 0.0, alto=0.1)
+    x0, y0, x1, _y1 = _extension_del_texto(titulo)
+    ents = [
+        titulo,
+        _flecha("f", [(x0 - 0.6, y0 + 0.5), (x0 - 0.3, y0 - 0.02), (x1, y0 - 0.02)]),
+        _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    ia = _ia("D-1C", family="dado", section_cm=(55, 115), mesh="#4@10")
+    merge_external_specs(inv, [ia], C)
+    d = construir_definiciones(inv, C)[0]["D-1C"]
+    assert (d.familia, d.seccion_cm.valor, d.seccion_cm.ilegible) == ("dado", None, True)
+    assert d.parrillas is not None and d.parrillas.fuente == "ia"
+    if aviso_de_familia:
+        assert aviso_de_familia in d.avisos
+    else:
+        assert not any(a.startswith("familia:") for a in d.avisos)
+
+
+def test_two_texts_on_one_leader_are_one_title():
+    # R130 (ES-007 en Marina): «DADO D-1B» sobre el apoyo y «O D-1C» bajo él son un título: D-1C
+    # es dado y se reclama; la nota de las dalas no la lee.
+    ents = [
+        _titulo("a", "DADO D-1B", 0.0, 0.05, alto=0.1),
+        _titulo("b", "O D-1C", 0.06, -0.14, alto=0.1),
+        _flecha("f", [(-0.6, 0.4), (-0.3, 0.0), (0.55, 0.0)]),
+        _texto("n", "DALA 15X25 4#3 E#2@15", 5.0, 5.0, alto=0.1),
+        _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    senaladas = sorted(
+        (s.mark, s.family)
+        for s in inv.specs
+        if s.source_text.endswith("señalada por flecha; se lee en E3")
+    )
+    assert senaladas == [("D-1B", "dado"), ("D-1C", "dado")]

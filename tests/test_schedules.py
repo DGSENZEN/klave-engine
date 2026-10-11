@@ -1875,3 +1875,19 @@ def test_a_comma_that_is_neither_a_separator_nor_a_decimal_quotes_the_section(tm
     assert "sección con una coma que no se sabe leer: «15X20,4A»" in s.avisos
     merge_external_specs(inv, [_ia("K-1", section_cm=(40, 40))], C)
     assert inv.by_mark["K-1"].section_cm is None
+
+
+@pytest.mark.parametrize(
+    "texto",
+    ["K-1 15X20,4 VRS #3", "K-1 15X20,4 PZS #3", "K-1 15X20,4 VS #3", "K-1 15X20,4 DE 3/8"],
+)
+def test_a_comma_before_a_bar_token_is_never_a_decimal(tmp_path, texto):
+    # R131: con una ficha de varilla («#3», «3/8», una palabra de varilla) en las dos fichas que
+    # siguen, la coma nunca es decimal (antes, «15X20,4 VRS #3» daba 15x20.4); nada que el parser
+    # reconozca empieza en las cifras: la sección se cita y se reclama.
+    inv = build_schedule_inventory(_notas(tmp_path, [texto]), frames=_frame())
+    (s,) = inv.specs
+    assert s.section_cm is None and "seccion" in s.campos_con_texto
+    assert "sección con una coma que no se sabe leer: «15X20,4»" in s.avisos
+    merge_external_specs(inv, [_ia("K-1", section_cm=(40, 40))], C)
+    assert inv.by_mark["K-1"].section_cm is None

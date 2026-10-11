@@ -152,7 +152,9 @@ def fuente_de_seccion(spec: ElementSpec) -> Fuente:
 _SE_ORDENA = FAMILIAS_QUE_SE_ORDENAN
 
 
-def _seccion(valor: tuple[int, int], familia: str) -> tuple[int, int]:
+def _seccion(
+    valor: tuple[int | float, int | float], familia: str
+) -> tuple[int | float, int | float]:
     a, b = sorted(valor) if familia in _SE_ORDENA else valor
     return (a, b)
 
@@ -274,6 +276,8 @@ def _definir(
     lecturas = [s for s in specs if s.source != "ia"]
     de_ia = [s for s in specs if s.source == "ia"]
     avisos: list[str] = []
+    # R125: una familia que sólo da el prefijo de la marca no tira campos de la IA.
+    supuesta = familia is None and _familia_supuesta(lecturas, de_ia)
     familia = familia or _familia(marca, lecturas, de_ia, avisos)
     datos: dict[str, list[Dato]] = {campo: [] for campo in _NOMBRE}
 
@@ -331,7 +335,8 @@ def _definir(
         for _campo, attr, _de_texto in _ARMADO:
             escrito = getattr(s, attr)
             if escrito:
-                _de_la_ia(s, escrito, familia, de_esta, avisos)
+                propia = s.family if s.family not in (None, "", "elemento") else familia
+                _de_la_ia(s, escrito, propia if supuesta else familia, de_esta, avisos)
         if s.length_m is not None:
             de_esta["longitud_m"].append(_dato(s, "ia", s.length_m))
         for campo, lista in de_esta.items():
@@ -576,28 +581,41 @@ def _armado_de_textos(spec: ElementSpec, familia: str, avisos: list[str]) -> Arm
     return armado
 
 
+def _dicha(s: ElementSpec) -> bool:
+    """Si la lectura dice una familia (no «elemento» ni sólo el prefijo de su marca, R125)."""
+    return bool(s.family) and s.family != "elemento" and not s.familia_supuesta
+
+
+def _familia_supuesta(lecturas: list[ElementSpec], de_ia: list[ElementSpec]) -> bool:
+    """R125: si ninguna lectura, ni la IA, dice la familia de la marca: la de su prefijo es
+    supuesta."""
+    return not any(_dicha(s) for s in [*lecturas, *de_ia])
+
+
 def _familia(
     marca: str, lecturas: list[ElementSpec], de_ia: list[ElementSpec], avisos: list[str]
 ) -> str:
-    """La familia de una marca: la de su lectura del plano de más rango; si el plano no la lee o
-    sólo dice «elemento» (no se sabe), la que dice la IA, y se avisa (R80); si nadie la lee, la de
-    su prefijo. Si las lecturas no coinciden se dice cuáles, nunca se escoge callado."""
+    """La familia de una marca: la que dice su lectura del plano de más rango (la palabra de
+    familia de su propio título, R130, la dice); si el plano no la dice —sólo «elemento» (no se
+    sabe) o sólo el prefijo de la marca, R125—, la que dice la IA, y se avisa (R80); si nadie la
+    dice, la de su prefijo. Si las lecturas no coinciden se dice cuáles, nunca se escoge
+    callado."""
     dichas: dict[str, list[str]] = {}
     for s in [*lecturas, *de_ia]:
         if s.family and s.family != "elemento":
             quien = "IA" if s.source == "ia" else (s.hoja or "sin hoja")
             dichas.setdefault(s.family, []).append(quien)
     del_plano = sorted(lecturas, key=lambda s: -PRECEDENCIA[fuente_de_lectura(s)])
-    elegida = next((s.family for s in del_plano if s.family != "elemento"), None)
+    elegida = next((s.family for s in del_plano if _dicha(s)), None)
+    de_prefijo = next((s.family for s in del_plano if s.family != "elemento"), None)
     if elegida is None:
-        de_la_ia = next((s.family for s in de_ia if s.family != "elemento"), None)
+        de_la_ia = next((s.family for s in de_ia if _dicha(s)), None)
         if de_la_ia is not None and lecturas:
-            avisos.append(
-                f"familia: el plano no la dice («elemento»); se toma la de la IA: {de_la_ia}"
-            )
+            dice = f"sólo el prefijo de la marca: {de_prefijo}" if de_prefijo else "«elemento»"
+            avisos.append(f"familia: el plano no la dice ({dice}); se toma la de la IA: {de_la_ia}")
         elegida = de_la_ia
     if elegida is None:
-        elegida = family_of_mark(marca)
+        elegida = de_prefijo or family_of_mark(marca)
     if len(dichas) > 1:
         lista = ", ".join(f"{f} ({', '.join(dict.fromkeys(q))})" for f, q in sorted(dichas.items()))
         avisos.append(f"familia: las lecturas no coinciden — {lista}; se toma {elegida}")

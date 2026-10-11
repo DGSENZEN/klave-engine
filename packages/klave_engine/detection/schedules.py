@@ -81,6 +81,7 @@ from klave_engine.estructura.marcas import (
     leer_marcas,
     marca_en_rango,
     marca_normalizada,
+    marca_sola,
     marcas_de_ficha,
     marcas_nombradas,
     punteros,
@@ -88,7 +89,12 @@ from klave_engine.estructura.marcas import (
     titulos,
 )
 from klave_engine.estructura.reglas import leer_reglas
-from klave_engine.estructura.textos import ANCHO_POR_CARACTER, ancla_texto, caja_de_texto
+from klave_engine.estructura.textos import (
+    ANCHO_POR_CARACTER,
+    alto_de_texto,
+    ancla_texto,
+    caja_de_texto,
+)
 from klave_engine.geometry.bbox import (
     BBox,
     bbox_center,
@@ -189,6 +195,9 @@ class ElementSpec(BaseModel):
     # The section has an assumed side (one cota and a square outline taken square, or the
     # width the sheet's callouts use): a «supuesto» value, never a «detalle» one (R81).
     seccion_supuesta: bool = False
+    # R125: its family is only its mark's prefix (no text of the drawing states it): a reading
+    # that states one (the AI's included) wins over it.
+    familia_supuesta: bool = False
 
 
 class TextoConMarca(BaseModel):
@@ -825,6 +834,7 @@ def _read_associations(
             ElementSpec(
                 mark=a.marca,
                 family=family,
+                familia_supuesta=True,
                 source="cuadro" if row else "detalle",
                 metodo=a.via,
                 hoja=a.hoja,
@@ -917,11 +927,13 @@ def _parse_annotations(
                     )
                 )
                 continue
+            supuesta = family is None
             family = family or family_of_mark(mark)
             specs.append(
                 ElementSpec(
                     mark=mark,
                     family=family,
+                    familia_supuesta=supuesta,
                     source="nota",
                     metodo="nota",
                     hoja=hoja,
@@ -1068,6 +1080,7 @@ def _sections_from_detail_geometry(
             ElementSpec(
                 mark=mark,
                 family=family_of_mark(mark),
+                familia_supuesta=True,
                 section_cm=(a, b),
                 source="detalle",
                 metodo="geometria",
@@ -1174,6 +1187,7 @@ def _sections_from_section_callouts(
             ElementSpec(
                 mark=mark,
                 family=family_of_mark(mark),
+                familia_supuesta=True,
                 section_cm=largest,
                 source="detalle",
                 metodo="llamada",
@@ -1419,6 +1433,8 @@ class _Etiqueta:
     x1: float = 0.0
     y0: float = 0.0
     y1: float = 0.0
+    # R130: the family its own title's family word states («DADO\nD-3»), if any.
+    familia: str | None = None
 
 
 @dataclass
@@ -1432,6 +1448,9 @@ class _Propio:
     sin_contorno: bool = False
     # Its title spans two sections side by side and neither is clearly its own (R120): claimed.
     dudosa: bool = False
+    # R129: the gap to the nearest closed outline on its side, which is not a section: the title
+    # reaches nothing past it (a pair of cotas nearer than it may still be its section).
+    tope: float | None = None
 
 
 def _extension_del_texto(text: NormalizedEntity) -> BBox:
@@ -1467,7 +1486,7 @@ def _parece_seccion(c: _Contorno, alto_letra: float, une: float) -> bool:
     corto, largo = sorted((x1 - x0, y1 - y0))
     return (
         _es_rectangulo(_esquinas(c.puntos, une), une)
-        and corto >= _LADO_MINIMO * alto_letra
+        and corto >= _LADO_MINIMO * alto_letra * (1 - 1e-6)  # R129: float noise
         and largo <= _ESBELTEZ_MAXIMA * corto
     )
 
@@ -1480,62 +1499,144 @@ _PUNTA_DE_FLECHA = 0.6
 _LARGO_DE_FLECHA = 2.0
 
 
-class _Abiertas:
-    """The open polylines near the labels, by the grid cells of their ends, to find the leader
-    that starts or lands at a title (R124)."""
+def _distancia_tramo_caja(p: tuple[float, float], q: tuple[float, float], caja: BBox) -> float:
+    """How far the segment ``p``–``q`` passes from the box (0 when it touches or crosses it)."""
+    x0, y0, x1, y1 = caja
 
-    def __init__(self, lineas: list[NormalizedEntity], celda: float) -> None:
+    def a_la_caja(r: tuple[float, float]) -> float:
+        return math.hypot(max(x0 - r[0], 0.0, r[0] - x1), max(y0 - r[1], 0.0, r[1] - y1))
+
+    def al_tramo(r: tuple[float, float]) -> float:
+        dx, dy = q[0] - p[0], q[1] - p[1]
+        largo = dx * dx + dy * dy
+        t = (
+            0.0
+            if largo == 0
+            else max(0.0, min(1.0, ((r[0] - p[0]) * dx + (r[1] - p[1]) * dy) / largo))
+        )
+        return math.dist(r, (p[0] + t * dx, p[1] + t * dy))
+
+    if (
+        min(p[0], q[0]) <= x1
+        and max(p[0], q[0]) >= x0
+        and min(p[1], q[1]) <= y1
+        and max(p[1], q[1]) >= y0
+    ):
+        # Its box meets the box: it crosses it unless it passes beside a corner.
+        pasos = 16
+        if any(
+            a_la_caja((p[0] + (q[0] - p[0]) * k / pasos, p[1] + (q[1] - p[1]) * k / pasos)) == 0
+            for k in range(pasos + 1)
+        ):
+            return 0.0
+    esquinas = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)]
+    return min(a_la_caja(p), a_la_caja(q), *(al_tramo(r) for r in esquinas))
+
+
+class _Abiertas:
+    """The leaders among the open polylines near the titles (R124, R128), by the grid cells
+    their landing runs through: a LEADER or a MULTILEADER (open polylines from the normalizer;
+    either end segment can be the landing), or one drawn as an open polyline of three vertices —
+    a horizontal landing and a slanted segment to what it points at."""
+
+    def __init__(self, lineas: list[NormalizedEntity], celda: float, tol: float) -> None:
         self.celda = max(celda, 1e-6)
-        self.trazos: list[tuple[NormalizedEntity, list[tuple[float, float]]]] = []
+        self.apoyos: list[tuple[NormalizedEntity, list[tuple[float, float]], tuple[int, int]]] = []
         self.rejilla: dict[tuple[int, int], list[int]] = defaultdict(list)
         for linea in lineas:
             puntos = [(float(q[0]), float(q[1])) for q in linea.points or []]
             if len(puntos) < 2:
                 continue
-            for x, y in (puntos[0], puntos[-1]):
-                self.rejilla[(int(x // self.celda), int(y // self.celda))].append(len(self.trazos))
-            self.trazos.append((linea, puntos))
+            if linea.properties.get("derived_from") in ("LEADER", "MULTILEADER"):
+                tramos = [(0, 1), (len(puntos) - 2, len(puntos) - 1)]
+            elif len(puntos) == 3:
+                tramos = [
+                    (1, c)
+                    for a, c in ((0, 2), (2, 0))
+                    if abs(puntos[c][1] - puntos[1][1]) <= tol < abs(puntos[c][0] - puntos[1][0])
+                    and abs(puntos[a][0] - puntos[1][0]) > tol
+                    and abs(puntos[a][1] - puntos[1][1]) > tol
+                ]
+            else:
+                continue
+            for tramo in dict.fromkeys(tramos):
+                (ax, ay), (bx, by) = puntos[tramo[0]], puntos[tramo[1]]
+                n = len(self.apoyos)
+                self.apoyos.append((linea, puntos, tramo))
+                for i in range(int(min(ax, bx) // self.celda), int(max(ax, bx) // self.celda) + 1):
+                    for j in range(
+                        int(min(ay, by) // self.celda), int(max(ay, by) // self.celda) + 1
+                    ):
+                        self.rejilla[(i, j)].append(n)
 
-    def flecha_de(self, e: _Etiqueta) -> NormalizedEntity | None:
-        """The leader that starts or lands at ``e``'s text, if any: a LEADER (an open polyline
-        from the normalizer) or one drawn as an open polyline of three vertices — a horizontal
-        landing at the title and a slanted segment to what it points at; one end within
-        ``_PUNTA_DE_FLECHA`` heights of the text and a vertex ``_LARGO_DE_FLECHA`` or more away.
-        Where it points is not read (E3)."""
-        punta, tol = _PUNTA_DE_FLECHA * e.alto, _SOBRE_ARISTA * e.alto
-
-        def lejania(q: tuple[float, float]) -> float:
-            return math.hypot(
-                max(e.x0 - q[0], 0.0, q[0] - e.x1), max(e.y0 - q[1], 0.0, q[1] - e.y1)
-            )
-
+    def flecha_de(self, caja: BBox, alto: float) -> NormalizedEntity | None:
+        """The leader whose landing runs under, meets or crosses the title's real text (R128: the
+        whole landing segment, within ``_PUNTA_DE_FLECHA`` heights, not only its end) and that
+        reaches ``_LARGO_DE_FLECHA`` heights or more away from it. Where it points is not read
+        (E3)."""
+        punta = _PUNTA_DE_FLECHA * alto
+        x0, y0, x1, y1 = caja
         vistos: set[int] = set()
-        for i in range(int((e.x0 - punta) // self.celda), int((e.x1 + punta) // self.celda) + 1):
-            for j in range(
-                int((e.y0 - punta) // self.celda), int((e.y1 + punta) // self.celda) + 1
-            ):
+        for i in range(int((x0 - punta) // self.celda), int((x1 + punta) // self.celda) + 1):
+            for j in range(int((y0 - punta) // self.celda), int((y1 + punta) // self.celda) + 1):
                 for n in self.rejilla.get((i, j), ()):
                     if n in vistos:
                         continue
                     vistos.add(n)
-                    linea, puntos = self.trazos[n]
-                    if linea.properties.get("derived_from") == "LEADER":
-                        extremos = [puntos[0], puntos[-1]]
-                    elif len(puntos) == 3:
-                        extremos = [
-                            c
-                            for a, b, c in (puntos, puntos[::-1])
-                            if abs(c[1] - b[1]) <= tol < abs(c[0] - b[0])
-                            and abs(a[0] - b[0]) > tol
-                            and abs(a[1] - b[1]) > tol
-                        ]
-                    else:
-                        continue
-                    if any(lejania(q) <= punta for q in extremos) and any(
-                        lejania(q) >= _LARGO_DE_FLECHA * e.alto for q in puntos
+                    linea, puntos, (a, b) = self.apoyos[n]
+                    if _distancia_tramo_caja(puntos[a], puntos[b], caja) <= punta and any(
+                        _distancia_tramo_caja(q, q, caja) >= _LARGO_DE_FLECHA * alto for q in puntos
                     ):
                         return linea
         return None
+
+
+# R128: a title, for a leader's claim, is a text made only of family words, marks and connectors
+# («DADO\nD-1A», «DADO D-1B / O D-1C», «PILOTE\nP-3»), of any length; its family word states the
+# family of its marks (R130).
+_PALABRAS_DE_FAMILIA: list[tuple[str, re.Pattern[str]]] = [
+    ("dado", re.compile(r"DADOS?")),
+    ("pilote", re.compile(r"PILOTES?")),
+    ("castillo", re.compile(r"CASTILLOS?")),
+    ("columna", re.compile(r"COLUMNAS?")),
+    ("contratrabe", re.compile(r"CONTRATRABES?")),
+    ("trabe", re.compile(r"TRABES?")),
+    ("dala", re.compile(r"DALAS?|CADENAS?")),
+    ("zapata", re.compile(r"ZAPATAS?")),
+    ("muro", re.compile(r"MUROS?")),
+    ("losa", re.compile(r"LOSAS?")),
+    ("cerramiento", re.compile(r"CERRAMIENTOS?")),
+]
+_CONECTORES = frozenset({"O", "Y", "E", "U", "&", "-"})
+
+
+def _familia_de_titulo(familia: str | None, marca: str) -> str | None:
+    """The family a title's word states for ``marca`` (R130); «MURO» over a muro de concreto
+    (MC-1) says what its prefix says, more precisely."""
+    if familia == "muro" and family_of_mark(marca) == "muro_concreto":
+        return "muro_concreto"
+    return familia
+
+
+def _titulo(texto: str, config: TextPatternConfig) -> tuple[list[str], str | None] | None:
+    """The marks of a title made only of family words, marks and connectors (R128), and the
+    family its family word states (R130); None if any word is something else."""
+    marcas: list[str] = []
+    familia: str | None = None
+    for ficha in re.split(r"[\s/,;:()]+", texto.upper()):
+        if not ficha or ficha in _CONECTORES:
+            continue
+        de_familia = next(
+            (f for f, patron in _PALABRAS_DE_FAMILIA if patron.fullmatch(ficha)), None
+        )
+        if de_familia is not None:
+            familia = familia or de_familia
+            continue
+        marca = marca_sola(ficha, config)
+        if marca is None:
+            return None
+        marcas.append(marca)
+    return (list(dict.fromkeys(marcas)), familia) if marcas else None
 
 
 def _solape(e: _Etiqueta, c: _Contorno) -> float:
@@ -1561,19 +1662,21 @@ def _propio(
     etiquetas: list[_Etiqueta],
     contornos: list[_Contorno],
     es_seccion: Callable[[_Contorno, _Etiqueta], bool] | None = None,
+    topes: dict[str, float] | None = None,
 ) -> dict[str, _Propio]:
     """Each label's own outline (R81), by its entity id, with why there is none. An outline (or
     pair rectangle) is a label's when the label's text really lies over it (R120: its
     alignment-aware extent overlaps the outline's x-range by at least ``_ENCIMA_MINIMO`` of the
-    text, R123; never an anchor or an estimated centre), it is a section (``es_seccion``, R123:
-    a sliver, a wall strip, an octagon or a symbol without cotas is not), it is the nearest such
-    outline on the side its sheet's convention puts the section,
-    within reach, and no other label lies over it as much: of two labels nearest one outline,
-    the larger overlap wins only by ``_MARGEN`` (as R54); otherwise it is both labels' and
-    neither's (claimed, ``otras``). A title over two sections side by side at that distance
-    takes the one it overlaps clearly more, else neither (claimed, ``dudosa``); one another
-    label clearly owns is not among them. The convention is the side (above or below the label)
-    on which more labels of the sheet own an outline."""
+    text, R123; never an anchor or an estimated centre), it is a section (``es_seccion``, R123,
+    R129: a sliver, a wall strip, an octagon, a symbol, a trapezoid or a rotated outline is
+    not), it is the nearest closed outline on the side its sheet's convention puts the section,
+    within reach — a title never reaches past the nearest one, section or not (R129; ``topes``
+    bounds a label's reach for the pairs of cotas) — and no other label lies over it as much: of
+    two labels nearest one outline, the larger overlap wins only by ``_MARGEN`` (as R54);
+    otherwise it is both labels' and neither's (claimed, ``otras``). A title over two sections
+    side by side at that distance takes the one it overlaps clearly more, else neither (claimed,
+    ``dudosa``); one another label clearly owns is not among them. The convention is the side
+    (above or below the label) on which more labels of the sheet own an outline."""
     por_hoja: dict[str, list[_Etiqueta]] = defaultdict(list)
     for e in etiquetas:
         por_hoja[e.llave].append(e)
@@ -1598,36 +1701,44 @@ def _propio(
             de[e.texto.entity_id] = igual
 
         def hueco(e: _Etiqueta, c: _Contorno, lado: int) -> float | None:
-            """The gap from the label to the section on ``lado``, if its text lies over it."""
+            """The gap from the label to the outline on ``lado``, if its text lies over it."""
             x0, y0, x1, y1 = c.caja
             if _solape(e, c) < _ENCIMA_MINIMO or max(x1 - x0, y1 - y0) > _TAMANO * e.alto:
                 return None
             h = y0 - e.y if lado > 0 else e.y - y1
-            if not 0 < h <= _ALCANCE * e.alto:
-                return None
-            return h if es_seccion is None or es_seccion(c, e) else None
+            tope = (topes or {}).get(e.texto.entity_id, math.inf)
+            return h if 0 < h <= _ALCANCE * e.alto and h < tope else None
 
-        def mas_cercanos(e: _Etiqueta, lado: int) -> list[_Contorno]:
-            """The outlines nearest the label on ``lado`` that its text lies over: one, or
+        def mas_cercanos(e: _Etiqueta, lado: int) -> tuple[list[_Contorno], float | None]:
+            """The sections nearest the label on ``lado`` that its text lies over: one, or
             several side by side at that distance (of outlines one inside another, the
-            largest)."""
+            largest); or none, with its gap, when the nearest closed outline is not a section
+            (R129: the title does not reach past it)."""
             candidatos = [(h, c) for c in contornos if (h := hueco(e, c, lado)) is not None]
             if not candidatos:
-                return []
+                return [], None
             minimo = min(h for h, _c in candidatos)
             cerca = sorted(
-                (c for h, c in candidatos if h - minimo <= _SOBRE_ARISTA * e.alto),
+                (
+                    c
+                    for h, c in candidatos
+                    if h - minimo <= _SOBRE_ARISTA * e.alto
+                    and (es_seccion is None or es_seccion(c, e))
+                ),
                 key=lambda c: -_area(c.puntos),
             )
+            if not cerca:
+                return [], minimo
             aparte: list[_Contorno] = []
             for c in cerca:
                 if all(min(c.caja[2], o.caja[2]) - max(c.caja[0], o.caja[0]) <= 0 for o in aparte):
                     aparte.append(c)
-            return aparte
+            return aparte, None
 
         def resolver(lado: int, representantes: list[_Etiqueta]) -> dict[int, _Propio | None]:
             """Each label's outline on ``lado`` (None: it finds none there)."""
-            cercanos = {id(r): mas_cercanos(r, lado) for r in representantes}
+            vistos = {id(r): mas_cercanos(r, lado) for r in representantes}
+            cercanos = {clave: v[0] for clave, v in vistos.items()}
             quienes: dict[int, list[_Etiqueta]] = defaultdict(list)
             for r in representantes:
                 for c in cercanos[id(r)]:
@@ -1638,7 +1749,17 @@ def _propio(
                     if id(c) not in gana:
                         gana[id(c)] = _por_solape([(_solape(o, c), o) for o in quienes[id(c)]])
             resultado: dict[int, _Propio | None] = {}
+            donde = "encima" if lado > 0 else "debajo"
             for r in representantes:
+                tope = vistos[id(r)][1]
+                if tope is not None:
+                    resultado[id(r)] = _Propio(
+                        None,
+                        f"lo más cercano dibujado {donde} no es una sección: no se toma lo que "
+                        "está más allá",
+                        tope=tope,
+                    )
+                    continue
                 if not cercanos[id(r)]:
                     resultado[id(r)] = None
                     continue
@@ -1679,11 +1800,14 @@ def _propio(
                 )
             else:
                 # Sin convención en la hoja: sólo si la etiqueta tiene sección de un solo lado.
-                lados = [p for p in (por_lado[1][id(r)], por_lado[-1][id(r)]) if p is not None]
+                ambos = [p for p in (por_lado[1][id(r)], por_lado[-1][id(r)]) if p is not None]
+                lados = [p for p in ambos if p.tope is None]
                 if len(lados) == 1:
                     propio = lados[0]
                 elif lados:
                     propio = _Propio(None, "tiene una sección dibujada encima y otra debajo")
+                elif ambos:
+                    propio = min(ambos, key=lambda p: p.tope or 0.0)
                 else:
                     propio = _Propio(None, "no se encontró su sección dibujada", sin_contorno=True)
             for e in grupo:
@@ -2019,7 +2143,6 @@ def _sections_from_detail_cotas(
     rechazos: list[Rechazo] | None = None,
     duenos: Collection[str] = (),
     dibujadas: Collection[str] = (),
-    flechas: list[tuple[str, ElementSpec]] | None = None,
 ) -> list[ElementSpec]:
     """A cuadro or detail label's section from ITS OWN drawn section (R81): the closed
     outline (polylines and lines joined end to end, block contents included) nearest
@@ -2035,21 +2158,23 @@ def _sections_from_detail_cotas(
     disagreement stays visible. With one cota only, a square outline of a cuadro is
     taken square, and a missing width is the one the sheet's callouts use for that
     family — both assumed (``seccion_supuesta``, a «supuesto» value, never a
-    «detalle» one). A non-rectangular outline gives no rectangle: an aviso with its
-    box and area, and a rejection. Without any closed outline where its section
-    goes, the section is the rectangle of a pair of cotas sharing a corner whose
-    edges the drawing draws (R106, ``_pares_de_cotas``), owned by the same side and
-    claim rule. No section from cotas (no nearest dimension is ever taken) is said
-    and the section claimed, so nothing fills it from elsewhere, whenever the label
-    owns a drawn section (R123) or one that carries a cota, two labels reach one
-    section (every claimant, R111) or its title lies over two (R120), and where the
-    old nearest-cota reader read one. A label that owns a stack (``duenos``) is a
-    candidate even with no armado near it (R111). A label whose section the drawing
-    draws at real size is read by ``_sections_from_detail_geometry``
-    (``dibujadas``): its drawn section without cotas is not claimed here (R123
-    blocks what fills it from elsewhere, not the reading of that drawing). A title a
-    leader starts or lands at whose section is read nowhere is claimed «señalada por
-    flecha» (R124, ``flechas``; where it points is E3)."""
+    «detalle» one). A non-rectangular outline (a trapezoid, a rotated one) is never
+    a section, nor a sliver, a strip, an octagon or a symbol without cotas; the
+    nearest closed outline, section or not, ends the title's reach (R129). Without
+    any closed outline where its section goes, the section is the rectangle of a
+    pair of cotas sharing a corner whose edges the drawing draws (R106,
+    ``_pares_de_cotas``), owned by the same side and claim rule. No section from
+    cotas (no nearest dimension is ever taken) is said and the section claimed, so
+    nothing fills it from elsewhere, whenever the label owns a drawn section (R123)
+    or one that carries a cota, two labels reach one section (every claimant, R111)
+    or its title lies over two (R120), and where the old nearest-cota reader read
+    one. A label that owns a stack (``duenos``) is a candidate even with no armado
+    near it (R111). A label whose section the drawing draws at real size is read by
+    ``_sections_from_detail_geometry`` (``dibujadas``): its drawn section without
+    cotas is not claimed here (R123 blocks what fills it from elsewhere, not the
+    reading of that drawing). A title a leader starts or lands at whose section is
+    read nowhere is claimed «señalada por flecha» (R124, ``flechas``; where it
+    points is E3)."""
     dims = [e for e in entities if e.entity_type == EntityType.dimension]
     if not dims:
         return []
@@ -2098,6 +2223,7 @@ def _sections_from_detail_cotas(
                 x1=x1,
                 y0=y0,
                 y1=y1,
+                familia=_familia_de_titulo((_titulo(content, config) or ([], None))[1], mark),
             )
         )
     if not etiquetas:
@@ -2118,8 +2244,10 @@ def _sections_from_detail_cotas(
     con_cotas: dict[tuple[int, float], bool] = {}
 
     def es_seccion(c: _Contorno, e: _Etiqueta) -> bool:
-        """R123: an outline is a section when it looks like one or carries a cota on its
-        edges."""
+        """R123, R129: an outline is a section when it is a rectangle (a trapezoid or a rotated
+        one is not) that looks like one or carries a cota on its edges."""
+        if not _es_rectangulo(_esquinas(c.puntos, _UNE * alto), _UNE * alto):
+            return False
         if _parece_seccion(c, e.alto, _UNE * alto):
             return True
         clave = (id(c), e.alto)
@@ -2131,7 +2259,13 @@ def _sections_from_detail_cotas(
     propios = _propio(etiquetas, contornos, es_seccion)
     # R106: the labels with no closed outline where their section goes, against the rectangles
     # of pairs of cotas, by the same side and claim rule.
-    sin_contorno = [e for e in etiquetas if propios[e.texto.entity_id].sin_contorno]
+    sin_contorno = [
+        e
+        for e in etiquetas
+        if propios[e.texto.entity_id].sin_contorno or propios[e.texto.entity_id].tope is not None
+    ]
+    # R129: a pair of cotas past the nearest closed outline is out of reach too.
+    topes = {i: p.tope for i, p in propios.items() if p.tope is not None and not p.sin_contorno}
     pares: dict[int, _Par] = {}
     de_par: dict[str, _Propio] = {}
     if sin_contorno:
@@ -2155,7 +2289,7 @@ def _sections_from_detail_cotas(
             _TAMANO * alto,
         )
         pares = {id(par.contorno): par for par in lista}
-        de_par = _propio(sin_contorno, [par.contorno for par in lista])
+        de_par = _propio(sin_contorno, [par.contorno for par in lista], topes=topes)
 
     specs: list[ElementSpec] = []
     for e in etiquetas:
@@ -2174,21 +2308,6 @@ def _sections_from_detail_cotas(
             alto,
             leida_a_escala=e.texto.entity_id in dibujadas,
         )
-    if flechas is not None:
-        # R124: a title a leader starts or lands at, whose section is not read here, is a
-        # candidate claim (``build_schedule_inventory`` keeps it if nothing reads the mark).
-        con_valor = {i for s in specs if s.section_cm is not None for i in s.entidades}
-        abiertas = _Abiertas(
-            [x for x in segmentos if x.entity_type == EntityType.polyline and not x.is_closed],
-            4 * alto,
-        )
-        for e in etiquetas:
-            if e.texto.entity_id in con_valor or abiertas.flecha_de(e) is None:
-                continue
-            aviso = f"sección: {_SENALADA}"
-            flechas.append(
-                (e.texto.entity_id, _lectura_de_cotas(e, sheet, None, [aviso], _SENALADA))
-            )
     return specs
 
 
@@ -2245,7 +2364,8 @@ def _lectura_de_cotas(
     hoja, llave = sheet(e.texto)
     return ElementSpec(
         mark=e.marca,
-        family=family_of_mark(e.marca),
+        family=e.familia or family_of_mark(e.marca),
+        familia_supuesta=e.familia is None,
         section_cm=section,
         source="detalle",
         metodo=metodo,
@@ -2337,30 +2457,8 @@ def _seccion_de_etiqueta(
     # like one (``_parece_seccion``; without cotas it is owned only then), unless the section
     # drawn at real size is read (``leida_a_escala``).
     reclama = _parece_seccion(propio, e.alto, _UNE * alto) and not leida_a_escala
-    esquinas = _esquinas(propio.puntos, _UNE * alto)
     horizontales, verticales, avisos = _cotas_de_arista(propio, dims, tol, unit_to_m)
     con_cota = bool(horizontales or verticales or avisos)  # its own section carries a cota
-    if not _es_rectangulo(esquinas, _UNE * alto):
-        medidas = sorted({f"{v:g}" for *_t, v in horizontales + verticales})
-        aviso = (
-            f"sección no rectangular ({len(esquinas)} vértices): caja "
-            f"{w * unit_to_m:.3f} × {h * unit_to_m:.3f} m y área "
-            f"{_area(propio.puntos) * unit_to_m**2:.4f} m² en el dibujo; cotas en sus aristas: "
-            f"{', '.join(medidas) or 'ninguna'}: no se toma un rectángulo"
-        )
-        if not reclama and not con_cota and not cercanas:
-            return []
-        if rechazos is not None:
-            rechazos.append(
-                Rechazo(
-                    entidad_id=e.texto.entity_id,
-                    texto=(e.texto.text or "").strip(),
-                    hoja=sheet(e.texto)[0],
-                    motivo="sin_lector",
-                    marcas=[e.marca],
-                )
-            )
-        return [_lectura_de_cotas(e, sheet, None, [*avisos, aviso], "sección no rectangular")]
     ancho, como_ancho = _lado(horizontales, x0, x1, tol)
     peralte, como_peralte = _lado(verticales, y0, y1, tol)
     for valor, nombre, como in ((ancho, "ancho", como_ancho), (peralte, "peralte", como_peralte)):
@@ -2629,24 +2727,104 @@ def _marcas_del_plano(texts: list[NormalizedEntity], config: TextPatternConfig) 
     return dict(sorted(cuenta.items()))
 
 
+def _flechas_de_titulos(
+    entities: list[NormalizedEntity],
+    config: TextPatternConfig,
+    detail_boxes: list[BBox],
+    sheet: Sheet,
+    etiquetas: Collection[str],
+) -> list[tuple[str, ElementSpec]]:
+    """R124, R128: the titles a leader starts or lands at — texts made only of family words,
+    marks and connectors (``_titulo``), of any length, inside a detail or labels of the cotas
+    reader — each mark a candidate claim «señalada por flecha», with the family its title
+    states (R130). Which of them stand is ``_senaladas_por_flecha``'s call."""
+    titulos: list[tuple[NormalizedEntity, list[str], str | None, BBox, float]] = []
+    for text in entities:
+        if not text.is_textual or not text.text:
+            continue
+        leido = _titulo(text.text, config)
+        if leido is None:
+            continue
+        centro = bbox_center(text.bbox)
+        if text.entity_id not in etiquetas and not any(
+            bbox_contains_point(box, centro) for box in detail_boxes
+        ):
+            continue
+        alto = bbox_height(text.bbox) or alto_de_texto(text)
+        titulos.append((text, leido[0], leido[1], _extension_del_texto(text), alto))
+    if not titulos:
+        return []
+    mediana = statistics.median(t[4] for t in titulos)
+    ventanas = [
+        (c[0] - _PUNTA_DE_FLECHA * h, c[1] - _PUNTA_DE_FLECHA * h,
+         c[2] + _PUNTA_DE_FLECHA * h, c[3] + _PUNTA_DE_FLECHA * h)
+        for _t, _m, _f, c, h in titulos
+    ]  # fmt: skip
+    abiertas = _Abiertas(
+        [
+            x
+            for x in _cerca_de(entities, ventanas)
+            if x.entity_type == EntityType.polyline and not x.is_closed
+        ],
+        4 * mediana,
+        _SOBRE_ARISTA * mediana,
+    )
+    con_flecha = [
+        (t, flecha) for t in titulos if (flecha := abiertas.flecha_de(t[3], t[4])) is not None
+    ]
+    # Texts that share one leader are one title («DADO D-1B» over the landing, «O D-1C» under it):
+    # the family word of one states the family of all (R130).
+    de_la_flecha: dict[str, str] = {}
+    for (_t, _m, familia, _c, _h), flecha in con_flecha:
+        if familia is not None:
+            de_la_flecha.setdefault(flecha.entity_id, familia)
+    salida: list[tuple[str, ElementSpec]] = []
+    for (text, marcas, familia, caja, alto), flecha in con_flecha:
+        familia = familia or de_la_flecha.get(flecha.entity_id)
+        for marca in marcas:
+            e = _Etiqueta(
+                texto=text,
+                marca=marca,
+                x=(caja[0] + caja[2]) / 2,
+                y=(caja[1] + caja[3]) / 2,
+                alto=alto,
+                llave=sheet(text)[1],
+                en_detalle=True,
+                familia=_familia_de_titulo(familia, marca),
+            )
+            aviso = f"sección: {_SENALADA}"
+            salida.append((text.entity_id, _lectura_de_cotas(e, sheet, None, [aviso], _SENALADA)))
+    return salida
+
+
 def _senaladas_por_flecha(
     specs: list[ElementSpec], flechas: list[tuple[str, ElementSpec]]
 ) -> list[ElementSpec]:
-    """R124: a title a leader starts or lands at, whose mark's section nothing in the drawing
-    reads (no reading of the mark with a section but the AI's; a family note is the family's
-    fallback, not the mark's reading, and does not stop the AI), claims it: ilegible, «señalada
-    por flecha; se lee en E3», so the AI does not fill what the drawing points at. Its own
-    claimed readings, if any, say so; otherwise the claim is added. Where the leader points is
-    E3."""
+    """R124, R128: a title a leader starts or lands at claims each of its marks whose section
+    nothing in the drawing reads: ilegible, «señalada por flecha; se lee en E3», so the AI does
+    not fill what the drawing points at. It is a block on the AI only: it stands only when no
+    reading of the mark but the AI's gives a section and no note of the mark's family does (the
+    family's note reads it: CE-5's 15×25), so it never outranks and erases a value the drawing
+    reads. The title's own claimed readings of that mark, if any, say so; otherwise the claim is
+    added. Where the leader points is E3."""
     if not flechas:
         return specs
     leidas = {s.mark for s in specs if s.section_cm is not None and s.source != "ia"}
+    familias = {
+        s.family
+        for s in specs
+        if s.source == "nota" and s.mark == s.family.upper() and s.section_cm is not None
+    }
     salida = list(specs)
     for entidad, reclamo in flechas:
-        if reclamo.mark in leidas:
+        if reclamo.mark in leidas or reclamo.family in familias:
             continue
         aviso = reclamo.avisos[0]
-        suyas = [s for s in salida if s.metodo == "cotas" and entidad in s.entidades]
+        suyas = [
+            s
+            for s in salida
+            if s.metodo == "cotas" and entidad in s.entidades and s.mark == reclamo.mark
+        ]
         for s in suyas:
             if aviso not in s.avisos:
                 s.avisos.append(aviso)
@@ -2821,7 +2999,10 @@ def build_schedule_inventory(
                 de_cotas,
                 set(labels),
                 dibujadas,
-                flechas,
+            )
+            # R124, R128: the titles a leader starts or lands at, each mark a candidate claim.
+            flechas = _flechas_de_titulos(
+                entities, config, detail_boxes or [], sheet, {*cuadro_marks, *labels}
             )
             rechazos = rechazos + de_cotas
             inventory_cuadro_marks = cuadro_marks

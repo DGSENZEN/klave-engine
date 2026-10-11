@@ -32,8 +32,19 @@ FRAGMENTO_TRAS_LA_COMA = (
     r"))"
 )
 _FRONTERA_DEL_DECIMAL = r"(?=$|[\s;:)|,]|\.(?!\d)|(?i:CMS?)\b)"
+# R131: una ficha de varilla («#3», «Ø», «3/8», una palabra de varilla que el parser no lee
+# como cuenta: «VRS», «VS», «PZS»…) en las dos fichas que siguen a las cifras: la coma nunca es
+# decimal («15X20,4 VRS #3», «15X20,4 DE 3/8»); si nada que el parser reconozca empieza en
+# ellas, la sección se cita y se reclama.
+_VARILLA_CERCA = (
+    r"(?i:\d{1,2}\s+(?:\S+\s+)?(?:#\s*\d|Ø|%%C|\d{1,2}\s*/\s*\d{1,2}(?![\d/])"
+    r"|(?:VARILLAS?|VARS?|VRS?|VS|PZAS?|PZS|PIEZAS?)\.?(?![A-Z])))"
+)
 LADO = r"\d{1,3}(?:[.,]\d+)?"
-LADO_FINAL = rf"\d{{1,3}}(?:\.\d+|,(?!{FRAGMENTO_TRAS_LA_COMA})\d{{1,2}}{_FRONTERA_DEL_DECIMAL})?"
+LADO_FINAL = (
+    rf"\d{{1,3}}(?:\.\d+|,(?!{FRAGMENTO_TRAS_LA_COMA})(?!{_VARILLA_CERCA})"
+    rf"\d{{1,2}}{_FRONTERA_DEL_DECIMAL})?"
+)
 # La coma que sigue a una sección y no es ni separador ni decimal («15X20,4A»).
 SECCION_CON_COMA_DUDOSA = re.compile(rf",(?!{FRAGMENTO_TRAS_LA_COMA})\d")
 _PALABRAS = (
