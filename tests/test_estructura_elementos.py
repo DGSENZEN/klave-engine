@@ -564,6 +564,15 @@ def test_the_detectors_word_on_the_span_is_said_on_the_element():
     assert els[c.detection_id].longitud_m is None
 
 
+def test_a_doubtful_marker_is_said_on_the_element():
+    # R166: el detector conserva el marcador que otra marca alcanza casi igual de cerca y lo dice;
+    # el elemento lo repite (PRUEBA-1: los K-0 sobre el 15×30 de K-2).
+    aviso = "marcador dudoso: el marcador tomado (polilínea de 0.045 u²) está a 0.066 de esta (…)"
+    k = _tag("K-0", x=0.0, marcador_dudoso=aviso)
+    (el,) = _construir([k], _seg({k.detection_id: "v_pa"}), {}, {})
+    assert aviso in el.avisos
+
+
 def test_a_doubtful_view_is_said_on_the_element():
     # R165: la segmentación dice «vista dudosa» de lo que quedó casi igual de cerca de dos títulos
     # sin dibujo que decida: el elemento lo repite.

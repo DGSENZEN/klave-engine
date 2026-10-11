@@ -170,3 +170,30 @@ def test_a_castillos_outline_beats_its_own_fill():
     (tag,) = detect_columns(entidades, SpatialIndex(entidades)).detections
     assert tag.source_entities[1] in ("ent_000001", "ent_000002")  # un cuadro, nunca el relleno
     assert tag.properties["contorno_area_du2"] == pytest.approx(0.23, abs=1e-6)
+
+
+@pytest.mark.parametrize("x_k2", [-10.8, -11.4])
+def test_a_marker_another_marks_tag_reaches_as_near_is_flagged(x_k2):
+    # R166 (PRUEBA-1, -10.25, -53.37, coordenadas redondeadas): el 15×30 de K-2 está a 0.066 de la
+    # caja de K-0 y a 0.070 de la de K-2; el círculo de K-0, a 0.110. El valor se conserva y las dos
+    # etiquetas dicen «marcador dudoso», con su siguiente candidato. Con K-2 lejos, nada que decir.
+    k0 = _texto("ent_000009", "K-0", (-10.253, -53.372))
+    k2 = _texto("ent_000008", "K-2", (x_k2, -53.05))
+    rectangulo = _rect("ent_000001", -10.73, -53.339, -10.58, -53.039, layer="castillos")
+    propiedades = {"center": (-10.502, -53.192), "radius": 0.07}
+    caja = (-10.572, -53.262, -10.432, -53.122)
+    circulo = _ent("ent_000002", EntityType.circle, caja, properties=propiedades, layer="castillos")
+    entidades = [k0, k2, rectangulo, circulo]
+    salida = detect_columns(entidades, SpatialIndex(entidades), config=_metros())
+    tags = {d.label: d for d in salida.detections}
+    assert tags["K-0"].source_entities[1] == "ent_000001"
+    assert tags["K-0"].properties["section_area_du2"] == pytest.approx(0.045, abs=1e-9)
+    if x_k2 == -10.8:
+        assert tags["K-0"].properties["marcador_dudoso"] == (
+            "marcador dudoso: el marcador tomado (polilínea de 0.045 u²) está a 0.066 de esta "
+            "etiqueta y a 0.070 de «K-2», otra marca; el siguiente: círculo de 0.01539 u² a "
+            "0.110; se conserva"
+        )
+        assert "«K-0»" in tags["K-2"].properties["marcador_dudoso"]
+    else:
+        assert "marcador_dudoso" not in tags["K-0"].properties

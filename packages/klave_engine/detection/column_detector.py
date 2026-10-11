@@ -21,6 +21,7 @@ from klave_engine.detection.results import (
 )
 from klave_engine.detection.text_patterns import TextPatternConfig, match_category
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
+from klave_engine.dxf.text_extent import alto_de_texto
 from klave_engine.geometry.bbox import bbox_area, bbox_center
 from klave_engine.geometry.forma import Formas, cerrada_por_geometria
 from klave_engine.geometry.measurements import polygon_area
@@ -132,6 +133,9 @@ def detect_columns(
 
     formas = Formas(entities)
     con_marcador: list[tuple[int, str]] = []  # (the tag's detection, its marker)
+    # R166: each tag with a marker, for «marcador dudoso»: (its detection, its text, the distance
+    # to its marker, its other candidates as (distance, id)).
+    elegidos: list[tuple[int, NormalizedEntity, float, list[tuple[float, str]]]] = []
     for entity in entities:
         if not entity.is_textual or not entity.text:
             continue
@@ -193,7 +197,11 @@ def detect_columns(
             # castillo's outline and its fill are one symbol, and the outline is what R142 reads.
             if not all(m[0] for m in markers):
                 markers = [m for m in markers if not m[0]]
-            marker_id = min(m[1:] for m in markers)[2]
+            orden = sorted(m[1:] for m in markers)
+            marker_id = orden[0][2]
+            elegidos.append(
+                (len(output.detections), entity, orden[0][0], [(d, i) for d, _a, i in orden[1:]])
+            )
         if marker_id is not None:
             features[MARKER] = 1.0
             source_entities.append(marker_id)
@@ -225,6 +233,7 @@ def detect_columns(
                 entity.source_file,
             )
         )
+    _marcadores_dudosos(output, elegidos, index, formas, text_config)
     # R142, R150: each polygon marker's outline, without the other tags' markers.
     marcadores = {marker_id for _i, marker_id in con_marcador}
     for i, marker_id in con_marcador:
@@ -232,3 +241,64 @@ def detect_columns(
             _contorno(index.get(marker_id), index, marcadores - {marker_id})
         )
     return output
+
+
+# R166: half a text height (see ``_marcadores_dudosos``).
+_MARGEN_DE_MARCADOR = 0.5
+
+
+def _marcadores_dudosos(
+    output: DetectorOutput,
+    elegidos: list[tuple[int, NormalizedEntity, float, list[tuple[float, str]]]],
+    index: SpatialIndex,
+    formas: Formas,
+    text_config: TextPatternConfig,
+) -> None:
+    """R166: a marker that a tag of another mark reaches about as near — within half a text
+    height of this tag's distance, the width the text box may exceed the drawn letters by on a
+    side — may be that tag's (PRUEBA-1: K-0 at 0.066 and K-2 at 0.065 from K-2's 15×30, while
+    K-0's circle lies at 0.109; K-0's box is 0.065 wider on the left than its «K»). The value is
+    kept; the tag says «marcador dudoso» with the other tag and its own next candidate."""
+    for i, etiqueta, distancia, siguientes in elegidos:
+        detection = output.detections[i]
+        marcador = detection.source_entities[-1]
+        marca = (etiqueta.text or "").strip()
+        margen = _MARGEN_DE_MARCADOR * alto_de_texto(etiqueta)
+        otras: list[tuple[float, str]] = []
+        for hit in index.entities_near_entity(marcador, distancia + margen):
+            otra = index.get(hit.entity_id)
+            if otra.entity_id == etiqueta.entity_id or not otra.is_textual or not otra.text:
+                continue
+            if otra.text.strip() == marca:
+                continue
+            if match_category(otra.text, text_config, "column_tag") is None:
+                continue
+            d = formas.distancia(otra, index.get(marcador))
+            if d <= distancia + margen:
+                otras.append((d, otra.text.strip()))
+        if not otras:
+            continue
+        d_otra, otra_marca = min(otras)
+        siguiente = (
+            f"el siguiente: {_tipo_de(index.get(siguientes[0][1]))} a {siguientes[0][0]:.3f}"
+            if siguientes
+            else "no hay otro"
+        )
+        aviso = (
+            f"marcador dudoso: el marcador tomado ({_tipo_de(index.get(marcador))}) está a "
+            f"{distancia:.3f} de esta etiqueta y a {d_otra:.3f} de «{otra_marca}», otra marca; "
+            f"{siguiente}; se conserva"
+        )
+        detection.properties["marcador_dudoso"] = aviso
+        detection.evidence.notes.append(aviso)
+
+
+def _tipo_de(marker: NormalizedEntity) -> str:
+    area, _fuente = _marker_section(marker)
+    nombre = {
+        EntityType.circle: "círculo",
+        EntityType.polyline: "polilínea",
+        EntityType.hatch: "relleno",
+        EntityType.insert: "bloque",
+    }.get(marker.entity_type, marker.entity_type.value)
+    return f"{nombre} de {area:.4g} u²" if area is not None else nombre

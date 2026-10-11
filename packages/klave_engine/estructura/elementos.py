@@ -445,8 +445,9 @@ def _avisos_de_la_deteccion(
     if not marca:
         avisos.append("sin marca: la colocación no tiene marca en planta")
     # R146: the detector's word on the span — doubtful, measured on the beam's axis between its
-    # two faces, or its own tramo of a line several tags share.
-    for clave in ("claro_dudoso", "claro_caras", "claro_compartido"):
+    # two faces, or its own tramo of a line several tags share; R166: and on a column's marker that
+    # a tag of another mark reaches about as near.
+    for clave in ("claro_dudoso", "claro_caras", "claro_compartido", "marcador_dudoso"):
         texto = (d.properties or {}).get(clave)
         if texto:
             avisos.append(str(texto))
