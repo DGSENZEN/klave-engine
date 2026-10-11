@@ -139,6 +139,14 @@ def fuente_de_lectura(spec: ElementSpec) -> Fuente:
         ) from None
 
 
+def fuente_de_seccion(spec: ElementSpec) -> Fuente:
+    """La fuente de la sección de una lectura: la de la lectura (``fuente_de_lectura``), salvo
+    que un lado de la sección sea supuesto (``seccion_supuesta``: una sola cota tomada cuadrada,
+    el ancho de las demás secciones de la familia): entonces es «supuesto», nunca «detalle»
+    (R81)."""
+    return "supuesto" if spec.seccion_supuesta else fuente_de_lectura(spec)
+
+
 # Las familias cuya sección se compara con sus lados ordenados (castillo, columna, pilote); las
 # demás —una viga es b×h— quedan como las leyó quien sabe orientarlas (R75, R88).
 _SE_ORDENA = FAMILIAS_QUE_SE_ORDENAN
@@ -274,7 +282,8 @@ def _definir(
     for s in lecturas:
         fuente = fuente_de_lectura(s)
         if s.section_cm is not None:
-            datos["seccion_cm"].append(_dato(s, fuente, _seccion(s.section_cm, familia)))
+            seccion = _seccion(s.section_cm, familia)
+            datos["seccion_cm"].append(_dato(s, fuente_de_seccion(s), seccion))
         elif "seccion" in s.campos_con_texto:
             datos["seccion_cm"].append(_dato(s, fuente, None, ilegible=True))
         armado = s.armado if s.armado is not None else _armado_de_textos(s, familia, avisos)

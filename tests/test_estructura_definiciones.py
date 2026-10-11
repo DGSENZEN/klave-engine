@@ -264,13 +264,15 @@ def _texto(entity_id, text, x, y, height=0.1):
     )  # fmt: skip
 
 
-def _cota(entity_id, x, y, w, h, display_cm):
-    bbox = (x, y, x + w, y + h)
+def _cota(entity_id, p, q, display_cm):
+    """Una cota con los dos puntos que mide (``p``, ``q``) y su línea a 0.18 de ellos."""
+    x0, x1, y0, y1 = min(p[0], q[0]), max(p[0], q[0]), min(p[1], q[1]), max(p[1], q[1])
+    bbox = (x0, y0 - 0.18, x1, y1) if y0 == y1 else (x0, y0, x1 + 0.18, y1)
     return NormalizedEntity(
         entity_id=entity_id, entity_type=EntityType.dimension, source_file="a.dxf",
         layer="COTAS1", bbox=bbox, raw_handle=entity_id,
         properties={"display_value": float(display_cm), "dimlfac": 100.0,
-                    "measurement": display_cm / 100.0},
+                    "measurement": display_cm / 100.0, "measured_segment": [p, q]},
         evidence=EvidencePacket(source="a.dxf", method="t", entity_ids=[entity_id], bbox=bbox,
                                 confidence=1.0),
     )  # fmt: skip
@@ -301,10 +303,12 @@ def _todas_las_lecturas(tmp_path):
         _texto("l1", "SECCIÓN 1", 21.0, 15.0),
         _texto("s1", "30X80", 21.0, 14.8),
     ]
+    # R81: las cotas de su sección dibujada (debajo del título, en un detalle): 30 × 80.
     cotas = [
         _texto("m3", "CTA-3", 30.0, 25.0, 0.12),
-        _cota("d1", 29.0, 23.0, 0.3, 0.8, 80),
-        _cota("d2", 29.5, 23.6, 0.3, 0.2, 30),
+        _rectangulo("r3", 29.6, 21.4, 30.8, 24.6),
+        _cota("d1", (30.8, 24.6), (30.8, 21.4), 80),
+        _cota("d2", (29.6, 21.4), (30.8, 21.4), 30),
     ]
     inv = build_schedule_inventory(geometria + llamada + cotas, C, 1.0, detalle)
 
@@ -364,6 +368,7 @@ def test_every_reader_output_has_its_fuente(tmp_path):
         "detalle",
         "detalle",
     )
+    assert defs["CTA-3"].seccion_cm.valor == (30, 80)
     assert (defs["K-1"].seccion_cm.fuente, defs["CA-1"].familia) == ("cuadro", "canceleria")
     assert familias["dala"].longitudinales.fuente == "nota"
 

@@ -115,28 +115,48 @@ def test_section_callouts_along_an_elevation_belong_to_its_title():
     assert "CTA-3" not in inventory.by_mark
 
 
-def _dimension(entity_id, x, y, w, h, display_cm):
-    bbox = (x, y, x + w, y + h)
+def _dimension(entity_id, p, q, display_cm):
+    """A cota measuring ``p``–``q``, its line 0.18 off them."""
+    x0, x1, y0, y1 = min(p[0], q[0]), max(p[0], q[0]), min(p[1], q[1]), max(p[1], q[1])
+    bbox = (x0, y0 - 0.18, x1, y1) if y0 == y1 else (x0, y0, x1 + 0.18, y1)
     return NormalizedEntity(
         entity_id=entity_id, entity_type=EntityType.dimension, source_file="a.dxf",
         layer="COTAS1", bbox=bbox, raw_handle=entity_id,
         properties={"display_value": float(display_cm), "dimlfac": 100.0,
-                    "measurement": display_cm / 100.0},
+                    "measurement": display_cm / 100.0, "measured_segment": [p, q]},
+        evidence=EvidencePacket(source="a.dxf", method="t", entity_ids=[entity_id], bbox=bbox,
+                                confidence=1.0),
+    )
+
+
+def _outline(entity_id, x0, y0, x1, y1):
+    bbox = (x0, y0, x1, y1)
+    return NormalizedEntity(
+        entity_id=entity_id, entity_type=EntityType.polyline, source_file="a.dxf",
+        layer="DETALLES", bbox=bbox, points=[(x0, y0), (x1, y0), (x1, y1), (x0, y1)],
+        raw_handle=entity_id, properties={"closed": True},
         evidence=EvidencePacket(source="a.dxf", method="t", entity_ids=[entity_id], bbox=bbox,
                                 confidence=1.0),
     )
 
 
 def test_sections_from_the_cotas_of_the_detail_drawing():
-    """A mark in a detail frame with a vertical cota of 80 and a horizontal
-    cota of 30 beside it: section 30x80. With only the peralte, the width
-    comes from the sheet's callouts for that family, and the spec says so."""
+    """R81: a mark titles its section drawing in a detail frame; the section is
+    that drawing's, by the cotas on its edges: 30 wide, 80 deep. With only the
+    peralte on its edges, the width comes from the sheet's callouts for that
+    family, and the reading says it is assumed. Loose cotas beside a title
+    with no drawing of its own are never taken (the old reader took the
+    nearest)."""
     entities = [
         _text("m1", "CTA-3", 2.0, 20.0, 0.12),
-        _dimension("d1", 1.0, 18.0, 0.3, 0.8, 80),  # vertical: peralte
-        _dimension("d2", 1.5, 18.6, 0.3, 0.2, 30),  # horizontal: ancho
+        _outline("o1", 1.6, 16.4, 2.8, 19.6),
+        _dimension("d1", (2.8, 19.6), (2.8, 16.4), 80),  # vertical, on its right edge: peralte
+        _dimension("d2", (1.6, 16.4), (2.8, 16.4), 30),  # horizontal, on its bottom edge: ancho
         _text("m2", "CTA-7", 10.0, 20.0, 0.12),
-        _dimension("d3", 9.0, 18.0, 0.3, 0.7, 70),  # only the peralte
+        _outline("o2", 9.6, 16.8, 10.8, 19.6),
+        _dimension("d3", (10.8, 19.6), (10.8, 16.8), 70),  # only the peralte
+        _text("m4", "CTA-9", 30.0, 20.0, 0.12),
+        _dimension("d4", (29.5, 18.8), (29.5, 18.0), 60),  # loose, no drawing: not taken
         # Elsewhere on the sheet, an elevation callout fixes the family width.
         _text("m3", "CTA-16", 20.0, 10.0, 0.12),
         _text("l1", "SECCIÓN 1", 30.0, 6.0, 0.1),
@@ -146,7 +166,9 @@ def test_sections_from_the_cotas_of_the_detail_drawing():
         entities, TextPatternConfig(), unit_to_m=1.0, detail_boxes=[(0.0, 0.0, 44.0, 29.4)]
     )
     assert inventory.by_mark["CTA-3"].section_cm == (30, 80)
-    assert "cotas del detalle" in inventory.by_mark["CTA-3"].source_text
+    assert "cotas de su sección" in inventory.by_mark["CTA-3"].source_text
     seven = inventory.by_mark["CTA-7"]
-    assert seven.section_cm == (30, 70) and seven.confidence == 0.55
+    assert seven.section_cm == (30, 70) and seven.confidence == 0.55 and seven.seccion_supuesta
     assert "ancho 30 como las demás" in seven.source_text
+    nine = inventory.by_mark["CTA-9"]
+    assert nine.section_cm is None and "las cotas cercanas (60) no se toman" in nine.avisos
