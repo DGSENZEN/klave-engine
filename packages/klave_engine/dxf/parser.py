@@ -9,7 +9,11 @@ from klave_engine.common.logging import get_logger, log_stage
 from klave_engine.dxf.entities import NormalizedEntity, ParseWarning
 from klave_engine.dxf.layouts import LayoutInfo, XrefInfo, read_layouts, resolve_xrefs
 from klave_engine.dxf.loader import NON_GRAPHICAL_TYPES, load_dxf
-from klave_engine.dxf.normalizer import normalize_entity
+from klave_engine.dxf.normalizer import (
+    MULTILEADER_TYPES,
+    normalize_entity,
+    normalize_multileader,
+)
 
 logger = get_logger(__name__)
 
@@ -108,6 +112,24 @@ class DxfParser:
                         source_file=source_file,
                     )
                 )
+                continue
+            if kind in MULTILEADER_TYPES:
+                # R127: its leader lines and its text, not nothing.
+                try:
+                    lideres, warnings = normalize_multileader(entity, source_file, self._ids)
+                except Exception as exc:  # one broken entity never costs the sheet
+                    lideres, warnings = [], []
+                    drawing.warnings.append(
+                        ParseWarning(
+                            warning_type="entity_unreadable",
+                            message=f"Entidad {kind} ilegible: {type(exc).__name__}: {exc}"[:200],
+                            entity_type=kind,
+                            handle=str(getattr(entity.dxf, "handle", "") or "") or None,
+                            source_file=source_file,
+                        )
+                    )
+                drawing.warnings.extend(warnings)
+                drawing.entities.extend(lideres)
                 continue
             try:
                 normalized, warnings = normalize_entity(entity, source_file, self._ids)
@@ -238,18 +260,21 @@ class DxfParser:
             if child.dxftype() in NON_GRAPHICAL_TYPES:
                 continue
             try:
-                normalized, _warnings = normalize_entity(child, source_file, self._ids)
+                if child.dxftype() in MULTILEADER_TYPES:
+                    hijos, _warnings = normalize_multileader(child, source_file, self._ids)
+                else:
+                    normalized, _warnings = normalize_entity(child, source_file, self._ids)
+                    hijos = [normalized] if normalized is not None else []
             except Exception:
                 continue
-            if normalized is None:
-                continue
-            if normalized.layer == "0":
-                normalized.layer = insert_layer
-            normalized.raw_handle = f"{insert_handle}#{index}"
-            normalized.block_name = block_name
-            normalized.properties["from_block"] = block_name
-            normalized.properties["parent_insert"] = insert_handle
-            normalized.evidence.notes.append(f"Expandido del bloque {block_name}")
-            drawing.entities.append(normalized)
-            emitted += 1
-            budget.total += 1
+            for normalized in hijos:
+                if normalized.layer == "0":
+                    normalized.layer = insert_layer
+                normalized.raw_handle = f"{insert_handle}#{index}"
+                normalized.block_name = block_name
+                normalized.properties["from_block"] = block_name
+                normalized.properties["parent_insert"] = insert_handle
+                normalized.evidence.notes.append(f"Expandido del bloque {block_name}")
+                drawing.entities.append(normalized)
+                emitted += 1
+                budget.total += 1

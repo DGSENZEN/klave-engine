@@ -594,11 +594,11 @@
         "note": ""
       },
       "EST-001": {
-        "quantity": 12.422,
+        "quantity": 12.247,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "desempate de marcadores: el c\u00edrculo del castillo en vez de la caja del bloque que lo contiene (los LEADER del espacio modelo cambiaban el orden del STRtree)"
       },
       "EST-002": {
         "quantity": 11.731,

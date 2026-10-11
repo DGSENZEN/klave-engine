@@ -269,7 +269,9 @@ def normalize_entity(
     elif dxf_type == "LEADER":
         entity_type = EntityType.polyline
         try:
-            points = [(float(v.x), float(v.y)) for v in entity.vertices]
+            # A LEADER read from the file keeps its vertices as tuples, one from a block as
+            # vectors: both index (R127; before, every model-space LEADER was dropped).
+            points = [(float(v[0]), float(v[1])) for v in entity.vertices]
         except Exception:
             points = []
         if points:
@@ -449,3 +451,80 @@ def normalize_entity(
         ),
     )
     return normalized, warnings
+
+
+MULTILEADER_TYPES = ("MULTILEADER", "MLEADER")
+
+
+def normalize_multileader(
+    entity: Any,
+    source_file: str,
+    ids: IdGenerator,
+) -> tuple[list[NormalizedEntity], list[ParseWarning]]:
+    """A MULTILEADER as what it draws (R127): each leader line as an open polyline from its
+    arrow tip through its last point and along its landing (``derived_from: MULTILEADER``),
+    and its text, if any, as an MTEXT. Its arrowheads and block content are not kept."""
+    layer = str(entity.dxf.layer)
+    handle = str(entity.dxf.handle)
+    salida: list[NormalizedEntity] = []
+    warnings: list[ParseWarning] = []
+    try:
+        lideres = list(entity.context.leaders)
+    except Exception:
+        lideres = []
+    for lider in lideres:
+        final = lider.last_leader_point
+        apoyo: list[Point] = []
+        if lider.has_dogleg_vector and float(lider.dogleg_length or 0.0) > 0:
+            fin = final + lider.dogleg_vector.normalize(float(lider.dogleg_length))
+            apoyo = [(float(fin[0]), float(fin[1]))]
+        for linea in lider.lines:
+            points = [(float(v[0]), float(v[1])) for v in linea.vertices]
+            points += [(float(final[0]), float(final[1])), *apoyo]
+            if len(points) < 2:
+                continue
+            bbox = bbox_from_points(points)
+            salida.append(
+                NormalizedEntity(
+                    entity_id=ids.next(),
+                    entity_type=EntityType.polyline,
+                    source_file=source_file,
+                    layer=layer,
+                    bbox=bbox,
+                    raw_handle=handle,
+                    properties={"closed": False, "derived_from": "MULTILEADER"},
+                    points=points,
+                    color=int(entity.dxf.color) if entity.dxf.hasattr("color") else None,
+                    evidence=EvidencePacket(
+                        source=source_file,
+                        method="ezdxf_multileader_extraction",
+                        bbox=bbox,
+                        notes=["Línea de una directriz múltiple (MULTILEADER)"],
+                    ),
+                )
+            )
+    try:
+        textos = [v for v in entity.virtual_entities() if v.dxftype() == "MTEXT"]
+    except Exception:
+        textos = []
+    for mtext in textos:
+        if not str(mtext.plain_text()).strip():
+            continue
+        normalizado, avisos = normalize_entity(mtext, source_file, ids)
+        warnings.extend(avisos)
+        if normalizado is not None:
+            normalizado.raw_handle = handle
+            normalizado.properties["derived_from"] = "MULTILEADER"
+            salida.append(normalizado)
+    if not salida:
+        warnings.append(
+            ParseWarning(
+                warning_type="bbox_unavailable",
+                message="MULTILEADER sin líneas ni texto; se omitió",
+                entity_type=str(entity.dxftype()),
+                handle=handle,
+                layer=layer,
+                source_file=source_file,
+            )
+        )
+    return salida, warnings

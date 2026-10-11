@@ -112,7 +112,11 @@ def detect_columns(
 
         # Marker geometry: circle/insert/small closed polyline nearby; when found
         # measure its real cross-section so costing uses the actual section.
+        # R130: the nearest marker; among equally near ones (a tag inside a symbol and its
+        # enclosing block both at distance 0) the smallest, then the first entity id — never
+        # the spatial index's own order.
         marker_id: str | None = None
+        markers: list[tuple[float, float, str]] = []
         for hit in index.entities_near_entity(entity.entity_id, config.geometry_search_radius):
             other = index.get(hit.entity_id)
             is_marker = other.entity_type in (EntityType.circle, EntityType.insert) or (
@@ -121,8 +125,9 @@ def detect_columns(
                 and bbox_area(other.bbox) <= config.max_marker_area
             )
             if is_marker:
-                marker_id = other.entity_id
-                break
+                markers.append((hit.distance, bbox_area(other.bbox), other.entity_id))
+        if markers:
+            marker_id = min(markers)[2]
         if marker_id is not None:
             features[MARKER] = 1.0
             source_entities.append(marker_id)
