@@ -545,40 +545,193 @@ def test_slab_lines_running_past_the_corners_make_no_section():
     assert all(s.section_cm is None for s in _cotas(inv, "T-1"))
 
 
-def _titulo(entity_id, text, x, y, alto=0.14):
+def _titulo(entity_id, text, x, y, alto=0.14, halign=0):
     """Un título alineado a la izquierda: su ancla (``ancla_texto``) es su ``insert``, la punta
-    izquierda de su base; su caja, la que estima el normalizador."""
+    izquierda de su base; su caja, la que estima el normalizador (siempre desde el ``insert``).
+    Con ``halign`` 2, alineado a la derecha en ``x`` (su punto de alineación; el ``insert``
+    como lo deja un DXF sin calcular, en el mismo punto)."""
     ancho = 0.6 * len(text) * alto
     bbox = (x, y, x + ancho, y + alto)
+    propiedades = {"height": alto, "insert": (x, y)}
+    if halign:
+        propiedades |= {"halign": halign, "align_point": (x, y)}
     return NormalizedEntity(
         entity_id=entity_id, entity_type=EntityType.text, source_file="a.dxf", layer="T",
-        bbox=bbox, text=text, properties={"height": alto, "insert": (x, y)},
-        raw_handle=entity_id, evidence=_evidencia(entity_id, bbox),
+        bbox=bbox, text=text, properties=propiedades, raw_handle=entity_id,
+        evidence=_evidencia(entity_id, bbox),
     )  # fmt: skip
 
 
+def _leidas(inv, *marcas):
+    return {m: [s.section_cm for s in _cotas(inv, m) if s.section_cm] for m in marcas}
+
+
 @pytest.mark.parametrize(
-    "x_ancla,otro,leida",
+    "texto,x,halign,leida",
     [
-        # T3-1 en Marina: su centro estimado cae 0.41 altos fuera, su ancla dentro: es suya.
-        (1.13, False, (20, 50)),
-        # El ancla 0.4 altos fuera y nadie más la alcanza: es suya.
-        (1.256, False, (20, 50)),
-        # Igual, pero otro título también la alcanza con esa holgura: no es de ninguno.
-        (1.256, True, None),
-        # T2-8 en Marina: el ancla 1.36 altos fuera: no es suya.
-        (1.39, False, None),
+        # T3-1 en Marina: su ancla dentro de la sección y su texto encima: es suya.
+        ("T-1", 1.13, 0, (20, 50)),
+        # T2-8 en Marina (ES-201): alineado a la izquierda, su ancla 1.36 altos antes de la sección
+        # (260.966 contra 261.157) y su texto encima de ella (0.145 de 0.336): es suya.
+        ("T2-8", 0.2 - 0.191, 0, (20, 50)),
+        # Su texto empieza 0.4 altos después de la sección: no está encima, no es suya (la holgura
+        # de media altura de R115 ya no existe).
+        ("T-1", 1.256, 0, None),
+        # Alineado a la derecha en 1.4, pasada la sección: su texto acaba encima de ella (la caja
+        # del normalizador, desde el insert, no la tocaría): es suya.
+        ("T-1", 1.4, 2, (20, 50)),
+        # Alineado a la derecha en 0.15, antes de la sección: su texto no la toca (la caja del
+        # normalizador sí): no es suya.
+        ("T-1", 0.15, 2, None),
     ],
 )
-def test_ownership_goes_by_the_labels_anchor(x_ancla, otro, leida):
-    # R115: quién es dueño de una sección va por el ancla del título (donde lo puso el
-    # dibujante), nunca por un centro estimado; media altura de holgura sólo sin disputa.
-    ents = _detalle_sin_contorno("a", "T-1", 0.0, 0.0, (0.2, 0.0, 1.2, 2.5), 20, 50)
-    ents[0] = _titulo("am", "T-1", x_ancla, 2.6)
-    if otro:
-        ents.append(_titulo("bm", "T-9", 1.25, 2.62))
+def test_ownership_goes_by_the_titles_real_text(texto, x, halign, leida):
+    # R120: el dueño de una sección es el título cuyo texto, donde lo pone su alineación, está
+    # encima del ancho de la sección; nunca su ancla ni un centro estimado.
+    ents = _detalle_sin_contorno("a", texto, 0.0, 0.0, (0.2, 0.0, 1.2, 2.5), 20, 50)
+    ents[0] = _titulo("am", texto, x, 2.6, halign=halign)
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
-    assert [s.section_cm for s in _cotas(inv, "T-1") if s.section_cm] == ([leida] if leida else [])
+    assert _leidas(inv, texto)[texto] == ([leida] if leida else [])
+
+
+@pytest.mark.parametrize("contorno", [False, True])
+@pytest.mark.parametrize(
+    "x_otro,suya",
+    [
+        # T-1 entero encima de la sección y T-9 en 0.1 de sus 0.252: es de T-1.
+        (1.1, True),
+        # T-9 encima en 0.22 de 0.252 (87 %) contra el 100 % de T-1: menos del 25 % de margen:
+        # de ninguno, reclamada por los dos.
+        (0.98, False),
+    ],
+)
+def test_two_titles_over_one_section_the_clearly_larger_overlap_wins(contorno, x_otro, suya):
+    # R120: dos títulos encima de una sección (un contorno cerrado o un par de cotas): es del que
+    # está más encima por un margen claro (25 %, como R54); si no, de ninguno (ambigua).
+    if contorno:
+        ents = [
+            _rectangulo("c", 0.2, 0.0, 1.2, 2.5),
+            _cota("h", (0.2, 0.0), (1.2, 0.0), 20),
+            _cota("v", (0.2, 2.5), (0.2, 0.0), 50),
+        ]
+    else:
+        ents = _detalle_sin_contorno("a", "T-1", 0.0, 0.0, (0.2, 0.0, 1.2, 2.5), 20, 50)[1:]
+    ents += [_titulo("am", "T-1", 0.4, 2.6), _titulo("bm", "T-9", x_otro, 2.62)]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    ambiguas = sorted(sorted(r.marcas) for r in inv.rechazos if r.motivo == "ambigua")
+    if suya:
+        assert _leidas(inv, "T-1", "T-9") == {"T-1": [(20, 50)], "T-9": []}
+        assert ambiguas == []
+    else:
+        assert _leidas(inv, "T-1", "T-9") == {"T-1": [], "T-9": []}
+        assert ambiguas == [["T-1", "T-9"], ["T-1", "T-9"]]
+        for marca in ("T-1", "T-9"):
+            assert [s.campos_con_texto for s in _cotas(inv, marca)] == [["seccion"]]
+
+
+@pytest.mark.parametrize(
+    "x_titulo,vecina,leidas",
+    [
+        # Un título ancho (0.9) encima de dos secciones, de la primera 0.6 y de la otra 0.1: es la
+        # primera.
+        (0.6, False, {"T-1": [(20, 50)], "T-2": []}),
+        # Encima de las dos casi igual (0.35 y 0.35): de ninguna; la reclama.
+        (0.85, False, {"T-1": [], "T-2": []}),
+        # Igual, pero la segunda tiene su título entero encima: es de su título, y la primera
+        # queda del título ancho.
+        (0.85, True, {"T-1": [(20, 50)], "T-2": [(30, 60)]}),
+    ],
+)
+def test_a_wide_title_over_two_sections(x_titulo, vecina, leidas):
+    # R120: un título encima de dos secciones lado a lado es de la que está más encima por un
+    # margen claro; nunca se lleva la de un vecino que tiene su título encima.
+    ents = _detalle_sin_contorno("a", "T-1", 0.0, 0.0, (0.2, 0.0, 1.2, 2.5), 20, 50)
+    ents[0] = _titulo("am", "T-1", x_titulo, 2.6, alto=0.5)
+    ents += _detalle_sin_contorno("b", "T-2", 0.0, 0.0, (1.4, 0.0, 2.4, 2.5), 30, 60)[1:]
+    if vecina:
+        ents.append(_titulo("bm", "T-2", 1.6, 2.6))
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert _leidas(inv, "T-1", "T-2") == leidas
+    if x_titulo == 0.85 and not vecina:
+        (t1,) = _cotas(inv, "T-1")
+        assert t1.campos_con_texto == ["seccion"]
+        assert "su título está sobre dos rectángulos de pares de cotas" in t1.avisos[0]
+
+
+def _titulo_en_columna(entity_id, text, x, y, alto=0.1):
+    """Un MTEXT como los de ES-500 en Marina: insertado arriba a la izquierda, con una columna de
+    1.358 y el párrafo centrado en ella («\\pxqc»); su caja del normalizador, desde el insert."""
+    ancho = 0.6 * len(text) * alto
+    bbox = (x, y, x + ancho, y + alto)
+    propiedades = {
+        "height": alto,
+        "insert": (x, y),
+        "attachment_point": 1,
+        "column_width": 1.357913709497112,
+        "paragraph_align": "c",
+    }
+    return NormalizedEntity(
+        entity_id=entity_id, entity_type=EntityType.mtext, source_file="a.dxf", layer="T",
+        bbox=bbox, text=text, properties=propiedades, raw_handle=entity_id,
+        evidence=_evidencia(entity_id, bbox),
+    )  # fmt: skip
+
+
+def test_d3_and_cta8_over_one_strip_claim_it_both():
+    # R120 (D-3 y CTA-8 en Marina, ES-500, corridos 204, -105): los dos títulos van centrados en
+    # su columna (205.02–205.26 y 205.00–205.30), no en su insert (204.46): los dos enteros bajo
+    # la misma tira de 1.925 × 0.049; el contorno chico de 0.300 × 0.049 junto al insert de D-3 no
+    # está bajo su texto. De ninguno: los dos la reclaman y la IA no llena D-3. En la hoja, las
+    # secciones van encima de sus títulos (K-1).
+    ents = [
+        _titulo_en_columna("d3", "DADO\nD-3 ", 0.458, -0.14),
+        _titulo_en_columna("c8", "CTA-8 ", 0.469, 0.378),
+        _rectangulo("tira", 0.574, 0.661, 2.499, 0.710),
+        _rectangulo("chico", 0.274, 0.161, 0.574, 0.210),
+        _texto("k1", "K-1", 5.0, 0.0, alto=0.1),
+        _rectangulo("k1c", 4.8, 0.5, 5.2, 1.0),
+        _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    for marca, otra in (("D-3", "CTA-8"), ("CTA-8", "D-3")):
+        (s,) = _cotas(inv, marca)
+        assert (s.section_cm, s.campos_con_texto) == (None, ["seccion"])
+        assert s.avisos == [f"sección: su sección dibujada la alcanza también {otra}"]
+    assert sorted(sorted(r.marcas) for r in inv.rechazos if r.motivo == "ambigua") == [
+        ["CTA-8", "D-3"], ["CTA-8", "D-3"]
+    ]  # fmt: skip
+    merge_external_specs(inv, [_ia("D-3", family="dala", section_cm=(25, 100))], C)
+    assert "D-3" not in inv.by_mark or inv.by_mark["D-3"].section_cm is None
+
+
+@pytest.mark.parametrize(
+    "caja,reclama",
+    [
+        # Su sección dibujada, sin cotas: la reclama.
+        ((-1.0, 0.0, 1.0, 2.4), True),
+        # D-3 en Marina (ES-500): un contorno de 0.300 × 0.049, más ancho que sus letras (0.14):
+        # también.
+        ((-0.15, 0.0, 0.15, 0.049), True),
+        # Más chico que sus letras en los dos sentidos: un símbolo, no su sección.
+        ((-0.05, 0.0, 0.05, 0.1), False),
+    ],
+)
+def test_an_owned_outline_without_cotas_claims_the_section(caja, reclama):
+    # R122: la etiqueta dueña de un contorno cerrado reclama la sección aunque no tenga cotas (el
+    # dibujo dibuja su sección): la IA no la llena. Un contorno del tamaño de un símbolo, no.
+    ents = [
+        _texto("m", "D-3", 0.0, caja[3] + 0.3, alto=0.14),
+        _rectangulo("c", *caja),
+        _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    lecturas = _cotas(inv, "D-3")
+    assert [(s.section_cm, s.campos_con_texto) for s in lecturas] == (
+        [(None, ["seccion"])] if reclama else []
+    )
+    merge_external_specs(inv, [_ia("D-3", family="dala", section_cm=(25, 100))], C)
+    de_la_ia = inv.by_mark["D-3"].section_cm if "D-3" in inv.by_mark else None
+    assert de_la_ia == (None if reclama else (25, 100))
 
 
 @pytest.mark.parametrize("pareja", [False, True])
