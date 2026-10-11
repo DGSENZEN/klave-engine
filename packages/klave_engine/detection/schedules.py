@@ -1535,9 +1535,11 @@ def _distancia_tramo_caja(p: tuple[float, float], q: tuple[float, float], caja: 
 
 class _Abiertas:
     """The leaders among the open polylines near the titles (R124, R128), by the grid cells
-    their landing runs through: a LEADER or a MULTILEADER (open polylines from the normalizer;
-    either end segment can be the landing), or one drawn as an open polyline of three vertices —
-    a horizontal landing and a slanted segment to what it points at."""
+    their landing runs through: a LEADER or a MULTILEADER (open polylines from the normalizer,
+    from the arrow tip to the landing: only the last segment is the landing, and a two-point
+    leader lands only at its last point — the tip is what it points at, never its title, R136),
+    or one drawn as an open polyline of three vertices — a horizontal landing and a slanted
+    segment to what it points at."""
 
     def __init__(self, lineas: list[NormalizedEntity], celda: float, tol: float) -> None:
         self.celda = max(celda, 1e-6)
@@ -1548,7 +1550,8 @@ class _Abiertas:
             if len(puntos) < 2:
                 continue
             if linea.properties.get("derived_from") in ("LEADER", "MULTILEADER"):
-                tramos = [(0, 1), (len(puntos) - 2, len(puntos) - 1)]
+                ultimo = len(puntos) - 1
+                tramos = [(ultimo - 1, ultimo) if ultimo >= 2 else (ultimo, ultimo)]
             elif len(puntos) == 3:
                 tramos = [
                     (1, c)
@@ -2798,7 +2801,7 @@ def _flechas_de_titulos(
 
 
 def _senaladas_por_flecha(
-    specs: list[ElementSpec], flechas: list[tuple[str, ElementSpec]]
+    specs: list[ElementSpec], flechas: list[tuple[str, ElementSpec]], config: TextPatternConfig
 ) -> list[ElementSpec]:
     """R124, R128, R132: a title a leader starts or lands at claims each of its marks whose
     section nothing in the drawing reads: ilegible, «señalada por flecha; se lee en E3», so the
@@ -2807,11 +2810,12 @@ def _senaladas_por_flecha(
     callout; never the AI's) gives a section, so it never outranks and erases a value the
     drawing reads. A note of the family is not one (R132): it is the family's fallback. The
     title's own claimed readings of that mark, if any, say so; otherwise the claim is added.
-    Where the leader points is E3."""
+    Marks compare in their one spelling (``_normal``, as the definitions join them, R136): a
+    «K1» title never outranks a read «K-1 20X40». Where the leader points is E3."""
     if not flechas:
         return specs
     leidas = {
-        s.mark
+        _normal(s.mark, config)
         for s in specs
         if s.section_cm is not None
         and s.source != "ia"
@@ -2819,13 +2823,14 @@ def _senaladas_por_flecha(
     }
     salida = list(specs)
     for entidad, reclamo in flechas:
-        if reclamo.mark in leidas:
+        marca = _normal(reclamo.mark, config)
+        if marca in leidas:
             continue
         aviso = reclamo.avisos[0]
         suyas = [
             s
             for s in salida
-            if s.metodo == "cotas" and entidad in s.entidades and s.mark == reclamo.mark
+            if s.metodo == "cotas" and entidad in s.entidades and _normal(s.mark, config) == marca
         ]
         for s in suyas:
             if aviso not in s.avisos:
@@ -3014,7 +3019,7 @@ def build_schedule_inventory(
     for reader in extra_readers or []:
         specs += reader(entities)
     specs, rechazos = _family_notes_that_name_a_mark(specs, rechazos, texts, config)
-    specs = _senaladas_por_flecha(specs, flechas)
+    specs = _senaladas_por_flecha(specs, flechas, config)
     leidos_por_reglas = leer_reglas(entities, frames).textos_leidos
     rechazos = rechazos + _lo_que_nadie_leyo(
         texts, specs, rechazos, config, sheet, posibles, leidos_por_reglas

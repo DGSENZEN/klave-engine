@@ -114,11 +114,13 @@ def detect_columns(
         # measure its real cross-section so costing uses the actual section.
         # R130: the nearest marker; among equally near ones (a tag inside a symbol and its
         # enclosing block both at distance 0) the smallest, then the first entity id — never
-        # the spatial index's own order.
+        # the spatial index's own order. A leader's lines are never a marker (R135).
         marker_id: str | None = None
         markers: list[tuple[float, float, str]] = []
         for hit in index.entities_near_entity(entity.entity_id, config.geometry_search_radius):
             other = index.get(hit.entity_id)
+            if other.is_annotation:
+                continue
             is_marker = other.entity_type in (EntityType.circle, EntityType.insert) or (
                 other.entity_type == EntityType.polyline
                 and other.is_closed

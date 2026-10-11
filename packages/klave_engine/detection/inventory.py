@@ -210,7 +210,8 @@ def build_inventory(
                         if view:
                             tag.by_view[view] = tag.by_view.get(view, 0) + 1
             elif entity.entity_type in (EntityType.line, EntityType.polyline, EntityType.arc):
-                if _ANNOTATION_LAYER_RE.search(entity.layer):
+                # A leader's lines are annotation, on whatever layer they sit (R135).
+                if _ANNOTATION_LAYER_RE.search(entity.layer) or entity.is_annotation:
                     continue
                 # El trazo interno de un mueble ya contado por su bloque no
                 # suma metros ni áreas al levantamiento de la capa.

@@ -809,8 +809,11 @@ def _flecha(entity_id, puntos, lider=False):
     [
         # Una flecha dibujada: el apoyo horizontal acaba en el título.
         (_flecha("f", [(-0.6, 0.4), (-0.3, 0.0), (-0.12, 0.0)]), True),
-        # Una directriz LEADER (el normalizador la da como polilínea abierta).
-        (_flecha("f", [(-0.12, 0.0), (-0.8, 0.5)], lider=True), True),
+        # Una directriz LEADER (el normalizador la da como polilínea abierta, de la punta de la
+        # flecha a su apoyo): su apoyo acaba en el título.
+        (_flecha("f", [(-0.8, 0.5), (-0.12, 0.0)], lider=True), True),
+        # R136: la punta de un LEADER en el título es a lo que apunta, nunca su título.
+        (_flecha("f", [(-0.12, 0.0), (-0.8, 0.5)], lider=True), False),
         # Una línea suelta de dos vértices que acaba en el título no es una flecha dibujada.
         (_flecha("f", [(-0.12, 0.0), (-0.8, 0.5)]), False),
         # Una flecha que acaba lejos del título (a 0.28 de su texto, más de 0.6 altos).
@@ -1076,3 +1079,43 @@ def test_two_texts_on_one_leader_are_one_title():
         if s.source_text.endswith("señalada por flecha; se lee en E3")
     )
     assert senaladas == [("D-1B", "dado"), ("D-1C", "dado")]
+
+
+# ------------------------------------------------- Tarea 9, paso previo A: R136
+
+
+def test_a_title_spelled_otherwise_never_outranks_the_note_that_reads_its_mark():
+    # R136: «K1» con su flecha y la nota «K-1 20X40 …» son la misma marca (``normalizar_marca``):
+    # la nota la lee, así que la flecha no la reclama ni tapa su 20×40 con un ilegible de detalle.
+    ents = [
+        _titulo("m", "K1", 0.0, 0.0, alto=0.1),
+        _flecha("f", [(-0.6, 0.4), (-0.3, -0.02), (0.2, -0.02)]),
+        _texto("n", "K-1 20X40 4#3 E#2@15", 5.0, 5.0, alto=0.1),
+        _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert not [s for s in inv.specs if s.source_text.endswith("señalada por flecha; se lee en E3")]
+    d = construir_definiciones(inv, C)[0]["K-1"].seccion_cm
+    assert (d.valor, d.fuente, d.ilegible) == ((20, 40), "nota", False)
+
+
+@pytest.mark.parametrize("lider", ["LEADER", "MULTILEADER"])
+def test_only_the_landing_of_a_leader_attaches_to_a_title(lider):
+    # R136: un LEADER o una MULTILEADER va de la punta de su flecha (lo que señala) a su apoyo (su
+    # título). La marca suelta «K-7» en la punta no es su título: no se reclama ni toma la familia
+    # del título «DADO D-3», que sí está en el apoyo.
+    flecha = _flecha("f", [(-1.0, 1.0), (-0.3, -0.02), (0.5, -0.02)])
+    flecha.properties["derived_from"] = lider
+    ents = [
+        _titulo("t", "DADO D-3", 0.0, 0.0, alto=0.1),
+        _texto("k", "K-7", -1.0, 1.05, alto=0.1),
+        flecha,
+        _cota("lejos", (8.0, 8.0), (9.0, 8.0), 100),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    senaladas = sorted(
+        (s.mark, s.family)
+        for s in inv.specs
+        if s.source_text.endswith("señalada por flecha; se lee en E3")
+    )
+    assert senaladas == [("D-3", "dado")]

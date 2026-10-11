@@ -136,3 +136,19 @@ def test_tags_come_from_block_attributes_too(tmp_path):
     sheet = inventory.sheets[0]
     assert [(b.block_name, b.count) for b in sheet.blocks] == [("CANC_ALUM", 4)]
     assert [(t.tag, t.count) for t in sheet.tags] == [("V-1", 2), ("P-2", 1), ("V-3", 1)]
+
+
+def test_a_leader_on_a_pipe_layer_is_no_run(tmp_path):
+    # R135: las líneas de un LEADER son anotación, en la capa que estén: no suman metros.
+    def build(doc):
+        msp = doc.modelspace()
+        msp.add_line((0, 0), (12, 0), dxfattribs={"layer": "00-SANITARIA"})
+        msp.add_leader([(2, 1), (4, 3), (6, 3)], dxfattribs={"layer": "00-SANITARIA"})
+
+    entities = _entities(tmp_path, "05 SANITARIO.dxf", build)
+    assert any(e.properties.get("derived_from") == "LEADER" for e in entities)
+    inventory = build_inventory(
+        entities, DrawingUnits(unit="m", source="declared", confidence=1.0), []
+    )
+    (sheet,) = inventory.sheets
+    assert [(r.layer, r.length_m, r.segments) for r in sheet.runs] == [("00-SANITARIA", 12.0, 1)]

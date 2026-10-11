@@ -173,7 +173,8 @@ def run_detectors(
     structural: bool = True,
     suite: "DisciplineSuite | None" = None,
 ) -> list[DetectorOutput]:
-    """Run every detector in dependency order (grid → columns → footings …).
+    """Run every detector in dependency order (grid → columns → footings …), never on a
+    leader's lines (R135).
 
     ``structural=False`` for a sheet of instalaciones or acabados: sus círculos
     y cajas son salidas y equipos, no zapatas, y los detectores estructurales
@@ -181,6 +182,11 @@ def run_detectors(
     un plano arquitectónico también trae contactos y salidas."""
     ids = ids or IdGenerator("det")
     meters = units.to_meters() if units is not None else None
+    # R135: a leader's lines (LEADER, MULTILEADER) are annotation. No detector takes them as
+    # a trabe, a wall, a slab edge, a marker or a pipe, whatever index it was handed.
+    geometria = [e for e in entities if not e.is_annotation]
+    if len(geometria) != len(entities):
+        entities, index = geometria, SpatialIndex(geometria)
     if not structural:
         if suite is not None and suite.detect is not None:
             # La suite de la disciplina llenó su hueco: ella decide qué se

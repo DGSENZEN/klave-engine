@@ -276,8 +276,6 @@ def _definir(
     lecturas = [s for s in specs if s.source != "ia"]
     de_ia = [s for s in specs if s.source == "ia"]
     avisos: list[str] = []
-    # R125: una familia que sólo da el prefijo de la marca no tira campos de la IA.
-    supuesta = familia is None and _familia_supuesta(lecturas, de_ia)
     familia = familia or _familia(marca, lecturas, de_ia, avisos)
     datos: dict[str, list[Dato]] = {campo: [] for campo in _NOMBRE}
 
@@ -335,8 +333,9 @@ def _definir(
         for _campo, attr, _de_texto in _ARMADO:
             escrito = getattr(s, attr)
             if escrito:
-                propia = s.family if s.family not in (None, "", "elemento") else familia
-                _de_la_ia(s, escrito, propia if supuesta else familia, de_esta, avisos)
+                # R125: con una familia que sólo da el prefijo, la de la IA (la que ella dice, si
+                # la dice: ``_familia``) es la elegida; nada se tira por la familia.
+                _de_la_ia(s, escrito, familia, de_esta, avisos)
         if s.length_m is not None:
             de_esta["longitud_m"].append(_dato(s, "ia", s.length_m))
         for campo, lista in de_esta.items():
@@ -584,12 +583,6 @@ def _armado_de_textos(spec: ElementSpec, familia: str, avisos: list[str]) -> Arm
 def _dicha(s: ElementSpec) -> bool:
     """Si la lectura dice una familia (no «elemento» ni sólo el prefijo de su marca, R125)."""
     return bool(s.family) and s.family != "elemento" and not s.familia_supuesta
-
-
-def _familia_supuesta(lecturas: list[ElementSpec], de_ia: list[ElementSpec]) -> bool:
-    """R125: si ninguna lectura, ni la IA, dice la familia de la marca: la de su prefijo es
-    supuesta."""
-    return not any(_dicha(s) for s in [*lecturas, *de_ia])
 
 
 def _familia(

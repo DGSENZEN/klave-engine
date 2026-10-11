@@ -418,8 +418,10 @@ def run_full_pipeline(
     for source, file_entities in by_file.items():
         file_frames = [f for f in frames if f.source_file == source]
         ruta_hoja = route_sheet(sheet_names.get(source, source))
+        # R135: a leader's lines are annotation; the detectors never see them.
+        geometria = [e for e in file_entities if not e.is_annotation]
         detector_outputs = run_detectors(
-            file_entities, SpatialIndex(file_entities), manifest, detector_config,
+            geometria, SpatialIndex(geometria), manifest, detector_config,
             frames=file_frames, ids=detector_ids, units=units,
             structural=ruta_hoja.structural, suite=ruta_hoja,
         )
