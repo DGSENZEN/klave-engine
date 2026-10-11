@@ -539,3 +539,21 @@ def test_a_sheets_unreadable_copy_never_hides_what_another_sheet_read():
         a.startswith("sección: lo que dice la hoja ES-200 no se pudo leer") for a in e.avisos
     )
     assert not e.dudas
+
+
+def test_one_line_that_is_the_span_of_several_tags_is_said_on_each():
+    # Marina: varias etiquetas CE-1 sobre la misma línea de MUROS1 de 14.9 toman cada una el
+    # largo entero. La medida no se reparte aquí (es del detector), pero el elemento lo dice.
+    a = _tag("CE-1", "dala", x=0.0, estimated_span_length=14.9)
+    b = _tag("CE-1", "dala", x=5.0, estimated_span_length=14.9)
+    c = _tag("CE-2", "dala", x=9.0, estimated_span_length=3.0)
+    a.source_entities = ["ent_a", "ent_linea"]
+    b.source_entities = ["ent_b", "ent_linea"]
+    c.source_entities = ["ent_c", "ent_otra"]
+    seg = _seg({d.detection_id: "v_pa" for d in (a, b, c)})
+    els = {e.detection_id: e for e in _construir([a, b, c], seg, {}, {"dala": _nota_dala()})}
+    for d in (a, b):
+        assert any(x.startswith("claro compartido: la misma línea es el claro de 2 etiquetas")
+                   for x in els[d.detection_id].avisos)  # fmt: skip
+        assert els[d.detection_id].longitud_m.valor == 14.9
+    assert not any(x.startswith("claro compartido") for x in els[c.detection_id].avisos)
