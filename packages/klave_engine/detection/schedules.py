@@ -1220,7 +1220,14 @@ _UNIDADES_DE_COTA = (1.0, 0.01, 0.001)
 def _unidad_mostrada(props: dict, unit_to_m: float) -> float | None:
     """Metres per unit of a dimension's displayed number: the drawing unit over the style's
     linear factor (dimlfac 100 on a drawing in metres: centimetres), when that is metres,
-    centimetres or millimetres (or the factor is 1); otherwise not known (None)."""
+    centimetres or millimetres (or the factor is 1); otherwise not known (None). R151: where the
+    factor does not fix it, the unit its group's note declares (``_con_unidad_declarada``); none
+    when the notes of its group disagree."""
+    if props.get("unidades_en_conflicto"):
+        return None
+    declarada = props.get("unidad_declarada")
+    if isinstance(declarada, (int, float)):
+        return float(declarada)
     dimlfac = props.get("dimlfac")
     if not isinstance(dimlfac, (int, float)) or dimlfac <= 0 or abs(dimlfac - 1.0) < 1e-9:
         return unit_to_m
@@ -1251,11 +1258,134 @@ def _sin_unidad(entity: NormalizedEntity, unit_to_m: float) -> str | None:
     if not isinstance(display, (int, float)) or _unidad_mostrada(props, unit_to_m) is not None:
         return None
     texto = props.get("display_text") or f"{display:g}"
+    if props.get("unidades_en_conflicto"):
+        return (
+            f"cota «{texto}»: las notas de unidad de su grupo no coinciden "
+            f"({props['unidades_en_conflicto']}): no se toma"
+        )
     paso = unit_to_m / float(props["dimlfac"]) * 100.0
     return (
         f"cota «{texto}» con un factor de escala que no dice su unidad (1 unidad = {paso:g} cm): "
         "no se toma"
     )
+
+
+# R151: a note that declares the unit of its group's cotas: «ACOTACIONES EN CMS, SIN ESCALA»,
+# «(ACOTACIONES EN CMS, S/E)», «ACOTACIONES EN MMS», «ACOTACIONES EN CENTIMETROS, NIVELES EN
+# METROS», «ACOTACIONES Y NIVELES EN METROS, EXCEPTO INDICADOS».
+_NOTA_DE_UNIDAD = re.compile(
+    r"ACOTACION(?:ES)?(?:\s+Y\s+NIVELES)?\s+EN\s+"
+    r"(CENT[IÍ]METROS|CMS?|MIL[IÍ]METROS|MMS?|METROS|MTS?)\b",
+    re.IGNORECASE,
+)
+# A cota's group is its title's (the nearest mark label, within the reach of a section from it:
+# ``_ALCANCE + _TAMANO`` of its heights), and the title's group note the unit note nearest to it,
+# within this many of its heights (Marina's detail groups: 22–27; PRUEBA-1's general notes, no
+# detail's group: 51 and more).
+_NOTA_DEL_GRUPO = 40.0
+# Two notes of different units about as near the title (the second within 10 %): its group is
+# not told apart, and its cotas are refused (R151).
+_NOTAS_EMPATADAS = 1.10
+
+
+def _unidad_de_nota(texto: str) -> float | None:
+    """Metres per unit of the cotas a unit note declares (None if it declares none)."""
+    m = _NOTA_DE_UNIDAD.search(texto)
+    if m is None:
+        return None
+    unidad = m.group(1).upper()
+    if unidad.startswith("C"):
+        return 0.01
+    if unidad.startswith("MI") or unidad.startswith("MM"):
+        return 0.001
+    return 1.0
+
+
+def _fija_su_unidad(props: dict, unit_to_m: float) -> bool:
+    """Whether a dimension's style factor fixes its displayed number's unit: a factor other than
+    1 that gives metres, centimetres or millimetres (dimlfac 100 on a drawing in metres). A
+    factor of 1 says nothing (Marina's CR depth «20»), nor one that is a scale (dimlfac 40)."""
+    dimlfac = props.get("dimlfac")
+    if not isinstance(dimlfac, (int, float)) or dimlfac <= 0 or abs(dimlfac - 1.0) < 1e-9:
+        return False
+    factor = unit_to_m / float(dimlfac)
+    return any(abs(factor - u) <= 0.01 * u for u in _UNIDADES_DE_COTA)
+
+
+def _con_unidad_declarada(
+    dims: list[NormalizedEntity],
+    entities: list[NormalizedEntity],
+    unit_to_m: float,
+    config: TextPatternConfig,
+) -> list[NormalizedEntity]:
+    """R151: a unit note («ACOTACIONES EN CMS, SIN ESCALA») declares the unit of its OWN detail
+    group's cotas, and only where the style factor does not fix it (``_fija_su_unidad``). A cota's
+    group is its title's — the mark label nearest to it, within a section's reach — and the
+    title's note is the unit note nearest to the title's centre within ``_NOTA_DEL_GRUPO`` of its
+    heights (the note sits under its group's heading, centred like the group: on Marina ES-200
+    the CR-1 cota lies as near the «EN MMS» note of «COLUMNAS METÁLICAS» as to its own «EN CMS»,
+    but its title is 1.16 times nearer its own). One note: its unit (``unidad_declarada``, on a
+    copy of the dimension). Two of different units about as near (``_NOTAS_EMPATADAS``): the cota
+    is refused (``unidades_en_conflicto``) and its section claimed. No note: as the factor says."""
+    notas = [
+        (bbox_center(e.bbox), u)
+        for e in entities
+        if e.is_textual and e.text and (u := _unidad_de_nota(e.text)) is not None
+    ]
+    sueltas = [
+        d
+        for d in dims
+        if not _fija_su_unidad(d.properties or {}, unit_to_m)
+        and len((d.properties or {}).get("measured_segment") or []) == 2
+    ]
+    if not notas or not sueltas:
+        return dims
+    titulos = [
+        e
+        for e in entities
+        if e.is_textual
+        and e.text
+        and len(e.text.strip()) <= 8
+        and marca_en_texto(e.text.strip(), config) is not None
+    ]
+    if not titulos:
+        return dims
+    centros = [(bbox_center(t.bbox), alto_de_texto(t), t.entity_id) for t in titulos]
+    de_titulo: dict[str, dict] = {}
+    extra: dict[str, dict] = {}
+    for d in sueltas:
+        p, q = d.properties["measured_segment"]
+        medio = ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2)
+        distancia, (centro, alto, titulo) = min(
+            ((math.dist(medio, c[0]), c) for c in centros), key=lambda x: x[0]
+        )
+        if distancia > (_ALCANCE + _TAMANO) * alto:
+            continue
+        if titulo not in de_titulo:
+            cerca = sorted((math.dist(centro, n), u) for n, u in notas)
+            d0, u0 = cerca[0]
+            rival = next((dn for dn, u in cerca if u != u0), None)
+            if d0 > _NOTA_DEL_GRUPO * alto:
+                de_titulo[titulo] = {}
+            elif rival is not None and rival <= _NOTAS_EMPATADAS * d0:
+                unidades = sorted({u0, *(u for dn, u in cerca if dn <= _NOTAS_EMPATADAS * d0)})
+                de_titulo[titulo] = {
+                    "unidades_en_conflicto": ", ".join(
+                        {1.0: "m", 0.01: "cm", 0.001: "mm"}[u] for u in reversed(unidades)
+                    )
+                }
+            else:
+                de_titulo[titulo] = {"unidad_declarada": u0}
+        if de_titulo[titulo]:
+            extra[d.entity_id] = de_titulo[titulo]
+    if not extra:
+        return dims
+    return [
+        d.model_copy(update={"properties": {**(d.properties or {}), **extra[d.entity_id]}})
+        if d.entity_id in extra
+        else d
+        for d in dims
+    ]
 
 
 _COTA_CM = (_MIN_SIDE_CM, _MAX_SIDE_CM)  # a section side read from a cota: 8–400 cm
@@ -2546,6 +2676,7 @@ def _sections_from_detail_cotas(
     dims = [e for e in entities if e.entity_type == EntityType.dimension]
     if not dims:
         return []
+    dims = _con_unidad_declarada(dims, entities, unit_to_m, config)  # R151
     etiquetas: list[_Etiqueta] = []
     tentativas: list[_Etiqueta] = []
     for text in entities:

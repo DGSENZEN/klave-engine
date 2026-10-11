@@ -1914,3 +1914,55 @@ def test_a_notes_panel_beside_a_section_is_no_elevation():
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
     posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
     assert posibles == {"2#6": []}
+
+
+def _cr1(*notas):
+    """CR-1 de Marina (ES-200), con el origen en la esquina de abajo a la izquierda de su sección
+    (0.854 × 1.139, dibujada sin escala): su ancho «15» con dimlfac 100 (centímetros, fijos por su
+    estilo) y su alto «20» con dimlfac 1 (el estilo no dice su unidad); ``notas`` son las notas de
+    unidad de su grupo, como (texto, x, y)."""
+    alto = _cota("v", (0.0, 1.139), (0.0, 0.0), 20)
+    alto.properties |= {"dimlfac": 1.0, "display_value": 20.0, "measurement": 1.139}
+    return [
+        _titulo("t", "CR-1", 0.25, 1.341, alto=0.13),
+        _rectangulo("s", 0.0, 0.0, 0.854, 1.139),
+        _cota("h", (0.0, 0.0), (0.854, 0.0), 15),
+        alto,
+        *(_texto(f"n{i}", t, x, y, alto=0.1) for i, (t, x, y) in enumerate(notas)),
+    ]
+
+
+_EN_CMS = "ACOTACIONES EN CMS, SIN ESCALA"
+
+
+@pytest.mark.parametrize(
+    "notas,leida,aviso",
+    [
+        # Su grupo dice «EN CMS»: el «20» de dimlfac 1 es 20 cm (R151).
+        ([(_EN_CMS, 0.976, -1.554)], (15, 20), None),
+        # La de su grupo y, más lejos de su título, la «EN MMS» del grupo de al lado (ES-200:
+        # CERRAMIENTOS y COLUMNAS METÁLICAS, 1.16 veces más lejos): la suya.
+        ([(_EN_CMS, 0.976, -1.554), ("ACOTACIONES EN MMS, SIN ESCALA", -2.6, -1.0)], (15, 20),
+         None),
+        # Sin nota, el estilo manda: 20 m, fuera de rango (como antes).
+        ([], None, "peralte 2000 cm fuera de rango: no se toma"),
+        # Una nota a más de 40 alturas de su título no es de su grupo (las notas generales).
+        ([(_EN_CMS, 0.976, -4.2)], None, "peralte 2000 cm fuera de rango: no se toma"),
+        # «EN MMS»: 20 mm, fuera de rango; el «15» de dimlfac 100 sigue en centímetros.
+        ([("ACOTACIONES EN MMS, SIN ESCALA", 0.976, -1.554)], None,
+         "peralte 2 cm fuera de rango: no se toma"),
+        # Dos notas que no coinciden casi igual de cerca de su título (menos de 10 %): no se sabe
+        # de qué grupo es; la cota no se toma y la sección se reclama.
+        ([(_EN_CMS, 0.976, -1.554), ("ACOTACIONES EN MMS, SIN ESCALA", -0.2, -1.554)], None,
+         "cota «20»: las notas de unidad de su grupo no coinciden (cm, mm): no se toma"),
+    ],
+)  # fmt: skip
+def test_a_unit_note_declares_the_unit_of_its_own_groups_cotas(notas, leida, aviso):
+    # R151: «ACOTACIONES EN CMS/MMS/METROS» vale sólo para las cotas de su grupo y sólo donde el
+    # dimlfac no fija la unidad (el alto «20» de los CR de Marina, dimlfac 1 en un plano en metros).
+    inv = build_schedule_inventory(_cr1(*notas), C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    (s,) = _cotas(inv, "CR-1")
+    assert s.section_cm == leida
+    if aviso is not None:
+        assert any(aviso in a for a in s.avisos), s.avisos
+        assert "seccion" in s.campos_con_texto  # reclamada: nada la llena de otro lado
