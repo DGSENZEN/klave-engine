@@ -58,7 +58,7 @@ Root causes in `detection/schedules.py`, each a loophole this spec closes:
 1. `_STIRRUP_RE` does not match `EYG#3@15`, so `_MESH_RE` captures `#3@15` and files a castillo's grapa as a **mesh** (§3.3 lossless parsing).
 2. `_REBAR_RE.search` keeps only the **first bar group** (`4#5+2#4` → `4#5`, `6#8+6#6` → `6#8`) (§3.3).
 3. **Wrong association:** the slab label `LOSA MACIZA DOBLEMENTE ARMADA H=20 LS #4@20 A/S LI #4@20 A/S` was attached to K-4 — while the losa maciza is reported "sin armado" (§3.5 association rules).
-4. **Conflicting readings merged silently:** K-5 and K-6 read 20×30 on one sheet and 20×40 on another (the workbook says 20×40); K-8 reads 15×25 and 20×25 (§3.1, check 3/8).
+4. **Sections taken from the wrong cuadro row** *(corrected 2026-10-10 by two independent raw-DXF checks, Task 8 review and Task 8b)*: the cotas reader took the dimension nearest the label by centre; in Marina's cuadros the label sits under its own section, so it often took the NEXT row's cota. The drawing agrees with itself on every sheet — K-5 20×30, K-6 20×40, K-8 15×60 on all five sheets; K-9 20×40, K-11 20×60, K-12 30×30, K-18 75×25, C-1 45×45, T2-10 30×40; K-15A is not a rectangle. The "K-5/K-6/K-8 contradict themselves across sheets" reading of the first audit was this reader artifact. The workbook says K-5 20×40 (the drawing: 20×30 — workbook difference for Diego), K-6 20×40 and K-8 60×15 (both agree with the drawing). Fixed by R81: the section comes from the label's own drawn section (§3.1, check 3/8).
 5. **The AI filled what a misparse emptied:** with the stirrup field empty after (1), the IA reading supplied `#2` where the drawing says `#3`, unflagged (§3.1 ia rule).
 
 The same audit over columns, the remaining castillos and pilotes (texts inside blocks included):
@@ -86,7 +86,7 @@ Precedence (higher wins, losers kept in `alternativas`):
 `humano` is a decision taken in Revisión (§4.3). No confidence number is stored or shown (doctrine).
 
 **Rules that keep precedence honest:**
-- **Same-rank disagreement is never resolved silently.** Two `detalle` readings of K-5 (20×30 and 20×40) both stay; the value used is the one from the cuadro/detail whose frame matches the placement's level (ES-200 cuadro for planta-alta placements, etc.) when that can be decided, and the element carries a check-8 duda either way (the drawing contradicts itself).
+- **Same-rank disagreement is never resolved silently.** Two `detalle` readings of one mark that disagree (e.g. a section drawn differently on two sheets) both stay; the value used is the one from the cuadro/detail whose frame matches the placement's level (ES-200 cuadro for planta-alta placements, etc.) when that can be decided, and the element carries a check-8 duda either way (the drawing contradicts itself).
 - **`ia` never fills a field whose drawing text exists but failed to parse.** A parse failure is an `aviso` on that text, not an empty field. `ia` fills only fields for which no text was associated at all, and `ia` values never count as "from the drawing" in the scorecard.
 - **Copies are counted, not trusted blindly.** When the same mark is defined in several frames, all readings are compared; agreement across copies is recorded, disagreement is check 8.
 
@@ -270,7 +270,7 @@ Per block definition, a name-independent signature: counts of child entity types
 ## 10. Phasing (one plan each)
 
 **E0 · Foundation of the model.** `Dato`, `Definicion`, `Armado` + parser, `Reglas` from notes and table, `Elemento` join, checks 1, 2, 7, 8, scorecard + API + Revisión panel, gold `estructura` block. Steel stage reads structured armado (zones, several stirrups per set, grapas, two bar groups).
-*Done when:* the five root causes in §2 are fixed and tested; every Marina armado text parses losslessly (or carries an aviso naming the unconsumed token); Marina's definitions reproduce the Marina transcription exactly (all marks, not only the ten in §2); no `ia` value fills a field whose text exists; Marina `Reglas` = 8 table rows, covers for 4 family groups, weld from #8, lap limit #6, first stirrup 6 cm, castillo anchorage 100 cm, the #8 contradiction flagged; K-5/K-6/K-8 section conflicts appear as dudas; scorecards for Marina, PRUEBA-1, Torre; gold recaptured with the reason stated.
+*Done when:* the five root causes in §2 are fixed and tested; every Marina armado text parses losslessly (or carries an aviso naming the unconsumed token); Marina's definitions reproduce the Marina transcription exactly (all marks, not only the ten in §2); no `ia` value fills a field whose text exists; Marina `Reglas` = 8 table rows, covers for 4 family groups, weld from #8, lap limit #6, first stirrup 6 cm, castillo anchorage 100 cm, the #8 contradiction flagged; K-5/K-6/K-8 sections read as the drawing draws them on every sheet (20×30, 20×40, 15×60), with no cross-sheet conflict; scorecards for Marina, PRUEBA-1, Torre; gold recaptured with the reason stated.
 
 **E1 · Cimentación complete.** Pilotes from `DETALLE DE PILOTE` (section, length, zoned armado), dados joined to D-marks, contratrabe armado, losa de cimentación mesh, muros de contención, excavation/plantilla from levels, steel by §5.4 with lap rows and welds.
 *Done when:* every Marina pilote and dado is joined to a definition or carries a `bloquea` naming what is missing; excavation shows its levels and supuestos; foundation steel within ±1 % of the corrected reference.
@@ -290,7 +290,7 @@ Structural steel (Marina has HSS 10"×10" columns and IPR 12"×8" beams: profile
 
 ## 12. What Diego owes / open items
 
-- Spot-check list after E0: castillo stirrup sizes K-2…K-3A and K-4A's longitudinal (workbook vs drawing, §2); K-5/K-6 sections (the drawing itself reads 20×30 on one sheet and 20×40 on another; the workbook says 20×40); K-8 (workbook 60×15, drawing 15×25 and 20×25); K-15A.1/K-15A.2 in the workbook vs `K-15A` (6#8+6#6) in the drawing; C-3 (workbook 8 × 1", drawing 8#8+4#6); D-marks without a definition; the full Marina transcription.
+- Spot-check list after E0: castillo stirrup sizes K-2…K-3A and K-4A's longitudinal (workbook vs drawing, §2); K-5 section (drawing 20×30 on every sheet, workbook 20×40); K-6 (drawing and workbook 20×40) and K-8 (drawing 15×60, workbook 60×15) agree; K-15A.1/K-15A.2 in the workbook vs `K-15A` (6#8+6#6) in the drawing; C-3 (workbook 8 × 1", drawing 8#8+4#6); D-marks without a definition; the full Marina transcription.
 - Confirm the «1/4"» weight (0.384 vs 0.248 kg/m) and dados cover (7.5 vs 5 cm).
 - Ask Marina's calculista about #8 laps (table lists them; note 4 forbids them).
 - Natural ground level for Marina if the drawing does not state it (otherwise excavation stays a `supuesto`).
