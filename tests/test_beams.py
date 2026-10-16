@@ -632,3 +632,83 @@ def test_the_declared_widths_come_from_the_definitions():
     assert config.face_widths == {"T2-12": 45.0, "T2-7": None, "T9": None}
     assert config.family_face_widths == {"dala": 15.0}
     assert con_anchos_declarados(_PRESET, inv, None).face_widths == {}
+
+
+# ------------------------------------------------- Tarea 9b, ronda de arreglos 1: R173
+
+
+def _polilinea(entity_id, puntos, layer="E-TRABES"):
+    xs, ys = [p[0] for p in puntos], [p[1] for p in puntos]
+    caja = (min(xs), min(ys), max(xs), max(ys))
+    return _ent(entity_id, _tipo("polyline"), caja, points=puntos, layer=layer)
+
+
+def test_the_untagged_leg_of_a_tags_own_polyline_is_that_tags():
+    # R173 (PRUEBA-1, T-7 «682A»): la polilínea 650C de E-TRABES sube 4.325 junto a la etiqueta y
+    # da vuelta 2.225 a lo largo de la escalera, sin etiqueta propia: es de la T-7 (6.55); se dice.
+    entidades = [
+        _polilinea("650C", [(0.0, 0.0), (0.0, 4.325), (2.225, 4.325)]),
+        _texto("t", "T-7", (-0.05, 1.5), giro=90.0, capa="TEXTO"),
+    ]
+    viga = _vigas(entidades)["t"]
+    assert viga.properties["estimated_span_length"] == pytest.approx(6.55)
+    assert viga.properties["tramo_sin_etiqueta"].startswith(
+        "tramo sin etiqueta propia: la línea 650C sigue 2.225"
+    )
+
+
+def test_the_untagged_leg_goes_to_the_tag_whose_tramo_holds_its_corner():
+    # R173 (PRUEBA-1, T-9 «6833»): dos T-9 se reparten los 6.375 de 672D; los 1.818 que suben en
+    # su punta son de la etiqueta cuyo tramo llega a esa esquina, no de la otra.
+    entidades = [
+        _polilinea("672D", [(0.0, 0.0), (6.375, 0.0), (6.375, 1.818)]),
+        _texto("a", "T-9", (1.0, -0.15), capa="TEXTO"),
+        _texto("b", "T-9", (5.0, -0.15), capa="TEXTO"),
+    ]
+    vigas = _vigas(entidades)
+    a, b = vigas["a"].properties, vigas["b"].properties
+    assert "tramo_sin_etiqueta" not in a
+    assert "tramo_sin_etiqueta" in b
+    assert a["estimated_span_length"] + b["estimated_span_length"] == pytest.approx(8.193)
+
+
+def test_a_leg_between_two_tagged_legs_is_cut_halfway():
+    entidades = [
+        _polilinea("l", [(0.0, 0.0), (3.0, 0.0), (3.0, 2.0), (6.0, 2.0)]),
+        _texto("a", "T-1", (1.0, -0.15), capa="TEXTO"),
+        _texto("b", "T-1", (4.0, 2.05), capa="TEXTO"),
+    ]
+    vigas = _vigas(entidades)
+    assert [vigas[k].properties["estimated_span_length"] for k in ("a", "b")] == [4.0, 4.0]
+    assert "(la mitad, 1.000" in vigas["a"].properties["tramo_sin_etiqueta"]
+
+
+def test_a_leg_drawn_twice_or_a_beams_end_is_not_a_leg():
+    # R173 (PRUEBA-1, T-4 6504 y 6BB4): dos polilíneas en L cuyos tramos cortos de 0.825 están
+    # dibujados uno sobre otro: no se suman (no se sabe de quién son, y contarían dos veces). La
+    # punta de una viga dibujada con sus dos caras (0.2) tampoco es un tramo.
+    entidades = [
+        _polilinea("6504", [(2.225, 0.825), (2.225, 0.0), (0.0, 0.0)]),
+        _polilinea("6BB4", [(2.225, 0.075), (2.225, 0.9), (0.0, 0.9)]),
+        _texto("a", "T-4", (1.0, -0.2), capa="TEXTO"),
+        _texto("b", "T-4", (1.0, 0.95), capa="TEXTO"),
+    ]
+    vigas = _vigas(entidades)
+    for k in ("a", "b"):
+        assert vigas[k].properties["estimated_span_length"] == 2.225
+        assert "tramo_sin_etiqueta" not in vigas[k].properties
+    u = [_polilinea("u", [(0.0, 0.0), (5.0, 0.0), (5.0, 0.2), (0.0, 0.2)]),
+         _texto("t", "T-1", (2.0, -0.15), capa="TEXTO")]  # fmt: skip
+    assert _vigas(u)["t"].properties["estimated_span_length"] == 5.0
+
+
+def test_a_walls_outline_is_not_a_dalas_own_polyline():
+    # R173: el contorno de un muro (MUROS1) sigue en el muro que lo cruza; ese tramo no es de la
+    # dala que corona el muro de su etiqueta.
+    entidades = [
+        _polilinea("muro", [(0.0, 0.0), (4.0, 0.0), (4.0, 1.3)], layer="MUROS1"),
+        _texto("t", "CI", (1.0, -0.15)),
+    ]
+    viga = _vigas(entidades)["t"]
+    assert viga.properties["estimated_span_length"] == 4.0
+    assert "tramo_sin_etiqueta" not in viga.properties

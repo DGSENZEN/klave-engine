@@ -13,8 +13,10 @@ in range the tag has no span, and says so.
 Then the lines are settled together: a run one family's tags take is never another family's;
 the two faces of one beam are one beam line, measured on its axis (R172: as far apart as its
 definition's width plus 5 cm, else 0.35 m; the axis drawn halfway between them is the beam's
-too); and a line several tags of one kind take is partitioned among them, cut at the castillos
-and columns on it, else halfway between consecutive tags, so it counts once."""
+too); a line several tags of one kind take is partitioned among them, cut at the castillos and
+columns on it, else halfway between consecutive tags, so it counts once; and the legs of a tag's
+own polyline that no tag takes go to the tag on the leg they hang from (R173, «tramo sin etiqueta
+propia»)."""
 
 import math
 import re
@@ -97,6 +99,9 @@ class BeamDetectorConfig(BaseModel):
     # (within this share of their gap) makes them one beam when each face lies at most
     # ``max_face_gap`` from it.
     axis_centre_tolerance: float = 0.1
+    # R173: a wall's outline is never a beam's own line: its other legs are walls (the stub of a
+    # crossing wall, its other face, its end), not the dala's that crowns the wall its tag labels.
+    wall_layer_hints: list[str] = Field(default_factory=lambda: ["MURO"])
     # R146: a castillo or column whose marker reaches this near a beam line is a support on it:
     # a shared line is cut there (scaled per unit preset).
     support_tolerance: float = 1.5
@@ -354,6 +359,133 @@ def _repartir(
     for grupo in _por_clase(marcadas).values():
         for viga in _vigas(grupo, config, index):
             _partir(viga, output, apoyos, config)
+    _sin_etiqueta_propia(marcadas, output, config, index)
+
+
+def _sin_etiqueta_propia(
+    marcadas: list[_Marcada],
+    output: DetectorOutput,
+    config: BeamDetectorConfig,
+    index: SpatialIndex | None,
+) -> None:
+    """R173: a leg of a tag's own polyline (on its family's own layer, never a wall's outline)
+    that no tag takes goes to the tag on the leg it hangs from — the one whose tramo holds that
+    corner, one per kind of tag on it —, with «tramo sin etiqueta propia» (PRUEBA-1: T-7's beam
+    turns 2.225 along the stair; T-9's, 1.818). A leg between two taken legs is cut halfway. Not
+    a leg: one no longer than ``max_face_gap`` (the end of a beam drawn with its faces), nor one
+    with a line of its layer beside it as a face, or on it (a beam drawn with both faces, a
+    stretch drawn twice): those stop the polyline there."""
+    tomados = {m.elegida.tramo.clave for m in marcadas if m.elegida is not None}
+    por_linea: dict[str, list[_Marcada]] = {}
+    for m in marcadas:
+        props = output.detections[m.indice].properties
+        if m.elegida is None or "estimated_span_length" not in props:
+            continue
+        linea = m.elegida.tramo.linea
+        if _preferencia(linea.layer, m.familia, config) != 0:
+            continue
+        if layer_matches(linea.layer, config.wall_layer_hints):
+            continue
+        por_linea.setdefault(linea.entity_id, []).append(m)
+    for suyas in por_linea.values():
+        tramos = tramos_rectos(suyas[0].elegida.tramo.linea)  # type: ignore[union-attr]
+        if len(tramos) < 2:
+            continue
+        tomado = [t.clave in tomados for t in tramos]
+        libre = [
+            not tomado[k] and _es_tramo(t, tramos, index, config) for k, t in enumerate(tramos)
+        ]
+        for k, t in enumerate(tramos):
+            if tomado[k]:
+                continue
+            # The taken legs it hangs from, through free legs only, on each side.
+            lados: list[tuple[int, int]] = []
+            for paso in (-1, 1):
+                j = k
+                while 0 <= j < len(tramos) and not tomado[j] and libre[j]:
+                    j += paso
+                if 0 <= j < len(tramos) and tomado[j] and libre[k]:
+                    lados.append((abs(j - k), j))
+            if not lados:
+                continue
+            cerca = min(d for d, _j in lados)
+            duenos = [j for d, j in lados if d == cerca]
+            for j in duenos:
+                esquina = tramos[j].p if k < j else tramos[j].q
+                parte = t.largo / len(duenos)
+                _sumar_tramo(suyas, tramos[j], esquina, t, parte, len(duenos) > 1, output)
+
+
+def _es_tramo(
+    t: Tramo, tramos: list[Tramo], index: SpatialIndex | None, config: BeamDetectorConfig
+) -> bool:
+    """R173: whether an untaken leg is a leg of the beam: longer than ``max_face_gap``, with no
+    line of its layer beside it as a face or drawn on it."""
+    if t.largo <= config.max_face_gap:
+        return False
+    otros: list[Tramo] = [r for r in tramos if r.clave != t.clave]
+    if index is not None:
+        tol = config.max_face_gap
+        xs, ys = [t.p[0], t.q[0]], [t.p[1], t.q[1]]
+        caja = (min(xs) - tol, min(ys) - tol, max(xs) + tol, max(ys) + tol)
+        for hit in index.entities_in_bbox(caja):
+            linea = index.get(hit.entity_id)
+            if linea.entity_id == t.linea.entity_id or linea.layer != t.linea.layer:
+                continue
+            if linea.entity_type not in (EntityType.line, EntityType.polyline):
+                continue
+            if not linea.points or linea.is_annotation:
+                continue
+            otros.extend(tramos_rectos(linea))
+    for r in otros:
+        if r.linea.layer != t.linea.layer:
+            continue
+        ur = r.direccion
+        if abs(t.direccion[0] * ur[0] + t.direccion[1] * ur[1]) < math.cos(_MISMA_DIRECCION * 2):
+            continue
+        cruces = [_a_lo_largo(t.p, t.direccion, r.p)[1], _a_lo_largo(t.p, t.direccion, r.q)[1]]
+        if max(abs(c) for c in cruces) <= config.max_face_gap and _traslapan(t, r, config):
+            return False
+    return True
+
+
+def _sumar_tramo(
+    suyas: list[_Marcada],
+    tomado: Tramo,
+    esquina: Point,
+    tramo: Tramo,
+    parte: float,
+    partido: bool,
+    output: DetectorOutput,
+) -> None:
+    """Give an untaken leg (or its half) to the tag of each kind on the taken leg whose tramo
+    holds the corner it hangs from."""
+    por_clase: dict[tuple[str, str], list[_Marcada]] = {}
+    for m in suyas:
+        assert m.elegida is not None
+        if m.elegida.tramo.clave == tomado.clave:
+            por_clase.setdefault((m.familia, m.clase), []).append(m)
+    for ms in por_clase.values():
+
+        def junto(m: _Marcada) -> tuple[float, int]:
+            corrida = output.detections[m.indice].properties.get("span_run") or []
+            cerca = min((math.dist(esquina, (q[0], q[1])) for q in corrida), default=math.inf)
+            return (cerca, m.indice)
+
+        m = min(ms, key=junto)
+        d = output.detections[m.indice]
+        props = d.properties
+        antes = float(props["estimated_span_length"])
+        props["estimated_span_length"] = round(antes + parte, 3)
+        mitad = f" (la mitad, {parte:.3f}: sigue entre dos tramos con etiqueta)" if partido else ""
+        aviso = (
+            f"tramo sin etiqueta propia: la línea {tramo.linea.entity_id} sigue {tramo.largo:.3f} "
+            f"en un tramo que ninguna etiqueta toma, unido al suyo; se le suma{mitad} — claro "
+            f"{antes:.3f} → {antes + parte:.3f}"
+        )
+        previo = props.get("tramo_sin_etiqueta")
+        props["tramo_sin_etiqueta"] = f"{previo}; {aviso}" if previo else aviso
+        d.evidence.notes.append(aviso)
 
 
 def _por_clase(marcadas: list[_Marcada]) -> dict[tuple[str, str], list[_Marcada]]:

@@ -609,13 +609,13 @@
         }
       },
       "EST-002": {
-        "quantity": 7.796,
+        "quantity": 8.251,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "claros de trabe: cada etiqueta toma el tramo recto alineado junto a ella, no la l\u00ednea de un detalle de secci\u00f3n ni la polil\u00ednea entera; la l\u00ednea que comparten varias etiquetas se reparte y cuenta una vez (R146)",
+        "note": "claros de trabe: cada etiqueta toma el tramo recto alineado junto a ella, no la l\u00ednea de un detalle de secci\u00f3n ni la polil\u00ednea entera; la l\u00ednea que comparten varias etiquetas se reparte y cuenta una vez (R146); el tramo de su propia polil\u00ednea que ninguna etiqueta toma es suyo, con \u00abtramo sin etiqueta propia\u00bb: la T-7 (682A) suma los 2.225 de 650C que dan vuelta a lo largo de la escalera y la T-9 (6833) los 1.818 de 672D que suben en su esquina; 7.796 \u2192 8.251, verificado en el crudo (R173)",
         "variants": {
-          "EST-002.GEN": 7.796
+          "EST-002.GEN": 8.251
         }
       },
       "EST-005": {
