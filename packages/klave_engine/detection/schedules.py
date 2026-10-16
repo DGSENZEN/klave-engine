@@ -1295,6 +1295,16 @@ _MISMA_FILA = 2.0
 # Two notes of different units about as near the title along the row (the second within 10 % or
 # both over it): its group is not told apart, and its cotas are refused (R151).
 _NOTAS_EMPATADAS = 1.10
+# R174: a group's note is a caption, «ACOTACIONES EN CMS, SIN ESCALA» or «(ACOTACIONES EN CMS,
+# S/E)», written under its group's heading. A numbered note («1.- ACOTACIONES Y NIVELES EN METROS,
+# EXCEPTO INDICADOS», the first of PRUEBA-1's NOTAS GENERALES beside PLANTA BAJA) or one inside a
+# longer text (a pile's specifications) is the sheet's or a plan view's general note: it never
+# scopes a detail's cotas.
+_NOTA_DE_GRUPO = re.compile(r"\s*\(?\s*ACOTACION", re.IGNORECASE)
+# R174: a group note's heading is the text written right over it, across it, its bottom within
+# this many of the note's heights above the note's top (Marina: «COLUMNAS METÁLICAS» over «… EN
+# MMS», «CERRAMIENTOS» over «… EN CMS», «DADO D-1» over its note: 2.2 to 3.3).
+_SOBRE_LA_NOTA = 3.5
 
 
 def _unidad_de_nota(texto: str) -> float | None:
@@ -1327,21 +1337,28 @@ def _con_unidad_declarada(
     unit_to_m: float,
     config: TextPatternConfig,
 ) -> list[NormalizedEntity]:
-    """R151: a unit note («ACOTACIONES EN CMS, SIN ESCALA») declares the unit of its OWN detail
-    group's cotas, and only where the style factor does not fix it (``_fija_su_unidad``). A cota's
-    group is its title's — the mark label nearest to it, within a section's reach — and the
-    title's note is the one written under its group (``_nota_del_grupo``): on Marina ES-200 the
-    CR-1 cota lies as near the «EN MMS» note of «COLUMNAS METÁLICAS» as to its own «EN CMS», and
-    the title of the CI for 15 cm walls is nearer that «EN MMS» than to its own «EN CMS» under
-    «CADENAS INTERMEDIAS»; by rows below each title both find their own. One note: its unit
+    """R151, R174: a unit note («ACOTACIONES EN CMS, SIN ESCALA») declares the unit of its OWN
+    detail group's cotas, and only where the style factor does not fix it (``_fija_su_unidad``).
+    A cota's group is the nearest group heading of any kind, within a section's reach: a mark
+    label, or the heading a group note is written under (``_encabezados``: «COLUMNAS METÁLICAS»
+    over «… EN MMS»). A heading's note is the one under it; a mark title's is the one written
+    under its group (``_nota_del_grupo``), never across another group's heading. On Marina ES-200
+    the cotas of CM-1 (not a mark) lie nearer «COLUMNAS METÁLICAS» than the CR-1 title: millimetres,
+    not centimetres; the CR-1 cota lies as near the «EN MMS» note as to its own «EN CMS», and the
+    title of the CI for 15 cm walls is nearer that «EN MMS» than to its own «EN CMS» under
+    «CADENAS INTERMEDIAS»; by rows below each title both find their own. Only a group's caption
+    is a group note (``_NOTA_DE_GRUPO``): a numbered general note — PRUEBA-1's «1.- ACOTACIONES Y
+    NIVELES EN METROS», beside PLANTA BAJA — never scopes a detail's cotas. One note: its unit
     (``unidad_declarada``, on a copy of the dimension). Two of different units about as near
     (``_NOTAS_EMPATADAS``): the cota is refused (``unidades_en_conflicto``) and its section
     claimed. No note: as the factor says."""
-    notas = [
-        (e.bbox, bbox_center(e.bbox), alto_de_texto(e), u)
-        for e in entities
-        if e.is_textual and e.text and (u := _unidad_de_nota(e.text)) is not None
-    ]
+    notas: list[tuple[BBox, tuple[float, float], float, float]] = []
+    for e in entities:
+        if not e.is_textual or not e.text or not _NOTA_DE_GRUPO.match(e.text):
+            continue
+        unidad = _unidad_de_nota(e.text)
+        if unidad is not None:
+            notas.append((e.bbox, bbox_center(e.bbox), alto_de_texto(e), unidad))
     sueltas = [
         d
         for d in dims
@@ -1358,23 +1375,32 @@ def _con_unidad_declarada(
         and len(e.text.strip()) <= 8
         and marca_en_texto(e.text.strip(), config) is not None
     ]
-    if not titulos:
+    encabezados = _encabezados(entities, notas)
+    # Each heading: its centre, height, and its note (a heading's) or None (a mark title's).
+    grupos: list[tuple[tuple[float, float], float, str, dict | None]] = [
+        (bbox_center(t.bbox), alto_de_texto(t), t.entity_id, None) for t in titulos
+    ]
+    grupos += [
+        (bbox_center(caja), alto, f"encabezado:{k}", {"unidad_declarada": u})
+        for k, (caja, alto, u, _nota) in enumerate(encabezados)
+    ]
+    if not grupos:
         return dims
-    centros = [(bbox_center(t.bbox), alto_de_texto(t), t.entity_id) for t in titulos]
-    de_titulo: dict[str, dict] = {}
+    cajas = [(caja, nota) for caja, _alto, _u, nota in encabezados]
+    de_grupo: dict[str, dict] = {}
     extra: dict[str, dict] = {}
     for d in sueltas:
         p, q = d.properties["measured_segment"]
         medio = ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2)
-        distancia, (centro, alto, titulo) = min(
-            ((math.dist(medio, c[0]), c) for c in centros), key=lambda x: x[0]
+        distancia, (centro, alto, clave, suya) = min(
+            ((math.dist(medio, g[0]), g) for g in grupos), key=lambda x: (x[0], x[1][2])
         )
         if distancia > (_ALCANCE + _TAMANO) * alto:
             continue
-        if titulo not in de_titulo:
-            de_titulo[titulo] = _nota_del_grupo(centro, notas)
-        if de_titulo[titulo]:
-            extra[d.entity_id] = de_titulo[titulo]
+        if clave not in de_grupo:
+            de_grupo[clave] = suya if suya is not None else _nota_del_grupo(centro, notas, cajas)
+        if de_grupo[clave]:
+            extra[d.entity_id] = de_grupo[clave]
     if not extra:
         return dims
     return [
@@ -1385,14 +1411,41 @@ def _con_unidad_declarada(
     ]
 
 
+def _encabezados(
+    entities: list[NormalizedEntity], notas: list[tuple[BBox, tuple[float, float], float, float]]
+) -> list[tuple[BBox, float, float, BBox]]:
+    """R174: the headings group notes are written under — for each, the nearest text over it
+    (``_SOBRE_LA_NOTA``), across it, that is no unit note — with its height, its note's unit and
+    its note's box."""
+    textos = [e for e in entities if e.is_textual and e.text and _unidad_de_nota(e.text) is None]
+    salida: list[tuple[BBox, float, float, BBox]] = []
+    for caja, _centro, alto, unidad in notas:
+        encima = [
+            t
+            for t in textos
+            if t.bbox[1] >= caja[3] - 0.2 * alto
+            and t.bbox[1] - caja[3] <= _SOBRE_LA_NOTA * alto
+            and t.bbox[0] < caja[2]
+            and t.bbox[2] > caja[0]
+        ]
+        if encima:
+            t = min(encima, key=lambda e: (e.bbox[1], e.entity_id))
+            salida.append((t.bbox, alto_de_texto(t), unidad, caja))
+    return salida
+
+
 def _nota_del_grupo(
-    centro: tuple[float, float], notas: list[tuple[BBox, tuple[float, float], float, float]]
+    centro: tuple[float, float],
+    notas: list[tuple[BBox, tuple[float, float], float, float]],
+    encabezados: list[tuple[BBox, BBox]] | None = None,
 ) -> dict:
     """R151: what the unit note of a title's group declares: of the unit notes below the title
     and beside it (each within ``_NOTA_DEL_GRUPO`` of the note's heights, down and across), the
     nearest row, and of it the note horizontally nearest the title (0 when the title is over it):
     ``{"unidad_declarada": u}``, or ``{"unidades_en_conflicto": "cm, mm"}`` when two of different
-    units are about as near, or nothing."""
+    units are about as near, or nothing. R174: never across another group's heading — a heading
+    (``encabezados``: its box and its note's) between the title and that row, over the title's
+    column, that is not the heading of a note in that row, is another group's: then nothing."""
 
     def de_lado(n: tuple[BBox, tuple[float, float], float, float]) -> float:
         return max(n[0][0] - centro[0], 0.0, centro[0] - n[0][2])
@@ -1408,9 +1461,17 @@ def _nota_del_grupo(
         return {}
     arriba = max(n[1][1] for n in debajo)
     fila = [n for n in debajo if arriba - n[1][1] <= _MISMA_FILA * n[2]]
-    cerca = sorted((de_lado(n), n[3]) for n in fila)
-    d0, u0 = cerca[0]
-    empatadas = {u for dx, u in cerca if dx <= _NOTAS_EMPATADAS * d0}
+    cerca = sorted((de_lado(n), n[3], n) for n in fila)
+    d0, u0, n0 = cerca[0]
+    # The headings of the row's notes lie right over them; another one between the title and the
+    # row, over the title's column, is another group's.
+    de_la_fila = {n[0] for n in fila}
+    for caja, nota in encabezados or []:
+        if nota in de_la_fila:
+            continue
+        if arriba < bbox_center(caja)[1] < centro[1] and caja[0] <= centro[0] <= caja[2]:
+            return {}
+    empatadas = {u for dx, u, _n in cerca if dx <= _NOTAS_EMPATADAS * d0}
     if len(empatadas) > 1:
         return {
             "unidades_en_conflicto": ", ".join(

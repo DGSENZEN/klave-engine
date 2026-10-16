@@ -1970,3 +1970,75 @@ def test_a_unit_note_declares_the_unit_of_its_own_groups_cotas(notas, leida, avi
     if aviso is not None:
         assert any(aviso in a for a in s.avisos), s.avisos
         assert "seccion" in s.campos_con_texto  # reclamada: nada la llena de otro lado
+
+
+# ------------------------------------------------- Tarea 9b, ronda de arreglos 1: R174
+
+
+def _cota_suelta(entity_id, p, q, numero):
+    """Una cota de dimlfac 1 (su estilo no dice la unidad de su número)."""
+    cota = _cota(entity_id, p, q, numero)
+    cota.properties |= {"dimlfac": 1.0, "display_value": float(numero)}
+    return cota
+
+
+def _unidades(ents):
+    from klave_engine.detection.schedules import _con_unidad_declarada
+
+    dims = [e for e in ents if e.entity_type == EntityType.dimension]
+    salida = _con_unidad_declarada(dims, ents, 1.0, C)
+    unidad = {d.entity_id: d.properties.get("unidad_declarada") for d in salida}
+    conflicto = {d.entity_id: d.properties.get("unidades_en_conflicto") for d in salida}
+    return {k: unidad[k] or conflicto[k] for k in unidad}
+
+
+def test_a_cotas_group_is_its_nearest_heading_of_any_kind():
+    # R174 (Marina ES-200): las cotas «254» y «12.7» de CM-1 (que no es una marca) están bajo
+    # «COLUMNAS METÁLICAS» / «ACOTACIONES EN MMS»; su título de marca más cercano es CR-1, cuya
+    # nota dice «EN CMS». Su grupo es el encabezado más cercano: milímetros. La cota de CR-1
+    # sigue con la nota de su grupo, centímetros.
+    ents = [
+        _titulo("cr1", "CR-1", 197.81, 4.95, alto=0.13),
+        _texto("cm", "COLUMNAS METÁLICAS", 195.235, 2.605, alto=0.15),
+        _texto("mms", "ACOTACIONES EN MMS, SIN ESCALA", 195.235, 2.24, alto=0.1),
+        _texto("cerr", "CERRAMIENTOS", 199.95, 2.54, alto=0.16),
+        _texto("cms", "ACOTACIONES EN CMS, SIN ESCALA", 199.955, 2.17, alto=0.1),
+        _cota_suelta("254", (195.789, 4.734), (194.522, 4.734), 254),
+        _cota_suelta("12.7", (194.584, 4.072), (194.522, 4.072), 12.7),
+        _cota_suelta("cr", (197.8, 3.4), (197.8, 4.54), 20),
+    ]
+    assert _unidades(ents) == {"254": 0.001, "12.7": 0.001, "cr": 0.01}
+
+
+def test_a_general_note_never_scopes_a_details_cotas():
+    # R174 (PRUEBA-1): las cotas del detalle de T-8 tomaban «1.- ACOTACIONES Y NIVELES EN METROS,
+    # EXCEPTO INDICADOS», la primera de las NOTAS GENERALES junto a PLANTA BAJA, 5 m abajo: una
+    # nota general (numerada) no es la de ningún grupo de detalle.
+    nota = "1.- ACOTACIONES Y NIVELES EN METROS, EXCEPTO INDICADOS"
+    ents = [
+        _titulo("t8", "T-8", 68.07, -62.97, alto=0.39),
+        _cota_suelta("40", (67.33, -61.31), (67.33, -60.11), 40),
+        _texto("ng", "NOTAS  GENERALES", 68.78, -67.33, alto=0.3),
+        _texto("n1", nota, 67.2, -67.885, alto=0.11),
+    ]
+    assert _unidades(ents) == {"40": None}
+    # Escrita como la nota de un grupo, bajo su encabezado, sí lo es (R151).
+    ents[3] = _texto("n1", "ACOTACIONES EN METROS", 67.2, -67.885, alto=0.11)
+    assert _unidades(ents) == {"40": 1.0}
+
+
+def test_a_titles_note_is_never_across_another_groups_heading():
+    # R174: entre el título y la fila de notas que encuentra (la de DADOS), el encabezado largo de
+    # otro grupo sobre la columna del título (su nota, bajo su otra punta, lejos de lado): la nota
+    # de DADOS no es la del grupo del título.
+    ents = [
+        _titulo("t", "T-1", 0.0, 5.0, alto=0.1),
+        _cota_suelta("c", (0.0, 4.5), (0.6, 4.5), 30),
+        _texto("otro", "CONEXIÓN COLUMNA CM-1 CON TRABE METÁLICA", 4.0, 3.0, alto=0.4),
+        _texto("su_nota", "ACOTACIONES EN MMS, SIN ESCALA", 8.4, 2.6, alto=0.1),
+        _texto("dados", "DADOS", 0.3, 0.87, alto=0.15),
+        _texto("cms", "ACOTACIONES EN CMS, SIN ESCALA", 0.3, 0.5, alto=0.1),
+    ]
+    assert _unidades(ents) == {"c": None}
+    # Sin ese encabezado, la de DADOS es la de su grupo (R151).
+    assert _unidades([e for e in ents if e.entity_id != "otro"]) == {"c": 0.01}
