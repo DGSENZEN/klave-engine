@@ -102,6 +102,9 @@ class BeamDetectorConfig(BaseModel):
     # R173: a wall's outline is never a beam's own line: its other legs are walls (the stub of a
     # crossing wall, its other face, its end), not the dala's that crowns the wall its tag labels.
     wall_layer_hints: list[str] = Field(default_factory=lambda: ["MURO"])
+    # R169: the layers of a dala's tags that crown the wall they sit on, whatever their text's
+    # direction.
+    dala_tag_layer_hints: list[str] = Field(default_factory=lambda: ["CADENA", "DALA"])
     # R146: a castillo or column whose marker reaches this near a beam line is a support on it:
     # a shared line is cut there (scaled per unit preset).
     support_tolerance: float = 1.5
@@ -225,6 +228,7 @@ def detect_beams(
         # The trabe's own line: an aligned straight run beside the tag, never a grid axis nor a
         # leader's lines (R135), measured to what is drawn (R146).
         candidatas: list[_Candidata] = []
+        sobre: list[_Candidata] = []
         for hit in index.entities_near_entity(entity.entity_id, config.line_search_radius):
             other = index.get(hit.entity_id)
             if other.entity_type not in (EntityType.line, EntityType.polyline):
@@ -237,6 +241,13 @@ def detect_beams(
                 tramos_de[other.entity_id] = tramos_rectos(other)
             tramos = tramos_de[other.entity_id]
             candidatas.extend(_alineadas(entity, familia, tramos, formas, config))
+            if _sobre_su_muro(entity, familia, config):
+                sobre.extend(_alineadas(entity, familia, tramos, formas, config, True))
+        if familia == "dala":
+            # R169: a trabe's line is never a dala's span.
+            candidatas = [c for c in candidatas if not _de_trabe(c.tramo, config)]
+        if _sobre_su_muro(entity, familia, config):
+            candidatas = _del_muro(entity, candidatas, sobre, config)
         elegida, dudoso = _tramo_de_la_trabe(candidatas, entity, config)
         marcadas.append(
             _Marcada(len(output.detections), entity, familia, _clase(entity.text, familia),
@@ -265,6 +276,12 @@ def detect_beams(
                 f"{config.alignment_tolerance_deg:g}°) corre junto a ella a menos de "
                 f"{config.line_search_radius:g} unidades; sin claro"
             )
+            if _sobre_su_muro(entity, familia, config):
+                sin_claro = (
+                    "longitud: la etiqueta no está sobre ningún muro ni corre junto a una línea "
+                    f"de su familia o de un muro a menos de {config.line_search_radius:g} "
+                    "unidades (un vano, o la trabe que no es suya); sin claro"
+                )
             properties["sin_claro"] = sin_claro
             notes.append(sin_claro)
 
@@ -870,16 +887,54 @@ def _preferencia(capa: str, familia: str, config: BeamDetectorConfig) -> int:
     return 3
 
 
+def _sobre_su_muro(etiqueta: NormalizedEntity, familia: str, config: BeamDetectorConfig) -> bool:
+    """R169: a dala's tag (CE, CI, DA, DC; or a CR) on a cadenas/dalas layer crowns the wall it
+    sits on, whatever its text's direction."""
+    return familia in ("dala", "cerramiento") and layer_matches(
+        etiqueta.layer, config.dala_tag_layer_hints
+    )
+
+
+def _de_trabe(tramo: Tramo, config: BeamDetectorConfig) -> bool:
+    propias = (config.family_layer_hints.get("trabe") or [[]])[0]
+    return bool(propias) and layer_matches(tramo.linea.layer, propias)
+
+
+def _del_muro(
+    etiqueta: NormalizedEntity,
+    alineadas: list[_Candidata],
+    sobre: list[_Candidata],
+    config: BeamDetectorConfig,
+) -> list[_Candidata]:
+    """R169: the runs a dala's tag on its layer may take — its family's own lines and the wall it
+    sits on, never a wall's end (a run no longer than ``max_face_gap``: Marina «DC» AF072, in a
+    door between two walls, took the 0.3 m end of one). The wall's run its letters sit on (within
+    one text height, reaching its span), in any direction, before any aligned one (Marina ES-200:
+    «CI» written across a short wall took the trabe's line or the wall's end)."""
+
+    def suyo(c: _Candidata) -> bool:
+        if c.preferencia > 1:
+            return False
+        return c.tramo.largo > config.max_face_gap or not layer_matches(
+            c.tramo.linea.layer, config.wall_layer_hints
+        )
+
+    alto = alto_de_texto(etiqueta)
+    debajo = [c for c in sobre if suyo(c) and c.distancia <= alto]
+    return debajo if debajo else [c for c in alineadas if suyo(c)]
+
+
 def _alineadas(
     etiqueta: NormalizedEntity,
     familia: str,
     tramos: list[Tramo],
     formas: Formas,
     config: BeamDetectorConfig,
+    cualquier_direccion: bool = False,
 ) -> list[_Candidata]:
-    """The runs of one line that a tag may dimension: aligned with it, of a beam's length (any
-    length on the family's own layers or the wall it sits on), within the search radius of its
-    letters, and running alongside it."""
+    """The runs of one line that a tag may dimension: aligned with it (any direction with
+    ``cualquier_direccion``), of a beam's length (any length on the family's own layers or the
+    wall it sits on), within the search radius of its letters, and running alongside it."""
     giro = math.radians(etiqueta.rotation or 0.0)
     sentido = (math.cos(giro), math.sin(giro))
     alto = alto_de_texto(etiqueta)
@@ -889,7 +944,9 @@ def _alineadas(
     for tramo in tramos:
         ux, uy = tramo.direccion
         coseno = min(1.0, abs(ux * sentido[0] + uy * sentido[1]))
-        if math.degrees(math.acos(coseno)) > config.alignment_tolerance_deg:
+        if math.degrees(math.acos(coseno)) > config.alignment_tolerance_deg and not (
+            cualquier_direccion
+        ):
             continue
         preferencia = _preferencia(tramo.linea.layer, familia, config)
         # On the family's own layers (or the wall it sits on) a run is the element whatever its

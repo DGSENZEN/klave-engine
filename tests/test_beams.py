@@ -276,7 +276,8 @@ def test_the_l_shaped_wall_counts_each_leg_by_itself():
     assert vigas["h"].properties["estimated_span_length"] == 5.45
     assert vigas["v"].properties["estimated_span_length"] == 9.3
     assert "estimated_span_length" not in vigas["lejos"].properties
-    assert vigas["lejos"].properties["sin_claro"].startswith("longitud: ninguna línea alineada")
+    # R169: una dala en su capa dice que no está sobre ningún muro.
+    assert vigas["lejos"].properties["sin_claro"].startswith("longitud: la etiqueta no está sobre")
 
 
 def _tipo(nombre):
@@ -712,3 +713,68 @@ def test_a_walls_outline_is_not_a_dalas_own_polyline():
     viga = _vigas(entidades)["t"]
     assert viga.properties["estimated_span_length"] == 4.0
     assert "tramo_sin_etiqueta" not in viga.properties
+
+
+# ------------------------------------------------- Tarea 9b, ronda de arreglos 1: R169
+
+
+def _muro_con_tramo_corto():
+    # 1F719 en Marina (ES-200): el muro corto que baja 1.35 y sube 1.55 con su punta de 0.3, y
+    # sigue 1.95 a lo largo del muro de arriba.
+    return _polilinea(
+        "1F719",
+        [(196.976, 14.152), (196.976, 12.802), (197.276, 12.802), (197.276, 14.352),
+         (195.326, 14.352)],
+        layer="MUROS1",
+    )  # fmt: skip
+
+
+def test_a_dala_tag_takes_the_wall_it_sits_on_whatever_its_direction():
+    # R169 (Marina «CI» 301ED): escrita de lado sobre el muro corto, tomaba su punta de 0.3
+    # (alineada con el texto); el muro en que está es la cara de 1.55.
+    viga = _vigas([_muro_con_tramo_corto(), _texto("t", "CI", (197.322, 13.337))])["t"]
+    assert viga.properties["estimated_span_length"] == 1.55
+
+
+def test_a_trabe_line_is_never_a_dalas_span():
+    # R169 (Marina «CI» AFFD6): sobre el muro 1F664 (2.95) y a 0.48 de la trabe 25CD1 (6.95), tomaba
+    # la trabe; la línea de una trabe nunca es el claro de una dala. Y una dala alineada con la
+    # trabe a 0.1 y con su muro a 0.35 (7162F) toma el muro.
+    entidades = [
+        _linea("trabe", (197.126, 14.1524), (204.076, 14.1524), layer="EST-TRABES"),
+        _linea("muro", (204.076, 12.802), (204.076, 15.752)),
+        _texto("t", "CI", (203.925, 13.575)),
+    ]
+    viga = _vigas(entidades)["t"]
+    assert viga.source_entities[1] == "muro"
+    assert viga.properties["estimated_span_length"] == 2.95
+    entidades = [
+        _linea("trabe", (0.0, -0.1), (4.1, -0.1), layer="EST-TRABES"),
+        _linea("muro", (-2.0, -0.35), (16.55, -0.35)),
+        _texto("t", "CI", (1.0, 0.0)),
+    ]
+    assert _vigas(entidades)["t"].source_entities[1] == "muro"
+
+
+def test_a_dala_tag_in_an_opening_reports_no_line():
+    # R169 (Marina «DC» AF072): en el vano entre dos muros cortos, tomaba la punta de 0.3 de uno.
+    abajo = [(196.976, 8.602), (196.976, 9.852), (197.276, 9.852), (197.276, 8.502)]
+    entidades = [
+        _muro_con_tramo_corto(),
+        _polilinea("1F718", abajo, layer="MUROS1"),
+        _texto("t", "DC", (197.297, 11.711)),
+    ]
+    viga = _vigas(entidades)["t"]
+    assert "estimated_span_length" not in viga.properties
+    assert viga.properties["sin_claro"].startswith("longitud: la etiqueta no está sobre ningún")
+
+
+def test_a_dala_tag_beside_its_wall_keeps_the_aligned_wall():
+    # R169: escrita a lo largo de su muro a 0.2, con otro muro que la cruza a 0.15 (más que la
+    # altura de su texto): no está sobre el que la cruza; toma el suyo.
+    entidades = [
+        _linea("suyo", (0.0, -0.2), (4.0, -0.2)),
+        _linea("cruza", (1.33, 0.0), (1.33, 2.0)),
+        _texto("t", "CI", (1.0, 0.0)),
+    ]
+    assert _vigas(entidades)["t"].source_entities[1] == "suyo"
