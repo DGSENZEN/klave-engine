@@ -3,6 +3,7 @@ sus metros. Lo que la tabla no reconoce no se pierde, y nada se cuenta dos veces
 """
 
 import ezdxf
+import pytest
 from klave_engine.common.ids import IdGenerator
 from klave_engine.detection.fixture_detector import detect_fixtures
 from klave_engine.detection.results import DetectionType
@@ -660,3 +661,28 @@ def test_la_conexion_nunca_pasa_por_un_ducto_por_confirmar(tmp_path):
     duda = next(d for d in salida.detections if d.properties.get("diametro_mm") is None)
     assert "sólo se conecta a través del ducto" in duda.evidence.notes[1]
     assert duda.evidence.notes[1].count("en su collarín") == 1  # sólo E
+
+
+# ------------------------------------------- Tarea 9b, ronda de arreglos 4: R185
+
+
+@pytest.mark.parametrize(
+    "rotulo,esperado",
+    [('12" x 7,50 m', 305), ('Ø 12" x 60 cm', 305), ("12\" X 25'", 305), ('CODO 4" x 45°', 102),
+     ('12" x 3', None), ('2 x 12"', None), ('2X12"', None)],
+)  # fmt: skip
+def test_un_ducto_de_rotulo_rechazado_nunca_toma_el_diametro_de_la_red(tmp_path, rotulo, esperado):
+    # R185: cuatro ductos flexibles rotulados 10", 10", 8" y una de estas formas. Antes el cuarto se
+    # pagaba como 10" (el de la red) sin aviso: el rótulo se rechazaba y el ducto quedaba sin él.
+    # Ahora un largo o un ángulo deja leer su diámetro, y lo que sigue siendo una sección o una
+    # cantidad deja el ducto «por confirmar».
+    def build(doc):
+        msp = doc.modelspace()
+        for k, texto in enumerate(('10"', '10"', '8"', rotulo)):
+            _ducto(msp, [(0, 6 * k), (5, 6 * k + 1), (10, 6 * k)])
+            _rotulo(msp, texto, 5, 6 * k + 1.2)
+
+    salida = detect_runs(_entities(tmp_path, "r.dxf", build), None, IdGenerator("d"), 1.0, [])
+    metros = _por_diametro(salida)
+    assert metros[254] == pytest.approx(2 * metros[203], rel=0.01)  # los dos de 10", enteros
+    assert metros.get(esperado, 0.0) == pytest.approx(metros[203], rel=0.01)

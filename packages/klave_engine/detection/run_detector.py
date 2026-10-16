@@ -503,15 +503,27 @@ def _tramos_por_diametro(
     # Los rótulos de diámetro que valen para esta corrida, legibles o no (R180: un 14" que no se
     # leía se pagaba como 12"); la sección de un ducto rectangular no es un diámetro.
     rotulos: list[tuple[tuple[float, float], str, tuple[int, str] | None, str, str]] = []
+    # R185: los rótulos de la capa de la corrida que traen una medida y no dan un diámetro que se
+    # pueda tomar (una sección «2 x 12"», «12" x 3», uno de otro sistema o fuera de rango): el ducto
+    # del que son el rótulo más cercano queda por confirmar, nunca con el diámetro de la red.
+    rechazados: list[tuple[tuple[float, float], str, str]] = []
     for (tx, ty), texto, asa, capa_r in etiquetas:
+        medida = _pulgadas(texto) is not None or es_seccion(texto)
+        de_su_capa = bool(capa) and capa_r == capa and medida
         nombrados = _sistemas_nombrados(texto)
         if nombrados and familia not in nombrados:
+            if de_su_capa:
+                rechazados.append(((tx, ty), texto, asa))
             continue
         if not nombrados and not _diametro_plausible(texto, familia):
+            if de_su_capa:
+                rechazados.append(((tx, ty), texto, asa))
             continue
         pedazo = _pedazo_de(texto, familia)
         diametro = normaliza_diametro(pedazo)
         if diametro is None and (_pulgadas(pedazo) is None or es_seccion(pedazo)):
+            if de_su_capa:
+                rechazados.append(((tx, ty), texto, asa))
             continue  # no dice un diámetro: un material, una sección rectangular
         rotulos.append(((tx, ty), texto, diametro, asa, capa_r))
     legibles = [(pos, texto, d) for pos, texto, d, _asa, _c in rotulos if d is not None]
@@ -543,9 +555,24 @@ def _tramos_por_diametro(
             d, t = dueno
             if t not in recorrido or d < recorrido[t][0]:
                 recorrido[t] = (d, diametro, texto, asa)
+    # R185: el rótulo rechazado de su capa más cercano a cada ducto.
+    rechazo: dict[int, tuple[float, str, str]] = {}
+    for (tx, ty), texto, asa in rechazados:
+        for t in curvas:
+            d = distancia(t, tx, ty)
+            if d <= alcance and (t not in rechazo or d < rechazo[t][0]):
+                rechazo[t] = (d, texto, asa)
     del_ducto: dict[int, tuple[tuple[int, str], str]] = {}
     en_duda: dict[int, str] = {}
+    for t, (_d, texto, asa) in rechazo.items():
+        if t not in cercanos or _d < cercanos[t][0]:
+            en_duda[t] = (
+                f"el rótulo del ducto {grupo.handles[t]}, «{texto.strip()}» ({asa}), no da un "
+                "diámetro que se pueda tomar (una sección, una cantidad, otro sistema)"
+            )
     for t, (_d, diametro, texto, asa) in cercanos.items():
+        if t in en_duda:
+            continue
         suyo = recorrido.get(t)
         if diametro is None:
             en_duda[t] = (

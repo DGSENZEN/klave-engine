@@ -49,6 +49,16 @@ def test_una_seccion_a_por_b_nunca_es_un_diametro():
     assert normaliza_diametro('4" x 60 m') == (102, '102 mm (4")')  # un largo, no una sección
 
 
+def test_un_largo_o_un_angulo_despues_del_diametro_no_es_una_seccion():
+    # R185: metros con coma, centímetros, pies y el ángulo de una pieza dejan leer el diámetro.
+    assert normaliza_diametro('12" x 7,50 m') == (305, '305 mm (12")')
+    assert normaliza_diametro('Ø 12" x 60 cm') == (305, '305 mm (12")')
+    assert normaliza_diametro("12\" X 25'") == (305, '305 mm (12")')
+    assert normaliza_diametro('CODO 4" x 45°') == (102, '102 mm (4")')
+    for seccion in ('12" x 3', '2 x 12"', '2X12"'):
+        assert normaliza_diametro(seccion) is None, seccion
+
+
 def test_la_tabla_nominal_va_de_menor_a_mayor_y_no_repite():
     mm = [m for m, _ in NOMINALES]
     assert mm == sorted(mm) and len(mm) == len(set(mm))

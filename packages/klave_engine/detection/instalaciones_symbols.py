@@ -203,11 +203,14 @@ _MM_EQUIVALENTE = {
     50: 51, 63: 64, 100: 102, 101: 102, 125: 127, 150: 152, 200: 203, 250: 254, 300: 305,
     350: 356, 355: 356, 400: 406, 450: 457, 500: 508, 550: 559, 600: 610,
 }  # fmt: skip
-# R180, R184: una sección rectangular «A x B» no es un diámetro, con la marca de pulgadas en uno, en
-# los dos o en ninguno («16" x 16"», «20 x 16"», «24x14"», «BYP 24" X 8"», «200 x 150 mm»); un largo
-# después del diámetro («4" x 6 m») sí lo deja.
+# R180, R184, R185: una sección rectangular «A x B» no es un diámetro, con la marca de pulgadas en
+# uno, en los dos o en ninguno («16" x 16"», «20 x 16"», «24x14"», «BYP 24" X 8"», «200 x 150 mm»,
+# «2 x 12"»); un largo o un ángulo después del diámetro («4" x 6 m», «12" x 7,50 m»,
+# «Ø 12" x 60 cm», «12" X 25'», «CODO 4" x 45°») sí lo deja.
 _SECCION_RE = re.compile(
-    r'\d\s*(?:"|MM\b)?\s*[X×]\s*\d+(?:\.\d+)?(?![\d.])(?!\s*(?:M|MTS?|ML|METROS?)\b)', re.I
+    r'\d\s*(?:"|MM\b)?\s*[X×]\s*\d+(?:[.,]\d+)?(?![\d.,])'
+    r"(?!\s*(?:M|MTS?|ML|METROS?|CM|CMS|CENT[IÍ]METROS?)\b)(?!\s*['´’°º])",
+    re.I,
 )
 
 
