@@ -156,25 +156,53 @@ def filter_excluded(
 def rekey_reviews(
     reviews: ProjectReviews, detections: list[Detection], meters_factor: float | None
 ) -> tuple[int, list[str]]:
-    """Tras un reproceso, cada revisión cuya clave ya no existe se mueve al
-    elemento con la misma identidad. Devuelve cuántas se movieron y las que
-    quedaron huérfanas (su elemento ya no está, o nunca guardó identidad)."""
+    """Tras un reproceso, cada revisión va a la clave del elemento con su identidad — SIEMPRE,
+    también cuando su clave sigue existiendo pero ya nombra otro elemento (R176: en Marina la
+    «LOS-24» que Diego confirmó en TAB1 pasó a ser la etiqueta de TAB15, y TAB1 la «LOS-25»).
+    Una revisión cuyo elemento ya no está, o que nunca guardó identidad y cuya clave ya no
+    existe, queda huérfana: se conserva, pero nunca en una clave que hoy nombra otro elemento
+    (ahí se aplicaría a él). Una sin identidad cuya clave sigue existiendo se queda donde está.
+    Dos revisiones del mismo elemento: la que ya estaba en su clave, si no la más reciente; la
+    otra, huérfana. Devuelve cuántas cambiaron de clave y las que quedaron huérfanas."""
     from klave_engine.costing.referencias import element_id
 
     vigentes = {review_key(d) for d in detections}
     por_identidad: dict[str, str] = {}
     for d in detections:
         por_identidad.setdefault(element_id(d, meters_factor), review_key(d))
-    movidas = 0
+    nuevas: dict[str, DetectionReview] = {}
+    de_donde: dict[str, str] = {}
+    sueltas: list[tuple[str, DetectionReview]] = []
+    for key, review in reviews.detections.items():
+        if review.element_id:
+            destino = por_identidad.get(review.element_id)
+        else:
+            destino = key if key in vigentes else None
+        if destino is None:
+            sueltas.append((key, review))
+            continue
+        previa = nuevas.get(destino)
+        if previa is not None:
+            gana_previa = de_donde[destino] == destino or (
+                key != destino and previa.updated_at >= review.updated_at
+            )
+            if gana_previa:
+                sueltas.append((key, review))
+                continue
+            sueltas.append((de_donde[destino], previa))
+        nuevas[destino] = review
+        de_donde[destino] = key
+    movidas = sum(1 for destino, key in de_donde.items() if destino != key)
     huerfanas: list[str] = []
-    for key in list(reviews.detections):
-        if key in vigentes:
-            continue
-        review = reviews.detections[key]
-        destino = por_identidad.get(review.element_id) if review.element_id else None
-        if destino is None or destino in reviews.detections:
-            huerfanas.append(key)
-            continue
-        reviews.detections[destino] = reviews.detections.pop(key)
-        movidas += 1
+    for key, review in sueltas:
+        huerfanas.append(key)
+        clave = key
+        n = 1
+        while clave in vigentes or clave in nuevas:
+            clave = f"{key} (huérfana{'' if n == 1 else f' {n}'})"
+            n += 1
+        if clave != key:
+            movidas += 1
+        nuevas[clave] = review
+    reviews.detections = nuevas
     return movidas, huerfanas
