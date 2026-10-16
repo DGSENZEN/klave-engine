@@ -189,15 +189,25 @@ def familia_de_capa(layer: str) -> CorridaRegla | None:
 # pulgada son 12.7 mm y a esa tubería todo el mundo le dice de 13— sino la
 # tabla de diámetros nominales, que es la que usan las publicaciones y por la
 # tanto la única con la que un precio publicado se deja encontrar.
+# R180: hasta 24", como los ductos flexibles de AA (14" y 16" se pagaban como 12").
 NOMINALES: tuple[tuple[int, str], ...] = (
     (6, '1/4'), (10, '3/8'), (13, '1/2'), (16, '5/8'), (19, '3/4'), (25, '1'),
     (32, '1 1/4'), (38, '1 1/2'), (51, '2'), (64, '2 1/2'), (76, '3'), (102, '4'),
-    (152, '6'), (203, '8'), (254, '10'), (305, '12'),
-)
+    (127, '5'), (152, '6'), (203, '8'), (254, '10'), (305, '12'), (356, '14'), (406, '16'),
+    (457, '18'), (508, '20'), (559, '22'), (610, '24'),
+)  # fmt: skip
 _POR_PULGADA = {pulgadas: mm for mm, pulgadas in NOMINALES}
 # Milímetros que el comercio escribe de más de una forma: 100 y 101 son 4",
 # 50 es 2", 63 es 2 1/2". Se llevan al valor que publica el tabulador.
-_MM_EQUIVALENTE = {50: 51, 63: 64, 100: 102, 101: 102, 150: 152, 200: 203, 250: 254, 300: 305}
+_MM_EQUIVALENTE = {
+    50: 51, 63: 64, 100: 102, 101: 102, 125: 127, 150: 152, 200: 203, 250: 254, 300: 305,
+    350: 356, 355: 356, 400: 406, 450: 457, 500: 508, 550: 559, 600: 610,
+}  # fmt: skip
+# Una sección rectangular («16" x 16"», «BYP 24" X 8"», «200 x 150 mm») no es un diámetro; un
+# largo después del diámetro («4" x 6 m») sí lo deja.
+_SECCION_RE = re.compile(
+    r'\d\s*"\s*[X×]\s*\d+(?:\.\d+)?\s*"|\d\s*(?:MM)?\s*[X×]\s*\d+(?:\.\d+)?\s*MM\b', re.I
+)
 
 _PULGADAS_RE = re.compile(r'(?<![\d/])(\d{1,2})(?:\s+(\d)\s*/\s*(\d))?\s*"|(\d)\s*/\s*(\d)\s*"')
 _MM_RE = re.compile(r'(?<!\d)(\d{2,3})\s*(?:MM\b|Ø)', re.I)
@@ -221,6 +231,8 @@ def normaliza_diametro(texto: str) -> tuple[int, str] | None:
     if not texto:
         return None
     limpio = texto.replace("″", '"').replace("''", '"')
+    if _SECCION_RE.search(limpio):
+        return None  # la sección de un ducto rectangular no tiene diámetro (R180)
 
     fraccion = _PULGADAS_RE.search(limpio)
     if fraccion:

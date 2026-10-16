@@ -32,6 +32,16 @@ def test_un_numero_que_no_es_un_diametro_no_se_fuerza_a_serlo():
     assert normaliza_diametro("") is None
 
 
+def test_se_leen_los_diametros_de_4_a_24_pulgadas():
+    # R180: 14" y 16" (ductos flexibles de AA) no se leían y se pagaban como 12".
+    assert normaliza_diametro('14"') == (356, '356 mm (14")')
+    assert normaliza_diametro('16"') == (406, '406 mm (16")')
+    assert normaliza_diametro('24"') == (610, '610 mm (24")')
+    assert normaliza_diametro("350 mm") == (356, '356 mm (14")')
+    assert normaliza_diametro('BYP 24" X 8"') is None  # sección de ducto
+    assert normaliza_diametro('4" x 6 m') == (102, '102 mm (4")')  # un largo, no una sección
+
+
 def test_la_tabla_nominal_va_de_menor_a_mayor_y_no_repite():
     mm = [m for m, _ in NOMINALES]
     assert mm == sorted(mm) and len(mm) == len(set(mm))

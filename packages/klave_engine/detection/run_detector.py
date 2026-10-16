@@ -174,6 +174,8 @@ class _Acumulado:
         self.puntas: list[tuple[tuple[float, float], tuple[float, float]]] = []
         # R170: los trazos que son un spline (un ducto flexible): de un solo diámetro.
         self.curvas: list[bool] = []
+        # R180: el handle de cada trazo, para nombrar el ducto en un aviso.
+        self.handles: list[str] = []
 
     def add(self, entity: NormalizedEntity, length: float) -> None:
         self.length_du += length
@@ -192,6 +194,7 @@ class _Acumulado:
             self.segments_xy.append((float(ax), float(ay), float(bx), float(by)))
             self.de_trazo.append(indice)
         self.curvas.append(curva)
+        self.handles.append(entity.raw_handle or entity.entity_id)
         if points:
             primero, ultimo = points[0][:2], points[-1][:2]
             self.puntas.append(
@@ -260,19 +263,20 @@ def detect_runs(
             cortas += 1
             continue
         familia, disciplina, que_es = regla.familia, regla.disciplina, regla.que_es
-        tramos = _tramos_por_diametro(grupo, etiquetas, meters_factor, regla.familia)
+        tramos = _tramos_por_diametro(grupo, etiquetas, meters_factor, regla.familia, layer)
         if tramos:
             # La red cambia de diámetro a lo largo: cada tramo es un concepto
             # distinto, con sus propios metros — no una tubería entera con el
             # diámetro del rótulo más repetido.
-            for spec_t, diametro_t, du_t, segs_t in tramos:
+            for spec_t, diametro_t, du_t, segs_t, motivo_t in tramos:
                 metros_t = round(du_t * meters_factor, 2)
                 if metros_t <= 0:
                     continue
                 material_t = normaliza_material(spec_t) or normaliza_material(layer)
                 if diametro_t is None:
-                    # R170: los metros sin rótulo que no se conectan con ningún tramo rotulado,
-                    # cuando los dos diámetros con más metros rotulados están casi parejos.
+                    # R170, R180: los metros sin rótulo que no se conectan con ningún tramo
+                    # rotulado, con los dos diámetros mayores casi parejos; o los ductos cuyos
+                    # rótulos propios no se leen o no coinciden.
                     output.detections.append(
                         make_detection(
                             detection_ids.next(),
@@ -285,9 +289,7 @@ def detect_runs(
                             [
                                 f"{metros_t:,.2f} m de {que_es} en «{layer}»: diámetro por "
                                 "confirmar",
-                                "Trazos sin rótulo cerca que no se conectan con un tramo "
-                                "rotulado, y los dos diámetros con más metros rotulados están "
-                                "a menos de 10 %: no se adjudican a ninguno.",
+                                f"{motivo_t[:1].upper()}{motivo_t[1:]}.",
                             ],
                             {
                                 "run_family": familia,
@@ -417,11 +419,11 @@ def detect_runs(
 
 def _etiquetas_de_especificacion(
     entities: list[NormalizedEntity],
-) -> list[tuple[tuple[float, float], str]]:
-    """Los rótulos de diámetro y material de la hoja, con su posición.
+) -> list[tuple[tuple[float, float], str, str, str]]:
+    """Los rótulos de diámetro y material de la hoja, con su posición, su handle y su capa.
 
     Los códigos de control de AutoCAD se traducen antes: %%C es Ø."""
-    salida: list[tuple[tuple[float, float], str]] = []
+    salida: list[tuple[tuple[float, float], str, str, str]] = []
     for entity in entities:
         if not entity.is_textual or not entity.text:
             continue
@@ -430,13 +432,14 @@ def _etiquetas_de_especificacion(
         )
         if len(texto) > 60 or not _SPEC.search(texto):
             continue
-        salida.append((bbox_center(entity.bbox), texto))
+        asa = entity.raw_handle or entity.entity_id
+        salida.append((bbox_center(entity.bbox), texto, asa, entity.layer))
     return salida
 
 
 def _spec_de(
     grupo: "_Acumulado",
-    etiquetas: list[tuple[tuple[float, float], str]],
+    etiquetas: list[tuple[tuple[float, float], str, str, str]],
     meters_factor: float,
     familia: str,
 ) -> str:
@@ -455,7 +458,7 @@ def _spec_de(
         return ""
     alcance = _SPEC_REACH_M / meters_factor if meters_factor else _SPEC_REACH_M
     cerca: Counter[str] = Counter()
-    for (tx, ty), texto in etiquetas:
+    for (tx, ty), texto, _asa, _capa in etiquetas:
         nombrados = _sistemas_nombrados(texto)
         if nombrados and familia not in nombrados:
             continue  # el rótulo es de otra tubería, aunque pase al lado
@@ -472,65 +475,103 @@ def _spec_de(
 
 def _tramos_por_diametro(
     grupo: "_Acumulado",
-    etiquetas: list[tuple[tuple[float, float], str]],
+    etiquetas: list[tuple[tuple[float, float], str, str, str]],
     meters_factor: float,
     familia: str,
-) -> list[tuple[str, tuple[int, str] | None, float, int]]:
-    """Los tramos de una corrida, partidos por diámetro nominal (R170).
+    capa: str = "",
+) -> list[tuple[str, tuple[int, str] | None, float, int, str]]:
+    """Los tramos de una corrida, partidos por diámetro nominal (R170, R180).
 
-    Cada segmento se adjudica al rótulo legible más cercano dentro del alcance
-    — con los mismos filtros de sistema y plausibilidad que ``_spec_de`` —. Un
-    ducto flexible (un spline del espacio modelo, muestreado entero) es de un
-    solo diámetro: el de su rótulo más cercano a todo él; un ducto sin rótulo
-    cerca toma el del ducto rotulado con el que se conecta, punta con punta.
-    Lo demás va al diámetro con más metros rotulados, salvo que los dos
-    primeros estén a menos de 10 %: ahí queda «por confirmar» (diámetro
-    ``None``). Con menos de dos diámetros legibles cerca de la red no hay nada
-    que partir y se regresa vacío (el camino de siempre decide).
+    Cada segmento de un trazo recto se adjudica al rótulo legible más cercano dentro del alcance
+    — con los mismos filtros de sistema y plausibilidad que ``_spec_de`` —. Un ducto flexible (un
+    spline del espacio modelo, muestreado entero) es de un solo diámetro: el de su rótulo más
+    cercano (R170). R180: si ése no se lee, o el rótulo de su recorrido — el de su capa que le
+    queda más cerca a él que a cualquier otro ducto — dice otro diámetro que el de su collarín,
+    queda «por confirmar»; nunca el diámetro de la red. Un ducto sin rótulo toma el del ducto
+    rotulado con el que se conecta, punta con punta. Lo demás va al diámetro con más metros
+    rotulados, salvo que los dos primeros estén a menos de 10 %: ahí queda «por confirmar». Con
+    menos de dos diámetros legibles cerca de la red no hay nada que partir y se regresa vacío (el
+    camino de siempre decide).
 
-    Regresa ``[(spec, (mm, texto) o None, metros_du, segmentos)]``.
+    Regresa ``[(spec, (mm, texto) o None, metros_du, segmentos, motivo)]``: el motivo dice por qué
+    un tramo sin diámetro quedó por confirmar.
     """
     if not etiquetas or not grupo.segments_xy:
         return []
     alcance = _SPEC_REACH_M / meters_factor if meters_factor else _SPEC_REACH_M
-    legibles: list[tuple[tuple[float, float], str, tuple[int, str]]] = []
-    for (tx, ty), texto in etiquetas:
+    # Los rótulos de diámetro que valen para esta corrida, legibles o no (R180: un 14" que no se
+    # leía se pagaba como 12"); la sección de un ducto rectangular no es un diámetro.
+    rotulos: list[tuple[tuple[float, float], str, tuple[int, str] | None, str, str]] = []
+    for (tx, ty), texto, asa, capa_r in etiquetas:
         nombrados = _sistemas_nombrados(texto)
         if nombrados and familia not in nombrados:
             continue
         if not nombrados and not _diametro_plausible(texto, familia):
             continue
-        diametro = normaliza_diametro(_pedazo_de(texto, familia))
-        if diametro is None:
-            continue
-        legibles.append(((tx, ty), texto, diametro))
+        pedazo = _pedazo_de(texto, familia)
+        diametro = normaliza_diametro(pedazo)
+        if diametro is None and (_pulgadas(pedazo) is None or _ES_SECCION.search(pedazo)):
+            continue  # no dice un diámetro: un material, una sección rectangular
+        rotulos.append(((tx, ty), texto, diametro, asa, capa_r))
+    legibles = [(pos, texto, d) for pos, texto, d, _asa, _c in rotulos if d is not None]
     if len({d[0] for _p, _t, d in legibles}) < 2:
         return []
 
-    # R170: cada segmento, el rótulo legible más cercano dentro del alcance. Un spline (un ducto
-    # flexible, muestreado entero) es de un solo diámetro: el de su rótulo más cercano a todo él
-    # (un 8" entre dos ductos de 10" se llevaba la punta de cada uno), y un ducto sin rótulo toma
-    # el del ducto rotulado con el que se conecta. Lo que queda va al diámetro con más metros
-    # rotulados, salvo que los dos primeros estén a menos de 10 %: entonces «por confirmar».
     largos = [math.dist((ax, ay), (bx, by)) for ax, ay, bx, by in grupo.segments_xy]
+    segs_de: dict[int, list[int]] = {}
+    for k, t in enumerate(grupo.de_trazo):
+        segs_de.setdefault(t, []).append(k)
+    curvas = [t for t in segs_de if grupo.curvas[t]]
+
+    # R180: cada ducto flexible, su rótulo más cercano (legible o no) y el de su recorrido: el de su
+    # capa que le queda más cerca a él que a cualquier otro ducto.
+    def distancia(t: int, tx: float, ty: float) -> float:
+        return min(_distancia_a_segmento(tx, ty, grupo.segments_xy[k]) for k in segs_de[t])
+
+    cercanos: dict[int, tuple[float, tuple[int, str] | None, str, str]] = {}
+    recorrido: dict[int, tuple[float, tuple[int, str] | None, str, str]] = {}
+    for (tx, ty), texto, diametro, asa, capa_r in rotulos:
+        dueno: tuple[float, int] | None = None
+        for t in curvas:
+            d = distancia(t, tx, ty)
+            if d > alcance:
+                continue
+            if t not in cercanos or d < cercanos[t][0]:
+                cercanos[t] = (d, diametro, texto, asa)
+            if dueno is None or d < dueno[0]:
+                dueno = (d, t)
+        if dueno is not None and capa and capa_r == capa:
+            d, t = dueno
+            if t not in recorrido or d < recorrido[t][0]:
+                recorrido[t] = (d, diametro, texto, asa)
+    del_ducto: dict[int, tuple[tuple[int, str], str]] = {}
+    en_duda: dict[int, str] = {}
+    for t, (_d, diametro, texto, asa) in cercanos.items():
+        suyo = recorrido.get(t)
+        if diametro is None:
+            en_duda[t] = (
+                f"el rótulo del ducto {grupo.handles[t]}, «{texto.strip()}» ({asa}), no se lee"
+            )
+        elif suyo is not None and (suyo[1] is None or suyo[1][0] != diametro[0]):
+            en_duda[t] = (
+                f"el ducto {grupo.handles[t]} dice «{texto.strip()}» ({asa}) en su collarín y "
+                f"«{suyo[2].strip()}» ({suyo[3]}) en su recorrido"
+            )
+        else:
+            del_ducto[t] = (diametro, texto)
+
     rotulo_de_seg: list[tuple[float, tuple[int, str], str] | None] = []
-    for ax, ay, bx, by in grupo.segments_xy:
-        mejor: tuple[float, tuple[int, str], str] | None = None
+    for k, (ax, ay, bx, by) in enumerate(grupo.segments_xy):
+        t = grupo.de_trazo[k]
+        if grupo.curvas[t]:
+            rotulo_de_seg.append((0.0, *del_ducto[t]) if t in del_ducto else None)
+            continue
+        mejor_s: tuple[float, tuple[int, str], str] | None = None
         for (tx, ty), texto, diametro in legibles:
             d = _distancia_a_segmento(tx, ty, (ax, ay, bx, by))
-            if d <= alcance and (mejor is None or d < mejor[0]):
-                mejor = (d, diametro, texto)
-        rotulo_de_seg.append(mejor)
-    del_spline: dict[int, tuple[float, tuple[int, str], str]] = {}
-    for k, rotulo in enumerate(rotulo_de_seg):
-        t = grupo.de_trazo[k]
-        if rotulo is not None and grupo.curvas[t]:
-            if t not in del_spline or rotulo[0] < del_spline[t][0]:
-                del_spline[t] = rotulo
-    for k in range(len(rotulo_de_seg)):
-        t = grupo.de_trazo[k]
-        if t in del_spline:
-            rotulo_de_seg[k] = del_spline[t]
+            if d <= alcance and (mejor_s is None or d < mejor_s[0]):
+                mejor_s = (d, diametro, texto)
+        rotulo_de_seg.append(mejor_s)
     rotulado_por_dia: dict[int, float] = {}
     por_trazo: dict[int, dict[int, float]] = {}
     dia_por_mm: dict[int, tuple[int, str]] = {}
@@ -540,8 +581,8 @@ def _tramos_por_diametro(
             continue
         mm = rotulo[1][0]
         rotulado_por_dia[mm] = rotulado_por_dia.get(mm, 0.0) + largos[k]
-        dias = por_trazo.setdefault(grupo.de_trazo[k], {})
-        dias[mm] = dias.get(mm, 0.0) + largos[k]
+        dias_t = por_trazo.setdefault(grupo.de_trazo[k], {})
+        dias_t[mm] = dias_t.get(mm, 0.0) + largos[k]
         dia_por_mm[mm] = rotulo[1]
         texto_por_dia.setdefault(mm, Counter())[_pedazo_de(rotulo[2], familia)] += 1
     if not rotulado_por_dia:
@@ -550,7 +591,7 @@ def _tramos_por_diametro(
     # segmento sin rótulo de un trazo que no es spline sigue su camino de siempre (el diámetro con
     # más metros rotulados, o «por confirmar» si los dos primeros están parejos).
     del_trazo = {t: max(dias, key=lambda mm: (dias[mm], -mm)) for t, dias in por_trazo.items()}
-    rotulados = set(del_trazo)
+    rotulados = set(del_trazo) | set(en_duda)
     # R181: sólo un ducto flexible sin rótulo toma el diámetro por conexión; sin ninguno en la red
     # (una red sanitaria de miles de trazos rectos) no hay nada que conectar.
     if any(curva and t not in rotulados for t, curva in enumerate(grupo.curvas)):
@@ -564,6 +605,7 @@ def _tramos_por_diametro(
     )
     largo_por_dia: dict[int | None, float] = {}
     segs_por_dia: dict[int | None, int] = {}
+    motivos: list[str] = []
     for k, largo in enumerate(largos):
         if largo <= 0:
             continue
@@ -572,10 +614,16 @@ def _tramos_por_diametro(
         dia: int | None
         if rotulo is not None:
             dia = rotulo[1][0]
+        elif t in en_duda:
+            dia = None  # R180: sus rótulos propios no se leen o no coinciden; nunca la red
+            if en_duda[t] not in motivos:
+                motivos.append(en_duda[t])
         elif grupo.curvas[t] and t not in rotulados and t in del_trazo:
             dia = del_trazo[t]  # un ducto sin rótulo, por el rotulado con el que se conecta
         else:
             dia = None if parejos else orden[0]
+            if dia is None and _SIN_ROTULO_PAREJOS not in motivos:
+                motivos.append(_SIN_ROTULO_PAREJOS)
         largo_por_dia[dia] = largo_por_dia.get(dia, 0.0) + largo
         segs_por_dia[dia] = segs_por_dia.get(dia, 0) + 1
     # Lo repartido se escala para que la suma dé los metros reales del grupo (el segmento que
@@ -589,11 +637,21 @@ def _tramos_por_diametro(
                 dia_por_mm[d] if d is not None else None,
                 largo_por_dia[d] * escala,
                 segs_por_dia[d],
+                "; ".join(motivos) if d is None else "",
             )
             for d in largo_por_dia
         ),
         key=lambda tramo: -tramo[2],
     )
+
+
+# R180: lo que no se adjudica porque los dos diámetros con más metros rotulados están parejos.
+_SIN_ROTULO_PAREJOS = (
+    "trazos sin rótulo cerca que no se conectan con un tramo rotulado, y los dos diámetros con "
+    "más metros rotulados están a menos de 10 %: no se adjudican a ninguno"
+)
+# R180: una sección rectangular («16" x 16"») en un rótulo.
+_ES_SECCION = re.compile(r'\d\s*"\s*[X×]\s*\d', re.I)
 
 
 # R170: dos trazos se conectan cuando una punta de uno está a esto (en metros) de una del otro.

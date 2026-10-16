@@ -444,13 +444,15 @@ def test_un_ducto_flexible_es_de_un_diametro_el_de_su_rotulo(tmp_path):
         _ducto(msp, [(0, 4), (3, 5), (6, 4), (9, 5), (12, 4)])
         msp.add_text('10"', height=0.2).set_placement((5.9, 0.1))
         msp.add_text('12"', height=0.2).set_placement((5.9, 4.1))
-        # Junto a la punta del de 10" (a 0.7), más lejos que su propio rótulo (a 0.15): el
-        # segmento de la punta le quedaba más cerca a él y se iba a 8".
+        # El de 8" que sigue a su punta, con su rótulo junto a la punta del de 10" (a 0.7, más
+        # lejos que el propio de éste, a 0.15): el segmento de la punta le quedaba más cerca y se
+        # iba a 8". R180: el rótulo es del ducto que le queda más cerca, el de 8".
+        _ducto(msp, [(12.6, 0.4), (14, 1.0), (16, 0.4)])
         msp.add_text('8"', height=0.2).set_placement((12.5, 0.6))
 
     salida = detect_runs(_entities(tmp_path, "f.dxf", build), None, IdGenerator("d"), 1.0, [])
     metros = _por_diametro(salida)
-    assert set(metros) == {254, 305}
+    assert set(metros) == {203, 254, 305}
     assert metros[254] == metros[305]  # los dos ductos enteros, iguales
 
 
@@ -539,3 +541,61 @@ def test_a_network_of_straight_traces_skips_the_connection_pass(tmp_path, monkey
     monkeypatch.setattr(run_detector, "_por_conexion", nunca)
     salida = detect_runs(_entities(tmp_path, "s.dxf", build), None, IdGenerator("d"), 1.0, [])
     assert salida.detections
+
+
+# ------------------------------------------- Tarea 9b, ronda de arreglos 2: R180
+
+
+def test_un_ducto_de_14_pulgadas_es_de_14_no_del_diametro_de_la_red(tmp_path):
+    # R180 (instalaciones-mini, spline 5AB): su rótulo dice 14"; no se leía y el ducto se iba al
+    # diámetro con más metros rotulados (12").
+    def build(doc):
+        msp = doc.modelspace()
+        _ducto(msp, [(0, 0), (5, 1), (10, 0)], capa="flexible")
+        _ducto(msp, [(0, 6), (5, 7), (10, 6)], capa="flexible")
+        _ducto(msp, [(0, 12), (1, 13), (2, 12)], capa="flexible")
+        msp.add_text('10"', height=0.2, dxfattribs={"layer": "flexible"}).set_placement((5, 1.2))
+        msp.add_text('12"', height=0.2, dxfattribs={"layer": "flexible"}).set_placement((5, 7.2))
+        msp.add_text('14"', height=0.2, dxfattribs={"layer": "flexible"}).set_placement((1, 13.2))
+
+    salida = detect_runs(_entities(tmp_path, "c.dxf", build), None, IdGenerator("d"), 1.0, [])
+    metros = _por_diametro(salida)
+    assert 356 in metros and metros[356] > 2.0
+    assert None not in metros
+
+
+def test_un_ducto_cuyo_collarin_y_recorrido_no_coinciden_queda_por_confirmar(tmp_path):
+    # R180 (instalaciones-mini, 62F y 630): el rótulo del collarín (EquipoAz) dice 14" y el de su
+    # recorrido (en su capa) 12": no se sabe cuál; «diámetro por confirmar», nunca el de la red.
+    def build(doc):
+        msp = doc.modelspace()
+        _ducto(msp, [(0, 0), (5, 1), (10, 0)], capa="flexible")
+        _ducto(msp, [(0, 6), (5, 7), (10, 6)], capa="flexible")
+        _ducto(msp, [(0, 12), (4, 13), (8, 12)], capa="flexible")
+        msp.add_text('10"', height=0.2, dxfattribs={"layer": "flexible"}).set_placement((5, 1.2))
+        msp.add_text('12"', height=0.2, dxfattribs={"layer": "flexible"}).set_placement((5, 7.2))
+        msp.add_text('14"', height=0.1, dxfattribs={"layer": "EquipoAz"}).set_placement((0, 12.05))
+        msp.add_text('12"', height=0.2, dxfattribs={"layer": "flexible"}).set_placement((4, 13.3))
+
+    salida = detect_runs(_entities(tmp_path, "k.dxf", build), None, IdGenerator("d"), 1.0, [])
+    metros = _por_diametro(salida)
+    assert None in metros and metros[None] > 8.0
+    duda = next(d for d in salida.detections if d.properties.get("diametro_mm") is None)
+    assert "en su collarín y" in duda.evidence.notes[1]
+
+
+def test_un_rotulo_que_no_se_lee_deja_el_ducto_por_confirmar(tmp_path):
+    # R180: un 13" (no es un diámetro del comercio) junto a un ducto: no se adjudica a la red (el
+    # de 12", que tiene más metros).
+    def build(doc):
+        msp = doc.modelspace()
+        _ducto(msp, [(0, 0), (5, 1), (10, 0)], capa="flexible")
+        _ducto(msp, [(0, 6), (5, 7), (10, 6), (15, 7), (20, 6)], capa="flexible")
+        _ducto(msp, [(0, 12), (1, 13), (2, 12)], capa="flexible")
+        msp.add_text('10"', height=0.2, dxfattribs={"layer": "flexible"}).set_placement((5, 1.2))
+        msp.add_text('12"', height=0.2, dxfattribs={"layer": "flexible"}).set_placement((5, 7.2))
+        msp.add_text('13"', height=0.2, dxfattribs={"layer": "flexible"}).set_placement((1, 13.2))
+
+    salida = detect_runs(_entities(tmp_path, "u.dxf", build), None, IdGenerator("d"), 1.0, [])
+    metros = _por_diametro(salida)
+    assert None in metros and metros[None] > 2.0
