@@ -59,6 +59,15 @@ def test_un_largo_o_un_angulo_despues_del_diametro_no_es_una_seccion():
         assert normaliza_diametro(seccion) is None, seccion
 
 
+def test_una_seccion_con_marcas_mezcladas_nunca_es_un_diametro():
+    # R186: dos acentos o dos comillas tipográficas también son la marca de pulgadas; sólo una
+    # prima sola (un pie) es un largo.
+    for seccion in ('16" x 16´´', '20" x 16´´ BYP', 'RR 16" x 10´´', '16" x 16’’', '24" x 12´',
+                    '12" x 12´´'):  # fmt: skip
+        assert normaliza_diametro(seccion) is None, seccion
+    assert normaliza_diametro("12\" X 25'") == (305, '305 mm (12")')
+
+
 def test_la_tabla_nominal_va_de_menor_a_mayor_y_no_repite():
     mm = [m for m, _ in NOMINALES]
     assert mm == sorted(mm) and len(mm) == len(set(mm))

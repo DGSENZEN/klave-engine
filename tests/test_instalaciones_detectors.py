@@ -686,3 +686,32 @@ def test_un_ducto_de_rotulo_rechazado_nunca_toma_el_diametro_de_la_red(tmp_path,
     metros = _por_diametro(salida)
     assert metros[254] == pytest.approx(2 * metros[203], rel=0.01)  # los dos de 10", enteros
     assert metros.get(esperado, 0.0) == pytest.approx(metros[203], rel=0.01)
+
+
+# ------------------------------------------- Tarea 9b, ronda de arreglos 5: R186
+
+
+def test_un_ducto_rectangular_con_marcas_mezcladas_no_tiene_diametro(tmp_path):
+    # R186: dos líneas de AireDucto de 10 m rotuladas «20" x 16´´» salían de 508 mm.
+    def build(doc):
+        msp = doc.modelspace()
+        msp.add_line((0, 0), (10, 0), dxfattribs={"layer": "AireDucto"})
+        msp.add_line((0, 3), (10, 3), dxfattribs={"layer": "AireDucto"})
+        _rotulo(msp, '20" x 16´´', 5, 0.2, capa="AireDucto")
+        _rotulo(msp, '20" x 16´´', 5, 3.2, capa="AireDucto")
+
+    salida = detect_runs(_entities(tmp_path, "a.dxf", build), None, IdGenerator("d"), 1.0, [])
+    assert {d.properties.get("diametro_mm") for d in salida.detections} == {None}
+
+
+def test_un_ducto_flexible_rotulado_con_una_seccion_de_acentos_queda_por_confirmar(tmp_path):
+    # R186: «12" x 12´´» en la capa del ducto flexible se pagaba como 12"; es una sección.
+    def build(doc):
+        msp = doc.modelspace()
+        for k, texto in enumerate(('10"', '8"', '12" x 12´´')):
+            _ducto(msp, [(0, 6 * k), (5, 6 * k + 1), (10, 6 * k)])
+            _rotulo(msp, texto, 5, 6 * k + 1.2)
+
+    salida = detect_runs(_entities(tmp_path, "f.dxf", build), None, IdGenerator("d"), 1.0, [])
+    metros = _por_diametro(salida)
+    assert 305 not in metros and metros[None] == pytest.approx(metros[203], rel=0.01)
