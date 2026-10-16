@@ -244,10 +244,30 @@ def test_among_equally_near_castillos_the_smallest_wins():
     assert _marcador(etiqueta, grande, chico) == "ent_000002"
 
 
-def test_an_outline_clearly_nearer_than_the_castillo_still_wins():
-    # R175: la tolerancia es de empate, no de capa: un pedazo de losa a 0.005 de las letras le gana
-    # al castillo a 0.044 (Marina K-1 8E092 sigue así; pendiente de regla).
+def test_a_castillo_symbol_within_half_a_text_height_beats_a_slab_piece():
+    # R179 (Marina K-1 8E092): un pedazo de EST-LOSA MACIZA a 0.005 de las letras y el castillo de
+    # K-1 a 0.044: a media altura de texto (0.05) del más cercano, gana el símbolo en la capa de
+    # castillos.
     etiqueta = _ent("ent_000009", EntityType.text, (0.0, 0.0, 0.27, 0.1), text="K-1")
     losa = _rect("ent_000001", -0.2, -0.705, 0.5, -0.005, layer="EST-LOSA MACIZA")
     castillo = _rect("ent_000002", 0.0, -0.194, 0.15, -0.044)
+    assert _marcador(etiqueta, losa, castillo) == "ent_000002"
+
+
+def test_an_outline_nearer_by_more_than_half_a_text_height_still_wins():
+    # R179: más allá de media altura de texto, el más cercano, sea de la capa que sea.
+    etiqueta = _ent("ent_000009", EntityType.text, (0.0, 0.0, 0.27, 0.1), text="K-1")
+    losa = _rect("ent_000001", -0.2, -0.705, 0.5, -0.005, layer="EST-LOSA MACIZA")
+    castillo = _rect("ent_000002", 0.0, -0.22, 0.15, -0.07)
     assert _marcador(etiqueta, losa, castillo) == "ent_000001"
+
+
+def test_a_dado_is_not_a_castillos_symbol():
+    # R179 (Marina K-15 DFC6C): la cara de un muro de concreto a 0.074, el dado de un pilote
+    # (EST-DADOS, 90x90) a 0.097 y el castillo de K-15 (EST-CASTILLOS, 30x60) a 0.122, a media
+    # altura de texto del más cercano: el del castillo, nunca el dado.
+    etiqueta = _ent("ent_000009", EntityType.text, (0.0, 0.0, 0.36, 0.1), text="K-15")
+    muro = _rect("ent_000001", -0.5, -0.2742438, 0.55, -0.0742438, layer="EST-MURO CONCRETO")
+    dado = _rect("ent_000002", 0.4, -0.9969529, 1.3, -0.0969529, layer="EST-DADOS")
+    castillo = _rect("ent_000003", 0.0, -0.7218038, 0.3, -0.1218038)
+    assert _marcador(etiqueta, muro, dado, castillo) == "ent_000003"

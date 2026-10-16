@@ -108,6 +108,12 @@ class ColumnDetectorConfig(BaseModel):
     # R175: two markers whose distances differ by at most this (1e-4 m, scaled per unit preset)
     # or a millionth of the distance are equally near: the smallest wins (R130).
     marker_tie_tolerance: float = 0.003
+    # R175, R179: the layers of a castillo's or column's own symbol, which beat outlines on other
+    # layers — never a dado's (a pile cap, EST-DADOS: Marina K-15 DFC6C's castillo lies 0.025
+    # farther than the dado beside it).
+    symbol_layer_hints: list[str] = Field(
+        default_factory=lambda: ["COL", "COLS", "COLUMN", "COLUMNA", "CASTILLO"]
+    )
 
 
 def detect_columns(
@@ -198,14 +204,16 @@ def detect_columns(
             if distancia <= config.geometry_search_radius:
                 rellenos = other.entity_type == EntityType.hatch
                 markers.append((rellenos, distancia, bbox_area(other.bbox), other.entity_id))
-                if layer_matches(other.layer, config.layer_hints):
+                if layer_matches(other.layer, config.symbol_layer_hints):
                     de_columna.add(other.entity_id)
         if markers:
             # A fill is the marker only of a castillo drawn with nothing else (PRUEBA-1: 4); a
             # castillo's outline and its fill are one symbol, and the outline is what R142 reads.
             if not all(m[0] for m in markers):
                 markers = [m for m in markers if not m[0]]
-            orden = _por_cercania([m[1:] for m in markers], de_columna, config)
+            orden = _por_cercania(
+                [m[1:] for m in markers], de_columna, alto_de_texto(entity), config
+            )
             marker_id = orden[0][2]
             elegidos.append(
                 (len(output.detections), entity, orden[0][0], [(d, i) for d, _a, i in orden[1:]])
@@ -258,19 +266,26 @@ _MARGEN_DE_MARCADOR = 0.5
 def _por_cercania(
     markers: list[tuple[float, float, str]],
     de_columna: set[str],
+    alto: float,
     config: ColumnDetectorConfig,
 ) -> list[tuple[float, float, str]]:
-    """R130, R175: a tag's markers (distance, area, id), the chosen one first. Distances within
-    ``marker_tie_tolerance`` or a millionth of the nearest are equal — never the float sort's
-    noise (Marina C-3 C793B: its castillo 1.8e-5 farther than a pile cap of twice its area; K-2
-    8E264 and 8E288: theirs 1.8e-6 farther than a MUROS1 box). Among those, a symbol on a castillo
-    or column layer beats outlines on other layers (a slab piece, a MUROS1 box, a pile cap), then
-    the smallest wins, then the first id. The others follow by distance."""
+    """R130, R175, R179: a tag's markers (distance, area, id), the chosen one first. Within half a
+    text height of the nearest (the width a text box may exceed its letters by, R166) a symbol on
+    a castillo or column layer beats outlines on other layers — a slab piece, a MUROS1 box, a pile
+    cap, an architect's wall outline (Marina K-1 8E092: its castillo 0.0386 farther than a piece of
+    EST-LOSA MACIZA; PRUEBA-1 K-1 6701: its 15×15 0.015 farther than an A-WALL outline). Among
+    the nearest of those, distances within ``marker_tie_tolerance`` or a millionth are equal —
+    never the float sort's noise (C-3 C793B: its castillo 1.8e-5 farther than a pile cap; K-2
+    8E264 and 8E288: theirs 1.8e-6 farther than a MUROS1 box) —, a castillo or column layer first,
+    then the smallest, then the first id. The others follow by distance."""
     orden = sorted(markers)
-    d0 = orden[0][0]
+    cercania = orden[0][0] + _MARGEN_DE_MARCADOR * alto
+    suyos = [m for m in orden if m[0] <= cercania and m[2] in de_columna]
+    candidatos = suyos or orden
+    d0 = candidatos[0][0]
     empatados = [
         m
-        for m in orden
+        for m in candidatos
         if math.isclose(m[0], d0, rel_tol=1e-6, abs_tol=config.marker_tie_tolerance)
     ]
     elegido = min(empatados, key=lambda m: (m[2] not in de_columna, m[1], m[2]))

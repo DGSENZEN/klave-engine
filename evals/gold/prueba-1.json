@@ -599,13 +599,13 @@
         }
       },
       "EST-001": {
-        "quantity": 10.037,
+        "quantity": 9.893,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "marcadores de castillo: cada etiqueta toma el castillo dibujado junto a sus letras (su cuadro, su c\u00edrculo o su relleno), no el bloque de muros de la planta que la contiene; los castillos del muro poniente de PLANTA BAJA, casi igual de cerca de \u00absimbolog\u00eda\u00bb, son de la planta por su dibujo (R146, R165); antes, R133: el c\u00edrculo del castillo en vez de la caja del bloque que lo contiene",
+        "note": "marcadores de castillo: cada etiqueta toma el castillo dibujado junto a sus letras (su cuadro, su c\u00edrculo o su relleno), no el bloque de muros de la planta que la contiene; los castillos del muro poniente de PLANTA BAJA, casi igual de cerca de \u00absimbolog\u00eda\u00bb, son de la planta por su dibujo (R146, R165); antes, R133: el c\u00edrculo del castillo en vez de la caja del bloque que lo contiene; R179: a media altura de texto del marcador m\u00e1s cercano, el s\u00edmbolo en la capa de castillos le gana al contorno de otra capa: la K-1 (6701) toma su castillo de 15\u00d715 (66C1, capa castillos) y no el contorno de muro de arquitectura (A-WALL 871A, 0.0702); 10.037 \u2192 9.893, verificado en el crudo",
         "variants": {
-          "EST-001.GEN": 10.037
+          "EST-001.GEN": 9.893
         }
       },
       "EST-002": {
