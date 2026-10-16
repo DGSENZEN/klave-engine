@@ -120,41 +120,53 @@
       "SAL-105"
     ],
     "pipe_run": [
-      "COR-01",
-      "COR-02",
-      "COR-03",
-      "COR-04",
-      "COR-05",
       "COR-06",
       "COR-07",
-      "COR-08",
-      "COR-09",
       "COR-10",
       "COR-11",
+      "COR-01",
       "COR-12",
       "COR-13",
+      "COR-03",
+      "COR-02",
+      "COR-04",
+      "COR-05",
+      "COR-08",
+      "COR-09",
       "COR-14",
       "COR-15",
       "COR-16",
       "COR-17",
-      "COR-18",
-      "COR-19",
-      "COR-20",
-      "COR-21",
-      "COR-22",
-      "COR-23",
-      "COR-24",
-      "COR-25",
       "COR-26",
-      "COR-27",
+      "COR-43",
+      "COR-44",
+      "COR-45",
       "COR-28",
       "COR-29",
       "COR-30",
       "COR-31",
+      "COR-39",
+      "COR-40",
+      "COR-41",
+      "COR-42",
+      "COR-36",
+      "COR-37",
+      "COR-38",
+      "COR-18",
+      "COR-19",
+      "COR-20",
+      "COR-21",
+      "COR-46",
+      "COR-47",
+      "COR-27",
       "COR-32",
       "COR-33",
       "COR-34",
-      "COR-35"
+      "COR-35",
+      "COR-22",
+      "COR-23",
+      "COR-24",
+      "COR-25"
     ],
     "opening": [
       "VAN-01"
@@ -207,11 +219,13 @@
         "unit": "M",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "R171/R180: variantes del motor tal como est\u00e1 hoy: 203 mm 14.635, 254 mm 6.841, 305 mm 30.743. Los 52.2 m de AireDucto no son piezas rectas: son los per\u00edmetros de las cajas de plenum y collar\u00edn y sus diagonales en X; cada segmento toma el r\u00f3tulo de di\u00e1metro redondo legible m\u00e1s cercano. El motor todav\u00eda no lee 14\" ni 16\" (R180 pendiente): en el crudo, segmento por segmento, con todos los di\u00e1metros redondos y sin las secciones rectangulares, dan 8\" 6.58, 10\" 5.93, 12\" 15.21, 14\" 8.64, 16\" 4.88 y 2.39 m sin r\u00f3tulo (de 43.6 m de segmentos)",
+        "note": "R180/R183: los 52.2 m de AireDucto son los per\u00edmetros de las cajas de plenum y collar\u00edn y sus diagonales en X, no piezas rectas; cada segmento toma el r\u00f3tulo de di\u00e1metro redondo legible m\u00e1s cercano, ahora de 4\" a 24\" y nunca una secci\u00f3n rectangular (\u00ab16\" x 16\"\u00bb). En el crudo, segmento por segmento (letras de cada r\u00f3tulo, a 2 m): 8\" 6.58, 10\" 5.93, 12\" 15.21, 14\" 8.64, 16\" 4.88 y 2.39 m sin r\u00f3tulo (que van a 12\", el de m\u00e1s metros), de 43.6 m de segmentos: 15 / 14 / 40 + 5 / 20 / 11 %, y el motor 16 / 13 / 41 / 20 / 11 % (203 8.192, 254 6.841, 305 21.269, 356 10.296, 406 5.621). Antes los r\u00f3tulos de 14\" y 16\" no se le\u00edan y sus segmentos iban a 8\" y 12\" (14.635 / 6.841 / 30.743).",
         "variants": {
-          "AIR-001.203MM": 14.635,
+          "AIR-001.203MM": 8.192,
+          "AIR-001.356MM": 10.296,
           "AIR-001.254MM": 6.841,
-          "AIR-001.305MM": 30.743
+          "AIR-001.305MM": 21.269,
+          "AIR-001.406MM": 5.621
         }
       },
       "AIR-002": {
@@ -219,11 +233,14 @@
         "unit": "M",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "R170/R171/R180: variantes del motor tal como est\u00e1 hoy: 305 mm 91.041, 254 mm 23.302, 203 mm 4.206 \u2014 NO verificadas: el motor no lee 14\" ni 16\" y esos ductos se pagan como 12\". En el crudo, ducto por ducto: 8\" 4.209 (5B4, 5B5), 10\" 23.322 (5B6, 5B7, 60A, 675, 20C6), 12\" \u2248 72.4, 14\" \u2248 13.2 (5AB con su r\u00f3tulo 5BA, 20CF, y 62F o 630) y 16\" 5.506 (633, 674, 20CC); 62F y 630 dicen 14\" y 12\" entre collar\u00edn y recorrido. La nota de R171 que las daba por verificadas era falsa: 5AB no es \u00abun ducto sin r\u00f3tulo que se une a uno de 12\"\u00bb, tiene su r\u00f3tulo de 14\" (5BA)",
+        "note": "R180/R183: cada ducto flexible es del di\u00e1metro de su r\u00f3tulo m\u00e1s cercano, ahora de 4\" a 24\"; si \u00e9se no se lee, o el r\u00f3tulo de su recorrido dice otro di\u00e1metro que el de su collar\u00edn, queda \u00abpor confirmar\u00bb (GEN), nunca el de la red. En el crudo, ducto por ducto (letras de cada r\u00f3tulo, trazo entero): 8\" 4.209 (5B4, 5B5), 10\" 23.322 (5B6, 5B7, 60A, 675, 20C6), 12\" 63.77 (sin 62F ni 630), 14\" 4.494 (5AB con su r\u00f3tulo 5BA, 20CF) y 16\" 5.506 (633, 674, 20CC); el ducto 62F dice \u00ab14\"\u00bb (62A) en su collar\u00edn y \u00ab12\"\u00bb (640) en su recorrido, y el 630 \u00ab12\"\u00bb (62C) en su collar\u00edn y \u00ab14\"\u00bb (63B) en su recorrido: 17.33 m por confirmar. El motor: 203 4.206, 254 23.302, 305 63.741, 356 4.492, 406 5.505, por confirmar 17.304. Antes 14\" y 16\" se pagaban como 12\" (305 91.041).",
         "variants": {
-          "AIR-002.305MM": 91.041,
+          "AIR-002.305MM": 63.741,
           "AIR-002.254MM": 23.302,
-          "AIR-002.203MM": 4.206
+          "AIR-002.203MM": 4.206,
+          "AIR-002.356MM": 4.492,
+          "AIR-002.406MM": 5.505,
+          "AIR-002.GEN": 17.304
         }
       },
       "AIR-003": {
@@ -303,5 +320,5 @@
       "SAN-003"
     ]
   },
-  "notes": "R166: el ducto flexible 20C6 bajo el \u00ab10\"\u00bb es de 10\" (centro real del texto, R146). R171, correcci\u00f3n: la nota de R166 dec\u00eda que nada m\u00e1s se mov\u00eda y no era as\u00ed: los metros de AIR se hab\u00edan re-adjudicado entre di\u00e1metros con el total igual, y el gold no registraba variantes; desde R171 las registra (ver AIR-001 y AIR-002)."
+  "notes": "R166: el ducto flexible 20C6 bajo el \u00ab10\"\u00bb es de 10\" (centro real del texto, R146). R171, correcci\u00f3n: la nota de R166 dec\u00eda que nada m\u00e1s se mov\u00eda y no era as\u00ed: los metros de AIR se hab\u00edan re-adjudicado entre di\u00e1metros con el total igual, y el gold no registraba variantes; desde R171 las registra (ver AIR-001 y AIR-002). R180/R183: se leen los di\u00e1metros de 4\" a 24\" y un ducto de r\u00f3tulos que no coinciden queda por confirmar; pipe_run 35 \u2192 47 porque cada di\u00e1metro nuevo (14\", 16\") y lo por confirmar es su propia corrida, en AireDucto y en flexible (ver AIR-001 y AIR-002)."
 }
