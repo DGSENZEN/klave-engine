@@ -219,7 +219,7 @@
         "unit": "M",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "R180/R183: los 52.2 m de AireDucto son los per\u00edmetros de las cajas de plenum y collar\u00edn y sus diagonales en X, no piezas rectas; cada segmento toma el r\u00f3tulo de di\u00e1metro redondo legible m\u00e1s cercano, ahora de 4\" a 24\" y nunca una secci\u00f3n rectangular (\u00ab16\" x 16\"\u00bb). En el crudo, segmento por segmento (letras de cada r\u00f3tulo, a 2 m): 8\" 6.58, 10\" 5.93, 12\" 15.21, 14\" 8.64, 16\" 4.88 y 2.39 m sin r\u00f3tulo (que van a 12\", el de m\u00e1s metros), de 43.6 m de segmentos: 15 / 14 / 40 + 5 / 20 / 11 %, y el motor 16 / 13 / 41 / 20 / 11 % (203 8.192, 254 6.841, 305 21.269, 356 10.296, 406 5.621). Antes los r\u00f3tulos de 14\" y 16\" no se le\u00edan y sus segmentos iban a 8\" y 12\" (14.635 / 6.841 / 30.743).",
+        "note": "R180/R183: los 52.2 m de AireDucto son los per\u00edmetros de las cajas de plenum y collar\u00edn y sus diagonales en X, no piezas rectas; cada segmento toma el r\u00f3tulo de di\u00e1metro redondo legible m\u00e1s cercano, ahora de 4\" a 24\" y nunca una secci\u00f3n rectangular (\u00ab16\" x 16\"\u00bb). En el crudo, segmento por segmento (letras de cada r\u00f3tulo, a 2 m): 8\" 6.58, 10\" 5.93, 12\" 15.21, 14\" 8.64, 16\" 4.88 y 2.39 m sin r\u00f3tulo (que van a 12\", el de m\u00e1s metros), de 43.6 m de segmentos: 15 / 14 / 35 + 5 = 40 / 20 / 11 %, y el motor 16 / 13 / 41 / 20 / 11 % (203 8.192, 254 6.841, 305 21.269, 356 10.296, 406 5.621). Antes los r\u00f3tulos de 14\" y 16\" no se le\u00edan y sus segmentos iban a 8\" y 12\" (14.635 / 6.841 / 30.743).",
         "variants": {
           "AIR-001.203MM": 8.192,
           "AIR-001.356MM": 10.296,

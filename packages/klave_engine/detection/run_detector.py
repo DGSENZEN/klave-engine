@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from klave_engine.common.ids import IdGenerator
 from klave_engine.detection.instalaciones_symbols import (
     CorridaRegla,
+    es_seccion,
     familia_de_capa,
     normaliza_diametro,
     normaliza_material,
@@ -510,12 +511,10 @@ def _tramos_por_diametro(
             continue
         pedazo = _pedazo_de(texto, familia)
         diametro = normaliza_diametro(pedazo)
-        if diametro is None and (_pulgadas(pedazo) is None or _ES_SECCION.search(pedazo)):
+        if diametro is None and (_pulgadas(pedazo) is None or es_seccion(pedazo)):
             continue  # no dice un diámetro: un material, una sección rectangular
         rotulos.append(((tx, ty), texto, diametro, asa, capa_r))
     legibles = [(pos, texto, d) for pos, texto, d, _asa, _c in rotulos if d is not None]
-    if len({d[0] for _p, _t, d in legibles}) < 2:
-        return []
 
     largos = [math.dist((ax, ay), (bx, by)) for ax, ay, bx, by in grupo.segments_xy]
     segs_de: dict[int, list[int]] = {}
@@ -559,6 +558,11 @@ def _tramos_por_diametro(
             )
         else:
             del_ducto[t] = (diametro, texto)
+    # Con menos de dos diámetros legibles no hay nada que partir (el camino de siempre decide) —
+    # salvo que un ducto traiga un rótulo propio que no se lee o no coincide (R184): ése nunca va al
+    # diámetro de la red.
+    if len({d[0] for _p, _t, d in legibles}) < 2 and not en_duda:
+        return []
 
     rotulo_de_seg: list[tuple[float, tuple[int, str], str] | None] = []
     for k, (ax, ay, bx, by) in enumerate(grupo.segments_xy):
@@ -585,7 +589,7 @@ def _tramos_por_diametro(
         dias_t[mm] = dias_t.get(mm, 0.0) + largos[k]
         dia_por_mm[mm] = rotulo[1]
         texto_por_dia.setdefault(mm, Counter())[_pedazo_de(rotulo[2], familia)] += 1
-    if not rotulado_por_dia:
+    if not rotulado_por_dia and not en_duda:
         return []
     # El diámetro de cada trazo rotulado, para el ducto sin rótulo que se conecta con él. Un
     # segmento sin rótulo de un trazo que no es spline sigue su camino de siempre (el diámetro con
@@ -593,10 +597,15 @@ def _tramos_por_diametro(
     del_trazo = {t: max(dias, key=lambda mm: (dias[mm], -mm)) for t, dias in por_trazo.items()}
     rotulados = set(del_trazo) | set(en_duda)
     # R181: sólo un ducto flexible sin rótulo toma el diámetro por conexión; sin ninguno en la red
-    # (una red sanitaria de miles de trazos rectos) no hay nada que conectar.
+    # (una red sanitaria de miles de trazos rectos) no hay nada que conectar. R184: nunca a través
+    # de un ducto por confirmar; el que sólo se alcanza por uno, queda por confirmar.
+    tras_duda: dict[int, int] = {}
     if any(curva and t not in rotulados for t, curva in enumerate(grupo.curvas)):
-        _por_conexion(
-            del_trazo, grupo.puntas, _UNE_TRAZOS / meters_factor if meters_factor else 0.0
+        tras_duda = _por_conexion(
+            del_trazo,
+            grupo.puntas,
+            _UNE_TRAZOS / meters_factor if meters_factor else 0.0,
+            set(en_duda),
         )
     orden = sorted(rotulado_por_dia, key=lambda mm: -rotulado_por_dia[mm])
     parejos = (
@@ -620,6 +629,18 @@ def _tramos_por_diametro(
                 motivos.append(en_duda[t])
         elif grupo.curvas[t] and t not in rotulados and t in del_trazo:
             dia = del_trazo[t]  # un ducto sin rótulo, por el rotulado con el que se conecta
+        elif grupo.curvas[t] and t in tras_duda:
+            dia = None  # R184: sólo se conecta a través de un ducto por confirmar
+            motivo = (
+                f"el ducto {grupo.handles[t]}, sin rótulo, sólo se conecta a través del ducto "
+                f"{grupo.handles[tras_duda[t]]}, que está por confirmar"
+            )
+            if motivo not in motivos:
+                motivos.append(motivo)
+        elif not orden:
+            dia = None  # R184: ningún diámetro legible en la red
+            if _SIN_ROTULO_LEGIBLE not in motivos:
+                motivos.append(_SIN_ROTULO_LEGIBLE)
         else:
             dia = None if parejos else orden[0]
             if dia is None and _SIN_ROTULO_PAREJOS not in motivos:
@@ -650,8 +671,8 @@ _SIN_ROTULO_PAREJOS = (
     "trazos sin rótulo cerca que no se conectan con un tramo rotulado, y los dos diámetros con "
     "más metros rotulados están a menos de 10 %: no se adjudican a ninguno"
 )
-# R180: una sección rectangular («16" x 16"») en un rótulo.
-_ES_SECCION = re.compile(r'\d\s*"\s*[X×]\s*\d', re.I)
+# R184: lo que no se adjudica porque la red no trae ningún diámetro legible.
+_SIN_ROTULO_LEGIBLE = "trazos sin rótulo y ningún diámetro legible en la red"
 
 
 # R170: dos trazos se conectan cuando una punta de uno está a esto (en metros) de una del otro.
@@ -664,18 +685,23 @@ def _por_conexion(
     del_trazo: dict[int, int],
     puntas: list[tuple[tuple[float, float], tuple[float, float]]],
     tolerancia: float,
-) -> None:
+    en_duda: set[int] | None = None,
+) -> dict[int, int]:
     """R170: un trazo sin rótulo toma el diámetro del trazo rotulado con el que se conecta,
     punta con punta, a través de otros sin rótulo (el más cercano en saltos); si dos diámetros
-    llegan en el mismo número de saltos, ninguno. Modifica ``del_trazo``."""
+    llegan en el mismo número de saltos, ninguno. Modifica ``del_trazo``. R184: nunca a través de
+    un trazo por confirmar (``en_duda``); regresa los trazos sin rótulo que no tomaron diámetro y
+    a los que se llega desde uno por confirmar sin pasar por un rotulado, con ese trazo."""
+    dudosos = en_duda or set()
     vecinos = _vecinos_por_puntas(puntas, tolerancia)
+    rotulados = set(del_trazo)
     frontera = {t: {mm} for t, mm in del_trazo.items()}
     llegado: dict[int, set[int]] = dict(frontera)
     while frontera:
         siguiente: dict[int, set[int]] = {}
         for t, dias in frontera.items():
             for v in vecinos[t]:
-                if v in llegado:
+                if v in llegado or v in dudosos:
                     continue
                 siguiente.setdefault(v, set()).update(dias)
         for v, dias in siguiente.items():
@@ -683,6 +709,17 @@ def _por_conexion(
             if len(dias) == 1:
                 del_trazo[v] = next(iter(dias))
         frontera = {v: d for v, d in siguiente.items() if len(d) == 1}
+    # R184: desde cada trazo por confirmar, por trazos sin rótulo que no tomaron diámetro.
+    tras_duda: dict[int, int] = {}
+    pendientes = [(t, t) for t in sorted(dudosos)]
+    while pendientes:
+        t, origen = pendientes.pop(0)
+        for v in vecinos[t]:
+            if v in dudosos or v in rotulados or v in del_trazo or v in tras_duda:
+                continue
+            tras_duda[v] = origen
+            pendientes.append((v, origen))
+    return tras_duda
 
 
 def _vecinos_por_puntas(

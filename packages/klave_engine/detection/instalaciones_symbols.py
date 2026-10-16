@@ -203,11 +203,18 @@ _MM_EQUIVALENTE = {
     50: 51, 63: 64, 100: 102, 101: 102, 125: 127, 150: 152, 200: 203, 250: 254, 300: 305,
     350: 356, 355: 356, 400: 406, 450: 457, 500: 508, 550: 559, 600: 610,
 }  # fmt: skip
-# Una sección rectangular («16" x 16"», «BYP 24" X 8"», «200 x 150 mm») no es un diámetro; un
-# largo después del diámetro («4" x 6 m») sí lo deja.
+# R180, R184: una sección rectangular «A x B» no es un diámetro, con la marca de pulgadas en uno, en
+# los dos o en ninguno («16" x 16"», «20 x 16"», «24x14"», «BYP 24" X 8"», «200 x 150 mm»); un largo
+# después del diámetro («4" x 6 m») sí lo deja.
 _SECCION_RE = re.compile(
-    r'\d\s*"\s*[X×]\s*\d+(?:\.\d+)?\s*"|\d\s*(?:MM)?\s*[X×]\s*\d+(?:\.\d+)?\s*MM\b', re.I
+    r'\d\s*(?:"|MM\b)?\s*[X×]\s*\d+(?:\.\d+)?(?![\d.])(?!\s*(?:M|MTS?|ML|METROS?)\b)', re.I
 )
+
+
+def es_seccion(texto: str) -> bool:
+    """R184: si el texto escribe una sección «A x B» (no un diámetro)."""
+    return bool(_SECCION_RE.search(texto.replace("″", '"').replace("''", '"')))
+
 
 _PULGADAS_RE = re.compile(r'(?<![\d/])(\d{1,2})(?:\s+(\d)\s*/\s*(\d))?\s*"|(\d)\s*/\s*(\d)\s*"')
 _MM_RE = re.compile(r'(?<!\d)(\d{2,3})\s*(?:MM\b|Ø)', re.I)
@@ -232,7 +239,7 @@ def normaliza_diametro(texto: str) -> tuple[int, str] | None:
         return None
     limpio = texto.replace("″", '"').replace("''", '"')
     if _SECCION_RE.search(limpio):
-        return None  # la sección de un ducto rectangular no tiene diámetro (R180)
+        return None  # la sección de un ducto rectangular no tiene diámetro (R180, R184)
 
     fraccion = _PULGADAS_RE.search(limpio)
     if fraccion:

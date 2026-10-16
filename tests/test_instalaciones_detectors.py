@@ -599,3 +599,64 @@ def test_un_rotulo_que_no_se_lee_deja_el_ducto_por_confirmar(tmp_path):
     salida = detect_runs(_entities(tmp_path, "u.dxf", build), None, IdGenerator("d"), 1.0, [])
     metros = _por_diametro(salida)
     assert None in metros and metros[None] > 2.0
+
+
+# ------------------------------------------- Tarea 9b, ronda de arreglos 3: R184
+
+
+def _rotulo(msp, texto, x, y, capa="flexible", alto=0.2):
+    msp.add_text(texto, height=alto, dxfattribs={"layer": capa}).set_placement((x, y))
+
+
+def test_un_rotulo_ilegible_queda_por_confirmar_aunque_la_red_tenga_un_solo_diametro(tmp_path):
+    # R184: 12" + 12" + 13" — con un solo diámetro legible no se partía y los 23.38 m salían 305 mm.
+    def build(doc):
+        msp = doc.modelspace()
+        _ducto(msp, [(0, 0), (5, 1), (10, 0)])
+        _ducto(msp, [(0, 6), (5, 7), (10, 6)])
+        _ducto(msp, [(0, 12), (1, 13), (2, 12)])
+        _rotulo(msp, '12"', 5, 1.2)
+        _rotulo(msp, '12"', 5, 7.2)
+        _rotulo(msp, '13"', 1, 13.2)
+
+    salida = detect_runs(_entities(tmp_path, "u.dxf", build), None, IdGenerator("d"), 1.0, [])
+    metros = _por_diametro(salida)
+    assert set(metros) == {305, None} and metros[None] > 2.0
+
+
+def test_un_collarin_legible_y_un_recorrido_ilegible_quedan_por_confirmar(tmp_path):
+    # R184: un collarín de 14" y un recorrido «13"» (no se lee) junto a un ducto de 14": antes todo
+    # salía 356 mm (en 599ec9f, «sin leer»).
+    def build(doc):
+        msp = doc.modelspace()
+        _ducto(msp, [(0, 0), (4, 1), (8, 0)])
+        _ducto(msp, [(0, 6), (4, 7), (8, 6)])
+        _rotulo(msp, '14"', 0, 0.05, capa="EquipoAz", alto=0.1)
+        _rotulo(msp, '13"', 4, 1.3)
+        _rotulo(msp, '14"', 4, 7.2)
+
+    salida = detect_runs(_entities(tmp_path, "c.dxf", build), None, IdGenerator("d"), 1.0, [])
+    metros = _por_diametro(salida)
+    assert set(metros) == {356, None} and metros[None] > 7.0
+
+
+def test_la_conexion_nunca_pasa_por_un_ducto_por_confirmar(tmp_path):
+    # R184: L (12") – E (collarín 14", recorrido 12": por confirmar) – U (sin rótulo, sólo toca a
+    # E): U salía 12" sin aviso; queda por confirmar y se dice por qué.
+    def build(doc):
+        msp = doc.modelspace()
+        _ducto(msp, [(0, 0), (3, 1), (6, 0)])  # L
+        _ducto(msp, [(6, 0), (9, -1), (12, 0)])  # E
+        _ducto(msp, [(12, 0), (15, 1), (18, 0)])  # U
+        _ducto(msp, [(0, 10), (5, 11), (10, 10)])  # otro de 10"
+        _rotulo(msp, '12"', 3, 1.2)
+        _rotulo(msp, '14"', 8.9, -1.2, capa="EquipoAz", alto=0.1)
+        _rotulo(msp, '12"', 9.3, -0.7)
+        _rotulo(msp, '10"', 5, 11.2)
+
+    salida = detect_runs(_entities(tmp_path, "e.dxf", build), None, IdGenerator("d"), 1.0, [])
+    metros = _por_diametro(salida)
+    assert metros[None] > 12.0 and metros[305] > 6.0  # E y U por confirmar; L de 12"
+    duda = next(d for d in salida.detections if d.properties.get("diametro_mm") is None)
+    assert "sólo se conecta a través del ducto" in duda.evidence.notes[1]
+    assert duda.evidence.notes[1].count("en su collarín") == 1  # sólo E

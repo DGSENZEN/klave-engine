@@ -42,6 +42,13 @@ def test_se_leen_los_diametros_de_4_a_24_pulgadas():
     assert normaliza_diametro('4" x 6 m') == (102, '102 mm (4")')  # un largo, no una sección
 
 
+def test_una_seccion_a_por_b_nunca_es_un_diametro():
+    # R184: con la marca de pulgadas en un número, en los dos o en ninguno.
+    for seccion in ('20 x 16"', '24x14"', '30 x 20"', '16" x 16"', "20 x 16", "200 x 150 mm"):
+        assert normaliza_diametro(seccion) is None, seccion
+    assert normaliza_diametro('4" x 60 m') == (102, '102 mm (4")')  # un largo, no una sección
+
+
 def test_la_tabla_nominal_va_de_menor_a_mayor_y_no_repite():
     mm = [m for m, _ in NOMINALES]
     assert mm == sorted(mm) and len(mm) == len(set(mm))
