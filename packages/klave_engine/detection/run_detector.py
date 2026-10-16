@@ -168,6 +168,12 @@ class _Acumulado:
         # doce metros sólo tiene dos vértices, y su rótulo va a la mitad: a
         # seis metros de los dos.
         self.segments_xy: list[tuple[float, float, float, float]] = []
+        # R170: de qué trazo es cada segmento (su índice en ``puntas``) y las dos puntas de cada
+        # trazo, para saber qué trazos se conectan.
+        self.de_trazo: list[int] = []
+        self.puntas: list[tuple[tuple[float, float], tuple[float, float]]] = []
+        # R170: los trazos que son un spline (un ducto flexible): de un solo diámetro.
+        self.curvas: list[bool] = []
 
     def add(self, entity: NormalizedEntity, length: float) -> None:
         self.length_du += length
@@ -175,9 +181,24 @@ class _Acumulado:
         self.entities.append(entity.entity_id)
         self.source_file = self.source_file or entity.source_file
         points = entity.points or []
-        for i in range(min(len(points) - 1, 16)):
+        # R170: un spline (un ducto flexible), entero: decenas de segmentos y su rótulo a la
+        # mitad. Otro trazo, sus primeros 16 segmentos, como siempre (lo repartido se escala).
+        indice = len(self.puntas)
+        props = entity.properties or {}
+        # Un spline del espacio modelo; las curvas de un símbolo (un bloque) no son un ducto.
+        curva = props.get("derived_from") == "SPLINE" and not props.get("parent_insert")
+        for i in range(len(points) - 1 if curva else min(len(points) - 1, 16)):
             (ax, ay), (bx, by) = points[i][:2], points[i + 1][:2]
             self.segments_xy.append((float(ax), float(ay), float(bx), float(by)))
+            self.de_trazo.append(indice)
+        self.curvas.append(curva)
+        if points:
+            primero, ultimo = points[0][:2], points[-1][:2]
+            self.puntas.append(
+                ((float(primero[0]), float(primero[1])), (float(ultimo[0]), float(ultimo[1])))
+            )
+        else:
+            self.puntas.append(((math.inf, math.inf), (math.inf, math.inf)))
         if self.bbox is None:
             self.bbox = entity.bbox
         else:
@@ -240,7 +261,7 @@ def detect_runs(
             continue
         familia, disciplina, que_es = regla.familia, regla.disciplina, regla.que_es
         tramos = _tramos_por_diametro(grupo, etiquetas, meters_factor, regla.familia)
-        if len(tramos) >= 2:
+        if tramos:
             # La red cambia de diámetro a lo largo: cada tramo es un concepto
             # distinto, con sus propios metros — no una tubería entera con el
             # diámetro del rótulo más repetido.
@@ -249,6 +270,43 @@ def detect_runs(
                 if metros_t <= 0:
                     continue
                 material_t = normaliza_material(spec_t) or normaliza_material(layer)
+                if diametro_t is None:
+                    # R170: los metros sin rótulo que no se conectan con ningún tramo rotulado,
+                    # cuando los dos diámetros con más metros rotulados están casi parejos.
+                    output.detections.append(
+                        make_detection(
+                            detection_ids.next(),
+                            DetectionType.pipe_run,
+                            layer,
+                            grupo.bbox,
+                            0.6,
+                            grupo.entities,
+                            "layer_run",
+                            [
+                                f"{metros_t:,.2f} m de {que_es} en «{layer}»: diámetro por "
+                                "confirmar",
+                                "Trazos sin rótulo cerca que no se conectan con un tramo "
+                                "rotulado, y los dos diámetros con más metros rotulados están "
+                                "a menos de 10 %: no se adjudican a ninguno.",
+                            ],
+                            {
+                                "run_family": familia,
+                                "discipline": disciplina,
+                                "layer": layer,
+                                "estimated_length": round(du_t, 4),
+                                "length_m": metros_t,
+                                "segments": segs_t,
+                                "spec": "",
+                                "diametro_mm": None,
+                                "diametro": "",
+                                "diametro_por_confirmar": True,
+                                "material": material_t[1] if material_t else "",
+                                "material_clave": material_t[0] if material_t else "",
+                            },
+                            grupo.source_file,
+                        )
+                    )
+                    continue
                 output.detections.append(
                     make_detection(
                         detection_ids.next(),
@@ -261,9 +319,11 @@ def detect_runs(
                         [
                             f"{metros_t:,.2f} m de {que_es} en «{layer}», tramo de "
                             f"{diametro_t[1]}",
-                            f"La capa trae {len(tramos)} diámetros rotulados; cada "
-                            "segmento se adjudicó al rótulo legible más cercano y los "
-                            "sin rótulo se sumaron al tramo mayor.",
+                            f"La capa trae {sum(1 for t in tramos if t[1] is not None)} "
+                            "diámetros rotulados; cada segmento se adjudicó al rótulo legible "
+                            "más cercano (un ducto flexible entero, al suyo), un ducto sin "
+                            "rótulo al del ducto con el que se conecta y lo demás al tramo "
+                            "mayor (R170).",
                         ],
                         {
                             "run_family": familia,
@@ -415,17 +475,20 @@ def _tramos_por_diametro(
     etiquetas: list[tuple[tuple[float, float], str]],
     meters_factor: float,
     familia: str,
-) -> list[tuple[str, tuple[int, str], float, int]]:
-    """Los tramos de una corrida, partidos por diámetro nominal.
+) -> list[tuple[str, tuple[int, str] | None, float, int]]:
+    """Los tramos de una corrida, partidos por diámetro nominal (R170).
 
-    Cada segmento del trazo se adjudica al rótulo legible más cercano dentro
-    del alcance — con los mismos filtros de sistema y plausibilidad que
-    ``_spec_de`` — y los metros se suman por diámetro. Los segmentos sin
-    rótulo cerca se van al tramo con más metros: partirlos sería inventar
-    dónde cambia el diámetro. Con menos de dos diámetros rotulados no hay
-    nada que partir y se regresa vacío (el camino de siempre decide).
+    Cada segmento se adjudica al rótulo legible más cercano dentro del alcance
+    — con los mismos filtros de sistema y plausibilidad que ``_spec_de`` —. Un
+    ducto flexible (un spline del espacio modelo, muestreado entero) es de un
+    solo diámetro: el de su rótulo más cercano a todo él; un ducto sin rótulo
+    cerca toma el del ducto rotulado con el que se conecta, punta con punta.
+    Lo demás va al diámetro con más metros rotulados, salvo que los dos
+    primeros estén a menos de 10 %: ahí queda «por confirmar» (diámetro
+    ``None``). Con menos de dos diámetros legibles cerca de la red no hay nada
+    que partir y se regresa vacío (el camino de siempre decide).
 
-    Regresa ``[(spec, (mm, texto), metros_du, segmentos)]``.
+    Regresa ``[(spec, (mm, texto) o None, metros_du, segmentos)]``.
     """
     if not etiquetas or not grupo.segments_xy:
         return []
@@ -444,47 +507,125 @@ def _tramos_por_diametro(
     if len({d[0] for _p, _t, d in legibles}) < 2:
         return []
 
-    largo_por_dia: dict[int, float] = {}
-    segs_por_dia: dict[int, int] = {}
-    texto_por_dia: dict[int, Counter] = {}
-    dia_por_mm: dict[int, tuple[int, str]] = {}
-    sin_rotulo = 0.0
-    sin_rotulo_segs = 0
+    # R170: cada segmento, el rótulo legible más cercano dentro del alcance. Un spline (un ducto
+    # flexible, muestreado entero) es de un solo diámetro: el de su rótulo más cercano a todo él
+    # (un 8" entre dos ductos de 10" se llevaba la punta de cada uno), y un ducto sin rótulo toma
+    # el del ducto rotulado con el que se conecta. Lo que queda va al diámetro con más metros
+    # rotulados, salvo que los dos primeros estén a menos de 10 %: entonces «por confirmar».
+    largos = [math.dist((ax, ay), (bx, by)) for ax, ay, bx, by in grupo.segments_xy]
+    rotulo_de_seg: list[tuple[float, tuple[int, str], str] | None] = []
     for ax, ay, bx, by in grupo.segments_xy:
-        largo = math.dist((ax, ay), (bx, by))
-        if largo <= 0:
-            continue
         mejor: tuple[float, tuple[int, str], str] | None = None
         for (tx, ty), texto, diametro in legibles:
             d = _distancia_a_segmento(tx, ty, (ax, ay, bx, by))
             if d <= alcance and (mejor is None or d < mejor[0]):
                 mejor = (d, diametro, texto)
-        if mejor is None:
-            sin_rotulo += largo
-            sin_rotulo_segs += 1
+        rotulo_de_seg.append(mejor)
+    del_spline: dict[int, tuple[float, tuple[int, str], str]] = {}
+    for k, rotulo in enumerate(rotulo_de_seg):
+        t = grupo.de_trazo[k]
+        if rotulo is not None and grupo.curvas[t]:
+            if t not in del_spline or rotulo[0] < del_spline[t][0]:
+                del_spline[t] = rotulo
+    for k in range(len(rotulo_de_seg)):
+        t = grupo.de_trazo[k]
+        if t in del_spline:
+            rotulo_de_seg[k] = del_spline[t]
+    rotulado_por_dia: dict[int, float] = {}
+    por_trazo: dict[int, dict[int, float]] = {}
+    dia_por_mm: dict[int, tuple[int, str]] = {}
+    texto_por_dia: dict[int, Counter] = {}
+    for k, rotulo in enumerate(rotulo_de_seg):
+        if rotulo is None or largos[k] <= 0:
             continue
-        mm = mejor[1][0]
-        largo_por_dia[mm] = largo_por_dia.get(mm, 0.0) + largo
-        segs_por_dia[mm] = segs_por_dia.get(mm, 0) + 1
-        texto_por_dia.setdefault(mm, Counter())[_pedazo_de(mejor[2], familia)] += 1
-        dia_por_mm[mm] = mejor[1]
-    if len(largo_por_dia) < 2:
+        mm = rotulo[1][0]
+        rotulado_por_dia[mm] = rotulado_por_dia.get(mm, 0.0) + largos[k]
+        dias = por_trazo.setdefault(grupo.de_trazo[k], {})
+        dias[mm] = dias.get(mm, 0.0) + largos[k]
+        dia_por_mm[mm] = rotulo[1]
+        texto_por_dia.setdefault(mm, Counter())[_pedazo_de(rotulo[2], familia)] += 1
+    if not rotulado_por_dia:
         return []
-    mayor = max(largo_por_dia, key=lambda mm: largo_por_dia[mm])
-    largo_por_dia[mayor] += sin_rotulo
-    segs_por_dia[mayor] += sin_rotulo_segs
-    # segments_xy guarda a lo más 16 tramos por entidad: lo repartido se
-    # escala para que la suma dé los metros reales del grupo.
+    # El diámetro de cada trazo rotulado, para el ducto sin rótulo que se conecta con él. Un
+    # segmento sin rótulo de un trazo que no es spline sigue su camino de siempre (el diámetro con
+    # más metros rotulados, o «por confirmar» si los dos primeros están parejos).
+    del_trazo = {t: max(dias, key=lambda mm: (dias[mm], -mm)) for t, dias in por_trazo.items()}
+    rotulados = set(del_trazo)
+    _por_conexion(del_trazo, grupo.puntas, _UNE_TRAZOS / meters_factor if meters_factor else 0.0)
+    orden = sorted(rotulado_por_dia, key=lambda mm: -rotulado_por_dia[mm])
+    parejos = (
+        len(orden) > 1
+        and rotulado_por_dia[orden[1]] >= (1 - _DIAMETROS_PAREJOS) * rotulado_por_dia[orden[0]]
+    )
+    largo_por_dia: dict[int | None, float] = {}
+    segs_por_dia: dict[int | None, int] = {}
+    for k, largo in enumerate(largos):
+        if largo <= 0:
+            continue
+        rotulo = rotulo_de_seg[k]
+        t = grupo.de_trazo[k]
+        dia: int | None
+        if rotulo is not None:
+            dia = rotulo[1][0]
+        elif grupo.curvas[t] and t not in rotulados and t in del_trazo:
+            dia = del_trazo[t]  # un ducto sin rótulo, por el rotulado con el que se conecta
+        else:
+            dia = None if parejos else orden[0]
+        largo_por_dia[dia] = largo_por_dia.get(dia, 0.0) + largo
+        segs_por_dia[dia] = segs_por_dia.get(dia, 0) + 1
+    # Lo repartido se escala para que la suma dé los metros reales del grupo (el segmento que
+    # cierra una polilínea cerrada no está en ``segments_xy``).
     cubierto = sum(largo_por_dia.values())
     escala = grupo.length_du / cubierto if cubierto else 1.0
     return sorted(
         (
-            (texto_por_dia[mm].most_common(1)[0][0], dia_por_mm[mm],
-             largo_por_dia[mm] * escala, segs_por_dia[mm])
-            for mm in largo_por_dia
+            (
+                texto_por_dia[d].most_common(1)[0][0] if d is not None else "",
+                dia_por_mm[d] if d is not None else None,
+                largo_por_dia[d] * escala,
+                segs_por_dia[d],
+            )
+            for d in largo_por_dia
         ),
         key=lambda tramo: -tramo[2],
     )
+
+
+# R170: dos trazos se conectan cuando una punta de uno está a esto (en metros) de una del otro.
+_UNE_TRAZOS = 0.05
+# R170: los dos diámetros con más metros rotulados a menos de esta parte: no hay mayor.
+_DIAMETROS_PAREJOS = 0.10
+
+
+def _por_conexion(
+    del_trazo: dict[int, int],
+    puntas: list[tuple[tuple[float, float], tuple[float, float]]],
+    tolerancia: float,
+) -> None:
+    """R170: un trazo sin rótulo toma el diámetro del trazo rotulado con el que se conecta,
+    punta con punta, a través de otros sin rótulo (el más cercano en saltos); si dos diámetros
+    llegan en el mismo número de saltos, ninguno. Modifica ``del_trazo``."""
+    vecinos: dict[int, list[int]] = {i: [] for i in range(len(puntas))}
+    for i, (a0, a1) in enumerate(puntas):
+        for j in range(i + 1, len(puntas)):
+            b0, b1 = puntas[j]
+            if min(math.dist(p, q) for p in (a0, a1) for q in (b0, b1)) <= tolerancia:
+                vecinos[i].append(j)
+                vecinos[j].append(i)
+    frontera = {t: {mm} for t, mm in del_trazo.items()}
+    llegado: dict[int, set[int]] = dict(frontera)
+    while frontera:
+        siguiente: dict[int, set[int]] = {}
+        for t, dias in frontera.items():
+            for v in vecinos[t]:
+                if v in llegado:
+                    continue
+                siguiente.setdefault(v, set()).update(dias)
+        for v, dias in siguiente.items():
+            llegado[v] = dias
+            if len(dias) == 1:
+                del_trazo[v] = next(iter(dias))
+        frontera = {v: d for v, d in siguiente.items() if len(d) == 1}
 
 
 def _distancia_a_segmento(

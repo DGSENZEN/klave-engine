@@ -419,3 +419,72 @@ def test_un_solo_diametro_no_parte_nada(tmp_path):
     salida = detect_runs(_entities(tmp_path, "u1.dxf", build), None, IdGenerator("d"), 1.0, [])
     assert len(salida.detections) == 1
     assert salida.detections[0].properties["length_m"] == 30.0
+
+
+def _ducto(msp, puntos, capa="flexible"):
+    """Un ducto flexible: un spline por sus puntos de paso (aplanado en decenas de segmentos)."""
+    msp.add_spline(puntos, dxfattribs={"layer": capa})
+
+
+def _por_diametro(salida):
+    metros: dict = {}
+    for d in salida.detections:
+        k = d.properties.get("diametro_mm")
+        metros[k] = round(metros.get(k, 0.0) + d.properties["length_m"], 2)
+    return metros
+
+
+def test_un_ducto_flexible_es_de_un_diametro_el_de_su_rotulo(tmp_path):
+    # R170 (instalaciones-mini, AA): un spline de decenas de segmentos con su rótulo a la mitad
+    # es de ese diámetro entero; un rótulo de 8" más cerca de su punta no se lleva la punta. Antes
+    # sólo contaban sus primeros 16 segmentos y cada segmento iba a su rótulo más cercano.
+    def build(doc):
+        msp = doc.modelspace()
+        _ducto(msp, [(0, 0), (3, 1), (6, 0), (9, 1), (12, 0)])
+        _ducto(msp, [(0, 4), (3, 5), (6, 4), (9, 5), (12, 4)])
+        msp.add_text('10"', height=0.2).set_placement((5.9, 0.1))
+        msp.add_text('12"', height=0.2).set_placement((5.9, 4.1))
+        # Junto a la punta del de 10" (a 0.7), más lejos que su propio rótulo (a 0.15): el
+        # segmento de la punta le quedaba más cerca a él y se iba a 8".
+        msp.add_text('8"', height=0.2).set_placement((12.5, 0.6))
+
+    salida = detect_runs(_entities(tmp_path, "f.dxf", build), None, IdGenerator("d"), 1.0, [])
+    metros = _por_diametro(salida)
+    assert set(metros) == {254, 305}
+    assert metros[254] == metros[305]  # los dos ductos enteros, iguales
+
+
+def test_un_ducto_sin_rotulo_toma_el_diametro_del_ducto_con_el_que_se_conecta(tmp_path):
+    # R170: el ducto sin rótulo que sigue a uno de 10" (punta con punta) es de 10", no del
+    # diámetro con más metros rotulados (12").
+    def build(doc):
+        msp = doc.modelspace()
+        _ducto(msp, [(0, 0), (2, 1), (4, 0)])
+        _ducto(msp, [(4, 0), (6, -1), (8, 0)])  # sin rótulo, sigue al de 10"
+        _ducto(msp, [(0, 6), (5, 7), (10, 6), (15, 7), (20, 6)])
+        msp.add_text('10"', height=0.2).set_placement((2, 1.2))
+        msp.add_text('12"', height=0.2).set_placement((10, 6.3))
+
+    salida = detect_runs(_entities(tmp_path, "c.dxf", build), None, IdGenerator("d"), 1.0, [])
+    metros = _por_diametro(salida)
+    assert metros[254] > 8.0  # los dos primeros ductos
+    assert None not in metros
+
+
+def test_con_dos_diametros_parejos_lo_suelto_queda_por_confirmar(tmp_path):
+    # R170: dos diámetros con casi los mismos metros rotulados (menos de 10 %) y un ducto suelto
+    # sin rótulo ni conexión: no se adjudica a ninguno; «diámetro por confirmar».
+    def build(doc):
+        msp = doc.modelspace()
+        _ducto(msp, [(0, 0), (5, 1), (10, 0)])
+        _ducto(msp, [(0, 6), (5, 7), (10, 6)])
+        _ducto(msp, [(0, 12), (2, 13), (4, 12)])  # suelto
+        msp.add_text('10"', height=0.2).set_placement((5, 1.2))
+        msp.add_text('12"', height=0.2).set_placement((5, 7.2))
+
+    salida = detect_runs(_entities(tmp_path, "p.dxf", build), None, IdGenerator("d"), 1.0, [])
+    metros = _por_diametro(salida)
+    assert None in metros and metros[None] > 4.0
+    suelto = next(d for d in salida.detections if d.properties.get("diametro_mm") is None)
+    assert suelto.properties["diametro_por_confirmar"] is True
+    assert "diámetro por confirmar" in suelto.evidence.notes[0]

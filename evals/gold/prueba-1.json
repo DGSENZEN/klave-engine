@@ -573,112 +573,165 @@
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "PRE-001.GEN": 128.987
+        }
       },
       "CIM-001": {
         "quantity": 5.343,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CIM-001.GEN": 5.343
+        }
       },
       "CIM-002": {
         "quantity": 3.74,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CIM-002.GEN": 3.74
+        }
       },
       "EST-001": {
         "quantity": 10.037,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "marcadores de castillo: cada etiqueta toma el castillo dibujado junto a sus letras (su cuadro, su c\u00edrculo o su relleno), no el bloque de muros de la planta que la contiene; los castillos del muro poniente de PLANTA BAJA, casi igual de cerca de \u00absimbolog\u00eda\u00bb, son de la planta por su dibujo (R146, R165); antes, R133: el c\u00edrculo del castillo en vez de la caja del bloque que lo contiene"
+        "note": "marcadores de castillo: cada etiqueta toma el castillo dibujado junto a sus letras (su cuadro, su c\u00edrculo o su relleno), no el bloque de muros de la planta que la contiene; los castillos del muro poniente de PLANTA BAJA, casi igual de cerca de \u00absimbolog\u00eda\u00bb, son de la planta por su dibujo (R146, R165); antes, R133: el c\u00edrculo del castillo en vez de la caja del bloque que lo contiene",
+        "variants": {
+          "EST-001.GEN": 10.037
+        }
       },
       "EST-002": {
         "quantity": 7.796,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "claros de trabe: cada etiqueta toma el tramo recto alineado junto a ella, no la l\u00ednea de un detalle de secci\u00f3n ni la polil\u00ednea entera; la l\u00ednea que comparten varias etiquetas se reparte y cuenta una vez (R146)"
+        "note": "claros de trabe: cada etiqueta toma el tramo recto alineado junto a ella, no la l\u00ednea de un detalle de secci\u00f3n ni la polil\u00ednea entera; la l\u00ednea que comparten varias etiquetas se reparte y cuenta una vez (R146)",
+        "variants": {
+          "EST-002.GEN": 7.796
+        }
       },
       "EST-005": {
         "quantity": 12.98,
         "unit": "M",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "cerramientos: cada CR-1 toma su doble l\u00ednea de E-CERRAMIENTOS entre castillos, no la trabe vecina; cuenta el CR-1 del muro poniente de PLANTA BAJA (R146, R165)"
+        "note": "cerramientos: cada CR-1 toma su doble l\u00ednea de E-CERRAMIENTOS entre castillos, no la trabe vecina; cuenta el CR-1 del muro poniente de PLANTA BAJA (R146, R165)",
+        "variants": {
+          "EST-005.GEN": 12.98
+        }
       },
       "EST-016": {
         "quantity": 34.291,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "EST-016.SINTIPO": 34.291
+        }
       },
       "EST-012": {
         "quantity": 194.446,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "EST-012.VIGUETABOVEDILLA": 194.446
+        }
       },
       "EST-004": {
         "quantity": 392.598,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165)"
+        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165)",
+        "variants": {
+          "EST-004.BLOCK-19": 7.769,
+          "EST-004.BLOCK-18": 54.548,
+          "EST-004.BLOCK-16": 225.508,
+          "EST-004.BLOCK-17": 61.282,
+          "EST-004.BLOCK-36": 26.588,
+          "EST-004.BLOCK-30": 16.902
+        }
       },
       "ACA-001": {
         "quantity": 785.197,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165)"
+        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165)",
+        "variants": {
+          "ACA-001.GEN": 785.197
+        }
       },
       "ACA-002": {
         "quantity": 785.197,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165)"
+        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165)",
+        "variants": {
+          "ACA-002.GEN": 785.197
+        }
       },
       "AIR-004": {
         "quantity": 42.0,
         "unit": "PZA",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "AIR-004.GEN": 42.0
+        }
       },
       "CAR-001": {
         "quantity": 33.0,
         "unit": "PZA",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CAR-001.GEN": 33.0
+        }
       },
       "CIM-003": {
         "quantity": 12.03,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CIM-003.GEN": 12.03
+        }
       },
       "CIM-004": {
         "quantity": 1.002,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CIM-004.GEN": 1.002
+        }
       },
       "CIM-005": {
         "quantity": 6.947,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CIM-005.GEN": 6.947
+        }
       }
     },
     "direct_cost": 0.0,

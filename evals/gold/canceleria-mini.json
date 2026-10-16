@@ -65,14 +65,20 @@
         "unit": "PZA",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CAN-001.GEN": 36.0
+        }
       },
       "CAR-001": {
         "quantity": 7.0,
         "unit": "PZA",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CAR-001.GEN": 7.0
+        }
       }
     },
     "direct_cost": 0.0,

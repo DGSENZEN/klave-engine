@@ -61,84 +61,120 @@
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "PRE-001.GEN": 120000.0
+        }
       },
       "CIM-001": {
         "quantity": 3600.0,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CIM-001.GEN": 3600.0
+        }
       },
       "CIM-002": {
         "quantity": 2520.0,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CIM-002.GEN": 2520.0
+        }
       },
       "EST-001": {
         "quantity": 0.81,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "EST-001.GEN": 0.81
+        }
       },
       "EST-002": {
         "quantity": 33.75,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "EST-002.GEN": 33.75
+        }
       },
       "EST-016": {
         "quantity": 120000.0,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "EST-016.GEN": 120000.0
+        }
       },
       "EST-004": {
         "quantity": 442.8,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "EST-004.BLOCK": 442.8
+        }
       },
       "ACA-001": {
         "quantity": 885.6,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "ACA-001.GEN": 885.6
+        }
       },
       "ACA-002": {
         "quantity": 885.6,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "ACA-002.GEN": 885.6
+        }
       },
       "CIM-003": {
         "quantity": 7248.08,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CIM-003.GEN": 7248.08
+        }
       },
       "CIM-004": {
         "quantity": 717.596,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CIM-004.GEN": 717.596
+        }
       },
       "CIM-005": {
         "quantity": 4680.0,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CIM-005.GEN": 4680.0
+        }
       }
     },
     "direct_cost": 0.0,

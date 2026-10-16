@@ -202,7 +202,14 @@
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "ALB-001.TABIQUE-20": 5.203,
+          "ALB-001.TABIQUE-25": 22.085,
+          "ALB-001.TABIQUE-35": 9.29,
+          "ALB-001.TABIQUE-30": 27.214,
+          "ALB-001.TABIQUE-40": 17.925
+        }
       }
     },
     "direct_cost": 0.0,

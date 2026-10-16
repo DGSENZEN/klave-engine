@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 
 from klave_engine.common.config import Settings, get_settings
 from klave_engine.common.io import read_json, write_json, write_text
-from klave_engine.costing.models import CostingConfig, CostReport
+from klave_engine.costing.models import BoqLine, CostingConfig, CostReport
 from klave_engine.costing.report import generate_cost_report
 from klave_engine.costing.reviews import load_reviews
 from klave_engine.detection.dimensions import DimensionInventory
@@ -60,6 +60,10 @@ class QuantityExpectation(BaseModel):
     tolerance_pct: float = 10.0
     source: Literal["engine", "human"] = "engine"
     note: str = ""
+    # R171: the quantity of each variant of a concept priced by variant (its key → quantity),
+    # so a shift between variants — the same metres re-priced as another diameter or section —
+    # cannot pass the gate while the concept's total stays put.
+    variants: dict[str, float] | None = None
 
 
 class MoneyExpectation(BaseModel):
@@ -228,6 +232,7 @@ def money_from_report(report: CostReport) -> MoneyExpectation:
     concepts = {
         line.concept_code: QuantityExpectation(
             quantity=round(line.quantity, 3), unit=line.unit, source="engine",
+            variants={v.key: round(v.quantity, 3) for v in line.variants} or None,
         )
         for line in report.boq.lines
     }
@@ -236,6 +241,33 @@ def money_from_report(report: CostReport) -> MoneyExpectation:
         direct_cost=round(report.boq.direct_cost_total, 2),
         unpriced=sorted(line.concept_code for line in report.boq.lines if line.unpriced),
     )
+
+
+def _score_variants(code: str, want: QuantityExpectation, line: BoqLine) -> list[MoneyScore]:
+    """R171: each recorded variant against the line's variant of that key, with the concept's
+    tolerance; a variant the gold never saw, or one it saw that is gone, fails."""
+    actual = {v.key: v.quantity for v in line.variants}
+    expected = want.variants or {}
+    scores: list[MoneyScore] = []
+    for key in sorted(set(expected) | set(actual)):
+        esperado, real = expected.get(key), actual.get(key)
+        if esperado is None or real is None:
+            deviation = None
+            passed = False
+        else:
+            deviation = (
+                (0.0 if real == 0 else 100.0)
+                if esperado == 0
+                else abs(real - esperado) / abs(esperado) * 100.0
+            )
+            passed = deviation <= want.tolerance_pct
+        scores.append(MoneyScore(
+            concept_code=key, unit=want.unit, expected=esperado if esperado is not None else 0.0,
+            actual=round(real, 3) if real is not None else None,
+            deviation_pct=round(deviation, 2) if deviation is not None else None,
+            tolerance_pct=want.tolerance_pct, source=want.source, passed=passed,
+        ))  # fmt: skip
+    return scores
 
 
 def score_money(
@@ -264,6 +296,8 @@ def score_money(
             tolerance_pct=want.tolerance_pct, source=want.source,
             passed=deviation <= want.tolerance_pct and line.unit.upper() == want.unit.upper(),
         ))
+        if want.variants is not None:
+            scores.extend(_score_variants(code, want, line))
     cost_passed: bool | None = None
     if expected.direct_cost is not None:
         if expected.direct_cost == 0:
@@ -360,7 +394,8 @@ def capture_money(
 def save_entry(entry: GoldEntry, gold_dir: Path = GOLD_DIR) -> Path:
     gold_dir.mkdir(parents=True, exist_ok=True)
     path = gold_dir / f"{entry.drawing_id}.json"
-    write_json(path, entry)
+    # A concept without variants carries none (R171): no ``null`` in the gold files.
+    write_json(path, entry.model_dump(mode="json", exclude_none=True))
     return path
 
 

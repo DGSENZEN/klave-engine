@@ -174,77 +174,117 @@
         "unit": "SAL",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "SAN-001.GEN": 16.0
+        }
       },
       "SAN-002": {
         "quantity": 167.746,
         "unit": "M",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "SAN-002.102MM": 118.235,
+          "SAN-002.51MM": 45.22,
+          "SAN-002.GEN": 4.29
+        }
       },
       "SAN-003": {
         "quantity": 238.893,
         "unit": "M",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "SAN-003.102MM": 200.93,
+          "SAN-003.51MM": 37.962
+        }
       },
       "AIR-001": {
         "quantity": 52.219,
         "unit": "M",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "R171: variantes registradas (las piezas rectas de AireDucto, cada segmento al r\u00f3tulo legible m\u00e1s cercano, como siempre): 203 mm 14.635, 254 mm 6.841, 305 mm 30.743. En el crudo (letras de cada r\u00f3tulo), segmento por segmento, las piezas del collar\u00edn junto al \u00ab8\"\u00bb (y 22.5 a 28.6) dan 8\" 6.58 m, 10\" 0.30 m y 5.18 m sin r\u00f3tulo (al mayor, 8\"): el motor 0.38 m de 10\", B0 1.50 m (13.511 / 7.964)",
+        "variants": {
+          "AIR-001.203MM": 14.635,
+          "AIR-001.254MM": 6.841,
+          "AIR-001.305MM": 30.743
+        }
       },
       "AIR-002": {
         "quantity": 118.549,
         "unit": "M",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "R170/R171: cada ducto flexible (un spline entero) es del di\u00e1metro de su r\u00f3tulo m\u00e1s cercano; un ducto sin r\u00f3tulo, del ducto con el que se conecta. Variantes verificadas en el crudo ducto por ducto (letras de cada r\u00f3tulo, trazo entero): 305 mm 91.041, 254 mm 23.302, 203 mm 4.206. B0 (93.503 / 19.538 / 5.509) muestreaba 16 segmentos por ducto y part\u00eda cada ducto entre r\u00f3tulos; c4bd996 (76.637 / 35.807 / 6.105) daba los metros sin r\u00f3tulo al di\u00e1metro con m\u00e1s metros rotulados",
+        "variants": {
+          "AIR-002.305MM": 91.041,
+          "AIR-002.254MM": 23.302,
+          "AIR-002.203MM": 4.206
+        }
       },
       "AIR-003": {
         "quantity": 37.846,
         "unit": "M",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "AIR-003.COBRE": 37.846
+        }
       },
       "AIR-004": {
         "quantity": 18.0,
         "unit": "PZA",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "AIR-004.GEN": 18.0
+        }
       },
       "CAR-001": {
         "quantity": 1.0,
         "unit": "PZA",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CAR-001.GEN": 1.0
+        }
       },
       "ELE-006": {
         "quantity": 9.0,
         "unit": "SAL",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "ELE-006.GEN": 9.0
+        }
       },
       "AIR-005": {
         "quantity": 4.0,
         "unit": "PZA",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "AIR-005.GEN": 4.0
+        }
       },
       "AIR-006": {
         "quantity": 25.0,
         "unit": "PZA",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "AIR-006.GEN": 25.0
+        }
       }
     },
     "direct_cost": 0.0,
@@ -263,5 +303,5 @@
       "SAN-003"
     ]
   },
-  "notes": "R166: el arranque de 0.15 m del ducto flexible bajo el \u00ab10\"\u00bb es de 10\" (centro real del texto, R146)"
+  "notes": "R166: el ducto flexible 20C6 bajo el \u00ab10\"\u00bb es de 10\" (centro real del texto, R146). R171, correcci\u00f3n: la nota de R166 dec\u00eda que nada m\u00e1s se mov\u00eda y no era as\u00ed: los metros de AIR se hab\u00edan re-adjudicado entre di\u00e1metros con el total igual, y el gold no registraba variantes; desde R171 las registra (ver AIR-001 y AIR-002)."
 }
