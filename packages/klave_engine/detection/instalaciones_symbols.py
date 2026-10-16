@@ -207,18 +207,22 @@ _MM_EQUIVALENTE = {
 # uno, en los dos o en ninguno («16" x 16"», «20 x 16"», «24x14"», «BYP 24" X 8"», «200 x 150 mm»,
 # «2 x 12"»); un largo o un ángulo después del diámetro («4" x 6 m», «12" x 7,50 m»,
 # «Ø 12" x 60 cm», «12" X 25'», «CODO 4" x 45°») sí lo deja. R186: sólo una prima sola (', ′) es un
-# pie; «16" x 16´´», «16" x 16’’», «24" x 12´» son secciones.
+# pie; «16" x 16´´», «16" x 16’’», «24" x 12´» son secciones. R187: tras el primer número, cualquier
+# marca de pulgadas o ninguna («24” x 12"», «16´ x 16"», «16’ x 16"» son secciones).
 _SECCION_RE = re.compile(
-    r'\d\s*(?:"|MM\b)?\s*[X×]\s*\d+(?:[.,]\d+)?(?![\d.,])'
+    r'\d\s*(?:"|MM\b|[\'′´’])?\s*[X×]\s*\d+(?:[.,]\d+)?(?![\d.,])'
     r"(?!\s*(?:M|MTS?|ML|METROS?|CM|CMS|CENT[IÍ]METROS?)\b)(?!\s*['′](?!['′´’]))(?!\s*[°º])",
     re.I,
 )
-# R186: las maneras de escribir la marca de pulgadas con dos primas o acentos.
-_PULGADAS_DOBLES = ("″", "''", "′′", "´´", "’’")
+# R186, R187: las maneras de escribir la marca de pulgadas: con dos primas, dos acentos o dos
+# apóstrofos, y las comillas tipográficas (”, “). Las dobles van primero.
+_PULGADAS_DOBLES = ("″", "''", "′′", "´´", "’’", "”", "“")
 
 
-def _comillas(texto: str) -> str:
-    """El texto con cada marca de pulgadas escrita como «"» (R186)."""
+def comillas(texto: str) -> str:
+    """El texto con cada marca de pulgadas escrita como «"» (R186, R187). La ÚNICA normalización:
+    todo lector de diámetros, de medidas y de secciones (aquí y en ``run_detector``) lee el texto
+    que da."""
     for doble in _PULGADAS_DOBLES:
         texto = texto.replace(doble, '"')
     return texto
@@ -226,7 +230,7 @@ def _comillas(texto: str) -> str:
 
 def es_seccion(texto: str) -> bool:
     """R184: si el texto escribe una sección «A x B» (no un diámetro)."""
-    return bool(_SECCION_RE.search(_comillas(texto)))
+    return bool(_SECCION_RE.search(comillas(texto)))
 
 
 _PULGADAS_RE = re.compile(r'(?<![\d/])(\d{1,2})(?:\s+(\d)\s*/\s*(\d))?\s*"|(\d)\s*/\s*(\d)\s*"')
@@ -250,7 +254,7 @@ def normaliza_diametro(texto: str) -> tuple[int, str] | None:
     a ninguno del comercio."""
     if not texto:
         return None
-    limpio = _comillas(texto)
+    limpio = comillas(texto)
     if _SECCION_RE.search(limpio):
         return None  # la sección de un ducto rectangular no tiene diámetro (R180, R184)
 

@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from klave_engine.common.ids import IdGenerator
 from klave_engine.detection.instalaciones_symbols import (
     CorridaRegla,
+    comillas,
     es_seccion,
     familia_de_capa,
     normaliza_diametro,
@@ -102,7 +103,9 @@ _MILIMETRO = re.compile(r'(\d+(?:\.\d+)?)\s*MM\b', re.I)
 
 
 def _pulgadas(texto: str) -> float | None:
-    """El diámetro del rótulo en pulgadas, o None si no dice ninguno."""
+    """El diámetro del rótulo en pulgadas, o None si no dice ninguno. Lee el texto con su marca de
+    pulgadas normalizada (R187: «6´´», «6’’», «6''», «6”» son 6"), como todo lector."""
+    texto = comillas(texto)
     mm = _MILIMETRO.search(texto)
     if mm:
         return float(mm.group(1)) / 25.4

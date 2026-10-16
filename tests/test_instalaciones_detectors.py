@@ -715,3 +715,62 @@ def test_un_ducto_flexible_rotulado_con_una_seccion_de_acentos_queda_por_confirm
     salida = detect_runs(_entities(tmp_path, "f.dxf", build), None, IdGenerator("d"), 1.0, [])
     metros = _por_diametro(salida)
     assert 305 not in metros and metros[None] == pytest.approx(metros[203], rel=0.01)
+
+
+# ------------------------------------------- Tarea 9c, paso previo B: R187
+
+
+@pytest.mark.parametrize("rotulo", ["PVC 6´´", "PVC 6’’", "PVC 6''", "PVC 6”"])
+def test_un_rotulo_con_otra_marca_de_pulgadas_pasa_por_el_rango_del_sistema(tmp_path, rotulo):
+    # R187: un rótulo de 6" junto a una tubería de agua fría y un albañal: 6" no cabe en el agua
+    # fría (3/8" a 4"). Con «"» se rechazaba; con dos acentos, dos comillas tipográficas o dos
+    # apóstrofos se saltaba la prueba y el agua fría se pagaba como 152 mm.
+    def build(doc):
+        msp = doc.modelspace()
+        msp.add_line((0, 0), (12, 0), dxfattribs={"layer": "P-04IH-CPIP"})
+        msp.add_line((0, 0.15), (12, 0.15), dxfattribs={"layer": "00-SANITARIA"})
+        msp.add_text(rotulo, dxfattribs={"layer": "T", "height": 0.2}).set_placement((6, 0.4))
+
+    salida = detect_runs(_entities(tmp_path, "p.dxf", build), None, IdGenerator("d"), 1.0, [])
+    fria = [d for d in salida.detections if d.properties["run_family"] == "agua_fria"]
+    assert fria and all(d.properties.get("diametro_mm") is None for d in fria)
+
+
+def test_una_linea_de_refrigerante_nunca_es_de_12_pulgadas_con_acentos(tmp_path):
+    # R187: «Ø 12´´» junto al refrigerante y a un ducto: es del ducto (antes, 305 mm de cobre).
+    def build(doc):
+        msp = doc.modelspace()
+        msp.add_line((0, 0), (12, 0), dxfattribs={"layer": "AireDucto"})
+        msp.add_line((0, 0.1), (12, 0.1), dxfattribs={"layer": "AireTuboCu"})
+        msp.add_text("Ø 12´´", dxfattribs={"layer": "T", "height": 0.2}).set_placement((6, 0.4))
+
+    specs = _spec(tmp_path, "r.dxf", build)
+    assert specs["refrigerante"] == ""
+
+
+@pytest.mark.parametrize("rotulo", ['Ø 30"', "Ø 30´´", "Ø 30’’", "Ø 30”"])
+def test_un_ducto_flexible_de_30_pulgadas_queda_por_confirmar(tmp_path, rotulo):
+    # R187: 30" no cabe en un ducto flexible (4" a 24"): con «"» quedaba por confirmar; con dos
+    # acentos el rótulo pasaba la prueba y su «30» se leía como 32 mm.
+    def build(doc):
+        msp = doc.modelspace()
+        for k, texto in enumerate(('10"', '8"', rotulo)):
+            _ducto(msp, [(0, 6 * k), (5, 6 * k + 1), (10, 6 * k)])
+            _rotulo(msp, texto, 5, 6 * k + 1.2)
+
+    salida = detect_runs(_entities(tmp_path, "t.dxf", build), None, IdGenerator("d"), 1.0, [])
+    metros = _por_diametro(salida)
+    assert 32 not in metros and metros[None] == pytest.approx(metros[203], rel=0.01)
+
+
+@pytest.mark.parametrize("rotulo", ['24” x 12"', '16´ x 16"', '16’ x 16"', "24“ x 12”"])
+def test_una_seccion_con_cualquier_marca_en_su_primer_numero_no_tiene_diametro(tmp_path, rotulo):
+    # R187: la prueba de sección pedía «"» o MM tras el primer número, y «”» no se normalizaba:
+    # estas secciones se pagaban como diámetros redondos (305, 406, 406).
+    def build(doc):
+        msp = doc.modelspace()
+        msp.add_line((0, 0), (10, 0), dxfattribs={"layer": "AireDucto"})
+        _rotulo(msp, rotulo, 5, 0.2, capa="AireDucto")
+
+    salida = detect_runs(_entities(tmp_path, "s.dxf", build), None, IdGenerator("d"), 1.0, [])
+    assert {d.properties.get("diametro_mm") for d in salida.detections} == {None}

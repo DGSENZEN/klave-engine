@@ -2,7 +2,7 @@
 cotiza— de un concepto con precio publicado."""
 
 from klave_engine.costing.matching import Candidate, score
-from klave_engine.detection.instalaciones_symbols import NOMINALES, normaliza_diametro
+from klave_engine.detection.instalaciones_symbols import NOMINALES, es_seccion, normaliza_diametro
 
 
 def _c(clave: str, descripcion: str, unidad: str = "M") -> Candidate:
@@ -181,3 +181,14 @@ def test_el_tubo_de_concreto_de_las_redes_no_es_tuberia_domestica():
     m = score('Tubería de agua fría de cobre de 25 mm (1")', "M",
               concreto, "Instalación hidráulica")
     assert m is None or any("material distinto" in r for r in m.reasons)
+
+
+def test_una_sola_normalizacion_de_la_marca_de_pulgadas():
+    # R187: «”» y «“» son la marca de pulgadas; la prueba de sección acepta cualquier marca (o
+    # ninguna) tras su primer número.
+    assert normaliza_diametro("PVC 6”") == (152, '152 mm (6")')
+    assert normaliza_diametro("AF-1/2“Ø") == (13, '13 mm (1/2")')
+    for seccion in ('24” x 12"', '16´ x 16"', '16’ x 16"', "24“ x 12”", "16′ x 16″"):
+        assert normaliza_diametro(seccion) is None, seccion
+        assert es_seccion(seccion), seccion
+    assert normaliza_diametro("12” X 25'") == (305, '305 mm (12")')  # un largo, no una sección
