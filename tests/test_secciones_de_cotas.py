@@ -1862,14 +1862,16 @@ def test_only_the_nearest_heading_opening_its_text_states_a_cadena(textos):
 
 def _t3_8():
     """T3-8 de Marina (ES-301), con el origen en (251.173, −25.881): a la izquierda de su sección
-    el escalón de la losa nervada con sus dos «60» (uno horizontal a media altura, otro girado de
-    esquina a esquina), y su sección (su «20» de ancho) a la derecha; su título va sobre el
-    escalón."""
+    el escalón de la losa nervada (A9009) con su «60» horizontal (A9033) y su «30» (A9032), y el
+    «60» girado de esquina a esquina (E266C); su sección (su «20» de ancho, A90B7) a la derecha,
+    de la losa (A9087) al fondo, que corre bajo los tres (A9074). Su título va sobre el escalón y
+    acaba a 0.05 de su sección."""
     return [
         _titulo("t", "T3-8", 1.799, 2.606, alto=0.14),
         _poligono("escalon", [(0.0, 0.0), (0.0, 1.237), (2.357, 1.237), (2.357, 2.52)], False),
-        _linea("fondo", (0.0, 0.0), (2.357, 0.0)),
+        _linea("fondo", (0.0, 0.0), (4.426, 0.0)),
         _cota("h60", (0.0, 1.237), (2.357, 1.237), 60),
+        _cota("v30", (0.0, 0.0), (0.0, 1.237), 30),
         _cota_lineal("v60", (0.0, 0.0), (2.357, 2.243), 60, 90.0),
         _poligono("t38", [(3.141, 2.52), (3.141, 0.786), (4.426, 0.786)], False),
         _cota_lineal("b20", (2.357, 1.237), (3.141, 0.786), 20, 0.0),
@@ -1889,15 +1891,73 @@ def test_a_title_over_a_quarter_of_its_claimed_box_gives_it_its_armado(x, suya):
     assert posibles == {"E#3@15": ["T3-21"] if suya else []}
 
 
-def test_a_claimed_box_needs_the_titles_own_cotas_meeting_at_a_corner():
-    # R163 (T3-8 en Marina): el «60» horizontal del escalón y el «60» girado no se encuentran en
-    # una esquina (su esquina sólo se proyecta): no son la sección reclamada de T3-8, y lo que va
-    # escrito en el escalón no es suyo.
-    ents = _t3_8() + [_texto("r", "4#4", 1.0, 0.6, alto=0.11)]
+def test_a_claimed_box_is_the_titles_own_drawn_section():
+    # R164 (T3-8 en Marina): el escalón de la losa («60» × «30», sus cotas sí se encuentran en una
+    # esquina) no es la sección de T3-8 aunque su título vaya encima: el título acaba a 0.05 de la
+    # junta con su propia sección («20» × «60»). En la junta de dos piezas acotadas, de cuál es no
+    # se sabe: no reclama ninguna. El escalón es una pieza acotada que no es de nadie: lo que va
+    # escrito en él es suyo (sin dueño), nunca del título más cercano. Y el rectángulo de los dos
+    # «60» (uno a media altura, otro girado) tiene una esquina sin dibujar: no es un rectángulo.
+    ents = _t3_8() + [
+        _texto("r", "4#4", 1.0, 0.6, alto=0.11),
+        _texto("e", "2E#3@15", -0.6, 0.25, alto=0.1),
+        _flecha("fe", [(-0.3, 0.25), (0.15, 0.6)]),
+    ]
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
     assert [s.section_cm for s in _cotas(inv, "T3-8")] == [None]
     posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
-    assert posibles == {"4#4": []}
+    assert posibles == {"4#4": [], "2E#3@15": []}
+
+
+def _t2_7():
+    """T2-7 de Marina (ES-201), con el origen en (236.626, 3.485): una sección compuesta — su
+    cuerpo de 50 × 72.5 (capa de detalles: A9A9A, A9A9B, A9A9C, A9AA1) y, a su izquierda y abajo,
+    el ala de 60 × 30 (capa 0: A9C9B, A9C9C, A9C9D). Sus cotas no se encuentran en una esquina:
+    el «50» (A9A9D) va del pie del lado izquierdo del cuerpo a la esquina de abajo a la derecha, y
+    el «42.5» (AFD22) de la esquina del ala a la de arriba del cuerpo; sus cajas, las de Marina
+    (la del «50» es apenas más alta que ancha)."""
+    h50 = _cota_lineal("h50", (2.001, 1.068), (3.734, 0.0), 50, 180.0)
+    h50.bbox = (1.951, -0.769, 3.784, 1.068)
+    v42 = _cota_lineal("v42", (0.0, 1.068), (2.001, 2.485), 42.5, 90.0)
+    v42.bbox = (-0.295, 1.018, 2.001, 2.535)
+    return [
+        _titulo("t", "T2-7", 2.537, 2.624, alto=0.14),
+        _linea("arriba", (3.734, 2.485), (2.001, 2.485)),
+        _linea("der", (3.734, 2.282), (3.734, 0.0)),
+        _linea("izq", (2.001, 1.068), (2.001, 2.485)),
+        _linea("abajo", (2.001, 0.0), (3.734, 0.0)),
+        _linea("ala_abajo", (2.001, 0.0), (0.0, 0.0)),
+        _linea("ala_arriba", (2.001, 1.068), (0.0, 1.068)),
+        _linea("ala_izq", (0.0, 0.0), (0.0, 1.068)),
+        _linea("losa", (4.004, 2.485), (3.734, 2.485)),
+        h50,
+        v42,
+        _cota_lineal("h60", (0.0, 0.0), (2.001, -0.567), 60, 180.0),
+        _cota("v30", (0.0, 0.0), (0.0, 1.068), 30),
+        _cota("v72", (-0.295, 0.0), (-0.295, 2.485), 72.5),
+        _cota("h110", (0.0, -0.769), (3.734, -0.769), 110),
+    ]
+
+
+def test_a_composite_sections_own_box_is_claimed():
+    # R164 (T2-7 en Marina): sus cotas «50» y «42.5» no se encuentran en una esquina, pero el
+    # rectángulo que abarcan está dibujado (sus cuatro esquinas sobre sus líneas): es su sección,
+    # reclamada (nunca leída). Su «2#6», con su flecha al cuerpo, y lo de su alzado («2#8»,
+    # «1@6,8@15») son suyos: bloquean su IA.
+    ents = _t2_7() + [
+        _texto("r", "2#6", 1.722, 1.395, alto=0.1),
+        _flecha("f", [(2.116, 0.921), (1.781, 1.317), (3.6, 0.921)]),
+        _texto("a", "2#8", 5.771, 2.211, alto=0.1),
+        _texto("e", "1@6,8@15", 5.106, -0.109, alto=0.1),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s.section_cm for s in _cotas(inv, "T2-7")] == [None]
+    posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
+    assert posibles == {"2#6": ["T2-7"], "2#8": ["T2-7"], "1@6,8@15": ["T2-7"]}
+    merge_external_specs(inv, [_ia("T2-7", family="trabe", rebar="4#8", stirrups="E#4@15")], C)
+    d = construir_definiciones(inv, C)[0]["T2-7"]
+    assert d.longitudinales is None and d.estribos is None
+    assert {"longitudinales", "estribos"} <= set(d.sin_leer)
 
 
 def test_a_notes_panel_beside_a_section_is_no_elevation():

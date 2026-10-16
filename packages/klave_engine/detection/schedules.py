@@ -1497,6 +1497,9 @@ _MARGEN = 1.25
 _ENCIMA_MINIMO = 1 / 3
 # R165: the same for a claimed box of cotas (R158), which only attributes armado.
 _ENCIMA_RECLAMADA = 1 / 4
+# R164: a title whose text ends this close (in its heights, R115's tolerance) to the edge two
+# dimensioned pieces share stands at their boundary: which one is its own section is not known.
+_EN_LA_JUNTA = 0.5
 # R123: an outline without cotas is a section only when it looks like one: four corners, both
 # sides at least this many title heights, and no longer than this many times its width.
 _LADO_MINIMO = 1.5
@@ -2619,23 +2622,6 @@ def _se_encima(a: BBox, b: BBox) -> bool:
     return ancho * alto > 0.5 * menor
 
 
-def _se_encuentran(h: _Cota, v: _Cota, junto: float) -> bool:
-    """R163: whether a horizontal and a vertical cota meet at a real corner: a definition point
-    of each is the same point, or one's point lies on the other's own straight segment (a
-    vertical one whose points are one above the other, a horizontal one level)."""
-    if any(math.dist(a, b) <= junto for a in (h.p, h.q) for b in (v.p, v.q)):
-        return True
-
-    def sobre(q: tuple[float, float], c: _Cota) -> bool:
-        i = 0 if c.eje == "y" else 1  # the coordinate that is fixed along the cota
-        if abs(c.p[i] - c.q[i]) > junto or abs(q[i] - c.p[i]) > junto:
-            return False
-        a, b = sorted((c.p[1 - i], c.q[1 - i]))
-        return a - junto <= q[1 - i] <= b + junto
-
-    return any(sobre(q, v) for q in (h.p, h.q)) or any(sobre(q, h) for q in (v.p, v.q))
-
-
 def _rectangulos_de_cotas(
     dims: list[NormalizedEntity],
     segmentos: list[NormalizedEntity],
@@ -2643,14 +2629,16 @@ def _rectangulos_de_cotas(
     tol: float,
     tamano: float,
 ) -> list[_Contorno]:
-    """R158, R163: the rectangles a horizontal and a vertical cota span, never read — the drawing
+    """R158, R164: the rectangles a horizontal and a vertical cota span, never read — the drawing
     a claimed title's cotas measure where no pair closes it (R106 needs a shared corner and the
-    edges R118 accepts; a beam where a slab meets it has neither). The two cotas meet at a real
-    corner — a definition point of each is the same point, or one's point lies on the other's
-    own straight segment (T3-21's width from its side), within 2 % of the rectangle — never a
-    corner only projected (T3-8's neighbour's «60»s on ES-301); every definition point lies on a
-    drawn line (the section's own edges, or the slab line its depth runs up to); and at least two
-    of its edges are drawn (``_CUBIERTA`` of each)."""
+    edges R118 accepts; a beam where a slab meets it has neither). The vertical cota stands at an
+    end of the horizontal one's span and the horizontal one within the vertical one's span; every
+    definition point AND every corner of the rectangle lies on a drawn line (within 2 % of the
+    rectangle): the rectangle is drawn, never a corner only projected — T3-8's «60»s on ES-301,
+    one across mid-height and one turned corner to corner, span an empty corner. A composite
+    section's cotas need not meet (T2-7's «50» and «42.5» on ES-201: its upper part, drawn). At
+    least two of its edges are drawn (``_CUBIERTA`` of each). Whose it is, is the caller's
+    (``_propio``; a title at the junction of two such pieces claims neither, R164)."""
     cotas: list[_Cota] = []
     for d in dims:
         tramo = (d.properties or {}).get("measured_segment")
@@ -2684,9 +2672,10 @@ def _rectangulos_de_cotas(
             if not any(y0 - tol <= hy <= y1 + tol for hy in (h.p[1], h.q[1])):
                 continue
             junto = max(tol, 0.02 * max(x1 - x0, y1 - y0))
-            if not _se_encuentran(h, v, junto) or not all(
+            esquinas = ((x0, y0), (x1, y0), (x0, y1), (x1, y1))
+            if not all(
                 _sobre_lo_dibujado(q, horizontales, verticales, tol, junto)
-                for q in (h.p, h.q, v.p, v.q)
+                for q in (h.p, h.q, v.p, v.q, *esquinas)
             ):
                 continue
             dibujadas = sum(
@@ -3085,6 +3074,7 @@ def _leer_secciones(
 
     specs: list[ElementSpec] = []
     sin_caja: list[_Etiqueta] = []
+    de_nadie: list[BBox] = []
     for e in etiquetas:
         par = de_par.get(e.texto.entity_id)
         if par is not None and (par.contorno is not None or par.otras or par.dudosa):
@@ -3177,8 +3167,17 @@ def _leer_secciones(
                 (e, p.contorno.caja)
                 for e in sueltas
                 if (p := de_cotas[e.texto.entity_id]).contorno is not None
+                and not _en_la_junta(e, p.contorno.caja, rectangulos, _UNE * alto)
+            ]
+            # R164: a drawn, dimensioned piece no title claims (the slab's step beside T3-8, the
+            # wing of T2-7's composite section) is a section nobody owns: the armado written on
+            # it, or pointed into it, is its own — unowned, never the nearest title's (R150).
+            suyas_ya = [caja for _e, caja in [*duenas, *reclamadas]] + list(ocupadas or [])
+            de_nadie = [
+                c.caja for c in rectangulos if not any(_se_encima(c.caja, o) for o in suyas_ya)
             ]
     if libres is not None:
+        libres += de_nadie
         une = _UNE * alto
         suyas = [caja for _e, caja in [*duenas, *(reclamadas or [])]] + list(ocupadas or [])
         for c in contornos:
@@ -3198,6 +3197,27 @@ def _leer_secciones(
             if not any(_misma_caja(par.contorno.caja, o, une) for o in suyas)
         ]
     return specs
+
+
+def _en_la_junta(e: _Etiqueta, caja: BBox, rectangulos: list[_Contorno], une: float) -> bool:
+    """R164: whether the title stands at the junction of its claimed box and another dimensioned
+    piece drawn side by side with it (sharing a vertical edge, not overlapping it) — its text
+    ends within ``_EN_LA_JUNTA`` of its heights of that edge (R115's tolerance). Its own section is
+    then either piece: T3-8 on ES-301, whose title lies over the slab's step («60» × «30», with
+    its own «3#6», «2E#3@15», «#4@15») and ends 0.05 short of its own beam («20» × «60»). It
+    claims neither: a claimed box must be the title's OWN drawn section."""
+    x0, y0, x1, y1 = caja
+    tolerancia = _EN_LA_JUNTA * e.alto
+    for otro in rectangulos:
+        a0, b0, a1, b1 = otro.caja
+        if _misma_caja(otro.caja, caja, une) or min(y1, b1) - max(y0, b0) <= une:
+            continue  # the same piece, or not side by side
+        if min(x1, a1) - max(x0, a0) > une:
+            continue  # one over the other: not two pieces side by side
+        for junta in (x for x in (x0, x1) if min(abs(x - a0), abs(x - a1)) <= une):
+            if e.x0 - tolerancia <= junta <= e.x1 + tolerancia:
+                return True
+    return False
 
 
 def _seccion_de_par(
