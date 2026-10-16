@@ -55,6 +55,7 @@ _PRESET = BeamDetectorConfig(
     max_beam_length=15,
     layer_tolerance=0.15,
     max_face_gap=0.35,
+    face_width_margin=0.05,
     support_tolerance=0.05,
 )
 
@@ -502,3 +503,132 @@ def test_a_tiny_tramo_of_a_shared_line_is_doubtful():
     assert a["estimated_span_length"] < 0.2
     assert "menos que 2 alturas de su texto" in a["claro_dudoso"]
     assert "claro_dudoso" not in b
+
+
+# ------------------------------------------------- Tarea 9b, ronda de arreglos 1: R172
+
+
+def _con(**campos):
+    return _PRESET.model_copy(update=campos)
+
+
+def _caras(entidades, config):
+    salida = detect_beams(entidades, SpatialIndex(entidades), config)
+    return {d.source_entities[0]: d for d in salida.detections}
+
+
+def _t2_12(eje: bool):
+    # T2-12 en Marina (ES-200): sus caras 25CC9 y 25CCB a 0.45, de 9.2, con su eje 25CCA a la
+    # mitad; una etiqueta de cada lado toma la cara junto a ella.
+    lineas = [
+        _linea("cara1", (0.0, 0.0), (9.2, 0.0), layer="EST-TRABES"),
+        _linea("cara2", (0.0, 0.45), (9.2, 0.45), layer="EST-TRABES"),
+    ]
+    if eje:
+        lineas.append(_linea("eje", (0.0, 0.225), (9.2, 0.225), layer="EST-TRABES"))
+    etiquetas = [
+        _texto("a", "T2-12", (2.0, -0.15), capa="TEXTO"),
+        _texto("b", "T2-12", (6.0, 0.5), capa="TEXTO"),
+    ]
+    return [*lineas, *etiquetas]
+
+
+def test_the_faces_of_a_beam_lie_as_far_apart_as_its_definitions_width():
+    # R172: la definición de T2-12 dice 45×50: sus caras, a 0.45, son una viga (hasta 0.45 + 0.05)
+    # y suman 9.2 una vez; antes, con 0.35 para todas, cada etiqueta contaba su cara: 18.4.
+    vigas = _caras(_t2_12(eje=False), _con(face_widths={"T2-12": 0.45}))
+    claros = [vigas[k].properties["estimated_span_length"] for k in ("a", "b")]
+    assert sum(claros) == pytest.approx(9.2)
+    assert vigas["a"].properties["claro_caras"].startswith("claro de una viga dibujada con 2 caras")
+    # Sin definición, 0.35: dos líneas a 0.45 sin eje entre ellas no son una viga.
+    vigas = _caras(_t2_12(eje=False), _PRESET)
+    assert [vigas[k].properties["estimated_span_length"] for k in ("a", "b")] == [9.2, 9.2]
+
+
+def test_a_definition_never_narrows_the_faces_below_the_default():
+    # R172: un CI de 15 cm corona un muro de 30 (Marina ES-200, 1F65B y 1F65D): las caras son las
+    # del muro, no las de la dala; a 0.30 siguen siendo una (nunca menos que 0.35).
+    muro = [_linea("c1", (0.0, 0.0), (4.4, 0.0)), _linea("c2", (0.0, 0.3), (4.4, 0.3))]
+    etiquetas = [_texto("a", "CI", (1.0, -0.15)), _texto("b", "CI", (3.0, 0.35))]
+    vigas = _caras([*muro, *etiquetas], _con(face_widths={"CI": 0.15}))
+    assert sum(vigas[k].properties["estimated_span_length"] for k in ("a", "b")) == pytest.approx(
+        4.4
+    )
+
+
+def test_two_beams_wider_apart_than_their_definition_stay_two():
+    # R172: dos trabes de 20 dibujadas cada una con una línea, a 0.5: no son caras de una viga.
+    lineas = [
+        _linea("l1", (0.0, 0.0), (6.0, 0.0), layer="EST-TRABES"),
+        _linea("l2", (0.0, 0.5), (6.0, 0.5), layer="EST-TRABES"),
+    ]
+    etiquetas = [
+        _texto("a", "T3-6", (2.0, -0.15), capa="TEXTO"),
+        _texto("b", "T3-6", (2.0, 0.55), capa="TEXTO"),
+    ]
+    vigas = _caras([*lineas, *etiquetas], _con(face_widths={"T3-6": 0.2}))
+    assert [vigas[k].properties["estimated_span_length"] for k in ("a", "b")] == [6.0, 6.0]
+
+
+def _t2_7(rel_eje: float):
+    # T2-7 en Marina (ES-200): caras 25CE0 y 25CE2 a 0.50, de 9.35, con su eje 25CE1 a la mitad;
+    # cuatro etiquetas de un lado y A4704 sola del otro. Su definición no se lee (sin ancho).
+    lineas = [
+        _linea("cara1", (0.0, 0.0), (9.35, 0.0), layer="EST-TRABES"),
+        _linea("cara2", (0.0, 0.5), (9.35, 0.5), layer="EST-TRABES"),
+        _linea("eje", (0.0, 0.5 * rel_eje), (9.35, 0.5 * rel_eje), layer="EST-TRABES"),
+    ]
+    etiquetas = [_texto(f"t{x}", "T2-7", (x, -0.15), capa="TEXTO") for x in (0.5, 3.0, 5.5, 8.0)]
+    etiquetas.append(_texto("sola", "T2-7", (4.0, 0.55), capa="TEXTO"))
+    return [*lineas, *etiquetas]
+
+
+def test_without_a_definition_the_axis_drawn_halfway_makes_the_faces_one_beam():
+    # R172: sin definición, el eje dibujado a la mitad entre las caras (cada cara a 0.25 de él,
+    # menos que 0.35) dice que son una viga: 9.35 una vez entre sus cinco etiquetas, con el eje
+    # entre sus líneas. Antes A4704 contaba su cara entera: 18.7.
+    vigas = _caras(_t2_7(rel_eje=0.5), _PRESET)
+    claros = [d.properties["estimated_span_length"] for d in vigas.values()]
+    assert sum(claros) == pytest.approx(9.35)
+    assert {"cara1", "cara2", "eje"} <= set(vigas["sola"].source_entities)
+    assert "y su eje dibujado" in vigas["sola"].properties["claro_caras"]
+
+
+def test_a_line_off_the_middle_is_not_the_beams_axis():
+    # R172: una tercera línea a 2/3 entre las dos (Marina ES-000, CTA-10 y CTA-11) no es su eje.
+    vigas = _caras(_t2_7(rel_eje=0.67), _PRESET)
+    assert vigas["sola"].properties["estimated_span_length"] == 9.35
+    assert sum(d.properties["estimated_span_length"] for d in vigas.values()) == pytest.approx(18.7)
+
+
+def test_the_axis_between_merged_faces_is_the_beams_too():
+    # R172: con definición, el eje de T2-12 entre sus caras también es de la viga: se cuenta una
+    # vez, con ella.
+    vigas = _caras(_t2_12(eje=True), _con(face_widths={"T2-12": 0.45}))
+    assert {"cara1", "cara2", "eje"} <= set(vigas["a"].source_entities)
+    assert sum(vigas[k].properties["estimated_span_length"] for k in ("a", "b")) == pytest.approx(
+        9.2
+    )
+
+
+def test_the_declared_widths_come_from_the_definitions():
+    # R172: el ancho es la b de la sección b×h que la definición declara, en unidades del dibujo;
+    # una sección con un lado supuesto no declara ancho; una marca sin definición toma la de su
+    # familia.
+    from klave_engine.detection.beam_detector import con_anchos_declarados
+    from klave_engine.detection.schedules import ElementSpec, ScheduleInventory
+
+    def spec(marca, familia, seccion, supuesta=False):
+        return ElementSpec(mark=marca, family=familia, section_cm=seccion, source="detalle",
+                           source_text=marca, confidence=0.9,
+                           seccion_supuesta=supuesta)  # fmt: skip
+
+    inv = ScheduleInventory(
+        by_mark={"T2-12": spec("T2-12", "trabe", (45, 50)), "T2-7": spec("T2-7", "trabe", None),
+                 "T9": spec("T9", "trabe", (30, 60), supuesta=True)},
+        by_family={"dala": spec("DALA", "dala", (15, 25))},
+    )  # fmt: skip
+    config = con_anchos_declarados(_PRESET, inv, 0.01)  # centímetros
+    assert config.face_widths == {"T2-12": 45.0, "T2-7": None, "T9": None}
+    assert config.family_face_widths == {"dala": 15.0}
+    assert con_anchos_declarados(_PRESET, inv, None).face_widths == {}

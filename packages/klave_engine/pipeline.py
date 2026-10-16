@@ -34,6 +34,7 @@ from klave_engine.costing.report import (
 )
 from klave_engine.costing.reviews import filter_excluded, load_reviews, rekey_reviews, save_reviews
 from klave_engine.detection.bajadas import stamp_bajada_stacks
+from klave_engine.detection.beam_detector import con_anchos_declarados
 from klave_engine.detection.candidates import candidatos, write_candidates
 from klave_engine.detection.dimension_links import link_dimensions
 from klave_engine.detection.dimensions import build_dimension_inventory
@@ -414,6 +415,23 @@ def run_full_pipeline(
                 f"La hoja «{label}» se lee como {ruta.key} por su nombre; su "
                 f"contenido vota {voto[0]} ({voto[1]} trazos). Revisa el nombre del archivo."
             )
+    # The sheet's specifications are read before the detectors: a beam's faces may lie as far
+    # apart as its definition's width (R172).
+    schedule = build_schedule_inventory(
+        result.entities,
+        detector_config.text_patterns,
+        unit_to_m=units.to_meters(),
+        frames=frames,
+    )
+    ai_reads = load_ai_reads(control_dir)
+    if ai_reads.readings:
+        merge_external_specs(schedule, ai_element_specs(ai_reads), detector_config.text_patterns)
+        for reading in ai_reads.readings:
+            for family, fc in reading.read.concrete_fc.items():
+                schedule.concrete_fc.setdefault(family.lower(), int(fc))
+    detector_config = detector_config.model_copy(
+        update={"beam": con_anchos_declarados(detector_config.beam, schedule, units.to_meters())}
+    )
     detector_ids = IdGenerator("det")
     for source, file_entities in by_file.items():
         file_frames = [f for f in frames if f.source_file == source]
@@ -465,18 +483,6 @@ def run_full_pipeline(
             )
     # What the sheet declares about its marks outranks measured markers and
     # assumptions: stamp sections from cuadros, details, and notes first.
-    schedule = build_schedule_inventory(
-        result.entities,
-        detector_config.text_patterns,
-        unit_to_m=units.to_meters(),
-        frames=frames,
-    )
-    ai_reads = load_ai_reads(control_dir)
-    if ai_reads.readings:
-        merge_external_specs(schedule, ai_element_specs(ai_reads), detector_config.text_patterns)
-        for reading in ai_reads.readings:
-            for family, fc in reading.read.concrete_fc.items():
-                schedule.concrete_fc.setdefault(family.lower(), int(fc))
     cuadro_tagged = mark_cuadro_detections(result.detections, schedule)
     if cuadro_tagged:
         schedule.notes.append(

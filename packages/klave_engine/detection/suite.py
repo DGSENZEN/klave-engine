@@ -112,6 +112,7 @@ class DetectorSuiteConfig(BaseModel):
         # own; a wall's other face lies 0.15 away, on the same layer (the nearer one wins).
         config.beam.layer_tolerance = m(0.15)
         config.beam.max_face_gap = m(0.35)
+        config.beam.face_width_margin = m(0.05)
         config.beam.support_tolerance = m(0.05)
         # A 3×3 m panel is a real slab (a small room); cuadros and notes
         # are kept out by the avoid layers and the frame-share guard.

@@ -11,14 +11,15 @@ cerramiento over a window, a contratrabe drawn across the whole building). With 
 in range the tag has no span, and says so.
 
 Then the lines are settled together: a run one family's tags take is never another family's;
-the two faces of one beam are one beam line, measured on its axis; and a line several tags of
-one kind take is partitioned among them, cut at the castillos and columns on it, else halfway
-between consecutive tags, so it counts once."""
+the two faces of one beam are one beam line, measured on its axis (R172: as far apart as its
+definition's width plus 5 cm, else 0.35 m; the axis drawn halfway between them is the beam's
+too); and a line several tags of one kind take is partitioned among them, cut at the castillos
+and columns on it, else halfway between consecutive tags, so it counts once."""
 
 import math
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 from shapely.geometry import LineString, Polygon
@@ -33,6 +34,7 @@ from klave_engine.detection.results import (
     layer_matches,
     make_detection,
 )
+from klave_engine.detection.schedules import ElementSpec, ScheduleInventory, family_of_mark
 from klave_engine.detection.taxonomy import familia_de_viga
 from klave_engine.detection.text_patterns import (
     TextPatternConfig,
@@ -83,9 +85,44 @@ class BeamDetectorConfig(BaseModel):
     # this share of the shorter, chosen by one beam's tags, are its two faces: one beam line.
     max_face_gap: float = 10.5
     min_face_overlap: float = 0.8
+    # R172: the width a mark's definition declares, in drawing units (the pipeline sets them from
+    # the drawing's definitions before detection): its mark → its width, ``None`` when the mark's
+    # own definition declares none; a mark with no definition, its family note's. Its faces may
+    # lie that width plus ``face_width_margin`` (scaled per unit preset) apart, never less than
+    # ``max_face_gap``: a dala's faces are its wall's (a CI of 15 cm on a 30 cm wall).
+    face_widths: dict[str, float | None] = Field(default_factory=dict)
+    family_face_widths: dict[str, float] = Field(default_factory=dict)
+    face_width_margin: float = 1.5
+    # R172: with no width declared, the beam's axis drawn on its layer halfway between two faces
+    # (within this share of their gap) makes them one beam when each face lies at most
+    # ``max_face_gap`` from it.
+    axis_centre_tolerance: float = 0.1
     # R146: a castillo or column whose marker reaches this near a beam line is a support on it:
     # a shared line is cut there (scaled per unit preset).
     support_tolerance: float = 1.5
+
+
+def con_anchos_declarados(
+    config: BeamDetectorConfig, inventory: ScheduleInventory, meters_factor: float | None
+) -> BeamDetectorConfig:
+    """A copy of ``config`` with the width each mark's definition declares (R172), in drawing
+    units: the b of its b×h, as ``apply_schedule`` would stamp it — none for a section with an
+    assumed side. Without a reliable unit, none."""
+    if meters_factor is None or meters_factor <= 0:
+        return config
+
+    def ancho(spec: ElementSpec) -> float | None:
+        if spec.section_cm is None or spec.seccion_supuesta:
+            return None
+        return spec.section_cm[0] / 100.0 / meters_factor
+
+    familias = {f: ancho(spec) for f, spec in inventory.by_family.items()}
+    return config.model_copy(
+        update={
+            "face_widths": {marca: ancho(spec) for marca, spec in inventory.by_mark.items()},
+            "family_face_widths": {f: a for f, a in familias.items() if a is not None},
+        }
+    )
 
 
 @dataclass(frozen=True)
@@ -198,7 +235,7 @@ def detect_beams(
         elegida, dudoso = _tramo_de_la_trabe(candidatas, entity, config)
         marcadas.append(
             _Marcada(len(output.detections), entity, familia, _clase(entity.text, familia),
-                     candidatas, elegida)
+                     candidatas, elegida, _ancho_declarado(entity.text, config))
         )  # fmt: skip
         if elegida is not None:
             tramo = elegida.tramo
@@ -250,7 +287,7 @@ def detect_beams(
             )
         )
     apoyos = _apoyos(supports, index, formas)
-    _repartir(marcadas, output, apoyos, config)
+    _repartir(marcadas, output, apoyos, config, index)
     return output
 
 
@@ -266,6 +303,17 @@ class _Marcada:
     clase: str
     candidatas: list[_Candidata]
     elegida: _Candidata | None
+    # R172: the width its mark's definition declares (drawing units), if any.
+    ancho: float | None = None
+
+
+def _ancho_declarado(texto: str, config: BeamDetectorConfig) -> float | None:
+    """The width the definition of a tag's mark declares: its own, else (no definition of the
+    mark) its family note's — what ``apply_schedule`` stamps on it."""
+    marca = texto.strip().upper()
+    if marca in config.face_widths:
+        return config.face_widths[marca]
+    return config.family_face_widths.get(family_of_mark(marca))
 
 
 def _clase(texto: str, familia: str) -> str:
@@ -296,6 +344,7 @@ def _repartir(
     output: DetectorOutput,
     apoyos: list[BaseGeometry],
     config: BeamDetectorConfig,
+    index: SpatialIndex | None = None,
 ) -> None:
     """R146 (4, 5): a line one family's tags take is never another family's (the foreign tag
     takes its next aligned run, or none); the two faces of one beam its tags take are one beam
@@ -303,7 +352,7 @@ def _repartir(
     supports between consecutive tags, else halfway — so it counts once."""
     _sin_ajenas(marcadas, output, config)
     for grupo in _por_clase(marcadas).values():
-        for viga in _vigas(grupo, config):
+        for viga in _vigas(grupo, config, index):
             _partir(viga, output, apoyos, config)
 
 
@@ -390,6 +439,8 @@ class _Viga:
     # R152: a face drawn in pieces (shorter than ``min_face_overlap`` of the longest face) — the
     # beam is measured end to end, not on the mean of its faces' ends.
     en_tramos: bool = False
+    # R172: its axis drawn halfway between its faces, no tag's: the beam's too, counted once.
+    ejes: list[Tramo] = field(default_factory=list)
 
 
 def _a_lo_largo(origen: Point, u: Point, p: Point) -> tuple[float, float]:
@@ -398,13 +449,20 @@ def _a_lo_largo(origen: Point, u: Point, p: Point) -> tuple[float, float]:
     return dx * u[0] + dy * u[1], -dx * u[1] + dy * u[0]
 
 
-def _vigas(grupo: list[_Marcada], config: BeamDetectorConfig) -> list[_Viga]:
+def _vigas(
+    grupo: list[_Marcada], config: BeamDetectorConfig, index: SpatialIndex | None = None
+) -> list[_Viga]:
     """The beam lines of one kind of tag: its chosen runs, the two faces of one beam merged
-    (``_caras_de_una_viga``)."""
+    (``_caras_de_una_viga``) — as far apart as the widest definition of their tags' marks plus
+    ``face_width_margin``, never less than ``max_face_gap``; with no width declared, up to twice
+    that with the beam's axis drawn halfway between them (R172)."""
     tramos: dict[tuple[str, int], Tramo] = {}
+    anchos: dict[tuple[str, int], list[float]] = {}
     for m in grupo:
         assert m.elegida is not None
         tramos.setdefault(m.elegida.tramo.clave, m.elegida.tramo)
+        if m.ancho is not None:
+            anchos.setdefault(m.elegida.tramo.clave, []).append(m.ancho)
     claves = list(tramos)
     padre = {c: c for c in claves}
 
@@ -416,7 +474,15 @@ def _vigas(grupo: list[_Marcada], config: BeamDetectorConfig) -> list[_Viga]:
 
     for i, a in enumerate(claves):
         for b in claves[i + 1 :]:
-            if _caras_de_una_viga(tramos[a], tramos[b], config):
+            declarados = anchos.get(a, []) + anchos.get(b, [])
+            limite = config.max_face_gap
+            if declarados:
+                limite = max(limite, max(declarados) + config.face_width_margin)
+            if _caras_de_una_viga(tramos[a], tramos[b], config, limite) or (
+                not declarados
+                and _caras_de_una_viga(tramos[a], tramos[b], config, 2 * limite)
+                and _ejes_entre(tramos[a], tramos[b], index, config)
+            ):
                 padre[raiz(b)] = raiz(a)
     juntas: dict[tuple[str, int], list[Tramo]] = {}
     for c in claves:
@@ -445,6 +511,12 @@ def _vigas(grupo: list[_Marcada], config: BeamDetectorConfig) -> list[_Viga]:
         # ES-200's 18.15 m wall, the other face in pieces of 5.45, 4.40 and 6.80): end to end — the
         # mean would shorten the beam and leave its end tags outside it.
         en_tramos = any(t.largo < config.min_face_overlap * base.largo for t in caras)
+        ejes: dict[tuple[str, int], Tramo] = {}
+        for k, cara in enumerate(caras):
+            for otra in caras[k + 1 :]:
+                for eje in _ejes_entre(cara, otra, index, config):
+                    if eje.clave not in claves_caras:
+                        ejes.setdefault(eje.clave, eje)
         vigas.append(
             _Viga(
                 caras,
@@ -455,14 +527,18 @@ def _vigas(grupo: list[_Marcada], config: BeamDetectorConfig) -> list[_Viga]:
                 (min(cruces), max(cruces)),
                 sorted(suyas, key=lambda x: (x[0], x[1].indice)),
                 en_tramos,
+                sorted(ejes.values(), key=lambda t: (_orden_de_id(t.linea.entity_id), t.indice)),
             )
         )
     return vigas
 
 
-def _caras_de_una_viga(a: Tramo, b: Tramo, config: BeamDetectorConfig) -> bool:
+def _caras_de_una_viga(
+    a: Tramo, b: Tramo, config: BeamDetectorConfig, limite: float | None = None
+) -> bool:
     """Two runs are the faces of one beam when they are drawn on the same layer, parallel, at
-    most ``max_face_gap`` apart and overlapping ``min_face_overlap`` of the shorter."""
+    most ``limite`` apart (``max_face_gap`` by default) and overlapping ``min_face_overlap`` of
+    the shorter."""
     if a.linea.layer != b.linea.layer:
         return False
     ua, ub = a.direccion, b.direccion
@@ -470,10 +546,56 @@ def _caras_de_una_viga(a: Tramo, b: Tramo, config: BeamDetectorConfig) -> bool:
         return False
     pa, ca = _a_lo_largo(a.p, ua, b.p)
     pb, cb = _a_lo_largo(a.p, ua, b.q)
-    if max(abs(ca), abs(cb)) > config.max_face_gap or min(abs(ca), abs(cb)) <= 0.0:
+    tope = config.max_face_gap if limite is None else limite
+    if max(abs(ca), abs(cb)) > tope or min(abs(ca), abs(cb)) <= 0.0:
         return False
+    return _traslapan(a, b, config)
+
+
+def _traslapan(a: Tramo, b: Tramo, config: BeamDetectorConfig) -> bool:
+    """Two parallel runs overlap ``min_face_overlap`` of the shorter, along ``a``."""
+    pa, _ca = _a_lo_largo(a.p, a.direccion, b.p)
+    pb, _cb = _a_lo_largo(a.p, a.direccion, b.q)
     traslape = min(a.largo, max(pa, pb)) - max(0.0, min(pa, pb))
     return traslape >= config.min_face_overlap * min(a.largo, b.largo)
+
+
+def _ejes_entre(
+    a: Tramo, b: Tramo, index: SpatialIndex | None, config: BeamDetectorConfig
+) -> list[Tramo]:
+    """R172: the runs drawn halfway between two parallel faces — on their layer, parallel, within
+    ``axis_centre_tolerance`` of their gap from the middle, overlapping both as faces do: the
+    beam's axis."""
+    if index is None:
+        return []
+    u = a.direccion
+    _pa, ca = _a_lo_largo(a.p, u, b.p)
+    _pb, cb = _a_lo_largo(a.p, u, b.q)
+    medio, separacion = (ca + cb) / 4, abs(ca + cb) / 2
+    if separacion <= 0.0:
+        return []
+    xs = [a.p[0], a.q[0], b.p[0], b.q[0]]
+    ys = [a.p[1], a.q[1], b.p[1], b.q[1]]
+    salida: list[Tramo] = []
+    for hit in index.entities_in_bbox((min(xs), min(ys), max(xs), max(ys))):
+        linea = index.get(hit.entity_id)
+        if linea.layer != a.linea.layer or linea.is_closed or not linea.points:
+            continue
+        if linea.entity_type not in (EntityType.line, EntityType.polyline) or linea.is_annotation:
+            continue
+        for r in tramos_rectos(linea):
+            if r.clave in (a.clave, b.clave):
+                continue
+            ur = r.direccion
+            if abs(u[0] * ur[0] + u[1] * ur[1]) < math.cos(_MISMA_DIRECCION * 2):
+                continue
+            cruces = [_a_lo_largo(a.p, u, r.p)[1], _a_lo_largo(a.p, u, r.q)[1]]
+            tolerancia = config.axis_centre_tolerance * separacion
+            if any(abs(c - medio) > tolerancia for c in cruces):
+                continue
+            if _traslapan(a, r, config) and _traslapan(b, r, config):
+                salida.append(r)
+    return salida
 
 
 def _partir(
@@ -510,14 +632,15 @@ def _partir(
         q = (viga.origen[0] + viga.u[0] * b, viga.origen[1] + viga.u[1] * b)
         props["estimated_span_length"] = round(max(b - a, 0.0), 3)
         props["span_run"] = [_redondo(p), _redondo(q)]
-        for t in viga.tramos:
+        for t in [*viga.tramos, *viga.ejes]:
             if t.linea.entity_id not in d.source_entities:
                 d.source_entities.append(t.linea.entity_id)
         if len(viga.tramos) > 1:
             medida = "de punta a punta (una cara en tramos)" if viga.en_tramos else "su eje"
+            con_eje = " y su eje dibujado" if viga.ejes else ""
             aviso_caras = (
-                f"claro de una viga dibujada con {len(viga.tramos)} caras ({', '.join(caras)}): "
-                f"se mide {medida}, {largo_total:.3f}"
+                f"claro de una viga dibujada con {len(viga.tramos)} caras ({', '.join(caras)})"
+                f"{con_eje}: se mide {medida}, {largo_total:.3f}"
             )
             props["claro_caras"] = aviso_caras
             d.evidence.notes.append(aviso_caras)
