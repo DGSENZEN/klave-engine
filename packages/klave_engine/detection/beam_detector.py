@@ -105,6 +105,10 @@ class BeamDetectorConfig(BaseModel):
     # R169: the layers of a dala's tags that crown the wall they sit on, whatever their text's
     # direction.
     dala_tag_layer_hints: list[str] = Field(default_factory=lambda: ["CADENA", "DALA"])
+    # R177: a dala crowns masonry: a concrete wall's layer (EST-MURO CONCRETO) is never its own.
+    concrete_wall_layer_hints: list[str] = Field(
+        default_factory=lambda: ["MURO CONC", "MURO DE CONC", "MURO DE CONCRETO"]
+    )
     # R146: a castillo or column whose marker reaches this near a beam line is a support on it:
     # a shared line is cut there (scaled per unit preset).
     support_tolerance: float = 1.5
@@ -878,6 +882,9 @@ def _preferencia(capa: str, familia: str, config: BeamDetectorConfig) -> int:
     listas = config.family_layer_hints.get(familia) or []
     propias = listas[0] if listas else []
     de_apoyo = listas[1] if len(listas) > 1 else []
+    if familia == "dala" and layer_matches(capa, config.concrete_wall_layer_hints):
+        # R177: a wall is a dala's own layer for masonry only, never a concrete wall's.
+        propias = [h for h in propias if h not in config.wall_layer_hints]
     if propias and layer_matches(capa, propias):
         return 0
     if de_apoyo and layer_matches(capa, de_apoyo):

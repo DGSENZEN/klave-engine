@@ -778,3 +778,18 @@ def test_a_dala_tag_beside_its_wall_keeps_the_aligned_wall():
         _texto("t", "CI", (1.0, 0.0)),
     ]
     assert _vigas(entidades)["t"].source_entities[1] == "suyo"
+
+
+# ------------------------------------------------- Tarea 9b, ronda de arreglos 1: R177
+
+
+@pytest.mark.parametrize("capa", ["TEXTO", "EST-CADENAS Y DALAS"])
+def test_a_concrete_wall_is_never_a_dalas_own_layer(capa):
+    # R177: una dala corona mampostería; la cara de un muro de concreto (EST-MURO CONCRETO) más
+    # cerca de la etiqueta no es su capa: toma el muro de mampostería, casi igual de cerca.
+    entidades = [
+        _linea("concreto", (0.0, -0.05), (4.0, -0.05), layer="EST-MURO CONCRETO"),
+        _linea("muro", (0.0, -0.12), (4.0, -0.12), layer="MUROS1"),
+        _texto("t", "CE-1", (1.0, 0.0), capa=capa),
+    ]
+    assert _vigas(entidades)["t"].source_entities[1] == "muro"
