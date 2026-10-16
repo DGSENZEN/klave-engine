@@ -488,3 +488,54 @@ def test_con_dos_diametros_parejos_lo_suelto_queda_por_confirmar(tmp_path):
     suelto = next(d for d in salida.detections if d.properties.get("diametro_mm") is None)
     assert suelto.properties["diametro_por_confirmar"] is True
     assert "diámetro por confirmar" in suelto.evidence.notes[0]
+
+
+# ------------------------------------------- Tarea 9b, ronda de arreglos 2: R181
+
+
+def test_the_endpoint_grid_finds_the_same_neighbours_as_every_pair():
+    # R181: las puntas que se tocan, por rejilla, son las mismas (y en el mismo orden) que
+    # comparando todos los pares, incluso a la tolerancia exacta y entre celdas.
+    import math
+    import random
+
+    from klave_engine.detection.run_detector import _vecinos_por_puntas
+
+    azar = random.Random(7)
+    puntas = []
+    for _ in range(400):
+        a = (round(azar.uniform(0, 3), 2), round(azar.uniform(0, 3), 2))
+        b = (round(azar.uniform(0, 3), 2), round(azar.uniform(0, 3), 2))
+        puntas.append((a, b))
+    puntas.append(((10.0, 10.0), (11.0, 10.0)))
+    puntas.append(((11.05, 10.0), (12.0, 10.0)))  # a la tolerancia justa
+    for tolerancia in (0.05, 0.0):
+        todos: dict[int, list[int]] = {i: [] for i in range(len(puntas))}
+        for i, (a0, a1) in enumerate(puntas):
+            for j in range(i + 1, len(puntas)):
+                b0, b1 = puntas[j]
+                if min(math.dist(p, q) for p in (a0, a1) for q in (b0, b1)) <= tolerancia:
+                    todos[i].append(j)
+                    todos[j].append(i)
+        assert _vecinos_por_puntas(puntas, tolerancia) == todos
+
+
+def test_a_network_of_straight_traces_skips_the_connection_pass(tmp_path, monkeypatch):
+    # R181 (Marina 05 SANITARIO, «00_I PLUVIAL», 7,291 trazos): sin ductos flexibles sin rótulo no
+    # hay nada que conectar; el paso de conexión ni se corre (era cuadrático: 1.49 → 12.65 s).
+    from klave_engine.detection import run_detector
+
+    def build(doc):
+        msp = doc.modelspace()
+        for k in range(40):
+            msp.add_line((k, 0), (k + 1, 0), dxfattribs={"layer": "flexible"})
+            msp.add_line((k, 5), (k + 1, 5), dxfattribs={"layer": "flexible"})
+        msp.add_text('10"', height=0.2).set_placement((5, 0.1))
+        msp.add_text('12"', height=0.2).set_placement((5, 5.1))
+
+    def nunca(*_a, **_k):
+        raise AssertionError("no hay ducto flexible sin rótulo que conectar")
+
+    monkeypatch.setattr(run_detector, "_por_conexion", nunca)
+    salida = detect_runs(_entities(tmp_path, "s.dxf", build), None, IdGenerator("d"), 1.0, [])
+    assert salida.detections

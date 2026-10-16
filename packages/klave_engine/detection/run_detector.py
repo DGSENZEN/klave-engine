@@ -551,7 +551,12 @@ def _tramos_por_diametro(
     # más metros rotulados, o «por confirmar» si los dos primeros están parejos).
     del_trazo = {t: max(dias, key=lambda mm: (dias[mm], -mm)) for t, dias in por_trazo.items()}
     rotulados = set(del_trazo)
-    _por_conexion(del_trazo, grupo.puntas, _UNE_TRAZOS / meters_factor if meters_factor else 0.0)
+    # R181: sólo un ducto flexible sin rótulo toma el diámetro por conexión; sin ninguno en la red
+    # (una red sanitaria de miles de trazos rectos) no hay nada que conectar.
+    if any(curva and t not in rotulados for t, curva in enumerate(grupo.curvas)):
+        _por_conexion(
+            del_trazo, grupo.puntas, _UNE_TRAZOS / meters_factor if meters_factor else 0.0
+        )
     orden = sorted(rotulado_por_dia, key=lambda mm: -rotulado_por_dia[mm])
     parejos = (
         len(orden) > 1
@@ -605,13 +610,7 @@ def _por_conexion(
     """R170: un trazo sin rótulo toma el diámetro del trazo rotulado con el que se conecta,
     punta con punta, a través de otros sin rótulo (el más cercano en saltos); si dos diámetros
     llegan en el mismo número de saltos, ninguno. Modifica ``del_trazo``."""
-    vecinos: dict[int, list[int]] = {i: [] for i in range(len(puntas))}
-    for i, (a0, a1) in enumerate(puntas):
-        for j in range(i + 1, len(puntas)):
-            b0, b1 = puntas[j]
-            if min(math.dist(p, q) for p in (a0, a1) for q in (b0, b1)) <= tolerancia:
-                vecinos[i].append(j)
-                vecinos[j].append(i)
+    vecinos = _vecinos_por_puntas(puntas, tolerancia)
     frontera = {t: {mm} for t, mm in del_trazo.items()}
     llegado: dict[int, set[int]] = dict(frontera)
     while frontera:
@@ -626,6 +625,37 @@ def _por_conexion(
             if len(dias) == 1:
                 del_trazo[v] = next(iter(dias))
         frontera = {v: d for v, d in siguiente.items() if len(d) == 1}
+
+
+def _vecinos_por_puntas(
+    puntas: list[tuple[tuple[float, float], tuple[float, float]]], tolerancia: float
+) -> dict[int, list[int]]:
+    """R181: los trazos cuyas puntas se tocan (a ``tolerancia`` o menos), por una rejilla de
+    puntas de ese lado: cada punta sólo se compara con las de su celda y las ocho de alrededor —
+    lineal, no cuadrático (los 7,291 trazos de «00_I PLUVIAL» eran 26 millones de pares)."""
+    vecinos: dict[int, list[int]] = {i: [] for i in range(len(puntas))}
+    lado = tolerancia if tolerancia > 0 else 1.0
+
+    def celda(p: tuple[float, float]) -> tuple[int, int]:
+        return (math.floor(p[0] / lado), math.floor(p[1] / lado))
+
+    rejilla: dict[tuple[int, int], list[tuple[int, tuple[float, float]]]] = {}
+    for i, extremos in enumerate(puntas):
+        for p in extremos:
+            rejilla.setdefault(celda(p), []).append((i, p))
+    for i, extremos in enumerate(puntas):
+        tocados: set[int] = set()
+        for p in extremos:
+            cx, cy = celda(p)
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for j, q in rejilla.get((cx + dx, cy + dy), ()):
+                        if j > i and j not in tocados and math.dist(p, q) <= tolerancia:
+                            tocados.add(j)
+        for j in sorted(tocados):
+            vecinos[i].append(j)
+            vecinos[j].append(i)
+    return vecinos
 
 
 def _distancia_a_segmento(
