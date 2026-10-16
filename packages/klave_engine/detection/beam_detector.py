@@ -377,9 +377,11 @@ def _repartir(
     line; and a line several tags of one kind take is partitioned among them — cut at the
     supports between consecutive tags, else halfway — so it counts once."""
     _sin_ajenas(marcadas, output, config)
+    puntas: list[_Punta] = []
     for grupo in _por_clase(marcadas).values():
         for viga in _vigas(grupo, config, index):
-            _partir(viga, output, apoyos, config)
+            puntas.extend(_partir(viga, output, apoyos, config))
+    _puntas_entre_otras(puntas, marcadas, output)
     _sin_etiqueta_propia(marcadas, output, config, index)
 
 
@@ -596,6 +598,61 @@ class _Viga:
     ejes: list[Tramo] = field(default_factory=list)
 
 
+@dataclass
+class _Punta:
+    """R178: an end tag of a shared line, its tramo along the line's axis (``a``–``b``), where it
+    lies (``t``), and the supports on the line."""
+
+    marcada: _Marcada
+    a: float
+    b: float
+    t: float
+    viga: _Viga
+    sobre: list[float]
+
+
+def _puntas_entre_otras(
+    puntas: list[_Punta], marcadas: list[_Marcada], output: DetectorOutput
+) -> None:
+    """R178: an end tag's tramo runs to the line's end; where it crosses a bay (between two
+    supports) other than its own that holds tags of another mark on the same line, it is
+    «claro dudoso» and names them — a flag, never a cut (Marina CE-3 95BF9: 7.307 to the wall's
+    end, through the CI bays under T2-6)."""
+    for punta in puntas:
+        m = punta.marcada
+        d = output.detections[m.indice]
+        if "estimated_span_length" not in d.properties:
+            continue
+        viga = punta.viga
+        claves = {t.clave for t in viga.tramos}
+        propias = {id(x) for _t, x in viga.marcadas}
+        marca = (m.etiqueta.text or "").strip().upper()
+        abajo = max((s for s in punta.sobre if s < punta.t), default=-math.inf)
+        arriba = min((s for s in punta.sobre if s > punta.t), default=math.inf)
+        ajenas: list[tuple[float, str]] = []
+        for otra in marcadas:
+            if otra.elegida is None or otra.elegida.tramo.clave not in claves:
+                continue
+            if id(otra) in propias or (otra.etiqueta.text or "").strip().upper() == marca:
+                continue
+            esquinas = esquinas_de_texto(otra.etiqueta)
+            centro = (sum(q[0] for q in esquinas) / 4, sum(q[1] for q in esquinas) / 4)
+            t = _a_lo_largo(viga.origen, viga.u, centro)[0]
+            if punta.a < t < punta.b and not (abajo < t < arriba):
+                texto = (otra.etiqueta.text or "").strip()
+                ajenas.append((t, f"{texto} ({otra.etiqueta.raw_handle})"))
+        if not ajenas:
+            continue
+        nombres = ", ".join(n for _t, n in sorted(ajenas))
+        aviso = (
+            f"claro dudoso: su tramo de punta llega al final de la línea pasando apoyos, por "
+            f"tramos con etiquetas de otra marca: {nombres}"
+        )
+        previo = d.properties.get("claro_dudoso")
+        d.properties["claro_dudoso"] = f"{previo}; {aviso}" if previo else aviso
+        d.evidence.notes.append(aviso)
+
+
 def _a_lo_largo(origen: Point, u: Point, p: Point) -> tuple[float, float]:
     """A point's place along the axis and across it."""
     dx, dy = p[0] - origen[0], p[1] - origen[1]
@@ -753,9 +810,10 @@ def _ejes_entre(
 
 def _partir(
     viga: _Viga, output: DetectorOutput, apoyos: list[BaseGeometry], config: BeamDetectorConfig
-) -> None:
+) -> list[_Punta]:
     """Each tag of a beam line gets its own tramo: cut between consecutive tags at the support
-    nearest halfway between them (a castillo or column on the line), else halfway."""
+    nearest halfway between them (a castillo or column on the line), else halfway. Returns the
+    end tags of a line several tags share, for R178."""
     largo_total = viga.fin - viga.inicio
     caras = [
         f"{t.largo:g}" for t in sorted(viga.tramos, key=lambda t: _orden_de_id(t.linea.entity_id))
@@ -763,7 +821,7 @@ def _partir(
     n = len(viga.marcadas)
     if n == 1 and len(viga.tramos) == 1:
         _al_maximo(viga.marcadas[0][1], output, config)
-        return
+        return []
     sobre = _apoyos_sobre(viga, apoyos, config)
     cortes: list[float] = []
     por_apoyo = 0
@@ -825,6 +883,12 @@ def _partir(
                 props["claro_dudoso"] = f"{previo}; {dudoso}" if previo else dudoso
                 d.evidence.notes.append(dudoso)
         _al_maximo(m, output, config)
+    if n < 2:
+        return []
+    return [
+        _Punta(viga.marcadas[k][1], limites[k], limites[k + 1], viga.marcadas[k][0], viga, sobre)
+        for k in (0, n - 1)
+    ]
 
 
 # R152: a tag's own tramo of a shared line shorter than this many of its text heights is doubtful.

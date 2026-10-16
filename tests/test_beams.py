@@ -793,3 +793,44 @@ def test_a_concrete_wall_is_never_a_dalas_own_layer(capa):
         _texto("t", "CE-1", (1.0, 0.0), capa=capa),
     ]
     assert _vigas(entidades)["t"].source_entities[1] == "muro"
+
+
+# ------------------------------------------------- Tarea 9b, ronda de arreglos 1, adenda: R178
+
+
+def _muro_con_castillos(x_ci):
+    # Un muro de 10 con castillos en 2.0 y 5.0; dos CE-3 se lo reparten (cortado en el de 2.0) y
+    # una CI en ``x_ci``.
+    from klave_engine.detection.column_detector import ColumnDetectorConfig, detect_columns
+
+    entidades = [_linea("muro", (0.0, 0.0), (10.0, 0.0))]
+    entidades += [_texto(f"ce{x}", "CE-3", (x, 0.04)) for x in (1.0, 3.0)]
+    entidades.append(_texto("ci", "CI", (x_ci, 0.04)))
+    for k, x in enumerate((2.0, 5.0)):
+        entidades.append(
+            _ent(f"c{k}", _tipo("polyline"), (x, -0.15, x + 0.15, 0.0), layer="EST-CASTILLOS",
+                 points=[(x, -0.15), (x + 0.15, -0.15), (x + 0.15, 0.0), (x, 0.0)],
+                 properties={"closed": True})
+        )  # fmt: skip
+        entidades.append(_texto(f"k{k}", "K-1", (x, -0.3), capa="TEXTO"))
+    columnas = detect_columns(
+        entidades, SpatialIndex(entidades), None,
+        ColumnDetectorConfig(geometry_search_radius=0.6, max_marker_area=1.0),
+    )  # fmt: skip
+    return _vigas(entidades, columnas)
+
+
+def test_an_end_tramo_through_another_marks_bay_is_doubtful_and_not_cut():
+    # R178 (Marina CE-3 95BF9): la CE-3 de la punta llega al final del muro pasando el castillo de
+    # 5.0, por el tramo donde está la CI: se dice dudoso y se nombra la CI; el claro no cambia.
+    vigas = _muro_con_castillos(7.0)
+    punta = vigas["ce3.0"].properties
+    assert punta["estimated_span_length"] == pytest.approx(10.0 - 2.075, abs=1e-3)
+    assert "por tramos con etiquetas de otra marca: CI (ci)" in punta["claro_dudoso"]
+    assert "claro_dudoso" not in vigas["ce1.0"].properties
+
+
+def test_another_mark_in_the_end_tags_own_bay_is_no_doubt():
+    # R178: una CI en el mismo tramo entre apoyos que la CE-3 corona el mismo muro: nada que decir.
+    vigas = _muro_con_castillos(4.0)
+    assert "claro_dudoso" not in vigas["ce3.0"].properties
