@@ -198,6 +198,9 @@ class ElementSpec(BaseModel):
     familia_supuesta: bool = False
     # R150: the section the label's title points at is drawn and is not a rectangle (K-15A's L).
     seccion_no_rectangular: bool = False
+    # R168: the wall thickness (cm) the reading's detail declares under its title («CI» over
+    # «(PARA MUROS DE 15CM)»): the reading is that variant of its mark's.
+    para_muro_cm: float | None = None
 
 
 class TextoConMarca(BaseModel):
@@ -2842,6 +2845,49 @@ def _sections_from_detail_cotas(
     return specs
 
 
+# R168: a detail title's subtitle declaring the wall its variant is for: «(PARA MUROS DE 15CM)».
+_PARA_MUROS = re.compile(
+    r"^\(?\s*PARA\s+(?:MUROS?|TABIQUES?|BLOCK)\s+DE\s+(\d+(?:[.,]\d+)?)\s*"
+    r"(?:CMS?\.?|CENT[IÍ]METROS)?\s*\)?\.?$",
+    re.IGNORECASE,
+)
+_SUBTITULO = 1.5  # the subtitle lies this many title heights from its title, at most
+
+
+def _muros_de_los_titulos(
+    texts: list[NormalizedEntity], titulos: Collection[str]
+) -> dict[str, float]:
+    """R168: for each detail title (entity id), the wall thickness in cm its own subtitle declares
+    — the one «(PARA MUROS DE n CM)» text right under or over it (within ``_SUBTITULO`` of its
+    heights, its real extent spanning the title's centre). Two such subtitles: neither (said by
+    the variant never being chosen)."""
+    por_id = {t.entity_id: t for t in texts}
+    subtitulos = [
+        (t, float(m.group(1).replace(",", ".")))
+        for t in texts
+        if (m := _PARA_MUROS.match(" ".join((t.text or "").split()))) is not None
+    ]
+    salida: dict[str, float] = {}
+    if not subtitulos:
+        return salida
+    for titulo_id in titulos:
+        titulo = por_id.get(titulo_id)
+        if titulo is None:
+            continue
+        x0, y0, x1, y1 = _extension_del_texto(titulo)
+        alto = _alto_de_renglon(titulo, y1 - y0)
+        cx = (x0 + x1) / 2
+        suyos = []
+        for sub, cm in subtitulos:
+            a0, b0, a1, b1 = _extension_del_texto(sub)
+            hueco = max(b0 - y1, y0 - b1, 0.0)
+            if a0 <= cx <= a1 and hueco <= _SUBTITULO * alto:
+                suyos.append(cm)
+        if len(suyos) == 1:
+            salida[titulo_id] = suyos[0]
+    return salida
+
+
 def solo_armado(texto: str) -> bool:
     """A text that shows armado and nothing else («4#4», «E#4», «1@6,8@10»): never a note, a size
     or a section (R140)."""
@@ -4191,6 +4237,14 @@ def build_schedule_inventory(
         e for s in specs if any(a.endswith(_SENALADA) for a in s.avisos) for e in s.entidades
     }
     titulos_de_detalle = sorted({*titulos_de_detalle, *senaladas})
+    # R168: a title whose subtitle declares the wall its detail is for makes its readings that
+    # variant of its mark («CI (PARA MUROS DE 15CM)»).
+    muros = _muros_de_los_titulos(
+        texts, {s.entidades[0] for s in specs if s.metodo == "cotas" and s.entidades}
+    )
+    for s in specs:
+        if s.metodo in ("cotas", "geometria") and s.entidades and s.entidades[0] in muros:
+            s.para_muro_cm = muros[s.entidades[0]]
     leidos_por_reglas = leer_reglas(entities, frames).textos_leidos
     rechazos = rechazos + _lo_que_nadie_leyo(
         texts, specs, rechazos, config, sheet, posibles, leidos_por_reglas

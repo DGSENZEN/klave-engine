@@ -125,6 +125,12 @@ class Definicion(BaseModel):
     sin_leer: dict[str, str] = Field(default_factory=dict)
     # R142, R150: el plano dibuja su sección y no es un rectángulo (K-15A).
     seccion_no_rectangular: bool = False
+    # R168: las variantes de la marca por el muro que corona, cada una con el espesor que su
+    # detalle declara («CI (PARA MUROS DE 15CM)»): la definición de las lecturas de ese detalle.
+    # La definición de la marca junta todas (y su sección queda en conflicto); cada colocación
+    # toma la de su muro.
+    para_muro_cm: float | None = None
+    variantes: list["Definicion"] = Field(default_factory=list)
 
 
 def normalizar_marca(texto: str, config: TextPatternConfig | None = None) -> str:
@@ -137,6 +143,9 @@ def normalizar_marca(texto: str, config: TextPatternConfig | None = None) -> str
     función: una sola llave para la definición y para sus elementos."""
     normal = marca_normalizada(texto, config or TextPatternConfig())
     return normal if normal is not None else " ".join(texto.upper().split())
+
+
+Definicion.model_rebuild()
 
 
 def fuente_de_lectura(spec: ElementSpec) -> Fuente:
@@ -205,6 +214,21 @@ def construir_definiciones(
         marca: _definir(marca, specs, inv, config, known, repetidas)
         for marca, specs in por_marca.items()
     }
+    # R168: las lecturas de un detalle que dice para qué muro es son una variante de su marca.
+    for marca, specs in por_marca.items():
+        espesores = sorted({s.para_muro_cm for s in specs if s.para_muro_cm is not None})
+        for cm in espesores:
+            variante = _definir(
+                marca,
+                [s for s in specs if s.para_muro_cm == cm],
+                inv,
+                config,
+                known,
+                repetidas,
+                familia=marcas[marca].familia,
+            )
+            variante.para_muro_cm = cm
+            marcas[marca].variantes.append(variante)
     familias = {
         familia: _definir(
             familia.upper(), specs, inv, config, known, repetidas, familia=familia, de_familia=True
@@ -402,6 +426,8 @@ def _definir(
             for campo, lista in bloqueados.items()
             if campos[campo] is None and campo in _ARMADO_DE_LA_DEFINICION
         },
+        para_muro_cm=None,  # R168: sus variantes las pone ``construir_definiciones``
+        variantes=[],
         **campos,
     )
 

@@ -274,7 +274,15 @@ def detect_beams(
             if dudoso is not None:
                 properties["claro_dudoso"] = dudoso
                 notes.append(dudoso)
-        else:
+        if _sobre_su_muro(entity, familia, config):
+            # R168: the wall a dala crowns, measured: the gap between its two faces at the tag.
+            muro = _espesor_del_muro(entity, elegida, index, config)
+            if isinstance(muro, str):
+                properties["muro_sin_medir"] = muro
+            else:
+                properties["muro_espesor"] = round(muro[0], 6)
+                properties["muro_caras"] = muro[1]
+        if elegida is None:
             sin_claro = (
                 "longitud: ninguna línea alineada con la etiqueta (±"
                 f"{config.alignment_tolerance_deg:g}°) corre junto a ella a menos de "
@@ -1032,6 +1040,86 @@ def _cajas_de_muro_bajo(
         if d <= alto:
             salida.append((d, f"{otra.layer} {otra.raw_handle}"))
     return [n for _d, n in sorted(salida)]
+
+
+def _espesor_del_muro(
+    etiqueta: NormalizedEntity,
+    elegida: _Candidata | None,
+    index: SpatialIndex,
+    config: BeamDetectorConfig,
+) -> tuple[float, list[str]] | str:
+    """R168: the thickness of the masonry wall a dala's tag crowns — the gap between the wall's two
+    faces where the tag lies: wall-layer runs (open lines, or the sides of a wall drawn as a closed
+    box; never a concrete wall's) parallel to the wall (the dala's chosen run, else the tag's text
+    direction, ±``alignment_tolerance_deg``) whose span covers the tag's centre, within the search
+    radius of it. The two faces are the pair of such runs, ``face_width_margin`` to
+    ``max_face_gap + face_width_margin`` apart, that holds the tag between them, else the nearest
+    to the tag on its side. Their gap and the faces' drawing handles; or why it was not measured."""
+    if elegida is not None and layer_matches(elegida.tramo.linea.layer, config.wall_layer_hints):
+        u = elegida.tramo.direccion
+    else:
+        giro = math.radians(etiqueta.rotation or 0.0)
+        u = (math.cos(giro), math.sin(giro))
+    esquinas = esquinas_de_texto(etiqueta)
+    centro = (sum(q[0] for q in esquinas) / 4, sum(q[1] for q in esquinas) / 4)
+    tope = math.cos(math.radians(config.alignment_tolerance_deg))
+    caras: list[tuple[float, str]] = []  # signed offset across the wall, handle
+    vistas: set[tuple[str, int]] = set()
+    for hit in index.entities_near_entity(etiqueta.entity_id, config.line_search_radius):
+        linea = index.get(hit.entity_id)
+        if linea.entity_type not in (EntityType.line, EntityType.polyline) or linea.is_annotation:
+            continue
+        if not layer_matches(linea.layer, config.wall_layer_hints) or layer_matches(
+            linea.layer, config.concrete_wall_layer_hints
+        ):
+            continue
+        puntos = [(float(q[0]), float(q[1])) for q in linea.points or []]
+        if linea.is_closed and len(puntos) > 2:
+            puntos.append(puntos[0])
+        for k, (a, b) in enumerate(zip(puntos, puntos[1:], strict=False)):
+            largo = math.dist(a, b)
+            if largo == 0 or (linea.entity_id, k) in vistas:
+                continue
+            d = ((b[0] - a[0]) / largo, (b[1] - a[1]) / largo)
+            if abs(d[0] * u[0] + d[1] * u[1]) < tope:
+                continue
+            a_lo_largo = (centro[0] - a[0]) * d[0] + (centro[1] - a[1]) * d[1]
+            if not -config.face_width_margin <= a_lo_largo <= largo + config.face_width_margin:
+                continue
+            cruce = (centro[0] - a[0]) * u[1] - (centro[1] - a[1]) * u[0]
+            if abs(cruce) > config.line_search_radius:
+                continue
+            vistas.add((linea.entity_id, k))
+            caras.append((-cruce, linea.raw_handle))
+    if not caras:
+        return (
+            "el muro bajo la etiqueta no se encontró (ninguna cara de muro paralela junto a ella)"
+        )
+    caras.sort()
+    minimo, maximo = config.face_width_margin, config.max_face_gap + config.face_width_margin
+    pares = [
+        (una, otra)
+        for i, una in enumerate(caras)
+        for otra in caras[i + 1 :]
+        if minimo <= otra[0] - una[0] <= maximo
+    ]
+    entre = [(una, otra) for una, otra in pares if una[0] <= 0 <= otra[0]]
+    if entre:
+        una, otra = min(entre, key=lambda par: par[1][0] - par[0][0])
+    else:
+        cerca = min(caras, key=lambda c: abs(c[0]))
+        lado = [
+            (u1, u2)
+            for u1, u2 in pares
+            if cerca in (u1, u2) and (u1[0] > 0 if cerca[0] > 0 else u2[0] < 0)
+        ]
+        if not lado:
+            return (
+                f"el muro bajo la etiqueta tiene una sola cara a la vista ({cerca[1]}): su espesor "
+                "no se mide"
+            )
+        una, otra = min(lado, key=lambda par: par[1][0] - par[0][0])
+    return otra[0] - una[0], list(dict.fromkeys([una[1], otra[1]]))
 
 
 def _de_trabe(tramo: Tramo, config: BeamDetectorConfig) -> bool:

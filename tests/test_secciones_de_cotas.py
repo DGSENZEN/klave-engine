@@ -2102,3 +2102,56 @@ def test_a_titles_note_is_never_across_another_groups_heading():
     assert _unidades(ents) == {"c": None}
     # Sin ese encabezado, la de DADOS es la de su grupo (R151).
     assert _unidades([e for e in ents if e.entity_id != "otro"]) == {"c": 0.01}
+
+
+# ------------------------------------------------- Tarea 9c: R168, variantes por muro
+
+
+def _ci(dx, ancho_cm, muros, n):
+    """Un detalle «CI» de Marina (ES-200): el título, su subtítulo «(PARA MUROS DE nCM)» debajo y
+    su sección (ancho × 20, sin escala: 0.854 de ancho por cada 15 cm) bajo ellos."""
+    ancho = 0.854 * ancho_cm / 15
+    ents = [
+        _titulo(f"t{n}", "CI", dx + 0.33, 1.466, alto=0.13),
+        _rectangulo(f"s{n}", dx, 0.0, dx + ancho, 1.139),
+        _cota(f"h{n}", (dx, 0.0), (dx + ancho, 0.0), ancho_cm),
+        _cota(f"v{n}", (dx, 1.139), (dx, 0.0), 20),
+    ]
+    if muros is not None:
+        ents.append(_texto(f"m{n}", muros, dx + 0.43, 1.325, alto=0.1))
+    return ents
+
+
+def test_a_detail_title_declaring_its_wall_is_a_variant_of_its_mark():
+    # R168: los títulos «CI» de Marina llevan debajo «(PARA MUROS DE 15CM)», «(… 20CM)» y
+    # «(… 30CM)»: cada lectura es la variante de ese muro, y la definición de CI las guarda.
+    ents = [
+        *_ci(0.0, 15, "(PARA MUROS DE 15CM)", 1),
+        *_ci(3.0, 20, "(PARA MUROS DE 20CM)", 2),
+        *_ci(6.0, 30, "(PARA MUROS DE 30CM)", 3),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    leidas = sorted((s.section_cm, s.para_muro_cm) for s in _cotas(inv, "CI"))
+    assert leidas == [((15, 20), 15.0), ((20, 20), 20.0), ((30, 20), 30.0)]
+    d = construir_definiciones(inv, C)[0]["CI"]
+    assert d.seccion_cm.en_conflicto
+    assert [(v.para_muro_cm, v.seccion_cm.valor) for v in d.variantes] == [
+        (15.0, (15, 20)),
+        (20.0, (20, 20)),
+        (30.0, (30, 20)),
+    ]
+    assert not any(v.seccion_cm.en_conflicto for v in d.variantes)
+
+
+@pytest.mark.parametrize(
+    "muros", [None, "CADENAS INTERMEDIAS (PARA MUROS DE 15/20/30 CM)", "(PARA MUROS DE 15CM)"]
+)
+def test_only_a_titles_own_subtitle_makes_a_variant(muros):
+    # R168: sin subtítulo, con el encabezado de todo el grupo («15/20/30»), o con el subtítulo de
+    # otro título (aquí lejos, bajo la sección): no es una variante.
+    ents = _ci(0.0, 15, None, 1)
+    if muros is not None:
+        ents.append(_texto("m", muros, 0.43, -1.0, alto=0.1))
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s.para_muro_cm for s in _cotas(inv, "CI")] == [None]
+    assert construir_definiciones(inv, C)[0]["CI"].variantes == []

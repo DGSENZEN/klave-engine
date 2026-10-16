@@ -898,3 +898,43 @@ def test_a_dala_on_a_wall_drawn_as_closed_boxes_says_so():
     caja.properties["closed"] = True
     viga = _vigas([caja, _texto("t", "CI", (0.1, -0.16))])["t"]
     assert "cajas cerradas (MUROS1 1F80C)" in viga.properties["sin_claro"]
+
+
+# ------------------------------------------------- Tarea 9c: R168, el muro que corona una dala
+
+
+def test_a_dala_tag_measures_the_wall_it_crowns():
+    # R168 (Marina «CI» 301ED, ES-200): escrita junto al muro 1F719, que sube entre sus caras de
+    # x 196.976 y 197.276: el muro mide 0.30, y se dicen sus caras por su handle.
+    viga = _vigas([_muro_con_tramo_corto(), _texto("t", "CI", (197.322, 13.337))])["t"]
+    assert viga.properties["muro_espesor"] == pytest.approx(0.30)
+    assert viga.properties["muro_caras"] == ["1F719"]
+
+
+def test_a_dala_tag_between_its_walls_faces_measures_them():
+    # R168: escrita entre las dos caras de su muro (a 0.05 de cada una, 0.15 de muro), y otra
+    # línea de muro más allá: el muro es el de las caras que la tienen en medio.
+    entidades = [
+        _linea("abajo", (0.0, -0.05), (4.0, -0.05), layer="MUROS1"),
+        _linea("arriba", (0.0, 0.10), (4.0, 0.10), layer="MUROS1"),
+        _linea("otro", (0.0, 0.35), (4.0, 0.35), layer="MUROS1"),
+        _texto("t", "CI", (1.0, -0.02), alto=0.06),
+    ]
+    viga = _vigas(entidades)["t"]
+    assert viga.properties["muro_espesor"] == pytest.approx(0.15)
+    assert set(viga.properties["muro_caras"]) == {"abajo", "arriba"}
+
+
+def test_a_dala_tag_beside_one_face_does_not_guess_the_wall():
+    # R168 (Marina «CI» 71630, ES-300): la cara de arriba de su muro es una línea de trabe, no de
+    # muro: sólo una cara a la vista; su espesor no se mide, y se dice.
+    entidades = [
+        _linea("muro", (0.0, -0.3), (8.0, -0.3), layer="MUROS1"),
+        _linea("trabe", (0.0, 0.0), (8.0, 0.0), layer="EST-TRABES"),
+        _texto("t", "CI", (1.0, 0.02)),
+    ]
+    viga = _vigas(entidades)["t"]
+    assert "muro_espesor" not in viga.properties
+    assert viga.properties["muro_sin_medir"] == (
+        "el muro bajo la etiqueta tiene una sola cara a la vista (muro): su espesor no se mide"
+    )

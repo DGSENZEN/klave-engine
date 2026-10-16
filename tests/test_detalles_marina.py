@@ -110,3 +110,19 @@ _EQUIVOCADAS = [
 def test_a_wrong_posible_is_never_read_under_the_wrong_title(marina, handle, equivocada):
     inv, ids = marina
     assert equivocada not in _leida_por(inv, ids[handle])
+
+
+# R168: los títulos «CI» de ES-200, ES-300 y ES-400 son las variantes por muro de 15, 20 y 30 cm
+# (su subtítulo «(PARA MUROS DE nCM)»), con su sección.
+_CI = {
+    "A8EB3": (15.0, (15, 20)), "A8ECC": (20.0, (20, 20)), "A8EB4": (30.0, (30, 20)),
+    "A8DFD": (15.0, (15, 20)), "A8E16": (20.0, (20, 20)), "A8DFE": (30.0, (30, 20)),
+    "4EFEA": (15.0, (15, 20)), "4F003": (20.0, (20, 20)), "4EFEB": (30.0, (30, 20)),
+}  # fmt: skip
+
+
+@pytest.mark.parametrize("handle", sorted(_CI))
+def test_each_ci_title_is_its_walls_variant(marina, handle):
+    inv, ids = marina
+    (lectura,) = [s for s in inv.specs if s.metodo == "cotas" and s.entidades == [ids[handle]]]
+    assert (lectura.para_muro_cm, lectura.section_cm) == _CI[handle]

@@ -749,3 +749,59 @@ def test_resolver_requires_the_frames():
     (e,) = _construir([k], _seg({k.detection_id: "v_pa"}), _defs("K-4"))
     with pytest.raises(TypeError):
         resolver(e, _defs("K-4"), {}, reglas_estandar())  # type: ignore[call-arg]
+
+
+# ------------------------------------------------------------------- Tarea 9c: R168, variantes
+
+
+def _ci_variantes():
+    """La definición de «CI» como la deja Marina: tres detalles «(PARA MUROS DE 15/20/30CM)», cada
+    uno con su sección; la marca los junta (su sección queda en conflicto)."""
+    variantes = []
+    for cm, seccion in ((15.0, (15, 20)), (20.0, (20, 20)), (30.0, (30, 20))):
+        v = _def("CI", familia="dala", seccion=seccion)
+        v.para_muro_cm = cm
+        variantes.append(v)
+    junta = Definicion(
+        marca="CI",
+        familia="dala",
+        seccion_cm=elegir([_seccion((15, 20)), _seccion((20, 20)), _seccion((30, 20))]),
+        variantes=variantes,
+    )
+    return {"CI": junta}
+
+
+@pytest.mark.parametrize(
+    "props,seccion,conflicto,aviso",
+    [
+        # Su muro mide 20 cm: la variante «para muros de 20 cm», del detalle, con su muro nombrado.
+        ({"muro_espesor": 0.20, "muro_caras": ["1F8EB", "1F83D"]}, (20, 20), False,
+         "variante: CI «para muros de 20 cm»: el muro bajo la etiqueta, entre sus caras 1F8EB y "
+         "1F83D: 20 cm"),
+        # 21.5 cm: dentro de ±2 cm de la de 20.
+        ({"muro_espesor": 0.215, "muro_caras": ["1F718"]}, (20, 20), False,
+         "variante: CI «para muros de 20 cm»: el muro bajo la etiqueta, entre dos caras de 1F718: "
+         "21.5 cm"),
+        # 35 cm: ninguna variante es la suya; el conflicto sigue y se dice.
+        ({"muro_espesor": 0.35, "muro_caras": ["1F67D", "1F66A"]}, None, True,
+         "ninguna de las variantes de CI (para muros de 15, 20, 30 cm) es la suya"),
+        # Su muro no se midió: el conflicto sigue y se dice por qué.
+        ({"muro_sin_medir": "el muro bajo la etiqueta tiene una sola cara a la vista (1F8EB)"},
+         None, True, "una sola cara a la vista (1F8EB)"),
+    ],
+)  # fmt: skip
+def test_a_type_tag_takes_the_variant_of_the_wall_it_crowns(props, seccion, conflicto, aviso):
+    # R168: cada colocación de CI toma la variante cuyo muro declarado coincide (±2 cm) con el
+    # espesor medido del muro que corona, como «detalle» y con un aviso que nombra el muro; si
+    # ninguna o dos coinciden, o el muro no se midió, la definición sigue en conflicto.
+    ci = _tag("CI", familia="dala", **props)
+    el = _construir([ci], None, _ci_variantes())[0]
+    assert el.seccion_cm is not None and el.seccion_cm.fuente == "detalle"
+    if seccion is not None:
+        assert el.seccion_cm.valor == seccion and not el.seccion_cm.en_conflicto
+        assert aviso in el.avisos
+        assert not any(d.startswith("variante") for d in el.dudas)
+    else:
+        assert el.seccion_cm.en_conflicto
+        assert any(aviso in a for a in el.avisos)
+        assert any(d.startswith("variante de CI") for d in el.dudas)

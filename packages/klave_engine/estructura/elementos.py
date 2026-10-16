@@ -108,6 +108,10 @@ class Colocacion(BaseModel):
     longitud_m: Dato | None = None
     altura_m: Dato | None = None
     avisos: list[str] = Field(default_factory=list)
+    # R168: el espesor del muro que corona una dala (cm), medido entre sus dos caras junto a la
+    # etiqueta; o por qué no se midió.
+    muro_cm: Dato | None = None
+    muro_sin_medir: str | None = None
 
 
 class Elemento(BaseModel):
@@ -201,6 +205,8 @@ def construir_elementos(
             longitud_m=_longitud_medida(d, familia, meters_factor),
             altura_m=_altura(familia, alturas.get(vista or ""), altura_supuesta_m),
             avisos=avisos,
+            muro_cm=_muro_medido(d, meters_factor),
+            muro_sin_medir=d.properties.get("muro_sin_medir"),
         )
         base = Elemento(
             element_id=element_id(d, meters_factor),
@@ -391,6 +397,27 @@ def _cm(v: float) -> str:
     return f"{v:g}"
 
 
+def _muro_medido(d: Detection, factor: float | None) -> Dato | None:
+    """R168: el espesor (cm) del muro que corona la dala de la colocación, medido entre sus dos
+    caras junto a la etiqueta (``detect_beams``), con sus caras por su handle del dibujo."""
+    espesor = d.properties.get("muro_espesor")
+    if not isinstance(espesor, int | float) or not factor:
+        return None
+    cm = round(float(espesor) * factor * 100.0, 1)
+    caras = list(d.properties.get("muro_caras") or [])
+    entre = (
+        f"entre dos caras de {caras[0]}"
+        if len(caras) == 1
+        else f"entre sus caras {' y '.join(caras)}"
+    )
+    return Dato(
+        valor=_numero(cm),
+        fuente="medido",
+        texto=f"el muro bajo la etiqueta, {entre}: {_cm(cm)} cm",
+        entidades=list(d.source_entities),
+    )
+
+
 def _longitud_medida(d: Detection, familia: str, factor: float | None) -> Dato | None:
     """El claro medido de una viga (la línea de su etiqueta) o el largo de un muro, en metros."""
     props = d.properties or {}
@@ -503,6 +530,8 @@ class _Resolutor:
         )
         avisos = list(col.avisos)
         dudas: list[str] = []
+        if propia is not None and propia.variantes:
+            propia = _variante(marca, propia, col, avisos, dudas)
         if marca and definicion == "familia":
             avisos.append(
                 f"la marca {marca} no está definida en el plano; se usa la definición de la "
@@ -777,6 +806,52 @@ class _Resolutor:
             )
         avisos.append(f"recubrimiento: ni el plano ni los supuestos lo dan para {familia}")
         return None
+
+
+# R168: el muro medido corresponde a la variante que lo declara con esta tolerancia (cm).
+_TOLERANCIA_DE_MURO_CM = 2.0
+
+
+def _variante(
+    marca: str, propia: Definicion, col: Colocacion, avisos: list[str], dudas: list[str]
+) -> Definicion:
+    """R168: la variante de una marca que su colocación toma: la que su detalle declara para el
+    espesor del muro que corona, medido (±``_TOLERANCIA_DE_MURO_CM``), con un aviso que nombra el
+    muro. Si ninguna o más de una coincide, o el muro no se midió, la definición de la marca (con
+    sus variantes juntas: en conflicto) sigue, y se dice."""
+    espesores = ", ".join(f"{_cm(v.para_muro_cm or 0.0)}" for v in propia.variantes)
+    medido = col.muro_cm
+    if medido is None or not isinstance(medido.valor, int | float):
+        motivo = col.muro_sin_medir or "su muro no se midió"
+        avisos.append(
+            f"variante: {marca} tiene variantes por muro (para muros de {espesores} cm) y no se "
+            f"sabe cuál es: {motivo}; su definición queda con sus variantes juntas"
+        )
+        dudas.append(f"variante de {marca}: el muro bajo la colocación no se midió ({motivo})")
+        return propia
+    suyas = [
+        v
+        for v in propia.variantes
+        if v.para_muro_cm is not None
+        and abs(v.para_muro_cm - medido.valor) <= _TOLERANCIA_DE_MURO_CM
+    ]
+    if len(suyas) == 1:
+        variante = suyas[0]
+        avisos.append(
+            f"variante: {marca} «para muros de {_cm(variante.para_muro_cm or 0.0)} cm»: "
+            f"{medido.texto}"
+        )
+        return variante
+    cuantas = "ninguna" if not suyas else "más de una"
+    avisos.append(
+        f"variante: {medido.texto}; {cuantas} de las variantes de {marca} (para muros de "
+        f"{espesores} cm) es la suya: su definición queda con sus variantes juntas"
+    )
+    dudas.append(
+        f"variante de {marca}: {cuantas} de sus variantes (para muros de {espesores} cm) es para "
+        f"el muro bajo la colocación ({_cm(float(medido.valor))} cm), por confirmar"
+    )
+    return propia
 
 
 def _nota_de_familia(de_familia: Definicion | None, hoja: str) -> Callable[[str], Dato | None]:
