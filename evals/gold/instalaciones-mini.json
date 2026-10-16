@@ -207,7 +207,7 @@
         "unit": "M",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "R171: variantes registradas (las piezas rectas de AireDucto, cada segmento al r\u00f3tulo legible m\u00e1s cercano, como siempre): 203 mm 14.635, 254 mm 6.841, 305 mm 30.743. En el crudo (letras de cada r\u00f3tulo), segmento por segmento, las piezas del collar\u00edn junto al \u00ab8\"\u00bb (y 22.5 a 28.6) dan 8\" 6.58 m, 10\" 0.30 m y 5.18 m sin r\u00f3tulo (al mayor, 8\"): el motor 0.38 m de 10\", B0 1.50 m (13.511 / 7.964)",
+        "note": "R171/R180: variantes del motor tal como est\u00e1 hoy: 203 mm 14.635, 254 mm 6.841, 305 mm 30.743. Los 52.2 m de AireDucto no son piezas rectas: son los per\u00edmetros de las cajas de plenum y collar\u00edn y sus diagonales en X; cada segmento toma el r\u00f3tulo de di\u00e1metro redondo legible m\u00e1s cercano. El motor todav\u00eda no lee 14\" ni 16\" (R180 pendiente): en el crudo, segmento por segmento, con todos los di\u00e1metros redondos y sin las secciones rectangulares, dan 8\" 6.58, 10\" 5.93, 12\" 15.21, 14\" 8.64, 16\" 4.88 y 2.39 m sin r\u00f3tulo (de 43.6 m de segmentos)",
         "variants": {
           "AIR-001.203MM": 14.635,
           "AIR-001.254MM": 6.841,
@@ -219,7 +219,7 @@
         "unit": "M",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "R170/R171: cada ducto flexible (un spline entero) es del di\u00e1metro de su r\u00f3tulo m\u00e1s cercano; un ducto sin r\u00f3tulo, del ducto con el que se conecta. Variantes verificadas en el crudo ducto por ducto (letras de cada r\u00f3tulo, trazo entero): 305 mm 91.041, 254 mm 23.302, 203 mm 4.206. B0 (93.503 / 19.538 / 5.509) muestreaba 16 segmentos por ducto y part\u00eda cada ducto entre r\u00f3tulos; c4bd996 (76.637 / 35.807 / 6.105) daba los metros sin r\u00f3tulo al di\u00e1metro con m\u00e1s metros rotulados",
+        "note": "R170/R171/R180: variantes del motor tal como est\u00e1 hoy: 305 mm 91.041, 254 mm 23.302, 203 mm 4.206 \u2014 NO verificadas: el motor no lee 14\" ni 16\" y esos ductos se pagan como 12\". En el crudo, ducto por ducto: 8\" 4.209 (5B4, 5B5), 10\" 23.322 (5B6, 5B7, 60A, 675, 20C6), 12\" \u2248 72.4, 14\" \u2248 13.2 (5AB con su r\u00f3tulo 5BA, 20CF, y 62F o 630) y 16\" 5.506 (633, 674, 20CC); 62F y 630 dicen 14\" y 12\" entre collar\u00edn y recorrido. La nota de R171 que las daba por verificadas era falsa: 5AB no es \u00abun ducto sin r\u00f3tulo que se une a uno de 12\"\u00bb, tiene su r\u00f3tulo de 14\" (5BA)",
         "variants": {
           "AIR-002.305MM": 91.041,
           "AIR-002.254MM": 23.302,
