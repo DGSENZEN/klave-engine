@@ -100,6 +100,7 @@ class DetectorSuiteConfig(BaseModel):
         config.column.grid_search_radius = m(1.5)
         config.column.geometry_search_radius = m(0.6)
         config.column.max_marker_area = m(1.0) * m(1.0)
+        config.column.marker_tie_tolerance = m(1e-4)
         config.footing.min_area = m(0.55) * m(0.55)
         config.footing.max_area = m(5.5) * m(5.5)
         config.footing.column_search_radius = m(2.0)

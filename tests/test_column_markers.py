@@ -197,3 +197,57 @@ def test_a_marker_another_marks_tag_reaches_as_near_is_flagged(x_k2):
         assert "«K-0»" in tags["K-2"].properties["marcador_dudoso"]
     else:
         assert "marcador_dudoso" not in tags["K-0"].properties
+
+
+# ------------------------------------------------- Tarea 9b, ronda de arreglos 1: R175
+
+
+def _config_metros():
+    from klave_engine.detection.column_detector import ColumnDetectorConfig
+
+    # Como el preset en metros de la suite.
+    return ColumnDetectorConfig(
+        geometry_search_radius=0.6, max_marker_area=1.0, marker_tie_tolerance=1e-4
+    )
+
+
+def _marcador(etiqueta, *marcadores):
+    entidades = [etiqueta, *marcadores]
+    (tag,) = detect_columns(entidades, SpatialIndex(entidades), config=_config_metros()).detections
+    return tag.source_entities[1]
+
+
+def test_a_castillo_symbol_beats_a_pile_cap_a_float_noise_nearer():
+    # R175 (Marina C-3 C793B): el dado del pilote (EST-PILOTES, 70x70) está a 0.1616613 de las
+    # letras y el castillo de C-3 (EST-CASTILLOS, 45x50) a 0.1616794: 1.8e-5 no es estar más
+    # cerca. Igual de cerca, el símbolo en la capa de castillos, y el más chico (R130).
+    etiqueta = _ent("ent_000009", EntityType.text, (0.0, 0.0, 0.27, 0.1), text="C-3")
+    dado = _rect("ent_000001", -0.2, -0.8616613, 0.5, -0.1616613, layer="EST-PILOTES")
+    castillo = _rect("ent_000002", 0.0, -0.6616794, 0.45, -0.1616794)
+    assert _marcador(etiqueta, dado, castillo) == "ent_000002"
+
+
+def test_a_castillo_symbol_beats_a_wall_box_a_float_noise_nearer():
+    # R175 (Marina K-2 8E264 y 8E288): la caja de MUROS1 (55x20) a 0.0373160, su castillo (15x20)
+    # a 0.0373178.
+    etiqueta = _ent("ent_000009", EntityType.text, (0.0, 0.0, 0.27, 0.1), text="K-2")
+    caja = _rect("ent_000001", -0.5, -0.237316, 0.05, -0.037316, layer="MUROS1")
+    castillo = _rect("ent_000002", 0.1, -0.2373178, 0.25, -0.0373178)
+    assert _marcador(etiqueta, caja, castillo) == "ent_000002"
+
+
+def test_among_equally_near_castillos_the_smallest_wins():
+    # R130 con R175: dos símbolos de castillo a 5e-5 uno del otro son igual de cercanos.
+    etiqueta = _ent("ent_000009", EntityType.text, (0.0, 0.0, 0.27, 0.1), text="K-1")
+    grande = _rect("ent_000001", -0.25, -0.35, 0.05, -0.05)
+    chico = _rect("ent_000002", 0.1, -0.20005, 0.25, -0.05005)
+    assert _marcador(etiqueta, grande, chico) == "ent_000002"
+
+
+def test_an_outline_clearly_nearer_than_the_castillo_still_wins():
+    # R175: la tolerancia es de empate, no de capa: un pedazo de losa a 0.005 de las letras le gana
+    # al castillo a 0.044 (Marina K-1 8E092 sigue así; pendiente de regla).
+    etiqueta = _ent("ent_000009", EntityType.text, (0.0, 0.0, 0.27, 0.1), text="K-1")
+    losa = _rect("ent_000001", -0.2, -0.705, 0.5, -0.005, layer="EST-LOSA MACIZA")
+    castillo = _rect("ent_000002", 0.0, -0.194, 0.15, -0.044)
+    assert _marcador(etiqueta, losa, castillo) == "ent_000001"

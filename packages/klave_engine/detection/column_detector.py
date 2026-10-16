@@ -1,5 +1,7 @@
 """Column tag detection from text patterns, grid proximity, and marker geometry."""
 
+import math
+
 import numpy as np
 from pydantic import BaseModel, Field
 from shapely.geometry import Polygon
@@ -103,6 +105,9 @@ class ColumnDetectorConfig(BaseModel):
     layer_hints: list[str] = Field(
         default_factory=lambda: ["COL", "COLS", "COLUMN", "COLUMNA", "CASTILLO", "DADO"]
     )
+    # R175: two markers whose distances differ by at most this (1e-4 m, scaled per unit preset)
+    # or a millionth of the distance are equally near: the smallest wins (R130).
+    marker_tie_tolerance: float = 0.003
 
 
 def detect_columns(
@@ -177,6 +182,7 @@ def detect_columns(
         # id — never the spatial index's own order. A leader's lines are never a marker (R135).
         marker_id: str | None = None
         markers: list[tuple[bool, float, float, str]] = []
+        de_columna: set[str] = set()
         for hit in index.entities_near_entity(entity.entity_id, config.geometry_search_radius):
             other = index.get(hit.entity_id)
             if other.is_annotation:
@@ -192,12 +198,14 @@ def detect_columns(
             if distancia <= config.geometry_search_radius:
                 rellenos = other.entity_type == EntityType.hatch
                 markers.append((rellenos, distancia, bbox_area(other.bbox), other.entity_id))
+                if layer_matches(other.layer, config.layer_hints):
+                    de_columna.add(other.entity_id)
         if markers:
             # A fill is the marker only of a castillo drawn with nothing else (PRUEBA-1: 4); a
             # castillo's outline and its fill are one symbol, and the outline is what R142 reads.
             if not all(m[0] for m in markers):
                 markers = [m for m in markers if not m[0]]
-            orden = sorted(m[1:] for m in markers)
+            orden = _por_cercania([m[1:] for m in markers], de_columna, config)
             marker_id = orden[0][2]
             elegidos.append(
                 (len(output.detections), entity, orden[0][0], [(d, i) for d, _a, i in orden[1:]])
@@ -245,6 +253,28 @@ def detect_columns(
 
 # R166: half a text height (see ``_marcadores_dudosos``).
 _MARGEN_DE_MARCADOR = 0.5
+
+
+def _por_cercania(
+    markers: list[tuple[float, float, str]],
+    de_columna: set[str],
+    config: ColumnDetectorConfig,
+) -> list[tuple[float, float, str]]:
+    """R130, R175: a tag's markers (distance, area, id), the chosen one first. Distances within
+    ``marker_tie_tolerance`` or a millionth of the nearest are equal — never the float sort's
+    noise (Marina C-3 C793B: its castillo 1.8e-5 farther than a pile cap of twice its area; K-2
+    8E264 and 8E288: theirs 1.8e-6 farther than a MUROS1 box). Among those, a symbol on a castillo
+    or column layer beats outlines on other layers (a slab piece, a MUROS1 box, a pile cap), then
+    the smallest wins, then the first id. The others follow by distance."""
+    orden = sorted(markers)
+    d0 = orden[0][0]
+    empatados = [
+        m
+        for m in orden
+        if math.isclose(m[0], d0, rel_tol=1e-6, abs_tol=config.marker_tie_tolerance)
+    ]
+    elegido = min(empatados, key=lambda m: (m[2] not in de_columna, m[1], m[2]))
+    return [elegido, *(m for m in orden if m is not elegido)]
 
 
 def _marcadores_dudosos(
