@@ -281,11 +281,18 @@ def detect_beams(
                 f"{config.line_search_radius:g} unidades; sin claro"
             )
             if _sobre_su_muro(entity, familia, config):
+                cajas = _cajas_de_muro_bajo(entity, index, formas, config)
                 sin_claro = (
                     "longitud: la etiqueta no está sobre ningún muro ni corre junto a una línea "
                     f"de su familia o de un muro a menos de {config.line_search_radius:g} "
                     "unidades (un vano, o la trabe que no es suya); sin claro"
                 )
+                if cajas:
+                    # R182: Marina 71656, 71658 and 7165B sit on MUROS1 boxes between castillos.
+                    sin_claro = (
+                        "longitud: el muro bajo la etiqueta está dibujado en cajas cerradas "
+                        f"({', '.join(cajas)}), no en líneas: no se lee su claro; sin claro"
+                    )
             properties["sin_claro"] = sin_claro
             notes.append(sin_claro)
 
@@ -378,8 +385,9 @@ def _repartir(
     supports between consecutive tags, else halfway — so it counts once."""
     _sin_ajenas(marcadas, output, config)
     puntas: list[_Punta] = []
+    tomados = {m.elegida.tramo.clave for m in marcadas if m.elegida is not None}
     for grupo in _por_clase(marcadas).values():
-        for viga in _vigas(grupo, config, index):
+        for viga in _vigas(grupo, config, index, tomados):
             puntas.extend(_partir(viga, output, apoyos, config))
     _puntas_entre_otras(puntas, marcadas, output)
     _sin_etiqueta_propia(marcadas, output, config, index)
@@ -502,7 +510,7 @@ def _sumar_tramo(
         props["estimated_span_length"] = round(antes + parte, 3)
         mitad = f" (la mitad, {parte:.3f}: sigue entre dos tramos con etiqueta)" if partido else ""
         aviso = (
-            f"tramo sin etiqueta propia: la línea {tramo.linea.entity_id} sigue {tramo.largo:.3f} "
+            f"tramo sin etiqueta propia: la línea {tramo.linea.raw_handle} sigue {tramo.largo:.3f} "
             f"en un tramo que ninguna etiqueta toma, unido al suyo; se le suma{mitad} — claro "
             f"{antes:.3f} → {antes + parte:.3f}"
         )
@@ -536,6 +544,7 @@ def _sin_ajenas(
             if len({m.familia for m in ms}) < 2:
                 continue
             assert all(m.elegida is not None for m in ms)
+            asa = ms[0].elegida.tramo.linea.raw_handle  # type: ignore[union-attr]
             duena = min(
                 ms,
                 key=lambda m: (m.elegida.preferencia, m.elegida.distancia),  # type: ignore[union-attr]
@@ -548,7 +557,7 @@ def _sin_ajenas(
                 m.elegida, dudoso = _tramo_de_la_trabe(restantes, m.etiqueta, config)
                 d = output.detections[m.indice]
                 aviso = (
-                    f"claro: la línea {clave[0]} junto a la etiqueta es de otra familia ({duena}); "
+                    f"claro: la línea {asa} junto a la etiqueta es de otra familia ({duena}); "
                     "no se toma"
                 )
                 d.evidence.notes.append(aviso)
@@ -660,19 +669,28 @@ def _a_lo_largo(origen: Point, u: Point, p: Point) -> tuple[float, float]:
 
 
 def _vigas(
-    grupo: list[_Marcada], config: BeamDetectorConfig, index: SpatialIndex | None = None
+    grupo: list[_Marcada],
+    config: BeamDetectorConfig,
+    index: SpatialIndex | None = None,
+    tomados: set[tuple[str, int]] | None = None,
 ) -> list[_Viga]:
     """The beam lines of one kind of tag: its chosen runs, the two faces of one beam merged
-    (``_caras_de_una_viga``) — as far apart as the widest definition of their tags' marks plus
-    ``face_width_margin``, never less than ``max_face_gap``; with no width declared, up to twice
-    that with the beam's axis drawn halfway between them (R172)."""
+    (``_caras_de_una_viga``). R172, R182: two runs whose tags share a mark are faces of it as far
+    apart as that mark's definition's width plus ``face_width_margin``, never less than
+    ``max_face_gap``; with no width declared, up to twice that with the beam's axis drawn halfway
+    between them. Runs of different marks only when the axis no tag takes is drawn halfway
+    between them, within ``max_face_gap``. A merge never makes a beam wider than the pair that
+    joins it allows (no chain of faces)."""
     tramos: dict[tuple[str, int], Tramo] = {}
-    anchos: dict[tuple[str, int], list[float]] = {}
+    marcas: dict[tuple[str, int], dict[str, float | None]] = {}
     for m in grupo:
         assert m.elegida is not None
-        tramos.setdefault(m.elegida.tramo.clave, m.elegida.tramo)
-        if m.ancho is not None:
-            anchos.setdefault(m.elegida.tramo.clave, []).append(m.ancho)
+        clave = m.elegida.tramo.clave
+        tramos.setdefault(clave, m.elegida.tramo)
+        marca = (m.etiqueta.text or "").strip().upper()
+        de_la_clave = marcas.setdefault(clave, {})
+        if de_la_clave.get(marca) is None:
+            de_la_clave[marca] = m.ancho
     claves = list(tramos)
     padre = {c: c for c in claves}
 
@@ -682,17 +700,35 @@ def _vigas(
             c = padre[c]
         return c
 
+    def limite(a: tuple[str, int], b: tuple[str, int]) -> float | None:
+        ta, tb = tramos[a], tramos[b]
+        comunes = marcas[a].keys() & marcas[b].keys()
+        tope = config.max_face_gap
+        if comunes:
+            anchos = [w for k in comunes for w in (marcas[a][k], marcas[b][k]) if w is not None]
+            if anchos:
+                tope = max(tope, max(anchos) + config.face_width_margin)
+                return tope if _caras_de_una_viga(ta, tb, config, tope) else None
+            if _caras_de_una_viga(ta, tb, config, tope):
+                return tope
+            if _caras_de_una_viga(ta, tb, config, 2 * tope) and _ejes_entre(
+                ta, tb, index, config, tomados
+            ):
+                return 2 * tope
+            return None
+        if _caras_de_una_viga(ta, tb, config, tope) and _ejes_entre(ta, tb, index, config, tomados):
+            return tope
+        return None
+
     for i, a in enumerate(claves):
         for b in claves[i + 1 :]:
-            declarados = anchos.get(a, []) + anchos.get(b, [])
-            limite = config.max_face_gap
-            if declarados:
-                limite = max(limite, max(declarados) + config.face_width_margin)
-            if _caras_de_una_viga(tramos[a], tramos[b], config, limite) or (
-                not declarados
-                and _caras_de_una_viga(tramos[a], tramos[b], config, 2 * limite)
-                and _ejes_entre(tramos[a], tramos[b], index, config)
-            ):
+            if raiz(a) == raiz(b):
+                continue
+            tope = limite(a, b)
+            if tope is None:
+                continue
+            juntos = [tramos[c] for c in claves if raiz(c) in (raiz(a), raiz(b))]
+            if _ancho_de_banda(juntos) <= tope * (1 + 1e-6):
                 padre[raiz(b)] = raiz(a)
     juntas: dict[tuple[str, int], list[Tramo]] = {}
     for c in claves:
@@ -724,7 +760,7 @@ def _vigas(
         ejes: dict[tuple[str, int], Tramo] = {}
         for k, cara in enumerate(caras):
             for otra in caras[k + 1 :]:
-                for eje in _ejes_entre(cara, otra, index, config):
+                for eje in _ejes_entre(cara, otra, index, config, tomados):
                     if eje.clave not in claves_caras:
                         ejes.setdefault(eje.clave, eje)
         vigas.append(
@@ -741,6 +777,13 @@ def _vigas(
             )
         )
     return vigas
+
+
+def _ancho_de_banda(tramos: list[Tramo]) -> float:
+    """R182: how wide the band of a set of parallel runs is, across the first one."""
+    base = tramos[0]
+    cruces = [_a_lo_largo(base.p, base.direccion, q)[1] for t in tramos for q in (t.p, t.q)]
+    return max(cruces) - min(cruces)
 
 
 def _caras_de_una_viga(
@@ -771,11 +814,15 @@ def _traslapan(a: Tramo, b: Tramo, config: BeamDetectorConfig) -> bool:
 
 
 def _ejes_entre(
-    a: Tramo, b: Tramo, index: SpatialIndex | None, config: BeamDetectorConfig
+    a: Tramo,
+    b: Tramo,
+    index: SpatialIndex | None,
+    config: BeamDetectorConfig,
+    tomados: set[tuple[str, int]] | None = None,
 ) -> list[Tramo]:
     """R172: the runs drawn halfway between two parallel faces — on their layer, parallel, within
     ``axis_centre_tolerance`` of their gap from the middle, overlapping both as faces do: the
-    beam's axis."""
+    beam's axis. R182: never a run a tag takes (``tomados``): that is another beam's face."""
     if index is None:
         return []
     u = a.direccion
@@ -794,7 +841,7 @@ def _ejes_entre(
         if linea.entity_type not in (EntityType.line, EntityType.polyline) or linea.is_annotation:
             continue
         for r in tramos_rectos(linea):
-            if r.clave in (a.clave, b.clave):
+            if r.clave in (a.clave, b.clave) or r.clave in (tomados or set()):
                 continue
             ur = r.direccion
             if abs(u[0] * ur[0] + u[1] * ur[1]) < math.cos(_MISMA_DIRECCION * 2):
@@ -964,6 +1011,27 @@ def _sobre_su_muro(etiqueta: NormalizedEntity, familia: str, config: BeamDetecto
     return familia in ("dala", "cerramiento") and layer_matches(
         etiqueta.layer, config.dala_tag_layer_hints
     )
+
+
+def _cajas_de_muro_bajo(
+    etiqueta: NormalizedEntity, index: SpatialIndex, formas: Formas, config: BeamDetectorConfig
+) -> list[str]:
+    """R182: the closed boxes of a wall layer (never a concrete wall's) its letters sit on, within
+    one text height: a wall drawn as boxes, which no beam rule reads. Their layer and handles."""
+    alto = alto_de_texto(etiqueta)
+    salida: list[tuple[float, str]] = []
+    for hit in index.entities_near_entity(etiqueta.entity_id, alto):
+        otra = index.get(hit.entity_id)
+        if otra.entity_type != EntityType.polyline or not otra.is_closed:
+            continue
+        if not layer_matches(otra.layer, config.wall_layer_hints):
+            continue
+        if layer_matches(otra.layer, config.concrete_wall_layer_hints):
+            continue
+        d = formas.distancia(etiqueta, otra)
+        if d <= alto:
+            salida.append((d, f"{otra.layer} {otra.raw_handle}"))
+    return [n for _d, n in sorted(salida)]
 
 
 def _de_trabe(tramo: Tramo, config: BeamDetectorConfig) -> bool:

@@ -147,6 +147,7 @@ def detect_columns(
     # R166: each tag with a marker, for «marcador dudoso»: (its detection, its text, the distance
     # to its marker, its other candidates as (distance, id)).
     elegidos: list[tuple[int, NormalizedEntity, float, list[tuple[float, str]]]] = []
+    previos: dict[int, str] = {}  # R182: «marcador dudoso» from the castillo-layer preference
     for entity in entities:
         if not entity.is_textual or not entity.text:
             continue
@@ -211,9 +212,21 @@ def detect_columns(
             # castillo's outline and its fill are one symbol, and the outline is what R142 reads.
             if not all(m[0] for m in markers):
                 markers = [m for m in markers if not m[0]]
-            orden = _por_cercania(
-                [m[1:] for m in markers], de_columna, alto_de_texto(entity), config
-            )
+            candidatos = [m[1:] for m in markers]
+            orden = _por_cercania(candidatos, de_columna, alto_de_texto(entity), config)
+            cercano = _por_cercania(candidatos, de_columna, 0.0, config)
+            if orden[0][2] != cercano[0][2]:
+                # R182: the castillo-layer preference (R179) never takes a symbol a tag of another
+                # mark reaches nearer: that one is the other tag's; the nearest stays.
+                ajena = _otra_marca_mas_cerca(entity, orden[0], index, formas, text_config)
+                if ajena is not None:
+                    previos[len(output.detections)] = (
+                        f"marcador dudoso: el símbolo de castillo a {orden[0][0]:.3f} de esta "
+                        f"etiqueta está a {ajena[0]:.3f} de «{ajena[1]}», otra marca; se conserva "
+                        f"el más cercano ({_tipo_de(index.get(cercano[0][2]))} a "
+                        f"{cercano[0][0]:.3f})"
+                    )
+                    orden = cercano
             marker_id = orden[0][2]
             elegidos.append(
                 (len(output.detections), entity, orden[0][0], [(d, i) for d, _a, i in orden[1:]])
@@ -250,6 +263,11 @@ def detect_columns(
             )
         )
     _marcadores_dudosos(output, elegidos, index, formas, text_config)
+    for i, aviso in previos.items():
+        props = output.detections[i].properties
+        otro = props.get("marcador_dudoso")
+        props["marcador_dudoso"] = f"{aviso}; {otro}" if otro else aviso
+        output.detections[i].evidence.notes.append(aviso)
     # R142, R150: each polygon marker's outline, without the other tags' markers.
     marcadores = {marker_id for _i, marker_id in con_marcador}
     for i, marker_id in con_marcador:
@@ -290,6 +308,32 @@ def _por_cercania(
     ]
     elegido = min(empatados, key=lambda m: (m[2] not in de_columna, m[1], m[2]))
     return [elegido, *(m for m in orden if m is not elegido)]
+
+
+def _otra_marca_mas_cerca(
+    etiqueta: NormalizedEntity,
+    marcador: tuple[float, float, str],
+    index: SpatialIndex,
+    formas: Formas,
+    text_config: TextPatternConfig,
+) -> tuple[float, str] | None:
+    """R182: the nearest tag of another mark that reaches a marker nearer than this tag does."""
+    distancia, _area, marker_id = marcador
+    marca = (etiqueta.text or "").strip()
+    simbolo = index.get(marker_id)
+    otras: list[tuple[float, str]] = []
+    for hit in index.entities_near_entity(marker_id, distancia):
+        otra = index.get(hit.entity_id)
+        if otra.entity_id == etiqueta.entity_id or not otra.is_textual or not otra.text:
+            continue
+        if otra.text.strip() == marca:
+            continue
+        if match_category(otra.text, text_config, "column_tag") is None:
+            continue
+        d = formas.distancia(otra, simbolo)
+        if d < distancia:
+            otras.append((d, otra.text.strip()))
+    return min(otras) if otras else None
 
 
 def _marcadores_dudosos(

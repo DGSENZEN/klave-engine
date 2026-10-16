@@ -271,3 +271,18 @@ def test_a_dado_is_not_a_castillos_symbol():
     dado = _rect("ent_000002", 0.4, -0.9969529, 1.3, -0.0969529, layer="EST-DADOS")
     castillo = _rect("ent_000003", 0.0, -0.7218038, 0.3, -0.1218038)
     assert _marcador(etiqueta, muro, dado, castillo) == "ent_000003"
+
+
+def test_the_castillo_preference_never_takes_another_marks_symbol():
+    # R182: K-1 junto a un contorno de A-WALL (a 0.02) y al 45×45 de C-1 (a 0.05, dentro de media
+    # altura de texto), que la etiqueta C-1 alcanza más cerca (0.01): ese símbolo es de C-1; K-1
+    # conserva el más cercano y dice «marcador dudoso».
+    k1 = _ent("ent_000009", EntityType.text, (0.0, 0.0, 0.27, 0.1), text="K-1")
+    c1 = _ent("ent_000008", EntityType.text, (0.6, -0.4, 0.87, -0.3), text="C-1")
+    muro = _rect("ent_000001", -0.3, -0.12, 0.05, -0.02, layer="A-WALL")
+    columna = _rect("ent_000002", 0.2, -0.5, 0.65, -0.05)
+    entidades = [k1, c1, muro, columna]
+    salida = detect_columns(entidades, SpatialIndex(entidades), config=_config_metros())
+    tag = next(d for d in salida.detections if d.label == "K-1")
+    assert tag.source_entities[1] == "ent_000001"
+    assert "«C-1», otra marca" in tag.properties["marcador_dudoso"]

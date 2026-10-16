@@ -834,3 +834,67 @@ def test_another_mark_in_the_end_tags_own_bay_is_no_doubt():
     # R178: una CI en el mismo tramo entre apoyos que la CE-3 corona el mismo muro: nada que decir.
     vigas = _muro_con_castillos(4.0)
     assert "claro_dudoso" not in vigas["ce3.0"].properties
+
+
+# ------------------------------------------------- Tarea 9b, ronda de arreglos 2: R182
+
+
+def _paralelas(*ys, largo=9.2, layer="EST-TRABES"):
+    return [_linea(f"l{k}", (0.0, y), (largo, y), layer=layer) for k, y in enumerate(ys)]
+
+
+def _suma(vigas):
+    return round(sum(d.properties.get("estimated_span_length") or 0 for d in vigas.values()), 3)
+
+
+def test_two_beams_of_different_marks_are_never_one_by_a_width():
+    # R182: una T2-12 (45x50) y una T3-5 en líneas a 0.45: son dos trabes, aunque el ancho de
+    # T2-12 alcance; antes el ancho de una marca juntaba la línea de otra (9.2 en vez de 18.4).
+    entidades = _paralelas(0.0, 0.45)
+    entidades += [_texto("a", "T2-12", (2.0, -0.15), capa="TEXTO"),
+                  _texto("b", "T3-5", (2.0, 0.5), capa="TEXTO")]  # fmt: skip
+    vigas = _caras(entidades, _con(face_widths={"T2-12": 0.45}))
+    assert _suma(vigas) == 18.4
+
+
+def test_a_chain_of_faces_is_never_one_beam_wider_than_its_pair_allows():
+    # R182: A y B caras de T2-12 (0.45), B y C caras de T3-5 (0.45): la cadena A–B–C mediría 0.9 de
+    # ancho; C queda aparte.
+    entidades = _paralelas(0.0, 0.45, 0.9)
+    entidades += [_texto("a", "T2-12", (2.0, -0.15), capa="TEXTO"),
+                  _texto("b1", "T2-12", (4.0, 0.5), capa="TEXTO"),
+                  _texto("b2", "T3-5", (7.0, 0.5), capa="TEXTO"),
+                  _texto("c", "T3-5", (2.0, 0.95), capa="TEXTO")]  # fmt: skip
+    vigas = _caras(entidades, _con(face_widths={"T2-12": 0.45, "T3-5": 0.45}))
+    assert vigas["c"].properties["estimated_span_length"] == 9.2
+    assert _suma(vigas) == 18.4
+
+
+def test_another_beams_face_is_never_the_axis():
+    # R182: sin definición, las caras de T-1 a 0.7 no se juntan por una línea a la mitad que es la
+    # cara que toma otra etiqueta (T-2): un eje es una línea que ninguna etiqueta toma.
+    entidades = _paralelas(0.0, 0.35, 0.7)
+    entidades += [_texto("a", "T-1", (2.0, -0.15), capa="TEXTO"),
+                  _texto("b", "T-2", (5.0, 0.4), capa="TEXTO"),
+                  _texto("c", "T-1", (6.0, 0.75), capa="TEXTO")]  # fmt: skip
+    vigas = _caras(entidades, _PRESET)
+    assert [vigas[k].properties["estimated_span_length"] for k in ("a", "c")] == [9.2, 9.2]
+
+
+def test_beam_notes_name_drawing_handles():
+    # R182: el aviso de R173 nombra la polilínea por su handle del dibujo (650C), no por su id.
+    polilinea = _polilinea("ent_000123", [(0.0, 0.0), (0.0, 4.325), (2.225, 4.325)])
+    polilinea.raw_handle = "650C"
+    viga = _vigas([polilinea, _texto("t", "T-7", (-0.05, 1.5), giro=90.0, capa="TEXTO")])["t"]
+    assert "la línea 650C sigue" in viga.properties["tramo_sin_etiqueta"]
+    assert "ent_000123" not in viga.properties["tramo_sin_etiqueta"]
+
+
+def test_a_dala_on_a_wall_drawn_as_closed_boxes_says_so():
+    # R182 (Marina 71656, 71658, 7165B): la CI está sobre las cajas cerradas de MUROS1 entre
+    # castillos; no hay línea de claro, y el aviso dice por qué.
+    caja = _polilinea("1F80C", [(0.0, 0.0), (0.55, 0.0), (0.55, 0.2), (0.0, 0.2), (0.0, 0.0)],
+                      layer="MUROS1")  # fmt: skip
+    caja.properties["closed"] = True
+    viga = _vigas([caja, _texto("t", "CI", (0.1, -0.16))])["t"]
+    assert "cajas cerradas (MUROS1 1F80C)" in viga.properties["sin_claro"]
