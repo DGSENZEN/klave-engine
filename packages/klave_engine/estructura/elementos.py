@@ -112,6 +112,8 @@ class Colocacion(BaseModel):
     # etiqueta; o por qué no se midió.
     muro_cm: Dato | None = None
     muro_sin_medir: str | None = None
+    # R193: el muro perpendicular más cercano a la etiqueta (cm, con sus caras), si lo hay.
+    muro_perpendicular_cm: Dato | None = None
 
 
 class Elemento(BaseModel):
@@ -207,6 +209,7 @@ def construir_elementos(
             avisos=avisos,
             muro_cm=_muro_medido(d, meters_factor),
             muro_sin_medir=d.properties.get("muro_sin_medir"),
+            muro_perpendicular_cm=_muro_perpendicular(d, meters_factor),
         )
         base = Elemento(
             element_id=element_id(d, meters_factor),
@@ -398,22 +401,45 @@ def _cm(v: float) -> str:
 
 
 def _muro_medido(d: Detection, factor: float | None) -> Dato | None:
-    """R168: el espesor (cm) del muro que corona la dala de la colocación, medido entre sus dos
-    caras junto a la etiqueta (``detect_beams``), con sus caras por su handle del dibujo."""
+    """R168: el espesor (cm) del muro que corona la dala de la colocación, medido junto a la
+    etiqueta (``detect_beams``), con sus caras por su handle del dibujo. R193: dice cómo se midió
+    — entre las dos caras que tienen la etiqueta en medio, o junto a la etiqueta, desde la cara
+    más cercana a ella (la etiqueta no está sobre su muro) —; nunca «entre sus caras» cuando no
+    fue así."""
     espesor = d.properties.get("muro_espesor")
     if not isinstance(espesor, int | float) or not factor:
         return None
     cm = round(float(espesor) * factor * 100.0, 1)
     caras = list(d.properties.get("muro_caras") or [])
-    entre = (
-        f"entre dos caras de {caras[0]}"
-        if len(caras) == 1
-        else f"entre sus caras {' y '.join(caras)}"
-    )
+    cercana = d.properties.get("muro_cara_cercana")
+    if d.properties.get("muro_medido") == "junto" and cercana:
+        otra = [c for c in caras if c != cercana]
+        hasta = f" a {otra[0]}" if otra else ""
+        texto = f"el muro junto a la etiqueta, desde su cara más cercana {cercana}{hasta}"
+    elif len(caras) == 1:
+        texto = f"el muro bajo la etiqueta, entre dos caras de {caras[0]}"
+    else:
+        texto = f"el muro bajo la etiqueta, entre sus caras {' y '.join(caras)}"
     return Dato(
         valor=_numero(cm),
         fuente="medido",
-        texto=f"el muro bajo la etiqueta, {entre}: {_cm(cm)} cm",
+        texto=f"{texto}: {_cm(cm)} cm",
+        entidades=list(d.source_entities),
+    )
+
+
+def _muro_perpendicular(d: Detection, factor: float | None) -> Dato | None:
+    """R193: el muro perpendicular más cercano a la etiqueta de una dala (cm), con sus caras."""
+    espesor = d.properties.get("muro_perpendicular_espesor")
+    if not isinstance(espesor, int | float) or not factor:
+        return None
+    cm = round(float(espesor) * factor * 100.0, 1)
+    caras = list(d.properties.get("muro_perpendicular_caras") or [])
+    return Dato(
+        valor=_numero(cm),
+        fuente="medido",
+        texto=f"un muro perpendicular de {_cm(cm)} cm junto a la etiqueta (caras "
+        f"{' y '.join(caras)})",
         entidades=list(d.source_entities),
     )
 
@@ -835,6 +861,22 @@ def _variante(
         if v.para_muro_cm is not None
         and abs(v.para_muro_cm - medido.valor) <= _TOLERANCIA_DE_MURO_CM
     ]
+    cruce = col.muro_perpendicular_cm
+    if (
+        cruce is not None
+        and isinstance(cruce.valor, int | float)
+        and abs(float(cruce.valor) - float(medido.valor)) > _TOLERANCIA_DE_MURO_CM
+    ):
+        # R193: junto a la etiqueta llega otro muro, de otro espesor: la dala puede ser la suya.
+        avisos.append(
+            f"variante: {medido.texto}; pero {cruce.texto}: no se sabe cuál de los dos corona; "
+            f"su definición queda con sus variantes juntas (para muros de {espesores} cm)"
+        )
+        dudas.append(
+            f"variante de {marca}: el muro medido ({_cm(float(medido.valor))} cm) y "
+            f"{cruce.texto}, por confirmar"
+        )
+        return propia
     if len(suyas) == 1:
         variante = suyas[0]
         avisos.append(

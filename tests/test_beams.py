@@ -923,6 +923,38 @@ def test_a_dala_tag_between_its_walls_faces_measures_them():
     viga = _vigas(entidades)["t"]
     assert viga.properties["muro_espesor"] == pytest.approx(0.15)
     assert set(viga.properties["muro_caras"]) == {"abajo", "arriba"}
+    assert viga.properties["muro_medido"] == "entre"
+    assert "muro_cara_cercana" not in viga.properties
+
+
+def test_a_dala_tag_beside_its_wall_says_so_and_names_the_nearest_face():
+    # R193: en Marina las 83 «CI» van junto a su muro, nunca entre sus caras: el muro se mide desde
+    # la cara más cercana a la etiqueta (la de abajo, a 0.06) hasta la siguiente, y se dice así.
+    entidades = [
+        _linea("cerca", (0.0, 0.0), (4.0, 0.0), layer="MUROS1"),
+        _linea("lejos", (0.0, -0.20), (4.0, -0.20), layer="MUROS1"),
+        _texto("t", "CI", (1.0, 0.06), alto=0.06),
+    ]
+    viga = _vigas(entidades)["t"]
+    assert viga.properties["muro_espesor"] == pytest.approx(0.20)
+    assert viga.properties["muro_medido"] == "junto"
+    assert viga.properties["muro_cara_cercana"] == "cerca"
+
+
+def test_a_perpendicular_wall_near_the_tag_is_measured_too():
+    # R193 (Marina «CI» A4B29, ES-200): la etiqueta mide 15 cm en su muro y, a 0.27, llega un muro
+    # perpendicular de 30 cm: se mide también, para que la colocación lo diga.
+    entidades = [
+        _linea("abajo", (0.0, -0.05), (4.0, -0.05), layer="MUROS1"),
+        _linea("arriba", (0.0, 0.10), (4.0, 0.10), layer="MUROS1"),
+        _linea("v1", (1.5, 0.10), (1.5, 3.0), layer="MUROS1"),
+        _linea("v2", (1.8, 0.10), (1.8, 3.0), layer="MUROS1"),
+        _texto("t", "CI", (1.2, 0.02), alto=0.06),
+    ]
+    viga = _vigas(entidades)["t"]
+    assert viga.properties["muro_espesor"] == pytest.approx(0.15)
+    assert viga.properties["muro_perpendicular_espesor"] == pytest.approx(0.30)
+    assert set(viga.properties["muro_perpendicular_caras"]) == {"v1", "v2"}
 
 
 def test_a_dala_tag_beside_one_face_does_not_guess_the_wall():

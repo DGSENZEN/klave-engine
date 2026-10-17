@@ -788,6 +788,18 @@ def _ci_variantes():
         # Su muro no se midió: el conflicto sigue y se dice por qué.
         ({"muro_sin_medir": "el muro bajo la etiqueta tiene una sola cara a la vista (1F8EB)"},
          None, True, "una sola cara a la vista (1F8EB)"),
+        # R193: medido junto a la etiqueta (no está sobre su muro): se dice así, con su cara más
+        # cercana, nunca «entre sus caras».
+        ({"muro_espesor": 0.20, "muro_caras": ["1F8EB", "1F83D"], "muro_medido": "junto",
+          "muro_cara_cercana": "1F8EB"}, (20, 20), False,
+         "variante: CI «para muros de 20 cm»: el muro junto a la etiqueta, desde su cara más "
+         "cercana 1F8EB a 1F83D: 20 cm"),
+        # R193 (A4B29): 15 cm en su muro y un muro perpendicular de 30 cm junto a la etiqueta: no se
+        # sabe cuál corona; duda, nunca una variante.
+        ({"muro_espesor": 0.15, "muro_caras": ["1F6F6", "1F6F4"], "muro_medido": "junto",
+          "muro_cara_cercana": "1F6F6", "muro_perpendicular_espesor": 0.30,
+          "muro_perpendicular_caras": ["1F67D", "1F66A"]}, None, True,
+         "un muro perpendicular de 30 cm junto a la etiqueta (caras 1F67D y 1F66A)"),
     ],
 )  # fmt: skip
 def test_a_type_tag_takes_the_variant_of_the_wall_it_crowns(props, seccion, conflicto, aviso):
