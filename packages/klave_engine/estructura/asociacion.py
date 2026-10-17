@@ -1320,19 +1320,11 @@ def _repartir(
                 sombras[r.id].append(a)
 
     def sombra(a: _Alcance, r: _Texto) -> set[str]:
-        # R147: una sección que corta la columna de otra no se queda con lo de más allá: no es
-        # una lista de etiquetas con su pila cada una (lee de un solo lado, el contrario a su
-        # título), así que lo de más allá sigue en disputa.
         return {
             s.marca
             for s in sombras.get(r.id, ())
             if s.marca != a.marca
-            and (
-                s.cortada is None
-                or not s.corte_limpio
-                or s.cortada.marca != a.marca
-                or isinstance(s.cortada, _Seccion)
-            )
+            and (s.cortada is None or not s.corte_limpio or s.cortada.marca != a.marca)
         }
 
     def ajenos(a: _Alcance) -> set[str]:
@@ -1492,7 +1484,6 @@ def _repartir(
                 and mas_alla is not None
                 and (
                     not elegido.corte_limpio
-                    or isinstance(cortada, _Seccion)  # R147: nunca un corte limpio
                     or not any(mas_alla in a.renglones for a in alcances.get(cortada.id, []))
                 )
             ):
@@ -1602,8 +1593,10 @@ def _en_rueda(alcanza: dict[str, set[str]]) -> dict[str, set[str]]:
     return ruedas
 
 
-def _pilas(textos: list[_Texto], de_filas: set[str]) -> _Reparto:
-    """Las pilas de un grupo de textos con la misma dirección, ya repartidas."""
+def _pilas(textos: list[_Texto], de_filas: set[str], titulos: set[str] | None = None) -> _Reparto:
+    """Las pilas de un grupo de textos con la misma dirección, ya repartidas. Con ``titulos``
+    (R189, las pilas bajo secciones: los ids de los títulos de las secciones), lo que cada
+    etiqueta o sección casi alcanza es su columna entera, no sólo su primer renglón: ver abajo."""
     etiquetas = [t for t in textos if t.clase == "etiqueta" and t.id not in de_filas]
     libres = {t.id for t in textos if t.clase == "linea" and t.id not in de_filas}
     lineas = [t for t in textos if t.id in libres]
@@ -1620,24 +1613,46 @@ def _pilas(textos: list[_Texto], de_filas: set[str]) -> _Reparto:
     casi: dict[str, float] = {}  # etiqueta de un lado → hueco a la pila de enfrente del otro
     casi_de: dict[str, set[str]] = defaultdict(set)  # renglón → marcas que lo tienen enfrente
     for e in etiquetas:
+        if titulos is not None and (
+            e.id in titulos
+            or (isinstance(e, _Seccion) and e.seccion is not None and e.seccion.de_cuadro)
+        ):
+            # R189: el título de una sección no tiene otra pila que casi alcance: la suya es la
+            # de su sección; ni la sección de una etiqueta de cuadro, cuya pila ya leyó su
+            # etiqueta (R195).
+            continue
         lados = {a.sentido for a in alcances[e.id]}
         for sentido in set(e.sentidos) - lados:
             cerca = _casi_alcanza(e, sentido, renglones)
             if cerca is None:
                 continue
             casi_de[cerca[1].id].add(e.marca or "")
-            if isinstance(e, _Seccion):
-                # R147: la pila apenas fuera del alcance de una sección es entera su candidata,
-                # no sólo su primer renglón: una columna vecina que sigue en uno de sus renglones
-                # (o en los de su columna más allá de donde se corta) puede llevarse lo de esta
-                # sección. Todos ellos le quedan enfrente (la duda de ``frente``); nada se lee.
+            if len(lados) == 1:
+                casi[e.id] = cerca[0]
+    if titulos is not None:
+        # R189: un renglón es de una sección sólo si nadie más puede tenerlo. El principio de
+        # «casi» (R56: lo que otra etiqueta tiene enfrente apenas fuera de su alcance puede ser
+        # suyo) vale para su columna entera: cada etiqueta y cada sección, hacia cada uno de sus
+        # lados, con el doble de su alcance, tiene enfrente toda la columna que tomaría —sus
+        # renglones y los que siguen más allá de donde se corta—. Una pila con uno de ellos
+        # queda en duda (``frente``); con el alcance de una sección (su lado menor, hasta 22
+        # altos de letra) la columna de una vecina llega a menudo bajo otra. El título de una
+        # sección no: su armado va bajo su sección, del otro lado; el título de un detalle va a
+        # menudo justo bajo la pila del detalle de arriba (CE-4 bajo CE-2 en ES-300). Del lado
+        # de su título, una sección compite aparte (``_del_lado_del_titulo``).
+        # La sección de una etiqueta de cuadro tampoco (R195): su pila ya la leyó su etiqueta;
+        # nada más allá de su alcance puede ser la suya.
+        for e in etiquetas:
+            if e.id in titulos or (
+                isinstance(e, _Seccion) and e.seccion is not None and e.seccion.de_cuadro
+            ):
+                continue
+            for sentido in e.sentidos:
                 lejos = _alcance(
                     replace(e, alto=_CASI * e.alto), sentido, indice, renglones, libres, etiquetas
                 )
                 for t in [*lejos.renglones, *lejos.despues] if lejos is not None else []:
                     casi_de[t.id].add(e.marca or "")
-            if len(lados) == 1:
-                casi[e.id] = cerca[0]
     return _repartir(etiquetas, alcances, casi, casi_de)
 
 
@@ -1971,6 +1986,10 @@ class SeccionDeTitulo:
     sentidos: tuple[int, ...] = (+1, -1)
     # La familia que dice su título (R130), si la dice: con la que se lee su armado.
     familia: str | None = None
+    # R195: la sección de una etiqueta de cuadro que ya tiene su pila (Tarea 6): compite de su
+    # lado, nunca del de su etiqueta (lo de ahí ya lo leyó su etiqueta), y no cuenta para la
+    # costumbre de los títulos.
+    de_cuadro: bool = False
 
 
 @dataclass(eq=False)
@@ -1995,49 +2014,113 @@ class _Seccion(_Texto):
         return []
 
 
-def _junto_a_un_metido(
-    seccion: _Texto, sentido: int, pila: list[_Texto], metidos: list[_Texto]
-) -> bool:
-    """Si la pila de ``seccion`` lleva un renglón metido en el dibujo de una sección, o tiene uno
-    en su columna entre la sección y su primer renglón, entre dos de los suyos o a lo más a 1.5
-    altos de renglón más allá del último (encimado de lado con la pila o con la sección)."""
-    if not metidos or not pila:
-        return False
-    ids = {t.id for t in pila}
-    if any(t.id in ids for t in metidos):
-        return True
-    ultimo = max(pila, key=lambda t: sentido * t.cy)
-    alcance = _HUECO_ENTRE_RENGLONES * ultimo.alto
-    borde = seccion.y0 if sentido < 0 else seccion.y1
-    lejos = (ultimo.y0 - alcance) if sentido < 0 else (ultimo.y1 + alcance)
-    bajo, alto = sorted((borde, lejos))
-    x0 = min([seccion.x0, *(t.x0 for t in pila)])
-    x1 = max([seccion.x1, *(t.x1 for t in pila)])
-    return any(
-        t.y1 > bajo
-        and t.y0 < alto
-        and min(t.x1, x1) - max(t.x0, x0) >= _ENCIMA_MINIMO * min(t.x1 - t.x0, x1 - x0)
-        for t in metidos
+def _del_lado_del_titulo(
+    secciones: list[_Seccion], textos: list[_Texto], estorban: set[str]
+) -> tuple[dict[str, list[tuple[_Seccion, float]]], set[str]]:
+    """R189: lo que cada sección alcanza del lado de su título (o del lado que no lee), con su
+    alcance de siempre y sin que su propio título le estorbe: el título puede estar del lado
+    equivocado (entre la sección y su pila), y entonces la pila de ese lado puede ser la suya.
+    Devuelve, por renglón, las secciones que lo alcanzan así con su hueco, y las secciones de
+    fiar: las que tienen su título en la hoja del lado de la costumbre de la hoja (al menos dos
+    y 80 % de los títulos del mismo lado de su sección, como la costumbre de la Tarea 6)."""
+    lineas = [t for t in textos if t.clase == "linea" and t.id not in estorban]
+    obstaculos = [t for t in textos if t.clase not in ("nada", "linea") or t.id in estorban]
+    renglones = _Indice(lineas)
+    libres = {t.id for t in lineas}
+    etiquetas = [t for t in textos if t.clase == "etiqueta" and t.id not in estorban]
+    presentes = {t.id for t in textos}
+    secciones = [sec for sec in secciones if sec.seccion is None or not sec.seccion.de_cuadro]
+    lados: Counter[int] = Counter()
+    for sec in secciones:
+        if sec.seccion is not None and sec.seccion.titulo_id in presentes:
+            lados[sec.sentidos[0] if len(sec.sentidos) == 1 else 0] += 1
+    costumbre = next(
+        (
+            lado
+            for lado, n in lados.items()
+            if lado and n >= _COSTUMBRE_MINIMA and n >= _COSTUMBRE_PARTE * sum(lados.values())
+        ),
+        None,
     )
+    de_fiar = {
+        sec.id
+        for sec in secciones
+        if sec.seccion is not None
+        and sec.seccion.titulo_id in presentes
+        and sec.sentidos == (costumbre,)
+    }
+    alcanzan: dict[str, list[tuple[_Seccion, float]]] = defaultdict(list)
+    for sec in secciones:
+        otros_lados = [lado for lado in (+1, -1) if lado not in sec.sentidos]
+        if not otros_lados:
+            continue
+        propio = sec.seccion.titulo_id if sec.seccion is not None else ""
+        indice = _Indice([*lineas, *(t for t in obstaculos if t.id != propio)])
+        rivales = [t for t in etiquetas if t.id != propio]
+        for lado in otros_lados:
+            a = _alcance(sec, lado, indice, renglones, libres, [*rivales, *secciones])
+            if a is None:
+                continue
+            for t in [*a.renglones, *a.despues]:
+                alcanzan[t.id].append((sec, a.hueco))
+    return alcanzan, de_fiar
 
 
-def _en_otra_columna(
-    seccion: _Texto, sentido: int, pila: list[_Texto], secciones: list[_Seccion]
+def _la_tiene_otra_de_su_titulo(
+    seccion: _Seccion,
+    hueco: float,
+    pila: list[_Texto],
+    alcanzan: dict[str, list[tuple[_Seccion, float]]],
+    de_fiar: set[str],
 ) -> bool:
-    """Si un renglón de la pila de ``seccion`` está también en la columna de otra sección que lee
-    hacia el mismo lado: más allá de ella, encimado de lado con su caja en al menos la mitad del
-    más angosto, y no más lejos de ella que de ``seccion``. Ese renglón (el renglón largo de una
-    pila que llega bajo la sección de al lado) puede ser de cualquiera de las dos."""
+    """R189: si otra sección alcanza un renglón de la pila de ``seccion`` del lado de su título
+    (``_del_lado_del_titulo``): la pila puede ser suya si su título está del lado equivocado. Si
+    la otra es de fiar (su título va del lado de la costumbre de la hoja) sólo cuando está
+    claramente más pegada (más allá del empate de lados opuestos, 25 %): CE-3 bajo la pila de
+    CE-1 en ES-100, 0.82 contra 0.71, no se la quita. Si no es de fiar, siempre."""
     for t in pila:
-        hueco_propio = seccion.y0 - t.y1 if sentido < 0 else t.y0 - seccion.y1
-        for o in secciones:
-            if o is seccion or sentido not in o.sentidos:
+        for otra, suyo in alcanzan.get(t.id, ()):
+            if otra is seccion:
                 continue
-            hueco = o.y0 - t.y1 if sentido < 0 else t.y0 - o.y1
-            if hueco < -_TRASLAPE * t.alto or hueco > hueco_propio:
+            if otra.id not in de_fiar:
+                return True
+            if suyo < hueco and not _casi_igual(suyo, hueco, t.alto, _EMPATE_OPUESTO):
+                return True
+    return False
+
+
+def _columna_ajena(seccion: _Texto, sentido: int, pila: list[_Texto], otros: list[_Texto]) -> bool:
+    """R189: si la pila de ``seccion`` no es su columna contigua y cerrada: si entre la sección y
+    su primer renglón, o entre dos de sus renglones, hay otro texto (o la caja de otra sección)
+    encimado de lado, en al menos la mitad del más angosto, con lo que tiene antes o con lo que
+    sigue —la pila se tomó saltándolo (prefirió un renglón de enfrente más lejano, o dio la vuelta
+    a una etiqueta): no se sabe si lo saltado es suyo, ni si lo que tomó lo es—, o si algo así
+    sigue a su último renglón a menos de un hueco entre renglones (la columna llega a otro
+    detalle: lo del final puede ser de él)."""
+    ids = {t.id for t in pila} | {seccion.id}
+    cadena = [seccion, *sorted(pila, key=lambda t: sentido * t.cy)]
+    # ... ni acaba limpio: lo que sigue a su último renglón, a menos de un hueco entre renglones
+    # (otro texto, o la caja de otra sección: la columna llega a otro detalle), puede seguirla.
+    ultimo = cadena[-1]
+    margen = _HUECO_ENTRE_RENGLONES * ultimo.alto
+    lejos = (ultimo.y1, ultimo.y1 + margen) if sentido > 0 else (ultimo.y0 - margen, ultimo.y0)
+    for u in otros:
+        if u.id in ids or u.y1 <= lejos[0] or u.y0 >= lejos[1]:
+            continue
+        comun = min(u.x1, ultimo.x1) - max(u.x0, ultimo.x0)
+        if comun >= _ENCIMA_MINIMO * min(u.x1 - u.x0, ultimo.x1 - ultimo.x0):
+            return True
+    for antes, despues in zip(cadena, cadena[1:], strict=False):
+        bajo, alto = (antes.y1, despues.y0) if sentido > 0 else (despues.y1, antes.y0)
+        if alto <= bajo:
+            continue
+        for u in otros:
+            if u.id in ids or u.y1 <= bajo or u.y0 >= alto:
                 continue
-            comun = min(t.x1, o.x1) - max(t.x0, o.x0)
-            if comun >= _ENCIMA_MINIMO * min(t.x1 - t.x0, o.x1 - o.x0):
+            if any(
+                min(u.x1, v.x1) - max(u.x0, v.x0) >= _ENCIMA_MINIMO * min(u.x1 - u.x0, v.x1 - v.x0)
+                for v in (antes, despues)
+            ):
                 return True
     return False
 
@@ -2056,12 +2139,19 @@ def asociar_secciones(
     las etiquetas, así que dos secciones vecinas nunca mezclan sus textos: lo dudoso no es de
     nadie. Sólo son renglones los textos de ``libres`` (los que nadie leyó ni nombra: «sin
     dueño»); todo lo demás —leído, rechazado con marcas, notas, llamadas— estorba. Sólo los
-    textos derechos (a 0°) apilan bajo una sección. Una sección nunca corta limpio la pila de
-    otra (siempre deja la duda), y una pila queda en duda —no se lee— si lleva un renglón metido
-    en el dibujo de una sección o sigue junto a uno, o si uno de sus renglones está también en la
-    columna de otra sección que lee hacia el mismo lado, no más lejos de ella. Devuelve las pilas
-    tomadas por las secciones que se leen (por su título: ``etiqueta_id`` es el título, ``marca``
-    la suya) y los renglones en disputa entre una sección y otra marca (con sus marcas)."""
+    textos derechos (a 0°) apilan bajo una sección.
+
+    R189, el principio: un renglón es de una sección sólo si ningún otro lector puede tenerlo.
+    Una pila queda en duda —no se lee, y sus renglones llevan las marcas como «posible»— si:
+    otra etiqueta o sección la tiene enfrente con el doble de su alcance (lo que casi alcanza,
+    R56, con su columna entera); otra sección la alcanza del lado de su título (que puede estar
+    del lado equivocado), salvo que su título vaya del lado de la costumbre de la hoja y no
+    esté claramente más pegada; su primer renglón no está enfrente de la sección (sólo en su
+    ensanche: una caja dibujada no se ensancha); o no es su columna contigua y cerrada (la tomó
+    saltando otro texto o la caja de otra sección, o algo así la sigue a menos de un hueco entre
+    renglones). Devuelve las pilas tomadas por las secciones que se leen (por su título:
+    ``etiqueta_id`` es el título, ``marca`` la suya) y los renglones en disputa entre una sección
+    y otra marca (con sus marcas)."""
     textos = [e for e in entities if e.is_textual and e.text and e.text.strip()]
     if not secciones or not textos:
         return [], {}
@@ -2124,28 +2214,24 @@ def asociar_secciones(
             por_id[seccion.id] = seccion
         if not por_id:
             continue
-        # Un renglón metido en el dibujo de una sección (sobre su caja) es de ese dibujo: no se
-        # sabe de qué pila es. Una pila que lo lleva o que sigue (o empieza) en su columna junto a
-        # él queda en duda: nunca a medias ni con lo ajeno.
-        metidos = [
-            t
-            for t in locales
-            if t.clase == "linea"
-            and t.id not in estorban
-            and any(
-                min(t.x1, c.x1) > max(t.x0, c.x0) and min(t.y1, c.y1) > max(t.y0, c.y0)
-                for c in por_id.values()
-            )
-        ]
-        reparto = _pilas([*locales, *por_id.values()], estorban)
+        reparto = _pilas([*locales, *por_id.values()], estorban, titulos=set(del_titulo))
+        del_titulo_alcanzan, de_fiar = _del_lado_del_titulo(
+            list(por_id.values()), locales, estorban
+        )
         for alcance, propios in reparto.tomadas:
             la_seccion = por_id.get(alcance.etiqueta.id)
             dato = la_seccion.seccion if la_seccion is not None else None
             if la_seccion is None or dato is None or not dato.lee:
                 continue
-            if _junto_a_un_metido(
-                la_seccion, alcance.sentido, propios, metidos
-            ) or _en_otra_columna(la_seccion, alcance.sentido, propios, list(por_id.values())):
+            if (
+                not alcance.frontal
+                or _columna_ajena(
+                    la_seccion, alcance.sentido, propios, [*locales, *por_id.values()]
+                )
+                or _la_tiene_otra_de_su_titulo(
+                    la_seccion, alcance.hueco, propios, del_titulo_alcanzan, de_fiar
+                )
+            ):
                 disputados.update({t.id: {dato.marca} for t in propios})
                 continue
             orden = propios[::-1] if alcance.sentido > 0 else propios

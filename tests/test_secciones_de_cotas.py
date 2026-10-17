@@ -2162,3 +2162,21 @@ def test_only_a_titles_own_subtitle_makes_a_variant(muros):
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
     assert [s.para_muro_cm for s in _cotas(inv, "CI")] == [None]
     assert construir_definiciones(inv, C)[0]["CI"].variantes == []
+
+
+def test_a_rectangle_whose_fourth_corner_is_not_drawn_is_never_claimed():
+    # R164, R191: sus dos cotas tienen sus puntos sobre lo dibujado y dos de sus aristas están
+    # dibujadas (abajo y a la izquierda), pero su esquina de arriba a la derecha no está sobre
+    # ninguna línea (una L, no un rectángulo): no es la sección de nadie; el «E#3@15» de abajo no
+    # es de T-1 (sin la regla de las esquinas, T-1 lo reclamaba).
+    ents = [
+        _titulo("t", "T-1", 0.1, 2.17, alto=0.14),
+        _linea("abajo", (0.0, 0.0), (1.0, 0.0)),
+        _linea("izq", (0.0, 0.0), (0.0, 2.0)),
+        _linea("arriba", (0.0, 2.0), (0.4, 2.0)),
+        _cota("h", (0.0, 0.0), (1.0, 0.0), 20),
+        _cota("v", (0.0, 2.0), (0.0, 0.0), 50),
+        _texto("e", "E#3@15", 0.5, -0.387, alto=0.11),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"} == {"E#3@15": []}

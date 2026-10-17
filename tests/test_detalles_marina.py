@@ -130,9 +130,8 @@ def test_each_ci_title_is_its_walls_variant(marina, handle):
 
 # R147: cada pila bajo la sección propia de un título de Marina, contra la verdad del dibujo
 # (los textos bajo su sección, de arriba abajo, sin las llamadas): sus renglones por su handle,
-# su marca, su hoja y lo que se lee. T2-8 (longitudinales), T3-19 y T4-4 (estribos) no leen un
-# campo que su detalle también escribe fuera de la pila (o que se le atribuye: «4#8» del alzado de
-# T2-7, las mallas del detalle LM-T): lo citan y lo reclaman.
+# su marca, su hoja y lo que se lee. T2-8 no lee sus longitudinales: un texto que puede ser suyo
+# («4#8», que R140 le atribuye del alzado de T2-7) va fuera de la pila; lo cita y lo reclama.
 _PILAS = [
     (["CFF58"], "CTA-13", "ES-004", None, "2E#4@15"),
     (["36E92"], "CTA-14", "ES-004", None, "E#4@20"),
@@ -171,7 +170,6 @@ _PILAS = [
     (["8F540"], "T3-1A", "ES-301", None, "E#4@15"),
     (["4B94F"], "T3-4", "ES-301", None, "E#3@18"),
     (["90095"], "T3-18", "ES-302", None, "E#3@15"),
-    (["901BC"], "T3-19", "ES-302", None, None),
     (["4EED6", "4EEDA"], "CE-1", "ES-400", "4#3", "E#2@15"),
     (["4EF07", "4EF0B"], "CE-2", "ES-400", "6#3", "E#2@15"),
     (["72B71", "72B75"], "CE-3", "ES-400", "6#4", "E#3@14"),
@@ -180,7 +178,6 @@ _PILAS = [
     (["4EFF7", "4EFF8"], "CI", "ES-400", "4#3", "E#2@15"),
     (["4F0D2", "4F0D3"], "CR-1", "ES-400", "4#3", "E#2@15"),
     (["4F0E9"], "CR-2", "ES-400", None, "E#2@15"),
-    (["4B692"], "T4-4", "ES-401", None, None),
 ]
 
 
@@ -198,11 +195,13 @@ def test_every_marina_stack_under_a_section_is_the_drawings(marina):
             assert not {r.entidad_id for r in inv.rechazos} & set(s.entidades)
 
 
-@pytest.mark.parametrize("handle", ["B6B0A", "B8F9A", "A955A", "4C584"])
+@pytest.mark.parametrize("handle", ["B6B0A", "B8F9A", "A955A", "4C584", "901BC", "4B692"])
 def test_claimed_or_doubtful_stacks_stay_unread(marina, handle):
     # T1-1 «2E#3@15» y T1-6 «E#3@14» (sus secciones, reclamadas: sus lados pasan sus esquinas,
     # R118), T2-4 «2E#3» (reclamada, en su esquina) y T3-17 «E#3» (junto a su esquina; su alzado
-    # escribe «@12»): nadie los lee; siguen siendo bloqueos «posible» de su título.
+    # escribe «@12»): nadie los lee; siguen siendo bloqueos «posible» de su título. R189: T3-19
+    # «E#3» y T4-4 «E#3@15» van bajo su sección pero a un lado (menos de la mitad de su texto sobre
+    # ella): una sección sólo toma de enfrente; antes se leían y su campo se vetaba.
     inv, ids = marina
     assert _leida_por(inv, ids[handle]) == set()
     assert _posibles(inv, ids[handle])
@@ -227,3 +226,17 @@ def test_each_ci_variant_reads_its_own_armado(marina):
         20.0: ([(4, "3")], [(1, "2", 0.15)], "detalle"),
         30.0: ([(6, "3")], [(1, "2", 0.15)], "detalle"),
     }
+
+
+@pytest.mark.parametrize(
+    "marca,hoja,otra", [("CE-1", "ES-100", "CE-3"), ("CE-2", "ES-100", "CE-3"),
+                        ("CE-2", "ES-300", "CE-4")],
+)  # fmt: skip
+def test_a_line_r140_gave_another_mark_is_said_when_read(marina, marca, hoja, otra):
+    # R192: B79B6, B79E7 y 8A18A los atribuía R140 también a la marca de abajo; se leen bajo su
+    # sección, y se dice.
+    inv, _ids = marina
+    (pila,) = [s for s in inv.specs if s.metodo == "pila" and s.mark == marca and s.hoja == hoja]
+    assert f"pila bajo su sección: se lee como de {marca}; antes se atribuía también a {otra}" in (
+        pila.avisos
+    )

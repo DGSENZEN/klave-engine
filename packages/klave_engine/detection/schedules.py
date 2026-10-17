@@ -93,6 +93,7 @@ from klave_engine.estructura.reglas import leer_reglas
 from klave_engine.estructura.textos import (
     alto_de_texto,
     ancla_texto,
+    caja_de_texto,
     extension_de_texto,
 )
 from klave_engine.geometry.bbox import (
@@ -1502,8 +1503,11 @@ _MARGEN = 1.25
 _ENCIMA_MINIMO = 1 / 3
 # R165: the same for a claimed box of cotas (R158), which only attributes armado.
 _ENCIMA_RECLAMADA = 1 / 4
-# R164: a title whose text ends this close (in its heights, R115's tolerance) to the edge two
-# dimensioned pieces share stands at their boundary: which one is its own section is not known.
+# R164: a title whose text ends this close (in its own text heights, R115's tolerance) to the edge
+# two dimensioned pieces share stands at their boundary: which one is its own section is not known.
+# R195, the margin on Marina: T3-8's title (0.14 high) ends 0.054 short of the junction, inside the
+# 0.07 tolerance by 0.016 — 11 % of its letter height; a text-width estimate 2 % wider or narrower
+# over its 4 letters would not flip it. Claimed boxes are blocks only, so a flip moves no reading.
 _EN_LA_JUNTA = 0.5
 # R123: an outline without cotas is a section only when it looks like one: four corners, both
 # sides at least this many title heights, and no longer than this many times its width.
@@ -2911,16 +2915,15 @@ def _secciones_para_pilas(
     section (in a detail frame, a detail title of a planta, R145, or a planta's label over its
     section) is read, on the side away from its title; another label's own section competes on
     that side only. A label that owns a stack of its own (Task 6: a cuadro's label, its stack
-    between it and its section) is no section here: its stack is read and its label competes as
-    a label. A claimed section competes on the side away from its title, one nobody owns on both
-    (so that their armado never goes to a neighbour); nothing is read from them."""
-    archivos = {e.source_file for e in entities}
-    unico = next(iter(archivos)) if len(archivos) == 1 else None
+    between it and its section) is read by its stack; its section still competes (R195), never
+    read. A claimed section competes on the side away from its title, one nobody owns on both
+    (so that their armado never goes to a neighbour); nothing is read from them. Every section
+    carries its file (R188): a free one, the file of the lines and cotas that draw it."""
     salida: list[SeccionDeTitulo] = []
     vistas: set[tuple[str, tuple[float, ...]]] = set()
     for e, caja in duenas:
         clave = (e.texto.entity_id, tuple(round(v, 6) for v in caja))
-        if clave in vistas or e.texto.entity_id in duenos:
+        if clave in vistas:
             continue
         vistas.add(clave)
         encima = e.y > (caja[1] + caja[3]) / 2
@@ -2933,10 +2936,13 @@ def _secciones_para_pilas(
                 # A detail's title (in a detail frame, R145), or a planta's label over its section
                 # (CR-2 on ES-200, whose callouts beside it made it a cuadro's label): its armado
                 # is written under its section. A cuadro's label under its section (its stack in
-                # between, Task 6) never reads past its section.
-                lee=e.en_detalle or e.texto.entity_id in titulos or encima,
+                # between, Task 6) never reads past its section; one that owns its stack is read
+                # by it (R195: its section competes).
+                lee=e.texto.entity_id not in duenos
+                and (e.en_detalle or e.texto.entity_id in titulos or encima),
                 sentidos=(-1,) if encima else (+1,),
                 familia=e.familia,
+                de_cuadro=e.texto.entity_id in duenos,
             )
         )
     for e, caja in reclamadas:
@@ -2951,13 +2957,46 @@ def _secciones_para_pilas(
                 sentidos=(-1,) if e.y > centro else (+1,),
             )
         )
-    if unico is not None:
-        tomadas = [caja for _e, caja in [*duenas, *reclamadas]]
-        salida += [
-            SeccionDeTitulo(marca="", caja=caja, archivo=unico, lee=False)
-            for caja in dict.fromkeys(libres)
-            if not any(_misma_caja(caja, o, 1e-6) for o in tomadas)
-        ]
+    tomadas = [caja for _e, caja in [*duenas, *reclamadas]]
+    sueltas = [
+        caja
+        for caja in dict.fromkeys(libres)
+        if not any(_misma_caja(caja, o, 1e-6) for o in tomadas)
+    ]
+    de_archivo = _archivos_de_cajas(sueltas, entities)
+    salida += [
+        SeccionDeTitulo(marca="", caja=caja, archivo=archivo, lee=False)
+        for caja in sueltas
+        if (archivo := de_archivo.get(caja)) is not None
+    ]
+    return salida
+
+
+def _archivos_de_cajas(cajas: list[BBox], entities: list[NormalizedEntity]) -> dict[BBox, str]:
+    """R188: the file of each drawn box: the most common file among the lines, polylines and cotas
+    that lie on it (within it, a hundredth of its larger side of slack). A project passes all
+    its files to the inventory; a free section competes only with the texts of its own file."""
+    if not cajas:
+        return {}
+    trazos = [
+        e
+        for e in _cerca_de(entities, cajas)
+        if e.entity_type in (EntityType.line, EntityType.polyline, EntityType.dimension)
+    ]
+    salida: dict[BBox, str] = {}
+    for caja in cajas:
+        x0, y0, x1, y1 = caja
+        holgura = 0.01 * max(x1 - x0, y1 - y0)
+        cuenta = Counter(
+            e.source_file
+            for e in trazos
+            if e.bbox[0] >= x0 - holgura
+            and e.bbox[2] <= x1 + holgura
+            and e.bbox[1] >= y0 - holgura
+            and e.bbox[3] <= y1 + holgura
+        )
+        if cuenta:
+            salida[caja] = cuenta.most_common(1)[0][0]
     return salida
 
 
@@ -4100,6 +4139,117 @@ def _junto_a_su_seccion(
                 r.posibles = sorted(marcas)
 
 
+def _encerrados(
+    candidatos: list[NormalizedEntity],
+    secciones: list[SeccionDeTitulo],
+    entities: list[NormalizedEntity],
+) -> set[str]:
+    """R190: the candidate stack lines another drawing encloses. A line in a read section's
+    column on its reading side, within twice its reach (its smaller side), is inside a drawing —
+    an elevation's bar label, «2#8» 0.18 under its top line —, not under the section, when drawn
+    lines (or polyline edges, never a cota or a leader) close around it: one across it above and
+    one below within that reach, and one on each side spanning its height, within the extent of
+    those two (four sides of a drawing). (An elevation drawn beside a section, ``_alzados``,
+    never holds a stack line: a stack's first line must be over its section, R189.) The
+    section's own drawing never counts: its outline, what lies inside its box and the linework
+    joined to it end to end (a CE's wall hanging from its section). A CE's stack on Marina has a
+    break line above it and the next drawing's lines below it (CE-2 on ES-200: 98049 above,
+    98027 and 98028 below), and nothing at its sides: a stack."""
+    leen = [sec for sec in secciones if sec.lee]
+    if not candidatos or not leen:
+        return set()
+    ventanas = []
+    for sec in leen:
+        x0, y0, x1, y1 = sec.caja
+        r = 3 * max(x1 - x0, y1 - y0)  # an elevation runs long: its ends too
+        ventanas.append((x0 - r, y0 - r, x1 + r, y1 + r))
+    tramos: list[tuple[tuple[float, float], tuple[float, float], str]] = []
+    for e in _cerca_de(entities, ventanas):
+        if e.entity_type not in (EntityType.line, EntityType.polyline) or e.is_annotation:
+            continue
+        puntos = [(float(q[0]), float(q[1])) for q in e.points or []]
+        if e.entity_type == EntityType.polyline and e.is_closed and len(puntos) > 2:
+            puntos.append(puntos[0])
+        tramos += [(a, b, e.source_file) for a, b in zip(puntos, puntos[1:], strict=False)]
+    salida: set[str] = set()
+    for sec in leen:
+        x0, y0, x1, y1 = sec.caja
+        alcance = min(x1 - x0, y1 - y0)
+        suyos = _dibujo_de(sec, tramos)
+        ajenos = [
+            (a, b)
+            for k, (a, b, archivo) in enumerate(tramos)
+            if k not in suyos and archivo == sec.archivo
+        ]
+        cruzan = [
+            (min(a[0], b[0]), max(a[0], b[0]), (a[1] + b[1]) / 2)
+            for a, b in ajenos
+            if abs(b[1] - a[1]) <= 0.05 * abs(b[0] - a[0])
+        ]
+        de_pie = [
+            ((a[0] + b[0]) / 2, min(a[1], b[1]), max(a[1], b[1]))
+            for a, b in ajenos
+            if abs(b[0] - a[0]) <= 0.05 * abs(b[1] - a[1])
+        ]
+        for t in candidatos:
+            if t.source_file != sec.archivo or t.entity_id in salida:
+                continue
+            (ax, ay), (dx0, dx1, dy0, dy1, _a) = ancla_texto(t), caja_de_texto(t, 0.0)
+            tx0, tx1, ty0, ty1 = ax + dx0, ax + dx1, ay + dy0, ay + dy1
+            if min(tx1, x1) <= max(tx0, x0):
+                continue
+            debajo = -1 in sec.sentidos and y0 - 2 * alcance <= ty1 <= y0
+            encima = +1 in sec.sentidos and y1 <= ty0 <= y1 + 2 * alcance
+            if not (debajo or encima):
+                continue
+            sobre = [(a, b) for a, b, y in cruzan if min(b, tx1) - max(a, tx0) >= 0.5 * (tx1 - tx0)
+                     and ty1 <= y <= ty1 + alcance]  # fmt: skip
+            bajo = [(a, b) for a, b, y in cruzan if min(b, tx1) - max(a, tx0) >= 0.5 * (tx1 - tx0)
+                    and ty0 - alcance <= y <= ty0]  # fmt: skip
+            lados = [x for x, v0, v1 in de_pie if v0 <= ty0 and v1 >= ty1]
+            if any(
+                any(max(s0, b0) <= x <= tx0 for x in lados)
+                and any(tx1 <= x <= min(s1, b1) for x in lados)
+                for s0, s1 in sobre
+                for b0, b1 in bajo
+            ):
+                salida.add(t.entity_id)
+    return salida
+
+
+def _dibujo_de(
+    sec: SeccionDeTitulo, tramos: list[tuple[tuple[float, float], tuple[float, float], str]]
+) -> set[int]:
+    """R190: the segments of a section's own drawing: those inside its box or with an end on its
+    outline, and those joined end to end to them (its hanging wall, its leaders' landings) — a
+    few links deep, never a whole sheet's linework."""
+    x0, y0, x1, y1 = sec.caja
+    tol = 0.01 * max(x1 - x0, y1 - y0)
+
+    def dentro(p: tuple[float, float]) -> bool:
+        return x0 - tol <= p[0] <= x1 + tol and y0 - tol <= p[1] <= y1 + tol
+
+    suyos = {
+        k
+        for k, (a, b, archivo) in enumerate(tramos)
+        if archivo == sec.archivo and (dentro(a) or dentro(b))
+    }
+    puntas = [p for k in suyos for p in tramos[k][:2]]
+    for _vuelta in range(4):
+        nuevos = {
+            k
+            for k, (a, b, archivo) in enumerate(tramos)
+            if k not in suyos
+            and archivo == sec.archivo
+            and any(math.dist(a, q) <= tol or math.dist(b, q) <= tol for q in puntas)
+        }
+        if not nuevos:
+            break
+        suyos |= nuevos
+        puntas = [p for k in nuevos for p in tramos[k][:2]]
+    return suyos
+
+
 def _pilas_de_secciones(
     entities: list[NormalizedEntity],
     frames: list[SheetFrame],
@@ -4127,8 +4277,11 @@ def _pilas_de_secciones(
     for r in rechazos:
         motivos[r.entidad_id].add(r.motivo)
     libres = {i for i, m in motivos.items() if m == {"sin_dueno"} and i not in consumidas}
-    asociaciones, disputados = asociar_secciones(entities, frames, config, secciones, libres)
     por_id = {e.entity_id: e for e in entities}
+    # R190: a line another drawing's linework encloses is that drawing's (an elevation's bar
+    # label): an obstacle, never a stack line.
+    libres -= _encerrados([por_id[i] for i in libres if i in por_id], secciones, entities)
+    asociaciones, disputados = asociar_secciones(entities, frames, config, secciones, libres)
     de_titulo = {s.titulo_id: s for s in secciones if s.lee}
     leidos = {
         (i, _plano(t)) for a in asociaciones for i, t in zip(a.entidades, a.textos, strict=True)
@@ -4168,12 +4321,27 @@ def _pilas_de_secciones(
             setattr(armado, campo, [])
             lectura[clave] = None
             de_la_pila = [t for t in a.textos if campo in campos_de_fragmento(t, family)]
+            # R192: a doubt, never a fact — the text outside may be the detail's (an elevation,
+            # a callout) or only attributed to it.
+            vistos = list(dict.fromkeys(otros))
             lectura["avisos"].append(
-                f"{campo}: no se lee de la pila bajo su sección («"
-                + "», «".join(de_la_pila)
-                + f"»): el detalle de {a.marca} lo escribe también fuera de ella («"
-                + "», «".join(dict.fromkeys(otros[:6]))
-                + ("», …)" if len(dict.fromkeys(otros)) > 6 else "»)")
+                f"{campo}: un texto que puede ser de {a.marca} fuera de la pila bajo su sección («"
+                + "», «".join(vistos[:6])
+                + ("», …" if len(vistos) > 6 else "»")
+                + f"): no se lee de la pila («{'», «'.join(de_la_pila)}»)"
+            )
+        # R192: a line that R140 had attributed to another mark, read here under this one.
+        otras_marcas = {
+            m
+            for r in rechazos
+            if (r.entidad_id, _plano(r.texto)) in suyos
+            for m in r.posibles
+            if m and _normal(m, config) != marca
+        }
+        if otras_marcas:
+            lectura["avisos"].append(
+                f"pila bajo su sección: se lee como de {a.marca}; antes se atribuía también a "
+                + ", ".join(sorted(otras_marcas))
             )
         salida.append(
             ElementSpec(
