@@ -255,6 +255,103 @@ class _GeminiSheetRead(BaseModel):
         return SheetRead.model_validate(data)
 
 
+class _ValorClaude(BaseModel):
+    family: str
+    value: float
+
+
+class _ElementoClaude(BaseModel):
+    mark: str = Field(description="Marca tal como aparece: K-1, T1-8, CTA-16, MC-2")
+    family: str = Field(
+        description="castillo | columna | trabe | contratrabe | dala | cerramiento | zapata | "
+        "dado | pilote | muro_concreto | losa | otro"
+    )
+    section_cm: str = Field(description="base x peralte en cm (30x80); cadena vacía si no aparece")
+    rebar: str = Field(description="armado longitudinal (4#4); cadena vacía si no aparece")
+    stirrups: str = Field(description="estribos (E#2@20); cadena vacía si no aparece")
+    length_m: float | None = Field(description="longitud declarada en m (pilotes); null si no")
+    note: str = Field(description="de dónde se leyó, abreviado; cadena vacía si no hace falta")
+    confidence: float = Field(ge=0, le=1)
+
+
+class _ConteoClaude(BaseModel):
+    family: str = Field(
+        description="castillo | columna | trabe | contratrabe | dala | cerramiento | "
+        "zapata | pilote | escalera"
+    )
+    drawn_count: int = Field(
+        ge=0,
+        description="instancias DIBUJADAS en la planta (símbolos o marcas repetidas); "
+        "los renglones de un cuadro y las viñetas de detalle NO cuentan",
+    )
+    note: str = Field(description="dónde se concentran; cadena vacía si no ayuda")
+
+
+class _ClaudeSheetRead(BaseModel):
+    """SheetRead's wire shape for Claude's structured outputs. The API compiles
+    the schema into a grammar, and every optional field and every union
+    (``anyOf`` / nullable) multiplies it: SheetRead as is (19 optional, 13
+    unions) came back 400 «Schema is too complex». Here every field is
+    required, a text that is not on the sheet is an empty string, only the
+    three numbers that can be absent are nullable, and the two per-family
+    dicts travel as keyed lists (a ``dict`` became an empty object the model
+    could never fill). It converts back on arrival."""
+
+    sheet_code: str = Field(description="Clave en el cajetín (ES-100); cadena vacía si no aparece")
+    title: str = Field(description="Título de la hoja en el cajetín; cadena vacía si no aparece")
+    level: str = Field(description="Nivel o planta (PLANTA BAJA, N+3.20); cadena vacía si no")
+    scale: str = Field(description="Escala declarada (1:50); cadena vacía si no aparece")
+    concrete_fc: list[_ValorClaude] = Field(
+        description="f'c en kg/cm² por familia (cimentacion, losa, castillo…); vacía si no aparece"
+    )
+    steel_fy: int | None = Field(description="fy del acero en kg/cm²; null si no aparece")
+    cover_cm: list[_ValorClaude] = Field(
+        description="recubrimientos en cm por familia; vacía si no aparece"
+    )
+    desplante_m: float | None = Field(description="profundidad de desplante en m; null si no")
+    slab_system: str = Field(
+        description="sistema de losa declarado (vigueta y bovedilla 12-5, reticular…); "
+        "cadena vacía si no aparece"
+    )
+    elements: list[_ElementoClaude]
+    conteo: list[_ConteoClaude] = Field(
+        description="conteo por familia de instancias dibujadas en la planta; vacía en hojas "
+        "de puros detalles/cuadros"
+    )
+    notes: list[str] = Field(description="notas generales relevantes")
+    uncertainties: list[str] = Field(description="lo ilegible o dudoso en la imagen")
+
+    def to_sheet_read(self) -> SheetRead:
+        def texto(valor: str) -> str | None:
+            return valor.strip() or None
+
+        return SheetRead(
+            sheet_code=texto(self.sheet_code),
+            title=texto(self.title),
+            level=texto(self.level),
+            scale=texto(self.scale),
+            concrete_fc={v.family: int(v.value) for v in self.concrete_fc if v.family},
+            steel_fy=self.steel_fy,
+            cover_cm={v.family: v.value for v in self.cover_cm if v.family},
+            desplante_m=self.desplante_m,
+            slab_system=texto(self.slab_system),
+            elements=[
+                ElementRead(
+                    mark=e.mark, family=e.family, section_cm=texto(e.section_cm),
+                    rebar=texto(e.rebar), stirrups=texto(e.stirrups), length_m=e.length_m,
+                    note=texto(e.note), confidence=e.confidence,
+                )
+                for e in self.elements
+            ],
+            conteo=[
+                FamilyCount(family=c.family, drawn_count=c.drawn_count, note=texto(c.note))
+                for c in self.conteo
+            ],
+            notes=self.notes,
+            uncertainties=self.uncertainties,
+        )
+
+
 def gemini_reader(client: Any | None = None, model: str = GEMINI_MODEL) -> Reader:
     """The Gemini reader: same contract, structured output via response_schema."""
     from google import genai
@@ -358,7 +455,7 @@ def anthropic_reader(client: Any | None = None, model: str = ANTHROPIC_MODEL) ->
                     ],
                 }
             ],
-            output_format=SheetRead,
+            output_format=_ClaudeSheetRead,
             **_respaldo(model),
         )
         _si_declino(response)
@@ -371,7 +468,7 @@ def anthropic_reader(client: Any | None = None, model: str = ANTHROPIC_MODEL) ->
             "input_tokens": int(getattr(response.usage, "input_tokens", 0) or 0),
             "output_tokens": int(getattr(response.usage, "output_tokens", 0) or 0),
         }
-        return parsed, usage
+        return parsed.to_sheet_read(), usage
 
     return read
 

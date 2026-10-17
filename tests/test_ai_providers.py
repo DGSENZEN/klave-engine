@@ -126,9 +126,13 @@ def _respuesta(**campos):
 
 
 def test_la_lectura_de_claude_pide_opus_5_5_con_respaldo_y_esfuerzo_alto():
-    from klave_engine.llm.reader import anthropic_reader
+    from klave_engine.llm.reader import _ClaudeSheetRead, anthropic_reader
 
-    leida = SheetRead(sheet_code="ES-100")
+    leida = _ClaudeSheetRead(
+        sheet_code="ES-100", title="", level="", scale="", concrete_fc=[], steel_fy=None,
+        cover_cm=[], desplante_m=None, slab_system="", elements=[], conteo=[], notes=[],
+        uncertainties=[],
+    )
     client = _FakeAnthropic(_respuesta(parsed_output=leida))
     parsed, usage = anthropic_reader(client=client)(b"\x89PNG fake", "Hoja ES-100")
     assert parsed.sheet_code == "ES-100"
@@ -137,7 +141,7 @@ def test_la_lectura_de_claude_pide_opus_5_5_con_respaldo_y_esfuerzo_alto():
     assert call["model"] == "claude-opus-5-5" == ANTHROPIC_MODEL
     assert call["fallbacks"] == "default"
     assert call["betas"] == ["server-side-fallback-2026-07-01"]
-    assert call["output_format"] is SheetRead
+    assert call["output_format"].__name__ == "_ClaudeSheetRead"
     assert call["output_config"] == {"effort": "high"}
     assert call["messages"][-1]["role"] == "user"  # sin prefill: el último turno es del usuario
 
@@ -193,3 +197,56 @@ def test_una_llave_sin_espacio_de_trabajo_lleva_el_encabezado_si_se_declara(monk
     assert "anthropic-workspace-id" not in _cliente_anthropic().default_headers
     monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", " wrkspc_123 ")
     assert _cliente_anthropic().default_headers["anthropic-workspace-id"] == "wrkspc_123"
+
+
+def test_el_esquema_que_va_a_claude_cabe_en_los_límites_de_salida_estructurada():
+    """La API compila el esquema a una gramática: cada parámetro opcional y cada
+    unión (anyOf / nullable) la multiplica; con 19 opcionales y 13 uniones
+    respondía 400 «Schema is too complex». Y un dict[str, int] llegaba como un
+    objeto vacío (additionalProperties: false): f'c y recubrimientos no cabían."""
+    import json
+
+    from anthropic.lib._parse._transform import transform_schema
+    from klave_engine.llm.reader import _ClaudeSheetRead
+
+    esquema = transform_schema(_ClaudeSheetRead)
+
+    def objetos(nodo):
+        if isinstance(nodo, dict):
+            if nodo.get("type") == "object":
+                yield nodo
+            for valor in nodo.values():
+                yield from objetos(valor)
+        elif isinstance(nodo, list):
+            for valor in nodo:
+                yield from objetos(valor)
+
+    opcionales = sum(
+        len(set(o.get("properties", {})) - set(o.get("required", []))) for o in objetos(esquema)
+    )
+    uniones = json.dumps(esquema).count('"anyOf"')
+    vacios = [o for o in objetos(esquema) if o.get("properties") == {}]
+    assert opcionales == 0 and uniones <= 3 and not vacios
+
+
+def test_la_lectura_de_claude_vuelve_a_la_forma_de_siempre():
+    from klave_engine.llm.reader import _ClaudeSheetRead, anthropic_reader
+
+    wire = _ClaudeSheetRead.model_validate({
+        "sheet_code": "ES-100", "title": "", "level": "PLANTA BAJA", "scale": "",
+        "concrete_fc": [{"family": "losa", "value": 250}], "steel_fy": 4200,
+        "cover_cm": [{"family": "castillo", "value": 3}], "desplante_m": None,
+        "slab_system": "",
+        "elements": [{"mark": "K-1", "family": "castillo", "section_cm": "15x15", "rebar": "4#3",
+                      "stirrups": "", "length_m": None, "note": "", "confidence": 0.9}],
+        "conteo": [{"family": "castillo", "drawn_count": 12, "note": ""}],
+        "notes": [], "uncertainties": [],
+    })
+    client = _FakeAnthropic(_respuesta(parsed_output=wire))
+    leida, _ = anthropic_reader(client=client)(b"\x89PNG fake", "Hoja ES-100")
+    assert isinstance(leida, SheetRead)
+    assert leida.concrete_fc == {"losa": 250} and leida.cover_cm == {"castillo": 3.0}
+    assert leida.title is None and leida.slab_system is None  # «» es «no aparece»
+    assert leida.elements[0].stirrups is None and leida.elements[0].rebar == "4#3"
+    assert leida.conteo[0].note is None
+    assert client.beta.messages.calls[0]["output_format"] is _ClaudeSheetRead
