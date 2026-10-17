@@ -125,3 +125,15 @@ def test_evaluator_is_arithmetic_only():
         evaluar("b_cm.real", {"b_cm": 1})
     with pytest.raises(ValueError):
         evaluar("fc", {})  # variable sin valor
+
+
+@pytest.mark.parametrize(
+    "texto,mm", [('tubo pvc 4"', 100.0), ("tubo 4´´", 100.0), ("tubo 2’’", 50.0),
+                 ("tubo 1/2''", 13.0), ("tubo 4”", 100.0)],
+)  # fmt: skip
+def test_a_concepts_diameter_reads_any_inch_mark(texto, mm):
+    # R187, R195: la única normalización de la marca de pulgadas (``comillas``) también para el
+    # diámetro de un concepto.
+    from klave_engine.costing.generacion import _diametro_mm
+
+    assert _diametro_mm(texto) == mm

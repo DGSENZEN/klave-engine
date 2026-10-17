@@ -208,7 +208,9 @@ _MM_EQUIVALENTE = {
 # «2 x 12"»); un largo o un ángulo después del diámetro («4" x 6 m», «12" x 7,50 m»,
 # «Ø 12" x 60 cm», «12" X 25'», «CODO 4" x 45°») sí lo deja. R186: sólo una prima sola (', ′) es un
 # pie; «16" x 16´´», «16" x 16’’», «24" x 12´» son secciones. R187: tras el primer número, cualquier
-# marca de pulgadas o ninguna («24” x 12"», «16´ x 16"», «16’ x 16"» son secciones).
+# marca de pulgadas o ninguna («24” x 12"», «16´ x 16"», «16’ x 16"» son secciones). R195: también
+# una prima sola (', ′) tras el PRIMER número, que R186 lee como pie: «16' x 16"» es una sección
+# (sin diámetro), nunca un largo; sólo tras el segundo número una prima sola es un largo.
 _SECCION_RE = re.compile(
     r'\d\s*(?:"|MM\b|[\'′´’])?\s*[X×]\s*\d+(?:[.,]\d+)?(?![\d.,])'
     r"(?!\s*(?:M|MTS?|ML|METROS?|CM|CMS|CENT[IÍ]METROS?)\b)(?!\s*['′](?!['′´’]))(?!\s*[°º])",
@@ -221,8 +223,8 @@ _PULGADAS_DOBLES = ("″", "''", "′′", "´´", "’’", "”", "“")
 
 def comillas(texto: str) -> str:
     """El texto con cada marca de pulgadas escrita como «"» (R186, R187). La ÚNICA normalización:
-    todo lector de diámetros, de medidas y de secciones (aquí y en ``run_detector``) lee el texto
-    que da."""
+    todo lector de diámetros, de medidas y de secciones (aquí, en ``run_detector`` y en el
+    diámetro de un concepto, ``costing.generacion._diametro_mm``) lee el texto que da."""
     for doble in _PULGADAS_DOBLES:
         texto = texto.replace(doble, '"')
     return texto
