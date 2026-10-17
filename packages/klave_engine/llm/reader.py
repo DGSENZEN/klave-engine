@@ -26,9 +26,15 @@ from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
-ANTHROPIC_MODEL = "claude-opus-5"
+ANTHROPIC_MODEL = "claude-opus-5-5"
 GEMINI_MODEL = "gemini-2.5-pro"
 MODEL = ANTHROPIC_MODEL  # backwards-compatible alias
+
+# Claude puede declinar una petición (stop_reason «refusal»); con el respaldo
+# del servidor la misma petición la contesta el modelo que Anthropic recomienda
+# para esa categoría, en la misma llamada. Sólo estos modelos lo aceptan.
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
+_CON_RESPALDO = ("claude-opus-5-5", "claude-opus-5", "claude-fable-5-1", "claude-sonnet-5-5")
 
 # How a failed sheet reads in its own uncertainties: the marker that lets a
 # later run find exactly which sheets are worth asking for again.
@@ -185,22 +191,31 @@ def credentials_available(provider: str | None = None) -> bool:
     return resolve_provider(provider) is not None
 
 
+def _modelo(resolved: str, model: str | None) -> str:
+    """El modelo para ese proveedor: el que pide la configuración, salvo que sea
+    de otro proveedor (un KLAVE_AI_MODEL=gemini-… que quedó de antes no se le
+    manda a Claude, ni uno claude-… a Gemini); entonces, el de omisión."""
+    por_omision = ANTHROPIC_MODEL if resolved == "anthropic" else GEMINI_MODEL
+    if not model:
+        return por_omision
+    ajeno = "gemini" if resolved == "anthropic" else "claude"
+    return por_omision if model.strip().lower().startswith(ajeno) else model
+
+
 def active_model(provider: str | None = None, model: str | None = None) -> str | None:
     resolved = resolve_provider(provider)
     if resolved is None:
         return None
-    if model:
-        return model
-    return ANTHROPIC_MODEL if resolved == "anthropic" else GEMINI_MODEL
+    return _modelo(resolved, model)
 
 
 def configured_reader(provider: str | None = None, model: str | None = None) -> Reader:
     """The reader for the configured provider; raises when none is set up."""
     resolved = resolve_provider(provider)
     if resolved == "anthropic":
-        return anthropic_reader(model=model or ANTHROPIC_MODEL)
+        return anthropic_reader(model=_modelo(resolved, model))
     if resolved == "gemini":
-        return gemini_reader(model=model or GEMINI_MODEL)
+        return gemini_reader(model=_modelo(resolved, model))
     raise RuntimeError("La lectura con IA no está configurada (sin credenciales).")
 
 
@@ -282,19 +297,38 @@ def gemini_reader(client: Any | None = None, model: str = GEMINI_MODEL) -> Reade
     return read
 
 
+def _respaldo(model: str) -> dict[str, Any]:
+    """Los parámetros del respaldo del servidor, para los modelos que lo aceptan."""
+    if model in _CON_RESPALDO:
+        return {"betas": [FALLBACK_BETA], "fallbacks": "default"}
+    return {}
+
+
+def _si_declino(response: Any) -> None:
+    """Una negativa de Claude es un error dicho, nunca una lectura vacía: llega
+    con HTTP 200 y ``stop_reason == "refusal"`` (ya con el respaldo agotado)."""
+    if getattr(response, "stop_reason", None) != "refusal":
+        return
+    detalles = getattr(response, "stop_details", None)
+    categoria = getattr(detalles, "category", None) or "sin categoría"
+    raise ValueError(f"Claude declinó la petición ({categoria})")
+
+
 def anthropic_reader(client: Any | None = None, model: str = ANTHROPIC_MODEL) -> Reader:
     """The Claude reader: one vision request per sheet image, structured
-    output validated against SheetRead."""
+    output validated against SheetRead. Reading a drawing is precise work, so
+    it asks for effort «high» (Opus 5.5 would default to «medium»)."""
     import anthropic
 
     sdk = client or anthropic.Anthropic()
 
     def read(png: bytes, prompt: str) -> tuple[SheetRead, dict[str, int]]:
-        response = sdk.messages.parse(
+        response = sdk.beta.messages.parse(
             model=model,
             max_tokens=16000,
             system=SYSTEM_PROMPT,
             thinking={"type": "adaptive"},
+            output_config={"effort": "high"},
             messages=[
                 {
                     "role": "user",
@@ -312,7 +346,11 @@ def anthropic_reader(client: Any | None = None, model: str = ANTHROPIC_MODEL) ->
                 }
             ],
             output_format=SheetRead,
+            **_respaldo(model),
         )
+        _si_declino(response)
+        if getattr(response, "stop_reason", None) == "max_tokens":
+            raise ValueError("la lectura se cortó por longitud (max_tokens)")
         parsed = response.parsed_output
         if parsed is None:
             raise ValueError("el modelo no devolvió una lectura estructurada")
@@ -335,9 +373,9 @@ def configured_asker(provider: str | None = None, model: str | None = None) -> A
     the reader: an explicit choice without credentials never falls back."""
     resolved = resolve_provider(provider)
     if resolved == "anthropic":
-        return anthropic_asker(model=model or ANTHROPIC_MODEL)
+        return anthropic_asker(model=_modelo(resolved, model))
     if resolved == "gemini":
-        return gemini_asker(model=model or GEMINI_MODEL)
+        return gemini_asker(model=_modelo(resolved, model))
     raise RuntimeError("El copiloto no está configurado (sin credenciales de IA).")
 
 
@@ -364,12 +402,16 @@ def anthropic_asker(client: Any | None = None, model: str = ANTHROPIC_MODEL) -> 
     sdk = client or anthropic.Anthropic()
 
     def ask(system: str, prompt: str) -> str:
-        response = sdk.messages.create(
+        # En Opus 5.5 el pensamiento no se apaga y cuenta contra max_tokens: con
+        # un tope chico la respuesta se cortaría antes de empezar.
+        response = sdk.beta.messages.create(
             model=model,
-            max_tokens=1200,
+            max_tokens=16000,
             system=system,
             messages=[{"role": "user", "content": prompt}],
+            **_respaldo(model),
         )
+        _si_declino(response)
         # The SDK's block union is wider than the text blocks we asked for.
         return "".join(
             str(getattr(block, "text", ""))

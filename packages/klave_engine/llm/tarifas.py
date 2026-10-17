@@ -42,9 +42,13 @@ TARIFAS: dict[str, Tarifa] = {
     "gemini-3.7-flash": Tarifa(0.30, 2.50, "2026-08"),
     "gemini-3.5-flash": Tarifa(0.30, 2.50, "2026-08"),
     "gemini-2.5-pro": Tarifa(1.25, 10.00, "2026-08"),
-    # Anthropic, tarifas de lista declaradas 2026-08.
+    # Anthropic, tarifas de lista. Las claves más largas van primero: tarifa_de
+    # empata por prefijo, y «claude-opus-5» es prefijo de «claude-opus-5-5».
+    "claude-opus-5-5": Tarifa(4.00, 20.00, "2026-10"),
+    "claude-sonnet-5-5": Tarifa(2.00, 10.00, "2026-10"),
+    "claude-haiku-5-5": Tarifa(0.10, 0.50, "2026-10"),
     "claude-opus-5": Tarifa(5.00, 25.00, "2026-08"),
-    "claude-sonnet-5": Tarifa(3.00, 15.00, "2026-08"),
+    "claude-sonnet-5": Tarifa(2.00, 10.00, "2026-10"),
     "claude-haiku-4-5-20251001": Tarifa(1.00, 5.00, "2026-08"),
 }
 
