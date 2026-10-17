@@ -314,13 +314,26 @@ def _si_declino(response: Any) -> None:
     raise ValueError(f"Claude declinó la petición ({categoria})")
 
 
+def _cliente_anthropic() -> Any:
+    """El cliente de Anthropic con las credenciales del entorno. Una llave que no
+    está ligada a un workspace exige el encabezado ``anthropic-workspace-id``
+    (400 sin él); si ``ANTHROPIC_WORKSPACE_ID`` está declarado, va en cada
+    petición."""
+    import os
+
+    import anthropic
+
+    workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
+    if workspace:
+        return anthropic.Anthropic(default_headers={"anthropic-workspace-id": workspace})
+    return anthropic.Anthropic()
+
+
 def anthropic_reader(client: Any | None = None, model: str = ANTHROPIC_MODEL) -> Reader:
     """The Claude reader: one vision request per sheet image, structured
     output validated against SheetRead. Reading a drawing is precise work, so
     it asks for effort «high» (Opus 5.5 would default to «medium»)."""
-    import anthropic
-
-    sdk = client or anthropic.Anthropic()
+    sdk = client or _cliente_anthropic()
 
     def read(png: bytes, prompt: str) -> tuple[SheetRead, dict[str, int]]:
         response = sdk.beta.messages.parse(
@@ -397,9 +410,7 @@ def gemini_asker(client: Any | None = None, model: str = GEMINI_MODEL) -> Asker:
 
 
 def anthropic_asker(client: Any | None = None, model: str = ANTHROPIC_MODEL) -> Asker:
-    import anthropic
-
-    sdk = client or anthropic.Anthropic()
+    sdk = client or _cliente_anthropic()
 
     def ask(system: str, prompt: str) -> str:
         # En Opus 5.5 el pensamiento no se apaga y cuenta contra max_tokens: con

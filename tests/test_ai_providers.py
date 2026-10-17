@@ -181,3 +181,15 @@ def test_la_tarifa_de_opus_5_5_está_declarada():
 
     t = tarifa_de("claude-opus-5-5")
     assert t is not None and (t.entrada_por_millon, t.salida_por_millon) == (4.00, 20.00)
+
+
+def test_una_llave_sin_espacio_de_trabajo_lleva_el_encabezado_si_se_declara(monkeypatch):
+    """Una llave de la consola que no está ligada a un workspace exige el
+    encabezado anthropic-workspace-id; ANTHROPIC_WORKSPACE_ID lo pone."""
+    from klave_engine.llm.reader import _cliente_anthropic
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-prueba")
+    monkeypatch.delenv("ANTHROPIC_WORKSPACE_ID", raising=False)
+    assert "anthropic-workspace-id" not in _cliente_anthropic().default_headers
+    monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", " wrkspc_123 ")
+    assert _cliente_anthropic().default_headers["anthropic-workspace-id"] == "wrkspc_123"
