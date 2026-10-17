@@ -9,12 +9,14 @@ anticipated must become "unreadable", not a crash in the middle of a run.
 """
 
 import io
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import ezdxf
 from ezdxf import recover as ezdxf_recover
+from ezdxf.tools.codepage import toencoding
 
 # DXF OBJECT types a converter may misfile among entities. They carry no
 # geometry; dropping them from ENTITIES loses nothing the engine reads.
@@ -251,6 +253,66 @@ def _decode(raw_bytes: bytes) -> str:
             return raw_bytes.decode("utf-8", errors="replace")
 
 
+_ACADVER = re.compile(rb"\$ACADVER(\r?\n)\s*1\r?\n[^\r\n]*\r?\n")
+_VERSION = re.compile(r"\$ACADVER\r?\n\s*1\r?\n([^\r\n]*)")
+_PAGINA = re.compile(r"\$DWGCODEPAGE\r?\n\s*3\r?\n([^\r\n]*)")
+_BINARIO = b"AutoCAD Binary DXF"
+
+
+def _con_pagina_de_codigos(raw: bytes) -> bytes:
+    """El DXF con ``$DWGCODEPAGE`` en su HEADER, si no la trae.
+
+    ``ezdxf.recover`` sólo lee UTF-8 cuando encuentra ``$ACADVER`` (R2007 o más)
+    *y* ``$DWGCODEPAGE``; sin la segunda cae a cp1252. LibreDWG escribe R2013 en
+    UTF-8 con un HEADER mínimo, sin página de códigos, y «LAVANDERÍA» se leía
+    «LAVANDERÃ\\udc8dA». Desde R2007 el texto es UTF-8 sea cual sea la página, así
+    que se añade ``ANSI_1252`` justo después de ``$ACADVER``; antes de R2007
+    ``ANSI_1252`` es lo que ezdxf ya suponía, y nada cambia."""
+    if raw.startswith(_BINARIO) or b"$DWGCODEPAGE" in raw:
+        return raw
+    m = _ACADVER.search(raw)
+    if m is None:
+        return raw
+    nl = m.group(1)
+    pagina = b"  9" + nl + b"$DWGCODEPAGE" + nl + b"  3" + nl + b"ANSI_1252" + nl
+    return raw[: m.end()] + pagina + raw[m.end() :]
+
+
+def _para_ezdxf(texto: str) -> bytes:
+    """El texto ya leído, en los bytes que ``ezdxf.recover`` va a leer bien: UTF-8
+    desde R2007 (con la página de códigos que lo hace creerlo), y antes en la
+    página que declara el HEADER (cp1252 si no declara). Un carácter que esa
+    página no tiene deja el texto en UTF-8, como antes."""
+    m = _VERSION.search(texto)
+    if m is not None and m.group(1).strip() >= "AC1021":
+        return _con_pagina_de_codigos(texto.encode("utf-8"))
+    p = _PAGINA.search(texto)
+    encoding = toencoding(p.group(1).strip()) if p else "cp1252"
+    try:
+        return texto.encode(encoding)
+    except (UnicodeEncodeError, LookupError):
+        return texto.encode("utf-8")
+
+
+def _leer_recuperado(path: Path) -> LoadedDxf:
+    raw = path.read_bytes()
+    doc, auditor = ezdxf_recover.read(io.BytesIO(_con_pagina_de_codigos(raw)))
+    return LoadedDxf(
+        doc=doc, method="recovery",
+        audit_errors=len(auditor.errors), audit_fixes=len(auditor.fixes),
+    )
+
+
+def _leer_saneado(path: Path) -> LoadedDxf:
+    text, rejoined, dropped = sanitize_dxf_text(_decode(path.read_bytes()))
+    doc, auditor = ezdxf_recover.read(io.BytesIO(_para_ezdxf(text)))
+    return LoadedDxf(
+        doc=doc, method="sanitized",
+        audit_errors=len(auditor.errors), audit_fixes=len(auditor.fixes),
+        dropped_objects=dropped, rejoined_lines=rejoined,
+    )
+
+
 def load_dxf(path: Path) -> LoadedDxf:
     """Open a DXF by any honest means, or raise ``ValueError`` with the reasons."""
     failures: list[str] = []
@@ -259,21 +321,11 @@ def load_dxf(path: Path) -> LoadedDxf:
     except Exception as exc:  # any ezdxf error family, plus decoding
         failures.append(f"estricto: {type(exc).__name__}: {str(exc)[:120]}")
     try:
-        doc, auditor = ezdxf_recover.readfile(str(path))
-        return LoadedDxf(
-            doc=doc, method="recovery",
-            audit_errors=len(auditor.errors), audit_fixes=len(auditor.fixes),
-        )
+        return _leer_recuperado(path)
     except Exception as exc:
         failures.append(f"recuperación: {type(exc).__name__}: {str(exc)[:120]}")
     try:
-        text, rejoined, dropped = sanitize_dxf_text(_decode(path.read_bytes()))
-        doc, auditor = ezdxf_recover.read(io.BytesIO(text.encode("utf-8")))
-        return LoadedDxf(
-            doc=doc, method="sanitized",
-            audit_errors=len(auditor.errors), audit_fixes=len(auditor.fixes),
-            dropped_objects=dropped, rejoined_lines=rejoined,
-        )
+        return _leer_saneado(path)
     except Exception as exc:
         failures.append(f"saneado: {type(exc).__name__}: {str(exc)[:120]}")
     raise ValueError("; ".join(failures))

@@ -123,3 +123,45 @@ def test_el_xref_se_encuentra_aunque_la_subida_lo_haya_slugificado(tmp_path):
     assert found is not None and found.name == "00_xref_l_04_-_26_01_15.dxf"
     # Y lo que no es el mismo archivo, no casa.
     assert _find_sibling("01 ARQ L.04", [tmp_path / "converted"]) is None
+
+
+# LibreDWG 0.13 escribe DXF R2013 (AC1027) en UTF-8 con un HEADER mínimo: sin
+# $DWGCODEPAGE. ezdxf.recover sólo cree en UTF-8 cuando ve las dos variables,
+# así que leía «LAVANDERÍA» como cp1252: «LAVANDERÃ\udc8dA». El sustituto suelto
+# tumbaba el JSON del visor (GET /geometry → 500) y los demás acentos quedaban
+# en mojibake callado («UBICACIÃ“N»).
+_R2013_SIN_PAGINA = (
+    "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1027\n  0\nENDSEC\n"
+    "  0\nSECTION\n  2\nENTITIES\n"
+    "  0\nTEXT\n  5\n2A\n  8\n0\n 10\n0.0\n 20\n0.0\n 30\n0.0\n 40\n1.0\n  1\nLAVANDERÍA\n"
+    "  0\nTEXT\n  5\n2B\n  8\n0\n 10\n0.0\n 20\n2.0\n 30\n0.0\n 40\n1.0\n  1\nCUARTO DE MÁQUINAS\n"
+    "  0\nTEXT\n  5\n2C\n  8\n0\n 10\n0.0\n 20\n4.0\n 30\n0.0\n 40\n1.0\n  1\nUBICACIÓN\n"
+    "  0\nENDSEC\n  0\nEOF\n"
+)
+_ESPERADOS = ["LAVANDERÍA", "CUARTO DE MÁQUINAS", "UBICACIÓN"]
+
+
+@pytest.mark.parametrize("camino", ["recovery", "sanitized"])
+def test_un_dxf_r2013_sin_pagina_de_codigos_se_lee_en_utf8_por_todo_camino(tmp_path, camino):
+    from klave_engine.dxf import loader
+
+    path = tmp_path / "x.dxf"
+    path.write_bytes(_R2013_SIN_PAGINA.encode("utf-8"))
+    leer = {"recovery": loader._leer_recuperado, "sanitized": loader._leer_saneado}[camino]
+    loaded = leer(path)
+    textos = [e.dxf.text for e in loaded.doc.modelspace().query("TEXT")]
+    assert textos == _ESPERADOS
+    assert not any(0xD800 <= ord(c) <= 0xDFFF for t in textos for c in t)
+
+
+def test_la_pagina_de_codigos_sólo_se_añade_cuando_falta():
+    from klave_engine.dxf.loader import _con_pagina_de_codigos
+
+    sin = _R2013_SIN_PAGINA.encode("utf-8")
+    con = _con_pagina_de_codigos(sin)
+    assert con.count(b"$DWGCODEPAGE") == 1 and con.index(b"$DWGCODEPAGE") > con.index(b"AC1027")
+    assert _con_pagina_de_codigos(con) == con  # ya la trae: no se toca
+    sin_version = b"  0\nSECTION\n  2\nENTITIES\n  0\nENDSEC\n  0\nEOF\n"
+    assert _con_pagina_de_codigos(sin_version) == sin_version
+    crlf = sin.replace(b"\n", b"\r\n")
+    assert b"$DWGCODEPAGE\r\n" in _con_pagina_de_codigos(crlf)
