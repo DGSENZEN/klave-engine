@@ -66,7 +66,9 @@ from klave_engine.estructura.armado import (
 from klave_engine.estructura.asociacion import (
     ARMADO_RE,
     Rechazo,
+    SeccionDeTitulo,
     asociar,
+    asociar_secciones,
     hoja_y_llave,
     lo_lee_una_nota,
     marca_en_texto,
@@ -2716,6 +2718,7 @@ def _sections_from_detail_cotas(
     dibujadas: Collection[str] = (),
     titulos: list[str] | None = None,
     secciones: list[tuple[str, BBox, str, str]] | None = None,
+    pilas: list[SeccionDeTitulo] | None = None,
 ) -> list[ElementSpec]:
     """A cuadro or detail label's section from ITS OWN drawn section (R81): the closed
     outline (polylines and lines joined end to end, block contents included) nearest
@@ -2757,7 +2760,11 @@ def _sections_from_detail_cotas(
     pair of cotas), on its own sheet's side and not owned by another label, it is a detail
     TITLE — its reading is kept and its entity goes to ``titulos`` and ``cuadro_marks`` (a
     definition, never a placement); otherwise nothing of it is kept. ``secciones`` receives,
-    for R140, every owned drawn section: the mark, its box and its sheet key."""
+    for R140, every owned drawn section: the mark, its box and its sheet key. ``pilas`` receives,
+    for R147, every drawn section with whether its armado is read from under it: a detail
+    title's own (an R81 outline or an R106 pair, read or claimed; a label that owns a stack of
+    its own is read by its stack, Task 6), on the side away from its title; the sections a title
+    only claims (R111, R120, R158) and those nobody owns compete, never read."""
     dims = [e for e in entities if e.entity_type == EntityType.dimension]
     if not dims:
         return []
@@ -2842,6 +2849,10 @@ def _sections_from_detail_cotas(
             for caja in dict.fromkeys(libres)
             if not any(_misma_caja(caja, o, 1e-6) for o in poseidas)
         ]
+    if pilas is not None:
+        pilas += _secciones_para_pilas(
+            duenas, reclamadas, libres, set(titulos or []), duenos, entities
+        )
     return specs
 
 
@@ -2885,6 +2896,68 @@ def _muros_de_los_titulos(
                 suyos.append(cm)
         if len(suyos) == 1:
             salida[titulo_id] = suyos[0]
+    return salida
+
+
+def _secciones_para_pilas(
+    duenas: list[tuple[_Etiqueta, BBox]],
+    reclamadas: list[tuple[_Etiqueta, BBox]],
+    libres: list[BBox],
+    titulos: set[str],
+    duenos: Collection[str],
+    entities: list[NormalizedEntity],
+) -> list[SeccionDeTitulo]:
+    """R147: the drawn sections of the stack reader (``asociar_secciones``). A detail title's own
+    section (in a detail frame, a detail title of a planta, R145, or a planta's label over its
+    section) is read, on the side away from its title; another label's own section competes on
+    that side only. A label that owns a stack of its own (Task 6: a cuadro's label, its stack
+    between it and its section) is no section here: its stack is read and its label competes as
+    a label. A claimed section competes on the side away from its title, one nobody owns on both
+    (so that their armado never goes to a neighbour); nothing is read from them."""
+    archivos = {e.source_file for e in entities}
+    unico = next(iter(archivos)) if len(archivos) == 1 else None
+    salida: list[SeccionDeTitulo] = []
+    vistas: set[tuple[str, tuple[float, ...]]] = set()
+    for e, caja in duenas:
+        clave = (e.texto.entity_id, tuple(round(v, 6) for v in caja))
+        if clave in vistas or e.texto.entity_id in duenos:
+            continue
+        vistas.add(clave)
+        encima = e.y > (caja[1] + caja[3]) / 2
+        salida.append(
+            SeccionDeTitulo(
+                marca=e.marca,
+                caja=caja,
+                archivo=e.texto.source_file,
+                titulo_id=e.texto.entity_id,
+                # A detail's title (in a detail frame, R145), or a planta's label over its section
+                # (CR-2 on ES-200, whose callouts beside it made it a cuadro's label): its armado
+                # is written under its section. A cuadro's label under its section (its stack in
+                # between, Task 6) never reads past its section.
+                lee=e.en_detalle or e.texto.entity_id in titulos or encima,
+                sentidos=(-1,) if encima else (+1,),
+                familia=e.familia,
+            )
+        )
+    for e, caja in reclamadas:
+        centro = (caja[1] + caja[3]) / 2
+        salida.append(
+            SeccionDeTitulo(
+                marca=e.marca,
+                caja=caja,
+                archivo=e.texto.source_file,
+                titulo_id=e.texto.entity_id,
+                lee=False,
+                sentidos=(-1,) if e.y > centro else (+1,),
+            )
+        )
+    if unico is not None:
+        tomadas = [caja for _e, caja in [*duenas, *reclamadas]]
+        salida += [
+            SeccionDeTitulo(marca="", caja=caja, archivo=unico, lee=False)
+            for caja in dict.fromkeys(libres)
+            if not any(_misma_caja(caja, o, 1e-6) for o in tomadas)
+        ]
     return salida
 
 
@@ -4027,6 +4100,100 @@ def _junto_a_su_seccion(
                 r.posibles = sorted(marcas)
 
 
+def _pilas_de_secciones(
+    entities: list[NormalizedEntity],
+    frames: list[SheetFrame],
+    config: TextPatternConfig,
+    secciones: list[SeccionDeTitulo],
+    specs: list[ElementSpec],
+    rechazos: list[Rechazo],
+    sheet: Sheet,
+    muros: dict[str, float],
+) -> tuple[list[ElementSpec], list[Rechazo]]:
+    """R147: the stacks under the detail titles' own drawn sections (``asociar_secciones``), read
+    as ``detalle`` / ``pila`` under the title's mark, with the family its title states. Only an
+    unowned text (all its rejections «sin_dueno», read by nobody) can be a stack line. A field is
+    read from the stack only when the stack is ALL the detail writes of it: if any other text of
+    the title's group shows that field — its elevation's labels, a callout, a line beside the
+    section (a rejection on its sheet whose «posible» or whose marks name the title) — the stack
+    holds part of it and the field is not read: it stays claimed (ilegible, the AI blocked) and
+    the stack's line is quoted. What a stack reads leaves the rejections; a line two sections
+    (or a section and a label) dispute keeps its rejection and carries them as «posible» (a
+    block only)."""
+    if not secciones:
+        return [], rechazos
+    consumidas = {e for s in specs if s.source != "ia" for e in s.entidades}
+    motivos: dict[str, set[str]] = defaultdict(set)
+    for r in rechazos:
+        motivos[r.entidad_id].add(r.motivo)
+    libres = {i for i, m in motivos.items() if m == {"sin_dueno"} and i not in consumidas}
+    asociaciones, disputados = asociar_secciones(entities, frames, config, secciones, libres)
+    por_id = {e.entity_id: e for e in entities}
+    de_titulo = {s.titulo_id: s for s in secciones if s.lee}
+    leidos = {
+        (i, _plano(t)) for a in asociaciones for i, t in zip(a.entidades, a.textos, strict=True)
+    }
+    restantes = [r for r in rechazos if (r.entidad_id, _plano(r.texto)) not in leidos]
+    for r in restantes:
+        if r.motivo == "sin_dueno" and r.entidad_id in disputados:
+            r.posibles = sorted({*r.posibles, *disputados[r.entidad_id]})
+    salida: list[ElementSpec] = []
+    for a in asociaciones:
+        seccion = de_titulo[a.etiqueta_id]
+        family = seccion.familia or family_of_mark(a.marca)
+        marca = _normal(a.marca, config)
+        lectura = _reading(a.textos, family)
+        armado: Armado = lectura["armado"]
+        suyos = {(i, _plano(t)) for i, t in zip(a.entidades, a.textos, strict=True)}
+        titulo = por_id.get(a.etiqueta_id)
+        llave = sheet(titulo)[1] if titulo is not None else ""
+        fuera = [
+            r
+            for r in restantes
+            if (r.entidad_id, _plano(r.texto)) not in suyos
+            and r.entidad_id in por_id
+            and sheet(por_id[r.entidad_id])[1] == llave
+            and marca in {_normal(m, config) for m in [*r.posibles, *r.marcas] if m}
+        ]
+        for campo, clave in (
+            ("longitudinales", "rebar"),
+            ("estribos", "stirrups"),
+            ("parrillas", "mesh"),
+        ):
+            if not getattr(armado, campo):
+                continue
+            otros = [r.texto for r in fuera if campo in campos_de_fragmento(r.texto, family)]
+            if not otros:
+                continue
+            setattr(armado, campo, [])
+            lectura[clave] = None
+            de_la_pila = [t for t in a.textos if campo in campos_de_fragmento(t, family)]
+            lectura["avisos"].append(
+                f"{campo}: no se lee de la pila bajo su sección («"
+                + "», «".join(de_la_pila)
+                + f"»): el detalle de {a.marca} lo escribe también fuera de ella («"
+                + "», «".join(dict.fromkeys(otros[:6]))
+                + ("», …)" if len(dict.fromkeys(otros)) > 6 else "»)")
+            )
+        salida.append(
+            ElementSpec(
+                mark=a.marca,
+                family=family,
+                familia_supuesta=seccion.familia is None,
+                source="detalle",
+                metodo="pila",
+                hoja=a.hoja,
+                hoja_llave=llave,
+                entidades=list(a.entidades),
+                source_text=f"{a.marca} · {' / '.join(a.textos)} · bajo su sección",
+                confidence=0.75,
+                para_muro_cm=muros.get(a.etiqueta_id),
+                **lectura,
+            )
+        )
+    return salida, restantes
+
+
 def _alzados(
     secciones: list[tuple[str, BBox, str]], entities: list[NormalizedEntity]
 ) -> list[tuple[str, str, list[tuple[float, float]]]]:
@@ -4174,6 +4341,7 @@ def build_schedule_inventory(
     inventory_cuadro_marks: list[str] = []
     titulos_de_detalle: list[str] = []
     secciones_dibujadas: list[tuple[str, BBox, str, str]] = []
+    para_pilas: list[SeccionDeTitulo] = []
     dibujadas: set[str] = set()
     flechas: list[tuple[str, ElementSpec]] = []
     if unit_to_m and detail_boxes:
@@ -4210,6 +4378,7 @@ def build_schedule_inventory(
                 dibujadas,
                 titulos_de_detalle,
                 secciones_dibujadas,
+                para_pilas,
             )
             # R124, R128: the titles a leader starts or lands at, each mark a candidate claim.
             flechas = _flechas_de_titulos(
@@ -4253,6 +4422,11 @@ def build_schedule_inventory(
         if not r.posibles and r.entidad_id in posibles:
             r.posibles = sorted(posibles[r.entidad_id])
     _junto_a_su_seccion(rechazos, texts, secciones_dibujadas, sheet, entities)
+    # R147: the armado of a detail title, read from under its own drawn section.
+    de_secciones, rechazos = _pilas_de_secciones(
+        entities, frames, config, para_pilas, specs, rechazos, sheet, muros
+    )
+    specs += de_secciones
     inventory = ScheduleInventory(
         specs=specs,
         tables_found=tables,

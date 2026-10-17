@@ -1235,18 +1235,22 @@ def test_a_plan_tag_beside_its_marker_and_a_grid_cota_stays_a_placement():
     assert "role" not in det.properties
 
 
-def test_the_unowned_armado_under_a_titles_section_blocks_its_ai():
-    # R140: el armado escrito bajo la sección de cada título («4#3», «E#2@15»), que nadie lee,
-    # puede ser de ese título: bloquea la IA de su marca en esos campos (la sección ya es suya).
+def test_the_armado_under_a_titles_section_is_read_and_the_ai_is_an_alternative():
+    # R140 bloqueaba la IA con el armado escrito bajo la sección de cada título («4#3»,
+    # «E#2@15»), que nadie leía. R147 lo lee, con las reglas de la pila: es del detalle, y la IA
+    # vuelve a ser sólo una alternativa.
     ents = _grupo_de_cadenas()
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=[])
-    posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
-    assert posibles["4#3"] == ["CE-1"] and posibles["E#3@14"] == ["CE-3"]
-    ia = _ia("CE-1", family="dala", section_cm=(15, 30), rebar="4#3", stirrups="E#2@15")
+    leidas = {s.mark: (s.rebar, s.stirrups) for s in inv.specs if s.metodo == "pila"}
+    assert leidas == {
+        "CE-1": ("4#3", "E#2@15"), "CE-2": ("6#3", "E#2@15"), "CE-3": ("6#4", "E#3@14")
+    }  # fmt: skip
+    assert [r for r in inv.rechazos if r.motivo == "sin_dueno"] == []
+    ia = _ia("CE-1", family="dala", section_cm=(15, 30), rebar="4#4", stirrups="E#2@20")
     merge_external_specs(inv, [ia], C)
     d = construir_definiciones(inv, C)[0]["CE-1"]
-    assert d.longitudinales is None and d.estribos is None
-    assert set(d.sin_leer) == {"longitudinales", "estribos"}
+    assert (d.longitudinales.fuente, d.estribos.fuente, d.sin_leer) == ("detalle", "detalle", {})
+    assert [a.fuente for a in d.longitudinales.alternativas] == ["ia"]
     assert (d.seccion_cm.valor, d.seccion_cm.fuente) == ((15, 30), "detalle")
 
 
@@ -1303,13 +1307,13 @@ def test_a_leader_never_closes_a_section_outline():
     assert _cotas(inv, "T-1") == []
 
 
-def test_the_unowned_armado_under_a_titles_section_is_said_even_without_ai():
-    # R140 (CE-5 en Marina: sin lectura IA): su armado está escrito bajo su sección y nadie lo
-    # leyó; la definición lo dice, para que el elemento no diga «la marca no lo dice».
+def test_the_armado_under_a_titles_section_is_read_even_without_ai():
+    # R140 (CE-5 en Marina: sin lectura IA) decía en la definición el armado escrito bajo su
+    # sección que nadie leía; R147 lo lee.
     inv = build_schedule_inventory(_grupo_de_cadenas(), C, unit_to_m=1.0, detail_boxes=[])
     d = construir_definiciones(inv, C)[0]["CE-3"]
-    assert d.longitudinales is None and d.estribos is None
-    assert d.sin_leer == {"longitudinales": "«6#4»", "estribos": "«E#3@14»"}
+    assert [(g.cantidad, g.numero) for g in d.longitudinales.valor] == [(6, "4")]
+    assert d.estribos.fuente == "detalle" and d.sin_leer == {}
 
 
 # ------------------------------------------------- Tarea 9, ronda 2: R149, R150
@@ -1432,8 +1436,10 @@ def test_unowned_armado_beyond_its_sections_group_stays_unowned():
     ]
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=[])
     posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
-    assert posibles["4#5"] == [] and posibles["8#4"] == []
-    assert posibles["4#3"] == ["CE-1"] and posibles["6#4"] == ["CE-3"]
+    assert posibles == {"4#5": [], "8#4": []}
+    # R147: el de cada sección se lee bajo ella.
+    leidas = {s.mark: s.rebar for s in inv.specs if s.metodo == "pila"}
+    assert leidas == {"CE-1": "4#3", "CE-2": "6#3", "CE-3": "6#4"}
 
 
 def test_a_plan_castillo_whose_marker_carries_a_cota_is_no_detail_title():
@@ -1494,8 +1500,9 @@ def test_armado_under_a_section_nobody_owns_is_that_sections(abierta):
         ]
     )
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=[])
-    posibles = {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
-    assert posibles["6#3"] == ["CI"]
+    # R147: la «CI» es dueña de su sección; su «6#3» se lee bajo ella, nunca bajo CE-3.
+    assert {s.mark: s.rebar for s in inv.specs if s.metodo == "pila"} == {"CI": "6#3"}
+    assert [r for r in inv.rechazos if r.motivo == "sin_dueno"] == []
 
 
 # ------------------------------------------------- Tarea 9, ronda 3: R153, R154, R155, R156

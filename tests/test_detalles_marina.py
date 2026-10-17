@@ -126,3 +126,104 @@ def test_each_ci_title_is_its_walls_variant(marina, handle):
     inv, ids = marina
     (lectura,) = [s for s in inv.specs if s.metodo == "cotas" and s.entidades == [ids[handle]]]
     assert (lectura.para_muro_cm, lectura.section_cm) == _CI[handle]
+
+
+# R147: cada pila bajo la sección propia de un título de Marina, contra la verdad del dibujo
+# (los textos bajo su sección, de arriba abajo, sin las llamadas): sus renglones por su handle,
+# su marca, su hoja y lo que se lee. T2-8 (longitudinales), T3-19 y T4-4 (estribos) no leen un
+# campo que su detalle también escribe fuera de la pila (o que se le atribuye: «4#8» del alzado de
+# T2-7, las mallas del detalle LM-T): lo citan y lo reclaman.
+_PILAS = [
+    (["CFF58"], "CTA-13", "ES-004", None, "2E#4@15"),
+    (["36E92"], "CTA-14", "ES-004", None, "E#4@20"),
+    (["36BA1"], "CTA-9", "ES-004", None, "E#3@15"),
+    (["B79B2", "B79B6"], "CE-1", "ES-100", "4#3", "E#2@15"),
+    (["B79E3", "B79E7"], "CE-2", "ES-100", "6#3", "E#2@15"),
+    (["B7A0C", "B7A10"], "CE-3", "ES-100", "6#4", "E#3@14"),
+    (["B6BF4"], "T1-2", "ES-101", None, "E#3@12"),
+    (["B6CD7"], "T1-3", "ES-101", None, "E#3@15"),
+    (["B6EF1"], "T1-5", "ES-101", None, "E#3@15"),
+    (["97FFC", "98000"], "CE-1", "ES-200", "4#3", "E#2@15"),
+    (["9802D", "98031"], "CE-2", "ES-200", "6#3", "E#2@15"),
+    (["98056", "9805A"], "CE-3", "ES-200", "6#4", "E#3@14"),
+    (["A8E8E", "A8E8F"], "CI", "ES-200", "4#3", "E#2@15"),
+    (["A8EA5", "A8EA6"], "CI", "ES-200", "6#3", "E#2@15"),
+    (["A8EC0", "A8EC1"], "CI", "ES-200", "4#3", "E#2@15"),
+    (["980E0", "980E1"], "CR-1", "ES-200", "4#3", "E#2@15"),
+    (["980F6"], "CR-2", "ES-200", None, "E#2@15"),
+    (["9810F", "98110"], "CR-3", "ES-200", "6#3", "E#2@15"),
+    (["4C850"], "T2-1", "ES-201", None, "E#3@15"),
+    (["A926A"], "T2-2", "ES-201", None, "E#3@15"),
+    (["4CD42", "A9E5E"], "T2-8", "ES-201", None, "E#3@16"),
+    (["ACA29"], "T2-14", "ES-202", None, "E#3@15"),
+    (["ACAEF"], "T2-15", "ES-202", None, "E#3@15"),
+    (["8A155", "8A159"], "CE-1", "ES-300", "4#3", "E#2@15"),
+    (["8A186", "8A18A"], "CE-2", "ES-300", "6#3", "E#2@15"),
+    (["8A1AF", "8A1B3"], "CE-3", "ES-300", "6#4", "E#3@14"),
+    (["8A2C8", "8A2CC"], "CE-4", "ES-300", "4#4", "E#3@16"),
+    (["8A2A1", "8A2A5"], "CE-5", "ES-300", "4#3", "E#3@16"),
+    (["A8DD8", "A8DD9"], "CI", "ES-300", "4#3", "E#2@15"),
+    (["A8DEF", "A8DF0"], "CI", "ES-300", "6#3", "E#2@15"),
+    (["A8E0A", "A8E0B"], "CI", "ES-300", "4#3", "E#2@15"),
+    (["8E2DE", "8E2DF"], "CR-1", "ES-300", "4#3", "E#2@15"),
+    (["8E2F4"], "CR-2", "ES-300", None, "E#2@15"),
+    (["8E37D", "8E37E"], "CR-3", "ES-300", "6#3", "E#2@15"),
+    (["8F540"], "T3-1A", "ES-301", None, "E#4@15"),
+    (["4B94F"], "T3-4", "ES-301", None, "E#3@18"),
+    (["90095"], "T3-18", "ES-302", None, "E#3@15"),
+    (["901BC"], "T3-19", "ES-302", None, None),
+    (["4EED6", "4EEDA"], "CE-1", "ES-400", "4#3", "E#2@15"),
+    (["4EF07", "4EF0B"], "CE-2", "ES-400", "6#3", "E#2@15"),
+    (["72B71", "72B75"], "CE-3", "ES-400", "6#4", "E#3@14"),
+    (["4EFBB", "4EFBC"], "CI", "ES-400", "4#3", "E#2@15"),
+    (["4EFDC", "4EFDD"], "CI", "ES-400", "6#3", "E#2@15"),
+    (["4EFF7", "4EFF8"], "CI", "ES-400", "4#3", "E#2@15"),
+    (["4F0D2", "4F0D3"], "CR-1", "ES-400", "4#3", "E#2@15"),
+    (["4F0E9"], "CR-2", "ES-400", None, "E#2@15"),
+    (["4B692"], "T4-4", "ES-401", None, None),
+]
+
+
+def test_every_marina_stack_under_a_section_is_the_drawings(marina):
+    inv, ids = marina
+    manija = {i: h for h, i in ids.items()}
+    leidas = sorted(
+        ([manija[i] for i in s.entidades], s.mark, s.hoja, s.rebar, s.stirrups)
+        for s in inv.specs
+        if s.metodo == "pila" and s.source_text.endswith("bajo su sección")
+    )
+    assert leidas == sorted(_PILAS)
+    for s in inv.specs:  # lo que lee una pila ya no es «sin dueño»
+        if s.metodo == "pila":
+            assert not {r.entidad_id for r in inv.rechazos} & set(s.entidades)
+
+
+@pytest.mark.parametrize("handle", ["B6B0A", "B8F9A", "A955A", "4C584"])
+def test_claimed_or_doubtful_stacks_stay_unread(marina, handle):
+    # T1-1 «2E#3@15» y T1-6 «E#3@14» (sus secciones, reclamadas: sus lados pasan sus esquinas,
+    # R118), T2-4 «2E#3» (reclamada, en su esquina) y T3-17 «E#3» (junto a su esquina; su alzado
+    # escribe «@12»): nadie los lee; siguen siendo bloqueos «posible» de su título.
+    inv, ids = marina
+    assert _leida_por(inv, ids[handle]) == set()
+    assert _posibles(inv, ids[handle])
+
+
+def test_each_ci_variant_reads_its_own_armado(marina):
+    # R168 + R147: cada variante de CI lee el armado bajo su propia sección.
+    from klave_engine.estructura.definiciones import construir_definiciones
+
+    inv, _ids = marina
+    d = construir_definiciones(inv, C)[0]["CI"]
+    leidas = {
+        v.para_muro_cm: (
+            [(g.cantidad, g.numero) for g in v.longitudinales.valor],
+            [(j.cantidad, j.numero, j.zonas[0].separacion_m) for j in v.estribos.valor],
+            v.longitudinales.fuente,
+        )
+        for v in d.variantes
+    }
+    assert leidas == {
+        15.0: ([(4, "3")], [(1, "2", 0.15)], "detalle"),
+        20.0: ([(4, "3")], [(1, "2", 0.15)], "detalle"),
+        30.0: ([(6, "3")], [(1, "2", 0.15)], "detalle"),
+    }

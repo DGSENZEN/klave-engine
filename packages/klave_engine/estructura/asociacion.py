@@ -49,7 +49,7 @@ import re
 import statistics
 from collections import Counter, defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -79,6 +79,7 @@ __all__ = [
     "Rechazo",
     "ancla_texto",
     "asociar",
+    "asociar_secciones",
     "hoja_de",
     "hoja_y_llave",
     "lo_lee_una_nota",
@@ -351,6 +352,9 @@ class _Texto:
     y0: float
     y1: float
     alto: float
+    # Hacia dónde puede ir su pila: arriba (+1), abajo (-1). Una etiqueta, de los dos lados; la
+    # sección de un título (R147), sólo del lado contrario al de su título.
+    sentidos: tuple[int, ...] = (+1, -1)
 
     @property
     def id(self) -> str:
@@ -806,7 +810,7 @@ def _en_su_columna(e: _Texto, t: _Texto, indice: _Indice, libres: set[str]) -> b
     menos la mitad del más angosto y en su ensanche), hasta un hueco o un texto que no es renglón
     (otra etiqueta, una nota…). Una columna que se abre en dos sigue por el más cerca de su
     centro: es la lectura más estrecha, la que menos le concede a ``e`` (R60)."""
-    for sentido in (+1, -1):
+    for sentido in e.sentidos:
         previo: _Texto | None = None
         visto = {e.id}
         while True:
@@ -1316,11 +1320,19 @@ def _repartir(
                 sombras[r.id].append(a)
 
     def sombra(a: _Alcance, r: _Texto) -> set[str]:
+        # R147: una sección que corta la columna de otra no se queda con lo de más allá: no es
+        # una lista de etiquetas con su pila cada una (lee de un solo lado, el contrario a su
+        # título), así que lo de más allá sigue en disputa.
         return {
             s.marca
             for s in sombras.get(r.id, ())
             if s.marca != a.marca
-            and (s.cortada is None or not s.corte_limpio or s.cortada.marca != a.marca)
+            and (
+                s.cortada is None
+                or not s.corte_limpio
+                or s.cortada.marca != a.marca
+                or isinstance(s.cortada, _Seccion)
+            )
         }
 
     def ajenos(a: _Alcance) -> set[str]:
@@ -1480,6 +1492,7 @@ def _repartir(
                 and mas_alla is not None
                 and (
                     not elegido.corte_limpio
+                    or isinstance(cortada, _Seccion)  # R147: nunca un corte limpio
                     or not any(mas_alla in a.renglones for a in alcances.get(cortada.id, []))
                 )
             ):
@@ -1599,7 +1612,7 @@ def _pilas(textos: list[_Texto], de_filas: set[str]) -> _Reparto:
     alcances = {
         e.id: [
             a
-            for a in (_alcance(e, s, indice, renglones, libres, etiquetas) for s in (+1, -1))
+            for a in (_alcance(e, s, indice, renglones, libres, etiquetas) for s in e.sentidos)
             if a is not None
         ]
         for e in etiquetas
@@ -1608,11 +1621,21 @@ def _pilas(textos: list[_Texto], de_filas: set[str]) -> _Reparto:
     casi_de: dict[str, set[str]] = defaultdict(set)  # renglón → marcas que lo tienen enfrente
     for e in etiquetas:
         lados = {a.sentido for a in alcances[e.id]}
-        for sentido in {+1, -1} - lados:
+        for sentido in set(e.sentidos) - lados:
             cerca = _casi_alcanza(e, sentido, renglones)
             if cerca is None:
                 continue
             casi_de[cerca[1].id].add(e.marca or "")
+            if isinstance(e, _Seccion):
+                # R147: la pila apenas fuera del alcance de una sección es entera su candidata,
+                # no sólo su primer renglón: una columna vecina que sigue en uno de sus renglones
+                # (o en los de su columna más allá de donde se corta) puede llevarse lo de esta
+                # sección. Todos ellos le quedan enfrente (la duda de ``frente``); nada se lee.
+                lejos = _alcance(
+                    replace(e, alto=_CASI * e.alto), sentido, indice, renglones, libres, etiquetas
+                )
+                for t in [*lejos.renglones, *lejos.despues] if lejos is not None else []:
+                    casi_de[t.id].add(e.marca or "")
             if len(lados) == 1:
                 casi[e.id] = cerca[0]
     return _repartir(etiquetas, alcances, casi, casi_de)
@@ -1927,3 +1950,219 @@ def _sin_dueno(
                 Rechazo(entidad_id=e.entity_id, texto=texto, hoja=hoja, motivo="sin_dueno")
             )
     return huerfanos
+
+
+# ---------------------------------------------------------- R147: la pila bajo una sección
+
+
+@dataclass(frozen=True)
+class SeccionDeTitulo:
+    """R147: una sección dibujada que un título tiene (``lee``: su armado se lee de debajo de
+    ella, como la pila de una etiqueta), o que sólo reclama o que no es de nadie (compite, para
+    que su armado nunca se lo lleve una vecina, y nada se lee de ella). ``caja`` es su rectángulo
+    en el dibujo; ``archivo`` y el centro de la caja dicen su hoja; ``sentidos``, de qué lado
+    puede estar su pila (el contrario al de su título: abajo, -1, si su título va encima)."""
+
+    marca: str
+    caja: tuple[float, float, float, float]
+    archivo: str
+    titulo_id: str = ""
+    lee: bool = True
+    sentidos: tuple[int, ...] = (+1, -1)
+    # La familia que dice su título (R130), si la dice: con la que se lee su armado.
+    familia: str | None = None
+
+
+@dataclass(eq=False)
+class _Seccion(_Texto):
+    """Una sección en el lugar de una etiqueta (R147): su caja es la de la sección; su «alto», el
+    que hace que su primer renglón pueda estar a lo más a su lado menor (la columna de un
+    detalle: el armado escrito bajo su sección, más allá del dibujo que cuelga de ella)."""
+
+    ident: str = ""
+    seccion: SeccionDeTitulo | None = None
+
+    @property
+    def id(self) -> str:
+        return self.ident
+
+    @property
+    def texto(self) -> str:
+        return self.marca or ""
+
+    @property
+    def renglones(self) -> list[str]:
+        return []
+
+
+def _junto_a_un_metido(
+    seccion: _Texto, sentido: int, pila: list[_Texto], metidos: list[_Texto]
+) -> bool:
+    """Si la pila de ``seccion`` lleva un renglón metido en el dibujo de una sección, o tiene uno
+    en su columna entre la sección y su primer renglón, entre dos de los suyos o a lo más a 1.5
+    altos de renglón más allá del último (encimado de lado con la pila o con la sección)."""
+    if not metidos or not pila:
+        return False
+    ids = {t.id for t in pila}
+    if any(t.id in ids for t in metidos):
+        return True
+    ultimo = max(pila, key=lambda t: sentido * t.cy)
+    alcance = _HUECO_ENTRE_RENGLONES * ultimo.alto
+    borde = seccion.y0 if sentido < 0 else seccion.y1
+    lejos = (ultimo.y0 - alcance) if sentido < 0 else (ultimo.y1 + alcance)
+    bajo, alto = sorted((borde, lejos))
+    x0 = min([seccion.x0, *(t.x0 for t in pila)])
+    x1 = max([seccion.x1, *(t.x1 for t in pila)])
+    return any(
+        t.y1 > bajo
+        and t.y0 < alto
+        and min(t.x1, x1) - max(t.x0, x0) >= _ENCIMA_MINIMO * min(t.x1 - t.x0, x1 - x0)
+        for t in metidos
+    )
+
+
+def _en_otra_columna(
+    seccion: _Texto, sentido: int, pila: list[_Texto], secciones: list[_Seccion]
+) -> bool:
+    """Si un renglón de la pila de ``seccion`` está también en la columna de otra sección que lee
+    hacia el mismo lado: más allá de ella, encimado de lado con su caja en al menos la mitad del
+    más angosto, y no más lejos de ella que de ``seccion``. Ese renglón (el renglón largo de una
+    pila que llega bajo la sección de al lado) puede ser de cualquiera de las dos."""
+    for t in pila:
+        hueco_propio = seccion.y0 - t.y1 if sentido < 0 else t.y0 - seccion.y1
+        for o in secciones:
+            if o is seccion or sentido not in o.sentidos:
+                continue
+            hueco = o.y0 - t.y1 if sentido < 0 else t.y0 - o.y1
+            if hueco < -_TRASLAPE * t.alto or hueco > hueco_propio:
+                continue
+            comun = min(t.x1, o.x1) - max(t.x0, o.x0)
+            if comun >= _ENCIMA_MINIMO * min(t.x1 - t.x0, o.x1 - o.x0):
+                return True
+    return False
+
+
+def asociar_secciones(
+    entities: list[NormalizedEntity],
+    frames: list[SheetFrame],
+    config: TextPatternConfig,
+    secciones: list[SeccionDeTitulo],
+    libres: set[str],
+) -> tuple[list[Asociacion], dict[str, set[str]]]:
+    """R147: el armado de un título que tiene una sección dibujada, leído de debajo de ESA
+    sección con las reglas de la pila (Tarea 6: banda, hueco entre renglones, alineación) y sus
+    reglas de reclamo y duda (R54–R61): la sección toma el lugar de la etiqueta. Compiten todas
+    las secciones de la hoja (las que se leen, las reclamadas y las que no son de nadie) y todas
+    las etiquetas, así que dos secciones vecinas nunca mezclan sus textos: lo dudoso no es de
+    nadie. Sólo son renglones los textos de ``libres`` (los que nadie leyó ni nombra: «sin
+    dueño»); todo lo demás —leído, rechazado con marcas, notas, llamadas— estorba. Sólo los
+    textos derechos (a 0°) apilan bajo una sección. Una sección nunca corta limpio la pila de
+    otra (siempre deja la duda), y una pila queda en duda —no se lee— si lleva un renglón metido
+    en el dibujo de una sección o sigue junto a uno, o si uno de sus renglones está también en la
+    columna de otra sección que lee hacia el mismo lado, no más lejos de ella. Devuelve las pilas
+    tomadas por las secciones que se leen (por su título: ``etiqueta_id`` es el título, ``marca``
+    la suya) y los renglones en disputa entre una sección y otra marca (con sus marcas)."""
+    textos = [e for e in entities if e.is_textual and e.text and e.text.strip()]
+    if not secciones or not textos:
+        return [], {}
+    hoja_de = _hoja_de(frames)
+    ordenados = sorted(frames, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
+    grupos: dict[tuple, list[NormalizedEntity]] = defaultdict(list)
+    hojas: dict[tuple, str] = {}
+    hoja_por_id: dict[str, str] = {}
+    for e in textos:
+        llave, hoja = hoja_de(e)
+        grupos[llave].append(e)
+        hojas[llave] = hoja
+        hoja_por_id[e.entity_id] = hoja
+    de_la_hoja: dict[tuple, list[tuple[int, SeccionDeTitulo]]] = defaultdict(list)
+    for n, sec in enumerate(secciones):
+        centro = ((sec.caja[0] + sec.caja[2]) / 2, (sec.caja[1] + sec.caja[3]) / 2)
+        marco = next(
+            (f for f in ordenados if f.source_file in ("", sec.archivo) and f.contains(centro)),
+            None,
+        )
+        de_la_hoja[(sec.archivo, marco.frame_id if marco is not None else None)].append((n, sec))
+    _, _, de_notas = leer_notas_con_renglones(textos, lambda e: hoja_por_id[e.entity_id])
+    lineas = _lineas(entities, textos)
+    asociaciones: list[Asociacion] = []
+    disputados: dict[str, set[str]] = {}
+    for llave, grupo in grupos.items():
+        suyas = de_la_hoja.get(llave)
+        if not suyas:
+            continue
+        giros = _giros(grupo)
+        # El título de una sección y su sección son la misma marca: nunca se disputan nada.
+        del_titulo = {sec.titulo_id: f"{sec.marca}\u00a7{n}" for n, sec in suyas if sec.titulo_id}
+        locales: list[_Texto] = []
+        for e in grupo:
+            if giros[e.entity_id] != 0:
+                continue
+            clase, marca = _clase(e, config, de_notas)
+            if clase == "etiqueta" and e.entity_id in del_titulo:
+                marca = del_titulo[e.entity_id]
+            t = _texto_local(e, 0, clase, marca)
+            if clase == "linea" and lineas.es_llamada(t, 0):
+                t.clase = "llamada"
+            locales.append(t)
+        if not locales:
+            continue
+        # Lo que no es un renglón libre estorba: lo que otro ya leyó o rechazó con su marca.
+        estorban = {t.id for t in locales if t.clase == "linea" and t.id not in libres}
+        por_id: dict[str, _Seccion] = {}
+        for n, sec in suyas:
+            x0, y0, x1, y1 = sec.caja
+            lado_menor = min(x1 - x0, y1 - y0)
+            if lado_menor <= 0:
+                continue
+            titulo = next((e for e in grupo if e.entity_id == sec.titulo_id), grupo[0])
+            seccion = _Seccion(
+                titulo, "etiqueta", f"{sec.marca}§{n}", x0, x1, y0, y1,
+                lado_menor / _HUECO_DE_ETIQUETA, sentidos=sec.sentidos,
+                ident=f"§seccion:{n}", seccion=sec,
+            )  # fmt: skip
+            por_id[seccion.id] = seccion
+        if not por_id:
+            continue
+        # Un renglón metido en el dibujo de una sección (sobre su caja) es de ese dibujo: no se
+        # sabe de qué pila es. Una pila que lo lleva o que sigue (o empieza) en su columna junto a
+        # él queda en duda: nunca a medias ni con lo ajeno.
+        metidos = [
+            t
+            for t in locales
+            if t.clase == "linea"
+            and t.id not in estorban
+            and any(
+                min(t.x1, c.x1) > max(t.x0, c.x0) and min(t.y1, c.y1) > max(t.y0, c.y0)
+                for c in por_id.values()
+            )
+        ]
+        reparto = _pilas([*locales, *por_id.values()], estorban)
+        for alcance, propios in reparto.tomadas:
+            la_seccion = por_id.get(alcance.etiqueta.id)
+            dato = la_seccion.seccion if la_seccion is not None else None
+            if la_seccion is None or dato is None or not dato.lee:
+                continue
+            if _junto_a_un_metido(
+                la_seccion, alcance.sentido, propios, metidos
+            ) or _en_otra_columna(la_seccion, alcance.sentido, propios, list(por_id.values())):
+                disputados.update({t.id: {dato.marca} for t in propios})
+                continue
+            orden = propios[::-1] if alcance.sentido > 0 else propios
+            renglones = [(t.id, r) for t in orden for r in t.renglones]
+            asociaciones.append(
+                Asociacion(
+                    etiqueta_id=dato.titulo_id,
+                    marca=dato.marca,
+                    hoja=hojas[llave],
+                    textos=[r for _i, r in renglones],
+                    entidades=[i for i, _r in renglones],
+                    via="pila",
+                )
+            )
+        for renglon, marcas in reparto.ambiguos.items():
+            reales = {m.split("§")[0] for m in marcas}
+            if any("§" in m for m in marcas):
+                disputados[renglon] = {m for m in reales if m}
+    asociaciones.sort(key=lambda a: (a.hoja, a.marca, a.etiqueta_id))
+    return asociaciones, disputados
