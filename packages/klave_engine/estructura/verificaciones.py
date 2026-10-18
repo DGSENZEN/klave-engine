@@ -145,7 +145,9 @@ class Verificacion(BaseModel):
     (con desperdicio) y ``concreto_m3`` cuando hay cifra (lo que pesa o mide el dato en duda, o
     lo que cambia entre los valores que el plano dice), ``volumen_m3`` cuando no la hay (el
     concreto de las piezas a las que les falta el dato: de qué tamaño es lo que falta) y
-    ``piezas``."""
+    ``piezas``. ``cantidad`` dice si lo que está en juego tiene cifra (``conocida``), no la tiene
+    (``desconocida``: lo que falta no se puede medir del plano) o es una cota que el plano permite
+    (``estimada``)."""
 
     id: str
     numero: int
@@ -159,11 +161,14 @@ class Verificacion(BaseModel):
     campo: str = ""
     textos: list[str] = Field(default_factory=list)
     en_juego: dict[str, float] = Field(default_factory=dict)
+    cantidad: Literal["conocida", "desconocida", "estimada"] = "conocida"
 
 
 def id_de_verificacion(numero: int, marca: str, hoja: str, clave: str) -> str:
-    """El id estable de un hallazgo: sha1 de su número, su marca, su hoja y su clave (el texto
-    que lo identifica, nunca una cuenta), sus primeros 12 hex."""
+    """El id estable de un hallazgo: sha1 de su número, su marca, su hoja y su clave — la
+    identidad estable de lo que trata (su campo, o el nombre de la familia o la clase en los de
+    familia o de hoja), nunca un texto del detalle, una cuenta ni el juego de campos que hoy
+    junta —, sus primeros 12 hex. Las decisiones (Tarea 12) se guardan con él."""
     llave = "\x1f".join((str(numero), marca, hoja, clave))
     return hashlib.sha1(llave.encode("utf-8")).hexdigest()[:12]
 
@@ -184,6 +189,7 @@ def _hallazgo(
     campo: str = "",
     textos: Iterable[str] = (),
     en_juego: dict[str, float] | None = None,
+    cantidad: Literal["conocida", "desconocida", "estimada"] = "conocida",
 ) -> Verificacion:
     """Un hallazgo. ``de_la_marca``: es de toda una marca (o una familia: todas sus colocaciones,
     en las hojas que sean), así que su id no lleva hoja aunque ``hoja`` diga la única en que
@@ -193,7 +199,7 @@ def _hallazgo(
         id=id_de_verificacion(numero, marca, "" if de_la_marca else hoja, clave),
         numero=numero,
         severidad=severidad,
-        mensaje=mensaje,
+        mensaje=al_lenguaje_del_plano(mensaje),
         marcas=lista_marcas,
         elementos=list(dict.fromkeys(elementos)),
         datos=[d.model_copy(deep=True) for d in datos],
@@ -202,10 +208,85 @@ def _hallazgo(
         campo=campo,
         textos=list(dict.fromkeys(textos)),
         en_juego={k: round(v, 4) for k, v in (en_juego or {}).items() if v},
+        cantidad=cantidad,
+    )
+
+
+# Lo que el motor escribe de sus lecturas («T3-8 · sección dibujada no encontrada», «… se lee en
+# E3») dicho como lo diría la oficina: ningún mensaje lleva cadenas del motor ni códigos de etapa.
+_DEL_MOTOR: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(patron), reemplazo)
+    for patron, reemplazo in (
+        (
+            r"«IA · hoja ([\w.-]+): ([^«»]*?)(?: · «([^«»]*)»)?»",
+            r"la lectura IA de \1 («\2»)",
+        ),
+        (r"IA · hoja ([\w.-]+): ([^«»·;]*)", r"la lectura IA de \1 («\2»)"),
+        (r"IA · hoja ([\w.-]+)", r"la lectura IA de \1"),
+        (
+            r"«?([A-Z][\w.-]*(?: \([^()«»]*\))?) · sección dibujada no encontrada»?",
+            r"el detalle de \1 (su sección dibujada no se pudo leer)",
+        ),
+        (
+            r"«?([A-Z][\w.-]*) · sección dibujada (compartida|dudosa)»?",
+            r"el detalle de \1 (su sección dibujada, \2, no se pudo leer)",
+        ),
+        (
+            r"«?([A-Z][^«»·;]*?) · señalada por flecha; se lee en E\d»?",
+            r"el detalle de \1 (su sección la señala una flecha, por leer)",
+        ),
+        (
+            r"«?([A-Z][\w.-]*) · par de cotas (\S+) sin contorno cerrado \(\d de 4 aristas "
+            r"dibujadas\)»?",
+            r"\2 acotada en el detalle de \1",
+        ),
+        (r"«?([A-Z][\w.-]*) · cotas de su sección (\S+)»?", r"\2 acotada en el detalle de \1"),
+        (
+            r"«?([A-Z][\w.-]*) · sección 1 (\S+), sección 2 (\S+) \(se toma la mayor\)»?",
+            r"los cortes «SECCIÓN 1» \2 y «SECCIÓN 2» \3 de \1",
+        ),
+        (
+            r"«?([A-Z][\w.-]*) · recubrimiento de ([\d.]+) cm acotado en las esquinas de su "
+            r"sección»?",
+            r"\2 cm acotados en las esquinas de la sección de \1",
+        ),
+        (r"«([A-Z][\w.-]*) · ([^«»·]+?) · bajo su sección»", r"«\2» bajo la sección de \1"),
+        (r"«([A-Z][\w.-]*) · ([^«»·]*[#@][^«»·]*)»", r"«\2» de \1"),
+        (r"sección dibujada no encontrada", "su sección dibujada no se pudo leer"),
+        (r"la lectura IA la lectura IA de", "la lectura IA de"),
+        # El nombre de una vista como lo junta el motor («ES-300 · ESTRUCTURA DE ROOF GARDEN»).
+        (r"\b([A-Z]{1,3}-\d{3}) · ", r"\1, "),
+        (r"; se lee en E\d", ", por leer"),
+        (r"se lee en E\d", "queda por leer"),
+    )
+)
+
+
+def al_lenguaje_del_plano(texto: str) -> str:
+    """El mensaje sin cadenas internas del motor ni códigos de etapa: las notas de una lectura
+    («K-1 · par de cotas 30x80 sin contorno cerrado …») dichas como las diría la oficina, y los
+    renglones de una pila separados como textos («4#3», «E#2@15»)."""
+    for patron, reemplazo in _DEL_MOTOR:
+        texto = patron.sub(reemplazo, texto)
+    # Un número con más de dos decimales es una medida del motor, no del plano: al décimo.
+    texto = re.sub(
+        r"(?<![\w.])(\d+\.\d{3,})(?![\w.])", lambda m: f"{round(float(m.group(1)), 1):g}", texto
+    )
+    texto = texto.replace("\n", " ")
+    return re.sub(
+        r"«([^«»]*?) / ([^«»]*?)»",
+        r"«\1», «\2»",
+        re.sub(r"«([^«»]*?) / ([^«»]*?) / ([^«»]*?)»", r"«\1», «\2», «\3»", texto),
     )
 
 
 # ------------------------------------------------------------------------------- el contexto
+
+
+def _handle_de(e: NormalizedEntity) -> str:
+    """El handle con que se busca un texto en el CAD: el suyo, o el del bloque que lo trae
+    («A7A6D#199», el texto 199 dentro del bloque A7A6D, se busca como A7A6D)."""
+    return (e.raw_handle or e.entity_id).split("#", 1)[0]
 
 
 @dataclass
@@ -224,9 +305,11 @@ class _Contexto:
     config: TextPatternConfig
     anclaje_m: float
     desperdicio: float
+    factor: float | None = None  # metros por unidad del dibujo
     _reglas: dict[str, Reglas] = field(default_factory=dict)
     _acero: dict[str, float] = field(default_factory=dict)
     deteccion: dict[str, Detection] = field(default_factory=dict)
+    en_planta: set[str] | None = None
 
     def __post_init__(self) -> None:
         self.deteccion = {d.detection_id: d for d in self.detections}
@@ -251,7 +334,7 @@ class _Contexto:
 
     def handle(self, entidad_id: str) -> str:
         e = self.entidades.get(entidad_id)
-        return e.raw_handle if e is not None and e.raw_handle else entidad_id
+        return _handle_de(e) if e is not None else entidad_id
 
     def cita(self, entidad_id: str, texto: str | None = None) -> str:
         e = self.entidades.get(entidad_id)
@@ -285,11 +368,14 @@ def verificar(
     config: TextPatternConfig | None = None,
     anclaje_m: float | None = None,
     desperdicio: float | None = None,
+    meters_factor: float | None = None,
 ) -> list[Verificacion]:
     """Las verificaciones del propio plano (ver el docstring del módulo), ordenadas: primero lo
     que bloquea, luego las dudas, luego los avisos; dentro de cada severidad, por lo que está en
-    juego (``peso``). ``anclaje_m`` y ``desperdicio`` son los de la etapa del acero (los de
-    ``SteelAssumptions`` si no se dan): con ellos se pesa lo que está en juego."""
+    juego (``ordenar``). ``anclaje_m`` y ``desperdicio`` son los de la etapa del acero (los de
+    ``SteelAssumptions`` si no se dan): con ellos se pesa lo que está en juego.
+    ``meters_factor`` (metros por unidad del dibujo) mide lo que se estima del dibujo (el largo de
+    un muro sin elemento); sin él se toma la unidad del dibujo por metro."""
     supuestos = SteelAssumptions()
     ctx = _Contexto(
         por_marca=por_marca,
@@ -304,37 +390,75 @@ def verificar(
         config=config or TextPatternConfig(),
         anclaje_m=supuestos.anchorage_m if anclaje_m is None else anclaje_m,
         desperdicio=supuestos.waste_pct / 100 if desperdicio is None else desperdicio,
+        factor=meters_factor,
     )
-    escritas = _marcas_escritas_en_planta(ctx)
+    titulos = _titulos_dibujados(ctx)
+    nervadura = _marcas_de_nervadura(ctx, titulos)
+    de_acero = {n for n, ts in titulos.items() if all(t.clase == "acero" for t in ts)}
+    # Un nombre que el plano sólo titula solo (sin palabra de familia) y que es de la familia de
+    # letras de las nervaduras escritas en planta («X1» junto a X0…X7) también es de la losa.
+    letras = {m.group(0) for n in nervadura if (m := re.match(r"[A-Z]+", n))}
+    de_la_losa = {
+        n
+        for n, ts in titulos.items()
+        if (m := re.match(r"[A-Z]+(?=-?\d)", n)) is not None
+        and m.group(0) in letras
+        and not any(
+            _TITULO_CON_FAMILIA.search(_una_linea(t.entidad.text or "").upper()) for t in ts
+        )
+        and not any(e.marca == n for e in ctx.elementos)
+    }
+    ajenas = set(nervadura) | de_acero | de_la_losa  # no son de esta lectura: tienen su aviso
+    escritas = _marcas_escritas_en_planta(ctx, titulos, ajenas)
     hallazgos: list[Verificacion] = []
     hallazgos += _sin_definir(ctx)
-    hallazgos += _sin_colocar(ctx, escritas)
-    hallazgos += _escritas_sin_elemento(ctx, escritas)
+    hallazgos += _sin_colocar(ctx, escritas, titulos, ajenas)
+    hallazgos += _escritas_sin_elemento(ctx, escritas, titulos)
     hallazgos += _detectadas_fuera(ctx)
-    hallazgos += _criticos(ctx)
-    hallazgos += _contradicciones(ctx)
-    hallazgos += _sin_dueno(ctx)
-    return ordenar(hallazgos, _totales(ctx))
+    hallazgos += _nervaduras(ctx, nervadura)
+    hallazgos += _de_acero(ctx, titulos)
+    criticos = _criticos(ctx)
+    hallazgos += _contradicciones(ctx, ajenas)
+    hallazgos += _juntar_por_marca(ctx, criticos, _sin_dueno(ctx), ajenas)
+    return ordenar(_referencias_cruzadas(hallazgos), _totales(ctx))
 
 
 def ordenar(
     hallazgos: list[Verificacion], totales: dict[str, float] | None = None
 ) -> list[Verificacion]:
-    """Por severidad y, dentro de ella, por ``peso`` (lo que está en juego como parte del acero
-    y del concreto de toda la estructura, ``totales``: ``acero_kg`` y ``concreto_m3``); a igual
-    peso, por número, marca, hoja e id."""
+    """Por severidad y, dentro de ella, por lo que está en juego (``banda``): primero lo que pesa
+    al menos 1 % del acero o del concreto de toda la estructura (``totales``: ``acero_kg`` y
+    ``concreto_m3``), luego lo que no tiene cifra (``cantidad`` desconocida o sólo estimada: lo que
+    falta no se puede medir, nunca por debajo de un hallazgo chico con cifra), luego lo demás;
+    dentro de cada banda por ``peso`` (en la de sin cifra, por cuántas piezas y textos toca); a
+    igual peso, por número, marca, hoja e id."""
     totales = totales or {}
     return sorted(
         hallazgos,
         key=lambda v: (
             _RANGO_DE_SEVERIDAD[v.severidad],
-            -peso(v, totales),
+            *banda(v, totales),
             v.numero,
             v.marcas[:1],
             v.hoja,
             v.id,
         ),
     )
+
+
+# Lo que pesa al menos esto del acero o del concreto de la estructura va primero.
+_PESO_GRANDE = 0.01
+
+
+def banda(v: Verificacion, totales: dict[str, float]) -> tuple[int, float]:
+    """(banda, orden dentro de ella) de un hallazgo por lo que está en juego: 0 lo que pesa al
+    menos ``_PESO_GRANDE``, 1 lo que no tiene cifra, 2 lo demás."""
+    p = peso(v, totales)
+    if p >= _PESO_GRANDE:
+        return (0, -p)
+    if v.cantidad != "conocida":
+        return (1, -(v.en_juego.get("piezas", 0.0) + len(v.textos)) - p)
+    return (2, -p)
 
 
 def peso(v: Verificacion, totales: dict[str, float]) -> float:
@@ -471,6 +595,10 @@ def _volumen(e: Elemento, seccion: Any = None, largo: float | None = None) -> fl
 def _nombre_de_hoja(hoja: str) -> str:
     """El código de la hoja; sin marcos, el nombre del archivo (sin su carpeta)."""
     return hoja.rsplit("/", 1)[-1] if hoja else "sin hoja"
+
+
+def _nombres_de_hojas(hojas: Iterable[str]) -> str:
+    return ", ".join(dict.fromkeys(_nombre_de_hoja(h) for h in hojas))
 
 
 def _hojas(elementos: Iterable[Elemento]) -> str:
@@ -676,21 +804,26 @@ class _Escrita:
     junto_sin_marca: list[str]  # las familias de las colocaciones sin marca junto a él
 
 
-def _marcas_escritas_en_planta(ctx: _Contexto) -> dict[str, list[_Escrita]]:
+def _marcas_escritas_en_planta(
+    ctx: _Contexto, titulos: dict[str, list["_Titulo"]], ajenas: set[str]
+) -> dict[str, list[_Escrita]]:
     """Los textos de una planta estructural que son una marca (con o sin su palabra de familia
     delante: «DADO D-1», «P-4»), que ninguna detección tomó, que no son etiquetas de cuadro ni
     títulos, y junto a los que no hay ninguna detección de esa marca: por marca normalizada. Una
-    marca es lo que la gramática lee como marca o el nombre de una definición."""
+    marca es lo que la gramática lee como marca, el nombre de una definición o un nombre que el
+    plano titula en un dibujo de concreto (R222: «MURO DE CONCRETO MC-A», sin la gramática ni la
+    IA). Las marcas de nervaduras y de acero (``ajenas``) no son de esta cuenta: tienen su aviso."""
     seg = ctx.segmentation
     if seg is None:
         return {}
     plantas = [v for v in seg.structural_plan_views() if v.bbox is not None]
     if not plantas:
         return {}
-    archivo_de: dict[str, str] = {f.frame_id: f.source_file for f in ctx.frames}
     usadas = {i for d in ctx.detections for i in d.source_entities}
     de_cuadro = set(ctx.inv.cuadro_mark_entities) | set(ctx.inv.titulos_de_detalle)
-    conocidas = {k for k in ctx.por_marca if not _SOLO_CIFRAS.match(k)}
+    conocidas = {k for k in ctx.por_marca if not _SOLO_CIFRAS.match(k)} | {
+        n for n, ts in titulos.items() if any(t.clase == "concreto" for t in ts)
+    }
     por_marca: dict[str, list[Detection]] = defaultdict(list)
     sin_marca: list[Detection] = []
     for d in ctx.detections:
@@ -705,15 +838,9 @@ def _marcas_escritas_en_planta(ctx: _Contexto) -> dict[str, list[_Escrita]]:
         if not e.is_textual or not e.text or e.entity_id in usadas or e.entity_id in de_cuadro:
             continue
         marca = _marca_del_texto(e.text, ctx.config, conocidas)
-        if marca is None:
+        if marca is None or marca in ajenas:
             continue
-        centro = bbox_center(e.bbox)
-        if not any(
-            v.bbox is not None
-            and bbox_contains_point(v.bbox, centro)
-            and archivo_de.get(v.view_id, "") in ("", e.source_file)
-            for v in plantas
-        ):
+        if not _en_planta(ctx, e):
             continue
         alto = alto_de_texto(e)
         if any(
@@ -746,10 +873,293 @@ def _marca_del_texto(texto: str, config: TextPatternConfig, conocidas: set[str])
     return escrito if escrito in conocidas else None
 
 
+# ----------------------------------------------------- lo que el plano titula (sin la gramática)
+
+# Un título dibujado: una palabra de familia y el nombre de lo que define («MURO DE CONCRETO MC-A»,
+# «DADO D-3A», «COLUMNA CM-1», «CONEXIÓN CN-A», «PLACA PL-A», «VIGA V-E», «NERVADURA Z5»). El nombre
+# lleva una cifra o un guion: «MURO BAJO», «PILOTE NO» no son nombres.
+_TITULO_CON_FAMILIA = re.compile(
+    r"(?<![A-ZÁÉÍÓÚÑ])(DADOS?|MUROS?(?:\s+DE\s+(?:CONCRETO|CONTENCI[OÓ]N))?|COLUMNAS?"
+    r"(?:\s+MET[AÁ]LICAS?)?|CASTILLOS?|CONTRATRABES?|TRABES?|PILOTES?|ZAPATAS?|DALAS?|CADENAS?"
+    r"(?:\s+DE\s+[A-ZÁÉÍÓÚ]+)?|CERRAMIENTOS?|PLACAS?(?:\s+BASE)?|CONEXI[OÓ]N(?:ES)?|VIGAS?|"
+    r"NERVADURAS?)\s+(?:TIPO\s+)?([A-Z]{1,4}\d{0,2}-?[0-9A-Z]{1,3}'?)(?![A-Z0-9-])"
+)
+# El nombre solo, en la capa de los detalles («D-C», «Z2»), o con lo que es su vista («D-3A PLANTA»,
+# «D-4A CORTE X-X'»).
+_NOMBRE_SOLO = re.compile(
+    r"^([A-Z]{1,4}\d{0,2}-?[0-9A-Z]{1,3}'?)(?:\s+(?:PLANTA|CORTE|ELEVACI[OÓ]N|SECCI[OÓ]N)\b.*)?$"
+)
+_DE_ACERO = re.compile(r"^(PLACA|CONEXI[OÓ]N|VIGA)")
+_DE_NERVADURA = re.compile(r"^NERVADURA")
+
+
+# Lo que empieza así remite a otro dibujo («DET-MB», «CORTE A-A»): no es el nombre de un elemento.
+_REFERENCIA = re.compile(r"^(?:DET|DETALLE|CORTE|SECC|VER|FIG|NTC|NPT|NIV|EJE)")
+
+
+def _nombre_de_marca(ficha: str) -> bool:
+    return (
+        bool(re.search(r"\d|-", ficha))
+        and not _SOLO_CIFRAS.match(ficha)
+        and not _REFERENCIA.match(ficha)
+    )
+
+
+@dataclass
+class _Titulo:
+    """Un título dibujado: el texto, su hoja y qué clase de elemento define."""
+
+    entidad: NormalizedEntity
+    hoja: str
+    clase: Literal["concreto", "acero", "nervadura"]
+    familia: str = ""  # la de su palabra de familia («DADO D-2A»: dado), si la lleva
+
+
+def _en_planta(ctx: _Contexto, e: NormalizedEntity) -> bool:
+    """Si el texto cae en una planta estructural (de su mismo archivo)."""
+    if ctx.en_planta is None:
+        seg = ctx.segmentation
+        plantas = (
+            [v for v in seg.structural_plan_views() if v.bbox is not None]
+            if seg is not None
+            else []
+        )
+        archivo_de = {f.frame_id: f.source_file for f in ctx.frames}
+        ctx.en_planta = {
+            x.entity_id
+            for x in ctx.entidades.values()
+            if x.is_textual
+            and any(
+                bbox_contains_point(v.bbox, bbox_center(x.bbox))  # type: ignore[arg-type]
+                and archivo_de.get(v.view_id, "") in ("", x.source_file)
+                for v in plantas
+            )
+        }
+    return e.entity_id in ctx.en_planta
+
+
+def _titulos_dibujados(ctx: _Contexto) -> dict[str, list[_Titulo]]:
+    """Los nombres que el plano titula en un dibujo, sin la gramática de marcas ni la IA (R222):
+    una palabra de familia y un nombre fuera de las plantas («MURO DE CONCRETO MC-A», en ES-302), o
+    un nombre solo en la capa de los detalles, en cualquier hoja («D-C» sobre su armado en ES-200).
+    Por nombre normalizado, con la clase de lo que define: concreto, acero (placas, conexiones,
+    vigas metálicas) o nervadura (las nervaduras de una losa)."""
+    salida: dict[str, list[_Titulo]] = defaultdict(list)
+    sin_familia: dict[str, list[NormalizedEntity]] = {}
+    for e in ctx.entidades.values():
+        if not e.is_textual or not e.text:
+            continue
+        texto = _una_linea(e.text).upper()
+        de_detalle = "DETALLE" in (e.layer or "").upper()
+        en_planta = _en_planta(ctx, e)
+        hallados: list[tuple[str, Literal["concreto", "acero", "nervadura"], str]] = []
+        if not en_planta or de_detalle:
+            for familia, ficha in _TITULO_CON_FAMILIA.findall(texto):
+                if not _nombre_de_marca(ficha):
+                    continue
+                clase_t: Literal["concreto", "acero", "nervadura"] = (
+                    "acero"
+                    if _DE_ACERO.match(familia)
+                    else "nervadura"
+                    if _DE_NERVADURA.match(familia)
+                    else "concreto"
+                )
+                hallados.append((ficha, clase_t, _familia_de_palabra(familia)))
+        solos: list[str] = []
+        if de_detalle and not hallados:
+            m = _NOMBRE_SOLO.match(_FAMILIA_EN_TITULO.sub("", texto).strip())
+            if m is not None and _nombre_de_marca(m.group(1)):
+                solos.append(m.group(1))
+        for ficha, clase, de_familia in hallados:
+            nombre = normalizar_marca(ficha.rstrip("'"), ctx.config)
+            salida[nombre].append(_Titulo(e, ctx.hoja_de(e), clase, de_familia))
+        for ficha in solos:
+            nombre = normalizar_marca(ficha.rstrip("'"), ctx.config)
+            sin_familia.setdefault(nombre, []).append(e)
+    # Un nombre solo es de la clase que dicen sus títulos con palabra de familia («VIGA V-E» y
+    # «V-E»: acero); si no tiene ninguno, de concreto.
+    for nombre, es in sin_familia.items():
+        clases = {t.clase for t in salida.get(nombre, [])}
+        de_ellos: Literal["concreto", "acero", "nervadura"] = (
+            "acero"
+            if clases == {"acero"}
+            else "nervadura"
+            if clases == {"nervadura"}
+            else "concreto"
+        )
+        salida[nombre] += [_Titulo(e, ctx.hoja_de(e), de_ellos) for e in es]
+    return salida
+
+
+_FAMILIA_DE_PALABRA = (
+    ("DADO", "dado"),
+    ("MURO", "muro_concreto"),
+    ("COLUMNA", "columna"),
+    ("CASTILLO", "castillo"),
+    ("CONTRATRABE", "contratrabe"),
+    ("TRABE", "trabe"),
+    ("PILOTE", "pilote"),
+    ("ZAPATA", "zapata"),
+    ("DALA", "dala"),
+    ("CADENA", "dala"),
+    ("CERRAMIENTO", "cerramiento"),
+)
+
+
+def _familia_de_palabra(palabra: str) -> str:
+    """La familia que nombra la palabra de un título («DADOS» → dado); vacío si no es de una
+    familia de concreto."""
+    return next((f for p, f in _FAMILIA_DE_PALABRA if palabra.startswith(p)), "")
+
+
+def _familia_titulada(titulos: list[_Titulo]) -> str:
+    """La familia que dicen los títulos de un nombre, si todos dicen la misma."""
+    familias = {t.familia for t in titulos if t.familia}
+    return next(iter(familias)) if len(familias) == 1 else ""
+
+
+def _donde_se_titula(ctx: _Contexto, titulos: list[_Titulo]) -> str:
+    """«ES-302 (329E1, 8ED73)»: las hojas y los handles de los títulos de un nombre."""
+    por_hoja: dict[str, list[str]] = defaultdict(list)
+    for t in titulos:
+        por_hoja[t.hoja].append(_handle_de(t.entidad))
+    return "; ".join(
+        f"{_nombre_de_hoja(h)} ({', '.join(sorted(set(hs))[:4])})"
+        for h, hs in sorted(por_hoja.items())
+    )
+
+
+# Las capas de una losa: lo escrito en ellas son marcas de nervaduras, viguetas o tableros.
+_CAPA_DE_LOSA = re.compile(r"LOSA|NERVAD|VIGUETA", re.IGNORECASE)
+_FICHA_DE_NERVADURA = re.compile(r"^[A-Z]{1,3}-?\d{1,2}[A-Z]?'?$")
+
+
+def _marcas_de_nervadura(
+    ctx: _Contexto, titulos: dict[str, list[_Titulo]]
+) -> dict[str, list[NormalizedEntity]]:
+    """Las marcas de las nervaduras de una losa escritas en planta (R226): las que van en la capa
+    de una losa («EST-LOSA NERVADA»: W1, X2, Y4, Z2) y las que el plano titula «NERVADURA». Son de
+    la losa, no elementos de esta lectura: un aviso por familia, nunca una marca sin colocar."""
+    salida: dict[str, list[NormalizedEntity]] = defaultdict(list)
+    nervaduras = {n for n, ts in titulos.items() if any(t.clase == "nervadura" for t in ts)}
+    for e in ctx.entidades.values():
+        if not e.is_textual or not e.text:
+            continue
+        texto = _una_linea(e.text).upper()
+        if not _FICHA_DE_NERVADURA.match(texto) or not _en_planta(ctx, e):
+            continue
+        nombre = normalizar_marca(texto.rstrip("'"), ctx.config)
+        if _CAPA_DE_LOSA.search(e.layer or "") or nombre in nervaduras:
+            salida[nombre].append(e)
+    return salida
+
+
+def _nervaduras(ctx: _Contexto, marcas: dict[str, list[NormalizedEntity]]) -> list[Verificacion]:
+    familias: dict[str, dict[str, list[NormalizedEntity]]] = defaultdict(dict)
+    for nombre, textos in marcas.items():
+        prefijo = re.match(r"[A-Z]+", nombre)
+        familias[prefijo.group(0) if prefijo else nombre][nombre] = textos
+    salida = []
+    for letra, de_ella in sorted(familias.items()):
+        todos = [t for ts in de_ella.values() for t in ts]
+        hojas = Counter(ctx.hoja_de(t) for t in todos)
+        capas = sorted({t.layer for t in todos})
+        # Como las escribe el plano («Z1», no la marca normalizada «Z-1»: no son zapatas).
+        escritas = Counter(_una_linea(t.text or "").upper() for t in todos)
+        cuantas = ", ".join(f"{n} ({c})" for n, c in sorted(escritas.items()))
+        handles = list(dict.fromkeys(_handle_de(t) for t in todos))
+        salida.append(
+            _hallazgo(
+                10,
+                "aviso",
+                f"Marcas de losa nervada sin lector, familia {letra}: {len(todos)} textos en "
+                f"{', '.join(f'{h} ({n})' for h, n in sorted(hojas.items()))}, capa "
+                f"{', '.join(capas)}: {cuantas}. Son de las nervaduras de la losa, no castillos, "
+                "trabes ni zapatas: la lectura estructural no las lee y sus cantidades no salen de "
+                f"aquí. Textos: {', '.join(handles[:_EJEMPLOS])}"
+                + (f" y {len(handles) - _EJEMPLOS} más" if len(handles) > _EJEMPLOS else "")
+                + ". Cantidad desconocida.",
+                clave=f"nervaduras: {letra}",
+                marcas=sorted(escritas),
+                textos=handles,
+                en_juego={"piezas": float(len(todos))},
+                cantidad="desconocida",
+            )
+        )
+    return salida
+
+
+# Los elementos de acero que esta lectura (de concreto) no lee, por familia (R231): columnas
+# HSS/PTR, placas, conexiones y vigas metálicas.
+_FAMILIAS_DE_ACERO: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("columnas de acero (HSS, PTR)", re.compile(r"\b(?:HSS|PTR)\b")),
+    ("placas base (PL)", re.compile(r"^(?:PLACA\s+(?:BASE\s+)?)?PL-[A-Z0-9]{1,3}\b")),
+    ("conexiones (CN)", re.compile(r"^(?:CONEXI[OÓ]N\s+)?CN-[A-Z0-9]{1,3}\b|^CONEXI[OÓ]N\b")),
+    (
+        "vigas de acero (V-, IPR)",
+        re.compile(r"\bIPR\b|\bIPS\b|\bVIGA\s+V-?[A-Z0-9]{1,3}\b|^V-[A-Z]$"),
+    ),
+)
+
+
+def _de_acero(ctx: _Contexto, titulos: dict[str, list[_Titulo]]) -> list[Verificacion]:
+    """Un aviso por familia de acero con lo que el plano escribe de ella en planta y en sus
+    detalles (por handle): no es de esta lectura, y se dice."""
+    salida = []
+    for nombre, patron in _FAMILIAS_DE_ACERO:
+        en_planta: list[NormalizedEntity] = []
+        en_detalle: list[NormalizedEntity] = []
+        for e in ctx.entidades.values():
+            if not e.is_textual or not e.text:
+                continue
+            texto = _una_linea(e.text).upper()
+            de_su_capa = nombre.startswith("conexiones") and "CONEXI" in (e.layer or "").upper()
+            if not patron.search(texto) and not de_su_capa:
+                continue
+            (en_planta if _en_planta(ctx, e) else en_detalle).append(e)
+        if not en_planta and not en_detalle:
+            continue
+
+        def citas(es: list[NormalizedEntity]) -> str:
+            lista = [f"{ctx.cita(e.entity_id)} ({ctx.hoja_de(e)})" for e in es]
+            return ", ".join(lista[:_EJEMPLOS]) + (
+                f" y {len(lista) - _EJEMPLOS} más" if len(lista) > _EJEMPLOS else ""
+            )
+
+        partes = []
+        if en_planta:
+            partes.append(f"en planta {citas(en_planta)}")
+        if en_detalle:
+            partes.append(f"en sus detalles {citas(en_detalle)}")
+        salida.append(
+            _hallazgo(
+                10,
+                "aviso",
+                f"Elementos de acero fuera de esta lectura, {nombre}: el plano los escribe "
+                + "; ".join(partes)
+                + ". Esta lectura es del concreto armado: sus cantidades no salen de aquí. "
+                "Cantidad desconocida.",
+                clave=f"acero: {nombre}",
+                textos=[_handle_de(e) for e in [*en_planta, *en_detalle]],
+                en_juego={"piezas": float(len(en_planta))},
+                cantidad="desconocida",
+            )
+        )
+    return salida
+
+
 # ------------------------------------------------------------ 2: definida que no se coloca
 
 
-def _sin_colocar(ctx: _Contexto, escritas: dict[str, list[_Escrita]]) -> list[Verificacion]:
+def _sin_colocar(
+    ctx: _Contexto,
+    escritas: dict[str, list[_Escrita]],
+    titulos: dict[str, list[_Titulo]],
+    ajenas: set[str],
+) -> list[Verificacion]:
+    """Lo definido que nunca se coloca ni se escribe en planta: lo que una lectura del plano
+    define, y lo que el plano titula en un dibujo aunque nadie lo haya leído (R224: «DADO D-2A»,
+    o una definición que sólo da la IA y que el plano titula)."""
     colocadas = {e.marca for e in ctx.elementos}
     detectadas: dict[str, list[Detection]] = defaultdict(list)
     plantas = (
@@ -760,10 +1170,17 @@ def _sin_colocar(ctx: _Contexto, escritas: dict[str, list[_Escrita]]) -> list[Ve
     for d in ctx.detections:
         if d.mark.strip() and d.family in FAMILIAS_ESTRUCTURALES:
             detectadas[normalizar_marca(d.mark, ctx.config)].append(d)
-    titulos = {v.view_id: v.title for v in ctx.segmentation.views} if ctx.segmentation else {}
+    titulos_de_vista = (
+        {v.view_id: v.title for v in ctx.segmentation.views} if ctx.segmentation else {}
+    )
+    de_concreto = {n: ts for n, ts in titulos.items() if any(t.clase == "concreto" for t in ts)}
     salida: list[Verificacion] = []
-    for marca, definicion in sorted(ctx.por_marca.items()):
-        if marca in colocadas or marca in escritas or not _del_plano(definicion):
+    for marca in sorted(set(ctx.por_marca) | set(de_concreto)):
+        if marca in colocadas or marca in escritas or marca in ajenas:
+            continue
+        definicion = ctx.por_marca.get(marca)
+        dibujados = de_concreto.get(marca, [])
+        if (definicion is None or not _del_plano(definicion)) and not dibujados:
             continue
         en_cuadro = sorted(
             {
@@ -775,26 +1192,38 @@ def _sin_colocar(ctx: _Contexto, escritas: dict[str, list[_Escrita]]) -> list[Ve
         )
         solo = (
             " En planta sólo aparece como etiqueta de cuadro o título de detalle ("
-            + ", ".join(titulos.get(v, v).split(" · ")[0] for v in en_cuadro)
+            + ", ".join(titulos_de_vista.get(v, v).split(" · ")[0] for v in en_cuadro)
             + "), nunca como colocación."
             if en_cuadro
             else ""
         )
-        hojas = ", ".join(definicion.hojas) or "sin hoja"
+        if definicion is not None and _del_plano(definicion):
+            dice = (
+                f"está definida en el plano ({_nombres_de_hojas(definicion.hojas) or 'sin hoja'})"
+            )
+            familia = definicion.familia
+        else:
+            dice = (
+                f"el plano la define en {_donde_se_titula(ctx, dibujados)} y no se leyó su "
+                "definición"
+            )
+            familia = definicion.familia if definicion is not None else _familia_titulada(dibujados)
+        de_familia = f" ({familia})" if familia else ""
         salida.append(
             _hallazgo(
                 2,
                 "aviso",
-                f"{marca} ({definicion.familia}) está definida en el plano ({hojas}) y no se "
-                f"coloca en ninguna planta: no entra en las cantidades.{solo} Si se construye, "
-                "falta su colocación.",
+                f"{marca}{de_familia} {dice}, y no se coloca en ninguna planta: no entra en las "
+                f"cantidades.{solo} Si se construye, falta su colocación.",
                 clave="definida sin colocar",
                 marca=marca,
                 datos=[
                     d
                     for campo in ("seccion_cm", *_ARMADO)
-                    if (d := getattr(definicion, campo)) is not None
+                    if definicion is not None and (d := getattr(definicion, campo)) is not None
                 ],
+                textos=[_handle_de(t.entidad) for t in dibujados],
+                cantidad="desconocida",
             )
         )
     return salida
@@ -813,20 +1242,34 @@ def _del_plano(d: Definicion) -> bool:
 
 
 def _escritas_sin_elemento(
-    ctx: _Contexto, escritas: dict[str, list[_Escrita]]
+    ctx: _Contexto, escritas: dict[str, list[_Escrita]], titulos: dict[str, list[_Titulo]]
 ) -> list[Verificacion]:
     salida: list[Verificacion] = []
     colocadas = _por_marca(ctx.elementos)
     for marca, textos in sorted(escritas.items()):
         por_hoja = Counter(t.hoja for t in textos)
-        donde = "; ".join(f"{h}: {_veces(n)}" for h, n in sorted(por_hoja.items()))
+        donde = "; ".join(f"{_nombre_de_hoja(h)}: {_veces(n)}" for h, n in sorted(por_hoja.items()))
         definicion = ctx.por_marca.get(marca)
-        if definicion is None:
-            estado = "Tampoco está definida en el plano."
-        elif not _del_plano(definicion):
-            estado = "Sólo la define la lectura IA."
+        # El nombre en la capa de los detalles dentro de una planta puede ser la etiqueta de una
+        # colocación («MC-1» junto a «20CM»): lo que está escrito en planta no es su propio título.
+        propios = {t.entidad.entity_id for t in textos}
+        dibujados = [
+            t
+            for t in titulos.get(marca, [])
+            if t.clase == "concreto" and t.entidad.entity_id not in propios
+        ]
+        if definicion is not None and _del_plano(definicion):
+            estado = f"Está definida en {_nombres_de_hojas(definicion.hojas) or 'el plano'}."
+        elif dibujados:
+            # R223: el plano la titula; lo que falló fue leer su definición.
+            estado = (
+                f"El plano la define en {_donde_se_titula(ctx, dibujados)} y no se leyó su "
+                "definición" + (" (sólo la lectura IA la lee)." if definicion is not None else ".")
+            )
+        elif definicion is not None:
+            estado = "Sólo la lectura IA la define; el plano no titula ningún dibujo suyo."
         else:
-            estado = f"Está definida en {', '.join(definicion.hojas) or 'el plano'}."
+            estado = "Tampoco está definida en el plano: ningún dibujo la titula."
         if colocadas.get(marca):
             otras = sorted({e.hoja for e in colocadas[marca]})
             estado += f" Sí tiene colocaciones en {', '.join(otras)}, no junto a estos textos."
@@ -842,9 +1285,21 @@ def _escritas_sin_elemento(
                 f" {cuales} junto a una colocación sin marca ({familias}): puede ser la suya, "
                 "sin juntar con su marca."
             )
-        familia = definicion.familia if definicion is not None else ""
+        familia = definicion.familia if definicion is not None else _familia_titulada(dibujados)
         if familia == "pilote" or marca.startswith("P-"):
             estado += " Todo pilote escrito en planta debe tener su pila: a éstos les falta."
+        estimado = _estimado_de_muro(ctx, textos) if _es_muro(marca, familia, textos) else None
+        if estimado is not None:
+            largo, volumen, como = estimado
+            estado += f" Estimado: {como}."
+            juego = {"piezas": float(len(textos)), "longitud_estimada_m": largo}
+            if volumen:
+                juego["concreto_m3"] = volumen
+            cantidad: Literal["conocida", "desconocida", "estimada"] = "estimada"
+        else:
+            estado += f" Cantidad desconocida: {_veces(len(textos))} escrita, sin elemento."
+            juego = {"piezas": float(len(textos))}
+            cantidad = "desconocida"
         citas = [ctx.cita(t.entidad.entity_id) for t in textos]
         hoja = next(iter(por_hoja)) if len(por_hoja) == 1 else ""
         salida.append(
@@ -861,11 +1316,129 @@ def _escritas_sin_elemento(
                 hoja=hoja,
                 de_la_marca=True,
                 bbox=_caja(t.entidad.bbox for t in textos) if hoja else None,
-                textos=[t.entidad.raw_handle for t in textos],
-                en_juego={"piezas": float(len(textos))},
+                textos=[_handle_de(t.entidad) for t in textos],
+                en_juego=juego,
+                cantidad=cantidad,
             )
         )
     return salida
+
+
+def _es_muro(marca: str, familia: str, textos: list[_Escrita]) -> bool:
+    return (
+        familia == "muro_concreto"
+        or marca.startswith("MC-")
+        or any("MURO" in (t.entidad.layer or "").upper() for t in textos)
+    )
+
+
+# Un texto de muro va sobre su muro: la cara más cercana a lo más esto, en altos de su letra.
+_SOBRE_SU_MURO = 3.0
+_ESPESOR_MINIMO_M = 0.08
+# Dos caras de un muro: paralelas, a lo más esto (m) una de otra.
+_ESPESOR_MAXIMO_M = 0.6
+
+
+def _estimado_de_muro(ctx: _Contexto, textos: list[_Escrita]) -> tuple[float, float, str] | None:
+    """R227: lo que el plano permite estimar de un muro escrito sin elemento: su largo, la cara
+    (en su capa) más cercana a cada texto, cada tramo una vez; su espesor, el de la cara paralela
+    más cercana a ella; su alto, el entrepiso declarado de su planta. Es una cota (la cara puede
+    seguir más allá de este muro), dicha como estimado; ``None`` si no hay cara."""
+    seg = ctx.segmentation
+    alturas = seg.alturas_de_entrepiso() if seg is not None else {}
+    capas = {t.entidad.layer for t in textos if t.entidad.layer}
+    trazos: list[tuple[str, int, tuple[float, float], tuple[float, float]]] = []
+    for e in ctx.entidades.values():
+        if e.layer not in capas or e.is_textual or not e.points or len(e.points) < 2:
+            continue
+        puntos = [(float(q[0]), float(q[1])) for q in e.points]
+        if e.properties.get("closed"):
+            puntos.append(puntos[0])
+        for k, (a, b) in enumerate(zip(puntos, puntos[1:], strict=False)):
+            trazos.append((e.entity_id, k, a, b))
+    if not trazos:
+        return None
+    tomados: dict[tuple[str, int], tuple[float, float, float]] = {}  # tramo → largo, espesor, alto
+    for t in textos:
+        centro = bbox_center(t.entidad.bbox)
+        alto_letra = alto_de_texto(t.entidad)
+        cerca = min(trazos, key=lambda tr: _a_tramo(centro, tr[2], tr[3]))
+        if _a_tramo(centro, cerca[2], cerca[3]) > _SOBRE_SU_MURO * alto_letra:
+            continue
+        largo = math.dist(cerca[2], cerca[3]) * (ctx.factor or 1.0)
+        espesor = _espesor(cerca, trazos, ctx.factor or 1.0)
+        vista = _vista_de(ctx, t.entidad)
+        entrepiso = alturas.get(vista) if vista else None
+        tomados[(cerca[0], cerca[1])] = (largo, espesor, entrepiso.altura_m if entrepiso else 0.0)
+    if not tomados:
+        return None
+    largo = sum(v[0] for v in tomados.values())
+    volumen = sum(v[0] * v[1] * v[2] for v in tomados.values() if v[1] and v[2])
+    espesores = sorted({round(v[1] * 100) for v in tomados.values() if v[1]})
+    altos = sorted({v[2] for v in tomados.values() if v[2]})
+    como = f"a lo más {largo:.2f} m de muro dibujado en planta ({len(tomados)} tramos de su cara)"
+    if volumen:
+        como += (
+            f" × espesor dibujado {', '.join(f'{x:g}' for x in espesores)} cm × entrepiso "
+            f"{', '.join(f'{x:g}' for x in altos)} m ≈ {volumen:.2f} m³ de concreto"
+        )
+    return largo, volumen, como
+
+
+def _a_tramo(p: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    largo2 = dx * dx + dy * dy
+    if largo2 <= 0:
+        return math.dist(p, a)
+    u = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / largo2))
+    return math.dist(p, (a[0] + u * dx, a[1] + u * dy))
+
+
+def _espesor(
+    cara: tuple[str, int, tuple[float, float], tuple[float, float]],
+    trazos: list[tuple[str, int, tuple[float, float], tuple[float, float]]],
+    factor: float,
+) -> float:
+    """La distancia, en metros, a la cara paralela más cercana que se le encima (el espesor
+    dibujado); una línea a menos de un espesor posible de muro (un achurado, una línea doble)
+    no es la otra cara."""
+    _i, _k, a, b = cara
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    largo = math.hypot(dx, dy)
+    if largo <= 0:
+        return 0.0
+    ux, uy = dx / largo, dy / largo
+    mejor = 0.0
+    for otro in trazos:
+        if otro is cara:
+            continue
+        c, d = otro[2], otro[3]
+        ox, oy = d[0] - c[0], d[1] - c[1]
+        ol = math.hypot(ox, oy)
+        if ol <= 0 or abs(ux * oy - uy * ox) / ol > 0.05:
+            continue  # no paralela
+        sep = abs((c[0] - a[0]) * uy - (c[1] - a[1]) * ux) * factor
+        t0 = (c[0] - a[0]) * ux + (c[1] - a[1]) * uy
+        t1 = (d[0] - a[0]) * ux + (d[1] - a[1]) * uy
+        if (
+            max(t0, t1) <= 0
+            or min(t0, t1) >= largo
+            or not _ESPESOR_MINIMO_M <= sep <= _ESPESOR_MAXIMO_M
+        ):
+            continue
+        mejor = sep if not mejor else min(mejor, sep)
+    return mejor
+
+
+def _vista_de(ctx: _Contexto, e: NormalizedEntity) -> str | None:
+    seg = ctx.segmentation
+    if seg is None:
+        return None
+    centro = bbox_center(e.bbox)
+    for v in seg.structural_plan_views():
+        if v.bbox is not None and bbox_contains_point(v.bbox, centro):
+            return v.view_id
+    return None
 
 
 _FUERA = {
@@ -946,6 +1519,7 @@ class _Estado:
     severidad: Severidad
     detalle: str  # lo que lo explica (igual para las colocaciones que se agrupan)
     dato: Dato | None = None
+    valores: list[Any] = field(default_factory=list)  # las secciones de «dos_secciones»
 
 
 # Los datos que sólo da una definición: sin ninguna, su falta es la de la marca (verificación 1).
@@ -956,7 +1530,13 @@ _SIN_VALOR = frozenset({"falta", "por_leer"})
 
 
 def _criticos(ctx: _Contexto) -> list[Verificacion]:
-    grupos: dict[tuple[str, str, str, str], list[tuple[Elemento, str, _Estado]]] = defaultdict(list)
+    """Un hallazgo por marca y dato (R229: su id es la marca y el dato, nunca los estados ni los
+    textos que hoy junta): los campos de armado a los que les falta su valor van juntos («armado»);
+    la altura repetida de la planta más alta, uno por hoja. Cada estado de las colocaciones de ese
+    dato (supuesto, de otra hoja, sin separación…) es una parte de su mensaje."""
+    grupos: dict[tuple[str, str, str], dict[str, list[tuple[Elemento, str, _Estado]]]] = (
+        defaultdict(lambda: defaultdict(list))
+    )
     for e in ctx.elementos:
         if not e.marca:
             continue  # sin marca: su aviso por familia (verificación 1) dice lo que les falta
@@ -967,23 +1547,75 @@ def _criticos(ctx: _Contexto) -> list[Verificacion]:
             for estado in _estados(ctx, e, campo):
                 if campo == "altura_m" and estado.estado == "supuesto":
                     # La altura que se repite en la planta más alta es de la hoja, no de la marca.
-                    llave = ("", campo, estado.estado, f"{e.hoja}: {estado.detalle}")
+                    llave = ("", e.hoja, campo)
+                    sub = f"{estado.estado}: {estado.detalle}"
                 elif campo in _ARMADO and estado.estado in _SIN_VALOR:
-                    llave = (e.marca, "armado", estado.estado, "")
+                    llave, sub = (e.marca, "", "armado"), estado.estado
                 else:
-                    llave = (e.marca, campo, estado.estado, "")
-                grupos[llave].append((e, campo, estado))
+                    llave, sub = (e.marca, "", campo), estado.estado
+                grupos[llave][sub].append((e, campo, estado))
         for estado in _variante(e):
-            grupos[(e.marca, "variante", estado.estado, "")].append((e, "seccion_cm", estado))
+            grupos[(e.marca, "", "variante")]["variante"].append((e, "seccion_cm", estado))
     salida: list[Verificacion] = []
     cubiertas: set[tuple[str, str]] = set()  # (element_id, campo) que ya tienen su hallazgo
-    for (marca, grupo, nombre, detalle), ternas in sorted(grupos.items()):
-        for e, campo, _s in ternas:
-            cubiertas.add((e.element_id, "variante" if grupo == "variante" else campo))
-        salida.append(_hallazgo_critico(ctx, marca, nombre, detalle, ternas))
+    for (marca, hoja, grupo), por_estado in sorted(grupos.items()):
+        partes = []
+        for sub, ternas in sorted(
+            por_estado.items(), key=lambda x: _ORDEN_DE_ESTADO.get(x[0].split(":")[0], 9)
+        ):
+            for e, campo, _s in ternas:
+                cubiertas.add((e.element_id, "variante" if grupo == "variante" else campo))
+            partes.append(_hallazgo_critico(ctx, marca, sub.split(":")[0], sub, ternas))
+        salida.append(_combinar(partes, marca, hoja, grupo))
     salida += _dudosas_de_colocacion(ctx)
     salida += _dudas_sin_hallazgo(ctx, cubiertas)
     return salida
+
+
+_ORDEN_DE_ESTADO = {
+    "falta": 0,
+    "por_leer": 1,
+    "sin_separacion": 2,
+    "dos_secciones": 3,
+    "supuesto": 4,
+    "ia": 5,
+    "de_otra_hoja": 6,
+    "medida_en_planta": 7,
+    "variante": 8,
+}
+
+
+def _combinar(partes: list[Verificacion], marca: str, hoja: str, grupo: str) -> Verificacion:
+    """Las partes de un mismo dato de una marca (o de una hoja) en un solo hallazgo, con el id de
+    la marca, la hoja y el dato: su severidad es la peor, su mensaje el de cada parte, lo que está
+    en juego el mayor de cada cifra (las partes tocan las mismas piezas)."""
+    severidad = min((v.severidad for v in partes), key=lambda x: _RANGO_DE_SEVERIDAD[x])
+    juego: dict[str, float] = {}
+    for v in partes:
+        for k, x in v.en_juego.items():
+            juego[k] = max(juego.get(k, 0.0), x)
+    cantidades = {v.cantidad for v in partes}
+    cantidad: Literal["conocida", "desconocida", "estimada"] = (
+        "desconocida" if "desconocida" in cantidades else "conocida"
+    )
+    elementos = list(dict.fromkeys(e for v in partes for e in v.elementos))
+    unica = partes[0] if len(partes) == 1 else None
+    campos = list(dict.fromkeys(c for v in partes for c in v.campo.split(",") if c))
+    return Verificacion(
+        id=id_de_verificacion(7, marca, hoja, grupo),
+        numero=7,
+        severidad=severidad,
+        mensaje=" ".join(v.mensaje for v in partes),
+        marcas=list(dict.fromkeys(m for v in partes for m in v.marcas)),
+        elementos=elementos,
+        datos=[d for v in partes for d in v.datos][:6],
+        hoja=unica.hoja if unica is not None else (hoja or partes[0].hoja),
+        bbox=unica.bbox if unica is not None else None,
+        campo=grupo if grupo in ("armado", "variante") else ",".join(campos),
+        textos=list(dict.fromkeys(t for v in partes for t in v.textos)),
+        en_juego=juego,
+        cantidad=cantidad,
+    )
 
 
 def _estados(ctx: _Contexto, e: Elemento, campo: str) -> list[_Estado]:
@@ -1038,7 +1670,52 @@ def _estados(ctx: _Contexto, e: Elemento, campo: str) -> list[_Estado]:
         )
     if campo == "estribos":
         estados += _sin_separacion(familia, dato)
+    if campo == "seccion_cm":
+        dos = _dos_secciones(ctx, e)
+        if dos is not None:
+            estados.append(dos)
     return estados
+
+
+def _secciones_por_hoja(dato: Dato) -> dict[str, list[Dato]]:
+    """Las secciones que el plano lee de una marca en cada hoja, distintas, del rango más alto que
+    lee en esa hoja (una sección dibujada a escala no es otro corte de una acotada)."""
+    por_hoja: dict[str, dict[int, dict[str, Dato]]] = defaultdict(lambda: defaultdict(dict))
+    for m in miembros(dato):
+        if m.fuente not in _LEIDAS or m.ilegible or m.valor is None:
+            continue
+        for h in hojas_de(m):
+            por_hoja[h][PRECEDENCIA[m.fuente]].setdefault(_llave_de_valor(m.valor), m)
+    return {h: list(rangos[max(rangos)].values()) for h, rangos in por_hoja.items()}
+
+
+def _dos_secciones(ctx: _Contexto, e: Elemento) -> _Estado | None:
+    """R225: el plano dibuja dos (o más) secciones de una marca en una misma hoja («SECCIÓN 1» y
+    «SECCIÓN 2» de una contratrabe): no se contradice, dibuja dos cortes; se toma una (la mayor) y
+    se dice, con lo que cambia en concreto."""
+    definicion = ctx.por_marca.get(e.marca)
+    if definicion is None or definicion.seccion_cm is None or definicion.variantes:
+        return None  # las variantes por muro no son cortes: cada una es de su muro
+    hojas = {h: ms for h, ms in _secciones_por_hoja(definicion.seccion_cm).items() if len(ms) > 1}
+    if not hojas:
+        return None
+    partes, valores = [], []
+    for h, ms in sorted(hojas.items()):
+        titulos = {ctx.handle(m.entidades[0]) for m in ms if m.entidades}
+        if len(titulos) == 1 and all(m.entidades for m in ms):
+            # Un mismo título escribe los dos cortes: se cita una vez.
+            lista = ", ".join(_valor("seccion_cm", m.valor) for m in ms) + (
+                f" (título {next(iter(titulos))})"
+            )
+        else:
+            lista = ", ".join(
+                f"{_valor('seccion_cm', m.valor)}"
+                + (f" (título {ctx.handle(m.entidades[0])})" if m.entidades else "")
+                for m in ms
+            )
+        partes.append(f"en {h}: {lista}")
+        valores += [m.valor for m in ms]
+    return _Estado("dos_secciones", "duda", "; ".join(partes), e.seccion_cm, valores=valores)
 
 
 def _entre_comillas(textos: Iterable[str]) -> list[str]:
@@ -1123,7 +1800,7 @@ def _notas_de_pilotes(ctx: _Contexto) -> list[str]:
             continue
         for frase in _FRASE_DE_PILOTE.findall(_una_linea(e.text).upper()):
             if re.search(r"LONGITUD|MEC[AÁ]NICA DE SUELOS|DESPLANTE|PROFUNDIDAD", frase):
-                copias[_una_linea(frase)].append(e.raw_handle)
+                copias[_una_linea(frase)].append(_handle_de(e))
     salida = []
     for frase, handles in sorted(copias.items(), key=lambda x: (-len(x[1]), x[0]))[:4]:
         corta = frase if len(frase) <= 160 else f"{frase[:157]}…"
@@ -1133,28 +1810,54 @@ def _notas_de_pilotes(ctx: _Contexto) -> list[str]:
 
 
 def _supuesto(ctx: _Contexto, e: Elemento, campo: str, dato: Dato) -> str:
-    """El supuesto que se usa y, para una sección, lo que el plano acota cerca de su título."""
+    """El supuesto que se usa y, para una sección cuyo detalle no se leyó, las cotas que el plano
+    escribe junto al título de ese detalle (por handle: CTA-11 acota «70» y «25» en ES-004)."""
     detalle = _una_linea(dato.texto) or "supuesto de Klave"
     if campo != "seccion_cm":
         return detalle
     definicion = ctx.por_marca.get(e.marca)
-    if definicion is None:
+    if definicion is None or definicion.seccion_cm is None:
         return detalle
-    acotado = []
     lados = {float(v) for v in dato.valor} if isinstance(dato.valor, list | tuple) else set()
-    for aviso in definicion.avisos:
-        m = _COTAS_CERCANAS.search(aviso)
-        if m is None:
+    acotado, ajenas = [], False
+    for m in miembros(definicion.seccion_cm):
+        if not m.ilegible or not m.entidades or m.entidades[0] not in ctx.entidades:
             continue
-        valores = [v.strip() for v in m.group(1).split(",") if v.strip()]
-        if any(_numero_texto(v) not in lados for v in valores):
-            acotado.append(f"{', '.join(valores)} cm en {m.group(2)}")
+        titulo = ctx.entidades[m.entidades[0]]
+        cotas = _cotas_junto_a(ctx, titulo)
+        if not cotas:
+            continue
+        ajenas = ajenas or any(v not in lados for v, _h in cotas)
+        lista = ", ".join(f"«{v:g}» {h}" for v, h in cotas)
+        acotado.append(f"{lista} en {m.hoja or ctx.hoja_de(titulo)} (título {_handle_de(titulo)})")
     if acotado:
         detalle += (
-            f"; cerca de su título el plano acota {'; '.join(acotado)}, que no se tomó: la "
-            "supuesta no coincide con lo acotado"
+            f"; junto al título de su detalle el plano acota {'; '.join(acotado)}, que no se tomó"
         )
+        if ajenas:
+            detalle += ": la supuesta no coincide con lo acotado"
     return detalle
+
+
+# Las cotas junto al título de un detalle: a lo más esto, en altos del título, y del tamaño de un
+# lado de sección (cm, como las escribe el plano).
+_COTAS_DEL_TITULO = 20.0
+_LADO_DE_SECCION = (8.0, 150.0)
+
+
+def _cotas_junto_a(ctx: _Contexto, titulo: NormalizedEntity) -> list[tuple[float, str]]:
+    """Las cotas (su número escrito, redondeado al décimo, y su handle) junto a un título."""
+    alcance = _COTAS_DEL_TITULO * alto_de_texto(titulo)
+    salida = []
+    for d in ctx.entidades.values():
+        if d.entity_type.value != "dimension" or d.source_file != titulo.source_file:
+            continue
+        valor = _numero(d.properties.get("display_value"))
+        if valor is None or not _LADO_DE_SECCION[0] <= valor <= _LADO_DE_SECCION[1]:
+            continue
+        if _hueco(d.bbox, titulo.bbox) <= alcance:
+            salida.append((round(valor, 1), _handle_de(d), _hueco(d.bbox, titulo.bbox)))
+    return [(v, h) for v, h, _g in sorted(salida, key=lambda x: x[2])]
 
 
 def _numero_texto(v: str) -> float | None:
@@ -1202,11 +1905,12 @@ def _hallazgo_critico(
     )
     dice = detalles()
     texto_valor = _valor(campos[0], valor)
+    desconocida = f" Cantidad desconocida: {_pzas(len(els))}."
     if nombre == "falta":
         porque = dice or f"el plano no {pron} da"
         mensaje = (
             f"{sujeto} de {quien} ({donde}): {porque}; no hay un supuesto que {pron} sustituya: "
-            f"{_consecuencia(campos)}."
+            f"{_consecuencia(campos)}.{desconocida}"
         )
     elif nombre == "por_leer":
         por_campo = (
@@ -1216,10 +1920,10 @@ def _hallazgo_critico(
         mensaje = (
             f"{sujeto} de {quien} ({donde}): el plano {pron} escribe y no se {leidos} "
             f"({por_campo}); no hay un supuesto que {pron} sustituya: {_consecuencia(campos)}, "
-            "por leer."
+            f"por leer.{desconocida}"
         )
     elif nombre == "supuesto" and campos == ["altura_m"]:
-        hoja = detalle_de_grupo.split(":", 1)[0]
+        hoja = _hoja_unica(els) or _hojas(els)
         mensaje = (
             f"La altura de los castillos y columnas de {hoja} ({len(els)} colocaciones de "
             f"{_listar(sorted({e.marca for e in els}))}) es un supuesto: {dice}. Confírmala."
@@ -1274,7 +1978,28 @@ def _hallazgo_critico(
             f"de su colocación: {_listar(medidas)}. Confírma{pron}."
         )
     elif nombre == "sin_separacion":
-        mensaje = f"Los estribos de {quien} ({donde}): {dice}."
+        mensaje = f"Los estribos de {quien} ({donde}): {dice}." + (
+            desconocida if severidad == "bloquea" else ""
+        )
+    elif nombre == "dos_secciones":
+        usados = list(
+            dict.fromkeys(
+                _llave_de_valor(s.dato.valor)
+                for s in estados
+                if s.dato is not None and s.dato.valor
+            )
+        )
+        cortes = [v for s in estados for v in s.valores]
+        mayor = max(cortes, key=lambda v: _area_m2(v) or 0.0) if cortes else None
+        tomadas = _listar(
+            sorted({_valor("seccion_cm", s.dato.valor) for s in estados if s.dato is not None})
+        )
+        cual = ", la mayor" if mayor is not None and usados == [_llave_de_valor(mayor)] else ""
+        mensaje = (
+            f"{quien} ({donde}): el plano dibuja dos secciones de la marca; {dice}; se toma "
+            f"{tomadas}{cual}. Confírmalo: si el elemento cambia de sección en su largo, cada "
+            "tramo lleva la suya."
+        )
     elif nombre == "variante":
         mensaje = (
             f"{quien} tiene variantes por muro y en {_pzas(len(els))} ({_hojas(els)}) no se "
@@ -1284,12 +2009,11 @@ def _hallazgo_critico(
     else:  # sin_estribos_declarados
         mensaje = f"{quien} ({donde}): {dice}."
     hoja = _hoja_unica(els)
-    grupo = "variante" if nombre == "variante" else ",".join(campos)
     return _hallazgo(
         7,
         severidad,
         mensaje,
-        clave=f"{grupo}: {nombre}" + (f": {detalle_de_grupo}" if detalle_de_grupo else ""),
+        clave=detalle_de_grupo,  # sólo una parte: el id del hallazgo lo pone ``_combinar``
         marca=marca,
         hoja=hoja,
         de_la_marca=bool(marca),
@@ -1298,7 +2022,10 @@ def _hallazgo_critico(
         datos=list({id(s.dato): s.dato for s in estados if s.dato is not None}.values())[:4],
         bbox=_caja_de(ctx, els) if hoja else None,
         campo=",".join(campos),
-        en_juego=_en_juego_de_campos(ctx, campos, nombre, els),
+        en_juego=_en_juego_de_campos(ctx, campos, nombre, els, estados),
+        cantidad="desconocida"
+        if nombre in _SIN_VALOR or (nombre == "sin_separacion" and severidad == "bloquea")
+        else "conocida",
     )
 
 
@@ -1309,7 +2036,11 @@ def _consecuencia(campos: list[str]) -> str:
 
 
 def _en_juego_de_campos(
-    ctx: _Contexto, campos: list[str], nombre: str, els: list[Elemento]
+    ctx: _Contexto,
+    campos: list[str],
+    nombre: str,
+    els: list[Elemento],
+    estados: list[_Estado] | None = None,
 ) -> dict[str, float]:
     """Lo que depende del dato: el concreto si es geométrico y el acero que se pesa con él (lo
     que se pierde si se quita). Sin valor no hay cifra que perder: el concreto de esas piezas
@@ -1319,6 +2050,13 @@ def _en_juego_de_campos(
         return juego  # nada que falte: el plano no los declara
     if nombre in ("falta", "por_leer"):
         juego["volumen_m3"] = sum(_volumen(e) or 0.0 for e in els)
+        return juego
+    if nombre == "dos_secciones":
+        # R225: lo que cambia entre las secciones dibujadas, en concreto, sobre sus colocaciones.
+        valores = [v for s in estados or [] for v in s.valores]
+        volumenes = [sum(_volumen(e, v) or 0.0 for e in els) for v in valores]
+        if volumenes:
+            juego["concreto_m3"] = max(volumenes) - min(volumenes)
         return juego
     if any(c in _GEOMETRIA for c in campos):
         juego["concreto_m3"] = sum(_volumen(e) or 0.0 for e in els)
@@ -1439,23 +2177,29 @@ def _dudas_sin_hallazgo(ctx: _Contexto, cubiertas: set[tuple[str, str]]) -> list
 # ---------------------------------------------------------------- 8: el plano se contradice
 
 
-def _contradicciones(ctx: _Contexto) -> list[Verificacion]:
+def _contradicciones(ctx: _Contexto, ajenas: set[str]) -> list[Verificacion]:
     salida: list[Verificacion] = []
-    salida += _definiciones_que_no_coinciden(ctx)
+    salida += _definiciones_que_no_coinciden(ctx, ajenas)
     salida += _reglas_que_no_coinciden(ctx)
     salida += _codigos_de_hoja(ctx)
     salida += _entrepisos(ctx)
     return salida
 
 
-def _definiciones_que_no_coinciden(ctx: _Contexto) -> list[Verificacion]:
+def _definiciones_que_no_coinciden(ctx: _Contexto, ajenas: set[str]) -> list[Verificacion]:
     """Dos lecturas del plano del mismo rango que dicen valores distintos de un campo de una
     marca (R12: por valor, nunca por cuántas alternativas hay; una copia ilegible no cuenta). Una
     marca con variantes por muro se compara variante por variante: sus variantes no se
-    contradicen, cada una es de su muro."""
+    contradicen, cada una es de su muro. Dos secciones en una misma hoja son dos cortes dibujados
+    (R225, verificación 7), no una contradicción; un valor que es de la llamada de otra marca en
+    la misma hoja no es una lectura propia (R226); las marcas de nervaduras y de acero no son de
+    esta lectura."""
     salida: list[Verificacion] = []
     colocadas = _por_marca(ctx.elementos)
+    ajenos = _valores_de_llamadas(ctx)
     for marca, definicion in sorted(ctx.por_marca.items()):
+        if marca in ajenas:
+            continue
         partes = definicion.variantes or [definicion]
         for parte in partes:
             nombre = (
@@ -1467,8 +2211,8 @@ def _definiciones_que_no_coinciden(ctx: _Contexto) -> list[Verificacion]:
                 dato = getattr(parte, campo)
                 if dato is None:
                     continue
-                grupos = _valores_leidos(dato)
-                if len(grupos) < 2:
+                grupos = _propios(_valores_leidos(dato), marca, ajenos)
+                if len(grupos) < 2 or _en_una_hoja(grupos):
                     continue
                 els = [
                     e
@@ -1479,6 +2223,51 @@ def _definiciones_que_no_coinciden(ctx: _Contexto) -> list[Verificacion]:
                 ]
                 salida.append(_definicion_contradicha(ctx, marca, nombre, campo, dato, grupos, els))
     return salida
+
+
+def _valores_de_llamadas(ctx: _Contexto) -> dict[tuple[str, str], set[str]]:
+    """(hoja, valor) → las marcas cuya llamada de corte en esa hoja escribe esa sección
+    («SECCIÓN 1 28X45», leída como «sección 1 28x45, sección 2 31x30»)."""
+    salida: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for s in ctx.inv.specs:
+        if s.metodo != "llamada" or s.source == "ia":
+            continue
+        for a, b in re.findall(r"(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)", s.source_text.lower()):
+            valor = (_numero_texto(a), _numero_texto(b))
+            salida[(s.hoja, _llave_de_valor([_entero(v) for v in valor]))].add(
+                normalizar_marca(s.mark, ctx.config)
+            )
+    return salida
+
+
+def _entero(v: float | None) -> float | int | None:
+    return int(v) if v is not None and float(v).is_integer() else v
+
+
+def _propios(
+    grupos: list[list[Dato]], marca: str, ajenos: dict[tuple[str, str], set[str]]
+) -> list[list[Dato]]:
+    """Los grupos de valores quitando las lecturas que no son de la marca: las de una hoja cuya
+    llamada de corte de otra marca escribe ese mismo valor (R226: Z-2 «28x45» de ES-101 es la
+    «SECCIÓN 1» de T1-2)."""
+    salida = []
+    for grupo in grupos:
+        propios = [
+            m
+            for m in grupo
+            if not any(
+                ajenos.get((h, _llave_de_valor(m.valor)), set()) - {marca} for h in hojas_de(m)
+            )
+        ]
+        if propios:
+            salida.append(propios)
+    return salida
+
+
+def _en_una_hoja(grupos: list[list[Dato]]) -> bool:
+    """Si una misma hoja lee todos los valores (dos cortes de una marca, no una contradicción)."""
+    hojas = [{h for m in g for h in hojas_de(m)} for g in grupos]
+    return bool(set.intersection(*hojas)) if hojas else False
 
 
 def _de(campo: str) -> str:
@@ -1517,27 +2306,44 @@ def _definicion_contradicha(
     lecturas = []
     for grupo in grupos:
         hojas = sorted({h for m in grupo for h in hojas_de(m)})
-        cita = _una_linea(grupo[0].texto)
+        titulos = sorted({ctx.handle(m.entidades[0]) for m in grupo if m.entidades})
         lecturas.append(
             f"{_valor(campo, grupo[0].valor)} ({', '.join(hojas) or 'sin hoja'}"
-            + (f"; «{cita}»" if cita else "")
+            + (f"; título {', '.join(titulos)}" if titulos else "")
             + ")"
         )
+    leen = {h for g in grupos for m in g for h in hojas_de(m)}
+    cada_una = bool(els) and all(e.hoja in leen for e in els)
     usado = (
         "cada colocación toma la de su hoja; las de las hojas sin lectura propia, "
         f"{_valor(campo, dato.valor)}"
-        if any(e.hoja in {h for g in grupos for m in g for h in hojas_de(m)} for e in els)
+        if any(e.hoja in leen for e in els)
         else f"se usa {_valor(campo, dato.valor)}"
     )
     juego = _delta(ctx, campo, grupos, els)
+    if campo == "recubrimiento_m" and cada_una:
+        # Un recubrimiento que cada hoja acota a su modo y que cada colocación toma de su propia
+        # hoja: dicho, no una duda (lo que cambia es poco y cada hoja manda sobre lo suyo).
+        return _hallazgo(
+            8,
+            "aviso",
+            f"{nombre} tiene {len(grupos)} valores distintos {_de(campo)} en el plano: "
+            f"{_listar(lecturas)}. Cada hoja usa la suya.",
+            clave=campo if nombre == marca else f"{campo}: {nombre}",
+            marca=marca,
+            elementos=[e.element_id for e in els],
+            datos=[g[0] for g in grupos],
+            campo=campo,
+            textos=[ctx.handle(i) for g in grupos for m in g for i in m.entidades],
+            en_juego=juego,
+        )
     return _hallazgo(
         8,
         "duda",
         f"{nombre} tiene {len(grupos)} valores distintos {_de(campo)} en el plano: "
         f"{_listar(lecturas)}. {usado.capitalize()}; confírmalo.",
-        clave=f"{campo}: {nombre}",
+        clave=campo if nombre == marca else f"{campo}: {nombre}",
         marca=marca,
-        marcas=[marca],
         elementos=[e.element_id for e in els],
         datos=[g[0] for g in grupos],
         campo=campo,
@@ -1605,7 +2411,7 @@ def _reglas_que_no_coinciden(ctx: _Contexto) -> list[Verificacion]:
             for h in hojas_de(m):
                 por_hoja[h].setdefault(_llave_de_valor(m.valor), m)
         en_una = {h: list(v.values()) for h, v in por_hoja.items() if len(v) > 1}
-        for firma, hojas in _agrupar_hojas(en_una).items():
+        for _firma, hojas in _agrupar_hojas(en_una).items():
             valores = en_una[hojas[0]]
             salida.append(
                 _hallazgo(
@@ -1614,8 +2420,8 @@ def _reglas_que_no_coinciden(ctx: _Contexto) -> list[Verificacion]:
                     f"En {_listar(hojas)} el plano dice dos cosas distintas sobre {nombre}: "
                     + _listar([f"«{_una_linea(m.texto)}»" for m in valores])
                     + ". Una misma hoja no puede usar las dos; confirma cuál vale.",
-                    clave=f"regla en una hoja: {nombre}: {firma}",
-                    hoja=hojas[0] if len(hojas) == 1 else "",
+                    clave=f"regla en una hoja: {nombre}",
+                    hoja=hojas[0],
                     datos=valores,
                     textos=[ctx.handle(i) for m in valores for i in m.entidades],
                 )
@@ -1632,7 +2438,7 @@ def _reglas_que_no_coinciden(ctx: _Contexto) -> list[Verificacion]:
                         f"elementos, no trae su propia copia: se usa «{_una_linea(dato.texto)}» "
                         f"({', '.join(hojas_de(dato))}). Confirma cuál vale para esa hoja.",
                         clave=f"regla sin copia propia: {nombre}",
-                        hoja=sin_copia[0] if len(sin_copia) == 1 else "",
+                        hoja=sin_copia[0],
                         datos=[dato],
                         textos=[ctx.handle(i) for i in dato.entidades],
                     )
@@ -1691,8 +2497,8 @@ def _soldar_contra_tabla(ctx: _Contexto) -> list[Verificacion]:
                 f"del #{desde_txt} en adelante se suelda («{_una_linea(nota.texto)}»): ¿se "
                 "traslapan "
                 "o se sueldan? Confírmalo.",
-                clave=f"tabla contra soldadura: #{desde_txt}: {', '.join(numeros)}",
-                hoja=hojas[0] if len(hojas) == 1 else "",
+                clave="tabla contra soldadura",
+                hoja=sorted(hojas)[0],
                 datos=[nota],
                 textos=[ctx.handle(i) for i in nota.entidades],
             )
@@ -1843,14 +2649,138 @@ def _entrepisos(ctx: _Contexto) -> list[Verificacion]:
 # ------------------------------------------------------------------- 11: lo que nadie leyó
 
 
-def _sin_dueno(ctx: _Contexto) -> list[Verificacion]:
-    salida: list[Verificacion] = []
-    salida += _rechazos_por_hoja(ctx)
-    salida += _avisos_de_lectura(ctx)
-    salida += _junto_a_su_seccion(ctx)
-    salida += _etiquetas_de_cuadro(ctx)
-    salida += _solo_ia(ctx)
-    salida += _avisos_de_reglas(ctx)
+def _sin_dueno(ctx: _Contexto) -> tuple[list[Verificacion], list[Verificacion], set[str]]:
+    """(los hallazgos de la verificación 11 que son de una clase o de las reglas, los que son de
+    una marca: lo escrito junto a su sección, lo que avisan sus lecturas, lo que sólo dice la
+    IA; y los textos que ya cita lo escrito junto a su sección). Los de una marca se juntan con
+    su hallazgo de dato crítico o en uno solo por marca, y los textos sin leer por hoja se cuentan
+    después, sin lo que ya se dijo de una marca (``_juntar_por_marca``)."""
+    de_marca, informativos = _avisos_de_lectura(ctx)
+    junto, citados = _junto_a_su_seccion(ctx)
+    globales = [*informativos, *_etiquetas_de_cuadro(ctx), *_avisos_de_reglas(ctx)]
+    return globales, [*junto, *de_marca, *_solo_ia(ctx)], citados
+
+
+def _juntar_por_marca(
+    ctx: _Contexto,
+    criticos: list[Verificacion],
+    sin_dueno: tuple[list[Verificacion], list[Verificacion], set[str]],
+    ajenas: set[str],
+) -> list[Verificacion]:
+    """R228, R148a: lo que la verificación 11 dice de una marca (sus textos sin leer, sus avisos,
+    su lectura IA) va dentro del hallazgo de dato crítico de esa marca, si lo tiene, con sus
+    handles; si no, en un solo hallazgo por marca. El nombre que la IA le da a una sección
+    («CTA-3 (SECCIÓN 1)») es de su marca. Un texto sin leer que sólo puede ser de una marca y que
+    su hallazgo de dato crítico ya nombra («8@15» de TE-A) se cita ahí, con su handle, y no se
+    repite en la cuenta de su hoja."""
+    globales, de_marca, citados = sin_dueno
+    principal: dict[str, int] = {}
+    for i, v in enumerate(criticos):
+        if v.numero != 7 or len(v.marcas) != 1 or not v.marcas[0]:
+            continue
+        marca = v.marcas[0]
+        actual = principal.get(marca)
+        if actual is None or _prioridad(v) < _prioridad(criticos[actual]):
+            principal[marca] = i
+    salida = list(criticos)
+    plegados: dict[int, list[Any]] = defaultdict(list)
+    for r in ctx.inv.rechazos:
+        if r.entidad_id in citados or r.entidad_id not in ctx.entidades:
+            continue
+        suyas = {*r.marcas, *r.posibles}
+        if len(suyas) != 1 or (marca := next(iter(suyas))) not in principal:
+            continue
+        i = principal[marca]
+        if all(c in salida[i].mensaje for c in re.findall(r"«[^«»]*»", _citas_de(r.texto))):
+            plegados[i].append(r)
+    for i, rs in plegados.items():
+        w = salida[i]
+        por_hoja: dict[str, list[str]] = defaultdict(list)
+        for r in rs:
+            por_hoja[r.hoja or "sin hoja"].append(ctx.cita(r.entidad_id, r.texto))
+        donde = "; ".join(f"en {h}: {', '.join(cs)}" for h, cs in sorted(por_hoja.items()))
+        salida[i] = w.model_copy(
+            update={
+                "mensaje": f"{w.mensaje} Esos textos en el plano, sin dueño: {donde}.",
+                "textos": list(dict.fromkeys([*w.textos, *(ctx.handle(r.entidad_id) for r in rs)])),
+            }
+        )
+    fuera = citados | {r.entidad_id for rs in plegados.values() for r in rs}
+    por_marca: dict[str, list[Verificacion]] = defaultdict(list)
+    for v in de_marca:
+        base = (v.marcas[0] if v.marcas else "").split(" (", 1)[0]
+        if base in principal:
+            i = principal[base]
+            w = salida[i]
+            salida[i] = w.model_copy(
+                update={
+                    "mensaje": f"{w.mensaje} Además: {v.mensaje}",
+                    "textos": list(dict.fromkeys([*w.textos, *v.textos])),
+                    "datos": [*w.datos, *v.datos][:8],
+                }
+            )
+        else:
+            por_marca[base].append(v)
+    for base, partes in sorted(por_marca.items()):
+        severidad = min((v.severidad for v in partes), key=lambda x: _RANGO_DE_SEVERIDAD[x])
+        hojas = {v.hoja for v in partes}
+        salida.append(
+            Verificacion(
+                id=id_de_verificacion(11, base, "", ""),
+                numero=11,
+                severidad=severidad,
+                mensaje=" ".join(v.mensaje for v in partes),
+                marcas=list(dict.fromkeys(m for v in partes for m in v.marcas)),
+                datos=[d for v in partes for d in v.datos][:8],
+                hoja=next(iter(hojas)) if len(hojas) == 1 else "",
+                bbox=partes[0].bbox if len(partes) == 1 else None,
+                campo=",".join(dict.fromkeys(v.campo for v in partes if v.campo)),
+                textos=list(dict.fromkeys(t for v in partes for t in v.textos)),
+                cantidad="desconocida"
+                if any(v.cantidad == "desconocida" for v in partes)
+                else "conocida",
+            )
+        )
+    return [*salida, *_rechazos_por_hoja(ctx, fuera), *globales]
+
+
+def _citas_de(texto: str) -> str:
+    """Cómo se cita un texto en un mensaje: «4#3 / E#2@15» se dice «4#3», «E#2@15»."""
+    return al_lenguaje_del_plano(f"«{_una_linea(texto)}»")
+
+
+def _prioridad(v: Verificacion) -> tuple[int, int]:
+    """El hallazgo de una marca que recibe lo demás que se dice de ella: el de su armado por
+    leer primero, luego el más grave."""
+    return (0 if v.campo == "armado" else 1, _RANGO_DE_SEVERIDAD[v.severidad])
+
+
+def _referencias_cruzadas(hallazgos: list[Verificacion]) -> list[Verificacion]:
+    """La altura supuesta de la planta más alta y la contradicción de los entrepisos tratan de lo
+    mismo: cada una nombra a la otra."""
+    entrepisos = next(
+        (v for v in hallazgos if v.id == id_de_verificacion(8, "", "", "entrepisos")), None
+    )
+    if entrepisos is None:
+        return hallazgos
+    alturas = [
+        v
+        for v in hallazgos
+        if v.numero == 7 and v.campo == "altura_m" and v.hoja and "repite" in v.mensaje
+    ]
+    if not alturas:
+        return hallazgos
+    salida = []
+    for v in hallazgos:
+        if v is entrepisos:
+            donde = ", ".join(f"{a.hoja} ({a.id})" for a in alturas)
+            v = v.model_copy(
+                update={"mensaje": f"{v.mensaje} Ver también la altura supuesta de {donde}."}
+            )
+        elif v in alturas:
+            cual = f"la contradicción de los entrepisos ({entrepisos.id})"
+            v = v.model_copy(update={"mensaje": f"{v.mensaje} Ver también {cual}."})
+        salida.append(v)
     return salida
 
 
@@ -1910,11 +2840,14 @@ def _clase_de_texto(texto: str) -> str:
     return "armado"
 
 
-def _rechazos_por_hoja(ctx: _Contexto) -> list[Verificacion]:
+def _rechazos_por_hoja(ctx: _Contexto, citados: set[str]) -> list[Verificacion]:
     """Los textos con armado que nadie leyó, por hoja, por motivo y por clase de texto: su cuenta,
-    sus ejemplos y todos sus handles, con las marcas de las que pueden ser."""
+    sus ejemplos y todos sus handles, con las marcas de las que pueden ser. Lo que ya cita el
+    hallazgo de su marca (``citados``: lo escrito junto a su sección) no se repite aquí."""
     grupos: dict[tuple[str, str, str], list[Any]] = defaultdict(list)
     for r in ctx.inv.rechazos:
+        if r.entidad_id in citados:
+            continue
         grupos[(r.hoja or "sin hoja", r.motivo, _clase_de_texto(r.texto))].append(r)
     salida = []
     for (hoja, motivo, clase), rechazos in sorted(grupos.items()):
@@ -1948,7 +2881,7 @@ def _rechazos_por_hoja(ctx: _Contexto) -> list[Verificacion]:
     return salida
 
 
-def _avisos_de_lectura(ctx: _Contexto) -> list[Verificacion]:
+def _avisos_de_lectura(ctx: _Contexto) -> tuple[list[Verificacion], list[Verificacion]]:
     """Lo que las lecturas de cada marca avisan. Lo que pide que alguien mire (un texto vetado de
     su pila, un dibujo que no coincide con sus cotas, un corte que no se pudo escoger, un texto
     de la marca que nadie leyó, la sección que no se encontró y que nada más da) es una duda, un
@@ -1956,7 +2889,8 @@ def _avisos_de_lectura(ctx: _Contexto) -> list[Verificacion]:
     unas cotas cercanas que no se tomaron, una lectura IA que no se usa) es un aviso, un hallazgo
     por clase de aviso con todas sus marcas: así no tapa lo demás. El código de hoja repetido es
     una contradicción (verificación 8) y no se repite aquí."""
-    salida = []
+    salida: list[Verificacion] = []
+    agrupados: list[Verificacion] = []
     informativos: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for marca, definicion in sorted({**ctx.por_marca, **ctx.por_familia}.items()):
         avisos = [a for a in definicion.avisos if "marcos distintos llevan ese código" not in a]
@@ -1973,8 +2907,7 @@ def _avisos_de_lectura(ctx: _Contexto) -> list[Verificacion]:
                 "duda",
                 f"Las lecturas de {marca} avisan: " + "; ".join(dudas) + ".",
                 clave="avisos de lectura",
-                marca=marca if marca in ctx.por_marca else "",
-                marcas=[marca],
+                marca=marca,
                 datos=[
                     d
                     for campo in ("seccion_cm", *_ARMADO)
@@ -1986,7 +2919,7 @@ def _avisos_de_lectura(ctx: _Contexto) -> list[Verificacion]:
         marcas = list(dict.fromkeys(m for m, _a in pares))
         detalle = "; ".join(f"{m}: {a}" for m, a in pares[:_EJEMPLOS])
         mas = f"; y {len(pares) - _EJEMPLOS} más" if len(pares) > _EJEMPLOS else ""
-        salida.append(
+        agrupados.append(
             _hallazgo(
                 11,
                 "aviso",
@@ -1995,7 +2928,7 @@ def _avisos_de_lectura(ctx: _Contexto) -> list[Verificacion]:
                 marcas=marcas,
             )
         )
-    return salida
+    return salida, agrupados
 
 
 _FAMILIA_DE_LA_IA = re.compile(
@@ -2057,7 +2990,7 @@ def _clase_de_aviso(aviso: str, definicion: Definicion) -> str | None:
     return None
 
 
-def _junto_a_su_seccion(ctx: _Contexto) -> list[Verificacion]:
+def _junto_a_su_seccion(ctx: _Contexto) -> tuple[list[Verificacion], set[str]]:
     """El armado de una marca escrito junto a la sección de su detalle o en su esquina —no bajo
     ella, donde se lee su pila— que nadie leyó, y lo que bajo ella quedó en duda: por marca, cada
     texto por su handle. Un texto cuenta para la sección de su marca si se le atribuye
@@ -2118,7 +3051,7 @@ def _junto_a_su_seccion(ctx: _Contexto) -> list[Verificacion]:
                 textos=[ctx.handle(r.entidad_id) for r, *_ in unicos],
             )
         )
-    return salida
+    return salida, {i for vistos in por_marca.values() for i in vistos}
 
 
 def _etiquetas_de_cuadro(ctx: _Contexto) -> list[Verificacion]:
@@ -2214,18 +3147,15 @@ def _solo_ia(ctx: _Contexto) -> list[Verificacion]:
             hoja = dato.hoja
             hojas.append(hoja)
             de_la_hoja = titulos.get(hoja, [])
-            cerca = []
-            for r in rechazos.get(hoja, []):
-                fragmento = {"seccion_cm": "seccion", "longitud_m": "longitud"}.get(campo, campo)
-                if fragmento not in campos_de_fragmento(r.texto, definicion.familia):
-                    continue
-                caja = ctx.entidades[r.entidad_id].bbox
+            cerca: list[tuple[str, str]] = []  # (entidad, texto)
+            for entidad, texto in _candidatos_de_campo(ctx, campo, hoja, rechazos, definicion):
+                caja = ctx.entidades[entidad].bbox
                 if not _de_su_titulo(de_la_hoja, caja, marca, cortes):
                     continue
-                cerca.append(r)
+                cerca.append((entidad, texto))
                 cajas.append(caja)
-            citas = [ctx.cita(r.entidad_id, r.texto) for r in cerca]
-            citados += [ctx.handle(r.entidad_id) for r in cerca]
+            citas = [ctx.cita(i, t) for i, t in cerca]
+            citados += [ctx.handle(i) for i, _t in cerca]
             junto = (
                 "; junto a su título el plano escribe, sin que nadie lo lea: "
                 + ", ".join(citas[:_EJEMPLOS])
@@ -2254,6 +3184,52 @@ def _solo_ia(ctx: _Contexto) -> list[Verificacion]:
                 textos=citados,
             )
         )
+    return salida
+
+
+# Una malla electrosoldada de losa («6x6-8/8», «MALLA ELECTROSOLDADA 6X6-10/10») no es la sección de
+# un elemento; una sección escrita con pulgadas («10"X10"») o un perfil (HSS, PTR, IPR) sí.
+_MALLA = re.compile(r"\d+\s*[xX×]\s*\d+\s*-\s*\d+\s*/\s*\d+|MALLA")
+_SECCION_ESCRITA = re.compile(
+    r"\d+(?:\.\d+)?\s*(?:\"|''|´´)\s*[xX×]\s*\d+(?:\.\d+)?|\b(?:HSS|PTR|IPR|OR)\b"
+)
+
+
+def _candidatos_de_campo(
+    ctx: _Contexto,
+    campo: str,
+    hoja: str,
+    rechazos: dict[str, list[Any]],
+    definicion: Definicion,
+) -> list[tuple[str, str]]:
+    """Los textos de la hoja con los que se compara un campo que sólo dice la IA, filtrados por la
+    clase del campo (R231): para una sección, las secciones sin dueño que no son una malla de losa
+    y los textos que escriben una sección con pulgadas o un perfil de acero («COLUMNA HSS
+    10"X10"»); para una parrilla, las mallas, nunca las distribuciones de estribos de una viga;
+    para lo demás, los textos sin dueño que muestran ese campo."""
+    fragmento = {"seccion_cm": "seccion", "longitud_m": "longitud"}.get(campo, campo)
+    salida: list[tuple[str, str]] = []
+    for r in rechazos.get(hoja, []):
+        if fragmento not in campos_de_fragmento(r.texto, definicion.familia):
+            continue
+        texto = _una_linea(r.texto).upper()
+        if campo == "seccion_cm" and _MALLA.search(texto):
+            continue
+        if campo == "parrillas" and _DISTRIBUCION.match(texto):
+            continue
+        salida.append((r.entidad_id, r.texto))
+    if campo == "seccion_cm":
+        vistos = {i for i, _t in salida}
+        for e in ctx.entidades.values():
+            if not e.is_textual or not e.text or e.entity_id in vistos:
+                continue
+            texto = _una_linea(e.text).upper()
+            if (
+                _SECCION_ESCRITA.search(texto)
+                and not _MALLA.search(texto)
+                and ctx.hoja_de(e) == hoja
+            ):
+                salida.append((e.entity_id, _una_linea(e.text)))
     return salida
 
 

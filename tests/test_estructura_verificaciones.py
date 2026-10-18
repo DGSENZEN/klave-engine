@@ -192,7 +192,7 @@ def _run(
     frames=None,
 ):
     por_marca = defs if isinstance(defs, dict) else {m: _defn(m) for m in defs or []}
-    return verificar(
+    v = verificar(
         por_marca,
         familias or {},
         list(elementos),
@@ -203,6 +203,16 @@ def _run(
         seg,
         frames=frames or [],
     )
+    # Every run: ids never collide, and no message carries engine strings or phase codes.
+    assert len({x.id for x in v}) == len(v), sorted(x.id for x in v)
+    for x in v:
+        assert not _DEL_MOTOR_EN_MENSAJE.search(x.mensaje), x.mensaje
+    return v
+
+
+_DEL_MOTOR_EN_MENSAJE = re.compile(
+    r"(?<![\w-])E\d\b|dibujada no encontrada|par de cotas|\n|IA · hoja|\d+\.\d{3,}|-\d{3} · "
+)
 
 
 def _all(v, numero):
@@ -371,16 +381,35 @@ def test_7_pile_length_quotes_what_the_notes_say():
     assert "MECANICA DE SUELOS" in f.mensaje and nota.raw_handle in f.mensaje
 
 
+def _cota_escrita(eid, valor, x, y, handle):
+    return NormalizedEntity(
+        entity_id=eid,
+        entity_type=EntityType.dimension,
+        source_file="a.dxf",
+        layer="COTAS",
+        bbox=(x, y, x + 0.6, y + 0.1),
+        raw_handle=handle,
+        properties={"display_value": float(valor), "display_text": f"{valor:g}"},
+        evidence=EvidencePacket(source="a.dxf", method="t"),
+    )
+
+
 def test_7_supuesto_section_is_a_duda_and_says_the_drawn_cotas_near_its_title():
     supuesta = _dato((25, 50), "supuesto", "", "sección supuesta de contratrabe, 25x50 cm")
     el = _el("CTA-11", "contratrabe", seccion=supuesta)
-    d = _defn(
-        "CTA-11", "contratrabe", seccion_cm=_ilegible("CTA-11 · sección dibujada no encontrada")
-    )
-    d.avisos = ["las cotas cercanas (70) no se toman (ES-004)"]
-    f = _one(_run(elementos=[el], defs={"CTA-11": d}), 7)
+    titulo = _texto("CTA-11", 0, 0, h=0.14, eid="ent_tit", handle="36CA4")
+    ilegible = _ilegible("CTA-11 · sección dibujada no encontrada", "ES-004")
+    ilegible.entidades = ["ent_tit"]
+    d = _defn("CTA-11", "contratrabe", seccion_cm=ilegible)
+    cotas = [
+        _cota_escrita("ent_70", 70, 0.2, -0.3, "36CA1"),
+        _cota_escrita("ent_25", 25, 1.2, -0.5, "36C9E"),
+        _cota_escrita("ent_lejos", 41.5516, 30, 30, "LEJOS"),  # far away: not cited
+    ]
+    f = _one(_run(elementos=[el], defs={"CTA-11": d}, entities=[titulo, *cotas]), 7)
     assert f.severidad == "duda" and "25x50" in f.mensaje
-    assert "acota 70 cm en ES-004" in f.mensaje and "no coincide" in f.mensaje
+    assert "«70» 36CA1" in f.mensaje and "«25» 36C9E" in f.mensaje and "LEJOS" not in f.mensaje
+    assert "no coincide" in f.mensaje and "41.5516" not in f.mensaje
 
 
 def test_7_ilegible_without_supuesto_blocks_and_quotes_the_text():
@@ -394,7 +423,7 @@ def test_7_unread_text_beside_the_section_makes_an_empty_field_por_leer():
     d.sin_leer = {"longitudinales": "«3#8», «4#4»", "estribos": "«E#4»"}
     el = _el("CTA-1", "contratrabe", longitudinales=None, estribos=None)
     f = _one(_run(elementos=[el], defs={"CTA-1": d}), 7)  # both armado fields, one finding
-    assert f.campo == "longitudinales,estribos" and f.severidad == "bloquea"
+    assert f.campo == "armado" and f.severidad == "bloquea"
     assert "«3#8», «4#4»" in f.mensaje and "«E#4»" in f.mensaje and "no se leyeron" in f.mensaje
 
 
@@ -959,3 +988,450 @@ def test_11_what_the_rules_reading_warns_is_said_once():
     ]
     f = _con(_run(reglas=r), 11, "Las reglas del plano")
     assert len(f) == 1 and "se toma el mínimo" in f[0].mensaje
+
+
+# ------------------------------------------------------- ronda 1: lo que el plano titula, etc.
+
+
+def _planta_y_detalle(*textos, dets=()):
+    seg = _seg({d.detection_id: "v_pa" for d in dets})
+    frames = [
+        SheetFrame(
+            frame_id="v_pa", bbox=(-100, -100, 100, 100), source_file="a.dxf", code="ES-300"
+        ),
+        SheetFrame(frame_id="v_det", bbox=(200, 200, 300, 300), source_file="a.dxf", code="ES-302"),
+    ]
+    return dict(entities=list(textos), detections=list(dets), seg=seg, frames=frames)
+
+
+def test_10_a_mark_the_grammar_rejects_is_seen_from_its_drawn_title_without_any_ai():
+    textos = [_texto("MC-A", 1 + 3 * i, 1) for i in range(3)]
+    titulo = _texto("MURO DE CONCRETO MC-A", 250, 250, handle="329E1")
+    v = _run(**_planta_y_detalle(*textos, titulo))  # no definition, no AI reading
+    f = _one(v, 10)
+    assert f.marcas == ["MC-A"] and "3 veces" in f.mensaje
+    assert "El plano la define en ES-302 (329E1) y no se leyó su definición" in f.mensaje
+
+
+def test_10_says_undefined_only_when_no_drawing_titles_it():
+    v = _run(**_planta_y_detalle(_texto("D-9", 1, 1)))
+    assert "ningún dibujo la titula" in _one(v, 10).mensaje
+    solo_ia = {
+        "D-4A": Definicion(marca="D-4A", familia="dado", parrillas=_dato([], "ia", "ES-302"))
+    }
+    titulo = _texto("DADO D-4A", 250, 250, handle="44C4B")
+    v2 = _run(defs=solo_ia, **_planta_y_detalle(_texto("D-4A", 1, 1), titulo))
+    assert "El plano la define en ES-302 (44C4B)" in _one(v2, 10).mensaje
+
+
+def test_2_runs_from_drawn_titles_and_counts_an_ai_definition_with_a_title():
+    titulo = _texto("DADO D-2A", 250, 250, handle="42FB2")
+    v = _run(**_planta_y_detalle(titulo))
+    assert "D-2A (dado) el plano la define en ES-302 (42FB2)" in _one(v, 2).mensaje
+    solo_ia = {
+        "D-5B": Definicion(marca="D-5B", familia="dado", parrillas=_dato([], "ia", "ES-302"))
+    }
+    v2 = _run(defs=solo_ia, **_planta_y_detalle(_texto("DADO D-5B", 250, 250, handle="46464")))
+    assert "46464" in _one(v2, 2).mensaje
+
+
+def test_7_two_drawn_cuts_of_a_mark_on_one_sheet_are_a_duda_never_a_contradiction():
+    corte1 = _dato((30, 80), hoja="ES-003", texto="CTA-3 · par de cotas 30x80")
+    corte2 = _dato((30, 60), hoja="ES-003", texto="CTA-3 · par de cotas 30x60")
+    defs = {"CTA-3": _defn("CTA-3", "contratrabe", seccion_cm=elegir([corte1, corte2]))}
+    els = [_el("CTA-3", "contratrabe", seccion=_dato((30, 80), hoja="ES-003")) for _ in range(2)]
+    v = _run(elementos=els, defs=defs)
+    assert not _all(v, 8)
+    f = _one(v, 7)
+    assert "dibuja dos secciones" in f.mensaje and "la mayor" in f.mensaje
+    assert f.en_juego["concreto_m3"] == pytest.approx(0.30 * 0.20 * 4.0 * 2)
+
+
+def test_8_a_value_another_marks_cut_callout_writes_is_not_this_marks_reading():
+    z2 = {
+        "Z-2": _defn(
+            "Z-2",
+            "zapata",
+            seccion_cm=elegir([_dato((28, 45), hoja="ES-101"), _dato((25, 45), hoja="ES-203")]),
+        )
+    }
+    llamada = ElementSpec(
+        mark="T1-2",
+        family="trabe",
+        section_cm=(28, 45),
+        source="detalle",
+        metodo="llamada",
+        hoja="ES-101",
+        source_text="T1-2 · sección 1 28x45, sección 2 31x30 (se toma la mayor)",
+        confidence=0.7,
+    )
+    assert _all(_run(defs=z2), 8)
+    assert not _all(_run(defs=z2, inv=ScheduleInventory(specs=[llamada])), 8)
+
+
+def _en_capa(t, capa):
+    return t.model_copy(update={"layer": capa})
+
+
+def test_10_rib_marks_on_a_slab_layer_are_one_aviso_per_family_never_recall():
+    nervaduras = [
+        _en_capa(_texto(m, 1 + i, 1), "EST-LOSA NERVADA")
+        for i, m in enumerate(["Z1", "Z2", "Z2", "W1"])
+    ]
+    defs = {
+        "Z-2": _defn(
+            "Z-2", "zapata", seccion_cm=elegir([_dato((28, 45)), _dato((30, 45), hoja="ES-203")])
+        )
+    }
+    v = _run(defs=defs, **_planta_y_detalle(*nervaduras))
+    avisos = _con(v, 10, "losa nervada")
+    assert {x.severidad for x in avisos} == {"aviso"} and len(avisos) == 2  # W and Z
+    assert not [x for x in v if x.numero in (8, 10) and x.severidad != "aviso"]
+
+
+def test_10_a_titled_nervadura_is_a_rib_mark():
+    texto = _texto("Z5", 1, 1)
+    titulo = _texto("NERVADURA Z5", 250, 250)
+    v = _run(**_planta_y_detalle(texto, titulo))
+    assert _con(v, 10, "losa nervada") and not _con(v, 10, "está escrita en planta")
+
+
+def test_10_steel_marks_are_one_aviso_per_family():
+    textos = [
+        _texto("PL-A", 1, 1),
+        _texto("CN-A", 3, 1),
+        _texto('COLUMNA HSS 10"X10"', 5, 1),
+        _en_capa(_texto("DET-MB", 7, 1, handle="B3C63"), "EST-CONEXIONES"),
+    ]
+    titulos = [_texto("PLACA PL-A BASE 450X450X32 MM", 250, 250), _texto("CONEXIÓN CN-A", 250, 260)]
+    v = _run(**_planta_y_detalle(*textos, *titulos))
+    acero = _con(v, 10, "Elementos de acero")
+    assert len(acero) == 3 and {x.severidad for x in acero} == {"aviso"}
+    assert any("B3C63" in x.textos for x in acero if "conexiones" in x.mensaje)
+    assert not _con(v, 10, "está escrita en planta") and not _all(v, 2)
+
+
+def test_unknown_quantities_rank_after_big_known_ones_and_before_small_ones():
+    from klave_engine.estructura.verificaciones import ordenar
+
+    totales = {"acero_kg": 1000.0, "concreto_m3": 100.0}
+    grande = Verificacion(
+        id="a", numero=7, severidad="duda", mensaje="", en_juego={"concreto_m3": 5.0}
+    )
+    chica = Verificacion(
+        id="b", numero=7, severidad="duda", mensaje="", en_juego={"concreto_m3": 0.1}
+    )
+    sin_cifra = Verificacion(
+        id="c",
+        numero=7,
+        severidad="duda",
+        mensaje="",
+        en_juego={"piezas": 23.0},
+        cantidad="desconocida",
+    )
+    assert [v.id for v in ordenar([chica, sin_cifra, grande], totales)] == ["a", "c", "b"]
+
+
+def test_7_pile_length_unknown_is_labelled():
+    f = next(
+        x
+        for x in _run(elementos=[_el("P-4", "pilote", longitud=None)], defs=["P-4"])
+        if x.campo == "longitud_m"
+    )
+    assert f.cantidad == "desconocida" and "Cantidad desconocida: 1 pieza" in f.mensaje
+
+
+def _muro(eid, x0, y0, x1, y1, handle):
+    return NormalizedEntity(
+        entity_id=eid,
+        entity_type=EntityType.polyline,
+        source_file="a.dxf",
+        layer="EST-MURO CONCRETO",
+        bbox=(min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)),
+        points=[(x0, y0), (x1, y1)],
+        raw_handle=handle,
+        properties={},
+        evidence=EvidencePacket(source="a.dxf", method="t"),
+    )
+
+
+def test_10_a_wall_without_element_is_estimated_from_its_drawn_face_and_storey():
+    texto = _en_capa(_texto("MC-1", 1, 0.05, h=0.1), "EST-MURO CONCRETO")
+    caras = [
+        _muro("cara1", 0, 0, 10, 0, "F1"),
+        _muro("rayado", 0, -0.004, 10, -0.004, "F3"),  # a hatch line is not the other face
+        _muro("cara2", 0, 0.3, 10, 0.3, "F2"),
+    ]
+    seg = _seg(vistas=("v_pa", "v_up"), niveles={"v_pa": 0.0, "v_up": 3.0})
+    seg.views[1].bbox = (500, 500, 600, 600)
+    frames = [
+        SheetFrame(frame_id="v_pa", bbox=(-100, -100, 100, 100), source_file="a.dxf", code="ES-000")
+    ]
+    v = _run(
+        defs={"MC-1": _defn("MC-1", "muro_concreto")},
+        entities=[texto, *caras],
+        seg=seg,
+        frames=frames,
+    )
+    f = _one(v, 10)
+    assert f.cantidad == "estimada" and "Estimado" in f.mensaje
+    assert f.en_juego["longitud_estimada_m"] == pytest.approx(10.0)
+    assert f.en_juego["concreto_m3"] == pytest.approx(10.0 * 0.3 * 3.0)
+
+
+def test_11_what_check_7_already_lists_folds_into_it_one_finding_per_mark():
+    d = _defn("CTA-1", "contratrabe")
+    d.sin_leer = {"longitudinales": "«4#4»"}
+    d.avisos = ["sin leer: «@1S»"]
+    junto = _texto("4#4", 2.2, 1.0, eid="ent_junto", handle="D0869")
+    inv = ScheduleInventory(
+        rechazos=[
+            _rech("4#4", "sin_dueno", [], hoja="ES-002", posibles=["CTA-1"], eid="ent_junto")
+        ],
+        secciones_dibujadas=[
+            SeccionDibujada(marca="CTA-1", caja=(1.0, 0.8, 2.0, 2.0), hoja="ES-002", titulo_id="t")
+        ],
+    )
+    el = _el("CTA-1", "contratrabe", longitudinales=None)
+    v = _run(elementos=[el], defs={"CTA-1": d}, inv=inv, entities=[junto])
+    de_la_marca = [x for x in v if "CTA-1" in x.marcas and x.numero in (7, 11)]
+    assert len(de_la_marca) == 1 and de_la_marca[0].numero == 7
+    assert "D0869" in de_la_marca[0].textos and "@1S" in de_la_marca[0].mensaje
+    # without a check-7 finding: one check-11 finding for the mark
+    v2 = _run(defs={"CTA-1": d}, inv=inv, entities=[junto])
+    assert len([x for x in v2 if "CTA-1" in x.marcas and x.numero == 11]) == 1
+
+
+def test_ids_survive_an_extra_level_text_a_field_read_and_a_family_aviso():
+    alto = _dato(3.2, "supuesto", "", "la planta más alta repite (+14.75 ×5)")
+    alto2 = _dato(3.2, "supuesto", "", "la planta más alta repite (+14.75 ×5, +14.95 ×4)")
+    a = _one(_run(elementos=[_el("K-1", altura=alto, hoja="ES-400")], defs=["K-1"]), 7).id
+    b = _one(_run(elementos=[_el("K-1", altura=alto2, hoja="ES-400")], defs=["K-1"]), 7).id
+    assert a == b
+    ambos = _el(
+        "CTA-1", "contratrabe", longitudinales=_ilegible("«3#8»"), estribos=_ilegible("«E#4»")
+    )
+    uno = _el("CTA-1", "contratrabe", longitudinales=_ilegible("«3#8»"))
+    assert (
+        _one(_run(elementos=[ambos], defs=["CTA-1"]), 7).id
+        == _one(_run(elementos=[uno], defs=["CTA-1"]), 7).id
+    )
+    base = {m: _defn(m) for m in ("K-4",)}
+    base["K-4"].avisos = ["sin leer: «@1S»"]
+    familia = _defn("DALA", "dala")
+    familia.avisos = ["armado prefabricado «ARMEX»: no se lee"]
+    sin = {x.id for x in _run(defs=base)}
+    con = {x.id for x in _run(defs=base, familias={"dala": familia})}
+    assert sin < con and len(con) == len(sin) + 1
+
+
+def test_8_an_ai_value_never_contradicts_the_drawing():
+    dato = elegir([_dato((20, 30), hoja="ES-200"), _dato((20, 40), "ia", "ES-400")])
+    assert not _all(_run(defs={"K-5": _defn("K-5", seccion_cm=dato)}), 8)
+    # two AI readings that disagree are still not the drawing contradicting itself
+    dos_ia = elegir([_dato((20, 30), "ia", "ES-200"), _dato((20, 40), "ia", "ES-400")])
+    assert not _all(_run(defs={"K-5": _defn("K-5", seccion_cm=dos_ia)}), 8)
+
+
+def test_7_a_non_armado_field_groups_all_placements_of_a_mark():
+    supuesta = _dato((25, 45), "supuesto", "", "sección supuesta de trabe, 25x45 cm")
+    els = [_el("T3-1", "trabe", seccion=supuesta, hoja=h) for h in ("ES-300", "ES-400")]
+    f = _one(_run(elementos=els, defs=["T3-1"]), 7)
+    assert len(f.elementos) == 2
+
+
+def test_10_id_does_not_depend_on_how_many_texts():
+    uno = _one(_run(defs=["K-50"], **_planta_con(_texto("K-50", 1, 1))), 10).id
+    dos = _one(
+        _run(defs=["K-50"], **_planta_con(_texto("K-50", 1, 1), _texto("K-50", 20, 20))), 10
+    ).id
+    assert uno == dos
+
+
+def test_11_an_ai_section_never_compares_with_a_slab_mesh_and_cites_a_written_section():
+    titulo = _texto("CM-1", 0, 0, h=0.15)
+    malla = _texto("6x6-8/8", 0.5, -0.4, eid="ent_malla", handle="2FB36")
+    hss = _texto('COLUMNA HSS 10"X10"', 0, -0.6, eid="ent_hss", handle="97A5E")
+    frames = [SheetFrame(frame_id="f", bbox=(-10, -10, 10, 10), source_file="a.dxf", code="ES-200")]
+    defs = {
+        "CM-1": Definicion(
+            marca="CM-1", familia="columna", seccion_cm=_dato((25.4, 25.4), "ia", "ES-200")
+        )
+    }
+    inv = ScheduleInventory(
+        rechazos=[_rech("6x6-8/8", "sin_dueno", [], hoja="ES-200", eid="ent_malla")]
+    )
+    f = [
+        x
+        for x in _run(defs=defs, inv=inv, entities=[titulo, malla, hss], frames=frames)
+        if "lectura IA" in x.mensaje
+    ][0]
+    assert "97A5E" in f.mensaje and "2FB36" not in f.mensaje
+
+
+def test_11_an_ai_mesh_never_compares_with_beam_stirrup_distributions():
+    titulo = _texto("MURO DE CONCRETO MC-C", 0, 0, h=0.15)
+    malla = _texto("#4@15", 0.4, -0.5, eid="ent_m", handle="CC0CB")
+    dist = _texto("1@6,8@10", 0.4, -0.8, eid="ent_d", handle="CC5C1")
+    frames = [SheetFrame(frame_id="f", bbox=(-10, -10, 10, 10), source_file="a.dxf", code="ES-002")]
+    ia = _dato(
+        [Parrilla(numero="4", separacion_m=0.15, lecho="unico", sentidos=None)], "ia", "ES-002"
+    )
+    defs = {"MC-C": Definicion(marca="MC-C", familia="muro_concreto", parrillas=ia)}
+    inv = ScheduleInventory(
+        rechazos=[
+            _rech(t.text, "sin_dueno", [], hoja="ES-002", eid=t.entity_id) for t in (malla, dist)
+        ]
+    )
+    f = [
+        x
+        for x in _run(defs=defs, inv=inv, entities=[titulo, malla, dist], frames=frames)
+        if "lectura IA" in x.mensaje
+    ][0]
+    assert "CC0CB" in f.mensaje and "CC5C1" not in f.mensaje
+
+
+def test_messages_carry_no_engine_strings_or_phase_codes():
+    from klave_engine.estructura.verificaciones import al_lenguaje_del_plano as f
+
+    for interno in (
+        "(«T3-8 · sección dibujada no encontrada», «T3-8 · señalada por flecha; se lee en E3»)",
+        "30x80 (ES-003; «CTA-3 · par de cotas 30x80 sin contorno cerrado"
+        " (4 de 4 aristas dibujadas)»)",
+        "las cotas cercanas (20, 41.5516, 120) no se toman",
+        "la sección de K-2; se lee en E3",
+        "el armado de K-2 se lee en E4",
+    ):
+        limpio = f(interno)
+        assert not re.search(
+            r"(?<![\w-])E\d\b| · |dibujada no encontrada|par de cotas|41\.5516", limpio
+        )
+    assert f("la sección de K-2; se lee en E3") == "la sección de K-2, por leer"
+    assert f("el armado de K-2 se lee en E4") == "el armado de K-2 queda por leer"
+    assert f("«ES-300 · ESTRUCTURA DE ROOF GARDEN»") == "«ES-300, ESTRUCTURA DE ROOF GARDEN»"
+
+
+def test_8_a_cover_each_sheet_dimensions_its_own_way_is_an_aviso():
+    cover = elegir(
+        [_dato(0.04, "seccion_dibujada", "ES-100"), _dato(0.03, "seccion_dibujada", "ES-400")]
+    )
+    d = _defn("K-6")
+    d.recubrimiento_m = cover
+    els = [_el("K-6", hoja="ES-100"), _el("K-6", hoja="ES-400")]
+    f = _one(_run(elementos=els, defs={"K-6": d}), 8)
+    assert f.severidad == "aviso" and "Cada hoja usa la suya" in f.mensaje
+
+
+def test_the_top_planta_height_and_the_storey_contradiction_name_each_other():
+    vistas = ("v0", "v1", "v2")
+    seg = _seg(vistas=vistas, niveles={"v0": 1.0, "v1": 4.0, "v2": 7.5}, cimentacion=("v0",))
+    texto_tope = "la planta más alta no tiene nivel encima: repite la de abajo"
+    els = [
+        _el(
+            f"K-{i}",
+            vista=v,
+            hoja=v.upper(),
+            altura=_dato(3.0, "supuesto" if v == "v2" else "nota", "", texto_tope),
+        )
+        for i, v in enumerate(vistas)
+    ]
+    v = _run(elementos=els, defs=[e.marca for e in els], seg=seg)
+    entrepisos = _con(v, 8, "entrepisos")[0]
+    altura = next(x for x in v if x.numero == 7 and x.campo == "altura_m")
+    assert altura.id in entrepisos.mensaje and entrepisos.id in altura.mensaje
+
+
+def test_10_a_name_alone_on_the_details_layer_is_a_drawn_title():
+    titulo = _en_capa(_texto("D-C", 250, 250, handle="D0C01"), "EST-DETALLES")
+    v = _run(**_planta_y_detalle(_texto("D-C", 1, 1), titulo))
+    assert "El plano la define en ES-302 (D0C01)" in _one(v, 10).mensaje
+    # A name on the details layer inside the planta can be a placement's label («MC-1 20CM»): it
+    # is written in planta, and never cited as its own title.
+    dentro = _en_capa(_texto("D-C", 5, 5, handle="D0C02"), "EST-DETALLES")
+    f_dentro = _one(_run(**_planta_y_detalle(dentro)), 10)
+    assert "ningún dibujo la titula" in f_dentro.mensaje and "(D0C02)" not in f_dentro.mensaje
+    # The same text off a details layer titles nothing: the grammar alone does not take «D-C».
+    sin_capa = _texto("D-C", 250, 250, handle="D0C01")
+    assert not _all(_run(**_planta_y_detalle(_texto("D-C", 1, 1), sin_capa)), 10)
+
+
+def test_2_words_and_references_are_not_drawn_names():
+    textos = [
+        _texto("MURO BAJO", 250, 250),
+        _texto("PILOTE NO", 250, 255),
+        _en_capa(_texto("DET-MB", 250, 260), "EST-DETALLES"),
+    ]
+    assert not _all(_run(**_planta_y_detalle(*textos)), 2)
+
+
+def test_2_a_bare_name_takes_the_class_of_its_titled_drawing():
+    textos = [_texto("VIGA V-E", 250, 250), _en_capa(_texto("V-E", 250, 260), "EST-DETALLES")]
+    v = _run(**_planta_y_detalle(*textos))
+    assert not _all(v, 2) and _con(v, 10, "Elementos de acero")
+
+
+def test_2_a_name_of_the_rib_letters_titled_alone_is_of_the_slab():
+    textos = [
+        _en_capa(_texto("X0", 1, 1), "EST-LOSA NERVADA"),
+        _en_capa(_texto("X1", 250, 250), "EST-DETALLES"),
+    ]
+    v = _run(**_planta_y_detalle(*textos))
+    assert not _all(v, 2) and _con(v, 10, "losa nervada")
+
+
+def test_7_variants_per_wall_are_not_two_cuts():
+    corte1 = _dato((15, 20), hoja="ES-003")
+    corte2 = _dato((15, 30), hoja="ES-003")
+    d = _defn("CI", "castillo", seccion_cm=elegir([corte1, corte2]))
+    d.variantes = [_defn("CI", seccion_cm=corte1), _defn("CI", seccion_cm=corte2)]
+    v = _run(elementos=[_el("CI")], defs={"CI": d})
+    assert not [x for x in v if "dos secciones" in x.mensaje]
+
+
+def test_11_an_unread_text_only_one_mark_can_own_is_cited_in_its_check_7_finding():
+    d = _defn("TE-A", "trabe")
+    d.sin_leer = {"estribos": "«8@15»"}
+    suyo = _texto("8@15", 250, 250, eid="ent_suyo", handle="E3AA0")
+    de_dos = _texto("8@15", 260, 250, eid="ent_dos", handle="E3AA9")
+    inv = ScheduleInventory(
+        rechazos=[
+            _rech("8@15", "sin_dueno", [], hoja="ES-007", posibles=["TE-A"], eid="ent_suyo"),
+            _rech("8@15", "sin_dueno", [], hoja="ES-007", posibles=["TE-A", "TE-B"], eid="ent_dos"),
+        ]
+    )
+    el = _el("TE-A", "trabe", estribos=None)
+    v = _run(elementos=[el], defs={"TE-A": d}, inv=inv, entities=[suyo, de_dos])
+    f = next(x for x in v if x.numero == 7 and x.marcas == ["TE-A"])
+    assert "E3AA0" in f.textos and "«8@15» E3AA0" in f.mensaje and "E3AA9" not in f.textos
+    hoja = [x for x in v if x.numero == 11 and x.hoja == "ES-007"]
+    assert len(hoja) == 1 and hoja[0].textos == ["E3AA9"]
+
+
+def test_rib_marks_are_named_as_written_and_block_texts_by_their_insert():
+    textos = [_en_capa(_texto("Z1", 1, 1, handle="A7A6D#199"), "EST-LOSA NERVADA")]
+    f = _con(_run(**_planta_y_detalle(*textos)), 10, "losa nervada")[0]
+    assert "Z1 (1)" in f.mensaje and "Z-1" not in f.mensaje and f.marcas == ["Z1"]
+    assert f.textos == ["A7A6D"] and "#199" not in f.mensaje
+
+
+def test_7_two_cuts_one_title_writes_cite_it_once():
+    corte1 = _dato((30, 70), hoja="ES-003", texto="CTA-5 · sección 1 30x70", entidades=["t1"])
+    corte2 = _dato((30, 60), hoja="ES-003", texto="CTA-5 · sección 2 30x60", entidades=["t1"])
+    defs = {"CTA-5": _defn("CTA-5", "contratrabe", seccion_cm=elegir([corte1, corte2]))}
+    titulo = _texto("CTA-5", 0, 0, eid="t1", handle="CCD2C")
+    els = [_el("CTA-5", "contratrabe", seccion=_dato((30, 70), hoja="ES-003"))]
+    f = _con(_run(elementos=els, defs=defs, entities=[titulo]), 7, "dos secciones")[0]
+    assert f.mensaje.count("CCD2C") == 1
+
+
+def test_10_a_title_only_mark_takes_the_family_its_title_names():
+    titulo = _texto("PILOTE PX-1", 250, 250, handle="9A001")
+    f = _one(_run(**_planta_y_detalle(_texto("PX-1", 1, 1), titulo)), 10)
+    assert "Todo pilote escrito en planta debe tener su pila" in f.mensaje
+
+
+def test_10_a_sheet_without_frames_is_named_by_its_file_not_its_folder():
+    texto = _texto("K-50", 1, 1, archivo="drawings/Plano Prueba 1.dxf")
+    defs = {"K-50": _defn("K-50", hojas=("drawings/Plano Prueba 1.dxf",))}
+    f = _one(_run(defs=defs, entities=[texto], seg=_seg()), 10)
+    assert "Plano Prueba 1.dxf: una vez" in f.mensaje and "drawings/" not in f.mensaje
