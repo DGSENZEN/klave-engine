@@ -847,12 +847,12 @@ def _marco_grande(ents):
 
 
 @pytest.mark.parametrize("ce4_tiene_la_suya", [True, False])
-def test_a_stack_between_two_rows_goes_to_its_section_unless_the_other_needs_it(ce4_tiene_la_suya):
-    # R196, R205 (ES-300): la pila de CE-2 («6#3» / «E#2@15») va a 0.71 de su sección y, del lado
-    # del título de CE-4 (que podría estar del lado equivocado), a 0.95 de la de CE-4. CE-4 lee
-    # su pila entera bajo su sección («4#4» / «E#3@16»): no disputa la de CE-2 (sólo disputa del
-    # lado de su título lo que no tiene); las dos se leen. Sin la suya, CE-4 la necesitaría: la
-    # distancia nunca se la da a otra, queda en duda.
+def test_a_stack_between_two_rows_of_details_is_in_doubt(ce4_tiene_la_suya):
+    # R196, R209 (ES-300): la pila de CE-2 («6#3» / «E#2@15») va a 0.71 de su sección y, del lado
+    # del título de CE-4 (que podría estar del lado equivocado), a 0.95 de la de CE-4: no está
+    # claramente (25 %) más pegada a CE-2; queda en duda, lea CE-4 su propia pila («4#4» /
+    # «E#3@16», que se lee) o no. Que la otra tenga la suya no la exime de disputarla: así dos
+    # secciones se cambiaban las pilas (la semilla 45408 de la rejilla, R209).
     ents = [
         _en("t2", "CE-2", 218.861, -21.176, 219.433, -21.026),
         _en("a", "6#3", 219.0, -24.055, 219.253, -23.955),
@@ -870,21 +870,17 @@ def test_a_stack_between_two_rows_goes_to_its_section_unless_the_other_needs_it(
     ]
     libres = {e.entity_id for e in ents if not e.entity_id.startswith("t")}
     asoc, dudosos = asociar_secciones(ents, _marco_grande(ents), C, secciones, libres)
-    if ce4_tiene_la_suya:
-        assert sorted((a.marca, a.textos) for a in asoc) == [
-            ("CE-2", ["6#3", "E#2@15"]),
-            ("CE-4", ["4#4", "E#3@16"]),
-        ]
-    else:
-        assert asoc == [] and dudosos["a"] == dudosos["b"] == {"CE-2"}
+    leidas = [("CE-4", ["4#4", "E#3@16"])] if ce4_tiene_la_suya else []
+    assert sorted((a.marca, a.textos) for a in asoc) == leidas
+    assert dudosos["a"] == dudosos["b"] == {"CE-2"}
 
 
 @pytest.mark.parametrize("ce3_tiene_la_suya", [True, False])
 def test_the_sheets_convention_never_wins_a_contested_stack(ce3_tiene_la_suya):
-    # R196, R205 (ES-100): la pila de CE-1 va a 0.71 de su sección y a 0.82 de la de CE-3, bajo
-    # ella, con el título de CE-3 en medio. CE-3 lee su pila entera bajo su sección: no la
-    # disputa; CE-1 la lee. Si CE-3 no tuviera la suya, la costumbre de la hoja (los títulos
-    # encima) no gana una pila que otra sección necesita: queda en duda.
+    # R196, R209 (ES-100): la pila de CE-1 va a 0.71 de su sección y a 0.82 de la de CE-3, bajo
+    # ella, con el título de CE-3 en medio. La costumbre de la hoja (los títulos encima) no gana
+    # una pila disputada: sólo la distancia, y 0.71 contra 0.82 no es claramente más pegada
+    # (25 %): queda en duda, lea CE-3 la suya (que se lee) o no.
     ents = [
         _en("t1", "CE-1", 197.691, 38.342, 198.198, 38.492),
         _en("a", "4#3", 197.86, 35.462, 198.113, 35.562),
@@ -902,13 +898,8 @@ def test_the_sheets_convention_never_wins_a_contested_stack(ce3_tiene_la_suya):
     ]
     libres = {e.entity_id for e in ents if not e.entity_id.startswith("t")}
     asoc, _ = asociar_secciones(ents, _marco_grande(ents), C, secciones, libres)
-    if ce3_tiene_la_suya:
-        assert sorted((a.marca, a.textos) for a in asoc) == [
-            ("CE-1", ["4#3", "E#2@15"]),
-            ("CE-3", ["6#4", "E#3@14"]),
-        ]
-    else:
-        assert asoc == []
+    leidas = [("CE-3", ["6#4", "E#3@14"])] if ce3_tiene_la_suya else []
+    assert sorted((a.marca, a.textos) for a in asoc) == leidas
 
 
 def test_a_cuadro_section_never_almost_reaches_a_detail_stack():
@@ -933,7 +924,8 @@ def test_a_cuadro_section_never_almost_reaches_a_detail_stack():
 @pytest.mark.parametrize(
     "hueco_de_la_otra,la_otra,leida",
     [
-        (0.45, "con la suya", True),  # T-2 tiene su lectura de varillas: no la disputa
+        (0.45, "con la suya", False),  # R209: aunque T-2 tenga su lectura, la disputa
+        (0.60, "con la suya", True),  # 50 % más lejos: de T-1
         (0.45, "reclamada", False),  # nunca se lee: compite por la distancia, 12 % más lejos
         (0.60, "reclamada", True),  # 50 % más lejos: de T-1
         (0.60, "sin la suya", False),  # la necesita: la distancia nunca se la da a T-1
@@ -942,12 +934,11 @@ def test_a_cuadro_section_never_almost_reaches_a_detail_stack():
 def test_a_stack_two_sections_reach_goes_only_to_the_clearly_nearer(
     hueco_de_la_otra, la_otra, leida
 ):
-    # R196, R205: «4#3» a 0.40 bajo T-1 y, debajo, T-2 (que lee hacia abajo) la alcanza del lado
-    # de su título. Si T-2 tiene su lectura de varillas («6#4»), no la disputa. Una sección que
-    # nunca se lee (reclamada) compite sólo por la distancia, con el empate de lados opuestos de
-    # la Tarea 6 (25 %): a 0.45 (12 % más) es de nadie; a 0.60 (50 %), de T-1. Una que se lee y no
-    # tiene su lectura de varillas la necesita: queda en duda a cualquier distancia (la semilla
-    # 99 de la rejilla, abajo).
+    # R196, R205b, R209: «4#3» a 0.40 bajo T-1 y, debajo, T-2 (que lee hacia abajo) la alcanza del
+    # lado de su título. Con su propia lectura («6#4») o reclamada (nunca se lee), T-2 compite por
+    # la distancia, con el empate de lados opuestos de la Tarea 6 (25 %): a 0.45 (12 % más) es de
+    # nadie; a 0.60 (50 %), de T-1. Una que se lee y no tiene su lectura de varillas la necesita:
+    # queda en duda a cualquier distancia (la semilla 99 de la rejilla, abajo).
     arriba = -0.50 - hueco_de_la_otra
     ents = [_texto("r", "4#3", 0.5, -0.45, alto=0.10)]
     if la_otra == "con la suya":
@@ -1227,11 +1218,10 @@ def test_a_stack_of_several_sets_reads_them_all_or_says_what_it_cannot(
 
 @pytest.mark.parametrize("k4_tiene_la_suya", [False, True])
 def test_a_section_that_reaches_a_line_from_the_side_competes_for_it(k4_tiene_la_suya):
-    # R201, R205 (la semilla 21161 de la rejilla): «E#4@10» va de frente sobre K-6, a 0.40, y de
-    # lado bajo K-4 (en su ensanche), a 0.35, del lado de su título: es de K-4, que no tiene otra
-    # lectura (lo que va encima de ella, en su lado que lee, queda en duda). K-4 compite con el
-    # alcance con que lee, también de lado, y lo necesita: en duda. Si K-4 leyera sus estribos
-    # encima («E#3@20»), no lo disputaría: K-6 lo lee.
+    # R201, R209 (la semilla 21161 de la rejilla): «E#4@10» va de frente sobre K-6, a 0.40, y de
+    # lado bajo K-4 (en su ensanche), a 0.35, del lado de su título: es de K-4. K-4 compite con el
+    # alcance con que lee, también de lado: K-6 no está claramente más cerca; en duda, lea K-4 sus
+    # estribos encima («E#3@20», que se lee) o no.
     ents = [
         _texto("x", "6#4", 2.4, -6.411, alto=0.10, centrado=False),
         _texto("a", "E#4@10", 1.536, -6.731, alto=0.10, centrado=False),
@@ -1243,13 +1233,10 @@ def test_a_section_that_reaches_a_line_from_the_side_competes_for_it(k4_tiene_la
         _seccion(1, 0.0, -9.25, 2.078, -7.181, "K-6", sentidos=(+1,)),
     ]
     asoc, dudosos = asociar_secciones(ents, _marco(ents), C, secciones, {"x", "a", "b"})
-    if k4_tiene_la_suya:
-        assert sorted((x.marca, x.textos) for x in asoc) == [
-            ("K-4", ["E#3@20"]),
-            ("K-6", ["E#4@10"]),
-        ]
-    else:
-        assert asoc == [] and dudosos["a"] == {"K-6"}
+    assert [(x.marca, x.textos) for x in asoc] == (
+        [("K-4", ["E#3@20"])] if k4_tiene_la_suya else []
+    )
+    assert dudosos["a"] == {"K-6"}
 
 
 def test_a_section_takes_a_column_from_its_titles_side_with_twice_its_reach():
@@ -1268,3 +1255,75 @@ def test_a_section_takes_a_column_from_its_titles_side_with_twice_its_reach():
     ]
     asoc, dudosos = asociar_secciones(ents, _marco(ents), C, secciones, {"a", "b"})
     assert asoc == [] and dudosos == {"a": {"K-2"}, "b": {"K-2"}}
+
+
+def _filas_con_titulo_debajo(con_otra_pila):
+    """El revisor (adv14): tres filas con la costumbre «el título bajo su sección, el armado bajo
+    el título» (sección de 0.8×1.0, su título 0.12 debajo, su pila 0.25 bajo el título) y, si
+    ``con_otra_pila``, una pila completa de otro grupo encima de la primera fila."""
+    ents = []
+    for n, y, pila in (
+        (1, 4.0, ["4#3", "E#2@15"]),
+        (2, 2.0, ["6#4", "E#3@14"]),
+        (3, 0.0, ["4#4", "E#3@16"]),
+    ):
+        ents += [
+            _rectangulo(f"s{n}", 0.0, y, 0.8, y + 1.0),
+            _cota(f"h{n}", (0.0, y), (0.8, y), 20),
+            _cota(f"v{n}", (0.0, y + 1.0), (0.0, y), 25),
+            _titulo(f"t{n}", f"T-{n}", 0.15, y - 0.12, alto=0.14),
+        ]
+        ents += [
+            _texto(f"l{n}{k}", t, 0.4, y - 0.45 - 0.15 * k, alto=0.10) for k, t in enumerate(pila)
+        ]
+    if con_otra_pila:
+        ents += [
+            _texto("x1", "4#5", 0.4, 5.40, alto=0.10),
+            _texto("x2", "E#3@20", 0.4, 5.25, alto=0.10),
+        ]
+    return ents
+
+
+@pytest.mark.parametrize("con_otra_pila", [False, True])
+def test_a_section_with_its_own_reading_still_contests_its_titles_side(con_otra_pila):
+    # R209 (el revisor, adv14): con R205a, T-1 leía la pila de otro grupo encima de ella, y con eso
+    # T-2 dejaba de disputar la de T-1 (bajo el título de T-1, del lado del título de T-2) y la leía
+    # como suya; la de T-3 quedaba vetada. Toda sección disputa del lado de su título, con el doble
+    # de su alcance, tenga o no su propia lectura: ninguna fila lee la pila de otra. (La pila de
+    # otro grupo, que ninguna otra sección alcanza, T-1 la lee: nadie podría saber que no es suya,
+    # la analogía de R58a.)
+    inv = build_schedule_inventory(
+        _filas_con_titulo_debajo(con_otra_pila), C, unit_to_m=1.0, detail_boxes=_DETALLE
+    )
+    for s in inv.specs:
+        if s.metodo == "pila":
+            n = s.mark[-1]
+            assert all(i.startswith("x") or i.startswith(f"l{n}") for i in s.entidades), (
+                s.mark,
+                s.entidades,
+            )
+    assert not [s for s in inv.specs if s.metodo == "pila" and s.mark in ("T-2", "T-3")]
+
+
+# R209: las semillas en que dos secciones se cambian las pilas (o la columna se corre una) por la
+# distancia sola: cada una está claramente más cerca del renglón de la otra, y las dos quedan con
+# su lectura, así que ninguna regla de duda las ve. Leían así desde la ronda 3 (50e84d4): no las
+# causaba R205a. El cierre de los intercambios (que A tome lo que B alcanza y B lo que A alcanza
+# deja a las dos en duda) y la exención por la costumbre de la hoja quedan para la ronda 9d; hasta
+# entonces son lecturas ajenas conocidas (en rojo en cuanto dejen de serlo).
+@pytest.mark.xfail(strict=True, reason="R209: intercambio por distancia, aparcado para 9d")
+@pytest.mark.parametrize("semilla", [45408, 47070])
+def test_the_grid_seeds_where_two_sections_swap_stacks(semilla):
+    leidas = _lee_la_rejilla(semilla)
+    assert leidas is not None
+    assert all(entera for _marca, _textos, entera in leidas), leidas
+
+
+@pytest.mark.xfail(strict=True, reason="R209: la columna de K-2 no alcanza su renglón; aparcado")
+def test_the_zigzag_seed_where_a_section_reads_its_neighbours_line():
+    # «zigzag», 50456, lado al azar, sin títulos: K-1 lee «E#4@10 Y E#3@20 EN NUDOS», de K-2, a
+    # 0.11 bajo ella; K-2 lo tiene a 0.28 (más del doble de su alcance, 0.26) y fuera de su columna.
+    with tempfile.TemporaryDirectory(prefix="t9c_semilla_") as d:
+        cuadro = _cuadro_de(Path(d), "zigzag", 50456)
+        assert cuadro is not None
+        _ni_ajena_ni_a_medias(cuadro, 50456, False, False, True)
