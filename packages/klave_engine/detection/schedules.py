@@ -247,6 +247,19 @@ class HojaConFragmentos(BaseModel):
     lineas: list[LineaConFragmento] = Field(default_factory=list)
 
 
+class SeccionDibujada(BaseModel):
+    """A detail's drawn section that a title owns or claims (R81, R106, R111, R120, R158): the
+    title's mark, the section's box in the drawing, the sheet and the title's text entity. What is
+    written beside it or at its corner (R194, R203) — not under it — is no stack of its own: the
+    drawing's checks (Task 11) say so per mark, by handle."""
+
+    marca: str
+    caja: tuple[float, float, float, float]
+    hoja: str = ""
+    hoja_llave: str = ""
+    titulo_id: str = ""
+
+
 class ScheduleInventory(BaseModel):
     specs: list[ElementSpec] = Field(default_factory=list)
     by_mark: dict[str, ElementSpec] = Field(default_factory=dict)
@@ -281,6 +294,9 @@ class ScheduleInventory(BaseModel):
     # The texts the rules reader (``estructura.reglas.leer_reglas``) read a rule from, with the
     # lines it read (none: the whole text): consumed, never rejected (R119).
     leidos_por_reglas: dict[str, list[str]] = Field(default_factory=dict)
+    # The drawn sections the detail titles own or claim, with their boxes (R194): the checks tell
+    # what is written beside a section from what is written under it.
+    secciones_dibujadas: list[SeccionDibujada] = Field(default_factory=list)
 
     def lineas_con_fragmento(self) -> list[tuple[HojaConFragmentos, LineaConFragmento]]:
         return [(hoja, linea) for hoja in self.textos_con_fragmento for linea in hoja.lineas]
@@ -4322,6 +4338,34 @@ def _junto_a_su_seccion(
                 r.posibles = sorted(marcas)
 
 
+def _secciones_con_titulo(
+    secciones: list[tuple[str, BBox, str, str]], texts: list[NormalizedEntity], sheet: Sheet
+) -> list[SeccionDibujada]:
+    """The drawn sections a title owns or claims (``secciones`` as the cotas reader leaves them:
+    mark, box, sheet key, title), each once, with the sheet of its title; a section nobody owns is
+    not one of them (no mark to say it of)."""
+    por_id = {t.entity_id: t for t in texts}
+    salida: list[SeccionDibujada] = []
+    vistas: set[tuple[str, tuple[float, ...]]] = set()
+    for marca, caja, _llave, titulo_id in secciones:
+        titulo = por_id.get(titulo_id)
+        clave = (titulo_id, tuple(round(v, 6) for v in caja))
+        if not marca or titulo is None or clave in vistas:
+            continue
+        vistas.add(clave)
+        hoja, llave = sheet(titulo)
+        salida.append(
+            SeccionDibujada(
+                marca=marca,
+                caja=(caja[0], caja[1], caja[2], caja[3]),
+                hoja=hoja,
+                hoja_llave=llave,
+                titulo_id=titulo_id,
+            )
+        )
+    return salida
+
+
 def _encerrados(
     candidatos: list[NormalizedEntity],
     secciones: list[SeccionDeTitulo],
@@ -4903,6 +4947,7 @@ def build_schedule_inventory(
         titulos_de_detalle=titulos_de_detalle,
         rechazos=rechazos,
         leidos_por_reglas=leidos_por_reglas,
+        secciones_dibujadas=_secciones_con_titulo(secciones_dibujadas, texts, sheet),
     )
     inventory.textos_con_marca, inventory.textos_con_fragmento = _texts_naming_marks(
         texts, config, sheet
