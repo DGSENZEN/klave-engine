@@ -2127,6 +2127,24 @@ def _deja_sin_lectura(
     )
 
 
+def _intercambiadas(
+    pilas: list[tuple[_Seccion, list[_Texto]]],
+    alcanzan: dict[str, list[tuple[_Seccion, float]]],
+) -> set[str]:
+    """R211, el cierre de intercambios: las secciones (por id) cuya pila toma un renglón que otra
+    alcanza mientras la pila de esa otra toma uno que ésta alcanza (con el doble de su alcance, de
+    cualquier lado, de frente o de lado: el alcance de la competencia). Cada una puede estar más
+    cerca del renglón de la otra y quedar las dos con su lectura (la semilla 45408 de la rejilla):
+    ni la distancia ni la huérfana lo ven. Pueden estar cambiadas: las dos quedan en duda.
+    ``pilas`` son todas las que tomarían las secciones que se leen, en duda o no: el intercambio se
+    decide una vez, sobre lo que el dibujo pone, nunca sobre lo que otra regla ya dejó en duda."""
+    alcanza_a: dict[str, set[str]] = defaultdict(set)  # sección -> secciones que alcanzan su pila
+    for seccion, pila in pilas:
+        for t in pila:
+            alcanza_a[seccion.id] |= {o.id for o, _h in alcanzan.get(t.id, ()) if o is not seccion}
+    return {a.id for a, _pila in pilas for b in alcanza_a[a.id] if a.id in alcanza_a.get(b, set())}
+
+
 # R200: lo que dice un renglón de una pila, para saber qué campo daría a su sección: un juego de
 # estribos (con su cabeza: «E#4@10», «2E#3EXT@10», «EYG#3@15») o una distribución («CENTRO@20»,
 # «1@6,8@10»), y un juego de varillas («4#3», «12#8+8#6»: los «+» lo juntan en uno).
@@ -2224,7 +2242,8 @@ def asociar_secciones(
     o en su esquina, a su lado); le daría dos juegos de un mismo campo que pueden ser dos pilas
     juntas (R206: no van seguidos, u otra sección alcanza alguno); o dejaría sin su lectura de
     ese campo a otra sección que se lee y la alcanza (la distancia nunca le da a una sección la
-    pila que otra necesita; R205: una que nunca se lee compite sólo por la distancia).
+    pila que otra necesita; R205: una que nunca se lee compite sólo por la distancia); o su sección
+    y otra se cambiarían renglones (R211: cada pila toma uno que la otra alcanza).
     Devuelve las pilas tomadas por las secciones que se leen
     (por su título: ``etiqueta_id`` es el título, ``marca`` la suya) y los renglones en disputa
     entre una sección y otra marca (con sus marcas)."""
@@ -2305,13 +2324,24 @@ def asociar_secciones(
         reparto = _pilas([*locales, *por_id.values()], estorban, titulos=set(del_titulo))
         alcanzan = _lo_que_alcanza_cada_seccion(list(por_id.values()), locales, estorban)
         candidatas: list[tuple[_Seccion, SeccionDeTitulo, _Alcance, list[_Texto]]] = []
+        intercambiadas = _intercambiadas(
+            [
+                (por_id[alcance.etiqueta.id], propios)
+                for alcance, propios in reparto.tomadas
+                if alcance.etiqueta.id in por_id
+                and (dato := por_id[alcance.etiqueta.id].seccion) is not None
+                and dato.lee
+            ],
+            alcanzan,
+        )
         for alcance, propios in reparto.tomadas:
             la_seccion = por_id.get(alcance.etiqueta.id)
             dato = la_seccion.seccion if la_seccion is not None else None
             if la_seccion is None or dato is None or not dato.lee:
                 continue
             if (
-                not alcance.frontal
+                la_seccion.id in intercambiadas
+                or not alcance.frontal
                 or any(t.id in dibujo for t in propios)
                 or _campo_doble(la_seccion, propios, alcanzan)
                 or _columna_abierta(
@@ -2324,7 +2354,10 @@ def asociar_secciones(
             candidatas.append((la_seccion, dato, alcance, propios))
         # R200, R205: nunca una pila que deja sin su lectura de un campo a otra sección que se lee
         # y la alcanza (la que la necesita). Lo que se quita puede dejar sin su lectura a otra:
-        # hasta que nada cambie.
+        # hasta que nada cambie. R211: el intercambio (arriba) se decide sobre todas las pilas que
+        # tomarían las que se leen, antes de este punto fijo: no depende de lo que se quite en él,
+        # así que el punto fijo sigue siendo monótono (quitar sólo encoge ``campos_de``, y una
+        # huérfana lo sigue siendo) y el resultado, el mayor punto fijo, no depende del orden.
         while True:
             campos_de: dict[str, set[str]] = defaultdict(set)
             for lectora, _dato, _alcance, propios in candidatas:

@@ -1305,13 +1305,28 @@ def test_a_section_with_its_own_reading_still_contests_its_titles_side(con_otra_
     assert not [s for s in inv.specs if s.metodo == "pila" and s.mark in ("T-2", "T-3")]
 
 
-# R209: las semillas en que dos secciones se cambian las pilas (o la columna se corre una) por la
-# distancia sola: cada una está claramente más cerca del renglón de la otra, y las dos quedan con
-# su lectura, así que ninguna regla de duda las ve. Leían así desde la ronda 3 (50e84d4): no las
-# causaba R205a. El cierre de los intercambios (que A tome lo que B alcanza y B lo que A alcanza
-# deja a las dos en duda) y la exención por la costumbre de la hoja quedan para la ronda 9d; hasta
-# entonces son lecturas ajenas conocidas (en rojo en cuanto dejen de serlo).
-@pytest.mark.xfail(strict=True, reason="R209: intercambio por distancia, aparcado para 9d")
+def test_two_sections_that_would_swap_stacks_both_doubt():
+    # R211 (la semilla 45408 de la rejilla): K-3 lee hacia abajo y K-6, debajo, hacia arriba. Entre
+    # las dos, «E#3@20 Y E#2@15» (de K-6) a 0.30 de K-3 y 1.36 de K-6, y más abajo «EYG#3@15» (de
+    # K-3) a 1.00 de K-3 y 0.66 de K-6. Cada una está claramente más cerca del renglón de la otra y
+    # las dos quedan con su lectura: la distancia y la huérfana no ven nada. Pero la pila de K-3
+    # toma un renglón que K-6 alcanza y la de K-6 uno que K-3 alcanza: pueden estar cambiadas.
+    # Las dos quedan en duda.
+    ents = [
+        _en("a", "E#3@20 Y E#2@15", -0.204, -6.707, 1.146, -6.607),
+        _en("b", "EYG#3@15", 0.44, -7.406, 1.16, -7.306),
+    ]
+    secciones = [
+        _seccion(0, 0.0, -6.306, 1.974, -4.013, "K-3", sentidos=(-1,)),
+        _seccion(1, 0.0, -9.859, 1.779, -8.07, "K-6", sentidos=(+1,)),
+    ]
+    asoc, dudosos = asociar_secciones(ents, _marco_grande(ents), C, secciones, {"a", "b"})
+    assert asoc == [] and dudosos == {"a": {"K-3"}, "b": {"K-6"}}
+
+
+# R211: las semillas en que dos secciones se cambiaban las pilas por la distancia sola (cada una
+# claramente más cerca del renglón de la otra, las dos con su lectura; leían así desde la ronda
+# 3): en rojo sin el cierre de intercambios.
 @pytest.mark.parametrize("semilla", [45408, 47070])
 def test_the_grid_seeds_where_two_sections_swap_stacks(semilla):
     leidas = _lee_la_rejilla(semilla)
@@ -1319,10 +1334,11 @@ def test_the_grid_seeds_where_two_sections_swap_stacks(semilla):
     assert all(entera for _marca, _textos, entera in leidas), leidas
 
 
-@pytest.mark.xfail(strict=True, reason="R209: la columna de K-2 no alcanza su renglón; aparcado")
+@pytest.mark.xfail(strict=True, reason="R210 (ii): el dueño no alcanza su renglón; límite R58a")
 def test_the_zigzag_seed_where_a_section_reads_its_neighbours_line():
-    # «zigzag», 50456, lado al azar, sin títulos: K-1 lee «E#4@10 Y E#3@20 EN NUDOS», de K-2, a
-    # 0.11 bajo ella; K-2 lo tiene a 0.28 (más del doble de su alcance, 0.26) y fuera de su columna.
+    # R210, la clase (ii) («zigzag», 50456, lado al azar, sin títulos): K-1 lee «E#4@10 Y E#3@20 EN
+    # NUDOS», de K-2, a 0.11 bajo ella; K-2 lo tiene a 0.28 (más del doble de su alcance, 0.26) y
+    # fuera de su columna. Nadie que lo alcance puede ser su dueño: el límite de R58a, aceptado.
     with tempfile.TemporaryDirectory(prefix="t9c_semilla_") as d:
         cuadro = _cuadro_de(Path(d), "zigzag", 50456)
         assert cuadro is not None
