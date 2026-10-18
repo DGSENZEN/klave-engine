@@ -734,29 +734,51 @@ def compute_steel(
         rebar = leido.grupos or None
         stirrups = leido.estribo
         section = tuple(spec["section_cm"]) if spec and spec.get("section_cm") else None
-        assumed = rebar is None or section is None
+        sin_armado, sin_seccion = rebar is None, section is None
+        assumed = sin_armado or sin_seccion
+        no_se_pesan = ""
         if assumed:
             d_rebar, d_stirrup, d_section = a.default_dala
             default = _leer_spec({"rebar": d_rebar, "stirrups": d_stirrup}, "dala")
             rebar = rebar or default.grupos
-            stirrups = stirrups or default.estribo
+            if sin_seccion and stirrups is not None and (stirrups.piezas > 1 or stirrups.zonas):
+                # R221 (como R214): un juego de varias piezas o por zonas no se pesa sobre una
+                # sección supuesta.
+                no_se_pesan = _texto_estribo(stirrups).strip()
+                stirrups = None
+            elif sin_armado:
+                stirrups = stirrups or default.estribo
             section = section or d_section
         assert rebar is not None and section is not None
         long_kg, stir_kg = _linear_element_kg(
             length, rebar, stirrups, (float(section[0]), float(section[1])), a, anchorage=False
         )
+        fuente = (
+            "(supuesto)" if sin_armado and sin_seccion
+            else "(armado supuesto)" if sin_armado
+            else "(supuesta)" if sin_seccion
+            else f"(plano: {origin})"
+        )  # fmt: skip
+        notas_dala = [
+            f"Dala de cerramiento sobre {length:,.1f} m de muro: {_texto_varillas(rebar)}"
+            + _texto_estribo(stirrups)
+            + f" sección {section[0]}x{section[1]} cm {fuente}",
+            f"Desperdicio {a.waste_pct:g} %",
+            _metodo_sin_modelo(a),
+        ]
+        if no_se_pesan:
+            notas_dala.append(
+                f"Dala: estribos {no_se_pesan} no se pesan: la sección es supuesta (el plano no "
+                "la da) y el juego tiene varias piezas o zonas"
+            )
+            report.warnings.append(
+                f"Acero por leer — dalas: estribos {no_se_pesan} no se pesan sobre una sección "
+                "supuesta (acero no cuantificado)"
+            )
         report.lines.append(
             SteelLine(
                 concept_code=CODE_DALAS, quantity=round((long_kg + stir_kg) * waste, 2),
-                unit="KG", source_detections=list(walls.source_detections),
-                notes=[
-                    f"Dala de cerramiento sobre {length:,.1f} m de muro: {_texto_varillas(rebar)}"
-                    + _texto_estribo(stirrups)
-                    + f" sección {section[0]}x{section[1]} cm "
-                    + ("(supuesto)" if assumed else f"(plano: {origin})"),
-                    f"Desperdicio {a.waste_pct:g} %",
-                    _metodo_sin_modelo(a),
-                ],
+                unit="KG", source_detections=list(walls.source_detections), notes=notas_dala,
             )
         )
 

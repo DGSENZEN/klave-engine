@@ -2215,16 +2215,22 @@ def _recubrimiento_dibujado(
     A side's cota has both points on the outline: never a cover."""
     x0, y0, x1, y1 = contorno.caja
     esquinas = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)]
-    vertices = [
-        (float(px), float(py))
+    dentro = [
+        sg
         for sg in segmentos
         if sg.bbox[2] >= x0 and sg.bbox[0] <= x1 and sg.bbox[3] >= y0 and sg.bbox[1] <= y1
+    ]
+    vertices = [
+        (float(px), float(py))
+        for sg in dentro
         for px, py, *_ in (sg.points or [])
         if x0 + tol < px < x1 - tol and y0 + tol < py < y1 - tol
     ]
+    tramos = [t for sg in dentro for t in _tramos_de(sg)]
     valores: list[float] = []
     sin_estribo: list[float] = []
     grandes: list[float] = []
+    adentro_de_otro: list[float] = []
     for d in dims:
         dx0, dy0, dx1, dy1 = d.bbox
         if dx1 < x0 - tol or dx0 > x1 + tol or dy1 < y0 - tol or dy0 > y1 + tol:
@@ -2245,10 +2251,18 @@ def _recubrimiento_dibujado(
             valor = _cota_cm(d, unit_to_m)
             if valor is None or not _RECUBRIMIENTO_CM[0] <= valor <= _RECUBRIMIENTO_CM[1]:
                 break
-            if not any(math.dist(adentro, v) <= tol for v in vertices):
+            # R221: la tolerancia del vértice va con la cota (un 10 % de su largo): el trazo de
+            # Marina deja la esquina de un estribo a 0.008 de su cota; el centro de una varilla
+            # queda mucho más lejos.
+            cerca = max(tol, _CERCA_DEL_VERTICE * math.dist(esquina, adentro))
+            vertice = min(vertices, key=lambda v: math.dist(adentro, v), default=None)
+            if vertice is None or math.dist(adentro, vertice) > cerca:
                 sin_estribo.append(valor)
             elif valor >= lado_menor_cm / 4:
                 grandes.append(valor)
+            elif _algo_entre(esquina, vertice, tramos, cerca):
+                # R220: entre el contorno y ese estribo corre otro: es un aro interior.
+                adentro_de_otro.append(valor)
             else:
                 valores.append(valor)
             break
@@ -2268,6 +2282,14 @@ def _recubrimiento_dibujado(
             f"lado menor ({lado_menor_cm:g} cm): no es un recubrimiento, no se toma"
         )
         dichos.append(f"acota {cifras} cm en una esquina, un cuarto o más de su lado menor")
+    if adentro_de_otro:
+        cifras = ", ".join(f"{v:g}" for v in sorted(set(adentro_de_otro)))
+        avisos.append(
+            f"recubrimiento: su sección acota {cifras} cm de una esquina a un estribo que no es el "
+            "estribo de afuera (otro corre entre él y el contorno): no es el recubrimiento, no se "
+            "toma"
+        )
+        dichos.append(f"acota {cifras} cm a un estribo interior")
     if not valores:
         return None, avisos, "; ".join(dichos) or None
     distintos = sorted(set(valores))
@@ -2281,6 +2303,59 @@ def _recubrimiento_dibujado(
                       "no se toma")  # fmt: skip
         return None, avisos, f"acota {valores[0]:g} cm en una sola esquina leída"
     return valores[0], avisos, None
+
+
+_CERCA_DEL_VERTICE = 0.10
+
+
+def _tramos_de(sg: NormalizedEntity) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+    """The straight pieces a line or polyline draws."""
+    puntos = [(float(x), float(y)) for x, y, *_ in (sg.points or [])]
+    if (sg.properties or {}).get("closed") and len(puntos) > 2:
+        puntos.append(puntos[0])
+    return list(zip(puntos, puntos[1:], strict=False))
+
+
+def _algo_entre(
+    esquina: tuple[float, float],
+    vertice: tuple[float, float],
+    tramos: list[tuple[tuple[float, float], tuple[float, float]]],
+    tol: float,
+) -> bool:
+    """R220: whether a drawn piece runs through the box between the outline's corner and a
+    stirrup's corner (shrunk by ``tol``), other than the pieces that end at that stirrup corner:
+    another stirrup between it and the outline."""
+    ax0, ax1 = sorted((esquina[0], vertice[0]))
+    ay0, ay1 = sorted((esquina[1], vertice[1]))
+    caja = (ax0 + tol, ay0 + tol, ax1 - tol, ay1 - tol)
+    if caja[0] >= caja[2] or caja[1] >= caja[3]:
+        return False
+    for p, q in tramos:
+        if math.dist(p, vertice) <= tol or math.dist(q, vertice) <= tol:
+            continue
+        if _corta_caja(p, q, caja):
+            return True
+    return False
+
+
+def _corta_caja(p: tuple[float, float], q: tuple[float, float], caja: BBox) -> bool:
+    """Whether the segment ``p``–``q`` enters the box (Liang–Barsky clipping)."""
+    x0, y0, x1, y1 = caja
+    dx, dy = q[0] - p[0], q[1] - p[1]
+    t0, t1 = 0.0, 1.0
+    for pk, qk in ((-dx, p[0] - x0), (dx, x1 - p[0]), (-dy, p[1] - y0), (dy, y1 - p[1])):
+        if pk == 0:
+            if qk < 0:
+                return False
+            continue
+        t = qk / pk
+        if pk < 0:
+            t0 = max(t0, t)
+        else:
+            t1 = min(t1, t)
+        if t0 > t1:
+            return False
+    return True
 
 
 def _lado(

@@ -837,6 +837,13 @@ class _Resolutor:
                     f"(«{dato.texto if dato is not None else ''}»): no se toma; se usa el de "
                     "las reglas"
                 )
+            elif (unico := _valor_unico(dato)) is not None and abs(cm - unico) > _HOLGURA_CM:
+                # R220: la nota dice un solo valor y el dibujo acota otro, más de 1 cm aparte.
+                avisos.append(
+                    f"recubrimiento acotado {cm:g} cm, la nota dice {unico:g} cm "
+                    f"(«{dato.texto if dato is not None else ''}»): no se toma; se usa el de "
+                    "la nota"
+                )
             else:
                 elegido = elegir([propio] + ([dato] if dato is not None else []))
                 assert elegido is not None
@@ -896,6 +903,20 @@ def _rango(dato: Dato | None) -> tuple[float, float] | None:
         return None
     a, b = (float(v.replace(",", ".")) for v in (m[1], m[2]))
     return (min(a, b), max(a, b)) if a != b else None
+
+
+# R220: un recubrimiento dibujado se toma si no se aparta más de esto del único valor de la nota.
+_HOLGURA_CM = 1.0
+
+
+def _valor_unico(dato: Dato | None) -> float | None:
+    """R220: el único valor (cm) que la nota da para un recubrimiento, si no da un rango."""
+    if dato is None or dato.fuente not in ("nota", "regla") or _rango(dato) is not None:
+        return None
+    valor = dato.valor
+    if isinstance(valor, bool) or not isinstance(valor, int | float):
+        return None
+    return float(valor) * 100
 
 
 def _variante(

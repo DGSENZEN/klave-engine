@@ -568,7 +568,7 @@ def test_assumed_shapes_on_an_elongated_section_are_to_confirm():
     # interior; en una sección con h/b ≥ 2 la forma supuesta queda por confirmar, con la marca.
     k7 = _elemento("K-7", "castillo", (20, 55), 3.2, ["4#5+4#4"], "2E#3@20", 0.03, det_id="k7")
     a = acero_elemento(k7, R, 0.40)
-    assert any("alargada" in d and "por confirmar" in d for d in a.por_confirmar)
+    assert any("alargada" in d and "E3" in d for d in a.por_confirmar)
     k12 = _elemento("K-12", "castillo", (30, 30), 3.2, ["4#6+4#4"], "2E#3@15", 0.05)
     assert not any("alargada" in d for d in acero_elemento(k12, R, 0.40).por_confirmar)
     k5 = _elemento("K-5", "castillo", (20, 30), 3.2, ["6#4"], "EYG#3@15", 0.03)  # 1 + grapa
@@ -701,3 +701,41 @@ def test_only_a_single_bar_without_stirrups_is_not_unread():
     assert a.por_leer and not a.sin_estribos_declarados
     kx = _elemento("K-X", "castillo", (20, 40), 3.0, ["1#4"], None, 0.03)
     assert acero_elemento(kx, R, 0.40).sin_estribos_declarados
+
+
+# ------------------------------------------------------------------ ronda de arreglos 3
+
+
+def test_a_dala_set_is_never_weighed_on_an_assumed_section():
+    # R221: la rama de dalas del camino sin modelo lleva la guarda de R214.
+    w = _det("w1", "W1", DetectionType.wall)
+    boq = BillOfQuantities(project_id="p", lines=[_line("EST-004", ["w1"], raw=10.0)])
+    specs = {"by_family": {"dala": {"rebar": "4#3", "stirrups": "2E#2@20", "section_cm": None}}}
+    report = compute_steel(boq, [w], specs, None, 1.0, 2.7)
+    dala = next(x for x in report.lines if x.concept_code == "ACE-002")
+    assert dala.quantity == pytest.approx(4 * 10.0 * 0.560 * 1.05, abs=0.01)
+    assert "(supuesta)" in dala.notes[0] and "(plano" not in dala.notes[0]
+    assert any("2E#2@20" in n and "no se pesan" in n for n in dala.notes)
+    assert any("dalas" in w_ and "no se pesan" in w_ for w_ in report.warnings)
+
+
+def test_por_confirmar_is_said_once_per_warning():
+    # R221: «por confirmar» una vez por aviso (el encabezado), no en cada renglón.
+    rango = Dato(valor=0.03, fuente="nota", hoja="ES-300", texto="3.0 A 5.0 CM LIBRES EN CASTILLOS")
+    aviso = (
+        "recubrimiento: la sección dibujada de la hoja ES-300 no se leyó (acota 5 cm en una "
+        "sola esquina leída); se usa el de las reglas"
+    )
+    k7 = _elemento("K-7", "castillo", (20, 55), 3.2, ["4#5+4#4"], "2E#3@20", 0.03, det_id="k7",
+                   hoja="ES-300")  # fmt: skip
+    k7 = k7.model_copy(update={"recubrimiento_m": rango, "avisos": [aviso]})
+    boq = BillOfQuantities(project_id="p", lines=[_line("EST-001", ["k7"])])
+    report = compute_steel(boq, [_det("k7", "K-7")], None, None, 1.0, 2.7,
+                           estructura=_estructura(k7))  # fmt: skip
+    w = next(w for w in report.warnings if "(por confirmar)" in w)
+    assert w.count("por confirmar") == 1, w
+    fuera = k7.model_copy(update={"detection_id": "k0", "hoja": "ES-000"})
+    report = compute_steel(boq, [_det("k7", "K-7")], None, None, 1.0, 2.7,
+                           estructura=_estructura(k7, fuera))  # fmt: skip
+    entrada = next(w for w in report.warnings if "fuera del presupuesto" in w)
+    assert entrada.count("por confirmar") == 1, entrada

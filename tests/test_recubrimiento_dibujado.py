@@ -236,3 +236,82 @@ def test_what_the_drawing_dimensions_without_being_taken_reaches_the_element():
         in x
         for x in e.avisos
     )
+
+
+# -------------------------------------------------------------- R220, R221
+
+
+def _columna_60(cotas, estribos):
+    """Una sección de 60×60 (1.0 × 1.0 unidades) con ``estribos``: esquinas de estribo dibujadas
+    (punto, hacia) y ``cotas`` (esquina, adentro, cm)."""
+    x0, y0, x1, y1 = (-0.5, 0.9, 0.5, 1.9)
+    ents = _castillo("a", "K-1", 0.0, 0.0, ["8#8"], (x0, y0, x1, y1), 60, 60)
+    for i, (punto, hacia) in enumerate(estribos):
+        ents.append(_estribo_en(f"s{i}", punto, hacia))
+    for i, (esquina, adentro, cm) in enumerate(cotas):
+        ents.append(_diagonal(f"q{i}", esquina, adentro, cm))
+    (k,) = _cotas(build_schedule_inventory(ents, C, 1.0), "K-1")
+    return k
+
+
+# el estribo de afuera a 5 cm (0.083 u) y un aro interior a 10 cm (0.167 u) en dos esquinas
+_AFUERA = [((-0.417, 0.983), (1, 1)), ((0.417, 1.817), (-1, -1))]
+_ADENTRO = [((-0.333, 1.067), (1, 1)), ((0.333, 1.733), (-1, -1))]
+
+
+def test_an_inner_hoop_is_not_the_cover():
+    # R220: «10» de dos esquinas del contorno a un aro interior de una columna de 60×60: el
+    # vértice existe y 10 es menos de un cuarto de 60, pero entre él y el contorno corre el estribo
+    # de afuera: no es el recubrimiento.
+    k = _columna_60(
+        [((-0.5, 0.9), (-0.333, 1.067), 10), ((0.5, 1.9), (0.333, 1.733), 10)], _AFUERA + _ADENTRO
+    )
+    assert k.recubrimiento_cm is None
+    assert any("no es el estribo de afuera" in a for a in k.avisos)
+    # el de afuera sí es su recubrimiento
+    k = _columna_60(
+        [((-0.5, 0.9), (-0.417, 0.983), 5), ((0.5, 1.9), (0.417, 1.817), 5)], _AFUERA + _ADENTRO
+    )
+    assert k.recubrimiento_cm == 5
+
+
+def test_the_vertex_tolerance_follows_the_cotas_length():
+    # R221 (K-7A en Marina): la esquina del estribo dibujada 0.008 al lado del punto de la cota;
+    # una tolerancia de 10 % de la cota la toma; el centro de una varilla, lejos, no.
+    x0, y0, x1, y1 = (-0.5, 0.9, 0.5, 2.4)
+    ents = _castillo("a", "K-1", 0.0, 0.0, ["4#3"], (x0, y0, x1, y1), 20, 30)
+    for i, (esquina, adentro, desvio) in enumerate(
+        [((x0, y0), (x0 + 0.1, y0 + 0.1), 0.008), ((x1, y1), (x1 - 0.1, y1 - 0.1), 0.0)]
+    ):
+        ents.append(_diagonal(f"q{i}", esquina, adentro, 3))
+        hacia = (1 if adentro[0] > esquina[0] else -1, 1 if adentro[1] > esquina[1] else -1)
+        ents.append(_estribo_en(f"s{i}", (adentro[0] + desvio, adentro[1]), hacia))
+    (k,) = _cotas(build_schedule_inventory(ents, C, 1.0), "K-1")
+    assert k.recubrimiento_cm == 3
+
+
+def test_a_drawn_cover_off_a_single_valued_note_is_not_taken():
+    # R220: la nota dice un solo valor (5 cm); el dibujo acota 7: no se toma, se dice.
+    k = _seccion_con([((-0.5, 0.9), (-0.4, 1.0), 7), ((0.5, 2.4), (0.4, 2.3), 7)],
+                     ancho=40, peralte=60)  # fmt: skip
+    inv = build_schedule_inventory(_con_recubrimientos("K-1", 0.0, 0.0, []), C, 1.0)
+    (spec,) = _cotas(inv, "K-1")
+    spec.recubrimiento_cm, spec.hoja = k.recubrimiento_cm, "ES-100"
+    defs = construir_definiciones(inv, C)[0]
+    reglas = reglas_estandar()
+    cubre = dict(reglas.recubrimiento_m)
+    cubre["castillo"] = Dato(valor=0.05, fuente="nota", hoja="ES-100",
+                             texto="5.0 CM LIBRES EN CASTILLOS")  # fmt: skip
+    reglas = reglas.model_copy(update={"recubrimiento_m": cubre})
+    a = _tag("K-1")
+    marcos = [SheetFrame(frame_id="v_100", code="ES-100", bbox=(0, 0, 1, 1), title="ES-100")]
+    (e,) = _construir([a], _seg({a.detection_id: "v_100"}, plan=("v_100",)), defs, {},
+                      reglas=reglas, frames=marcos)  # fmt: skip
+    assert (e.recubrimiento_m.valor, e.recubrimiento_m.fuente) == (0.05, "nota")
+    assert any("recubrimiento acotado 7 cm, la nota dice 5 cm" in x for x in e.avisos)
+    # dentro de 1 cm sí se toma
+    spec.recubrimiento_cm = 5.5
+    defs = construir_definiciones(inv, C)[0]
+    (e,) = _construir([a], _seg({a.detection_id: "v_100"}, plan=("v_100",)), defs, {},
+                      reglas=reglas, frames=marcos)  # fmt: skip
+    assert e.recubrimiento_m.valor == 0.055

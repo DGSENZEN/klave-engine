@@ -407,7 +407,7 @@ def _recubrimiento(e: Elemento, reglas: Reglas, salida: AceroElemento) -> float 
         # queda por confirmar, con el valor que se usa.
         for aviso in e.avisos:
             if aviso.startswith("recubrimiento"):
-                salida.por_confirmar.append(f"{aviso} ({valor * 100:g} cm), por confirmar")
+                salida.por_confirmar.append(f"{aviso} ({valor * 100:g} cm)")
         if dato.en_conflicto:
             otros = sorted({f"{float(a.valor) * 100:g}" for a in dato.alternativas
                             if _numero(a.valor) is not None and a.valor != dato.valor})  # fmt: skip
@@ -493,9 +493,8 @@ def _estribos(
                 # R212: en una sección alargada el corte suele dibujar amarres interiores donde
                 # la práctica supone un rombo.
                 salida.por_confirmar.append(
-                    "formas de estribos supuestas en una sección alargada (h/b ≥ 2), por "
-                    "confirmar con el corte dibujado (E3): el corte puede traer amarres "
-                    "interiores donde se supuso un rombo"
+                    "formas de estribos supuestas en una sección alargada (h/b ≥ 2): el corte "
+                    "dibujado (E3) puede traer amarres interiores donde se supuso un rombo"
                 )
         extremos = extremos_supuesto_m(b, h, largo)
         try:
