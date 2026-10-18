@@ -288,8 +288,10 @@ def detect_beams(
                 if muro.cercana is not None:
                     properties["muro_cara_cercana"] = muro.cercana
                 if muro.perpendicular is not None:
-                    properties["muro_perpendicular_espesor"] = round(muro.perpendicular[0], 6)
-                    properties["muro_perpendicular_caras"] = muro.perpendicular[1]
+                    espesor, caras = muro.perpendicular
+                    if espesor is not None:
+                        properties["muro_perpendicular_espesor"] = round(espesor, 6)
+                    properties["muro_perpendicular_caras"] = caras
         if elegida is None:
             sin_claro = (
                 "longitud: ninguna línea alineada con la etiqueta (±"
@@ -1061,7 +1063,7 @@ class _Muro:
     caras: list[str]
     como: str
     cercana: str | None = None
-    perpendicular: tuple[float, list[str]] | None = None
+    perpendicular: tuple[float | None, list[str]] | None = None
 
 
 def _espesor_del_muro(
@@ -1089,7 +1091,8 @@ def _espesor_del_muro(
     caras = _caras_de_muro(etiqueta, centro, u, index, config, cubre=True)
     if not caras:
         return (
-            "el muro bajo la etiqueta no se encontró (ninguna cara de muro paralela junto a ella)"
+            "el muro junto a la etiqueta no se encontró (ninguna cara de muro paralela junto a "
+            "ella)"
         )
     minimo, maximo = config.face_width_margin, config.max_face_gap + config.face_width_margin
     pares = [
@@ -1112,23 +1115,29 @@ def _espesor_del_muro(
         ]
         if not lado:
             return (
-                f"el muro bajo la etiqueta tiene una sola cara a la vista ({cerca[1]}): su espesor "
-                "no se mide"
+                f"el muro junto a la etiqueta tiene una sola cara a la vista ({cerca[1]}): su "
+                "espesor no se mide"
             )
         una, otra = min(lado, key=lambda par: par[1][0] - par[0][0])
         como, cercana = "junto", cerca[1]
-    # R193: the perpendicular wall nearest the tag, within the search radius.
-    perpendicular: tuple[float, list[str]] | None = None
-    transversales = _caras_de_muro(etiqueta, centro, (-u[1], u[0]), index, config, cubre=False)
-    pares_t = [
-        (abs(a[0] + b[0]) / 2, b[0] - a[0], [a[1], b[1]])
-        for i, a in enumerate(transversales)
-        for b in transversales[i + 1 :]
-        if minimo <= b[0] - a[0] <= maximo
+    # R193, R198: the perpendicular wall nearest the tag, within the search radius: faces
+    # perpendicular to this wall whose span reaches the tag (± ``face_width_margin``). A thickness
+    # is stated only for two consecutive faces (nothing between them) 10–40 cm apart
+    # (2 × ``face_width_margin`` to ``max_face_gap + face_width_margin``); otherwise the nearest
+    # face is named, with no number.
+    perpendicular: tuple[float | None, list[str]] | None = None
+    transversales = _caras_de_muro(etiqueta, centro, (-u[1], u[0]), index, config, cubre=True)
+    consecutivas = [
+        (0.0 if a[0] <= 0 <= b[0] else min(abs(a[0]), abs(b[0])), b[0] - a[0], [a[1], b[1]])
+        for a, b in zip(transversales, transversales[1:], strict=False)
+        if 2 * config.face_width_margin <= b[0] - a[0] <= maximo
     ]
-    if pares_t:
-        _d, ancho, suyas = min(pares_t, key=lambda par: par[0])
+    if consecutivas:
+        _d, ancho, suyas = min(consecutivas, key=lambda par: par[0])
         perpendicular = (ancho, list(dict.fromkeys(suyas)))
+    elif transversales:
+        mas_cerca = min(transversales, key=lambda c: abs(c[0]))
+        perpendicular = (None, [mas_cerca[1]])
     return _Muro(
         espesor=otra[0] - una[0],
         caras=list(dict.fromkeys([una[1], otra[1]])),

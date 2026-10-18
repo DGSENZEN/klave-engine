@@ -968,5 +968,50 @@ def test_a_dala_tag_beside_one_face_does_not_guess_the_wall():
     viga = _vigas(entidades)["t"]
     assert "muro_espesor" not in viga.properties
     assert viga.properties["muro_sin_medir"] == (
-        "el muro bajo la etiqueta tiene una sola cara a la vista (muro): su espesor no se mide"
+        "el muro junto a la etiqueta tiene una sola cara a la vista (muro): su espesor no se mide"
     )
+
+
+@pytest.mark.parametrize(
+    "caras,espesor,nombradas",
+    [
+        # R198 (A4B28, A4B29 de Marina): dos líneas perpendiculares a 5 cm no son un muro: se
+        # nombra la cara más cercana, sin número.
+        ([1.5, 1.55], None, ["p0"]),
+        # Tres caras: el muro es el de dos caras SEGUIDAS a 10–40 cm (nada entre ellas); la de
+        # 1.5 a 1.9 (40 cm, con 1.6 en medio) no.
+        ([1.5, 1.6, 1.9], 0.10, ["p0", "p1"]),
+        # Dos caras a 30 cm, seguidas: su espesor.
+        ([1.5, 1.8], 0.30, ["p0", "p1"]),
+    ],
+)  # fmt: skip
+def test_a_perpendicular_wall_is_measured_only_between_consecutive_faces(caras, espesor, nombradas):
+    entidades = [
+        _linea("abajo", (0.0, -0.05), (4.0, -0.05), layer="MUROS1"),
+        _linea("arriba", (0.0, 0.10), (4.0, 0.10), layer="MUROS1"),
+        *(_linea(f"p{i}", (x, 0.10), (x, 3.0), layer="MUROS1") for i, x in enumerate(caras)),
+        _texto("t", "CI", (1.2, 0.02), alto=0.06),
+    ]
+    viga = _vigas(entidades)["t"]
+    if espesor is None:
+        assert "muro_perpendicular_espesor" not in viga.properties
+    else:
+        assert viga.properties["muro_perpendicular_espesor"] == pytest.approx(espesor)
+    assert viga.properties["muro_perpendicular_caras"] == nombradas
+
+
+def test_a_lone_perpendicular_face_never_replaces_the_nearest_face():
+    # R198: junto a su muro (medido desde su cara más cercana) y con una sola cara perpendicular
+    # cerca: el muro perpendicular se nombra por esa cara, sin número, y la cara más cercana del
+    # muro sigue siendo la suya (antes la pisaba la perpendicular).
+    entidades = [
+        _linea("cerca", (0.0, 0.0), (4.0, 0.0), layer="MUROS1"),
+        _linea("lejos", (0.0, -0.20), (4.0, -0.20), layer="MUROS1"),
+        _linea("p0", (1.5, -0.2), (1.5, 3.0), layer="MUROS1"),
+        _texto("t", "CI", (1.0, 0.06), alto=0.06),
+    ]
+    viga = _vigas(entidades)["t"]
+    assert viga.properties["muro_medido"] == "junto"
+    assert viga.properties["muro_cara_cercana"] == "cerca"
+    assert viga.properties["muro_perpendicular_caras"] == ["p0"]
+    assert "muro_perpendicular_espesor" not in viga.properties

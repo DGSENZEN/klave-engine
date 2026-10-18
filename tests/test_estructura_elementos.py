@@ -786,7 +786,7 @@ def _ci_variantes():
         ({"muro_espesor": 0.35, "muro_caras": ["1F67D", "1F66A"]}, None, True,
          "ninguna de las variantes de CI (para muros de 15, 20, 30 cm) es la suya"),
         # Su muro no se midió: el conflicto sigue y se dice por qué.
-        ({"muro_sin_medir": "el muro bajo la etiqueta tiene una sola cara a la vista (1F8EB)"},
+        ({"muro_sin_medir": "el muro junto a la etiqueta tiene una sola cara a la vista (1F8EB)"},
          None, True, "una sola cara a la vista (1F8EB)"),
         # R193: medido junto a la etiqueta (no está sobre su muro): se dice así, con su cara más
         # cercana, nunca «entre sus caras».
@@ -817,3 +817,18 @@ def test_a_type_tag_takes_the_variant_of_the_wall_it_crowns(props, seccion, conf
         assert el.seccion_cm.en_conflicto
         assert any(aviso in a for a in el.avisos)
         assert any(d.startswith("variante de CI") for d in el.dudas)
+
+
+def test_a_perpendicular_wall_without_a_thickness_is_named_and_doubted():
+    # R198: sin dos caras seguidas que acoten su espesor, el muro perpendicular se nombra sin
+    # número, y la variante queda en duda.
+    ci = _tag("CI", familia="dala", muro_espesor=0.15, muro_caras=["1F6F6", "1F6F4"],
+              muro_medido="junto", muro_cara_cercana="1F6F6",
+              muro_perpendicular_caras=["1F66B"])  # fmt: skip
+    el = _construir([ci], None, _ci_variantes())[0]
+    assert el.seccion_cm is not None and el.seccion_cm.en_conflicto
+    assert any(
+        "un muro perpendicular junto a la etiqueta (cara 1F66B), sin dos caras seguidas" in a
+        for a in el.avisos
+    )
+    assert any(d.startswith("variante de CI") for d in el.dudas)

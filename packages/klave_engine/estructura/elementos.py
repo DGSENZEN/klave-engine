@@ -429,17 +429,26 @@ def _muro_medido(d: Detection, factor: float | None) -> Dato | None:
 
 
 def _muro_perpendicular(d: Detection, factor: float | None) -> Dato | None:
-    """R193: el muro perpendicular más cercano a la etiqueta de una dala (cm), con sus caras."""
-    espesor = d.properties.get("muro_perpendicular_espesor")
-    if not isinstance(espesor, int | float) or not factor:
-        return None
-    cm = round(float(espesor) * factor * 100.0, 1)
+    """R193, R198: el muro perpendicular más cercano a la etiqueta de una dala, con sus caras; su
+    espesor (cm) sólo si dos caras seguidas lo acotan (``detect_beams``), si no sin número."""
     caras = list(d.properties.get("muro_perpendicular_caras") or [])
+    if not caras or not factor:
+        return None
+    espesor = d.properties.get("muro_perpendicular_espesor")
+    if isinstance(espesor, int | float):
+        cm = round(float(espesor) * factor * 100.0, 1)
+        de = f"caras {' y '.join(caras)}" if len(caras) > 1 else f"las dos caras de {caras[0]}"
+        return Dato(
+            valor=_numero(cm),
+            fuente="medido",
+            texto=f"un muro perpendicular de {_cm(cm)} cm junto a la etiqueta ({de})",
+            entidades=list(d.source_entities),
+        )
     return Dato(
-        valor=_numero(cm),
+        valor=None,
         fuente="medido",
-        texto=f"un muro perpendicular de {_cm(cm)} cm junto a la etiqueta (caras "
-        f"{' y '.join(caras)})",
+        texto=f"un muro perpendicular junto a la etiqueta (cara {' y '.join(caras)}), sin dos "
+        "caras seguidas que acoten su espesor",
         entidades=list(d.source_entities),
     )
 
@@ -862,10 +871,9 @@ def _variante(
         and abs(v.para_muro_cm - medido.valor) <= _TOLERANCIA_DE_MURO_CM
     ]
     cruce = col.muro_perpendicular_cm
-    if (
-        cruce is not None
-        and isinstance(cruce.valor, int | float)
-        and abs(float(cruce.valor) - float(medido.valor)) > _TOLERANCIA_DE_MURO_CM
+    if cruce is not None and (
+        not isinstance(cruce.valor, int | float)
+        or abs(float(cruce.valor) - float(medido.valor)) > _TOLERANCIA_DE_MURO_CM
     ):
         # R193: junto a la etiqueta llega otro muro, de otro espesor: la dala puede ser la suya.
         avisos.append(
