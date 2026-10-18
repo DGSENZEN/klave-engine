@@ -335,7 +335,10 @@ def generate_cost_report(
     price_vigencias: dict[str, str] | None = None,
     integracion_taller: dict | None = None,
     variant_mappings: dict[str, dict] | None = None,
+    estructura: dict | None = None,
 ) -> CostReport:
+    """``estructura`` es el modelo estructural (R6: ``{"reglas", "elementos"}``): con él, el
+    acero de castillos, columnas, trabes y contratrabes sale del armado de cada elemento."""
     config = config or CostingConfig()
     assumptions, calibration_notes = _calibrate_assumptions(
         config.assumptions, dimensions, detections
@@ -369,6 +372,7 @@ def generate_cost_report(
         boq, detections, schedule_specs, segmentation, units.to_meters(),
         assumptions.column_height_m,
         SteelAssumptions(wall_height_m=assumptions.wall_height_m),
+        estructura=estructura,
     )
     apply_steel(boq, catalog, apus, steel)
     formwork = compute_formwork(

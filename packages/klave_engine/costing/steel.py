@@ -5,16 +5,33 @@ how many castillos, how many metres of wall and trabe, and which zapatas.
 This stage multiplies the two into kilograms with every assumption written
 down: bar weights per número (NMX-B-506), anchorage, hooks, cover, waste,
 and a default armado only where the sheet says nothing — and says so.
+
+With the structural model (``estructura``: its rules and elements) castillos,
+columnas, trabes and contratrabes are weighed element by element from their
+structured armado (``estructura.acero``: every bar group, every stirrup set by
+shape, hooks, cover by family and sheet, stirrups laid out by zone). Whatever
+cannot be weighed is listed mark by mark with its reason («acero por leer»,
+R148a): a concept never vanishes silently.
+
+``estructura.acero`` weighs with ``BAR_KG_PER_M`` from here, so this module
+imports it only inside the functions that use it (R17: no import cycle).
 """
 
 import math
 import re
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
 from klave_engine.costing.models import BillOfQuantities, BoqLine, QuantityKind
 from klave_engine.detection.results import Detection
 from klave_engine.detection.views import SheetSegmentation
+from klave_engine.estructura.armado import Armado, Zona, parsear_armado, texto_estribos
+
+if TYPE_CHECKING:
+    from klave_engine.estructura.elementos import Elemento
+    from klave_engine.estructura.reglas import Reglas
 
 # kg/m por número de varilla (diámetro en octavos de pulgada).
 BAR_KG_PER_M: dict[str, float] = {
@@ -126,22 +143,331 @@ def slab_rebar_kg_per_m2(label: str | None) -> tuple[float, str] | None:
     return round(total, 3), ", ".join(parts)
 
 
+@dataclass
+class _Estribo:
+    """El juego de estribos que el camino sin estructura cuenta: número, cuántas piezas por juego
+    y su separación uniforme, o sus zonas (un texto canónico «2E#3 EXT@10 CENTRO@20»)."""
+
+    numero: str
+    separacion_m: float | None
+    piezas: int = 1
+    zonas: list[Zona] = field(default_factory=list)
+    texto: str = ""
+
+
+@dataclass
+class _Leido:
+    """Lo que el camino sin estructura lee de una especificación: los grupos de varillas y el
+    primer juego de estribos; ``otros_juegos``, los que ese camino no cuenta (dicho en la nota)."""
+
+    grupos: list[tuple[int, str]] = field(default_factory=list)
+    estribo: _Estribo | None = None
+    otros_juegos: list[str] = field(default_factory=list)
+
+
+def _texto_varillas(grupos: list[tuple[int, str]]) -> str:
+    return "+".join(f"{c}#{n}" for c, n in grupos)
+
+
+def _texto_estribo(estribo: _Estribo | None) -> str:
+    if estribo is None:
+        return ""
+    if estribo.texto:
+        return f" {estribo.texto}"
+    cuenta = str(estribo.piezas) if estribo.piezas > 1 else ""
+    return f" {cuenta}E#{estribo.numero}@{(estribo.separacion_m or 0) * 100:.0f}"
+
+
+def _leer_spec(spec: dict | None, familia: str) -> _Leido:
+    """Las varillas y el primer juego de estribos de una especificación (``rebar``, ``stirrups``).
+
+    Los textos de siempre («4#3», «#2@20», «E#3@15») se leen como siempre; uno que
+    ``parse_rebar``/``parse_spacing`` no entienden (los canónicos «4#5+2#4», «2E#3@15»,
+    «EYG#3@15», «4#3,E#2@20») se lee con ``parsear_armado`` —un «#n@s» suelto lleva antes su
+    «E», como lo guardaban las corridas viejas—: todos los grupos de varillas y el primer juego
+    de estribos. Nunca se pierde callado un armado que antes se leía (Tarea 7, R62)."""
+    leido = _Leido()
+    if not spec:
+        return leido
+    rebar = (spec.get("rebar") or "").strip()
+    stirrups = (spec.get("stirrups") or "").strip()
+    simple = parse_rebar(rebar) if rebar else None
+    if simple is not None:
+        leido.grupos = [simple]
+    estribo_simple = parse_spacing(stirrups) if stirrups else None
+    if estribo_simple is not None:
+        leido.estribo = _Estribo(numero=estribo_simple[0], separacion_m=estribo_simple[1])
+    textos = []
+    if rebar and simple is None:
+        textos.append(rebar)
+    if stirrups and estribo_simple is None:
+        textos.append("E" + stirrups if stirrups.startswith("#") else stirrups)
+    if not textos:
+        return leido
+    armado = parsear_armado(textos, familia)
+    if not leido.grupos:
+        leido.grupos = [
+            (g.cantidad, g.numero) for g in armado.longitudinales if g.numero in BAR_KG_PER_M
+        ]
+    juegos = [j for j in armado.estribos if j.numero in BAR_KG_PER_M]
+    if leido.estribo is None and juegos:
+        primero = juegos[0]
+        zonas = list(primero.zonas)
+        if [z.tramo for z in zonas] == ["todo"] and zonas[0].separacion_m:
+            leido.estribo = _Estribo(
+                numero=primero.numero, separacion_m=zonas[0].separacion_m,
+                piezas=primero.cantidad,
+            )
+        elif zonas and all(z.separacion_m for z in zonas):
+            leido.estribo = _Estribo(
+                numero=primero.numero, separacion_m=None, piezas=primero.cantidad, zonas=zonas,
+                texto=texto_estribos(Armado(estribos=[primero])),
+            )
+        leido.otros_juegos = [
+            texto_estribos(Armado(estribos=[j])) for j in juegos[1 if leido.estribo else 0 :]
+        ]
+    return leido
+
+
+def _leer_malla(spec: dict | None) -> tuple[str, float] | None:
+    """La parrilla de una zapata: «#4@20» como siempre; un texto canónico («#4@20 A/S») con
+    ``parsear_armado``, la primera malla."""
+    mesh = ((spec or {}).get("mesh") or "").strip()
+    if not mesh:
+        return None
+    simple = parse_spacing(mesh)
+    if simple is not None:
+        return simple
+    parrillas = parsear_armado([mesh], "zapata").parrillas
+    if parrillas and parrillas[0].numero in BAR_KG_PER_M:
+        return parrillas[0].numero, parrillas[0].separacion_m
+    return None
+
+
 def _linear_element_kg(
-    length_m: float, rebar: tuple[int, str], stirrups: tuple[str, float] | None,
+    length_m: float, rebar: list[tuple[int, str]], stirrups: _Estribo | None,
     section_cm: tuple[float, float], a: SteelAssumptions, *, anchorage: bool,
 ) -> tuple[float, float]:
-    """(longitudinal kg, stirrup kg) for one prismatic element."""
-    count, number = rebar
+    """(longitudinal kg, stirrup kg) for one prismatic element: every bar group, and the first
+    stirrup set as perimeters (one per piece). Zoned stirrups are laid out by zone
+    (``estructura.acero.posiciones``, ends supuesto by NTC) — strings the old reader never read."""
     bar_length = length_m + (a.anchorage_m if anchorage else 0.0)
-    longitudinal = count * bar_length * BAR_KG_PER_M[number]
+    longitudinal = sum(count * bar_length * BAR_KG_PER_M[number] for count, number in rebar)
     stirrup_kg = 0.0
     if stirrups is not None:
-        s_number, spacing = stirrups
         w, h = section_cm[0] / 100.0, section_cm[1] / 100.0
         perimeter = 2 * ((w - 2 * a.cover_m) + (h - 2 * a.cover_m)) + a.hook_m
-        n_stirrups = math.floor(length_m / spacing) + 1 if spacing > 0 else 0
-        stirrup_kg = n_stirrups * perimeter * BAR_KG_PER_M[s_number]
+        if stirrups.zonas:
+            from klave_engine.estructura.acero import extremos_supuesto_m, posiciones
+
+            n_stirrups = posiciones(
+                length_m, stirrups.zonas, None, extremos_supuesto_m(w, h, length_m)
+            )
+        else:
+            spacing = stirrups.separacion_m or 0.0
+            n_stirrups = math.floor(length_m / spacing) + 1 if spacing > 0 else 0
+        stirrup_kg = stirrups.piezas * n_stirrups * perimeter * BAR_KG_PER_M[stirrups.numero]
     return longitudinal, stirrup_kg
+
+
+def _pzas(n: int) -> str:
+    return f"{n} pza" if n == 1 else f"{n} pzas"
+
+
+class _Modelo:
+    """El modelo estructural que lee la etapa de acero (R6: sólo ``estructura["reglas"]``, un
+    volcado de ``Reglas``, y ``estructura["elementos"]``, volcados de ``Elemento``): los elementos
+    por detección y las reglas de cada hoja, calculadas una vez."""
+
+    def __init__(self, estructura: dict) -> None:
+        from klave_engine.estructura.elementos import Elemento
+        from klave_engine.estructura.reglas import Reglas
+
+        self.reglas = Reglas.model_validate(estructura["reglas"])
+        elementos = [Elemento.model_validate(e) for e in estructura["elementos"]]
+        self.elementos = elementos
+        self.por_deteccion = {e.detection_id: e for e in elementos}
+        self._por_hoja: dict[str, Reglas] = {}
+
+    def reglas_de(self, hoja: str) -> "Reglas":
+        """Las reglas como las resuelve ``hoja`` (``Reglas.para``), una vez por hoja."""
+        if hoja not in self._por_hoja:
+            self._por_hoja[hoja] = self.reglas.para(hoja)
+        return self._por_hoja[hoja]
+
+    def fy(self, numero: str) -> float | None:
+        dato = self.reglas.fy_kg_cm2.get(numero)
+        valor = dato.valor if dato is not None else None
+        return float(valor) if isinstance(valor, int | float) else None
+
+
+@dataclass
+class _Cuenta:
+    """Lo que la etapa junta de los elementos de una línea de acero."""
+
+    kg_por_numero: dict[str, float] = field(default_factory=dict)
+    total: float = 0.0
+    grupos: dict[tuple, list] = field(default_factory=dict)  # nota por marca → [pzas, kg]
+    supuestos: dict[str, set[str]] = field(default_factory=dict)  # supuesto → marcas
+    por_confirmar: dict[tuple[str, str], list[str]] = field(default_factory=dict)
+    por_leer: dict[tuple[str, tuple[str, ...], bool], list[str]] = field(default_factory=dict)
+    calculados: int = 0
+    elementos: int = 0
+    sin_fila: dict[str, set[str]] = field(default_factory=dict)  # aviso de tabla → marcas
+
+    def sumar(self, kg: dict[str, float]) -> None:
+        for numero, valor in kg.items():
+            self.kg_por_numero[numero] = self.kg_por_numero.get(numero, 0.0) + valor
+            self.total += valor
+
+
+def _del_modelo(cuenta: _Cuenta, e: "Elemento", modelo: _Modelo, a: SteelAssumptions) -> bool:
+    """El acero de un elemento con su armado estructurado, en ``cuenta``. Falso si el elemento no
+    tiene acero (``sin_acero``): el llamador decide qué hace con él."""
+    from klave_engine.estructura.acero import acero_elemento, texto_del_armado
+
+    cuenta.elementos += 1
+    marca = e.marca or "sin marca"
+    acero = acero_elemento(e, modelo.reglas_de(e.hoja), a.anchorage_m)
+    if acero is None:
+        return False
+    cuenta.calculados += 1
+    cuenta.sumar(acero.kg_por_numero)
+    seccion = e.seccion_cm
+    valor = seccion.valor if seccion is not None else None
+    if isinstance(valor, list | tuple):
+        lados = "x".join(f"{float(v):g}" for v in valor) + " cm"
+    elif isinstance(valor, dict) and "area_cm2" in valor:
+        lados = f"no rectangular de {float(valor['area_cm2']):g} cm²"
+    else:
+        lados = repr(valor)
+    fuente = seccion.fuente if seccion is not None else "?"
+    clave = (marca, texto_del_armado(e), lados, fuente)
+    pzas_kg = cuenta.grupos.setdefault(clave, [0, 0.0])
+    pzas_kg[0] += 1
+    pzas_kg[1] += acero.total_kg()
+    for supuesto in acero.supuestos:
+        if supuesto.startswith("tabla de varillas: "):
+            cuenta.sin_fila.setdefault(supuesto.removeprefix("tabla de varillas: "), set()).add(
+                marca
+            )
+        else:
+            cuenta.supuestos.setdefault(supuesto, set()).add(marca)
+    for duda in acero.por_confirmar:
+        cuenta.por_confirmar.setdefault((marca, duda), []).append(e.hoja)
+    if acero.por_leer:
+        cuenta.por_leer.setdefault((marca, tuple(acero.por_leer), True), []).append(e.hoja)
+    return True
+
+
+def _sin_acero_en(cuenta: _Cuenta, e: "Elemento", extra: tuple[str, ...] = ()) -> None:
+    """El elemento sin acero desde su armado, en «acero por leer» con sus motivos."""
+    from klave_engine.estructura.acero import sin_acero
+
+    marca = e.marca or "sin marca"
+    cuenta.por_leer.setdefault((marca, (*sin_acero(e), *extra), False), []).append(e.hoja)
+
+
+def _lados_cm(e: "Elemento") -> tuple[float, float] | None:
+    seccion = e.seccion_cm
+    if seccion is None or not isinstance(seccion.valor, list | tuple) or len(seccion.valor) != 2:
+        return None
+    b, h = seccion.valor
+    if not all(isinstance(v, int | float) and v > 0 for v in (b, h)):
+        return None
+    return float(b), float(h)
+
+
+def _armado_supuesto(
+    elementos: list["Elemento"], a: SteelAssumptions, height: float, cuenta: _Cuenta
+) -> tuple[float, list[str], list[str]]:
+    """Los castillos y columnas del modelo sin acero desde su armado: el camino de antes con el
+    armado supuesto (nunca la especificación: la IA que el modelo bloqueó no vuelve por aquí), con
+    la sección y la altura de cada elemento si las tiene, y cada uno en «acero por leer» con su
+    motivo y el armado que se supuso (R148a). Devuelve (kg sin desperdicio, notas, marcas)."""
+    d_rebar, d_stirrup, d_section = a.default_castillo
+    default = _leer_spec({"rebar": d_rebar, "stirrups": d_stirrup}, "castillo")
+    texto = _texto_varillas(default.grupos) + _texto_estribo(default.estribo)
+    total = 0.0
+    por_grupo: dict[tuple[str, tuple[float, float], str], list[float]] = {}
+    for e in elementos:
+        marca = e.marca or "sin marca"
+        lados = _lados_cm(e)
+        fuente = e.seccion_cm.fuente if lados is not None and e.seccion_cm is not None else ""
+        seccion = lados or (float(d_section[0]), float(d_section[1]))
+        largo = e.altura_m.valor if e.altura_m is not None else None
+        alto = float(largo) if isinstance(largo, int | float) and largo > 0 else height
+        long_kg, stir_kg = _linear_element_kg(
+            alto, default.grupos, default.estribo, seccion, a, anchorage=True
+        )
+        total += long_kg + stir_kg
+        grupo = por_grupo.setdefault((marca, seccion, fuente), [0, 0.0])
+        grupo[0] += 1
+        grupo[1] += long_kg + stir_kg
+        usada = f"{seccion[0]:g}x{seccion[1]:g} cm" + ("" if lados else " supuesta")
+        _sin_acero_en(cuenta, e, (f"se usó el armado supuesto {texto.strip()} ({usada})",))
+    notas = [
+        f"{marca}: {int(n)} pzas × {texto.strip()} sección {b:g}x{h:g} cm (supuesto: armado; "
+        f"sección {fuente or 'supuesta'}) = {kg:,.2f} kg"
+        for (marca, (b, h), fuente), (n, kg) in sorted(por_grupo.items())
+    ]
+    marcas = sorted({m for m, _, _ in por_grupo})
+    return total, notas, marcas
+
+
+def _notas_del_modelo(cuenta: _Cuenta, modelo: _Modelo, waste: float) -> list[str]:
+    notas = [
+        f"{marca}: {pzas} pzas × {texto} sección {lados} ({fuente}) = {kg:,.2f} kg"
+        for (marca, texto, lados, fuente), (pzas, kg) in sorted(cuenta.grupos.items())
+    ]
+    if cuenta.kg_por_numero:
+        partes = [
+            f"#{n} {kg * waste:,.2f} kg"
+            for n, kg in sorted(cuenta.kg_por_numero.items(), key=lambda x: float(x[0]))
+            if n != "2"
+        ]
+        texto = "Kg por número (con desperdicio): " + ("; ".join(partes) or "—")
+        if "2" in cuenta.kg_por_numero:
+            fy = modelo.fy("2")
+            texto += (
+                f"; #2 aparte (alambrón, fy {fy:g} kg/cm²"
+                if fy is not None
+                else "; #2 aparte (alambrón, fy sin declarar"
+            ) + f"): {cuenta.kg_por_numero['2'] * waste:,.2f} kg"
+        notas.append(texto)
+    for supuesto, marcas in cuenta.supuestos.items():
+        notas.append(f"{supuesto} — {', '.join(sorted(marcas))}")
+    for (marca, duda), hojas in sorted(cuenta.por_confirmar.items()):
+        notas.append(f"{marca} ({_pzas(len(hojas))}): {duda}")
+    return notas
+
+
+def _hojas(hojas: list[str]) -> str:
+    return ", ".join(sorted(set(h for h in hojas if h))) or "sin hoja"
+
+
+def _avisos_del_modelo(cuenta: _Cuenta, nombre: str, consecuencia: str) -> list[str]:
+    """«Acero por leer» (R148a): cada marca con su motivo, sin recortar; y lo que se calculó sobre
+    datos que hay que confirmar."""
+    avisos: list[str] = []
+    if cuenta.por_leer:
+        partes = []
+        for (marca, motivos, parcial), hojas in sorted(cuenta.por_leer.items()):
+            cuantas = _pzas(len(hojas)) + (", sólo varillas longitudinales" if parcial else "")
+            partes.append(f"{marca} ({cuantas}) en {_hojas(hojas)}: " + "; ".join(motivos))
+        avisos.append(
+            f"Acero por leer — {nombre}: {cuenta.calculados} de {cuenta.elementos} elementos "
+            f"con acero calculado; {consecuencia}: " + " | ".join(partes)
+        )
+    if cuenta.por_confirmar:
+        por_duda: dict[str, list[str]] = {}
+        for (marca, duda), hojas in sorted(cuenta.por_confirmar.items()):
+            por_duda.setdefault(duda, []).append(f"{marca} ({_pzas(len(hojas))})")
+        avisos.append(
+            f"Acero de {nombre} calculado sobre datos supuestos o en conflicto (por confirmar): "
+            + " | ".join(f"{', '.join(m)}: {d}" for d, m in por_duda.items())
+        )
+    return avisos
 
 
 def compute_steel(
@@ -152,12 +478,20 @@ def compute_steel(
     meters_factor: float | None,
     column_height_m: float,
     assumptions: SteelAssumptions | None = None,
+    estructura: dict | None = None,
 ) -> SteelReport:
+    """El acero de las líneas que el presupuesto ya contó. Con ``estructura`` (el modelo de
+    ``estructura``: R6, ``{"reglas", "elementos"}``) castillos, columnas, trabes y contratrabes
+    se pesan desde el armado estructurado de cada elemento (``estructura.acero``); sin ella, como
+    antes, desde las especificaciones por marca (``specs``), que ahora también se leen en su
+    forma canónica. Lo que no se puede pesar se dice, marca por marca («acero por leer», R148a)."""
     a = assumptions or SteelAssumptions()
     report = SteelReport()
     by_id = {d.detection_id: d for d in detections}
     lines = {line.concept_code: line for line in boq.lines}
     waste = 1.0 + a.waste_pct / 100.0
+    modelo = _Modelo(estructura) if estructura is not None else None
+    sin_fila: dict[str, set[str]] = {}
     # Each castillo is as tall as ITS planta (entrepiso), never the whole
     # building: with declared levels the story heights apply per assignment;
     # without them the assumed column height does. The total height divided
@@ -176,22 +510,38 @@ def compute_steel(
     if columns is not None and columns.source_detections:
         total_long = total_stirrup = 0.0
         groups: dict[str, list[Detection]] = {}
+        cuenta = _Cuenta()
+        sin_su_acero: list[Elemento] = []
         for det_id in columns.source_detections:
             det = by_id.get(det_id)
-            if det is not None:
-                groups.setdefault(det.label.strip().upper() or "?", []).append(det)
+            if det is None:
+                continue
+            elemento = modelo.por_deteccion.get(det_id) if modelo is not None else None
+            if elemento is not None and modelo is not None:
+                if not _del_modelo(cuenta, elemento, modelo, a):
+                    sin_su_acero.append(elemento)
+                continue
+            groups.setdefault(det.label.strip().upper() or "?", []).append(det)
         notes: list[str] = []
         assumed_marks: list[str] = []
+        faltan: dict[str, str] = {}  # marca → lo que el plano no dio (armado, sección)
         for mark, members in sorted(groups.items()):
             family = "castillo" if mark.startswith("K") else "columna"
             spec, origin = _spec_for(specs, mark, family)
-            rebar = parse_rebar(spec.get("rebar")) if spec else None
-            stirrups = parse_spacing(spec.get("stirrups")) if spec else None
+            leido = _leer_spec(spec, family)
+            rebar = leido.grupos or None
+            stirrups = leido.estribo
             section = tuple(spec["section_cm"]) if spec and spec.get("section_cm") else None
             if rebar is None or section is None:
+                faltan[mark] = " y ".join(
+                    falta
+                    for falta, sin in (("armado", rebar is None), ("sección", section is None))
+                    if sin
+                )
                 d_rebar, d_stirrup, d_section = a.default_castillo
-                rebar = rebar or parse_rebar(d_rebar)
-                stirrups = stirrups or parse_spacing(d_stirrup)
+                default = _leer_spec({"rebar": d_rebar, "stirrups": d_stirrup}, family)
+                rebar = rebar or default.grupos
+                stirrups = stirrups or default.estribo
                 section = section or d_section
                 assumed_marks.append(mark)
             assert rebar is not None and section is not None
@@ -204,24 +554,64 @@ def compute_steel(
                 total_long += long_kg
                 total_stirrup += stir_kg
             notes.append(
-                f"{mark}: {len(members)} pzas × {rebar[0]}#{rebar[1]}"
-                + (f" E#{stirrups[0]}@{stirrups[1] * 100:.0f}" if stirrups else "")
+                f"{mark}: {len(members)} pzas × {_texto_varillas(rebar)}"
+                + _texto_estribo(stirrups)
                 + f" sección {section[0]}x{section[1]} cm "
                 + ("(plano)" if origin != "none" else "(supuesto)")
+                + (" (sin elemento en el modelo estructural)" if modelo is not None else "")
             )
-        quantity = (total_long + total_stirrup) * waste
+            if leido.otros_juegos:
+                notes.append(
+                    f"{mark}: sólo se cuenta el primer juego de estribos; no se cuentan "
+                    + ", ".join(leido.otros_juegos)
+                )
+        if sin_su_acero:
+            supuesto_kg, notas_supuestas, marcas = _armado_supuesto(
+                sin_su_acero, a, height, cuenta
+            )
+            total_long += supuesto_kg
+            notes += notas_supuestas
+            assumed_marks += marcas
+        quantity = (total_long + total_stirrup + cuenta.total) * waste
         if assumed_marks:
             notes.append(
-                "Armado supuesto (el plano no lo declara): " + ", ".join(assumed_marks[:8])
+                "Armado supuesto (el plano no lo declara): " + ", ".join(assumed_marks)
             )
-        heights_note = (
-            "altura de entrepiso de cada planta (niveles NTC/NPT)" if story_heights
-            else f"altura {height:.2f} m por elemento"
-        )
+            if modelo is None:
+                # R148a: sin el modelo no se sabe si el plano lo escribe y no se leyó o si no lo
+                # dice; cada marca se nombra.
+                d_rebar, d_stirrup, _ = a.default_castillo
+                report.warnings.append(
+                    "Acero por leer — castillos y columnas sin armado o sin sección leídos del "
+                    f"plano (acero no cuantificado desde el plano; se suplió con {d_rebar} "
+                    f"E{d_stirrup}, {d_section[0]}x{d_section[1]} cm): "
+                    + ", ".join(f"{m} (sin {faltan[m]})" for m in assumed_marks)
+                )
+        if modelo is not None:
+            heights_note = (
+                "altura de cada elemento del modelo estructural (niveles del plano, o supuesta y "
+                "dicha)"
+            )
+            notes = _notas_del_modelo(cuenta, modelo, waste) + notes
+            report.warnings.extend(
+                _avisos_del_modelo(
+                    cuenta, "castillos y columnas",
+                    "acero no cuantificado desde su armado en estos (los que no tienen ninguno "
+                    "llevan el armado supuesto, dicho)",
+                )
+            )
+            for aviso, marcas_sin_fila in cuenta.sin_fila.items():
+                sin_fila.setdefault(aviso, set()).update(marcas_sin_fila)
+        else:
+            heights_note = (
+                "altura de entrepiso de cada planta (niveles NTC/NPT)" if story_heights
+                else f"altura {height:.2f} m por elemento"
+            )
         notes.insert(
             0,
-            f"{heights_note[:1].upper()}{heights_note[1:]} + {a.anchorage_m:.2f} m de anclaje; "
-            f"desperdicio {a.waste_pct:g} %",
+            f"{heights_note[:1].upper()}{heights_note[1:]} + {a.anchorage_m:.2f} m de anclaje"
+            + (" (supuesto)" if modelo is not None else "")
+            + f"; desperdicio {a.waste_pct:g} %",
         )
         report.lines.append(
             SteelLine(
@@ -235,14 +625,16 @@ def compute_steel(
     if walls is not None and walls.raw_quantity > 0:
         length = walls.raw_quantity  # metres of wall (already in m)
         spec, origin = _spec_for(specs, "DALA", "dala")
-        rebar = parse_rebar(spec.get("rebar")) if spec else None
-        stirrups = parse_spacing(spec.get("stirrups")) if spec else None
+        leido = _leer_spec(spec, "dala")
+        rebar = leido.grupos or None
+        stirrups = leido.estribo
         section = tuple(spec["section_cm"]) if spec and spec.get("section_cm") else None
         assumed = rebar is None or section is None
         if assumed:
             d_rebar, d_stirrup, d_section = a.default_dala
-            rebar = rebar or parse_rebar(d_rebar)
-            stirrups = stirrups or parse_spacing(d_stirrup)
+            default = _leer_spec({"rebar": d_rebar, "stirrups": d_stirrup}, "dala")
+            rebar = rebar or default.grupos
+            stirrups = stirrups or default.estribo
             section = section or d_section
         assert rebar is not None and section is not None
         long_kg, stir_kg = _linear_element_kg(
@@ -253,8 +645,8 @@ def compute_steel(
                 concept_code=CODE_DALAS, quantity=round((long_kg + stir_kg) * waste, 2),
                 unit="KG", source_detections=list(walls.source_detections),
                 notes=[
-                    f"Dala de cerramiento sobre {length:,.1f} m de muro: {rebar[0]}#{rebar[1]}"
-                    + (f" E#{stirrups[0]}@{stirrups[1] * 100:.0f}" if stirrups else "")
+                    f"Dala de cerramiento sobre {length:,.1f} m de muro: {_texto_varillas(rebar)}"
+                    + _texto_estribo(stirrups)
                     + f" sección {section[0]}x{section[1]} cm "
                     + ("(supuesto)" if assumed else f"(plano: {origin})"),
                     f"Desperdicio {a.waste_pct:g} %",
@@ -266,7 +658,7 @@ def compute_steel(
     footings = lines.get("CIM-002")
     if footings is not None and footings.source_detections and meters_factor:
         spec, origin = _spec_for(specs, "ZAPATA", "zapata")
-        mesh = parse_spacing(spec.get("mesh")) if spec else None
+        mesh = _leer_malla(spec)
         assumed = mesh is None
         mesh = mesh or parse_spacing(a.default_zapata_mesh)
         assert mesh is not None
@@ -316,38 +708,58 @@ def compute_steel(
         total = 0.0
         covered: list[str] = []
         missing: set[str] = set()
+        cuenta = _Cuenta()
         for det_id, family in beam_sources:
             det = by_id.get(det_id)
             if det is None:
                 continue
+            elemento = modelo.por_deteccion.get(det_id) if modelo is not None else None
+            if elemento is not None and modelo is not None:
+                if _del_modelo(cuenta, elemento, modelo, a):
+                    covered.append(det_id)
+                else:
+                    _sin_acero_en(cuenta, elemento)
+                continue
             mark = det.label.strip().upper()
             spec, _origin = _spec_for(specs, mark, family)
-            rebar = parse_rebar(spec.get("rebar")) if spec else None
+            leido = _leer_spec(spec, family)
             section = tuple(spec["section_cm"]) if spec and spec.get("section_cm") else None
             span_du = float(det.properties.get("estimated_span_length") or 0.0)
             span = span_du * (meters_factor or 1.0)
-            if rebar is None or section is None or span <= 0:
+            if not leido.grupos or section is None or span <= 0:
                 missing.add(mark)
                 continue
-            stirrups = parse_spacing(spec.get("stirrups")) if spec else None
             long_kg, stir_kg = _linear_element_kg(
-                span, rebar, stirrups, (float(section[0]), float(section[1])), a, anchorage=True
+                span, leido.grupos, leido.estribo, (float(section[0]), float(section[1])), a,
+                anchorage=True,
             )
             total += long_kg + stir_kg
             covered.append(det_id)
         if covered:
+            notes = [f"{len(covered)} trabes con armado declarado en el plano"]
+            if modelo is not None:
+                notes += _notas_del_modelo(cuenta, modelo, waste)
+            notes.append(f"Desperdicio {a.waste_pct:g} %")
             report.lines.append(
                 SteelLine(
-                    concept_code=CODE_TRABES, quantity=round(total * waste, 2), unit="KG",
-                    source_detections=covered,
-                    notes=[f"{len(covered)} trabes con armado declarado en el plano",
-                           f"Desperdicio {a.waste_pct:g} %"],
+                    concept_code=CODE_TRABES, quantity=round((total + cuenta.total) * waste, 2),
+                    unit="KG", source_detections=covered, notes=notes,
                 )
             )
+        if modelo is not None:
+            report.warnings.extend(
+                _avisos_del_modelo(
+                    cuenta, "trabes y contratrabes",
+                    "acero no cuantificado en estos (no hay armado supuesto de trabes)",
+                )
+            )
+            for aviso, marcas_sin_fila in cuenta.sin_fila.items():
+                sin_fila.setdefault(aviso, set()).update(marcas_sin_fila)
         if missing:
+            # R148a: cada marca, sin recortar.
             report.warnings.append(
-                "Trabes sin armado declarado en el plano (acero no cuantificado): "
-                + ", ".join(sorted(missing)[:10])
+                "Acero por leer — trabes y contratrabes sin armado leído del plano (acero no "
+                "cuantificado): " + ", ".join(sorted(missing))
             )
 
     # --- losa: malla electrosoldada en la capa de compresión ----------------
@@ -412,6 +824,22 @@ def compute_steel(
                        f"Desperdicio {a.waste_pct:g} %"],
             )
         )
+    for aviso, con_esa_varilla in sorted(sin_fila.items()):
+        report.warnings.append(
+            f"Tabla de varillas: {aviso} (en {', '.join(sorted(con_esa_varilla))})."
+        )
+    if modelo is not None:
+        # R148a: las familias del modelo sin concepto de acero en esta etapa también se dicen.
+        sin_concepto: dict[str, list[str]] = {}
+        for e in modelo.elementos:
+            if e.familia in ("pilote", "muro_concreto"):
+                sin_concepto.setdefault(e.marca or f"{e.familia} sin marca", []).append(e.hoja)
+        if sin_concepto:
+            report.warnings.append(
+                "Acero por leer — pilotes y muros de concreto: acero no cuantificado (no tienen "
+                "concepto de acero en esta etapa): "
+                + ", ".join(f"{m} ({_pzas(len(h))})" for m, h in sorted(sin_concepto.items()))
+            )
     return report
 
 
