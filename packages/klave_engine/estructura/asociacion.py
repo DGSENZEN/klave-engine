@@ -2017,13 +2017,13 @@ class _Seccion(_Texto):
 def _lo_que_alcanza_cada_seccion(
     secciones: list[_Seccion], textos: list[_Texto], estorban: set[str]
 ) -> dict[str, list[tuple[_Seccion, float]]]:
-    """R189, R196: por renglón, las secciones que lo alcanzan de frente, de cualquiera de sus dos
-    lados (el de su título también: puede estar del lado equivocado), con el doble de su alcance
-    (lo que casi alcanza, R56), sin nada en medio más que otros renglones libres (ningún otro
-    texto, salvo su propio título, ni la caja de otra sección), con su hueco a él; y, del lado de
-    su título, la columna entera que tomaría con ese doble (R196: el mismo casi que del lado que
-    lee), con el hueco de su primer renglón. La sección de un cuadro no (su pila ya la leyó su
-    etiqueta)."""
+    """R189, R196, R201: por renglón, las secciones que lo alcanzan de frente o de lado (su
+    ensanche: el alcance con que leen), de cualquiera de sus dos lados (el de su título también:
+    puede estar del lado equivocado), con el doble de su alcance (lo que casi alcanza, R56), sin
+    nada en medio más que otros renglones libres (ningún otro texto, salvo su propio título, ni
+    la caja de otra sección), con su hueco a él; y, del lado de su título, la columna entera que
+    tomaría con ese doble (R196: el mismo casi que del lado que lee), con el hueco de su primer
+    renglón. La sección de un cuadro no (su pila ya la leyó su etiqueta)."""
     lineas = [t for t in textos if t.clase == "linea" and t.id not in estorban]
     obstaculos = [t for t in textos if not (t.clase == "linea" and t.id not in estorban)]
     alcanzan: dict[str, list[tuple[_Seccion, float]]] = defaultdict(list)
@@ -2036,7 +2036,8 @@ def _lo_que_alcanza_cada_seccion(
             o for o in secciones if o is not sec
         ]
         for t in lineas:
-            if not _se_enciman(t, sec):
+            # R201: con el alcance con que lee: de frente o de lado (en su ensanche).
+            if not (_se_enciman(t, sec) or _en_la_etiqueta(sec, t)):
                 continue
             if t.y0 >= sec.y1:
                 bajo, alto = sec.y1, t.y0
@@ -2049,6 +2050,8 @@ def _lo_que_alcanza_cada_seccion(
             # Lo que estorba es lo que está en medio en la franja que comparten (la vista de la
             # sección al renglón), no lo que sólo cae junto a uno de los dos.
             f0, f1 = max(sec.x0, t.x0), min(sec.x1, t.x1)
+            if f1 <= f0:  # de lado: la franja es la del renglón
+                f0, f1 = t.x0, t.x1
             if any(
                 u.y1 > bajo
                 and u.y0 < alto
@@ -2099,6 +2102,35 @@ def _la_tiene_otra_mas_cerca(
     return False
 
 
+# R200: lo que dice un renglón de una pila, para saber qué campo daría a su sección: un juego de
+# estribos (con su cabeza: «E#4@10», «2E#3EXT@10», «EYG#3@15») o una distribución («CENTRO@20»,
+# «1@6,8@10»), y un juego de varillas («4#3», «12#8+8#6»: los «+» lo juntan en uno).
+_CABEZA_DE_ESTRIBO = re.compile(r"(?:\d*E(?:YG)?|G)\s*#\s*\d")
+_VARILLAS = re.compile(r"(?<![#@\dEG])\d+\s*#\s*\d+(?!\s*@)")
+
+
+def _campos_del_renglon(t: _Texto) -> set[str]:
+    texto = t.texto.upper()
+    campos = set()
+    if _CABEZA_DE_ESTRIBO.search(texto) or "@" in texto:
+        campos.add("estribos")
+    if _VARILLAS.search(_CABEZA_DE_ESTRIBO.sub(" ", texto)):
+        campos.add("longitudinales")
+    return campos
+
+
+def _campo_doble(pila: list[_Texto]) -> bool:
+    """R200: si la pila le daría a su sección dos juegos del mismo campo: dos renglones con
+    varillas (no juntos por «+», que van en un renglón) o dos con cabeza de estribo. Una pila
+    así son dos pilas juntas: queda en duda."""
+    varillas = estribos = 0
+    for t in pila:
+        texto = t.texto.upper()
+        estribos += bool(_CABEZA_DE_ESTRIBO.search(texto))
+        varillas += bool(_VARILLAS.search(_CABEZA_DE_ESTRIBO.sub(" ", texto)))
+    return varillas > 1 or estribos > 1
+
+
 def _columna_abierta(
     seccion: _Texto, sentido: int, pila: list[_Texto], otros: list[_Texto]
 ) -> bool:
@@ -2135,17 +2167,19 @@ def asociar_secciones(
     dueño»); todo lo demás —leído, rechazado con marcas, notas, llamadas— estorba. Sólo los
     textos derechos (a 0°) apilan bajo una sección.
 
-    R189, R196, el principio: un renglón es de una sección sólo si ningún otro lector puede
-    tenerlo. Una pila queda en duda —no se lee, y sus renglones llevan las marcas como
+    R189, R196, R200, el principio: un renglón es de una sección sólo si ningún otro lector
+    puede tenerlo. Una pila queda en duda —no se lee, y sus renglones llevan las marcas como
     «posible»— si: otra etiqueta o sección la tiene enfrente con el doble de su alcance (lo que
-    casi alcanza, R56, con su columna entera); otra sección alcanza de frente uno de sus
-    renglones, de cualquiera de sus lados (el de su título puede ser el equivocado), con ese
-    mismo doble y sin nada en medio, y el renglón no está claramente (25 %) más pegado a ésta
-    (sólo la distancia decide); su primer renglón no está enfrente de la sección (sólo en su
-    ensanche: una caja dibujada no se ensancha); o no acaba limpia (algo la sigue a menos de un
-    hueco entre renglones). Devuelve las pilas tomadas por las secciones que se leen (por su
-    título: ``etiqueta_id`` es el título, ``marca`` la suya) y los renglones en disputa entre una
-    sección y otra marca (con sus marcas)."""
+    casi alcanza, R56, con su columna entera); otra sección alcanza uno de sus renglones, de
+    frente o de lado, de cualquiera de sus lados (el de su título puede ser el equivocado), con
+    ese mismo doble y sin nada en medio, y el renglón no está claramente (25 %) más pegado a
+    ésta (sólo la distancia decide); su primer renglón no está enfrente de la sección (sólo en su
+    ensanche: una caja dibujada no se ensancha); no acaba limpia (algo la sigue a menos de un
+    hueco entre renglones); le daría dos juegos de un mismo campo (dos pilas juntas); o dejaría
+    sin su lectura de ese campo a otra sección que la alcanza (la distancia nunca le da a una
+    sección la pila que otra necesita). Devuelve las pilas tomadas por las secciones que se leen
+    (por su título: ``etiqueta_id`` es el título, ``marca`` la suya) y los renglones en disputa
+    entre una sección y otra marca (con sus marcas)."""
     textos = [e for e in entities if e.is_textual and e.text and e.text.strip()]
     if not secciones or not textos:
         return [], {}
@@ -2208,6 +2242,7 @@ def asociar_secciones(
             continue
         reparto = _pilas([*locales, *por_id.values()], estorban, titulos=set(del_titulo))
         alcanzan = _lo_que_alcanza_cada_seccion(list(por_id.values()), locales, estorban)
+        candidatas: list[tuple[_Seccion, SeccionDeTitulo, _Alcance, list[_Texto]]] = []
         for alcance, propios in reparto.tomadas:
             la_seccion = por_id.get(alcance.etiqueta.id)
             dato = la_seccion.seccion if la_seccion is not None else None
@@ -2215,6 +2250,7 @@ def asociar_secciones(
                 continue
             if (
                 not alcance.frontal
+                or _campo_doble(propios)
                 or _columna_abierta(
                     la_seccion, alcance.sentido, propios, [*locales, *por_id.values()]
                 )
@@ -2222,6 +2258,30 @@ def asociar_secciones(
             ):
                 disputados.update({t.id: {dato.marca} for t in propios})
                 continue
+            candidatas.append((la_seccion, dato, alcance, propios))
+        # R200: nunca una pila que deja sin su lectura de ese campo a otra sección que la alcanza
+        # (con el doble de su alcance, de cualquier lado, de frente o de lado): queda en duda. Lo
+        # que se quita puede dejar huérfana a otra: hasta que nada cambie.
+        while True:
+            campos_de: dict[str, set[str]] = defaultdict(set)
+            for lectora, _dato, _alcance, propios in candidatas:
+                for t in propios:
+                    campos_de[lectora.id] |= _campos_del_renglon(t)
+            huerfanas = [
+                c
+                for c in candidatas
+                if any(
+                    otra is not c[0] and not (_campos_del_renglon(t) <= campos_de[otra.id])
+                    for t in c[3]
+                    for otra, _hueco in alcanzan.get(t.id, ())
+                )
+            ]
+            if not huerfanas:
+                break
+            for c in huerfanas:
+                candidatas.remove(c)
+                disputados.update({t.id: {c[1].marca} for t in c[3]})
+        for _la_seccion, dato, alcance, propios in candidatas:
             orden = propios[::-1] if alcance.sentido > 0 else propios
             renglones = [(t.id, r) for t in orden for r in t.renglones]
             asociaciones.append(

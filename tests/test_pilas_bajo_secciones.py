@@ -428,7 +428,9 @@ def test_a_sweep_with_the_reading_side_at_random(familia):
             nuevos, secciones, propios = _secciones_en_lugar_de_etiquetas(
                 ents, de_quien, semilla, False, False, True
             )
-            if not _sin_choques(nuevos, secciones):
+            if not _sin_choques(nuevos, secciones) or not _cada_dueno_alcanza_su_pila(
+                nuevos, secciones, propios
+            ):
                 continue
             libres = {e.entity_id for e in ents if e.is_textual}
             asoc, _ = asociar_secciones(nuevos, _marco(nuevos), C, secciones, libres)
@@ -447,12 +449,11 @@ def test_a_sweep_of_detail_grids():
         if leidas is None:
             continue
         cuadros += 1
-        for marca, textos, entera, suya, por_distancia in leidas:
-            # Nunca a medias; ajena sólo si el lector está claramente más cerca de lo que leyó
-            # (R196: entonces la verdad del generador contradice la distancia).
-            assert entera or (not suya and por_distancia), (semilla, marca, textos)
+        for marca, textos, entera in leidas:
+            # R200: nunca ajena ni a medias, esté el lector más cerca o no.
+            assert entera, (semilla, marca, textos)
             pilas += 1
-    assert cuadros >= 40 and pilas >= cuadros
+    assert cuadros >= 40 and pilas >= cuadros // 2
 
 
 # ------------------------------------------------- R189: la rejilla de detalles
@@ -562,6 +563,28 @@ def _sin_choques(ents, secciones):
     return True
 
 
+def _cada_dueno_alcanza_su_pila(ents, secciones, propios):
+    """R200: si cada sección del generador alcanza su propia pila (su renglón más cercano a lo más
+    a dos veces su lado menor, el doble de su alcance, de cualquier lado, de frente o en su
+    ensanche de 3 altos de renglón). Si no, ningún lector puede saber que es suya (la analogía de
+    R58a): el cuadro se excluye, como un choque."""
+    cajas = {e.entity_id: _caja_del_motor(e) for e in ents if e.is_textual}
+    for s in secciones:
+        suyos = [cajas[i] for i in propios.get(s.marca, ()) if i in cajas]
+        if not suyos:
+            continue
+        x0, y0, x1, y1 = s.caja
+        doble = 2 * min(x1 - x0, y1 - y0)
+        if not any(
+            _hueco_vertical(s.caja, b) <= doble
+            and b[0] < x1 + 3 * (b[3] - b[1])
+            and b[2] > x0 - 3 * (b[3] - b[1])
+            for b in suyos
+        ):
+            return False
+    return True
+
+
 def _criterios_de_lectura(ents, secciones, propios):
     """R196: si un cuadro sin choques cumple los criterios 3 y 4 (para medirlos, nunca para
     excluir): (3) entre cada sección y el último renglón de su pila, en el ancho de las dos, nada
@@ -612,47 +635,18 @@ def _hueco_vertical(caja, b):
     return b[1] - caja[3] if b[1] >= caja[3] else caja[1] - b[3] if b[3] <= caja[1] else 0.0
 
 
-def _el_lector_esta_claramente_mas_cerca(marca, entidades, ents, secciones, propios):
-    """R196: si lo ajeno de una pila leída, dueño por dueño, está claramente (25 %) más cerca de la
-    sección que lo leyó que de la de su dueño en el generador (el renglón más cercano de cada
-    una): el principio de la distancia se lo da al lector; la verdad del generador lo contradice
-    (su título iba del lado equivocado, o su pila quedó más lejos que la de la vecina). Ningún
-    lector diría que es de su dueño."""
-    cajas = {e.entity_id: _caja_del_motor(e) for e in ents if e.is_textual}
-    por = {s.marca: s for s in secciones}
-    ajenos: dict[str, list] = {}
-    for i in entidades:
-        dueno = next((m for m, ids in propios.items() if i in ids), None)
-        if dueno is not None and dueno != marca:
-            ajenos.setdefault(dueno, []).append(cajas[i])
-    for dueno, de_el in ajenos.items():
-        lector = min(_hueco_vertical(por[marca].caja, b) for b in de_el)
-        suyo = min(_hueco_vertical(por[dueno].caja, b) for b in de_el)
-        if not lector * 1.25 < suyo:
-            return False
-    return True
-
-
 def _lee_la_rejilla(semilla):
-    """Las pilas que se leen de una rejilla: su marca, sus textos, si es la del generador entera, si
-    es sólo de lo suyo, y si el principio de la distancia da lo ajeno al lector
-    (``_el_lector_esta_claramente_mas_cerca``)."""
+    """Las pilas que se leen de una rejilla (sin choques, y cada dueño alcanzando su pila): su
+    marca, sus textos y si es la del generador entera."""
     cuadro = _rejilla_de_detalles(semilla)
     if cuadro is None:
         return None
     ents, secciones, propios = cuadro
+    if not _cada_dueno_alcanza_su_pila(ents, secciones, propios):
+        return None
     libres = {i for ids in propios.values() for i in ids}
     asoc, _ = asociar_secciones(ents, _marco_de(ents, secciones), C, secciones, libres)
-    return [
-        (
-            a.marca,
-            a.textos,
-            set(a.entidades) == propios[a.marca],
-            set(a.entidades) <= propios[a.marca],
-            _el_lector_esta_claramente_mas_cerca(a.marca, a.entidades, ents, secciones, propios),
-        )
-        for a in asoc
-    ]
+    return [(a.marca, a.textos, set(a.entidades) == propios[a.marca]) for a in asoc]
 
 
 # ------------------------------------------------- ronda de arreglos 1 (R188–R193)
@@ -854,18 +848,20 @@ def test_a_cuadro_section_never_almost_reaches_a_detail_stack():
 
 @pytest.mark.parametrize("hueco_de_la_otra,leida", [(0.45, False), (0.60, True)])
 def test_a_stack_two_sections_reach_goes_only_to_the_clearly_nearer(hueco_de_la_otra, leida):
-    # R196: «4#3» a 0.40 bajo T-1 y, debajo, T-2 (que lee hacia abajo: su título arriba, del lado
-    # equivocado quizá) la alcanza del lado de su título. Sólo la distancia decide, con el empate
-    # de lados opuestos de la Tarea 6 (25 %): a 0.45 de T-2 (12 % más) es de nadie; a 0.60 (50 %),
-    # de T-1.
-    ents = [_texto("r", "4#3", 0.5, -0.45, alto=0.10)]
+    # R196: «4#3» a 0.40 bajo T-1 y, debajo, T-2 (que lee hacia abajo, su «6#4»: tiene su lectura)
+    # la alcanza del lado de su título. Sólo la distancia decide, con el empate de lados opuestos
+    # de la Tarea 6 (25 %): a 0.45 de T-2 (12 % más) es de nadie; a 0.60 (50 %), de T-1.
     arriba = -0.50 - hueco_de_la_otra
+    ents = [
+        _texto("r", "4#3", 0.5, -0.45, alto=0.10),
+        _texto("s", "6#4", 0.5, arriba - 1.25, alto=0.10),  # la pila de T-2: tiene la suya
+    ]
     secciones = [
         _seccion(0, 0.0, 0.0, 1.0, 1.0, "T-1"),
         _seccion(1, 0.0, arriba - 1.0, 1.0, arriba, "T-2"),
     ]
-    asoc, _ = asociar_secciones(ents, _marco(ents), C, secciones, {"r"})
-    assert [a.marca for a in asoc] == (["T-1"] if leida else [])
+    asoc, _ = asociar_secciones(ents, _marco(ents), C, secciones, {"r", "s"})
+    assert sorted(a.marca for a in asoc) == (["T-1", "T-2"] if leida else ["T-2"])
 
 
 def test_a_cuadro_labels_section_is_never_read():
@@ -884,20 +880,20 @@ def test_a_cuadro_labels_section_is_never_read():
 
 
 def test_a_line_r140_also_gave_another_mark_says_so_when_read():
-    # R192: CE-1 y CE-2 lado a lado, a 1.0 (0.15 entre sus secciones): R140 atribuía también a CE-2
-    # la pila de CE-1 («posible»). La pila bajo su sección la lee como de CE-1, y lo dice.
-    ce2 = _ce1(dx=1.0, marca="CE-2")
-    for e in ce2:
-        e.entity_id = e.raw_handle = e.entity_id + "2"
-    ents = (
-        _ce1() + _muro() + _pila_de_ce1() + ce2 + _muro(1.0)
-        + [_texto("k1", "6#3", 1.458, -2.468, alto=0.10),
-           _texto("k2", "E#2@15", 1.458, -2.663, alto=0.10)]
-    )  # fmt: skip
-    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
-    (pila,) = _cotas(inv, "CE-1")
-    assert pila.entidades == ["l1", "l2"]
-    assert "pila bajo su sección: se lee como de CE-1; antes se atribuía también a CE-2" in (
+    # R192: «4#3» bajo T-1 (su sección, sola) que R140 atribuía también a T-2 («posible»): la pila
+    # bajo su sección lo lee como de T-1, y lo dice.
+    from klave_engine.detection.schedules import _pilas_de_secciones
+    from klave_engine.estructura.asociacion import Rechazo, hoja_y_llave
+
+    ents = [_titulo("t", "T-1", 0.4, 1.2, alto=0.14), _texto("r", "4#3", 0.4, -0.3, alto=0.10)]
+    marcos = _marco(ents)
+    rechazo = Rechazo(entidad_id="r", texto="4#3", hoja="ES-1", motivo="sin_dueno",
+                      posibles=["T-1", "T-2"])  # fmt: skip
+    seccion = _seccion(0, 0.0, 0.0, 0.8, 1.0, "T-1", titulo="t")
+    (pila,), _ = _pilas_de_secciones(
+        ents, marcos, C, [seccion], [], [rechazo], hoja_y_llave(marcos), {}
+    )
+    assert "pila bajo su sección: se lee como de T-1; antes se atribuía también a T-2" in (
         pila.avisos
     )
 
@@ -991,3 +987,52 @@ def test_a_ce_stack_between_its_break_line_and_the_next_drawing_is_read():
     ]
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
     assert [(p.rebar, p.stirrups) for p in _cotas(inv, "CE-3")] == [("6#4", "E#3@14")]
+
+
+def test_a_stack_that_would_orphan_another_section_is_in_doubt():
+    # R200 (la semilla 15243 de la rejilla): «12#8+8#6 EN 2 LECHOS» va a 0.50 bajo T-1 y a 0.98
+    # sobre T-2, que la alcanza del lado de su título y no tiene otra lectura de sus varillas. T-1
+    # está claramente más cerca, pero dárselo dejaría a T-2 sin la suya: queda en duda.
+    ents = [_texto("r", "12#8+8#6 EN 2 LECHOS", -0.4, -0.55, alto=0.10, centrado=False)]
+    secciones = [
+        _seccion(0, 0.0, 0.0, 2.0, 2.0, "T-1"),
+        _seccion(1, 0.0, -3.58, 1.65, -1.58, "T-2"),
+    ]
+    asoc, dudosos = asociar_secciones(ents, _marco(ents), C, secciones, {"r"})
+    assert asoc == [] and dudosos["r"] == {"T-1"}
+
+
+@pytest.mark.parametrize(
+    "renglones,leida",
+    [
+        (["4#3", "6#4"], False),  # dos juegos de varillas
+        (["E#4@10", "EYG#3@15"], False),  # dos juegos de estribos
+        (["4#6+4#4", "E#2@15"], True),  # las varillas juntas por «+», y sus estribos
+    ],
+)
+def test_a_stack_with_two_sets_of_one_field_is_in_doubt(renglones, leida):
+    # R200: una columna que le daría a su sección dos juegos del mismo campo son dos pilas juntas.
+    ents = [_texto(f"r{i}", t, 0.4, -0.25 - 0.18 * i, alto=0.10) for i, t in enumerate(renglones)]
+    asoc, _ = asociar_secciones(
+        ents, _marco(ents), C, [_seccion(0, 0.0, 0.0, 0.8, 1.0, "T-1")], {"r0", "r1"}
+    )
+    assert [a.textos for a in asoc] == ([renglones] if leida else [])
+
+
+def test_a_section_that_reaches_a_line_from_the_side_competes_for_it():
+    # R201 (la semilla 21161 de la rejilla): «E#4@10» va de frente sobre K-6, a 0.40, y de lado bajo
+    # K-4 (en su ensanche), a 0.35, pasado «6#4» (que corta la columna de K-4 del lado de su
+    # título). K-4 tiene su lectura de estribos («E#3@20» encima). Compite con el alcance con que
+    # lee, también de lado: K-6 no está claramente más cerca; en duda. La de K-4 se lee.
+    ents = [
+        _texto("x", "6#4", 2.4, -6.411, alto=0.10, centrado=False),
+        _texto("a", "E#4@10", 1.536, -6.731, alto=0.10, centrado=False),
+        _texto("b", "E#3@20", 2.3, -4.15, alto=0.10, centrado=False),
+    ]
+    secciones = [
+        _seccion(0, 1.835, -6.331, 3.273, -4.256, "K-4", sentidos=(+1,)),
+        _seccion(1, 0.0, -9.25, 2.078, -7.181, "K-6", sentidos=(+1,)),
+    ]
+    asoc, dudosos = asociar_secciones(ents, _marco(ents), C, secciones, {"x", "a", "b"})
+    assert [(x.marca, x.textos) for x in asoc] == [("K-4", ["E#3@20"])]
+    assert dudosos["a"] == {"K-6"}

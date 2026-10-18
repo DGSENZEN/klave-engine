@@ -153,7 +153,6 @@ _PILAS = [
     (["980E0", "980E1"], "CR-1", "ES-200", "4#3", "E#2@15"),
     (["980F6"], "CR-2", "ES-200", None, "E#2@15"),
     (["9810F", "98110"], "CR-3", "ES-200", "6#3", "E#2@15"),
-    (["4C850"], "T2-1", "ES-201", None, "E#3@15"),
     (["A926A"], "T2-2", "ES-201", None, "E#3@15"),
     (["4CD42", "A9E5E"], "T2-8", "ES-201", None, "E#3@16"),
     (["ACA29"], "T2-14", "ES-202", None, "E#3@15"),
@@ -238,6 +237,10 @@ _EN_DUDA = [
     ("8A186", "CE-2"), ("8A18A", "CE-2"),
     # CI de 20 cm en ES-300: «E#2@15» A8E0B a 0.569 de su sección y a 0.572 de la de 15 cm.
     ("A8E0A", "CI"), ("A8E0B", "CI"),
+    # R200, T2-1 en ES-201: «E#3@15» a 0.38 de su sección; la de T2-4 (reclamada, sin lectura de
+    # sus estribos: su «2E#3» va en su esquina) la alcanza a 2.68, dentro del doble de su alcance.
+    # Dárselo a T2-1 dejaría a T2-4 sin la suya: en duda.
+    ("4C850", "T2-1"),
 ]  # fmt: skip
 
 
