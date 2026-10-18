@@ -499,3 +499,42 @@ def test_without_the_model_every_assumed_castillo_is_named():
     report = compute_steel(boq, dets, specs, None, 1.0, 2.7)
     aviso = next(w for w in report.warnings if "Acero por leer" in w)
     assert "K-1 (sin sección)" in aviso and "K-2 (sin armado y sección)" in aviso
+
+
+def test_an_unread_beam_says_every_unread_field():
+    t = _elemento("CTA-1", "contratrabe", (35, 80), 2.3, [], None, 0.05, det_id="b1")
+    t = t.model_copy(
+        update={
+            "avisos": [
+                "longitudinales: el plano lo escribe y no se leyó («3#8», «2#8+2#6»); no hay nota "
+                "de familia: sin longitudinales",
+                "estribos: el plano lo escribe y no se leyó («E#4», «1@6,8@10», «@15»); no hay "
+                "nota de familia: sin estribos",
+            ]
+        }
+    )
+    boq = BillOfQuantities(project_id="p", lines=[_line("CIM-008", ["b1"])])
+    report = compute_steel(
+        boq, [_det("b1", "CTA-1", DetectionType.beam_tag)], None, None, 1.0, 2.7,
+        estructura=_estructura(t),
+    )  # fmt: skip
+    aviso = next(w for w in report.warnings if "Acero por leer" in w)
+    assert "«3#8», «2#8+2#6»" in aviso and "«E#4», «1@6,8@10», «@15»" in aviso
+
+
+def test_model_elements_outside_the_budget_lines_are_said():
+    # Un castillo que el presupuesto no cuenta (la planta de cimentación) y una trabe sin claro
+    # (no entra a EST-002): su acero no se suma, y se dice con lo que pesaría o por qué no.
+    k = _elemento("K-4", "castillo", (15, 30), 2.9, ["6#4"], "EYG#3@15", 0.03, det_id="k0",
+                  hoja="ES-000")  # fmt: skip
+    t = _elemento("T4-1", "trabe", (25, 40), None, ["3#4"], "E#3@15", 0.04, det_id="t0")
+    t = t.model_copy(update={"avisos": ["longitud: ninguna línea corre junto a ella; sin claro"]})
+    dentro = _elemento("K-1", "castillo", (15, 15), 3.0, ["4#3"], "E#2@15", 0.03, det_id="k1")
+    boq = BillOfQuantities(project_id="p", lines=[_line("EST-001", ["k1"])])
+    report = compute_steel(boq, [_det("k1", "K-1")], None, None, 1.0, 2.7,
+                           estructura=_estructura(k, t, dentro))  # fmt: skip
+    aviso = next(w for w in report.warnings if "fuera del presupuesto" in w)
+    kg = acero_elemento(k, R, 0.40).total_kg() * 1.05
+    assert f"K-4 (1 pza) en ES-000: {kg:,.1f} kg" in aviso
+    assert "T4-1 (1 pza)" in aviso and "sin claro" in aviso
+    assert "K-1" not in aviso

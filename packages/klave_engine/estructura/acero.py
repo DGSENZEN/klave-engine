@@ -273,6 +273,23 @@ def sin_acero(e: Elemento) -> list[str]:
     return motivos
 
 
+def motivos_por_leer(e: Elemento) -> list[str]:
+    """Todo lo que falta para pesar un elemento sin acero: lo que lo deja sin acero
+    (``sin_acero``) y, si tampoco tiene estribos, por qué (para que la oficina vea de una vez
+    todo lo que hay que leer)."""
+    motivos = sin_acero(e)
+    if motivos and not _juegos(e.estribos):
+        motivos.append(
+            _aviso(e, "estribos")
+            or (
+                f"estribos: ilegibles («{e.estribos.texto}»)"
+                if e.estribos is not None and e.estribos.ilegible
+                else "estribos: el plano no los declara"
+            )
+        )
+    return motivos
+
+
 def _de_la_fuente(campo: str, dato: Dato | None, por_confirmar: list[str]) -> None:
     """Lo que hay que confirmar de un dato que se usa: supuesto, de la IA o en conflicto."""
     if dato is None:

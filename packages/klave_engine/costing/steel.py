@@ -362,10 +362,10 @@ def _del_modelo(cuenta: _Cuenta, e: "Elemento", modelo: _Modelo, a: SteelAssumpt
 
 def _sin_acero_en(cuenta: _Cuenta, e: "Elemento", extra: tuple[str, ...] = ()) -> None:
     """El elemento sin acero desde su armado, en «acero por leer» con sus motivos."""
-    from klave_engine.estructura.acero import sin_acero
+    from klave_engine.estructura.acero import motivos_por_leer
 
     marca = e.marca or "sin marca"
-    cuenta.por_leer.setdefault((marca, (*sin_acero(e), *extra), False), []).append(e.hoja)
+    cuenta.por_leer.setdefault((marca, (*motivos_por_leer(e), *extra), False), []).append(e.hoja)
 
 
 def _lados_cm(e: "Elemento") -> tuple[float, float] | None:
@@ -468,6 +468,51 @@ def _avisos_del_modelo(cuenta: _Cuenta, nombre: str, consecuencia: str) -> list[
             + " | ".join(f"{', '.join(m)}: {d}" for d, m in por_duda.items())
         )
     return avisos
+
+
+_FAMILIAS_CON_ACERO = ("castillo", "columna", "trabe", "contratrabe")
+
+
+def _fuera_del_presupuesto(
+    modelo: _Modelo, en_lineas: set[str], a: SteelAssumptions, waste: float
+) -> str | None:
+    """Los castillos, columnas, trabes y contratrabes del modelo que no están en las líneas de
+    concreto del presupuesto (la planta de cimentación, que el presupuesto toma como la base de
+    las mismas columnas de arriba; una viga sin claro): su acero no se suma, y se dice cuánto
+    pesaría o por qué no se puede pesar (R148a)."""
+    from klave_engine.estructura.acero import acero_elemento, motivos_por_leer
+
+    pesados: dict[str, list] = {}  # marca → [hojas, kg]
+    sin: dict[tuple[str, tuple[str, ...]], list[str]] = {}
+    for e in modelo.elementos:
+        if e.familia not in _FAMILIAS_CON_ACERO or e.detection_id in en_lineas:
+            continue
+        marca = e.marca or f"{e.familia} sin marca"
+        acero = acero_elemento(e, modelo.reglas_de(e.hoja), a.anchorage_m)
+        if acero is None:
+            sin.setdefault((marca, tuple(motivos_por_leer(e))), []).append(e.hoja)
+            continue
+        hojas_kg = pesados.setdefault(marca, [[], 0.0])
+        hojas_kg[0].append(e.hoja)
+        hojas_kg[1] += acero.total_kg() * waste
+    if not pesados and not sin:
+        return None
+    partes = [
+        f"{marca} ({_pzas(len(hojas))}) en {_hojas(hojas)}: {kg:,.1f} kg"
+        for marca, (hojas, kg) in sorted(pesados.items())
+    ] + [
+        f"{marca} ({_pzas(len(hojas))}) en {_hojas(hojas)}, sin acero: " + "; ".join(motivos)
+        for (marca, motivos), hojas in sorted(sin.items())
+    ]
+    total = sum(kg for _, kg in pesados.values())
+    cuantos = sum(len(h) for h, _ in pesados.values()) + sum(len(h) for h in sin.values())
+    return (
+        f"Acero fuera del presupuesto — {cuantos} "
+        "castillos, columnas, trabes y contratrabes del modelo estructural no están en las líneas "
+        "de concreto (EST-001, EST-002, CIM-008), así que su acero no se suma (acero no "
+        f"cuantificado; {total:,.1f} kg con desperdicio en los que se pueden pesar): "
+        + " | ".join(partes)
+    )
 
 
 def compute_steel(
@@ -824,6 +869,16 @@ def compute_steel(
                        f"Desperdicio {a.waste_pct:g} %"],
             )
         )
+    if modelo is not None:
+        en_lineas = {
+            det_id
+            for code in ("EST-001", "EST-002", "CIM-008")
+            if (line := lines.get(code)) is not None
+            for det_id in line.source_detections
+        }
+        fuera = _fuera_del_presupuesto(modelo, en_lineas, a, waste)
+        if fuera:
+            report.warnings.append(fuera)
     for aviso, con_esa_varilla in sorted(sin_fila.items()):
         report.warnings.append(
             f"Tabla de varillas: {aviso} (en {', '.join(sorted(con_esa_varilla))})."
