@@ -4191,6 +4191,13 @@ def _encerrados(
             for a, b in ajenos
             if abs(b[0] - a[0]) <= 0.05 * abs(b[1] - a[1])
         ]
+        # R204: a chord may be sloped (a ramp's elevation, TE-A on ES-007): within the alignment
+        # tolerance.
+        tendidos = [
+            (a, b) if a[0] <= b[0] else (b, a)
+            for a, b in ajenos
+            if abs(b[1] - a[1]) <= _INCLINACION * abs(b[0] - a[0]) and b[0] != a[0]
+        ]
         for t in candidatos:
             if t.source_file != sec.archivo or t.entity_id in salida:
                 continue
@@ -4221,7 +4228,7 @@ def _encerrados(
             # broken around the label). Inside a drawing: a chord above and one below within the
             # reach; written on a drawing's line: a chord within one text height of it.
             h = ty1 - ty0
-            cuerdas = _cuerdas(cruzan, tx0, tx1, h)
+            cuerdas = _cuerdas(tendidos, tx0, tx1, h)
             arriba = [y for y in cuerdas if ty1 <= y <= ty1 + alcance]
             abajo = [y for y in cuerdas if ty0 - alcance <= y <= ty0]
             pegada = [y for y in cuerdas if ty0 - h <= y <= ty0 or ty1 <= y <= ty1 + h]
@@ -4230,30 +4237,48 @@ def _encerrados(
     return salida
 
 
-# R197: a drawing's chord runs past a text by more than this many of its heights on both sides. On
-# Marina the break line above a CE's stack runs past it 3.2 heights at most (CE-2, ES-200: 98049
-# over 98031); an elevation's chords run the beam's length (7 heights and more in the reviewer's
-# repro, metres on a sheet).
-_CUERDA = 5.0
+# R197, R204: a drawing's chord runs past a text by more than this many of its heights on both
+# sides (from the text's estimated box). An elevation's chords run the beam's length (metres on a
+# sheet); a short open frame whose lines run 3.6–5 heights past its label (the reviewer's stubs) is
+# a drawing too. The one line on Marina near this — the break line across a CE's hanging wall,
+# 3.2 heights past its stack (CE-2, ES-200: 98049 over 98031) — is the section's own drawing and
+# never a chord; Marina's stacks read the same with 2, 3 or 5.
+_CUERDA = 3.0
+# R204: a chord is linework within the alignment tolerance of the horizontal (15°, the text
+# patterns' ``alignment_tolerance_deg``), and its levels at a text merge within a quarter of its
+# height (a polyline with a small step at the label is one chord).
+_INCLINACION = math.tan(math.radians(15.0))
+_PASO_DE_NIVEL = 0.25
 
 
 def _cuerdas(
-    tramos: list[tuple[float, float, float]], tx0: float, tx1: float, h: float
+    tramos: list[tuple[tuple[float, float], tuple[float, float]]], tx0: float, tx1: float, h: float
 ) -> list[float]:
-    """R197: the levels (y) where horizontal linework is a chord at a text spanning ``tx0``–``tx1``
-    of height ``h``: one piece at that level reaching more than ``_CUERDA`` heights left of it and
-    one (the same or another, the line broken around the text) more than that right of it, each
-    starting within twice that of the text."""
+    """R197, R204: the levels (y at the text's centre) where linework is a chord at a text spanning
+    ``tx0``–``tx1`` of height ``h``: one piece reaching, along its own direction, more than
+    ``_CUERDA`` heights left of the text and one (the same or another: the line broken around the
+    text) more than that right of it, each with its near end within twice that of the text. Each
+    piece is at the level it has (or would have, prolonged) at the text's centre, and levels within
+    ``_PASO_DE_NIVEL`` heights of each other are one."""
     largo, cerca = _CUERDA * h, 2 * _CUERDA * h
-    niveles: dict[int, list[tuple[float, float]]] = defaultdict(list)
-    for a, b, y in tramos:
-        niveles[round(y / (0.25 * h))].append((a, b))
-    salida = []
-    for llave, piezas in niveles.items():
-        izquierda = any(a <= tx0 - largo and b >= tx0 - cerca for a, b in piezas)
-        derecha = any(b >= tx1 + largo and a <= tx1 + cerca for a, b in piezas)
-        if izquierda and derecha:
-            salida.append(llave * 0.25 * h)
+    centro = (tx0 + tx1) / 2
+    piezas = []
+    for a, b in tramos:  # a left of b
+        pendiente = (b[1] - a[1]) / (b[0] - a[0])
+        paso = math.hypot(1.0, pendiente)  # length along the piece per unit of x
+        izquierda = (tx0 - a[0]) * paso > largo and (tx0 - b[0]) * paso <= cerca
+        derecha = (b[0] - tx1) * paso > largo and (a[0] - tx1) * paso <= cerca
+        piezas.append((a[1] + pendiente * (centro - a[0]), izquierda, derecha))
+    piezas.sort()
+    salida: list[float] = []
+    grupo: list[tuple[float, bool, bool]] = []
+    for pieza in [*piezas, None]:
+        if pieza is not None and (not grupo or pieza[0] - grupo[-1][0] <= _PASO_DE_NIVEL * h):
+            grupo.append(pieza)
+            continue
+        if grupo and any(g[1] for g in grupo) and any(g[2] for g in grupo):
+            salida.append(sum(g[0] for g in grupo) / len(grupo))
+        grupo = [pieza] if pieza is not None else []
     return salida
 
 
@@ -4356,6 +4381,36 @@ def _pilas_de_secciones(
         marca = _normal(a.marca, config)
         lectura = _reading(a.textos, family)
         armado: Armado = lectura["armado"]
+        # R206: a stack may join two sets of one field (lechos, a grapa, «RESTO»); a set the
+        # reader could not read is never dropped while the others are read: the field is a doubt.
+        for campo, clave in (
+            ("longitudinales", "rebar"),
+            ("estribos", "stirrups"),
+            ("parrillas", "mesh"),
+        ):
+            if not getattr(armado, campo):
+                continue
+            sueltos = [
+                cita
+                for aviso in lectura["avisos"]
+                if aviso.startswith("sin leer")
+                for cita in re.findall(r"«([^»]*)»", aviso)[:1]
+                if campo in campos_de_fragmento(cita, family)
+            ]
+            if not sueltos:
+                continue
+            setattr(armado, campo, [])
+            lectura[clave] = None
+            leidos_del_campo = [
+                t for t in a.textos if campo in campos_de_fragmento(t, family) and t not in sueltos
+            ]
+            lectura["avisos"].append(
+                f"{campo}: la pila bajo su sección junta juegos y uno no se lee («"
+                + "», «".join(dict.fromkeys(sueltos))
+                + "»): no se lee ninguno («"
+                + "», «".join(leidos_del_campo)
+                + "»)"
+            )
         suyos = {(i, _plano(t)) for i, t in zip(a.entidades, a.textos, strict=True)}
         titulo = por_id.get(a.etiqueta_id)
         llave = sheet(titulo)[1] if titulo is not None else ""
