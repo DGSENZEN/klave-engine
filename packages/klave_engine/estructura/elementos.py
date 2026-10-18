@@ -810,6 +810,26 @@ class _Resolutor:
         cuando las reglas la leen así (R144)."""
         reglas = self.reglas_de(hoja)
         dato = reglas.recubrimiento_m.get(familia)
+        dibujado = propia.recubrimiento_m if propia is not None else None
+        if dibujado is not None and dibujado.valor is not None:
+            # R212: el que su sección dibujada acota en SU hoja; el de las reglas queda como
+            # alternativa (gana por rango: ``seccion_dibujada`` > ``nota``). El de otra hoja no:
+            # las hojas de Marina acotan recubrimientos distintos para la misma marca (K-6: 4 cm
+            # en ES-100, 3 en ES-400).
+            propio = para_hoja(dibujado, hoja)
+            if hoja in hojas_de(propio):
+                elegido = elegir([propio] + ([dato] if dato is not None else []))
+                assert elegido is not None
+                return elegido
+            otras = ", ".join(
+                f"{float(m.valor) * 100:g} cm en {', '.join(hojas_de(m))}"
+                for m in miembros(dibujado)
+                if m.valor is not None
+            )
+            avisos.append(
+                f"recubrimiento: la sección dibujada de la hoja {hoja} no lo acota (o no se "
+                f"leyó); el de otras hojas no se toma ({otras}); se usa el de las reglas"
+            )
         if familia == "muro_concreto" and (dato is None or dato.fuente == "supuesto"):
             hojas = {hoja, *(propia.hojas if propia is not None else [])}
             if hojas & self.de_cimentacion:

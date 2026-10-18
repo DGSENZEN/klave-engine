@@ -131,6 +131,9 @@ class Definicion(BaseModel):
     # toma la de su muro.
     para_muro_cm: float | None = None
     variantes: list["Definicion"] = Field(default_factory=list)
+    # R212: el recubrimiento que su sección dibujada acota en sus esquinas (``seccion_dibujada``),
+    # elegido entre sus hojas como los demás campos: le gana al de la nota de la familia.
+    recubrimiento_m: Dato | None = None
 
 
 def normalizar_marca(texto: str, config: TextPatternConfig | None = None) -> str:
@@ -395,6 +398,19 @@ def _definir(
             datos[campo] += lista
 
     campos = {campo: elegir(lista, preferir_hoja=None) for campo, lista in datos.items()}
+    recubrimiento = elegir(
+        [
+            _dato(
+                s,
+                "seccion_dibujada",
+                s.recubrimiento_cm / 100,
+                texto=f"{s.mark} · recubrimiento de {s.recubrimiento_cm:g} cm acotado en las "
+                "esquinas de su sección",
+            )
+            for s in lecturas
+            if s.recubrimiento_cm is not None
+        ]
+    )
     for campo, dato in campos.items():
         if dato is not None and dato.ilegible and any(a.fuente == "ia" for a in dato.alternativas):
             avisos.append(
@@ -428,6 +444,7 @@ def _definir(
         },
         para_muro_cm=None,  # R168: sus variantes las pone ``construir_definiciones``
         variantes=[],
+        recubrimiento_m=recubrimiento,
         **campos,
     )
 

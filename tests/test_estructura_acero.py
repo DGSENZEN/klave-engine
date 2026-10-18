@@ -360,6 +360,7 @@ def test_an_unread_castillo_takes_the_assumed_armado_and_is_listed():
                            estructura=_estructura(k))  # fmt: skip
     line = report.lines[0]
     assert line.quantity > 0 and any("Armado supuesto" in n and "K-7" in n for n in line.notes)
+    assert any(n.startswith("K-7: 1 pzas × 4#3 E#2@20") and "sin desperdicio" in n for n in line.notes)
     aviso = next(w for w in report.warnings if "Acero por leer" in w)
     assert "K-7" in aviso and "«4#3 + 2#3?»" in aviso and "4#3 E#2@20" in aviso
 
@@ -538,3 +539,103 @@ def test_model_elements_outside_the_budget_lines_are_said():
     assert f"K-4 (1 pza) en ES-000: {kg:,.1f} kg" in aviso
     assert "T4-1 (1 pza)" in aviso and "sin claro" in aviso
     assert "K-1" not in aviso
+
+
+# ------------------------------------------------------------------ ronda de arreglos 1
+
+
+def _con_cover(e, dato):
+    return e.model_copy(update={"recubrimiento_m": dato})
+
+
+def test_a_cover_taken_from_a_range_is_said():
+    # R212: «3.0 A 5.0 CM LIBRES EN CASTILLOS» da 3 cm, el mínimo: es un supuesto y se dice.
+    rango = Dato(valor=0.03, fuente="nota", hoja="ES-000", texto="3.0 A 5.0 CM LIBRES EN CASTILLOS")
+    k = _con_cover(_elemento("K-1", "castillo", (15, 15), 3.0, ["4#3"], "E#2@15", 0.03), rango)
+    a = acero_elemento(k, R, 0.40)
+    assert any("recubrimiento 3.0 cm, el mínimo de «3.0 A 5.0 CM»" in s for s in a.supuestos)
+    dibujado = Dato(valor=0.05, fuente="seccion_dibujada", hoja="ES-000", texto="K-12 · 5 cm",
+                    alternativas=[rango])  # fmt: skip
+    k12 = _elemento("K-12", "castillo", (30, 30), 3.0, ["4#6"], "E#3@15", 0.03)
+    k12 = _con_cover(k12, dibujado)
+    assert not any("mínimo" in s for s in acero_elemento(k12, R, 0.40).supuestos)
+
+
+def test_assumed_shapes_on_an_elongated_section_are_to_confirm():
+    # R212: K-7 20×55 con 2E: la práctica supone perimetral + rombo y el corte dibuja un amarre
+    # interior; en una sección con h/b ≥ 2 la forma supuesta queda por confirmar, con la marca.
+    k7 = _elemento("K-7", "castillo", (20, 55), 3.2, ["4#5+4#4"], "2E#3@20", 0.03, det_id="k7")
+    a = acero_elemento(k7, R, 0.40)
+    assert any("alargada" in d and "por confirmar" in d for d in a.por_confirmar)
+    k12 = _elemento("K-12", "castillo", (30, 30), 3.2, ["4#6+4#4"], "2E#3@15", 0.05)
+    assert not any("alargada" in d for d in acero_elemento(k12, R, 0.40).por_confirmar)
+    k5 = _elemento("K-5", "castillo", (20, 30), 3.2, ["6#4"], "EYG#3@15", 0.03)  # 1 + grapa
+    assert not any("alargada" in d for d in acero_elemento(k5, R, 0.40).por_confirmar)
+    boq = BillOfQuantities(project_id="p", lines=[_line("EST-001", ["k7"])])
+    report = compute_steel(boq, [_det("k7", "K-7")], None, None, 1.0, 2.7,
+                           estructura=_estructura(k7))  # fmt: skip
+    aviso = next(w for w in report.warnings if "por confirmar" in w)
+    assert "K-7 (1 pza)" in aviso and "alargada" in aviso
+
+
+def test_a_partial_weight_says_so_wherever_it_appears():
+    # R213 (K-15A): las varillas pesan y los estribos no; la nota de la marca y la entrada fuera
+    # del presupuesto lo dicen junto al número. R215: las notas por marca, sin desperdicio.
+    area = Dato(valor={"area_cm2": 2300.0}, fuente="medido", hoja="ES-100", texto="contorno")
+    k = _elemento("K-15A", "castillo", (30, 60), 3.6, ["6#8+6#6"], "4E#3EXT@10 CENTRO@20", 0.03,
+                  det_id="k1", hoja="ES-100")  # fmt: skip
+    k = k.model_copy(update={"seccion_cm": area})
+    otra_area = area.model_copy(update={"valor": {"area_cm2": 2300.1}})
+    k2 = k.model_copy(update={"detection_id": "k2", "hoja": "ES-200", "seccion_cm": otra_area})
+    fuera = k.model_copy(update={"detection_id": "k0", "hoja": "ES-000"})
+    boq = BillOfQuantities(project_id="p", lines=[_line("EST-001", ["k1", "k2"])])
+    report = compute_steel(boq, [_det("k1", "K-15A"), _det("k2", "K-15A")], None, None, 1.0, 2.7,
+                           estructura=_estructura(k, k2, fuera))  # fmt: skip
+    notas = [n for n in report.lines[0].notes if n.startswith("K-15A:")]
+    assert len(notas) == 1 and notas[0].startswith("K-15A: 2 pzas")  # 2300.0 y 2300.1: una
+    assert "(sólo varillas longitudinales; estribos por leer)" in notas[0]
+    assert "kg sin desperdicio" in notas[0]
+    entrada = next(w for w in report.warnings if "fuera del presupuesto" in w)
+    assert "K-15A (1 pza) en ES-000:" in entrada
+    assert "(sólo varillas longitudinales; estribos por leer)" in entrada
+    por_leer = next(w for w in report.warnings if w.startswith("Acero por leer"))
+    assert por_leer.count("K-15A (") == 1
+
+
+def test_a_castillo_without_declared_stirrups_is_not_unread():
+    # R215: K-X («CASTILLO AHOGADO / REFUERZO 1#4») no declara estribos: no es «por leer».
+    kx = _elemento("K-X", "castillo", (20, 40), 3.2, ["1#4"], None, 0.03, det_id="kx")
+    a = acero_elemento(kx, R, 0.40)
+    assert not a.por_leer and a.sin_estribos_declarados
+    boq = BillOfQuantities(project_id="p", lines=[_line("EST-001", ["kx"])])
+    report = compute_steel(boq, [_det("kx", "K-X")], None, None, 1.0, 2.7,
+                           estructura=_estructura(kx))  # fmt: skip
+    assert not any(w.startswith("Acero por leer") for w in report.warnings)
+    nota = next(n for n in report.lines[0].notes if n.startswith("K-X:"))
+    assert "(sin estribos declarados)" in nota
+
+
+def test_the_path_without_the_model_never_calls_a_default_the_drawings():
+    # R214: sin el modelo (cada corrida del pipeline hasta la Tarea 12), K-15A trae su armado y
+    # no su sección: la sección es supuesta y se dice; sus 4E por zonas no se pesan sobre una
+    # sección supuesta; el método sin modelo se dice una vez.
+    dets = [_det("k1", "K-15A")]
+    boq = BillOfQuantities(project_id="p", lines=[_line("EST-001", ["k1"])])
+    specs = {"by_mark": {"K-15A": {"rebar": "6#8+6#6", "stirrups": "4E#3 EXT@10 CENTRO@20",
+                                   "section_cm": None}}}  # fmt: skip
+    report = compute_steel(boq, dets, specs, None, 1.0, 3.0)
+    line = report.lines[0]
+    nota = next(n for n in line.notes if n.startswith("K-15A:"))
+    assert "(supuesta)" in nota and "(plano)" not in nota
+    assert line.quantity == pytest.approx((6 * 3.973 + 6 * 2.235) * 3.40 * 1.05, abs=0.01)
+    assert any("4E#3 EXT@10 CENTRO@20" in n and "no se pesan" in n for n in line.notes)
+    assert not any(n.startswith("Armado supuesto") and "K-15A" in n for n in line.notes)
+    assert any(n.startswith("Sección supuesta") and "K-15A" in n for n in line.notes)
+    aviso = next(w for w in report.warnings if w.startswith("Acero por leer"))
+    assert "K-15A (sin sección" in aviso and "no se pesan" in aviso
+    metodo = "método sin modelo estructural: recubrimiento 2.5 cm, gancho 7.5 cm, cada pieza"
+    assert sum(metodo in n for n in line.notes) == 1
+    # una sola pieza uniforme sobre la sección supuesta sí se pesa, como siempre
+    specs["by_mark"]["K-15A"]["stirrups"] = "E#3@15"
+    uno = compute_steel(boq, dets, specs, None, 1.0, 3.0)
+    assert uno.lines[0].quantity > line.quantity

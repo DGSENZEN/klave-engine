@@ -47,6 +47,8 @@ _CON_ALTURA = frozenset({"castillo", "columna"})
 # Lo que absorbe el ruido de la aritmética de punto flotante al contar (m).
 _EPS = 1e-9
 _EXTREMOS_MINIMO_M = 0.60
+# R212: una sección cuyo lado mayor es al menos este múltiplo del menor es alargada.
+_ALARGADA = 2.0
 
 
 class AceroElemento(BaseModel):
@@ -58,6 +60,9 @@ class AceroElemento(BaseModel):
     supuestos: list[str] = Field(default_factory=list)
     por_confirmar: list[str] = Field(default_factory=list)
     por_leer: list[str] = Field(default_factory=list)
+    # R215: el plano no le declara estribos (ni texto sin leer): pesan sólo sus varillas y no es
+    # «por leer» (un castillo ahogado).
+    sin_estribos_declarados: bool = False
 
     def total_kg(self) -> float:
         return sum(self.kg_por_numero.values())
@@ -377,22 +382,41 @@ def _anclaje_declarado(familia: str, reglas: Reglas) -> str:
     )
 
 
+_RANGO = re.compile(r"(\d+(?:[.,]\d+)?)\s*A\s*(\d+(?:[.,]\d+)?)\s*CMS?\b", re.IGNORECASE)
+
+
 def _recubrimiento(e: Elemento, reglas: Reglas, salida: AceroElemento) -> float | None:
+    """El recubrimiento del elemento (el de su sección dibujada, R212, o el de su familia en su
+    hoja); el mínimo de un rango de la nota («3.0 A 5.0 CM») es un supuesto y se dice."""
     dato = e.recubrimiento_m or reglas.recubrimiento_m.get(e.familia)
     if dato is not None and _numero(dato.valor) is not None:
+        valor = float(dato.valor)
         if dato.fuente == "supuesto":
             salida.supuestos.append(
-                f"supuesto: recubrimiento {float(dato.valor):.3f} m"
+                f"supuesto: recubrimiento {valor:.3f} m"
                 + (f" ({dato.texto})" if dato.texto else "")
             )
-        return float(dato.valor)
-    valor = RECUBRIMIENTO_SUPUESTO.get(e.familia)
-    if valor is not None:
+        rango = _RANGO.search(dato.texto or "") if dato.fuente in ("nota", "regla") else None
+        if rango is not None and rango[1].replace(",", ".") != rango[2].replace(",", "."):
+            salida.supuestos.append(
+                f"supuesto: recubrimiento {valor * 100:.1f} cm, el mínimo de «{rango[0].upper()}»"
+                " (la nota da un rango; la sección dibujada no lo acota)"
+            )
+        if dato.en_conflicto:
+            otros = sorted({f"{float(a.valor) * 100:g}" for a in dato.alternativas
+                            if _numero(a.valor) is not None and a.valor != dato.valor})  # fmt: skip
+            salida.por_confirmar.append(
+                f"recubrimiento en conflicto (el plano dice también {', '.join(otros)} cm); se "
+                f"usa {valor * 100:g} cm"
+            )
+        return valor
+    estandar = RECUBRIMIENTO_SUPUESTO.get(e.familia)
+    if estandar is not None:
         salida.supuestos.append(
-            f"supuesto: recubrimiento {valor:.3f} m, el estándar de {e.familia}: el plano no "
+            f"supuesto: recubrimiento {estandar:.3f} m, el estándar de {e.familia}: el plano no "
             "lo dice"
         )
-    return valor
+    return estandar
 
 
 def _estribos(
@@ -407,22 +431,26 @@ def _estribos(
     va a ``por_leer`` con su motivo."""
     juegos = _juegos(e.estribos)
     if not juegos:
-        salida.por_leer.append(
-            _aviso(e, "estribos")
-            or (
-                f"estribos: ilegibles («{e.estribos.texto}»)"
-                if e.estribos is not None and e.estribos.ilegible
-                else "estribos: el plano no los declara"
-            )
+        motivo = _aviso(e, "estribos") or (
+            f"estribos: ilegibles («{e.estribos.texto}»)"
+            if e.estribos is not None and e.estribos.ilegible
+            else None
         )
+        if motivo is None and e.estribos is None:
+            # R215: ni estribos ni texto suyo sin leer: el plano no los declara.
+            salida.sin_estribos_declarados = True
+            return
+        salida.por_leer.append(motivo or "estribos: el plano no los declara")
         return
     lados = _lados(e.seccion_cm)
     if lados is None:
         valor = e.seccion_cm.valor if e.seccion_cm is not None else None
-        salida.por_leer.append(
-            f"estribos: la sección no es un rectángulo b×h ({valor!r}); su forma la dirá el "
-            "corte dibujado"
+        forma = (
+            f"no rectangular de {round(float(valor['area_cm2'])):g} cm²"
+            if isinstance(valor, dict) and _numero(valor.get("area_cm2")) is not None
+            else f"no es un rectángulo b×h ({valor!r})"
         )
+        salida.por_leer.append(f"estribos: la sección {forma}; su forma la dirá el corte dibujado")
         return
     b, h = lados[0] / 100, lados[1] / 100
     r = _recubrimiento(e, reglas, salida)
@@ -444,6 +472,14 @@ def _estribos(
                 f"supuesto: {nombre} con formas {', '.join(j.formas)} (la práctica del taller; "
                 "las dirá el corte dibujado)"
             )
+            if j.cantidad in (2, 3) and max(b, h) >= _ALARGADA * min(b, h):
+                # R212: en una sección alargada el corte suele dibujar amarres interiores donde
+                # la práctica supone un rombo.
+                salida.por_confirmar.append(
+                    "formas de estribos supuestas en una sección alargada (h/b ≥ 2), por "
+                    "confirmar con el corte dibujado (E3): el corte puede traer amarres "
+                    "interiores donde se supuso un rombo"
+                )
         extremos = extremos_supuesto_m(b, h, largo)
         try:
             n = posiciones(largo, j.zonas, primer, extremos)
