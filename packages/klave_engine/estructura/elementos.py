@@ -27,6 +27,7 @@ su aviso, nunca 0. El recubrimiento es el de las reglas de la hoja para la famil
 dice la colocación misma (``Colocacion``: lo medido en planta, la altura de su planta, sus avisos)
 no cambia."""
 
+import re
 import unicodedata
 from collections.abc import Callable
 from typing import Literal
@@ -817,18 +818,34 @@ class _Resolutor:
             # las hojas de Marina acotan recubrimientos distintos para la misma marca (K-6: 4 cm
             # en ES-100, 3 en ES-400).
             propio = para_hoja(dibujado, hoja)
-            if hoja in hojas_de(propio):
+            rango = _rango(dato)
+            cm = float(propio.valor) * 100
+            if hoja not in hojas_de(propio):
+                otras = ", ".join(
+                    f"{float(m.valor) * 100:g} cm en {', '.join(hojas_de(m))}"
+                    for m in miembros(dibujado)
+                    if m.valor is not None
+                )
+                avisos.append(
+                    f"recubrimiento: la sección dibujada de la hoja {hoja} no se leyó; el de otras "
+                    f"hojas no se toma ({otras}); se usa el de las reglas"
+                )
+            elif rango is not None and not rango[0] - 1e-9 <= cm <= rango[1] + 1e-9:
+                # R218: un recubrimiento dibujado fuera del rango que da la nota no se toma.
+                avisos.append(
+                    f"recubrimiento acotado {cm:g} cm fuera de lo que dice la nota "
+                    f"(«{dato.texto if dato is not None else ''}»): no se toma; se usa el de "
+                    "las reglas"
+                )
+            else:
                 elegido = elegir([propio] + ([dato] if dato is not None else []))
                 assert elegido is not None
                 return elegido
-            otras = ", ".join(
-                f"{float(m.valor) * 100:g} cm en {', '.join(hojas_de(m))}"
-                for m in miembros(dibujado)
-                if m.valor is not None
-            )
+        sin_tomar = propia.recubrimiento_sin_tomar.get(hoja) if propia is not None else None
+        if sin_tomar is not None:
             avisos.append(
-                f"recubrimiento: la sección dibujada de la hoja {hoja} no lo acota (o no se "
-                f"leyó); el de otras hojas no se toma ({otras}); se usa el de las reglas"
+                f"recubrimiento: la sección dibujada de la hoja {hoja} no se leyó ({sin_tomar}); "
+                "se usa el de las reglas"
             )
         if familia == "muro_concreto" and (dato is None or dato.fuente == "supuesto"):
             hojas = {hoja, *(propia.hojas if propia is not None else [])}
@@ -865,6 +882,20 @@ class _Resolutor:
 
 # R168: el muro medido corresponde a la variante que lo declara con esta tolerancia (cm).
 _TOLERANCIA_DE_MURO_CM = 2.0
+
+
+_RANGO_DE_LA_NOTA = re.compile(r"(\d+(?:[.,]\d+)?)\s*A\s*(\d+(?:[.,]\d+)?)\s*CMS?\b", re.IGNORECASE)
+
+
+def _rango(dato: Dato | None) -> tuple[float, float] | None:
+    """R218: el rango (cm) que la nota da para un recubrimiento («3.0 A 5.0 CM»), si da uno."""
+    if dato is None or dato.fuente not in ("nota", "regla"):
+        return None
+    m = _RANGO_DE_LA_NOTA.search(dato.texto or "")
+    if m is None:
+        return None
+    a, b = (float(v.replace(",", ".")) for v in (m[1], m[2]))
+    return (min(a, b), max(a, b)) if a != b else None
 
 
 def _variante(

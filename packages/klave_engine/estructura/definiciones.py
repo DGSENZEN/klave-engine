@@ -134,6 +134,9 @@ class Definicion(BaseModel):
     # R212: el recubrimiento que su sección dibujada acota en sus esquinas (``seccion_dibujada``),
     # elegido entre sus hojas como los demás campos: le gana al de la nota de la familia.
     recubrimiento_m: Dato | None = None
+    # R216: lo que su sección dibujada acota como recubrimiento sin tomarse, por hoja («acota 5 cm
+    # en una sola esquina leída»): quien use el recubrimiento lo dice.
+    recubrimiento_sin_tomar: dict[str, str] = Field(default_factory=dict)
 
 
 def normalizar_marca(texto: str, config: TextPatternConfig | None = None) -> str:
@@ -445,6 +448,11 @@ def _definir(
         para_muro_cm=None,  # R168: sus variantes las pone ``construir_definiciones``
         variantes=[],
         recubrimiento_m=recubrimiento,
+        recubrimiento_sin_tomar={
+            s.hoja: s.recubrimiento_sin_tomar
+            for s in lecturas
+            if s.recubrimiento_sin_tomar is not None and s.hoja
+        },
         **campos,
     )
 

@@ -503,7 +503,7 @@ def _fuera_del_presupuesto(
     pesaría o por qué no se puede pesar (R148a)."""
     from klave_engine.estructura.acero import acero_elemento, motivos_por_leer
 
-    pesados: dict[tuple[str, str], list] = {}  # (marca, estado) → [hojas, kg]
+    pesados: dict[tuple[str, str, tuple[str, ...]], list] = {}  # (marca, estado, dudas) → …
     sin: dict[tuple[str, tuple[str, ...]], list[str]] = {}
     for e in modelo.elementos:
         if e.familia not in _FAMILIAS_CON_ACERO or e.detection_id in en_lineas:
@@ -513,14 +513,16 @@ def _fuera_del_presupuesto(
         if acero is None:
             sin.setdefault((marca, tuple(motivos_por_leer(e))), []).append(e.hoja)
             continue
-        hojas_kg = pesados.setdefault((marca, _estado(acero)), [[], 0.0])
+        dudas = tuple(dict.fromkeys(acero.por_confirmar))
+        hojas_kg = pesados.setdefault((marca, _estado(acero), dudas), [[], 0.0])
         hojas_kg[0].append(e.hoja)
         hojas_kg[1] += acero.total_kg() * waste
     if not pesados and not sin:
         return None
     partes = [
         f"{marca} ({_pzas(len(hojas))}) en {_hojas(hojas)}: {kg:,.1f} kg{estado}"
-        for (marca, estado), (hojas, kg) in sorted(pesados.items())
+        + (f"; por confirmar: {'; '.join(dudas)}" if dudas else "")
+        for (marca, estado, dudas), (hojas, kg) in sorted(pesados.items())
     ] + [
         f"{marca} ({_pzas(len(hojas))}) en {_hojas(hojas)}, sin acero: " + "; ".join(motivos)
         for (marca, motivos), hojas in sorted(sin.items())

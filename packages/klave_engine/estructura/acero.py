@@ -300,7 +300,8 @@ def _de_la_fuente(campo: str, dato: Dato | None, por_confirmar: list[str]) -> No
     if dato is None:
         return
     if dato.fuente == "supuesto":
-        por_confirmar.append(f"{campo} supuesto: {dato.texto}" if dato.texto else campo)
+        adjetivo = "supuesta" if campo in ("sección", "altura", "longitud") else "supuestos"
+        por_confirmar.append(f"{campo} {adjetivo}: {dato.texto}" if dato.texto else campo)
     elif dato.fuente == "ia":
         por_confirmar.append(f"{campo} de la IA, por confirmar: {dato.texto}")
     if dato.en_conflicto:
@@ -400,8 +401,13 @@ def _recubrimiento(e: Elemento, reglas: Reglas, salida: AceroElemento) -> float 
         if rango is not None and rango[1].replace(",", ".") != rango[2].replace(",", "."):
             salida.supuestos.append(
                 f"supuesto: recubrimiento {valor * 100:.1f} cm, el mínimo de «{rango[0].upper()}»"
-                " (la nota da un rango; la sección dibujada no lo acota)"
+                " (la nota da un rango; no se tomó un recubrimiento dibujado de su hoja)"
             )
+        # R216: lo que el plano acota y no se tomó (una sola esquina, otra hoja, fuera de la nota)
+        # queda por confirmar, con el valor que se usa.
+        for aviso in e.avisos:
+            if aviso.startswith("recubrimiento"):
+                salida.por_confirmar.append(f"{aviso} ({valor * 100:g} cm), por confirmar")
         if dato.en_conflicto:
             otros = sorted({f"{float(a.valor) * 100:g}" for a in dato.alternativas
                             if _numero(a.valor) is not None and a.valor != dato.valor})  # fmt: skip
@@ -436,8 +442,9 @@ def _estribos(
             if e.estribos is not None and e.estribos.ilegible
             else None
         )
-        if motivo is None and e.estribos is None:
-            # R215: ni estribos ni texto suyo sin leer: el plano no los declara.
+        if motivo is None and e.estribos is None and sum(g.cantidad for g in grupos) == 1:
+            # R215, R219: una sola varilla sin estribos ni texto suyo sin leer (la forma de un
+            # castillo ahogado): el plano no los declara. Cualquier otro sigue «por leer».
             salida.sin_estribos_declarados = True
             return
         salida.por_leer.append(motivo or "estribos: el plano no los declara")
@@ -461,8 +468,18 @@ def _estribos(
     primer_dato = reglas.primer_estribo_m.get(e.familia)
     primer = _numero(primer_dato.valor) if primer_dato is not None else None
     extremos_dichos = False
+    por_que = e.seccion_cm.texto if e.seccion_cm is not None else ""
+    supuesta = e.seccion_cm is not None and e.seccion_cm.fuente == "supuesto"
     for juego in juegos:
         nombre = _nombre_juego(juego)
+        if supuesta and (juego.cantidad > 1 or any(z.tramo != "todo" for z in juego.zonas)):
+            # R214, R217: un juego de varias piezas o por zonas no se pesa sobre una sección que
+            # el plano no da (sus piezas y sus extremos dependen de ella).
+            salida.por_leer.append(
+                f"estribos {nombre}: no se pesan sobre una sección supuesta "
+                f"({lados[0]:g}x{lados[1]:g} cm: {por_que})"
+            )
+            continue
         (j,), avisos = asignar_formas([juego], grupos)
         if not j.formas:
             salida.por_leer.append(f"estribos {nombre}: " + (avisos[0] if avisos else "sin formas"))

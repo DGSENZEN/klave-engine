@@ -207,6 +207,9 @@ class ElementSpec(BaseModel):
     # R212: the cover (cm) its own drawn section dimensions at its corners (the diagonal cotas from
     # the outline's corner to the stirrup's, all the same value): it beats a note's range.
     recubrimiento_cm: float | None = None
+    # R216: what its drawn section dimensions as a cover without being taken («acota 5 cm en una
+    # sola esquina leída»): said downstream, never silent.
+    recubrimiento_sin_tomar: str | None = None
 
 
 class TextoConMarca(BaseModel):
@@ -2193,18 +2196,35 @@ _DIAGONAL = 2.0
 
 
 def _recubrimiento_dibujado(
-    contorno: _Contorno, dims: list[NormalizedEntity], tol: float, unit_to_m: float
-) -> tuple[float | None, list[str]]:
-    """R212: the cover a section's own drawing dimensions: the cotas from one of the outline's
-    corners to the stirrup's corner inside it (the other definition point inside the section,
-    off the corner about as much in x as in y), each of a cover's size; Marina measures them
-    along x and along y at each corner, drawn on the diagonal. At least two, and all the same
-    value: then it is the section's cover. One alone, or two that differ, is said and not taken
-    (a cover read wrong is worse than the note's). A side's cota has both points on the outline:
-    never a cover."""
+    contorno: _Contorno,
+    dims: list[NormalizedEntity],
+    segmentos: Collection[NormalizedEntity],
+    tol: float,
+    unit_to_m: float,
+    lado_menor_cm: float,
+) -> tuple[float | None, list[str], str | None]:
+    """R212, R218: the cover a section's own drawing dimensions: the cotas from one of the
+    outline's corners to a stirrup's corner inside it — the other definition point is a vertex of
+    a drawn segment inside the section (never a bar's centre or any interior point), off the corner
+    about as much in x as in y and less than half the section; Marina measures them along x and
+    along y at each corner, drawn on the diagonal. Its value is a cover's (below a quarter of the
+    section's short side: a «10» from a corner is a bar spacing, not a cover). At least two, and
+    all the same value: then it is the section's cover. One alone, two that differ, or cotas that
+    are not covers are said and not taken (a cover read wrong is worse than the note's). Returns
+    the cover, the avisos, and what the drawing dimensions without being taken (said downstream).
+    A side's cota has both points on the outline: never a cover."""
     x0, y0, x1, y1 = contorno.caja
     esquinas = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)]
+    vertices = [
+        (float(px), float(py))
+        for sg in segmentos
+        if sg.bbox[2] >= x0 and sg.bbox[0] <= x1 and sg.bbox[3] >= y0 and sg.bbox[1] <= y1
+        for px, py, *_ in (sg.points or [])
+        if x0 + tol < px < x1 - tol and y0 + tol < py < y1 - tol
+    ]
     valores: list[float] = []
+    sin_estribo: list[float] = []
+    grandes: list[float] = []
     for d in dims:
         dx0, dy0, dx1, dy1 = d.bbox
         if dx1 < x0 - tol or dx0 > x1 + tol or dy1 < y0 - tol or dy0 > y1 + tol:
@@ -2216,28 +2236,51 @@ def _recubrimiento_dibujado(
         for esquina, adentro in ((p, q), (q, p)):
             if not any(math.dist(esquina, c) <= tol for c in esquinas):
                 continue
-            if not (x0 + tol < adentro[0] < x1 - tol and y0 + tol < adentro[1] < y1 - tol):
-                continue
+            # (inside the section: ``vertices`` holds only the drawn vertices inside it)
             ax, ay = abs(adentro[0] - esquina[0]), abs(adentro[1] - esquina[1])
             if ay <= 0 or not 1 / _DIAGONAL <= ax / ay <= _DIAGONAL:
                 continue
             if ax > (x1 - x0) / 2 or ay > (y1 - y0) / 2:
                 continue
             valor = _cota_cm(d, unit_to_m)
-            if valor is not None and _RECUBRIMIENTO_CM[0] <= valor <= _RECUBRIMIENTO_CM[1]:
+            if valor is None or not _RECUBRIMIENTO_CM[0] <= valor <= _RECUBRIMIENTO_CM[1]:
+                break
+            if not any(math.dist(adentro, v) <= tol for v in vertices):
+                sin_estribo.append(valor)
+            elif valor >= lado_menor_cm / 4:
+                grandes.append(valor)
+            else:
                 valores.append(valor)
             break
+    avisos: list[str] = []
+    dichos: list[str] = []
+    if sin_estribo:
+        cifras = ", ".join(f"{v:g}" for v in sorted(set(sin_estribo)))
+        avisos.append(
+            f"recubrimiento: su sección acota {cifras} cm de una esquina a un punto que no es la "
+            "esquina de un estribo dibujado: no es un recubrimiento, no se toma"
+        )
+        dichos.append(f"acota {cifras} cm de una esquina a un punto que no es un estribo")
+    if grandes:
+        cifras = ", ".join(f"{v:g}" for v in sorted(set(grandes)))
+        avisos.append(
+            f"recubrimiento: su sección acota {cifras} cm en una esquina, un cuarto o más de su "
+            f"lado menor ({lado_menor_cm:g} cm): no es un recubrimiento, no se toma"
+        )
+        dichos.append(f"acota {cifras} cm en una esquina, un cuarto o más de su lado menor")
     if not valores:
-        return None, []
+        return None, avisos, "; ".join(dichos) or None
     distintos = sorted(set(valores))
     if len(distintos) > 1:
         cifras = ", ".join(f"{v:g}" for v in distintos)
-        return None, [f"recubrimiento: su sección acota recubrimientos distintos ({cifras}) "
-                      "en sus esquinas: no se toma"]  # fmt: skip
+        avisos.append(f"recubrimiento: su sección acota recubrimientos distintos ({cifras}) "
+                      "en sus esquinas: no se toma")  # fmt: skip
+        return None, avisos, f"acota recubrimientos distintos ({cifras} cm) en sus esquinas"
     if len(valores) < 2:
-        return None, [f"recubrimiento: su sección acota {valores[0]:g} cm en una sola esquina: "
-                      "no se toma"]  # fmt: skip
-    return valores[0], []
+        avisos.append(f"recubrimiento: su sección acota {valores[0]:g} cm en una sola esquina: "
+                      "no se toma")  # fmt: skip
+        return None, avisos, f"acota {valores[0]:g} cm en una sola esquina leída"
+    return valores[0], avisos, None
 
 
 def _lado(
@@ -3341,6 +3384,7 @@ def _leer_secciones(
             rechazos,
             alto,
             leida_a_escala=e.texto.entity_id in dibujadas,
+            segmentos=segmentos,
         )
     if reclamadas is not None:
         # R158: a title whose section is claimed with no drawing it owns («no se encontró», the
@@ -3516,8 +3560,10 @@ def _seccion_de_etiqueta(
     rechazos: list[Rechazo] | None,
     alto: float,
     leida_a_escala: bool = False,
+    segmentos: Collection[NormalizedEntity] = (),
 ) -> list[ElementSpec]:
-    """The readings of one label's section (see ``_sections_from_detail_cotas``)."""
+    """The readings of one label's section (see ``_sections_from_detail_cotas``); ``segmentos``
+    are the drawn lines near it (a cover cota ends at a stirrup's corner, R218)."""
     family = family_of_mark(e.marca)
     tol = _SOBRE_ARISTA * e.alto
 
@@ -3605,12 +3651,15 @@ def _seccion_de_etiqueta(
         peralte = None
     if ancho is not None and peralte is not None:
         section = (_cm(ancho), _cm(peralte))
-        recubrimiento, de_recubrimiento = _recubrimiento_dibujado(propio, dims, tol, unit_to_m)
+        recubrimiento, de_recubrimiento, sin_tomar = _recubrimiento_dibujado(
+            propio, dims, segmentos, tol, unit_to_m, float(min(ancho, peralte))
+        )
         lectura = _lectura_de_cotas(
             e, sheet, section, [*avisos, *de_recubrimiento],
             f"cotas de su sección {section[0]}x{section[1]}",
         )  # fmt: skip
         lectura.recubrimiento_cm = recubrimiento
+        lectura.recubrimiento_sin_tomar = sin_tomar
         salida = [lectura]
         # The outline's own proportions corroborate the cotas: at the scale that best fits both,
         # each drawn side within 2 cm or 10 % (R112). If not, the section as drawn is a reading too.
