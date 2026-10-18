@@ -503,6 +503,16 @@ def test_a_sweep_of_detail_grids():
 # ------------------------------------------------- R189: la rejilla de detalles
 
 
+@pytest.mark.parametrize("semilla", [7626, 22353, 31203])
+def test_the_grid_seeds_a_drawings_text_hid_from_a_section_are_whole(semilla):
+    # R203 (en rojo si un texto del dibujo de una sección le tapara a otra lo que disputa): en la
+    # 7626, «EYG#3@15 EN TODA LA ALTURA», sobre la esquina de la caja de K-2, le tapaba a K-1 el
+    # «E#2@15» de su pila (del lado de su título), y K-5 lo leía; la 22353 y la 31203, lo mismo.
+    leidas = _lee_la_rejilla(semilla)
+    assert leidas is not None
+    assert all(entera for _marca, _textos, entera in leidas), leidas
+
+
 def _rejilla_de_detalles(semilla):
     """R189: filas y columnas de detalles titulados al alcance de Marina: cada sección de lado
     menor 0.5–2.5, su pila de 1 a 4 renglones debajo (o, uno de cada cuatro, encima) a 0.02–0.9
