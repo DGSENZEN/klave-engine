@@ -381,15 +381,16 @@ def test_7_pile_length_quotes_what_the_notes_say():
     assert "MECANICA DE SUELOS" in f.mensaje and nota.raw_handle in f.mensaje
 
 
-def _cota_escrita(eid, valor, x, y, handle):
+def _cota_escrita(eid, valor, x, y, handle, angulo=None, ancho=0.6, alto=0.1):
     return NormalizedEntity(
         entity_id=eid,
         entity_type=EntityType.dimension,
         source_file="a.dxf",
         layer="COTAS",
-        bbox=(x, y, x + 0.6, y + 0.1),
+        bbox=(x, y, x + ancho, y + alto),
         raw_handle=handle,
-        properties={"display_value": float(valor), "display_text": f"{valor:g}"},
+        properties={"display_value": float(valor), "display_text": f"{valor:g}"}
+        | ({"angle": angulo} if angulo is not None else {}),
         evidence=EvidencePacket(source="a.dxf", method="t"),
     )
 
@@ -402,13 +403,16 @@ def test_7_supuesto_section_is_a_duda_and_says_the_drawn_cotas_near_its_title():
     ilegible.entidades = ["ent_tit"]
     d = _defn("CTA-11", "contratrabe", seccion_cm=ilegible)
     cotas = [
-        _cota_escrita("ent_70", 70, 0.2, -0.3, "36CA1"),
-        _cota_escrita("ent_25", 25, 1.2, -0.5, "36C9E"),
+        _cota_escrita("ent_70", 70, -0.7, -2.9, "36CA1", angulo=270, ancho=0.6, alto=2.9),
+        _cota_escrita("ent_25", 25, -0.1, -2.5, "36C9E", angulo=180, ancho=1.1, alto=0.3),
+        # beside, outside the section's x span: another piece's cota
+        _cota_escrita("ent_60", 60, 1.9, -2.4, "CFC1D", angulo=180, ancho=1.0, alto=0.3),
         _cota_escrita("ent_lejos", 41.5516, 30, 30, "LEJOS"),  # far away: not cited
     ]
     f = _one(_run(elementos=[el], defs={"CTA-11": d}, entities=[titulo, *cotas]), 7)
     assert f.severidad == "duda" and "25x50" in f.mensaje
     assert "«70» 36CA1" in f.mensaje and "«25» 36C9E" in f.mensaje and "LEJOS" not in f.mensaje
+    assert "CFC1D" not in f.mensaje
     assert "no coincide" in f.mensaje and "41.5516" not in f.mensaje
 
 
@@ -1141,42 +1145,176 @@ def test_7_pile_length_unknown_is_labelled():
     assert f.cantidad == "desconocida" and "Cantidad desconocida: 1 pieza" in f.mensaje
 
 
-def _muro(eid, x0, y0, x1, y1, handle):
+def _achurado(handle, x0, y0, x1, y1, huecos=(), dy=0.0):
+    """A wall-concrete hatch region: a box, minus box holes; ``dy`` shifts it (a planta copy)."""
+
+    def caja(a, b, c, d):
+        return [(a, b + dy), (c, b + dy), (c, d + dy), (a, d + dy)]
+
+    anillos = [caja(x0, y0, x1, y1), *(caja(*h) for h in huecos)]
     return NormalizedEntity(
-        entity_id=eid,
-        entity_type=EntityType.polyline,
+        entity_id=f"ent_{handle}",
+        entity_type=EntityType.hatch,
         source_file="a.dxf",
         layer="EST-MURO CONCRETO",
-        bbox=(min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)),
-        points=[(x0, y0), (x1, y1)],
+        bbox=(x0, y0 + dy, x1, y1 + dy),
+        points=anillos[0],
         raw_handle=handle,
-        properties={},
+        properties={"pattern_name": "ANSI31", "closed": True}
+        | ({"anillos": anillos} if huecos else {}),
         evidence=EvidencePacket(source="a.dxf", method="t"),
     )
 
 
-def test_10_a_wall_without_element_is_estimated_from_its_drawn_face_and_storey():
-    texto = _en_capa(_texto("MC-1", 1, 0.05, h=0.1), "EST-MURO CONCRETO")
-    caras = [
-        _muro("cara1", 0, 0, 10, 0, "F1"),
-        _muro("rayado", 0, -0.004, 10, -0.004, "F3"),  # a hatch line is not the other face
-        _muro("cara2", 0, 0.3, 10, 0.3, "F2"),
-    ]
-    seg = _seg(vistas=("v_pa", "v_up"), niveles={"v_pa": 0.0, "v_up": 3.0})
-    seg.views[1].bbox = (500, 500, 600, 600)
-    frames = [
-        SheetFrame(frame_id="v_pa", bbox=(-100, -100, 100, 100), source_file="a.dxf", code="ES-000")
-    ]
-    v = _run(
-        defs={"MC-1": _defn("MC-1", "muro_concreto")},
-        entities=[texto, *caras],
-        seg=seg,
-        frames=frames,
+def _rotulo(marca, x, y):
+    return _en_capa(_texto(marca, x, y, h=0.1), "EST-MURO CONCRETO")
+
+
+def _plantas_de_muros():
+    """Three plantas at +0, +3, +6.5: each its own box, 1000 apart in y."""
+    seg = _seg(vistas=("v0", "v1", "v2"), niveles={"v0": 0.0, "v1": 3.0, "v2": 6.5})
+    for k, v in enumerate(seg.views[:3]):
+        v.bbox = (-100, 1000 * k - 100, 100, 1000 * k + 100)
+    return seg
+
+
+def _muros(*entidades, defs=("MC-1",)):
+    return _run(
+        defs={m: _defn(m, "muro_concreto") for m in defs},
+        entities=list(entidades),
+        seg=_plantas_de_muros(),
     )
-    f = _one(v, 10)
-    assert f.cantidad == "estimada" and "Estimado" in f.mensaje
-    assert f.en_juego["longitud_estimada_m"] == pytest.approx(10.0)
-    assert f.en_juego["concreto_m3"] == pytest.approx(10.0 * 0.3 * 3.0)
+
+
+def _de(v, marca):
+    return next(x for x in v if x.numero == 10 and x.marcas == [marca])
+
+
+def test_10_a_wall_bound_is_its_hatched_area_times_both_storey_readings():
+    # 10 x 0.3 hatched on the +3 planta (v1): A (up to +6.5) 3.5 m, B (down to +0) 3 m.
+    losa = _achurado("L1", 20, 1000, 30, 1010).model_copy(update={"layer": "EST-LOSA MACIZA"})
+    v = _muros(_achurado("H1", 0, 1000, 10, 1000.3), _rotulo("MC-1", 1, 1000.1), losa)
+    f = _de(v, "MC-1")
+    assert f.cantidad == "estimada" and "3.00 m² suyos (H1)" in f.mensaje
+    assert "(de 3.00 m² achurados ahí)" in f.mensaje  # a slab hatch is no wall
+    assert "(A) cada planta sube desde su losa (V1 3.5 m): a lo más 10.50 m³" in f.mensaje
+    assert "(B) cada planta está bajo su losa (V1 3 m): a lo más 9.00 m³" in f.mensaje
+    assert f.en_juego["volumen_m3"] == pytest.approx(10.5) and "concreto_m3" not in f.en_juego
+
+
+def test_10_a_hatched_region_two_marks_label_is_said_jointly_and_counted_once():
+    v = _muros(
+        _achurado("H1", 0, 1000, 10, 1000.3),
+        _rotulo("MC-1", 1, 1000.1),
+        _rotulo("MC-1", 2, 1000.1),  # two texts of a mark on one region: the region once
+        _rotulo("MC-3", 8, 1000.1),
+        defs=("MC-1", "MC-3"),
+    )
+    for marca in ("MC-1", "MC-3"):
+        f = _de(v, marca)
+        assert "MC-1/MC-3: 3.00 m² (H1), que se cuentan una vez para todas" in f.mensaje
+        assert "suyos" not in f.mensaje
+        assert f.en_juego["area_planta_m2"] == pytest.approx(3.0)
+
+
+def test_10_the_same_walls_drawn_on_two_plantas_are_counted_per_reading():
+    # v0 (+0) and v1 (+3) draw the same wall: A counts both (3 and 3.5 m), B only v1 (3 m).
+    v = _muros(
+        _achurado("H0", 0, 0, 10, 0.3),
+        _achurado("H1", 0, 0, 10, 0.3, dy=1000),
+        _rotulo("MC-1", 1, 0.1),
+        _rotulo("MC-1", 1, 1000.1),
+    )
+    f = _de(v, "MC-1")
+    assert f.mensaje.count("(de 3.00 m² achurados ahí)") == 2  # each planta its own hatch
+    assert "(V0 3 m, V1 3.5 m): a lo más 19.50 m³" in f.mensaje
+    assert "(V0 no se cuenta, V1 3 m): a lo más 9.00 m³" in f.mensaje
+
+
+def test_10_a_hole_is_subtracted_and_a_planta_never_counts_more_than_it_hatches():
+    anillo = _achurado("H1", 0, 1000, 4, 1004, huecos=[(0.2, 1000.2, 3.8, 1003.8)])
+    v = _muros(anillo, _rotulo("MC-A", 0.05, 1002), defs=("MC-A",))
+    f = _de(v, "MC-A")
+    assert f.en_juego["area_planta_m2"] == pytest.approx(16 - 3.6 * 3.6)
+    assert f"de {16 - 3.6 * 3.6:.2f} m² achurados ahí" in f.mensaje
+    # a text inside the hole is not on the wall
+    v2 = _muros(anillo, _rotulo("MC-A", 2, 1002), defs=("MC-A",))
+    assert _de(v2, "MC-A").cantidad == "desconocida"
+
+
+def test_10_a_wall_text_off_every_region_with_unowned_hatch_is_unknown():
+    regiones = [_achurado("H1", 0, 1000, 10, 1000.3), _achurado("H2", 0, 1005, 10, 1005.3)]
+    lejos = _rotulo("MC-1", 1, 1003)  # between them, on neither; H2 has no owner
+    f = _de(_muros(*regiones, _rotulo("MC-1", 1, 1000.1), lejos), "MC-1")
+    assert f.cantidad == "desconocida" and "Cantidad desconocida" in f.mensaje
+    assert "volumen_m3" not in f.en_juego
+    # when every region of the planta has an owner, the stray text adds nothing: still a bound
+    f2 = _de(
+        _muros(
+            *regiones,
+            _rotulo("MC-1", 1, 1000.1),
+            _rotulo("MC-3", 1, 1005.1),
+            lejos,
+            defs=("MC-1", "MC-3"),
+        ),
+        "MC-1",
+    )
+    assert (
+        f2.cantidad == "estimada" and "toda región achurada de su planta ya la toma" in f2.mensaje
+    )
+
+
+def test_estimated_and_unknown_findings_never_rank_above_big_known_ones():
+    from klave_engine.estructura.verificaciones import ordenar
+
+    totales = {"acero_kg": 1000.0, "concreto_m3": 100.0}
+    conocida = Verificacion(
+        id="a", numero=8, severidad="duda", mensaje="", en_juego={"concreto_m3": 2.0}
+    )
+    cota = Verificacion(
+        id="b",
+        numero=10,
+        severidad="duda",
+        mensaje="",
+        en_juego={"volumen_m3": 40.0},
+        cantidad="estimada",
+    )
+    assert [v.id for v in ordenar([cota, conocida], totales)] == ["a", "b"]
+
+
+def test_unknown_findings_sort_by_size_never_by_how_many_texts_they_cite():
+    from klave_engine.estructura.verificaciones import ordenar
+
+    pilotes = Verificacion(
+        id="p",
+        numero=7,
+        severidad="bloquea",
+        mensaje="",
+        en_juego={"piezas": 3.0, "concreto_por_metro_m3": 0.27},
+        cantidad="desconocida",
+    )
+    viga = Verificacion(
+        id="t",
+        numero=7,
+        severidad="bloquea",
+        mensaje="",
+        textos=[f"H{i}" for i in range(12)],
+        en_juego={"piezas": 1.0, "volumen_m3": 0.036},
+        cantidad="desconocida",
+    )
+    assert [v.id for v in ordenar([viga, pilotes], {"concreto_m3": 100.0})] == ["p", "t"]
+
+
+def test_7_a_pile_without_length_carries_its_concrete_per_metre():
+    pilote = _el("P-1", "pilote", longitud=None, seccion=_dato((30, 30)))
+    f = next(
+        x
+        for x in _run(
+            elementos=[pilote, pilote.model_copy(update={"element_id": "x"})], defs=["P-1"]
+        )
+        if x.campo == "longitud_m"
+    )
+    assert f.en_juego["concreto_por_metro_m3"] == pytest.approx(2 * 0.09)
 
 
 def test_11_what_check_7_already_lists_folds_into_it_one_finding_per_mark():
@@ -1342,14 +1480,31 @@ def test_the_top_planta_height_and_the_storey_contradiction_name_each_other():
 
 
 def test_10_a_name_alone_on_the_details_layer_is_a_drawn_title():
+    # A bare name heading its armado stack defines; a bare callout only names.
     titulo = _en_capa(_texto("D-C", 250, 250, handle="D0C01"), "EST-DETALLES")
-    v = _run(**_planta_y_detalle(_texto("D-C", 1, 1), titulo))
-    assert "El plano la define en ES-302 (D0C01)" in _one(v, 10).mensaje
+    pila = _en_capa(_texto("6#3", 250, 249, handle="D0C05"), "EST-DETALLES")
+    v = _run(**_planta_y_detalle(_texto("D-C", 1, 1), titulo, pila))
+    assert "El plano la define en ES-302 (D0C01, con «6#3» D0C05)" in _one(v, 10).mensaje
+    llamada = _one(_run(**_planta_y_detalle(_texto("D-C", 1, 1), titulo)), 10).mensaje
+    assert "El plano no la define: sólo la nombra en ES-302 (D0C01)" in llamada
+    lejos = _en_capa(_texto("6#3", 250, 247), "EST-DETALLES")  # 30 heights below: not its stack
+    al_lado = _en_capa(_texto("6#3", 252, 249), "EST-DETALLES")  # out of its column
+    for otro in (lejos, al_lado):
+        m = _one(_run(**_planta_y_detalle(_texto("D-C", 1, 1), titulo, otro)), 10).mensaje
+        assert "sólo la nombra" in m
+    # a titled drawing defines; a bare callout elsewhere is said apart
+    dado = _texto("DADO D-C", 260, 260, handle="D0C09")
+    ambos = _one(_run(**_planta_y_detalle(_texto("D-C", 1, 1), titulo, dado)), 10).mensaje
+    assert "define en ES-302 (D0C09)" in ambos and "La nombra también en ES-302 (D0C01)" in ambos
+    assert not _all(_run(**_planta_y_detalle(titulo)), 2)  # a callout alone is no definition
     # A name on the details layer inside the planta can be a placement's label («MC-1 20CM»): it
-    # is written in planta, and never cited as its own title.
+    # is written in planta, and never cited as its own callout; a stack there is its definition.
     dentro = _en_capa(_texto("D-C", 5, 5, handle="D0C02"), "EST-DETALLES")
     f_dentro = _one(_run(**_planta_y_detalle(dentro)), 10)
     assert "ningún dibujo la titula" in f_dentro.mensaje and "(D0C02)" not in f_dentro.mensaje
+    con_pila = _en_capa(_texto("6#3", 5, 4, handle="D0C06"), "EST-DETALLES")
+    f_pila = _one(_run(**_planta_y_detalle(dentro, con_pila)), 10)
+    assert "El plano la define en ES-300 (D0C02, con «6#3» D0C06)" in f_pila.mensaje
     # The same text off a details layer titles nothing: the grammar alone does not take «D-C».
     sin_capa = _texto("D-C", 250, 250, handle="D0C01")
     assert not _all(_run(**_planta_y_detalle(_texto("D-C", 1, 1), sin_capa)), 10)
@@ -1360,8 +1515,11 @@ def test_2_words_and_references_are_not_drawn_names():
         _texto("MURO BAJO", 250, 250),
         _texto("PILOTE NO", 250, 255),
         _en_capa(_texto("DET-MB", 250, 260), "EST-DETALLES"),
+        _en_capa(_texto("2#3", 250, 259.5), "EST-DETALLES"),  # even over a stack
     ]
     assert not _all(_run(**_planta_y_detalle(*textos)), 2)
+    # a reference written in planta is never a mark written without element
+    assert not _all(_run(**_planta_y_detalle(*textos, _texto("DET-MB", 1, 1))), 10)
 
 
 def test_2_a_bare_name_takes_the_class_of_its_titled_drawing():
@@ -1374,6 +1532,7 @@ def test_2_a_name_of_the_rib_letters_titled_alone_is_of_the_slab():
     textos = [
         _en_capa(_texto("X0", 1, 1), "EST-LOSA NERVADA"),
         _en_capa(_texto("X1", 250, 250), "EST-DETALLES"),
+        _en_capa(_texto("2#3", 250, 249.5), "EST-DETALLES"),  # it heads a stack: it defines
     ]
     v = _run(**_planta_y_detalle(*textos))
     assert not _all(v, 2) and _con(v, 10, "losa nervada")
@@ -1414,6 +1573,25 @@ def test_rib_marks_are_named_as_written_and_block_texts_by_their_insert():
     assert f.textos == ["A7A6D"] and "#199" not in f.mensaje
 
 
+def test_7_each_cut_cites_its_own_cut_title_before_the_callout_naming_both():
+    llamada = _dato(
+        (30, 70),
+        hoja="ES-003",
+        texto="CTA-5 · sección 1 30x60, sección 2 30x70 (se toma la mayor)",
+        entidades=["t1"],
+    )
+    corte70 = _dato((30, 70), hoja="ES-003", texto="CTA-5 · cotas", entidades=["t2"])
+    corte60 = _dato((30, 60), hoja="ES-003", texto="CTA-5 · cotas", entidades=["t1"])
+    defs = {"CTA-5": _defn("CTA-5", "contratrabe", seccion_cm=elegir([llamada, corte70, corte60]))}
+    titulos = [
+        _texto("CTA-5", 0, 0, eid="t1", handle="CCD2C"),
+        _texto("CTA-5", 9, 0, eid="t2", handle="366AA"),
+    ]
+    els = [_el("CTA-5", "contratrabe", seccion=_dato((30, 70), hoja="ES-003"))]
+    f = _con(_run(elementos=els, defs=defs, entities=titulos), 7, "dos secciones")[0]
+    assert "30x70 cm (título 366AA)" in f.mensaje and "30x60 cm (título CCD2C)" in f.mensaje
+
+
 def test_7_two_cuts_one_title_writes_cite_it_once():
     corte1 = _dato((30, 70), hoja="ES-003", texto="CTA-5 · sección 1 30x70", entidades=["t1"])
     corte2 = _dato((30, 60), hoja="ES-003", texto="CTA-5 · sección 2 30x60", entidades=["t1"])
@@ -1435,3 +1613,72 @@ def test_10_a_sheet_without_frames_is_named_by_its_file_not_its_folder():
     defs = {"K-50": _defn("K-50", hojas=("drawings/Plano Prueba 1.dxf",))}
     f = _one(_run(defs=defs, entities=[texto], seg=_seg()), 10)
     assert "Plano Prueba 1.dxf: una vez" in f.mensaje and "drawings/" not in f.mensaje
+    acero = _run(entities=[_texto("IPR", 1, 1, archivo="drawings/Plano Prueba 1.dxf")], seg=_seg())
+    assert "(Plano Prueba 1.dxf)" in _one(acero, 10).mensaje
+
+
+def test_what_check_11_says_of_a_rib_mark_folds_into_its_family_aviso():
+    d = _defn("Z1", "zapata")  # the reading names it as written: «Z1», the rib mark «Z-1»
+    d.avisos = ["sin leer: «@1S»"]
+    nervadura = _en_capa(_texto("Z1", 1, 1, handle="B2D7B"), "EST-LOSA NERVADA")
+    v = _run(defs={"Z1": d}, **_planta_y_detalle(nervadura))
+    assert not [x for x in v if x.numero == 11 and "Z1" in x.marcas]
+    aviso = _con(v, 10, "losa nervada")[0]
+    assert (
+        aviso.severidad == "aviso" and "Además, de Z1" in aviso.mensaje and "@1S" in aviso.mensaje
+    )
+
+
+def test_an_ai_only_field_of_a_mark_written_without_element_folds_into_check_10():
+    ia = _dato(
+        [Parrilla(numero="4", separacion_m=0.18, lecho="unico", sentidos=None)], "ia", "ES-302"
+    )
+    defs = {"D-4A": Definicion(marca="D-4A", familia="dado", parrillas=ia)}
+    v = _run(defs=defs, **_planta_y_detalle(_texto("D-4A", 1, 1), _texto("DADO D-4A", 250, 250)))
+    assert not _all(v, 11)
+    assert "sólo la lectura IA dice" in _one(v, 10).mensaje
+
+
+def test_10_a_detail_callout_on_the_connections_layer_is_cited_apart_and_stairs_get_an_aviso():
+    textos = [
+        _en_capa(_texto("CN-A", 1, 1), "EST-CONEXIONES"),
+        _en_capa(_texto("DET-MB", 3, 1, handle="B3C63"), "EST-CONEXIONES"),
+        _en_capa(_texto("TORNILLOS A325", 5, 1, handle="B3C70"), "EST-CONEXIONES"),
+        _texto("VIGA METÁLICA DE ESCALERA", 250, 250, handle="D7DA0"),
+        _texto("CORTE R1-R1' ARMADO DE ESCALERA DE ACCESO PRINCIPAL", 250, 260, handle="E3738"),
+    ]
+    v = _run(**_planta_y_detalle(*textos))
+    cn = _con(v, 10, "conexiones")[0]
+    assert "Remite a sus detalles: «DET-MB» B3C63" in cn.mensaje
+    assert "en planta «CN-A»" in cn.mensaje and "en planta «DET-MB»" not in cn.mensaje
+    assert "«TORNILLOS A325» B3C70" in cn.mensaje  # what its layer writes is of the connections
+    escaleras = _con(v, 10, "Escaleras fuera de esta lectura")[0]
+    assert escaleras.severidad == "aviso" and {"D7DA0", "E3738"} <= set(escaleras.textos)
+
+
+def test_7_blocking_stirrups_of_a_pile_without_length_carry_its_concrete_per_metre():
+    pilote = _el(
+        "P-3",
+        "pilote",
+        longitud=None,
+        seccion=_dato((50, 50)),
+        estribos=_dato([JuegoEstribos(tipo="estribo", cantidad=1, numero="3")]),
+    )
+    f = next(x for x in _run(elementos=[pilote], defs=["P-3"]) if x.campo == "estribos")
+    assert f.severidad == "bloquea" and f.en_juego["concreto_por_metro_m3"] == pytest.approx(0.25)
+
+
+def test_a_wall_bound_and_the_storey_contradiction_name_each_other():
+    from klave_engine.estructura.verificaciones import _referencias_cruzadas, id_de_verificacion
+
+    entrepisos = Verificacion(
+        id=id_de_verificacion(8, "", "", "entrepisos"), numero=8, severidad="duda", mensaje="E."
+    )
+    muro = Verificacion(
+        id="m",
+        numero=10,
+        severidad="duda",
+        mensaje="Por su entrepiso, en las dos lecturas de los entrepisos: …",
+    )
+    salida = {v.id: v for v in _referencias_cruzadas([entrepisos, muro])}
+    assert entrepisos.id in salida["m"].mensaje

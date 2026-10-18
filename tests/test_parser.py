@@ -256,3 +256,24 @@ def test_multileader_becomes_its_lines_and_its_text(dxf_path):
     assert [t.text for t in textos] == ["K-1"]
     assert textos[0].properties["derived_from"] == "MULTILEADER"
     assert not [w for w in drawing.warnings if w.entity_type == "MULTILEADER"]
+
+
+def test_hatch_keeps_all_its_loops_so_holes_can_be_subtracted(dxf_path):
+    def build(doc):
+        msp = doc.modelspace()
+        anillo = msp.add_hatch(dxfattribs={"layer": "EST-MURO CONCRETO"})
+        anillo.paths.add_polyline_path([(0, 0), (10, 0), (10, 10), (0, 10)], is_closed=True)
+        anillo.paths.add_polyline_path([(2, 2), (8, 2), (8, 8), (2, 8)], is_closed=True)
+        solo = msp.add_hatch(dxfattribs={"layer": "EST-MURO CONCRETO"})
+        solo.paths.add_polyline_path([(20, 0), (21, 0), (21, 1), (20, 1)], is_closed=True)
+
+    entities = DxfParser().parse_file(dxf_path(build)).entities
+    hatches = sorted(
+        (e for e in entities if e.entity_type.value == "hatch"), key=lambda e: e.bbox[0]
+    )
+    anillo, solo = hatches
+    # the outline stays the largest loop; every loop is kept beside it
+    assert anillo.bbox == (0.0, 0.0, 10.0, 10.0)
+    assert len(anillo.properties["anillos"]) == 2
+    assert {len(r) >= 4 for r in anillo.properties["anillos"]} == {True}
+    assert "anillos" not in solo.properties  # one loop: its points say it all

@@ -157,27 +157,35 @@ def _hatch_boundary_points(entity: Any) -> list[Point]:
     AutoCAD writes for most slab and wall hatches) are flattened through
     ezdxf's path module. With several loops, the largest is the outline.
     """
-    try:
-        from ezdxf.path import make_path
-
-        full = make_path(entity)
-        extent = full.bbox()
-        tolerance = max(extent.size.x, extent.size.y, 1e-9) * 0.005
-        best: list[Point] = []
-        for sub in full.sub_paths():
-            ring = [(float(v.x), float(v.y)) for v in sub.flattening(tolerance)]
-            if len(ring) >= 3 and _shoelace(ring) > _shoelace(best):
-                best = ring
-        if best:
-            return best
-    except Exception:  # noqa: BLE001 — fall back to raw polyline vertices
-        pass
+    rings = _hatch_rings(entity)
+    if rings:
+        return max(rings, key=_shoelace)
     points: list[Point] = []
     for path in entity.paths:
         vertices = getattr(path, "vertices", None)
         if vertices:
             points.extend((float(v[0]), float(v[1])) for v in vertices)
     return points
+
+
+def _hatch_rings(entity: Any) -> list[list[Point]]:
+    """Every loop of a hatch as a flattened vertex ring (outlines and holes
+    alike; which is which follows from their nesting). Empty if ezdxf cannot
+    build its path."""
+    try:
+        from ezdxf.path import make_path
+
+        full = make_path(entity)
+        extent = full.bbox()
+        tolerance = max(extent.size.x, extent.size.y, 1e-9) * 0.005
+        rings = []
+        for sub in full.sub_paths():
+            ring = [(float(v.x), float(v.y)) for v in sub.flattening(tolerance)]
+            if len(ring) >= 3 and _shoelace(ring) > 0:
+                rings.append(ring)
+        return rings
+    except Exception:  # noqa: BLE001 — the caller falls back to raw vertices
+        return []
 
 
 def normalize_entity(
@@ -304,6 +312,12 @@ def normalize_entity(
             points = boundary
             properties["closed"] = True
             bbox = bbox_from_points(boundary)
+            rings = _hatch_rings(entity)
+            if len(rings) > 1:
+                # Every loop, so a reader can subtract the holes from the outlines.
+                properties["anillos"] = [
+                    [(round(x, 6), round(y, 6)) for x, y in ring] for ring in rings
+                ]
         else:
             bbox = _exact_bbox(entity)
             notes.append("Hatch boundary not extracted; bbox from ezdxf extents")

@@ -310,6 +310,7 @@ class _Contexto:
     _acero: dict[str, float] = field(default_factory=dict)
     deteccion: dict[str, Detection] = field(default_factory=dict)
     en_planta: set[str] | None = None
+    de_armado: list[NormalizedEntity] | None = None
 
     def __post_init__(self) -> None:
         self.deteccion = {d.detection_id: d for d in self.detections}
@@ -420,7 +421,45 @@ def verificar(
     criticos = _criticos(ctx)
     hallazgos += _contradicciones(ctx, ajenas)
     hallazgos += _juntar_por_marca(ctx, criticos, _sin_dueno(ctx), ajenas)
+    hallazgos = _plegar_en_su_hallazgo(hallazgos, nervadura, ctx.config)
     return ordenar(_referencias_cruzadas(hallazgos), _totales(ctx))
+
+
+def _plegar_en_su_hallazgo(
+    hallazgos: list[Verificacion],
+    nervadura: dict[str, list[NormalizedEntity]],
+    config: TextPatternConfig,
+) -> list[Verificacion]:
+    """R234: lo que la verificación 11 dice de una marca va en el hallazgo que ya la trata: el de
+    una marca de losa nervada («Z1», la marca «Z-1»), en el aviso de su familia (nunca un hallazgo
+    estructural); el de una marca escrita en planta sin elemento, en ese hallazgo de la
+    verificación 10."""
+    por_id = {v.id: i for i, v in enumerate(hallazgos)}
+    salida = list(hallazgos)
+    quitar: set[int] = set()
+    for i, v in enumerate(hallazgos):
+        if v.numero != 11 or len(v.marcas) < 1:
+            continue
+        base = v.marcas[0].split(" (", 1)[0]
+        if v.id != id_de_verificacion(11, base, "", ""):
+            continue  # sólo el hallazgo de una marca (no los de una hoja o una clase)
+        if base in nervadura or normalizar_marca(base, config) in nervadura:
+            letra = m.group(0) if (m := re.match(r"[A-Z]+", base)) else base
+            destino = por_id.get(id_de_verificacion(10, "", "", f"nervaduras: {letra}"))
+        else:
+            destino = por_id.get(id_de_verificacion(10, base, "", "escrita en planta sin elemento"))
+        if destino is None:
+            continue
+        w = salida[destino]
+        salida[destino] = w.model_copy(
+            update={
+                "mensaje": f"{w.mensaje} Además, de {base}: {v.mensaje}",
+                "textos": list(dict.fromkeys([*w.textos, *v.textos])),
+                "datos": [*w.datos, *v.datos][:8],
+            }
+        )
+        quitar.add(i)
+    return [v for i, v in enumerate(salida) if i not in quitar]
 
 
 def ordenar(
@@ -450,15 +489,27 @@ def ordenar(
 _PESO_GRANDE = 0.01
 
 
-def banda(v: Verificacion, totales: dict[str, float]) -> tuple[int, float]:
-    """(banda, orden dentro de ella) de un hallazgo por lo que está en juego: 0 lo que pesa al
-    menos ``_PESO_GRANDE``, 1 lo que no tiene cifra, 2 lo demás."""
-    p = peso(v, totales)
-    if p >= _PESO_GRANDE:
-        return (0, -p)
+def banda(v: Verificacion, totales: dict[str, float]) -> tuple[int, float, float]:
+    """(banda, orden dentro de ella, desempate) de un hallazgo por lo que está en juego: 0 lo que
+    se sabe y pesa al menos ``_PESO_GRANDE``; 1 lo que no tiene cifra (cantidad desconocida o una
+    cota medida, R227, R232), por su tamaño (``tamano``); 2 lo demás. Nunca por cuántos textos
+    cita."""
+    piezas = -v.en_juego.get("piezas", 0.0)
     if v.cantidad != "conocida":
-        return (1, -(v.en_juego.get("piezas", 0.0) + len(v.textos)) - p)
-    return (2, -p)
+        return (1, -tamano(v), piezas)
+    p = peso(v, totales)
+    return (0 if p >= _PESO_GRANDE else 2, -p, piezas)
+
+
+def tamano(v: Verificacion) -> float:
+    """R233: el tamaño de lo que no tiene cifra: el concreto de sus piezas (o la cota medida de un
+    muro); para lo que no tiene largo (los pilotes), su sección por las piezas, el concreto por
+    metro."""
+    return max(
+        v.en_juego.get("volumen_m3", 0.0),
+        v.en_juego.get("concreto_m3", 0.0),
+        v.en_juego.get("concreto_por_metro_m3", 0.0),
+    )
 
 
 def peso(v: Verificacion, totales: dict[str, float]) -> float:
@@ -913,6 +964,15 @@ class _Titulo:
     hoja: str
     clase: Literal["concreto", "acero", "nervadura"]
     familia: str = ""  # la de su palabra de familia («DADO D-2A»: dado), si la lleva
+    con_palabra: bool = True  # «DADO D-2A»; un nombre solo («D-C») no la lleva
+    pila: list[str] = field(default_factory=list)  # el armado que encabeza un nombre solo
+
+    @property
+    def define(self) -> bool:
+        """R234: un título con su palabra de familia, o un nombre solo que encabeza su pila de
+        armado («D-C» sobre «6#3», «E#2@15»), define; un nombre solo sin pila (una llamada en un
+        corte) sólo nombra."""
+        return self.con_palabra or bool(self.pila)
 
 
 def _en_planta(ctx: _Contexto, e: NormalizedEntity) -> bool:
@@ -987,8 +1047,35 @@ def _titulos_dibujados(ctx: _Contexto) -> dict[str, list[_Titulo]]:
             if clases == {"nervadura"}
             else "concreto"
         )
-        salida[nombre] += [_Titulo(e, ctx.hoja_de(e), de_ellos) for e in es]
+        salida[nombre] += [
+            _Titulo(e, ctx.hoja_de(e), de_ellos, con_palabra=False, pila=_pila_bajo(ctx, e))
+            for e in es
+        ]
     return salida
+
+
+# La pila de armado que encabeza un nombre solo: bajo él, en su columna, a lo más esto en altos.
+_ALCANCE_DE_SU_PILA = 15.0
+
+
+def _pila_bajo(ctx: _Contexto, titulo: NormalizedEntity) -> list[str]:
+    """El armado escrito bajo un nombre solo, en su columna (las citas, de arriba abajo)."""
+    if ctx.de_armado is None:
+        ctx.de_armado = [
+            e for e in ctx.entidades.values() if e.is_textual and e.text and tiene_armado(e.text)
+        ]
+    alto = alto_de_texto(titulo)
+    x0, y0, x1, _y1 = titulo.bbox
+    bajo = [
+        e
+        for e in ctx.de_armado
+        if e.source_file == titulo.source_file
+        and e.bbox[2] > x0 - alto
+        and e.bbox[0] < x1 + alto
+        and e.bbox[3] <= y0
+        and y0 - e.bbox[3] <= _ALCANCE_DE_SU_PILA * alto
+    ]
+    return [ctx.cita(e.entity_id) for e in sorted(bajo, key=lambda e: -e.bbox[3])[:4]]
 
 
 _FAMILIA_DE_PALABRA = (
@@ -1019,10 +1106,12 @@ def _familia_titulada(titulos: list[_Titulo]) -> str:
 
 
 def _donde_se_titula(ctx: _Contexto, titulos: list[_Titulo]) -> str:
-    """«ES-302 (329E1, 8ED73)»: las hojas y los handles de los títulos de un nombre."""
+    """«ES-302 (329E1, 8ED73)»: las hojas y los handles de los títulos de un nombre; el de un
+    nombre solo con la pila que encabeza («AF02D, con «6#3» AF025, «E#2@15» AF026»)."""
     por_hoja: dict[str, list[str]] = defaultdict(list)
     for t in titulos:
-        por_hoja[t.hoja].append(_handle_de(t.entidad))
+        h = _handle_de(t.entidad)
+        por_hoja[t.hoja].append(f"{h}, con {', '.join(t.pila)}" if t.pila else h)
     return "; ".join(
         f"{_nombre_de_hoja(h)} ({', '.join(sorted(set(hs))[:4])})"
         for h, hs in sorted(por_hoja.items())
@@ -1104,16 +1193,22 @@ _FAMILIAS_DE_ACERO: tuple[tuple[str, re.Pattern[str]], ...] = (
 
 def _de_acero(ctx: _Contexto, titulos: dict[str, list[_Titulo]]) -> list[Verificacion]:
     """Un aviso por familia de acero con lo que el plano escribe de ella en planta y en sus
-    detalles (por handle): no es de esta lectura, y se dice."""
+    detalles (por handle): no es de esta lectura, y se dice. En la capa de las conexiones, lo que
+    remite a otro dibujo («DET-MB») es la llamada a un detalle, no una conexión: se cita aparte. Las
+    escaleras, igual: su aviso (R234)."""
     salida = []
-    for nombre, patron in _FAMILIAS_DE_ACERO:
+    for nombre, patron in (*_FAMILIAS_DE_ACERO, _ESCALERAS):
         en_planta: list[NormalizedEntity] = []
         en_detalle: list[NormalizedEntity] = []
+        remiten: list[NormalizedEntity] = []
         for e in ctx.entidades.values():
             if not e.is_textual or not e.text:
                 continue
             texto = _una_linea(e.text).upper()
             de_su_capa = nombre.startswith("conexiones") and "CONEXI" in (e.layer or "").upper()
+            if de_su_capa and _REFERENCIA.match(texto):
+                remiten.append(e)
+                continue
             if not patron.search(texto) and not de_su_capa:
                 continue
             (en_planta if _en_planta(ctx, e) else en_detalle).append(e)
@@ -1121,7 +1216,7 @@ def _de_acero(ctx: _Contexto, titulos: dict[str, list[_Titulo]]) -> list[Verific
             continue
 
         def citas(es: list[NormalizedEntity]) -> str:
-            lista = [f"{ctx.cita(e.entity_id)} ({ctx.hoja_de(e)})" for e in es]
+            lista = [f"{ctx.cita(e.entity_id)} ({_nombre_de_hoja(ctx.hoja_de(e))})" for e in es]
             return ", ".join(lista[:_EJEMPLOS]) + (
                 f" y {len(lista) - _EJEMPLOS} más" if len(lista) > _EJEMPLOS else ""
             )
@@ -1131,21 +1226,34 @@ def _de_acero(ctx: _Contexto, titulos: dict[str, list[_Titulo]]) -> list[Verific
             partes.append(f"en planta {citas(en_planta)}")
         if en_detalle:
             partes.append(f"en sus detalles {citas(en_detalle)}")
+        llamadas = f" Remite a sus detalles: {citas(remiten)}." if remiten else ""
+        if nombre == _ESCALERAS[0]:
+            cabeza = "Escaleras fuera de esta lectura: el plano las dibuja "
+            cola = (
+                ". La lectura estructural no lee escaleras (rampas, escalones, sus vigas): sus "
+                "cantidades no salen de aquí. Cantidad desconocida."
+            )
+        else:
+            cabeza = f"Elementos de acero fuera de esta lectura, {nombre}: el plano los escribe "
+            cola = (
+                f".{llamadas} Esta lectura es del concreto armado: sus cantidades no salen de "
+                "aquí. Cantidad desconocida."
+            )
         salida.append(
             _hallazgo(
                 10,
                 "aviso",
-                f"Elementos de acero fuera de esta lectura, {nombre}: el plano los escribe "
-                + "; ".join(partes)
-                + ". Esta lectura es del concreto armado: sus cantidades no salen de aquí. "
-                "Cantidad desconocida.",
-                clave=f"acero: {nombre}",
-                textos=[_handle_de(e) for e in [*en_planta, *en_detalle]],
+                cabeza + "; ".join(partes) + cola,
+                clave=f"acero: {nombre}" if nombre != _ESCALERAS[0] else "escaleras",
+                textos=[_handle_de(e) for e in [*en_planta, *en_detalle, *remiten]],
                 en_juego={"piezas": float(len(en_planta))},
                 cantidad="desconocida",
             )
         )
     return salida
+
+
+_ESCALERAS = ("escaleras", re.compile(r"\bESCALERAS?\b"))
 
 
 # ------------------------------------------------------------ 2: definida que no se coloca
@@ -1180,7 +1288,9 @@ def _sin_colocar(
             continue
         definicion = ctx.por_marca.get(marca)
         dibujados = de_concreto.get(marca, [])
-        if (definicion is None or not _del_plano(definicion)) and not dibujados:
+        definen = [t for t in dibujados if t.define]
+        nombran = [t for t in dibujados if not t.define]
+        if (definicion is None or not _del_plano(definicion)) and not definen:
             continue
         en_cuadro = sorted(
             {
@@ -1204,10 +1314,11 @@ def _sin_colocar(
             familia = definicion.familia
         else:
             dice = (
-                f"el plano la define en {_donde_se_titula(ctx, dibujados)} y no se leyó su "
+                f"el plano la define en {_donde_se_titula(ctx, definen)} y no se leyó su "
                 "definición"
+                + (f" (la nombra también en {_donde_se_titula(ctx, nombran)})" if nombran else "")
             )
-            familia = definicion.familia if definicion is not None else _familia_titulada(dibujados)
+            familia = definicion.familia if definicion is not None else _familia_titulada(definen)
         de_familia = f" ({familia})" if familia else ""
         salida.append(
             _hallazgo(
@@ -1246,32 +1357,45 @@ def _escritas_sin_elemento(
 ) -> list[Verificacion]:
     salida: list[Verificacion] = []
     colocadas = _por_marca(ctx.elementos)
+    muros = {
+        marca: textos
+        for marca, textos in escritas.items()
+        if _es_muro(marca, _familia_de_marca(ctx, marca, titulos), textos)
+    }
+    medidas = _medir_muros(ctx, muros)
     for marca, textos in sorted(escritas.items()):
         por_hoja = Counter(t.hoja for t in textos)
         donde = "; ".join(f"{_nombre_de_hoja(h)}: {_veces(n)}" for h, n in sorted(por_hoja.items()))
         definicion = ctx.por_marca.get(marca)
         # El nombre en la capa de los detalles dentro de una planta puede ser la etiqueta de una
         # colocación («MC-1» junto a «20CM»): lo que está escrito en planta no es su propio título.
+        # (Una pila de armado escrita en planta sí es su definición: R234.)
         propios = {t.entidad.entity_id for t in textos}
-        dibujados = [
-            t
-            for t in titulos.get(marca, [])
-            if t.clase == "concreto" and t.entidad.entity_id not in propios
-        ]
+        de_concreto = [t for t in titulos.get(marca, []) if t.clase == "concreto"]
+        dibujados = [t for t in de_concreto if t.define]
+        nombran = [t for t in de_concreto if not t.define and t.entidad.entity_id not in propios]
+        tambien = f" La nombra también en {_donde_se_titula(ctx, nombran)}." if nombran else ""
         if definicion is not None and _del_plano(definicion):
             estado = f"Está definida en {_nombres_de_hojas(definicion.hojas) or 'el plano'}."
         elif dibujados:
             # R223: el plano la titula; lo que falló fue leer su definición.
             estado = (
                 f"El plano la define en {_donde_se_titula(ctx, dibujados)} y no se leyó su "
-                "definición" + (" (sólo la lectura IA la lee)." if definicion is not None else ".")
+                "definición"
+                + (" (sólo la lectura IA la lee)." if definicion is not None else ".")
+                + tambien
+            )
+        elif nombran:
+            estado = (
+                f"El plano no la define: sólo la nombra en {_donde_se_titula(ctx, nombran)}"
+                + ("; sólo la lectura IA la define." if definicion is not None else ".")
             )
         elif definicion is not None:
             estado = "Sólo la lectura IA la define; el plano no titula ningún dibujo suyo."
         else:
             estado = "Tampoco está definida en el plano: ningún dibujo la titula."
         if colocadas.get(marca):
-            otras = sorted({e.hoja for e in colocadas[marca]})
+            otras = sorted({_nombre_de_hoja(e.hoja) for e in colocadas[marca]})
             estado += f" Sí tiene colocaciones en {', '.join(otras)}, no junto a estos textos."
         junto = [t for t in textos if t.junto_sin_marca]
         if junto:
@@ -1288,14 +1412,14 @@ def _escritas_sin_elemento(
         familia = definicion.familia if definicion is not None else _familia_titulada(dibujados)
         if familia == "pilote" or marca.startswith("P-"):
             estado += " Todo pilote escrito en planta debe tener su pila: a éstos les falta."
-        estimado = _estimado_de_muro(ctx, textos) if _es_muro(marca, familia, textos) else None
-        if estimado is not None:
-            largo, volumen, como = estimado
-            estado += f" Estimado: {como}."
-            juego = {"piezas": float(len(textos)), "longitud_estimada_m": largo}
-            if volumen:
-                juego["concreto_m3"] = volumen
-            cantidad: Literal["conocida", "desconocida", "estimada"] = "estimada"
+        medida = medidas.get(marca)
+        cantidad: Literal["conocida", "desconocida", "estimada"]
+        if medida is not None:
+            estado += f" {medida.texto}"
+            juego = {"piezas": float(len(textos))}
+            if medida.limpia:
+                juego |= {"area_planta_m2": medida.area_m2, "volumen_m3": medida.volumen_m3}
+            cantidad = "estimada" if medida.limpia else "desconocida"
         else:
             estado += f" Cantidad desconocida: {_veces(len(textos))} escrita, sin elemento."
             juego = {"piezas": float(len(textos))}
@@ -1324,6 +1448,13 @@ def _escritas_sin_elemento(
     return salida
 
 
+def _familia_de_marca(ctx: _Contexto, marca: str, titulos: dict[str, list[_Titulo]]) -> str:
+    definicion = ctx.por_marca.get(marca)
+    if definicion is not None:
+        return definicion.familia
+    return _familia_titulada([t for t in titulos.get(marca, []) if t.clase == "concreto"])
+
+
 def _es_muro(marca: str, familia: str, textos: list[_Escrita]) -> bool:
     return (
         familia == "muro_concreto"
@@ -1332,60 +1463,93 @@ def _es_muro(marca: str, familia: str, textos: list[_Escrita]) -> bool:
     )
 
 
-# Un texto de muro va sobre su muro: la cara más cercana a lo más esto, en altos de su letra.
+# Un texto de muro va sobre su muro: la región achurada más cercana a lo más esto, en altos de
+# su letra (dentro de ella, a distancia cero).
 _SOBRE_SU_MURO = 3.0
-_ESPESOR_MINIMO_M = 0.08
-# Dos caras de un muro: paralelas, a lo más esto (m) una de otra.
-_ESPESOR_MAXIMO_M = 0.6
+_DOS_LECTURAS = "en las dos lecturas de los entrepisos"
+# Las regiones del concreto de los muros: el achurado de la capa de muros de concreto.
+_CAPA_DE_MURO = re.compile(r"MURO.*CONC|CONC.*MURO", re.IGNORECASE)
+
+Punto = tuple[float, float]
 
 
-def _estimado_de_muro(ctx: _Contexto, textos: list[_Escrita]) -> tuple[float, float, str] | None:
-    """R227: lo que el plano permite estimar de un muro escrito sin elemento: su largo, la cara
-    (en su capa) más cercana a cada texto, cada tramo una vez; su espesor, el de la cara paralela
-    más cercana a ella; su alto, el entrepiso declarado de su planta. Es una cota (la cara puede
-    seguir más allá de este muro), dicha como estimado; ``None`` si no hay cara."""
-    seg = ctx.segmentation
-    alturas = seg.alturas_de_entrepiso() if seg is not None else {}
-    capas = {t.entidad.layer for t in textos if t.entidad.layer}
-    trazos: list[tuple[str, int, tuple[float, float], tuple[float, float]]] = []
+@dataclass
+class _Region:
+    """Una región achurada de muro de concreto en una planta: su contorno menos sus huecos."""
+
+    entidad: NormalizedEntity
+    vista: str
+    anillos: list[list[Punto]]
+    huecos: list[bool]
+    area_m2: float
+
+
+@dataclass
+class _Medida:
+    """La cota medida del concreto de un muro escrito sin elemento (R232), o por qué no la hay."""
+
+    texto: str
+    volumen_m3: float  # la mayor de las dos lecturas de los entrepisos
+    area_m2: float
+    limpia: bool
+
+
+def _regiones_de_muro(ctx: _Contexto) -> list[_Region]:
+    """Las regiones achuradas de muro de concreto de las plantas estructurales, cada una con su
+    área neta en m² (el contorno menos los huecos: un anillo cuenta lo que está entre sus dos
+    contornos)."""
+    salida = []
+    factor = ctx.factor or 1.0
     for e in ctx.entidades.values():
-        if e.layer not in capas or e.is_textual or not e.points or len(e.points) < 2:
+        if e.entity_type.value != "hatch" or not _CAPA_DE_MURO.search(e.layer or ""):
             continue
-        puntos = [(float(q[0]), float(q[1])) for q in e.points]
-        if e.properties.get("closed"):
-            puntos.append(puntos[0])
-        for k, (a, b) in enumerate(zip(puntos, puntos[1:], strict=False)):
-            trazos.append((e.entity_id, k, a, b))
-    if not trazos:
-        return None
-    tomados: dict[tuple[str, int], tuple[float, float, float]] = {}  # tramo → largo, espesor, alto
-    for t in textos:
-        centro = bbox_center(t.entidad.bbox)
-        alto_letra = alto_de_texto(t.entidad)
-        cerca = min(trazos, key=lambda tr: _a_tramo(centro, tr[2], tr[3]))
-        if _a_tramo(centro, cerca[2], cerca[3]) > _SOBRE_SU_MURO * alto_letra:
+        crudos = e.properties.get("anillos") or [e.points or []]
+        anillos = [[(float(p[0]), float(p[1])) for p in r] for r in crudos if len(r) >= 3]
+        if not anillos:
             continue
-        largo = math.dist(cerca[2], cerca[3]) * (ctx.factor or 1.0)
-        espesor = _espesor(cerca, trazos, ctx.factor or 1.0)
-        vista = _vista_de(ctx, t.entidad)
-        entrepiso = alturas.get(vista) if vista else None
-        tomados[(cerca[0], cerca[1])] = (largo, espesor, entrepiso.altura_m if entrepiso else 0.0)
-    if not tomados:
-        return None
-    largo = sum(v[0] for v in tomados.values())
-    volumen = sum(v[0] * v[1] * v[2] for v in tomados.values() if v[1] and v[2])
-    espesores = sorted({round(v[1] * 100) for v in tomados.values() if v[1]})
-    altos = sorted({v[2] for v in tomados.values() if v[2]})
-    como = f"a lo más {largo:.2f} m de muro dibujado en planta ({len(tomados)} tramos de su cara)"
-    if volumen:
-        como += (
-            f" × espesor dibujado {', '.join(f'{x:g}' for x in espesores)} cm × entrepiso "
-            f"{', '.join(f'{x:g}' for x in altos)} m ≈ {volumen:.2f} m³ de concreto"
+        vista = _vista_de(ctx, e)
+        if vista is None:
+            continue
+        huecos = [
+            sum(_dentro(r[0], o) for j, o in enumerate(anillos) if j != i) % 2 == 1
+            for i, r in enumerate(anillos)
+        ]
+        area = sum(_area_de(r) * (-1 if h else 1) for r, h in zip(anillos, huecos, strict=True))
+        salida.append(_Region(e, vista, anillos, huecos, max(area, 0.0) * factor * factor))
+    return salida
+
+
+def _area_de(anillo: list[Punto]) -> float:
+    return (
+        abs(
+            sum(
+                a[0] * b[1] - b[0] * a[1]
+                for a, b in zip(anillo, [*anillo[1:], anillo[0]], strict=True)
+            )
         )
-    return largo, volumen, como
+        / 2
+    )
 
 
-def _a_tramo(p: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
+def _dentro(p: Punto, anillo: list[Punto]) -> bool:
+    x, y = p
+    dentro = False
+    for (x1, y1), (x2, y2) in zip(anillo, [*anillo[1:], anillo[0]], strict=True):
+        if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / (y2 - y1) + x1:
+            dentro = not dentro
+    return dentro
+
+
+def _a_region(p: Punto, region: _Region) -> float:
+    """La distancia de un punto a una región achurada: cero dentro de ella (no en un hueco)."""
+    if sum(_dentro(p, r) for r in region.anillos) % 2 == 1:
+        return 0.0
+    return min(
+        _a_tramo(p, a, b) for r in region.anillos for a, b in zip(r, [*r[1:], r[0]], strict=True)
+    )
+
+
+def _a_tramo(p: Punto, a: Punto, b: Punto) -> float:
     dx, dy = b[0] - a[0], b[1] - a[1]
     largo2 = dx * dx + dy * dy
     if largo2 <= 0:
@@ -1394,40 +1558,142 @@ def _a_tramo(p: tuple[float, float], a: tuple[float, float], b: tuple[float, flo
     return math.dist(p, (a[0] + u * dx, a[1] + u * dy))
 
 
-def _espesor(
-    cara: tuple[str, int, tuple[float, float], tuple[float, float]],
-    trazos: list[tuple[str, int, tuple[float, float], tuple[float, float]]],
-    factor: float,
-) -> float:
-    """La distancia, en metros, a la cara paralela más cercana que se le encima (el espesor
-    dibujado); una línea a menos de un espesor posible de muro (un achurado, una línea doble)
-    no es la otra cara."""
-    _i, _k, a, b = cara
-    dx, dy = b[0] - a[0], b[1] - a[1]
-    largo = math.hypot(dx, dy)
-    if largo <= 0:
-        return 0.0
-    ux, uy = dx / largo, dy / largo
-    mejor = 0.0
-    for otro in trazos:
-        if otro is cara:
+def _lecturas_de_entrepiso(
+    ctx: _Contexto,
+) -> tuple[dict[str, float | None], dict[str, float | None]]:
+    """El entrepiso de cada planta en las dos lecturas que el plano sostiene (verificación 8):
+    (A) cada planta sube desde su losa hasta el nivel de arriba (la más alta no tiene); (B) cada
+    planta está bajo su losa, desde el nivel de abajo (la más baja no tiene)."""
+    seg = ctx.segmentation
+    if seg is None:
+        return {}, {}
+    vistas = sorted(
+        (v for v in seg.structural_plan_views() if v.npt_level is not None),
+        key=lambda v: v.npt_level or 0.0,
+    )
+    niveles = [float(v.npt_level or 0.0) for v in vistas]
+    sube: dict[str, float | None] = {}
+    baja: dict[str, float | None] = {}
+    for i, v in enumerate(vistas):
+        sube[v.view_id] = round(niveles[i + 1] - niveles[i], 3) if i + 1 < len(vistas) else None
+        baja[v.view_id] = round(niveles[i] - niveles[i - 1], 3) if i > 0 else None
+    return sube, baja
+
+
+def _medir_muros(ctx: _Contexto, muros: dict[str, list[_Escrita]]) -> dict[str, _Medida]:
+    """R232: la cota medida del concreto de cada muro escrito sin elemento, o nada. Cada texto toma
+    la región achurada de muro sobre la que está; cada región se cuenta una vez y la que toman
+    varias marcas se dice junta («MC-1/MC-3: 6.01 m²»). El alto es el entrepiso de su planta en
+    las dos lecturas de los entrepisos, las dos dichas (la lectura no escoge). Lo de cada planta
+    nunca pasa de lo que esa planta achura. Si un texto no está sobre ninguna región y en su
+    planta queda achurado sin dueño, no se puede atribuir: cantidad desconocida."""
+    regiones = _regiones_de_muro(ctx)
+    if not regiones:
+        return {}
+    por_vista: dict[str, list[_Region]] = defaultdict(list)
+    for r in regiones:
+        por_vista[r.vista].append(r)
+    duenos: dict[int, set[str]] = defaultdict(set)  # id(region) → las marcas que la toman
+    de_la_marca: dict[str, dict[str, list[_Region]]] = defaultdict(lambda: defaultdict(list))
+    fuera: dict[str, list[_Escrita]] = defaultdict(list)
+    for marca, textos in muros.items():
+        for t in textos:
+            vista = _vista_de(ctx, t.entidad)
+            candidatas = por_vista.get(vista or "", [])
+            centro = bbox_center(t.entidad.bbox)
+            cerca = min(candidatas, key=lambda r: _a_region(centro, r), default=None)
+            if cerca is None or _a_region(centro, cerca) > _SOBRE_SU_MURO * alto_de_texto(
+                t.entidad
+            ):
+                fuera[marca].append(t)
+                continue
+            duenos[id(cerca)].add(marca)
+            if cerca not in de_la_marca[marca][cerca.vista]:
+                de_la_marca[marca][cerca.vista].append(cerca)
+    sube, baja = _lecturas_de_entrepiso(ctx)
+    nombre = (
+        {v.view_id: v.title.split(" · ")[0] for v in ctx.segmentation.views}
+        if ctx.segmentation is not None
+        else {}
+    )
+    salida: dict[str, _Medida] = {}
+    for marca in muros:
+        vistas = de_la_marca.get(marca, {})
+        sin_dueno = {v for v in por_vista if any(not duenos.get(id(r)) for r in por_vista[v])}
+        sueltos = fuera.get(marca, [])
+        sueltos_txt = ", ".join(_handle_de(t.entidad) for t in sueltos[:_EJEMPLOS])
+        esta = "está" if len(sueltos) == 1 else "están"
+        if not vistas or any((_vista_de(ctx, t.entidad) or "") in sin_dueno for t in sueltos):
+            motivo = (
+                "ninguno de sus textos está sobre una región achurada de muro"
+                if not vistas
+                else f"{len(sueltos)} de sus textos ({sueltos_txt}) no {esta} sobre ninguna región "
+                "achurada de muro y en su planta queda achurado sin dueño"
+            )
+            salida[marca] = _Medida(
+                f"Cantidad desconocida: {motivo}, así que su concreto no se puede atribuir; "
+                f"{_veces(len(muros[marca]))} escrita, "
+                "sin elemento.",
+                0.0,
+                0.0,
+                False,
+            )
             continue
-        c, d = otro[2], otro[3]
-        ox, oy = d[0] - c[0], d[1] - c[1]
-        ol = math.hypot(ox, oy)
-        if ol <= 0 or abs(ux * oy - uy * ox) / ol > 0.05:
-            continue  # no paralela
-        sep = abs((c[0] - a[0]) * uy - (c[1] - a[1]) * ux) * factor
-        t0 = (c[0] - a[0]) * ux + (c[1] - a[1]) * uy
-        t1 = (d[0] - a[0]) * ux + (d[1] - a[1]) * uy
-        if (
-            max(t0, t1) <= 0
-            or min(t0, t1) >= largo
-            or not _ESPESOR_MINIMO_M <= sep <= _ESPESOR_MAXIMO_M
-        ):
+        partes: list[str] = []
+        area_total = vol_a = vol_b = 0.0
+        alto_a: list[str] = []
+        alto_b: list[str] = []
+        for vista, rs in sorted(vistas.items(), key=lambda x: nombre.get(x[0], x[0])):
+            propias = [r for r in rs if duenos[id(r)] == {marca}]
+            juntas: dict[tuple[str, ...], list[_Region]] = defaultdict(list)
+            for r in rs:
+                if duenos[id(r)] != {marca}:
+                    juntas[tuple(sorted(duenos[id(r)]))].append(r)
+            achurado = sum(r.area_m2 for r in por_vista[vista])
+            # Cada región una vez y sólo las de esta planta: nunca más que lo que ella achura.
+            area = sum(r.area_m2 for r in rs)
+            area_total += area
+            trozos = []
+            if propias:
+                trozos.append(
+                    f"{sum(r.area_m2 for r in propias):.2f} m² suyos "
+                    f"({', '.join(_handle_de(r.entidad) for r in propias[:_EJEMPLOS])})"
+                )
+            for quienes, js in sorted(juntas.items()):
+                trozos.append(
+                    f"{'/'.join(quienes)}: {sum(r.area_m2 for r in js):.2f} m² "
+                    f"({', '.join(_handle_de(r.entidad) for r in js[:_EJEMPLOS])}), que se cuentan "
+                    "una vez para todas"
+                )
+            hoja = nombre.get(vista, vista)
+            partes.append(f"en {hoja}, {'; '.join(trozos)} (de {achurado:.2f} m² achurados ahí)")
+            a, b = sube.get(vista), baja.get(vista)
+            alto_a.append(f"{hoja} {a:g} m" if a else f"{hoja} no se cuenta")
+            alto_b.append(f"{hoja} {b:g} m" if b else f"{hoja} no se cuenta")
+            vol_a += area * (a or 0.0)
+            vol_b += area * (b or 0.0)
+        sueltos_dicho = (
+            f" {len(sueltos)} de sus textos ({sueltos_txt}) no están sobre ninguna región "
+            "achurada; toda región achurada de su planta ya la toma algún texto."
+            if sueltos
+            else ""
+        )
+        if not sube and not baja:
+            texto = (
+                f"Cota medida en planta: {'; '.join(partes)}. Sin niveles declarados no hay "
+                f"entrepiso con qué darle alto: cantidad desconocida.{sueltos_dicho}"
+            )
+            salida[marca] = _Medida(texto, 0.0, area_total, False)
             continue
-        mejor = sep if not mejor else min(mejor, sep)
-    return mejor
+        texto = (
+            f"Cota medida en planta (el muro achurado sobre el que están sus textos, cada región "
+            f"una vez): {'; '.join(partes)}. Por su entrepiso, {_DOS_LECTURAS}: (A) cada planta "
+            f"sube desde su losa ({', '.join(alto_a)}): a lo más "
+            f"{vol_a:.2f} m³; (B) cada planta está bajo su losa ({', '.join(alto_b)}): a lo más "
+            f"{vol_b:.2f} m³. La lectura no escoge.{sueltos_dicho}"
+        )
+        salida[marca] = _Medida(texto, max(vol_a, vol_b), area_total, True)
+    return salida
 
 
 def _vista_de(ctx: _Contexto, e: NormalizedEntity) -> str | None:
@@ -1685,8 +1951,17 @@ def _secciones_por_hoja(dato: Dato) -> dict[str, list[Dato]]:
         if m.fuente not in _LEIDAS or m.ilegible or m.valor is None:
             continue
         for h in hojas_de(m):
-            por_hoja[h][PRECEDENCIA[m.fuente]].setdefault(_llave_de_valor(m.valor), m)
+            de_rango = por_hoja[h][PRECEDENCIA[m.fuente]]
+            llave = _llave_de_valor(m.valor)
+            # La sección acotada en su corte, antes que la llamada que la nombra junto con la
+            # otra («SECCIÓN 1 30X60, SECCIÓN 2 30X70»): así cada corte cita su propio título.
+            if llave not in de_rango or (_es_llamada(de_rango[llave]) and not _es_llamada(m)):
+                de_rango[llave] = m
     return {h: list(rangos[max(rangos)].values()) for h, rangos in por_hoja.items()}
+
+
+def _es_llamada(m: Dato) -> bool:
+    return "(se toma la mayor)" in (m.texto or "")
 
 
 def _dos_secciones(ctx: _Contexto, e: Elemento) -> _Estado | None:
@@ -1846,9 +2121,12 @@ _LADO_DE_SECCION = (8.0, 150.0)
 
 
 def _cotas_junto_a(ctx: _Contexto, titulo: NormalizedEntity) -> list[tuple[float, str]]:
-    """Las cotas (su número escrito, redondeado al décimo, y su handle) junto a un título."""
+    """Las cotas de la sección junto a un título (su número escrito, redondeado al décimo, y su
+    handle): la horizontal más cercana y las que miden su mismo tramo en x, la vertical más
+    cercana y las que miden su mismo tramo en y (R234: una cota fuera del tramo de la sección es
+    de otra pieza)."""
     alcance = _COTAS_DEL_TITULO * alto_de_texto(titulo)
-    salida = []
+    cerca = []
     for d in ctx.entidades.values():
         if d.entity_type.value != "dimension" or d.source_file != titulo.source_file:
             continue
@@ -1856,8 +2134,28 @@ def _cotas_junto_a(ctx: _Contexto, titulo: NormalizedEntity) -> list[tuple[float
         if valor is None or not _LADO_DE_SECCION[0] <= valor <= _LADO_DE_SECCION[1]:
             continue
         if _hueco(d.bbox, titulo.bbox) <= alcance:
-            salida.append((round(valor, 1), _handle_de(d), _hueco(d.bbox, titulo.bbox)))
-    return [(v, h) for v, h, _g in sorted(salida, key=lambda x: x[2])]
+            cerca.append((round(valor, 1), d, _hueco(d.bbox, titulo.bbox)))
+    cerca.sort(key=lambda x: x[2])
+    salida = []
+    for eje in (0, 1):  # 0: horizontales (miden en x), 1: verticales (miden en y)
+        de_eje = [c for c in cerca if _eje_de_cota(c[1]) == eje]
+        if not de_eje:
+            continue
+        guia = de_eje[0][1].bbox
+        salida += [
+            c for c in de_eje if c[1].bbox[2 + eje] > guia[eje] and c[1].bbox[eje] < guia[2 + eje]
+        ]
+    salida += [c for c in cerca if _eje_de_cota(c[1]) is None]
+    return [(v, _handle_de(d)) for v, d, _g in sorted(salida, key=lambda x: x[2])]
+
+
+def _eje_de_cota(d: NormalizedEntity) -> int | None:
+    """0 si la cota mide en x (horizontal), 1 si mide en y (vertical), ``None`` si no se sabe."""
+    angulo = _numero(d.properties.get("angle"))
+    if angulo is None:
+        return None
+    resto = angulo % 180
+    return 0 if min(resto, 180 - resto) < 1 else 1 if abs(resto - 90) < 1 else None
 
 
 def _numero_texto(v: str) -> float | None:
@@ -2048,8 +2346,16 @@ def _en_juego_de_campos(
     juego: dict[str, float] = {"piezas": float(len(els))}
     if nombre == "sin_estribos_declarados":
         return juego  # nada que falte: el plano no los declara
-    if nombre in ("falta", "por_leer"):
+    sin_cifra = nombre == "sin_separacion" and any(s.severidad == "bloquea" for s in estados or [])
+    if nombre in ("falta", "por_leer") or sin_cifra:
         juego["volumen_m3"] = sum(_volumen(e) or 0.0 for e in els)
+        # Las piezas sin largo (un pilote sin longitud): el concreto por metro, su sección por las
+        # piezas, dice su tamaño (R233).
+        juego["concreto_por_metro_m3"] = sum(
+            _area_m2(e.seccion_cm.valor) or 0.0
+            for e in els
+            if _volumen(e) is None and e.seccion_cm is not None
+        )
         return juego
     if nombre == "dos_secciones":
         # R225: lo que cambia entre las secciones dibujadas, en concreto, sobre sus colocaciones.
@@ -2768,11 +3074,14 @@ def _referencias_cruzadas(hallazgos: list[Verificacion]) -> list[Verificacion]:
         for v in hallazgos
         if v.numero == 7 and v.campo == "altura_m" and v.hoja and "repite" in v.mensaje
     ]
-    if not alturas:
-        return hallazgos
+    # R232: la cota de un muro da su alto en las dos lecturas de los entrepisos.
+    muros = [v for v in hallazgos if v.numero == 10 and _DOS_LECTURAS in v.mensaje]
     salida = []
     for v in hallazgos:
-        if v is entrepisos:
+        if v in muros:
+            cual = f"la contradicción de los entrepisos ({entrepisos.id})"
+            v = v.model_copy(update={"mensaje": f"{v.mensaje} Ver también {cual}."})
+        elif v is entrepisos and alturas:
             donde = ", ".join(f"{a.hoja} ({a.id})" for a in alturas)
             v = v.model_copy(
                 update={"mensaje": f"{v.mensaje} Ver también la altura supuesta de {donde}."}
@@ -3328,5 +3637,6 @@ __all__ = [
     "id_de_verificacion",
     "ordenar",
     "peso",
+    "tamano",
     "verificar",
 ]
