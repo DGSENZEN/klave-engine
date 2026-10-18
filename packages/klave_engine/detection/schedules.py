@@ -4144,7 +4144,7 @@ def _encerrados(
     secciones: list[SeccionDeTitulo],
     entities: list[NormalizedEntity],
 ) -> set[str]:
-    """R190: the candidate stack lines another drawing encloses. A line in a read section's
+    """R190, R197: the candidate stack lines another drawing encloses. A line in a read section's
     column on its reading side, within twice its reach (its smaller side), is inside a drawing —
     an elevation's bar label, «2#8» 0.18 under its top line —, not under the section, when drawn
     lines (or polyline edges, never a cota or a leader) close around it: one across it above and
@@ -4214,39 +4214,98 @@ def _encerrados(
                 for b0, b1 in bajo
             ):
                 salida.add(t.entity_id)
+                continue
+            # R197: an elevation drawn open (its ends broken or not drawn) has no sides: its long
+            # chords say it. A chord at a level is drawn linework there running past the text
+            # by more than ``_CUERDA`` text heights on both sides (one line, or the pieces of one
+            # broken around the label). Inside a drawing: a chord above and one below within the
+            # reach; written on a drawing's line: a chord within one text height of it.
+            h = ty1 - ty0
+            cuerdas = _cuerdas(cruzan, tx0, tx1, h)
+            arriba = [y for y in cuerdas if ty1 <= y <= ty1 + alcance]
+            abajo = [y for y in cuerdas if ty0 - alcance <= y <= ty0]
+            pegada = [y for y in cuerdas if ty0 - h <= y <= ty0 or ty1 <= y <= ty1 + h]
+            if (arriba and abajo) or pegada:
+                salida.add(t.entity_id)
+    return salida
+
+
+# R197: a drawing's chord runs past a text by more than this many of its heights on both sides. On
+# Marina the break line above a CE's stack runs past it 3.2 heights at most (CE-2, ES-200: 98049
+# over 98031); an elevation's chords run the beam's length (7 heights and more in the reviewer's
+# repro, metres on a sheet).
+_CUERDA = 5.0
+
+
+def _cuerdas(
+    tramos: list[tuple[float, float, float]], tx0: float, tx1: float, h: float
+) -> list[float]:
+    """R197: the levels (y) where horizontal linework is a chord at a text spanning ``tx0``–``tx1``
+    of height ``h``: one piece at that level reaching more than ``_CUERDA`` heights left of it and
+    one (the same or another, the line broken around the text) more than that right of it, each
+    starting within twice that of the text."""
+    largo, cerca = _CUERDA * h, 2 * _CUERDA * h
+    niveles: dict[int, list[tuple[float, float]]] = defaultdict(list)
+    for a, b, y in tramos:
+        niveles[round(y / (0.25 * h))].append((a, b))
+    salida = []
+    for llave, piezas in niveles.items():
+        izquierda = any(a <= tx0 - largo and b >= tx0 - cerca for a, b in piezas)
+        derecha = any(b >= tx1 + largo and a <= tx1 + cerca for a, b in piezas)
+        if izquierda and derecha:
+            salida.append(llave * 0.25 * h)
     return salida
 
 
 def _dibujo_de(
     sec: SeccionDeTitulo, tramos: list[tuple[tuple[float, float], tuple[float, float], str]]
 ) -> set[int]:
-    """R190: the segments of a section's own drawing: those inside its box or with an end on its
-    outline, and those joined end to end to them (its hanging wall, its leaders' landings) — a
-    few links deep, never a whole sheet's linework."""
+    """R190, R197: the segments of a section's own drawing: those inside its box or with an end on
+    or near its outline (within 5 % of its larger side: a CE's wall starts 0.047 under its box
+    on ES-200), and those touching them — an end of one on the other (its hanging wall, the break
+    line across that wall, its leaders' landings) — a few links deep, never a whole sheet's
+    linework."""
     x0, y0, x1, y1 = sec.caja
-    tol = 0.01 * max(x1 - x0, y1 - y0)
+    tol = 0.05 * max(x1 - x0, y1 - y0)
 
     def dentro(p: tuple[float, float]) -> bool:
         return x0 - tol <= p[0] <= x1 + tol and y0 - tol <= p[1] <= y1 + tol
 
-    suyos = {
-        k
-        for k, (a, b, archivo) in enumerate(tramos)
-        if archivo == sec.archivo and (dentro(a) or dentro(b))
-    }
-    puntas = [p for k in suyos for p in tramos[k][:2]]
+    def sobre(p: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> bool:
+        return _distancia_tramo_caja(a, b, (p[0], p[1], p[0], p[1])) <= tol
+
+    propios = [k for k, (_a, _b, archivo) in enumerate(tramos) if archivo == sec.archivo]
+    lado = max(x1 - x0, y1 - y0) or 1.0
+    celdas: dict[tuple[int, int], list[int]] = defaultdict(list)
+
+    def de(k: int) -> list[tuple[int, int]]:
+        """The grid cells a segment's box (with ``tol`` of slack) covers."""
+        a, b, _archivo = tramos[k]
+        i0 = math.floor((min(a[0], b[0]) - tol) / lado)
+        i1 = math.floor((max(a[0], b[0]) + tol) / lado)
+        j0 = math.floor((min(a[1], b[1]) - tol) / lado)
+        j1 = math.floor((max(a[1], b[1]) + tol) / lado)
+        return [(i, j) for i in range(i0, i1 + 1) for j in range(j0, j1 + 1)]
+
+    for k in propios:
+        for celda in de(k):
+            celdas[celda].append(k)
+    suyos = {k for k in propios if dentro(tramos[k][0]) or dentro(tramos[k][1])}
+    frente = set(suyos)
     for _vuelta in range(4):
-        nuevos = {
-            k
-            for k, (a, b, archivo) in enumerate(tramos)
-            if k not in suyos
-            and archivo == sec.archivo
-            and any(math.dist(a, q) <= tol or math.dist(b, q) <= tol for q in puntas)
-        }
+        nuevos = set()
+        for j in frente:
+            c, d, _otro = tramos[j]
+            for k in {k for celda in de(j) for k in celdas.get(celda, ())}:
+                if k in suyos or k in nuevos:
+                    continue
+                a, b, _archivo = tramos[k]
+                if sobre(a, c, d) or sobre(b, c, d) or sobre(c, a, b) or sobre(d, a, b):
+                    nuevos.add(k)
         if not nuevos:
             break
         suyos |= nuevos
-        puntas = [p for k in nuevos for p in tramos[k][:2]]
+        frente = nuevos
     return suyos
 
 

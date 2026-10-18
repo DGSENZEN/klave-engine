@@ -132,13 +132,15 @@ def test_each_ci_title_is_its_walls_variant(marina, handle):
 # (los textos bajo su sección, de arriba abajo, sin las llamadas): sus renglones por su handle,
 # su marca, su hoja y lo que se lee. T2-8 no lee sus longitudinales: un texto que puede ser suyo
 # («4#8», que R140 le atribuye del alzado de T2-7) va fuera de la pila; lo cita y lo reclama.
+# R196: las pilas que otra sección alcanza sin que estén claramente (25 %) más pegadas a la suya
+# quedan en duda (ver ``_EN_DUDA``), y lo que dejan como «posible» veta el campo de la marca
+# vecina en la hoja: CE-3 (ES-100) y CE-4 (ES-300) sus estribos, las CI de 15 y 30 cm de ES-300
+# los dos (la de 20 cm, en duda, es la misma marca).
 _PILAS = [
     (["CFF58"], "CTA-13", "ES-004", None, "2E#4@15"),
     (["36E92"], "CTA-14", "ES-004", None, "E#4@20"),
     (["36BA1"], "CTA-9", "ES-004", None, "E#3@15"),
-    (["B79B2", "B79B6"], "CE-1", "ES-100", "4#3", "E#2@15"),
-    (["B79E3", "B79E7"], "CE-2", "ES-100", "6#3", "E#2@15"),
-    (["B7A0C", "B7A10"], "CE-3", "ES-100", "6#4", "E#3@14"),
+    (["B7A0C", "B7A10"], "CE-3", "ES-100", "6#4", None),
     (["B6BF4"], "T1-2", "ES-101", None, "E#3@12"),
     (["B6CD7"], "T1-3", "ES-101", None, "E#3@15"),
     (["B6EF1"], "T1-5", "ES-101", None, "E#3@15"),
@@ -157,13 +159,11 @@ _PILAS = [
     (["ACA29"], "T2-14", "ES-202", None, "E#3@15"),
     (["ACAEF"], "T2-15", "ES-202", None, "E#3@15"),
     (["8A155", "8A159"], "CE-1", "ES-300", "4#3", "E#2@15"),
-    (["8A186", "8A18A"], "CE-2", "ES-300", "6#3", "E#2@15"),
     (["8A1AF", "8A1B3"], "CE-3", "ES-300", "6#4", "E#3@14"),
-    (["8A2C8", "8A2CC"], "CE-4", "ES-300", "4#4", "E#3@16"),
+    (["8A2C8", "8A2CC"], "CE-4", "ES-300", "4#4", None),
     (["8A2A1", "8A2A5"], "CE-5", "ES-300", "4#3", "E#3@16"),
-    (["A8DD8", "A8DD9"], "CI", "ES-300", "4#3", "E#2@15"),
-    (["A8DEF", "A8DF0"], "CI", "ES-300", "6#3", "E#2@15"),
-    (["A8E0A", "A8E0B"], "CI", "ES-300", "4#3", "E#2@15"),
+    (["A8DD8", "A8DD9"], "CI", "ES-300", None, None),
+    (["A8DEF", "A8DF0"], "CI", "ES-300", None, None),
     (["8E2DE", "8E2DF"], "CR-1", "ES-300", "4#3", "E#2@15"),
     (["8E2F4"], "CR-2", "ES-300", None, "E#2@15"),
     (["8E37D", "8E37E"], "CR-3", "ES-300", "6#3", "E#2@15"),
@@ -228,15 +228,21 @@ def test_each_ci_variant_reads_its_own_armado(marina):
     }
 
 
-@pytest.mark.parametrize(
-    "marca,hoja,otra", [("CE-1", "ES-100", "CE-3"), ("CE-2", "ES-100", "CE-3"),
-                        ("CE-2", "ES-300", "CE-4")],
-)  # fmt: skip
-def test_a_line_r140_gave_another_mark_is_said_when_read(marina, marca, hoja, otra):
-    # R192: B79B6, B79E7 y 8A18A los atribuía R140 también a la marca de abajo; se leen bajo su
-    # sección, y se dice.
-    inv, _ids = marina
-    (pila,) = [s for s in inv.specs if s.metodo == "pila" and s.mark == marca and s.hoja == hoja]
-    assert f"pila bajo su sección: se lee como de {marca}; antes se atribuía también a {otra}" in (
-        pila.avisos
-    )
+# R196: las pilas que dejan de leerse, con su geometría (de la sección a cada renglón; de la otra
+# sección, del lado de su título, a su primer renglón de la columna o de frente al renglón).
+_EN_DUDA = [
+    # CE-1 y CE-2 en ES-100: a 0.71 / 0.90 de su sección; CE-3, bajo ellas (su título en medio),
+    # las alcanza a 0.82.
+    ("B79B2", "CE-1"), ("B79B6", "CE-1"), ("B79E3", "CE-2"), ("B79E7", "CE-2"),
+    # CE-2 en ES-300: 0.71 / 0.90; CE-4, debajo, a 0.95.
+    ("8A186", "CE-2"), ("8A18A", "CE-2"),
+    # CI de 20 cm en ES-300: «E#2@15» A8E0B a 0.569 de su sección y a 0.572 de la de 15 cm.
+    ("A8E0A", "CI"), ("A8E0B", "CI"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize("handle,marca", _EN_DUDA)
+def test_a_stack_another_section_reaches_about_as_near_is_in_doubt(marina, handle, marca):
+    inv, ids = marina
+    assert _leida_por(inv, ids[handle]) == set()
+    assert marca in _posibles(inv, ids[handle])
