@@ -1264,6 +1264,62 @@ def test_10_a_wall_text_off_every_region_with_unowned_hatch_is_unknown():
     )
 
 
+def test_10_a_hatch_sliver_without_owner_does_not_make_a_wall_unknown():
+    # Tarea 12 (de la 11): an unowned sliver under 0.1 m², or under 1 % of what the planta
+    # hatches, is a drawing scrap: the stray text adds nothing and the bound stands.
+    grande = _achurado("H1", 0, 1000, 10, 1000.3)  # 3 m²
+    lejos = _rotulo("MC-1", 1, 1003)
+    con = _muros(grande, _achurado("S1", 50, 1000, 50.5, 1000.1), _rotulo("MC-1", 1, 1000.1), lejos)
+    assert _de(con, "MC-1").cantidad == "estimada"  # 0.05 m² < 0.1 m²
+    assert "(de 3.05 m² achurados ahí)" in _de(con, "MC-1").mensaje  # still in the planta total
+    # 1 % of the planta: 0.15 m² beside 20 m² is a scrap; 0.3 m² is not
+    veinte = _achurado("H1", 0, 1000, 20, 1001)
+    for lado, cantidad in ((0.15, "estimada"), (0.3, "desconocida")):
+        v = _muros(
+            veinte,
+            _achurado("S1", 50, 1000, 50 + lado, 1001),
+            _rotulo("MC-1", 1, 1000.5),
+            _rotulo("MC-1", 1, 1003),
+        )
+        assert _de(v, "MC-1").cantidad == cantidad, lado
+    # beside a 3 m² planta 1 % is 0.03 m²: a 0.05 m² region is only a scrap by the 0.1 m² rule,
+    # a 0.12 m² one is a real unowned region
+    v = _muros(grande, _achurado("S1", 50, 1000, 51.2, 1000.1), _rotulo("MC-1", 1, 1000.1), lejos)
+    assert _de(v, "MC-1").cantidad == "desconocida"
+
+
+def test_10_one_cap_per_planta_so_shared_regions_are_never_summed_twice():
+    v = _muros(
+        _achurado("H1", 0, 1000, 10, 1000.3),  # MC-1 / MC-3: 3 m²
+        _achurado("H2", 0, 1005, 2, 1005.5),  # MC-1 alone: 1 m²
+        _rotulo("MC-1", 1, 1000.1),
+        _rotulo("MC-3", 8, 1000.1),
+        _rotulo("MC-1", 1, 1005.1),
+        defs=("MC-1", "MC-3"),
+    )
+    tope = next(x for x in v if x.id == id_de_verificacion(10, "", "", "muros: tope por planta"))
+    assert tope.severidad == "aviso" and tope.cantidad == "estimada"
+    assert tope.marcas == ["MC-1", "MC-3"]
+    # v1 (+3) hatches 4 m²: A 3.5 m → 14 m³, B 3 m → 12 m³; once, never MC-1 + MC-3
+    assert "V1: 4.00 m² achurados; tope (A) 14.00 m³ / (B) 12.00 m³" in tope.mensaje
+    assert "En total: (A) a lo más 14.00 m³; (B) a lo más 12.00 m³" in tope.mensaje
+    suma = _de(v, "MC-1").en_juego["volumen_m3"] + _de(v, "MC-3").en_juego["volumen_m3"]
+    assert suma > tope.en_juego["volumen_m3"] == pytest.approx(14.0)
+    # no wall text measured: no cap line
+    assert not [x for x in _muros(_achurado("H1", 0, 1000, 10, 1000.3)) if "tope" in x.mensaje]
+
+
+def test_10_reading_a_never_counts_the_top_planta():
+    # v2 (+6.5) is the top planta: under A it has no storey above (not counted), under B it sits
+    # 3.5 m over v1.
+    v = _muros(_achurado("H2", 0, 2000, 10, 2000.3), _rotulo("MC-1", 1, 2000.1))
+    f = _de(v, "MC-1")
+    assert "(A) cada planta sube desde su losa (V2 no se cuenta): a lo más 0.00 m³" in f.mensaje
+    assert "(B) cada planta está bajo su losa (V2 3.5 m): a lo más 10.50 m³" in f.mensaje
+    tope = next(x for x in v if x.id == id_de_verificacion(10, "", "", "muros: tope por planta"))
+    assert "V2: 3.00 m² achurados; tope (A) no se cuenta / (B) 10.50 m³" in tope.mensaje
+
+
 def test_estimated_and_unknown_findings_never_rank_above_big_known_ones():
     from klave_engine.estructura.verificaciones import ordenar
 

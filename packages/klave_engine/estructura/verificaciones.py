@@ -1362,7 +1362,27 @@ def _escritas_sin_elemento(
         for marca, textos in escritas.items()
         if _es_muro(marca, _familia_de_marca(ctx, marca, titulos), textos)
     }
-    medidas = _medir_muros(ctx, muros)
+    medidas, tope = _medir_muros(ctx, muros)
+    if tope is not None:
+        salida.append(
+            _hallazgo(
+                10,
+                "aviso",
+                "Muros de concreto escritos sin elemento: lo más que puede haber en cada planta "
+                "que tocan sus cotas (todo su achurado de muro × su entrepiso, "
+                f"{_DOS_LECTURAS}; la lectura no escoge). Las cotas de "
+                f"{', '.join(tope.marcas)} no se suman entre sí: una región que comparten aparece "
+                f"en cada una. {'; '.join(tope.lineas)}. En total: (A) a lo más "
+                f"{tope.volumen_a_m3:.2f} m³; (B) a lo más {tope.volumen_b_m3:.2f} m³.",
+                clave="muros: tope por planta",
+                marcas=tope.marcas,
+                en_juego={
+                    "area_planta_m2": tope.area_m2,
+                    "volumen_m3": max(tope.volumen_a_m3, tope.volumen_b_m3),
+                },
+                cantidad="estimada",
+            )
+        )
     for marca, textos in sorted(escritas.items()):
         por_hoja = Counter(t.hoja for t in textos)
         donde = "; ".join(f"{_nombre_de_hoja(h)}: {_veces(n)}" for h, n in sorted(por_hoja.items()))
@@ -1494,6 +1514,25 @@ class _Medida:
     limpia: bool
 
 
+@dataclass
+class _Tope:
+    """Lo más que pueden sumar los muros escritos sin elemento: todo el achurado de muro de cada
+    planta que sus cotas tocan × su entrepiso, en las dos lecturas (cada región una vez: las cotas
+    de las marcas no se suman entre sí, una región compartida aparece en cada una)."""
+
+    lineas: list[str]
+    area_m2: float
+    volumen_a_m3: float
+    volumen_b_m3: float
+    marcas: list[str]
+
+
+# Un trozo de achurado sin dueño más chico que esto (m², o esta parte de lo que achura su planta)
+# es una astilla del dibujo: no vuelve desconocida la cota de un muro (sigue en el total achurado).
+_ASTILLA_M2 = 0.1
+_ASTILLA_PARTE = 0.01
+
+
 def _regiones_de_muro(ctx: _Contexto) -> list[_Region]:
     """Las regiones achuradas de muro de concreto de las plantas estructurales, cada una con su
     área neta en m² (el contorno menos los huecos: un anillo cuenta lo que está entre sus dos
@@ -1580,16 +1619,20 @@ def _lecturas_de_entrepiso(
     return sube, baja
 
 
-def _medir_muros(ctx: _Contexto, muros: dict[str, list[_Escrita]]) -> dict[str, _Medida]:
+def _medir_muros(
+    ctx: _Contexto, muros: dict[str, list[_Escrita]]
+) -> tuple[dict[str, _Medida], _Tope | None]:
     """R232: la cota medida del concreto de cada muro escrito sin elemento, o nada. Cada texto toma
     la región achurada de muro sobre la que está; cada región se cuenta una vez y la que toman
     varias marcas se dice junta («MC-1/MC-3: 6.01 m²»). El alto es el entrepiso de su planta en
     las dos lecturas de los entrepisos, las dos dichas (la lectura no escoge). Lo de cada planta
     nunca pasa de lo que esa planta achura. Si un texto no está sobre ninguna región y en su
-    planta queda achurado sin dueño, no se puede atribuir: cantidad desconocida."""
+    planta queda achurado sin dueño (no una astilla: ``_ASTILLA_M2``, ``_ASTILLA_PARTE``), no se
+    puede atribuir: cantidad desconocida. Con las cotas, el tope de cada planta que tocan (todo su
+    achurado de muro × su entrepiso), para que nadie sume las cotas de las marcas."""
     regiones = _regiones_de_muro(ctx)
     if not regiones:
-        return {}
+        return {}, None
     por_vista: dict[str, list[_Region]] = defaultdict(list)
     for r in regiones:
         por_vista[r.vista].append(r)
@@ -1616,10 +1659,20 @@ def _medir_muros(ctx: _Contexto, muros: dict[str, list[_Escrita]]) -> dict[str, 
         if ctx.segmentation is not None
         else {}
     )
+    achurado_de = {v: sum(r.area_m2 for r in rs) for v, rs in por_vista.items()}
+    # Un trozo sin dueño cuenta si no es una astilla del dibujo (R232, con la tarea 12).
+    sin_dueno = {
+        v
+        for v, rs in por_vista.items()
+        if any(
+            not duenos.get(id(r)) and r.area_m2 >= max(_ASTILLA_M2, _ASTILLA_PARTE * achurado_de[v])
+            for r in rs
+        )
+    }
     salida: dict[str, _Medida] = {}
+    tocadas: dict[str, set[str]] = defaultdict(set)  # vista → las marcas con cota ahí
     for marca in muros:
         vistas = de_la_marca.get(marca, {})
-        sin_dueno = {v for v in por_vista if any(not duenos.get(id(r)) for r in por_vista[v])}
         sueltos = fuera.get(marca, [])
         sueltos_txt = ", ".join(_handle_de(t.entidad) for t in sueltos[:_EJEMPLOS])
         esta = "está" if len(sueltos) == 1 else "están"
@@ -1693,7 +1746,37 @@ def _medir_muros(ctx: _Contexto, muros: dict[str, list[_Escrita]]) -> dict[str, 
             f"{vol_b:.2f} m³. La lectura no escoge.{sueltos_dicho}"
         )
         salida[marca] = _Medida(texto, max(vol_a, vol_b), area_total, True)
-    return salida
+        for vista in vistas:
+            tocadas[vista].add(marca)
+    return salida, _tope(tocadas, achurado_de, sube, baja, nombre)
+
+
+def _tope(
+    tocadas: dict[str, set[str]],
+    achurado_de: dict[str, float],
+    sube: dict[str, float | None],
+    baja: dict[str, float | None],
+    nombre: dict[str, str],
+) -> _Tope | None:
+    """El tope de los muros por planta (``_Tope``): una línea por planta que las cotas tocan."""
+    if not tocadas:
+        return None
+    lineas: list[str] = []
+    area = vol_a = vol_b = 0.0
+    for vista in sorted(tocadas, key=lambda v: nombre.get(v, v)):
+        achurado = achurado_de[vista]
+        a, b = sube.get(vista), baja.get(vista)
+        area += achurado
+        vol_a += achurado * (a or 0.0)
+        vol_b += achurado * (b or 0.0)
+        tope_a = f"{achurado * a:.2f} m³" if a else "no se cuenta"
+        tope_b = f"{achurado * b:.2f} m³" if b else "no se cuenta"
+        lineas.append(
+            f"{nombre.get(vista, vista)}: {achurado:.2f} m² achurados; tope (A) {tope_a} / (B) "
+            f"{tope_b}"
+        )
+    marcas = sorted({m for ms in tocadas.values() for m in ms})
+    return _Tope(lineas, area, vol_a, vol_b, marcas)
 
 
 def _vista_de(ctx: _Contexto, e: NormalizedEntity) -> str | None:
