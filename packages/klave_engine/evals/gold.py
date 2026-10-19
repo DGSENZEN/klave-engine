@@ -20,9 +20,9 @@ import tempfile
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from klave_engine.common.config import Settings, get_settings
 from klave_engine.common.io import read_json, write_json, write_text
@@ -74,6 +74,11 @@ class MoneyExpectation(BaseModel):
     direct_cost: float | None = None
     direct_cost_tolerance_pct: float = 5.0
     unpriced: list[str] = Field(default_factory=list)
+    # Lo que el motor produce y el gold, a sabiendas, no cerca —un renglón cuya cantidad nadie ha
+    # verificado contra el plano, o ``"costo_directo"``—, cada uno con su razón: no es «concepto
+    # nuevo» y ``gold money`` no lo vuelve a capturar. Todo lo demás que el motor produzca y el gold
+    # no tenga sigue fallando.
+    sin_cerca: dict[str, str] | None = None
 
 
 class MoneyScore(BaseModel):
@@ -87,6 +92,235 @@ class MoneyScore(BaseModel):
     passed: bool
 
 
+CAMPOS_DE_FAMILIA = ("colocaciones", "con_definicion", "criticos_total", "criticos_del_plano")
+SEVERIDADES = ("bloquea", "duda", "aviso")
+_PREFIJOS_SIN_CERCA = ("por_familia.", "verificaciones.")
+
+
+class EstructuraExpectation(BaseModel):
+    """La cerca de la lectura estructural (``estructura.json``), exacta.
+
+    ``por_familia``: por familia, sus cuentas de la tarjeta (``CAMPOS_DE_FAMILIA``).
+    ``verificaciones``: cuántos hallazgos da cada verificación, por su número (``"7"``: todas sus
+    severidades juntas) o por número y severidad (``"1/bloquea"``). ``sin_cerca``: lo que el gold, a
+    sabiendas, no cerca, cada cosa con su razón: ``"por_familia.zapata"`` (toda la familia),
+    ``"por_familia.castillo.criticos_del_plano"``, ``"verificaciones.7"`` o
+    ``"verificaciones.1/aviso"``. Todo lo demás debe ser cero: una familia o una verificación que el
+    gold no cerca ni excusa y que el motor empieza a dar, falla. ``transcripcion``: la ruta de una
+    transcripción hecha a mano (formato de la Tarea 16); si la hay, las lecturas del motor por
+    (marca, hoja) deben ser exactamente las suyas."""
+
+    por_familia: dict[str, dict[str, int]] = Field(default_factory=dict)
+    verificaciones: dict[str, int] = Field(default_factory=dict)
+    transcripcion: str | None = None
+    sin_cerca: dict[str, str] | None = None
+
+    @field_validator("por_familia")
+    @classmethod
+    def _campos_conocidos(cls, v: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
+        for familia, campos in v.items():
+            extra = set(campos) - set(CAMPOS_DE_FAMILIA)
+            if extra:
+                raise ValueError(f"{familia}: campos que la tarjeta no tiene: {sorted(extra)}")
+        return v
+
+    @field_validator("verificaciones")
+    @classmethod
+    def _claves_de_verificacion(cls, v: dict[str, int]) -> dict[str, int]:
+        for clave in v:
+            _clave_de_verificacion(clave)
+        return v
+
+    @field_validator("sin_cerca")
+    @classmethod
+    def _claves_sin_cerca(cls, v: dict[str, str] | None) -> dict[str, str] | None:
+        for clave, razon in (v or {}).items():
+            if not clave.startswith(_PREFIJOS_SIN_CERCA):
+                raise ValueError(f"«{clave}»: sin_cerca empieza con {_PREFIJOS_SIN_CERCA}")
+            if clave.startswith("verificaciones."):
+                _clave_de_verificacion(clave.removeprefix("verificaciones."))
+            else:
+                partes = clave.removeprefix("por_familia.").split(".")
+                if len(partes) > 2 or (len(partes) == 2 and partes[1] not in CAMPOS_DE_FAMILIA):
+                    raise ValueError(f"«{clave}»: no es una familia ni un campo de su tarjeta")
+            if not razon.strip():
+                raise ValueError(f"«{clave}»: lo que no se cerca lleva su razón")
+        return v
+
+
+def _clave_de_verificacion(clave: str) -> tuple[int, str | None]:
+    numero, barra, severidad = clave.partition("/")
+    if not numero.isdigit() or (barra and severidad not in SEVERIDADES):
+        raise ValueError(f"«{clave}»: la clave es «N» o «N/severidad» ({', '.join(SEVERIDADES)})")
+    return int(numero), (severidad if barra else None)
+
+
+def score_estructura(
+    want: EstructuraExpectation, estructura_json: dict | None
+) -> tuple[bool, list[str]]:
+    """La cerca, exacta, contra el ``estructura.json`` de una corrida: cada cuenta cercada igual,
+    lo excusado en ``sin_cerca`` sin medir y todo lo demás en cero. Las diferencias, en español,
+    empiezan por lo que cambió («castillo.con_definicion: …», «verificación 7/duda: …»)."""
+    if estructura_json is None:
+        return False, ["la corrida no escribió estructura.json y el gold cerca su lectura"]
+    sin_cerca = want.sin_cerca or {}
+    diffs: list[str] = []
+    tarjetas = {t["familia"]: t for t in estructura_json.get("resumen", [])}
+    for familia in sorted(set(tarjetas) | set(want.por_familia)):
+        if f"por_familia.{familia}" in sin_cerca:
+            continue
+        cercados = want.por_familia.get(familia, {})
+        tarjeta = tarjetas.get(familia, {})
+        for campo in CAMPOS_DE_FAMILIA:
+            if campo not in cercados and f"por_familia.{familia}.{campo}" in sin_cerca:
+                continue
+            esperado = cercados.get(campo, 0)
+            real = int(tarjeta.get(campo, 0))
+            if real != esperado:
+                origen = "" if campo in cercados else " (no está en el gold: debe ser 0)"
+                diffs.append(f"{familia}.{campo}: esperado {esperado}, motor {real}{origen}")
+    cuenta: Counter[tuple[int, str]] = Counter(
+        (int(v["numero"]), str(v["severidad"])) for v in estructura_json.get("verificaciones", [])
+    )
+    numeros = {n for n, _ in cuenta} | {_clave_de_verificacion(c)[0] for c in want.verificaciones}
+    numeros |= {
+        _clave_de_verificacion(c.removeprefix("verificaciones."))[0]
+        for c in sin_cerca if c.startswith("verificaciones.")
+    }
+    for numero in sorted(numeros):
+        if f"verificaciones.{numero}" in sin_cerca:
+            continue
+        total = sum(q for (n, _s), q in cuenta.items() if n == numero)
+        if str(numero) in want.verificaciones:
+            if total != want.verificaciones[str(numero)]:
+                diffs.append(
+                    f"verificación {numero}: esperado {want.verificaciones[str(numero)]}, "
+                    f"motor {total}"
+                )
+            continue
+        for severidad in SEVERIDADES:
+            clave = f"{numero}/{severidad}"
+            if clave not in want.verificaciones and f"verificaciones.{clave}" in sin_cerca:
+                continue
+            esperado = want.verificaciones.get(clave, 0)
+            real = cuenta.get((numero, severidad), 0)
+            if real != esperado:
+                origen = "" if clave in want.verificaciones else " (no está en el gold: debe ser 0)"
+                diffs.append(f"verificación {clave}: esperado {esperado}, motor {real}{origen}")
+    return not diffs, diffs
+
+
+def estructura_from_json(
+    estructura_json: dict, sin_cerca: dict[str, str] | None = None
+) -> EstructuraExpectation:
+    """La cerca que una corrida da, sin lo que ``sin_cerca`` excusa (que se conserva con su
+    razón): las tarjetas con algo distinto de cero y cada verificación por número y severidad.
+    Sólo se captura de una corrida cuyas cuentas se verificaron contra el plano crudo."""
+    sin_cerca = dict(sin_cerca or {})
+    por_familia: dict[str, dict[str, int]] = {}
+    for t in estructura_json.get("resumen", []):
+        familia = t["familia"]
+        if f"por_familia.{familia}" in sin_cerca:
+            continue
+        campos = {
+            c: int(t.get(c, 0)) for c in CAMPOS_DE_FAMILIA
+            if f"por_familia.{familia}.{c}" not in sin_cerca
+        }
+        if any(campos.values()):
+            por_familia[familia] = campos
+    cuenta: Counter[str] = Counter(
+        f"{int(v['numero'])}/{v['severidad']}" for v in estructura_json.get("verificaciones", [])
+    )
+    verificaciones = {
+        clave: n for clave, n in sorted(cuenta.items(), key=lambda kv: _orden(kv[0]))
+        if f"verificaciones.{clave}" not in sin_cerca
+        and f"verificaciones.{clave.partition('/')[0]}" not in sin_cerca
+    }
+    return EstructuraExpectation(
+        por_familia=por_familia, verificaciones=verificaciones, sin_cerca=sin_cerca or None
+    )
+
+
+def _orden(clave: str) -> tuple[int, int]:
+    numero, severidad = _clave_de_verificacion(clave)
+    return numero, SEVERIDADES.index(severidad) if severidad else -1
+
+
+_LEIDAS_DEL_PLANO = frozenset({"cuadro", "detalle", "nota"})
+
+
+def _texto_canonico(valor: Any) -> str | None:
+    if valor is None:
+        return None
+    texto = "".join(str(valor).upper().split())
+    return texto or None
+
+
+def _seccion_canonica(valor: Any) -> tuple[float, ...] | None:
+    if not valor:
+        return None
+    return tuple(sorted(float(v) for v in valor))
+
+
+def score_transcripcion(path: Path, schedules_json: dict | None) -> tuple[bool, list[str]]:
+    """R7: una transcripción hecha a mano (formato de la Tarea 16: ``lecturas`` con ``marca``,
+    ``hoja``, ``longitudinal``, ``estribos``, ``seccion_cm``; ``dudas`` con ``marca`` y ``hoja``)
+    contra las lecturas del plano del motor (``schedules.json``: fuentes cuadro, detalle o nota,
+    nunca la IA), por (marca, hoja), en los dos sentidos: lo que la transcripción lee y el motor no
+    —o lee distinto— y lo que el motor lee y la transcripción no tiene. Lo que la transcripción deja
+    en ``dudas`` no se compara. Los textos se comparan sin espacios y en mayúsculas; la sección
+    sin el orden de sus lados."""
+    from klave_engine.estructura.definiciones import normalizar_marca
+
+    if schedules_json is None:
+        return False, ["la corrida no escribió schedules.json y el gold tiene una transcripción"]
+    try:
+        hecha = read_json(Path(path))
+    except (OSError, ValueError) as exc:
+        return False, [f"la transcripción {path} no se puede leer: {exc}"]
+    dudas = {(normalizar_marca(str(d["marca"])), str(d["hoja"])) for d in hecha.get("dudas", [])}
+    esperado: dict[tuple[str, str], dict[str, Any]] = {}
+    for lectura in hecha.get("lecturas", []):
+        llave = (normalizar_marca(str(lectura["marca"])), str(lectura["hoja"]))
+        esperado[llave] = {
+            "longitudinal": {t} if (t := _texto_canonico(lectura.get("longitudinal"))) else set(),
+            "estribos": {t} if (t := _texto_canonico(lectura.get("estribos"))) else set(),
+            "seccion_cm": {s} if (s := _seccion_canonica(lectura.get("seccion_cm"))) else set(),
+        }
+    motor: dict[tuple[str, str], dict[str, set[Any]]] = {}
+    for spec in schedules_json.get("specs", []):
+        if spec.get("source") not in _LEIDAS_DEL_PLANO or not spec.get("mark"):
+            continue
+        llave = (normalizar_marca(str(spec["mark"])), str(spec.get("hoja") or ""))
+        lecturas = motor.setdefault(
+            llave, {"longitudinal": set(), "estribos": set(), "seccion_cm": set()}
+        )
+        if (t := _texto_canonico(spec.get("rebar"))) is not None:
+            lecturas["longitudinal"].add(t)
+        if (t := _texto_canonico(spec.get("stirrups"))) is not None:
+            lecturas["estribos"].add(t)
+        if (s := _seccion_canonica(spec.get("section_cm"))) is not None:
+            lecturas["seccion_cm"].add(s)
+    diffs: list[str] = []
+    for llave in sorted(set(esperado) | set(motor)):
+        if llave in dudas:
+            continue
+        marca, hoja = llave
+        if llave not in esperado:
+            diffs.append(f"{marca} en {hoja}: el motor la lee y la transcripción no la tiene")
+            continue
+        if llave not in motor:
+            diffs.append(f"{marca} en {hoja}: la transcripción la lee y el motor no")
+            continue
+        for campo in ("longitudinal", "estribos", "seccion_cm"):
+            if esperado[llave][campo] != motor[llave][campo]:
+                diffs.append(
+                    f"{marca} en {hoja}, {campo}: transcripción {sorted(esperado[llave][campo])}, "
+                    f"motor {sorted(motor[llave][campo])}"
+                )
+    return not diffs, diffs
+
+
 class GoldEntry(BaseModel):
     drawing_id: str
     source: str
@@ -98,6 +332,7 @@ class GoldEntry(BaseModel):
     excluded: list[str] = Field(default_factory=list)
     baseline_f1: dict[str, float] = Field(default_factory=dict)
     money: MoneyExpectation | None = None
+    estructura: EstructuraExpectation | None = None
     notes: str = ""
 
 
@@ -116,6 +351,11 @@ class EntryResult(BaseModel):
     concepts_unexpected: list[str] = Field(default_factory=list)
     # Renglones cuyas variantes no suman su cantidad (debe estar vacío).
     variants_unbalanced: list[str] = Field(default_factory=list)
+    # La cerca estructural: None si el gold no la tiene; sus diferencias, si las hay.
+    estructura_passed: bool | None = None
+    estructura_diffs: list[str] = Field(default_factory=list)
+    transcripcion_passed: bool | None = None
+    transcripcion_diffs: list[str] = Field(default_factory=list)
     passed: bool
     message: str = ""
 
@@ -214,33 +454,51 @@ def _engine_money(scratch: Path, settings: Settings, detections: list[Detection]
     )
 
 
-def _fresh_run(project_root: Path, settings: Settings) -> tuple[list[Detection], CostReport]:
+def _leer_procesado(scratch: Path, settings: Settings, name: str) -> dict | None:
+    """Un artefacto de la corrida de prueba, leído antes de que se borre."""
+    path = scratch / settings.processed_dir_name / name
+    return read_json(path) if path.exists() else None
+
+
+def _fresh_run(
+    project_root: Path, settings: Settings
+) -> tuple[list[Detection], CostReport, dict | None]:
     """Run the current engine on a scratch copy of the drawings: the
-    detections and the pure-engine presupuesto."""
+    detections, the pure-engine presupuesto and the run's ``estructura.json``
+    (read before the scratch is deleted)."""
     scratch = Path(tempfile.mkdtemp(prefix="klave_gold_")) / project_root.name
     try:
         shutil.copytree(project_root / "drawings", scratch / "drawings")
         detections = run_full_pipeline(
             scratch, settings, record_history=False, perfil_del_taller=False
         ).detections
-        return detections, _engine_money(scratch, settings, detections)
+        report = _engine_money(scratch, settings, detections)
+        return detections, report, _leer_procesado(scratch, settings, "estructura.json")
     finally:
         shutil.rmtree(scratch.parent, ignore_errors=True)
 
 
-def money_from_report(report: CostReport) -> MoneyExpectation:
-    """Capture every line's quantity and the direct cost as the fence."""
+def money_from_report(
+    report: CostReport, sin_cerca: dict[str, str] | None = None
+) -> MoneyExpectation:
+    """Capture every line's quantity and the direct cost as the fence, except
+    what ``sin_cerca`` excuses (kept with its reason)."""
+    sin_cerca = dict(sin_cerca or {})
     concepts = {
         line.concept_code: QuantityExpectation(
             quantity=round(line.quantity, 3), unit=line.unit, source="engine",
             variants={v.key: round(v.quantity, 3) for v in line.variants} or None,
         )
         for line in report.boq.lines
+        if line.concept_code not in sin_cerca
     }
     return MoneyExpectation(
         concepts=concepts,
-        direct_cost=round(report.boq.direct_cost_total, 2),
+        direct_cost=(
+            None if "costo_directo" in sin_cerca else round(report.boq.direct_cost_total, 2)
+        ),
         unpriced=sorted(line.concept_code for line in report.boq.lines if line.unpriced),
+        sin_cerca=sin_cerca or None,
     )
 
 
@@ -306,7 +564,10 @@ def score_money(
         else:
             drift = abs(report.boq.direct_cost_total - expected.direct_cost)
             cost_passed = drift / expected.direct_cost * 100.0 <= expected.direct_cost_tolerance_pct
-    unexpected = sorted(code for code in actual if code not in expected.concepts)
+    excusados = expected.sin_cerca or {}
+    unexpected = sorted(
+        code for code in actual if code not in expected.concepts and code not in excusados
+    )
     return scores, cost_passed, unexpected
 
 
@@ -323,9 +584,12 @@ def capture(
     settings = settings or get_settings()
     project_root = Path(project_root)
     money: MoneyExpectation | None = None
+    estructura: EstructuraExpectation | None = None
     if fresh:
-        detections, report = _fresh_run(project_root, settings)
+        detections, report, estructura_json = _fresh_run(project_root, settings)
         money = money_from_report(report)
+        if estructura_json is not None:
+            estructura = estructura_from_json(estructura_json)
     else:
         detections = _active_detections(project_root, settings)
     reviews = load_reviews(project_root / settings.processed_dir_name)
@@ -362,6 +626,7 @@ def capture(
         excluded=excluded,
         baseline_f1=baseline,
         money=money,
+        estructura=estructura,
     )
 
 
@@ -379,15 +644,48 @@ def capture_money(
         source = Path(entry.source)
         if not (source / "drawings").is_dir():
             continue
-        _detections, report = _fresh_run(source, settings)
-        fresh = money_from_report(report)
+        _detections, report, _estructura = _fresh_run(source, settings)
+        fresh = money_from_report(report, entry.money.sin_cerca if entry.money else None)
         if entry.money is not None:
             for code, want in entry.money.concepts.items():
                 if want.source == "human":
                     fresh.concepts[code] = want
+                elif code in fresh.concepts:
+                    # Un renglón del motor que se vuelve a capturar conserva su tolerancia
+                    # y su nota.
+                    fresh.concepts[code].tolerance_pct = want.tolerance_pct
+                    fresh.concepts[code].note = want.note
             if entry.money.direct_cost_tolerance_pct != 5.0:
                 fresh.direct_cost_tolerance_pct = entry.money.direct_cost_tolerance_pct
         entry.money = fresh
+        saved.append(save_entry(entry, gold_dir))
+    return saved
+
+
+def capture_estructura(
+    gold_dir: Path = GOLD_DIR, only: str | None = None, settings: Settings | None = None
+) -> list[Path]:
+    """Fresh engine run per entry that has an ``estructura`` fence (or the one named in
+    ``only``); its counts become the fence, without what the entry's ``sin_cerca`` excuses
+    (kept with its reasons) and keeping its ``transcripcion``. Only for counts verified
+    against the raw drawing: say which and how in the entry's notes."""
+    settings = settings or get_settings()
+    saved: list[Path] = []
+    for entry in load_entries(gold_dir):
+        if only is not None and entry.drawing_id != only:
+            continue
+        if only is None and entry.estructura is None:
+            continue
+        source = Path(entry.source)
+        if not (source / "drawings").is_dir():
+            continue
+        _detections, _report, estructura_json = _fresh_run(source, settings)
+        if estructura_json is None:
+            raise RuntimeError(f"{entry.drawing_id}: la corrida no escribió estructura.json")
+        anterior = entry.estructura
+        fresh = estructura_from_json(estructura_json, anterior.sin_cerca if anterior else None)
+        fresh.transcripcion = anterior.transcripcion if anterior else None
+        entry.estructura = fresh
         saved.append(save_entry(entry, gold_dir))
     return saved
 
@@ -419,11 +717,17 @@ def evaluate_entry(entry: GoldEntry, settings: Settings | None = None) -> EntryR
         )
     matches = fingerprint(source) == entry.files
     scratch = Path(tempfile.mkdtemp(prefix="klave_gold_")) / entry.drawing_id
+    estructura_json: dict | None = None
+    schedules_json: dict | None = None
     try:
         shutil.copytree(source / "drawings", scratch / "drawings")
         result = run_full_pipeline(scratch, settings, record_history=False, perfil_del_taller=False)
         predicted = result.detections
         report = _engine_money(scratch, settings, predicted) if entry.money else None
+        if entry.estructura is not None:
+            estructura_json = _leer_procesado(scratch, settings, "estructura.json")
+            if entry.estructura.transcripcion is not None:
+                schedules_json = _leer_procesado(scratch, settings, "schedules.json")
     finally:
         shutil.rmtree(scratch.parent, ignore_errors=True)
 
@@ -450,6 +754,18 @@ def evaluate_entry(entry: GoldEntry, settings: Settings | None = None) -> EntryR
             passed and all(m.passed for m in money_scores)
             and cost_passed is not False and not unexpected
         )
+    estructura_passed: bool | None = None
+    estructura_diffs: list[str] = []
+    transcripcion_passed: bool | None = None
+    transcripcion_diffs: list[str] = []
+    if entry.estructura is not None:
+        estructura_passed, estructura_diffs = score_estructura(entry.estructura, estructura_json)
+        passed = passed and estructura_passed
+        if entry.estructura.transcripcion is not None:
+            transcripcion_passed, transcripcion_diffs = score_transcripcion(
+                Path(entry.estructura.transcripcion), schedules_json
+            )
+            passed = passed and transcripcion_passed
     message = "" if matches else "El plano cambió desde la captura; recaptura el gold."
     return EntryResult(
         drawing_id=entry.drawing_id,
@@ -465,6 +781,10 @@ def evaluate_entry(entry: GoldEntry, settings: Settings | None = None) -> EntryR
         direct_cost_passed=cost_passed,
         concepts_unexpected=unexpected,
         variants_unbalanced=variants_unbalanced,
+        estructura_passed=estructura_passed,
+        estructura_diffs=estructura_diffs,
+        transcripcion_passed=transcripcion_passed,
+        transcripcion_diffs=transcripcion_diffs,
         passed=passed,
         message=message,
     )
@@ -555,6 +875,14 @@ def render_markdown(summary: dict) -> str:
         if entry.get("variants_unbalanced"):
             lines += ["", "Variantes que no suman su renglón: "
                       + "; ".join(entry["variants_unbalanced"])]
+        if entry.get("estructura_passed") is not None:
+            verdict = "sí" if entry["estructura_passed"] else "NO"
+            lines += ["", "### Lectura estructural", "", f"Cerca exacta — OK: {verdict}"]
+            lines += [f"- {d}" for d in entry.get("estructura_diffs", [])]
+        if entry.get("transcripcion_passed") is not None:
+            verdict = "sí" if entry["transcripcion_passed"] else "NO"
+            lines += ["", f"Transcripción a mano — OK: {verdict}"]
+            lines += [f"- {d}" for d in entry.get("transcripcion_diffs", [])]
         lines.append("")
     return "\n".join(lines) + "\n"
 
@@ -575,6 +903,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     money.add_argument("--gold", default=str(GOLD_DIR))
     money.add_argument("--only")
+    est = sub.add_parser(
+        "estructura",
+        help="capture the structural reading's counts into existing entries (raw-verified only)",
+    )
+    est.add_argument("--gold", default=str(GOLD_DIR))
+    est.add_argument("--only")
     runner = sub.add_parser("run", help="evaluate the engine against the gold set")
     runner.add_argument("--gold", default=str(GOLD_DIR))
     runner.add_argument("--only")
@@ -589,6 +923,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "money":
         for path in capture_money(Path(args.gold), only=args.only):
             print(f"money → {path}")
+        return 0
+    if args.command == "estructura":
+        for path in capture_estructura(Path(args.gold), only=args.only):
+            print(f"estructura → {path}")
         return 0
     summary = run(Path(args.gold), only=args.only)
     print(render_markdown(summary))

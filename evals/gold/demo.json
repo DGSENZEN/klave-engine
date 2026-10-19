@@ -194,5 +194,33 @@
       "PRE-001"
     ]
   },
-  "notes": ""
+  "estructura": {
+    "por_familia": {
+      "columna": {
+        "colocaciones": 3,
+        "con_definicion": 0,
+        "criticos_total": 12,
+        "criticos_del_plano": 0
+      },
+      "trabe": {
+        "colocaciones": 1,
+        "con_definicion": 0,
+        "criticos_total": 4,
+        "criticos_del_plano": 0
+      },
+      "zapata": {
+        "colocaciones": 2,
+        "con_definicion": 0,
+        "criticos_total": 6,
+        "criticos_del_plano": 0
+      }
+    },
+    "verificaciones": {
+      "1/bloquea": 3,
+      "1/aviso": 1,
+      "7/bloquea": 1,
+      "7/duda": 1
+    }
+  },
+  "notes": "Cerca estructural (tarea 15), verificada en el DXF crudo (10 textos, 3 contornos): 3 etiquetas de columna (C1 \u00d72, C2) en S-COL-TAG, 1 de trabe (B1) en S-BEAM, 2 contornos de zapata sin marca en S-FOOTING; nada definido (ni cuadro, ni detalle, ni nota), sin niveles y sin unidades ($INSUNITS 0): ning\u00fan dato cr\u00edtico sale del plano. Hallazgos: C-1, C-2 y B-1 colocadas sin definir (1/bloquea 3), las 2 zapatas sin marca (1/aviso), el claro de B-1 sin unidades (7/bloquea) y la altura supuesta (7/duda); nada m\u00e1s."
 }

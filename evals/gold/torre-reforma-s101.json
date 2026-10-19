@@ -232,5 +232,32 @@
       "PRE-001"
     ]
   },
-  "notes": ""
+  "estructura": {
+    "por_familia": {
+      "columna": {
+        "colocaciones": 9,
+        "con_definicion": 0,
+        "criticos_total": 36,
+        "criticos_del_plano": 0
+      },
+      "trabe": {
+        "colocaciones": 3,
+        "con_definicion": 0,
+        "criticos_total": 12,
+        "criticos_del_plano": 3
+      },
+      "zapata": {
+        "colocaciones": 6,
+        "con_definicion": 0,
+        "criticos_total": 18,
+        "criticos_del_plano": 6
+      }
+    },
+    "verificaciones": {
+      "1/bloquea": 3,
+      "1/aviso": 1,
+      "7/duda": 3
+    }
+  },
+  "notes": "Cerca estructural (tarea 15), verificada en los tres DXF crudos (iguales entre s\u00ed: 10 textos y 3 contornos cada uno): por hoja 3 etiquetas de columna (C1 \u00d72, C2), 1 de trabe (B1, su l\u00ednea de 300 u en S-BEAM), 2 contornos de zapata de 60\u00d760 u sin marca; nada definido y sin niveles. Del plano s\u00f3lo salen el claro de cada B-1 (3) y la secci\u00f3n medida de cada zapata (6), en las unidades que el motor infiere (cm, $INSUNITS 0); los c\u00edrculos de 8 u en S-COL junto a dos de las tres C son s\u00edmbolos, no secciones (R133 y la regla de marcadores que se le propuso a Diego): columna 0. Hallazgos: C-1, C-2, B-1 sin definir (1/bloquea 3), zapatas sin marca (1/aviso), altura supuesta por hoja (7/duda 3)."
 }

@@ -67,5 +67,9 @@
       "CAR-001"
     ]
   },
-  "notes": ""
+  "estructura": {
+    "por_familia": {},
+    "verificaciones": {}
+  },
+  "notes": "Cerca estructural (tarea 15): en crudo no hay ninguna marca estructural ni texto de armado: sin colocaciones ni hallazgos."
 }

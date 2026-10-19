@@ -320,5 +320,9 @@
       "SAN-003"
     ]
   },
-  "notes": "R166: el ducto flexible 20C6 bajo el \u00ab10\"\u00bb es de 10\" (centro real del texto, R146). R171, correcci\u00f3n: la nota de R166 dec\u00eda que nada m\u00e1s se mov\u00eda y no era as\u00ed: los metros de AIR se hab\u00edan re-adjudicado entre di\u00e1metros con el total igual, y el gold no registraba variantes; desde R171 las registra (ver AIR-001 y AIR-002). R180/R183: se leen los di\u00e1metros de 4\" a 24\" y un ducto de r\u00f3tulos que no coinciden queda por confirmar; pipe_run 35 \u2192 47 porque cada di\u00e1metro nuevo (14\", 16\") y lo por confirmar es su propia corrida, en AireDucto y en flexible (ver AIR-001 y AIR-002)."
+  "estructura": {
+    "por_familia": {},
+    "verificaciones": {}
+  },
+  "notes": "R166: el ducto flexible 20C6 bajo el \u00ab10\"\u00bb es de 10\" (centro real del texto, R146). R171, correcci\u00f3n: la nota de R166 dec\u00eda que nada m\u00e1s se mov\u00eda y no era as\u00ed: los metros de AIR se hab\u00edan re-adjudicado entre di\u00e1metros con el total igual, y el gold no registraba variantes; desde R171 las registra (ver AIR-001 y AIR-002). R180/R183: se leen los di\u00e1metros de 4\" a 24\" y un ducto de r\u00f3tulos que no coinciden queda por confirmar; pipe_run 35 \u2192 47 porque cada di\u00e1metro nuevo (14\", 16\") y lo por confirmar es su propia corrida, en AireDucto y en flexible (ver AIR-001 y AIR-002). Cerca estructural (tarea 15): en crudo (sanitario y aire acondicionado) no hay ninguna marca estructural ni texto de armado: sin colocaciones ni hallazgos."
 }
