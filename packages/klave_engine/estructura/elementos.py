@@ -995,6 +995,19 @@ def _variante(
     return propia
 
 
+def variante_de(e: Elemento) -> float | None:
+    """R168: el espesor de muro (cm) de la variante de su marca que ``e`` tomó (el aviso que
+    ``_variante`` escribe al resolverla), o ``None`` si no tomó ninguna."""
+    prefijo = f"variante: {e.marca} «para muros de "
+    for a in e.avisos:
+        if a.startswith(prefijo):
+            try:
+                return float(a[len(prefijo) :].split(" cm»", 1)[0])
+            except ValueError:
+                return None
+    return None
+
+
 def _nota_de_familia(de_familia: Definicion | None, hoja: str) -> Callable[[str], Dato | None]:
     """Los campos que la nota de la familia dice con valor (del plano, nunca de la IA), resueltos
     para la hoja: el respaldo de una marca que no los dice o no se leyó (R134)."""

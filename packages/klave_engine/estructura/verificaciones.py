@@ -65,7 +65,13 @@ from klave_engine.estructura.armado import (
 )
 from klave_engine.estructura.dato import PRECEDENCIA, Dato, hojas_de, miembros
 from klave_engine.estructura.definiciones import Definicion, normalizar_marca
-from klave_engine.estructura.elementos import FAMILIAS_ESTRUCTURALES, Elemento, excluidas
+from klave_engine.estructura.elementos import (
+    _TOLERANCIA_DE_MURO_CM,
+    FAMILIAS_ESTRUCTURALES,
+    Elemento,
+    excluidas,
+    variante_de,
+)
 from klave_engine.estructura.marcas import marca_normalizada, marcas_nombradas
 from klave_engine.estructura.reglas import Reglas
 from klave_engine.estructura.textos import alto_de_texto, extension_de_texto
@@ -3336,6 +3342,44 @@ def _campo_de_aviso(aviso: str) -> str | None:
     return None
 
 
+def _parte(definicion: Definicion, muro: float | None) -> Definicion:
+    """La variante para muros de ``muro`` cm (R168), o la definición de la marca si ``None``."""
+    if muro is None:
+        return definicion
+    return next(v for v in definicion.variantes if v.para_muro_cm == muro)
+
+
+def _parte_decidida(definicion: Definicion, campo: str, aviso: str) -> Definicion | None:
+    """R241: la parte de la definición de la que es ``aviso`` (las variantes cuyas lecturas lo
+    dicen; si ninguna, la marca misma), si alguien ya decidió su ``campo`` en todas; si no,
+    ``None`` (el aviso sigue siendo una duda)."""
+    duenas = [v for v in definicion.variantes if aviso in v.avisos] or [definicion]
+    for parte in duenas:
+        dato = getattr(parte, campo, None)
+        if dato is None or dato.fuente != "humano":
+            return None
+    return duenas[0]
+
+
+def _cuantas_tomaron(ctx: _Contexto, marca: str, definicion: Definicion, muro: float | None) -> str:
+    """R241: en una marca con variantes por muro, cuántas de sus colocaciones tomaron la decisión
+    de la parte ``muro``: las que resolvieron esa variante, o (``None``, la de la marca) las que no
+    resolvieron ninguna (una decisión ``humano`` le gana a todo, así que todas las de la parte la
+    toman); «» sin variantes (las toman todas)."""
+    if not definicion.variantes:
+        return ""
+    suyas = [e for e in ctx.elementos if e.marca == marca]
+    tomaron = 0
+    for e in suyas:
+        propia = variante_de(e)
+        tomaron += (
+            propia is None
+            if muro is None
+            else propia is not None and abs(propia - muro) <= _TOLERANCIA_DE_MURO_CM
+        )
+    return f"lo toman {tomaron} de {len(suyas)} colocaciones"
+
+
 def _avisos_de_lectura(ctx: _Contexto) -> tuple[list[Verificacion], list[Verificacion]]:
     """Lo que las lecturas de cada marca avisan. Lo que pide que alguien mire (un texto vetado de
     su pila, un dibujo que no coincide con sus cotas, un corte que no se pudo escoger, un texto
@@ -3355,23 +3399,34 @@ def _avisos_de_lectura(ctx: _Contexto) -> tuple[list[Verificacion], list[Verific
             if clase is not None:
                 informativos[clase].append((marca, a))
         # R241: lo que sus lecturas avisan de un dato que alguien ya decidió no es una duda nueva:
-        # un aviso que dice quién lo decidió.
-        decididas: dict[str, list[str]] = defaultdict(list)
+        # un aviso que dice quién lo decidió. En una marca con variantes por muro, sólo lo de la
+        # parte que la decisión alcanzó (la marca, o la variante que nombró): lo que avisa la
+        # lectura de otra variante sigue siendo su duda.
+        decididas: dict[tuple[str, float | None], list[str]] = defaultdict(list)
         for a in list(dudas):
             campo = _campo_de_aviso(a)
-            dato = getattr(definicion, campo) if campo is not None else None
-            if campo is not None and dato is not None and dato.fuente == "humano":
-                decididas[campo].append(a)
+            parte = _parte_decidida(definicion, campo, a) if campo is not None else None
+            if campo is not None and parte is not None:
+                decididas[(campo, parte.para_muro_cm)].append(a)
                 dudas.remove(a)
-        for campo, textos in sorted(decididas.items()):
-            dato = getattr(definicion, campo)
+        for (campo, muro), textos in sorted(
+            decididas.items(), key=lambda kv: (kv[0][0], kv[0][1] or 0.0)
+        ):
+            parte = _parte(definicion, muro)
+            dato = getattr(parte, campo)
+            quien = marca if muro is None else f"{marca} (para muros de {_cm(muro)} cm)"
+            tomaron = _cuantas_tomaron(ctx, marca, definicion, muro)
             agrupados.append(
                 _hallazgo(
                     11,
                     "aviso",
-                    f"{marca}: {_NOMBRE[campo]} es {_valor(campo, dato.valor)}, {dato.texto}. Lo "
-                    "que sus lecturas avisaban: " + "; ".join(textos) + ".",
-                    clave=f"avisos de lectura: decidido: {campo}",
+                    f"{quien}: {_NOMBRE[campo]} es {_valor(campo, dato.valor)}, {dato.texto}"
+                    + (f"; {tomaron}" if tomaron else "")
+                    + ". Lo que sus lecturas avisaban: "
+                    + "; ".join(textos)
+                    + ".",
+                    clave=f"avisos de lectura: decidido: {campo}"
+                    + (f": muro {_cm(muro)}" if muro is not None else ""),
                     marca=marca,
                     campo=campo,
                     datos=[dato],

@@ -156,6 +156,9 @@ class ResumenFamilia(BaseModel):
     cuya cantidad en juego no tiene cifra (``en_juego_desconocido`` dice cuántos) o si lo que hay
     en juego no tiene precio; 0.0 sólo si no hay nada abierto. ``en_juego_fuera_del_presupuesto``:
     lo que cambia en colocaciones que ningún renglón cuenta (dicho aparte, no sumado).
+    ``en_juego_mxn_conocido``: el dinero de la parte con precio de lo que está en juego, siempre
+    (0.0 si no hay); con ``en_juego_mxn`` en ``None`` por un hallazgo sin cifra o por una parte sin
+    precio, lo que sí tiene precio no se esconde: es el piso de lo que está en juego, no el total.
     ``en_juego_aparte``: lo que pone en juego un hallazgo cuyos valores no son de un elemento (los
     entrepisos contados de dos maneras), por su id: aparece igual en cada tarjeta que toca, así
     que es compartido por id y nunca se suma entre tarjetas."""
@@ -175,6 +178,7 @@ class ResumenFamilia(BaseModel):
     en_juego_aparte: dict[str, dict[str, float]] = Field(default_factory=dict)
     en_juego_desconocido: int = 0
     en_juego_fuera_del_presupuesto: dict[str, float] = Field(default_factory=dict)
+    en_juego_mxn_conocido: float = 0.0
 
 
 class Escritura(BaseModel):
@@ -184,7 +188,8 @@ class Escritura(BaseModel):
     marca: str
     familia: str
     hoja: str
-    campo: Literal["seccion", "fuente", "claro", "armado"]
+    # ``claro``: el de una viga; ``longitud_m``: la de un pilote (lo que mide CIM-011).
+    campo: Literal["seccion", "fuente", "claro", "armado", "longitud_m"]
     antes: str | None
     fuente_antes: str | None
     despues: str
@@ -1140,7 +1145,7 @@ def _escribir_largo_de_pilote(
     props["longitud_m"] = metros
     props["longitud_fuente"] = largo.fuente
     antes = f"{actual:g} m" if actual is not None else None
-    cambios.append(_escritura(e, det, "claro", antes, None, largo))
+    cambios.append(_escritura(e, det, "longitud_m", antes, None, largo))
     notas.append(f"Longitud {metros:g} m del modelo estructural ({largo.fuente}: «{largo.texto}»)")
 
 
@@ -1301,7 +1306,9 @@ def _escritura(
         campo=campo,  # type: ignore[arg-type]
         antes=antes,
         fuente_antes=str(fuente_antes) if fuente_antes is not None else None,
-        despues=_seccion_texto(s.valor) if campo != "claro" else f"{float(s.valor):g} m",
+        despues=(
+            f"{float(s.valor):g} m" if campo in ("claro", "longitud_m") else _seccion_texto(s.valor)
+        ),
         fuente=s.fuente,
         texto=s.texto,
     )
@@ -1338,31 +1345,53 @@ def _escribir_claro(
 
 
 def notas_de_escritura(detections: list[Detection]) -> list[str]:
-    """Lo que el modelo escribió en las detecciones que el presupuesto lee, por marca: dicho en el
-    presupuesto (lo que se mide ya no es lo que el detector leyó)."""
+    """Lo que el modelo escribió en las detecciones que el presupuesto lee, por marca: su sección
+    (o su fuente) y su armado (R236: la sección y el armado de una variante van juntos), dicho en
+    el presupuesto (lo que se mide ya no es lo que el detector leyó). Lo que no cambió no se
+    dice: una detección a la que sólo se le reescribió el armado no dice una sección «→» igual."""
     por_marca: dict[tuple[str, str, str], int] = {}
     for d in detections:
-        previa = (d.properties or {}).get("seccion_previa")
+        props = d.properties or {}
+        previa = props.get("seccion_previa")
         if not isinstance(previa, dict):
             continue
-        antes = previa.get("section_cm") or (
-            "marcador" if previa.get("section_area_du2") else "sin sección"
-        )
-        despues = (
-            f"{d.properties.get('section_cm') or 'área de su contorno'} "
-            f"({d.properties.get('section_source') or '—'})"
-        )
-        clave = (d.mark or d.label, f"{antes} ({previa.get('section_source') or '—'})", despues)
+        seccion = ""
+        if any(
+            previa.get(k) != props.get(k)
+            for k in ("section_cm", "section_area_du2", "section_source")
+        ):
+            antes = previa.get("section_cm") or (
+                "marcador" if previa.get("section_area_du2") else "sin sección"
+            )
+            despues = props.get("section_cm") or "área de su contorno"
+            seccion = (
+                f"{antes} ({previa.get('section_source') or '—'}) → "
+                f"{despues} ({props.get('section_source') or '—'})"
+            )
+        armado = ""
+        if "armado_del_modelo" in props:
+            claves = ("spec_rebar", "spec_stirrups")
+            antes = " ".join(str(previa[k]) for k in claves if previa.get(k))
+            despues = " ".join(str(props[k]) for k in claves if props.get(k))
+            # ``_escribir_armado`` sólo lo marca cuando el armado cambia.
+            armado = (
+                f"armado {antes or 'sin armado'} → {despues or 'sin armado'} "
+                f"({props['armado_del_modelo']})"
+            )
+        if not seccion and not armado:
+            continue
+        clave = (d.mark or d.label, seccion, armado)
         por_marca[clave] = por_marca.get(clave, 0) + 1
     if not por_marca:
         return []
     partes = [
-        f"{marca} ({n}): {antes} → {despues}"
-        for (marca, antes, despues), n in sorted(por_marca.items())
+        f"{marca} ({n}): " + ", ".join(x for x in (seccion, armado) if x)
+        for (marca, seccion, armado), n in sorted(por_marca.items())
     ]
     return [
-        "Secciones del modelo estructural escritas en las detecciones (la definición de cada "
-        "marca en su hoja, con su fuente; lo que había queda en la detección): " + "; ".join(partes)
+        "Secciones y armados del modelo estructural escritos en las detecciones (la definición de "
+        "cada marca en su hoja, con su fuente; lo que había queda en la detección): "
+        + "; ".join(partes)
     ]
 
 
@@ -1375,9 +1404,10 @@ _GENERAL = "general"
 def resumir(e: Estructura, report: Any) -> list[ResumenFamilia]:
     """La tarjeta por familia (``ResumenFamilia``): las familias con colocaciones o con hallazgos,
     más «general» para los hallazgos que no son de ninguna (R240: cada hallazgo en una sola
-    tarjeta), ordenadas por el dinero en juego, luego por la cantidad conocida (concreto, acero)
-    y luego como ``FAMILIAS_ESTRUCTURALES``. ``report`` es el ``CostReport`` de la misma lectura:
-    de él salen los P.U. de los renglones que tienen las colocaciones."""
+    tarjeta), ordenadas por el dinero en juego que se conoce (``en_juego_mxn_conocido``), luego
+    por la cantidad conocida (concreto, acero) y luego como ``FAMILIAS_ESTRUCTURALES``. ``report``
+    es el ``CostReport`` de la misma lectura: de él salen los P.U. de los renglones que tienen las
+    colocaciones."""
     from klave_engine.detection.schedules import family_of_mark
 
     por_marca = {d.marca: d for d in e.definiciones}
@@ -1514,12 +1544,14 @@ def resumir(e: Estructura, report: Any) -> list[ResumenFamilia]:
                 en_juego_aparte=aparte.get(familia, {}),
                 en_juego_desconocido=desconocido,
                 en_juego_fuera_del_presupuesto={k: round(q, 4) for k, q in fuera.items()},
+                en_juego_mxn_conocido=round(dinero, 2),
             )
         )
     posicion = {f: i for i, f in enumerate(orden)}
     salida.sort(
         key=lambda r: (
-            -(r.en_juego_mxn or 0.0),
+            # El dinero conocido: una tarjeta con precio en juego no baja por un hallazgo sin cifra.
+            -r.en_juego_mxn_conocido,
             -r.en_juego_cantidad.get("concreto_m3", 0.0),
             -r.en_juego_cantidad.get("acero_kg", 0.0),
             posicion[r.familia],

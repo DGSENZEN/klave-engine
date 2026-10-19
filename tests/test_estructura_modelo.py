@@ -37,8 +37,10 @@ from klave_engine.estructura.modelo import (
     leer_decisiones,
     leer_estructura,
     leer_estructura_vigente,
+    notas_de_escritura,
     resumir,
 )
+from klave_engine.estructura.verificaciones import id_de_verificacion
 from klave_engine.evals.fixtures import write_demo_project
 from klave_engine.graph.evidence import EvidencePacket
 from klave_engine.pipeline import run_full_pipeline
@@ -720,6 +722,51 @@ def test_a_scenario_of_another_run_is_never_taken(tmp_path):
     assert leer_estructura_vigente(control, corrida).avisos == ["otra corrida"]
 
 
+def test_the_known_money_is_never_hidden_by_a_finding_without_a_figure():
+    # Task 12 carried minor: an open doubt with no figure makes the card's money None (never $0),
+    # but the priced part of what is at stake is still said, and the cards rank by it.
+    from klave_engine.estructura.verificaciones import Verificacion
+
+    e = _estructura_k5_conflict()  # its storey is assumed: a doubt with no figure
+    cas = next(x for x in resumir(e, _report_with_est001_price(4000.0)) if x.familia == "castillo")
+    assert cas.en_juego_desconocido >= 1 and cas.en_juego_mxn is None
+    assert cas.en_juego_mxn_conocido == pytest.approx(0.20 * 0.10 * 2.9 * 2 * 4000.0)
+    sin_nada = resumir(_estructura_k5_conflict(niveles=True), _report_with_est001_price(0.0))
+    assert sin_nada[0].en_juego_mxn == 0.0 and sin_nada[0].en_juego_mxn_conocido == 0.0
+    # d1 a columna whose concrete is priced and that has an open doubt without a figure; d2 a
+    # castillo whose line has no price: the same Δ each, so only the known money orders them
+    e = _estructura_k5_conflict()
+    e.elementos = [
+        x.model_copy(update={"familia": "columna"}) if x.detection_id == "d1" else x
+        for x in e.elementos
+    ]
+    d1 = next(x.element_id for x in e.elementos if x.detection_id == "d1")
+    e.verificaciones = [
+        *e.verificaciones,
+        Verificacion(
+            id="c", numero=7, severidad="duda", mensaje="C", marcas=["K-5"], elementos=[d1]
+        ),
+    ]
+    report = SimpleNamespace(
+        boq=BillOfQuantities(
+            project_id="p",
+            lines=[
+                _linea("EST-001", ["d1"], price=4000.0),
+                _linea("EST-002", ["d2"], price=0.0, unpriced=True),
+            ],
+        )
+    )
+    r = resumir(e, report)
+    col, cas = r[0], r[1]
+    assert (col.familia, cas.familia) == ("columna", "castillo")
+    assert col.en_juego_mxn is None and col.en_juego_mxn_conocido == pytest.approx(
+        0.20 * 0.10 * 2.9 * 4000.0
+    )
+    assert cas.en_juego_cantidad["concreto_m3"] == pytest.approx(
+        col.en_juego_cantidad["concreto_m3"]
+    )
+
+
 def test_resumen_fields_are_the_plans():
     assert {
         "familia", "colocaciones", "con_definicion", "criticos_total", "criticos_del_plano",
@@ -872,7 +919,9 @@ def test_a_declared_span_and_a_pile_length_are_written():
     pila = _det("pilote", tipo=DetectionType.pile)
     largo = _el("pilote", None, longitud_m=Dato(valor=18.0, fuente="humano", texto="decisión"))
     salida, escritas = escribir_en_detecciones([pila], [largo], 1.0)
-    assert salida[0].properties["longitud_m"] == 18.0 and escritas[0].campo == "claro"
+    assert salida[0].properties["longitud_m"] == 18.0
+    # a pile's length is no beam's span: its write says so (Task 12 carried minor)
+    assert [(w.campo, w.despues) for w in escritas] == [("longitud_m", "18 m")]
     supuesta = _el("pilote", None, longitud_m=Dato(valor=12.0, fuente="supuesto", texto="?"))
     assert escribir_en_detecciones([pila], [supuesta], 1.0)[1] == []
 
@@ -971,7 +1020,8 @@ def test_a_decision_survives_a_reprocess_and_moves_the_concrete(tmp_path, data_d
     assert all(x.seccion_cm.fuente == "humano" for x in e.elementos if x.marca == "C-1")
     assert _c1_volume(result.cost_report) == pytest.approx(_c1_volume(recalculado))
     assert any(
-        n.startswith("Secciones del modelo estructural escritas") and "→ 70x70 (humano)" in n
+        n.startswith("Secciones y armados del modelo estructural escritos")
+        and "→ 70x70 (humano)" in n
         for n in result.cost_report.boq.assumptions
     )
     # R235: detections.json keeps what the detector read; the decision lives only in the costing
@@ -1252,6 +1302,20 @@ def test_a_variants_section_goes_with_its_own_armado():
     igual = det.model_copy(update={"properties": {**det.properties, "section_cm": "30x20"}})
     otra, escritas = escribir_en_detecciones([igual], [e], 1.0)
     assert otra[0].properties["spec_rebar"] == "6#3" and [w.campo for w in escritas] == ["armado"]
+    # the budget's note says the armado rewrite too (Task 12 carried minor), and an armado-only
+    # write never says a section «→» to itself
+    assert notas_de_escritura(salida) == [
+        "Secciones y armados del modelo estructural escritos en las detecciones (la definición de "
+        "cada marca en su hoja, con su fuente; lo que había queda en la detección): K-1 (1): "
+        "15x20 (cuadro) → 30x20 (detalle), armado 4#3 E#2@15 → 6#3 E#2@15 (detalle)"
+    ]
+    (nota,) = notas_de_escritura(otra)
+    assert nota.endswith(": K-1 (1): armado 4#3 E#2@15 → 6#3 E#2@15 (detalle)")
+    # a section-only write says no armado
+    sola = _el("castillo", [20, 20], marca="K-1")
+    marcador = _det("castillo", section_cm="15x20", section_source="cuadro", spec_source="cuadro")
+    (nota,) = notas_de_escritura(escribir_en_detecciones([marcador], [sola], 1.0)[0])
+    assert nota.endswith(": K-1 (1): 15x20 (cuadro) → 20x20 (detalle)")
 
 
 def test_a_height_decision_on_a_castillo_waits_for_its_storey():
@@ -1368,6 +1432,58 @@ def test_a_reading_aviso_on_a_decided_field_is_never_a_new_doubt():
     once = [v for v in con_aviso([d]).verificaciones if v.numero == 11 and "K-5" in v.marcas]
     assert [v.severidad for v in once] == ["aviso"]
     assert "decidido por Diego" in once[0].mensaje and "17.8x84.4" in once[0].mensaje
+
+
+def test_a_decided_aviso_on_a_mark_with_variants_says_who_took_it_and_folds_only_its_part():
+    # Task 12 carried minor (R241 on variant marks): a mark-level decision reaches only the
+    # placements whose variant is unresolved, so it folds only the mark's own reading avisos and
+    # says how many placements took it; the 15 cm variant's own aviso stays in doubt (folded into
+    # the mark's check-7 finding, R228) until a decision names that variant.
+    e = _con_variantes()
+    k5 = _k5(e)
+    de_la_marca = "sección dibujada 21.0x31.0 cm a la escala de sus cotas: no coincide con 20x30"
+    de_la_15 = "sección dibujada 14.1x22.4 cm a la escala de sus cotas: no coincide con 15x20"
+    k5.avisos += [de_la_marca, de_la_15]
+    k5.variantes[0].avisos.append(de_la_15)
+    e.decisiones = [Decision(marca="X", campo="estribos", valor=[], fecha=_now())]
+
+    def hallazgos(decisiones):
+        out = aplicar_decisiones(e, decisiones)
+        suyos = [v for v in out.verificaciones if "K-5" in v.marcas]
+        dudas = " ".join(v.mensaje for v in suyos if v.severidad != "aviso")
+        decididos = [v for v in suyos if v.numero == 11 and v.severidad == "aviso"]
+        return dudas, decididos
+
+    dudas, decididos = hallazgos([])
+    assert de_la_marca in dudas and de_la_15 in dudas and decididos == []
+    marca = Decision(marca="K-5", campo="seccion_cm", valor=[25, 20], actor="R", fecha=_now())
+    dudas, (aviso,) = hallazgos([marca])
+    assert de_la_15 in dudas and de_la_marca not in dudas
+    assert aviso.mensaje.startswith("K-5: la sección es 20x25 cm, decidido por R")
+    assert "lo toman 1 de 2 colocaciones" in aviso.mensaje
+    assert de_la_marca in aviso.mensaje and de_la_15 not in aviso.mensaje
+    # the mark-level aviso keeps the id it had before this rule (its clave is unchanged)
+    assert aviso.id == id_de_verificacion(11, "K-5", "", "avisos de lectura: decidido: seccion_cm")
+    quince = Decision(
+        marca="K-5", campo="seccion_cm", valor=[15, 25], para_muro_cm=15, actor="R", fecha=_now()
+    )
+    dudas, (aviso,) = hallazgos([quince])
+    assert de_la_marca in dudas and de_la_15 not in dudas
+    assert aviso.mensaje.startswith("K-5 (para muros de 15 cm): la sección es 15x25 cm")
+    assert "lo toman 1 de 2 colocaciones" in aviso.mensaje and de_la_15 in aviso.mensaje
+    # both decided: neither reading is in doubt any more; one aviso per part, distinct ids
+    dudas, ambos = hallazgos([marca, quince])
+    assert de_la_marca not in dudas and de_la_15 not in dudas
+    assert len(ambos) == 2 and len({x.id for x in ambos}) == 2
+    # each part counts its own placements: d2 took the mark's, d1 its variant's
+    assert all("lo toman 1 de 2 colocaciones" in x.mensaje for x in ambos)
+    # without variants nothing changes: every placement takes it and no count is said
+    sin_variantes = _estructura_k5_conflict(niveles=True)
+    _k5(sin_variantes).avisos.append(de_la_marca)
+    sin_variantes.decisiones = [Decision(marca="X", campo="estribos", valor=[], fecha=_now())]
+    out = aplicar_decisiones(sin_variantes, [marca])
+    (aviso,) = [x for x in out.verificaciones if x.numero == 11 and "K-5" in x.marcas]
+    assert aviso.severidad == "aviso" and "lo toman" not in aviso.mensaje
 
 
 def test_formwork_of_a_non_rectangular_section_is_its_contour():
