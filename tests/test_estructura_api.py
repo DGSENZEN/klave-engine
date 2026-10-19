@@ -485,6 +485,35 @@ def test_a_stale_scenario_is_never_served_as_current(data_dir):
          "0 piezas por juego de estribo"),
         ({"marca": "K-5", "campo": "estribos", "valor": [], "nota": "n"}, "decision_rechazada",
          "una decisión sin estribos no se toma"),
+        # R256: stirrups need their spacing, text or pieces, and never a 500
+        ({"marca": "K-5", "campo": "estribos", "valor": "E#3", "nota": "n"}, "decision_rechazada",
+         "los estribos necesitan su separación"),
+        ({"marca": "K-5", "campo": "estribos", "valor": [{"tipo": "estribo", "cantidad": 1,
+          "numero": "3", "zonas": []}], "nota": "n"}, "decision_rechazada",
+         "los estribos necesitan su separación"),
+        ({"marca": "K-5", "campo": "estribos", "valor": [{"tipo": "estribo", "cantidad": 1,
+          "numero": "3", "zonas": [{"tramo": "todo", "separacion_m": None}]}], "nota": "n"},
+         "decision_rechazada", "los estribos necesitan su separación"),
+        ({"marca": "K-5", "campo": "estribos", "valor": [{"tipo": "estribo", "cantidad": 1,
+          "numero": "3", "zonas": [{"tramo": "centro", "separacion_m": 0.15}]}], "nota": "n"},
+         "decision_rechazada", "no son un juego de estribos"),
+        ({"marca": "K-5", "campo": "estribos", "valor": [{"tipo": "estribo", "cantidad": 1,
+          "numero": "3", "zonas": [{"tramo": "todo", "separacion_m": 2.0}]}], "nota": "n"},
+         "decision_rechazada", "(de 0.03 a 0.6 m, como la lee el texto)"),
+        # R256: zones longer than the placements that take them
+        ({"marca": "K-5", "campo": "estribos", "valor": [{"tipo": "estribo", "cantidad": 1,
+          "numero": "3", "zonas": [{"tramo": "extremos", "separacion_m": 0.1,
+          "longitud_m": 100}]}], "nota": "n"}, "decision_rechazada",
+         "no caben en la colocación más corta que la toma (2.9 m)"),
+        ({"marca": "T-1", "campo": "estribos", "valor": [{"tipo": "estribo", "cantidad": 1,
+          "numero": "3", "zonas": [{"tramo": "extremos", "separacion_m": 0.1, "longitud_m": 150},
+          {"tramo": "centro", "separacion_m": 0.2, "longitud_m": 150}]}], "nota": "n"},
+         "decision_rechazada", "no caben en la colocación más corta que la toma (4 m)"),
+        # R256: bars that do not fit in two layers on T-1's 25x50 (and 100 is past the count)
+        ({"marca": "T-1", "campo": "longitudinales", "valor": "99#12", "nota": "n"},
+         "decision_rechazada", "sus varillas no caben en la sección"),
+        ({"marca": "T-1", "campo": "longitudinales", "valor": [{"cantidad": 100, "numero": "12"}],
+          "nota": "n"}, "decision_rechazada", "100 varillas no es un armado (de 1 a 99)"),
         ({"marca": "K-5", "campo": "seccion_cm", "valor": [1e-9, 1e-9], "nota": "n"},
          "decision_rechazada", "¿en metros? la sección va en cm"),
         ({"marca": "K-5", "campo": "seccion_cm", "valor": [0.2, 0.3], "nota": "n"},
@@ -1046,3 +1075,24 @@ def test_the_route_asks_for_the_role_itself(data_dir, monkeypatch):
     r = client.post(f"/projects/{pid}/estructura/decisiones", json=body,
                     headers={"x-quien": "ana"})  # fmt: skip
     assert r.status_code == 200
+
+
+def test_a_request_reads_the_decisions_file_once(data_dir, monkeypatch):
+    # R256: the payload's decisions, avisos and «al día» come from one reading of the file
+    import klave_engine.estructura.modelo as modelo
+
+    pid, processed = _obra(data_dir)
+    client = _client()
+    assert _decidir(client, pid, marca="K-5", campo="seccion_cm", valor=[20, 40],
+                    nota="PA").status_code == 200  # fmt: skip
+    real = modelo.read_json
+    lecturas = []
+
+    def contando(ruta):
+        if ruta.name == DECISIONES_FILENAME:
+            lecturas.append(ruta)
+        return real(ruta)
+
+    monkeypatch.setattr(modelo, "read_json", contando)
+    body = client.get(f"/projects/{pid}/estructura").json()
+    assert body["al_dia"] is True and len(lecturas) == 1

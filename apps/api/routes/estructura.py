@@ -58,13 +58,13 @@ from klave_engine.estructura.modelo import (
     NOMBRE_DEL_CAMPO,
     Decision,
     DecisionesIlegibles,
+    DecisionesLeidas,
     Estructura,
     decisiones_vigentes,
     guardar_decision,
-    leer_decisiones,
+    leer_archivo_de_decisiones,
     leer_estructura_con_motivo,
     leer_estructura_vigente,
-    problema_de_decisiones,
     quitar_decision,
     revisar_decision,
 )
@@ -103,15 +103,17 @@ class _Lectura:
     motivo: str  # "" (disponible), "anterior", "ilegible", "sin_procesar"
     aviso: str
     control: Path
+    decisiones: DecisionesLeidas  # R256: una sola lectura del archivo por petición
 
 
 def _lectura(store: ProjectStore, settings: Settings, project_id: str) -> _Lectura:
     """El modelo que vale para la corrida activa, o por qué no lo hay (404: no hay proyecto)."""
     control = store.get_root(project_id) / settings.processed_dir_name
     corrida = store.artifact_root(project_id)
-    e = leer_estructura_vigente(control, corrida)
+    leidas = leer_archivo_de_decisiones(control)
+    e = leer_estructura_vigente(control, corrida, leidas.decisiones)
     if e is not None:
-        return _Lectura(e, "", "", control)
+        return _Lectura(e, "", "", control, leidas)
     _, motivo = leer_estructura_con_motivo(corrida)
     if motivo:
         return _Lectura(
@@ -120,26 +122,26 @@ def _lectura(store: ProjectStore, settings: Settings, project_id: str) -> _Lectu
             f"La lectura estructural de esta corrida no se pudo leer: {motivo}. Reprocesa el "
             "proyecto para rehacerla.",
             control,
+            leidas,
         )
     if not (corrida / "detections.json").exists():
-        return _Lectura(None, "sin_procesar", SIN_PROCESAR, control)
-    return _Lectura(None, "anterior", ANTERIOR, control)
+        return _Lectura(None, "sin_procesar", SIN_PROCESAR, control, leidas)
+    return _Lectura(None, "anterior", ANTERIOR, control, leidas)
 
 
 def _al_dia(lectura: _Lectura) -> bool:
     """Si el modelo que se da tiene aplicadas exactamente las decisiones guardadas; nunca si el
     archivo de decisiones no se lee (R245)."""
     e = lectura.estructura
-    if e is None or problema_de_decisiones(lectura.control) is not None:
+    if e is None or lectura.decisiones.problema is not None:
         return False
-    guardadas, _ = leer_decisiones(lectura.control)
-    return decisiones_vigentes(guardadas, e.patrones) == e.decisiones
+    return decisiones_vigentes(lectura.decisiones.decisiones, e.patrones) == e.decisiones
 
 
 def _payload(lectura: _Lectura) -> dict[str, Any]:
     """Lo que ``Estructura`` tiene, como lo lee Revisión. ``al_dia``: ``_al_dia``;
     ``decisiones_guardadas``: las guardadas (una por marca, campo y variante: la más reciente)."""
-    guardadas, avisos_de_decisiones = leer_decisiones(lectura.control)
+    guardadas, avisos_de_decisiones = lectura.decisiones.decisiones, lectura.decisiones.avisos
     e = lectura.estructura
     base: dict[str, Any] = {
         "campos_decidibles": [

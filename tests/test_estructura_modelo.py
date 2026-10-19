@@ -1698,7 +1698,12 @@ def _como_zapata(e):
          "sentidos": "ambos"}]), "una parrilla sin separación no es un armado"),
         (lambda: _como_zapata(_estructura_k5_conflict(niveles=True)), dict(marca="K-5",
          campo="parrillas", valor=[{"numero": "4", "separacion_m": 0.01, "lecho": "inf",
-         "sentidos": "ambos"}]), "la separación de la parrilla (0.01 m)"),
+         "sentidos": "ambos"}]), "la separación de las parrillas (0.01 m)"),
+        # R256: one spacing table for text and pieces — the text reads mallas at 5–100 cm
+        (lambda: _como_zapata(_estructura_k5_conflict(niveles=True)), dict(marca="K-5",
+         campo="parrillas", valor=[{"numero": "4", "separacion_m": 1.9, "lecho": "inf",
+         "sentidos": "ambos"}]), "la separación de las parrillas (1.9 m) no es la de un armado (de "
+         "0.05 a 1 m, como la lee el texto)"),
         (lambda: _como_zapata(_estructura_k5_conflict(niveles=True)), dict(marca="K-5",
          campo="parrillas", valor=[{"numero": "9", "separacion_m": 0.2, "lecho": "inf",
          "sentidos": "ambos"}]), "no hay varilla del #9"),
@@ -1710,6 +1715,18 @@ def _como_zapata(e):
         (lambda: _estructura_k5_conflict(niveles=True), dict(marca="K-5", campo="estribos",
          valor=[{"tipo": "estribo", "cantidad": 1, "numero": "3", "zonas": [{"tramo": "todo",
          "separacion_m": 3.0}]}]), "la separación de los estribos (3 m)"),
+        # R256: the stirrups' zones fit in the placement (K-5 is 2.9 m high on its storey)
+        (lambda: _estructura_k5_conflict(niveles=True), dict(marca="K-5", campo="estribos",
+         valor=[{"tipo": "estribo", "cantidad": 1, "numero": "3", "zonas": [{"tramo": "extremos",
+         "separacion_m": 0.1, "longitud_m": 100}]}]), "no caben en la colocación más corta que la "
+         "toma (2.9 m)"),
+        (lambda: _estructura_k5_conflict(niveles=True), dict(marca="K-5", campo="estribos",
+         valor=[{"tipo": "estribo", "cantidad": 1, "numero": "3", "zonas": [{"tramo": "extremos",
+         "separacion_m": 0.1, "longitud_m": 1.5}, {"tramo": "centro", "separacion_m": 0.2,
+         "longitud_m": 1.5}]}]), "(1.5 m + 1.5 m) no caben en la colocación más corta"),
+        # R256: the bars fit in two layers along the section's inner perimeter
+        (lambda: _estructura_k5_conflict(niveles=True), dict(marca="K-5", campo="longitudinales",
+         valor="40#8"), "sus varillas no caben en la sección"),
     ],
 )  # fmt: skip
 def test_a_refusal_before_saving_is_the_aviso_the_model_gives_when_applying(

@@ -62,6 +62,9 @@ from klave_engine.detection.views import SheetSegmentation
 from klave_engine.dxf.entities import NormalizedEntity
 from klave_engine.estructura.acero import acero_elemento
 from klave_engine.estructura.armado import (
+    _RANGO_ESTRIBOS,
+    _RANGO_MALLAS,
+    _TRAMOS_ESCRIBIBLES,
     FAMILIAS_CON_PARRILLA,
     NUMEROS,
     GrupoVarillas,
@@ -420,14 +423,17 @@ def escribir_estructura_derivada(control_dir: Path, corrida: Path, e: Estructura
     write_json(control_dir / ESTRUCTURA_DERIVADA_FILENAME, e)
 
 
-def leer_estructura_vigente(control_dir: Path, corrida: Path) -> Estructura | None:
+def leer_estructura_vigente(
+    control_dir: Path, corrida: Path, decisiones: list[Decision] | None = None
+) -> Estructura | None:
     """El modelo que vale para la corrida activa: el escenario del recálculo si es de ella (el
     último que se costeó: el presupuesto derivado es el suyo), si no el de la corrida. Si el que
     se da no está al día con las decisiones guardadas (se guardó o se quitó una decisión y el
     recálculo no ha terminado, o el archivo de decisiones no se lee), lo dice en sus avisos: las
     decisiones que tenía no desaparecen mientras se recalcula (R247). Un escenario de otra corrida
-    nunca se da."""
-    decisiones = cargar_decisiones(control_dir)
+    nunca se da. ``decisiones``: las ya leídas (``leer_archivo_de_decisiones``), si las hay."""
+    if decisiones is None:
+        decisiones = cargar_decisiones(control_dir)
     derivada, _ = _leer(control_dir / ESTRUCTURA_DERIVADA_FILENAME)
     if derivada is not None and derivada.base and derivada.base == huella(corrida):
         if _vigentes(decisiones, derivada.patrones) != derivada.decisiones:
@@ -518,19 +524,40 @@ def estructura_para_recalcular(
 # ------------------------------------------------------------------------------ decisiones
 
 
-def leer_decisiones(control_dir: Path) -> tuple[list[Decision], list[str]]:
-    """Las decisiones guardadas y los avisos de las que no se pudieron leer (nunca un error: una
-    decisión ilegible se dice y se conserva en el archivo)."""
+@dataclass
+class DecisionesLeidas:
+    """Una sola lectura del archivo de decisiones (R256: quien necesita las decisiones, sus avisos
+    y si el archivo se lee entero, los toma de la misma lectura, nunca de tres que pueden no
+    coincidir). ``problema``: por qué el archivo no se lee entero (no es JSON, o no es una lista);
+    ``None`` si se lee o no existe."""
+
+    decisiones: list[Decision]
+    avisos: list[str]
+    problema: str | None
+
+
+def leer_archivo_de_decisiones(control_dir: Path) -> DecisionesLeidas:
+    """Las decisiones guardadas, los avisos de las que no se pudieron leer (nunca un error: una
+    decisión ilegible se dice y se conserva en el archivo) y si el archivo se lee entero, de una
+    sola lectura."""
     ruta = control_dir / DECISIONES_FILENAME
     if not ruta.exists():
-        return [], []
+        return DecisionesLeidas([], [], None)
     try:
         crudas = read_json(ruta)
     except (OSError, ValueError) as error:
-        return [], [f"{_DE_DECISION}: {DECISIONES_FILENAME} no se pudo leer ({error}); no se "
-                    "aplica ninguna decisión"]  # fmt: skip
+        return DecisionesLeidas(
+            [],
+            [f"{_DE_DECISION}: {DECISIONES_FILENAME} no se pudo leer ({error}); no se aplica "
+             "ninguna decisión"],
+            f"{DECISIONES_FILENAME} no se puede leer ({str(error)[:120]})",
+        )  # fmt: skip
     if not isinstance(crudas, list):
-        return [], [f"{_DE_DECISION}: {DECISIONES_FILENAME} no es una lista; no se aplica"]
+        return DecisionesLeidas(
+            [],
+            [f"{_DE_DECISION}: {DECISIONES_FILENAME} no es una lista; no se aplica"],
+            f"{DECISIONES_FILENAME} no es una lista de decisiones",
+        )
     salida: list[Decision] = []
     avisos: list[str] = []
     for i, cruda in enumerate(crudas):
@@ -541,7 +568,13 @@ def leer_decisiones(control_dir: Path) -> tuple[list[Decision], list[str]]:
                 f"{_DE_DECISION} {i + 1} de {DECISIONES_FILENAME} no se pudo leer "
                 f"({str(error).splitlines()[0][:120]}); no se aplica"
             )
-    return salida, avisos
+    return DecisionesLeidas(salida, avisos, None)
+
+
+def leer_decisiones(control_dir: Path) -> tuple[list[Decision], list[str]]:
+    """Las decisiones guardadas y los avisos de las que no se pudieron leer."""
+    leidas = leer_archivo_de_decisiones(control_dir)
+    return leidas.decisiones, leidas.avisos
 
 
 def cargar_decisiones(control_dir: Path) -> list[Decision]:
@@ -556,16 +589,7 @@ class DecisionesIlegibles(ValueError):
 def problema_de_decisiones(control_dir: Path) -> str | None:
     """Por qué el archivo de decisiones no se puede leer entero (no es JSON, o no es una lista);
     ``None`` si se lee o no existe. Una entrada suelta que no se lee no es esto: se conserva."""
-    ruta = control_dir / DECISIONES_FILENAME
-    if not ruta.exists():
-        return None
-    try:
-        leidas = read_json(ruta)
-    except (OSError, ValueError) as error:
-        return f"{DECISIONES_FILENAME} no se puede leer ({str(error)[:120]})"
-    if not isinstance(leidas, list):
-        return f"{DECISIONES_FILENAME} no es una lista de decisiones"
-    return None
+    return leer_archivo_de_decisiones(control_dir).problema
 
 
 def _crudas(control_dir: Path) -> list[Any]:
@@ -685,6 +709,27 @@ class _Revisada:
     valor: Any = None
     variante: Definicion | None = None
     aviso: str | None = None
+    alcanzadas: list[Elemento] = field(default_factory=list)
+
+
+def _alcanzadas(
+    d: Decision, definicion: Definicion | None, colocadas: list[Elemento]
+) -> list[Elemento]:
+    """Las colocaciones que toman la decisión (R239): en una marca con variantes, las de la
+    variante que nombra o, sin variante, las que no resolvieron la suya; si no, todas."""
+    if definicion is None or not definicion.variantes:
+        return list(colocadas)
+    muro = d.para_muro_cm
+    salida = []
+    for x in colocadas:
+        propia = variante_de(x)
+        if muro is None:
+            toma = propia is None
+        else:
+            toma = propia is not None and abs(propia - muro) <= _TOLERANCIA_DE_MURO_CM
+        if toma:
+            salida.append(x)
+    return salida
 
 
 def _revisar(
@@ -747,7 +792,88 @@ def _revisar(
                 aviso=f"{quien}: {marca} no tiene una variante para muros de "
                 f"{_cm(d.para_muro_cm)} cm; no se aplica",
             )
-    return _Revisada(marca, definicion, colocadas, familia, valor, variante)
+    alcanzadas = _alcanzadas(d, definicion, colocadas)
+    try:
+        _cabe_en_sus_colocaciones(d.campo, valor, alcanzadas)
+    except ValueError as error:
+        return _Revisada(
+            marca, definicion, colocadas, familia, aviso=f"{quien}: {error}; no se aplica"
+        )
+    return _Revisada(marca, definicion, colocadas, familia, valor, variante, None, alcanzadas)
+
+
+def _largo_m(x: Elemento) -> float | None:
+    """El largo del elemento para sus estribos: su altura (castillo, columna) o su longitud."""
+    dato = x.altura_m if x.familia in _CON_ALTURA else x.longitud_m
+    largo = _numero(dato.valor) if dato is not None and not dato.ilegible else None
+    return largo if largo is not None and largo > 0 else None
+
+
+def _perimetro_interior_cm(x: Elemento) -> float | None:
+    """El perímetro de la sección del elemento por dentro de su recubrimiento (cm)."""
+    s = x.seccion_cm
+    if s is None or s.valor is None or s.ilegible:
+        return None
+    r = x.recubrimiento_m
+    rec = _numero(r.valor) if r is not None and not r.ilegible else None
+    rec_cm = rec * 100 if rec is not None and rec > 0 else _RECUBRIMIENTO_SUPUESTO_CM
+    if isinstance(s.valor, dict):
+        area = _numero(s.valor.get("area_cm2"))
+        if area is None or area <= 0:
+            return None
+        lado = math.sqrt(area)
+        return 4 * max(lado - 2 * rec_cm, 0.0)
+    if isinstance(s.valor, list | tuple) and len(s.valor) == 2:
+        b, h = _numero(s.valor[0]), _numero(s.valor[1])
+        if b is None or h is None:
+            return None
+        return 2 * (max(b - 2 * rec_cm, 0.0) + max(h - 2 * rec_cm, 0.0))
+    return None
+
+
+_RECUBRIMIENTO_SUPUESTO_CM = 2.5
+_HOLGURA_DE_VARILLA_CM = 2.5  # la separación libre mínima entre varillas
+
+
+def _diametro_cm(numero: str) -> float:
+    """El diámetro nominal de la varilla del #n: n octavos de pulgada."""
+    return float(numero) * 2.54 / 8
+
+
+def _cabe_en_sus_colocaciones(campo: str, valor: Any, alcanzadas: list[Elemento]) -> None:
+    """R256: lo que una decisión pone tiene que caber en las colocaciones que la toman. Los tramos
+    de los estribos (cada uno y su suma) no pasan del largo de la más corta; las varillas
+    longitudinales (cantidad × (Ø + 2.5 cm)) no pasan del doble del perímetro interior de la
+    sección más chica: dos capas, a lo más."""
+    if campo == "estribos":
+        largos = [m for x in alcanzadas if (m := _largo_m(x)) is not None]
+        if not largos:
+            return
+        corto = min(largos)
+        for j in valor:
+            tramos = [
+                z["longitud_m"] for z in j.get("zonas", []) if z.get("longitud_m") is not None
+            ]
+            # Cada tramo es positivo (``_acotar_armado``): si su suma cabe, cada uno cabe.
+            if sum(tramos) > corto + _TOLERANCIA_CLARO_M:
+                raise ValueError(
+                    f"sus tramos de estribos ({' + '.join(f'{t:g} m' for t in tramos)}) no caben "
+                    f"en la colocación más corta que la toma ({corto:g} m)"
+                )
+    if campo == "longitudinales":
+        perimetros = [p for x in alcanzadas if (p := _perimetro_interior_cm(x)) is not None]
+        if not perimetros:
+            return
+        interior = min(perimetros)
+        ocupa = sum(
+            g["cantidad"] * (_diametro_cm(g["numero"]) + _HOLGURA_DE_VARILLA_CM) for g in valor
+        )
+        if ocupa > 2 * interior:
+            raise ValueError(
+                f"sus varillas no caben en la sección: ocupan {ocupa:.0f} cm (cantidad × (Ø + "
+                f"{_HOLGURA_DE_VARILLA_CM:g} cm)) y el perímetro interior de la sección más chica "
+                f"que la toma es de {interior:.0f} cm (caben dos capas: {2 * interior:.0f} cm)"
+            )
 
 
 @dataclass
@@ -779,21 +905,7 @@ def revisar_decision(e: Estructura, d: Decision) -> RevisionDeDecision:
     if r.aviso is not None:
         return RevisionDeDecision(marca=r.marca or d.marca.strip(), rechazo=r.aviso)
     parte = r.variante or r.definicion
-    if r.definicion is not None and r.definicion.variantes:
-        # R239: sólo las colocaciones de esa variante, o (sin variante) las que no resolvieron la
-        # suya; las demás conservan la de su muro.
-        muro = d.para_muro_cm
-        alcanzadas = [
-            x
-            for x in r.colocadas
-            if (
-                variante_de(x) is None
-                if muro is None
-                else (v := variante_de(x)) is not None and abs(v - muro) <= _TOLERANCIA_DE_MURO_CM
-            )
-        ]
-    else:
-        alcanzadas = r.colocadas
+    alcanzadas = r.alcanzadas
     if not alcanzadas:
         # R247: una decisión que no toma ninguna colocación no mueve nada: no se guarda.
         quien = f"{_DE_DECISION} sobre {r.marca} ({_NOMBRE_DEL_CAMPO[d.campo]})"
@@ -806,9 +918,7 @@ def revisar_decision(e: Estructura, d: Decision) -> RevisionDeDecision:
                 "todas sus colocaciones tomaron la variante de su muro: nombra la variante por el "
                 "espesor de su muro"
             )
-        return RevisionDeDecision(
-            marca=r.marca, rechazo=f"{quien}: {motivo}; no se guarda"
-        )
+        return RevisionDeDecision(marca=r.marca, rechazo=f"{quien}: {motivo}; no se guarda")
     de_la_parte = getattr(parte, d.campo) if parte is not None else None
     de_las_colocaciones = [getattr(x, d.campo) for x in alcanzadas]
     antes = (
@@ -1137,10 +1247,9 @@ def _valor_de_decision(campo: str, valor: Any, familia: str) -> Any:
 _LADO_MINIMO_CM = 5.0
 _AREA_MINIMA_CM2 = _LADO_MINIMO_CM**2
 _LONGITUD_MINIMA_M = 0.1
-_VARILLAS_MAXIMAS = 100
+# Las del texto (``armado``): una sola tabla para el texto y para las piezas (R256).
+_VARILLAS_MAXIMAS = 99
 _PIEZAS_DE_ESTRIBO_MAXIMAS = 20
-_SEPARACION_MINIMA_M = 0.03
-_SEPARACION_MAXIMA_M = 2.0
 
 
 def _acotar_seccion(valor: Any, familia: str) -> Any:
@@ -1200,13 +1309,13 @@ def _numero_de_varilla(numero: str) -> None:
         )
 
 
-def _separacion(s: float | None, que: str) -> None:
+def _separacion(s: float | None, que: str, rango_cm: tuple[float, float]) -> None:
     if s is None:
-        return
-    if not _SEPARACION_MINIMA_M <= s <= _SEPARACION_MAXIMA_M:
+        raise ValueError(f"{que} necesitan su separación")
+    if not rango_cm[0] <= s * 100 <= rango_cm[1]:
         raise ValueError(
-            f"la separación de {que} ({s:g} m) no es la de un armado (de "
-            f"{_SEPARACION_MINIMA_M:g} a {_SEPARACION_MAXIMA_M:g} m): ¿en centímetros? va en metros"
+            f"la separación de {que} ({s:g} m) no es la de un armado (de {rango_cm[0] / 100:g} a "
+            f"{rango_cm[1] / 100:g} m, como la lee el texto): ¿en centímetros? va en metros"
         )
 
 
@@ -1235,15 +1344,23 @@ def _acotar_armado(campo: str, piezas: list[Any]) -> None:
                     f"{_PIEZAS_DE_ESTRIBO_MAXIMAS})"
                 )
             _numero_de_varilla(p.numero)
+            if not p.zonas:
+                raise ValueError(f"{_DE_TIPO[p.tipo]} necesitan su separación")
+            tramos = tuple(z.tramo for z in p.zonas)
+            if tramos not in _TRAMOS_ESCRIBIBLES:
+                raise ValueError(
+                    f"los tramos {list(tramos)} no son un juego de estribos (todo; extremos; o "
+                    "extremos y centro)"
+                )
             for z in p.zonas:
-                _separacion(z.separacion_m, _DE_TIPO[p.tipo])
+                _separacion(z.separacion_m, _DE_TIPO[p.tipo], _RANGO_ESTRIBOS)
                 if z.longitud_m is not None and not 0 < z.longitud_m <= _LONGITUD_MAXIMA_M:
                     raise ValueError(f"el tramo de {z.longitud_m:g} m no es un tramo de elemento")
         elif isinstance(p, Parrilla):
             _numero_de_varilla(p.numero)
             if p.separacion_m is None or p.separacion_m <= 0:
                 raise ValueError("una parrilla sin separación no es un armado")
-            _separacion(p.separacion_m, "la parrilla")
+            _separacion(p.separacion_m, "las parrillas", _RANGO_MALLAS)
 
 
 # ------------------------------------------------------------------------- la escritura
