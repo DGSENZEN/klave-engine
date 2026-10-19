@@ -242,6 +242,20 @@ def resolver(
     return _Resolutor(por_marca, por_familia, reglas, frames).resolver(elemento)
 
 
+def resolver_todos(
+    elementos: list[Elemento],
+    por_marca: dict[str, Definicion],
+    por_familia: dict[str, Definicion],
+    reglas: Reglas,
+    *,
+    frames: list[SheetFrame],
+) -> list[Elemento]:
+    """``resolver`` para cada elemento, con las reglas de cada hoja calculadas una sola vez (como
+    ``construir_elementos``)."""
+    resolutor = _Resolutor(por_marca, por_familia, reglas, frames)
+    return [resolutor.resolver(e) for e in elementos]
+
+
 # --------------------------------------------------------------------------------- colocaciones
 
 

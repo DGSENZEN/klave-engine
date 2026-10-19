@@ -472,7 +472,11 @@ def test_the_cost_report_passes_the_model_to_the_steel_stage(monkeypatch):
         "p", [_det("c1", "C-1")], units, CostingConfig(), None, None, estructura=est
     )
     report_module.generate_cost_report("p", [_det("c1", "C-1")], units, CostingConfig())
-    assert vistos == [est, None]
+    # Tarea 12: the model reaches the steel stage as its rules and the elements of the detections
+    # that are costed (validated once, never re-dumped).
+    pasado, sin = vistos
+    assert sin is None and pasado is not None and pasado["reglas"] == est["reglas"]
+    assert [e.model_dump(mode="json") for e in pasado["elementos"]] == est["elementos"]
 
 
 def test_the_cover_is_the_elements_own():

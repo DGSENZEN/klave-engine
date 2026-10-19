@@ -6,6 +6,7 @@ individually (see the CLI) or together via ``run_full_pipeline``.
 """
 
 import json
+import time
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -33,6 +34,7 @@ from klave_engine.costing.report import (
     generate_cost_report,
 )
 from klave_engine.costing.reviews import filter_excluded, load_reviews, rekey_reviews, save_reviews
+from klave_engine.costing.steel import altura_supuesta_m
 from klave_engine.detection.bajadas import stamp_bajada_stacks
 from klave_engine.detection.beam_detector import con_anchos_declarados
 from klave_engine.detection.candidates import candidatos, write_candidates
@@ -44,6 +46,7 @@ from klave_engine.detection.inventory import build_inventory, reads_as_structure
 from klave_engine.detection.prefabs import build_prefab_index
 from klave_engine.detection.results import Detection, DetectionType
 from klave_engine.detection.schedules import (
+    ScheduleInventory,
     apply_schedule,
     build_schedule_inventory,
     mark_cuadro_detections,
@@ -54,13 +57,22 @@ from klave_engine.detection.suite import (
     run_detectors,
 )
 from klave_engine.detection.taxonomy import enrich_detections
-from klave_engine.detection.views import segment_views
+from klave_engine.detection.text_patterns import TextPatternConfig
+from klave_engine.detection.views import SheetSegmentation, segment_views
 from klave_engine.dxf.blocks import summarize_blocks
 from klave_engine.dxf.entities import NormalizedEntity
 from klave_engine.dxf.harmonize import harmonize_units
 from klave_engine.dxf.layers import summarize_layers
 from klave_engine.dxf.parser import DxfParser, ParsedDrawing
 from klave_engine.dxf.units import UNKNOWN_UNIT, DrawingUnits
+from klave_engine.estructura.modelo import (
+    Estructura,
+    construir_estructura,
+    escribir_en_detecciones,
+    escribir_estructura,
+    leer_decisiones,
+    resumir,
+)
 from klave_engine.geometry.spatial_index import SpatialIndex
 from klave_engine.graph.builder import DrawingGraph, build_drawing_graph
 from klave_engine.ingestion.manifest import (
@@ -634,6 +646,23 @@ def run_full_pipeline(
                 "Perfil del taller: " + "; ".join(partes)
                 + ". Revísalos en Revisión; se excluyen como cualquier lectura."
             )
+    # The user's costing edits (needed now: the model's assumed column height is theirs).
+    overrides = load_overrides(control_dir)
+    if overrides is not None:
+        costing_config = overrides.config
+        price_book = apply_price_overrides(
+            catalog_store.load_price_book(), overrides.insumo_prices
+        )
+    else:
+        costing_config = load_costing_config(settings.costing_config_path)
+        price_book = catalog_store.load_price_book()
+    # El modelo estructural: reglas, definiciones, elementos y verificaciones, con las decisiones
+    # humanas; lo que cada elemento resolvió se escribe en su detección (el concreto y la cimbra
+    # todavía leen las detecciones), antes de que detections.json se escriba (una sola vez).
+    estructura = _modelo_estructural(
+        result, frames, schedule, segmentation, units, costing_config, control_dir,
+        detector_config.text_patterns,
+    )
     write_json(processed / "detections.json", result.detections)
     write_candidates(processed, candidatos_hoja)
     # Las propuestas del lector: lo que ninguna regla tomó y se parece a lo
@@ -671,16 +700,7 @@ def run_full_pipeline(
         vigueta=dimensions.vigueta_system,
     )
 
-    # Reapply any user costing edits so they survive a full reprocess.
-    overrides = load_overrides(control_dir)
-    if overrides is not None:
-        costing_config = overrides.config
-        price_book = apply_price_overrides(
-            catalog_store.load_price_book(), overrides.insumo_prices
-        )
-    else:
-        costing_config = load_costing_config(settings.costing_config_path)
-        price_book = catalog_store.load_price_book()
+    # The user costing edits (read above) survive a full reprocess.
     # Human corrections survive a reprocess: exclusions are keyed by the
     # deterministic display labels and adjustments are concept-level. The
     # detections artifact keeps everything; exclusion is a costing-layer act.
@@ -712,10 +732,18 @@ def run_full_pipeline(
         price_vigencias=catalog_store.price_vigencias(),
         integracion_taller=catalog_store.get_setting("integracion"),
         variant_mappings=catalog_store.load_variant_mappings(),
+        estructura=estructura.para_el_costo() if estructura is not None else None,
     )
     apply_taller_history(
         result.cost_report, catalog_store, manifest.project_id, save=record_history
     )
+    if estructura is not None:
+        # La tarjeta por familia, con los P.U. de este presupuesto; el modelo, junto a la corrida.
+        estructura.resumen = resumir(estructura, result.cost_report)
+        escribir_estructura(processed, estructura)
+        result.cost_report.warnings.extend(
+            a for a in estructura.avisos if a not in result.cost_report.warnings
+        )
     # El detector conoce denominadores que el presupuesto no ve; viaja al
     # diagnóstico solo lo que sus reglas saben clasificar.
     result.cost_report.warnings.extend(
@@ -769,6 +797,52 @@ def run_full_pipeline(
         status=manifest.processing_status.value,
     )
     return result
+
+
+def _modelo_estructural(
+    result: PipelineResult,
+    frames: list[SheetFrame],
+    schedule: ScheduleInventory,
+    segmentation: SheetSegmentation,
+    units: DrawingUnits,
+    costing_config: CostingConfig,
+    control_dir: Path,
+    patrones: TextPatternConfig,
+) -> Estructura | None:
+    """El modelo estructural de la corrida con las decisiones guardadas, escrito en las
+    detecciones (``result.detections`` se reemplaza). Un modelo que no se puede construir no tumba
+    la corrida: se dice, y el acero se calcula sin él."""
+    inicio = time.perf_counter()
+    try:
+        altura = altura_supuesta_m(segmentation, costing_config.assumptions.column_height_m)
+        decisiones, avisos = leer_decisiones(control_dir)
+        estructura = construir_estructura(
+            result.entities, frames, schedule, result.detections, segmentation,
+            units.to_meters(), altura, config=patrones, decisiones=decisiones,
+        )
+        estructura.avisos = list(dict.fromkeys([*avisos, *estructura.avisos]))
+        result.detections, estructura.escrituras = escribir_en_detecciones(
+            result.detections, estructura.elementos, units.to_meters()
+        )
+    except Exception as error:  # noqa: BLE001 — a broken model must never fail the run
+        logger.exception("No se pudo construir el modelo estructural")
+        result.warnings.append(
+            f"La lectura estructural no se pudo construir ({type(error).__name__}: {error}); el "
+            "acero se calcula sin el modelo estructural y no hay tarjeta ni verificaciones."
+        )
+        return None
+    result.warnings.extend(a for a in estructura.avisos if a not in result.warnings)
+    log_stage(
+        logger,
+        "estructura_built",
+        definiciones=len(estructura.definiciones),
+        elementos=len(estructura.elementos),
+        verificaciones=len(estructura.verificaciones),
+        decisiones=len(estructura.decisiones),
+        escrituras=len(estructura.escrituras),
+        elapsed_ms=round((time.perf_counter() - inicio) * 1000),
+    )
+    return estructura
 
 
 def _input_hashes(manifest: ProjectManifest) -> dict:

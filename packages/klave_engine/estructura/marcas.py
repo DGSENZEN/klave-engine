@@ -269,9 +269,13 @@ def es_etiqueta(texto: str, config: TextPatternConfig) -> bool:
     """Si ``texto`` entero es una marca que un detector puede poner: una etiqueta de columna o de
     trabe de la configuración, o la marca de una zapata o de un pilote (R94; como
     ``match_category``: sus patrones anclados, sobre el texto sin espacios a los lados)."""
-    limpio = texto.strip()
-    patrones = _patrones(tuple(config.column_tag), tuple(config.beam_tag))
-    return any(p.match(limpio) for p in patrones)
+    return _es_etiqueta(texto.strip(), tuple(config.column_tag), tuple(config.beam_tag))
+
+
+@lru_cache(maxsize=65_536)
+def _es_etiqueta(limpio: str, columnas: tuple[str, ...], trabes: tuple[str, ...]) -> bool:
+    # Una función pura del texto y de los patrones: se recuerda (Tarea 12, el tiempo del pipeline).
+    return any(p.match(limpio) for p in _patrones(columnas, trabes))
 
 
 def escrita(m: re.Match[str]) -> str:
@@ -301,6 +305,14 @@ def marca_sola(ficha: str, config: TextPatternConfig) -> str | None:
 
 
 def marca_normalizada(texto: str, config: TextPatternConfig) -> str | None:
+    """Ver ``_marca_normalizada`` (la misma, recordada por el texto y los patrones)."""
+    return _marca_normalizada(texto, tuple(config.column_tag), tuple(config.beam_tag))
+
+
+@lru_cache(maxsize=65_536)
+def _marca_normalizada(
+    texto: str, columnas: tuple[str, ...], trabes: tuple[str, ...]
+) -> str | None:
     """La forma única de ``texto`` si es una sola marca, escrita como sea: en mayúsculas, sin
     espacios, con «-» por cualquier guion, las letras de su prefijo, «-» y lo demás tal cual
     («K15A.1», «k-15a.1», «K 15A.1» → K-15A.1; «C 1» → C-1; «K1» → K-1; «TL1» → TL-1; «K1-A» →
@@ -317,7 +329,7 @@ def marca_normalizada(texto: str, config: TextPatternConfig) -> str | None:
     con_letra = _CON_LETRA.fullmatch(ficha)
     if con_letra is not None:
         return f"{con_letra.group(1)}-{con_letra.group(2)}-{con_letra.group(3)}"
-    if es_etiqueta(ficha, config):
+    if _es_etiqueta(ficha.strip(), columnas, trabes):
         # Una etiqueta de la configuración que ya lleva su guion queda como está («T1-1», «TE-A»);
         # si no, el guion va tras las letras de su prefijo («TL1» → TL-1).
         prefijo = re.match(r"[A-Z]+", ficha)

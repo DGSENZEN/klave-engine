@@ -337,9 +337,33 @@ def generate_cost_report(
     variant_mappings: dict[str, dict] | None = None,
     estructura: dict | None = None,
 ) -> CostReport:
-    """``estructura`` es el modelo estructural (R6: ``{"reglas", "elementos"}``): con él, el
-    acero de castillos, columnas, trabes y contratrabes sale del armado de cada elemento."""
+    """``estructura`` es el modelo estructural (R6: ``{"reglas", "elementos"}``, volcados o los
+    modelos mismos): con él, el acero de castillos, columnas, trabes y contratrabes sale del
+    armado de cada elemento, y la sección y el claro que cada elemento resolvió se escriben en su
+    detección antes de medir el concreto (``escribir_en_detecciones``), así que concreto, cimbra y
+    acero miden lo mismo. Sólo cuentan los elementos de las detecciones que llegan (una detección
+    excluida en Revisión no es un elemento de este presupuesto)."""
     config = config or CostingConfig()
+    modelo_notas: list[str] = []
+    elementos_del_modelo: list = []
+    if estructura is not None:
+        from klave_engine.estructura.elementos import Elemento
+        from klave_engine.estructura.modelo import escribir_en_detecciones, notas_de_escritura
+
+        presentes = {d.detection_id for d in detections}
+        elementos_del_modelo = [
+            x
+            for x in (
+                e if isinstance(e, Elemento) else Elemento.model_validate(e)
+                for e in estructura["elementos"]
+            )
+            if x.detection_id in presentes
+        ]
+        detections, _escritas = escribir_en_detecciones(
+            detections, elementos_del_modelo, units.to_meters()
+        )
+        modelo_notas = notas_de_escritura(detections)
+        estructura = {"reglas": estructura["reglas"], "elementos": elementos_del_modelo}
     assumptions, calibration_notes = _calibrate_assumptions(
         config.assumptions, dimensions, detections
     )
@@ -366,6 +390,23 @@ def generate_cost_report(
         segmentation=segmentation, assumptions=assumptions,
     )
     boq.assumptions.extend(calibration_notes)
+    if estructura is not None:
+        from klave_engine.estructura.modelo import diferencias_con_el_concreto
+
+        boq.assumptions.extend(modelo_notas)
+        # Donde el concreto (las detecciones) y el acero (los elementos) no miden lo mismo.
+        en_lineas = {
+            i
+            for line in boq.lines
+            if line.concept_code in ("EST-001", "EST-002", "CIM-008")
+            for i in line.source_detections
+        }
+        boq.warnings.extend(
+            diferencias_con_el_concreto(
+                detections, elementos_del_modelo, units.to_meters(), assumptions, segmentation,
+                en_lineas,
+            )
+        )
     # Acero de refuerzo derives from the counted elements and the sheet's
     # armados; it runs before human adjustments so they can correct it too.
     steel = compute_steel(

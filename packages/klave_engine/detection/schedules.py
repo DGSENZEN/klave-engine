@@ -5082,6 +5082,7 @@ _PUNTO_ENTRE_LETRA_Y_CIFRA = re.compile(r"(?<=[A-Z])\.(?=\d)|(?<=\d)\.(?=[A-Z])"
 _GUIONES_Y_ESPACIOS = re.compile(r"[\s\-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]+")
 
 
+@lru_cache(maxsize=65_536)
 def _loose_key(mark: str) -> str:
     """A mark as the AI block compares it (R65), on both sides, AI marks
     included: uppercase, without hyphens (any Unicode dash: «–», «‑», «—», R66)
@@ -5109,6 +5110,7 @@ def marcas_del_dibujo(inventory: ScheduleInventory, config: TextPatternConfig) -
 _CEROS = re.compile(r"(?<!\d)0+(?=\d)")
 
 
+@lru_cache(maxsize=65_536)
 def _llave_sin_ceros(mark: str) -> str:
     """The loose key without the leading zeros of its numbers (K-07 ≡ K-7, R68)."""
     return _CEROS.sub("", _loose_key(mark))

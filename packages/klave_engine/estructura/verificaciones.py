@@ -311,6 +311,10 @@ class _Contexto:
     deteccion: dict[str, Detection] = field(default_factory=dict)
     en_planta: set[str] | None = None
     de_armado: list[NormalizedEntity] | None = None
+    # Calculados una vez (Tarea 12: el tiempo del pipeline): las frases de las notas sobre la
+    # longitud de los pilotes y las cotas con valor de lado de sección, por archivo.
+    notas_de_pilotes: list[str] | None = None
+    cotas_de_lado: dict[str, list[tuple[float, NormalizedEntity]]] | None = None
 
     def __post_init__(self) -> None:
         self.deteccion = {d.detection_id: d for d in self.detections}
@@ -2151,7 +2155,13 @@ _FRASE_DE_PILOTE = re.compile(r"[^.;]*\bPILOTES?\b[^.;]*")
 
 def _notas_de_pilotes(ctx: _Contexto) -> list[str]:
     """Las frases de las notas que hablan de la longitud de los pilotes, cada una una vez, citada
-    por el handle de su primera copia y cuántas copias tiene."""
+    por el handle de su primera copia y cuántas copias tiene (una vez por corrida)."""
+    if ctx.notas_de_pilotes is None:
+        ctx.notas_de_pilotes = _leer_notas_de_pilotes(ctx)
+    return list(ctx.notas_de_pilotes)
+
+
+def _leer_notas_de_pilotes(ctx: _Contexto) -> list[str]:
     copias: dict[str, list[str]] = defaultdict(list)
     for e in ctx.entidades.values():
         if not e.is_textual or not e.text:
@@ -2209,13 +2219,16 @@ def _cotas_junto_a(ctx: _Contexto, titulo: NormalizedEntity) -> list[tuple[float
     cercana y las que miden su mismo tramo en y (R234: una cota fuera del tramo de la sección es
     de otra pieza)."""
     alcance = _COTAS_DEL_TITULO * alto_de_texto(titulo)
+    if ctx.cotas_de_lado is None:
+        ctx.cotas_de_lado = defaultdict(list)
+        for d in ctx.entidades.values():
+            if d.entity_type.value != "dimension":
+                continue
+            valor = _numero(d.properties.get("display_value"))
+            if valor is not None and _LADO_DE_SECCION[0] <= valor <= _LADO_DE_SECCION[1]:
+                ctx.cotas_de_lado[d.source_file].append((valor, d))
     cerca = []
-    for d in ctx.entidades.values():
-        if d.entity_type.value != "dimension" or d.source_file != titulo.source_file:
-            continue
-        valor = _numero(d.properties.get("display_value"))
-        if valor is None or not _LADO_DE_SECCION[0] <= valor <= _LADO_DE_SECCION[1]:
-            continue
+    for valor, d in ctx.cotas_de_lado.get(titulo.source_file, []):
         if _hueco(d.bbox, titulo.bbox) <= alcance:
             cerca.append((round(valor, 1), d, _hueco(d.bbox, titulo.bbox)))
     cerca.sort(key=lambda x: x[2])
@@ -2757,6 +2770,38 @@ def _delta(
         pesos = [sum(ctx.acero_de(e.model_copy(update={campo: v})) for e in els) for v in valores]
         juego["acero_kg"] = max(pesos) - min(pesos)
     return juego
+
+
+# Los campos cuyos valores en disputa cambian una cantidad (lo que está en juego, Tarea 12).
+CAMPOS_EN_JUEGO = ("seccion_cm", "longitud_m", *_ARMADO, "recubrimiento_m")
+
+
+def valores_en_disputa(v: Verificacion, por_marca: dict[str, Definicion]) -> list[Dato]:
+    """Los valores que el plano da y entre los que duda un hallazgo abierto: los de una marca que
+    el plano dice distinto (verificación 8, una duda: uno por valor) o los cortes que dibuja de
+    ella en una misma hoja (verificación 7, R225). Vacío si el hallazgo no duda entre valores
+    que el plano da (un supuesto, un dato que falta, un aviso)."""
+    if v.severidad == "aviso" or not v.marcas:
+        return []
+    marca = v.marcas[0].split(" (", 1)[0]
+    if v.numero == 8 and v.campo in CAMPOS_EN_JUEGO and len(v.datos) >= 2:
+        return [d.model_copy(deep=True) for d in v.datos]
+    if v.numero == 7 and "seccion_cm" in v.campo.split(","):
+        definicion = por_marca.get(marca)
+        if definicion is None or definicion.seccion_cm is None or definicion.variantes:
+            return []
+        valores: dict[str, Dato] = {}
+        for ms in _secciones_por_hoja(definicion.seccion_cm).values():
+            if len(ms) > 1:
+                for m in ms:
+                    valores.setdefault(_llave_de_valor(m.valor), m)
+        return [d.model_copy(deep=True) for d in valores.values()] if len(valores) > 1 else []
+    return []
+
+
+def volumen(e: Elemento) -> float | None:
+    """El concreto del elemento (m³) con su sección y su largo; ``None`` si le falta alguno."""
+    return _volumen(e)
 
 
 _REGLAS_SIMPLES: tuple[tuple[str, str], ...] = (

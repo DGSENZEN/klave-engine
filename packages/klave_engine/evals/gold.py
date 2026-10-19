@@ -210,6 +210,7 @@ def _engine_money(scratch: Path, settings: Settings, detections: list[Detection]
         SheetSegmentation.model_validate(views) if views else None,
         DimensionInventory.model_validate(dims) if dims else None,
         schedule_specs=optional("schedules.json"),
+        estructura=optional("estructura.json"),
     )
 
 

@@ -436,6 +436,10 @@ def _estribos(
     """Cada juego por cada forma de sus piezas, acomodado por zona; lo que no se puede cuantificar
     va a ``por_leer`` con su motivo."""
     juegos = _juegos(e.estribos)
+    if not juegos and e.estribos is not None and e.estribos.fuente == "humano":
+        # Alguien decidió que no lleva estribos (Tarea 12): no hay estribos que pesar.
+        salida.sin_estribos_declarados = True
+        return
     if not juegos:
         motivo = _aviso(e, "estribos") or (
             f"estribos: ilegibles («{e.estribos.texto}»)"

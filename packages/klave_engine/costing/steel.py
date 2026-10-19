@@ -538,6 +538,19 @@ def _fuera_del_presupuesto(
     )
 
 
+def altura_supuesta_m(segmentation: SheetSegmentation | None, column_height_m: float) -> float:
+    """La altura de un castillo o una columna cuando su planta no declara su entrepiso: la
+    supuesta (``column_height_m``) o, si el plano declara niveles que no se juntan en entrepisos,
+    la altura total entre las plantas de superestructura. La misma para el camino sin modelo y
+    para los elementos del modelo estructural (Tarea 12)."""
+    story_heights = segmentation.story_heights() if segmentation is not None else {}
+    total_height = segmentation.total_height() if segmentation is not None else None
+    if not story_heights and total_height and segmentation is not None:
+        plantas = max(len(segmentation.superstructure_views()), 1)
+        return total_height / plantas
+    return column_height_m
+
+
 def compute_steel(
     boq: BillOfQuantities,
     detections: list[Detection],
@@ -567,11 +580,7 @@ def compute_steel(
     # pair up into stories.
     story_heights = segmentation.story_heights() if segmentation is not None else {}
     assignment = segmentation.assignment if segmentation is not None else {}
-    height = column_height_m
-    total_height = segmentation.total_height() if segmentation is not None else None
-    if not story_heights and total_height and segmentation is not None:
-        plantas = max(len(segmentation.superstructure_views()), 1)
-        height = total_height / plantas
+    height = altura_supuesta_m(segmentation, column_height_m)
 
     # --- castillos / columnas -------------------------------------------
     columns = lines.get("EST-001")
