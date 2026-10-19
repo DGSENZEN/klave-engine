@@ -95,19 +95,37 @@ def _castillo(det_id, marca, x, y, eid, **props):
     return d
 
 
-def _planta(detecciones):
+def _planta(detecciones, niveles=False):
+    """La planta de ES-100; con ``niveles``, declarada a +0.00 bajo otra a +2.90 (su entrepiso
+    se lee: 2.9 m, ``nota``); sin ellos, su altura es la supuesta."""
     vistas = [
         ViewRegion(
             view_id="f1",
             title="ES-100 · PLANTA",
             kind=ViewKind.plan,
             level_key="planta",
+            npt_level=0.0 if niveles else None,
             anchor=(0, 0),
             bbox=(0, 0, 100, 100),
         )
     ]
+    if niveles:
+        vistas.append(
+            ViewRegion(
+                view_id="fz",
+                title="AZOTEA",
+                kind=ViewKind.plan,
+                level_key="azotea",
+                npt_level=2.9,
+                anchor=(0, 0),
+                bbox=(600, 0, 700, 100),
+            )  # fmt: skip
+        )
     return SheetSegmentation(
-        views=vistas, assignment={d.detection_id: "f1" for d in detecciones}, is_segmented=True
+        views=vistas,
+        assignment={d.detection_id: "f1" for d in detecciones},
+        is_segmented=True,
+        npt_levels=[0.0, 2.9] if niveles else [],
     )
 
 
@@ -118,7 +136,7 @@ _MARCOS = [
 ]
 
 
-def _estructura_k5_conflict(con_k9=False):
+def _estructura_k5_conflict(con_k9=False, niveles=False):
     """K-5 dicho 20x30 en el cuadro de ES-200 y 20x40 en el de ES-400; dos K-5 colocados en la
     planta de ES-100, sin niveles (altura supuesta 2.9 m). ``con_k9``: además un K-9 colocado que
     el plano no define (su verificación 1 es otro hallazgo, que una decisión de K-5 no toca)."""
@@ -135,7 +153,7 @@ def _estructura_k5_conflict(con_k9=False):
     inv = ScheduleInventory(
         specs=[_spec("K-5", (20, 30), "ES-200", "t200"), _spec("K-5", (20, 40), "ES-400", "t400")]
     )
-    return construir_estructura(textos, _MARCOS, inv, dets, _planta(dets), 1.0, 2.9)
+    return construir_estructura(textos, _MARCOS, inv, dets, _planta(dets, niveles), 1.0, 2.9)
 
 
 def _linea(code, ids, unit="M3", price=0.0, unpriced=False):
@@ -207,8 +225,10 @@ def test_decision_for_a_vanished_mark_is_a_warning():
 
 
 def test_resumen_counts_and_money():
-    r = resumir(_estructura_k5_conflict(), _report_with_est001_price(4000.0))
+    # with its storey declared, the only open doubt of K-5 is the contradiction, which has a figure
+    r = resumir(_estructura_k5_conflict(niveles=True), _report_with_est001_price(4000.0))
     cas = next(x for x in r if x.familia == "castillo")
+    assert cas.en_juego_desconocido == 0
     assert cas.colocaciones == 2 and cas.con_definicion == 2 and cas.duda >= 1
     assert cas.en_juego_mxn == pytest.approx(
         0.20 * 0.10 * 2.9 * 2 * 4000.0
@@ -332,19 +352,64 @@ def test_a_decision_on_an_undefined_mark_goes_to_its_placements_and_check_1_stay
     assert any(v.numero == 1 and "K-9" in v.marcas for v in out.verificaciones)
 
 
-def test_a_decision_reaches_every_variant_of_its_mark():
-    from klave_engine.estructura.definiciones import Definicion
+def _con_variantes():
+    """K-5 con dos variantes por muro (15 y 20 cm): d1 resolvió la de 15 cm; d2 no (su muro no
+    se midió), así que toma la definición de la marca con sus variantes juntas."""
+    from klave_engine.estructura.elementos import resolver_todos
 
     e = _estructura_k5_conflict()
     k5 = _k5(e)
-    variante = k5.model_copy(deep=True, update={"para_muro_cm": 15.0, "variantes": []})
-    e.definiciones = [
-        k5.model_copy(update={"variantes": [variante]}) if isinstance(k5, Definicion) else k5
+    v15 = k5.model_copy(
+        deep=True,
+        update={"para_muro_cm": 15.0, "variantes": [],
+                "seccion_cm": Dato(valor=[15, 20], fuente="detalle", hoja="ES-200")},
+    )  # fmt: skip
+    v20 = k5.model_copy(
+        deep=True,
+        update={"para_muro_cm": 20.0, "variantes": [],
+                "seccion_cm": Dato(valor=[20, 20], fuente="detalle", hoja="ES-200")},
+    )  # fmt: skip
+    e.definiciones = [k5.model_copy(update={"variantes": [v15, v20]})]
+    medido = Dato(valor=15.0, fuente="medido", texto="el muro bajo la etiqueta: 15 cm")
+    e.elementos = [
+        x.model_copy(update={"colocacion": x.colocacion.model_copy(update={"muro_cm": medido})})
+        if x.detection_id == "d1"
+        else x
+        for x in e.elementos
     ]
+    e.elementos = resolver_todos(e.elementos, {"K-5": e.definiciones[0]}, {}, e.reglas, frames=[])
+    return e
+
+
+def test_a_decision_on_a_mark_with_variants_takes_only_the_unresolved_placements():
+    # R239: d1 keeps its wall's variant; only d2 (its variant unknown) takes the mark's decision.
+    e = _con_variantes()
+    por_id = {x.detection_id: x for x in e.elementos}
+    assert tuple(por_id["d1"].seccion_cm.valor) == (15, 20)
     out = aplicar_decisiones(
-        e, [Decision(marca="K-5", campo="seccion_cm", valor=[20, 40], fecha=_now())]
+        e, [Decision(marca="K-5", campo="seccion_cm", valor=[25, 20], fecha=_now())]
     )
+    por_id = {x.detection_id: x for x in out.elementos}
+    assert tuple(por_id["d1"].seccion_cm.valor) == (15, 20)
+    assert por_id["d1"].seccion_cm.fuente == "detalle"
+    assert por_id["d2"].seccion_cm.fuente == "humano"
+    assert all(v.seccion_cm.fuente != "humano" for v in _k5(out).variantes)
+    aviso = next(a for a in out.avisos if a.startswith("Decisión sobre K-5 (sección"))
+    assert "la toman 1 pza de 2" in aviso and "conservan la de su muro" in aviso
+    # a decision that names the variant takes exactly that variant
+    out = aplicar_decisiones(
+        e,
+        [Decision(marca="K-5", campo="seccion_cm", valor=[15, 25], para_muro_cm=15, fecha=_now())],
+    )
+    por_id = {x.detection_id: x for x in out.elementos}
+    assert tuple(por_id["d1"].seccion_cm.valor) == (15, 25)
+    assert por_id["d2"].seccion_cm.fuente != "humano"
     assert _k5(out).variantes[0].seccion_cm.fuente == "humano"
+    sin = aplicar_decisiones(
+        e,
+        [Decision(marca="K-5", campo="seccion_cm", valor=[15, 25], para_muro_cm=30, fecha=_now())],
+    )
+    assert any("no tiene una variante para muros de 30 cm" in a for a in sin.avisos)
 
 
 @pytest.mark.parametrize(
@@ -367,7 +432,7 @@ def test_an_unusable_decision_value_is_an_aviso_never_an_error(campo, valor, mot
 
 
 def test_without_the_drawing_texts_the_checks_are_kept_and_it_is_said():
-    e = Estructura.model_validate(_estructura_k5_conflict().model_dump(mode="json"))
+    e = Estructura.model_validate(_estructura_k5_conflict(niveles=True).model_dump(mode="json"))
     out = aplicar_decisiones(
         e, [Decision(marca="K-5", campo="seccion_cm", valor=[20, 40], fecha=_now())]
     )
@@ -408,7 +473,7 @@ def test_saved_decisions_replace_per_mark_and_field_and_bad_entries_are_said(tmp
 
 
 def test_resumen_without_steel_price_keeps_the_kilos_as_quantity():
-    r = resumir(_estructura_k5_conflict(), _report_with_est001_price(4000.0))
+    r = resumir(_estructura_k5_conflict(niveles=True), _report_with_est001_price(4000.0))
     cas = next(x for x in r if x.familia == "castillo")
     assert cas.en_juego_cantidad["concreto_m3"] == pytest.approx(0.20 * 0.10 * 2.9 * 2)
     assert cas.en_juego_cantidad["acero_kg"] > 0
@@ -416,19 +481,22 @@ def test_resumen_without_steel_price_keeps_the_kilos_as_quantity():
     # priced steel joins the money; nothing priced at all is None, not zero
     con_acero = next(
         x
-        for x in resumir(_estructura_k5_conflict(), _report_with_est001_price(4000.0, acero=30.0))
+        for x in resumir(
+            _estructura_k5_conflict(niveles=True), _report_with_est001_price(4000.0, acero=30.0)
+        )
         if x.familia == "castillo"
     )
     assert con_acero.en_juego_mxn == pytest.approx(
         cas.en_juego_mxn + cas.en_juego_cantidad["acero_kg"] * 30.0
     )
-    sin_precio = resumir(_estructura_k5_conflict(), _report_with_est001_price(0.0))
+    sin_precio = resumir(_estructura_k5_conflict(niveles=True), _report_with_est001_price(0.0))
     sin_precio_line = SimpleNamespace(
         boq=BillOfQuantities(
             project_id="p", lines=[_linea("EST-001", ["d1", "d2"], price=9.0, unpriced=True)]
         )
     )
-    assert next(x for x in resumir(_estructura_k5_conflict(), sin_precio_line)).en_juego_mxn is None
+    nada = next(x for x in resumir(_estructura_k5_conflict(niveles=True), sin_precio_line))
+    assert nada.en_juego_mxn is None and nada.en_juego_sin_precio["concreto_m3"] > 0
     assert sin_precio[0].en_juego_mxn == 0.0  # priced at zero is zero
 
 
@@ -442,7 +510,15 @@ def test_resumen_counts_critical_values_from_the_drawing_and_decided_ones_apart(
     )
     decidida = resumir(out, _report_with_est001_price(1.0))[0]
     assert decidida.criticos_del_plano == 4 and decidida.criticos_humanos == 2
-    assert decidida.en_juego_mxn == 0.0 and decidida.en_juego_cantidad == {}  # nothing at stake
+    # the contradiction is answered; the supposed height is still open and has no figure: never $0
+    assert decidida.en_juego_cantidad == {} and decidida.en_juego_desconocido == 1
+    assert decidida.en_juego_mxn is None
+    nivelada = aplicar_decisiones(
+        _estructura_k5_conflict(niveles=True),
+        [Decision(marca="K-5", campo="seccion_cm", valor=[20, 40], fecha=_now())],
+    )
+    nada = resumir(nivelada, _report_with_est001_price(1.0))[0]
+    assert nada.duda == 0 and nada.en_juego_mxn == 0.0  # nothing open: nothing at stake
 
 
 def test_resumen_has_one_card_per_family_and_says_apart_what_it_cannot_split():
@@ -481,8 +557,10 @@ def test_resumen_has_one_card_per_family_and_says_apart_what_it_cannot_split():
     assert [x.familia for x in r] == ["castillo", "columna"]  # each once, in the plan's order
     for x in r:
         assert x.en_juego_aparte == {"e1": {"acero_kg": 1666.75, "concreto_m3": 4.32}}
-        assert x.en_juego_cantidad == {} and x.en_juego_mxn == 0.0  # never split by eye
-    assert r[0].duda == 1 and r[0].aviso == 1 and r[1].aviso == 0
+        # never split by eye, and while it is open the card gives no money (never $0)
+        assert x.en_juego_cantidad == {}
+    assert r[0].en_juego_mxn is None and r[1].en_juego_mxn == 0.0  # the finding is on one card
+    assert r[0].duda == 1 and r[0].aviso == 1 and r[1].duda == 0 and r[1].aviso == 0
 
 
 def test_a_decision_that_there_are_no_stirrups_is_weighed_as_such():
@@ -682,17 +760,23 @@ def test_a_drawing_section_replaces_a_marker_and_keeps_what_was_there():
     assert p["section_cm"] == "20x55" and p["section_area_du2"] == pytest.approx(0.11)
     assert p["section_source"] == "detalle"
     assert p["seccion_previa"] == {
-        "section_cm": None, "section_area_du2": 0.0225, "section_source": "marcador_poligonal"
+        "section_cm": None, "section_area_du2": 0.0225, "section_source": "marcador_poligonal",
+        "section_perimetro_du": None, "spec_rebar": None, "spec_stirrups": None,
     }  # fmt: skip
     assert escritas[0].antes == "225 cm²" and escritas[0].despues == "20x55"
     assert det.properties == {"section_area_du2": 0.0225, "section_source": "marcador_poligonal"}
-    # idempotent: a second pass writes nothing and the first previa stays
-    otra, nada = escribir_en_detecciones(salida, [_el("castillo", [20, 55])], 1.0)
-    assert nada == [] and otra[0] is salida[0]
+    # R235, a pure function of (the detector's detection, the model): on an already written
+    # detection (an old run saved it) it gives the same result, its first previa intact…
+    otra, _ = escribir_en_detecciones(salida, [_el("castillo", [20, 55])], 1.0)
+    assert otra[0].properties == p and otra[0].evidence.notes == salida[0].evidence.notes
     humano = _el("castillo", [25, 55], fuente="humano")
     tercera, una = escribir_en_detecciones(salida, [humano], 1.0)
     assert len(una) == 1 and tercera[0].properties["seccion_previa"] == p["seccion_previa"]
     assert tercera[0].properties["section_source"] == "humano"
+    # …and a model without the decision restores what the detector read, exactly
+    vuelta, nada = escribir_en_detecciones(tercera, [_el("castillo", [15, 20], "supuesto")], 1.0)
+    assert nada == [] and vuelta[0].properties == det.properties
+    assert vuelta[0].evidence.notes == det.evidence.notes
 
 
 def test_side_order_is_the_same_section_for_a_castillo_but_not_for_a_beam():
@@ -890,9 +974,15 @@ def test_a_decision_survives_a_reprocess_and_moves_the_concrete(tmp_path, data_d
         n.startswith("Secciones del modelo estructural escritas") and "→ 70x70 (humano)" in n
         for n in result.cost_report.boq.assumptions
     )
+    # R235: detections.json keeps what the detector read; the decision lives only in the costing
     ids = {x.detection_id for x in e.elementos if x.marca == "C-1"}
-    escritas = [d for d in result.detections if d.detection_id in ids]
-    assert escritas and all(d.properties["section_source"] == "humano" for d in escritas)
+    guardadas = [d for d in read_json(control / "detections.json") if d["detection_id"] in ids]
+    assert guardadas and all(
+        d["properties"].get("section_source") != "humano"
+        and "seccion_previa" not in d["properties"]
+        for d in guardadas
+    )
+    assert {w.detection_id for w in e.escrituras} >= ids
     # a stale scenario of another run is never taken
     assert leer_estructura_vigente(control, control).base in ("", e.base)
 
@@ -1068,3 +1158,294 @@ def _tipos(anotacion):
     yield anotacion
     for arg in typing.get_args(anotacion):
         yield from _tipos(arg)
+
+
+# ------------------------------------------------------------- ronda de arreglos 1 (R235–R242)
+
+
+def test_a_removed_decision_leaves_the_concrete_as_if_it_never_was(tmp_path, data_dir):
+    # R235: the decision lives in the costing, never in detections.json.
+    root, control = _demo(tmp_path)
+    limpio = _c1_volume(run_full_pipeline(root, get_settings()).cost_report)
+    guardar_decision(
+        control, Decision(marca="C-1", campo="seccion_cm", valor=[70, 70], fecha=_FECHA)
+    )
+    con = _c1_volume(run_full_pipeline(root, get_settings()).cost_report)
+    assert con > limpio
+    (control / DECISIONES_FILENAME).unlink()
+    assert _c1_volume(_recompute(root)) == pytest.approx(limpio)
+    assert _c1_volume(run_full_pipeline(root, get_settings()).cost_report) == pytest.approx(limpio)
+
+
+def test_an_old_run_that_saved_a_decision_on_its_detections_is_restored():
+    # A detections.json written by the first Task 12 commit carries the humano section and pile
+    # length; costing without the decision measures what the detector read.
+    from klave_engine.costing.models import CostingConfig
+    from klave_engine.costing.report import generate_cost_report
+    from klave_engine.dxf.units import DrawingUnits
+
+    escrita = _det(
+        section_cm="70x70", section_area_du2=0.49, section_source="humano",
+        seccion_previa={"section_cm": None, "section_area_du2": 0.0225,
+                        "section_source": "marcador_poligonal"},
+        seccion_del_modelo="decisión",
+    )  # fmt: skip
+    escrita.evidence.notes.append("Sección 70x70 del modelo estructural (humano: «decisión»)")
+    limpia = _det(section_area_du2=0.0225, section_source="marcador_poligonal")
+    salida, nada = escribir_en_detecciones([escrita], [_el("castillo", [15, 20], "supuesto")], 1.0)
+    assert nada == [] and salida[0].properties == limpia.properties
+    assert salida[0].evidence.notes == limpia.evidence.notes
+    pila = make_detection(
+        "p1", DetectionType.pile, "P-4", (0, 0, 1, 1), 0.9, [], "t", [],
+        {"longitud_m": 18.0, "longitud_fuente": "humano", "longitud_previa": {"longitud_m": None}},
+    )  # fmt: skip
+    pila.mark, pila.family = "P-4", "pilote"
+    sin = _el("pilote", None, detection_id="p1", marca="P-4",
+              longitud_m=Dato(valor=12.0, fuente="supuesto", texto="?"))  # fmt: skip
+    unidades = DrawingUnits(unit="m", source="declared", confidence=1.0)
+    from klave_engine.estructura.reglas import reglas_estandar
+
+    def metros(det, elementos):
+        r = generate_cost_report(
+            "p", [det], unidades, CostingConfig(), None, None,
+            schedule_specs={"by_mark": {"P-4": {"length_m": 10.0}}},
+            estructura={"reglas": reglas_estandar(), "elementos": elementos},
+        )  # fmt: skip
+        return next(x.quantity for x in r.boq.lines if x.concept_code == "CIM-011")
+
+    assert metros(pila, [sin]) == 10.0  # the specs' length, as if the decision never was
+    decidida = sin.model_copy(update={"longitud_m": Dato(valor=18.0, fuente="humano", texto="d")})
+    assert metros(pila, [decidida]) == 18.0
+
+
+def test_a_variants_section_goes_with_its_own_armado():
+    # R236: the 30 cm wall's variant writes 30x20 AND its 6#3 / E#2@15, never 30x20 with 4#3.
+    from klave_engine.costing.sintesis import firma
+    from klave_engine.estructura.armado import GrupoVarillas, JuegoEstribos, Zona
+
+    det = _det(
+        "dala", tipo=DetectionType.beam_tag, section_cm="15x20", section_source="cuadro",
+        spec_source="detalle", spec_rebar="4#3", spec_stirrups="E#2@15",
+    )  # fmt: skip
+    e = _el(
+        "dala", [30, 20], marca="CI",
+        longitudinales=Dato(valor=[GrupoVarillas(cantidad=6, numero="3")], fuente="detalle"),
+        estribos=Dato(
+            valor=[JuegoEstribos(tipo="estribo", cantidad=1, numero="2",
+                                 zonas=[Zona(tramo="todo", separacion_m=0.15)])],
+            fuente="detalle",
+        ),
+        avisos=["variante: CI «para muros de 30 cm»: el muro bajo la etiqueta: 30 cm"],
+    )  # fmt: skip
+    salida, escritas = escribir_en_detecciones([det], [e], 1.0)
+    p = salida[0].properties
+    assert (
+        p["section_cm"] == "30x20" and p["spec_rebar"] == "6#3" and p["spec_stirrups"] == "E#2@15"
+    )
+    # one previa for both writes: what the detector had, never the section just written
+    assert (
+        p["seccion_previa"]["spec_rebar"] == "4#3" and p["seccion_previa"]["section_cm"] == "15x20"
+    )
+    assert {w.campo for w in escritas} == {"seccion", "armado"}
+    assert firma(salida[0], 1.0) == {"seccion": "20x30", "armado": "6#3"}
+    # the same section as the detection's, but its variant's armado differs: the armado is written
+    igual = det.model_copy(update={"properties": {**det.properties, "section_cm": "30x20"}})
+    otra, escritas = escribir_en_detecciones([igual], [e], 1.0)
+    assert otra[0].properties["spec_rebar"] == "6#3" and [w.campo for w in escritas] == ["armado"]
+
+
+def test_a_height_decision_on_a_castillo_waits_for_its_storey():
+    # R237: concrete measures a castillo by its storey; a human height would move only the steel.
+    out = aplicar_decisiones(
+        _estructura_k5_conflict(),
+        [Decision(marca="K-5", campo="longitud_m", valor=3.2, fecha=_now())],
+    )
+    assert any("se decide por entrepiso (pendiente)" in a for a in out.avisos)
+    assert all(x.altura_m.fuente != "humano" for x in out.elementos)
+
+
+def test_a_beam_length_decision_needs_one_measured_span():
+    from klave_engine.estructura.definiciones import Definicion
+    from klave_engine.estructura.reglas import reglas_estandar
+
+    def viga(i, claro):
+        x = _el("trabe", [25, 50], marca="T-1", detection_id=f"t{i}")
+        medido = Dato(valor=claro, fuente="medido", texto=f"{claro} m")
+        return x.model_copy(update={"colocacion": Colocacion(longitud_m=medido)})
+
+    t1 = Definicion(marca="T-1", familia="trabe", seccion_cm=Dato(valor=[25, 50], fuente="cuadro"))
+    d = Decision(marca="T-1", campo="longitud_m", valor=5.0, fecha=_now())
+    distintas = Estructura(
+        reglas=reglas_estandar(), definiciones=[t1], elementos=[viga(1, 4.0), viga(2, 6.0)]
+    )
+    out = aplicar_decisiones(distintas, [d])
+    assert any("miden claros distintos (4 m, 6 m)" in a for a in out.avisos)
+    iguales = distintas.model_copy(update={"elementos": [viga(1, 4.0), viga(2, 4.0)]})
+    out = aplicar_decisiones(iguales, [d])
+    assert {x.longitud_m.fuente for x in out.elementos} == {"humano"}
+
+
+def test_naive_and_aware_decision_dates_are_both_utc(tmp_path):
+    # R238: a decisions file mixing «…T12:00:00» and «…Z» used to crash the recompute.
+    write_json(
+        tmp_path / DECISIONES_FILENAME,
+        [
+            {"marca": "K-5", "campo": "seccion_cm", "valor": v, "fecha": f}
+            for v, f in (([20, 30], "2026-10-18T12:00:00"), ([20, 40], "2026-10-18T13:00:00Z"))
+        ],
+    )
+    decisiones = cargar_decisiones(tmp_path)
+    assert all(d.fecha.tzinfo is not None for d in decisiones)
+    out = aplicar_decisiones(_estructura_k5_conflict(), decisiones)
+    assert tuple(_k5(out).seccion_cm.valor) == (20, 40)  # 13:00 UTC is the latest
+
+
+def test_every_finding_is_on_exactly_one_card():
+    # R240: the card totals are the findings; what is no family's goes to «general».
+    from klave_engine.estructura.reglas import reglas_estandar
+    from klave_engine.estructura.verificaciones import Verificacion
+
+    e = _estructura_k5_conflict(con_k9=True)
+    extra = [
+        Verificacion(id="z", numero=10, severidad="duda", mensaje="ZC-1 escrita", marcas=["ZC-1"]),
+        Verificacion(id="g", numero=8, severidad="duda", mensaje="tabla contra nota"),
+        Verificacion(id="m", numero=2, severidad="aviso", mensaje="D-9", marcas=["XYZ-9"]),
+    ]
+    e = e.model_copy(update={"verificaciones": [*e.verificaciones, *extra]})
+    r = resumir(e, _report_with_est001_price(1.0))
+    assert sum(x.bloquea + x.duda + x.aviso for x in r) == len(e.verificaciones)
+    por = {x.familia: x for x in r}
+    assert por["zapata"].duda == 1  # by its mark's prefix
+    assert por["general"].duda == 1 and por["general"].aviso == 1
+    assert por["general"].en_juego_mxn is None and por["general"].en_juego_desconocido == 1
+    assert Estructura(reglas=reglas_estandar()).resumen == []
+
+
+def test_cards_rank_by_money_then_known_quantity_and_state_out_of_budget_apart():
+    e = _estructura_k5_conflict(niveles=True)
+    solo_d1 = SimpleNamespace(
+        boq=BillOfQuantities(project_id="p", lines=[_linea("EST-001", ["d1"], price=4000.0)])
+    )
+    cas = next(x for x in resumir(e, solo_d1) if x.familia == "castillo")
+    # d2 is no line's: its Δ is said apart, never summed into what is at stake in the budget
+    assert cas.en_juego_cantidad["concreto_m3"] == pytest.approx(0.02 * 2.9)
+    assert cas.en_juego_fuera_del_presupuesto["concreto_m3"] == pytest.approx(0.02 * 2.9)
+    assert cas.en_juego_mxn == pytest.approx(0.02 * 2.9 * 4000.0)
+    from klave_engine.estructura.verificaciones import Verificacion
+
+    e = e.model_copy(
+        update={
+            "verificaciones": [
+                *e.verificaciones,
+                Verificacion(id="t", numero=7, severidad="duda", mensaje="T-1", marcas=["T-1"]),
+            ]
+        }
+    )
+    assert [x.familia for x in resumir(e, _report_with_est001_price(4000.0))][:2] == [
+        "castillo",
+        "trabe",
+    ]
+
+
+def test_a_reading_aviso_on_a_decided_field_is_never_a_new_doubt():
+    # R241: K-5's reading says its drawn section does not match its cotas (a duda of its own);
+    # once a person decides the section, that is an aviso naming who decided, never a new duda.
+    sin = _estructura_k5_conflict(niveles=True)
+    ctx = sin._contexto
+    aviso = "sección dibujada 17.8x84.4 cm a la escala de sus cotas: no coincide con 15x85"
+
+    def con_aviso(decisiones):
+        e = construir_estructura(
+            ctx.entities, _MARCOS, ctx.inv, ctx.detections, ctx.segmentation, 1.0, 2.9
+        )
+        _k5(e).avisos.append(aviso)
+        e.decisiones = [Decision(marca="X", campo="estribos", valor=[], fecha=_now())]
+        return aplicar_decisiones(e, decisiones)  # re-runs the checks with the aviso
+
+    antes = [v for v in con_aviso([]).verificaciones if v.numero == 11 and "K-5" in v.marcas]
+    assert [v.severidad for v in antes] == ["duda"]
+    d = Decision(marca="K-5", campo="seccion_cm", valor=[15, 85], actor="Diego", fecha=_now())
+    once = [v for v in con_aviso([d]).verificaciones if v.numero == 11 and "K-5" in v.marcas]
+    assert [v.severidad for v in once] == ["aviso"]
+    assert "decidido por Diego" in once[0].mensaje and "17.8x84.4" in once[0].mensaje
+
+
+def test_formwork_of_a_non_rectangular_section_is_its_contour():
+    # R242: K-15A's L (2,300 cm², perimeter 2.30 m) is formed over its contour, not √area.
+    from klave_engine.costing.formwork import _section_m
+
+    det = _det(section_area_du2=0.0225, section_source="marcador_poligonal")
+    e = _el("castillo", {"area_cm2": 2300.0, "perimetro_cm": 230.0}, fuente="medido")
+    (escrita,), _ = escribir_en_detecciones([det], [e], 1.0)
+    (a, b), origen = _section_m(escrita.properties, None, "K-15A", "castillo", (0.15, 0.2), 1.0)
+    assert origen == "contorno" and 2 * (a + b) == pytest.approx(2.30)
+    sin = _el("castillo", {"area_cm2": 2300.0}, fuente="medido")
+    (escrita,), _ = escribir_en_detecciones([det], [sin], 1.0)
+    assert "section_perimetro_du" not in escrita.properties
+    assert _section_m(escrita.properties, None, "K-15A", "castillo", (0.15, 0.2), 1.0)[1] == (
+        "área sin contorno"
+    )
+
+
+def test_a_saved_decision_retires_the_stale_scenario_and_the_run_says_so(tmp_path, data_dir):
+    root, control = _demo(tmp_path)
+    run_full_pipeline(root, get_settings())
+    _recompute(root)
+    assert (control / ESTRUCTURA_DERIVADA_FILENAME).exists()
+    guardar_decision(
+        control, Decision(marca="C-1", campo="seccion_cm", valor=[70, 70], fecha=_FECHA)
+    )
+    assert not (control / ESTRUCTURA_DERIVADA_FILENAME).exists()
+    vigente = leer_estructura_vigente(control, control)
+    assert any("cambiaron desde este modelo" in a for a in vigente.avisos)
+    _recompute(root)
+    vigente = leer_estructura_vigente(control, control)
+    assert not any("cambiaron desde este modelo" in a for a in vigente.avisos)
+    ids = {x.detection_id for x in vigente.elementos if x.marca == "C-1"}
+    assert ids <= {w.detection_id for w in vigente.escrituras}  # the recompute's own writes
+    # removed by hand: the scenario is no longer current, the run's own model (without it) is
+    (control / DECISIONES_FILENAME).unlink()
+    vigente = leer_estructura_vigente(control, control)
+    assert not any(x.seccion_cm.fuente == "humano" for x in vigente.elementos)
+    assert not any("cambiaron desde este modelo" in a for a in vigente.avisos)
+
+
+def test_decisions_key_on_the_normalized_mark():
+    from klave_engine.estructura.modelo import _vigentes
+
+    ds = [
+        Decision(marca="K5", campo="seccion_cm", valor=[20, 30], fecha=_FECHA),
+        Decision(marca="K-5", campo="seccion_cm", valor=[20, 40], fecha=_FECHA.replace(hour=13)),
+    ]
+    assert [d.valor for d in _vigentes(ds, TextPatternConfig())] == [[20, 40]]
+
+
+def test_an_assumed_side_the_cuadro_stamped_is_corrected_too():
+    # apply_schedule stamps a section with an assumed side as «supuesto»: the model may correct it.
+    det = _det(section_cm="15x30", section_source="supuesto", spec_source="cuadro")
+    salida, escritas = escribir_en_detecciones([det], [_el("castillo", [15, 20], "supuesto")], 1.0)
+    assert salida[0].properties["section_cm"] == "15x20" and escritas
+
+
+def test_a_pile_length_written_twice_keeps_what_the_detector_had():
+    pila = make_detection("p1", DetectionType.pile, "P-4", (0, 0, 1, 1), 0.9, [], "t", [], {})
+    pila.mark, pila.family = "P-4", "pilote"
+    largo = _el("pilote", None, detection_id="p1", marca="P-4",
+                longitud_m=Dato(valor=18.0, fuente="humano", texto="d"))  # fmt: skip
+    (una,), _ = escribir_en_detecciones([pila], [largo], 1.0)
+    otro = largo.model_copy(update={"longitud_m": Dato(valor=20.0, fuente="humano", texto="d")})
+    (dos,), _ = escribir_en_detecciones([una], [otro], 1.0)
+    assert dos.properties["longitud_m"] == 20.0
+    assert dos.properties["longitud_previa"] == {"longitud_m": None}
+
+
+def test_a_non_rectangular_placement_carries_its_contours_perimeter():
+    # R142 + R242: the element's measured L section keeps its contour's perimeter (cm).
+    from klave_engine.estructura.elementos import _contorno_no_rectangular
+
+    det = _det(
+        contorno_area_du2=0.23, contorno_rectangular=False, contorno_capa="EST-CASTILLOS",
+        contorno_perimetro_du=2.30,
+    )  # fmt: skip
+    dato = _contorno_no_rectangular(det, "castillo", 1.0)
+    assert dato is not None and dato.valor == {"area_cm2": 2300.0, "perimetro_cm": 230.0}

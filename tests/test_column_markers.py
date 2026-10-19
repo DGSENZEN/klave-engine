@@ -63,6 +63,8 @@ def test_an_l_shaped_castillo_records_its_whole_outline():
     assert p["contorno_area_du2"] == pytest.approx(0.23, abs=1e-4)
     assert p["contorno_rectangular"] is False and p["contorno_capa"] == "EST-CASTILLOS"
     assert sorted(p["contorno_entidades"]) == ["ent_000001", "ent_000002"]
+    # Tarea 12 (R242): its perimeter, the formwork's: 2 × (0.55 + 0.6) = 2.30
+    assert p["contorno_perimetro_du"] == pytest.approx(2.30, abs=1e-3)
 
 
 def test_a_rectangular_castillo_outline_is_rectangular():

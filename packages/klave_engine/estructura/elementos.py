@@ -389,8 +389,13 @@ def _contorno_no_rectangular(d: Detection, familia: str, factor: float | None) -
     ):
         return None
     cm2 = round(float(area) * factor * factor * 10_000, 1)
+    valor: dict[str, float] = {"area_cm2": cm2}
+    perimetro = props.get("contorno_perimetro_du")
+    if isinstance(perimetro, int | float) and perimetro > 0:
+        # R242: el perímetro del contorno (cm), el de su cimbra.
+        valor["perimetro_cm"] = round(float(perimetro) * factor * 100, 1)
     return Dato(
-        valor={"area_cm2": cm2},
+        valor=valor,
         fuente="medido",
         texto=f"contorno en planta no rectangular (capa {capa}): {cm2:g} cm²",
         entidades=list(props.get("contorno_entidades") or d.source_entities[1:]),

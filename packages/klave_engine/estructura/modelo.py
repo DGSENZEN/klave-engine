@@ -44,11 +44,11 @@ no eligió. Cuando el concreto y el acero quedan con secciones distintas, se dic
 import hashlib
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, get_args
 
-from pydantic import BaseModel, Field, PrivateAttr, ValidationError
+from pydantic import BaseModel, Field, PrivateAttr, ValidationError, field_validator
 
 from klave_engine.common.io import read_json, write_json
 from klave_engine.common.logging import get_logger
@@ -126,20 +126,39 @@ class Decision(BaseModel):
     nota: str = ""
     actor: str = ""
     fecha: datetime
+    # R239: en una marca con variantes por muro, la variante que decide (el espesor del muro, cm);
+    # sin él, la decisión sólo vale para las colocaciones cuya variante no se resolvió.
+    para_muro_cm: float | None = None
+
+    @field_validator("fecha")
+    @classmethod
+    def _en_utc(cls, fecha: datetime) -> datetime:
+        """R238: toda fecha en UTC (una sin zona se toma como UTC): así se comparan siempre."""
+        if fecha.tzinfo is None:
+            return fecha.replace(tzinfo=UTC)
+        return fecha.astimezone(UTC)
 
 
 class ResumenFamilia(BaseModel):
     """La tarjeta de una familia.
 
+    Cada hallazgo está en una sola tarjeta (R240): la de la familia de la mayoría de sus
+    elementos, si no la de sus marcas (su definición o el prefijo), si no «general».
+
     ``con_definicion``: colocaciones juntadas con la definición de su propia marca (la de la
     familia no cuenta: su marca sigue sin definir). ``criticos_del_plano``: datos críticos
     (``CRITICOS``) que da el plano: ni supuesto, ni IA, ni regla; los que decidió alguien van en
-    ``criticos_humanos``. ``en_juego_mxn``: el dinero en juego donde el plano da dos valores, con
-    precio (``None`` si hay algo en juego y nada tiene precio). ``en_juego_cantidad``: esas
-    diferencias en cantidad (``concreto_m3``, ``acero_kg``), con precio o sin él;
-    ``en_juego_sin_precio``: la parte de ellas que no tiene precio. ``en_juego_aparte``: lo que
-    pone en juego un hallazgo cuyos valores no son de un elemento (los entrepisos contados de dos
-    maneras), por su id: no está en las cifras de arriba ni se reparte entre las familias."""
+    ``criticos_humanos``. Lo que está en juego es lo que cambia entre dos valores que el plano da
+    para un dato (una contradicción, dos cortes), en las colocaciones que el presupuesto cuenta:
+    ``en_juego_cantidad`` (``concreto_m3``, ``acero_kg``), con precio o sin él;
+    ``en_juego_sin_precio``, la parte sin precio; ``en_juego_mxn``, el dinero de la parte con
+    precio. ``en_juego_mxn`` es ``None`` —nunca $0— si hay un hallazgo abierto (bloquea o duda)
+    cuya cantidad en juego no tiene cifra (``en_juego_desconocido`` dice cuántos) o si lo que hay
+    en juego no tiene precio; 0.0 sólo si no hay nada abierto. ``en_juego_fuera_del_presupuesto``:
+    lo que cambia en colocaciones que ningún renglón cuenta (dicho aparte, no sumado).
+    ``en_juego_aparte``: lo que pone en juego un hallazgo cuyos valores no son de un elemento (los
+    entrepisos contados de dos maneras), por su id: aparece igual en cada tarjeta que toca, así
+    que es compartido por id y nunca se suma entre tarjetas."""
 
     familia: str
     colocaciones: int
@@ -154,6 +173,8 @@ class ResumenFamilia(BaseModel):
     criticos_humanos: int = 0
     en_juego_sin_precio: dict[str, float] = Field(default_factory=dict)
     en_juego_aparte: dict[str, dict[str, float]] = Field(default_factory=dict)
+    en_juego_desconocido: int = 0
+    en_juego_fuera_del_presupuesto: dict[str, float] = Field(default_factory=dict)
 
 
 class Escritura(BaseModel):
@@ -163,7 +184,7 @@ class Escritura(BaseModel):
     marca: str
     familia: str
     hoja: str
-    campo: Literal["seccion", "fuente", "claro"]
+    campo: Literal["seccion", "fuente", "claro", "armado"]
     antes: str | None
     fuente_antes: str | None
     despues: str
@@ -384,12 +405,25 @@ def escribir_estructura_derivada(control_dir: Path, corrida: Path, e: Estructura
 
 
 def leer_estructura_vigente(control_dir: Path, corrida: Path) -> Estructura | None:
-    """El modelo que vale para la corrida activa: el escenario del recálculo si es de ella, si no
-    el de la corrida."""
+    """El modelo que vale para la corrida activa: el escenario del recálculo si es de ella y está
+    al día con las decisiones guardadas, si no el de la corrida. Si ése tampoco lo está (se
+    guardó o se quitó una decisión y no se ha recalculado), lo dice en sus avisos."""
+    decisiones = cargar_decisiones(control_dir)
     derivada, _ = _leer(control_dir / ESTRUCTURA_DERIVADA_FILENAME)
-    if derivada is not None and derivada.base and derivada.base == huella(corrida):
+    if (
+        derivada is not None
+        and derivada.base
+        and derivada.base == huella(corrida)
+        and _vigentes(decisiones, derivada.patrones) == derivada.decisiones
+    ):
         return derivada
-    return leer_estructura(corrida)
+    e = leer_estructura(corrida)
+    if e is not None and _vigentes(decisiones, e.patrones) != e.decisiones:
+        e.avisos.append(
+            f"{_DE_DECISION}: las decisiones guardadas cambiaron desde este modelo; se aplican al "
+            "recalcular"
+        )
+    return e
 
 
 def estructura_para_recalcular(
@@ -506,27 +540,34 @@ def guardar_decision(control_dir: Path, d: Decision) -> None:
             crudas = leidas if isinstance(leidas, list) else []
         except (OSError, ValueError):
             crudas = []
-    llave = _llave(d.marca, d.campo)
+    llave = _llave(d.marca, d.campo, d.para_muro_cm)
     conservadas = [
         c
         for c in crudas
         if not (
             isinstance(c, dict)
-            and _llave(str(c.get("marca", "")), str(c.get("campo", ""))) == llave
+            and _llave(str(c.get("marca", "")), str(c.get("campo", "")), c.get("para_muro_cm"))
+            == llave
         )
     ]
     write_json(ruta, [*conservadas, d.model_dump(mode="json")])
+    # El escenario del recálculo ya no está al día: se rehace en el próximo recálculo.
+    (control_dir / ESTRUCTURA_DERIVADA_FILENAME).unlink(missing_ok=True)
 
 
-def _llave(marca: str, campo: str) -> tuple[str, str]:
-    return (normalizar_marca(marca) if marca.strip() else "", campo)
+def _llave(
+    marca: str, campo: str, para_muro_cm: Any = None, config: TextPatternConfig | None = None
+) -> tuple[str, str, float | None]:
+    """La llave de una decisión: su marca normalizada, su campo y (R239) su variante."""
+    muro = _numero(para_muro_cm) if para_muro_cm is not None else None
+    return (normalizar_marca(marca, config) if marca.strip() else "", campo, muro)
 
 
 def _vigentes(decisiones: list[Decision], config: TextPatternConfig) -> list[Decision]:
-    """Una por marca y campo: la más reciente."""
-    por_llave: dict[tuple[str, str], Decision] = {}
+    """Una por marca, campo y variante: la más reciente."""
+    por_llave: dict[tuple[str, str, float | None], Decision] = {}
     for d in sorted(decisiones, key=lambda x: x.fecha):
-        por_llave[(normalizar_marca(d.marca, config), d.campo)] = d
+        por_llave[_llave(d.marca, d.campo, d.para_muro_cm, config)] = d
     return list(por_llave.values())
 
 
@@ -568,6 +609,7 @@ def aplicar_decisiones(
         for parte in (definida, *definida.variantes):
             _deshacer(parte)
     en_colocaciones: dict[str, dict[str, Dato]] = {}
+    con_variante: dict[tuple[str, str], list[Decision]] = {}
     for d in vigentes:
         marca = normalizar_marca(d.marca, config) if d.marca.strip() else ""
         nombre = _NOMBRE_DEL_CAMPO[d.campo]
@@ -582,17 +624,42 @@ def aplicar_decisiones(
             )
             continue
         familia = definicion.familia if definicion is not None else colocadas[0].familia
+        quien = f"{_DE_DECISION} sobre {marca} ({nombre})"
         try:
             valor = _valor_de_decision(d.campo, d.valor, familia)
+            _se_puede_decidir(d, familia, colocadas, definicion)
         except ValueError as error:
-            avisos.append(f"{_DE_DECISION} sobre {marca} ({nombre}): {error}; no se aplica")
+            avisos.append(f"{quien}: {error}; no se aplica")
             continue
         humano = Dato(valor=valor, fuente="humano", texto=_texto_de_decision(d))
-        if definicion is not None:
-            for parte in (definicion, *definicion.variantes):
-                setattr(parte, d.campo, _decidido(humano, getattr(parte, d.campo)))
-        else:
+        if definicion is None:
             en_colocaciones.setdefault(marca, {})[d.campo] = humano
+            continue
+        if d.para_muro_cm is not None:
+            # R239: la variante que la decisión nombra, y sólo ella.
+            variante = next(
+                (
+                    v
+                    for v in definicion.variantes
+                    if v.para_muro_cm is not None
+                    and abs(v.para_muro_cm - d.para_muro_cm) <= _TOLERANCIA_DE_MURO_CM
+                ),
+                None,
+            )
+            if variante is None:
+                avisos.append(
+                    f"{quien}: {marca} no tiene una variante para muros de "
+                    f"{_cm(d.para_muro_cm)} cm; no se aplica"
+                )
+                continue
+            setattr(variante, d.campo, _decidido(humano, getattr(variante, d.campo)))
+            con_variante.setdefault((marca, d.campo), []).append(d)
+        else:
+            # R239: en una marca con variantes, sólo para las colocaciones cuya variante no se
+            # resolvió (las demás conservan la de su muro); sin variantes, para todas.
+            setattr(definicion, d.campo, _decidido(humano, getattr(definicion, d.campo)))
+            if definicion.variantes:
+                con_variante.setdefault((marca, d.campo), []).append(d)
     if altura_supuesta_m is not None and altura_cambia:
         nueva = Dato(
             valor=altura_supuesta_m,
@@ -615,6 +682,24 @@ def aplicar_decisiones(
             elementos[i] = x = x.model_copy(
                 update={destino: _decidido(humano, getattr(x, destino))}
             )
+    for (marca, campo), ds in sorted(con_variante.items()):
+        # R239: qué colocaciones tomaron la decisión de una marca con variantes, dicho.
+        destino = "altura_m" if campo == "longitud_m" else campo
+        suyas = [x for x in elementos if x.marca == marca]
+        tomaron = [x for x in suyas if (getattr(x, destino) or Dato(fuente="supuesto")).fuente
+                   == "humano"]  # fmt: skip
+        cuenta = Counter(x.hoja for x in tomaron)
+        donde = ", ".join(f"{h} ({n})" for h, n in sorted(cuenta.items())) or "ninguna"
+        cuales = " y ".join(
+            f"la de la variante para muros de {_cm(d.para_muro_cm)} cm"
+            if d.para_muro_cm is not None
+            else "la de la marca (sólo donde la variante por muro no se resolvió)"
+            for d in ds
+        )
+        avisos.append(
+            f"{_DE_DECISION} sobre {marca} ({_NOMBRE_DEL_CAMPO[campo]}, {cuales}): la toman "
+            f"{_pzas(len(tomaron))} de {len(suyas)} ({donde}); las demás conservan la de su muro"
+        )
     salida.definiciones = list(por_marca.values())
     salida.elementos = elementos
     salida.decisiones = vigentes
@@ -665,7 +750,39 @@ def _decidido(humano: Dato, previo: Dato | None) -> Dato:
 def _texto_de_decision(d: Decision) -> str:
     quien = d.actor or "alguien"
     nota = f": {d.nota}" if d.nota else ""
-    return f"decisión de {quien} ({d.fecha.date().isoformat()}){nota}"
+    return f"decidido por {quien} el {d.fecha.date().isoformat()}{nota}"
+
+
+# R168: el espesor de muro de una variante coincide con éste de holgura (cm), como en elementos.
+_TOLERANCIA_DE_MURO_CM = 2.0
+
+
+def _se_puede_decidir(
+    d: Decision, familia: str, colocadas: list[Elemento], definicion: Definicion | None
+) -> None:
+    """``ValueError`` con por qué no se aplica una decisión que concreto y acero no pueden tomar
+    igual (R237): la altura de un castillo o una columna (el concreto se mide por entrepiso,
+    E1), una longitud de marca para vigas cuyos claros medidos no son iguales, una variante en
+    una marca sin variantes."""
+    if d.campo == "longitud_m" and familia in _CON_ALTURA:
+        raise ValueError(f"la altura de un {familia} se decide por entrepiso (pendiente)")
+    if d.campo == "longitud_m" and familia in _VIGAS:
+        claros = sorted(
+            {
+                round(float(x.colocacion.longitud_m.valor), 2)
+                for x in colocadas
+                if x.colocacion.longitud_m is not None
+                and _numero(x.colocacion.longitud_m.valor) is not None
+            }
+        )
+        if len(claros) > 1 and claros[-1] - claros[0] > _TOLERANCIA_CLARO_M:
+            medidos = ", ".join(f"{c:g} m" for c in claros[:8])
+            raise ValueError(
+                f"sus colocaciones miden claros distintos ({medidos}); una longitud para toda la "
+                "marca no vale para todas"
+            )
+    if d.para_muro_cm is not None and (definicion is None or not definicion.variantes):
+        raise ValueError("la marca no tiene variantes por muro")
 
 
 def _numero(v: Any) -> float | None:
@@ -787,39 +904,69 @@ def _iguales(familia: str, modelo: Any, props: dict, factor: float) -> bool:
 def escribir_en_detecciones(
     detections: list[Detection], elementos: list[Elemento], meters_factor: float | None
 ) -> tuple[list[Detection], list[Escritura]]:
-    """(las detecciones con lo que el modelo resolvió escrito en ellas, lo escrito). Las
-    detecciones que cambian son copias; las demás, las mismas. Ver el docstring del módulo. Sin
-    unidades confiables no se escribe nada (el presupuesto no tiene precio)."""
-    if not meters_factor:
-        return list(detections), []
+    """(las detecciones con lo que el modelo resolvió escrito en ellas, lo escrito). Es una
+    función pura de (la detección del detector, el modelo) (R235): lo que una escritura anterior
+    dejó en una detección (``seccion_previa``, ``claro_previo``, ``longitud_previa``: una
+    corrida que lo guardó en ``detections.json``) se restaura primero, así que quitar una decisión
+    deja la detección como la leyó el detector. Las detecciones que cambian son copias; las demás,
+    las mismas. Ver el docstring del módulo. Sin unidades confiables no se escribe nada (el
+    presupuesto no tiene precio)."""
     por_id = {e.detection_id: e for e in elementos}
     salida: list[Detection] = []
     escritas: list[Escritura] = []
     for det in detections:
-        e = por_id.get(det.detection_id)
-        if e is None:
-            salida.append(det)
-            continue
-        cambios: list[Escritura] = []
         props = dict(det.properties or {})
+        restaurada = _restaurar(props)
+        e = por_id.get(det.detection_id)
+        cambios: list[Escritura] = []
         notas: list[str] = []
-        if e.familia in _CON_ESCRITURA and det.detection_type in (
-            DetectionType.column_tag,
-            DetectionType.beam_tag,
-        ):
-            _escribir_seccion(det, e, props, meters_factor, cambios, notas)
-            _escribir_claro(det, e, props, meters_factor, cambios, notas)
-        elif e.familia == "pilote" and det.detection_type == DetectionType.pile:
-            _escribir_largo_de_pilote(det, e, props, cambios, notas)
-        if cambios:
+        if e is not None and meters_factor:
+            if e.familia in _CON_ESCRITURA and det.detection_type in (
+                DetectionType.column_tag,
+                DetectionType.beam_tag,
+            ):
+                _escribir_seccion(det, e, props, meters_factor, cambios, notas)
+                _escribir_claro(det, e, props, meters_factor, cambios, notas)
+            elif e.familia == "pilote" and det.detection_type == DetectionType.pile:
+                _escribir_largo_de_pilote(det, e, props, cambios, notas)
+        if cambios or restaurada:
             nueva = det.model_copy(deep=True)
             nueva.properties = props
-            nueva.evidence.notes.extend(notas)
+            nueva.evidence.notes = [
+                n for n in nueva.evidence.notes if _NOTA_DEL_MODELO not in n
+            ] + notas
             salida.append(nueva)
             escritas += cambios
         else:
             salida.append(det)
     return salida, escritas
+
+
+# Lo que dicen las notas que el modelo agrega a una detección (para quitarlas al restaurar).
+_NOTA_DEL_MODELO = " del modelo estructural ("
+# Lo que el modelo escribe (además de lo que restaura de cada previa).
+_DEL_MODELO = ("seccion_del_modelo", "armado_del_modelo", "longitud_fuente")
+
+
+def _restaurar(props: dict) -> bool:
+    """Deshace lo que una escritura del modelo dejó en ``props`` (R235): cada clave vuelve a lo
+    que la detección traía (``None``: no la traía). Si había algo que deshacer."""
+    hubo = False
+    for previa_de in ("seccion_previa", "claro_previo", "longitud_previa"):
+        previa = props.pop(previa_de, None)
+        if not isinstance(previa, dict):
+            continue
+        hubo = True
+        for clave, valor in previa.items():
+            if valor is None:
+                props.pop(clave, None)
+            else:
+                props[clave] = valor
+    for clave in _DEL_MODELO:
+        if clave in props:
+            hubo = True
+            props.pop(clave)
+    return hubo
 
 
 def _pzas(n: int) -> str:
@@ -988,8 +1135,8 @@ def _escribir_largo_de_pilote(
     actual = _numero(props.get("longitud_m"))
     if actual is not None and abs(actual - metros) <= _TOLERANCIA_CLARO_M:
         return
-    if "longitud_previa" not in props:
-        props["longitud_previa"] = {"longitud_m": props.get("longitud_m")}
+    # Lo que traía la detección (ya restaurada: ``_restaurar``), para deshacerlo después.
+    props["longitud_previa"] = {"longitud_m": props.get("longitud_m")}
     props["longitud_m"] = metros
     props["longitud_fuente"] = largo.fuente
     antes = f"{actual:g} m" if actual is not None else None
@@ -1022,6 +1169,9 @@ def _escribir_seccion(
             _previa(props)
             props["section_source"] = s.fuente
             cambios.append(_escritura(e, det, "fuente", actual_txt, fuente_actual, s))
+        if _variante_resuelta(e):
+            # R236: la sección es la de su variante; su armado también lo es.
+            _escribir_armado(det, e, props, cambios, notas)
         return
     if not leida and not del_cuadro:
         # Un supuesto (o la IA) del modelo no tapa la medida de la detección ni llena la que no
@@ -1032,16 +1182,88 @@ def _escribir_seccion(
         b, h = float(valor[0]), float(valor[1])
         props["section_cm"] = f"{_cm(b)}x{_cm(h)}"
         props["section_area_du2"] = round(b * h / 10_000 / (factor * factor), 6)
+        props.pop("section_perimetro_du", None)
     else:
         props.pop("section_cm", None)
         area = float(valor["area_cm2"])
         props["section_area_du2"] = round(area / 10_000 / (factor * factor), 6)
+        perimetro = _numero(valor.get("perimetro_cm"))
+        if perimetro:
+            # R242: la cimbra de una sección que no es un rectángulo es su contorno.
+            props["section_perimetro_du"] = round(perimetro / 100 / factor, 6)
+        else:
+            props.pop("section_perimetro_du", None)
     props["section_source"] = s.fuente
     props["seccion_del_modelo"] = s.texto
     cambios.append(_escritura(e, det, "seccion", actual_txt, fuente_actual, s))
     notas.append(
         f"Sección {_seccion_texto(valor)} del modelo estructural ({s.fuente}: «{s.texto}»); "
         f"antes {actual_txt or 'sin sección'}" + (f" ({fuente_actual})" if fuente_actual else "")
+    )
+    # R236: la sección y el armado de la detección salen de la misma lectura, nunca mezclados.
+    _escribir_armado(det, e, props, cambios, notas)
+
+
+def _variante_resuelta(e: Elemento) -> bool:
+    """Si el elemento tomó la variante por muro de su marca (R168)."""
+    return any(a.startswith(f"variante: {e.marca} «para muros de") for a in e.avisos)
+
+
+def _textos_del_armado(e: Elemento) -> tuple[str | None, str | None]:
+    """El armado del elemento como lo escriben las especificaciones (``spec_rebar``,
+    ``spec_stirrups``): sus varillas y sus estribos en forma canónica, o ``None``."""
+    from klave_engine.estructura.armado import Armado, texto_estribos, texto_longitudinal
+
+    def piezas(dato: Dato | None, modelo: type[BaseModel]) -> list[Any]:
+        if dato is None or not isinstance(dato.valor, list) or dato.ilegible:
+            return []
+        return [modelo.model_validate(p) for p in dato.valor]
+
+    grupos = piezas(e.longitudinales, GrupoVarillas)
+    juegos = piezas(e.estribos, JuegoEstribos)
+    try:
+        varillas = texto_longitudinal(Armado(longitudinales=grupos)) if grupos else None
+    except ValueError:
+        varillas = None
+    try:
+        estribos = texto_estribos(Armado(estribos=juegos)) if juegos else None
+    except ValueError:
+        estribos = None
+    return varillas or None, estribos or None
+
+
+def _escribir_armado(
+    det: Detection, e: Elemento, props: dict, cambios: list[Escritura], notas: list[str]
+) -> None:
+    varillas, estribos = _textos_del_armado(e)
+    if props.get("spec_rebar") == varillas and props.get("spec_stirrups") == estribos:
+        return
+    _previa(props)
+    antes = " ".join(str(x) for x in (props.get("spec_rebar"), props.get("spec_stirrups")) if x)
+    for clave, texto in (("spec_rebar", varillas), ("spec_stirrups", estribos)):
+        if texto:
+            props[clave] = texto
+        else:
+            props.pop(clave, None)
+    fuente = next((d.fuente for d in (e.longitudinales, e.estribos) if d is not None), "supuesto")
+    despues = " ".join(x for x in (varillas, estribos) if x) or "sin armado"
+    props["armado_del_modelo"] = fuente
+    cambios.append(
+        Escritura(
+            detection_id=det.detection_id,
+            marca=e.marca,
+            familia=e.familia,
+            hoja=e.hoja,
+            campo="armado",
+            antes=antes or None,
+            fuente_antes=str(props.get("spec_source")) if props.get("spec_source") else None,
+            despues=despues,
+            fuente=fuente,
+        )
+    )
+    notas.append(
+        f"Armado {despues} del modelo estructural ({fuente}: el de la misma lectura que su "
+        f"sección); antes {antes or 'sin armado'}"
     )
 
 
@@ -1062,6 +1284,9 @@ def _previa(props: dict) -> None:
             "section_cm": props.get("section_cm"),
             "section_area_du2": props.get("section_area_du2"),
             "section_source": props.get("section_source"),
+            "section_perimetro_du": props.get("section_perimetro_du"),
+            "spec_rebar": props.get("spec_rebar"),
+            "spec_stirrups": props.get("spec_stirrups"),
         }
 
 
@@ -1144,23 +1369,43 @@ def notas_de_escritura(detections: list[Detection]) -> list[str]:
 # ------------------------------------------------------------------------------ la tarjeta
 
 
+_GENERAL = "general"
+
+
 def resumir(e: Estructura, report: Any) -> list[ResumenFamilia]:
-    """La tarjeta por familia (``ResumenFamilia``), en el orden de ``FAMILIAS_ESTRUCTURALES``:
-    las familias con colocaciones o con hallazgos de sus marcas. ``report`` es el ``CostReport``
-    de la misma lectura: de él salen los P.U. de los renglones que tienen las colocaciones."""
+    """La tarjeta por familia (``ResumenFamilia``): las familias con colocaciones o con hallazgos,
+    más «general» para los hallazgos que no son de ninguna (R240: cada hallazgo en una sola
+    tarjeta), ordenadas por el dinero en juego, luego por la cantidad conocida (concreto, acero)
+    y luego como ``FAMILIAS_ESTRUCTURALES``. ``report`` es el ``CostReport`` de la misma lectura:
+    de él salen los P.U. de los renglones que tienen las colocaciones."""
+    from klave_engine.detection.schedules import family_of_mark
+
     por_marca = {d.marca: d for d in e.definiciones}
     familia_de_marca = {d.marca: d.familia for d in e.definiciones}
     por_elemento = {x.element_id: x for x in e.elementos}
     familias: dict[str, list[Elemento]] = {}
     for x in e.elementos:
         familias.setdefault(x.familia, []).append(x)
+    rango = {f: i for i, f in enumerate(FAMILIAS_ESTRUCTURALES)}
+
+    def de_la_marca(marca: str) -> str | None:
+        base = marca.split(" (", 1)[0]
+        familia = familia_de_marca.get(base) or family_of_mark(base)
+        return None if familia == "elemento" else familia
+
+    def tarjeta(v: Verificacion) -> str:
+        """R240: la familia de la mayoría de sus elementos; si no tiene, la de sus marcas (su
+        definición o su prefijo); si tampoco, «general»."""
+        cuenta = Counter(por_elemento[i].familia for i in v.elementos if i in por_elemento)
+        if not cuenta:
+            cuenta = Counter(f for m in v.marcas if (f := de_la_marca(m)) is not None)
+        if not cuenta:
+            return _GENERAL
+        return min(cuenta, key=lambda f: (-cuenta[f], rango.get(f, len(rango)), f))
+
     hallazgos: dict[str, list[Verificacion]] = {}
     for v in e.verificaciones:
-        suyas = {por_elemento[i].familia for i in v.elementos if i in por_elemento}
-        if not suyas:
-            suyas = {familia_de_marca[m] for m in v.marcas if m in familia_de_marca}
-        for f in suyas:
-            hallazgos.setdefault(f, []).append(v)
+        hallazgos.setdefault(tarjeta(v), []).append(v)
     precios = _Precios(report)
     reglas: dict[str, Reglas] = {}
     a = SteelAssumptions()
@@ -1170,11 +1415,13 @@ def resumir(e: Estructura, report: Any) -> list[ResumenFamilia]:
             reglas[hoja] = e.reglas.para(hoja)
         return reglas[hoja]
 
+    con_cifra: set[str] = set()  # los hallazgos cuya cantidad en juego tiene cifra
     deltas: dict[tuple[str, str], tuple[float, float]] = {}  # (element_id, campo) → (m³, kg)
     for v in e.verificaciones:
         valores = valores_en_disputa(v, por_marca)
         if len(valores) < 2:
             continue
+        con_cifra.add(v.id)
         campo = v.campo.split(",")[0] if v.numero == 8 else "seccion_cm"
         for i in v.elementos:
             el = por_elemento.get(i)
@@ -1185,8 +1432,10 @@ def resumir(e: Estructura, report: Any) -> list[ResumenFamilia]:
             deltas[(i, campo)] = (max(anterior[0], delta[0]), max(anterior[1], delta[1]))
     # Lo que un hallazgo pone en juego sin valores por elemento (los entrepisos contados de dos
     # maneras: el acero y el concreto de todas sus colocaciones juntas): dicho aparte, por su id,
-    # en cada familia que toca; nunca repartido a ojo entre ellas.
+    # en cada familia que toca —compartido por id, nunca sumado entre tarjetas— y nunca repartido
+    # a ojo entre ellas. Tiene cifra, pero no dinero: la tarjeta no da $ mientras esté abierto.
     aparte: dict[str, dict[str, dict[str, float]]] = {}
+    sin_dinero: set[str] = set()
     for v in e.verificaciones:
         if v.severidad == "aviso" or v.numero != 8 or v.cantidad != "conocida":
             continue
@@ -1195,10 +1444,13 @@ def resumir(e: Estructura, report: Any) -> list[ResumenFamilia]:
         juego = {k: q for k, q in v.en_juego.items() if k in ("concreto_m3", "acero_kg") and q}
         if not juego:
             continue
+        sin_dinero.add(v.id)
         for f in {por_elemento[i].familia for i in v.elementos if i in por_elemento}:
             aparte.setdefault(f, {})[v.id] = juego
     orden = [f for f in FAMILIAS_ESTRUCTURALES if f in familias or f in hallazgos]
-    orden += sorted((set(familias) | set(hallazgos)) - set(orden))
+    orden += sorted((set(familias) | set(hallazgos)) - set(orden) - {_GENERAL})
+    if _GENERAL in hallazgos:
+        orden.append(_GENERAL)
     salida: list[ResumenFamilia] = []
     for familia in orden:
         els = familias.get(familia, [])
@@ -1212,26 +1464,39 @@ def resumir(e: Estructura, report: Any) -> list[ResumenFamilia]:
                 del_plano += dato.fuente in _DEL_PLANO
                 humanos += dato.fuente == "humano"
         suyos = hallazgos.get(familia, [])
+        abiertos = [v for v in suyos if v.severidad != "aviso"]
+        desconocido = sum(1 for v in abiertos if v.id not in con_cifra and v.id not in sin_dinero)
         cantidad: dict[str, float] = {}
         sin_precio: dict[str, float] = {}
+        fuera: dict[str, float] = {}
         dinero = 0.0
-        hay_precio = False
         for (i, _campo), (m3, kg) in deltas.items():
             x = por_elemento[i]
             if x.familia != familia:
                 continue
+            en_presupuesto = precios.en_presupuesto(x.detection_id)
             for clave, q, pu in (
                 ("concreto_m3", m3, precios.concreto(x.detection_id)),
                 ("acero_kg", kg, precios.acero(x.detection_id)),
             ):
                 if q <= 0:
                     continue
+                if not en_presupuesto:
+                    # Una colocación que ningún renglón cuenta: aparte, no sumado.
+                    fuera[clave] = fuera.get(clave, 0.0) + q
+                    continue
                 cantidad[clave] = cantidad.get(clave, 0.0) + q
                 if pu is None:
                     sin_precio[clave] = sin_precio.get(clave, 0.0) + q
                 else:
                     dinero += q * pu
-                    hay_precio = True
+        con_aparte = any(v.id in sin_dinero for v in abiertos)
+        con_precio = any(q for k, q in cantidad.items() if q > sin_precio.get(k, 0.0))
+        mxn: float | None = round(dinero, 2)
+        if desconocido or con_aparte or (cantidad and not con_precio):
+            # Algo abierto no tiene cifra, o lo que hay en juego no tiene ningún precio: nunca $0.
+            # Con una parte sin precio, el dinero es el de la otra; ``en_juego_sin_precio`` lo dice.
+            mxn = None
         salida.append(
             ResumenFamilia(
                 familia=familia,
@@ -1242,13 +1507,24 @@ def resumir(e: Estructura, report: Any) -> list[ResumenFamilia]:
                 bloquea=sum(1 for v in suyos if v.severidad == "bloquea"),
                 duda=sum(1 for v in suyos if v.severidad == "duda"),
                 aviso=sum(1 for v in suyos if v.severidad == "aviso"),
-                en_juego_mxn=round(dinero, 2) if hay_precio or not cantidad else None,
+                en_juego_mxn=mxn,
                 en_juego_cantidad={k: round(q, 4) for k, q in cantidad.items()},
                 criticos_humanos=humanos,
                 en_juego_sin_precio={k: round(q, 4) for k, q in sin_precio.items()},
                 en_juego_aparte=aparte.get(familia, {}),
+                en_juego_desconocido=desconocido,
+                en_juego_fuera_del_presupuesto={k: round(q, 4) for k, q in fuera.items()},
             )
         )
+    posicion = {f: i for i, f in enumerate(orden)}
+    salida.sort(
+        key=lambda r: (
+            -(r.en_juego_mxn or 0.0),
+            -r.en_juego_cantidad.get("concreto_m3", 0.0),
+            -r.en_juego_cantidad.get("acero_kg", 0.0),
+            posicion[r.familia],
+        )
+    )
     return salida
 
 
@@ -1294,11 +1570,13 @@ class _Precios:
     def __init__(self, report: Any) -> None:
         self._concreto: dict[str, float | None] = {}
         self._acero: dict[str, float | None] = {}
+        self._contadas: set[str] = set()
         boq = getattr(report, "boq", None)
         if boq is None:
             return
         confiable = getattr(boq, "units_reliable", True)
         for line in boq.lines:
+            self._contadas.update(line.source_detections)
             destino = (
                 self._concreto
                 if line.unit.upper() == "M3"
@@ -1322,3 +1600,7 @@ class _Precios:
 
     def acero(self, detection_id: str) -> float | None:
         return self._acero.get(detection_id)
+
+    def en_presupuesto(self, detection_id: str) -> bool:
+        """Si algún renglón del presupuesto cuenta la detección."""
+        return detection_id in self._contadas

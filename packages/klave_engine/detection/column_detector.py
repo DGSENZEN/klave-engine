@@ -92,6 +92,8 @@ def _contorno(
     caja = (x1 - x0) * (y1 - y0)
     return {
         "contorno_area_du2": round(float(union.area), 6),
+        # Tarea 12 (R242): su perímetro, el de la cimbra de una sección que no es un rectángulo.
+        "contorno_perimetro_du": round(float(union.length), 6),
         "contorno_rectangular": bool(caja > 0 and union.area / caja >= 0.98),
         "contorno_capa": marker.layer,
         "contorno_entidades": sorted(p.entity_id for p in piezas),

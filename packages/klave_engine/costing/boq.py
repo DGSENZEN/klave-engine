@@ -586,8 +586,16 @@ def _variantes(
         part = measure(subset)
         return part.quantity, part.dets
 
+    # Columns (Tarea 12): a group made only of detections the line does not count (the
+    # cimentación planta's columns) is no variant; measured alone it would invent quantity that
+    # the rest then gives back pro rata.
+    agrupadas = (
+        result.dets or matched
+        if concept.view_scope == ViewScope.COLUMN_VOLUME
+        else matched
+    )
     rows, factor = dividir(
-        concept.code, concept.description, result.quantity, matched, meters_factor, medir
+        concept.code, concept.description, result.quantity, agrupadas, meters_factor, medir
     )
     if abs(factor - 1.0) > 0.02:
         result.notes.append(

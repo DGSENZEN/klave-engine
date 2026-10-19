@@ -31,6 +31,7 @@ from klave_engine.detection.views import SheetSegmentation
 from klave_engine.dxf.units import DrawingUnits
 from klave_engine.estructura.modelo import (
     Estructura,
+    escribir_en_detecciones,
     escribir_estructura_derivada,
     estructura_para_recalcular,
     resumir,
@@ -178,12 +179,18 @@ def recompute_and_persist(
     estructura, avisos = estructura_para_recalcular(
         input_dir, control_dir, inputs.segmentation, overrides.config.assumptions.column_height_m
     )
+    reviews = load_reviews(control_dir)
     report = build_cost_report(
-        inputs, overrides, reviews=load_reviews(control_dir), store=store, estructura=estructura
+        inputs, overrides, reviews=reviews, store=store, estructura=estructura
     )
     apply_taller_history(report, store, project_id)
     report.warnings.extend(a for a in avisos if a not in report.warnings)
     if estructura is not None:
+        # Lo que este costo escribió en las detecciones (R242), y la tarjeta con sus P.U.
+        estructura.escrituras = escribir_en_detecciones(
+            filter_excluded(inputs.detections, reviews), estructura.elementos,
+            inputs.units.to_meters(),
+        )[1]
         estructura.resumen = resumir(estructura, report)
         escribir_estructura_derivada(control_dir, input_dir, estructura)
 

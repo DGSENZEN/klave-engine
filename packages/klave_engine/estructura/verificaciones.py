@@ -3318,6 +3318,24 @@ def _rechazos_por_hoja(ctx: _Contexto, citados: set[str]) -> list[Verificacion]:
     return salida
 
 
+def _campo_de_aviso(aviso: str) -> str | None:
+    """El dato del que habla un aviso de lectura, por cómo empieza («sección dibujada …»,
+    «estribos: …»), o ``None`` si no se sabe."""
+    texto = unicodedata.normalize("NFD", aviso.lower())
+    texto = "".join(c for c in texto if unicodedata.category(c) != "Mn")
+    for prefijo, campo in (
+        ("seccion", "seccion_cm"),
+        ("longitudinales", "longitudinales"),
+        ("varillas", "longitudinales"),
+        ("estribos", "estribos"),
+        ("parrillas", "parrillas"),
+        ("longitud", "longitud_m"),
+    ):
+        if texto.startswith(prefijo):
+            return campo
+    return None
+
+
 def _avisos_de_lectura(ctx: _Contexto) -> tuple[list[Verificacion], list[Verificacion]]:
     """Lo que las lecturas de cada marca avisan. Lo que pide que alguien mire (un texto vetado de
     su pila, un dibujo que no coincide con sus cotas, un corte que no se pudo escoger, un texto
@@ -3336,6 +3354,29 @@ def _avisos_de_lectura(ctx: _Contexto) -> tuple[list[Verificacion], list[Verific
             clase = _clase_de_aviso(a, definicion)
             if clase is not None:
                 informativos[clase].append((marca, a))
+        # R241: lo que sus lecturas avisan de un dato que alguien ya decidió no es una duda nueva:
+        # un aviso que dice quién lo decidió.
+        decididas: dict[str, list[str]] = defaultdict(list)
+        for a in list(dudas):
+            campo = _campo_de_aviso(a)
+            dato = getattr(definicion, campo) if campo is not None else None
+            if campo is not None and dato is not None and dato.fuente == "humano":
+                decididas[campo].append(a)
+                dudas.remove(a)
+        for campo, textos in sorted(decididas.items()):
+            dato = getattr(definicion, campo)
+            agrupados.append(
+                _hallazgo(
+                    11,
+                    "aviso",
+                    f"{marca}: {_NOMBRE[campo]} es {_valor(campo, dato.valor)}, {dato.texto}. Lo "
+                    "que sus lecturas avisaban: " + "; ".join(textos) + ".",
+                    clave=f"avisos de lectura: decidido: {campo}",
+                    marca=marca,
+                    campo=campo,
+                    datos=[dato],
+                )
+            )
         if not dudas:
             continue
         salida.append(

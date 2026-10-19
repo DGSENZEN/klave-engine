@@ -1,6 +1,7 @@
 """Heights from the plantas' own levels (NTC/NPT) instead of project-wide
 assumptions; slab rebar from the tablero's own label."""
 
+import pytest
 from klave_engine.costing.apu import build_all_apus
 from klave_engine.costing.boq import generate_bill_of_quantities
 from klave_engine.costing.catalog import build_default_catalog
@@ -191,3 +192,29 @@ def test_each_height_says_where_it_comes_from():
     assert "+4.35" in f1.texto and "+7.95" in f1.texto and "PLANTA BAJA" in f1.texto
     f3 = alturas["f3"]
     assert f3.nivel_arriba_m is None and "repite" in f3.texto and "+11.15" in f3.texto
+
+
+def test_a_variant_only_the_cimentacion_planta_draws_is_no_variant():
+    # Tarea 12: the cimentación planta's columns are not counted in EST-001; a section only they
+    # carry (K-9 30x30) must not become a variant measured on its own (it used to be measured by
+    # the canonical fallback and the others shrank pro rata to make room for it, silently).
+    a = CostingAssumptions()
+    base = _column("c0", "K-9")
+    base.properties["section_cm"] = "30x30"
+    dets = [base, _column("c1", "K-1"), _column("c2", "K-2")]
+    dets[2].properties["section_cm"] = "20x20"
+    seg = SheetSegmentation(
+        views=_seg(), is_segmented=True, npt_levels=[1.45, 4.35, 7.95, 11.15],
+        assignment={"c0": "f0", "c1": "f1", "c2": "f2"},
+    )
+    catalog = [c for c in build_default_catalog(a) if c.code == "EST-001"]
+    units = DrawingUnits(unit="m", source="declared", confidence=1.0)
+    boq = generate_bill_of_quantities(
+        "t", dets, units, catalog, build_all_apus(catalog, LIBRO), segmentation=seg, assumptions=a
+    )
+    (linea,) = boq.lines
+    variantes = {v.key: v.quantity for v in linea.variants}
+    assert variantes == {
+        "EST-001.15X20": pytest.approx(0.03 * 3.6),
+        "EST-001.20X20": pytest.approx(0.04 * 3.2),
+    }

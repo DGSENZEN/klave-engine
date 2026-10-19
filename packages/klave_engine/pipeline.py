@@ -657,8 +657,8 @@ def run_full_pipeline(
         costing_config = load_costing_config(settings.costing_config_path)
         price_book = catalog_store.load_price_book()
     # El modelo estructural: reglas, definiciones, elementos y verificaciones, con las decisiones
-    # humanas; lo que cada elemento resolvió se escribe en su detección (el concreto y la cimbra
-    # todavía leen las detecciones), antes de que detections.json se escriba (una sola vez).
+    # humanas. detections.json guarda lo que leyó el detector: lo que cada elemento resolvió se
+    # escribe en su detección sólo dentro del costo (R235: quitar una decisión la deshace).
     estructura = _modelo_estructural(
         result, frames, schedule, segmentation, units, costing_config, control_dir,
         detector_config.text_patterns,
@@ -738,7 +738,11 @@ def run_full_pipeline(
         result.cost_report, catalog_store, manifest.project_id, save=record_history
     )
     if estructura is not None:
-        # La tarjeta por familia, con los P.U. de este presupuesto; el modelo, junto a la corrida.
+        # Lo que el costo escribió en las detecciones, la tarjeta por familia con los P.U. de este
+        # presupuesto; el modelo, junto a la corrida.
+        estructura.escrituras = escribir_en_detecciones(
+            filter_excluded(result.detections, reviews), estructura.elementos, units.to_meters()
+        )[1]
         estructura.resumen = resumir(estructura, result.cost_report)
         escribir_estructura(processed, estructura)
         result.cost_report.warnings.extend(
@@ -809,9 +813,8 @@ def _modelo_estructural(
     control_dir: Path,
     patrones: TextPatternConfig,
 ) -> Estructura | None:
-    """El modelo estructural de la corrida con las decisiones guardadas, escrito en las
-    detecciones (``result.detections`` se reemplaza). Un modelo que no se puede construir no tumba
-    la corrida: se dice, y el acero se calcula sin él."""
+    """El modelo estructural de la corrida con las decisiones guardadas. Un modelo que no se puede
+    construir no tumba la corrida: se dice, y el acero se calcula sin él."""
     inicio = time.perf_counter()
     try:
         altura = altura_supuesta_m(segmentation, costing_config.assumptions.column_height_m)
@@ -821,9 +824,6 @@ def _modelo_estructural(
             units.to_meters(), altura, config=patrones, decisiones=decisiones,
         )
         estructura.avisos = list(dict.fromkeys([*avisos, *estructura.avisos]))
-        result.detections, estructura.escrituras = escribir_en_detecciones(
-            result.detections, estructura.elementos, units.to_meters()
-        )
     except Exception as error:  # noqa: BLE001 — a broken model must never fail the run
         logger.exception("No se pudo construir el modelo estructural")
         result.warnings.append(
