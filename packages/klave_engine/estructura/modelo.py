@@ -63,6 +63,7 @@ from klave_engine.dxf.entities import NormalizedEntity
 from klave_engine.estructura.acero import acero_elemento
 from klave_engine.estructura.armado import (
     FAMILIAS_CON_PARRILLA,
+    NUMEROS,
     GrupoVarillas,
     JuegoEstribos,
     Parrilla,
@@ -420,25 +421,28 @@ def escribir_estructura_derivada(control_dir: Path, corrida: Path, e: Estructura
 
 
 def leer_estructura_vigente(control_dir: Path, corrida: Path) -> Estructura | None:
-    """El modelo que vale para la corrida activa: el escenario del recálculo si es de ella y está
-    al día con las decisiones guardadas, si no el de la corrida. Si ése tampoco lo está (se
-    guardó o se quitó una decisión y no se ha recalculado), lo dice en sus avisos."""
+    """El modelo que vale para la corrida activa: el escenario del recálculo si es de ella (el
+    último que se costeó: el presupuesto derivado es el suyo), si no el de la corrida. Si el que
+    se da no está al día con las decisiones guardadas (se guardó o se quitó una decisión y el
+    recálculo no ha terminado, o el archivo de decisiones no se lee), lo dice en sus avisos: las
+    decisiones que tenía no desaparecen mientras se recalcula (R247). Un escenario de otra corrida
+    nunca se da."""
     decisiones = cargar_decisiones(control_dir)
     derivada, _ = _leer(control_dir / ESTRUCTURA_DERIVADA_FILENAME)
-    if (
-        derivada is not None
-        and derivada.base
-        and derivada.base == huella(corrida)
-        and _vigentes(decisiones, derivada.patrones) == derivada.decisiones
-    ):
+    if derivada is not None and derivada.base and derivada.base == huella(corrida):
+        if _vigentes(decisiones, derivada.patrones) != derivada.decisiones:
+            derivada.avisos.append(_ATRAS)
         return derivada
     e = leer_estructura(corrida)
     if e is not None and _vigentes(decisiones, e.patrones) != e.decisiones:
-        e.avisos.append(
-            f"{_DE_DECISION}: las decisiones guardadas cambiaron desde este modelo; se aplican al "
-            "recalcular"
-        )
+        e.avisos.append(_ATRAS)
     return e
+
+
+_ATRAS = (
+    f"{_DE_DECISION}: las decisiones guardadas cambiaron desde este modelo; se aplican al "
+    "recalcular"
+)
 
 
 def estructura_para_recalcular(
@@ -544,17 +548,41 @@ def cargar_decisiones(control_dir: Path) -> list[Decision]:
     return leer_decisiones(control_dir)[0]
 
 
+class DecisionesIlegibles(ValueError):
+    """El archivo de decisiones existe y no se puede leer (o no es una lista): no se escribe
+    encima, porque se perderían las decisiones que guarda (R245)."""
+
+
+def problema_de_decisiones(control_dir: Path) -> str | None:
+    """Por qué el archivo de decisiones no se puede leer entero (no es JSON, o no es una lista);
+    ``None`` si se lee o no existe. Una entrada suelta que no se lee no es esto: se conserva."""
+    ruta = control_dir / DECISIONES_FILENAME
+    if not ruta.exists():
+        return None
+    try:
+        leidas = read_json(ruta)
+    except (OSError, ValueError) as error:
+        return f"{DECISIONES_FILENAME} no se puede leer ({str(error)[:120]})"
+    if not isinstance(leidas, list):
+        return f"{DECISIONES_FILENAME} no es una lista de decisiones"
+    return None
+
+
+def _crudas(control_dir: Path) -> list[Any]:
+    problema = problema_de_decisiones(control_dir)
+    if problema is not None:
+        raise DecisionesIlegibles(problema)
+    ruta = control_dir / DECISIONES_FILENAME
+    return list(read_json(ruta)) if ruta.exists() else []
+
+
 def guardar_decision(control_dir: Path, d: Decision) -> None:
     """Guarda ``d``; reemplaza la que había para la misma marca y campo (el registro de etiquetas
-    guarda la historia). Las entradas que no se pueden leer se conservan tal cual."""
+    guarda la historia). Las entradas que no se pueden leer se conservan tal cual; un archivo que
+    no se lee entero no se pisa (``DecisionesIlegibles``). El escenario del recálculo se queda:
+    ya no está al día y lo dice (``leer_estructura_vigente``) hasta que el recálculo lo rehace."""
     ruta = control_dir / DECISIONES_FILENAME
-    crudas: list[Any] = []
-    if ruta.exists():
-        try:
-            leidas = read_json(ruta)
-            crudas = leidas if isinstance(leidas, list) else []
-        except (OSError, ValueError):
-            crudas = []
+    crudas = _crudas(control_dir)
     llave = _llave(d.marca, d.campo, d.para_muro_cm)
     conservadas = [
         c
@@ -566,8 +594,6 @@ def guardar_decision(control_dir: Path, d: Decision) -> None:
         )
     ]
     write_json(ruta, [*conservadas, d.model_dump(mode="json")])
-    # El escenario del recálculo ya no está al día: se rehace en el próximo recálculo.
-    (control_dir / ESTRUCTURA_DERIVADA_FILENAME).unlink(missing_ok=True)
 
 
 def _llave(
@@ -602,17 +628,11 @@ def quitar_decision(
 ) -> list[Decision]:
     """Quita las decisiones guardadas de esa marca (escrita como sea: se normaliza como al
     guardarla y, con ``config``, como la lectura), campo y variante; devuelve las quitadas (vacío
-    si no había). El escenario del recálculo ya no está al día y se borra, como al guardar. Las
-    entradas que no se pueden leer se conservan tal cual (``leer_decisiones`` las dice)."""
+    si no había). Como al guardar, el escenario del recálculo se queda y dice que quedó atrás. Las
+    entradas que no se pueden leer se conservan tal cual (``leer_decisiones`` las dice); un archivo
+    que no se lee entero no se pisa (``DecisionesIlegibles``)."""
     ruta = control_dir / DECISIONES_FILENAME
-    if not ruta.exists():
-        return []
-    try:
-        crudas = read_json(ruta)
-    except (OSError, ValueError):
-        return []
-    if not isinstance(crudas, list):
-        return []
+    crudas = _crudas(control_dir)
     buscadas = {_llave(marca, campo, para_muro_cm), _llave(marca, campo, para_muro_cm, config)}
     quitadas: list[Decision] = []
     conservadas: list[Any] = []
@@ -632,7 +652,6 @@ def quitar_decision(
             conservadas.append(c)
     if quitadas:
         write_json(ruta, conservadas)
-        (control_dir / ESTRUCTURA_DERIVADA_FILENAME).unlink(missing_ok=True)
     return quitadas
 
 
@@ -739,8 +758,9 @@ class RevisionDeDecision:
     valor en la forma del modelo. ``antes``: lo que el campo tiene ahora en la parte que la
     decisión alcanza (la definición de la marca o su variante; en una marca sin definir, su
     colocación). ``del_plano``: los valores que el plano da y la decisión reemplaza, en esa parte
-    y en las colocaciones que la toman (con sus alternativas); si hay alguno, decidir otro valor
-    necesita una nota, y ``nota_requerida`` dice por qué."""
+    y en las colocaciones que la toman (con sus alternativas); si hay alguno y la decisión no es el
+    único valor que dan, decidir necesita una nota, y ``nota_requerida`` dice por qué. Una
+    decisión que no toma ninguna colocación se rechaza (R247)."""
 
     marca: str
     rechazo: str | None = None
@@ -774,6 +794,21 @@ def revisar_decision(e: Estructura, d: Decision) -> RevisionDeDecision:
         ]
     else:
         alcanzadas = r.colocadas
+    if not alcanzadas:
+        # R247: una decisión que no toma ninguna colocación no mueve nada: no se guarda.
+        quien = f"{_DE_DECISION} sobre {r.marca} ({_NOMBRE_DEL_CAMPO[d.campo]})"
+        if not r.colocadas:
+            motivo = "la marca no está colocada en esta lectura: no la toma ninguna colocación"
+        elif d.para_muro_cm is not None:
+            motivo = f"ninguna colocación tomó la variante para muros de {_cm(d.para_muro_cm)} cm"
+        else:
+            motivo = (
+                "todas sus colocaciones tomaron la variante de su muro: nombra la variante por el "
+                "espesor de su muro"
+            )
+        return RevisionDeDecision(
+            marca=r.marca, rechazo=f"{quien}: {motivo}; no se guarda"
+        )
     de_la_parte = getattr(parte, d.campo) if parte is not None else None
     de_las_colocaciones = [getattr(x, d.campo) for x in alcanzadas]
     antes = (
@@ -783,7 +818,9 @@ def revisar_decision(e: Estructura, d: Decision) -> RevisionDeDecision:
     )
     del_plano = _del_plano([de_la_parte, *de_las_colocaciones])
     nota = None
-    if del_plano:
+    # R247: decidir el único valor que el plano da no cambia lo que dice: no pide nota.
+    valores = {_clave(x.valor) for x in del_plano}
+    if del_plano and valores != {_clave(r.valor)}:
         lista = "; ".join(_dicho(d.campo, x) for x in del_plano[:6])
         mas = f"; y {len(del_plano) - 6} más" if len(del_plano) > 6 else ""
         nota = (
@@ -1060,65 +1097,153 @@ _LONGITUD_MAXIMA_M = 200.0
 
 
 def _valor_de_decision(campo: str, valor: Any, familia: str) -> Any:
-    """El valor de una decisión en la forma del modelo, o ``ValueError`` con por qué no sirve."""
+    """El valor de una decisión en la forma del modelo, o ``ValueError`` con por qué no sirve. Todo
+    valor pasa por la misma cota (``_acotar_seccion``, ``_acotar_longitud``, ``_acotar_armado``),
+    llegue como texto o como sus piezas (R244)."""
     if not _finito(valor):
         raise ValueError(f"el valor lleva un número que no es finito ({valor!r})")
     if campo == "seccion_cm":
-        if isinstance(valor, dict):
-            area = _numero(valor.get("area_cm2"))
-            if area is None or area <= 0:
-                raise ValueError(f"el área de la sección no es un número positivo ({valor!r})")
-            if area > _LADO_MAXIMO_CM**2:
-                raise ValueError(f"el área {area:g} cm² está fuera de lo que mide un elemento")
-            return {"area_cm2": area}
-        lados = valor.lower().split("x") if isinstance(valor, str) else valor
-        if not isinstance(lados, list | tuple) or len(lados) != 2:
-            raise ValueError(f"la sección no es b×h en cm ({valor!r})")
-        b, h = (_numero(x) for x in lados)
-        if b is None or h is None or b <= 0 or h <= 0:
-            raise ValueError(f"la sección no es b×h en cm ({valor!r})")
-        if max(b, h) > _LADO_MAXIMO_CM:
-            raise ValueError(
-                f"la sección {_cm(b)}x{_cm(h)} cm está fuera de lo que mide un elemento (cada lado "
-                f"hasta {_LADO_MAXIMO_CM:g} cm)"
-            )
-        par = [int(x) if float(x).is_integer() else x for x in (b, h)]
-        return sorted(par) if familia in FAMILIAS_QUE_SE_ORDENAN else par
+        return _acotar_seccion(valor, familia)
     if campo == "longitud_m":
-        largo = _numero(valor)
-        if largo is None or largo <= 0:
-            raise ValueError(f"la longitud no es un número positivo de metros ({valor!r})")
-        if largo > _LONGITUD_MAXIMA_M:
-            raise ValueError(
-                f"la longitud {largo:g} m está fuera de lo que mide un elemento (hasta "
-                f"{_LONGITUD_MAXIMA_M:g} m)"
-            )
-        return largo
+        return _acotar_longitud(valor)
     if campo == "parrillas" and familia not in FAMILIAS_CON_PARRILLA:
         raise ValueError(f"la familia {familia} no lleva parrillas")
+    piezas: list[Any]
     if isinstance(valor, str):
         armado = parsear_armado([valor], familia)
         if armado.avisos:
             raise ValueError(f"«{valor}» no se lee entero ({'; '.join(armado.avisos)})")
-        piezas = getattr(armado, campo)
+        piezas = list(getattr(armado, campo))
         if not piezas:
             raise ValueError(f"«{valor}» no dice {_NOMBRE_DEL_CAMPO[campo]}")
-        return [p.model_dump(mode="json") for p in piezas]
-    if isinstance(valor, list):
+    elif isinstance(valor, list):
         tipos: dict[str, type[BaseModel]] = {
             "longitudinales": GrupoVarillas,
             "estribos": JuegoEstribos,
             "parrillas": Parrilla,
         }
-        modelo = tipos[campo]
         try:
-            piezas_ = [modelo.model_validate(p) for p in valor]
+            piezas = [tipos[campo].model_validate(p) for p in valor]
         except ValidationError as error:
             raise ValueError(f"las piezas no se leen ({str(error).splitlines()[0]})") from None
-        if campo == "longitudinales" and not piezas_:
-            raise ValueError("un elemento sin varillas longitudinales no se decide así")
-        return [p.model_dump(mode="json") for p in piezas_]
-    raise ValueError(f"el valor no es un armado ({valor!r})")
+    else:
+        raise ValueError(f"el valor no es un armado ({valor!r})")
+    _acotar_armado(campo, piezas)
+    return [p.model_dump(mode="json") for p in piezas]
+
+
+# R244: lo que mide un elemento, de sobra por los dos lados. Más allá es un error de captura (una
+# sección en metros, una separación en metros por centímetros), nunca una medida.
+_LADO_MINIMO_CM = 5.0
+_AREA_MINIMA_CM2 = _LADO_MINIMO_CM**2
+_LONGITUD_MINIMA_M = 0.1
+_VARILLAS_MAXIMAS = 100
+_PIEZAS_DE_ESTRIBO_MAXIMAS = 20
+_SEPARACION_MINIMA_M = 0.03
+_SEPARACION_MAXIMA_M = 2.0
+
+
+def _acotar_seccion(valor: Any, familia: str) -> Any:
+    if isinstance(valor, dict):
+        area = _numero(valor.get("area_cm2"))
+        if area is None or area <= 0:
+            raise ValueError(f"el área de la sección no es un número positivo ({valor!r})")
+        if area < _AREA_MINIMA_CM2:
+            raise ValueError(
+                f"el área {area:g} cm² es menor que la de un elemento ({_AREA_MINIMA_CM2:g} cm²): "
+                "¿en metros? la sección va en cm"
+            )
+        if area > _LADO_MAXIMO_CM**2:
+            raise ValueError(f"el área {area:g} cm² está fuera de lo que mide un elemento")
+        return {"area_cm2": area}
+    lados = valor.lower().split("x") if isinstance(valor, str) else valor
+    if not isinstance(lados, list | tuple) or len(lados) != 2:
+        raise ValueError(f"la sección no es b×h en cm ({valor!r})")
+    b, h = (_numero(x) for x in lados)
+    if b is None or h is None or b <= 0 or h <= 0:
+        raise ValueError(f"la sección no es b×h en cm ({valor!r})")
+    if min(b, h) < _LADO_MINIMO_CM:
+        raise ValueError(
+            f"la sección {_cm(b)}x{_cm(h)} tiene un lado de menos de {_LADO_MINIMO_CM:g} cm: "
+            "¿en metros? la sección va en cm"
+        )
+    if max(b, h) > _LADO_MAXIMO_CM:
+        raise ValueError(
+            f"la sección {_cm(b)}x{_cm(h)} cm está fuera de lo que mide un elemento (cada lado "
+            f"hasta {_LADO_MAXIMO_CM:g} cm)"
+        )
+    par = [int(x) if float(x).is_integer() else x for x in (b, h)]
+    return sorted(par) if familia in FAMILIAS_QUE_SE_ORDENAN else par
+
+
+def _acotar_longitud(valor: Any) -> float:
+    largo = _numero(valor)
+    if largo is None or largo <= 0:
+        raise ValueError(f"la longitud no es un número positivo de metros ({valor!r})")
+    if largo < _LONGITUD_MINIMA_M:
+        raise ValueError(
+            f"la longitud {largo:g} m es menor que la de un elemento ({_LONGITUD_MINIMA_M:g} m): "
+            "¿en centímetros? la longitud va en metros"
+        )
+    if largo > _LONGITUD_MAXIMA_M:
+        raise ValueError(
+            f"la longitud {largo:g} m está fuera de lo que mide un elemento (hasta "
+            f"{_LONGITUD_MAXIMA_M:g} m)"
+        )
+    return largo
+
+
+def _numero_de_varilla(numero: str) -> None:
+    if numero not in NUMEROS:
+        raise ValueError(
+            f"no hay varilla del #{numero} en la tabla de varillas ({', '.join(NUMEROS)})"
+        )
+
+
+def _separacion(s: float | None, que: str) -> None:
+    if s is None:
+        return
+    if not _SEPARACION_MINIMA_M <= s <= _SEPARACION_MAXIMA_M:
+        raise ValueError(
+            f"la separación de {que} ({s:g} m) no es la de un armado (de "
+            f"{_SEPARACION_MINIMA_M:g} a {_SEPARACION_MAXIMA_M:g} m): ¿en centímetros? va en metros"
+        )
+
+
+_DE_TIPO = {"estribo": "los estribos", "grapa": "las grapas", "liga": "las ligas"}
+
+
+def _acotar_armado(campo: str, piezas: list[Any]) -> None:
+    """R244: la cota única de un armado decidido, el mismo para el texto y para las piezas: al
+    menos una pieza; varillas de 1 a ``_VARILLAS_MAXIMAS`` y de un número de la tabla; juegos de
+    estribos de al menos una pieza, con separaciones de armado; parrillas con su separación."""
+    if not piezas:
+        raise ValueError(
+            f"una decisión sin {_NOMBRE_DEL_CAMPO[campo]} no se toma: el plano o la obra los dan"
+        )
+    for p in piezas:
+        if isinstance(p, GrupoVarillas):
+            if not 1 <= p.cantidad <= _VARILLAS_MAXIMAS:
+                raise ValueError(
+                    f"{p.cantidad} varillas no es un armado (de 1 a {_VARILLAS_MAXIMAS})"
+                )
+            _numero_de_varilla(p.numero)
+        elif isinstance(p, JuegoEstribos):
+            if not 1 <= p.cantidad <= _PIEZAS_DE_ESTRIBO_MAXIMAS:
+                raise ValueError(
+                    f"{p.cantidad} piezas por juego de {p.tipo} no es un armado (de 1 a "
+                    f"{_PIEZAS_DE_ESTRIBO_MAXIMAS})"
+                )
+            _numero_de_varilla(p.numero)
+            for z in p.zonas:
+                _separacion(z.separacion_m, _DE_TIPO[p.tipo])
+                if z.longitud_m is not None and not 0 < z.longitud_m <= _LONGITUD_MAXIMA_M:
+                    raise ValueError(f"el tramo de {z.longitud_m:g} m no es un tramo de elemento")
+        elif isinstance(p, Parrilla):
+            _numero_de_varilla(p.numero)
+            if p.separacion_m is None or p.separacion_m <= 0:
+                raise ValueError("una parrilla sin separación no es un armado")
+            _separacion(p.separacion_m, "la parrilla")
 
 
 # ------------------------------------------------------------------------- la escritura

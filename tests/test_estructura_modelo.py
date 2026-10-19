@@ -40,6 +40,7 @@ from klave_engine.estructura.modelo import (
     notas_de_escritura,
     resumir,
 )
+from klave_engine.estructura.modelo import NOMBRE_DEL_CAMPO as _NOMBRE
 from klave_engine.estructura.verificaciones import id_de_verificacion
 from klave_engine.evals.fixtures import write_demo_project
 from klave_engine.graph.evidence import EvidencePacket
@@ -565,14 +566,21 @@ def test_resumen_has_one_card_per_family_and_says_apart_what_it_cannot_split():
     assert r[0].duda == 1 and r[0].aviso == 1 and r[1].duda == 0 and r[1].aviso == 0
 
 
-def test_a_decision_that_there_are_no_stirrups_is_weighed_as_such():
+def test_a_decision_without_pieces_is_refused():
+    # R244 (Task 13 review): «no stirrups» is no armado a person decides — an empty list was taken
+    # as such (Task 12) and dropped the stirrups' steel without a figure; now it is refused, as an
+    # empty «longitudinales» always was, and the drawing's E#3 is still weighed.
     from klave_engine.estructura.acero import acero_elemento
 
     e = _estructura_k5_conflict()
-    out = aplicar_decisiones(e, [Decision(marca="K-5", campo="estribos", valor=[], fecha=_now())])
+    for campo in ("estribos", "longitudinales"):
+        out = aplicar_decisiones(e, [Decision(marca="K-5", campo=campo, valor=[], fecha=_now())])
+        assert any(
+            a.startswith(f"Decisión sobre K-5 ({_NOMBRE[campo]})") and "no se aplica" in a
+            for a in out.avisos
+        ), out.avisos
     acero = acero_elemento(out.elementos[0], out.reglas, 0.4)
-    assert acero.sin_estribos_declarados and not acero.por_leer
-    assert "3" not in acero.kg_por_numero  # the E#3 the drawing wrote is not weighed
+    assert "3" in acero.kg_por_numero
 
 
 def test_a_decided_value_is_not_said_to_come_from_another_sheet():
@@ -1486,6 +1494,42 @@ def test_a_decided_aviso_on_a_mark_with_variants_says_who_took_it_and_folds_only
     assert aviso.severidad == "aviso" and "lo toman" not in aviso.mensaje
 
 
+def test_a_reading_two_decided_variants_share_folds_with_each_variants_count():
+    # R247 (Task 13 review, minor 9): an aviso both variants' readings say folds only once both
+    # are decided, and the aviso gives each variant its value and its own count
+    e = _con_variantes()
+    k5 = _k5(e)
+    comun = "estribos: un texto que puede ser de K-5 fuera de la pila bajo su sección («E#3@15»)"
+    k5.avisos.append(comun)
+    for v in k5.variantes:
+        v.avisos.append(comun)
+    e.decisiones = [Decision(marca="X", campo="estribos", valor=[], fecha=_now())]
+    d15 = Decision(marca="K-5", campo="estribos", valor="E#3@10", para_muro_cm=15, actor="R",
+                   fecha=_now())  # fmt: skip
+    d20 = Decision(marca="K-5", campo="estribos", valor="E#3@20", para_muro_cm=20, actor="R",
+                   fecha=_now())  # fmt: skip
+
+    def decididos(ds):
+        out = aplicar_decisiones(e, ds)
+        suyos = [v for v in out.verificaciones if "K-5" in v.marcas]
+        dudas = " ".join(v.mensaje for v in suyos if v.severidad != "aviso")
+        return dudas, [v for v in suyos if v.numero == 11 and v.severidad == "aviso"]
+
+    dudas, avisos = decididos([d15])
+    assert comun in dudas and avisos == []  # the 20 cm variant has not been decided
+    dudas, (aviso,) = decididos([d15, d20])
+    assert comun not in dudas
+    assert "K-5 (para muros de 15 cm):" in aviso.mensaje and "lo toman 1 de 2 colocaciones" in (
+        aviso.mensaje
+    )
+    assert "K-5 (para muros de 20 cm):" in aviso.mensaje and "lo toman 0 de 2 colocaciones" in (
+        aviso.mensaje
+    )
+    assert aviso.id == id_de_verificacion(
+        11, "K-5", "", "avisos de lectura: decidido: estribos: muro 15: muro 20"
+    )
+
+
 def test_formwork_of_a_non_rectangular_section_is_its_contour():
     # R242: K-15A's L (2,300 cm², perimeter 2.30 m) is formed over its contour, not √area.
     from klave_engine.costing.formwork import _section_m
@@ -1503,7 +1547,10 @@ def test_formwork_of_a_non_rectangular_section_is_its_contour():
     )
 
 
-def test_a_saved_decision_retires_the_stale_scenario_and_the_run_says_so(tmp_path, data_dir):
+def test_a_saved_decision_leaves_the_scenario_marked_stale_until_the_recompute(tmp_path, data_dir):
+    # R247 (Task 13 review): saving no longer deletes the recompute's scenario — while the
+    # recompute runs, the last scenario (the one the derived budget is) is served, saying it is
+    # behind, so its decisions never flicker away; a recompute makes it current again.
     root, control = _demo(tmp_path)
     run_full_pipeline(root, get_settings())
     _recompute(root)
@@ -1511,19 +1558,51 @@ def test_a_saved_decision_retires_the_stale_scenario_and_the_run_says_so(tmp_pat
     guardar_decision(
         control, Decision(marca="C-1", campo="seccion_cm", valor=[70, 70], fecha=_FECHA)
     )
-    assert not (control / ESTRUCTURA_DERIVADA_FILENAME).exists()
+    assert (control / ESTRUCTURA_DERIVADA_FILENAME).exists()
     vigente = leer_estructura_vigente(control, control)
     assert any("cambiaron desde este modelo" in a for a in vigente.avisos)
+    assert vigente.decisiones == [] and vigente.base  # the scenario, behind
     _recompute(root)
     vigente = leer_estructura_vigente(control, control)
     assert not any("cambiaron desde este modelo" in a for a in vigente.avisos)
     ids = {x.detection_id for x in vigente.elementos if x.marca == "C-1"}
     assert ids <= {w.detection_id for w in vigente.escrituras}  # the recompute's own writes
-    # removed by hand: the scenario is no longer current, the run's own model (without it) is
+    # removed by hand: the scenario that was costed (with C-1 decided) is still what the derived
+    # budget is, and it says it is behind the saved decisions
     (control / DECISIONES_FILENAME).unlink()
+    vigente = leer_estructura_vigente(control, control)
+    assert any(x.seccion_cm.fuente == "humano" for x in vigente.elementos)
+    assert any("cambiaron desde este modelo" in a for a in vigente.avisos)
+    _recompute(root)
     vigente = leer_estructura_vigente(control, control)
     assert not any(x.seccion_cm.fuente == "humano" for x in vigente.elementos)
     assert not any("cambiaron desde este modelo" in a for a in vigente.avisos)
+
+
+def test_an_unreadable_decisions_file_is_never_written_over(tmp_path):
+    # R245: a torn or non-list decisions file would lose every decision it holds if a save or an
+    # undo wrote over it; both refuse, and the file stays byte for byte
+    from klave_engine.estructura.modelo import (
+        DecisionesIlegibles,
+        problema_de_decisiones,
+        quitar_decision,
+    )
+
+    d = Decision(marca="K-5", campo="seccion_cm", valor=[20, 40], fecha=_FECHA)
+    assert problema_de_decisiones(tmp_path) is None
+    for roto in ("[{", '{"marca": "K-5"}'):
+        (tmp_path / DECISIONES_FILENAME).write_text(roto)
+        assert problema_de_decisiones(tmp_path)
+        with pytest.raises(DecisionesIlegibles):
+            guardar_decision(tmp_path, d)
+        with pytest.raises(DecisionesIlegibles):
+            quitar_decision(tmp_path, "K-5", "seccion_cm")
+        assert (tmp_path / DECISIONES_FILENAME).read_text() == roto
+    # one unreadable entry is no unreadable file: it is kept and the rest is read
+    write_json(tmp_path / DECISIONES_FILENAME, [{"marca": "K-1"}])
+    assert problema_de_decisiones(tmp_path) is None
+    guardar_decision(tmp_path, d)
+    assert read_json(tmp_path / DECISIONES_FILENAME)[0] == {"marca": "K-1"}
 
 
 def test_decisions_key_on_the_normalized_mark():
@@ -1613,6 +1692,24 @@ def _como_zapata(e):
          campo="estribos", valor="E#3@15"), "el modelo no lee los estribos de una zapata"),
         (lambda: _como_zapata(_estructura_k5_conflict(niveles=True)), dict(marca="K-5",
          campo="longitud_m", valor=2.0), "el modelo no lee la longitud de una zapata"),
+        # R244: a parrilla's spacing and bar, as text or as pieces, through the same bound
+        (lambda: _como_zapata(_estructura_k5_conflict(niveles=True)), dict(marca="K-5",
+         campo="parrillas", valor=[{"numero": "4", "separacion_m": 0, "lecho": "inf",
+         "sentidos": "ambos"}]), "una parrilla sin separación no es un armado"),
+        (lambda: _como_zapata(_estructura_k5_conflict(niveles=True)), dict(marca="K-5",
+         campo="parrillas", valor=[{"numero": "4", "separacion_m": 0.01, "lecho": "inf",
+         "sentidos": "ambos"}]), "la separación de la parrilla (0.01 m)"),
+        (lambda: _como_zapata(_estructura_k5_conflict(niveles=True)), dict(marca="K-5",
+         campo="parrillas", valor=[{"numero": "9", "separacion_m": 0.2, "lecho": "inf",
+         "sentidos": "ambos"}]), "no hay varilla del #9"),
+        (lambda: _como_zapata(_estructura_k5_conflict(niveles=True)), dict(marca="K-5",
+         campo="parrillas", valor=[]), "una decisión sin parrillas no se toma"),
+        (lambda: _estructura_k5_conflict(niveles=True), dict(marca="K-5", campo="estribos",
+         valor=[{"tipo": "estribo", "cantidad": 1, "numero": "3", "zonas": [{"tramo": "extremos",
+         "separacion_m": 0.1, "longitud_m": 0}]}]), "no es un tramo de elemento"),
+        (lambda: _estructura_k5_conflict(niveles=True), dict(marca="K-5", campo="estribos",
+         valor=[{"tipo": "estribo", "cantidad": 1, "numero": "3", "zonas": [{"tramo": "todo",
+         "separacion_m": 3.0}]}]), "la separación de los estribos (3 m)"),
     ],
 )  # fmt: skip
 def test_a_refusal_before_saving_is_the_aviso_the_model_gives_when_applying(
@@ -1724,10 +1821,10 @@ def test_undo_removes_a_decision_as_it_was_written_and_keeps_what_does_not_read(
                [*read_json(tmp_path / DECISIONES_FILENAME), {"marca": "K-5"}])  # fmt: skip
     (tmp_path / ESTRUCTURA_DERIVADA_FILENAME).write_text("{}")
     assert quitar_decision(tmp_path, "K-5", "estribos") == []
-    assert (tmp_path / ESTRUCTURA_DERIVADA_FILENAME).exists()  # nothing removed, nothing stale
     (quitada,) = quitar_decision(tmp_path, "k5", "seccion_cm")
     assert quitada.valor == [20, 40]
-    assert not (tmp_path / ESTRUCTURA_DERIVADA_FILENAME).exists()
+    # R247: the scenario stays (it says it is behind) until the recompute makes it again
+    assert (tmp_path / ESTRUCTURA_DERIVADA_FILENAME).read_text() == "{}"
     # the variant's decision and the mark's are different keys
     (quitada,) = quitar_decision(tmp_path, "CI", "seccion_cm", 15.0)
     assert quitada.para_muro_cm == 15.0
@@ -1749,8 +1846,6 @@ def test_undo_removes_a_decision_as_it_was_written_and_keeps_what_does_not_read(
     assert quitar_decision(tmp_path, "MX1", "estribos") == []
     (quitada,) = quitar_decision(tmp_path, "MX1", "estribos", config=proyecto)
     assert quitada.marca == "MX-1"
-    (tmp_path / DECISIONES_FILENAME).write_text("{roto")
-    assert quitar_decision(tmp_path, "CI", "seccion_cm") == []
     assert quitar_decision(tmp_path / "otra", "CI", "seccion_cm") == []
 
 

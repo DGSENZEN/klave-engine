@@ -5,23 +5,34 @@ una persona sobre un campo de una marca, que se guarda, queda como etiqueta y re
 quita, y el presupuesto queda como si nunca hubiera estado.
 
 **Qué modelo.** Siempre ``leer_estructura_vigente``: el escenario del recálculo si es de la
-corrida activa y está al día con las decisiones guardadas; si no, el de la corrida (que dice si
-quedó atrás). Una corrida anterior al modelo, una que no se puede leer o un proyecto sin procesar
-contestan ``{"disponible": false}`` con su aviso, nunca un error.
+corrida activa (mientras un recálculo corre, el último, marcado como atrasado: sus decisiones no
+desaparecen); si no, el de la corrida. ``al_dia`` dice si el modelo tiene aplicadas exactamente las
+decisiones guardadas, y es falso si el archivo de decisiones no se lee. Una corrida anterior al
+modelo, una que no se puede leer o un proyecto sin procesar contestan ``{"disponible": false}``
+con su aviso, nunca un error.
 
 **Decidir.** Lo que el modelo no aplicaría (la altura de un castillo, una longitud para vigas de
-claros distintos, una variante que la marca no tiene, un valor que no se lee, una marca que la
-lectura no tiene) se contesta 422 con el aviso del modelo, sin guardar nada: nunca un 200 callado.
-Cambiar lo que dice el plano necesita una nota. Guardar, etiquetar y recalcular van bajo el
-candado del proyecto, así que dos decisiones a la vez se guardan las dos y sus recálculos van uno
-tras otro; si el recálculo se rompe, la decisión no queda a medias.
+claros distintos, una variante que la marca no tiene, un valor que no se lee o que está fuera de
+lo que mide un elemento, una marca que la lectura no tiene, una decisión que no toma ninguna
+colocación) se contesta 422 con el aviso del modelo, sin guardar nada: nunca un 200 callado.
+Cambiar lo que dice el plano necesita una nota (decidir el único valor que da, no). Guardar,
+etiquetar y recalcular van bajo el candado del proyecto, así que dos decisiones a la vez se guardan
+las dos y sus recálculos van uno tras otro. Si el recálculo se rompe, o termina sin aplicar la
+decisión, todo lo que tocó vuelve a como estaba y se contesta un error (500 o 409): nunca
+«guardada pero sin aplicar». Un archivo de decisiones que no se lee no se pisa (409).
 
 **Acceso.** Bajo ``/projects``: el middleware de acceso pide «viewer» para leer y «editor» para
-decidir o quitar, y cada ruta lo vuelve a pedir con ``require_project_role`` (la misma regla), así
-que el router no queda abierto aunque se monte de otro modo."""
+decidir o quitar, y cada ruta vuelve a pedir lo mismo con ``require_project_role`` sobre la sesión
+que el middleware dejó. Sin el middleware no hay sesión y esa regla deja pasar (el modo abierto de
+siempre): el router se monta detrás de él. Quién firma la decisión es la sesión (el middleware
+reescribe ``X-Actor``); en modo abierto, sin cuentas, es el ``X-Actor`` que llegue, y sin él la
+decisión queda «decidida por alguien», como las revisiones y las demás rutas."""
 
 from __future__ import annotations
 
+import json
+import os
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,9 +40,13 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
 from klave_engine.common.config import Settings
-from klave_engine.common.io import write_text
 from klave_engine.costing.etiquetas import LABELS_FILENAME, append_labels
-from klave_engine.costing.recompute import COST_REPORT_OVERRIDE_FILENAME
+from klave_engine.costing.models import CostReport
+from klave_engine.costing.recompute import (
+    COST_REPORT_OVERRIDE_FILENAME,
+    OVERRIDES_FILENAME,
+    apply_taller_history,
+)
 from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.estructura.dato import Dato
 from klave_engine.estructura.definiciones import normalizar_marca
@@ -42,12 +57,14 @@ from klave_engine.estructura.modelo import (
     ESTRUCTURA_DERIVADA_FILENAME,
     NOMBRE_DEL_CAMPO,
     Decision,
+    DecisionesIlegibles,
     Estructura,
     decisiones_vigentes,
     guardar_decision,
     leer_decisiones,
     leer_estructura_con_motivo,
     leer_estructura_vigente,
+    problema_de_decisiones,
     quitar_decision,
     revisar_decision,
 )
@@ -57,12 +74,14 @@ from apps.api.auth.access import require_project_role
 from apps.api.dependencies import ProjectStore, get_settings, get_store, project_recompute_lock
 from apps.api.events import clean_actor, clean_client_id
 from apps.api.routes.reviews import _recompute_after_review
+from apps.api.tenancy import store_for_project
 
 router = APIRouter(prefix="/projects", tags=["estructura"])
 
 ANTERIOR = "Esta lectura es anterior a la lectura estructural. Reprocesa el proyecto para verla."
 SIN_PROCESAR = "El proyecto no se ha procesado: procésalo para ver su lectura estructural."
 _MURO_MAXIMO_CM = 200.0
+_VALOR_MAXIMO_BYTES = 2048  # R247: una sección, una longitud o un armado; nunca un documento
 
 
 class DecisionInput(BaseModel):
@@ -107,10 +126,19 @@ def _lectura(store: ProjectStore, settings: Settings, project_id: str) -> _Lectu
     return _Lectura(None, "anterior", ANTERIOR, control)
 
 
+def _al_dia(lectura: _Lectura) -> bool:
+    """Si el modelo que se da tiene aplicadas exactamente las decisiones guardadas; nunca si el
+    archivo de decisiones no se lee (R245)."""
+    e = lectura.estructura
+    if e is None or problema_de_decisiones(lectura.control) is not None:
+        return False
+    guardadas, _ = leer_decisiones(lectura.control)
+    return decisiones_vigentes(guardadas, e.patrones) == e.decisiones
+
+
 def _payload(lectura: _Lectura) -> dict[str, Any]:
-    """Lo que ``Estructura`` tiene, como lo lee Revisión. ``al_dia``: si el modelo tiene aplicadas
-    exactamente las decisiones guardadas; ``decisiones_guardadas``: las guardadas (una por marca,
-    campo y variante: la más reciente)."""
+    """Lo que ``Estructura`` tiene, como lo lee Revisión. ``al_dia``: ``_al_dia``;
+    ``decisiones_guardadas``: las guardadas (una por marca, campo y variante: la más reciente)."""
     guardadas, avisos_de_decisiones = leer_decisiones(lectura.control)
     e = lectura.estructura
     base: dict[str, Any] = {
@@ -143,7 +171,7 @@ def _payload(lectura: _Lectura) -> dict[str, Any]:
     return {
         "disponible": True,
         "motivo": "",
-        "al_dia": vigentes == e.decisiones,
+        "al_dia": _al_dia(lectura),
         "avisos": list(dict.fromkeys([*e.avisos, *avisos_de_decisiones])),
         "resumen": [r.model_dump(mode="json") for r in e.resumen],
         "verificaciones": [v.model_dump(mode="json") for v in e.verificaciones],
@@ -285,43 +313,83 @@ def _dato(d: Dato | None) -> dict[str, Any] | None:
     return {"valor": d.valor, "fuente": d.fuente, "texto": d.texto, "hoja": d.hoja}
 
 
-_TOCADOS = (DECISIONES_FILENAME, ESTRUCTURA_DERIVADA_FILENAME, COST_REPORT_OVERRIDE_FILENAME)
+_TOCADOS = (
+    DECISIONES_FILENAME,
+    ESTRUCTURA_DERIVADA_FILENAME,
+    COST_REPORT_OVERRIDE_FILENAME,
+    OVERRIDES_FILENAME,
+)
 
 
 @dataclass
 class _Foto:
-    """Lo que una decisión toca, como estaba antes de guardarla: las decisiones, el escenario del
-    modelo, el costo derivado y hasta dónde llegaba el diario de etiquetas."""
+    """Lo que una decisión y su recálculo tocan, como estaba antes de guardarla: las decisiones, el
+    escenario del modelo, el costo derivado, los parámetros del costo, los reportes del recálculo
+    (``presupuesto.csv``, ``resumen_costos.md``) y hasta dónde llegaba el diario de etiquetas.
 
-    control: Path
-    archivos: dict[str, str | None]
+    Lo que no se guarda aquí: los índices del proyecto en la historia del taller (la base del
+    taller no da la fila de un proyecto). ``restaurar`` los vuelve a guardar con los del
+    presupuesto restaurado; su fecha en la historia se mueve, y si el presupuesto restaurado no
+    tiene índices (o sus unidades no son confiables) quedan los del intento fallido hasta el
+    siguiente recálculo."""
+
+    store: ProjectStore
+    settings: Settings
+    project_id: str
+    archivos: dict[Path, bytes | None]
     etiquetas: int | None
 
     @classmethod
-    def de(cls, control: Path) -> _Foto:
+    def de(cls, store: ProjectStore, settings: Settings, project_id: str) -> _Foto:
+        root = store.get_root(project_id)
+        control = root / settings.processed_dir_name
+        rutas = [control / n for n in _TOCADOS] + [
+            root / "reports" / n for n in ("presupuesto.csv", "resumen_costos.md")
+        ]
         diario = control / LABELS_FILENAME
         return cls(
-            control,
-            {
-                n: (control / n).read_text(encoding="utf-8") if (control / n).exists() else None
-                for n in _TOCADOS
-            },
+            store,
+            settings,
+            project_id,
+            {r: r.read_bytes() if r.exists() else None for r in rutas},
             diario.stat().st_size if diario.exists() else None,
         )
 
     def restaurar(self) -> None:
-        for nombre, contenido in self.archivos.items():
-            ruta = self.control / nombre
+        for ruta, contenido in self.archivos.items():
             if contenido is None:
                 ruta.unlink(missing_ok=True)
             else:
-                write_text(ruta, contenido)
-        diario = self.control / LABELS_FILENAME
+                _escribir_bytes(ruta, contenido)
+        diario = self.store.get_root(self.project_id) / self.settings.processed_dir_name
+        diario = diario / LABELS_FILENAME
         if self.etiquetas is None:
             diario.unlink(missing_ok=True)
         elif diario.exists():
             with diario.open("r+b") as f:
                 f.truncate(self.etiquetas)
+        try:
+            report = CostReport.model_validate(
+                self.store.read_artifact(self.project_id, "cost_report.json")
+            )
+            apply_taller_history(
+                report, store_for_project(self.settings, self.project_id), self.project_id
+            )
+        except Exception:  # noqa: BLE001 — la historia del taller es un extra; lo demás ya volvió
+            pass
+
+
+def _escribir_bytes(ruta: Path, contenido: bytes) -> None:
+    """Byte por byte (un CSV conserva sus fines de línea) y de una vez: un archivo temporal junto
+    a él que lo reemplaza."""
+    fd, temporal = tempfile.mkstemp(prefix=f".{ruta.name}.", suffix=".tmp", dir=ruta.parent)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(contenido)
+        os.replace(temporal, ruta)
+    except BaseException:
+        Path(temporal).unlink(missing_ok=True)
+        raise
 
 
 def _recalcular(
@@ -332,10 +400,12 @@ def _recalcular(
     client_id: str | None,
     detalle: str,
     foto: _Foto,
-) -> None:
+) -> _Lectura:
     """El recálculo de siempre (``_recompute_after_review``: el costo, el modelo derivado y los
-    eventos). Si se rompe, lo que la decisión tocó vuelve a como estaba antes de guardarla
-    (``foto``) y el error sigue: nada a medias."""
+    eventos), y la lectura que deja. Si se rompe, lo que la decisión tocó vuelve a como estaba
+    antes de guardarla (``foto``) y el error sigue. Si termina sin aplicarla (``_recompute_after_
+    review`` calla un ``ReportGenerationError``: una corrida sin lo que el costo lee), también
+    vuelve todo y se contesta 409 (R246): nunca «guardada pero sin aplicar»."""
     try:
         _recompute_after_review(
             store, settings, project_id, actor, client_id, "estructura_decision", detalle
@@ -343,6 +413,27 @@ def _recalcular(
     except Exception:
         foto.restaurar()
         raise
+    lectura = _lectura(store, settings, project_id)
+    if lectura.estructura is not None and not _al_dia(lectura):
+        foto.restaurar()
+        raise _invalida(
+            "recalculo_sin_aplicar",
+            "El recálculo no aplicó la decisión (a la corrida le falta lo que el costo lee); no se "
+            "guardó nada. Reprocesa el proyecto.",
+            status=409,
+        )
+    return lectura
+
+
+def _ilegibles(error: DecisionesIlegibles) -> HTTPException:
+    """R245: un archivo de decisiones que no se lee entero no se pisa (el modelo se niega a
+    escribirlo): 409."""
+    return _invalida(
+        "decisiones_ilegibles",
+        f"El archivo de decisiones no se puede leer ({error}); no se guarda ni se quita nada "
+        "hasta que se repare.",
+        status=409,
+    )
 
 
 @router.post("/{project_id}/estructura/decisiones")
@@ -370,6 +461,12 @@ def decidir(
         ) from None
     campo = _campo(body.campo)
     para_muro_cm = _muro(body.para_muro_cm)
+    if len(json.dumps(body.valor, ensure_ascii=False, default=str)) > _VALOR_MAXIMO_BYTES:
+        raise _invalida(
+            "valor_demasiado_largo",
+            f"El valor de una decisión es una sección, una longitud o un armado (hasta "
+            f"{_VALOR_MAXIMO_BYTES} caracteres).",
+        )
     marca = body.marca.strip()
     if not marca:
         raise _invalida("decision_invalida", "La decisión necesita la marca.")
@@ -392,10 +489,13 @@ def decidir(
         revision = revisar_decision(e, d)
         if revision.rechazo is not None:
             raise _invalida("decision_rechazada", revision.rechazo)
-        if not nota and revision.del_plano:
-            raise _invalida("nota_requerida", revision.nota_requerida or "")
-        foto = _Foto.de(lectura.control)
-        guardar_decision(lectura.control, d)
+        if not nota and revision.nota_requerida:
+            raise _invalida("nota_requerida", revision.nota_requerida)
+        foto = _Foto.de(store, settings, project_id)
+        try:
+            guardar_decision(lectura.control, d)
+        except DecisionesIlegibles as error:
+            raise _ilegibles(error) from None
         append_labels(
             lectura.control,
             [
@@ -414,11 +514,11 @@ def decidir(
                 }
             ],
         )
-        _recalcular(
+        nueva = _recalcular(
             store, settings, project_id, actor, clean_client_id(x_client_id),
             f"{revision.marca} · {NOMBRE_DEL_CAMPO[campo]}", foto,
         )  # fmt: skip
-        return _payload(_lectura(store, settings, project_id))
+        return _payload(nueva)
 
 
 @router.delete("/{project_id}/estructura/decisiones")
@@ -442,8 +542,11 @@ def quitar(
     with project_recompute_lock(project_id):
         lectura = _lectura(store, settings, project_id)
         config = lectura.estructura.patrones if lectura.estructura is not None else None
-        foto = _Foto.de(lectura.control)
-        quitadas = quitar_decision(lectura.control, marca.strip(), campo, muro, config=config)
+        foto = _Foto.de(store, settings, project_id)
+        try:
+            quitadas = quitar_decision(lectura.control, marca.strip(), campo, muro, config=config)
+        except DecisionesIlegibles as error:
+            raise _ilegibles(error) from None
         if not quitadas:
             raise _invalida(
                 "decision_no_encontrada",
@@ -459,7 +562,8 @@ def quitar(
                 {
                     "kind": "estructura",
                     "action": "undo_decision",
-                    "marca": ultima.marca,
+                    # la marca normalizada, como en ``decide_value``: las dos etiquetas se juntan
+                    "marca": normalizar_marca(ultima.marca, config),
                     "campo": campo,
                     "para_muro_cm": muro,
                     "valor": None,
@@ -469,8 +573,8 @@ def quitar(
                 }
             ],
         )  # fmt: skip
-        _recalcular(
+        nueva = _recalcular(
             store, settings, project_id, actor, clean_client_id(x_client_id),
             f"{marca.strip()} · {NOMBRE_DEL_CAMPO[campo]} (quitada)", foto,
         )  # fmt: skip
-        return _payload(_lectura(store, settings, project_id))
+        return _payload(nueva)

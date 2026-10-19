@@ -3349,16 +3349,18 @@ def _parte(definicion: Definicion, muro: float | None) -> Definicion:
     return next(v for v in definicion.variantes if v.para_muro_cm == muro)
 
 
-def _parte_decidida(definicion: Definicion, campo: str, aviso: str) -> Definicion | None:
-    """R241: la parte de la definición de la que es ``aviso`` (las variantes cuyas lecturas lo
-    dicen; si ninguna, la marca misma), si alguien ya decidió su ``campo`` en todas; si no,
-    ``None`` (el aviso sigue siendo una duda)."""
+def _partes_decididas(
+    definicion: Definicion, campo: str, aviso: str
+) -> tuple[float | None, ...] | None:
+    """R241: las partes de la definición de las que es ``aviso`` (las variantes cuyas lecturas lo
+    dicen, por su muro; si ninguna, la marca misma: ``(None,)``), si alguien ya decidió su
+    ``campo`` en todas; si no, ``None`` (el aviso sigue siendo una duda)."""
     duenas = [v for v in definicion.variantes if aviso in v.avisos] or [definicion]
     for parte in duenas:
         dato = getattr(parte, campo, None)
         if dato is None or dato.fuente != "humano":
             return None
-    return duenas[0]
+    return tuple(p.para_muro_cm if p is not definicion else None for p in duenas)
 
 
 def _cuantas_tomaron(ctx: _Contexto, marca: str, definicion: Definicion, muro: float | None) -> str:
@@ -3402,34 +3404,39 @@ def _avisos_de_lectura(ctx: _Contexto) -> tuple[list[Verificacion], list[Verific
         # un aviso que dice quién lo decidió. En una marca con variantes por muro, sólo lo de la
         # parte que la decisión alcanzó (la marca, o la variante que nombró): lo que avisa la
         # lectura de otra variante sigue siendo su duda.
-        decididas: dict[tuple[str, float | None], list[str]] = defaultdict(list)
+        decididas: dict[tuple[str, tuple[float | None, ...]], list[str]] = defaultdict(list)
         for a in list(dudas):
             campo = _campo_de_aviso(a)
-            parte = _parte_decidida(definicion, campo, a) if campo is not None else None
-            if campo is not None and parte is not None:
-                decididas[(campo, parte.para_muro_cm)].append(a)
+            partes = _partes_decididas(definicion, campo, a) if campo is not None else None
+            if campo is not None and partes is not None:
+                decididas[(campo, partes)].append(a)
                 dudas.remove(a)
-        for (campo, muro), textos in sorted(
-            decididas.items(), key=lambda kv: (kv[0][0], kv[0][1] or 0.0)
+        for (campo, muros), textos in sorted(
+            decididas.items(), key=lambda kv: (kv[0][0], [m or 0.0 for m in kv[0][1]])
         ):
-            parte = _parte(definicion, muro)
-            dato = getattr(parte, campo)
-            quien = marca if muro is None else f"{marca} (para muros de {_cm(muro)} cm)"
-            tomaron = _cuantas_tomaron(ctx, marca, definicion, muro)
+            # Una lectura que dicen varias variantes decididas: cada una con su valor y su cuenta.
+            dichos = []
+            for muro in muros:
+                dato = getattr(_parte(definicion, muro), campo)
+                quien = marca if muro is None else f"{marca} (para muros de {_cm(muro)} cm)"
+                tomaron = _cuantas_tomaron(ctx, marca, definicion, muro)
+                dichos.append(
+                    f"{quien}: {_NOMBRE[campo]} es {_valor(campo, dato.valor)}, {dato.texto}"
+                    + (f"; {tomaron}" if tomaron else "")
+                )
             agrupados.append(
                 _hallazgo(
                     11,
                     "aviso",
-                    f"{quien}: {_NOMBRE[campo]} es {_valor(campo, dato.valor)}, {dato.texto}"
-                    + (f"; {tomaron}" if tomaron else "")
+                    ". ".join(dichos)
                     + ". Lo que sus lecturas avisaban: "
                     + "; ".join(textos)
                     + ".",
                     clave=f"avisos de lectura: decidido: {campo}"
-                    + (f": muro {_cm(muro)}" if muro is not None else ""),
+                    + "".join(f": muro {_cm(m)}" for m in muros if m is not None),
                     marca=marca,
                     campo=campo,
-                    datos=[dato],
+                    datos=[getattr(_parte(definicion, m), campo) for m in muros],
                 )
             )
         if not dudas:

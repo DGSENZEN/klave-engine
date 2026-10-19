@@ -120,7 +120,8 @@ def _planta(dets):
 def _lectura():
     """K-5: castillo que el cuadro de ES-200 dice 20x30 y el de ES-400 20x40 (una contradicción),
     colocado dos veces en ES-100. T-1: trabe 25x50 del cuadro, colocada con claros medidos de 4 y
-    5 m. CI: dala con variantes por muro (15 y 20 cm), colocada una vez sin muro medido."""
+    5 m. CI: dala con variantes por muro (15 y 20 cm), colocada sobre un muro medido de 15 cm (toma
+    esa variante) y sobre uno sin medir (toma la definición de la marca)."""
     textos = [
         _texto("t200", "K-5", 210, 10),
         _texto("t400", "K-5", 410, 10),
@@ -132,14 +133,17 @@ def _lectura():
         _texto("tci15", "CI", 230, 50),
         _texto("tci20", "CI", 250, 50),
         _texto("c1", "CI", 10, 70),
+        _texto("c2", "CI", 30, 70),
     ]
     dets = [
         _det("d1", "K-5", "castillo", 10, 10, "p1"),
         _det("d2", "K-5", "castillo", 30, 10, "p2"),
         _det("v1", "T-1", "trabe", 10, 40, "b1", DetectionType.beam_tag, estimated_span_length=4.0),
         _det("v2", "T-1", "trabe", 30, 40, "b2", DetectionType.beam_tag, estimated_span_length=5.0),
-        _det("ci", "CI", "dala", 10, 70, "c1", DetectionType.beam_tag, estimated_span_length=3.0),
-    ]
+        _det("ci1", "CI", "dala", 10, 70, "c1", DetectionType.beam_tag, estimated_span_length=3.0,
+             muro_espesor=0.15, muro_caras=["W1", "W2"]),
+        _det("ci2", "CI", "dala", 30, 70, "c2", DetectionType.beam_tag, estimated_span_length=3.0),
+    ]  # fmt: skip
     inv = ScheduleInventory(
         specs=[
             _spec("K-5", "castillo", (20, 30), "ES-200", "t200"),
@@ -291,7 +295,7 @@ def test_the_payload_is_what_the_model_holds(data_dir):
     assert body["escrituras"] == derivada["escrituras"]
     assert body["avisos"] == derivada["avisos"]
     assert {x["familia"]: x["colocaciones"] for x in body["familias"]} == {
-        "castillo": 2, "dala": 1, "trabe": 2,
+        "castillo": 2, "dala": 2, "trabe": 2,
     }  # fmt: skip
     assert [c["campo"] for c in body["campos_decidibles"]] == [
         "seccion_cm", "longitud_m", "longitudinales", "estribos", "parrillas",
@@ -320,7 +324,7 @@ def test_the_elements_of_a_family_with_their_definitions(data_dir):
     assert {x["marca"] for x in por_marca["elementos"]} == {"K-5"}
     # all of them
     todos = client.get(f"/projects/{pid}/estructura/elementos").json()
-    assert len(todos["elementos"]) == 5 and set(todos["definiciones"]) == {"K-5", "T-1", "CI"}
+    assert len(todos["elementos"]) == 6 and set(todos["definiciones"]) == {"K-5", "T-1", "CI"}
     r = client.get(f"/projects/{pid}/estructura/elementos?familia=ventana")
     assert r.status_code == 422 and r.json()["detail"]["error_type"] == "familia_desconocida"
 
@@ -454,6 +458,48 @@ def test_a_stale_scenario_is_never_served_as_current(data_dir):
          "decision_invalida", "nota"),
         ({"marca": "K-5", "campo": "seccion_cm", "valor": [20, 40], "nota": "n",
           "para_muro_cm": "mucho"}, "muro_invalido", "espesor de su muro"),
+        # R244 (Task 13 review): one bound for every value, text or pieces
+        ({"marca": "K-5", "campo": "longitudinales", "valor": [{"cantidad": -4, "numero": "4"}],
+          "nota": "n"}, "decision_rechazada", "-4 varillas no es un armado"),
+        ({"marca": "K-5", "campo": "longitudinales", "valor": [{"cantidad": 0, "numero": "4"}],
+          "nota": "n"}, "decision_rechazada", "0 varillas no es un armado"),
+        ({"marca": "K-5", "campo": "longitudinales", "valor": [{"cantidad": 4000, "numero": "4"}],
+          "nota": "n"}, "decision_rechazada", "4000 varillas no es un armado"),
+        ({"marca": "K-5", "campo": "estribos", "valor": "25E#3@15", "nota": "n"},
+         "decision_rechazada", "25 piezas por juego de estribo no es un armado"),
+        ({"marca": "K-5", "campo": "longitudinales", "valor": [{"cantidad": 4, "numero": "99"}],
+          "nota": "n"}, "decision_rechazada", "no hay varilla del #99"),
+        ({"marca": "K-5", "campo": "longitudinales", "valor": [{"cantidad": 4, "numero": "abc"}],
+          "nota": "n"}, "decision_rechazada", "no hay varilla del #abc"),
+        ({"marca": "K-5", "campo": "estribos", "valor": [{"tipo": "estribo", "cantidad": 1,
+          "numero": "3", "zonas": [{"tramo": "todo", "separacion_m": 0}]}], "nota": "n"},
+         "decision_rechazada", "la separación de los estribos (0 m)"),
+        ({"marca": "K-5", "campo": "estribos", "valor": [{"tipo": "estribo", "cantidad": 1,
+          "numero": "3", "zonas": [{"tramo": "todo", "separacion_m": -0.2}]}], "nota": "n"},
+         "decision_rechazada", "la separación de los estribos (-0.2 m)"),
+        ({"marca": "K-5", "campo": "estribos", "valor": [{"tipo": "grapa", "cantidad": 1,
+          "numero": "3", "zonas": [{"tramo": "todo", "separacion_m": 0.001}]}], "nota": "n"},
+         "decision_rechazada", "la separación de las grapas (0.001 m)"),
+        ({"marca": "K-5", "campo": "estribos", "valor": [{"tipo": "estribo", "cantidad": 0,
+          "numero": "3", "zonas": []}], "nota": "n"}, "decision_rechazada",
+         "0 piezas por juego de estribo"),
+        ({"marca": "K-5", "campo": "estribos", "valor": [], "nota": "n"}, "decision_rechazada",
+         "una decisión sin estribos no se toma"),
+        ({"marca": "K-5", "campo": "seccion_cm", "valor": [1e-9, 1e-9], "nota": "n"},
+         "decision_rechazada", "¿en metros? la sección va en cm"),
+        ({"marca": "K-5", "campo": "seccion_cm", "valor": [0.2, 0.3], "nota": "n"},
+         "decision_rechazada", "¿en metros? la sección va en cm"),
+        ({"marca": "K-5", "campo": "seccion_cm", "valor": {"area_cm2": 4}, "nota": "n"},
+         "decision_rechazada", "¿en metros? la sección va en cm"),
+        ({"marca": "T-1", "campo": "longitud_m", "valor": 0.05, "nota": "n"},
+         "decision_rechazada", "¿en centímetros? la longitud va en metros"),
+        # R247: a decision no placement takes moves nothing
+        ({"marca": "CI", "campo": "seccion_cm", "valor": [20, 25], "nota": "n",
+          "para_muro_cm": 20}, "decision_rechazada",
+         "ninguna colocación tomó la variante para muros de 20 cm; no se guarda"),
+        # R247: a value is a section, a length or an armado, never a document
+        ({"marca": "K-5", "campo": "longitudinales", "valor": "4#4 " * 600, "nota": "n"},
+         "valor_demasiado_largo", "hasta 2048 caracteres"),
     ],
 )  # fmt: skip
 def test_a_refusal_is_a_422_with_the_models_aviso_and_saves_nothing(
@@ -598,8 +644,21 @@ def test_a_failed_recompute_leaves_nothing_half_done(data_dir, monkeypatch):
     costo = (processed / "cost_report_override.json").read_bytes()
     real = estructura_routes._recompute_after_review
 
+    reportes = processed.parent / "reports"
+    otros = {
+        x: x.read_bytes()
+        for x in (
+            reportes / "presupuesto.csv",
+            reportes / "resumen_costos.md",
+            processed / "costing_overrides.json",
+        )
+    }
+    assert all(otros.values())
+
     def roto(*a, **k):
         (processed / "cost_report_override.json").write_text("{}")  # half written
+        for x in otros:
+            x.write_text("a medias")
         raise RuntimeError("catálogo caído")
 
     monkeypatch.setattr(estructura_routes, "_recompute_after_review", roto)
@@ -608,6 +667,7 @@ def test_a_failed_recompute_leaves_nothing_half_done(data_dir, monkeypatch):
     assert not (processed / DECISIONES_FILENAME).exists()
     assert (processed / ESTRUCTURA_DERIVADA_FILENAME).read_bytes() == derivada
     assert (processed / "cost_report_override.json").read_bytes() == costo
+    assert {x: x.read_bytes() for x in otros} == otros
     assert read_labels(processed) == []
     # with a decision and its label already there, a failed one leaves exactly those
     monkeypatch.setattr(estructura_routes, "_recompute_after_review", real)
@@ -626,6 +686,117 @@ def test_a_failed_recompute_leaves_nothing_half_done(data_dir, monkeypatch):
     assert (processed / ESTRUCTURA_DERIVADA_FILENAME).read_bytes() == derivada
     assert (processed / "cost_report_override.json").read_bytes() == costo
     assert read_labels(processed) == etiquetas
+
+
+def test_the_rollback_saves_the_taller_indices_of_the_restored_budget(data_dir, monkeypatch):
+    # the taller's history keeps one row per project that the store cannot give back: the
+    # rollback saves again the indices of the budget it restored (R247)
+    pid, processed = _obra(data_dir)
+    restaurados = []
+    monkeypatch.setattr(
+        estructura_routes, "apply_taller_history",
+        lambda report, store, project_id: restaurados.append((report.boq.direct_cost_total,
+                                                              project_id)),
+    )  # fmt: skip
+    antes = read_json(processed / "cost_report_override.json")["boq"]["direct_cost_total"]
+
+    def roto(*a, **k):
+        raise RuntimeError("catálogo caído")
+
+    monkeypatch.setattr(estructura_routes, "_recompute_after_review", roto)
+    client = TestClient(_app(), raise_server_exceptions=False)
+    r = _decidir(client, pid, marca="K-5", campo="seccion_cm", valor=[30, 50], nota="n")
+    assert r.status_code == 500 and restaurados == [(antes, pid)]
+
+
+def test_an_unreadable_decisions_file_is_a_409_and_is_never_written_over(data_dir):
+    # R245: a torn (or non-list) decisions file would lose every decision it holds
+    pid, processed = _obra(data_dir)
+    client = _client()
+    # with no decision in the scenario either, an unreadable file is still not «al día»
+    (processed / DECISIONES_FILENAME).write_text("[{")
+    assert client.get(f"/projects/{pid}/estructura").json()["al_dia"] is False
+    (processed / DECISIONES_FILENAME).unlink()
+    assert _decidir(client, pid, marca="T-1", campo="estribos", valor="E#3@15",
+                    nota="d").status_code == 200  # fmt: skip
+    for roto in ("[{", '{"marca": "T-1"}'):
+        (processed / DECISIONES_FILENAME).write_text(roto)
+        etiquetas = read_labels(processed)
+        body = client.get(f"/projects/{pid}/estructura").json()
+        assert body["al_dia"] is False  # the scenario has T-1; the file says nothing readable
+        r = _decidir(client, pid, marca="K-5", campo="seccion_cm", valor=[20, 40], nota="PA")
+        assert r.status_code == 409, r.text
+        assert r.json()["detail"]["error_type"] == "decisiones_ilegibles"
+        assert "El archivo de decisiones no se puede leer" in r.json()["detail"]["message"]
+        r = _quitar(client, pid, marca="T-1", campo="estribos")
+        assert r.status_code == 409 and r.json()["detail"]["error_type"] == "decisiones_ilegibles"
+        assert "El archivo de decisiones no se puede leer" in r.json()["detail"]["message"]
+        assert (processed / DECISIONES_FILENAME).read_text() == roto
+        assert read_labels(processed) == etiquetas
+
+
+def test_a_recompute_that_does_not_apply_the_decision_is_a_409_with_nothing_saved(data_dir):
+    # R246: `_recompute_after_review` says nothing when the run lacks what the costing reads;
+    # the route checks the reading it leaves and never answers «saved» for «not applied»
+    pid, processed = _obra(data_dir)
+    client = _client()
+    derivada = (processed / ESTRUCTURA_DERIVADA_FILENAME).read_bytes()
+    (processed / "detections.json").unlink()
+    r = _decidir(client, pid, marca="K-5", campo="seccion_cm", valor=[20, 40], nota="PA")
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["error_type"] == "recalculo_sin_aplicar"
+    assert not (processed / DECISIONES_FILENAME).exists() and read_labels(processed) == []
+    assert (processed / ESTRUCTURA_DERIVADA_FILENAME).read_bytes() == derivada
+    assert client.get(f"/projects/{pid}/estructura").json()["al_dia"] is True
+
+
+def test_while_a_recompute_runs_the_decisions_do_not_flicker_away(data_dir, monkeypatch):
+    # R247: during the recompute the last scenario is served, marked behind, with its decisions
+    pid, processed = _obra(data_dir)
+    client = _client()
+    assert _decidir(client, pid, marca="K-5", campo="seccion_cm", valor=[20, 40],
+                    nota="PA").status_code == 200  # fmt: skip
+    real = estructura_routes._recompute_after_review
+    vistos = []
+
+    def mirando(*a, **k):
+        vistos.append(client.get(f"/projects/{pid}/estructura").json())
+        return real(*a, **k)
+
+    monkeypatch.setattr(estructura_routes, "_recompute_after_review", mirando)
+    r = _decidir(client, pid, marca="T-1", campo="estribos", valor="E#3@15", nota="d")
+    assert r.status_code == 200
+    (durante,) = vistos
+    assert durante["al_dia"] is False
+    assert [d["marca"] for d in durante["decisiones"]] == ["K-5"]
+    assert any("las decisiones guardadas cambiaron" in a for a in durante["avisos"])
+    assert r.json()["al_dia"] is True
+    assert {d["marca"] for d in r.json()["decisiones"]} == {"K-5", "T-1"}
+
+
+def test_deciding_the_drawings_only_value_needs_no_note(data_dir):
+    # R247: T-1's section is 25x50 in its only cuadro; deciding exactly that is no override
+    pid, _ = _obra(data_dir)
+    client = _client()
+    r = _decidir(client, pid, marca="T-1", campo="seccion_cm", valor=[25, 50], nota="")
+    assert r.status_code == 200, r.text
+    r = _decidir(client, pid, marca="T-1", campo="seccion_cm", valor=[25, 55], nota="")
+    assert r.status_code == 422 and r.json()["detail"]["error_type"] == "nota_requerida"
+    # K-5's cuadros disagree: picking one of them still needs a note
+    r = _decidir(client, pid, marca="K-5", campo="seccion_cm", valor=[20, 30], nota="")
+    assert r.status_code == 422 and r.json()["detail"]["error_type"] == "nota_requerida"
+
+
+def test_the_undo_label_names_the_mark_as_the_decide_label_does(data_dir):
+    pid, processed = _obra(data_dir)
+    client = _client()
+    assert _decidir(client, pid, marca="k5", campo="seccion_cm", valor=[20, 40],
+                    nota="PA").status_code == 200  # fmt: skip
+    assert _quitar(client, pid, marca="K 5", campo="seccion_cm").status_code == 200
+    etiquetas = [x for x in read_labels(processed) if x.get("kind") == "estructura"]
+    assert [(x["action"], x["marca"]) for x in etiquetas] == [
+        ("decide_value", "K-5"), ("undo_decision", "K-5"),
+    ]  # fmt: skip
 
 
 # ------------------------------------------------------------------- la corrida activa y otra
