@@ -42,8 +42,9 @@ sin sección (el presupuesto usa la suya); sólo corrige un valor que el cuadro 
 no eligió. Cuando el concreto y el acero quedan con secciones distintas, se dice."""
 
 import hashlib
+import math
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, get_args
@@ -67,7 +68,7 @@ from klave_engine.estructura.armado import (
     Parrilla,
     parsear_armado,
 )
-from klave_engine.estructura.dato import Dato, elegir
+from klave_engine.estructura.dato import Dato, _clave, elegir
 from klave_engine.estructura.definiciones import (
     Definicion,
     construir_definiciones,
@@ -78,6 +79,7 @@ from klave_engine.estructura.elementos import (
     Elemento,
     construir_elementos,
     resolver_todos,
+    variante_de,
 )
 from klave_engine.estructura.reglas import Reglas, leer_reglas
 from klave_engine.estructura.verificaciones import (
@@ -105,6 +107,14 @@ _NOMBRE_DEL_CAMPO = {
     "longitudinales": "varillas longitudinales",
     "estribos": "estribos",
     "parrillas": "parrillas",
+}
+NOMBRE_DEL_CAMPO = _NOMBRE_DEL_CAMPO  # cómo se nombra cada campo decidible (la API lo dice)
+_CON_ARTICULO = {
+    "seccion_cm": "la sección",
+    "longitud_m": "la longitud",
+    "longitudinales": "las varillas longitudinales",
+    "estribos": "los estribos",
+    "parrillas": "las parrillas",
 }
 # Lo que dice un aviso de decisión (se rehace en cada aplicación: aplicar es idempotente).
 _DE_DECISION = "Decisión"
@@ -576,6 +586,254 @@ def _vigentes(decisiones: list[Decision], config: TextPatternConfig) -> list[Dec
     return list(por_llave.values())
 
 
+def decisiones_vigentes(decisiones: list[Decision], config: TextPatternConfig) -> list[Decision]:
+    """Las que valen: una por marca (normalizada con ``config``), campo y variante, la más
+    reciente. Un modelo está al día con las decisiones guardadas si son sus ``decisiones``."""
+    return _vigentes(decisiones, config)
+
+
+def quitar_decision(
+    control_dir: Path,
+    marca: str,
+    campo: str,
+    para_muro_cm: float | None = None,
+    *,
+    config: TextPatternConfig | None = None,
+) -> list[Decision]:
+    """Quita las decisiones guardadas de esa marca (escrita como sea: se normaliza como al
+    guardarla y, con ``config``, como la lectura), campo y variante; devuelve las quitadas (vacío
+    si no había). El escenario del recálculo ya no está al día y se borra, como al guardar. Las
+    entradas que no se pueden leer se conservan tal cual (``leer_decisiones`` las dice)."""
+    ruta = control_dir / DECISIONES_FILENAME
+    if not ruta.exists():
+        return []
+    try:
+        crudas = read_json(ruta)
+    except (OSError, ValueError):
+        return []
+    if not isinstance(crudas, list):
+        return []
+    buscadas = {_llave(marca, campo, para_muro_cm), _llave(marca, campo, para_muro_cm, config)}
+    quitadas: list[Decision] = []
+    conservadas: list[Any] = []
+    for c in crudas:
+        try:
+            d = Decision.model_validate(c)
+        except ValidationError:
+            conservadas.append(c)
+            continue
+        llaves = {
+            _llave(d.marca, d.campo, d.para_muro_cm),
+            _llave(d.marca, d.campo, d.para_muro_cm, config),
+        }
+        if llaves & buscadas:
+            quitadas.append(d)
+        else:
+            conservadas.append(c)
+    if quitadas:
+        write_json(ruta, conservadas)
+        (control_dir / ESTRUCTURA_DERIVADA_FILENAME).unlink(missing_ok=True)
+    return quitadas
+
+
+_UNA: dict[str, str] = {
+    "castillo": "un castillo",
+    "columna": "una columna",
+    "trabe": "una trabe",
+    "contratrabe": "una contratrabe",
+    "zapata": "una zapata",
+    "pilote": "un pilote",
+    "muro_concreto": "un muro de concreto",
+    "dala": "una dala",
+    "cerramiento": "un cerramiento",
+    "dado": "un dado",
+}
+
+
+def _un(familia: str) -> str:
+    return _UNA.get(familia, f"la familia {familia}")
+
+
+@dataclass
+class _Revisada:
+    """Lo que una decisión alcanza en la lectura (``_revisar``), o ``aviso``: por qué no se
+    aplica, dicho entero."""
+
+    marca: str
+    definicion: Definicion | None = None
+    colocadas: list[Elemento] = field(default_factory=list)
+    familia: str = ""
+    valor: Any = None
+    variante: Definicion | None = None
+    aviso: str | None = None
+
+
+def _revisar(
+    d: Decision,
+    por_marca: dict[str, Definicion],
+    elementos: list[Elemento],
+    config: TextPatternConfig,
+    *,
+    guardada: bool,
+) -> _Revisada:
+    """La única revisión de una decisión, para aplicarla (``guardada``: ya está en el archivo) y
+    para la API antes de guardarla (``revisar_decision``): las dos dicen lo mismo con las mismas
+    palabras. Una marca que no está ni definida ni colocada, un valor que no sirve, lo que concreto
+    y acero no pueden tomar igual (R237), un campo que la familia no mide, una variante que la
+    marca no tiene (R239)."""
+    marca = normalizar_marca(d.marca, config) if d.marca.strip() else ""
+    nombre = _NOMBRE_DEL_CAMPO[d.campo]
+    definicion = por_marca.get(marca)
+    colocadas = [x for x in elementos if marca and x.marca == marca]
+    if definicion is None and not colocadas:
+        if guardada:
+            cola = (
+                "la marca ya no está en esta lectura (ni definida ni colocada); se conserva y no "
+                "se aplica"
+            )
+        else:
+            cola = "la marca no está en esta lectura (ni definida ni colocada); no se guarda"
+        return _Revisada(
+            marca,
+            aviso=f"{_DE_DECISION} sobre {d.marca or '(sin marca)'} ({nombre}"
+            + (f", {d.actor}" if d.actor else "")
+            + f"): {cola}",
+        )
+    familia = definicion.familia if definicion is not None else colocadas[0].familia
+    quien = f"{_DE_DECISION} sobre {marca} ({nombre})"
+    try:
+        valor = _valor_de_decision(d.campo, d.valor, familia)
+        _se_puede_decidir(d, familia, colocadas, definicion)
+    except ValueError as error:
+        return _Revisada(
+            marca, definicion, colocadas, familia, aviso=f"{quien}: {error}; no se aplica"
+        )
+    variante = None
+    if definicion is not None and d.para_muro_cm is not None:
+        variante = next(
+            (
+                v
+                for v in definicion.variantes
+                if v.para_muro_cm is not None
+                and abs(v.para_muro_cm - d.para_muro_cm) <= _TOLERANCIA_DE_MURO_CM
+            ),
+            None,
+        )
+        if variante is None:
+            return _Revisada(
+                marca,
+                definicion,
+                colocadas,
+                familia,
+                aviso=f"{quien}: {marca} no tiene una variante para muros de "
+                f"{_cm(d.para_muro_cm)} cm; no se aplica",
+            )
+    return _Revisada(marca, definicion, colocadas, familia, valor, variante)
+
+
+@dataclass
+class RevisionDeDecision:
+    """Lo que la API sabe de una decisión antes de guardarla (``revisar_decision``).
+
+    ``rechazo``: el aviso con que el modelo no la aplicaría (``None``: se aplica). ``valor``: el
+    valor en la forma del modelo. ``antes``: lo que el campo tiene ahora en la parte que la
+    decisión alcanza (la definición de la marca o su variante; en una marca sin definir, su
+    colocación). ``del_plano``: los valores que el plano da y la decisión reemplaza, en esa parte
+    y en las colocaciones que la toman (con sus alternativas); si hay alguno, decidir otro valor
+    necesita una nota, y ``nota_requerida`` dice por qué."""
+
+    marca: str
+    rechazo: str | None = None
+    valor: Any = None
+    antes: Dato | None = None
+    del_plano: list[Dato] = field(default_factory=list)
+    nota_requerida: str | None = None
+
+
+def revisar_decision(e: Estructura, d: Decision) -> RevisionDeDecision:
+    """La decisión ``d`` contra el modelo ``e`` antes de guardarla: si el modelo la aplicaría (y,
+    si no, su aviso, con las mismas palabras que al aplicarla), qué reemplaza y si cambia lo que
+    dice el plano."""
+    por_marca = {x.marca: x for x in e.definiciones}
+    r = _revisar(d, por_marca, e.elementos, e.patrones, guardada=False)
+    if r.aviso is not None:
+        return RevisionDeDecision(marca=r.marca or d.marca.strip(), rechazo=r.aviso)
+    parte = r.variante or r.definicion
+    if r.definicion is not None and r.definicion.variantes:
+        # R239: sólo las colocaciones de esa variante, o (sin variante) las que no resolvieron la
+        # suya; las demás conservan la de su muro.
+        muro = d.para_muro_cm
+        alcanzadas = [
+            x
+            for x in r.colocadas
+            if (
+                variante_de(x) is None
+                if muro is None
+                else (v := variante_de(x)) is not None and abs(v - muro) <= _TOLERANCIA_DE_MURO_CM
+            )
+        ]
+    else:
+        alcanzadas = r.colocadas
+    de_la_parte = getattr(parte, d.campo) if parte is not None else None
+    de_las_colocaciones = [getattr(x, d.campo) for x in alcanzadas]
+    antes = (
+        de_la_parte
+        if parte is not None
+        else next((x for x in de_las_colocaciones if x is not None), None)
+    )
+    del_plano = _del_plano([de_la_parte, *de_las_colocaciones])
+    nota = None
+    if del_plano:
+        lista = "; ".join(_dicho(d.campo, x) for x in del_plano[:6])
+        mas = f"; y {len(del_plano) - 6} más" if len(del_plano) > 6 else ""
+        nota = (
+            f"{_DE_DECISION} sobre {r.marca} ({_NOMBRE_DEL_CAMPO[d.campo]}): el plano dice "
+            f"{lista}{mas}. Decidir otro valor necesita una nota: de dónde sale o quién lo "
+            "confirmó."
+        )
+    return RevisionDeDecision(
+        marca=r.marca,
+        valor=r.valor,
+        antes=antes,
+        del_plano=del_plano,
+        nota_requerida=nota,
+    )
+
+
+def _del_plano(datos: list[Dato | None]) -> list[Dato]:
+    """Los valores que dice el plano (``_DEL_PLANO``, con valor y legibles: un texto que no se
+    leyó, o una sección dibujada que no se encontró, no es un valor que la decisión cambie) entre
+    ``datos`` y todas sus alternativas (también bajo una decisión anterior: lo que el plano dice
+    sigue ahí), cada uno una vez, sin sus alternativas."""
+    vistos: dict[tuple[str, str, str], Dato] = {}
+    pendientes = [x for x in datos if x is not None]
+    while pendientes:
+        x = pendientes.pop(0)
+        pendientes.extend(x.alternativas)
+        if x.fuente in _DEL_PLANO and not x.ilegible and x.valor is not None:
+            llave = (_clave(x.valor), x.fuente, x.hoja)
+            vistos.setdefault(llave, x.model_copy(update={"alternativas": []}))
+    return list(vistos.values())
+
+
+def _dicho(campo: str, x: Dato) -> str:
+    """Un valor del plano como se dice en un mensaje: «20x30 cm (cuadro, ES-200)»."""
+    if campo == "seccion_cm":
+        try:
+            texto = _seccion_texto(x.valor) + ("" if isinstance(x.valor, dict) else " cm")
+        except (TypeError, ValueError, KeyError, IndexError):
+            texto = x.texto or str(x.valor)
+    elif campo == "longitud_m" and _numero(x.valor) is not None:
+        texto = f"{float(x.valor):g} m"
+    else:
+        texto = f"«{x.texto}»" if x.texto else str(x.valor)
+    donde = f", {x.hoja}" if x.hoja else ""
+    return f"{texto} ({_FUENTE_EN_PALABRAS.get(x.fuente, x.fuente)}{donde})"
+
+
+_FUENTE_EN_PALABRAS = {"seccion_dibujada": "sección dibujada"}
+
+
 def aplicar_decisiones(
     e: Estructura,
     decisiones: list[Decision],
@@ -616,47 +874,18 @@ def aplicar_decisiones(
     en_colocaciones: dict[str, dict[str, Dato]] = {}
     con_variante: dict[tuple[str, str], list[Decision]] = {}
     for d in vigentes:
-        marca = normalizar_marca(d.marca, config) if d.marca.strip() else ""
-        nombre = _NOMBRE_DEL_CAMPO[d.campo]
-        definicion = por_marca.get(marca)
-        colocadas = [x for x in salida.elementos if marca and x.marca == marca]
-        if definicion is None and not colocadas:
-            avisos.append(
-                f"{_DE_DECISION} sobre {d.marca or '(sin marca)'} ({nombre}"
-                + (f", {d.actor}" if d.actor else "")
-                + "): la marca ya no está en esta lectura (ni definida ni colocada); se "
-                "conserva y no se aplica"
-            )
+        r = _revisar(d, por_marca, salida.elementos, config, guardada=True)
+        if r.aviso is not None:
+            avisos.append(r.aviso)
             continue
-        familia = definicion.familia if definicion is not None else colocadas[0].familia
-        quien = f"{_DE_DECISION} sobre {marca} ({nombre})"
-        try:
-            valor = _valor_de_decision(d.campo, d.valor, familia)
-            _se_puede_decidir(d, familia, colocadas, definicion)
-        except ValueError as error:
-            avisos.append(f"{quien}: {error}; no se aplica")
-            continue
-        humano = Dato(valor=valor, fuente="humano", texto=_texto_de_decision(d))
+        marca, definicion = r.marca, r.definicion
+        humano = Dato(valor=r.valor, fuente="humano", texto=_texto_de_decision(d))
         if definicion is None:
             en_colocaciones.setdefault(marca, {})[d.campo] = humano
             continue
-        if d.para_muro_cm is not None:
+        if r.variante is not None:
             # R239: la variante que la decisión nombra, y sólo ella.
-            variante = next(
-                (
-                    v
-                    for v in definicion.variantes
-                    if v.para_muro_cm is not None
-                    and abs(v.para_muro_cm - d.para_muro_cm) <= _TOLERANCIA_DE_MURO_CM
-                ),
-                None,
-            )
-            if variante is None:
-                avisos.append(
-                    f"{quien}: {marca} no tiene una variante para muros de "
-                    f"{_cm(d.para_muro_cm)} cm; no se aplica"
-                )
-                continue
+            variante = r.variante
             setattr(variante, d.campo, _decidido(humano, getattr(variante, d.campo)))
             con_variante.setdefault((marca, d.campo), []).append(d)
         else:
@@ -768,9 +997,16 @@ def _se_puede_decidir(
     """``ValueError`` con por qué no se aplica una decisión que concreto y acero no pueden tomar
     igual (R237): la altura de un castillo o una columna (el concreto se mide por entrepiso,
     E1), una longitud de marca para vigas cuyos claros medidos no son iguales, una variante en
-    una marca sin variantes."""
+    una marca sin variantes; un campo que la familia no mide (``CRITICOS``)."""
     if d.campo == "longitud_m" and familia in _CON_ALTURA:
-        raise ValueError(f"la altura de un {familia} se decide por entrepiso (pendiente)")
+        raise ValueError(f"la altura de {_un(familia)} se decide por entrepiso (pendiente)")
+    criticos = CRITICOS.get(familia)
+    if criticos is not None and d.campo not in criticos:
+        # Un campo que nada de la familia mide: la decisión no movería nada, y se diría aplicada.
+        raise ValueError(
+            f"el modelo no lee {_CON_ARTICULO[d.campo]} de {_un(familia)}: la decisión no movería "
+            "nada"
+        )
     if d.campo == "longitud_m" and familia in _VIGAS:
         claros = sorted(
             {
@@ -791,25 +1027,49 @@ def _se_puede_decidir(
 
 
 def _numero(v: Any) -> float | None:
+    """Un número finito (``NaN`` e infinito no son medidas), o ``None``."""
     if isinstance(v, bool):
         return None
     if isinstance(v, int | float):
-        return float(v)
-    if isinstance(v, str):
+        numero = float(v)
+    elif isinstance(v, str):
         try:
-            return float(v.strip().replace(",", "."))
+            numero = float(v.strip().replace(",", "."))
         except ValueError:
             return None
-    return None
+    else:
+        return None
+    return numero if math.isfinite(numero) else None
+
+
+def _finito(valor: Any) -> bool:
+    """Si ningún número dentro de ``valor`` es ``NaN`` o infinito (un JSON con ``NaN`` se lee en
+    Python; escrito, ya no es JSON)."""
+    if isinstance(valor, float):
+        return math.isfinite(valor)
+    if isinstance(valor, dict):
+        return all(_finito(v) for v in valor.values())
+    if isinstance(valor, list | tuple):
+        return all(_finito(v) for v in valor)
+    return True
+
+
+# Lo que mide un elemento, de sobra: más allá es un error de captura, nunca una medida.
+_LADO_MAXIMO_CM = 2000.0
+_LONGITUD_MAXIMA_M = 200.0
 
 
 def _valor_de_decision(campo: str, valor: Any, familia: str) -> Any:
     """El valor de una decisión en la forma del modelo, o ``ValueError`` con por qué no sirve."""
+    if not _finito(valor):
+        raise ValueError(f"el valor lleva un número que no es finito ({valor!r})")
     if campo == "seccion_cm":
         if isinstance(valor, dict):
             area = _numero(valor.get("area_cm2"))
             if area is None or area <= 0:
                 raise ValueError(f"el área de la sección no es un número positivo ({valor!r})")
+            if area > _LADO_MAXIMO_CM**2:
+                raise ValueError(f"el área {area:g} cm² está fuera de lo que mide un elemento")
             return {"area_cm2": area}
         lados = valor.lower().split("x") if isinstance(valor, str) else valor
         if not isinstance(lados, list | tuple) or len(lados) != 2:
@@ -817,12 +1077,22 @@ def _valor_de_decision(campo: str, valor: Any, familia: str) -> Any:
         b, h = (_numero(x) for x in lados)
         if b is None or h is None or b <= 0 or h <= 0:
             raise ValueError(f"la sección no es b×h en cm ({valor!r})")
+        if max(b, h) > _LADO_MAXIMO_CM:
+            raise ValueError(
+                f"la sección {_cm(b)}x{_cm(h)} cm está fuera de lo que mide un elemento (cada lado "
+                f"hasta {_LADO_MAXIMO_CM:g} cm)"
+            )
         par = [int(x) if float(x).is_integer() else x for x in (b, h)]
         return sorted(par) if familia in FAMILIAS_QUE_SE_ORDENAN else par
     if campo == "longitud_m":
         largo = _numero(valor)
         if largo is None or largo <= 0:
             raise ValueError(f"la longitud no es un número positivo de metros ({valor!r})")
+        if largo > _LONGITUD_MAXIMA_M:
+            raise ValueError(
+                f"la longitud {largo:g} m está fuera de lo que mide un elemento (hasta "
+                f"{_LONGITUD_MAXIMA_M:g} m)"
+            )
         return largo
     if campo == "parrillas" and familia not in FAMILIAS_CON_PARRILLA:
         raise ValueError(f"la familia {familia} no lleva parrillas")

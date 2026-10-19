@@ -1565,3 +1565,200 @@ def test_a_non_rectangular_placement_carries_its_contours_perimeter():
     )  # fmt: skip
     dato = _contorno_no_rectangular(det, "castillo", 1.0)
     assert dato is not None and dato.valor == {"area_cm2": 2300.0, "perimetro_cm": 230.0}
+
+
+# ------------------------------------------------- Tarea 13: revisar una decisión y quitarla
+
+
+def _como(e, familia):
+    """K-5 vuelta otra familia (definición y colocaciones)."""
+    e.definiciones = [d.model_copy(update={"familia": familia}) for d in e.definiciones]
+    e.elementos = [x.model_copy(update={"familia": familia}) for x in e.elementos]
+    return e
+
+
+def _como_zapata(e):
+    """Una zapata: una familia que no lee estribos ni longitud."""
+    return _como(e, "zapata")
+
+
+@pytest.mark.parametrize(
+    ("hacer", "decision", "motivo"),
+    [
+        (lambda: _estructura_k5_conflict(niveles=True), dict(marca="K-5", campo="longitud_m",
+         valor=3.2), "la altura de un castillo se decide por entrepiso (pendiente)"),
+        (lambda: _como(_estructura_k5_conflict(niveles=True), "columna"), dict(marca="K-5",
+         campo="longitud_m", valor=3.2), "la altura de una columna se decide por entrepiso"),
+        (lambda: _estructura_k5_conflict(niveles=True), dict(marca="K-5", campo="seccion_cm",
+         valor=[20]), "la sección no es b×h en cm"),
+        (lambda: _estructura_k5_conflict(niveles=True), dict(marca="K-5", campo="seccion_cm",
+         valor=["nan", 40]), "la sección no es b×h en cm"),
+        (lambda: _estructura_k5_conflict(niveles=True), dict(marca="K-5", campo="longitud_m",
+         valor="inf"), "la longitud no es un número positivo de metros"),
+        (lambda: _estructura_k5_conflict(niveles=True), dict(marca="K-5", campo="longitud_m",
+         valor=500), "la longitud 500 m está fuera de lo que mide un elemento"),
+        (lambda: _estructura_k5_conflict(niveles=True), dict(marca="K-5", campo="seccion_cm",
+         valor=[float("nan"), 40]), "un número que no es finito"),
+        (lambda: _estructura_k5_conflict(niveles=True), dict(marca="K-5", campo="seccion_cm",
+         valor={"area_cm2": float("inf")}), "un número que no es finito"),
+        (lambda: _estructura_k5_conflict(niveles=True), dict(marca="K-5", campo="seccion_cm",
+         valor=[20, 4000]), "fuera de lo que mide un elemento"),
+        (lambda: _estructura_k5_conflict(niveles=True), dict(marca="K-5", campo="seccion_cm",
+         valor={"area_cm2": 5e6}), "fuera de lo que mide un elemento"),
+        (lambda: _estructura_k5_conflict(niveles=True), dict(marca="K-5", campo="seccion_cm",
+         valor=[20, 40], para_muro_cm=15), "la marca no tiene variantes por muro"),
+        (_con_variantes, dict(marca="K-5", campo="seccion_cm", valor=[20, 40], para_muro_cm=30),
+         "K-5 no tiene una variante para muros de 30 cm"),
+        (lambda: _como_zapata(_estructura_k5_conflict(niveles=True)), dict(marca="K-5",
+         campo="estribos", valor="E#3@15"), "el modelo no lee los estribos de una zapata"),
+        (lambda: _como_zapata(_estructura_k5_conflict(niveles=True)), dict(marca="K-5",
+         campo="longitud_m", valor=2.0), "el modelo no lee la longitud de una zapata"),
+    ],
+)  # fmt: skip
+def test_a_refusal_before_saving_is_the_aviso_the_model_gives_when_applying(
+    hacer, decision, motivo
+):
+    from klave_engine.estructura.modelo import revisar_decision
+
+    e = hacer()
+    d = Decision(**decision, fecha=_now())
+    r = revisar_decision(e, d)
+    assert r.rechazo is not None and motivo in r.rechazo and r.rechazo.endswith("; no se aplica")
+    # the same words the model writes when the decision is in the file
+    assert r.rechazo in aplicar_decisiones(e, [d]).avisos
+
+
+def test_a_mark_the_reading_does_not_have_is_refused_before_it_is_saved():
+    from klave_engine.estructura.modelo import revisar_decision
+
+    e = _estructura_k5_conflict(niveles=True)
+    d = Decision(marca="K-99", campo="seccion_cm", valor=[20, 40], actor="Ana", fecha=_now())
+    r = revisar_decision(e, d)
+    assert r.rechazo == (
+        "Decisión sobre K-99 (sección, Ana): la marca no está en esta lectura (ni definida ni "
+        "colocada); no se guarda"
+    )
+    # once saved (an older reading had it), it is kept and said, never applied
+    assert any(
+        a.startswith("Decisión sobre K-99 (sección, Ana): la marca ya no está")
+        and a.endswith("se conserva y no se aplica")
+        for a in aplicar_decisiones(e, [d]).avisos
+    )
+
+
+def test_what_a_decision_replaces_and_whether_it_needs_a_note():
+    from klave_engine.estructura.modelo import revisar_decision
+
+    e = _estructura_k5_conflict(niveles=True)
+    d = Decision(marca="K5", campo="seccion_cm", valor="20x45", fecha=_now())
+    r = revisar_decision(e, d)
+    assert r.rechazo is None and r.marca == "K-5" and r.valor == [20, 45]
+    assert r.antes is not None and r.antes.fuente == "cuadro" and r.antes.en_conflicto
+    assert {(tuple(x.valor), x.fuente, x.hoja) for x in r.del_plano} == {
+        ((20, 30), "cuadro", "ES-200"),
+        ((20, 40), "cuadro", "ES-400"),
+    }
+    assert all(not x.alternativas for x in r.del_plano)
+    assert "20x30 cm (cuadro, ES-200)" in r.nota_requerida
+    assert "20x40 cm (cuadro, ES-400)" in r.nota_requerida
+    # under an earlier decision the drawing still says what it says
+    decidida = aplicar_decisiones(
+        e, [Decision(marca="K-5", campo="seccion_cm", valor=[20, 40], nota="PA", fecha=_now())]
+    )
+    r = revisar_decision(decidida, d)
+    assert r.antes.fuente == "humano" and r.antes.valor == [20, 40]
+    assert {tuple(x.valor) for x in r.del_plano} >= {(20, 30), (20, 40)}
+    # what Klave supposed is no drawing value: no note
+    d9 = Decision(marca="K-9", campo="seccion_cm", valor=[20, 20], fecha=_now())
+    r9 = revisar_decision(_estructura_k5_conflict(con_k9=True, niveles=True), d9)
+    assert r9.rechazo is None and r9.del_plano == [] and r9.nota_requerida is None
+
+
+def test_an_unread_text_is_not_a_drawing_value_to_override():
+    from klave_engine.estructura.modelo import revisar_decision
+
+    e = _estructura_k5_conflict(niveles=True)
+    k5 = _k5(e)
+    sin_leer = Dato(fuente="detalle", ilegible=True, texto="sección dibujada no encontrada")
+    k5.seccion_cm = Dato(valor=[20, 20], fuente="supuesto", texto="s", alternativas=[sin_leer])
+    e.elementos = [x.model_copy(update={"seccion_cm": k5.seccion_cm}) for x in e.elementos]
+    r = revisar_decision(e, Decision(marca="K-5", campo="seccion_cm", valor=[20, 40], fecha=_now()))
+    assert r.rechazo is None and r.del_plano == [] and r.nota_requerida is None
+    # a readable one deep in the alternatives is
+    leido = Dato(valor=[20, 30], fuente="seccion_dibujada", hoja="ES-200", texto="d")
+    k5.seccion_cm = k5.seccion_cm.model_copy(
+        update={"alternativas": [sin_leer.model_copy(update={"alternativas": [leido]})]}
+    )
+    r = revisar_decision(e, Decision(marca="K-5", campo="seccion_cm", valor=[20, 40], fecha=_now()))
+    assert [tuple(x.valor) for x in r.del_plano] == [(20, 30)]
+    # the source in words, as the office says it
+    assert "el plano dice 20x30 cm (sección dibujada, ES-200)." in r.nota_requerida
+
+
+def test_a_variant_decision_replaces_only_that_variant_and_its_placements():
+    from klave_engine.estructura.modelo import revisar_decision
+
+    e = _con_variantes()
+    quince = Decision(marca="K-5", campo="seccion_cm", valor=[15, 25], para_muro_cm=15,
+                      fecha=_now())  # fmt: skip
+    r = revisar_decision(e, quince)
+    assert r.antes.valor == [15, 20] and {tuple(x.valor) for x in r.del_plano} == {(15, 20)}
+    marca = Decision(marca="K-5", campo="seccion_cm", valor=[25, 25], fecha=_now())
+    r = revisar_decision(e, marca)
+    # the mark's part: its merged definition and d2 (unresolved); d1 keeps its 15 cm variant, so
+    # its 15x20 is not what this decision replaces
+    assert r.antes == _k5(e).seccion_cm
+    assert {tuple(x.valor) for x in r.del_plano} == {(20, 30), (20, 40)}
+
+
+def test_undo_removes_a_decision_as_it_was_written_and_keeps_what_does_not_read(tmp_path):
+    from klave_engine.estructura.modelo import quitar_decision
+
+    guardar_decision(tmp_path, Decision(marca="K-5", campo="seccion_cm", valor=[20, 40],
+                                        fecha=_FECHA))  # fmt: skip
+    guardar_decision(tmp_path, Decision(marca="CI", campo="seccion_cm", valor=[15, 25],
+                                        para_muro_cm=15, fecha=_FECHA))  # fmt: skip
+    guardar_decision(tmp_path, Decision(marca="CI", campo="seccion_cm", valor=[25, 25],
+                                        fecha=_FECHA))  # fmt: skip
+    write_json(tmp_path / DECISIONES_FILENAME,
+               [*read_json(tmp_path / DECISIONES_FILENAME), {"marca": "K-5"}])  # fmt: skip
+    (tmp_path / ESTRUCTURA_DERIVADA_FILENAME).write_text("{}")
+    assert quitar_decision(tmp_path, "K-5", "estribos") == []
+    assert (tmp_path / ESTRUCTURA_DERIVADA_FILENAME).exists()  # nothing removed, nothing stale
+    (quitada,) = quitar_decision(tmp_path, "k5", "seccion_cm")
+    assert quitada.valor == [20, 40]
+    assert not (tmp_path / ESTRUCTURA_DERIVADA_FILENAME).exists()
+    # the variant's decision and the mark's are different keys
+    (quitada,) = quitar_decision(tmp_path, "CI", "seccion_cm", 15.0)
+    assert quitada.para_muro_cm == 15.0
+    restantes = read_json(tmp_path / DECISIONES_FILENAME)
+    assert [(c.get("marca"), c.get("para_muro_cm")) for c in restantes] == [
+        ("CI", None), ("K-5", None),
+    ]  # fmt: skip
+    assert restantes[1] == {"marca": "K-5"}  # the unreadable entry is kept as it was
+    # a mark the project's own tags write another way («MX1» is MX-1 for this project)
+    proyecto = TextPatternConfig(column_tag=[r"^MX\d$"], beam_tag=[])
+    guardar_decision(tmp_path, Decision(marca="MX1", campo="estribos", valor="E#3@15",
+                                        fecha=_FECHA))  # fmt: skip
+    assert quitar_decision(tmp_path, "MX-1", "estribos") == []
+    (quitada,) = quitar_decision(tmp_path, "MX-1", "estribos", config=proyecto)
+    assert quitada.marca == "MX1"
+    # and the other way: saved as MX-1, asked for as the project writes it
+    guardar_decision(tmp_path, Decision(marca="MX-1", campo="estribos", valor="E#3@15",
+                                        fecha=_FECHA))  # fmt: skip
+    assert quitar_decision(tmp_path, "MX1", "estribos") == []
+    (quitada,) = quitar_decision(tmp_path, "MX1", "estribos", config=proyecto)
+    assert quitada.marca == "MX-1"
+    (tmp_path / DECISIONES_FILENAME).write_text("{roto")
+    assert quitar_decision(tmp_path, "CI", "seccion_cm") == []
+    assert quitar_decision(tmp_path / "otra", "CI", "seccion_cm") == []
+
+
+def test_the_current_decisions_are_one_per_mark_field_and_variant():
+    from klave_engine.estructura.modelo import decisiones_vigentes
+
+    a = Decision(marca="K-5", campo="seccion_cm", valor=[20, 30], fecha=_FECHA)
+    b = Decision(marca="K5", campo="seccion_cm", valor=[20, 40],
+                 fecha=_FECHA.replace(hour=13))  # fmt: skip
+    c = Decision(marca="K-5", campo="seccion_cm", valor=[15, 20], para_muro_cm=15, fecha=_FECHA)
+    assert decisiones_vigentes([a, b, c], TextPatternConfig()) == [b, c]
