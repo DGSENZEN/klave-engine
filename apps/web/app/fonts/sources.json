@@ -1,0 +1,20 @@
+[
+  {
+    "family": "Geist",
+    "file": "Geist.woff2",
+    "source": "https://fonts.gstatic.com/s/geist/v5/gyByhwUxId8gMEwcGFU.woff2",
+    "license": "https://raw.githubusercontent.com/google/fonts/main/ofl/geist/OFL.txt"
+  },
+  {
+    "family": "Geist Mono",
+    "file": "GeistMono.woff2",
+    "source": "https://fonts.gstatic.com/s/geistmono/v6/or3nQ6H-1_WfwkMZI_qYFrcdmg.woff2",
+    "license": "https://raw.githubusercontent.com/google/fonts/main/ofl/geistmono/OFL.txt"
+  },
+  {
+    "family": "Space Grotesk",
+    "file": "SpaceGrotesk.woff2",
+    "source": "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2",
+    "license": "https://raw.githubusercontent.com/google/fonts/main/ofl/spacegrotesk/OFL.txt"
+  }
+]
