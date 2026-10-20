@@ -1131,6 +1131,9 @@ def _donde_se_titula(ctx: _Contexto, titulos: list[_Titulo]) -> str:
 # Las capas de una losa: lo escrito en ellas son marcas de nervaduras, viguetas o tableros.
 _CAPA_DE_LOSA = re.compile(r"LOSA|NERVAD|VIGUETA", re.IGNORECASE)
 _FICHA_DE_NERVADURA = re.compile(r"^[A-Z]{1,3}-?\d{1,2}[A-Z]?'?$")
+# R253: en la capa de una losa, dos letras sin número también son marcas de nervadura (Marina
+# ES-400: NA…NG; ES-200: WI, XI, XO, una W1/X1/X0 escrita con letra); su familia es la primera.
+_FICHA_DE_NERVADURA_SIN_NUMERO = re.compile(r"^[A-Z]{2}$")
 
 
 def _marcas_de_nervadura(
@@ -1145,10 +1148,12 @@ def _marcas_de_nervadura(
         if not e.is_textual or not e.text:
             continue
         texto = _una_linea(e.text).upper()
-        if not _FICHA_DE_NERVADURA.match(texto) or not _en_planta(ctx, e):
+        de_losa = bool(_CAPA_DE_LOSA.search(e.layer or ""))
+        sin_numero = de_losa and bool(_FICHA_DE_NERVADURA_SIN_NUMERO.match(texto))
+        if not (_FICHA_DE_NERVADURA.match(texto) or sin_numero) or not _en_planta(ctx, e):
             continue
-        nombre = normalizar_marca(texto.rstrip("'"), ctx.config)
-        if _CAPA_DE_LOSA.search(e.layer or "") or nombre in nervaduras:
+        nombre = texto if sin_numero else normalizar_marca(texto.rstrip("'"), ctx.config)
+        if de_losa or nombre in nervaduras:
             salida[nombre].append(e)
     return salida
 
@@ -1156,7 +1161,9 @@ def _marcas_de_nervadura(
 def _nervaduras(ctx: _Contexto, marcas: dict[str, list[NormalizedEntity]]) -> list[Verificacion]:
     familias: dict[str, dict[str, list[NormalizedEntity]]] = defaultdict(dict)
     for nombre, textos in marcas.items():
-        prefijo = re.match(r"[A-Z]+", nombre)
+        # Sin número («NA», «WI»): la familia es su primera letra (R253).
+        con_numero = re.search(r"\d", nombre)
+        prefijo = re.match(r"[A-Z]+" if con_numero else r"[A-Z]", nombre)
         familias[prefijo.group(0) if prefijo else nombre][nombre] = textos
     salida = []
     for letra, de_ella in sorted(familias.items()):
@@ -3272,6 +3279,10 @@ _DISTRIBUCION = re.compile(
 )
 
 
+# R253: lo que hace de una nota un armado: una varilla o un estribo («#», «E#») o una separación.
+_TOKEN_DE_ACERO = re.compile(r"[#@]")
+
+
 def _clase_de_texto(texto: str) -> str:
     plano = _una_linea(texto).upper()
     if _DISTRIBUCION.match(plano):
@@ -3291,7 +3302,11 @@ def _rechazos_por_hoja(ctx: _Contexto, citados: set[str]) -> list[Verificacion]:
     for r in ctx.inv.rechazos:
         if r.entidad_id in citados:
             continue
-        grupos[(r.hoja or "sin hoja", r.motivo, _clase_de_texto(r.texto))].append(r)
+        clase = _clase_de_texto(r.texto)
+        if clase == "nota" and not _TOKEN_DE_ACERO.search(r.texto):
+            # R253: una nota sin varilla ni estribo («FORMATO 20X20» de un piso) no es armado.
+            continue
+        grupos[(r.hoja or "sin hoja", r.motivo, clase)].append(r)
     salida = []
     for (hoja, motivo, clase), rechazos in sorted(grupos.items()):
         ejemplos = [ctx.cita(r.entidad_id, r.texto) for r in rechazos]

@@ -205,22 +205,48 @@
       "trabe": {
         "colocaciones": 1,
         "con_definicion": 0,
-        "criticos_total": 4,
-        "criticos_del_plano": 0
+        "criticos_total": 4
       },
       "zapata": {
         "colocaciones": 2,
         "con_definicion": 0,
-        "criticos_total": 6,
-        "criticos_del_plano": 0
+        "criticos_total": 6
+      }
+    },
+    "por_hoja": {
+      "columna": {
+        "drawings/S-101.dxf": 3
+      },
+      "trabe": {
+        "drawings/S-101.dxf": 1
+      },
+      "zapata": {
+        "drawings/S-101.dxf": 2
       }
     },
     "verificaciones": {
       "1/bloquea": 3,
       "1/aviso": 1,
-      "7/bloquea": 1,
       "7/duda": 1
+    },
+    "hallazgos": {
+      "1/bloquea": [
+        "B-1",
+        "C-1",
+        "C-2"
+      ],
+      "1/aviso": [
+        "(sin marca)"
+      ],
+      "7/duda": [
+        "C-1+C-2"
+      ]
+    },
+    "sin_cerca": {
+      "por_familia.trabe.criticos_del_plano": "unidades inferidas, el plano no las declara ($INSUNITS 0, sin cotas): medir el claro depende de la inferencia",
+      "por_familia.zapata.criticos_del_plano": "unidades inferidas, el plano no las declara ($INSUNITS 0, sin cotas): medir la secci\u00f3n depende de la inferencia",
+      "verificaciones.7/bloquea": "unidades inferidas, el plano no las declara: que el claro sea desconocido (bloquea) o medido depende de la inferencia"
     }
   },
-  "notes": "Cerca estructural (tarea 15), verificada en el DXF crudo (10 textos, 3 contornos): 3 etiquetas de columna (C1 \u00d72, C2) en S-COL-TAG, 1 de trabe (B1) en S-BEAM, 2 contornos de zapata sin marca en S-FOOTING; nada definido (ni cuadro, ni detalle, ni nota), sin niveles y sin unidades ($INSUNITS 0): ning\u00fan dato cr\u00edtico sale del plano. Hallazgos: C-1, C-2 y B-1 colocadas sin definir (1/bloquea 3), las 2 zapatas sin marca (1/aviso), el claro de B-1 sin unidades (7/bloquea) y la altura supuesta (7/duda); nada m\u00e1s."
+  "notes": "Cerca estructural (tarea 15), verificada en el DXF crudo (10 textos, 3 contornos): 3 etiquetas de columna (C1 \u00d72, C2) en S-COL-TAG, 1 de trabe (B1) en S-BEAM, 2 contornos de zapata sin marca en S-FOOTING; nada definido (ni cuadro, ni detalle, ni nota), sin niveles y sin unidades ($INSUNITS 0): ning\u00fan dato cr\u00edtico sale del plano. Hallazgos: C-1, C-2 y B-1 colocadas sin definir (1/bloquea 3), las 2 zapatas sin marca (1/aviso), el claro de B-1 sin unidades (7/bloquea) y la altura supuesta (7/duda); nada m\u00e1s. Ronda de arreglos 1 (R249): lo mismo que en torre-reforma-s101 \u2014el mismo dibujo\u2014: criticos_del_plano de trabe y zapata y la verificaci\u00f3n 7/bloquea quedan sin cerca, porque dependen de si el motor acepta las unidades que infiere (confianza 0.55) y el plano no las declara."
 }

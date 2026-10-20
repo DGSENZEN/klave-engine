@@ -10,7 +10,9 @@ so a taller that grew into protected mode keeps every price it had.
 from __future__ import annotations
 
 import shutil
+import sqlite3
 import threading
+from contextlib import closing
 from pathlib import Path
 
 from fastapi import Request
@@ -38,24 +40,28 @@ def request_workspace_id(request: Request | None) -> str | None:
 
 
 def default_workspace_id(settings: Settings) -> str | None:
+    users = get_user_store(settings.users_database_url)
     try:
-        users = get_user_store(settings.users_database_url)
         if not users.has_users():
             return None
-        return str(users.default_workspace()["workspace_id"])
     except UsersDbUnavailable:
+        if settings.env == "production" or users.last_known_has_users:
+            raise
         return None
+    return str(users.default_workspace()["workspace_id"])
 
 
 def project_workspace_id(settings: Settings, project_id: str) -> str | None:
     """The taller a project belongs to; None in open mode."""
+    users = get_user_store(settings.users_database_url)
     try:
-        users = get_user_store(settings.users_database_url)
         if not users.has_users():
             return None
-        return users.project_workspace_id(project_id)
     except UsersDbUnavailable:
+        if settings.env == "production" or users.last_known_has_users:
+            raise
         return None
+    return users.project_workspace_id(project_id)
 
 
 def _adopt_legacy(settings: Settings, workspace_id: str) -> None:
@@ -66,7 +72,15 @@ def _adopt_legacy(settings: Settings, workspace_id: str) -> None:
         if target.exists() or not legacy.exists():
             return
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(legacy, target)
+        # A live catalog can keep committed prices in its WAL. Copying only
+        # the main file loses those edits; SQLite backup includes them.
+        try:
+            with closing(sqlite3.connect(legacy)) as source:
+                with closing(sqlite3.connect(target)) as destination:
+                    source.backup(destination)
+        except Exception:
+            target.unlink(missing_ok=True)
+            raise
         legacy_defaults = settings.data_dir / "taller_defaults.json"
         if legacy_defaults.exists():
             shutil.copy2(

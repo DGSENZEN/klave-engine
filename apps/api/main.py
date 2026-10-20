@@ -1,11 +1,17 @@
 """Klave Engine API. Routes orchestrate; the domain packages do the thinking."""
 
+import math
+import os
 import traceback
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
@@ -16,11 +22,11 @@ from klave_engine.common.logging import configure_logging, get_logger, request_i
 
 from apps.api.auth.account import router as account_router
 from apps.api.auth.invitations import router as invitations_router
-from apps.api.auth.middleware import AccessControlMiddleware, allowed_origins
+from apps.api.auth.middleware import AccessControlMiddleware, allowed_origins, origin_allowed
 from apps.api.auth.recovery import router as recovery_router
 from apps.api.auth.routes import router as auth_router
 from apps.api.events import BUS
-from apps.api.observability import RequestIdMiddleware
+from apps.api.observability import RequestIdMiddleware, redact_request_path
 from apps.api.routes import ai as ai_routes
 from apps.api.routes import (
     cambios,
@@ -53,7 +59,8 @@ from apps.api.routes import versions as version_routes
 # entries itself, but provider keys (GEMINI_API_KEY, ANTHROPIC_API_KEY) are
 # read from os.environ at request time, so load it there too. Real env vars
 # win over the file; a missing file is fine (Docker passes env directly).
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+if os.environ.get("KLAVE_LOAD_DOTENV") != "0":
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
 def _validate_production_config(settings) -> None:
@@ -84,7 +91,26 @@ logger = get_logger("klave.error")
 def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level)
-    app = FastAPI(title="Klave Engine", version="0.2.0")
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        # A crash mid-processing must not leave "Procesando…" forever.
+        from apps.api.auth.store import get_user_store
+        from apps.api.dependencies import ProjectStore
+        from apps.api.jobs import JOB_STORE
+
+        try:
+            get_user_store(settings.users_database_url).initialize_schema()
+        except Exception:  # noqa: BLE001 — liveness remains available during DB recovery
+            logger.warning("Users database unavailable during startup")
+
+        try:
+            JOB_STORE.repair_orphans(ProjectStore(settings).roots(), settings)
+        except Exception:  # noqa: BLE001 — repair is best-effort at boot
+            pass
+        yield
+
+    app = FastAPI(title="Klave Engine", version="0.2.0", lifespan=lifespan)
 
     # Session-based access control. Added before CORS so CORS wraps it and
     # 401/403 responses still carry CORS headers the browser can read.
@@ -113,21 +139,10 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         # Downloads go through fetch so a failed export is an error in the
         # page, not a JSON page; the browser needs the filename exposed.
-        expose_headers=["Content-Disposition"],
+        expose_headers=["Content-Disposition", "X-Request-Id"],
     )
     if not dev:
         _validate_production_config(settings)
-
-    @app.on_event("startup")
-    def _repair_interrupted_jobs() -> None:
-        # A crash mid-processing must not leave "Procesando…" forever.
-        from apps.api.dependencies import ProjectStore
-        from apps.api.jobs import JOB_STORE
-
-        try:
-            JOB_STORE.repair_orphans(ProjectStore(settings).roots(), settings)
-        except Exception:  # noqa: BLE001 — repair is best-effort at boot
-            pass
 
     # Lo que pasa en cada proyecto queda guardado para medir el piloto.
     from apps.api.actividad import escucha
@@ -173,6 +188,20 @@ def create_app() -> FastAPI:
     app.include_router(propuestas.router)
     app.include_router(piloto.router)
 
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request_handler(
+        request: Request, exc: RequestValidationError,
+    ) -> JSONResponse:
+        # Validation errors echo the rejected input. NaN/infinity cannot be
+        # emitted as JSON numbers, or a correct 422 becomes a serialization 500.
+        return JSONResponse(
+            status_code=422,
+            content={"detail": jsonable_encoder(
+                exc.errors(),
+                custom_encoder={float: lambda value: value if math.isfinite(value) else str(value)},
+            )},
+        )
+
     @app.exception_handler(KlaveEngineError)
     async def klave_error_handler(request: Request, exc: KlaveEngineError) -> JSONResponse:
         return JSONResponse(
@@ -187,12 +216,14 @@ def create_app() -> FastAPI:
         Sin esto, un DWG que tumba al parser a las once de la noche se sabe
         cuando el taller escribe un correo — si lo escribe. La traza se queda
         en la máquina del taller: sus planos son de sus clientes."""
+        reference = getattr(request.state, "request_id", None) or request_id_var.get() or ""
+        safe_path = redact_request_path(request.url.path)
         anotar_error(
             settings.data_dir,
             ErrorRegistrado(
                 ts=datetime.now(UTC).isoformat(),
-                request_id=request_id_var.get() or "",
-                ruta=request.url.path,
+                request_id=reference,
+                ruta=safe_path,
                 metodo=request.method,
                 tipo=type(exc).__name__,
                 mensaje=redactar(str(exc)),
@@ -202,16 +233,27 @@ def create_app() -> FastAPI:
                 ),
             ),
         )
-        logger.exception("sin manejar en %s %s", request.method, request.url.path)
+        logger.error("sin manejar en %s %s rid=%s tipo=%s",
+                     request.method, safe_path, reference, type(exc).__name__)
+        headers = {"X-Request-Id": reference}
+        origin = request.headers.get("origin")
+        if origin and origin_allowed(origin):
+            headers.update({
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Expose-Headers": "Content-Disposition, X-Request-Id",
+                "Vary": "Origin",
+            })
         return JSONResponse(
             status_code=500,
+            headers=headers,
             content={
                 "error_type": "error_interno",
                 "message": (
                     "Algo se rompió de nuestro lado y quedó registrado. Si se repite, "
                     "pásale a tu administrador el identificador de esta petición."
                 ),
-                "request_id": request_id_var.get() or "",
+                "request_id": reference,
             },
         )
 

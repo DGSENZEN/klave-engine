@@ -58,7 +58,7 @@ export function OnboardingChecklist({
     {
       key: "first",
       title: "Sube tu primer plano",
-      why: "DXF abre siempre; DWG se convierte con LibreDWG. Todas las hojas de una obra juntas: se leen como un solo conjunto.",
+      why: "Sube las hojas DWG o DXF de una obra juntas. Si un DWG no se puede convertir, expórtalo a DXF desde tu programa de dibujo.",
       href: "",
       linkLabel: "Subir un plano",
       done: onboarding.first_project,
@@ -86,7 +86,7 @@ export function OnboardingChecklist({
       title: "Entrega tu primer Excel",
       why: "Presupuesto → Exportar: Klave con generadores, layouts para OPUS/Neodata, catálogo de licitación con P.U. con letra.",
       href: processed
-        ? `/proyecto/${encodeURIComponent(processed.project_id)}`
+        ? `/proyecto/${encodeURIComponent(processed.project_id)}/presupuesto`
         : "/como-funciona",
       linkLabel: processed ? "Ir al presupuesto" : "Ver la guía de entrega",
       done: onboarding.any_exported,

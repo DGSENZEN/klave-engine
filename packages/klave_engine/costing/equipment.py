@@ -16,10 +16,12 @@ Every symbol is an editable input; the result keeps each line so the APU
 shows the machine's hour the way the reglamento defines it.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class EquipmentParameters(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     vm: float = Field(gt=0, description="Valor de la máquina nueva (sin llantas ni piezas)")
     vr: float = Field(ge=0, description="Valor de rescate")
     ve: float = Field(gt=0, description="Vida económica en horas")

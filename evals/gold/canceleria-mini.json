@@ -90,7 +90,9 @@
   },
   "estructura": {
     "por_familia": {},
+    "por_hoja": {},
     "verificaciones": {},
+    "hallazgos": {},
     "sin_cerca": {
       "verificaciones.10": "su aviso de escaleras sale de \u00abPLANTA CA-15 6 PZAS - ESCALERA ROOF GARDEN\u00bb (2BF5), la etiqueta de un cancel: no es una escalera dibujada; el motor se equivoca y 0 no pasar\u00eda"
     }

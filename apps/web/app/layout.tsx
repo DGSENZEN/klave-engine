@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { ApiBaseWarning } from "@/components/ApiBaseWarning";
 import { CopilotFab } from "@/components/CopilotFab";
+import { SessionRecovery } from "@/components/SessionRecovery";
 import localFont from "next/font/local";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
@@ -52,6 +53,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-full">
         <ApiBaseWarning />
+        <SessionRecovery />
         {children}
         {/* Siempre a la mano, en cualquier pantalla de trabajo. */}
         <CopilotFab />

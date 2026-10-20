@@ -243,21 +243,56 @@
       "trabe": {
         "colocaciones": 3,
         "con_definicion": 0,
-        "criticos_total": 12,
-        "criticos_del_plano": 3
+        "criticos_total": 12
       },
       "zapata": {
         "colocaciones": 6,
         "con_definicion": 0,
-        "criticos_total": 18,
-        "criticos_del_plano": 6
+        "criticos_total": 18
+      }
+    },
+    "por_hoja": {
+      "columna": {
+        "drawings/01-s-101_cimentacion.dxf": 3,
+        "drawings/02-s-201_entrepiso.dxf": 3,
+        "drawings/03-s-301_azotea.dxf": 3
+      },
+      "trabe": {
+        "drawings/01-s-101_cimentacion.dxf": 1,
+        "drawings/02-s-201_entrepiso.dxf": 1,
+        "drawings/03-s-301_azotea.dxf": 1
+      },
+      "zapata": {
+        "drawings/01-s-101_cimentacion.dxf": 2,
+        "drawings/02-s-201_entrepiso.dxf": 2,
+        "drawings/03-s-301_azotea.dxf": 2
       }
     },
     "verificaciones": {
       "1/bloquea": 3,
       "1/aviso": 1,
       "7/duda": 3
+    },
+    "hallazgos": {
+      "1/bloquea": [
+        "B-1",
+        "C-1",
+        "C-2"
+      ],
+      "1/aviso": [
+        "(sin marca)"
+      ],
+      "7/duda": [
+        "C-1+C-2",
+        "C-1+C-2",
+        "C-1+C-2"
+      ]
+    },
+    "sin_cerca": {
+      "por_familia.trabe.criticos_del_plano": "unidades inferidas, el plano no las declara ($INSUNITS 0, sin cotas): medir el claro depende de la inferencia",
+      "por_familia.zapata.criticos_del_plano": "unidades inferidas, el plano no las declara ($INSUNITS 0, sin cotas): medir la secci\u00f3n depende de la inferencia",
+      "verificaciones.7/bloquea": "unidades inferidas, el plano no las declara: que el claro sea desconocido (bloquea) o medido depende de la inferencia"
     }
   },
-  "notes": "Cerca estructural (tarea 15), verificada en los tres DXF crudos (iguales entre s\u00ed: 10 textos y 3 contornos cada uno): por hoja 3 etiquetas de columna (C1 \u00d72, C2), 1 de trabe (B1, su l\u00ednea de 300 u en S-BEAM), 2 contornos de zapata de 60\u00d760 u sin marca; nada definido y sin niveles. Del plano s\u00f3lo salen el claro de cada B-1 (3) y la secci\u00f3n medida de cada zapata (6), en las unidades que el motor infiere (cm, $INSUNITS 0); los c\u00edrculos de 8 u en S-COL junto a dos de las tres C son s\u00edmbolos, no secciones (R133 y la regla de marcadores que se le propuso a Diego): columna 0. Hallazgos: C-1, C-2, B-1 sin definir (1/bloquea 3), zapatas sin marca (1/aviso), altura supuesta por hoja (7/duda 3)."
+  "notes": "Cerca estructural (tarea 15), verificada en los tres DXF crudos (iguales entre s\u00ed: 10 textos y 3 contornos cada uno): por hoja 3 etiquetas de columna (C1 \u00d72, C2), 1 de trabe (B1, su l\u00ednea de 300 u en S-BEAM), 2 contornos de zapata de 60\u00d760 u sin marca; nada definido y sin niveles. Del plano s\u00f3lo salen el claro de cada B-1 (3) y la secci\u00f3n medida de cada zapata (6), en las unidades que el motor infiere (cm, $INSUNITS 0); los c\u00edrculos de 8 u en S-COL junto a dos de las tres C son s\u00edmbolos, no secciones (R133 y la regla de marcadores que se le propuso a Diego): columna 0. Hallazgos: C-1, C-2, B-1 sin definir (1/bloquea 3), zapatas sin marca (1/aviso), altura supuesta por hoja (7/duda 3). Ronda de arreglos 1 (R249): el claro de B-1, la secci\u00f3n de las zapatas y la verificaci\u00f3n 7/bloquea quedan sin cerca: dependen de las unidades que el motor infiere (cm, confianza 0.75) y el plano no las declara ($INSUNITS 0, sin cotas)."
 }

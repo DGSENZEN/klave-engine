@@ -1,3 +1,5 @@
+import { errorFromResponse } from "./httpErrors";
+export { apiMessage } from "./api";
 // Client for the workspace accounts API (FastAPI, dedicated users database).
 // Sessions ride an HttpOnly cookie on the API origin, so every call sends
 // credentials. The deployment has three modes: "open" (no accounts yet),
@@ -22,6 +24,7 @@ export type Workspace = { slug: string; name: string };
 
 export type AuthStatus = {
   mode: "open" | "protected" | "unavailable";
+  failure?: "network" | "service" | "users_db";
   user: AuthUser | null;
   workspace: Workspace | null;
   google_enabled: boolean;
@@ -54,26 +57,25 @@ async function authFetch<T>(
     try {
       detail = (await res.json())?.detail;
     } catch {}
-    throw new ApiError(res.status, path, detail);
+    const protectedRequest = ["/auth/me", "/auth/sessions", "/auth/password"].some(
+      (prefix) => path === prefix || path.startsWith(prefix + "/"),
+    );
+    throw await errorFromResponse(res, path, protectedRequest, detail);
   }
   return res.json() as Promise<T>;
 }
 
 /** Server-provided Spanish message from an ApiError, else the fallback. */
-export function apiMessage(error: unknown, fallback: string): string {
-  if (error instanceof ApiError && error.detail && typeof error.detail === "object") {
-    const message = (error.detail as { message?: string }).message;
-    if (message) return message;
-  }
-  return fallback;
-}
 
 export async function fetchAuthStatus(): Promise<AuthStatus> {
   try {
     return await authFetch<AuthStatus>("/auth/session", { cache: "no-store" });
-  } catch {
+  } catch (error) {
+    const detail = error instanceof ApiError ? error.detail as { error_type?: string } : undefined;
     return {
       mode: "unavailable",
+      failure: !(error instanceof ApiError) ? "network"
+        : detail?.error_type === "users_db_unavailable" ? "users_db" : "service",
       user: null,
       workspace: null,
       google_enabled: false,

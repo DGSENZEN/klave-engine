@@ -10,6 +10,8 @@ dist/
 build/
 
 # Env
+.env.prod
+.env.prod.*
 .env
 
 # Project data artifacts (all generated or local: demo is rebuilt by `make demo-data`)
@@ -29,6 +31,7 @@ apps/web/node_modules/
 apps/web/.next/
 apps/web/out/
 apps/web/.env.local
+.vercel/
 
 # OS
 .DS_Store
@@ -38,3 +41,5 @@ apps/web/.env.local
 
 # Runtime data: taller catalogs, uploads, outbox — never in the repo
 data/
+apps/web/test-results/
+apps/web/playwright-report/

@@ -1,6 +1,6 @@
 .PHONY: prod-up prod-logs backup-now install test lint typecheck demo-data ingest-demo convert-demo parse-demo process-demo eval-demo eval-gold gold-capture api web web-install clean users-db-up users-db-down
 
-prod-up:
+prod-up: prod-check
 	docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
 prod-logs:
@@ -78,3 +78,13 @@ web:
 
 clean:
 	rm -rf data/demo/*/processed data/demo/*/reports data/demo/*/converted reports/*.json reports/*.md
+
+# Config-only check is safe before the first deployment; no secrets are printed.
+ENV_FILE ?= .env.prod
+
+.PHONY: prod-check release-check
+prod-check:
+	uv run python scripts/release_check.py --env-file "$(ENV_FILE)"
+
+release-check:
+	uv run python scripts/release_check.py --env-file "$(ENV_FILE)" --run

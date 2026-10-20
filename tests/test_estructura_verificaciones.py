@@ -704,6 +704,27 @@ def test_11_rejections_are_grouped_per_sheet_motive_and_kind():
     assert dist.mensaje.startswith("3 distribuciones") and len(dist.textos) == 3
 
 
+def test_11_a_note_without_a_bar_or_stirrup_is_not_armado():
+    """R253: «FORMATO 20X20» de un piso no es armado (acabados-mini daba 10 dudas); una nota
+    con varilla, estribo o separación sí lo es."""
+    pisos = [
+        _rech("3. LAMBRIN DE PORCELANATO MOD. ASTRATTO BLANCO FORMATO 20X20", "sin_dueno", []),
+        _rech("4. PORCELANATO MOD. TENBY GREY MATE FORMATO 60X120 O SIMILAR", "sin_dueno", []),
+    ]
+    assert not _all(_run(inv=ScheduleInventory(rechazos=pisos)), 11)
+    con_acero = [
+        _rech("DALA DE DESPLANTE 15X20 CON 4#3", "sin_dueno", []),
+        _rech("CASTILLO AHOGADO EN BLOCK E#2@20", "sin_dueno", []),
+    ]
+    v = _run(inv=ScheduleInventory(rechazos=pisos + con_acero))
+    notas = _con(v, 11, "notas con armado")
+    assert len(notas) == 1 and notas[0].mensaje.startswith("2 notas con armado")
+    assert len(notas[0].textos) == 2
+    # Una sección suelta sigue siendo una sección sin leer (la regla es de las notas).
+    assert _con(_run(inv=ScheduleInventory(rechazos=[_rech("30X40", "sin_dueno", [])])), 11,
+                "secciones")  # fmt: skip
+
+
 def test_11_a_stack_owning_label_counted_as_a_placement():
     k1 = _texto("K-1", 1, 1)
     d = _det("K-1", entidades=[k1.entity_id])
@@ -1091,6 +1112,20 @@ def test_10_rib_marks_on_a_slab_layer_are_one_aviso_per_family_never_recall():
     avisos = _con(v, 10, "losa nervada")
     assert {x.severidad for x in avisos} == {"aviso"} and len(avisos) == 2  # W and Z
     assert not [x for x in v if x.numero in (8, 10) and x.severidad != "aviso"]
+
+
+def test_10_rib_marks_without_a_number_join_their_letter_family():
+    """R253: en la capa de la losa, «NA»…«NG» son la familia N (Marina ES-400) y «WI»/«XO» la W
+    y la X (ES-200): ni otra familia, ni fuera del aviso; fuera de la capa de losa, dos letras no
+    son una nervadura."""
+    textos = [_en_capa(_texto(m, 1 + i, 1), "EST-LOSA NERVADA")
+              for i, m in enumerate(["N1", "NA", "NG", "W2", "WI", "XO"])]  # fmt: skip
+    otras = [_texto("NA", 20, 1), _en_capa(_texto("LOSA", 22, 1), "EST-LOSA NERVADA")]
+    v = _run(**_planta_y_detalle(*textos, *otras))
+    avisos = {x.mensaje.split("familia ")[1].split(":")[0]: x for x in _con(v, 10, "losa nervada")}
+    assert sorted(avisos) == ["N", "W", "X"]
+    assert avisos["N"].marcas == ["N1", "NA", "NG"] and avisos["N"].en_juego["piezas"] == 3
+    assert avisos["W"].marcas == ["W2", "WI"] and avisos["X"].marcas == ["XO"]
 
 
 def test_10_a_titled_nervadura_is_a_rib_mark():

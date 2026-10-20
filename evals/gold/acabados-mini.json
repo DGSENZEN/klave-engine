@@ -122,7 +122,9 @@
   },
   "estructura": {
     "por_familia": {},
+    "por_hoja": {},
     "verificaciones": {},
+    "hallazgos": {},
     "sin_cerca": {
       "verificaciones.11": "sus 10 dudas toman como armado los formatos de piso (\u00abFORMATO 20X20\u00bb, \u00ab30X60\u00bb\u2026); en crudo no hay ning\u00fan texto de armado: el motor se equivoca y 0 no pasar\u00eda"
     }

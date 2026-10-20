@@ -84,7 +84,7 @@ solo abre el administrador o el owner.
 
 ## Cómo usarlo
 
-Requiere Python 3.11+, [uv](https://docs.astral.sh/uv/) y Node 20+.
+Requiere Python 3.11+, [uv](https://docs.astral.sh/uv/) y Node 24.
 
 ```bash
 make install          # dependencias de Python (uv sync)
@@ -94,10 +94,17 @@ cp .env.example .env  # opcional: convertidor, límites, cuentas
 
 Arranca los dos procesos y abre la app:
 
+Para estos procesos separados, define `NEXT_PUBLIC_API_URL=http://localhost:8000`
+en `.env` (descomenta la entrada del ejemplo).
+
 ```bash
 make api              # FastAPI en :8000
 make web              # Next.js en :3000  → abre http://localhost:3000
 ```
+
+Para ejecutar ambos como un proyecto Vercel con binding interno, consulta
+[Vercel Services](docs/vercel.md): usa `vercel dev -L` desde la raíz y deja
+`NEXT_PUBLIC_API_URL` sin definir.
 
 Desde ahí el flujo es el de la pantalla: **sube tu plano** (el diálogo dice
 qué datos jala cada hoja) → se procesa → el proyecto abre en su tablero →

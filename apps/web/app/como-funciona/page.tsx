@@ -61,7 +61,7 @@ const STEPS: { title: string; body: string }[] = [
   {
     title: "Subes los planos de una obra",
     body:
-      "DXF abre siempre; DWG se convierte con LibreDWG. Todas las hojas juntas: cimentación, estructura y plantas se leen como un solo conjunto y se complementan.",
+      "Sube planos DWG o DXF. Si un DWG no se puede convertir, expórtalo a DXF desde tu programa de dibujo. Todas las hojas juntas: cimentación, estructura y plantas se leen como un solo conjunto y se complementan.",
   },
   {
     title: "Klave lee y muestra su trabajo",

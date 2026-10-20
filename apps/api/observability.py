@@ -23,6 +23,11 @@ _SAFE_ID = re.compile(r"^[A-Za-z0-9._-]{4,64}$")
 _QUIET_PATHS = re.compile(r"^/(events|projects/[^/]+/events)$")
 
 
+def redact_request_path(path: str) -> str:
+    path = re.sub(r"(/by-token/)[^/]+", r"\1[redacted]", path)
+    return re.sub(r"^(/compartido/)[^/]+", r"\1[redacted]", path)
+
+
 class RequestIdMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -36,6 +41,7 @@ class RequestIdMiddleware:
             None,
         )
         request_id = incoming if incoming and _SAFE_ID.match(incoming) else uuid.uuid4().hex[:12]
+        scope.setdefault("state", {})["request_id"] = request_id
         token = request_id_var.set(request_id)
         started = time.perf_counter()
         status_holder = {"status": 0}
@@ -51,7 +57,7 @@ class RequestIdMiddleware:
         try:
             await self.app(scope, receive, send_with_id)
         finally:
-            path = scope.get("path", "")
+            path = redact_request_path(scope.get("path", ""))
             if not _QUIET_PATHS.match(path):
                 logger.info(
                     "%s %s -> %s in %.0f ms",

@@ -1,0 +1,21 @@
+{
+    email {$KLAVE_ACME_EMAIL}
+    # Allow initial certificate issuance over port 80 while port 443 is
+    # restricted to the operator's IP during first-account registration.
+    acme_ca https://acme-v02.api.letsencrypt.org/directory
+}
+
+{$KLAVE_API_DOMAIN} {
+    tls {
+        issuer acme {
+            disable_tlsalpn_challenge
+        }
+    }
+    encode gzip
+    request_body {
+        max_size 120MB
+    }
+    reverse_proxy api:8000 {
+        flush_interval -1
+    }
+}

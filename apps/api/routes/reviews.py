@@ -30,7 +30,7 @@ from klave_engine.costing.reviews import (
 from klave_engine.costing.revision import build_revision_table
 from klave_engine.detection.results import Detection
 from klave_engine.detection.views import SheetSegmentation
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, FiniteFloat
 
 from apps.api.dependencies import (
     ProjectStore,
@@ -52,11 +52,11 @@ class ReviewInput(BaseModel):
 
 class AdjustmentInput(BaseModel):
     concept_code: str = Field(min_length=2, max_length=40)
-    quantity_delta: float = 0.0
+    quantity_delta: FiniteFloat = 0.0
     # Editing in place: the quantity the engineer asserts, replacing the
     # engine's figure. A set needs a reason — the number changes silently
     # otherwise, and silence is what costs trust.
-    quantity_set: float | None = Field(default=None, ge=0)
+    quantity_set: FiniteFloat | None = Field(default=None, ge=0)
     note: str = Field(default="", max_length=300)
 
 

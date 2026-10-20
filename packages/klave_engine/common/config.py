@@ -1,8 +1,10 @@
 """Application configuration via pydantic-settings."""
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -43,6 +45,8 @@ class Settings(BaseSettings):
     # database. The local compose credentials below are not production secrets.
     users_database_url: str = "postgresql://klave_users:klave@127.0.0.1:5433/klave_users"
     web_origin: str = "http://localhost:3000"
+    # Public proxy mount; API routes themselves stay unprefixed internally.
+    api_public_prefix: str = Field(default="", pattern=r"^(?:/[A-Za-z0-9_-]+)*$")
     # Hosted deployments: share the session cookie across app/api subdomains
     # (e.g. ".taller.mx"), or go cross-site with SameSite=None (HTTPS only).
     cookie_domain: str | None = None
@@ -87,4 +91,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    if os.environ.get("KLAVE_LOAD_DOTENV") == "0":
+        # Pydantic's generated signature omits BaseSettings' runtime options.
+        return Settings(_env_file=None)  # type: ignore[call-arg]
     return Settings()

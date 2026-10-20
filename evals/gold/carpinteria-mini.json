@@ -69,7 +69,9 @@
   },
   "estructura": {
     "por_familia": {},
-    "verificaciones": {}
+    "por_hoja": {},
+    "verificaciones": {},
+    "hallazgos": {}
   },
   "notes": "Cerca estructural (tarea 15): en crudo no hay ninguna marca estructural ni texto de armado: sin colocaciones ni hallazgos."
 }

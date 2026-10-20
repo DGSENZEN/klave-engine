@@ -62,7 +62,7 @@ from klave_engine.costing.vigencia import (
     price_ages,
     roll_forward_factor,
 )
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, FiniteFloat, ValidationError
 
 from apps.api.auth.access import require_project_role
 from apps.api.auth.common import rate_limit
@@ -113,7 +113,7 @@ class InsumoUpdate(BaseModel):
     description: str | None = Field(default=None, min_length=1, max_length=200)
     unit: str | None = Field(default=None, min_length=1, max_length=12)
     resource_type: str | None = None
-    unit_cost: float | None = Field(default=None, gt=0)
+    unit_cost: FiniteFloat | None = Field(default=None, gt=0)
     source: str | None = Field(default=None, max_length=200)
     source_type: Literal["referencia", "cotizacion", "publicacion", "calculado"] | None = None
     region: str | None = Field(default=None, max_length=12)
@@ -125,7 +125,7 @@ class ConceptCreate(BaseModel):
     description: str = Field(min_length=3, max_length=200)
     unit: str = Field(min_length=1, max_length=12)
     phase: str = Field(min_length=2, max_length=40)
-    production_rate_per_day: float = Field(gt=0)
+    production_rate_per_day: FiniteFloat = Field(gt=0)
     components: list["ApuComponentInput"] = Field(min_length=1)
 
 
@@ -133,13 +133,13 @@ class ConceptUpdate(BaseModel):
     description: str | None = Field(default=None, min_length=3, max_length=200)
     unit: str | None = Field(default=None, min_length=1, max_length=12)
     phase: str | None = Field(default=None, min_length=2, max_length=40)
-    production_rate_per_day: float | None = Field(default=None, gt=0)
+    production_rate_per_day: FiniteFloat | None = Field(default=None, gt=0)
     active: bool | None = None
 
 
 class ApuComponentInput(BaseModel):
     resource_code: str
-    quantity: float = Field(gt=0)
+    quantity: FiniteFloat = Field(gt=0)
 
 
 class InsumoCreate(BaseModel):
@@ -147,7 +147,7 @@ class InsumoCreate(BaseModel):
     description: str = Field(min_length=1, max_length=200)
     unit: str = Field(min_length=1, max_length=12)
     resource_type: str
-    unit_cost: float = Field(gt=0)
+    unit_cost: FiniteFloat = Field(gt=0)
     source: str = Field(default="", max_length=200)
     kind: Literal["insumo", "basico", "cuadrilla"] = "insumo"
     # La matriz de un básico o cuadrilla, cuando nace con ella.
@@ -159,7 +159,7 @@ class ApuUpdate(BaseModel):
 
 
 class RendimientoUpdate(BaseModel):
-    production_rate_per_day: float = Field(gt=0)
+    production_rate_per_day: FiniteFloat = Field(gt=0)
 
 
 def _publish_catalog_updated(
@@ -256,7 +256,7 @@ def create_insumo(
 
 class AjusteBody(BaseModel):
     codes: list[str] | None = None
-    pct: float
+    pct: FiniteFloat
     resource_type: str | None = None
     source: str | None = None
     vigencia: str | None = Field(default=None, max_length=7)
@@ -480,7 +480,7 @@ class GenerarBody(BaseModel):
 
 
 class ToleranciaBody(BaseModel):
-    tolerance_pct: float
+    tolerance_pct: FiniteFloat
 
 
 @router.post("/concepts/{concept_code}/generar")
@@ -1222,7 +1222,7 @@ def concept_long_description(code: str, catalog: CatalogStore = Depends(get_cata
 
 class IndicesInput(BaseModel):
     source: str = Field(default="", max_length=200)
-    values: dict[str, float] = Field(default_factory=dict)
+    values: dict[str, FiniteFloat] = Field(default_factory=dict)
 
 
 class RollForwardInput(BaseModel):
@@ -1392,13 +1392,13 @@ def roll_forward(
 class ParametricRuleInput(BaseModel):
     concept_code: str = Field(min_length=2, max_length=40)
     basis: str = Field(default="m2_construida", max_length=60)
-    factor: float = Field(gt=0)
+    factor: FiniteFloat = Field(gt=0)
     source: str = Field(default="", max_length=120)
     note: str = Field(default="", max_length=300)
 
 
 class ParametricRuleUpdate(BaseModel):
-    factor: float | None = Field(default=None, gt=0)
+    factor: FiniteFloat | None = Field(default=None, gt=0)
     active: bool | None = None
     note: str | None = Field(default=None, max_length=300)
 
@@ -1926,7 +1926,7 @@ class InventoryMappingInput(BaseModel):
     kind: Literal["block", "layer", "tag", "area"]
     pattern: str = Field(min_length=1, max_length=200)
     concept_code: str = Field(min_length=1, max_length=40)
-    factor: float = Field(default=1.0, gt=0)
+    factor: FiniteFloat = Field(default=1.0, gt=0)
 
 
 @router.get("/inventory-mappings")

@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from apps.api.auth.common import get_users
+from apps.api.auth.access import project_access_problem
+from apps.api.auth.common import get_users, session_user
 from apps.api.auth.store import UsersDbUnavailable
 from apps.api.dependencies import ProjectStore, get_store
 from apps.api.events import (
@@ -24,6 +25,7 @@ from apps.api.events import (
     clean_client_id,
     clean_location_label,
     clean_location_path,
+    visible_to,
 )
 
 router = APIRouter()
@@ -99,41 +101,80 @@ def _stream_response(
     # with a stale higher cursor would silently drop every new event until the
     # counter caught up. Clamp so delivery always resumes from live state.
     since = min(since, BUS.latest_seq())
-    viewer_actor = clean_actor(actor)
+    viewer = getattr(request.state, "user", None)
+    protected = viewer is not None
     viewer_client_id = clean_client_id(client_id)
     viewer_location_path = clean_location_path(location_path)
     viewer_location_label = clean_location_label(location_label)
     session_id = uuid4().hex
-    tracks_presence = bool(project_id and viewer_actor and viewer_client_id)
 
-    # In protected mode the stream is the viewer's taller only: the user on
-    # the request (set by the auth middleware) and the projects of their
-    # workspace. Open mode (no users yet) sees everything, as before.
-    viewer = getattr(request.state, "user", None)
+    # Long-lived streams must recheck project grants after connection; the
+    # middleware only authorizes the initial HTTP request.
     workspace_id = str(viewer["workspace_id"]) if viewer else None
-    project_workspaces: dict[str, str] = {}
-    if workspace_id is not None:
-        try:
-            project_workspaces = get_users().project_workspace_map()
-        except UsersDbUnavailable:
-            project_workspaces = {}
 
-    def drain(cursor: int) -> list[Event]:
-        nonlocal project_workspaces
-        events = BUS.since(cursor, project_id, workspace_id, project_workspaces)
-        if workspace_id is not None and any(
-            e.type == "project_created" and e.project_id not in project_workspaces
-            for e in BUS.since(cursor, project_id)
-        ):
-            # A project born after the stream started: learn its taller.
-            try:
-                project_workspaces = get_users().project_workspace_map()
-            except UsersDbUnavailable:
-                pass
-            events = BUS.since(cursor, project_id, workspace_id, project_workspaces)
-        return events
+    def refresh_viewer() -> bool:
+        nonlocal viewer, workspace_id
+        if not protected:
+            return True
+        try:
+            current = session_user(request, get_users())
+        except UsersDbUnavailable:
+            return False
+        if current is None or current["status"] != "active":
+            return False
+        viewer = current
+        workspace_id = str(current["workspace_id"])
+        return True
+
+    def has_project_access(target_project_id: str) -> bool:
+        assert viewer is not None
+        try:
+            return project_access_problem(get_users(), viewer, target_project_id, "viewer") is None
+        except UsersDbUnavailable:
+            return False
+
+    def drain(cursor: int) -> list[Event] | None:
+        if not refresh_viewer():
+            return None
+        if viewer is None:
+            return BUS.since(cursor, project_id)
+        assert workspace_id is not None
+        if project_id is not None:
+            if not has_project_access(project_id):
+                return None
+            return BUS.since(cursor, project_id, workspace_id, {project_id: workspace_id})
+        try:
+            users = get_users()
+            allowed = (
+                None if viewer["role"] == "admin"
+                else users.project_ids_for_user(str(viewer["user_id"]))
+            )
+            project_workspaces = users.project_workspace_map()
+            pending = BUS.since(cursor)
+            for pid in {event.project_id for event in pending if event.project_id is not None}:
+                if allowed is not None and pid not in allowed:
+                    continue
+                if pid not in project_workspaces:
+                    # The same default-workspace fallback as normal project
+                    # authorization covers projects created before workspaces.
+                    project_workspaces[pid] = users.project_workspace_id(pid)
+            return [
+                event for event in pending
+                if visible_to(event, workspace_id, project_workspaces)
+                and (event.project_id is None or allowed is None or event.project_id in allowed)
+            ]
+        except UsersDbUnavailable:
+            # Previously cached grants or workspace mappings cannot authorize
+            # delivery when the current permissions cannot be checked.
+            return None
 
     async def stream() -> AsyncIterator[str]:
+        if not refresh_viewer():
+            return
+        if viewer is not None and project_id is not None and not has_project_access(project_id):
+            return  # Never expose presence after access was revoked before startup.
+        viewer_actor = clean_actor(str(viewer["name"]) if viewer else actor)
+        tracks_presence = bool(project_id and viewer_actor and viewer_client_id)
         cursor = since
         waiter = BUS.subscribe()
         presence = PRESENCE.viewers(project_id) if project_id is not None else None
@@ -162,11 +203,28 @@ def _stream_response(
                 # Clear before draining so a publish that races the drain sets
                 # the flag and wakes the next wait instead of being missed.
                 waiter.clear()
-                pending = drain(cursor)
+                # Capture the high-water mark before the snapshot: a publish
+                # after drain must remain eligible for the next iteration.
                 newest = BUS.latest_seq()
+                pending = drain(cursor)
+                if pending is None:
+                    break  # Reconnect through middleware after revocation or a DB outage.
                 for event in pending:
                     cursor = event.seq
                     if event_types is not None and event.type not in event_types:
+                        continue
+                    # Sending an earlier frame yields control: a grant can be
+                    # revoked or the session disabled while a snapshot is buffered.
+                    if not refresh_viewer():
+                        return
+                    if (
+                        viewer is not None and event.project_id is not None
+                        and not has_project_access(event.project_id)
+                    ):
+                        return
+                    if viewer is not None and event.project_id is None and (
+                        event.workspace_id is not None and event.workspace_id != workspace_id
+                    ):
                         continue
                     yield event.to_sse()
                     last_beat = time.monotonic()

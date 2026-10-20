@@ -10,20 +10,29 @@ npm install
 npm run dev
 ```
 
-The app expects the FastAPI backend on `http://localhost:8000`; override with
-`NEXT_PUBLIC_API_URL`.
+The browser uses `/api` on the same origin by default. Under Vercel Services,
+the Next.js API route forwards requests to FastAPI using the runtime
+`KLAVE_APP_URL` binding. Do not configure that binding variable yourself.
+
+For separate local processes, set `NEXT_PUBLIC_API_URL=http://localhost:8000`
+in the repository-root `.env` before running `npm run dev`. For the complete
+multi-service setup, run `vercel dev -L` from the repository root and leave
+`NEXT_PUBLIC_API_URL` unset. See [Vercel deployment](../../docs/vercel.md).
 
 ## Sign-in and accounts
 
 Authentication lives in the FastAPI backend against a dedicated users
-PostgreSQL (`make users-db-up`). The workspace starts in **open mode** (local
-name-only identity); creating the first account from `/bienvenida` bootstraps
-an active admin and flips it to **protected mode**: sessions required, new
-registrations wait for admin approval in `/equipo`, and each project enforces
-lectura/edición/propietario roles managed from its Configuración screen.
+PostgreSQL (`make users-db-up`). In development, a server without accounts runs
+in **open mode** (local name-only identity). Creating the first account from
+`/bienvenida` bootstraps an active admin and flips it to **protected mode**:
+sessions are required, and each project enforces lectura/edición/propietario
+roles managed from its Configuración screen. With open registration, founding
+a new taller activates its admin immediately; joining an existing taller waits
+for approval in `/equipo`. Production requires invitation-only registration
+after the first account has been created.
 Google sign-in activates when `KLAVE_AUTH_GOOGLE_ID`/`KLAVE_AUTH_GOOGLE_SECRET`
 are set for the API (redirect URI `http://localhost:8000/auth/google/callback`).
-Resetting the users database volume returns the workspace to open mode.
+Production servers without accounts require setup and keep project data closed.
 
 ## Structure
 
@@ -36,6 +45,13 @@ Resetting the users database volume returns the workspace to open mode.
 
 - All colors come from the tokens in `app/globals.css`; both light and dark
   palettes are defined there and switched via `data-theme` on `<html>`.
-- Icons are `lucide-react` only.
+- Icons use `@phosphor-icons/react`.
 - Every data screen renders shape-matched skeletons, an empty state, and an
   error state.
+
+## Checks
+
+Use Node 24. `npm test` runs the client regressions without extra test dependencies;
+`npm run lint`, `npm run typecheck`, and `npm run build` check the web workspace.
+From the repository root, `make release-check` also checks the engine and the
+private pilot configuration. See [deployment](../../docs/despliegue.md).

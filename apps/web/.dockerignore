@@ -1,0 +1,8 @@
+# Build context for apps/web/Dockerfile: sources only. Without this the local
+# .next (several GB) and node_modules ship to the daemon on every build.
+node_modules
+.next
+out
+.env
+.env.*
+npm-debug.log*

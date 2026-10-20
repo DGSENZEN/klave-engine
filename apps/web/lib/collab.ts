@@ -1,4 +1,4 @@
-import { API_BASE, type PresenceViewer, type ProjectEvent } from "@/lib/api";
+import { API_BASE, apiURL, type PresenceViewer, type ProjectEvent } from "./api";
 
 const ACTOR_KEY = "klave.displayName";
 const CLIENT_KEY = "klave.clientId";
@@ -64,12 +64,9 @@ export function projectEventsUrl(
   locationPath?: string,
   locationLabel?: string,
 ): string {
-  const url = new URL(`${API_BASE}/projects/${encodeURIComponent(projectId)}/events`);
-  if (actor) url.searchParams.set("actor", actor);
-  if (clientId) url.searchParams.set("client_id", clientId);
-  if (locationPath) url.searchParams.set("location_path", locationPath);
-  if (locationLabel) url.searchParams.set("location_label", locationLabel);
-  return url.toString();
+  return apiURL(`/projects/${encodeURIComponent(projectId)}/events`, {
+    actor, client_id: clientId, location_path: locationPath, location_label: locationLabel,
+  });
 }
 
 export function parseProjectEvent(message: MessageEvent): ProjectEvent | null {

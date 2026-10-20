@@ -6,7 +6,9 @@ import type { NextConfig } from "next";
 // this directory, so pull NEXT_PUBLIC_* entries from the root file ourselves.
 // Real environment variables win; a missing file is fine (Docker build args).
 try {
-  const rootEnv = readFileSync(join(__dirname, "..", "..", ".env"), "utf8");
+  const rootEnv = process.env.KLAVE_LOAD_DOTENV === "0"
+    ? ""
+    : readFileSync(join(__dirname, "..", "..", ".env"), "utf8");
   for (const line of rootEnv.split("\n")) {
     const match = /^(NEXT_PUBLIC_[A-Z0-9_]+)=(.*)$/.exec(line.trim());
     if (match && process.env[match[1]] === undefined) {

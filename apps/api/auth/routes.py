@@ -264,6 +264,14 @@ def logout(
 
 # ------------------------------------------------------------------ google
 
+def _google_callback_url(request: Request, settings: Settings) -> str:
+    if settings.api_public_prefix:
+        return (
+            settings.web_origin.rstrip("/") + settings.api_public_prefix + "/auth/google/callback"
+        )
+    return str(request.base_url).rstrip("/") + "/auth/google/callback"
+
+
 @router.get("/auth/google")
 def google_start(
     request: Request,
@@ -273,7 +281,7 @@ def google_start(
     if not (settings.auth_google_id and settings.auth_google_secret):
         raise HTTPException(status_code=404, detail={"error_type": "google_not_configured"})
     state = secrets.token_urlsafe(24)
-    redirect_uri = str(request.base_url).rstrip("/") + "/auth/google/callback"
+    redirect_uri = _google_callback_url(request, settings)
     url = GOOGLE_AUTH_URL + "?" + urlencode(
         {
             "client_id": settings.auth_google_id,
@@ -285,13 +293,15 @@ def google_start(
     )
     response = RedirectResponse(url)
     response.set_cookie(
-        STATE_COOKIE, state, httponly=True, samesite="lax", max_age=600, path="/auth"
+        STATE_COOKIE, state, httponly=True, samesite="lax", max_age=600,
+        path=settings.api_public_prefix + "/auth",
     )
     if invite:
         # Accepting an invitation with Google: the token rides a short-lived
         # cookie and is honored only when the Google email matches it.
         response.set_cookie(
-            INVITE_COOKIE, invite, httponly=True, samesite="lax", max_age=600, path="/auth"
+            INVITE_COOKIE, invite, httponly=True, samesite="lax", max_age=600,
+            path=settings.api_public_prefix + "/auth",
         )
     return response
 
@@ -304,8 +314,8 @@ async def google_callback(
 ) -> Response:
     def fail(reason: str) -> Response:
         response = RedirectResponse(web_link(settings, f"/bienvenida?error={reason}"))
-        response.delete_cookie(STATE_COOKIE, path="/auth")
-        response.delete_cookie(INVITE_COOKIE, path="/auth")
+        response.delete_cookie(STATE_COOKIE, path=settings.api_public_prefix + "/auth")
+        response.delete_cookie(INVITE_COOKIE, path=settings.api_public_prefix + "/auth")
         return response
 
     if not (settings.auth_google_id and settings.auth_google_secret):
@@ -317,7 +327,7 @@ async def google_callback(
 
     import httpx
 
-    redirect_uri = str(request.base_url).rstrip("/") + "/auth/google/callback"
+    redirect_uri = _google_callback_url(request, settings)
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             token_response = await client.post(
@@ -410,8 +420,8 @@ async def google_callback(
         )
         if user["status"] == "active":
             start_session(request, response, users, settings, str(user["user_id"]))
-        response.delete_cookie(STATE_COOKIE, path="/auth")
-        response.delete_cookie(INVITE_COOKIE, path="/auth")
+        response.delete_cookie(STATE_COOKIE, path=settings.api_public_prefix + "/auth")
+        response.delete_cookie(INVITE_COOKIE, path=settings.api_public_prefix + "/auth")
         return response
     except UsersDbUnavailable:
         return fail("db")

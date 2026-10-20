@@ -29,30 +29,6 @@ const STEPS = [
   { key: "processed", label: "Lectura, vistas y costos" },
 ];
 
-// Qué está haciendo el motor en cada paso, en frases honestas que rotan:
-// la pantalla dice trabajo real, nunca inventa cifras.
-const STEP_DETAIL: Record<string, string[]> = {
-  ingested: ["Registrando las hojas del proyecto…", "Preparando la carpeta de trabajo…"],
-  converted: [
-    "Convirtiendo cada DWG a DXF…",
-    "Verificando qué tan completa quedó cada conversión…",
-    "Resolviendo referencias externas…",
-  ],
-  parsed: [
-    "Leyendo entidades y capas…",
-    "Reventando bloques y sus atributos…",
-    "Detectando la unidad de dibujo…",
-    "Armando el índice de prefabricados…",
-  ],
-  processed: [
-    "Detectando ejes, columnas y zapatas…",
-    "Cerrando tableros de losa entre trabes…",
-    "Leyendo corridas de instalación por diámetro…",
-    "Segmentando plantas y niveles…",
-    "Cuantificando conceptos y armando el presupuesto…",
-  ],
-};
-
 const ORDER = ["queued", "ingested", "converted", "running", "parsed", "processed"];
 // El estado terminal no se queda esperando eventos; todo lo demás sí.
 const TERMINAL = new Set(["processed", "failed"]);
@@ -66,6 +42,17 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [starting, setStarting] = useState(false);
+  const [uploadWarning, setUploadWarning] = useState<string | null>(null);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const key = "klave.upload.warning." + id;
+        setUploadWarning(sessionStorage.getItem(key));
+        sessionStorage.removeItem(key);
+      } catch {}
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [id]);
 
   useEffect(() => {
     let active = true;
@@ -138,7 +125,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   // si el evento terminal se perdió (pestaña dormida, stream caído, ventana
   // del bus rebasada), la pantalla de procesamiento no puede quedarse
   // varada — era el bug de «terminó y no llegó la pantalla principal».
-  const processing = status !== null && !TERMINAL.has(status.state);
+  const processing = status !== null && Boolean(status.job_id) && !TERMINAL.has(status.state);
   useEffect(() => {
     if (!processing) return;
     let active = true;
@@ -172,7 +159,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
 
   const failed = status?.state === "failed";
   const notStarted =
-    status !== null && !ORDER.includes(status.state) && status.state !== "failed";
+    status !== null && !processing && status.state !== "processed" && status.state !== "failed";
 
   async function startProcessing() {
     setStarting(true);
@@ -193,6 +180,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
     return (
       <ProjectLiveProvider projectId={id}>
         <ProjectShell id={id} name={name}>
+          {uploadWarning && <div className="px-6 pt-5"><Callout tone="warning">{uploadWarning}</Callout></div>}
           {failed && (
             <div className="px-6 pt-5 lg:px-8">
               <Callout tone="danger">
@@ -219,6 +207,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   if (loadError) {
     return (
       <div className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6">
+        {uploadWarning && <Callout tone="warning">{uploadWarning}</Callout>}
         <Link href="/" className="mb-8 inline-flex items-center gap-2 text-sm text-muted">
           <Buildings size={16} weight="duotone" /> Klave
         </Link>
@@ -248,6 +237,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   if (notStarted || (failed && !status.artifacts_available)) {
     return (
       <div className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6">
+        {uploadWarning && <Callout tone="warning">{uploadWarning}</Callout>}
         <Link href="/" className="mb-8 inline-flex items-center gap-2 text-sm text-muted">
           <Buildings size={16} weight="duotone" /> Klave
         </Link>
@@ -280,7 +270,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         <Buildings size={16} weight="duotone" /> Klave
       </Link>
       <h1 className="flex items-baseline gap-3 text-xl font-semibold">
-        {failed ? "No se pudo procesar el plano" : "Procesando tu plano…"}
+        {failed ? "No se pudo procesar el plano" : status.state === "queued" ? "En cola de procesamiento" : "Procesando tu plano…"}
         {!failed && tick >= 3 && (
           <span className="tabular text-sm font-normal text-faint">
             {Math.floor(tick / 60)}:{String(tick % 60).padStart(2, "0")}
@@ -330,9 +320,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
                 {step.label}
                 {isCurrent && !failed && (
                   <span className="block text-xs font-normal text-faint">
-                    {STEP_DETAIL[step.key][
-                      Math.floor(tick / 4) % STEP_DETAIL[step.key].length
-                    ]}
+                    {status.state === "queued" ? "Tus planos están guardados; esperamos un turno disponible." : status.stage}
                   </span>
                 )}
               </span>
