@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-19
 
-**Status:** in-chat scope approved; written specification awaiting review.
+**Status:** written specification approved by the user on 2026-10-19.
 
 **Audience:** our team and a few invited pilot customers.
 
