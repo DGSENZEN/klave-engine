@@ -12,6 +12,9 @@ and checks a production Vercel build, deploys the exact verified API commit,
 checks public API readiness, promotes the staged frontend, and checks the
 public frontend. Main releases are serialized; production jobs are never
 cancelled by a newer push. Pull requests never receive deployment secrets.
+Vercel's separate Git integration may create previews, but its direct `main`
+deployments are disabled in `apps/web/vercel.json` so it cannot publish a
+frontend before the required checks and API release have completed.
 
 ## Configuration
 
