@@ -1,7 +1,7 @@
 # Producción: web en Vercel, motor en servidor persistente
 
-El proyecto Vercel `klave-web` pertenece al equipo `dgsenzens-projects`.
-Su Root Directory es `apps/web`, framework Next.js y Node.js 24.x.
+Consulta el proyecto y equipo de producción en la configuración privada de
+despliegue. Su Root Directory es `apps/web`, framework Next.js y Node.js 24.x.
 La configuración aplicable es `apps/web/vercel.json`. El `vercel.json`
 de la raíz corresponde al experimento de dos servicios, no a este despliegue.
 
@@ -51,24 +51,14 @@ siendo la alternativa que aloja también el frontend en el servidor.
 
 1. Confirmar el dominio/URL HTTPS del backend y comprobar `/health` y `/ready`.
 2. Definir `NEXT_PUBLIC_API_URL` en Vercel y el origen del frontend en el motor.
-3. Desplegar el código local revisado. La preparación existente incluye cambios
-   sin commit: un despliegue Git no incluirá esos archivos hasta que se guarden
-   y suban explícitamente al repositorio.
+3. Desplegar el commit revisado que haya pasado las verificaciones.
 4. Verificar inicio y cierre de sesión, subida de DXF/DWG, finalización del
    procesamiento, SSE, exportación y persistencia tras reiniciar la API.
-5. Conectar Git para despliegues automáticos después de validar la rama de
-   producción. Los previews requieren un backend y base de datos separados.
+5. Seguir [el procedimiento de CI/CD](cicd.md). Los previews requieren un
+   backend y base de datos separados.
 
 Las credenciales de PostgreSQL, correo e IA pertenecen al backend. No deben
 exponerse como variables `NEXT_PUBLIC_*` ni guardarse en el repositorio.
 
-## Estado de la preparación
-
-Publicado el 2026-10-20: `https://www.klave.space`, con API en
-`https://api.klave.space`. Deployment de producción:
-`dpl_7ZpDXeBhZJsS2fAoU6GDqHzGdtTB`. Build, TypeScript y 37 pruebas del cliente
-pasaron; readiness y CORS del motor se verificaron. Se reparó el lockfile con
-npm 11.19.0 para completar dependencias opcionales, sin cambiar versiones.
-La página pública muestra el formulario para activar la primera cuenta.
-Faltan el alta del administrador y la prueba autenticada de un plano.
-El proyecto todavía no está conectado a Git.
+Los identificadores de cada despliegue y sus resultados se consultan en los
+dashboards de Vercel y GitHub; no se guardan como notas en el código público.

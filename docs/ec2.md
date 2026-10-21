@@ -5,14 +5,9 @@ and local backups on one EC2 instance. Next.js stays on Vercel. The engine
 has one Uvicorn process and processes one drawing job at a time initially;
 measure memory and processing time before increasing concurrency.
 
-Deployment record (2026-10-20): the operator installed Docker on Ubuntu 26.04
-x86_64 at `3.148.232.21` and started the backend and PostgreSQL. Public HTTPS
-readiness at `https://api.klave.space/ready` returned database/storage OK.
-The frontend production deployment is live at `https://www.klave.space`.
-First-administrator registration and an authenticated drawing smoke test are
-still pending. Keep port 443 restricted to the operator's IP until bootstrap.
-The deployment preparation includes uncommitted files that a fresh Git clone
-will not contain.
+Keep instance addresses, SSH keys and release records in the operator's
+private deployment configuration. The steps below describe a fresh setup;
+for upgrades, use the tested release procedure in [CI/CD](cicd.md).
 
 ## 1. Find the instance and prepare DNS
 
@@ -169,9 +164,8 @@ NEXT_PUBLIC_API_URL=https://api.klave.space
 
 Build and deploy the reviewed current frontend source. The API URL is baked
 into the browser bundle, so changing the variable requires a new deployment.
-The frontend has been deployed from the reviewed local source, using production
-deployment `dpl_7ZpDXeBhZJsS2fAoU6GDqHzGdtTB`; it is not connected to Git yet.
-See [Vercel production notes](vercel-production.md).
+Record deployment identifiers in the hosting dashboard or private release
+records. See [Vercel production notes](vercel-production.md).
 
 While EC2 port 443 is still restricted to your IP, open
 `https://www.klave.space` and register the first administrator. Then widen

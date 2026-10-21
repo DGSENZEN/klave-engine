@@ -13,6 +13,15 @@ build/
 .env.prod
 .env.prod.*
 .env
+.env.*
+!.env.example
+
+# Private credentials and exported service-account keys
+*.pem
+*.key
+*.p12
+*.pfx
+service-account*.json
 
 # Project data artifacts (all generated or local: demo is rebuilt by `make demo-data`)
 data/raw/

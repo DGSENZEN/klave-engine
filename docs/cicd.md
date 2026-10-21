@@ -20,7 +20,10 @@ frontend before the required checks and API release have completed.
 
 The existing `KLAVE_ENV` environment contains `VERCEL_TOKEN` and `EC2_SSH_KEY`.
 Enter and rotate those values directly in GitHub. The workflow selects
-Vercel team `dgsenzens-projects`, project `klave-web`, and Node.js 24.
+the Vercel team and project through the protected environment variables
+`VERCEL_ORG_ID` and `VERCEL_PROJECT_ID`, and uses Node.js 24. These identifiers
+are not authentication credentials, but deployment targets belong in
+environment configuration rather than hardcoded source.
 Repository variables `EC2_HOST` and `EC2_KNOWN_HOSTS` select the existing API
 host and pin its verified SSH public key. SSH must be reachable from the
 runner; host-key checking is mandatory. Never disable it to fix a connection.

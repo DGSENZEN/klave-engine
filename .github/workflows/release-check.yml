@@ -63,8 +63,8 @@ jobs:
       name: KLAVE_ENV
       url: https://www.klave.space
     env:
-      VERCEL_ORG_ID: team_2niUN3sAoVJwvqO2mmBdNp9k
-      VERCEL_PROJECT_ID: prj_wXjYORJauXqed7rLpqGllqODiZ2Y
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       VERCEL_CLI_VERSION: '64.7.0'
       KLAVE_LOAD_DOTENV: '0'
       EC2_HOST: ${{ vars.EC2_HOST }}

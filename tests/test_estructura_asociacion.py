@@ -845,7 +845,7 @@ def test_marca_en_texto(texto, marca):
         ("VER CORTE", False),
         ("15X20", False),
         ("2E", False),
-        ("italohdez@gmail.com", False),
+        ("contacto@example.com", False),
         ("CENTRO DE CARGA", False),
         ("EXTREMOS", False),
         ("CENTRO @ 20", True),
