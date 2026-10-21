@@ -1,0 +1,144 @@
+name: Verify and deploy
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: klave-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      users-db:
+        image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+        env:
+          POSTGRES_USER: klave_users
+          POSTGRES_PASSWORD: klave
+          POSTGRES_DB: klave_users
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd 'pg_isready -U klave_users -d klave_users'
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      KLAVE_LOAD_DOTENV: '0'
+      UV_PYTHON: '3.12'
+      NEXT_TELEMETRY_DISABLED: '1'
+      PILOT_TEST_POSTGRES_URL: postgresql://klave_users:klave@127.0.0.1:5433/klave_users
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.13.0'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.9.24'
+      - run: uv sync --frozen
+      - run: npm --prefix apps/web ci
+      - run: npm --prefix apps/web exec -- playwright install --with-deps chromium
+      - name: Create synthetic release configuration
+        run: |
+          cat > /tmp/klave-ci.env <<'ENV'
+          KLAVE_DOMAIN=pilot.example.mx
+          KLAVE_ACME_EMAIL=ops@pilot.example.mx
+          KLAVE_USERS_DB_PASSWORD=synthetic_ci_password_0123456789abcdef
+          KLAVE_REGISTRATION=invite_only
+          ENV
+      - run: make release-check ENV_FILE=/tmp/klave-ci.env
+
+  deploy:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment:
+      name: KLAVE_ENV
+      url: https://www.klave.space
+    env:
+      VERCEL_ORG_ID: team_2niUN3sAoVJwvqO2mmBdNp9k
+      VERCEL_PROJECT_ID: prj_wXjYORJauXqed7rLpqGllqODiZ2Y
+      VERCEL_CLI_VERSION: '64.7.0'
+      KLAVE_LOAD_DOTENV: '0'
+      EC2_HOST: ${{ vars.EC2_HOST }}
+      EC2_USER: ubuntu
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.13.0'
+      - name: Install deployment CLI
+        run: npm install --global "vercel@$VERCEL_CLI_VERSION"
+      - name: Pull production frontend configuration
+        run: vercel pull --yes --environment=production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Build production frontend
+        run: vercel build --prod
+      - name: Stage production frontend
+        id: stage
+        run: |
+          set -euo pipefail
+          vercel deploy --prebuilt --prod --skip-domain --yes > "$RUNNER_TEMP/vercel-stage.txt"
+          node --input-type=module <<'JS'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const output = readFileSync(process.env.RUNNER_TEMP + '/vercel-stage.txt', 'utf8');
+          let value;
+          try { value = JSON.parse(output).deployment?.url; } catch {}
+          if (!value) value = output.trim();
+          const url = new URL(value);
+          if (url.protocol !== 'https:' || url.origin !== value || !url.hostname.endsWith('.vercel.app')) {
+            throw new Error('Unexpected deployment URL');
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, 'url=' + value + '\n');
+          JS
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Verify staged frontend
+        run: vercel curl /bienvenida --deployment "$DEPLOYMENT_URL" -- --fail --silent --show-error --output /dev/null
+        env:
+          DEPLOYMENT_URL: ${{ steps.stage.outputs.url }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Prepare SSH credentials
+        run: |
+          set -euo pipefail
+          test -n "$SSH_PRIVATE_KEY" && test -n "$SSH_KNOWN_HOSTS" && test -n "$EC2_HOST"
+          install -d -m 700 "$RUNNER_TEMP/klave-ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/klave-ssh/key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$RUNNER_TEMP/klave-ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/klave-ssh/key"
+          ssh-keygen -y -f "$RUNNER_TEMP/klave-ssh/key" > /dev/null
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ vars.EC2_KNOWN_HOSTS }}
+      - name: Back up and deploy tested API commit
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/klave-release-$GITHUB_SHA.tar.gz"
+          git archive --format=tar.gz -o "$archive" HEAD \
+            apps/api apps/__init__.py packages pyproject.toml uv.lock README.md \
+            .dockerignore docker-compose.ec2.yml deploy
+          options=(-i "$RUNNER_TEMP/klave-ssh/key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/klave-ssh/known_hosts" -o ConnectTimeout=15)
+          scp "${options[@]}" "$archive" "$EC2_USER@$EC2_HOST:klave-release-$GITHUB_SHA.tar.gz"
+          ssh "${options[@]}" "$EC2_USER@$EC2_HOST" "bash -s -- '$GITHUB_SHA' \"\$HOME/klave-release-$GITHUB_SHA.tar.gz\"" < deploy/ec2-release.sh
+      - name: Verify public API
+        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://api.klave.space/ready
+      - name: Promote tested frontend
+        run: vercel promote "$DEPLOYMENT_URL" --yes
+        env:
+          DEPLOYMENT_URL: ${{ steps.stage.outputs.url }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Verify public frontend
+        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 --output /dev/null https://www.klave.space/bienvenida
+      - name: Remove runner credentials
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/klave-ssh"

@@ -22,7 +22,7 @@ services:
         max-file: "3"
 
   api:
-    image: klave-api:ec2
+    image: ${KLAVE_API_IMAGE:-klave-api:ec2}
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -79,6 +79,7 @@ services:
     logging: *logging
 
   backup:
+    image: ${KLAVE_BACKUP_IMAGE:-klave-backup:ec2}
     build:
       context: .
       dockerfile: deploy/backup.Dockerfile
