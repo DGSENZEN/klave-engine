@@ -150,9 +150,13 @@ def uso_del_periodo(
     return filas
 
 
-def errores_recientes(data_dir: Path, dias: int = 7, limite: int = 200) -> list[dict]:
+def errores_recientes(
+    data_dir: Path, dias: int = 7, limite: int = 200, *, workspace: str | None = None
+) -> list[dict]:
     hasta = datetime.now(UTC).date()
     filas = _leer(data_dir, ERRORES_DIRNAME, hasta - timedelta(days=dias), hasta)
+    if workspace is not None:
+        filas = [fila for fila in filas if fila.get("workspace") == workspace]
     filas.sort(key=lambda f: str(f.get("ts", "")), reverse=True)
     return filas[:limite]
 
