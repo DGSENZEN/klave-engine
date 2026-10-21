@@ -334,15 +334,6 @@ class JobStore:
                 project_id,
                 redactar(str(exc)),
             )
-            self._record_failure(job, settings, "conversion_failed", stage, exc)
-            self._emit(
-                job,
-                "job_failed",
-                outcome="failed",
-                stage=stage,
-                error_code="conversion_failed",
-                duration_ms=(time.perf_counter() - started) * 1000,
-            )
             self._mark_manifest_failed(root, settings)
             self._update(
                 project_id,
@@ -352,17 +343,17 @@ class JobStore:
                 stage="Error",
                 error=redactar(str(exc), 400),
             )
-        except Exception as exc:  # noqa: BLE001 — persist unexpected processing failures
-            safe_log(logger, logging.ERROR, "Processing failed for %s", project_id)
-            self._record_failure(job, settings, "processing_failed", stage, exc)
+            self._record_failure(job, settings, "conversion_failed", stage, exc)
             self._emit(
                 job,
                 "job_failed",
                 outcome="failed",
                 stage=stage,
-                error_code="processing_failed",
+                error_code="conversion_failed",
                 duration_ms=(time.perf_counter() - started) * 1000,
             )
+        except Exception as exc:  # noqa: BLE001 — persist unexpected processing failures
+            safe_log(logger, logging.ERROR, "Processing failed for %s", project_id)
             self._mark_manifest_failed(root, settings)
             self._update(
                 project_id,
@@ -371,6 +362,15 @@ class JobStore:
                 state="failed",
                 stage="Error",
                 error="No se pudo procesar el dibujo. Revisa el archivo e inténtalo de nuevo.",
+            )
+            self._record_failure(job, settings, "processing_failed", stage, exc)
+            self._emit(
+                job,
+                "job_failed",
+                outcome="failed",
+                stage=stage,
+                error_code="processing_failed",
+                duration_ms=(time.perf_counter() - started) * 1000,
             )
 
     @staticmethod

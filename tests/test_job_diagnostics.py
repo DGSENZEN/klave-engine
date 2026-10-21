@@ -273,3 +273,55 @@ def test_telemetry_failure_does_not_hide_real_persistence_failure(
     monkeypatch.setattr(store, "_persist", broken)
     with pytest.raises(OSError, match="controlled write failure"):
         store.enqueue("p2", root / "p2", settings, context=origin())
+
+
+def test_existing_pipeline_logs_cannot_fail_valid_processing(local_jobs, monkeypatch):
+    import logging
+
+    from klave_engine.common.logging import get_logger, log_stage
+
+    store, settings, root = local_jobs
+    underlying = logging.getLogger("klave.test.pipeline-handler")
+
+    class BrokenHandler(logging.Handler):
+        def emit(self, record):
+            raise OSError("controlled log sink failure")
+
+    handler = BrokenHandler()
+    underlying.addHandler(handler)
+    underlying.setLevel(logging.INFO)
+
+    def pipeline(*args, **kwargs):
+        logger = get_logger(underlying.name)
+        log_stage(logger, "synthetic_stage", count=1)
+        logger.info("existing direct pipeline log")
+        logger.warning("existing direct warning")
+        return SimpleNamespace(entities=[], detections=[])
+
+    monkeypatch.setattr(jobs, "run_full_pipeline", pipeline)
+    try:
+        job, _ = store.enqueue("p1", root, settings, context=origin())
+        store._run("p1", root, settings)
+        assert job.state == "processed"
+    finally:
+        underlying.removeHandler(handler)
+
+
+def test_failed_lifecycle_follows_durable_failure(local_jobs, monkeypatch):
+    store, settings, root = local_jobs
+    observed = []
+
+    def pipeline(*args, **kwargs):
+        raise RuntimeError("controlled failure")
+
+    def observe(event, context, **fields):
+        if event == "job_failed":
+            observed.append(
+                read_json(root / settings.processed_dir_name / "latest_job.json")["state"]
+            )
+
+    monkeypatch.setattr(jobs, "run_full_pipeline", pipeline)
+    monkeypatch.setattr(jobs, "emit_job_event", observe)
+    store.enqueue("p1", root, settings, context=origin())
+    store._run("p1", root, settings)
+    assert observed == ["failed"]

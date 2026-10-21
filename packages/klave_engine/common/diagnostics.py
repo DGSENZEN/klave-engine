@@ -80,7 +80,9 @@ def bind_context(context: DiagnosticContext) -> Iterator[None]:
         _context.reset(token)
 
 
-def safe_log(logger: logging.Logger, level: int, message: str, *args: object) -> None:
+def safe_log(
+    logger: logging.Logger | logging.LoggerAdapter, level: int, message: str, *args: object
+) -> None:
     """Instrumentation failure must not become a product failure."""
     try:
         logger.log(level, message, *args)

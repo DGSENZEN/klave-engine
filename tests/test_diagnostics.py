@@ -208,3 +208,29 @@ def test_broken_api_diagnostics_preserve_support_response(data_dir, monkeypatch,
     assert response.status_code == 500
     assert response.headers["x-request-id"] == "ref-api-failure"
     assert response.json()["request_id"] == "ref-api-failure"
+
+
+def test_uvicorn_rendered_traceback_redacts_original_exception(data_dir, caplog):
+    import sys
+
+    from apps.api.main import create_app
+
+    create_app()  # Install the server logger boundary, even with Uvicorn's own handlers.
+    server_logger = logging.getLogger("uvicorn.error")
+    caplog.set_level(logging.ERROR)
+    try:
+        raise RuntimeError("failed /auth/reset/SECRET?code=PRIVATE")
+    except RuntimeError:
+        record = server_logger.makeRecord(
+            "uvicorn.error",
+            logging.ERROR,
+            __file__,
+            1,
+            "Exception in ASGI application",
+            (),
+            sys.exc_info(),
+        )
+    server_logger.handle(record)
+    rendered = logging.Formatter("%(message)s").format(record)
+    assert "RuntimeError" in rendered and "Traceback" in rendered
+    assert "SECRET" not in rendered and "PRIVATE" not in rendered
