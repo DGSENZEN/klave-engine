@@ -9,7 +9,7 @@ const STEPS = [
   {
     icon: <CloudArrowUp size={20} weight="duotone" />,
     title: "Sube tu plano",
-    text: "DWG o DXF estructural; la conversión y lectura corren en tu equipo.",
+    text: "DWG o DXF estructural; Klave convierte y lee las hojas de tu obra.",
   },
   {
     icon: <Scan size={20} weight="duotone" />,

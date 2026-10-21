@@ -12,7 +12,7 @@ engineer can check every line against the law.
 
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 YEAR = 2026
 SALARIO_MINIMO_GENERAL = 315.04  # CONASAMI, vigente 1 ene 2026
@@ -32,6 +32,8 @@ RIESGO_TRABAJO_CLASE_V = 7.58875
 
 
 class FsrParameters(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     year: int = YEAR
     uma: float = UMA_DIARIA
     # Days paid: 365 + aguinaldo + prima vacacional (as paid days).
@@ -139,6 +141,8 @@ def compute_fsr(salario_nominal: float, params: FsrParameters | None = None) -> 
 
 
 class LaborCategory(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     code: str  # MO insumo code
     description: str
     salario_nominal: float

@@ -118,3 +118,16 @@ def test_apply_steel_prices_lines_from_the_catalog(data_dir):
     assert line.concept_code == "ACE-001" and line.unit == "KG"
     assert line.amount == pytest.approx(line.quantity * apus["ACE-001"].direct_unit_cost, abs=0.01)
     assert boq.direct_cost_total == pytest.approx(sum(row.amount for row in boq.lines), abs=0.01)
+
+
+def test_a_decimal_section_is_never_truncated():
+    # R119: una sección de 15x20.5 se cuantifica con sus 20.5 cm (antes, 20).
+    k1 = make_detection("c1", DetectionType.column_tag, "K-1", (0, 0, 1, 1), 0.9, [], "m", [])
+    boq = BillOfQuantities(project_id="p", lines=[_line("EST-001", 0.135, 1, ["c1"])])
+    specs = {"by_mark": {"K-1": {"rebar": "4#3", "stirrups": "#2@20", "section_cm": [15, 20.5]}}}
+    report = compute_steel(boq, [k1], specs, None, 1.0, 3.0, SteelAssumptions())
+    line = next(s for s in report.lines if s.concept_code == "ACE-001")
+    longitudinal = 4 * (3.0 + 0.40) * 0.560
+    perimeter = 2 * ((0.15 - 0.05) + (0.205 - 0.05)) + 0.075
+    stirrups = (math.floor(3.0 / 0.20) + 1) * perimeter * 0.248
+    assert line.quantity == pytest.approx((longitudinal + stirrups) * 1.05, abs=0.01)

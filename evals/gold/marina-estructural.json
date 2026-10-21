@@ -1,0 +1,403 @@
+{
+  "drawing_id": "marina-estructural",
+  "source": "data/uploads/marina_lote_04_estructural_d1cd5ec8",
+  "files": {
+    "01-02_estructural_l_04_-_26_01_15.dwg": "c73c452542a3cd1fc0c816c682d9363e41d6d654d04ed783132357129ebdc793"
+  },
+  "status": "baseline",
+  "captured_at": "2026-10-19T02:52:22.204181Z",
+  "labels": {},
+  "confirmed": [],
+  "excluded": [],
+  "baseline_f1": {},
+  "money": {
+    "concepts": {
+      "PRE-001": {
+        "quantity": 178.249,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": "no verificado en crudo; protege contra deriva",
+        "variants": {
+          "PRE-001.GEN": 178.249
+        }
+      },
+      "CIM-001": {
+        "quantity": 10.786,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": "no verificado en crudo; protege contra deriva",
+        "variants": {
+          "CIM-001.GEN": 10.786
+        }
+      },
+      "CIM-007": {
+        "quantity": 30.306,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": "no verificado en crudo; protege contra deriva",
+        "variants": {
+          "CIM-007.CIMENTACION-20": 27.034,
+          "CIM-007.CIMENTACION-25": 3.272
+        }
+      },
+      "CIM-010": {
+        "quantity": 23.0,
+        "unit": "PZA",
+        "tolerance_pct": 0.0,
+        "source": "crudo",
+        "note": "23 contornos de pilote en EST-PILOTES de ES-000, contados y medidos en crudo",
+        "variants": {
+          "CIM-010.50": 3.0,
+          "CIM-010.70": 4.0,
+          "CIM-010.35": 4.0,
+          "CIM-010.60": 12.0
+        }
+      },
+      "CIM-008": {
+        "quantity": 35.452,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": "no verificado en crudo; protege contra deriva",
+        "variants": {
+          "CIM-008.35X80": 11.018,
+          "CIM-008.30X60": 3.078,
+          "CIM-008.30X80": 7.872,
+          "CIM-008.30X70": 7.234,
+          "CIM-008.35X70": 1.74,
+          "CIM-008.40X80": 3.104,
+          "CIM-008.20X40": 0.172,
+          "CIM-008.GEN": 0.694,
+          "CIM-008.25X60": 0.54
+        }
+      },
+      "EST-002": {
+        "quantity": 34.433,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": "no verificado en crudo; protege contra deriva",
+        "variants": {
+          "EST-002.15X825": 1.058,
+          "EST-002.25X40": 0.125,
+          "EST-002.20X75": 0.926,
+          "EST-002.GEN": 5.276,
+          "EST-002.20X40": 1.006,
+          "EST-002.30X50": 3.135,
+          "EST-002.25X75": 1.303,
+          "EST-002.30X65": 0.497,
+          "EST-002.20X50": 0.63,
+          "EST-002.15X725": 0.098,
+          "EST-002.20X70": 0.175,
+          "EST-002.20X65": 1.638,
+          "EST-002.25X45": 1.513,
+          "EST-002.15X40": 0.17,
+          "EST-002.15X71": 0.602,
+          "EST-002.40X45": 0.981,
+          "EST-002.20X35": 0.082,
+          "EST-002.30X52": 0.562,
+          "EST-002.30X40": 0.133,
+          "EST-002.45X50": 2.07,
+          "EST-002.725X75": 5.025,
+          "EST-002.28X45": 0.158,
+          "EST-002.20X45": 0.599,
+          "EST-002.35X55": 1.03,
+          "EST-002.30X80": 1.332,
+          "EST-002.45X60": 2.511,
+          "EST-002.20X60": 0.654,
+          "EST-002.30X70": 1.145
+        }
+      },
+      "EST-005": {
+        "quantity": 313.799,
+        "unit": "M",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": "no verificado en crudo; protege contra deriva",
+        "variants": {
+          "EST-005.15X20-4N3": 76.225,
+          "EST-005.20X20": 3.3,
+          "EST-005.20X30-6N3": 64.174,
+          "EST-005.15X30-4N3": 68.75,
+          "EST-005.15X25-4N3": 8.55,
+          "EST-005.20X20-4N3": 52.751,
+          "EST-005.30X30-6N4": 32.174,
+          "EST-005.20X35-4N4": 3.425,
+          "EST-005.15X35-4N3": 4.45
+        }
+      },
+      "EST-014": {
+        "quantity": 13.878,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": "no verificado en crudo; protege contra deriva",
+        "variants": {
+          "EST-014.CONCRETO-30": 12.42,
+          "EST-014.CONCRETO-20": 1.458
+        }
+      },
+      "EST-003": {
+        "quantity": 281.332,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": "no verificado en crudo; protege contra deriva",
+        "variants": {
+          "EST-003.RETICULAR-30": 92.972,
+          "EST-003.RETICULAR-45": 52.492,
+          "EST-003.RETICULAR-35": 83.08,
+          "EST-003.RETICULAR-25": 52.788
+        }
+      },
+      "EST-012": {
+        "quantity": 146.018,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": "no verificado en crudo; protege contra deriva",
+        "variants": {
+          "EST-012.VIGUETABOVEDILLA-20": 87.309,
+          "EST-012.VIGUETABOVEDILLA-31": 18.927,
+          "EST-012.VIGUETABOVEDILLA-25": 39.782
+        }
+      },
+      "EST-013": {
+        "quantity": 24.832,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": "no verificado en crudo; protege contra deriva",
+        "variants": {
+          "EST-013.MACIZA-20": 10.748,
+          "EST-013.MACIZA-30": 10.175,
+          "EST-013.MACIZA-12": 3.409,
+          "EST-013.MACIZA": 0.5
+        }
+      },
+      "EST-004": {
+        "quantity": 253.705,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": "no verificado en crudo; protege contra deriva",
+        "variants": {
+          "EST-004.BLOCK-30": 11.371,
+          "EST-004.BLOCK-20": 91.442,
+          "EST-004.BLOCK-15": 129.374,
+          "EST-004.BLOCK-10": 21.517
+        }
+      },
+      "ACA-001": {
+        "quantity": 507.411,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": "no verificado en crudo; protege contra deriva",
+        "variants": {
+          "ACA-001.GEN": 507.411
+        }
+      },
+      "ACA-002": {
+        "quantity": 507.411,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": "no verificado en crudo; protege contra deriva",
+        "variants": {
+          "ACA-002.GEN": 507.411
+        }
+      },
+      "CIM-003": {
+        "quantity": 30.95,
+        "unit": "M2",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": "no verificado en crudo; protege contra deriva",
+        "variants": {
+          "CIM-003.GEN": 30.95
+        }
+      },
+      "CIM-005": {
+        "quantity": 14.022,
+        "unit": "M3",
+        "tolerance_pct": 10.0,
+        "source": "engine",
+        "note": "no verificado en crudo; protege contra deriva",
+        "variants": {
+          "CIM-005.GEN": 14.022
+        }
+      }
+    },
+    "direct_cost": 0.0,
+    "direct_cost_tolerance_pct": 5.0,
+    "unpriced": [
+      "ACA-001",
+      "ACA-002",
+      "CIM-001",
+      "CIM-002",
+      "CIM-003",
+      "CIM-005",
+      "CIM-007",
+      "CIM-008",
+      "CIM-010",
+      "EST-001",
+      "EST-002",
+      "EST-003",
+      "EST-004",
+      "EST-005",
+      "EST-012",
+      "EST-013",
+      "EST-014",
+      "PRE-001"
+    ],
+    "sin_cerca": {
+      "EST-001": "depende de c\u00f3mo se cuentan los entrepisos (9cc241b99121), sin decidir",
+      "CIM-002": "son los dados D-n: la altura est\u00e1 acotada en los cortes de cada dado (p. ej. 42766 \u00ab100\u00bb de D-1 y 429EA de D-3, ES-005) y el motor no la lee (usa la supuesta); D-X dentro de D-4 est\u00e1 en duda"
+    }
+  },
+  "estructura": {
+    "por_familia": {
+      "contratrabe": {
+        "colocaciones": 56,
+        "con_definicion": 56,
+        "criticos_total": 224
+      },
+      "trabe": {
+        "colocaciones": 97,
+        "con_definicion": 96,
+        "criticos_total": 388
+      },
+      "castillo": {
+        "colocaciones": 204,
+        "con_definicion": 204,
+        "criticos_total": 816
+      },
+      "columna": {
+        "colocaciones": 11,
+        "con_definicion": 11,
+        "criticos_total": 44
+      },
+      "pilote": {
+        "colocaciones": 23,
+        "con_definicion": 23,
+        "criticos_total": 92,
+        "criticos_del_plano": 69
+      },
+      "dala": {
+        "colocaciones": 145,
+        "con_definicion": 142,
+        "criticos_total": 580
+      },
+      "cerramiento": {
+        "colocaciones": 17,
+        "con_definicion": 17,
+        "criticos_total": 68
+      }
+    },
+    "por_hoja": {
+      "castillo": {
+        "ES-000": 34,
+        "ES-100": 32,
+        "ES-200": 37,
+        "ES-300": 61,
+        "ES-400": 40
+      },
+      "cerramiento": {
+        "ES-100": 2,
+        "ES-200": 4,
+        "ES-300": 5,
+        "ES-400": 6
+      },
+      "columna": {
+        "ES-000": 4,
+        "ES-100": 4,
+        "ES-200": 3
+      },
+      "contratrabe": {
+        "ES-000": 56
+      },
+      "dala": {
+        "ES-100": 9,
+        "ES-200": 40,
+        "ES-300": 67,
+        "ES-400": 29
+      },
+      "pilote": {
+        "ES-000": 23
+      },
+      "trabe": {
+        "ES-000": 2,
+        "ES-100": 12,
+        "ES-200": 35,
+        "ES-300": 41,
+        "ES-400": 7
+      }
+    },
+    "verificaciones": {
+      "1/bloquea": 1,
+      "1/duda": 2,
+      "2/aviso": 5,
+      "10/duda": 21
+    },
+    "hallazgos": {
+      "1/bloquea": [
+        "T4-3"
+      ],
+      "1/duda": [
+        "DA-2",
+        "DC"
+      ],
+      "2/aviso": [
+        "D-1C",
+        "D-2A",
+        "D-5B",
+        "K-0",
+        "P-2"
+      ],
+      "10/duda": [
+        "CM-1",
+        "D-1",
+        "D-1A",
+        "D-1B",
+        "D-3",
+        "D-3A",
+        "D-3B",
+        "D-4",
+        "D-4A",
+        "D-4B",
+        "D-4C",
+        "D-5",
+        "D-5A",
+        "D-C",
+        "D-X",
+        "MC-1",
+        "MC-2",
+        "MC-3",
+        "MC-4",
+        "MC-A",
+        "MC-C"
+      ]
+    },
+    "sin_cerca": {
+      "por_familia.castillo.criticos_del_plano": "la fuente de la altura depende de c\u00f3mo se cuentan los entrepisos (hallazgo 9cc241b99121, 5 niveles y 5 juegos de castillos): con la lectura (A) de hoy las 40 de ES-400 son supuesto, con la (B) lo ser\u00edan las de ES-000; Diego no ha decidido",
+      "por_familia.columna.criticos_del_plano": "igual que los castillos: la altura de las columnas depende de la decisi\u00f3n de los entrepisos (9cc241b99121)",
+      "por_familia.trabe.criticos_del_plano": "pide la transcripci\u00f3n a mano por (marca, hoja) de la Tarea 16 (0 de 97 longitudinales y 22 de 97 estribos del plano no se verificaron trabe por trabe)",
+      "por_familia.contratrabe.criticos_del_plano": "pide la transcripci\u00f3n a mano por (marca, hoja) de la Tarea 16; p. ej. el corte de CTA-12 en ES-004 (36D3E) escribe \u00ab4#3\u00bb (36D47) y \u00abE#3\u00bb (36D3D) que el motor no toma, y no se decidi\u00f3 de qui\u00e9n son",
+      "por_familia.dala.criticos_del_plano": "las 8 etiquetas sin l\u00ednea medible y el estribo supuesto, y el armado de CI por muro, no se revisaron colocaci\u00f3n por colocaci\u00f3n en crudo",
+      "por_familia.cerramiento.criticos_del_plano": "el crudo da 68 y el motor 64: en el cuadro de ES-200 (y ES-300, ES-400) CR-2 lleva \u00ab2#3\u00bb (98104) y \u00ab2#4\u00bb (98102) con flecha a su secci\u00f3n, y el motor deja sus longitudinales vac\u00edas (su bloquea de la verificaci\u00f3n 7); no se cerca una cifra que el plano contradice",
+      "por_familia.zapata": "son los dados D-n: 23 contornos en EST-DADOS de ES-000, cada uno con su etiqueta D-n en EST-DADOS a 0.07\u20130.46 m de \u00e9l (al lado, no encima); el motor los cuenta como zapata sin marca porque no junta la etiqueta con su contorno (con_definicion 0), y su altura est\u00e1 acotada en los cortes de cada dado (p. ej. 42766 \u00ab100\u00bb de D-1, 429EA de D-3, ES-005) y el motor no la lee; adem\u00e1s D-X (E2EC4, 45x45, \u00abDADO D-X\u00bb en ES-004) est\u00e1 dentro de D-4 (35521) y el motor no lo cuenta: 22 o 23 no se decide del plano. Se cerca cuando la junta de los D-n llegue",
+      "por_familia.dado": "la familia dado tiene 0 colocaciones porque los 22-23 dados D-n est\u00e1n en zapata (sin juntar con su etiqueta): cercar 0 certificar\u00eda lo que el plano contradice; se cerca con la junta de los D-n",
+      "por_familia.muro_concreto": "el plano dibuja los muros MC-1\u2026MC-4, MC-A y MC-C como achurado con 74 marcas en planta; el motor s\u00f3lo coloca 4 contornos cerrados sin marca (y lo dice en sus dudas de la 10): no hay una cuenta de colocaciones del plano que sea la del motor",
+      "verificaciones.1/aviso": "sus 2 avisos dicen \u00absin marca\u00bb de los dados y de los muros, y el plano s\u00ed los marca: los D-n en EST-DADOS a 0.07\u20130.46 m de su contorno, los MC-n sobre el achurado de su muro; se cerca con la junta de los D-n",
+      "verificaciones.7": "pide la transcripci\u00f3n a mano por (marca, hoja) de la Tarea 16 (lo que falta o es supuesto, dato por dato)",
+      "verificaciones.8": "que no haya otra contradicci\u00f3n entre las lecturas de una marca en dos hojas pide la transcripci\u00f3n a mano por (marca, hoja) de la Tarea 16; los recubrimientos de K-6/K-9 salen de la geometr\u00eda de los cuadros y no se midieron en crudo",
+      "verificaciones.10/aviso": "un aviso por clase de elemento fuera de la lectura (nervaduras, acero, escaleras, el tope de muros) es una taxonom\u00eda abierta; p. ej. las nervaduras NA\u2026NG de ES-400 (4DD4B\u2026) no est\u00e1n en el aviso de la familia N",
+      "verificaciones.11": "los textos sin due\u00f1o agrupados por hoja, motivo y clase, y los avisos de lectura: pide la transcripci\u00f3n a mano por (marca, hoja) de la Tarea 16"
+    }
+  },
+  "notes": "Tarea 15, cerca verificada contra el DXF crudo (sha256 e72a3d87\u2026, el mismo que convierte el pipeline) con un guion independiente (load_dxf s\u00f3lo para abrirlo, ezdxf a mano; ning\u00fan lector del motor): marcos por sus contornos de 44\u00d729.3 y su c\u00f3digo ES-nnn; plantas ES-000/100/200/300/400 por su t\u00edtulo; la planta de cada hoja = la caja de sus burbujas de eje (+0.5 m). Colocaciones = etiquetas en la capa de su familia dentro de la planta: castillo 204 (EST-CASTILLOS K-n: ES-000 34, ES-100 32, ES-200 37, ES-300 61, ES-400 40, cada una sobre su contorno; 222 contornos = 215 cuerpos, los de m\u00e1s son C-1/C-3 dibujadas en dos capas y las dos piezas de la L de K-15A), columna 11 (C-1/2/3), trabe 97 (95 en EST-TRABES + 2 \u00abTE-A\u00bb en EST-CONTRATRABE de ES-000, \u00abTRABE TE-A\u00bb en ES-007), contratrabe 56, dala 145 (CI 83, CE-1 36, CE-2 10, CE-3 9, CE-5 3, DA-2 2, CE-4 1, DC 1), cerramiento 17, pilote 23 (cada P-n sobre su contorno de EST-PILOTES; P-4 EB0C6 est\u00e1 0.5 m bajo el \u00faltimo eje, dibujado y visto). Ninguna etiqueta repetida en su lugar; ninguna marca en otra capa dentro de una planta. con_definicion: todas las marcas colocadas tienen su t\u00edtulo fuera de las plantas con armado o cotas junto, salvo T4-3, DA-2 y DC, que s\u00f3lo existen como su etiqueta de planta (trabe 96, dala 142). Pilote criticos_del_plano 69 = 23 \u00d7 (secci\u00f3n, longitudinales, estribos) del cuadro de ES-000 (P-1 4#5+4#4 2E#3, P-3 4#8+4#4 2E#3, P-4 12#6 2E#3, P-5 4#8+12#6 3E#3 \u2014el texto 33AF5 est\u00e1 bajo la columna de P-4 pero el corte de P-5 dibuja 16 varillas y 3 estribos\u2014; cotas 60/70; contornos 35/50/60/70); la longitud no la escribe el plano (ES-001: LP y DF \u00abVER TABLA DE MEC\u00c1NICA DE SUELOS\u00bb); \u00ab2E#3 VER CORTE\u00bb cuenta como estribo del plano por definici\u00f3n (el juego est\u00e1 escrito, su separaci\u00f3n remite al corte y la verificaci\u00f3n 7 bloquea su peso). Verificaciones: 1/bloquea = T4-3 (sin nota de trabes), 1/duda = DA-2 y DC (la nota \u00abCADENA DE ENRASE 15X25 4#3 E#2@15\u00bb, D8A3A/D8A4F en ES-101); 2 = D-1C, D-2A, D-5B, K-0, P-2 (definidas, nunca escritas en una planta salvo como etiqueta de cuadro); 10/duda = las 21 marcas escritas en planta sin elemento suyo (MC-1/2/3/4/A/C, los 14 dados D-n con D-C, y CM-1), del universo completo de fichas de marca del dibujo; 14 de las 21 (los D-n) son la junta que falta entre la etiqueta y su dado, no algo que el plano no tenga: cuando la junta llegue, esta cerca se mueve a sabiendas. CIM-010: 23 contornos de pilote, 12 de 60, 4 de 70, 4 de 35 y 3 de 50 cm, con la marca del lado que su cuadro le da; exacto (tolerancia 0, fuente crudo: ninguna captura lo pisa). Los dem\u00e1s renglones de dinero y el costo directo son del motor (fuente engine): no verificados en crudo, s\u00f3lo protegen contra deriva; EST-001 y CIM-002 quedan sin cerca. Las etiquetas de detecci\u00f3n no se cercan aqu\u00ed: ser\u00edan una copia del motor. Ronda de arreglos 1: la cerca guarda tambi\u00e9n las colocaciones por hoja y qui\u00e9nes son los hallazgos de cada clave cercada (R250)."
+}

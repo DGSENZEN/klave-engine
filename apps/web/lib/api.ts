@@ -1,12 +1,25 @@
+import { ApiError, errorFromResponse } from "./httpErrors";
+export { ApiError } from "./httpErrors";
+
 // Typed client for the Klave Engine FastAPI backend.
 
 export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, "") || "/api";
 
-/** True when a production build is talking to localhost: the deployment
- * forgot NEXT_PUBLIC_API_URL, and every page would otherwise blame the server. */
+/** An override may be a same-origin path or an absolute HTTP(S) URL.
+ * Vercel needs no public override: its server route uses a runtime binding. */
 export const API_MISCONFIGURED =
-  process.env.NODE_ENV === "production" && !process.env.NEXT_PUBLIC_API_URL;
+  !/^\/(?!\/)|^https?:\/\//.test(API_BASE);
+
+/** Query URLs must also work when API_BASE is the relative /api prefix. */
+export function apiURL(path: string, query: Record<string, string | undefined> = {}): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value) params.set(key, value);
+  }
+  const suffix = params.toString();
+  return API_BASE + path + (suffix ? "?" + suffix : "");
+}
 
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -18,7 +31,7 @@ async function getJSON<T>(path: string): Promise<T> {
     try {
       detail = (await res.json())?.detail;
     } catch {}
-    throw new ApiError(res.status, path, detail);
+    throw await errorFromResponse(res, path, true, detail);
   }
   return res.json() as Promise<T>;
 }
@@ -39,7 +52,7 @@ async function postJSON<T>(
     try {
       detail = (await res.json())?.detail;
     } catch {}
-    throw new ApiError(res.status, path, detail);
+    throw await errorFromResponse(res, path, true, detail);
   }
   return res.json() as Promise<T>;
 }
@@ -62,7 +75,7 @@ async function postForm<T>(
     try {
       detail = (await res.json())?.detail;
     } catch {}
-    throw new ApiError(res.status, path, detail);
+    throw await errorFromResponse(res, path, true, detail);
   }
   return res.json() as Promise<T>;
 }
@@ -83,7 +96,7 @@ async function putJSON<T>(
     try {
       detail = (await res.json())?.detail;
     } catch {}
-    throw new ApiError(res.status, path, detail);
+    throw await errorFromResponse(res, path, true, detail);
   }
   return res.json() as Promise<T>;
 }
@@ -104,7 +117,7 @@ async function patchJSON<T>(
     try {
       detail = (await res.json())?.detail;
     } catch {}
-    throw new ApiError(res.status, path, detail);
+    throw await errorFromResponse(res, path, true, detail);
   }
   return res.json() as Promise<T>;
 }
@@ -120,18 +133,13 @@ async function deleteJSON<T>(path: string, headers?: Record<string, string>): Pr
     try {
       detail = (await res.json())?.detail;
     } catch {}
-    throw new ApiError(res.status, path, detail);
+    throw await errorFromResponse(res, path, true, detail);
   }
   // Un DELETE bien hecho responde 204 sin cuerpo, y res.json() truena con eso.
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
-export class ApiError extends Error {
-  constructor(public status: number, public path: string, public detail?: unknown) {
-    super(`API ${status} on ${path}`);
-  }
-}
 
 /**
  * The message the server wrote for people, or the fallback. Every error
@@ -139,11 +147,14 @@ export class ApiError extends Error {
  * failure or a 500 carries nothing worth showing.
  */
 export function apiMessage(error: unknown, fallback: string): string {
+  let message = fallback;
   if (error instanceof ApiError && error.detail && typeof error.detail === "object") {
-    const message = (error.detail as { message?: unknown }).message;
-    if (typeof message === "string" && message.trim()) return message;
+    const server = (error.detail as { message?: unknown }).message;
+    if (typeof server === "string" && server.trim()) message = server;
   }
-  return fallback;
+  return error instanceof ApiError && error.status >= 500 && error.requestId
+    ? message + " Referencia: " + error.requestId
+    : message;
 }
 
 /**
@@ -158,7 +169,7 @@ export async function downloadFile(path: string, fallbackName: string): Promise<
     try {
       detail = (await res.json())?.detail;
     } catch {}
-    throw new ApiError(res.status, path, detail);
+    throw await errorFromResponse(res, path, true, detail);
   }
   const disposition = res.headers.get("Content-Disposition") ?? "";
   const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
@@ -2121,7 +2132,7 @@ export async function importPlantilla(
     } catch {
       detail = null;
     }
-    throw new ApiError(res.status, "/catalog/plantillas", detail);
+    throw await errorFromResponse(res, "/catalog/plantillas", true, detail);
   }
   return (await res.json()) as PlantillaImportResult;
 }
@@ -2607,9 +2618,7 @@ export async function importCatalogPrices(
 ): Promise<{ updated: number; skipped: string[] }> {
   const form = new FormData();
   form.append("file", file);
-  const url = new URL(`${API_BASE}/catalog/import-prices`);
-  if (source) url.searchParams.set("source", source);
-  const res = await fetch(url.toString(), {
+  const res = await fetch(apiURL("/catalog/import-prices", { source }), {
     method: "POST",
     credentials: "include",
     headers: actor ? { "X-Actor": actor } : undefined,
@@ -2620,7 +2629,7 @@ export async function importCatalogPrices(
     try {
       detail = (await res.json())?.detail;
     } catch {}
-    throw new ApiError(res.status, "/catalog/import-prices", detail);
+    throw await errorFromResponse(res, "/catalog/import-prices", true, detail);
   }
   return res.json();
 }
@@ -2652,20 +2661,31 @@ async function postFiles<T>(
     try {
       detail = (await res.json())?.detail;
     } catch {}
-    throw new ApiError(res.status, path, detail);
+    throw await errorFromResponse(res, path, true, detail);
   }
   return res.json() as Promise<T>;
 }
 
-export const uploadProject = (
+export const uploadProject = async (
   files: File[],
   actor?: string,
   meta?: { project_name?: string; client?: string },
-) =>
-  postFiles<{ project_id: string; warnings: string[] }>("/projects/upload", files, actor, {
+) => {
+  try {
+    return await postFiles<{ project_id: string; warnings: string[] }>("/projects/upload", files, actor, {
     project_name: meta?.project_name,
     client: meta?.client,
-  });
+    });
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 429 && error.detail && typeof error.detail === "object") {
+      const detail = error.detail as { error_type?: string; project_id?: unknown };
+      if (detail.error_type === "processing_queue_full" && typeof detail.project_id === "string" && detail.project_id) {
+        return { project_id: detail.project_id, warnings: ["Tus planos se guardaron. La cola está llena; inicia el procesamiento desde el proyecto."] };
+      }
+    }
+    throw error;
+  }
+};
 
 export const addProjectFiles = (id: string, files: File[], actor?: string) =>
   postFiles<{ project_id: string; sheet_count: number; warnings: string[] }>(
@@ -2721,6 +2741,7 @@ export type OnboardingState = {
 
 export type WorkspaceOverview = {
   projects: ProjectOverview[];
+  upload_limits?: { max_files: number; max_file_bytes: number };
   onboarding?: OnboardingState;
   attention: {
     processing: number;
@@ -2760,7 +2781,7 @@ export const resetWorkspaceDefaults = (actor?: string) =>
     credentials: "include",
     headers: actor ? { "X-Actor": actor } : undefined,
   }).then(async (res) => {
-    if (!res.ok) throw new ApiError(res.status, "/workspace/defaults", undefined);
+    if (!res.ok) throw await errorFromResponse(res, "/workspace/defaults");
     return res.json() as Promise<WorkspaceDefaults>;
   });
 
@@ -2885,10 +2906,7 @@ export async function importCustomSource(
 ): Promise<{ source_key: string; rows: number; name: string }> {
   const form = new FormData();
   form.append("file", file);
-  const url = new URL(`${API_BASE}/catalog/sources/custom`);
-  if (name) url.searchParams.set("name", name);
-  if (vigencia) url.searchParams.set("vigencia", vigencia);
-  const res = await fetch(url.toString(), {
+  const res = await fetch(apiURL("/catalog/sources/custom", { name, vigencia }), {
     method: "POST",
     credentials: "include",
     headers: actor ? { "X-Actor": actor } : undefined,
@@ -2899,7 +2917,7 @@ export async function importCustomSource(
     try {
       detail = (await res.json())?.detail;
     } catch {}
-    throw new ApiError(res.status, "/catalog/sources/custom", detail);
+    throw await errorFromResponse(res, "/catalog/sources/custom", true, detail);
   }
   return res.json();
 }
@@ -3044,7 +3062,7 @@ export async function importMatrices(file: File, source: string, actor?: string)
     } catch {
       detail = null;
     }
-    throw new ApiError(res.status, "/catalog/import-matrices", detail);
+    throw await errorFromResponse(res, "/catalog/import-matrices", true, detail);
   }
   return (await res.json()) as MatricesImportResult;
 }

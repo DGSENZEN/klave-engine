@@ -1,0 +1,40 @@
+services:
+  users-db:
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    environment:
+      POSTGRES_USER: klave_users
+      POSTGRES_PASSWORD: synthetic-smoke-only
+      POSTGRES_DB: klave_users
+    volumes:
+      - users:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U klave_users -d klave_users"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  api:
+    image: $KLAVE_API_IMAGE
+    environment:
+      KLAVE_ENV: production
+      KLAVE_LOAD_DOTENV: "0"
+      KLAVE_DATA_DIR: /data
+      KLAVE_REPORTS_DIR: /data/reports
+      KLAVE_USERS_DATABASE_URL: postgresql://klave_users:synthetic-smoke-only@users-db:5432/klave_users
+      KLAVE_WEB_ORIGIN: https://app.pilot.example.mx
+      KLAVE_COOKIE_SECURE: "true"
+      KLAVE_REGISTRATION: invite_only
+      KLAVE_MAIL_PROVIDER: outbox
+    ports:
+      - "127.0.0.1::8000"
+    volumes:
+      - data:/data
+    depends_on:
+      users-db:
+        condition: service_healthy
+  web:
+    image: $KLAVE_WEB_IMAGE
+    ports:
+      - "127.0.0.1::3000"
+volumes:
+  users:
+  data:

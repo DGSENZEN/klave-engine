@@ -22,10 +22,10 @@ def project_access_problem(
 ) -> tuple[int, str, str] | None:
     """None si ``user`` tiene ``required`` sobre el proyecto; si no, el
     (estado, tipo de error, mensaje) con que se niega."""
+    # A stale grant must never open a project belonging to another taller.
+    if store.project_workspace_id(project_id) != str(user["workspace_id"]):
+        return 403, "forbidden_project", "Proyecto de otro taller."
     if user["role"] == "admin":
-        # Los administradores pasan cualquier rol, pero sólo en su taller.
-        if store.project_workspace_id(project_id) != str(user["workspace_id"]):
-            return 403, "forbidden_project", "Proyecto de otro taller."
         return None
     role = store.project_role(project_id, str(user["user_id"]))
     if role is None or ROLE_RANK[role] < ROLE_RANK[required]:

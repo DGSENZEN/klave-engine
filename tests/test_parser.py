@@ -219,3 +219,61 @@ def test_cobertura_declarada_por_archivo(tmp_path):
     assert ilegible["coverage"] == "ilegible"
     assert "READ ERROR 0x940" in " ".join(ilegible["coverage_reasons"])
     assert ilegible["entity_count"] == 0
+
+
+def test_model_space_leader_is_kept(dxf_path):
+    # R127: un LEADER leído del archivo trae sus vértices como tuplas; antes se tiraba («Could not
+    # compute bbox for LEADER») — 13 en Marina, 39 en PRUEBA-1.
+    def build(doc):
+        doc.modelspace().add_leader([(0, 0), (1, 1), (2, 1)])
+
+    drawing = DxfParser().parse_file(dxf_path(build))
+    (leader,) = drawing.entities
+    assert leader.entity_type.value == "polyline" and not leader.is_closed
+    assert leader.properties["derived_from"] == "LEADER"
+    assert [tuple(round(c, 6) for c in p) for p in leader.points] == [(0, 0), (1, 1), (2, 1)]
+    assert not drawing.warnings
+
+
+def test_multileader_becomes_its_lines_and_its_text(dxf_path):
+    # R127: una MULTILEADER ya no se tira: cada línea de directriz es una polilínea abierta (de la
+    # punta, por su último punto, a lo largo de su apoyo) y su texto, si lo tiene, un MTEXT.
+    from ezdxf.math import Vec2
+    from ezdxf.render import mleader
+
+    def build(doc):
+        ml = doc.modelspace().add_multileader_mtext("Standard")
+        ml.set_content("K-1", char_height=0.2)
+        ml.add_leader_line(mleader.ConnectionSide.left, [Vec2(-3, -2)])
+        ml.build(insert=Vec2(0, 0))
+
+    drawing = DxfParser().parse_file(dxf_path(build))
+    lineas = [e for e in drawing.entities if e.entity_type.value == "polyline"]
+    textos = [e for e in drawing.entities if e.is_textual]
+    assert len(lineas) == 1 and lineas[0].properties["derived_from"] == "MULTILEADER"
+    assert not lineas[0].is_closed and len(lineas[0].points) >= 2
+    assert lineas[0].points[0] == pytest.approx((-3, -2))
+    assert [t.text for t in textos] == ["K-1"]
+    assert textos[0].properties["derived_from"] == "MULTILEADER"
+    assert not [w for w in drawing.warnings if w.entity_type == "MULTILEADER"]
+
+
+def test_hatch_keeps_all_its_loops_so_holes_can_be_subtracted(dxf_path):
+    def build(doc):
+        msp = doc.modelspace()
+        anillo = msp.add_hatch(dxfattribs={"layer": "EST-MURO CONCRETO"})
+        anillo.paths.add_polyline_path([(0, 0), (10, 0), (10, 10), (0, 10)], is_closed=True)
+        anillo.paths.add_polyline_path([(2, 2), (8, 2), (8, 8), (2, 8)], is_closed=True)
+        solo = msp.add_hatch(dxfattribs={"layer": "EST-MURO CONCRETO"})
+        solo.paths.add_polyline_path([(20, 0), (21, 0), (21, 1), (20, 1)], is_closed=True)
+
+    entities = DxfParser().parse_file(dxf_path(build)).entities
+    hatches = sorted(
+        (e for e in entities if e.entity_type.value == "hatch"), key=lambda e: e.bbox[0]
+    )
+    anillo, solo = hatches
+    # the outline stays the largest loop; every loop is kept beside it
+    assert anillo.bbox == (0.0, 0.0, 10.0, 10.0)
+    assert len(anillo.properties["anillos"]) == 2
+    assert {len(r) >= 4 for r in anillo.properties["anillos"]} == {True}
+    assert "anillos" not in solo.properties  # one loop: its points say it all

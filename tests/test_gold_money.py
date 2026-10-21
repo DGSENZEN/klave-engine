@@ -60,3 +60,23 @@ def test_human_rows_keep_their_own_tolerance_and_missing_concepts_fail():
     assert by["XXX-999"].actual is None and not by["XXX-999"].passed
     assert cost_ok is None
     assert "ACA-001" in unexpected  # the engine produces lines the gold never listed
+
+
+def test_variants_are_fenced_so_a_shift_between_them_fails():
+    # R171 (instalaciones-mini): the same metres re-priced as another diameter moved AIR-002's
+    # variants while its total stayed put, and the gate passed. The gold records each variant of
+    # a concept priced by variant; a variant that moves past the tolerance, appears or disappears
+    # fails.
+    fence = money_from_report(_report(10.0))
+    assert fence.concepts["EST-004"].variants == {"EST-004.BLOCK-15": 22.14}
+    scores, _cost_ok, _unexpected = score_money(fence, _report(10.0))
+    assert all(s.passed for s in scores)
+    assert "EST-004.BLOCK-15" in {s.concept_code for s in scores}
+    movido = _report(10.0)
+    linea = next(line for line in movido.boq.lines if line.concept_code == "EST-004")
+    linea.variants[0].key = "EST-004.BLOCK-20"  # the same metres, another variant
+    scores, _cost_ok, _unexpected = score_money(fence, movido)
+    by = {s.concept_code: s for s in scores}
+    assert by["EST-004"].passed  # the total did not move
+    assert not by["EST-004.BLOCK-15"].passed and by["EST-004.BLOCK-15"].actual is None
+    assert not by["EST-004.BLOCK-20"].passed

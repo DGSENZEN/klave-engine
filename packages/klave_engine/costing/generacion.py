@@ -26,12 +26,14 @@ from importlib import resources
 
 from klave_engine.costing.ficha import extraer_ficha
 from klave_engine.costing.matching import normalize, unit_key
+from klave_engine.detection.instalaciones_symbols import comillas
 
 _DIM_RE = re.compile(r"\b(\d{1,3}(?:[.,]\d)?)\s*[x×]\s*(\d{1,3}(?:[.,]\d)?)(?!\s*[x×])\b")
 _CM_RE = re.compile(r"\b(\d{1,3}(?:[.,]\d)?)\s*(?:cms?\.?|cent[ií]metros?)\b")
 _MM_RE = re.compile(r"\b(\d{1,3})\s*mm\b")
-_FRACTION_IN_RE = re.compile(r"\b(\d)\s*/\s*(\d)\s*(?:\"|”|pulg)")
-_WHOLE_IN_RE = re.compile(r"\b(\d)\s*(?:\"|”|pulg)")
+# R187: la marca de pulgadas llega normalizada (``comillas``: ″, '', ´´, ’’, ”, “ son «"»).
+_FRACTION_IN_RE = re.compile(r"\b(\d)\s*/\s*(\d)\s*(?:\"|pulg)")
+_WHOLE_IN_RE = re.compile(r"\b(\d)\s*(?:\"|pulg)")
 _INCHES_TO_MM = {
     0.5: 13, 0.75: 19, 1.0: 25, 1.25: 32, 1.5: 38, 2.0: 50, 3.0: 75, 4.0: 100, 6.0: 150,
 }
@@ -180,6 +182,7 @@ def _elemento_canonico(nombre: str) -> str:
 
 
 def _diametro_mm(low: str) -> float | None:
+    low = comillas(low)  # R187, R195: la única normalización de la marca de pulgadas
     m = _MM_RE.search(low)
     if m:
         return float(m.group(1))

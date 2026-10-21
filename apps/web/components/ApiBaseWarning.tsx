@@ -2,7 +2,7 @@
 
 import { API_MISCONFIGURED } from "@/lib/api";
 
-/** Shown on every page of a production build that has no API URL configured. */
+/** Invalid explicit overrides should not masquerade as a service outage. */
 export function ApiBaseWarning() {
   if (!API_MISCONFIGURED) return null;
   return (
@@ -10,8 +10,8 @@ export function ApiBaseWarning() {
       role="alert"
       className="bg-danger px-4 py-2 text-center text-sm font-medium text-white"
     >
-      Esta instalación no tiene configurada la dirección del servidor (NEXT_PUBLIC_API_URL);
-      ninguna página podrá cargar datos hasta que se defina.
+      La dirección del servidor (NEXT_PUBLIC_API_URL) no es válida;
+      revisa la configuración para cargar datos.
     </div>
   );
 }

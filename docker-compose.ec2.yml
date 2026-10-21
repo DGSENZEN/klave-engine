@@ -1,0 +1,104 @@
+# Backend only; the Next.js frontend runs on Vercel.
+# docker compose -p klave -f docker-compose.ec2.yml --env-file .env.prod up -d --build
+services:
+  users-db:
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: klave_users
+      POSTGRES_PASSWORD: ${KLAVE_USERS_DB_PASSWORD:?set a URL-safe database password}
+      POSTGRES_DB: klave_users
+    volumes:
+      - users-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U klave_users -d klave_users"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    image: ${KLAVE_API_IMAGE:-klave-api:ec2}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      KLAVE_ENV: production
+      KLAVE_LOAD_DOTENV: "0"
+      KLAVE_DATA_DIR: /data
+      KLAVE_REPORTS_DIR: /data/reports
+      KLAVE_USERS_DATABASE_URL: postgresql://klave_users:${KLAVE_USERS_DB_PASSWORD}@users-db:5432/klave_users
+      KLAVE_WEB_ORIGIN: ${KLAVE_WEB_ORIGIN:?set the frontend HTTPS origin}
+      KLAVE_API_PUBLIC_PREFIX: ""
+      KLAVE_COOKIE_SECURE: "true"
+      KLAVE_COOKIE_SAMESITE: lax
+      KLAVE_REGISTRATION: invite_only
+      KLAVE_MAX_CONCURRENT_JOBS: "1"
+      # Leave KLAVE_CONVERTER_EXECUTABLE_PATH unset: it selects the ODA CLI.
+      # LibreDWG is detected on PATH and uses the single-file adapter instead.
+      KLAVE_LOG_LEVEL: ${KLAVE_LOG_LEVEL:-INFO}
+      KLAVE_RESEND_API_KEY: ${KLAVE_RESEND_API_KEY:-}
+      KLAVE_MAIL_FROM: ${KLAVE_MAIL_FROM:-Klave <no-reply@localhost>}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      KLAVE_AI_BUDGET_USD: ${KLAVE_AI_BUDGET_USD:-5}
+    volumes:
+      - klave-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/ready"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
+    depends_on:
+      users-db:
+        condition: service_healthy
+    logging: *logging
+
+  caddy:
+    image: caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      KLAVE_API_DOMAIN: ${KLAVE_API_DOMAIN:?set the backend hostname}
+      KLAVE_ACME_EMAIL: ${KLAVE_ACME_EMAIL:?set your TLS contact email}
+    volumes:
+      - ./deploy/Caddyfile.ec2:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    logging: *logging
+
+  backup:
+    image: ${KLAVE_BACKUP_IMAGE:-klave-backup:ec2}
+    build:
+      context: .
+      dockerfile: deploy/backup.Dockerfile
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${KLAVE_USERS_DB_PASSWORD}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
+    volumes:
+      # SQLite read-only connections still create WAL shared-memory sidecars.
+      - klave-data:/data
+      - backups:/backups
+    depends_on:
+      api:
+        condition: service_healthy
+    logging: *logging
+
+volumes:
+  users-db-data:
+  klave-data:
+  caddy-data:
+  caddy-config:
+  backups:

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -41,6 +41,7 @@ import { eventsUrl, getBrowserActor, parseProjectEvent } from "@/lib/collab";
 import { isProfileComplete } from "@/lib/identity";
 import { fetchAuthStatus } from "@/lib/session";
 import { timeAgo } from "@/lib/time";
+import { validateDrawingFiles } from "@/lib/uploads";
 import {
   Badge,
   Button,
@@ -94,6 +95,10 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const uploadInFlight = useRef(false);
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [focus, setFocus] = useState<Focus>("all");
@@ -155,6 +160,18 @@ export default function Home() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  const refreshNow = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      setOverview(await getWorkspaceOverview());
+      setLoadError(null);
+    } catch (error) {
+      setLoadError(apiMessage(error, "No se pudo cargar el taller. Revisa tu conexión e inténtalo de nuevo."));
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!ready) return;
     let active = true;
@@ -162,10 +179,13 @@ export default function Home() {
     function refresh() {
       getWorkspaceOverview()
         .then((data) => {
-          if (active) setOverview(data);
+          if (active) {
+            setOverview(data);
+            setLoadError(null);
+          }
         })
         .catch(() => {
-          if (active) setError("No se pudo cargar el taller. ¿Está activo el servidor?");
+          if (active) setLoadError("No se pudo cargar el taller. Revisa tu conexión e inténtalo de nuevo.");
         });
     }
     refresh();
@@ -205,26 +225,36 @@ export default function Home() {
   }, [ready]);
 
   function handleFiles(list: FileList | File[]) {
-    const files = [...list].filter((f) => /\.(dwg|dxf)$/i.test(f.name));
-    if (files.length === 0) {
-      setError("Formato no soportado. Sube archivos .dwg o .dxf.");
+    if (uploadInFlight.current || pendingFiles) return;
+    const files = [...list];
+    const validation = validateDrawingFiles(files, overview?.upload_limits);
+    if (validation) {
+      setError(validation);
       return;
     }
     setError(null);
+    setUploadError(null);
     setPendingFiles(files);
   }
 
   async function createProject(files: File[], name: string, client: string) {
+    if (uploadInFlight.current) return;
+    uploadInFlight.current = true;
     setUploading(true);
+    setUploadError(null);
     try {
-      const { project_id } = await uploadProject(files, getBrowserActor(), {
+      const { project_id, warnings } = await uploadProject(files, getBrowserActor(), {
         project_name: name,
         client,
       });
+      if (warnings.length) {
+        try { sessionStorage.setItem("klave.upload.warning." + project_id, warnings.join(" ")); } catch {}
+      }
       setPendingFiles(null);
-      router.push(`/proyecto/${project_id}`);
+      router.push(`/proyecto/${encodeURIComponent(project_id)}`);
     } catch (e) {
-      setError(apiMessage(e, "No se pudo subir el archivo. Revisa que el servidor esté activo."));
+      setUploadError(apiMessage(e, "No se pudo confirmar la subida. Revisa la lista de proyectos antes de volver a subirlos; conservamos tu selección."));
+      uploadInFlight.current = false;
       setUploading(false);
     }
   }
@@ -248,10 +278,6 @@ export default function Home() {
   }, [projects, query, showArchived, focus]);
 
   const archivedCount = projects?.filter((p) => p.archived).length ?? 0;
-
-  function refreshNow() {
-    getWorkspaceOverview().then(setOverview).catch(() => {});
-  }
 
   if (!ready) {
     return (
@@ -299,6 +325,7 @@ export default function Home() {
         <NewProjectDialog
           files={pendingFiles}
           busy={uploading}
+          error={uploadError}
           onCancel={() => setPendingFiles(null)}
           onCreate={(name, client) => createProject(pendingFiles, name, client)}
         />
@@ -370,6 +397,16 @@ export default function Home() {
             <Callout tone="danger">{error}</Callout>
           </div>
         )}
+        {loadError && (
+          <div className="mb-4" role="alert">
+            <Callout tone="danger">
+              <p>{loadError}</p>
+              <Button className="mt-2" onClick={refreshNow} disabled={refreshing}>
+                <ArrowCounterClockwise size={15} /> {refreshing ? "Cargando…" : "Volver a intentar"}
+              </Button>
+            </Callout>
+          </div>
+        )}
 
         {overview && <AttentionStrip overview={overview} focus={focus} onFocus={setFocus} />}
 
@@ -416,7 +453,7 @@ export default function Home() {
           </div>
         )}
 
-        {projects === null ? (
+        {projects === null ? (loadError ? null : (
           <div className="space-y-2">
             {Array.from({ length: 3 }, (_, i) => (
               <div key={i} className="card flex items-center gap-3 p-4">
@@ -429,12 +466,12 @@ export default function Home() {
               </div>
             ))}
           </div>
-        ) : projects.length === 0 ? (
+        )) : projects.length === 0 ? (
           <div className="rise-in">
             <EmptyState
               icon={<CloudArrowUp size={22} weight="duotone" />}
               title="Sube tu primer plano"
-              hint="Arrastra archivos a esta ventana o usa el botón. DXF abre siempre; DWG se convierte con LibreDWG (si una hoja no abre, exporta a DXF desde AutoCAD). Varias hojas se procesan como una sola obra."
+              hint="Sube hasta 40 hojas DWG o DXF de una misma obra. Si un DWG no se puede convertir, expórtalo a DXF desde tu programa de dibujo e inténtalo de nuevo."
               action={
                 <span className="flex flex-wrap items-center justify-center gap-2">
                   <Button variant="primary" onClick={() => inputRef.current?.click()}>
@@ -869,11 +906,13 @@ function suggestName(file: File): string {
 function NewProjectDialog({
   files,
   busy,
+  error,
   onCancel,
   onCreate,
 }: {
   files: File[];
   busy: boolean;
+  error: string | null;
   onCancel: () => void;
   onCreate: (name: string, client: string) => void;
 }) {
@@ -927,11 +966,13 @@ function NewProjectDialog({
         id={formId}
         onSubmit={(e) => {
           e.preventDefault();
-          if (name.trim().length >= 2) onCreate(name.trim(), client.trim());
+          if (!busy && name.trim().length >= 2) onCreate(name.trim(), client.trim());
         }}
       >
-        <label className="mb-1 block text-xs font-medium text-muted">Nombre del proyecto</label>
+        {error && <div role="alert" className="mb-4"><Callout tone="danger">{error}</Callout></div>}
+        <label htmlFor="project-name" className="mb-1 block text-xs font-medium text-muted">Nombre del proyecto</label>
         <Input
+          id="project-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           autoFocus
@@ -939,8 +980,9 @@ function NewProjectDialog({
           required
           className="mb-3 w-full"
         />
-        <label className="mb-1 block text-xs font-medium text-muted">Cliente (opcional)</label>
+        <label htmlFor="project-client" className="mb-1 block text-xs font-medium text-muted">Cliente (opcional)</label>
         <Input
+          id="project-client"
           value={client}
           onChange={(e) => setClient(e.target.value)}
           placeholder="Constructora, dependencia, particular…"
@@ -948,11 +990,11 @@ function NewProjectDialog({
           className="mb-3 w-full"
         />
         <ul className="max-h-56 space-y-0.5 overflow-y-auto text-xs">
-          {files.map((file) => {
+          {files.map((file, index) => {
             const preview = previews?.get(file.name);
             const open = openFile === file.name;
             return (
-              <li key={file.name}>
+              <li key={`${index}-${file.name}`}>
                 <button
                   type="button"
                   onClick={() => setOpenFile(open ? null : file.name)}

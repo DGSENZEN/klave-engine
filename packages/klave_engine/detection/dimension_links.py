@@ -150,8 +150,8 @@ def link_dimensions(
             )
             stats.footings += 1
         elif detection.detection_type == DetectionType.column_tag:
-            if props.get("section_source") == "cuadro":
-                continue
+            if props.get("section_source") in ("cuadro", "supuesto"):
+                continue  # the sheet's section (one side assumed, R112) is not re-measured
             cx, cy = bbox_center(box)
             # Castillos are small; a cota of 40–100 cm beside a K mark is the
             # zapata or a spacing, never the castillo's section.

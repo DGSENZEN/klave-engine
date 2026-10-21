@@ -29,6 +29,13 @@ from klave_engine.detection.dimensions import DimensionInventory
 from klave_engine.detection.results import Detection
 from klave_engine.detection.views import SheetSegmentation
 from klave_engine.dxf.units import DrawingUnits
+from klave_engine.estructura.modelo import (
+    Estructura,
+    escribir_en_detecciones,
+    escribir_estructura_derivada,
+    estructura_para_recalcular,
+    resumir,
+)
 
 logger = get_logger(__name__)
 
@@ -99,9 +106,12 @@ def build_cost_report(
     overrides: CostingOverrides,
     reviews: ProjectReviews | None = None,
     store: CatalogStore | None = None,
+    estructura: Estructura | None = None,
 ) -> CostReport:
     """Costing from persisted inputs: the taller's catalog, project overrides,
-    and human corrections (excluded detections + manual adjustments)."""
+    and human corrections (excluded detections + manual adjustments). With the
+    run's structural model (``estructura``) steel reads its elements and the
+    model's sections are written on the detections, as in the pipeline."""
     store = store or get_catalog_store(get_settings().data_dir)
     price_book = apply_price_overrides(store.load_price_book(), overrides.insumo_prices)
     detections = (
@@ -135,6 +145,7 @@ def build_cost_report(
         price_vigencias=store.price_vigencias(),
         integracion_taller=store.get_setting("integracion"),
         variant_mappings=store.load_variant_mappings(),
+        estructura=estructura.para_el_costo() if estructura is not None else None,
     )
 
 
@@ -163,8 +174,25 @@ def recompute_and_persist(
     """Recompute costs from an immutable run and persist a derived scenario."""
     inputs = load_costing_inputs(input_dir, project_id)
     store = catalog_store or get_catalog_store(get_settings().data_dir)
-    report = build_cost_report(inputs, overrides, reviews=load_reviews(control_dir), store=store)
+    # The run's structural model with the decisions saved now (a run older than
+    # the model has none: its steel keeps the path it was costed with).
+    estructura, avisos = estructura_para_recalcular(
+        input_dir, control_dir, inputs.segmentation, overrides.config.assumptions.column_height_m
+    )
+    reviews = load_reviews(control_dir)
+    report = build_cost_report(
+        inputs, overrides, reviews=reviews, store=store, estructura=estructura
+    )
     apply_taller_history(report, store, project_id)
+    report.warnings.extend(a for a in avisos if a not in report.warnings)
+    if estructura is not None:
+        # Lo que este costo escribió en las detecciones (R242), y la tarjeta con sus P.U.
+        estructura.escrituras = escribir_en_detecciones(
+            filter_excluded(inputs.detections, reviews), estructura.elementos,
+            inputs.units.to_meters(),
+        )[1]
+        estructura.resumen = resumir(estructura, report)
+        escribir_estructura_derivada(control_dir, input_dir, estructura)
 
     write_json(control_dir / COST_REPORT_OVERRIDE_FILENAME, report)
     save_overrides(control_dir, overrides)

@@ -1,6 +1,7 @@
 """Sheet frames as views; frames and casetones never become slabs or zapatas."""
 
 import ezdxf
+import pytest
 from klave_engine.common.ids import IdGenerator
 from klave_engine.detection.footing_detector import FootingDetectorConfig, detect_footings
 from klave_engine.detection.frames import detect_frames
@@ -136,3 +137,51 @@ def test_lo_lejano_de_todo_titulo_queda_excluido(tmp_path):
     far = next(v for v in seg.views if v.view_id == "far_from_titles")
     assert far.kind.value == "excluded"
     assert assigned != "far_from_titles"
+
+
+def _muro(msp, puntos):
+    """Un muro en trazos de 1 m: ninguno tan largo como para unir dos dibujos de la hoja."""
+    for (x0, y0), (x1, y1) in zip(puntos, puntos[1:], strict=False):
+        n = max(1, round(max(abs(x1 - x0), abs(y1 - y0))))
+        for i in range(n):
+            a = (x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n)
+            b = (x0 + (x1 - x0) * (i + 1) / n, y0 + (y1 - y0) * (i + 1) / n)
+            msp.add_line(a, b, dxfattribs={"layer": "MUROS"})
+
+
+def _k(detection_id, x, y):
+    caja = (x - 0.1, y - 0.1, x + 0.1, y + 0.1)
+    return make_detection(detection_id, DetectionType.column_tag, "K-1", caja, 0.9, [], "m", [])
+
+
+@pytest.mark.parametrize("con_muro", [True, False])
+def test_a_near_tie_between_two_titles_is_decided_by_the_drawing(tmp_path, con_muro):
+    # R165 (PRUEBA-1, sin marcos): un castillo casi igual de cerca de dos títulos (11.24 contra
+    # 11.59, menos de 10 %) no se decide por el centro de los títulos: es de la planta cuyo dibujo
+    # toca (el muro donde están los castillos que sí son claramente de PLANTA BAJA). Sin dibujo que
+    # lo diga, se queda en el título más cercano y lo dice: «vista dudosa».
+    def build(msp):
+        for i in range(8):
+            msp.add_text("nota chica", height=0.2).set_placement((i, -5))
+        msp.add_text("PLANTA BAJA", height=1.0).set_placement((0, 0))
+        msp.add_text("PLANTA ALTA", height=1.0).set_placement((20, 0))
+        if con_muro:
+            _muro(msp, [(2, 4), (13.6, 4), (13.6, 8), (2, 8), (2, 4)])
+
+    entities = _entities(tmp_path, build)
+    seg = segment_views(entities, [_k("a", 3.0, 4.0), _k("b", 5.0, 8.0), _k("t", 13.5, 6.0)], [])
+    titulos = {v.view_id: v.title for v in seg.views}
+    # Los títulos se ubican como antes (su caja de 0.6 altos por letra desde su inserción), no en
+    # su centro real (4.95): mover el centro no mueve las vistas.
+    assert sorted(v.anchor for v in seg.views) == [(3.3, 0.5), (23.3, 0.5)]
+    assert titulos[seg.assignment["a"]] == titulos[seg.assignment["b"]] == "PLANTA BAJA"
+    if con_muro:
+        assert titulos[seg.assignment["t"]] == "PLANTA BAJA"
+        assert seg.vistas_dudosas == {}
+    else:
+        assert titulos[seg.assignment["t"]] == "PLANTA ALTA"
+        assert seg.vistas_dudosas == {
+            "t": "vista dudosa: casi igual de cerca de «PLANTA ALTA» y de «PLANTA BAJA», y su "
+            "dibujo no dice de cuál es (0 contra 0); se deja en «PLANTA ALTA»"
+        }
+        assert "1 detecciones en vista dudosa" in seg.notes

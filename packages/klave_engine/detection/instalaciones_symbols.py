@@ -189,15 +189,51 @@ def familia_de_capa(layer: str) -> CorridaRegla | None:
 # pulgada son 12.7 mm y a esa tubería todo el mundo le dice de 13— sino la
 # tabla de diámetros nominales, que es la que usan las publicaciones y por la
 # tanto la única con la que un precio publicado se deja encontrar.
+# R180: hasta 24", como los ductos flexibles de AA (14" y 16" se pagaban como 12").
 NOMINALES: tuple[tuple[int, str], ...] = (
     (6, '1/4'), (10, '3/8'), (13, '1/2'), (16, '5/8'), (19, '3/4'), (25, '1'),
     (32, '1 1/4'), (38, '1 1/2'), (51, '2'), (64, '2 1/2'), (76, '3'), (102, '4'),
-    (152, '6'), (203, '8'), (254, '10'), (305, '12'),
-)
+    (127, '5'), (152, '6'), (203, '8'), (254, '10'), (305, '12'), (356, '14'), (406, '16'),
+    (457, '18'), (508, '20'), (559, '22'), (610, '24'),
+)  # fmt: skip
 _POR_PULGADA = {pulgadas: mm for mm, pulgadas in NOMINALES}
 # Milímetros que el comercio escribe de más de una forma: 100 y 101 son 4",
 # 50 es 2", 63 es 2 1/2". Se llevan al valor que publica el tabulador.
-_MM_EQUIVALENTE = {50: 51, 63: 64, 100: 102, 101: 102, 150: 152, 200: 203, 250: 254, 300: 305}
+_MM_EQUIVALENTE = {
+    50: 51, 63: 64, 100: 102, 101: 102, 125: 127, 150: 152, 200: 203, 250: 254, 300: 305,
+    350: 356, 355: 356, 400: 406, 450: 457, 500: 508, 550: 559, 600: 610,
+}  # fmt: skip
+# R180, R184, R185: una sección rectangular «A x B» no es un diámetro, con la marca de pulgadas en
+# uno, en los dos o en ninguno («16" x 16"», «20 x 16"», «24x14"», «BYP 24" X 8"», «200 x 150 mm»,
+# «2 x 12"»); un largo o un ángulo después del diámetro («4" x 6 m», «12" x 7,50 m»,
+# «Ø 12" x 60 cm», «12" X 25'», «CODO 4" x 45°») sí lo deja. R186: sólo una prima sola (', ′) es un
+# pie; «16" x 16´´», «16" x 16’’», «24" x 12´» son secciones. R187: tras el primer número, cualquier
+# marca de pulgadas o ninguna («24” x 12"», «16´ x 16"», «16’ x 16"» son secciones). R195: también
+# una prima sola (', ′) tras el PRIMER número, que R186 lee como pie: «16' x 16"» es una sección
+# (sin diámetro), nunca un largo; sólo tras el segundo número una prima sola es un largo.
+_SECCION_RE = re.compile(
+    r'\d\s*(?:"|MM\b|[\'′´’])?\s*[X×]\s*\d+(?:[.,]\d+)?(?![\d.,])'
+    r"(?!\s*(?:M|MTS?|ML|METROS?|CM|CMS|CENT[IÍ]METROS?)\b)(?!\s*['′](?!['′´’]))(?!\s*[°º])",
+    re.I,
+)
+# R186, R187: las maneras de escribir la marca de pulgadas: con dos primas, dos acentos o dos
+# apóstrofos, y las comillas tipográficas (”, “). Las dobles van primero.
+_PULGADAS_DOBLES = ("″", "''", "′′", "´´", "’’", "”", "“")
+
+
+def comillas(texto: str) -> str:
+    """El texto con cada marca de pulgadas escrita como «"» (R186, R187). La ÚNICA normalización:
+    todo lector de diámetros, de medidas y de secciones (aquí, en ``run_detector`` y en el
+    diámetro de un concepto, ``costing.generacion._diametro_mm``) lee el texto que da."""
+    for doble in _PULGADAS_DOBLES:
+        texto = texto.replace(doble, '"')
+    return texto
+
+
+def es_seccion(texto: str) -> bool:
+    """R184: si el texto escribe una sección «A x B» (no un diámetro)."""
+    return bool(_SECCION_RE.search(comillas(texto)))
+
 
 _PULGADAS_RE = re.compile(r'(?<![\d/])(\d{1,2})(?:\s+(\d)\s*/\s*(\d))?\s*"|(\d)\s*/\s*(\d)\s*"')
 _MM_RE = re.compile(r'(?<!\d)(\d{2,3})\s*(?:MM\b|Ø)', re.I)
@@ -220,7 +256,9 @@ def normaliza_diametro(texto: str) -> tuple[int, str] | None:
     a ninguno del comercio."""
     if not texto:
         return None
-    limpio = texto.replace("″", '"').replace("''", '"')
+    limpio = comillas(texto)
+    if _SECCION_RE.search(limpio):
+        return None  # la sección de un ducto rectangular no tiene diámetro (R180, R184)
 
     fraccion = _PULGADAS_RE.search(limpio)
     if fraccion:

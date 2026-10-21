@@ -235,7 +235,9 @@ def ai_element_specs(reads: AiReads) -> list[dict]:
                 parts = element.section_cm.lower().replace("×", "x").split("x")
                 try:
                     if len(parts) == 2:
-                        section = (int(float(parts[0])), int(float(parts[1])))
+                        # With its decimals (20.5): never truncated (R109).
+                        lados = [float(p) for p in parts]
+                        section = tuple(int(v) if v == int(v) else v for v in lados)
                 except ValueError:
                     section = None
             if (
@@ -253,6 +255,8 @@ def ai_element_specs(reads: AiReads) -> list[dict]:
                     "length_m": element.length_m,
                     "mesh": None,
                     "source": "ia",
+                    # La hoja que leyó la IA, con el mismo código que las lecturas del plano.
+                    "hoja": reading.frame_code or "",
                     "source_text": (
                         f"IA · hoja {reading.frame_code}: "
                         f"{element.note or element.section_cm or ''}"

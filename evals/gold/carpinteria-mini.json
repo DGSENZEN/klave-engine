@@ -55,7 +55,10 @@
         "unit": "PZA",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CAR-001.GEN": 33.0
+        }
       }
     },
     "direct_cost": 0.0,
@@ -64,5 +67,11 @@
       "CAR-001"
     ]
   },
-  "notes": ""
+  "estructura": {
+    "por_familia": {},
+    "por_hoja": {},
+    "verificaciones": {},
+    "hallazgos": {}
+  },
+  "notes": "Cerca estructural (tarea 15): en crudo no hay ninguna marca estructural ni texto de armado: sin colocaciones ni hallazgos."
 }

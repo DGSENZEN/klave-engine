@@ -100,6 +100,7 @@ class DetectorSuiteConfig(BaseModel):
         config.column.grid_search_radius = m(1.5)
         config.column.geometry_search_radius = m(0.6)
         config.column.max_marker_area = m(1.0) * m(1.0)
+        config.column.marker_tie_tolerance = m(1e-4)
         config.footing.min_area = m(0.55) * m(0.55)
         config.footing.max_area = m(5.5) * m(5.5)
         config.footing.column_search_radius = m(2.0)
@@ -108,6 +109,12 @@ class DetectorSuiteConfig(BaseModel):
         config.beam.line_search_radius = m(1.0)
         config.beam.min_beam_length = m(1.5)
         config.beam.max_beam_length = m(15.0)
+        # PRUEBA-1 writes the trabe's mark on the architecture line 0.11–0.12 above the trabe's
+        # own; a wall's other face lies 0.15 away, on the same layer (the nearer one wins).
+        config.beam.layer_tolerance = m(0.15)
+        config.beam.max_face_gap = m(0.35)
+        config.beam.face_width_margin = m(0.05)
+        config.beam.support_tolerance = m(0.05)
         # A 3×3 m panel is a real slab (a small room); cuadros and notes
         # are kept out by the avoid layers and the frame-share guard.
         config.slab.min_area = m(3.0) * m(3.0)
@@ -173,7 +180,8 @@ def run_detectors(
     structural: bool = True,
     suite: "DisciplineSuite | None" = None,
 ) -> list[DetectorOutput]:
-    """Run every detector in dependency order (grid → columns → footings …).
+    """Run every detector in dependency order (grid → columns → footings …), never on a
+    leader's lines (R135).
 
     ``structural=False`` for a sheet of instalaciones or acabados: sus círculos
     y cajas son salidas y equipos, no zapatas, y los detectores estructurales
@@ -181,6 +189,11 @@ def run_detectors(
     un plano arquitectónico también trae contactos y salidas."""
     ids = ids or IdGenerator("det")
     meters = units.to_meters() if units is not None else None
+    # R135: a leader's lines (LEADER, MULTILEADER) are annotation. No detector takes them as
+    # a trabe, a wall, a slab edge, a marker or a pipe, whatever index it was handed.
+    geometria = [e for e in entities if not e.is_annotation]
+    if len(geometria) != len(entities):
+        entities, index = geometria, SpatialIndex(geometria)
     if not structural:
         if suite is not None and suite.detect is not None:
             # La suite de la disciplina llenó su hueco: ella decide qué se
@@ -197,7 +210,7 @@ def run_detectors(
     grid = detect_grid(entities, index, config.grid, config.text_patterns, ids, frames=frames)
     columns = detect_columns(entities, index, grid, config.column, config.text_patterns, ids)
     footings = detect_footings(entities, index, columns, config.footing, ids)
-    beams = detect_beams(entities, index, config.beam, config.text_patterns, ids)
+    beams = detect_beams(entities, index, config.beam, config.text_patterns, ids, supports=columns)
     slabs = detect_slabs(entities, config.slab, ids, frame_boxes(frames or []))
     panels = detect_slab_panels(entities, config.slab_panel, ids, frame_boxes(frames or []))
     if panels.detections:

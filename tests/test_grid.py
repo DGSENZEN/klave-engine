@@ -2,9 +2,13 @@
 and by sequence, and per-sheet intersections."""
 
 import ezdxf
+import pytest
+from ezdxf.enums import TextEntityAlignment
 from klave_engine.detection.grid_detector import GridDetectorConfig, detect_grid
 from klave_engine.dxf.parser import DxfParser
 from klave_engine.geometry.spatial_index import SpatialIndex
+
+_CENTRO = TextEntityAlignment.MIDDLE_CENTER
 
 
 def _detect(path, config=None):
@@ -17,21 +21,23 @@ def _detect(path, config=None):
 def test_fragments_merge_into_labeled_axes(tmp_path):
     doc = ezdxf.new("R2010")
     msp = doc.modelspace()
+    # Bubble labels are centred in their bubble, where the normalizer now places them (R146).
     # Axis A: three fragments broken by bubble gaps, on the grid layer.
     for a, b in ((0, 30), (32, 60), (61, 100)):
         msp.add_line((a, 0), (b, 0), dxfattribs={"layer": "S-GRID"})
-    msp.add_text("A", height=1.0).set_placement((-3, 0))
+    msp.add_text("A", height=1.0).set_placement((-3, 0), align=_CENTRO)
     # An unlabeled axis between A and C.
     msp.add_line((0, 10), (100, 10), dxfattribs={"layer": "S-GRID"})
     msp.add_line((0, 20), (100, 20), dxfattribs={"layer": "S-GRID"})
-    msp.add_text("C", height=1.0).set_placement((-3, 20))
+    msp.add_text("C", height=1.0).set_placement((-3, 20), align=_CENTRO)
     # Vertical axis 1, and axis 2 split by a view-sized gap (two plan views).
     msp.add_line((0, 0), (0, 100), dxfattribs={"layer": "S-GRID"})
-    msp.add_text("1", height=1.0).set_placement((0, -3))
+    msp.add_text("1", height=1.0).set_placement((0, -3), align=_CENTRO)
     msp.add_line((50, 0), (50, 40), dxfattribs={"layer": "S-GRID"})
     msp.add_line((50, 70), (50, 100), dxfattribs={"layer": "S-GRID"})
-    msp.add_text("2", height=1.0).set_placement((50, -3))
-    msp.add_text("2", height=1.0).set_placement((50, 103))  # the second view's bubble
+    msp.add_text("2", height=1.0).set_placement((50, -3), align=_CENTRO)
+    # The second view's bubble.
+    msp.add_text("2", height=1.0).set_placement((50, 103), align=_CENTRO)
     # A long architectural wall line: not an axis on a sheet that has a grid layer.
     msp.add_line((0, 5), (100, 5), dxfattribs={"layer": "A-WALL"})
     path = tmp_path / "grid.dxf"
@@ -151,3 +157,25 @@ def test_dentro_de_un_marco_el_gap_de_burbuja_se_funde():
     assert len(con_factores_de_marco) == 1
     assert len(con_factores_de_marco[0].fragments) == 2
     assert len(sin_factores) == 2  # las tolerancias de archivo no lo funden
+
+
+
+@pytest.mark.parametrize("capa,etiqueta", [("EST-CADENAS Y DALAS", "H1"), ("0", "CI")])
+def test_a_dala_type_tag_is_never_an_axis_label(tmp_path, capa, etiqueta):
+    # R152 (Marina): 40 «CI» de EST-CADENAS Y DALAS se tomaban como etiquetas de eje. En la capa
+    # de cadenas y dalas es la colocación de una cadena intermedia, nunca un eje; en otra capa el
+    # texto «CI» puede serlo.
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    msp.add_line((0, 0), (100, 0))
+    msp.add_line((0, 50), (100, 50))
+    msp.add_line((0, 0), (0, 50))
+    msp.add_text("CI", height=1.0, dxfattribs={"layer": capa}).set_placement((-3, 0), align=_CENTRO)
+    path = tmp_path / "ci.dxf"
+    doc.saveas(path)
+    output = _detect(path)
+    horizontal = next(
+        d for d in output.detections
+        if d.detection_type.value == "grid_line" and d.bbox[1] == 0.0 and d.bbox[3] == 0.0
+    )  # fmt: skip
+    assert horizontal.label == etiqueta

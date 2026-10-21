@@ -9,6 +9,7 @@ from klave_engine.detection.schedules import (
     ScheduleInventory,
     merge_external_specs,
 )
+from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.dxf.parser import DxfParser
 from klave_engine.llm.reader import ElementRead, SheetRead, read_frames
 from klave_engine.llm.render import render_region
@@ -125,11 +126,12 @@ def test_ai_specs_only_fill_what_the_rules_did_not_read():
     specs = ai_element_specs(reads)
     assert [s["mark"] for s in specs] == ["K-1", "K-2"]
     assert specs[0]["source"] == "ia" and specs[0]["confidence"] == 0.54
+    assert {s["hoja"] for s in specs} == {"ES-100"}  # R80: la hoja que leyó, con su código
     inventory = ScheduleInventory(by_mark={
         "K-1": ElementSpec(mark="K-1", family="castillo", section_cm=(15, 15), source="cuadro",
                            source_text="cuadro", confidence=0.95),
     })
-    added = merge_external_specs(inventory, specs)
+    added = merge_external_specs(inventory, specs, TextPatternConfig())
     assert added == 2
     assert inventory.by_mark["K-1"].section_cm == (15, 15)  # the cuadro keeps its section
     assert inventory.by_mark["K-1"].rebar == "4#3"  # the IA filled the missing armado

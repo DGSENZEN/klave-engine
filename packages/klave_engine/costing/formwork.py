@@ -66,8 +66,15 @@ def _section_m(props: dict, specs: dict | None, mark: str, family: str,
                default_m: tuple[float, float], factor: float) -> tuple[tuple[float, float], str]:
     declared = props.get("section_cm")
     if isinstance(declared, str) and "x" in declared:
-        a, b = (int(v) for v in declared.split("x"))
+        # A side keeps its decimals (72.5): never truncated (R106, R109).
+        a, b = (float(v) for v in declared.split("x"))
         return (a / 100.0, b / 100.0), "plano"
+    perimetro = props.get("section_perimetro_du")
+    if isinstance(perimetro, (int, float)) and perimetro > 0:
+        # The structural model's non-rectangular section (Tarea 12, R242): its contour's perimeter
+        # is the formwork's; as a square of that perimeter, 2·(a + b) is exactly it.
+        lado = float(perimetro) * factor / 4.0
+        return (lado, lado), "contorno"
     if specs:
         spec = (specs.get("by_mark") or {}).get(mark.upper()) or (
             specs.get("by_family") or {}
@@ -82,8 +89,15 @@ def _section_m(props: dict, specs: dict | None, mark: str, family: str,
         # bubble or a grid circle, not the section.
         if _MIN_SECTION_M2 <= area_m2 <= _MAX_SECTION_M2:
             side = math.sqrt(area_m2)
+            if props.get("section_source") in _DEL_MODELO_SIN_CONTORNO:
+                # The model's area with no known contour: a square of that area, said.
+                return (side, side), "área sin contorno"
             return (side, side), "marcador"
     return default_m, "supuesto"
+
+
+# An area the structural model wrote (a non-rectangular section, a decision) has no rectangle.
+_DEL_MODELO_SIN_CONTORNO = frozenset({"medido", "humano"})
 
 
 def _zapata_cuadro_m(mark: str, specs: dict | None) -> tuple[float, float] | None:
@@ -142,6 +156,12 @@ def compute_formwork(
             "altura de entrepiso de cada planta (niveles NTC/NPT)" if story_heights
             else f"{height:.2f} m por castillo"
         )
+        if origins.get("área sin contorno"):
+            report.warnings.append(
+                f"Cimbra de {origins['área sin contorno']} castillos/columnas de sección no "
+                "rectangular sin contorno conocido: se toma el perímetro de un cuadrado de su área "
+                "(se queda corto en una sección en L); por confirmar."
+            )
         report.lines.append(
             FormworkLine(
                 concept_code=CODE_CASTILLOS, quantity=round(area, 2),

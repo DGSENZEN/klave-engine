@@ -1,5 +1,7 @@
 "use client";
 
+import { consumeSessionReturn } from "@/lib/sessionReturn";
+
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -39,6 +41,7 @@ import {
 } from "@/components/ui";
 
 type UrlNotice =
+  | "session_expired"
   | "pending"
   | "google"
   | "google_unverified"
@@ -50,6 +53,7 @@ type UrlNotice =
   | null;
 
 const NOTICES: Record<Exclude<UrlNotice, null>, { tone: "info" | "danger"; text: string }> = {
+  session_expired: { tone: "info", text: "Tu sesión terminó. Inicia sesión para continuar donde estabas." },
   pending: {
     tone: "info",
     text: "Tu cuenta fue creada y espera la aprobación de un administrador del taller.",
@@ -65,7 +69,7 @@ const NOTICES: Record<Exclude<UrlNotice, null>, { tone: "info" | "danger"; text:
   },
   db: {
     tone: "danger",
-    text: "La base de datos de usuarios no está disponible; pide a tu administrador que la arranque y recarga.",
+    text: "La base de datos de usuarios no está disponible; inténtalo de nuevo o contacta al administrador del taller.",
   },
   disabled: { tone: "danger", text: "Tu cuenta está deshabilitada." },
   invite: { tone: "danger", text: "La invitación ya no es válida; pide una nueva a tu administrador." },
@@ -86,7 +90,7 @@ export default function BienvenidaPage() {
       if (!active) return;
       if (params.get("pending")) setNotice("pending");
       else {
-        const error = params.get("error");
+        const error = params.get("error") ?? params.get("reason");
         if (error && error in NOTICES) setNotice(error as UrlNotice);
       }
     }, 0);
@@ -114,7 +118,12 @@ export default function BienvenidaPage() {
       )}
       {notice !== "db" && auth?.mode === "unavailable" && (
         <div className="mb-4">
-          <Callout tone="danger">{NOTICES.db.text}</Callout>
+          <Callout tone="danger">
+            {auth.failure === "users_db" ? NOTICES.db.text
+              : auth.failure === "network" ? "No pudimos conectar con Klave. Revisa tu conexión e inténtalo de nuevo."
+              : "Klave no está disponible por el momento. Inténtalo de nuevo o contacta a tu administrador."}
+            <button type="button" className="ml-2 underline" onClick={() => window.location.reload()}>Reintentar</button>
+          </Callout>
         </div>
       )}
 
@@ -140,7 +149,7 @@ export default function BienvenidaPage() {
       {auth?.mode === "open" && (
         <p className="mt-6 flex items-center gap-2 text-xs text-faint">
           <Monitor size={14} />
-          Modo local: tus planos y presupuestos se procesan y guardan en tu equipo.
+          Tus planos y presupuestos se guardan en la instalación de Klave que estás usando.
         </p>
       )}
     </AuthFrame>
@@ -186,7 +195,7 @@ function SessionCard({ user }: { user: AuthUser }) {
   function continueToWorkspace(event: FormEvent) {
     event.preventDefault();
     completeProfile(name.trim() || user.name);
-    router.replace("/");
+    router.replace(consumeSessionReturn());
   }
 
   return (
@@ -265,7 +274,7 @@ function AuthCard({
         const user = await login(email.trim(), password, remember);
         if (user.status === "active") {
           completeProfile(user.name);
-          router.replace("/");
+          router.replace(consumeSessionReturn());
           return;
         }
         window.location.href = "/bienvenida?pending=1";
@@ -276,7 +285,7 @@ function AuthCard({
         );
         if (user.status === "active") {
           completeProfile(user.name);
-          router.replace("/");
+          router.replace(consumeSessionReturn());
           return;
         }
         setRegistered(true);
@@ -381,6 +390,7 @@ function AuthCard({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="correo@taller.mx"
+          aria-label="Correo electrónico"
           autoComplete="email"
           required
           className="w-full"
@@ -390,6 +400,7 @@ function AuthCard({
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder={tab === "register" ? "Contraseña (mínimo 10 caracteres)" : "Contraseña"}
+          aria-label="Contraseña"
           autoComplete={tab === "register" ? "new-password" : "current-password"}
           minLength={tab === "register" ? 10 : undefined}
           required
@@ -451,7 +462,7 @@ function OpenModeCards({ googleEnabled }: { googleEnabled: boolean }) {
     setTouched(true);
     if (!valid) return;
     completeProfile(name);
-    router.replace("/");
+    router.replace(consumeSessionReturn());
   }
 
   async function createAdmin(event: FormEvent) {
@@ -461,7 +472,7 @@ function OpenModeCards({ googleEnabled }: { googleEnabled: boolean }) {
     try {
       const user = await register(adminEmail.trim(), adminName.trim(), adminPassword);
       completeProfile(user.name);
-      router.replace("/");
+      router.replace(consumeSessionReturn());
     } catch (e) {
       setError(
         apiMessage(e, "No se pudo crear la cuenta. ¿Está corriendo la base de datos?"),

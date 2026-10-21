@@ -5,6 +5,21 @@ from functools import lru_cache
 
 from pydantic import BaseModel, Field
 
+# The marks the foundation detectors place (R94): one source for the detectors, for
+# the mark grammar (``estructura.marcas``), which reads every mark a detector can
+# place, and for the family of a mark (``schedules.family_of_mark``, R95). Z-1,
+# ZC-2, ZA-3, ZCM-100, Z-100A: zapatas; P-4: pilotes.
+FOOTING_MARK_PREFIXES = ("ZCM", "ZC", "ZA", "Z")
+PILE_MARK_PREFIXES = ("P",)
+FOOTING_MARK_PATTERN = rf"^(?:{'|'.join(FOOTING_MARK_PREFIXES)})-?\d{{1,3}}[A-Z]?$"
+PILE_MARK_PATTERN = rf"^(?:{'|'.join(PILE_MARK_PREFIXES)})-?\d{{1,2}}[A-Z]?$"
+# R152: the type tags of a dala (Marina, on EST-CADENAS Y DALAS: «CI» cadena intermedia ×83,
+# «DA-2» ×2, «DC» ×1): a placement of its type, defined by its type detail («CADENAS
+# INTERMEDIAS», a «CI» per wall thickness) — never a grid label. Only on a cadenas/dalas layer
+# is one a placement (``es_tipo_de_dala``); on a detail it is the type's title.
+DALA_TYPE_TAG_PATTERN = r"^(?:CI|DC|DA-?\d{1,2}[A-Z]?)$"
+DALA_LAYER_HINTS = ("CADENA", "DALA")
+
 
 class TextPatternConfig(BaseModel):
     """Default patterns cover both English and Spanish (Mexican) conventions:
@@ -34,6 +49,7 @@ class TextPatternConfig(BaseModel):
             r"^CE-?\d{1,2}[A-Z]?$",  # cadena de enrase / dala (Marina: CE-1 on EST-CADENAS Y DALAS)
             r"^CR-?\d{1,2}[A-Z]?$",  # cerramiento
             r"^(DL|DAL)-?\d{1,2}[A-Z]?$",  # dala DL-1 / DAL-1 (a bare D-4 is a dado)
+            DALA_TYPE_TAG_PATTERN,  # R152: CI, DC, DA-2
         ]
     )
     detail_reference: list[str] = Field(
@@ -85,3 +101,17 @@ def match_category(text: str, config: TextPatternConfig, category: str) -> TextM
         if match.category == category:
             return match
     return None
+
+
+def es_tipo_de_dala(texto: str, capa: str) -> bool:
+    """R152: whether a text is a dala's type tag (CI, DC, DA-2) on a cadenas/dalas layer: a
+    placement of that type, never a grid label."""
+    if _compiled(DALA_TYPE_TAG_PATTERN).match(texto.strip()) is None:
+        return False
+    capa = capa.upper()
+    return any(pista in capa for pista in DALA_LAYER_HINTS)
+
+
+def es_tipo_sin_capa(texto: str) -> bool:
+    """R152: a dala type tag (CI, DC, DA-2) whatever its layer."""
+    return _compiled(DALA_TYPE_TAG_PATTERN).match(texto.strip()) is not None

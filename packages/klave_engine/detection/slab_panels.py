@@ -37,6 +37,8 @@ FAMILY_SIN_TIPO = "sin_tipo"
 
 _LABEL_RE = re.compile(r"\bLOSA\b", re.I)
 _THICKNESS_RE = re.compile(r"\bH\s*=\s*(\d{1,3})", re.I)
+# A thickness written alone, without «LOSA»: «H=20».
+_SOLO_ESPESOR_RE = re.compile(r"H\s*=\s*(\d{1,3})\s*(?:CMS?\.?)?", re.I)
 _VOID_RE = re.compile(r"VAC[IÍ]O|HUECO|ESCALERA|PATIO|DUCTO|CUBO", re.I)
 _FAMILY_TEXT: list[tuple[str, re.Pattern[str]]] = [
     (FAMILY_CIMENTACION, re.compile(r"CIMENTACI", re.I)),
@@ -102,6 +104,8 @@ class _Face:
     label: NormalizedEntity | None = None
     void_reason: str | None = None
     frame: int = 0
+    # R165: the thicknesses written alone inside it («H=20» under a vigueta's «12-5»).
+    espesores: list[tuple[int, NormalizedEntity]] = field(default_factory=list)
 
 
 def _as_lines(entities: list[NormalizedEntity]) -> list[LineString]:
@@ -325,6 +329,9 @@ def detect_slab_panels(
                 labels.append((e, family, thickness))
                 if face is not None:
                     face.labels.append(e)
+            elif (solo := _SOLO_ESPESOR_RE.fullmatch(text)) is not None:
+                if face is not None:
+                    face.espesores.append((int(solo.group(1)), e))
             elif _VOID_RE.search(text):
                 void_texts.append(_center(e))
                 if face is not None:
@@ -496,6 +503,20 @@ def detect_slab_panels(
             family = FAMILY_SIN_TIPO
             untyped += 1
             notes.append("Sin patrón ni etiqueta de losa en el tablero; tipo por confirmar")
+        valores = sorted({v for v, _e in face.espesores})
+        if thickness is None and len(valores) == 1:
+            # R165: the tablero writes its own thickness, alone («H=20»; Marina ES-400 TAB28): it
+            # beats the nearest label of the family, which may be another tablero's.
+            thickness = valores[0]
+            thickness_source = "espesor escrito en el tablero"
+            source_entities.append(face.espesores[0][1].entity_id)
+            notes.append(f"Espesor H={thickness} escrito dentro del tablero")
+        elif thickness is None and len(valores) > 1:
+            notes.append(
+                "Espesores distintos escritos dentro del tablero ("
+                + ", ".join(f"H={v}" for v in valores)
+                + "): no se toma ninguno; se busca la etiqueta cercana"
+            )
         if thickness is None and family != FAMILY_SIN_TIPO:
             near = nearest_label(family, polygon.centroid, config.label_search_radius)
             if near is not None:

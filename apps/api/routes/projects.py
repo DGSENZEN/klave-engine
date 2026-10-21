@@ -6,15 +6,17 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request, UploadFile
 from klave_engine.common.config import Settings
+from klave_engine.common.errors import ProjectManifestError
 from klave_engine.common.ids import short_uuid, slugify
-from klave_engine.common.io import read_json
+from klave_engine.common.io import read_json, write_text
 from klave_engine.common.version import engine_fingerprint
 from klave_engine.costing.defaults import apply_workspace_defaults
-from klave_engine.ingestion.manifest import save_manifest
-from klave_engine.ingestion.project_loader import ingest_project
+from klave_engine.ingestion.manifest import load_manifest, manifest_path, save_manifest
+from klave_engine.ingestion.project_loader import find_drawing_files, ingest_project
 from pydantic import BaseModel
 
-from apps.api.auth.common import rate_limit
+from apps.api.auth.access import require_project_role
+from apps.api.auth.common import db_unavailable, rate_limit
 from apps.api.auth.store import UsersDbUnavailable, get_user_store
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
@@ -89,8 +91,10 @@ async def _save_upload(file: UploadFile, destination: Path, max_bytes: int) -> N
     """Stream an upload with a hard byte limit and remove partial files on failure."""
     written = 0
     header = bytearray()
+    created = False
     try:
         with destination.open("xb") as out:
+            created = True
             while chunk := await file.read(UPLOAD_CHUNK_BYTES):
                 written += len(chunk)
                 if written > max_bytes:
@@ -106,7 +110,8 @@ async def _save_upload(file: UploadFile, destination: Path, max_bytes: int) -> N
                 out.write(chunk)
         _validate_upload_signature(destination.suffix.lower(), bytes(header))
     except Exception:
-        destination.unlink(missing_ok=True)
+        if created:
+            destination.unlink(missing_ok=True)
         raise
     finally:
         await file.close()
@@ -125,8 +130,10 @@ def _grant_owner(request: Request, settings: Settings, project_id: str) -> None:
         users = get_user_store(settings.users_database_url)
         users.grant_access(project_id, str(user["user_id"]), "owner", str(user["user_id"]))
         users.register_project(project_id, str(user["workspace_id"]))
-    except UsersDbUnavailable:
-        pass
+    except UsersDbUnavailable as exc:
+        # An unassigned project falls back to the default workspace. Never
+        # publish another taller's uploaded drawings when ownership failed.
+        raise db_unavailable() from exc
 
 
 def visible_project_filter(request: Request, store: ProjectStore) -> Callable[[str], bool]:
@@ -199,13 +206,33 @@ def create_project(
             detail={"error_type": "invalid_root_path", "root_path": body.root_path},
         )
     root = store.managed_root(root)
+    if _state_user(request) is not None:
+        # Import is also a write to an existing project: check before ingestion
+        # changes its manifest or _grant_owner can upgrade the caller's role.
+        existing_ids = {
+            pid for pid, registered in store.roots().items()
+            if (
+                root.is_relative_to(registered.resolve())
+                or registered.resolve().is_relative_to(root)
+            )
+        }
+        # A retained manifest also protects a soft-deleted project's subfolders.
+        for candidate in (root, *root.parents):
+            if not candidate.is_relative_to(settings.data_dir.resolve()):
+                break
+            try:
+                existing_ids.add(load_manifest(candidate, settings.processed_dir_name).project_id)
+            except ProjectManifestError:
+                continue
+        for existing_id in existing_ids:
+            require_project_role(request, existing_id, "owner")
     manifest = ingest_project(
         root,
         project_name=body.project_name,
         processed_dir_name=settings.processed_dir_name,
     )
-    store.register(manifest.project_id, root)
     _grant_owner(request, settings, manifest.project_id)
+    store.register(manifest.project_id, root)
     apply_workspace_defaults(
         defaults_scope(settings, request_workspace_id(request)),
         root / settings.processed_dir_name,
@@ -232,7 +259,7 @@ async def _save_sheet_uploads(
             status_code=400,
             detail={"error_type": "no_files", "message": "Sube al menos un archivo."},
         )
-    if start_index + len(files) > MAX_FILES_PER_PROJECT:
+    if start_index - 1 + len(files) > MAX_FILES_PER_PROJECT:
         raise HTTPException(
             status_code=413,
             detail={
@@ -242,12 +269,17 @@ async def _save_sheet_uploads(
             },
         )
     saved: list[Path] = []
-    for offset, file in enumerate(files):
-        filename, suffix = _validated_upload_name(file.filename or "plano.dxf")
-        stem = slugify(Path(filename).stem)[:40] or "plano"
-        destination = drawings / f"{start_index + offset:02d}-{stem}{suffix}"
-        await _save_upload(file, destination, max_bytes)
-        saved.append(destination)
+    try:
+        for offset, file in enumerate(files):
+            filename, suffix = _validated_upload_name(file.filename or "plano.dxf")
+            stem = slugify(Path(filename).stem)[:40] or "plano"
+            destination = drawings / f"{start_index + offset:02d}-{stem}{suffix}"
+            await _save_upload(file, destination, max_bytes)
+            saved.append(destination)
+    except Exception:
+        for path in saved:
+            path.unlink(missing_ok=True)
+        raise
     return saved
 
 
@@ -283,16 +315,16 @@ async def upload_project(
         if cleaned_client:
             manifest.client = cleaned_client
             save_manifest(manifest, settings.processed_dir_name)
+        _grant_owner(request, settings, project_id)
         # La conversión DWG→DXF corre en el trabajo, no aquí: tarda minutos en
         # un juego grande y, dentro de la petición, congelaba todo el servidor
         # (la pantalla se quedaba cargando). El avance se ve hoja por hoja.
         warnings: list[str] = []
-    except HTTPException:
+    except Exception:
         shutil.rmtree(root, ignore_errors=True)
         raise
 
     store.register(project_id, root)
-    _grant_owner(request, settings, project_id)
     apply_workspace_defaults(
         defaults_scope(settings, request_workspace_id(request)),
         root / settings.processed_dir_name,
@@ -454,23 +486,36 @@ async def add_project_files(
     root = store.get_root(project_id)
     drawings = root / "drawings"
     drawings.mkdir(parents=True, exist_ok=True)
-    existing = len(
-        [p for p in drawings.iterdir() if p.suffix.lower() in ALLOWED_SUFFIXES]
-    )
+    existing = len(find_drawing_files(root))
     saved = await _save_sheet_uploads(
         files, drawings, settings.max_upload_bytes, existing + 1
     )
+    # Streaming yields to other requests: preserve the manifest as it stands
+    # after the upload, including metadata edits acknowledged in the meantime.
+    previous_manifest_path = manifest_path(root, settings.processed_dir_name)
+    try:
+        previous_manifest = (
+            previous_manifest_path.read_text(encoding="utf-8")
+            if previous_manifest_path.exists()
+            else None
+        )
+    except Exception:
+        for path in saved:
+            path.unlink(missing_ok=True)
+        raise
     try:
         manifest = ingest_project(
             root, project_id=project_id, processed_dir_name=settings.processed_dir_name
         )
         warnings: list[str] = []  # se convierten en el trabajo (ver upload_project)
-    except HTTPException:
+    except Exception:
         for path in saved:
             path.unlink(missing_ok=True)
-        ingest_project(
-            root, project_id=project_id, processed_dir_name=settings.processed_dir_name
-        )
+        # Re-ingesting would reset the original processing status and metadata.
+        if previous_manifest is None:
+            previous_manifest_path.unlink(missing_ok=True)
+        else:
+            write_text(previous_manifest_path, previous_manifest)
         raise
     BUS.publish(
         "project_updated",

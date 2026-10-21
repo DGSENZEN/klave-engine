@@ -1,8 +1,10 @@
 
 """Normalize ezdxf entities into NormalizedEntity records.
 
-Every supported entity gets a bbox. Where an exact bbox is impractical (text),
-a conservative approximation is used and noted in the evidence packet.
+Every supported entity gets a bbox. A text's bbox is its real extent (R146): the anchor its
+alignment or attachment fixes, its lines, its width (the CAD's own for an aligned TEXT, else
+estimated per character) and its rotation — ``klave_engine.dxf.text_extent``; the estimate is
+noted in the evidence packet.
 """
 
 import re
@@ -12,6 +14,7 @@ from ezdxf import bbox as ezdxf_bbox
 
 from klave_engine.common.ids import IdGenerator
 from klave_engine.dxf.entities import EntityType, NormalizedEntity, ParseWarning
+from klave_engine.dxf.text_extent import ANCHO_POR_CARACTER, extension_de_texto
 from klave_engine.geometry.bbox import BBox, Point, bbox_from_points
 from klave_engine.graph.evidence import EvidencePacket
 
@@ -34,15 +37,21 @@ SUPPORTED_DXF_TYPES = {
     "DIMENSION",
 }
 
-# Approximate average glyph width as a fraction of text height.
-TEXT_WIDTH_FACTOR = 0.6
-
 # Curves flatten into at most this many segments; enough for detection and
 # rendering without letting one dense spline dominate the entity budget.
 MAX_FLATTEN_POINTS = 200
 
 
+# What the evidence says of a text's box.
+_TEXT_EXTENT_NOTE = (
+    "Caja del texto: donde lo ponen su alineación y su giro; su ancho, el del CAD en un texto "
+    f"alineado, si no {ANCHO_POR_CARACTER:g} × alto por carácter"
+)
+
 _DISPLAY_NUMBER = re.compile(r"-?\d+(?:[.,]\d+)?")
+# The paragraph alignment an MTEXT sets inline (``\pxqc;`` = centred in its column).
+# Lowercase only: ``\P`` is a paragraph break, not a paragraph property.
+_MTEXT_PARAGRAPH_ALIGN = re.compile(r"\\p[^;\\]*?q([lrcjd])")
 
 
 def _dimension_display_text(entity: Any) -> str | None:
@@ -131,11 +140,6 @@ def _exact_bbox(entity: Any) -> BBox | None:
     )
 
 
-def _approximate_text_bbox(insert: Point, text: str, height: float) -> BBox:
-    width = max(height * TEXT_WIDTH_FACTOR * max(len(text), 1), height)
-    return (insert[0], insert[1], insert[0] + width, insert[1] + height)
-
-
 def _shoelace(points: list[Point]) -> float:
     return abs(
         sum(
@@ -153,27 +157,35 @@ def _hatch_boundary_points(entity: Any) -> list[Point]:
     AutoCAD writes for most slab and wall hatches) are flattened through
     ezdxf's path module. With several loops, the largest is the outline.
     """
-    try:
-        from ezdxf.path import make_path
-
-        full = make_path(entity)
-        extent = full.bbox()
-        tolerance = max(extent.size.x, extent.size.y, 1e-9) * 0.005
-        best: list[Point] = []
-        for sub in full.sub_paths():
-            ring = [(float(v.x), float(v.y)) for v in sub.flattening(tolerance)]
-            if len(ring) >= 3 and _shoelace(ring) > _shoelace(best):
-                best = ring
-        if best:
-            return best
-    except Exception:  # noqa: BLE001 — fall back to raw polyline vertices
-        pass
+    rings = _hatch_rings(entity)
+    if rings:
+        return max(rings, key=_shoelace)
     points: list[Point] = []
     for path in entity.paths:
         vertices = getattr(path, "vertices", None)
         if vertices:
             points.extend((float(v[0]), float(v[1])) for v in vertices)
     return points
+
+
+def _hatch_rings(entity: Any) -> list[list[Point]]:
+    """Every loop of a hatch as a flattened vertex ring (outlines and holes
+    alike; which is which follows from their nesting). Empty if ezdxf cannot
+    build its path."""
+    try:
+        from ezdxf.path import make_path
+
+        full = make_path(entity)
+        extent = full.bbox()
+        tolerance = max(extent.size.x, extent.size.y, 1e-9) * 0.005
+        rings = []
+        for sub in full.sub_paths():
+            ring = [(float(v.x), float(v.y)) for v in sub.flattening(tolerance)]
+            if len(ring) >= 3 and _shoelace(ring) > 0:
+                rings.append(ring)
+        return rings
+    except Exception:  # noqa: BLE001 — the caller falls back to raw vertices
+        return []
 
 
 def normalize_entity(
@@ -266,7 +278,9 @@ def normalize_entity(
     elif dxf_type == "LEADER":
         entity_type = EntityType.polyline
         try:
-            points = [(float(v.x), float(v.y)) for v in entity.vertices]
+            # A LEADER read from the file keeps its vertices as tuples, one from a block as
+            # vectors: both index (R127; before, every model-space LEADER was dropped).
+            points = [(float(v[0]), float(v[1])) for v in entity.vertices]
         except Exception:
             points = []
         if points:
@@ -298,6 +312,12 @@ def normalize_entity(
             points = boundary
             properties["closed"] = True
             bbox = bbox_from_points(boundary)
+            rings = _hatch_rings(entity)
+            if len(rings) > 1:
+                # Every loop, so a reader can subtract the holes from the outlines.
+                properties["anillos"] = [
+                    [(round(x, 6), round(y, 6)) for x, y in ring] for ring in rings
+                ]
         else:
             bbox = _exact_bbox(entity)
             notes.append("Hatch boundary not extracted; bbox from ezdxf extents")
@@ -307,18 +327,57 @@ def normalize_entity(
         rotation = float(entity.dxf.rotation)
         height = float(entity.dxf.height)
         insert = (float(entity.dxf.insert.x), float(entity.dxf.insert.y))
-        properties.update(height=height, insert=insert)
-        bbox = _approximate_text_bbox(insert, text, height)
-        notes.append("Text bbox approximated from insert point and height")
+        # A text with another alignment than left-baseline is placed by its
+        # alignment point (group 11), not by ``insert``; keep both: the bbox is
+        # where the text really lies (R146, ``text_extent``).
+        align_point: tuple[float, float] | None = None
+        if entity.dxf.hasattr("align_point"):
+            align_point = (float(entity.dxf.align_point.x), float(entity.dxf.align_point.y))
+        properties.update(
+            height=height,
+            insert=insert,
+            halign=int(entity.dxf.get("halign", 0)),
+            valign=int(entity.dxf.get("valign", 0)),
+            align_point=align_point,
+        )
+        # What else changes where the glyphs go: the width factor, the slant and the mirror.
+        width_factor = float(entity.dxf.get("width", 1.0) or 1.0)
+        if abs(width_factor - 1.0) > 1e-9:
+            properties["width_factor"] = width_factor
+        oblique = float(entity.dxf.get("oblique", 0.0) or 0.0)
+        if oblique:
+            properties["oblique"] = oblique
+        generation = int(entity.dxf.get("text_generation_flag", 0) or 0)
+        if generation & 2:
+            properties["mirror_x"] = True
+        if generation & 4:
+            properties["mirror_y"] = True
+        notes.append(_TEXT_EXTENT_NOTE)
     elif dxf_type == "MTEXT":
         entity_type = EntityType.mtext
         text = str(entity.plain_text())
-        rotation = float(entity.dxf.rotation)
+        # Its rotation may be stored as a direction vector (group 11), not as group 50: a MTEXT
+        # in a turned block always is (R146).
+        rotation = float(entity.get_rotation())
         height = float(entity.dxf.char_height)
         insert = (float(entity.dxf.insert.x), float(entity.dxf.insert.y))
-        properties.update(height=height, insert=insert)
-        bbox = _approximate_text_bbox(insert, text, height)
-        notes.append("MText bbox approximated from insert point and char height")
+        properties.update(
+            height=height,
+            insert=insert,
+            attachment_point=int(entity.dxf.get("attachment_point", 1)),
+        )
+        # Where the text really sits: paragraphs centred in a wide column are drawn far
+        # from the insert point, so keep the column width and the paragraph alignment.
+        column_width = float(entity.dxf.get("width", 0.0) or 0.0)
+        if column_width > 0:
+            properties["column_width"] = column_width
+        paragraph = _MTEXT_PARAGRAPH_ALIGN.search(str(entity.text))
+        if paragraph is not None:
+            properties["paragraph_align"] = paragraph.group(1).lower()
+        line_spacing = float(entity.dxf.get("line_spacing_factor", 1.0) or 1.0)
+        if abs(line_spacing - 1.0) > 1e-9:
+            properties["line_spacing"] = line_spacing
+        notes.append(_TEXT_EXTENT_NOTE)
     elif dxf_type == "DIMENSION":
         entity_type = EntityType.dimension
         try:
@@ -340,6 +399,13 @@ def normalize_entity(
             properties["dimlfac"] = float(style.dxf.get("dimlfac", 1.0)) if style else 1.0
         except Exception:
             properties["dimlfac"] = 1.0
+        # What it measures along: a linear dimension (type 0) the distance on its angle
+        # (0 = x, 90 = y) whatever its points; an aligned one (type 1) between its points.
+        try:
+            properties["dimtype"] = int(entity.dimtype)
+            properties["angle"] = float(entity.dxf.get("angle", 0.0) or 0.0)
+        except Exception:
+            pass
         # Extension-line origins: the two points the dimension actually measures.
         span: list[Point] | None = None
         if entity.dxf.hasattr("defpoint2") and entity.dxf.hasattr("defpoint3"):
@@ -380,6 +446,23 @@ def normalize_entity(
             bbox = (insert[0], insert[1], insert[0], insert[1])
             notes.append("Insert bbox approximated as insertion point")
 
+    if entity_type in (EntityType.text, EntityType.mtext):
+        # Its real extent, from what the entity says (R146): computed on a provisional record.
+        bbox = extension_de_texto(
+            NormalizedEntity(
+                entity_id="",
+                entity_type=entity_type,
+                source_file=source_file,
+                layer=layer,
+                bbox=(0.0, 0.0, 0.0, 0.0),
+                raw_handle=handle,
+                properties=properties,
+                text=text,
+                rotation=rotation,
+                evidence=EvidencePacket(source=source_file, method="", bbox=None, notes=[]),
+            )
+        )
+
     if bbox is None:
         warnings.append(
             ParseWarning(
@@ -415,3 +498,80 @@ def normalize_entity(
         ),
     )
     return normalized, warnings
+
+
+MULTILEADER_TYPES = ("MULTILEADER", "MLEADER")
+
+
+def normalize_multileader(
+    entity: Any,
+    source_file: str,
+    ids: IdGenerator,
+) -> tuple[list[NormalizedEntity], list[ParseWarning]]:
+    """A MULTILEADER as what it draws (R127): each leader line as an open polyline from its
+    arrow tip through its last point and along its landing (``derived_from: MULTILEADER``),
+    and its text, if any, as an MTEXT. Its arrowheads and block content are not kept."""
+    layer = str(entity.dxf.layer)
+    handle = str(entity.dxf.handle)
+    salida: list[NormalizedEntity] = []
+    warnings: list[ParseWarning] = []
+    try:
+        lideres = list(entity.context.leaders)
+    except Exception:
+        lideres = []
+    for lider in lideres:
+        final = lider.last_leader_point
+        apoyo: list[Point] = []
+        if lider.has_dogleg_vector and float(lider.dogleg_length or 0.0) > 0:
+            fin = final + lider.dogleg_vector.normalize(float(lider.dogleg_length))
+            apoyo = [(float(fin[0]), float(fin[1]))]
+        for linea in lider.lines:
+            points = [(float(v[0]), float(v[1])) for v in linea.vertices]
+            points += [(float(final[0]), float(final[1])), *apoyo]
+            if len(points) < 2:
+                continue
+            bbox = bbox_from_points(points)
+            salida.append(
+                NormalizedEntity(
+                    entity_id=ids.next(),
+                    entity_type=EntityType.polyline,
+                    source_file=source_file,
+                    layer=layer,
+                    bbox=bbox,
+                    raw_handle=handle,
+                    properties={"closed": False, "derived_from": "MULTILEADER"},
+                    points=points,
+                    color=int(entity.dxf.color) if entity.dxf.hasattr("color") else None,
+                    evidence=EvidencePacket(
+                        source=source_file,
+                        method="ezdxf_multileader_extraction",
+                        bbox=bbox,
+                        notes=["Línea de una directriz múltiple (MULTILEADER)"],
+                    ),
+                )
+            )
+    try:
+        textos = [v for v in entity.virtual_entities() if v.dxftype() == "MTEXT"]
+    except Exception:
+        textos = []
+    for mtext in textos:
+        if not str(mtext.plain_text()).strip():
+            continue
+        normalizado, avisos = normalize_entity(mtext, source_file, ids)
+        warnings.extend(avisos)
+        if normalizado is not None:
+            normalizado.raw_handle = handle
+            normalizado.properties["derived_from"] = "MULTILEADER"
+            salida.append(normalizado)
+    if not salida:
+        warnings.append(
+            ParseWarning(
+                warning_type="bbox_unavailable",
+                message="MULTILEADER sin líneas ni texto; se omitió",
+                entity_type=str(entity.dxftype()),
+                handle=handle,
+                layer=layer,
+                source_file=source_file,
+            )
+        )
+    return salida, warnings

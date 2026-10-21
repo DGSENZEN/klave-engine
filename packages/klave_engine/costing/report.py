@@ -59,11 +59,17 @@ from klave_engine.dxf.units import DrawingUnits
 logger = get_logger(__name__)
 
 
-def _typical_column_section(detections: list[Detection]) -> tuple[int, int, int] | None:
+def _lado(cm: float) -> int | float:
+    return int(cm) if cm == int(cm) else cm
+
+
+def _typical_column_section(
+    detections: list[Detection],
+) -> tuple[int | float, int | float, int] | None:
     """The section most columns declare (cuadro or marker), for the columns
     that declare none. Only sections bound to a column mark count — never
     the most frequent NxM of the whole sheet, which may be a zapata."""
-    counts: Counter[tuple[int, int]] = Counter()
+    counts: Counter[tuple[int | float, int | float]] = Counter()
     for det in detections:
         if det.detection_type != DetectionType.column_tag:
             continue
@@ -73,7 +79,8 @@ def _typical_column_section(detections: list[Detection]) -> tuple[int, int, int]
         if not isinstance(declared, str) or "x" not in declared:
             continue
         try:
-            a, b = (int(float(v)) for v in declared.lower().split("x"))
+            # A side keeps its decimals (22.5): never truncated (R109).
+            a, b = (_lado(float(v)) for v in declared.lower().split("x"))
         except ValueError:
             continue
         counts[(min(a, b), max(a, b))] += 1
@@ -328,8 +335,35 @@ def generate_cost_report(
     price_vigencias: dict[str, str] | None = None,
     integracion_taller: dict | None = None,
     variant_mappings: dict[str, dict] | None = None,
+    estructura: dict | None = None,
 ) -> CostReport:
+    """``estructura`` es el modelo estructural (R6: ``{"reglas", "elementos"}``, volcados o los
+    modelos mismos): con él, el acero de castillos, columnas, trabes y contratrabes sale del
+    armado de cada elemento, y la sección y el claro que cada elemento resolvió se escriben en su
+    detección antes de medir el concreto (``escribir_en_detecciones``), así que concreto, cimbra y
+    acero miden lo mismo. Sólo cuentan los elementos de las detecciones que llegan (una detección
+    excluida en Revisión no es un elemento de este presupuesto)."""
     config = config or CostingConfig()
+    modelo_notas: list[str] = []
+    elementos_del_modelo: list = []
+    if estructura is not None:
+        from klave_engine.estructura.elementos import Elemento
+        from klave_engine.estructura.modelo import escribir_en_detecciones, notas_de_escritura
+
+        presentes = {d.detection_id for d in detections}
+        elementos_del_modelo = [
+            x
+            for x in (
+                e if isinstance(e, Elemento) else Elemento.model_validate(e)
+                for e in estructura["elementos"]
+            )
+            if x.detection_id in presentes
+        ]
+        detections, _escritas = escribir_en_detecciones(
+            detections, elementos_del_modelo, units.to_meters()
+        )
+        modelo_notas = notas_de_escritura(detections)
+        estructura = {"reglas": estructura["reglas"], "elementos": elementos_del_modelo}
     assumptions, calibration_notes = _calibrate_assumptions(
         config.assumptions, dimensions, detections
     )
@@ -356,12 +390,30 @@ def generate_cost_report(
         segmentation=segmentation, assumptions=assumptions,
     )
     boq.assumptions.extend(calibration_notes)
+    if estructura is not None:
+        from klave_engine.estructura.modelo import diferencias_con_el_concreto
+
+        boq.assumptions.extend(modelo_notas)
+        # Donde el concreto (las detecciones) y el acero (los elementos) no miden lo mismo.
+        en_lineas = {
+            i
+            for line in boq.lines
+            if line.concept_code in ("EST-001", "EST-002", "CIM-008")
+            for i in line.source_detections
+        }
+        boq.warnings.extend(
+            diferencias_con_el_concreto(
+                detections, elementos_del_modelo, units.to_meters(), assumptions, segmentation,
+                en_lineas,
+            )
+        )
     # Acero de refuerzo derives from the counted elements and the sheet's
     # armados; it runs before human adjustments so they can correct it too.
     steel = compute_steel(
         boq, detections, schedule_specs, segmentation, units.to_meters(),
         assumptions.column_height_m,
         SteelAssumptions(wall_height_m=assumptions.wall_height_m),
+        estructura=estructura,
     )
     apply_steel(boq, catalog, apus, steel)
     formwork = compute_formwork(

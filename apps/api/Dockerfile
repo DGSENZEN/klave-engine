@@ -2,7 +2,7 @@
 # Build from the repo root:  docker build -f apps/api/Dockerfile .
 # GNU LibreDWG is not packaged by Debian, so dwg2dxf is built from the
 # release tarball: statically linked, one binary to copy.
-FROM debian:trixie-slim AS libredwg
+FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS libredwg
 ARG LIBREDWG_VERSION=0.13.3
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential curl ca-certificates xz-utils python3 \
@@ -16,7 +16,7 @@ RUN curl -fsSL -o /tmp/libredwg.tar.xz \
     && install -s programs/dwg2dxf /usr/local/bin/dwg2dxf \
     && /usr/local/bin/dwg2dxf --version
 
-FROM python:3.12-slim-trixie
+FROM python:3.12-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 
 # dwg2dxf converts DWG uploads; DXF-only projects work without it, and the
 # API reports honestly when a DWG cannot be converted. curl serves the
@@ -26,7 +26,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir uv
+RUN pip install --no-cache-dir uv==0.9.24
 
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
@@ -46,4 +46,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 
 # --proxy-headers: Caddy terminates TLS in front; the API must see https.
 CMD [".venv/bin/uvicorn", "apps.api.main:app", "--host", "0.0.0.0", "--port", "8000", \
-     "--proxy-headers", "--forwarded-allow-ips", "*"]
+     "--proxy-headers", "--forwarded-allow-ips", "*", "--no-access-log"]

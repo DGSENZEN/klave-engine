@@ -30,7 +30,7 @@ from apps.api.auth.store import UsersDbUnavailable, get_user_store
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
 from apps.api.jobs import JOB_STORE
-from apps.api.routes.projects import visible_project_filter
+from apps.api.routes.projects import MAX_FILES_PER_PROJECT, visible_project_filter
 from apps.api.tenancy import defaults_scope, request_workspace_id, store_for_request
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
@@ -213,6 +213,10 @@ def overview(
     }
     return {
         "projects": projects,
+        "upload_limits": {
+            "max_files": MAX_FILES_PER_PROJECT,
+            "max_file_bytes": settings.max_upload_bytes,
+        },
         "onboarding": onboarding,
         "attention": {
             "processing": sum(1 for p in active if p["status"] in ("queued", "running")),

@@ -1,16 +1,28 @@
 import type { Metadata, Viewport } from "next";
 import { ApiBaseWarning } from "@/components/ApiBaseWarning";
 import { CopilotFab } from "@/components/CopilotFab";
-import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
+import { SessionRecovery } from "@/components/SessionRecovery";
+import localFont from "next/font/local";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
-const spaceGrotesk = Space_Grotesk({
+const geistSans = localFont({
+  src: "./fonts/Geist.woff2",
+  variable: "--font-geist-sans",
+  weight: "100 900",
+  display: "swap",
+});
+const geistMono = localFont({
+  src: "./fonts/GeistMono.woff2",
+  variable: "--font-geist-mono",
+  weight: "100 900",
+  display: "swap",
+});
+const spaceGrotesk = localFont({
+  src: "./fonts/SpaceGrotesk.woff2",
   variable: "--font-space-grotesk",
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  weight: "500 700",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -41,6 +53,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-full">
         <ApiBaseWarning />
+        <SessionRecovery />
         {children}
         {/* Siempre a la mano, en cualquier pantalla de trabajo. */}
         <CopilotFab />

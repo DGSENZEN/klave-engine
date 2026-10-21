@@ -1,0 +1,22 @@
+# Local credentials, customer drawings, and development-only artifacts.
+.env
+.env.*
+**/.env
+**/.env.*
+.superpowers/
+.worktrees/
+.git/
+.vercel/
+.venv/
+**/.venv/
+**/node_modules/
+**/.next/
+**/__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+data/
+reports/
+.klave-pilot-test*/
+apps/web/test-results/
+apps/web/playwright-report/

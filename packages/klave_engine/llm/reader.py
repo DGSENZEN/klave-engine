@@ -26,9 +26,15 @@ from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
-ANTHROPIC_MODEL = "claude-opus-5"
+ANTHROPIC_MODEL = "claude-opus-5-5"
 GEMINI_MODEL = "gemini-2.5-pro"
 MODEL = ANTHROPIC_MODEL  # backwards-compatible alias
+
+# Claude puede declinar una petición (stop_reason «refusal»); con el respaldo
+# del servidor la misma petición la contesta el modelo que Anthropic recomienda
+# para esa categoría, en la misma llamada. Sólo estos modelos lo aceptan.
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
+_CON_RESPALDO = ("claude-opus-5-5", "claude-opus-5", "claude-fable-5-1", "claude-sonnet-5-5")
 
 # How a failed sheet reads in its own uncertainties: the marker that lets a
 # later run find exactly which sheets are worth asking for again.
@@ -185,22 +191,31 @@ def credentials_available(provider: str | None = None) -> bool:
     return resolve_provider(provider) is not None
 
 
+def _modelo(resolved: str, model: str | None) -> str:
+    """El modelo para ese proveedor: el que pide la configuración, salvo que sea
+    de otro proveedor (un KLAVE_AI_MODEL=gemini-… que quedó de antes no se le
+    manda a Claude, ni uno claude-… a Gemini); entonces, el de omisión."""
+    por_omision = ANTHROPIC_MODEL if resolved == "anthropic" else GEMINI_MODEL
+    if not model:
+        return por_omision
+    ajeno = "gemini" if resolved == "anthropic" else "claude"
+    return por_omision if model.strip().lower().startswith(ajeno) else model
+
+
 def active_model(provider: str | None = None, model: str | None = None) -> str | None:
     resolved = resolve_provider(provider)
     if resolved is None:
         return None
-    if model:
-        return model
-    return ANTHROPIC_MODEL if resolved == "anthropic" else GEMINI_MODEL
+    return _modelo(resolved, model)
 
 
 def configured_reader(provider: str | None = None, model: str | None = None) -> Reader:
     """The reader for the configured provider; raises when none is set up."""
     resolved = resolve_provider(provider)
     if resolved == "anthropic":
-        return anthropic_reader(model=model or ANTHROPIC_MODEL)
+        return anthropic_reader(model=_modelo(resolved, model))
     if resolved == "gemini":
-        return gemini_reader(model=model or GEMINI_MODEL)
+        return gemini_reader(model=_modelo(resolved, model))
     raise RuntimeError("La lectura con IA no está configurada (sin credenciales).")
 
 
@@ -238,6 +253,103 @@ class _GeminiSheetRead(BaseModel):
         data["concrete_fc"] = {e.family: int(e.value) for e in self.concrete_fc if e.family}
         data["cover_cm"] = {e.family: e.value for e in self.cover_cm if e.family}
         return SheetRead.model_validate(data)
+
+
+class _ValorClaude(BaseModel):
+    family: str
+    value: float
+
+
+class _ElementoClaude(BaseModel):
+    mark: str = Field(description="Marca tal como aparece: K-1, T1-8, CTA-16, MC-2")
+    family: str = Field(
+        description="castillo | columna | trabe | contratrabe | dala | cerramiento | zapata | "
+        "dado | pilote | muro_concreto | losa | otro"
+    )
+    section_cm: str = Field(description="base x peralte en cm (30x80); cadena vacía si no aparece")
+    rebar: str = Field(description="armado longitudinal (4#4); cadena vacía si no aparece")
+    stirrups: str = Field(description="estribos (E#2@20); cadena vacía si no aparece")
+    length_m: float | None = Field(description="longitud declarada en m (pilotes); null si no")
+    note: str = Field(description="de dónde se leyó, abreviado; cadena vacía si no hace falta")
+    confidence: float = Field(ge=0, le=1)
+
+
+class _ConteoClaude(BaseModel):
+    family: str = Field(
+        description="castillo | columna | trabe | contratrabe | dala | cerramiento | "
+        "zapata | pilote | escalera"
+    )
+    drawn_count: int = Field(
+        ge=0,
+        description="instancias DIBUJADAS en la planta (símbolos o marcas repetidas); "
+        "los renglones de un cuadro y las viñetas de detalle NO cuentan",
+    )
+    note: str = Field(description="dónde se concentran; cadena vacía si no ayuda")
+
+
+class _ClaudeSheetRead(BaseModel):
+    """SheetRead's wire shape for Claude's structured outputs. The API compiles
+    the schema into a grammar, and every optional field and every union
+    (``anyOf`` / nullable) multiplies it: SheetRead as is (19 optional, 13
+    unions) came back 400 «Schema is too complex». Here every field is
+    required, a text that is not on the sheet is an empty string, only the
+    three numbers that can be absent are nullable, and the two per-family
+    dicts travel as keyed lists (a ``dict`` became an empty object the model
+    could never fill). It converts back on arrival."""
+
+    sheet_code: str = Field(description="Clave en el cajetín (ES-100); cadena vacía si no aparece")
+    title: str = Field(description="Título de la hoja en el cajetín; cadena vacía si no aparece")
+    level: str = Field(description="Nivel o planta (PLANTA BAJA, N+3.20); cadena vacía si no")
+    scale: str = Field(description="Escala declarada (1:50); cadena vacía si no aparece")
+    concrete_fc: list[_ValorClaude] = Field(
+        description="f'c en kg/cm² por familia (cimentacion, losa, castillo…); vacía si no aparece"
+    )
+    steel_fy: int | None = Field(description="fy del acero en kg/cm²; null si no aparece")
+    cover_cm: list[_ValorClaude] = Field(
+        description="recubrimientos en cm por familia; vacía si no aparece"
+    )
+    desplante_m: float | None = Field(description="profundidad de desplante en m; null si no")
+    slab_system: str = Field(
+        description="sistema de losa declarado (vigueta y bovedilla 12-5, reticular…); "
+        "cadena vacía si no aparece"
+    )
+    elements: list[_ElementoClaude]
+    conteo: list[_ConteoClaude] = Field(
+        description="conteo por familia de instancias dibujadas en la planta; vacía en hojas "
+        "de puros detalles/cuadros"
+    )
+    notes: list[str] = Field(description="notas generales relevantes")
+    uncertainties: list[str] = Field(description="lo ilegible o dudoso en la imagen")
+
+    def to_sheet_read(self) -> SheetRead:
+        def texto(valor: str) -> str | None:
+            return valor.strip() or None
+
+        return SheetRead(
+            sheet_code=texto(self.sheet_code),
+            title=texto(self.title),
+            level=texto(self.level),
+            scale=texto(self.scale),
+            concrete_fc={v.family: int(v.value) for v in self.concrete_fc if v.family},
+            steel_fy=self.steel_fy,
+            cover_cm={v.family: v.value for v in self.cover_cm if v.family},
+            desplante_m=self.desplante_m,
+            slab_system=texto(self.slab_system),
+            elements=[
+                ElementRead(
+                    mark=e.mark, family=e.family, section_cm=texto(e.section_cm),
+                    rebar=texto(e.rebar), stirrups=texto(e.stirrups), length_m=e.length_m,
+                    note=texto(e.note), confidence=e.confidence,
+                )
+                for e in self.elements
+            ],
+            conteo=[
+                FamilyCount(family=c.family, drawn_count=c.drawn_count, note=texto(c.note))
+                for c in self.conteo
+            ],
+            notes=self.notes,
+            uncertainties=self.uncertainties,
+        )
 
 
 def gemini_reader(client: Any | None = None, model: str = GEMINI_MODEL) -> Reader:
@@ -282,19 +394,51 @@ def gemini_reader(client: Any | None = None, model: str = GEMINI_MODEL) -> Reade
     return read
 
 
-def anthropic_reader(client: Any | None = None, model: str = ANTHROPIC_MODEL) -> Reader:
-    """The Claude reader: one vision request per sheet image, structured
-    output validated against SheetRead."""
+def _respaldo(model: str) -> dict[str, Any]:
+    """Los parámetros del respaldo del servidor, para los modelos que lo aceptan."""
+    if model in _CON_RESPALDO:
+        return {"betas": [FALLBACK_BETA], "fallbacks": "default"}
+    return {}
+
+
+def _si_declino(response: Any) -> None:
+    """Una negativa de Claude es un error dicho, nunca una lectura vacía: llega
+    con HTTP 200 y ``stop_reason == "refusal"`` (ya con el respaldo agotado)."""
+    if getattr(response, "stop_reason", None) != "refusal":
+        return
+    detalles = getattr(response, "stop_details", None)
+    categoria = getattr(detalles, "category", None) or "sin categoría"
+    raise ValueError(f"Claude declinó la petición ({categoria})")
+
+
+def _cliente_anthropic() -> Any:
+    """El cliente de Anthropic con las credenciales del entorno. Una llave que no
+    está ligada a un workspace exige el encabezado ``anthropic-workspace-id``
+    (400 sin él); si ``ANTHROPIC_WORKSPACE_ID`` está declarado, va en cada
+    petición."""
+    import os
+
     import anthropic
 
-    sdk = client or anthropic.Anthropic()
+    workspace = os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
+    if workspace:
+        return anthropic.Anthropic(default_headers={"anthropic-workspace-id": workspace})
+    return anthropic.Anthropic()
+
+
+def anthropic_reader(client: Any | None = None, model: str = ANTHROPIC_MODEL) -> Reader:
+    """The Claude reader: one vision request per sheet image, structured
+    output validated against SheetRead. Reading a drawing is precise work, so
+    it asks for effort «high» (Opus 5.5 would default to «medium»)."""
+    sdk = client or _cliente_anthropic()
 
     def read(png: bytes, prompt: str) -> tuple[SheetRead, dict[str, int]]:
-        response = sdk.messages.parse(
+        response = sdk.beta.messages.parse(
             model=model,
             max_tokens=16000,
             system=SYSTEM_PROMPT,
             thinking={"type": "adaptive"},
+            output_config={"effort": "high"},
             messages=[
                 {
                     "role": "user",
@@ -311,8 +455,12 @@ def anthropic_reader(client: Any | None = None, model: str = ANTHROPIC_MODEL) ->
                     ],
                 }
             ],
-            output_format=SheetRead,
+            output_format=_ClaudeSheetRead,
+            **_respaldo(model),
         )
+        _si_declino(response)
+        if getattr(response, "stop_reason", None) == "max_tokens":
+            raise ValueError("la lectura se cortó por longitud (max_tokens)")
         parsed = response.parsed_output
         if parsed is None:
             raise ValueError("el modelo no devolvió una lectura estructurada")
@@ -320,7 +468,7 @@ def anthropic_reader(client: Any | None = None, model: str = ANTHROPIC_MODEL) ->
             "input_tokens": int(getattr(response.usage, "input_tokens", 0) or 0),
             "output_tokens": int(getattr(response.usage, "output_tokens", 0) or 0),
         }
-        return parsed, usage
+        return parsed.to_sheet_read(), usage
 
     return read
 
@@ -335,9 +483,9 @@ def configured_asker(provider: str | None = None, model: str | None = None) -> A
     the reader: an explicit choice without credentials never falls back."""
     resolved = resolve_provider(provider)
     if resolved == "anthropic":
-        return anthropic_asker(model=model or ANTHROPIC_MODEL)
+        return anthropic_asker(model=_modelo(resolved, model))
     if resolved == "gemini":
-        return gemini_asker(model=model or GEMINI_MODEL)
+        return gemini_asker(model=_modelo(resolved, model))
     raise RuntimeError("El copiloto no está configurado (sin credenciales de IA).")
 
 
@@ -359,17 +507,19 @@ def gemini_asker(client: Any | None = None, model: str = GEMINI_MODEL) -> Asker:
 
 
 def anthropic_asker(client: Any | None = None, model: str = ANTHROPIC_MODEL) -> Asker:
-    import anthropic
-
-    sdk = client or anthropic.Anthropic()
+    sdk = client or _cliente_anthropic()
 
     def ask(system: str, prompt: str) -> str:
-        response = sdk.messages.create(
+        # En Opus 5.5 el pensamiento no se apaga y cuenta contra max_tokens: con
+        # un tope chico la respuesta se cortaría antes de empezar.
+        response = sdk.beta.messages.create(
             model=model,
-            max_tokens=1200,
+            max_tokens=16000,
             system=system,
             messages=[{"role": "user", "content": prompt}],
+            **_respaldo(model),
         )
+        _si_declino(response)
         # The SDK's block union is wider than the text blocks we asked for.
         return "".join(
             str(getattr(block, "text", ""))

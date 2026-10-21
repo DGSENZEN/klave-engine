@@ -1,0 +1,1345 @@
+"""Tarea 9c (R147): el armado de un título de detalle se lee de debajo de SU sección dibujada, con
+las reglas de la pila (Tarea 6) y sus reglas de reclamo y duda: la sección toma el lugar de la
+etiqueta. Lo que se lee es entero y de su marca; lo dudoso no es de nadie; las cajas reclamadas y
+las líneas «posible» nunca se leen; las llamadas, lo que va junto a la sección y el alzado se
+reportan, nunca se leen; y un campo que el detalle también escribe fuera de la pila no se lee de
+ella."""
+
+import math
+import random
+import tempfile
+from pathlib import Path
+
+import pytest
+from klave_engine.detection.frames import SheetFrame
+from klave_engine.detection.schedules import build_schedule_inventory, merge_external_specs
+from klave_engine.estructura.asociacion import SeccionDeTitulo, asociar_secciones
+from klave_engine.estructura.definiciones import construir_definiciones
+from klave_engine.estructura.textos import ancla_texto, caja_de_texto
+
+from tests.test_secciones_de_cotas import (
+    _DETALLE,
+    C,
+    _ce1,
+    _cota,
+    _flecha,
+    _ia,
+    _linea,
+    _poligono,
+    _rectangulo,
+    _texto,
+    _titulo,
+)
+
+
+def _muro(dx=0.0):
+    """El muro de block que cuelga bajo la sección de una cadena de enrase (Marina, ES-100)."""
+    return [
+        _linea(f"m1{dx}", (dx, -1.73), (dx, -2.24)),
+        _linea(f"m2{dx}", (dx + 0.854, -1.73), (dx + 0.854, -2.24)),
+        _linea(f"m3{dx}", (dx - 0.1, -2.24), (dx + 0.954, -2.24)),
+    ]
+
+
+def _pila_de_ce1(dx=0.0, sufijo=""):
+    """«4#3» y «E#2@15» bajo CE-1, donde Marina los escribe (0.71 bajo su sección)."""
+    return [
+        _texto(f"l1{sufijo}", "4#3", dx + 0.458, -2.468, alto=0.10),
+        _texto(f"l2{sufijo}", "E#2@15", dx + 0.458, -2.663, alto=0.10),
+    ]
+
+
+def _cotas(inv, marca, metodo="pila"):
+    return [s for s in inv.specs if s.mark == marca and s.metodo == metodo]
+
+
+def _sin_dueno(inv):
+    return {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"}
+
+
+def test_a_detail_titles_armado_is_read_from_under_its_own_section():
+    # R147 (CE-1 de Marina): el título, su sección (15x30) con el muro que cuelga de ella, y bajo
+    # todo «4#3» / «E#2@15». Antes nadie los leía (sin dueño) y la IA quedaba bloqueada (R140);
+    # ahora son la lectura de CE-1, del detalle, y la IA vuelve a ser sólo una alternativa.
+    ents = _ce1() + _muro() + _pila_de_ce1()
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    (pila,) = _cotas(inv, "CE-1")
+    assert (pila.source, pila.rebar, pila.stirrups, pila.entidades) == (
+        "detalle",
+        "4#3",
+        "E#2@15",
+        ["l1", "l2"],
+    )
+    assert _sin_dueno(inv) == {}
+    merge_external_specs(inv, [_ia("CE-1", family="dala", rebar="4#4", stirrups="E#3@20")], C)
+    d = construir_definiciones(inv, C)[0]["CE-1"]
+    assert d.longitudinales.fuente == "detalle" and d.estribos.fuente == "detalle"
+    assert [a.fuente for a in d.longitudinales.alternativas] == ["ia"]
+    assert d.sin_leer == {}
+
+
+def test_two_details_side_by_side_never_mix_their_stacks():
+    # CE-1 y CE-2 de Marina, lado a lado (1.932 entre sus esquinas): cada uno lee la suya.
+    ce2 = _ce1(dx=1.932, marca="CE-2")
+    for e in ce2:
+        e.entity_id = e.raw_handle = e.entity_id + "2"
+    ents = (
+        _ce1() + _muro() + _pila_de_ce1()
+        + ce2 + _muro(1.932)
+        + [_texto("k1", "6#3", 1.932 + 0.458, -2.468, alto=0.10),
+           _texto("k2", "E#2@15", 1.932 + 0.458, -2.663, alto=0.10)]
+    )  # fmt: skip
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    leidas = {s.mark: (s.rebar, s.stirrups) for s in inv.specs if s.metodo == "pila"}
+    assert leidas == {"CE-1": ("4#3", "E#2@15"), "CE-2": ("6#3", "E#2@15")}
+
+
+def _seccion(n, x0, y0, x1, y1, marca, lee=True, sentidos=(-1,), titulo=""):
+    return SeccionDeTitulo(
+        marca=marca, caja=(x0, y0, x1, y1), archivo="a.dxf", titulo_id=titulo, lee=lee,
+        sentidos=sentidos,
+    )  # fmt: skip
+
+
+def _marco(ents):
+    return [SheetFrame(frame_id="f0", bbox=(-20, -20, 20, 20), source_file="a.dxf", code="ES-1")]
+
+
+def test_a_line_two_sections_reach_alike_is_nobodys():
+    # Un renglón bajo el hueco entre dos secciones, a la misma distancia de las dos: de cuál es no
+    # se sabe; no se lee.
+    ents = [_texto("r", "4#3", 1.0, -0.5, alto=0.10)]
+    secciones = [
+        _seccion(0, 0.0, 0.0, 0.95, 1.0, "T-1"),
+        _seccion(1, 1.05, 0.0, 2.0, 1.0, "T-2"),
+    ]
+    asoc, dudosos = asociar_secciones(ents, _marco(ents), C, secciones, {"r"})
+    assert asoc == [] and dudosos == {"r": {"T-1", "T-2"}}
+
+
+def test_nothing_is_read_on_the_titles_side():
+    # El renglón entre el título y su sección (encima de ella) no es su pila: la pila va del lado
+    # contrario al título.
+    ents = [_texto("r", "4#3", 0.4, 1.2, alto=0.10)]
+    asoc, _ = asociar_secciones(ents, _marco(ents), C, [_seccion(0, 0, 0, 0.8, 1.0, "T-1")], {"r"})
+    assert asoc == []
+
+
+def test_claimed_and_free_sections_compete_but_are_never_read():
+    # Una sección que sólo se reclama (o que no es de nadie) junto a la del título: su armado no
+    # es del título vecino, y de ella no se lee nada.
+    ents = [
+        _texto("a", "4#3", 0.4, -0.3, alto=0.10),
+        _texto("b", "6#4", 1.6, -0.3, alto=0.10),
+    ]
+    secciones = [
+        _seccion(0, 0.0, 0.0, 0.8, 1.0, "T-1"),
+        _seccion(1, 1.2, 0.0, 2.0, 1.0, "", lee=False, sentidos=(+1, -1)),
+    ]
+    asoc, _ = asociar_secciones(ents, _marco(ents), C, secciones, {"a", "b"})
+    assert [(a.marca, a.textos) for a in asoc] == [("T-1", ["4#3"])]
+
+
+def _t_con_alzado(alzado: bool):
+    """Un detalle de trabe como T1-2 de Marina (15x45): su título, su sección (cerrada, con sus
+    cotas), «E#3@12» bajo ella y una llamada «2#6» con su directriz a la sección; con ``alzado``,
+    el alzado a la derecha, a la misma altura, con su distribución de estribos."""
+    ents = [
+        _titulo("t", "T1-2", 0.1, 1.95, alto=0.14),
+        _rectangulo("s", 0.0, 0.0, 0.755, 1.744),
+        _cota("h", (0.0, 0.0), (0.755, 0.0), 15),
+        _cota("v", (0.0, 1.744), (0.0, 0.0), 45),
+        _texto("e", "E#3@12", 0.38, -0.35, alto=0.11),
+        _texto("c", "2#6", 1.19, -0.2, alto=0.11),
+        _flecha("f", [(1.0, -0.26), (1.35, -0.26), (0.6, 0.15)]),
+    ]
+    if alzado:
+        ents += [
+            _linea("z1", (1.8, 0.0), (8.0, 0.0)),
+            _linea("z2", (1.8, 1.744), (8.0, 1.744)),
+            _texto("z3", "1@6,8@10", 2.3, -0.15, alto=0.10),
+            _texto("z4", "@15", 5.0, -0.15, alto=0.10),
+        ]
+    return ents
+
+
+@pytest.mark.parametrize("alzado", [False, True])
+def test_a_field_the_detail_also_writes_elsewhere_is_never_read_from_the_stack(alzado):
+    # R147: «E#3@12» bajo la sección es todo lo que el detalle dice de sus estribos si no hay
+    # alzado: se lee. Con el alzado, que escribe la distribución («1@6,8@10», «@15»), la pila es
+    # sólo una parte: no se lee, se cita, y el campo queda reclamado (la IA no lo llena). La llamada
+    # «2#6» nunca es un renglón de la pila: es de su flecha (E3); sigue bloqueando la IA.
+    inv = build_schedule_inventory(_t_con_alzado(alzado), C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    (pila,) = _cotas(inv, "T1-2")
+    assert pila.entidades == ["e"] and pila.rebar is None
+    merge_external_specs(inv, [_ia("T1-2", family="trabe", rebar="4#6", stirrups="E#3@20")], C)
+    d = construir_definiciones(inv, C)[0]["T1-2"]
+    if alzado:
+        assert pila.stirrups is None and pila.campos_con_texto == ["estribos"]
+        # R192: dicho como duda, nunca como hecho.
+        assert any(a.startswith("estribos: un texto que puede ser de T1-2 fuera de la pila bajo")
+                   and a.endswith("no se lee de la pila («E#3@12»)")
+                   for a in pila.avisos)  # fmt: skip
+        assert d.estribos.ilegible and d.estribos.fuente == "detalle"
+    else:
+        assert pila.stirrups == "E#3@12"
+        assert d.estribos.fuente == "detalle" and d.estribos.valor[0].numero == "3"
+    assert _sin_dueno(inv)["2#6"] == ["T1-2"]
+    assert d.longitudinales is None and "longitudinales" in d.sin_leer
+
+
+def test_a_text_at_the_sections_corner_is_never_a_stack_line():
+    # CTA-1 de Marina (ES-002): su «E#4» va junto a la esquina de abajo de su sección, metido en
+    # su altura: no está bajo ella; no se lee (la separación va en su alzado).
+    ents = [
+        _titulo("t", "CTA-1", 0.27, 3.29, alto=0.14),
+        _rectangulo("s", 0.0, 0.0, 1.325, 3.136),
+        _cota("h", (0.0, 0.0), (1.325, 0.0), 35),
+        _cota("v", (0.0, 3.136), (0.0, 0.0), 80),
+        _texto("e", "E#4", 1.627, -0.028, alto=0.11),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert _cotas(inv, "CTA-1") == []
+    assert _sin_dueno(inv) == {"E#4": ["CTA-1"]}
+
+
+@pytest.mark.parametrize("dx", [0.6, 0.9, 1.2])
+def test_a_text_at_a_sections_corner_is_never_a_neighbours_stack_line(dx):
+    # R203 (el revisor, adv12; la costumbre de una hoja con los títulos bajo sus secciones): el
+    # «E#4» de CTA-1 en su esquina de abajo, cruzando la altura de su orilla, es del dibujo de
+    # CTA-1. La fila de abajo, corrida ``dx``, lee hacia arriba: CTA-2 nunca lo lee como sus
+    # estribos; queda sin dueño, «posible» de CTA-1.
+    ents = [
+        _rectangulo("sa", 0.0, 2.0, 1.325, 5.136),
+        _cota("ha", (0.0, 2.0), (1.325, 2.0), 35),
+        _cota("va", (0.0, 5.136), (0.0, 2.0), 80),
+        _texto("e", "E#4", 1.627, 1.972, alto=0.11),
+        _titulo("ta", "CTA-1", 0.27, 1.75, alto=0.14),
+        _rectangulo("sb", dx, 0.0, dx + 1.2, 1.2),
+        _cota("hb", (dx, 0.0), (dx + 1.2, 0.0), 30),
+        _cota("vb", (dx, 1.2), (dx, 0.0), 30),
+        _titulo("tb", "CTA-2", dx + 0.3, -0.15, alto=0.14),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s for s in inv.specs if s.metodo == "pila"] == []
+    assert "CTA-1" in _sin_dueno(inv)["E#4"]
+
+
+def test_a_sections_own_corner_text_never_hides_what_follows_from_it():
+    # R203: «E#4» cruza la orilla de abajo de T-1 (su esquina: de su dibujo, no se lee); «4#3» va
+    # 0.35 bajo T-1, pasado él, y 0.35 sobre T-2, que lee hacia arriba. T-1 lo sigue disputando
+    # (lo de su propio dibujo no le estorba): ninguna está claramente más cerca, en duda.
+    ents = [
+        _texto("e", "E#4", 0.3, 0.0, alto=0.10, centrado=False),
+        _texto("r", "4#3", 0.2, -0.40, alto=0.10, centrado=False),
+    ]
+    secciones = [
+        _seccion(0, 0.0, 0.0, 1.0, 1.0, "T-1", sentidos=(-1,)),
+        _seccion(1, 0.0, -1.80, 1.0, -0.80, "T-2", sentidos=(+1,), lee=False),
+    ]
+    asoc, dudosos = asociar_secciones(ents, _marco(ents), C, secciones, {"e", "r"})
+    assert asoc == []
+
+
+def test_a_claimed_box_is_never_read():
+    # R164: una sección que alcanzan dos títulos por igual (R111) es de los dos y de ninguno: su
+    # armado bloquea a los dos, nunca se lee.
+    ents = [
+        _titulo("a", "T-1", 0.1, 0.3, alto=0.14),
+        _titulo("b", "T-2", 0.55, 0.3, alto=0.14),
+        _rectangulo("s", 0.0, -2.0, 1.0, 0.0),
+        _cota("h", (0.0, -2.0), (1.0, -2.0), 30),
+        _cota("v", (1.0, -2.0), (1.0, 0.0), 60),
+        _texto("r", "3#6", 0.5, -2.35, alto=0.11),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s for s in inv.specs if s.metodo == "pila"] == []
+    assert _sin_dueno(inv) == {"3#6": ["T-1", "T-2"]}
+
+
+# ------------------------------------------------- las familias de la Tarea 6, con secciones
+
+
+def _secciones_en_lugar_de_etiquetas(
+    ents, de_quien, semilla, grande, titulos=True, lado_al_azar=False
+):
+    """Cada etiqueta «K-n» de un cuadro al azar se vuelve una sección: su arista del lado de su
+    pila donde estaba la de la etiqueta; con ``grande``, 1–2.5 veces su ancho y 0.2–0.9 de alto,
+    hacia el lado contrario a su pila. Su título (el mismo texto) va del otro lado de la sección
+    (sin ``titulos``, no va). El lado que lee la sección es el de su pila; con ``lado_al_azar``
+    (R189), uno al azar, que nunca sale de dónde está su pila: su título va del otro lado."""
+    from klave_engine.estructura.textos import caja_de_texto
+
+    def caja(e):
+        (ax, ay), (dx0, dx1, dy0, dy1, _a) = ancla_texto(e), caja_de_texto(e, 0.0)
+        return ax + dx0, ay + dy0, ax + dx1, ay + dy1
+
+    rnd = random.Random(semilla * 7919 + 17)
+    propios: dict[str, set[str]] = {}
+    for e in ents:
+        if e.is_textual:
+            clave = (e.text, round(ancla_texto(e)[0], 3), round(ancla_texto(e)[1], 3))
+            if clave in de_quien:
+                propios.setdefault(de_quien[clave], set()).add(e.entity_id)
+    por_id = {e.entity_id: e for e in ents}
+    etiquetas = [e for e in ents if e.is_textual and (e.text or "").startswith("K-")
+                 and (e.properties.get("height") or 0) > 0.12]  # fmt: skip
+    nuevos = [e for e in ents if e not in etiquetas]
+    secciones = []
+    for e in etiquetas:
+        x0, y0, x1, y1 = caja(e)
+        mios = propios.get(e.text or "", set())
+        if lado_al_azar:
+            lado = rnd.choice((+1, -1))
+        elif mios:
+            ym = sum((caja(por_id[i])[1] + caja(por_id[i])[3]) / 2 for i in mios) / len(mios)
+            lado = +1 if ym > (y0 + y1) / 2 else -1
+        else:
+            lado = rnd.choice((+1, -1))
+        if grande:
+            w, h, cx = (x1 - x0) * rnd.uniform(1.0, 2.5), rnd.uniform(0.2, 0.9), (x0 + x1) / 2
+            bx = (cx - w / 2, y1 - h, cx + w / 2, y1) if lado > 0 else (cx - w / 2, y0, cx + w / 2,
+                                                                         y0 + h)  # fmt: skip
+        else:
+            bx = (x0, y0, x1, y1)
+        secciones.append(
+            SeccionDeTitulo(
+                marca=e.text or "",
+                caja=bx,
+                archivo=e.source_file,
+                titulo_id=e.entity_id + "_t",
+                sentidos=(lado,),
+            )
+        )
+        if not titulos:
+            continue
+        titulo = e.model_copy(deep=True)
+        dy = (bx[1] - 0.05 - (y1 - y0)) - y0 if lado > 0 else (bx[3] + 0.05) - y0
+        titulo.properties = {
+            k: ((v[0], v[1] + dy) if k in ("insert", "align_point") and v is not None else v)
+            for k, v in titulo.properties.items()
+        }
+        titulo.bbox = (titulo.bbox[0], titulo.bbox[1] + dy, titulo.bbox[2], titulo.bbox[3] + dy)
+        titulo.entity_id = titulo.raw_handle = e.entity_id + "_t"
+        nuevos.append(titulo)
+    return nuevos, secciones, propios
+
+
+@pytest.mark.parametrize("grande", [False, True])
+@pytest.mark.parametrize("mezcla,sin_pila", [(False, False), (True, False), (True, True)])
+def test_a_sweep_of_the_reviewers_cuadros_with_sections(mezcla, sin_pila, grande):
+    """Las familias del revisor (Tarea 6, R55) con secciones en lugar de etiquetas: ninguna pila
+    ajena, ninguna a medias, y se lee algo."""
+    from tests.test_estructura_asociacion import _cuadro_del_revisor
+
+    legibles = leidos = 0
+    with tempfile.TemporaryDirectory(prefix="t9c_barrida_") as d:
+        for semilla in range(120):
+            cuadro = _cuadro_del_revisor(Path(d), semilla, mezcla, sin_pila)
+            if cuadro is None:
+                continue
+            ents, de_quien = cuadro
+            nuevos, secciones, propios = _secciones_en_lugar_de_etiquetas(
+                ents, de_quien, semilla, grande
+            )
+            libres = {e.entity_id for e in ents if e.is_textual}
+            asoc, _ = asociar_secciones(nuevos, _marco(nuevos), C, secciones, libres)
+            for a in asoc:
+                assert set(a.entidades) == propios.get(a.marca, set()), (semilla, a.marca, a.textos)
+            legibles += 1
+            leidos += len(asoc)
+    assert legibles >= 10 and leidos >= legibles // 2
+
+
+def _cuadro(d, familia, semilla):
+    """Un cuadro de las familias de la Tarea 6 (sus mismos sorteos), o ``None`` si no se lee: dos
+    textos que se tocan o, en «borde», un renglón fuera del ensanche de su etiqueta (la salvedad
+    a de R58, que la barrida de la Tarea 6 también salta)."""
+    import tests.test_estructura_asociacion as ta
+
+    if familia in ("azar", "azar_mezcla"):
+        ents, de_quien = ta._cuadro_al_azar(d, semilla, familia == "azar_mezcla")
+        return None if ta._se_tocan(ents) else (ents, de_quien)
+    if familia == "largo":
+        ents, de_quien = ta._cuadro_largo(d, semilla)
+    elif familia in ("zigzag", "ambos"):
+        ents, de_quien = ta._cuadro_mezclado(d, semilla, familia)
+    else:
+        ents, de_quien = ta._cuadro_de_lado(d, semilla, familia)
+        if ents is not None and familia == "borde" and ta._fuera_del_ensanche(ents, de_quien):
+            return None
+    return None if ents is None else (ents, de_quien)
+
+
+def _ni_ajena_ni_a_medias(cuadro, semilla, grande, titulos, al_azar=False):
+    ents, de_quien = cuadro
+    nuevos, secciones, propios = _secciones_en_lugar_de_etiquetas(
+        ents, de_quien, semilla, grande, titulos, al_azar
+    )
+    libres = {e.entity_id for e in ents if e.is_textual}
+    asoc, _ = asociar_secciones(nuevos, _marco(nuevos), C, secciones, libres)
+    for a in asoc:
+        assert set(a.entidades) == propios.get(a.marca, set()), (semilla, a.marca, a.textos)
+    return len(asoc)
+
+
+# R189: las semillas de las barridas que leían una pila ajena o a medias. Cada una la deja hoy en
+# duda al menos una regla; las marcadas, sólo una (en rojo sin ella).
+_SEMILLAS = [
+    # «zigzag», 814 (en rojo sin el «casi» de la columna entera): la columna de K-2 seguía en dos
+    # renglones largos de K-1 que K-3 casi alcanza.
+    ("zigzag", 814, False, False, False),
+    # «borde», 974 (en rojo sin la competencia del lado del título): K-10 tomaba «8#6 / 12#8+8#6…».
+    ("borde", 974, True, True, False),
+    # «borde», 3823 (el revisor; en rojo sin la columna contigua): K-3 tomaba de enfrente
+    # «12#8+8#6…» saltando «E#4@10», a un lado entre la sección y él.
+    ("borde", 3823, True, True, False),
+    # «azar_mezcla», 8029, lado al azar (en rojo sin la columna cerrada): la columna de K-3 subía
+    # por la pila de K-4 hasta su sección; lo que sigue al último renglón a menos de un hueco entre
+    # renglones (la caja de otra sección) la deja en duda.
+    ("azar_mezcla", 8029, False, False, True),
+    # «borde», 2481; «revisor_sinpila», 4040; «borde», 5551 y 8551; «revisor_sinpila», 7213 (el
+    # revisor); «revisor_mezcla», 2776 con el lado al azar: dos reglas o más las dejan en duda.
+    ("borde", 2481, False, False, False),
+    ("revisor_sinpila", 4040, False, False, False),
+    ("borde", 5551, False, True, False),
+    ("borde", 8551, False, True, False),
+    ("revisor_sinpila", 7213, True, True, False),
+    ("revisor_mezcla", 2776, False, False, True),
+    # R203: «zigzag», 806, secciones grandes con títulos (en rojo si lo del dibujo de otra sección
+    # cortara la columna como un obstáculo, en vez de dejarla en duda): el segundo renglón de la
+    # pila de K-3 cae sobre la caja de K-4; la pila, cortada ahí, se leía a medias.
+    ("zigzag", 806, True, True, False),
+]
+
+
+def _cuadro_de(d, familia, semilla):
+    if familia.startswith("revisor"):
+        from tests.test_estructura_asociacion import _cuadro_del_revisor
+
+        return _cuadro_del_revisor(d, semilla, "mezcla" in familia, "sinpila" in familia)
+    return _cuadro(d, familia, semilla)
+
+
+@pytest.mark.parametrize("familia,semilla,grande,titulos,al_azar", _SEMILLAS)
+def test_the_seeds_that_read_a_foreign_or_partial_stack_now_doubt_it(
+    familia, semilla, grande, titulos, al_azar
+):
+    with tempfile.TemporaryDirectory(prefix="t9c_semilla_") as d:
+        cuadro = _cuadro_de(Path(d), familia, semilla)
+        assert cuadro is not None
+        _ni_ajena_ni_a_medias(cuadro, semilla, grande, titulos, al_azar)
+
+
+def test_a_section_takes_a_stack_only_in_front_of_it():
+    # R189 (T3-19 y T4-4 de Marina): «E#3@15» bajo la sección pero a su lado (en su ensanche, sin
+    # encimarse con ella): una caja dibujada no se ensancha; no se lee.
+    ents = [_texto("r", "E#3@15", 1.2, -0.2, alto=0.10)]
+    asoc, _ = asociar_secciones(
+        ents, _marco(ents), C, [_seccion(0, 0.0, 0.0, 0.8, 1.0, "T-1")], {"r"}
+    )
+    assert asoc == []
+
+
+@pytest.mark.parametrize("titulos", [True, False])
+@pytest.mark.parametrize("grande", [False, True])
+@pytest.mark.parametrize("familia", ["largo", "azar_mezcla", "zigzag", "ambos", "lado", "borde"])
+def test_a_sweep_of_task_6s_other_families_with_sections(familia, grande, titulos):
+    """Las demás familias de la Tarea 6 con secciones en lugar de etiquetas (con y sin títulos):
+    ninguna pila ajena ni a medias."""
+    revisados = 0
+    with tempfile.TemporaryDirectory(prefix="t9c_familias_") as d:
+        for semilla in range(800, 900):
+            cuadro = _cuadro(Path(d), familia, semilla)
+            if cuadro is None:
+                continue
+            _ni_ajena_ni_a_medias(cuadro, semilla, grande, titulos)
+            revisados += 1
+    assert revisados >= 3
+
+
+@pytest.mark.parametrize("familia", ["revisor_sinpila", "largo", "lado", "borde"])
+def test_a_sweep_with_the_reading_side_at_random(familia):
+    """R189: el lado que lee cada sección al azar, nunca de dónde está su pila (su título del
+    otro lado): en los cuadros bien planteados, ninguna pila ajena ni a medias."""
+    revisados = 0
+    with tempfile.TemporaryDirectory(prefix="t9c_azar_") as d:
+        for semilla in range(900, 1100):
+            cuadro = _cuadro_de(Path(d), familia, semilla)
+            if cuadro is None or cuadro[0] is None:
+                continue
+            ents, de_quien = cuadro
+            nuevos, secciones, propios = _secciones_en_lugar_de_etiquetas(
+                ents, de_quien, semilla, False, False, True
+            )
+            if not _sin_choques(nuevos, secciones) or not _cada_dueno_alcanza_su_pila(
+                nuevos, secciones, propios
+            ):
+                continue
+            libres = {e.entity_id for e in ents if e.is_textual}
+            asoc, _ = asociar_secciones(nuevos, _marco(nuevos), C, secciones, libres)
+            for a in asoc:
+                assert set(a.entidades) == propios.get(a.marca, set()), (semilla, a.marca)
+            revisados += 1
+    assert revisados >= 5
+
+
+def test_a_sweep_of_detail_grids():
+    """R189: la rejilla de detalles (``_rejilla_de_detalles``): ninguna pila ajena ni a medias, y
+    se lee."""
+    cuadros = pilas = 0
+    for semilla in range(400):
+        leidas = _lee_la_rejilla(semilla)
+        if leidas is None:
+            continue
+        cuadros += 1
+        for marca, textos, entera in leidas:
+            # R200: nunca ajena ni a medias, esté el lector más cerca o no.
+            assert entera, (semilla, marca, textos)
+            pilas += 1
+    assert cuadros >= 40 and pilas >= cuadros // 2
+
+
+# ------------------------------------------------- R189: la rejilla de detalles
+
+
+@pytest.mark.parametrize("semilla", [7626, 22353, 31203])
+def test_the_grid_seeds_a_drawings_text_hid_from_a_section_are_whole(semilla):
+    # R203 (en rojo si un texto del dibujo de una sección le tapara a otra lo que disputa): en la
+    # 7626, «EYG#3@15 EN TODA LA ALTURA», sobre la esquina de la caja de K-2, le tapaba a K-1 el
+    # «E#2@15» de su pila (del lado de su título), y K-5 lo leía; la 22353 y la 31203, lo mismo.
+    leidas = _lee_la_rejilla(semilla)
+    assert leidas is not None
+    assert all(entera for _marca, _textos, entera in leidas), leidas
+
+
+def _rejilla_de_detalles(semilla):
+    """R189: filas y columnas de detalles titulados al alcance de Marina: cada sección de lado
+    menor 0.5–2.5, su pila de 1 a 4 renglones debajo (o, uno de cada cuatro, encima) a 0.02–0.9
+    de su lado menor, alineada a la izquierda, al centro o a la derecha (±0.3), y las vecinas tan
+    cerca que las pilas de unas quedan al alcance de otras. El título va del lado contrario a su
+    pila; uno de cada cuatro, del lado equivocado (entre la sección y su pila, o a un lado). La
+    sección lee del lado contrario a su título, como en el motor (``_secciones_para_pilas``):
+    nunca de dónde está su pila. Devuelve los textos, las secciones y los renglones de cada
+    marca; ``None`` si dos textos quedan a menos de 0.02."""
+    from tests.test_estructura_asociacion import _CORTOS, _LARGOS, _MEDIOS
+
+    rnd = random.Random(semilla)
+    ents, secciones, propios, cajas = [], [], {}, []
+    n = 0
+
+    def texto(eid, t, x, y, alto, como):
+        # Con el ancho que el motor estima (``caja_de_texto``: 0.9 altos por letra).
+        ancho = 0.9 * len(t) * alto
+        x0 = {"izq": x, "der": x - ancho, "cen": x - ancho / 2}[como]
+        e = _texto(eid, t, x0, y, alto=alto, centrado=False)
+        e.bbox = (x0, y - alto / 2, x0 + ancho, y + alto / 2)
+        ents.append(e)
+        cajas.append(e.bbox)
+        return e
+
+    y_fila = 0.0
+    for _j in range(rnd.randint(1, 3)):
+        x, bajo_de_la_fila = 0.0, y_fila
+        for _i in range(rnd.randint(2, 4)):
+            n += 1
+            marca = f"K-{n}"
+            w, h = rnd.uniform(0.5, 2.5), rnd.uniform(0.5, 2.5)
+            caja = (x, y_fila - h, x + w, y_fila)
+            menor = min(w, h)
+            arriba = rnd.random() < 0.25
+            hueco = rnd.uniform(0.02, 0.9 * menor)
+            como = rnd.choice(("izq", "cen", "der"))
+            ax = {"izq": caja[0], "cen": (caja[0] + caja[2]) / 2, "der": caja[2]}[como]
+            ax += rnd.uniform(-0.3, 0.3)
+            renglones = []
+            paso = rnd.uniform(0.17, 0.2)
+            for k in range(rnd.randint(1, 4)):
+                u = rnd.random()
+                t = rnd.choice(_LARGOS if u < 0.3 else _MEDIOS if u < 0.6 else _CORTOS)
+                if arriba:
+                    yc = caja[3] + hueco + 0.05 + k * paso
+                else:
+                    yc = caja[1] - hueco - 0.05 - k * paso
+                renglones.append(texto(f"{marca}r{k}", t, ax, yc, 0.10, como))
+            propios[marca] = {e.entity_id for e in renglones}
+            # El título: del lado contrario a su pila, o (uno de cada cuatro) del equivocado.
+            lado_titulo = -1 if arriba else +1
+            donde = "lado" if rnd.random() < 0.1 else "contrario"
+            if rnd.random() < 0.25:
+                lado_titulo = -lado_titulo
+            cx = (caja[0] + caja[2]) / 2
+            if donde == "lado":
+                ty = rnd.uniform(caja[1], caja[3])
+                titulo = texto(f"{marca}t", marca, caja[2] + 0.1, ty, 0.14, "izq")
+            elif lado_titulo > 0:
+                titulo = texto(f"{marca}t", marca, cx, caja[3] + 0.05 + 0.07, 0.14, "cen")
+            else:
+                titulo = texto(f"{marca}t", marca, cx, caja[1] - 0.05 - 0.07, 0.14, "cen")
+            ty = (titulo.bbox[1] + titulo.bbox[3]) / 2
+            secciones.append(
+                SeccionDeTitulo(
+                    marca=marca, caja=caja, archivo="a.dxf", titulo_id=titulo.entity_id,
+                    sentidos=(-1,) if ty > (caja[1] + caja[3]) / 2 else (+1,),
+                )
+            )  # fmt: skip
+            bajo_de_la_fila = min(bajo_de_la_fila, caja[1], *(e.bbox[1] for e in renglones))
+            x = max(caja[2], *(e.bbox[2] for e in renglones)) + rnd.uniform(0.05, 0.6)
+        y_fila = bajo_de_la_fila - rnd.uniform(0.05, 0.8)
+    if not _sin_choques(ents, secciones):
+        return None
+    return ents, secciones, propios
+
+
+def _caja_del_motor(e):
+    (ax, ay), (dx0, dx1, dy0, dy1, _a) = ancla_texto(e), caja_de_texto(e, 0.0)
+    return ax + dx0, ay + dy0, ax + dx1, ay + dy1
+
+
+def _sin_choques(ents, secciones):
+    """R196, R208: lo único que excluye un cuadro de las barridas: un choque físico entre textos,
+    con las cajas que estima el motor (dos textos a menos de 0.02). Un texto sobre la caja de una
+    sección se cuenta (R203: es del dibujo de esa sección; así escribe Marina en una esquina), y
+    lo demás (criterios 3 y 4 de ``_criterios_de_lectura``) se mide, nunca se excluye."""
+    lista = [_caja_del_motor(e) for e in ents if e.is_textual]
+    for i, a in enumerate(lista):
+        for b in lista[i + 1 :]:
+            if (
+                a[0] < b[2] + 0.02
+                and b[0] < a[2] + 0.02
+                and a[1] < b[3] + 0.02
+                and b[1] < a[3] + 0.02
+            ):
+                return False
+    return True
+
+
+def _sobre_una_caja(ents, secciones):
+    """R208: si algún texto cae sobre la caja de una sección (se cuenta aparte en la barrida)."""
+    lista = [_caja_del_motor(e) for e in ents if e.is_textual]
+    return any(
+        b[0] < x1 and x0 < b[2] and b[1] < y1 and y0 < b[3]
+        for x0, y0, x1, y1 in (s.caja for s in secciones)
+        for b in lista
+    )
+
+
+def _cada_dueno_alcanza_su_pila(ents, secciones, propios):
+    """R200: si cada sección del generador alcanza su propia pila (su renglón más cercano a lo más
+    a dos veces su lado menor, el doble de su alcance, de cualquier lado, de frente o en su
+    ensanche de 3 altos de renglón). Si no, ningún lector puede saber que es suya (la analogía de
+    R58a): el cuadro se excluye, como un choque."""
+    cajas = {e.entity_id: _caja_del_motor(e) for e in ents if e.is_textual}
+    for s in secciones:
+        suyos = [cajas[i] for i in propios.get(s.marca, ()) if i in cajas]
+        if not suyos:
+            continue
+        x0, y0, x1, y1 = s.caja
+        doble = 2 * min(x1 - x0, y1 - y0)
+        if not any(
+            _hueco_vertical(s.caja, b) <= doble
+            and b[0] < x1 + 3 * (b[3] - b[1])
+            and b[2] > x0 - 3 * (b[3] - b[1])
+            for b in suyos
+        ):
+            return False
+    return True
+
+
+def _criterios_de_lectura(ents, secciones, propios):
+    """R196: si un cuadro sin choques cumple los criterios 3 y 4 (para medirlos, nunca para
+    excluir): (3) entre cada sección y el último renglón de su pila, en el ancho de las dos, nada
+    de otro detalle; (4) su pila más cerca de su sección que de cualquier otra que la tenga en su
+    columna."""
+    cajas = {e.entity_id: _caja_del_motor(e) for e in ents if e.is_textual}
+
+    def hueco(caja, b):
+        return b[1] - caja[3] if b[1] >= caja[3] else caja[1] - b[3] if b[3] <= caja[1] else 0
+
+    for s in secciones:
+        suyos = [cajas[i] for i in propios.get(s.marca, ()) if i in cajas]
+        if not suyos:
+            continue
+        x0 = min(s.caja[0], *(b[0] for b in suyos))
+        x1 = max(s.caja[2], *(b[2] for b in suyos))
+        y0 = min(s.caja[1], *(b[1] for b in suyos))
+        y1 = max(s.caja[3], *(b[3] for b in suyos))
+        ajenos = [b for i, b in cajas.items() if i not in propios[s.marca] and i != s.titulo_id]
+        ajenos += [o.caja for o in secciones if o is not s]
+        if any(b[0] < x1 and x0 < b[2] and b[1] < y1 and y0 < b[3] for b in ajenos):
+            return False
+        propio = min(hueco(s.caja, b) for b in suyos)
+        for o in secciones:
+            if o is not s and any(
+                b[0] < o.caja[2] and o.caja[0] < b[2] and hueco(o.caja, b) <= propio for b in suyos
+            ):
+                return False
+    return True
+
+
+def _marco_de(ents, secciones):
+    xs = [v for e in ents for v in (e.bbox[0], e.bbox[2])] + [
+        v for s in secciones for v in (s.caja[0], s.caja[2])
+    ]
+    ys = [v for e in ents for v in (e.bbox[1], e.bbox[3])] + [
+        v for s in secciones for v in (s.caja[1], s.caja[3])
+    ]
+    return [
+        SheetFrame(
+            frame_id="f0", bbox=(min(xs) - 5, min(ys) - 5, max(xs) + 5, max(ys) + 5),
+            source_file="a.dxf", code="ES-1",
+        )
+    ]  # fmt: skip
+
+
+def _hueco_vertical(caja, b):
+    return b[1] - caja[3] if b[1] >= caja[3] else caja[1] - b[3] if b[3] <= caja[1] else 0.0
+
+
+def _lee_la_rejilla(semilla):
+    """Las pilas que se leen de una rejilla (sin choques, y cada dueño alcanzando su pila): su
+    marca, sus textos y si es la del generador entera."""
+    cuadro = _rejilla_de_detalles(semilla)
+    if cuadro is None:
+        return None
+    ents, secciones, propios = cuadro
+    if not _cada_dueno_alcanza_su_pila(ents, secciones, propios):
+        return None
+    libres = {i for ids in propios.values() for i in ids}
+    asoc, _ = asociar_secciones(ents, _marco_de(ents, secciones), C, secciones, libres)
+    return [(a.marca, a.textos, set(a.entidades) == propios[a.marca]) for a in asoc]
+
+
+# ------------------------------------------------- ronda de arreglos 1 (R188–R193)
+
+
+def _con_otro_archivo(ents):
+    """Lo mismo, y un texto de otro archivo del proyecto en cualquier parte (la tubería pasa
+    todos los archivos del proyecto al inventario)."""
+    otro = _texto("otro", "NOTA", 15.0, 15.0, alto=0.1)
+    otro.source_file = "b.dxf"
+    return [*ents, otro]
+
+
+@pytest.mark.parametrize(
+    "x,longitudinal",
+    [(1.05, "4#3"), (0.6, "6#4+2#5")],  # bajo la libre; y (adv6) a caballo entre las dos
+)
+@pytest.mark.parametrize("dos_archivos", [False, True])
+def test_a_free_section_competes_in_a_project_of_several_files(dos_archivos, x, longitudinal):
+    # R188 (el revisor, adv2 y adv6): T-1 tiene su sección; a su lado, una sección acotada que no
+    # es de nadie. Los dos renglones van bajo la libre, en la banda ensanchada de T-1, o (x=0.6,
+    # «6#4+2#5») centrados entre las dos, llegando bajo la libre. La libre compite siempre, con su
+    # archivo (el de sus líneas y cotas): con un archivo más en el proyecto, T-1 leía la pila.
+    ents = [
+        _titulo("t", "T-1", 0.1, 1.2, alto=0.14),
+        _rectangulo("s1", 0.0, 0.0, 0.8, 1.0),
+        _cota("h1", (0.0, 0.0), (0.8, 0.0), 20),
+        _cota("v1", (0.0, 1.0), (0.0, 0.0), 25),
+        _rectangulo("s2", 0.9, 0.0, 1.7, 1.0),
+        _cota("h2", (0.9, 0.0), (1.7, 0.0), 20),
+        _cota("v2", (1.7, 1.0), (1.7, 0.0), 25),
+        _texto("b", longitudinal, x, -0.3, alto=0.1),
+        _texto("c", "E#2@15", x, -0.45, alto=0.1),
+    ]
+    if dos_archivos:
+        ents = _con_otro_archivo(ents)
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert _cotas(inv, "T-1") == []
+    assert "T-1" in _sin_dueno(inv)[longitudinal]
+
+
+def _cta_con_alzado_debajo():
+    """El revisor (adv3): una sección como la de CTA-1 (35×80, 1.325 × 3.136) con sólo su «E#4»
+    en la esquina, y 0.6 debajo el alzado de otra trabe (8.5 × 1.4) con sus etiquetas de varillas
+    dentro: «2#8» a 0.18 bajo su línea de arriba."""
+    return [
+        _titulo("t", "CTA-1", 0.27, 3.29, alto=0.14),
+        _rectangulo("s", 0.0, 0.0, 1.325, 3.136),
+        _cota("h", (0.0, 0.0), (1.325, 0.0), 35),
+        _cota("v", (0.0, 3.136), (0.0, 0.0), 80),
+        _texto("e", "E#4", 1.627, -0.028, alto=0.11),
+        _linea("z1", (-0.5, -0.6), (8.0, -0.6)),
+        _linea("z2", (-0.5, -2.0), (8.0, -2.0)),
+        _linea("z3", (-0.5, -0.6), (-0.5, -2.0)),
+        _linea("z4", (8.0, -0.6), (8.0, -2.0)),
+        _texto("b1", "2#8", 0.66, -0.78, alto=0.11),
+        _titulo("t2", "T-9", 8.6, -1.3, alto=0.14),
+    ]
+
+
+def test_a_label_inside_another_drawing_is_never_a_stack_line():
+    # R190: «2#8» va dentro del alzado de otra trabe (líneas dibujadas arriba y abajo de él, en la
+    # banda de la sección): es de ese dibujo, un obstáculo; CTA-1 nunca lee «2#8» (antes: sus
+    # longitudinales 2#8, como detalle).
+    inv = build_schedule_inventory(
+        _cta_con_alzado_debajo(), C, unit_to_m=1.0, detail_boxes=_DETALLE
+    )
+    assert _cotas(inv, "CTA-1") == []
+    assert "2#8" in _sin_dueno(inv)
+
+
+def test_a_rotated_text_never_stacks_under_a_section():
+    # R147, 0° sólo: «E#2@15» girado 90° bajo la sección de CE-1 no es un renglón de su pila.
+    girado = _texto("l2", "E#2@15", 0.458, -2.663, alto=0.10)
+    girado.rotation = 90.0
+    ents = _ce1() + _muro() + [_texto("l1", "4#3", 0.458, -2.468, alto=0.10), girado]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [p.entidades for p in _cotas(inv, "CE-1")] == [["l1"]]
+
+
+@pytest.mark.parametrize("motivo,leida", [("sin_dueno", True), ("ambigua", False)])
+def test_only_a_line_nobody_reads_or_names_can_stack(motivo, leida):
+    # R147: sólo un texto cuyo único rechazo es «sin dueño» puede ser renglón de una pila; uno que
+    # la Tarea 6 dejó ambiguo entre dos marcas (u otro rechazo con marcas) estorba, nunca se lee.
+    from klave_engine.detection.schedules import _pilas_de_secciones
+    from klave_engine.estructura.asociacion import Rechazo, hoja_y_llave
+
+    ents = [_titulo("t", "T-1", 0.4, 1.2, alto=0.14), _texto("r", "4#3", 0.4, -0.3, alto=0.10)]
+    marcos = _marco(ents)
+    rechazo = Rechazo(entidad_id="r", texto="4#3", hoja="ES-1", motivo=motivo,
+                      marcas=[] if motivo == "sin_dueno" else ["K-1", "K-2"])  # fmt: skip
+    seccion = _seccion(0, 0.0, 0.0, 0.8, 1.0, "T-1", titulo="t")
+    pilas, _ = _pilas_de_secciones(
+        ents, marcos, C, [seccion], [], [rechazo], hoja_y_llave(marcos), {}
+    )
+    assert [p.entidades for p in pilas] == ([["r"]] if leida else [])
+
+
+def test_a_claimed_box_with_a_single_claimant_is_never_read():
+    # R158, R147 (T3-21 de Marina): la sección que T3-21 sólo reclama (sin contorno ni par, el
+    # rectángulo de sus cotas) es suya y de nadie más; aun así su «E#3@15» nunca se lee de ella:
+    # bloquea, como «posible».
+    from tests.test_secciones_de_cotas import _t3_21
+
+    ents = _t3_21() + [_texto("e", "E#3@15", 0.454, -0.387, alto=0.11)]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert _cotas(inv, "T3-21") == []
+    assert _sin_dueno(inv) == {"E#3@15": ["T3-21"]}
+
+
+# R189 con la geometría de Marina (en coordenadas de su hoja, sin el dibujo, que no está en el
+# repositorio): las reglas que separan las pilas de detalles en filas.
+
+
+def _en(eid, texto, x0, y0, x1, y1):
+    """Un renglón de Marina con la caja que le estima el motor allá (su factor de ancho la da)."""
+    from klave_engine.estructura.textos import ANCHO_POR_CARACTER
+
+    alto = round(y1 - y0, 3)
+    e = _texto(eid, texto, x0, (y0 + y1) / 2, alto=alto, centrado=False)
+    e.bbox = (x0, y0, x1, y1)
+    e.properties = {
+        **e.properties,
+        "width_factor": (x1 - x0) / (ANCHO_POR_CARACTER * alto * len(texto)),
+    }
+    return e
+
+
+def _seccion_de(marca, caja, titulo, **otros):
+    return SeccionDeTitulo(marca=marca, caja=caja, archivo="a.dxf", titulo_id=titulo, **otros)
+
+
+def _marco_grande(ents):
+    return [
+        SheetFrame(frame_id="f0", bbox=(-1000, -1000, 1000, 1000), source_file="a.dxf", code="E")
+    ]
+
+
+@pytest.mark.parametrize("ce4_tiene_la_suya", [True, False])
+def test_a_stack_between_two_rows_of_details_is_in_doubt(ce4_tiene_la_suya):
+    # R196, R209 (ES-300): la pila de CE-2 («6#3» / «E#2@15») va a 0.71 de su sección y, del lado
+    # del título de CE-4 (que podría estar del lado equivocado), a 0.95 de la de CE-4: no está
+    # claramente (25 %) más pegada a CE-2; queda en duda, lea CE-4 su propia pila («4#4» /
+    # «E#3@16», que se lee) o no. Que la otra tenga la suya no la exime de disputarla: así dos
+    # secciones se cambiaban las pilas (la semilla 45408 de la rejilla, R209).
+    ents = [
+        _en("t2", "CE-2", 218.861, -21.176, 219.433, -21.026),
+        _en("a", "6#3", 219.0, -24.055, 219.253, -23.955),
+        _en("b", "E#2@15", 218.86, -24.25, 219.393, -24.15),
+        _en("t4", "CE-4", 218.015, -24.837, 218.593, -24.687),
+    ]
+    if ce4_tiene_la_suya:
+        ents += [
+            _en("c", "4#4", 218.155, -27.934, 218.412, -27.834),
+            _en("d", "E#3@16", 218.019, -28.13, 218.548, -28.03),
+        ]
+    secciones = [
+        _seccion_de("CE-2", (218.61, -23.25, 219.58, -21.54), "t2", sentidos=(-1,)),
+        _seccion_de("CE-4", (217.77, -27.13, 218.74, -25.2), "t4", sentidos=(-1,)),
+    ]
+    libres = {e.entity_id for e in ents if not e.entity_id.startswith("t")}
+    asoc, dudosos = asociar_secciones(ents, _marco_grande(ents), C, secciones, libres)
+    leidas = [("CE-4", ["4#4", "E#3@16"])] if ce4_tiene_la_suya else []
+    assert sorted((a.marca, a.textos) for a in asoc) == leidas
+    assert dudosos["a"] == dudosos["b"] == {"CE-2"}
+
+
+@pytest.mark.parametrize("ce3_tiene_la_suya", [True, False])
+def test_the_sheets_convention_never_wins_a_contested_stack(ce3_tiene_la_suya):
+    # R196, R209 (ES-100): la pila de CE-1 va a 0.71 de su sección y a 0.82 de la de CE-3, bajo
+    # ella, con el título de CE-3 en medio. La costumbre de la hoja (los títulos encima) no gana
+    # una pila disputada: sólo la distancia, y 0.71 contra 0.82 no es claramente más pegada
+    # (25 %): queda en duda, lea CE-3 la suya (que se lee) o no.
+    ents = [
+        _en("t1", "CE-1", 197.691, 38.342, 198.198, 38.492),
+        _en("a", "4#3", 197.86, 35.462, 198.113, 35.562),
+        _en("b", "E#2@15", 197.72, 35.267, 198.253, 35.367),
+        _en("t3", "CE-3", 198.668, 34.808, 199.239, 34.958),
+    ]
+    if ce3_tiene_la_suya:
+        ents += [
+            _en("c", "6#4", 198.828, 31.928, 199.085, 32.028),
+            _en("d", "E#3@14", 198.687, 31.733, 199.225, 31.833),
+        ]
+    secciones = [
+        _seccion_de("CE-1", (197.53, 36.27, 198.38, 37.98), "t1", sentidos=(-1,)),
+        _seccion_de("CE-3", (198.12, 32.74, 199.83, 34.45), "t3", sentidos=(-1,)),
+    ]
+    libres = {e.entity_id for e in ents if not e.entity_id.startswith("t")}
+    asoc, _ = asociar_secciones(ents, _marco_grande(ents), C, secciones, libres)
+    leidas = [("CE-3", ["6#4", "E#3@14"])] if ce3_tiene_la_suya else []
+    assert sorted((a.marca, a.textos) for a in asoc) == leidas
+
+
+def test_a_cuadro_section_never_almost_reaches_a_detail_stack():
+    # R195 (ES-300): la sección de K-5, cuya pila ya leyó su etiqueta de cuadro, compite de su lado
+    # (hacia arriba) sin leerse; la pila de CE-4 le queda a 1.97, dentro del doble de su alcance.
+    # Lo de más allá de su alcance no puede ser suyo: CE-4 lee su pila.
+    ents = [
+        _en("t4", "CE-4", 218.015, -24.837, 218.593, -24.687),
+        _en("c", "4#4", 218.155, -27.934, 218.412, -27.834),
+        _en("d", "E#3@16", 218.019, -28.13, 218.548, -28.03),
+        _en("k5", "K-5", 217.603, -32.488, 217.981, -32.358),
+    ]
+    secciones = [
+        _seccion_de("CE-4", (217.77, -27.13, 218.74, -25.2), "t4", sentidos=(-1,)),
+        _seccion_de("K-5", (217.29, -31.59, 218.3, -30.0), "k5", sentidos=(+1,), lee=False,
+                    de_cuadro=True),
+    ]  # fmt: skip
+    asoc, _ = asociar_secciones(ents, _marco_grande(ents), C, secciones, {"c", "d"})
+    assert [(a.marca, a.textos) for a in asoc] == [("CE-4", ["4#4", "E#3@16"])]
+
+
+@pytest.mark.parametrize(
+    "hueco_de_la_otra,la_otra,leida",
+    [
+        (0.45, "con la suya", False),  # R209: aunque T-2 tenga su lectura, la disputa
+        (0.60, "con la suya", True),  # 50 % más lejos: de T-1
+        (0.45, "reclamada", False),  # nunca se lee: compite por la distancia, 12 % más lejos
+        (0.60, "reclamada", True),  # 50 % más lejos: de T-1
+        (0.60, "sin la suya", False),  # la necesita: la distancia nunca se la da a T-1
+    ],
+)
+def test_a_stack_two_sections_reach_goes_only_to_the_clearly_nearer(
+    hueco_de_la_otra, la_otra, leida
+):
+    # R196, R205b, R209: «4#3» a 0.40 bajo T-1 y, debajo, T-2 (que lee hacia abajo) la alcanza del
+    # lado de su título. Con su propia lectura («6#4») o reclamada (nunca se lee), T-2 compite por
+    # la distancia, con el empate de lados opuestos de la Tarea 6 (25 %): a 0.45 (12 % más) es de
+    # nadie; a 0.60 (50 %), de T-1. Una que se lee y no tiene su lectura de varillas la necesita:
+    # queda en duda a cualquier distancia (la semilla 99 de la rejilla, abajo).
+    arriba = -0.50 - hueco_de_la_otra
+    ents = [_texto("r", "4#3", 0.5, -0.45, alto=0.10)]
+    if la_otra == "con la suya":
+        ents.append(_texto("s", "6#4", 0.5, arriba - 1.25, alto=0.10))
+    secciones = [
+        _seccion(0, 0.0, 0.0, 1.0, 1.0, "T-1"),
+        _seccion(1, 0.0, arriba - 1.0, 1.0, arriba, "T-2", lee=la_otra != "reclamada"),
+    ]
+    asoc, dudosos = asociar_secciones(ents, _marco(ents), C, secciones, {"r", "s"})
+    assert ("T-1" in [a.marca for a in asoc]) == leida
+    if not leida:
+        assert dudosos["r"] == {"T-1"}
+
+
+def test_distance_never_gives_one_reader_the_stack_another_needs():
+    # R200, R205 (la semilla 99 de la rejilla): K-5 lee hacia arriba; a 0.55 de su sección va la
+    # pila de K-2 (tres renglones), que K-2 alcanza del lado de su título (que va de lado, el
+    # equivocado) a 1.61, sin otra lectura. K-5 está claramente más cerca, pero K-2 la necesita:
+    # dársela por la distancia sería leerla bajo otra marca. Queda en duda.
+    ents = [
+        _texto("a", "E#4@10 Y E#3@20 EN NUDOS", 1.157, -3.74, alto=0.10, centrado=False),
+        _texto("b", "6#4", 1.157, -3.929, alto=0.10, centrado=False),
+        _texto("c", "CENTRO@15 RESTO", 1.157, -4.119, alto=0.10, centrado=False),
+        _titulo("t2", "K-2", 3.551, -1.194, alto=0.14),
+        _titulo("t5", "K-5", 1.353, -5.757, alto=0.14),
+    ]
+    secciones = [
+        _seccion(0, 1.366, -2.077, 3.451, 0.0, "K-2", sentidos=(+1,), titulo="t2"),
+        _seccion(1, 1.237, -5.637, 1.848, -4.714, "K-5", sentidos=(+1,), titulo="t5"),
+    ]
+    asoc, dudosos = asociar_secciones(ents, _marco(ents), C, secciones, {"a", "b", "c"})
+    assert asoc == [] and dudosos["a"] == {"K-5"}
+
+
+def test_a_cuadro_labels_section_is_never_read():
+    # R195: K-5 es una etiqueta de cuadro con su pila (Tarea 6) entre ella y su sección; sobre la
+    # sección, un «E#3@15» suelto. La sección compite, pero nunca se lee: el texto queda como
+    # «posible» de K-5, sin pila bajo su sección.
+    from tests.test_secciones_de_cotas import _castillo
+
+    ents = [
+        *_castillo("a", "K-5", 0.0, 0.0, ["6#4", "EYG#3@15"], (-0.5, 0.9, 0.5, 2.4), 20, 30),
+        _texto("x", "E#3@15", 0.0, 2.75, alto=0.10),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [s.entidades for s in _cotas(inv, "K-5")] == [["ar1", "ar0"]]
+    assert _sin_dueno(inv) == {"E#3@15": ["K-5"]}
+
+
+def test_a_line_r140_also_gave_another_mark_says_so_when_read():
+    # R192: «4#3» bajo T-1 (su sección, sola) que R140 atribuía también a T-2 («posible»): la pila
+    # bajo su sección lo lee como de T-1, y lo dice.
+    from klave_engine.detection.schedules import _pilas_de_secciones
+    from klave_engine.estructura.asociacion import Rechazo, hoja_y_llave
+
+    ents = [_titulo("t", "T-1", 0.4, 1.2, alto=0.14), _texto("r", "4#3", 0.4, -0.3, alto=0.10)]
+    marcos = _marco(ents)
+    rechazo = Rechazo(entidad_id="r", texto="4#3", hoja="ES-1", motivo="sin_dueno",
+                      posibles=["T-1", "T-2"])  # fmt: skip
+    seccion = _seccion(0, 0.0, 0.0, 0.8, 1.0, "T-1", titulo="t")
+    (pila,), _ = _pilas_de_secciones(
+        ents, marcos, C, [seccion], [], [rechazo], hoja_y_llave(marcos), {}
+    )
+    assert "pila bajo su sección: se lee como de T-1; antes se atribuía también a T-2" in (
+        pila.avisos
+    )
+
+
+def test_a_stack_followed_by_something_within_a_line_gap_is_in_doubt():
+    # R189, la columna cerrada (la semilla 8029): bajo «4#3» de T-1, a 0.10 (menos de un hueco
+    # entre renglones), sigue un texto que otro ya leyó: la pila puede seguir en él; no se lee.
+    ents = [
+        _texto("a", "4#3", 0.4, -0.25, alto=0.10),
+        _texto("b", "E#2@15", 0.4, -0.45, alto=0.10),
+    ]
+    asoc, _ = asociar_secciones(
+        ents, _marco(ents), C, [_seccion(0, 0.0, 0.0, 0.8, 1.0, "T-1")], {"a"}
+    )
+    assert asoc == []
+
+
+def _alzado_abierto(variante):
+    """El revisor (adv4): bajo la sección de CTA-1, 0.6 abajo, el alzado de otra trabe dibujado
+    sin cerrar sus extremos, con «2#8» dentro, 0.18 bajo su línea de arriba, y «T-9» a su lado."""
+    arriba = _linea("z1", (-0.5, -0.6), (8.0, -0.6))
+    abajo = _linea("z2", (-0.5, -2.0), (8.0, -2.0))
+    etiqueta = [_texto("b1", "2#8", 0.66, -0.78, alto=0.11), _titulo("t2", "T-9", 8.6, -1.3)]
+    if variante == "abierto":
+        return [arriba, abajo, *etiqueta]
+    if variante == "zigzag":
+        cortes = [
+            _linea("k1", (-0.5, -0.6), (-0.35, -1.0)), _linea("k2", (-0.35, -1.0), (-0.65, -1.5)),
+            _linea("k3", (-0.65, -1.5), (-0.5, -2.0)), _linea("k4", (8.0, -0.6), (8.15, -1.0)),
+            _linea("k5", (8.15, -1.0), (7.85, -1.5)), _linea("k6", (7.85, -1.5), (8.0, -2.0)),
+        ]  # fmt: skip
+        return [arriba, abajo, *cortes, *etiqueta]
+    if variante == "rota":  # su línea de arriba cortada sobre la etiqueta
+        return [
+            _linea("y1", (-0.5, -0.6), (0.3, -0.6)), _linea("y2", (1.1, -0.6), (8.0, -0.6)),
+            abajo, *etiqueta,
+        ]  # fmt: skip
+    if variante.startswith("rampa"):  # R204 (adv8): el alzado de una rampa (TE-A, ES-007)
+        d = math.tan(math.radians(float(variante[5:])))
+        return [
+            _linea("r1", (-0.5, -0.6 - 0.5 * d), (8.0, -0.6 + 8 * d)),
+            _linea("r2", (-0.5, -2.0 - 0.5 * d), (8.0, -2.0 + 8 * d)),
+            _texto("b1", "2#8", 0.66, -0.78 + 0.66 * d, alto=0.11), etiqueta[1],
+        ]  # fmt: skip
+    if variante == "escalon":  # R204 (adv7): su línea de arriba con un escalón de 2 mm en él
+        return [
+            _poligono("pt2", [(-0.5, -0.6), (0.66, -0.6), (0.66, -0.62), (8.0, -0.62)], False),
+            abajo, *etiqueta,
+        ]  # fmt: skip
+    # «encima»: la etiqueta escrita justo sobre un alzado abierto
+    return [
+        _linea("w1", (-0.5, -1.0), (8.0, -1.0)), _linea("w2", (-0.5, -2.4), (8.0, -2.4)),
+        _texto("b1", "2#8", 0.66, -0.85, alto=0.11), _titulo("t2", "T-9", 8.6, -1.7),
+    ]  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "variante", ["abierto", "zigzag", "rota", "encima", "rampa3", "rampa5", "rampa14", "escalon"]
+)
+def test_an_open_elevations_label_is_never_a_stack_line(variante):
+    # R197, R204: un alzado se reconoce sin cerrar sus lados, por sus cuerdas largas: líneas
+    # arriba y abajo del renglón (o una a menos de un alto de él) que pasan de él más de 3 altos
+    # de cada lado, medidos a lo largo de ellas, y no son del dibujo de la sección. Una cuerda
+    # puede ir inclinada (la tolerancia de alineación, 15°) y con un escalón chico (sus niveles
+    # a un cuarto de alto son uno). CTA-1 nunca lee «2#8».
+    base = [e for e in _cta_con_alzado_debajo() if e.entity_id in ("t", "s", "h", "v", "e")]
+    inv = build_schedule_inventory(
+        base + _alzado_abierto(variante), C, unit_to_m=1.0, detail_boxes=_DETALLE
+    )
+    assert _cotas(inv, "CTA-1") == []
+    assert "2#8" in _sin_dueno(inv)
+
+
+@pytest.mark.parametrize("altos,leida", [(2.7, True), (3.3, False)])
+def test_a_chord_runs_more_than_three_heights_past_the_text(altos, leida):
+    # R204 (adv7/adv8: el tramo corto de un alzado abierto): las líneas de arriba y de abajo de
+    # «2#8» pasan de su caja (la que le estima el motor) ``altos`` altos de cada lado. Más de 3
+    # (``_CUERDA``) son cuerdas: un dibujo, aunque sea corto; menos, no lo son: la pila se lee.
+    base = [e for e in _cta_con_alzado_debajo() if e.entity_id in ("t", "s", "h", "v", "e")]
+    b1, t2 = _texto("b1", "2#8", 0.66, -0.78, alto=0.11), _titulo("t2", "T-9", 3.2, -1.3)
+    (ax, _ay), (dx0, dx1, _dy0, _dy1, _a) = ancla_texto(b1), caja_de_texto(b1, 0.0)
+    x0, x1 = ax + dx0 - altos * 0.11, ax + dx1 + altos * 0.11
+    tramo = [_linea("u1", (x0, -0.6), (x1, -0.6)), _linea("u2", (x0, -2.0), (x1, -2.0))]
+    inv = build_schedule_inventory(base + tramo + [b1, t2], C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [p.rebar for p in _cotas(inv, "CTA-1")] == (["2#8"] if leida else [])
+
+
+def test_a_ce_stack_between_its_break_line_and_the_next_drawing_is_read():
+    # R197 (CE-3 de Marina, ES-200): bajo su sección (30 de ancho), el muro que cuelga de ella, con
+    # su línea de corte (que cruza el muro, de lado a lado: pasa de la pila más de 5 altos) y,
+    # debajo de la pila, las líneas del dibujo de abajo. La línea de corte es del dibujo de la
+    # sección (toca su muro): no es una cuerda de otro dibujo; CE-3 lee «6#4» / «E#3@14».
+    ents = [
+        _titulo("t", "CE-3", 0.55, 1.85, alto=0.15),
+        _rectangulo("s", 0.0, 0.0, 1.708, 1.7),
+        _cota("h", (0.0, 0.0), (1.708, 0.0), 30),
+        _cota("v", (1.708, 1.7), (1.708, 0.0), 30),
+        _linea("m1", (0.0, -0.047), (0.0, -0.513)),
+        _linea("m2", (1.708, -0.047), (1.708, -0.513)),
+        _linea("m3", (0.0, -0.047), (1.708, -0.047)),
+        _poligono(
+            "corte",
+            [
+                (-0.112, -0.513),
+                (0.783, -0.513),
+                (0.783, -0.422),
+                (0.833, -0.422),
+                (0.833, -0.61),
+                (0.883, -0.61),
+                (0.883, -0.513),
+                (1.808, -0.513),
+            ],
+            cerrado=False,
+        ),  # fmt: skip
+        _texto("c", "6#4", 0.85, -0.764, alto=0.10),
+        _texto("d", "E#3@14", 0.85, -0.959, alto=0.10),
+        _linea("n1", (-0.4, -1.452), (2.3, -1.452)),
+        _linea("n2", (-0.5, -1.528), (2.4, -1.528)),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    assert [(p.rebar, p.stirrups) for p in _cotas(inv, "CE-3")] == [("6#4", "E#3@14")]
+
+
+def test_a_stack_that_would_orphan_another_section_is_in_doubt():
+    # R200, R205 (la semilla 15243 de la rejilla): «12#8+8#6 EN 2 LECHOS» va a 0.50 bajo T-1 y a
+    # 0.98 sobre T-2, que la alcanza del lado de su título y no tiene otra lectura de sus varillas.
+    # T-1 está claramente más cerca, pero dárselo dejaría a T-2 sin la suya: queda en duda.
+    ents = [_texto("r", "12#8+8#6 EN 2 LECHOS", -0.4, -0.55, alto=0.10, centrado=False)]
+    secciones = [
+        _seccion(0, 0.0, 0.0, 2.0, 2.0, "T-1"),
+        _seccion(1, 0.0, -3.58, 1.65, -1.58, "T-2"),
+    ]
+    asoc, dudosos = asociar_secciones(ents, _marco(ents), C, secciones, {"r"})
+    assert asoc == [] and dudosos["r"] == {"T-1"}
+
+
+@pytest.mark.parametrize(
+    "renglones,leida",
+    [
+        (["4#3", "6#4"], True),  # dos juegos de varillas, seguidos y sólo suyos: una pila
+        (["E#4@10", "EYG#3@15"], True),  # dos juegos de estribos, seguidos y sólo suyos
+        (["4#6+4#4", "E#2@15"], True),  # las varillas juntas por «+», y sus estribos
+        (["4#3", "E#2@15", "6#4"], False),  # dos de varillas con otro renglón en medio
+        (["E#4@10", "4#3", "EYG#3@15"], False),  # dos de estribos con otro renglón en medio
+    ],
+)
+def test_a_stack_with_two_sets_of_one_field_is_one_stack_only_if_they_go_together(renglones, leida):
+    # R200, R206: dos renglones del mismo campo son una pila si van seguidos en la columna (nada
+    # en medio, a un hueco entre renglones) y ninguna otra sección alcanza alguno; si no, pueden
+    # ser dos pilas juntas: queda en duda.
+    ents = [_texto(f"r{i}", t, 0.4, -0.25 - 0.18 * i, alto=0.10) for i, t in enumerate(renglones)]
+    libres = {f"r{i}" for i in range(len(renglones))}
+    asoc, _ = asociar_secciones(
+        ents, _marco(ents), C, [_seccion(0, 0.0, 0.0, 0.8, 1.0, "T-1")], libres
+    )
+    assert [a.textos for a in asoc] == ([renglones] if leida else [])
+
+
+def test_two_sets_of_one_field_another_section_reaches_are_in_doubt():
+    # R206: «4#3» / «6#4» seguidos bajo T-1, y T-2, debajo (reclamada: compite sólo por la
+    # distancia), alcanza «6#4» del lado de su título a 0.65, con el doble de su alcance. T-1 está
+    # claramente más cerca (0.38), pero dos juegos de varillas que otra sección alcanza pueden ser
+    # dos pilas, la de T-1 y la de T-2: queda en duda.
+    ents = [
+        _texto("a", "4#3", 0.4, -0.25, alto=0.10),
+        _texto("b", "6#4", 0.4, -0.43, alto=0.10),
+    ]
+    secciones = [
+        _seccion(0, 0.0, 0.0, 0.8, 1.0, "T-1"),
+        _seccion(1, 0.0, -2.13, 0.8, -1.13, "T-2", lee=False),
+    ]
+    asoc, dudosos = asociar_secciones(ents, _marco(ents), C, secciones, {"a", "b"})
+    assert asoc == [] and dudosos == {"a": {"T-1"}, "b": {"T-1"}}
+
+
+@pytest.mark.parametrize(
+    "renglones,varillas,estribos,aviso",
+    [
+        # adv13: las cuatro pilas de varios juegos bajo una sección como la de CTA-1: se leen con
+        # todos sus juegos, o se dice lo que no se entiende (nunca se pierde un juego).
+        (["3#8 LECHO INF.", "2#6 LECHO SUP.", "E#3@15"], None, "E#3@15",
+         "sin leer: «3#8 LECHO INF.»"),
+        (["4#4", "3#8", "2#8+2#6", "E#4 1@6,8@10,@15"], "4#4+3#8+2#8+2#6", None,
+         "sin leer: «E#4 1@6,8@10,@15»"),
+        (["4#4", "E#4@15", "G#3@30"], "4#4", "E#4@15 G#3@30", None),
+        (["2E#3@15", "E#3@15 RESTO"], None, None,
+         "estribos: la pila bajo su sección junta juegos y uno no se lee («E#3@15 RESTO»): no se"
+         " lee ninguno («2E#3@15»)"),
+    ],
+)  # fmt: skip
+def test_a_stack_of_several_sets_reads_them_all_or_says_what_it_cannot(
+    renglones, varillas, estribos, aviso
+):
+    # R206: el lector junta los juegos de la pila (lechos, grapas, «RESTO»); si uno no se entiende
+    # mientras otro del mismo campo sí, el campo no se lee (sería perder un juego): se dice.
+    ents = [
+        _titulo("t", "CTA-1", 0.27, 3.29, alto=0.14),
+        _rectangulo("s", 0.0, 0.0, 1.325, 3.136),
+        _cota("h", (0.0, 0.0), (1.325, 0.0), 35),
+        _cota("v", (0.0, 3.136), (0.0, 0.0), 80),
+        *(_texto(f"l{k}", t, 0.66, -0.35 - 0.17 * k, alto=0.11) for k, t in enumerate(renglones)),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
+    (pila,) = _cotas(inv, "CTA-1")
+    assert (pila.rebar, pila.stirrups) == (varillas, estribos)
+    assert pila.entidades == [f"l{k}" for k in range(len(renglones))]
+    if aviso is not None:
+        assert aviso in pila.avisos
+    # Lo que no se lee sigue reclamando su campo: nadie lo llena de otra parte (la IA tampoco).
+    assert "estribos" in pila.campos_con_texto
+    assert ("longitudinales" in pila.campos_con_texto) == (renglones[0] != "2E#3@15")
+
+
+@pytest.mark.parametrize("k4_tiene_la_suya", [False, True])
+def test_a_section_that_reaches_a_line_from_the_side_competes_for_it(k4_tiene_la_suya):
+    # R201, R209 (la semilla 21161 de la rejilla): «E#4@10» va de frente sobre K-6, a 0.40, y de
+    # lado bajo K-4 (en su ensanche), a 0.35, del lado de su título: es de K-4. K-4 compite con el
+    # alcance con que lee, también de lado: K-6 no está claramente más cerca; en duda, lea K-4 sus
+    # estribos encima («E#3@20», que se lee) o no.
+    ents = [
+        _texto("x", "6#4", 2.4, -6.411, alto=0.10, centrado=False),
+        _texto("a", "E#4@10", 1.536, -6.731, alto=0.10, centrado=False),
+    ]
+    if k4_tiene_la_suya:
+        ents.append(_texto("b", "E#3@20", 2.3, -4.15, alto=0.10, centrado=False))
+    secciones = [
+        _seccion(0, 1.835, -6.331, 3.273, -4.256, "K-4", sentidos=(+1,)),
+        _seccion(1, 0.0, -9.25, 2.078, -7.181, "K-6", sentidos=(+1,)),
+    ]
+    asoc, dudosos = asociar_secciones(ents, _marco(ents), C, secciones, {"x", "a", "b"})
+    assert [(x.marca, x.textos) for x in asoc] == (
+        [("K-4", ["E#3@20"])] if k4_tiene_la_suya else []
+    )
+    assert dudosos["a"] == {"K-6"}
+
+
+def test_a_section_takes_a_column_from_its_titles_side_with_twice_its_reach():
+    # R196, R207 (la semilla 13962 de «revisor_mezcla», el lado al azar): K-2 lee hacia abajo
+    # «E#2@15» / «4#3». K-4, a su lado, lee hacia arriba: su título puede estar del lado
+    # equivocado, y del lado de su título toma, con el doble de su alcance, la columna entera
+    # (su primer renglón, «E#2@15», a 0.19 —más de su alcance, 0.13—, en su ensanche, y lo que le
+    # sigue). No tiene otra lectura: la necesita, y la pila de K-2 queda en duda.
+    ents = [
+        _texto("a", "4#3", -0.319, 0.798, alto=0.10, centrado=False),
+        _texto("b", "E#2@15", -0.43, 0.984, alto=0.10, centrado=False),
+    ]
+    secciones = [
+        _seccion(0, -0.369, 1.063, -0.018, 1.193, "K-2", sentidos=(-1,)),
+        _seccion(1, 0.365, 1.227, 0.716, 1.357, "K-4", sentidos=(+1,)),
+    ]
+    asoc, dudosos = asociar_secciones(ents, _marco(ents), C, secciones, {"a", "b"})
+    assert asoc == [] and dudosos == {"a": {"K-2"}, "b": {"K-2"}}
+
+
+def _filas_con_titulo_debajo(con_otra_pila):
+    """El revisor (adv14): tres filas con la costumbre «el título bajo su sección, el armado bajo
+    el título» (sección de 0.8×1.0, su título 0.12 debajo, su pila 0.25 bajo el título) y, si
+    ``con_otra_pila``, una pila completa de otro grupo encima de la primera fila."""
+    ents = []
+    for n, y, pila in (
+        (1, 4.0, ["4#3", "E#2@15"]),
+        (2, 2.0, ["6#4", "E#3@14"]),
+        (3, 0.0, ["4#4", "E#3@16"]),
+    ):
+        ents += [
+            _rectangulo(f"s{n}", 0.0, y, 0.8, y + 1.0),
+            _cota(f"h{n}", (0.0, y), (0.8, y), 20),
+            _cota(f"v{n}", (0.0, y + 1.0), (0.0, y), 25),
+            _titulo(f"t{n}", f"T-{n}", 0.15, y - 0.12, alto=0.14),
+        ]
+        ents += [
+            _texto(f"l{n}{k}", t, 0.4, y - 0.45 - 0.15 * k, alto=0.10) for k, t in enumerate(pila)
+        ]
+    if con_otra_pila:
+        ents += [
+            _texto("x1", "4#5", 0.4, 5.40, alto=0.10),
+            _texto("x2", "E#3@20", 0.4, 5.25, alto=0.10),
+        ]
+    return ents
+
+
+@pytest.mark.parametrize("con_otra_pila", [False, True])
+def test_a_section_with_its_own_reading_still_contests_its_titles_side(con_otra_pila):
+    # R209 (el revisor, adv14): con R205a, T-1 leía la pila de otro grupo encima de ella, y con eso
+    # T-2 dejaba de disputar la de T-1 (bajo el título de T-1, del lado del título de T-2) y la leía
+    # como suya; la de T-3 quedaba vetada. Toda sección disputa del lado de su título, con el doble
+    # de su alcance, tenga o no su propia lectura: ninguna fila lee la pila de otra. (La pila de
+    # otro grupo, que ninguna otra sección alcanza, T-1 la lee: nadie podría saber que no es suya,
+    # la analogía de R58a.)
+    inv = build_schedule_inventory(
+        _filas_con_titulo_debajo(con_otra_pila), C, unit_to_m=1.0, detail_boxes=_DETALLE
+    )
+    for s in inv.specs:
+        if s.metodo == "pila":
+            n = s.mark[-1]
+            assert all(i.startswith("x") or i.startswith(f"l{n}") for i in s.entidades), (
+                s.mark,
+                s.entidades,
+            )
+    assert not [s for s in inv.specs if s.metodo == "pila" and s.mark in ("T-2", "T-3")]
+
+
+def test_two_sections_that_would_swap_stacks_both_doubt():
+    # R211 (la semilla 45408 de la rejilla): K-3 lee hacia abajo y K-6, debajo, hacia arriba. Entre
+    # las dos, «E#3@20 Y E#2@15» (de K-6) a 0.30 de K-3 y 1.36 de K-6, y más abajo «EYG#3@15» (de
+    # K-3) a 1.00 de K-3 y 0.66 de K-6. Cada una está claramente más cerca del renglón de la otra y
+    # las dos quedan con su lectura: la distancia y la huérfana no ven nada. Pero la pila de K-3
+    # toma un renglón que K-6 alcanza y la de K-6 uno que K-3 alcanza: pueden estar cambiadas.
+    # Las dos quedan en duda.
+    ents = [
+        _en("a", "E#3@20 Y E#2@15", -0.204, -6.707, 1.146, -6.607),
+        _en("b", "EYG#3@15", 0.44, -7.406, 1.16, -7.306),
+    ]
+    secciones = [
+        _seccion(0, 0.0, -6.306, 1.974, -4.013, "K-3", sentidos=(-1,)),
+        _seccion(1, 0.0, -9.859, 1.779, -8.07, "K-6", sentidos=(+1,)),
+    ]
+    asoc, dudosos = asociar_secciones(ents, _marco_grande(ents), C, secciones, {"a", "b"})
+    assert asoc == [] and dudosos == {"a": {"K-3"}, "b": {"K-6"}}
+
+
+# R211: las semillas en que dos secciones se cambiaban las pilas por la distancia sola (cada una
+# claramente más cerca del renglón de la otra, las dos con su lectura; leían así desde la ronda
+# 3): en rojo sin el cierre de intercambios.
+@pytest.mark.parametrize("semilla", [45408, 47070])
+def test_the_grid_seeds_where_two_sections_swap_stacks(semilla):
+    leidas = _lee_la_rejilla(semilla)
+    assert leidas is not None
+    assert all(entera for _marca, _textos, entera in leidas), leidas
+
+
+@pytest.mark.xfail(strict=True, reason="R210 (ii): el dueño no alcanza su renglón; límite R58a")
+def test_the_zigzag_seed_where_a_section_reads_its_neighbours_line():
+    # R210, la clase (ii) («zigzag», 50456, lado al azar, sin títulos): K-1 lee «E#4@10 Y E#3@20 EN
+    # NUDOS», de K-2, a 0.11 bajo ella; K-2 lo tiene a 0.28 (más del doble de su alcance, 0.26) y
+    # fuera de su columna. Nadie que lo alcance puede ser su dueño: el límite de R58a, aceptado.
+    with tempfile.TemporaryDirectory(prefix="t9c_semilla_") as d:
+        cuadro = _cuadro_de(Path(d), "zigzag", 50456)
+        assert cuadro is not None
+        _ni_ajena_ni_a_medias(cuadro, 50456, False, False, True)

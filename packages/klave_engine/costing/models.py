@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from klave_engine.costing.indirectos import (
     AnalisisFinanciamiento,
@@ -389,6 +389,8 @@ class FinancialPlan(BaseModel):
 class CostingAssumptions(BaseModel):
     """Geometric assumptions used to derive volumes from plan detections."""
 
+    model_config = ConfigDict(allow_inf_nan=False)
+
     column_section_m2: float = 0.09  # 30x30 cm
     castillo_section_m2: float = 0.03  # 15x20 cm (K marks without a cuadro)
     column_height_m: float = 3.0
@@ -419,6 +421,8 @@ class CostingAssumptions(BaseModel):
 
 
 class IndirectsConfig(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     field_indirects_pct: float = 8.0
     office_indirects_pct: float = 5.0
     financing_pct: float = 1.5
@@ -428,6 +432,8 @@ class IndirectsConfig(BaseModel):
 
 
 class ScheduleConfig(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     # Obra start date (ISO, "2026-09-01"); None keeps the programa in
     # relative working days. Calendar dates skip Sundays (6-day site week).
     start_date: str | None = None
@@ -447,6 +453,8 @@ class ScheduleConfig(BaseModel):
 
 
 class FinancialConfig(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     advance_payment_pct: float = 30.0  # anticipo
     retention_pct: float = 5.0  # fondo de garantía
     annual_operation_pct: float = 2.0  # % of sale price per year
@@ -455,6 +463,8 @@ class FinancialConfig(BaseModel):
 
 
 class CostingConfig(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     currency: str = "MXN"
     assumptions: CostingAssumptions = Field(default_factory=CostingAssumptions)
     indirects: IndirectsConfig = Field(default_factory=IndirectsConfig)
@@ -485,6 +495,8 @@ class CostingOverrides(BaseModel):
     submits the version it edited on top of, and the API rejects the write
     (409) if someone else saved in between — no silent last-write-wins on
     money-bearing parameters."""
+
+    model_config = ConfigDict(allow_inf_nan=False)
 
     config: CostingConfig = Field(default_factory=CostingConfig)
     insumo_prices: dict[str, float] = Field(default_factory=dict)

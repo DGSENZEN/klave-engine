@@ -15,7 +15,6 @@
       "EJE-1-04",
       "EJE-1-05",
       "EJE-1-06",
-      "EJE-1-07",
       "EJE-2-01",
       "EJE-2-02",
       "EJE-2-03",
@@ -56,10 +55,10 @@
       "EJE-E-04",
       "EJE-F-01",
       "EJE-F-02",
-      "EJE-F-03",
-      "EJE-F-04",
       "EJE-G-01",
       "EJE-G-02",
+      "EJE-G-03",
+      "EJE-G-04",
       "EJE-H-01",
       "EJE-H-02",
       "EJE-H-03",
@@ -102,7 +101,6 @@
       "INT-C/1-02",
       "INT-C/1-03",
       "INT-C/1-04",
-      "INT-C/1-05",
       "INT-C/2-01",
       "INT-C/2-02",
       "INT-C/2-03",
@@ -119,7 +117,6 @@
       "INT-D/1-02",
       "INT-D/1-03",
       "INT-D/1-04",
-      "INT-D/1-05",
       "INT-D/2-01",
       "INT-D/2-02",
       "INT-D/2-03",
@@ -136,7 +133,6 @@
       "INT-E/1-02",
       "INT-E/1-03",
       "INT-E/1-04",
-      "INT-E/1-05",
       "INT-E/2-01",
       "INT-E/2-02",
       "INT-E/2-03",
@@ -149,9 +145,9 @@
       "INT-E/3-04",
       "INT-E/4-01",
       "INT-E/4-02",
-      "INT-F/1",
       "INT-F/2",
       "INT-F/3",
+      "INT-G/1",
       "INT-G/2",
       "INT-G/3",
       "INT-H/1",
@@ -422,7 +418,7 @@
       "ZAP-26",
       "ZAP-27",
       "ZAP-28",
-      "ZAP-29"
+      "ZAP-ZCM-1"
     ],
     "beam_tag": [
       "CER-CR-1-01",
@@ -577,112 +573,165 @@
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "PRE-001.GEN": 128.987
+        }
       },
       "CIM-001": {
         "quantity": 5.343,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CIM-001.GEN": 5.343
+        }
       },
       "CIM-002": {
         "quantity": 3.74,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CIM-002.GEN": 3.74
+        }
       },
       "EST-001": {
-        "quantity": 12.422,
+        "quantity": 9.893,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "marcadores de castillo: cada etiqueta toma el castillo dibujado junto a sus letras (su cuadro, su c\u00edrculo o su relleno), no el bloque de muros de la planta que la contiene; los castillos del muro poniente de PLANTA BAJA, casi igual de cerca de \u00absimbolog\u00eda\u00bb, son de la planta por su dibujo (R146, R165); antes, R133: el c\u00edrculo del castillo en vez de la caja del bloque que lo contiene; R179: a media altura de texto del marcador m\u00e1s cercano, el s\u00edmbolo en la capa de castillos le gana al contorno de otra capa: la K-1 (6701) toma su castillo de 15\u00d715 (66C1, capa castillos) y no el contorno de muro de arquitectura (A-WALL 871A, 0.0702); 10.037 \u2192 9.893, verificado en el crudo",
+        "variants": {
+          "EST-001.GEN": 9.893
+        }
       },
       "EST-002": {
-        "quantity": 11.731,
+        "quantity": 8.251,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "claros de trabe: cada etiqueta toma el tramo recto alineado junto a ella, no la l\u00ednea de un detalle de secci\u00f3n ni la polil\u00ednea entera; la l\u00ednea que comparten varias etiquetas se reparte y cuenta una vez (R146); el tramo de su propia polil\u00ednea que ninguna etiqueta toma es suyo, con \u00abtramo sin etiqueta propia\u00bb: la T-7 (682A) suma los 2.225 de 650C que dan vuelta a lo largo de la escalera y la T-9 (6833) los 1.818 de 672D que suben en su esquina; 7.796 \u2192 8.251, verificado en el crudo (R173)",
+        "variants": {
+          "EST-002.GEN": 8.251
+        }
       },
       "EST-005": {
-        "quantity": 25.301,
+        "quantity": 12.98,
         "unit": "M",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "cerramientos: cada CR-1 toma su doble l\u00ednea de E-CERRAMIENTOS entre castillos, no la trabe vecina; cuenta el CR-1 del muro poniente de PLANTA BAJA (R146, R165)",
+        "variants": {
+          "EST-005.GEN": 12.98
+        }
       },
       "EST-016": {
         "quantity": 34.291,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "EST-016.SINTIPO": 34.291
+        }
       },
       "EST-012": {
         "quantity": 194.446,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "EST-012.VIGUETABOVEDILLA": 194.446
+        }
       },
       "EST-004": {
-        "quantity": 364.137,
+        "quantity": 392.598,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165)",
+        "variants": {
+          "EST-004.BLOCK-19": 7.769,
+          "EST-004.BLOCK-18": 54.548,
+          "EST-004.BLOCK-16": 225.508,
+          "EST-004.BLOCK-17": 61.282,
+          "EST-004.BLOCK-36": 26.588,
+          "EST-004.BLOCK-30": 16.902
+        }
       },
       "ACA-001": {
-        "quantity": 728.275,
+        "quantity": 785.197,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165)",
+        "variants": {
+          "ACA-001.GEN": 785.197
+        }
       },
       "ACA-002": {
-        "quantity": 728.275,
+        "quantity": 785.197,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165)",
+        "variants": {
+          "ACA-002.GEN": 785.197
+        }
       },
       "AIR-004": {
         "quantity": 42.0,
         "unit": "PZA",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "AIR-004.GEN": 42.0
+        }
       },
       "CAR-001": {
         "quantity": 33.0,
         "unit": "PZA",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CAR-001.GEN": 33.0
+        }
       },
       "CIM-003": {
         "quantity": 12.03,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CIM-003.GEN": 12.03
+        }
       },
       "CIM-004": {
         "quantity": 1.002,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CIM-004.GEN": 1.002
+        }
       },
       "CIM-005": {
         "quantity": 6.947,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": ""
+        "note": "",
+        "variants": {
+          "CIM-005.GEN": 6.947
+        }
       }
     },
     "direct_cost": 0.0,
@@ -706,5 +755,5 @@
       "PRE-001"
     ]
   },
-  "notes": ""
+  "notes": "R166: ZCM-1: el MTEXT de la marca, anclado arriba a la derecha, cae dentro de la esquina de su zapata corrida; ejes F/G/H: cada letra es la de la l\u00ednea en cuyo extremo est\u00e1 escrita (el gold anterior ten\u00eda la letra de la vecina); el \u00ab1\u00bb de x \u22126.03 era un tramo de la capa cimentacion, no un eje (R146)"
 }

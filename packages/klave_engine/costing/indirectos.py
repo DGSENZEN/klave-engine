@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 CategoriaRubro = Literal[
     "honorarios_prestaciones",
@@ -60,6 +60,8 @@ CATEGORIA_LABEL: dict[str, str] = {
 
 
 class RubroIndirecto(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     concepto: str
     categoria: CategoriaRubro = "servicios"
     # 0 = sin capturar: el renglón se ve vacío y no suma. Nunca es "gratis".
@@ -72,6 +74,8 @@ class DesgloseCampo(BaseModel):
 
 
 class DesgloseOficinaCentral(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     # Importes ANUALES; ``base`` se ignora aquí.
     rubros: list[RubroIndirecto] = Field(default_factory=list)
     # 0 = sin capturar: sin volumen no hay prorrateo y no hay análisis.
@@ -79,6 +83,8 @@ class DesgloseOficinaCentral(BaseModel):
 
 
 class AnalisisFinanciamiento(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     tasa_anual: float = 0.0
     indicador: str = ""       # p. ej. "TIIE 28 días"
     fuente: str = ""          # de dónde salió la tasa
@@ -102,6 +108,8 @@ class AnalisisFinanciamiento(BaseModel):
 
 
 class CargoAdicional(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     concepto: str
     base_legal: str = ""
     pct: float = 0.0

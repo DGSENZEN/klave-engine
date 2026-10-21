@@ -19,7 +19,7 @@ from collections.abc import Callable, Iterable
 from klave_engine.costing.models import MAX_SOURCE_IDS
 from klave_engine.detection.results import Detection
 
-_SECTION = re.compile(r"(\d{1,3}(?:\.\d)?)\s*[x×]\s*(\d{1,3}(?:\.\d)?)", re.IGNORECASE)
+_SECTION = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*[x×]\s*(\d{1,3}(?:\.\d+)?)", re.IGNORECASE)
 _REBAR = re.compile(r"^\s*(\d{1,2})\s*#\s*(\d{1,2})\s*$")
 
 

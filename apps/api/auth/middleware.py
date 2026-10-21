@@ -113,7 +113,7 @@ class AccessControlMiddleware:
             return
         method: str = scope["method"]
         path: str = scope["path"]
-        if method == "OPTIONS" or path == "/":
+        if method == "OPTIONS" or path == "/" or (method == "GET" and path == "/ready"):
             await self.app(scope, receive, send)
             return
         # CSRF: a browser must come from our own origin to change anything.

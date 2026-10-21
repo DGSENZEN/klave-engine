@@ -115,6 +115,20 @@ _SALIDAS = frozenset(
 _AXIS_ES = {"horizontal": "horizontal", "vertical": "vertical"}
 
 
+def familia_de_viga(marca: str) -> Family:
+    """The family of a beam tag by its mark (Mexican convention): CTA-n contratrabe, CE-n/DL-n
+    dala, CR-n cerramiento, any other trabe. The beam detector uses it to prefer the family's own
+    layers (R146)."""
+    mark = marca.strip().upper()
+    if re.match(r"^CTA?-?\d", mark):
+        return Family.contratrabe
+    if re.match(r"^(CE|DL|DAL)-?\d", mark) or re.match(r"^(CI|DC|DA-?\d)", mark):
+        return Family.dala  # R152: the type tags CI, DC, DA-2 too
+    if re.match(r"^CR-?\d", mark):
+        return Family.cerramiento
+    return Family.trabe
+
+
 def classify_family(detection: Detection) -> Family:
     """Canonical family from detection type + mark prefix (Mexican convention)."""
     # Lo que el perfil del taller agregó trae la familia que la oficina enseñó.
@@ -126,13 +140,7 @@ def classify_family(detection: Detection) -> Family:
     if dtype == DetectionType.column_tag:
         return Family.castillo if mark.startswith("K") else Family.columna
     if dtype == DetectionType.beam_tag:
-        if re.match(r"^CTA?-?\d", mark):
-            return Family.contratrabe
-        if re.match(r"^(CE|DL|DAL)-?\d", mark):
-            return Family.dala
-        if re.match(r"^CR-?\d", mark):
-            return Family.cerramiento
-        return Family.trabe
+        return familia_de_viga(mark)
     if dtype == DetectionType.pile:
         return Family.pilote
     if dtype == DetectionType.stair:
@@ -224,6 +232,7 @@ def _measurement_parts(detection: Detection, unit_to_m: float | None) -> list[st
         source_key = str(props.get("section_source") or "")
         source = {
             "cuadro": "según cuadro/detalle del plano",
+            "supuesto": "del plano, con un lado supuesto",
             "cota": "acotada en el plano",
         }.get(source_key, "medida del marcador" if source_key else "medida")
         declared = props.get("section_cm")

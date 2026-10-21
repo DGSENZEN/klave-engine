@@ -53,7 +53,14 @@ def apply_piles(
     for det_id in count_line.source_detections:
         det = by_id.get(det_id)
         mark = det.label if det else det_id
-        length = _declared_length(mark, specs)
+        # The structural model's length for this pile (its definition, or a human decision),
+        # written on the detection (Tarea 12), outranks the specs' lookup.
+        modelo = (det.properties or {}).get("longitud_m") if det else None
+        length = (
+            float(modelo)
+            if isinstance(modelo, int | float) and not isinstance(modelo, bool) and modelo > 0
+            else _declared_length(mark, specs)
+        )
         if length is None:
             missing.append(mark)
             continue

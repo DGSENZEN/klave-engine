@@ -18,11 +18,13 @@ import { Badge, buttonClasses, Callout, Card, Input, Skeleton } from "@/componen
 type State =
   | { kind: "loading" }
   | { kind: "missing" }
+  | { kind: "service-error" }
   | { kind: "ready"; info: InvitationInfo; token: string };
 
 export default function InvitacionPage() {
   const token = useQueryParam("token");
   const [state, setState] = useState<State>({ kind: "loading" });
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (token === undefined) return;
@@ -33,11 +35,15 @@ export default function InvitacionPage() {
     let active = true;
     invitationInfo(token)
       .then((info) => active && setState({ kind: "ready", info, token }))
-      .catch(() => active && setState({ kind: "missing" }));
+      .catch((error) => {
+        if (!active) return;
+        const status = error && typeof error === "object" && "status" in error ? error.status : 0;
+        setState({ kind: status === 404 || status === 410 ? "missing" : "service-error" });
+      });
     return () => {
       active = false;
     };
-  }, [token]);
+  }, [token, attempt]);
 
   return (
     <AuthFrame
@@ -61,6 +67,16 @@ export default function InvitacionPage() {
           <Skeleton className="h-4 w-56" />
           <Skeleton className="mt-3 h-9" />
           <Skeleton className="mt-2 h-9" />
+        </Card>
+      ) : state.kind === "service-error" ? (
+        <Card className="p-6">
+          <Callout tone="warning">
+            No pudimos consultar la invitación. Revisa tu conexión e inténtalo de nuevo.
+          </Callout>
+          <button type="button" className={buttonClasses("secondary", "md", "mt-4")}
+            onClick={() => { setState({ kind: "loading" }); setAttempt((n) => n + 1); }}>
+            Reintentar
+          </button>
         </Card>
       ) : state.kind === "missing" ? (
         <Card className="p-6">
@@ -162,6 +178,7 @@ function AcceptCard({ info, token }: { info: InvitationInfo; token: string }) {
 
       <form onSubmit={submit} className="space-y-3">
         <Input
+          aria-label="Nombre y apellido"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Nombre y apellido"
@@ -172,6 +189,7 @@ function AcceptCard({ info, token }: { info: InvitationInfo; token: string }) {
         />
         <Input
           type="password"
+          aria-label="Contraseña"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Contraseña (mínimo 8 caracteres)"
@@ -182,6 +200,7 @@ function AcceptCard({ info, token }: { info: InvitationInfo; token: string }) {
         />
         <Input
           type="password"
+          aria-label="Repite la contraseña"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           placeholder="Repite la contraseña"
@@ -190,7 +209,7 @@ function AcceptCard({ info, token }: { info: InvitationInfo; token: string }) {
           required
           className="w-full"
         />
-        {error && <p className="text-sm text-danger">{error}</p>}
+        {error && <p role="alert" className="text-sm text-danger">{error}</p>}
         <button
           type="submit"
           className={buttonClasses(info.google_enabled ? "secondary" : "primary", "md", "w-full")}

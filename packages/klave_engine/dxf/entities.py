@@ -22,6 +22,10 @@ class EntityType(StrEnum):
     unknown = "unknown"
 
 
+# What a leader draws (R133 brings them in): lines that point at things, never obra (R135).
+ANNOTATION_SOURCES = frozenset({"LEADER", "MULTILEADER"})
+
+
 class NormalizedEntity(BaseModel):
     entity_id: str
     entity_type: EntityType
@@ -47,6 +51,12 @@ class NormalizedEntity(BaseModel):
     @property
     def is_closed(self) -> bool:
         return bool(self.properties.get("closed", False))
+
+    @property
+    def is_annotation(self) -> bool:
+        """The lines of a LEADER or a MULTILEADER: annotation, never a trabe, a wall, a slab edge
+        or a marker (R135). A MULTILEADER's text is still a text."""
+        return not self.is_textual and self.properties.get("derived_from") in ANNOTATION_SOURCES
 
 
 class ParseWarning(BaseModel):

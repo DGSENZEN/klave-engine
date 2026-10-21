@@ -2,7 +2,7 @@
 cotiza— de un concepto con precio publicado."""
 
 from klave_engine.costing.matching import Candidate, score
-from klave_engine.detection.instalaciones_symbols import NOMINALES, normaliza_diametro
+from klave_engine.detection.instalaciones_symbols import NOMINALES, es_seccion, normaliza_diametro
 
 
 def _c(clave: str, descripcion: str, unidad: str = "M") -> Candidate:
@@ -30,6 +30,42 @@ def test_un_numero_que_no_es_un_diametro_no_se_fuerza_a_serlo():
     assert normaliza_diametro('16" x 16"') is None  # sección de ducto
     assert normaliza_diametro("sin nada") is None
     assert normaliza_diametro("") is None
+
+
+def test_se_leen_los_diametros_de_4_a_24_pulgadas():
+    # R180: 14" y 16" (ductos flexibles de AA) no se leían y se pagaban como 12".
+    assert normaliza_diametro('14"') == (356, '356 mm (14")')
+    assert normaliza_diametro('16"') == (406, '406 mm (16")')
+    assert normaliza_diametro('24"') == (610, '610 mm (24")')
+    assert normaliza_diametro("350 mm") == (356, '356 mm (14")')
+    assert normaliza_diametro('BYP 24" X 8"') is None  # sección de ducto
+    assert normaliza_diametro('4" x 6 m') == (102, '102 mm (4")')  # un largo, no una sección
+
+
+def test_una_seccion_a_por_b_nunca_es_un_diametro():
+    # R184: con la marca de pulgadas en un número, en los dos o en ninguno.
+    for seccion in ('20 x 16"', '24x14"', '30 x 20"', '16" x 16"', "20 x 16", "200 x 150 mm"):
+        assert normaliza_diametro(seccion) is None, seccion
+    assert normaliza_diametro('4" x 60 m') == (102, '102 mm (4")')  # un largo, no una sección
+
+
+def test_un_largo_o_un_angulo_despues_del_diametro_no_es_una_seccion():
+    # R185: metros con coma, centímetros, pies y el ángulo de una pieza dejan leer el diámetro.
+    assert normaliza_diametro('12" x 7,50 m') == (305, '305 mm (12")')
+    assert normaliza_diametro('Ø 12" x 60 cm') == (305, '305 mm (12")')
+    assert normaliza_diametro("12\" X 25'") == (305, '305 mm (12")')
+    assert normaliza_diametro('CODO 4" x 45°') == (102, '102 mm (4")')
+    for seccion in ('12" x 3', '2 x 12"', '2X12"'):
+        assert normaliza_diametro(seccion) is None, seccion
+
+
+def test_una_seccion_con_marcas_mezcladas_nunca_es_un_diametro():
+    # R186: dos acentos o dos comillas tipográficas también son la marca de pulgadas; sólo una
+    # prima sola (un pie) es un largo.
+    for seccion in ('16" x 16´´', '20" x 16´´ BYP', 'RR 16" x 10´´', '16" x 16’’', '24" x 12´',
+                    '12" x 12´´'):  # fmt: skip
+        assert normaliza_diametro(seccion) is None, seccion
+    assert normaliza_diametro("12\" X 25'") == (305, '305 mm (12")')
 
 
 def test_la_tabla_nominal_va_de_menor_a_mayor_y_no_repite():
@@ -145,3 +181,14 @@ def test_el_tubo_de_concreto_de_las_redes_no_es_tuberia_domestica():
     m = score('Tubería de agua fría de cobre de 25 mm (1")', "M",
               concreto, "Instalación hidráulica")
     assert m is None or any("material distinto" in r for r in m.reasons)
+
+
+def test_una_sola_normalizacion_de_la_marca_de_pulgadas():
+    # R187: «”» y «“» son la marca de pulgadas; la prueba de sección acepta cualquier marca (o
+    # ninguna) tras su primer número.
+    assert normaliza_diametro("PVC 6”") == (152, '152 mm (6")')
+    assert normaliza_diametro("AF-1/2“Ø") == (13, '13 mm (1/2")')
+    for seccion in ('24” x 12"', '16´ x 16"', '16’ x 16"', "24“ x 12”", "16′ x 16″"):
+        assert normaliza_diametro(seccion) is None, seccion
+        assert es_seccion(seccion), seccion
+    assert normaliza_diametro("12” X 25'") == (305, '305 mm (12")')  # un largo, no una sección

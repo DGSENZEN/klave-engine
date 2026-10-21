@@ -11,6 +11,7 @@ insumo costs, APU component matrices, and production rates (rendimientos).
 """
 
 import json
+import math
 import sqlite3
 import threading
 from collections.abc import Iterable, Iterator
@@ -1253,8 +1254,8 @@ class CatalogStore:
         self, *, concept_code: str, basis: str, factor: float, source: str = "",
         plantilla_key: str = "", note: str = "", engine_read: bool = False,
     ) -> dict:
-        if factor <= 0:
-            raise ValueError("El factor debe ser positivo.")
+        if not math.isfinite(factor) or factor <= 0:
+            raise ValueError("El factor debe ser positivo y finito.")
         with _LOCK, self._connect() as conn:
             if conn.execute(
                 "SELECT 1 FROM concepts WHERE code = ?", (concept_code,)
@@ -1280,6 +1281,8 @@ class CatalogStore:
         self, rule_id: int, *, factor: float | None = None, active: bool | None = None,
         note: str | None = None,
     ) -> dict:
+        if factor is not None and not math.isfinite(factor):
+            raise ValueError("El factor debe ser finito.")
         with _LOCK, self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM parametric_rules WHERE id = ?", (rule_id,)
@@ -1596,16 +1599,16 @@ class CatalogStore:
         """A manual concept needs its APU from birth: a concept without a
         matrix cannot be priced, and unpriced never means zero."""
         _check_origin(origin)
-        if production_rate_per_day <= 0:
-            raise ValueError("El rendimiento debe ser positivo.")
+        if not math.isfinite(production_rate_per_day) or production_rate_per_day <= 0:
+            raise ValueError("El rendimiento debe ser positivo y finito.")
         if not components:
             raise ValueError("Un concepto necesita al menos un recurso en su APU.")
         book = self.load_price_book()
         for resource_code, quantity in components:
             if resource_code not in book:
                 raise ValueError(f"Unknown resource {resource_code}.")
-            if quantity <= 0:
-                raise ValueError(f"Quantity for {resource_code} must be positive.")
+            if not math.isfinite(quantity) or quantity <= 0:
+                raise ValueError(f"Quantity for {resource_code} must be positive and finite.")
         with _LOCK, self._connect() as conn:
             existing = conn.execute(
                 "SELECT 1 FROM concepts WHERE code = ?", (code,)
@@ -1644,8 +1647,10 @@ class CatalogStore:
         """Con `actor`, una persona tocó la fila: si venía de una publicación,
         una importación o una generación, pasa a ser del taller y queda quién
         y cuándo. Con `origin` explícito, la importación reclasifica."""
-        if production_rate_per_day is not None and production_rate_per_day <= 0:
-            raise ValueError("El rendimiento debe ser positivo.")
+        if production_rate_per_day is not None and (
+            not math.isfinite(production_rate_per_day) or production_rate_per_day <= 0
+        ):
+            raise ValueError("El rendimiento debe ser positivo y finito.")
         if origin is not None:
             _check_origin(origin)
         with _LOCK, self._connect() as conn:
@@ -1705,7 +1710,7 @@ class CatalogStore:
     def save_indices(self, source: str, values: dict[str, float]) -> dict:
         clean = {
             k[:7]: float(v) for k, v in values.items()
-            if len(k) >= 7 and k[4] == "-" and float(v) > 0
+            if len(k) >= 7 and k[4] == "-" and math.isfinite(float(v)) and float(v) > 0
         }
         payload = {"source": source[:200], "values": dict(sorted(clean.items()))}
         self.set_setting(self.INDICES_KEY, payload)
@@ -1733,6 +1738,8 @@ class CatalogStore:
         """Update an existing insumo, or create one when all fields are given.
         Sin `origin`, una fila nueva es del taller (capturada a mano); con
         `actor`, la edición de una fila que no era del taller la promueve."""
+        if unit_cost is not None and not math.isfinite(unit_cost):
+            raise ValueError("El precio debe ser finito.")
         if source_type is not None and source_type not in (
             "referencia", "cotizacion", "publicacion", "calculado",
         ):
@@ -1845,8 +1852,8 @@ class CatalogStore:
         for resource_code, quantity in components:
             if resource_code not in book:
                 raise ValueError(f"Unknown resource {resource_code}.")
-            if quantity <= 0:
-                raise ValueError(f"Quantity for {resource_code} must be positive.")
+            if not math.isfinite(quantity) or quantity <= 0:
+                raise ValueError(f"Quantity for {resource_code} must be positive and finite.")
         templates = self.load_templates()
         templates[code] = list(components)
         self._check_basico_cycle(code, templates, book)
@@ -2173,8 +2180,8 @@ class CatalogStore:
         for resource_code, quantity in components:
             if resource_code not in book:
                 raise ValueError(f"Unknown resource {resource_code}.")
-            if quantity <= 0:
-                raise ValueError(f"Quantity for {resource_code} must be positive.")
+            if not math.isfinite(quantity) or quantity <= 0:
+                raise ValueError(f"Quantity for {resource_code} must be positive and finite.")
         with _LOCK, self._connect() as conn:
             existing = conn.execute(
                 "SELECT origin FROM concepts WHERE code = ?", (concept_code,)
@@ -2201,8 +2208,8 @@ class CatalogStore:
         self._revalidate_concept(concept_code)
 
     def set_rendimiento(self, concept_code: str, production_rate_per_day: float) -> None:
-        if production_rate_per_day <= 0:
-            raise ValueError("El rendimiento debe ser positivo.")
+        if not math.isfinite(production_rate_per_day) or production_rate_per_day <= 0:
+            raise ValueError("El rendimiento debe ser positivo y finito.")
         with _LOCK, self._connect() as conn:
             conn.execute(
                 "UPDATE concepts SET production_rate_per_day = ? WHERE code = ?",
@@ -2228,7 +2235,7 @@ class CatalogStore:
                 except ValueError:
                     skipped.append(code)
                     continue
-                if unit_cost <= 0:
+                if not math.isfinite(unit_cost) or unit_cost <= 0:
                     skipped.append(code)
                     continue
                 result = conn.execute(
@@ -2787,8 +2794,8 @@ class CatalogStore:
             raise ValueError("kind debe ser block, layer, tag o area")
         if not pattern.strip():
             raise ValueError("El patrón no puede estar vacío.")
-        if factor <= 0:
-            raise ValueError("El factor debe ser positivo.")
+        if not math.isfinite(factor) or factor <= 0:
+            raise ValueError("El factor debe ser positivo y finito.")
         with _LOCK, self._connect() as conn:
             if conn.execute(
                 "SELECT 1 FROM concepts WHERE code = ?", (concept_code,)

@@ -6,6 +6,7 @@ individually (see the CLI) or together via ``run_full_pipeline``.
 """
 
 import json
+import time
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -33,7 +34,9 @@ from klave_engine.costing.report import (
     generate_cost_report,
 )
 from klave_engine.costing.reviews import filter_excluded, load_reviews, rekey_reviews, save_reviews
+from klave_engine.costing.steel import altura_supuesta_m
 from klave_engine.detection.bajadas import stamp_bajada_stacks
+from klave_engine.detection.beam_detector import con_anchos_declarados
 from klave_engine.detection.candidates import candidatos, write_candidates
 from klave_engine.detection.dimension_links import link_dimensions
 from klave_engine.detection.dimensions import build_dimension_inventory
@@ -43,6 +46,7 @@ from klave_engine.detection.inventory import build_inventory, reads_as_structure
 from klave_engine.detection.prefabs import build_prefab_index
 from klave_engine.detection.results import Detection, DetectionType
 from klave_engine.detection.schedules import (
+    ScheduleInventory,
     apply_schedule,
     build_schedule_inventory,
     mark_cuadro_detections,
@@ -53,13 +57,22 @@ from klave_engine.detection.suite import (
     run_detectors,
 )
 from klave_engine.detection.taxonomy import enrich_detections
-from klave_engine.detection.views import segment_views
+from klave_engine.detection.text_patterns import TextPatternConfig
+from klave_engine.detection.views import SheetSegmentation, segment_views
 from klave_engine.dxf.blocks import summarize_blocks
 from klave_engine.dxf.entities import NormalizedEntity
 from klave_engine.dxf.harmonize import harmonize_units
 from klave_engine.dxf.layers import summarize_layers
 from klave_engine.dxf.parser import DxfParser, ParsedDrawing
 from klave_engine.dxf.units import UNKNOWN_UNIT, DrawingUnits
+from klave_engine.estructura.modelo import (
+    Estructura,
+    construir_estructura,
+    escribir_en_detecciones,
+    escribir_estructura,
+    leer_decisiones,
+    resumir,
+)
 from klave_engine.geometry.spatial_index import SpatialIndex
 from klave_engine.graph.builder import DrawingGraph, build_drawing_graph
 from klave_engine.ingestion.manifest import (
@@ -414,12 +427,31 @@ def run_full_pipeline(
                 f"La hoja «{label}» se lee como {ruta.key} por su nombre; su "
                 f"contenido vota {voto[0]} ({voto[1]} trazos). Revisa el nombre del archivo."
             )
+    # The sheet's specifications are read before the detectors: a beam's faces may lie as far
+    # apart as its definition's width (R172).
+    schedule = build_schedule_inventory(
+        result.entities,
+        detector_config.text_patterns,
+        unit_to_m=units.to_meters(),
+        frames=frames,
+    )
+    ai_reads = load_ai_reads(control_dir)
+    if ai_reads.readings:
+        merge_external_specs(schedule, ai_element_specs(ai_reads), detector_config.text_patterns)
+        for reading in ai_reads.readings:
+            for family, fc in reading.read.concrete_fc.items():
+                schedule.concrete_fc.setdefault(family.lower(), int(fc))
+    detector_config = detector_config.model_copy(
+        update={"beam": con_anchos_declarados(detector_config.beam, schedule, units.to_meters())}
+    )
     detector_ids = IdGenerator("det")
     for source, file_entities in by_file.items():
         file_frames = [f for f in frames if f.source_file == source]
         ruta_hoja = route_sheet(sheet_names.get(source, source))
+        # R135: a leader's lines are annotation; the detectors never see them.
+        geometria = [e for e in file_entities if not e.is_annotation]
         detector_outputs = run_detectors(
-            file_entities, SpatialIndex(file_entities), manifest, detector_config,
+            geometria, SpatialIndex(geometria), manifest, detector_config,
             frames=file_frames, ids=detector_ids, units=units,
             structural=ruta_hoja.structural, suite=ruta_hoja,
         )
@@ -463,18 +495,6 @@ def run_full_pipeline(
             )
     # What the sheet declares about its marks outranks measured markers and
     # assumptions: stamp sections from cuadros, details, and notes first.
-    schedule = build_schedule_inventory(
-        result.entities,
-        detector_config.text_patterns,
-        unit_to_m=units.to_meters(),
-        detail_boxes=[f.bbox for f in frames if f.kind == "excluded"],
-    )
-    ai_reads = load_ai_reads(control_dir)
-    if ai_reads.readings:
-        merge_external_specs(schedule, ai_element_specs(ai_reads))
-        for reading in ai_reads.readings:
-            for family, fc in reading.read.concrete_fc.items():
-                schedule.concrete_fc.setdefault(family.lower(), int(fc))
     cuadro_tagged = mark_cuadro_detections(result.detections, schedule)
     if cuadro_tagged:
         schedule.notes.append(
@@ -626,6 +646,23 @@ def run_full_pipeline(
                 "Perfil del taller: " + "; ".join(partes)
                 + ". Revísalos en Revisión; se excluyen como cualquier lectura."
             )
+    # The user's costing edits (needed now: the model's assumed column height is theirs).
+    overrides = load_overrides(control_dir)
+    if overrides is not None:
+        costing_config = overrides.config
+        price_book = apply_price_overrides(
+            catalog_store.load_price_book(), overrides.insumo_prices
+        )
+    else:
+        costing_config = load_costing_config(settings.costing_config_path)
+        price_book = catalog_store.load_price_book()
+    # El modelo estructural: reglas, definiciones, elementos y verificaciones, con las decisiones
+    # humanas. detections.json guarda lo que leyó el detector: lo que cada elemento resolvió se
+    # escribe en su detección sólo dentro del costo (R235: quitar una decisión la deshace).
+    estructura = _modelo_estructural(
+        result, frames, schedule, segmentation, units, costing_config, control_dir,
+        detector_config.text_patterns,
+    )
     write_json(processed / "detections.json", result.detections)
     write_candidates(processed, candidatos_hoja)
     # Las propuestas del lector: lo que ninguna regla tomó y se parece a lo
@@ -663,16 +700,7 @@ def run_full_pipeline(
         vigueta=dimensions.vigueta_system,
     )
 
-    # Reapply any user costing edits so they survive a full reprocess.
-    overrides = load_overrides(control_dir)
-    if overrides is not None:
-        costing_config = overrides.config
-        price_book = apply_price_overrides(
-            catalog_store.load_price_book(), overrides.insumo_prices
-        )
-    else:
-        costing_config = load_costing_config(settings.costing_config_path)
-        price_book = catalog_store.load_price_book()
+    # The user costing edits (read above) survive a full reprocess.
     # Human corrections survive a reprocess: exclusions are keyed by the
     # deterministic display labels and adjustments are concept-level. The
     # detections artifact keeps everything; exclusion is a costing-layer act.
@@ -704,10 +732,22 @@ def run_full_pipeline(
         price_vigencias=catalog_store.price_vigencias(),
         integracion_taller=catalog_store.get_setting("integracion"),
         variant_mappings=catalog_store.load_variant_mappings(),
+        estructura=estructura.para_el_costo() if estructura is not None else None,
     )
     apply_taller_history(
         result.cost_report, catalog_store, manifest.project_id, save=record_history
     )
+    if estructura is not None:
+        # Lo que el costo escribió en las detecciones, la tarjeta por familia con los P.U. de este
+        # presupuesto; el modelo, junto a la corrida.
+        estructura.escrituras = escribir_en_detecciones(
+            filter_excluded(result.detections, reviews), estructura.elementos, units.to_meters()
+        )[1]
+        estructura.resumen = resumir(estructura, result.cost_report)
+        escribir_estructura(processed, estructura)
+        result.cost_report.warnings.extend(
+            a for a in estructura.avisos if a not in result.cost_report.warnings
+        )
     # El detector conoce denominadores que el presupuesto no ve; viaja al
     # diagnóstico solo lo que sus reglas saben clasificar.
     result.cost_report.warnings.extend(
@@ -761,6 +801,48 @@ def run_full_pipeline(
         status=manifest.processing_status.value,
     )
     return result
+
+
+def _modelo_estructural(
+    result: PipelineResult,
+    frames: list[SheetFrame],
+    schedule: ScheduleInventory,
+    segmentation: SheetSegmentation,
+    units: DrawingUnits,
+    costing_config: CostingConfig,
+    control_dir: Path,
+    patrones: TextPatternConfig,
+) -> Estructura | None:
+    """El modelo estructural de la corrida con las decisiones guardadas. Un modelo que no se puede
+    construir no tumba la corrida: se dice, y el acero se calcula sin él."""
+    inicio = time.perf_counter()
+    try:
+        altura = altura_supuesta_m(segmentation, costing_config.assumptions.column_height_m)
+        decisiones, avisos = leer_decisiones(control_dir)
+        estructura = construir_estructura(
+            result.entities, frames, schedule, result.detections, segmentation,
+            units.to_meters(), altura, config=patrones, decisiones=decisiones,
+        )
+        estructura.avisos = list(dict.fromkeys([*avisos, *estructura.avisos]))
+    except Exception as error:  # noqa: BLE001 — a broken model must never fail the run
+        logger.exception("No se pudo construir el modelo estructural")
+        result.warnings.append(
+            f"La lectura estructural no se pudo construir ({type(error).__name__}: {error}); el "
+            "acero se calcula sin el modelo estructural y no hay tarjeta ni verificaciones."
+        )
+        return None
+    result.warnings.extend(a for a in estructura.avisos if a not in result.warnings)
+    log_stage(
+        logger,
+        "estructura_built",
+        definiciones=len(estructura.definiciones),
+        elementos=len(estructura.elementos),
+        verificaciones=len(estructura.verificaciones),
+        decisiones=len(estructura.decisiones),
+        escrituras=len(estructura.escrituras),
+        elapsed_ms=round((time.perf_counter() - inicio) * 1000),
+    )
+    return estructura
 
 
 def _input_hashes(manifest: ProjectManifest) -> dict:

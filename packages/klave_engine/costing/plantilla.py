@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 TipoCargo = Literal["tecnico", "administrativo", "servicio"]
 
@@ -56,6 +56,8 @@ class CargoCampo(BaseModel):
     ``desde_periodo`` y ``hasta_periodo`` son 1-based e inclusivos sobre el
     calendario del programa; ``hasta_periodo`` en None significa hasta el
     final de la obra."""
+
+    model_config = ConfigDict(allow_inf_nan=False)
 
     puesto: str
     tipo: TipoCargo = "tecnico"

@@ -197,13 +197,18 @@ class UserStore:
 
     # ------------------------------------------------------------ plumbing
 
-    def _connect(self) -> psycopg.Connection[dict[str, Any]]:
+    def initialize_schema(self) -> None:
+        with self._connect(options="-c statement_timeout=10000 -c lock_timeout=2000"):
+            pass
+
+    def _connect(self, *, options: str | None = None) -> psycopg.Connection[dict[str, Any]]:
         if time.monotonic() < self._down_until:
             raise UsersDbUnavailable()
         try:
             conn = psycopg.connect(
                 self.database_url, autocommit=True, row_factory=dict_row,
                 connect_timeout=3,
+                options=options,
             )
         except psycopg.OperationalError as exc:
             # Negative-cache the outage so every request doesn't pay a

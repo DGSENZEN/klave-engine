@@ -27,7 +27,7 @@ from klave_engine.detection.results import (
     layer_matches,
     make_detection,
 )
-from klave_engine.detection.text_patterns import TextPatternConfig, match_category
+from klave_engine.detection.text_patterns import TextPatternConfig, es_tipo_de_dala, match_category
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.geometry.bbox import (
     BBox,
@@ -314,7 +314,10 @@ def detect_grid(
     grid_label_texts = [
         e
         for e in entities
-        if e.is_textual and e.text and match_category(e.text, text_config, "grid_label")
+        if e.is_textual
+        and e.text
+        and match_category(e.text, text_config, "grid_label")
+        and not es_tipo_de_dala(e.text, e.layer)  # R152: a dala's type tag is never an axis
     ]
 
     fragments: list[_Fragment] = []
