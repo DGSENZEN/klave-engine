@@ -15,13 +15,13 @@ from klave_engine.ingestion.manifest import load_manifest, manifest_path, save_m
 from klave_engine.ingestion.project_loader import find_drawing_files, ingest_project
 from pydantic import BaseModel
 
-from apps.api.observability import context_from_request
 from apps.api.auth.access import require_project_role
 from apps.api.auth.common import db_unavailable, rate_limit
 from apps.api.auth.store import UsersDbUnavailable, get_user_store
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
 from apps.api.jobs import JOB_STORE, JobQueueFullError
+from apps.api.observability import context_from_request
 from apps.api.tenancy import defaults_scope, request_workspace_id
 
 router = APIRouter(prefix="/projects")

@@ -32,7 +32,11 @@ def configure_logging(level: str = "INFO") -> None:
         return
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s rid=%(request_id)s ws=%(workspace_id)s uid=%(user_id)s job=%(job_id)s run=%(run_id)s %(message)s",
+        format=(
+            "%(asctime)s %(levelname)s %(name)s rid=%(request_id)s "
+            "ws=%(workspace_id)s uid=%(user_id)s job=%(job_id)s "
+            "run=%(run_id)s %(message)s"
+        ),
     )
     for handler in logging.getLogger().handlers:
         handler.addFilter(_RequestIdFilter())
@@ -50,7 +54,7 @@ def log_stage(logger: logging.Logger, event: str, **fields: Any) -> None:
 
 
 def redact_email(email: str | None) -> str:
-    """"ana@taller.mx" → "a***@taller.mx": enough to recognise, never to harvest."""
+    """ "ana@taller.mx" → "a***@taller.mx": enough to recognise, never to harvest."""
     if not email or "@" not in email:
         return "***"
     local, _, domain = email.partition("@")

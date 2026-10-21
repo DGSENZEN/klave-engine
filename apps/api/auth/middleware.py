@@ -16,7 +16,6 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from klave_engine.common.config import get_settings
-
 from klave_engine.common.diagnostics import DiagnosticContext, bind_context
 
 from apps.api.auth.access import project_access_problem
@@ -100,9 +99,7 @@ def _set_actor_header(scope: dict, name: str) -> None:
 
 
 def _deny(status: int, error_type: str, message: str) -> tuple[int, bytes]:
-    return status, json.dumps(
-        {"detail": {"error_type": error_type, "message": message}}
-    ).encode()
+    return status, json.dumps({"detail": {"error_type": error_type, "message": message}}).encode()
 
 
 class AccessControlMiddleware:
@@ -122,7 +119,8 @@ class AccessControlMiddleware:
         # This runs before the open-prefix pass so login/register are covered.
         if method in _MUTATING and not origin_allowed(_request_origin(scope)):
             status, body = _deny(
-                403, "origin_not_allowed",
+                403,
+                "origin_not_allowed",
                 "Solicitud desde un origen no permitido.",
             )
             await _respond(send, status, body)
@@ -141,10 +139,14 @@ class AccessControlMiddleware:
                     # Un servidor de producción sin cuentas no abre nada: la
                     # primera cuenta se crea en /auth/ (abierto) y funda el
                     # taller. Antes un volumen nuevo servía todo sin sesión.
-                    await _respond(send, *_deny(
-                        403, "setup_required",
-                        "Este servidor todavía no tiene cuentas: crea la del administrador.",
-                    ))
+                    await _respond(
+                        send,
+                        *_deny(
+                            403,
+                            "setup_required",
+                            "Este servidor todavía no tiene cuentas: crea la del administrador.",
+                        ),
+                    )
                     return
                 scope.setdefault("state", {})["user"] = None
                 await self.app(scope, receive, send)
@@ -154,7 +156,8 @@ class AccessControlMiddleware:
                 denial = _deny(401, "auth_required", "Inicia sesión para continuar.")
             elif user["status"] == "pending":
                 denial = _deny(
-                    403, "pending_approval",
+                    403,
+                    "pending_approval",
                     "Tu cuenta espera la aprobación de un administrador.",
                 )
             elif user["status"] != "active":
@@ -177,7 +180,8 @@ class AccessControlMiddleware:
             # si acaso» era abrir todo.
             if production or store.last_known_has_users:
                 denial = _deny(
-                    503, "users_db_unavailable",
+                    503,
+                    "users_db_unavailable",
                     "La base de datos de usuarios no está disponible.",
                 )
             else:
@@ -188,11 +192,13 @@ class AccessControlMiddleware:
         if denial is None:
             state = scope.get("state", {})
             actor = state.get("user") or {}
-            with bind_context(DiagnosticContext(
-                request_id=state.get("request_id", ""),
-                workspace_id=str(actor.get("workspace_id") or ""),
-                user_id=str(actor.get("user_id") or ""),
-            )):
+            with bind_context(
+                DiagnosticContext(
+                    request_id=state.get("request_id", ""),
+                    workspace_id=str(actor.get("workspace_id") or ""),
+                    user_id=str(actor.get("user_id") or ""),
+                )
+            ):
                 await self.app(scope, receive, send)
             return
         status, body = denial

@@ -8,8 +8,8 @@ one. Each response logs method, path, status and duration.
 
 from __future__ import annotations
 
-import re
 import logging
+import re
 import time
 import uuid
 
@@ -32,9 +32,12 @@ def redact_request_path(path: str) -> str:
 
 def context_from_request(request: Request, *, project_id: str = "") -> DiagnosticContext:
     user = getattr(request.state, "user", None) or {}
-    return DiagnosticContext(request_id=getattr(request.state, "request_id", ""),
-                             workspace_id=str(user.get("workspace_id") or ""),
-                             user_id=str(user.get("user_id") or ""), project_id=project_id)
+    return DiagnosticContext(
+        request_id=getattr(request.state, "request_id", ""),
+        workspace_id=str(user.get("workspace_id") or ""),
+        user_id=str(user.get("user_id") or ""),
+        project_id=project_id,
+    )
 
 
 class RequestIdMiddleware:
@@ -69,12 +72,18 @@ class RequestIdMiddleware:
         finally:
             route = scope.get("route")
             path = redact_request_path(getattr(route, "path", None) or scope.get("path", ""))
-            if not _QUIET_PATHS.match(path):
-                safe_log(logger, logging.INFO,
-                    "%s %s -> %s in %.0f ms",
-                    scope.get("method", "?"),
-                    path,
-                    status_holder["status"] or "?",
-                    (time.perf_counter() - started) * 1000,
-                )
+            context = context_from_request(
+                Request(scope), project_id=str(scope.get("path_params", {}).get("project_id") or "")
+            )
+            with bind_context(context):
+                if not _QUIET_PATHS.match(path):
+                    safe_log(
+                        logger,
+                        logging.INFO,
+                        "%s %s -> %s in %.0f ms",
+                        scope.get("method", "?"),
+                        path,
+                        status_holder["status"] or "?",
+                        (time.perf_counter() - started) * 1000,
+                    )
             request_id_var.reset(token)

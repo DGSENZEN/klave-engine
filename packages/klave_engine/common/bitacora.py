@@ -35,6 +35,7 @@ USO_DIRNAME = "bitacora/uso"
 ERRORES_DIRNAME = "bitacora/errores"
 RETENCION_DIAS = 90
 
+
 def redactar(texto: str, limite: int = 600) -> str:
     """Redact token URLs, keys and email addresses before persistence."""
     return sanitize_text(texto, limite)
@@ -77,6 +78,7 @@ class ErrorRegistrado:
     run_id: str = ""
     operation: str = ""
     error_code: str = ""
+    stage: str = ""
 
 
 def _archivo(data_dir: Path, sub: str, dia: date | None = None) -> Path:
@@ -122,10 +124,17 @@ def anotar_error(data_dir: Path, error: ErrorRegistrado) -> None:
 
     from klave_engine.common.diagnostics import sanitize_path
 
-    _anotar(data_dir, ERRORES_DIRNAME, replace(
-        error, ruta=sanitize_path(error.ruta), mensaje=redactar(error.mensaje),
-        traza=redactar(error.traza, 2400), contexto={},
-    ))
+    _anotar(
+        data_dir,
+        ERRORES_DIRNAME,
+        replace(
+            error,
+            ruta=sanitize_path(error.ruta),
+            mensaje=redactar(error.mensaje),
+            traza=redactar(error.traza, 2400),
+            contexto={},
+        ),
+    )
 
 
 def _leer(data_dir: Path, sub: str, desde: date, hasta: date) -> list[dict]:
