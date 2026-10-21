@@ -127,13 +127,12 @@ export function ErroresCard() {
         <p className="text-sm text-muted">Cargando…</p>
       ) : errores.total === 0 ? (
         <p className="text-sm text-muted">
-          Nada se rompió en la última semana. Si un usuario reporta algo y aquí no
-          aparece, no llegó al servidor.
+          No hay incidentes registrados para este taller en la última semana.
         </p>
       ) : (
         <>
           <p className="text-sm">
-            <span className="font-medium">{errores.total}</span> incidente(s) en 7 días,
+            <span className="font-medium">{errores.total}</span> incidente(s) en la muestra reciente de 7 días,
             en {errores.grupos.length} punto(s) distintos.
           </p>
           <ul className="mt-2 space-y-1.5">
@@ -151,7 +150,7 @@ export function ErroresCard() {
             ))}
           </ul>
           <p className="mt-2 text-xs text-faint">
-            Detalle completo en {errores.donde.errores}
+            Se muestran hasta 200 incidentes recientes, agrupados en hasta 20 puntos.
           </p>
         </>
       )}

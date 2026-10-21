@@ -288,8 +288,11 @@ def errores(request: Request, settings: Settings = Depends(get_settings)) -> dic
     """Lo que se rompió en los últimos días, agrupado por dónde y de qué tipo.
 
     Se queda en la máquina del taller: sus planos son de sus clientes."""
-    _require_admin_if_protected(request)
-    filas = errores_recientes(settings.data_dir, dias=7)
+    user = _require_admin_if_protected(request)
+    workspace = request_workspace_id(request)
+    if user is not None and not workspace:
+        raise HTTPException(status_code=403, detail={"error_type": "workspace_required"})
+    filas = errores_recientes(settings.data_dir, dias=7, workspace=workspace)
     grupos: dict[tuple[str, str], dict] = {}
     for fila in filas:
         clave = (str(fila.get("ruta") or ""), str(fila.get("tipo") or ""))
@@ -308,7 +311,10 @@ def errores(request: Request, settings: Settings = Depends(get_settings)) -> dic
     return {
         "total": len(filas),
         "grupos": sorted(grupos.values(), key=lambda g: -g["veces"])[:20],
-        "donde": ruta_de_bitacora(settings.data_dir),
+        "donde": (
+            {"uso": "uso", "errores": "errores", "retencion_dias": "90"}
+            if user is not None else ruta_de_bitacora(settings.data_dir)
+        ),
     }
 
 

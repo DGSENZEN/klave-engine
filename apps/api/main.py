@@ -1,5 +1,6 @@
 """Klave Engine API. Routes orchestrate; the domain packages do the thinking."""
 
+import logging
 import math
 import os
 import traceback
@@ -17,6 +18,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from klave_engine.common.bitacora import ErrorRegistrado, anotar_error, redactar
 from klave_engine.common.config import get_settings
+from klave_engine.common.diagnostics import safe_log
 from klave_engine.common.errors import KlaveEngineError
 from klave_engine.common.logging import configure_logging, get_logger, request_id_var
 
@@ -26,7 +28,7 @@ from apps.api.auth.middleware import AccessControlMiddleware, allowed_origins, o
 from apps.api.auth.recovery import router as recovery_router
 from apps.api.auth.routes import router as auth_router
 from apps.api.events import BUS
-from apps.api.observability import RequestIdMiddleware, redact_request_path
+from apps.api.observability import RequestIdMiddleware, context_from_request, redact_request_path
 from apps.api.routes import ai as ai_routes
 from apps.api.routes import (
     cambios,
@@ -70,9 +72,7 @@ def _validate_production_config(settings) -> None:
     if settings.web_origin.startswith("http://") and "localhost" in settings.web_origin:
         problems.append("KLAVE_WEB_ORIGIN sigue apuntando a localhost")
     if not settings.web_origin.startswith("https://") and settings.cookie_secure is not True:
-        problems.append(
-            "KLAVE_WEB_ORIGIN no es https y KLAVE_COOKIE_SECURE no está forzado a true"
-        )
+        problems.append("KLAVE_WEB_ORIGIN no es https y KLAVE_COOKIE_SECURE no está forzado a true")
     if "127.0.0.1" in settings.users_database_url and "klave@" in settings.users_database_url:
         problems.append("KLAVE_USERS_DATABASE_URL usa las credenciales locales de desarrollo")
     if settings.registration != "invite_only":
@@ -80,9 +80,7 @@ def _validate_production_config(settings) -> None:
         # servidor. La primera cuenta sigue pudiendo registrarse sin invitación.
         problems.append("KLAVE_REGISTRATION debe ser invite_only en producción")
     if problems:
-        raise RuntimeError(
-            "Configuración de producción incompleta: " + "; ".join(problems)
-        )
+        raise RuntimeError("Configuración de producción incompleta: " + "; ".join(problems))
 
 
 logger = get_logger("klave.error")
@@ -190,16 +188,21 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request_handler(
-        request: Request, exc: RequestValidationError,
+        request: Request,
+        exc: RequestValidationError,
     ) -> JSONResponse:
         # Validation errors echo the rejected input. NaN/infinity cannot be
         # emitted as JSON numbers, or a correct 422 becomes a serialization 500.
         return JSONResponse(
             status_code=422,
-            content={"detail": jsonable_encoder(
-                exc.errors(),
-                custom_encoder={float: lambda value: value if math.isfinite(value) else str(value)},
-            )},
+            content={
+                "detail": jsonable_encoder(
+                    exc.errors(),
+                    custom_encoder={
+                        float: lambda value: value if math.isfinite(value) else str(value)
+                    },
+                )
+            },
         )
 
     @app.exception_handler(KlaveEngineError)
@@ -216,34 +219,53 @@ def create_app() -> FastAPI:
         Sin esto, un DWG que tumba al parser a las once de la noche se sabe
         cuando el taller escribe un correo — si lo escribe. La traza se queda
         en la máquina del taller: sus planos son de sus clientes."""
-        reference = getattr(request.state, "request_id", None) or request_id_var.get() or ""
-        safe_path = redact_request_path(request.url.path)
-        anotar_error(
-            settings.data_dir,
-            ErrorRegistrado(
-                ts=datetime.now(UTC).isoformat(),
-                request_id=reference,
-                ruta=safe_path,
-                metodo=request.method,
-                tipo=type(exc).__name__,
-                mensaje=redactar(str(exc)),
-                traza=redactar("".join(traceback.format_tb(exc.__traceback__)[-4:]), 2400),
-                workspace=str(
-                    (getattr(request.state, "user", None) or {}).get("workspace_id") or ""
-                ),
-            ),
+        context = context_from_request(
+            request, project_id=str(request.path_params.get("project_id") or "")
         )
-        logger.error("sin manejar en %s %s rid=%s tipo=%s",
-                     request.method, safe_path, reference, type(exc).__name__)
+        reference = getattr(request.state, "request_id", None) or request_id_var.get() or ""
+        safe_path = redact_request_path(
+            getattr(request.scope.get("route"), "path", None) or request.url.path
+        )
+        try:
+            anotar_error(
+                settings.data_dir,
+                ErrorRegistrado(
+                    ts=datetime.now(UTC).isoformat(),
+                    request_id=reference,
+                    ruta=safe_path,
+                    metodo=request.method,
+                    tipo=type(exc).__name__,
+                    mensaje=redactar(str(exc)),
+                    traza=redactar("".join(traceback.format_tb(exc.__traceback__)[-4:]), 2400),
+                    workspace=context.workspace_id,
+                    user_id=context.user_id,
+                    project_id=context.project_id,
+                    operation="http_request",
+                    error_code="request_failed",
+                ),
+            )
+        except Exception:  # noqa: BLE001 — a diagnostic outage cannot replace the error response
+            pass
+        safe_log(
+            logger,
+            logging.ERROR,
+            "sin manejar en %s %s rid=%s tipo=%s",
+            request.method,
+            safe_path,
+            reference,
+            type(exc).__name__,
+        )
         headers = {"X-Request-Id": reference}
         origin = request.headers.get("origin")
         if origin and origin_allowed(origin):
-            headers.update({
-                "Access-Control-Allow-Origin": origin,
-                "Access-Control-Allow-Credentials": "true",
-                "Access-Control-Expose-Headers": "Content-Disposition, X-Request-Id",
-                "Vary": "Origin",
-            })
+            headers.update(
+                {
+                    "Access-Control-Allow-Origin": origin,
+                    "Access-Control-Allow-Credentials": "true",
+                    "Access-Control-Expose-Headers": "Content-Disposition, X-Request-Id",
+                    "Vary": "Origin",
+                }
+            )
         return JSONResponse(
             status_code=500,
             headers=headers,

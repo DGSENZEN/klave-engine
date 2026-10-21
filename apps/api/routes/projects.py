@@ -21,6 +21,7 @@ from apps.api.auth.store import UsersDbUnavailable, get_user_store
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
 from apps.api.jobs import JOB_STORE, JobQueueFullError
+from apps.api.observability import context_from_request
 from apps.api.tenancy import defaults_scope, request_workspace_id
 
 router = APIRouter(prefix="/projects")
@@ -336,7 +337,9 @@ async def upload_project(
         data={"project_name": manifest.project_name},
     )
     try:
-        job, _ = JOB_STORE.enqueue(project_id, root, settings)
+        job, _ = JOB_STORE.enqueue(
+            project_id, root, settings, context=context_from_request(request, project_id=project_id)
+        )
     except JobQueueFullError as exc:
         raise HTTPException(
             status_code=429,
@@ -450,7 +453,9 @@ def process_project(
     rate_limit(request, "process", max_attempts=30, window_seconds=3600.0)
     root = store.get_root(project_id)
     try:
-        job, _ = JOB_STORE.enqueue(project_id, root, settings)
+        job, _ = JOB_STORE.enqueue(
+            project_id, root, settings, context=context_from_request(request, project_id=project_id)
+        )
     except JobQueueFullError as exc:
         raise HTTPException(
             status_code=429,
@@ -524,7 +529,9 @@ async def add_project_files(
         data={"action": "sheets_added", "sheet_count": len(manifest.source_files)},
     )
     try:
-        job, _ = JOB_STORE.enqueue(project_id, root, settings)
+        job, _ = JOB_STORE.enqueue(
+            project_id, root, settings, context=context_from_request(request, project_id=project_id)
+        )
     except JobQueueFullError as exc:
         raise HTTPException(
             status_code=429,
