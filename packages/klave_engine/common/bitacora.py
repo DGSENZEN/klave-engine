@@ -72,6 +72,11 @@ class ErrorRegistrado:
     workspace: str = ""
     project_id: str = ""
     contexto: dict[str, Any] = field(default_factory=dict)
+    user_id: str = ""
+    job_id: str = ""
+    run_id: str = ""
+    operation: str = ""
+    error_code: str = ""
 
 
 def _archivo(data_dir: Path, sub: str, dia: date | None = None) -> Path:
@@ -112,7 +117,15 @@ def anotar_uso(data_dir: Path, uso: UsoIA) -> None:
 
 
 def anotar_error(data_dir: Path, error: ErrorRegistrado) -> None:
-    _anotar(data_dir, ERRORES_DIRNAME, error)
+    # Do not persist arbitrary context or unsanitized details from any caller.
+    from dataclasses import replace
+
+    from klave_engine.common.diagnostics import sanitize_path
+
+    _anotar(data_dir, ERRORES_DIRNAME, replace(
+        error, ruta=sanitize_path(error.ruta), mensaje=redactar(error.mensaje),
+        traza=redactar(error.traza, 2400), contexto={},
+    ))
 
 
 def _leer(data_dir: Path, sub: str, desde: date, hasta: date) -> list[dict]:

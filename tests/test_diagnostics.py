@@ -55,3 +55,69 @@ def test_request_logs_and_error_records_redact_tokens(data_dir, caplog, mode):
         rows = errores_recientes(data_dir)
         assert len(rows) == 1
         assert 'SECRET' not in str(rows) and 'PRIVATE' not in str(rows)
+
+
+def test_context_binding_is_nested_and_resets_after_exception():
+    from klave_engine.common.diagnostics import DiagnosticContext, bind_context, current_context
+
+    original = current_context()
+    with bind_context(DiagnosticContext(request_id='outer', workspace_id='ws-a')):
+        assert current_context().request_id == 'outer'
+        with pytest.raises(RuntimeError), bind_context(DiagnosticContext(request_id='inner')):
+            assert current_context().workspace_id == ''
+            raise RuntimeError('controlled')
+        assert current_context().request_id == 'outer'
+    assert current_context() == original
+
+
+def test_request_identity_comes_from_session():
+    from starlette.requests import Request
+
+    from apps.api.observability import context_from_request
+
+    request = Request({'type': 'http', 'headers': [(b'x-actor', b'FORGED'),
+                      (b'x-workspace-id', b'FOREIGN')],
+                      'state': {'request_id': 'ref-1', 'user':
+                                {'user_id': 'u1', 'workspace_id': 'ws-a'}}})
+    context = context_from_request(request, project_id='p1')
+    assert (context.request_id, context.workspace_id, context.user_id, context.project_id) == (
+        'ref-1', 'ws-a', 'u1', 'p1')
+
+
+def test_lifecycle_schema_and_logging_failure(caplog, monkeypatch):
+    import json
+
+    from klave_engine.common import diagnostics
+
+    context = diagnostics.DiagnosticContext(request_id='ref-1')
+    caplog.set_level(logging.INFO)
+    diagnostics.emit_job_event('job_started', context, outcome='running', stage='processing')
+    event = json.loads(next(r.message for r in caplog.records if r.name == 'klave.jobs'))
+    assert event['schema_version'] == 1 and event['request_id'] == 'ref-1'
+    assert event['ts'].endswith('+00:00')
+    assert set(event) == {'schema_version', 'ts', 'event', 'outcome', 'stage', 'error_code',
+                          'request_id', 'workspace_id', 'user_id', 'project_id', 'job_id', 'run_id'}
+    before = len(caplog.records)
+    diagnostics.emit_job_event('arbitrary-secret', context, outcome='running')
+    assert len(caplog.records) == before
+
+    def broken(*args, **kwargs):
+        raise OSError('broken logger')
+    monkeypatch.setattr(logging.getLogger('klave.jobs'), 'info', broken)
+    diagnostics.emit_job_event('job_started', context, outcome='running')
+
+
+def test_log_filter_keeps_request_id_and_attaches_context():
+    from klave_engine.common.diagnostics import DiagnosticContext, bind_context
+    from klave_engine.common.logging import _RequestIdFilter, request_id_var
+
+    token = request_id_var.set('ref-1')
+    try:
+        record = logging.makeLogRecord({'msg': 'safe'})
+        assert _RequestIdFilter().filter(record)
+        assert record.request_id == 'ref-1'
+        with bind_context(DiagnosticContext(workspace_id='ws-a', user_id='u1')):
+            _RequestIdFilter().filter(record)
+            assert record.workspace_id == 'ws-a' and record.user_id == 'u1'
+    finally:
+        request_id_var.reset(token)

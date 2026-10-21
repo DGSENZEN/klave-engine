@@ -26,7 +26,7 @@ from apps.api.auth.middleware import AccessControlMiddleware, allowed_origins, o
 from apps.api.auth.recovery import router as recovery_router
 from apps.api.auth.routes import router as auth_router
 from apps.api.events import BUS
-from apps.api.observability import RequestIdMiddleware, redact_request_path
+from apps.api.observability import RequestIdMiddleware, context_from_request, redact_request_path
 from apps.api.routes import ai as ai_routes
 from apps.api.routes import (
     cambios,
@@ -216,6 +216,9 @@ def create_app() -> FastAPI:
         Sin esto, un DWG que tumba al parser a las once de la noche se sabe
         cuando el taller escribe un correo — si lo escribe. La traza se queda
         en la máquina del taller: sus planos son de sus clientes."""
+        context = context_from_request(
+            request, project_id=str(request.path_params.get("project_id") or "")
+        )
         reference = getattr(request.state, "request_id", None) or request_id_var.get() or ""
         safe_path = redact_request_path(
             getattr(request.scope.get("route"), "path", None) or request.url.path
@@ -230,9 +233,9 @@ def create_app() -> FastAPI:
                 tipo=type(exc).__name__,
                 mensaje=redactar(str(exc)),
                 traza=redactar("".join(traceback.format_tb(exc.__traceback__)[-4:]), 2400),
-                workspace=str(
-                    (getattr(request.state, "user", None) or {}).get("workspace_id") or ""
-                ),
+                workspace=context.workspace_id, user_id=context.user_id,
+                project_id=context.project_id, operation="http_request",
+                error_code="request_failed",
             ),
         )
         logger.error("sin manejar en %s %s rid=%s tipo=%s",

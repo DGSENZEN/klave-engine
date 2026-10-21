@@ -17,6 +17,8 @@ from urllib.parse import urlsplit
 
 from klave_engine.common.config import get_settings
 
+from klave_engine.common.diagnostics import DiagnosticContext, bind_context
+
 from apps.api.auth.access import project_access_problem
 from apps.api.auth.store import UsersDbUnavailable, get_user_store
 
@@ -184,7 +186,14 @@ class AccessControlMiddleware:
                 return
 
         if denial is None:
-            await self.app(scope, receive, send)
+            state = scope.get("state", {})
+            actor = state.get("user") or {}
+            with bind_context(DiagnosticContext(
+                request_id=state.get("request_id", ""),
+                workspace_id=str(actor.get("workspace_id") or ""),
+                user_id=str(actor.get("user_id") or ""),
+            )):
+                await self.app(scope, receive, send)
             return
         status, body = denial
         await _respond(send, status, body)

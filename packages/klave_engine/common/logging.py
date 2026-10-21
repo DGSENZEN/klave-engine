@@ -8,6 +8,8 @@ import logging
 from contextvars import ContextVar
 from typing import Any
 
+from klave_engine.common.diagnostics import current_context
+
 _CONFIGURED = False
 
 # The id of the request being served, injected into every log line emitted
@@ -17,7 +19,10 @@ request_id_var: ContextVar[str] = ContextVar("klave_request_id", default="-")
 
 class _RequestIdFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
-        record.request_id = request_id_var.get()
+        context = current_context()
+        record.request_id = context.request_id or request_id_var.get()
+        for key in ("workspace_id", "user_id", "project_id", "job_id", "run_id"):
+            setattr(record, key, getattr(context, key))
         return True
 
 
@@ -27,7 +32,7 @@ def configure_logging(level: str = "INFO") -> None:
         return
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s rid=%(request_id)s %(message)s",
+        format="%(asctime)s %(levelname)s %(name)s rid=%(request_id)s ws=%(workspace_id)s uid=%(user_id)s job=%(job_id)s run=%(run_id)s %(message)s",
     )
     for handler in logging.getLogger().handlers:
         handler.addFilter(_RequestIdFilter())

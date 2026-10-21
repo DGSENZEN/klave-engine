@@ -9,11 +9,13 @@ one. Each response logs method, path, status and duration.
 from __future__ import annotations
 
 import re
+import logging
 import time
 import uuid
 
-from klave_engine.common.diagnostics import sanitize_path
+from klave_engine.common.diagnostics import DiagnosticContext, bind_context, safe_log, sanitize_path
 from klave_engine.common.logging import get_logger, request_id_var
+from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 logger = get_logger("klave.request")
@@ -26,6 +28,13 @@ _QUIET_PATHS = re.compile(r"^/(events|projects/[^/]+/events)$")
 
 def redact_request_path(path: str) -> str:
     return sanitize_path(path)
+
+
+def context_from_request(request: Request, *, project_id: str = "") -> DiagnosticContext:
+    user = getattr(request.state, "user", None) or {}
+    return DiagnosticContext(request_id=getattr(request.state, "request_id", ""),
+                             workspace_id=str(user.get("workspace_id") or ""),
+                             user_id=str(user.get("user_id") or ""), project_id=project_id)
 
 
 class RequestIdMiddleware:
@@ -55,12 +64,13 @@ class RequestIdMiddleware:
             await send(message)
 
         try:
-            await self.app(scope, receive, send_with_id)
+            with bind_context(DiagnosticContext(request_id=request_id)):
+                await self.app(scope, receive, send_with_id)
         finally:
             route = scope.get("route")
             path = redact_request_path(getattr(route, "path", None) or scope.get("path", ""))
             if not _QUIET_PATHS.match(path):
-                logger.info(
+                safe_log(logger, logging.INFO,
                     "%s %s -> %s in %.0f ms",
                     scope.get("method", "?"),
                     path,
