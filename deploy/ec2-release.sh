@@ -23,8 +23,9 @@ export KLAVE_BACKUP_IMAGE="klave-backup:$revision"
 api_stopped=0
 
 dc() {
+  # bash -s reads this script over SSH; attached containers must not consume it.
   sudo --preserve-env=KLAVE_API_IMAGE,KLAVE_BACKUP_IMAGE docker compose \
-    -p klave -f docker-compose.ec2.yml --env-file .env.prod "$@"
+    -p klave -f docker-compose.ec2.yml --env-file .env.prod "$@" < /dev/null
 }
 
 recover() {

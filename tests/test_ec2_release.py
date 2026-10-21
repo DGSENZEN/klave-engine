@@ -33,7 +33,9 @@ def release(tmp_path, failure):
         'printf "%s %s\\n" "${KLAVE_API_IMAGE:-legacy}" "$*" >> "$CALLS"\n'
         'case "$1" in inspect) echo sha256:previous; exit 0;; esac\n'
         'case "$*" in\n'
-        '  *"run --rm --no-deps backup once"*) [ "$FAILURE" != backup ];;\n'
+        '  *"run --rm --no-deps backup once"*) '
+        'if [ "$FAILURE" = stdin ]; then cat > /dev/null; fi; '
+        '[ "$FAILURE" != backup ];;\n'
         '  *"up -d"*) [ "$FAILURE" != readiness ] || '
         '[ "${KLAVE_API_IMAGE:-}" = sha256:previous ];;\n'
         '  *) exit 0;;\n'
@@ -46,8 +48,12 @@ def release(tmp_path, failure):
     # macOS has no flock; the production host and CI runner are Linux.
     (binaries / "flock").write_text("#!/bin/sh\nexit 0\n")
     (binaries / "flock").chmod(0o755)
-    result = subprocess.run(["bash", str(SCRIPT), SHA, str(archive)], env=env,
-                            capture_output=True, text=True)
+    command = ["bash", str(SCRIPT), SHA, str(archive)]
+    stdin = None
+    if failure == "stdin":
+        command = ["bash", "-s", "--", SHA, str(archive)]
+        stdin = SCRIPT.read_text()
+    result = subprocess.run(command, input=stdin, env=env, capture_output=True, text=True)
     return root, (tmp_path / "calls"), result
 
 
@@ -67,6 +73,13 @@ def test_successful_release_records_only_ready_revision(tmp_path):
     assert result.returncode == 0, result.stderr
     assert (root / ".release-current").read_text().strip() == SHA
     assert (root / ".env.prod").read_text() == "KEEP=private\n"
+
+
+def test_release_over_ssh_stdin_finishes_after_attached_backup(tmp_path):
+    root, calls, result = release(tmp_path, "stdin")
+    assert result.returncode == 0, result.stderr
+    assert (root / ".release-current").read_text().strip() == SHA
+    assert "up -d" in calls.read_text()
 
 
 def test_invalid_revision_does_not_touch_server(tmp_path):
