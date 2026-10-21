@@ -108,16 +108,21 @@ def check(directory: Path) -> None:
             compose(state, "exec", "-T", "api", ".venv/bin/python", "-c",
                     "from pathlib import Path; Path('/data/.smoke-marker').write_text('persisted')")
             compose(state, "restart", "api")
+            # Docker can allocate a new ephemeral host port on restart.
+            restarted_api = "http://" + compose(state, "port", "api", "8000")
             deadline = time.monotonic() + 60
             while time.monotonic() < deadline:
                 try:
-                    if client.get("/health").status_code == 200:
+                    if httpx.get(restarted_api + "/health", timeout=2).status_code == 200:
                         break
                 except httpx.HTTPError:
                     pass
                 time.sleep(0.5)
             else:
                 raise RuntimeError("Restarted API did not become live")
+            assert httpx.get(
+                restarted_api + "/workspace/overview", headers={"Cookie": cookie}, timeout=10,
+            ).status_code == 200
             marker = compose(
                 state, "exec", "-T", "api", ".venv/bin/python", "-c",
                 "from pathlib import Path; print(Path('/data/.smoke-marker').read_text())",
