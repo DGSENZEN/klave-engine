@@ -15,6 +15,7 @@ from klave_engine.ingestion.manifest import load_manifest, manifest_path, save_m
 from klave_engine.ingestion.project_loader import find_drawing_files, ingest_project
 from pydantic import BaseModel
 
+from apps.api.observability import context_from_request
 from apps.api.auth.access import require_project_role
 from apps.api.auth.common import db_unavailable, rate_limit
 from apps.api.auth.store import UsersDbUnavailable, get_user_store
@@ -336,7 +337,9 @@ async def upload_project(
         data={"project_name": manifest.project_name},
     )
     try:
-        job, _ = JOB_STORE.enqueue(project_id, root, settings)
+        job, _ = JOB_STORE.enqueue(
+            project_id, root, settings, context=context_from_request(request, project_id=project_id)
+        )
     except JobQueueFullError as exc:
         raise HTTPException(
             status_code=429,
@@ -450,7 +453,9 @@ def process_project(
     rate_limit(request, "process", max_attempts=30, window_seconds=3600.0)
     root = store.get_root(project_id)
     try:
-        job, _ = JOB_STORE.enqueue(project_id, root, settings)
+        job, _ = JOB_STORE.enqueue(
+            project_id, root, settings, context=context_from_request(request, project_id=project_id)
+        )
     except JobQueueFullError as exc:
         raise HTTPException(
             status_code=429,
@@ -524,7 +529,9 @@ async def add_project_files(
         data={"action": "sheets_added", "sheet_count": len(manifest.source_files)},
     )
     try:
-        job, _ = JOB_STORE.enqueue(project_id, root, settings)
+        job, _ = JOB_STORE.enqueue(
+            project_id, root, settings, context=context_from_request(request, project_id=project_id)
+        )
     except JobQueueFullError as exc:
         raise HTTPException(
             status_code=429,

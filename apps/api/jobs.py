@@ -10,16 +10,17 @@ not executor details.
 
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from klave_engine.common.config import Settings
+from klave_engine.common.diagnostics import DiagnosticContext, bind_context
 from klave_engine.common.errors import ConversionError
 from klave_engine.common.ids import short_uuid
 from klave_engine.common.io import read_json, write_json
-from klave_engine.common.logging import get_logger
+from klave_engine.common.logging import get_logger, request_id_var
 from klave_engine.costing.versions import snapshot_before_reprocess
 from klave_engine.ingestion.manifest import ProcessingStatus, load_manifest, save_manifest
 from klave_engine.pipeline import run_full_pipeline
@@ -50,6 +51,7 @@ class Job:
     error: str | None = None
     entity_count: int = 0
     detection_count: int = 0
+    diagnostic_context: DiagnosticContext = field(default_factory=DiagnosticContext)
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
@@ -67,10 +69,14 @@ class Job:
             "updated_at": self.updated_at.isoformat(),
         }
 
+    def to_record(self) -> dict[str, Any]:
+        return {**self.to_json(), "diagnostic_context": asdict(self.diagnostic_context)}
+
     @classmethod
     def from_json(cls, value: dict[str, Any]) -> "Job":
         return cls(
             project_id=str(value["project_id"]),
+            diagnostic_context=DiagnosticContext.from_record(value.get("diagnostic_context")),
             job_id=str(value["job_id"]),
             run_id=str(value["run_id"]),
             state=str(value.get("state", "failed")),
@@ -117,7 +123,10 @@ class JobStore:
             self._jobs[project_id] = job
         return job
 
-    def enqueue(self, project_id: str, root: Path, settings: Settings) -> tuple[Job, bool]:
+    def enqueue(
+        self, project_id: str, root: Path, settings: Settings, *,
+        context: DiagnosticContext | None = None,
+    ) -> tuple[Job, bool]:
         """Schedule a run, or return the already-active run for idempotency."""
         self.get(project_id, root, settings)  # hydrate from disk before deciding
 
@@ -135,6 +144,10 @@ class JobStore:
                 project_id=project_id,
                 job_id=short_uuid("job"),
                 run_id=short_uuid("run"),
+            )
+            job.diagnostic_context = replace(
+                context or DiagnosticContext(), project_id=project_id,
+                job_id=job.job_id, run_id=job.run_id,
             )
             self._jobs[project_id] = job
             if self._executor is None:
@@ -164,6 +177,18 @@ class JobStore:
         return repaired
 
     def _run(self, project_id: str, root: Path, settings: Settings) -> None:
+        with self._lock:
+            current = self._jobs.get(project_id)
+        if current is None:
+            return
+        token = request_id_var.set(current.diagnostic_context.request_id or "-")
+        try:
+            with bind_context(current.diagnostic_context):
+                self._run_bound(project_id, root, settings)
+        finally:
+            request_id_var.reset(token)
+
+    def _run_bound(self, project_id: str, root: Path, settings: Settings) -> None:
         job = self._update(
             project_id, root, settings, state="running", stage="Procesando dibujo", error=None
         )
@@ -264,8 +289,8 @@ class JobStore:
 
     def _persist(self, job: Job, root: Path, settings: Settings) -> None:
         control_dir = self._control_dir(root, settings)
-        write_json(control_dir / JOBS_DIR_NAME / f"{job.job_id}.json", job.to_json())
-        write_json(control_dir / LATEST_JOB_FILENAME, job.to_json())
+        write_json(control_dir / JOBS_DIR_NAME / f"{job.job_id}.json", job.to_record())
+        write_json(control_dir / LATEST_JOB_FILENAME, job.to_record())
 
     @staticmethod
     def _mark_manifest_failed(root: Path, settings: Settings) -> None:
