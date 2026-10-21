@@ -22,7 +22,7 @@ jobs:
           POSTGRES_DB: klave_users
         ports: ['5433:5432']
         options: >-
-          --health-cmd 'pg_isready -U klave_users -d klave_users'
+          --health-cmd "pg_isready -U klave_users -d klave_users"
           --health-interval 5s --health-timeout 3s --health-retries 10
     env:
       KLAVE_LOAD_DOTENV: '0'
