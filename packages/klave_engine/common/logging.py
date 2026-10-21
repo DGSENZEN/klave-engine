@@ -5,7 +5,7 @@ import traceback
 from contextvars import ContextVar
 from typing import Any
 
-from klave_engine.common.diagnostics import current_context, safe_log, sanitize_text
+from klave_engine.common.diagnostics import current_context, safe_log, sanitize_path, sanitize_text
 
 _CONFIGURED = False
 request_id_var: ContextVar[str] = ContextVar("klave_request_id", default="-")
@@ -37,6 +37,20 @@ class _RequestIdFilter(logging.Filter):
         return True
 
 
+class _AccessLogFilter(logging.Filter):
+    """Keep Uvicorn's five arguments intact for its access formatter."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple) and len(record.args) == 5:
+            address, method, path, version, status = record.args
+            record.args = (address, method, sanitize_path(str(path)), version, status)
+        else:
+            # An unexpected access-record shape must not bypass redaction.
+            record.msg, record.args = "Access diagnostic record omitted", ()
+            return False
+        return True
+
+
 class _SafeLogger(logging.LoggerAdapter):
     """Contain handler failures for existing application logging call sites."""
 
@@ -64,6 +78,7 @@ def configure_logging(level: str = "INFO") -> None:
     # Uvicorn has non-propagating handlers: filter the logger itself before
     # any of them formats the original exception Starlette re-raises.
     logging.getLogger("uvicorn.error").addFilter(_RequestIdFilter())
+    logging.getLogger("uvicorn.access").addFilter(_AccessLogFilter())
     _CONFIGURED = True
 
 

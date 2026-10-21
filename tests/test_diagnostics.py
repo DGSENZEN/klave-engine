@@ -234,3 +234,36 @@ def test_uvicorn_rendered_traceback_redacts_original_exception(data_dir, caplog)
     rendered = logging.Formatter("%(message)s").format(record)
     assert "RuntimeError" in rendered and "Traceback" in rendered
     assert "SECRET" not in rendered and "PRIVATE" not in rendered
+
+
+def test_uvicorn_access_formatter_redacts_paths_without_breaking_format(data_dir):
+    import io
+
+    from uvicorn.logging import AccessFormatter
+
+    from apps.api.main import create_app
+
+    create_app()
+    logger = logging.getLogger("uvicorn.access")
+    output = io.StringIO()
+    handler = logging.StreamHandler(output)
+    handler.setFormatter(AccessFormatter("%(request_line)s %(status_code)s", use_colors=False))
+    previous = logger.propagate, logger.level
+    logger.propagate = False  # Same dedicated-handler topology as Uvicorn.
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
+    try:
+        logger.info(
+            '%s - "%s %s HTTP/%s" %d',
+            "127.0.0.1:1",
+            "GET",
+            "/auth/reset/SECRET?code=PRIVATE",
+            "1.1",
+            200,
+        )
+    finally:
+        logger.removeHandler(handler)
+        logger.propagate, logger.level = previous
+    rendered = output.getvalue()
+    assert "GET /auth/reset/[redacted] HTTP/1.1" in rendered
+    assert "200" in rendered and "SECRET" not in rendered and "PRIVATE" not in rendered
