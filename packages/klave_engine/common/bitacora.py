@@ -21,12 +21,13 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import threading
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+from klave_engine.common.diagnostics import sanitize_text
 
 _LOCK = threading.Lock()
 
@@ -34,18 +35,9 @@ USO_DIRNAME = "bitacora/uso"
 ERRORES_DIRNAME = "bitacora/errores"
 RETENCION_DIAS = 90
 
-# Nunca escribimos secretos en la bitácora, ni siquiera por accidente.
-_SECRETO = re.compile(
-    r"(AIza[0-9A-Za-z_\-]{10,}|sk-[A-Za-z0-9_\-]{10,}|Bearer\s+[A-Za-z0-9._\-]{10,})"
-)
-_CORREO = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
-
-
 def redactar(texto: str, limite: int = 600) -> str:
-    """El texto sin llaves ni correos, recortado."""
-    limpio = _SECRETO.sub("«clave»", texto)
-    limpio = _CORREO.sub("«correo»", limpio)
-    return limpio[:limite]
+    """Redact token URLs, keys and email addresses before persistence."""
+    return sanitize_text(texto, limite)
 
 
 @dataclass

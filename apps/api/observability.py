@@ -12,6 +12,7 @@ import re
 import time
 import uuid
 
+from klave_engine.common.diagnostics import sanitize_path
 from klave_engine.common.logging import get_logger, request_id_var
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -24,8 +25,7 @@ _QUIET_PATHS = re.compile(r"^/(events|projects/[^/]+/events)$")
 
 
 def redact_request_path(path: str) -> str:
-    path = re.sub(r"(/by-token/)[^/]+", r"\1[redacted]", path)
-    return re.sub(r"^(/compartido/)[^/]+", r"\1[redacted]", path)
+    return sanitize_path(path)
 
 
 class RequestIdMiddleware:
@@ -57,7 +57,8 @@ class RequestIdMiddleware:
         try:
             await self.app(scope, receive, send_with_id)
         finally:
-            path = redact_request_path(scope.get("path", ""))
+            route = scope.get("route")
+            path = redact_request_path(getattr(route, "path", None) or scope.get("path", ""))
             if not _QUIET_PATHS.match(path):
                 logger.info(
                     "%s %s -> %s in %.0f ms",

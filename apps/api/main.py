@@ -217,7 +217,9 @@ def create_app() -> FastAPI:
         cuando el taller escribe un correo — si lo escribe. La traza se queda
         en la máquina del taller: sus planos son de sus clientes."""
         reference = getattr(request.state, "request_id", None) or request_id_var.get() or ""
-        safe_path = redact_request_path(request.url.path)
+        safe_path = redact_request_path(
+            getattr(request.scope.get("route"), "path", None) or request.url.path
+        )
         anotar_error(
             settings.data_dir,
             ErrorRegistrado(
