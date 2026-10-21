@@ -267,3 +267,12 @@ def test_uvicorn_access_formatter_redacts_paths_without_breaking_format(data_dir
     rendered = output.getvalue()
     assert "GET /auth/reset/[redacted] HTTP/1.1" in rendered
     assert "200" in rendered and "SECRET" not in rendered and "PRIVATE" not in rendered
+
+
+def test_best_effort_logger_preserves_existing_extra_fields(caplog):
+    from klave_engine.common.logging import get_logger
+
+    caplog.set_level(logging.INFO)
+    get_logger("klave.extra-contract").info("existing event", extra={"marker": "preserved"})
+    record = next(r for r in caplog.records if r.name == "klave.extra-contract")
+    assert record.marker == "preserved"

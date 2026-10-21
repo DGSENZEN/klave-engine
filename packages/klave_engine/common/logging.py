@@ -54,6 +54,11 @@ class _AccessLogFilter(logging.Filter):
 class _SafeLogger(logging.LoggerAdapter):
     """Contain handler failures for existing application logging call sites."""
 
+    def process(self, msg: Any, kwargs: Any) -> tuple[Any, Any]:
+        # This adapter adds safety, not replacement metadata. Preserve the
+        # existing Logger contract for explicit extra attributes.
+        return msg, kwargs
+
     def log(self, level: int, msg: Any, *args: Any, **kwargs: Any) -> None:
         try:
             super().log(level, msg, *args, **kwargs)
