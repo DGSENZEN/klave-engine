@@ -42,10 +42,21 @@ jobs:
         with:
           version: '0.9.24'
       - run: uv sync --frozen
+      - name: Use trusted HTTPS Ubuntu mirror for runner dependencies
+        run: |
+          set -euo pipefail
+          # The hosted runner's Azure mirror repeatedly stalled font/library
+          # downloads. Select its official HTTPS fallback; apt signatures stay on.
+          if test -f /etc/apt/apt-mirrors.txt; then
+            printf '%s\n' 'https://archive.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors.txt > /dev/null
+          fi
+          printf '%s\n' 'Acquire::Retries "2";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/99-klave-ci-network > /dev/null
       - name: Install matching PostgreSQL archive verifier
         run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client-16
       - run: npm --prefix apps/web ci
-      - run: npm --prefix apps/web exec -- playwright install --with-deps chromium
+      - name: Install Chromium and system dependencies
+        timeout-minutes: 10
+        run: npm --prefix apps/web exec -- playwright install --with-deps chromium
       - name: Create synthetic release configuration
         run: |
           cat > /tmp/klave-ci.env <<'ENV'
