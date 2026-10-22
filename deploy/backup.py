@@ -5,6 +5,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import secrets
 import shutil
 import sqlite3
@@ -49,8 +50,16 @@ def verify_backup(directory: Path) -> dict:
         if (directory / name).is_symlink():
             raise ValueError("Unsafe backup metadata symlink")
     manifest = json.loads((directory / "manifest.json").read_text())
-    if manifest.get("format_version") != 1 or set(manifest.get("archives", {})) != set(ARCHIVES):
+    if (not isinstance(manifest, dict) or manifest.get("format_version") != 1
+            or not isinstance(manifest.get("stamp"), str)
+            or not isinstance(manifest.get("archives"), dict)
+            or set(manifest["archives"]) != set(ARCHIVES)):
         raise ValueError("Invalid backup manifest")
+    for expected in manifest["archives"].values():
+        if (not isinstance(expected, dict) or type(expected.get("size")) is not int
+                or expected["size"] < 0 or not isinstance(expected.get("sha256"), str)
+                or not re.fullmatch(r"[0-9a-f]{64}", expected["sha256"])):
+            raise ValueError("Invalid backup manifest archive metadata")
     if (directory / "COMPLETE").read_text().strip() != manifest["stamp"]:
         raise ValueError("Invalid completion marker")
     for name in ARCHIVES:

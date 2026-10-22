@@ -110,3 +110,22 @@ def test_manifest_records_source_commit_and_rejects_metadata_symlinks(tmp_path, 
     manifest.symlink_to(outside)
     with pytest.raises(ValueError, match="metadata|symlink"):
         module.verify_backup(directory)
+
+
+@pytest.mark.parametrize("broken", ["stamp", "archives", "metadata"])
+def test_incomplete_manifest_is_rejected_as_invalid(tmp_path, monkeypatch, broken):
+    module = backup_module(monkeypatch)
+    data = tmp_path / "data"
+    data.mkdir()
+    directory = module.run_backup(data, tmp_path / "backups", 14)
+    path = directory / "manifest.json"
+    manifest = json.loads(path.read_text())
+    if broken == "stamp":
+        del manifest["stamp"]
+    elif broken == "archives":
+        manifest["archives"] = None
+    else:
+        manifest["archives"]["users.dump"] = {}
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="manifest"):
+        module.verify_backup(directory)

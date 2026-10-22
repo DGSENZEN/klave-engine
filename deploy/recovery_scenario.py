@@ -204,6 +204,11 @@ def run(directory: Path) -> None:
                 "status": "PASS",
                 "scope": "synthetic same-image restore only",
                 "backup_stamp": manifest["stamp"],
+                    "source_commit": state["source_commit"],
+                    "lock_sha256": {
+                        name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+                        for name in ("uv.lock", "apps/web/package-lock.json")
+                    },
                 "image_ids": state["image_ids"],
                 "restores": 2,
                 "source_sha256": source_hash,
