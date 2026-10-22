@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 OWNER = "klave-container-smoke-v1"
 
 
@@ -29,6 +30,7 @@ def claim(directory: Path) -> dict:
     state = {
         "owner": OWNER, "project": project,
         "api_image": f"klave-api:{sha}-{project}", "web_image": f"klave-web:{sha}-{project}",
+        "source_commit": command(["git", "rev-parse", "HEAD"]),
     }
     marker.write_text(json.dumps(state))
     marker.chmod(0o600)
@@ -46,7 +48,10 @@ def command(argv: list[str], *, env: dict | None = None, timeout: int = 120) -> 
 
 def compose(state: dict, *args: str, timeout: int = 120) -> str:
     env = {**os.environ, "KLAVE_API_IMAGE": state["api_image"],
-           "KLAVE_WEB_IMAGE": state["web_image"]}
+           "KLAVE_WEB_IMAGE": state["web_image"],
+           "KLAVE_BACKUP_IMAGE": state.get("backup_image", "klave-backup:smoke"),
+           "KLAVE_SOURCE_COMMIT": state.get("source_commit", "unknown"),
+           "KLAVE_RECOVERY_BACKUPS": state.get("backups", "/tmp/klave-unused-backups")}
     return command([
         "docker", "compose", "-p", state["project"], "-f", str(ROOT / "deploy/compose.smoke.yml"),
         *args,
@@ -62,6 +67,9 @@ def cleanup(directory: Path) -> None:
 
 def build(directory: Path) -> None:
     state = claim(directory)
+    state["backup_image"] = state["api_image"].replace("klave-api:", "klave-backup:")
+    state["backups"] = str(directory / "backups")
+    (directory / "backups").mkdir(mode=0o700, exist_ok=True)
     command([
         "docker", "build", "-f", "apps/api/Dockerfile", "-t", state["api_image"], ".",
     ], timeout=1800)
@@ -69,9 +77,12 @@ def build(directory: Path) -> None:
         "docker", "build", "-f", "apps/web/Dockerfile", "--build-arg",
         "NEXT_PUBLIC_API_URL=https://api.pilot.example.mx", "-t", state["web_image"], "apps/web",
     ], timeout=1200)
+    command([
+        "docker", "build", "-f", "deploy/backup.Dockerfile", "-t", state["backup_image"], ".",
+    ], timeout=600)
     state["image_ids"] = {
         key: command(["docker", "image", "inspect", "--format", "{{.Id}}", state[key]])
-        for key in ("api_image", "web_image")
+        for key in ("api_image", "web_image", "backup_image")
     }
     (directory / "smoke.json").write_text(json.dumps(state))
 
@@ -129,6 +140,10 @@ def check(directory: Path) -> None:
             )
             assert marker == "persisted"
             compose(state, "exec", "-T", "api", "dwg2dxf", "--version")
+        # Keep the original environment alive until both fresh restores finish.
+        from deploy.recovery_scenario import run as recovery_scenario
+
+        recovery_scenario(directory)
         print("Owned production-image smoke passed.")
     finally:
         cleanup(directory)

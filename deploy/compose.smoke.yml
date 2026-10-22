@@ -35,6 +35,16 @@ services:
     image: $KLAVE_WEB_IMAGE
     ports:
       - "127.0.0.1::3000"
+  backup:
+    image: ${KLAVE_BACKUP_IMAGE:?owned backup image required}
+    profiles: ["recovery"]
+    environment:
+      PGPASSWORD: synthetic-smoke-only
+      BACKUP_KEEP_DAYS: "14"
+      KLAVE_SOURCE_COMMIT: ${KLAVE_SOURCE_COMMIT:-unknown}
+    volumes:
+      - data:/data
+      - ${KLAVE_RECOVERY_BACKUPS:?owned backup destination required}:/backups
 volumes:
   users:
   data:

@@ -108,3 +108,13 @@ producto:
 Para promover una cantidad a verdad humana, cuantifícala a mano y cambia su
 `source` de `engine` a `human` en `evals/gold/<id>.json`, con una tolerancia
 estrecha y una nota que diga cómo se cuantificó.
+
+## Milestone 0 release evidence
+
+Gold aggregate status is PENDING (nonzero CLI exit) if the selection is empty or
+any selected source drawing is unavailable. An available regression failure is
+FAIL even when another fixture is unavailable. PASS requires every selected
+fixture to be available and pass. Individual unavailable entries remain listed;
+none is an accuracy result. Baseline/partial labels do not establish independent
+human ground truth. Keep private inputs outside Git and attach a release-tied
+private quantity/recall report and independent human review to G2.

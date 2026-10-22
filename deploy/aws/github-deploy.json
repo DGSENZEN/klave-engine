@@ -1,0 +1,138 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Klave M0: GitHub OIDC restricted to deployment environment; SSM tunnel fixed to SSH port 22 on one instance. Requires organization approval.",
+  "Parameters": {
+    "InstanceId": {
+      "Type": "String",
+      "AllowedPattern": "i-[0-9a-f]{17}"
+    },
+    "GitHubSubject": {
+      "Type": "String",
+      "Description": "Exact verified immutable repository subject ending :environment:KLAVE_ENV. Environment must remain main-only.",
+      "AllowedPattern": "repo:[^*?]+:environment:KLAVE_ENV"
+    }
+  },
+  "Resources": {
+    "GitHubProvider": {
+      "Type": "AWS::IAM::OIDCProvider",
+      "Properties": {
+        "Url": "https://token.actions.githubusercontent.com",
+        "ClientIdList": [
+          "sts.amazonaws.com"
+        ]
+      }
+    },
+    "SSHDocument": {
+      "Type": "AWS::SSM::Document",
+      "Properties": {
+        "Name": "Klave-DeploymentSSH",
+        "DocumentType": "Session",
+        "Content": {
+          "schemaVersion": "1.0",
+          "description": "Klave deployment SSH tunnel; fixed port, no interactive SSM shell.",
+          "sessionType": "Port",
+          "properties": {
+            "portNumber": "22"
+          }
+        }
+      }
+    },
+    "DeployRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "klave-github-deploy",
+        "MaxSessionDuration": 3600,
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Federated": {
+                  "Ref": "GitHubProvider"
+                }
+              },
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringEquals": {
+                  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                  "token.actions.githubusercontent.com:sub": {
+                    "Ref": "GitHubSubject"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "klave-one-instance-ssh",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "OnlyDeploymentInstance",
+                  "Effect": "Allow",
+                  "Action": "ssm:StartSession",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${InstanceId}"
+                  },
+                  "Condition": {
+                    "Bool": {
+                      "ssm:SessionDocumentAccessCheck": "true"
+                    }
+                  }
+                },
+                {
+                  "Sid": "OnlyFixedSSHDocument",
+                  "Effect": "Allow",
+                  "Action": "ssm:StartSession",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:document/Klave-DeploymentSSH"
+                  }
+                },
+                {
+                  "Sid": "OpenAuthenticatedChannel",
+                  "Effect": "Allow",
+                  "Action": "ssmmessages:OpenDataChannel",
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "EndOnlyOwnTargetSessions",
+                  "Effect": "Allow",
+                  "Action": "ssm:TerminateSession",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:session/*"
+                  },
+                  "Condition": {
+                    "StringEquals": {
+                      "ssm:resourceTag/aws:ssmmessages:target-id": {
+                        "Ref": "InstanceId"
+                      },
+                      "ssm:resourceTag/aws:ssmmessages:session-id": "${aws:userid}"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "DeployRoleArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "DeployRole",
+          "Arn"
+        ]
+      }
+    },
+    "SSHDocumentName": {
+      "Value": {
+        "Ref": "SSHDocument"
+      }
+    }
+  }
+}
