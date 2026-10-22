@@ -38,3 +38,25 @@ def test_preflight_failure_is_actionable_and_redacted(
     output = capsys.readouterr()
     assert category in output.err
     assert "private-address" not in output.err + output.out
+
+
+def test_ssm_aws_denial_is_redacted_and_does_not_retry_public_ssh(tmp_path, monkeypatch, capsys):
+    spec = importlib.util.spec_from_file_location("transport_check", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    calls = []
+
+    def ssh(argv, **kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(
+            argv, 255, "", "AccessDenied: private-role private-instance"
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", ssh)
+    assert module.preflight("private-host", "ubuntu", tmp_path, use_ssm=True) != 0
+    assert len(calls) == 1
+    assert any("ProxyCommand=python3" in value and "ssm_proxy.py" in value for value in calls[0])
+    error = capsys.readouterr().err
+    assert "AWS authorization" in error
+    assert "private-role" not in error
+    assert "private-instance" not in error

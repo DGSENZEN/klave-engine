@@ -90,6 +90,11 @@ def stage_commands(state_dir: Path) -> list[tuple[str, list[str]]]:
         ("browser-build", ["npm", "--prefix", "apps/web", "run", "build"]),
         ("browser", ["npm", "--prefix", "apps/web", "run", "test:e2e"]),
         ("production-build", ["npm", "--prefix", "apps/web", "run", "build"]),
+        ("backup-ops-build", ["docker", "build", "-f", "deploy/backup-ops.Dockerfile",
+                              "-t", "klave-backup-ops:verify", "."]),
+        ("backup-ops-tools", ["docker", "run", "--rm", "--network", "none",
+                              "--entrypoint", "aws", "klave-backup-ops:verify", "s3api",
+                              "put-object", "--generate-cli-skeleton", "input"]),
         ("container-build", [python, "deploy/smoke.py", "build", "--state-dir", str(state_dir)]),
         ("container-check", [python, "deploy/smoke.py", "check", "--state-dir", str(state_dir)]),
     ]

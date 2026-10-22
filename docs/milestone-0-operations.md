@@ -1,6 +1,6 @@
 # Milestone 0 operator handoff
 
-Use with [release gates](pilot-release-record.md), [diagnostics](diagnostics.md), [EC2](ec2.md) and [deployment](despliegue.md). A second operator must rehearse this with synthetic data before signing G8. Live transport, off-host destination and alert recipient are PENDING by owner decision. This document does not authorize production restoration.
+Use with [release gates](pilot-release-record.md), [diagnostics](diagnostics.md), [EC2](ec2.md) and [deployment](despliegue.md). A second operator must rehearse this with synthetic data before signing G8. Operator SSM access is verified. GitHub OIDC provisioning and the proposed S3 destination/alert setup remain PENDING approved infrastructure changes and live evidence. This document does not authorize production restoration.
 
 ## Identify and diagnose
 
@@ -20,7 +20,7 @@ Use response `X-Request-Id`, UTC time, job ID and run ID to inspect a bounded ma
 | Failed/interrupted job | Inspect authenticated `/projects/ID/status`; retry saved project through `POST /projects/ID/process`; verify reviews/output; never recompute through GET or upload another copy |
 | SSH timeout | Inspect instance state/stable address, approved runner source, security group, host firewall/routes and SSH service privately; compare host fingerprint out of band; never open TCP/22 globally or disable host-key checks |
 
-Restricted runner networking or SSM/OIDC requires a separately reviewed infrastructure change.
+The reviewed SSM/OIDC and S3 setup is described in [AWS setup](milestone-0-aws-setup.md). Its templates require explicit infrastructure approval; an organization OIDC denial remains unresolved. Do not merge the SSM-only workflow before provisioning succeeds.
 
 ## Synthetic recovery and game day
 
