@@ -62,12 +62,17 @@ def cleanup(state: dict) -> None:
 def restore(directory: Path, source: Path) -> dict:
     original = validate_target(directory)
     manifest = backup.verify_backup(source)
+    source_commit = manifest.get("source_commit", "unknown")
+    image_commit = original.get("source_commit", "unknown")
+    if source_commit != "unknown" and image_commit != "unknown" and source_commit != image_commit:
+        raise ValueError("Restore requires a matching source commit and API image")
     # Verify before allocating directories, containers, databases or volumes.
     token = secrets.token_hex(10)
     target = directory / ("recovery-" + token)
     target.mkdir(mode=0o700)
     state = {"owner": OWNER, "project": "klave-recovery-" + token,
-             "api_image": original["api_image"], "data": str(target / "data"),
+             "api_image": original.get("image_ids", {}).get("api_image", original["api_image"]),
+             "data": str(target / "data"),
              "backup_stamp": manifest["stamp"]}
     state_file = target / "recovery.json"
     state_file.write_text(json.dumps(state))

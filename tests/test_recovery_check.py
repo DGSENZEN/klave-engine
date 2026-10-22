@@ -184,3 +184,21 @@ def test_existing_scratch_resources_are_never_attached_or_deleted(tmp_path, monk
     with pytest.raises(ValueError, match="fresh"):
         module.restore(directory, source)
     assert (tmp_path / "original/drawing.dxf").read_bytes() == b"original drawing"
+
+
+def test_mismatched_known_source_commit_is_rejected_before_allocation(tmp_path, monkeypatch):
+    module, source, directory = prepared_backup(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        module.smoke, "command", lambda *a, **kw: pytest.fail("must reject before Docker")
+    )
+    manifest_path = source / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["source_commit"] = "a" * 40
+    manifest_path.write_text(json.dumps(manifest))
+    marker = directory / "smoke.json"
+    state = json.loads(marker.read_text())
+    state["source_commit"] = "b" * 40
+    marker.write_text(json.dumps(state))
+    with pytest.raises(ValueError, match="matching|commit"):
+        module.restore(directory, source)
+    assert list(directory.iterdir()) == [marker]

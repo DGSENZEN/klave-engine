@@ -28,7 +28,13 @@ def copy_verified(source: Path, destination: Path, state_file: Path) -> None:
         or source in destination.resolve().parents
     ):
         raise ValueError("Copy destination must be fresh and separate from source")
-    if source in state_file.resolve().parents:
+    state_path = state_file.resolve()
+    target_path = destination.resolve()
+    if (
+        source in state_path.parents
+        or target_path in state_path.parents
+        or state_path == target_path
+    ):
         raise ValueError("Operator state must be separate from the backup")
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = destination.parent / (".partial-copy-" + secrets.token_hex(10))

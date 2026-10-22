@@ -3,6 +3,7 @@
 import hashlib
 import importlib.util
 import json
+import os
 import time
 from pathlib import Path
 
@@ -163,7 +164,22 @@ def run(directory: Path) -> None:
     assert len(before) == 2 and set(before.values()) == {source_hash}
     smoke.compose(state, "stop", "api")
     try:
-        smoke.compose(state, "run", "--rm", "--no-deps", "backup", "once")
+        # Linux bind mounts preserve container root ownership. Transfer only
+        # this synthetic backup tree to the invoking runner, keeping mode 0700.
+        smoke.compose(
+            state,
+            "run",
+            "--rm",
+            "--no-deps",
+            "--entrypoint",
+            "/bin/sh",
+            "backup",
+            "-c",
+            'python3 /backup.py once && chown -R "$1:$2" /backups',
+            "owned-synthetic-backup",
+            str(os.getuid()),
+            str(os.getgid()),
+        )
         backups = directory / "backups"
         sources = [path for path in backups.iterdir() if (path / "COMPLETE").is_file()]
         assert len(sources) == 1
