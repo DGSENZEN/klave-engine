@@ -50,3 +50,11 @@ gh run list --workflow release-check.yml --branch main
 Keep at least the previous API image and matching verified backup until the
 next release is accepted. Off-server backup copies and a complete restore
 drill remain operational requirements; a passing CI run does not prove them.
+
+Milestone 0 adds bounded, redacted SSH preflight and stages source under
+`.releases/` before building. Accepted SHA directories are immutable; archive
+extraction never overwrites legacy source or private configuration. Select the
+accepted release's Compose file for subsequent operations. The mandatory
+container stage includes actual backup creation and two fresh synthetic
+restore/export drills. See [operator handoff](milestone-0-operations.md) and
+the [gate record](pilot-release-record.md) for proof boundaries and pending work.

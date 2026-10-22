@@ -95,3 +95,18 @@ def test_manifest_cannot_reference_outside_files(tmp_path, monkeypatch):
     (directory / "manifest.json").write_text(json.dumps(manifest))
     with pytest.raises(ValueError):
         module.verify_backup(directory)
+
+
+def test_manifest_records_source_commit_and_rejects_metadata_symlinks(tmp_path, monkeypatch):
+    module = backup_module(monkeypatch)
+    monkeypatch.setenv("KLAVE_SOURCE_COMMIT", "a" * 40)
+    data = tmp_path / "data"
+    data.mkdir()
+    directory = module.run_backup(data, tmp_path / "backups", 14)
+    assert module.verify_backup(directory)["source_commit"] == "a" * 40
+    manifest = directory / "manifest.json"
+    outside = tmp_path / "outside.json"
+    manifest.rename(outside)
+    manifest.symlink_to(outside)
+    with pytest.raises(ValueError, match="metadata|symlink"):
+        module.verify_backup(directory)

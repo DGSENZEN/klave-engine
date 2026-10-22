@@ -42,6 +42,8 @@ jobs:
         with:
           version: '0.9.24'
       - run: uv sync --frozen
+      - name: Install matching PostgreSQL archive verifier
+        run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client-16
       - run: npm --prefix apps/web ci
       - run: npm --prefix apps/web exec -- playwright install --with-deps chromium
       - name: Create synthetic release configuration
@@ -120,6 +122,8 @@ jobs:
         env:
           SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
           SSH_KNOWN_HOSTS: ${{ vars.EC2_KNOWN_HOSTS }}
+      - name: Preflight approved SSH transport
+        run: python3 deploy/transport_check.py
       - name: Back up and deploy tested API commit
         run: |
           set -euo pipefail
@@ -127,7 +131,7 @@ jobs:
           git archive --format=tar.gz -o "$archive" HEAD \
             apps/api apps/__init__.py packages pyproject.toml uv.lock README.md \
             .dockerignore docker-compose.ec2.yml deploy
-          options=(-i "$RUNNER_TEMP/klave-ssh/key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/klave-ssh/known_hosts" -o ConnectTimeout=15)
+          options=(-i "$RUNNER_TEMP/klave-ssh/key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/klave-ssh/known_hosts" -o ConnectTimeout=15 -o ConnectionAttempts=1 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
           scp "${options[@]}" "$archive" "$EC2_USER@$EC2_HOST:klave-release-$GITHUB_SHA.tar.gz"
           ssh "${options[@]}" "$EC2_USER@$EC2_HOST" "bash -s -- '$GITHUB_SHA' \"\$HOME/klave-release-$GITHUB_SHA.tar.gz\"" < deploy/ec2-release.sh
       - name: Verify public API

@@ -45,6 +45,9 @@ def safe_members(archive: tarfile.TarFile) -> list[tarfile.TarInfo]:
 def verify_backup(directory: Path) -> dict:
     if directory.is_symlink() or not (directory / "COMPLETE").is_file():
         raise ValueError("Backup is not complete")
+    for name in ("COMPLETE", "manifest.json"):
+        if (directory / name).is_symlink():
+            raise ValueError("Unsafe backup metadata symlink")
     manifest = json.loads((directory / "manifest.json").read_text())
     if manifest.get("format_version") != 1 or set(manifest.get("archives", {})) != set(ARCHIVES):
         raise ValueError("Invalid backup manifest")
@@ -135,6 +138,7 @@ def run_backup(data_dir: Path, backup_dir: Path, keep_days: int) -> Path:
         shutil.rmtree(snapshots)
         manifest = {
             "format_version": 1, "stamp": stamp, "created_at": now.isoformat(),
+            "source_commit": os.environ.get("KLAVE_SOURCE_COMMIT", "unknown"),
             "archives": {
                 name: {"size": (staging / name).stat().st_size,
                        "sha256": _digest(staging / name)} for name in ARCHIVES
