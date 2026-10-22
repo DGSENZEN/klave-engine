@@ -5,6 +5,8 @@ import importlib.util
 import json
 import os
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
@@ -56,15 +58,16 @@ print(json.dumps(out, sort_keys=True))
 """
 
 
-def login(url: str, email: str) -> httpx.Client:
-    client = httpx.Client(base_url=url, timeout=60)
-    response = client.post("/auth/login", json={"email": email, "password": PASSWORD})
-    response.raise_for_status()
-    if response.json()["role"] != "admin":
-        raise AssertionError("Restored account role changed")
-    # Secure cookies are forwarded explicitly for this loopback-only drill.
-    client.headers["Cookie"] = response.headers["set-cookie"].split(";", 1)[0]
-    return client
+@contextmanager
+def login(url: str, email: str) -> Iterator[httpx.Client]:
+    with httpx.Client(base_url=url, timeout=60) as client:
+        response = client.post("/auth/login", json={"email": email, "password": PASSWORD})
+        response.raise_for_status()
+        if response.json()["role"] != "admin":
+            raise AssertionError("Restored account role changed")
+        # Secure cookies are forwarded explicitly for this loopback-only drill.
+        client.headers["Cookie"] = response.headers["set-cookie"].split(";", 1)[0]
+        yield client
 
 
 def upload(client: httpx.Client) -> str:
@@ -204,11 +207,11 @@ def run(directory: Path) -> None:
                 "status": "PASS",
                 "scope": "synthetic same-image restore only",
                 "backup_stamp": manifest["stamp"],
-                    "source_commit": state["source_commit"],
-                    "lock_sha256": {
-                        name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
-                        for name in ("uv.lock", "apps/web/package-lock.json")
-                    },
+                "source_commit": state["source_commit"],
+                "lock_sha256": {
+                    name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+                    for name in ("uv.lock", "apps/web/package-lock.json")
+                },
                 "image_ids": state["image_ids"],
                 "restores": 2,
                 "source_sha256": source_hash,
