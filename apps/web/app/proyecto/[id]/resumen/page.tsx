@@ -52,6 +52,7 @@ import {
 } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
 import { timeAgo } from "@/lib/time";
+import { uploadErrorMessage, validateDrawingFiles } from "@/lib/uploads";
 import { moneyState, UnitsGate } from "@/components/MoneyGate";
 
 export default function Resumen() {
@@ -380,13 +381,19 @@ function SheetsCard({ id, project }: { id: string; project: ProjectInfo }) {
   async function onFiles(list: FileList) {
     const files = [...list].filter((f) => /\.(dwg|dxf)$/i.test(f.name));
     if (files.length === 0) return;
+    // Mismo límite que la subida inicial: todo viaja en una sola petición.
+    const invalid = validateDrawingFiles(files);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       await addProjectFiles(id, files, getBrowserActor());
       // The re-enqueued job flips the project gate to the processing screen.
-    } catch {
-      setError("No se pudieron agregar las hojas.");
+    } catch (e) {
+      setError(uploadErrorMessage(e, "No se pudieron agregar las hojas."));
       setBusy(false);
     }
   }
