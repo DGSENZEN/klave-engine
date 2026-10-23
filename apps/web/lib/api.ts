@@ -3270,7 +3270,9 @@ export async function getShared<T>(token: string, path = ""): Promise<T> {
   const res = await fetch(`${API_BASE}/compartido/${encodeURIComponent(token)}${path}`, {
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(String(res.status));
+  // Sin sesión: un 401 aquí no es «tu sesión terminó». El token no viaja en
+  // la ruta del error para que no acabe en un registro.
+  if (!res.ok) throw await errorFromResponse(res, `/compartido/[token]${path}`, false);
   return (await res.json()) as T;
 }
 

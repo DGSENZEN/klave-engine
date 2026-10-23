@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Warning } from "@phosphor-icons/react";
 import { Button, buttonClasses, Input } from "@/components/ui";
+import { useDialogFocus } from "@/components/Modal";
 
 /**
  * Deliberate friction for destructive or authority-changing actions.
@@ -41,17 +42,18 @@ export function ConfirmDialog({
     if (open) setTyped("");
   }
 
+  // Cancelar recibe el foco al abrir; Tab no sale del diálogo y al cerrar
+  // el foco vuelve al botón que lo abrió.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onDialogKeyDown = useDialogFocus(open, dialogRef, cancelRef);
+
   useEffect(() => {
     if (!open) return;
-    const handle = window.setTimeout(() => cancelRef.current?.focus(), 0);
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onCancel();
     }
     document.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.clearTimeout(handle);
-      document.removeEventListener("keydown", onKeyDown);
-    };
+    return () => document.removeEventListener("keydown", onKeyDown);
   }, [open, onCancel]);
 
   if (!open) return null;
@@ -66,10 +68,13 @@ export function ConfirmDialog({
         className="absolute inset-0 bg-foreground/40 backdrop-blur-[2px]"
       />
       <div
+        ref={dialogRef}
         role="alertdialog"
         aria-modal="true"
         aria-label={title}
-        className="toast-in relative w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-lg"
+        tabIndex={-1}
+        onKeyDown={onDialogKeyDown}
+        className="toast-in relative w-full outline-none max-w-md rounded-xl border border-border bg-surface p-5 shadow-lg"
       >
         <div className="mb-2 flex items-center gap-2.5">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger">

@@ -35,6 +35,9 @@ export type NodeEntry = {
   href: string;
   /** Rutas hermanas que también cuentan como esta entrada (p.ej. /flujo). */
   also?: string[];
+  /** La pantalla no espera al candado de su nodo (GateGuard): el tablero la
+   * sigue ofreciendo aunque el nodo esté cerrado. */
+  sinCandado?: boolean;
 };
 
 export type NodeNav = {
@@ -155,6 +158,9 @@ export const NODE_NAV: NodeNav[] = [
         label: "Parámetros e insumos",
         icon: <Coins size={16} />,
         href: "/parametros",
+        // Los supuestos alimentan al presupuesto y son el paso 3 de la ruta
+        // de verificación: no pueden esperar a que se abra el programa.
+        sinCandado: true,
       },
     ],
   },
@@ -203,9 +209,20 @@ export const NODE_NAV: NodeNav[] = [
   },
 ];
 
-/** Resuelve un href de entrada a ruta real (el catálogo es del taller). */
+/** Un id de proyecto tal como lo emite el motor (`proj_1a2b3c4d`): nada que
+ * pueda volverse otra ruta u otro origen al armar un enlace. */
+export function isProjectSlug(value: string | null | undefined): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(value);
+}
+
+/**
+ * Resuelve un href de entrada a ruta real. El catálogo es del taller y vive
+ * fuera de la obra; lleva `?desde=` para que desde ahí se pueda volver.
+ */
 export function entryHref(base: string, entry: NodeEntry): string {
-  return entry.href === "/catalogo" ? entry.href : `${base}${entry.href}`;
+  if (entry.href !== "/catalogo") return `${base}${entry.href}`;
+  const id = base.replace(/^\/proyecto\//, "");
+  return isProjectSlug(id) ? `/catalogo?desde=${id}` : entry.href;
 }
 
 /** En qué nodo está parada esta ruta, para la barra lateral contextual. */

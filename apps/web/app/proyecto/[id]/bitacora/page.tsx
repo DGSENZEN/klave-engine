@@ -29,6 +29,7 @@ import {
   type NotaBitacora,
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
+import { isoDateLocal } from "@/lib/time";
 import {
   Badge,
   Button,
@@ -60,7 +61,7 @@ const TONO_PARTE: Record<string, "accent" | "success" | "default"> = {
 };
 
 function hoy() {
-  return new Date().toISOString().slice(0, 10);
+  return isoDateLocal();
 }
 
 function Nota({

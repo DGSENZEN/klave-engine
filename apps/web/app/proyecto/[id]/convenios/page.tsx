@@ -20,6 +20,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { FilePlus, Scales, Trash, Warning } from "@phosphor-icons/react";
 import {
+  apiMessage,
   borradorConvenio,
   borrarConvenio,
   getConvenios,
@@ -31,6 +32,7 @@ import {
   type EstimacionConResumen,
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
+import { isoDateLocal } from "@/lib/time";
 import {
   Badge,
   Button,
@@ -167,11 +169,10 @@ export default function ConveniosPage() {
   async function proponer(numero: number) {
     setError(null);
     try {
-      const hoy = new Date().toISOString().slice(0, 10);
-      const { convenio } = await borradorConvenio(id, numero, hoy);
+      const { convenio } = await borradorConvenio(id, numero, isoDateLocal());
       setBorrador(convenio);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo armar el borrador.");
+      setError(apiMessage(err, "No se pudo armar el borrador."));
     }
   }
 
@@ -182,13 +183,23 @@ export default function ConveniosPage() {
       return;
     }
     setError(null);
-    await guardarConvenio(id, borrador.numero, borrador, getBrowserActor());
+    try {
+      await guardarConvenio(id, borrador.numero, borrador, getBrowserActor());
+    } catch (err) {
+      setError(apiMessage(err, "No se pudo guardar el convenio. El borrador sigue abierto; inténtalo de nuevo."));
+      return;
+    }
     setBorrador(null);
     await cargar();
   }
 
   async function eliminar(numero: number) {
-    await borrarConvenio(id, numero, getBrowserActor());
+    setError(null);
+    try {
+      await borrarConvenio(id, numero, getBrowserActor());
+    } catch (err) {
+      setError(apiMessage(err, "No se pudo eliminar el convenio."));
+    }
     setConfirmar(null);
     await cargar();
   }
