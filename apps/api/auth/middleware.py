@@ -81,7 +81,7 @@ def _cookie_token(scope: dict[str, Any]) -> str | None:
 
 def _required_project_role(segments: list[str], method: str) -> str | None:
     """Role needed for /projects/... paths; None means active-user only."""
-    if len(segments) < 2 or segments[1] == "upload":
+    if len(segments) < 2 or segments[1] in ("upload", "demo"):
         return None
     if len(segments) == 2:
         return "owner" if method in ("PATCH", "DELETE") else "viewer"

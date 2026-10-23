@@ -807,6 +807,12 @@ def _generadores(
     refs = referencias(
         report.project_id, detections, segmentation, report.drawing_units.to_meters()
     )
+    # La medida de cada elemento en las mismas unidades que su renglón: el
+    # dibujo puede venir en centímetros, el respaldo siempre en metros. Sin
+    # unidades confiables el BoQ ya avisa y usa 1, igual aquí.
+    meters = report.drawing_units.to_meters() or 1.0
+    power = {"length": 1, "area": 2}
+    visibles = claves_visibles(report)
     origin = web_origin.rstrip("/")
     row = 1
     _title(ws, row, "Números generadores", size=13)
@@ -817,7 +823,8 @@ def _generadores(
     )
     row += 3
     for line in report.boq.lines:
-        _title(ws, row, f"{line.taller_clave or ''} {line.description}".strip(), size=11)
+        clave_visible = visibles.get(line.concept_code, "")
+        _title(ws, row, f"{clave_visible} {line.description}".strip(), size=11)
         row += 1
         _muted(
             ws, row, 1,
@@ -856,7 +863,8 @@ def _generadores(
                 measure: Any = 1
                 for prop in KIND_PROPERTY.get(line.raw_kind.value, ()):
                     if detection.properties.get(prop) is not None:
-                        measure = round(float(detection.properties[prop]), 3)
+                        scale = meters ** power.get(line.raw_kind.value, 0)
+                        measure = round(float(detection.properties[prop]) * scale, 3)
                         break
                 ref = refs.get(detection_id)
                 values: list[Any] = [

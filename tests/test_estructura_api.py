@@ -1096,3 +1096,14 @@ def test_a_request_reads_the_decisions_file_once(data_dir, monkeypatch):
     monkeypatch.setattr(modelo, "read_json", contando)
     body = client.get(f"/projects/{pid}/estructura").json()
     assert body["al_dia"] is True and len(lecturas) == 1
+
+
+def test_la_app_real_monta_la_lectura_estructural():
+    # El router existía y nadie lo montaba: el modelo cambiaba el acero y
+    # sus verificaciones contestaban 404 en producción.
+    from apps.api.main import create_app
+
+    paths = {getattr(route, "path", "") for route in create_app().routes}
+    assert "/projects/{project_id}/estructura" in paths
+    assert "/projects/{project_id}/estructura/elementos" in paths
+    assert "/projects/{project_id}/estructura/decisiones" in paths
