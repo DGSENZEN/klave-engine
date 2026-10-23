@@ -20,8 +20,8 @@ from pathlib import PurePath
 from pydantic import BaseModel, Field
 
 from klave_engine.costing.models import CostReport
-from klave_engine.costing.referencias import element_id
 from klave_engine.detection.results import Detection, DetectionType
+from klave_engine.ingestion.project_loader import clave_de_hoja
 
 # Lo que el motor lee para ubicar, no para cobrar: la malla se renumera sola.
 _CONTEXTO = {DetectionType.grid_line, DetectionType.grid_intersection}
@@ -86,6 +86,29 @@ def _hoja(d: Detection) -> str:
     return PurePath(d.evidence.source or "").name
 
 
+def _claves(detecciones: list[Detection]) -> dict[str, str]:
+    """Cada archivo de una lectura → la hoja que es («S-101»): así la revisión C
+    subida con otro nombre se compara con la B. Si dos archivos de la misma
+    lectura dicen ser la misma hoja, ninguno se junta por número: cada uno
+    queda con su nombre, nunca se adivina cuál es cuál."""
+    nombres = {_hoja(d) for d in detecciones}
+    por_clave: dict[str, list[str]] = defaultdict(list)
+    for nombre in nombres:
+        por_clave[clave_de_hoja(nombre).casefold()].append(nombre)
+    return {
+        nombre: (clave if len(por_clave[clave]) == 1 else f"archivo:{nombre}")
+        for clave in por_clave
+        for nombre in por_clave[clave]
+    }
+
+
+def _identidad(d: Detection, factor: float) -> tuple[str, str, int, int]:
+    """Tipo, marca y posición a 5 cm, sin el nombre del archivo: dentro de un
+    grupo ya es la misma hoja (lo que ``element_id`` hace con el archivo)."""
+    cx, cy = _centro_m(d, factor)
+    return d.detection_type.value, d.mark or "", round(cx / MOVIDO_M), round(cy / MOVIDO_M)
+
+
 def _centro_m(d: Detection, factor: float) -> tuple[float, float]:
     x0, y0, x1, y1 = d.bbox
     return (x0 + x1) / 2.0 * factor, (y0 + y1) / 2.0 * factor
@@ -130,12 +153,13 @@ def comparar_elementos(
     fa, fd = factor_antes or 1.0, factor_despues or 1.0
     grupos_a: dict[tuple, list[Detection]] = defaultdict(list)
     grupos_d: dict[tuple, list[Detection]] = defaultdict(list)
+    claves_a, claves_d = _claves(antes), _claves(despues)
     for d in antes:
         if d.detection_type not in _CONTEXTO:
-            grupos_a[(_hoja(d), d.detection_type.value)].append(d)
+            grupos_a[(claves_a[_hoja(d)], d.detection_type.value)].append(d)
     for d in despues:
         if d.detection_type not in _CONTEXTO:
-            grupos_d[(_hoja(d), d.detection_type.value)].append(d)
+            grupos_d[(claves_d[_hoja(d)], d.detection_type.value)].append(d)
     out: list[CambioElemento] = []
 
     def cambio(tipo: str, a: Detection | None, b: Detection | None, movido: float = 0.0,
@@ -156,12 +180,12 @@ def comparar_elementos(
         libres_d = list(grupos_d.get(key, []))
         pares: list[tuple[Detection, Detection, float]] = []
         # 1 · Misma identidad: misma marca y misma posición (5 cm).
-        por_id: dict[str, list[Detection]] = defaultdict(list)
+        por_id: dict[tuple, list[Detection]] = defaultdict(list)
         for b in libres_d:
-            por_id[element_id(b, fd)].append(b)
+            por_id[_identidad(b, fd)].append(b)
         quedan_a = []
         for a in libres_a:
-            candidatos = por_id.get(element_id(a, fa))
+            candidatos = por_id.get(_identidad(a, fa))
             if candidatos:
                 # Varias piezas pueden compartir identidad (corridas partidas
                 # por diámetro, tableros con el mismo centro): se toma la que
