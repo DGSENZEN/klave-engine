@@ -41,7 +41,14 @@ export default function RecuperarPage() {
   return (
     <AuthFrame
       title="Recuperar acceso"
-      sub="Te enviamos un enlace para elegir una contraseña nueva."
+      sub={
+        // El subtítulo no promete un correo que este taller no manda.
+        mailEnabled === null
+          ? "Con un enlace de un solo uso eliges una contraseña nueva."
+          : mailEnabled
+            ? "Te enviamos un enlace para elegir una contraseña nueva."
+            : "Un administrador de tu taller te entrega el enlace para elegir una contraseña nueva."
+      }
       footer={
         <Link href="/bienvenida" className="inline-flex items-center gap-1.5 hover:text-foreground">
           <ArrowLeft size={14} weight="bold" /> Volver a entrar
