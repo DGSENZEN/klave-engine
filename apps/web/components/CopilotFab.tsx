@@ -16,7 +16,9 @@ import { Copilot } from "@/components/Copilot";
  * abrirla, que es la diferencia entre una herramienta y un adorno.
  */
 
-// Pantallas de acceso y recuperación: ahí no hay nada que copilotear.
+// Pantallas públicas —acceso, recuperación, ligas compartidas y las de
+// lectura (glosario, cómo funciona)—: se abren sin sesión, y un visitante
+// que tocara el botón acabaría en «Tu sesión terminó».
 const SIN_COPILOTO = [
   "/compartido",
   "/bienvenida",
@@ -24,6 +26,8 @@ const SIN_COPILOTO = [
   "/recuperar",
   "/restablecer",
   "/verificar",
+  "/glosario",
+  "/como-funciona",
 ];
 
 export function CopilotFab() {
@@ -54,7 +58,7 @@ export function CopilotFab() {
 
   const pendientes = projectId && conteo?.id === projectId ? conteo.n : 0;
 
-  if (SIN_COPILOTO.some((ruta) => pathname.startsWith(ruta))) return null;
+  if (SIN_COPILOTO.some((ruta) => pathname === ruta || pathname.startsWith(ruta + "/"))) return null;
 
   return (
     <>

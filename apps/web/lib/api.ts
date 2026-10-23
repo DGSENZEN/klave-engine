@@ -2687,11 +2687,62 @@ export const uploadProject = async (
   }
 };
 
-export const addProjectFiles = (id: string, files: File[], actor?: string) =>
+/**
+ * Agregar hojas. Una hoja cuyo número ya está contesta 409 `hoja_repetida`
+ * (con sus parejas) salvo que se diga qué hacer: `reemplazar` pone cada
+ * revisión en el lugar de su hoja; `agregar` las suma tal cual.
+ */
+export const addProjectFiles = (
+  id: string,
+  files: File[],
+  actor?: string,
+  repetidas?: "reemplazar" | "agregar",
+) =>
   postFiles<{ project_id: string; sheet_count: number; warnings: string[] }>(
-    `/projects/${id}/files`,
+    `/projects/${id}/files${repetidas ? `?repetidas=${repetidas}` : ""}`,
     files,
     actor,
+  );
+
+/** Las parejas de un 409 `hoja_repetida`, o null si el error es otro. */
+export function hojasRepetidas(error: unknown): { nueva: string; existente: string }[] | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null;
+  const detail = error.detail as { error_type?: unknown; repetidas?: unknown } | undefined;
+  if (detail?.error_type !== "hoja_repetida" || !Array.isArray(detail.repetidas)) return null;
+  return detail.repetidas as { nueva: string; existente: string }[];
+}
+
+/** La revisión nueva de una hoja ocupa su lugar; la vieja se aparta. */
+export const replaceProjectFile = async (
+  id: string,
+  filename: string,
+  file: File,
+  actor?: string,
+) => {
+  const path = `/projects/${encodeURIComponent(id)}/files/${encodeURIComponent(filename)}`;
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "PUT",
+    credentials: "include",
+    headers: actor ? { "X-Actor": actor } : undefined,
+    body: form,
+  });
+  if (!res.ok) {
+    let detail: unknown;
+    try {
+      detail = (await res.json())?.detail;
+    } catch {}
+    throw await errorFromResponse(res, path, true, detail);
+  }
+  return res.json() as Promise<{ project_id: string; hoja: string; sheet_count: number }>;
+};
+
+/** Saca la hoja de la lectura (apartada, no borrada) y reprocesa. */
+export const retireProjectFile = (id: string, filename: string, actor?: string) =>
+  deleteJSON<{ project_id: string; retirada: string; sheet_count: number }>(
+    `/projects/${encodeURIComponent(id)}/files/${encodeURIComponent(filename)}`,
+    actor ? { "X-Actor": actor } : undefined,
   );
 
 export const patchProject = (
@@ -3270,7 +3321,9 @@ export async function getShared<T>(token: string, path = ""): Promise<T> {
   const res = await fetch(`${API_BASE}/compartido/${encodeURIComponent(token)}${path}`, {
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(String(res.status));
+  // Sin sesión: un 401 aquí no es «tu sesión terminó». El token no viaja en
+  // la ruta del error para que no acabe en un registro.
+  if (!res.ok) throw await errorFromResponse(res, `/compartido/[token]${path}`, false);
   return (await res.json()) as T;
 }
 
