@@ -38,6 +38,7 @@ from apps.api.routes import (
     detections,
     disciplinas,
     entities,
+    estructura,
     events,
     exports,
     geometry,
@@ -108,7 +109,16 @@ def create_app() -> FastAPI:
             pass
         yield
 
-    app = FastAPI(title="Klave Engine", version="0.2.0", lifespan=lifespan)
+    dev = settings.env != "production"
+    # El mapa de la API es para quien la desarrolla: en producción no se publica.
+    app = FastAPI(
+        title="Klave Engine",
+        version="0.2.0",
+        lifespan=lifespan,
+        docs_url="/docs" if dev else None,
+        redoc_url="/redoc" if dev else None,
+        openapi_url="/openapi.json" if dev else None,
+    )
 
     # Session-based access control. Added before CORS so CORS wraps it and
     # 401/403 responses still carry CORS headers the browser can read.
@@ -122,7 +132,6 @@ def create_app() -> FastAPI:
 
     # Local-first single workspace: allow the Next.js dev server. Credentials
     # are required so the HttpOnly session cookie travels with fetch and SSE.
-    dev = settings.env != "production"
     app.add_middleware(
         CORSMiddleware,
         allow_origins=(
@@ -174,6 +183,7 @@ def create_app() -> FastAPI:
     app.include_router(disciplinas.router)
     app.include_router(exports.router)
     app.include_router(reviews.router)
+    app.include_router(estructura.router)
     app.include_router(version_routes.router)
     app.include_router(croquis_routes.router)
     app.include_router(catalog.router)
