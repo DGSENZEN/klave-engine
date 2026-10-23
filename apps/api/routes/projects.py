@@ -3,7 +3,7 @@ import shutil
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request, UploadFile
 from klave_engine.common.config import Settings
@@ -25,7 +25,7 @@ from apps.api.auth.common import db_unavailable, rate_limit
 from apps.api.auth.store import UsersDbUnavailable, get_user_store
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
-from apps.api.jobs import JOB_STORE, JobQueueFullError
+from apps.api.jobs import ACTIVE_STATES, JOB_STORE, JobQueueFullError
 from apps.api.observability import context_from_request
 from apps.api.tenancy import defaults_scope, request_workspace_id
 
@@ -556,7 +556,7 @@ async def add_project_files(
     project_id: str,
     request: Request,
     files: list[UploadFile],
-    como_nuevas: bool = False,
+    repetidas: Literal["preguntar", "reemplazar", "agregar"] = "preguntar",
     x_actor: Annotated[str | None, Header()] = None,
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
@@ -564,35 +564,60 @@ async def add_project_files(
     """Add sheets to an existing project and reprocess it as one drawing set.
 
     Una hoja cuyo número ya está en el proyecto es casi siempre una revisión:
-    sumarla duplicaría sus cantidades. Sin ``como_nuevas`` se contesta 409 con
-    las parejas, y quien sube decide si reemplaza o si de veras son otras."""
+    sumarla duplicaría sus cantidades. Con ``repetidas=preguntar`` se contesta
+    409 con las parejas; ``reemplazar`` pone cada revisión en el lugar de su
+    hoja (y agrega las demás) en un solo cambio; ``agregar`` las suma tal cual."""
     rate_limit(request, "upload", max_attempts=20, window_seconds=3600.0)
     root = store.get_root(project_id)
+    _sin_trabajo_activo(project_id, root, settings)
     drawings = root / "drawings"
     drawings.mkdir(parents=True, exist_ok=True)
     current = find_drawing_files(root)
-    if not como_nuevas:
-        por_clave = {clave_de_hoja(p.name).casefold(): p.name for p in current}
-        repetidas = [
-            {"nueva": f.filename, "existente": por_clave[clave]}
-            for f in files
-            if f.filename and (clave := clave_de_hoja(f.filename).casefold()) in por_clave
-        ]
-        if repetidas:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "error_type": "hoja_repetida",
-                    "message": "Estas hojas ya están en el proyecto: "
-                    + ", ".join(f"{r['nueva']} (como {r['existente']})" for r in repetidas)
-                    + ". Reemplázalas para no contar dos veces la misma hoja.",
-                    "repetidas": repetidas,
-                },
+    por_clave = {clave_de_hoja(p.name).casefold(): p for p in current}
+    parejas = [
+        (f, por_clave[clave])
+        for f in files
+        if f.filename and (clave := clave_de_hoja(f.filename).casefold()) in por_clave
+    ]
+    if parejas and repetidas == "preguntar":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_type": "hoja_repetida",
+                "message": "Estas hojas ya están en el proyecto: "
+                + ", ".join(f"{f.filename} (como {viejo.name})" for f, viejo in parejas)
+                + ". Reemplázalas para no contar dos veces la misma hoja.",
+                "repetidas": [{"nueva": f.filename, "existente": v.name} for f, v in parejas],
+            },
+        )
+    reemplazos = parejas if repetidas == "reemplazar" else []
+    reemplazadas = {id(f) for f, _ in reemplazos}
+    nuevas = [f for f in files if id(f) not in reemplazadas]
+    # Cada revisión ocupa el lugar de su hoja; si algo falla, todo vuelve.
+    saved: list[Path] = []
+    apartadas: list[tuple[Path, Path]] = []
+    try:
+        for file, viejo in reemplazos:
+            _, suffix = _validated_upload_name(file.filename or "plano.dxf")
+            destino = viejo.with_suffix(suffix)
+            if destino != viejo and destino.exists():
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error_type": "sheet_name_taken",
+                        "message": f"Ya hay otra hoja llamada {destino.name} en el proyecto.",
+                    },
+                )
+            apartadas.append((_apartar(root, viejo), viejo))
+            await _save_upload(file, destino, settings.max_upload_bytes)
+            saved.append(destino)
+        if nuevas:
+            saved += await _save_sheet_uploads(
+                nuevas, drawings, settings.max_upload_bytes, len(current) + 1
             )
-    existing = len(current)
-    saved = await _save_sheet_uploads(
-        files, drawings, settings.max_upload_bytes, existing + 1
-    )
+    except BaseException:
+        _deshacer(saved, apartadas)
+        raise
     # Streaming yields to other requests: preserve the manifest as it stands
     # after the upload, including metadata edits acknowledged in the meantime.
     previous_manifest_path = manifest_path(root, settings.processed_dir_name)
@@ -603,8 +628,7 @@ async def add_project_files(
             else None
         )
     except Exception:
-        for path in saved:
-            path.unlink(missing_ok=True)
+        _deshacer(saved, apartadas)
         raise
     try:
         manifest = ingest_project(
@@ -612,14 +636,15 @@ async def add_project_files(
         )
         warnings: list[str] = []  # se convierten en el trabajo (ver upload_project)
     except Exception:
-        for path in saved:
-            path.unlink(missing_ok=True)
+        _deshacer(saved, apartadas)
         # Re-ingesting would reset the original processing status and metadata.
         if previous_manifest is None:
             previous_manifest_path.unlink(missing_ok=True)
         else:
             write_text(previous_manifest_path, previous_manifest)
         raise
+    for _apartada, viejo in apartadas:
+        _quitar_conversion(root, settings, viejo)
     BUS.publish(
         "project_updated",
         project_id=project_id,
@@ -643,6 +668,30 @@ async def add_project_files(
         "state": job.state,
         "warnings": warnings,
     }
+
+
+def _sin_trabajo_activo(project_id: str, root: Path, settings: Settings) -> None:
+    """Las hojas no cambian mientras se leen: el reproceso devolvería el trabajo
+    en curso y el cambio se quedaría sin leer."""
+    job = JOB_STORE.get(project_id, root, settings)
+    if job is not None and job.state in ACTIVE_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_type": "processing_in_progress",
+                "message": "El proyecto se está procesando: espera a que termine para "
+                "cambiar sus hojas.",
+            },
+        )
+
+
+def _deshacer(guardadas: list[Path], apartadas: list[tuple[Path, Path]]) -> None:
+    """Quita lo que se guardó y devuelve cada hoja apartada a su lugar."""
+    for path in guardadas:
+        path.unlink(missing_ok=True)
+    for apartada, original in reversed(apartadas):
+        if apartada.exists() and not original.exists():
+            apartada.rename(original)
 
 
 def _hoja_del_proyecto(root: Path, filename: str) -> Path:
@@ -725,6 +774,7 @@ async def replace_project_file(
     vuelve a procesar. Nunca se suman las dos."""
     rate_limit(request, "upload", max_attempts=20, window_seconds=3600.0)
     root = store.get_root(project_id)
+    _sin_trabajo_activo(project_id, root, settings)
     path = _hoja_del_proyecto(root, filename)
     _, suffix = _validated_upload_name(file.filename or "plano.dxf")
     destino = path.with_suffix(suffix)
@@ -777,6 +827,7 @@ def retire_project_file(
 ) -> dict:
     """Saca una hoja de la lectura (se aparta, no se borra) y reprocesa."""
     root = store.get_root(project_id)
+    _sin_trabajo_activo(project_id, root, settings)
     path = _hoja_del_proyecto(root, filename)
     if len(find_drawing_files(root)) <= 1:
         raise HTTPException(

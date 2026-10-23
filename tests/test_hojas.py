@@ -186,9 +186,55 @@ def test_adding_a_sheet_number_that_is_already_there_asks_first(data_dir, monkey
 
     asyncio.run(projects.add_project_files(
         "obra", Request({"type": "http"}), [_upload("S-101 rev C.dxf", DXF)],
-        como_nuevas=True, store=store, settings=settings,
+        repetidas="agregar", store=store, settings=settings,
     ))
     assert len(load_manifest(root).source_files) == 2
+
+
+def test_adding_can_replace_the_repeated_sheets_and_add_the_rest_in_one_go(
+    data_dir, monkeypatch
+):
+    settings, store, root, drawings = _proyecto(data_dir, ("01-s-101.dwg", DWG_B))
+    encolados = _encolar(monkeypatch)
+    asyncio.run(projects.add_project_files(
+        "obra", Request({"type": "http"}),
+        [_upload("S-101 rev C.dwg", DWG_C), _upload("S-102.dxf", DXF)],
+        repetidas="reemplazar", store=store, settings=settings,
+    ))
+    sheets = [f.path for f in load_manifest(root).source_files]
+    assert sheets == ["drawings/01-s-101.dwg", "drawings/02-s-102.dxf"]
+    assert (drawings / "01-s-101.dwg").read_bytes() == DWG_C
+    assert list(drawings.glob("retiradas/*/01-s-101.dwg"))
+    assert encolados == ["obra"]  # one change, one reprocess
+
+
+def test_the_drawing_set_does_not_change_while_it_is_being_read(data_dir, monkeypatch):
+    # Un trabajo activo ya leyó (o está leyendo) las hojas: un cambio a media
+    # lectura se perdería, porque el reproceso devuelve el trabajo en curso.
+    settings, store, root, drawings = _proyecto(
+        data_dir, ("01-s-101.dxf", DXF), ("02-s-102.dxf", DXF)
+    )
+    activo = jobs_module.Job(project_id="obra", job_id="j", run_id="r", state="running")
+    monkeypatch.setattr(projects.JOB_STORE, "get", lambda *_a, **_k: activo)
+    llamadas = [
+        lambda: projects.retire_project_file(
+            "obra", "02-s-102.dxf", Request({"type": "http"}), store=store, settings=settings
+        ),
+        lambda: asyncio.run(projects.replace_project_file(
+            "obra", "01-s-101.dxf", Request({"type": "http"}), _upload("S-101.dxf", DXF),
+            store=store, settings=settings,
+        )),
+        lambda: asyncio.run(projects.add_project_files(
+            "obra", Request({"type": "http"}), [_upload("S-103.dxf", DXF)],
+            store=store, settings=settings,
+        )),
+    ]
+    for llamada in llamadas:
+        with pytest.raises(HTTPException) as caught:
+            llamada()
+        assert caught.value.status_code == 409
+        assert caught.value.detail["error_type"] == "processing_in_progress"
+    assert sorted(p.name for p in drawings.iterdir()) == ["01-s-101.dxf", "02-s-102.dxf"]
 
 
 def test_cambios_pairs_a_renamed_revision_by_its_sheet_number():
