@@ -10,6 +10,7 @@ Without segmentation (a single implicit plan, e.g. simple sheets and the test
 fixture) the flat count/sum computation is used unchanged.
 """
 
+import math
 import re
 from collections import defaultdict
 from collections.abc import Callable
@@ -790,6 +791,20 @@ def generate_bill_of_quantities(
         variants = _variantes(
             concept, result, matched, meters_factor, variant_measure
         )
+        # La regla suma elemento por elemento; si las partes cuadran con el
+        # total, cada renglón del respaldo dice la suya. Si no (alturas por
+        # nivel, la mejor vista, un levantamiento que se suma aparte), nada:
+        # un número que no suma sería peor que ninguno.
+        por_elemento: dict[str, float] = {}
+        if concept.rule.kind not in (QuantityKind.EARTHWORK_CUT, QuantityKind.EARTHWORK_FILL):
+            partes = {
+                d.detection_id: _raw_over(concept, [d], meters_factor) for d in contributing
+            }
+            if partes and math.isclose(
+                sum(partes.values()), result.raw, rel_tol=1e-6, abs_tol=1e-9
+            ):
+                ids = {d.detection_id for d in contributing[:MAX_SOURCE_IDS]}
+                por_elemento = {k: round(v, 6) for k, v in partes.items() if k in ids}
         boq.lines.append(
             BoqLine(
                 concept_code=concept.code,
@@ -804,6 +819,7 @@ def generate_bill_of_quantities(
                 raw_kind=concept.rule.kind,
                 source_detection_count=len(contributing),
                 source_detections=[d.detection_id for d in contributing][:MAX_SOURCE_IDS],
+                por_elemento=por_elemento,
                 confidence=round(confidence, 3),
                 assumptions=[
                     a for a in concept.assumptions
