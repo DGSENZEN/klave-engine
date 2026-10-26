@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { senalRecorrido } from "@/lib/recorridoStore";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -657,7 +658,10 @@ export default function PlanoPage() {
             visibleFamilies={effectiveFamilies}
             minConfidence={minConfidence}
             selectedId={selected?.id ?? null}
-            onSelect={setSelected}
+            onSelect={(detection) => {
+              setSelected(detection);
+              if (detection) senalRecorrido("visor.seleccion");
+            }}
             measure={
               measureMode ? { mode: measureMode, points: measurePoints } : null
             }

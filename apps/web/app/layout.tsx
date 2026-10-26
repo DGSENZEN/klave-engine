@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { ApiBaseWarning } from "@/components/ApiBaseWarning";
 import { CopilotFab } from "@/components/CopilotFab";
+import { RecorridoProvider } from "@/components/recorrido/RecorridoProvider";
 import { SessionRecovery } from "@/components/SessionRecovery";
 import localFont from "next/font/local";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
@@ -57,6 +58,8 @@ export default function RootLayout({
         {children}
         {/* Siempre a la mano, en cualquier pantalla de trabajo. */}
         <CopilotFab />
+        {/* El recorrido guiado: encima de todo, nunca bloquea el trabajo. */}
+        <RecorridoProvider />
       </body>
     </html>
   );

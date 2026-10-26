@@ -572,6 +572,20 @@ export const createDemoProject = (actor?: string) =>
     actor ? { "X-Actor": actor } : undefined,
   );
 
+/** Empezar de cero con la obra de ejemplo: Rev A, sin revisiones ni mapeos. */
+export const reiniciarObraDeEjemplo = (projectId: string) =>
+  postJSON<{ project_id: string; job_id: string }>(
+    `/projects/${encodeURIComponent(projectId)}/demo/reiniciar`,
+    {},
+  );
+
+/** La Rev B de la obra de ejemplo: reescribe sus hojas y la vuelve a leer. */
+export const cargarRevisionB = (projectId: string) =>
+  postJSON<{ project_id: string; job_id: string }>(
+    `/projects/${encodeURIComponent(projectId)}/demo/revision-b`,
+    {},
+  );
+
 export const listProjects = () =>
   getJSON<{ projects: ProjectSummary[] }>("/projects").then((r) => r.projects);
 
