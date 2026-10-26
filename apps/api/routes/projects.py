@@ -10,7 +10,11 @@ from klave_engine.common.errors import ProjectManifestError
 from klave_engine.common.ids import short_uuid, slugify
 from klave_engine.common.io import read_json, write_text
 from klave_engine.common.version import engine_fingerprint
+from klave_engine.costing.catalog_store import drop_catalog_store
 from klave_engine.costing.defaults import apply_workspace_defaults
+from klave_engine.ejemplo import es_obra_de_ejemplo, sample_project_id
+from klave_engine.ejemplo.catalogo import sembrar_catalogo_didactico
+from klave_engine.ejemplo.obra import build_obra_ejemplo
 from klave_engine.ingestion.manifest import load_manifest, manifest_path, save_manifest
 from klave_engine.ingestion.project_loader import find_drawing_files, ingest_project
 from pydantic import BaseModel
@@ -22,7 +26,7 @@ from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
 from apps.api.jobs import JOB_STORE, JobQueueFullError
 from apps.api.observability import context_from_request
-from apps.api.tenancy import defaults_scope, request_workspace_id
+from apps.api.tenancy import defaults_scope, request_workspace_id, store_for_project
 
 router = APIRouter(prefix="/projects")
 
@@ -144,6 +148,15 @@ def visible_project_filter(request: Request, store: ProjectStore) -> Callable[[s
     user = _state_user(request)
     if user is None:
         return lambda project_id: True
+    propia = sample_project_id(str(user["workspace_id"]), str(user["user_id"]))
+    filtro = _filtro_de_cuentas(user, store)
+    # La obra de ejemplo es de quien la hizo: ni un administrador ve la ajena.
+    return lambda project_id: (
+        project_id == propia if es_obra_de_ejemplo(project_id) else filtro(project_id)
+    )
+
+
+def _filtro_de_cuentas(user: dict, store: ProjectStore) -> Callable[[str], bool]:
     try:
         users = get_user_store(store.settings.users_database_url)
         if user["role"] == "admin":
@@ -364,6 +377,18 @@ async def upload_project(
     }
 
 
+def _ya_procesada(store: ProjectStore, project_id: str, root: Path, settings: Settings) -> bool:
+    """La obra de ejemplo ya está leída: volver a abrirla no la reprocesa."""
+    job = JOB_STORE.get(project_id, root, settings)
+    if job is not None:
+        return job.state == "processed"
+    try:
+        manifest = load_manifest(root, settings.processed_dir_name)
+    except ProjectManifestError:
+        return False
+    return manifest.processing_status.value == "processed"
+
+
 @router.post("/demo", status_code=202)
 def create_demo_project(
     request: Request,
@@ -371,23 +396,27 @@ def create_demo_project(
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    """A small synthetic obra, created once per workspace and processed as a
-    job, so a firm sees a finished reading — with its evidence and its
-    warnings — before uploading anything of its own."""
+    """La obra de ejemplo de esta persona: la obra didáctica del recorrido
+    guiado, con su propio catálogo, creada una vez y procesada como trabajo.
+    Abrirla otra vez no la vuelve a leer si ya está leída."""
     rate_limit(request, "process", max_attempts=30, window_seconds=3600.0)
-    from klave_engine.evals.fixtures import write_demo_project
-
-    # El workspace completo, no un prefijo: dos talleres nunca comparten obra.
-    suffix = slugify(request_workspace_id(request) or "local")[:48] or "local"
-    project_id = f"obra_de_ejemplo_{suffix}"
+    user = _state_user(request)
+    project_id = sample_project_id(
+        request_workspace_id(request), str(user["user_id"]) if user else None
+    )
     root = (settings.data_dir / "uploads" / project_id).resolve()
     fresh = not root.exists()
+    if not fresh and _ya_procesada(store, project_id, root, settings):
+        _grant_owner(request, settings, project_id)
+        store.register(project_id, root)
+        return {"project_id": project_id, "job_id": None, "fresh": False}
     try:
         if fresh:
-            write_demo_project(root, declare_units=True)
+            build_obra_ejemplo(root, "A")
+            sembrar_catalogo_didactico(store_for_project(settings, project_id))
         manifest = ingest_project(
             root,
-            project_name="Obra de ejemplo (sintética)",
+            project_name="Obra de ejemplo",
             project_id=project_id,
             processed_dir_name=settings.processed_dir_name,
         )
@@ -395,6 +424,7 @@ def create_demo_project(
     except Exception:
         if fresh:
             shutil.rmtree(root, ignore_errors=True)
+            drop_catalog_store(settings.data_dir, project_id)
         raise
 
     store.register(project_id, root)

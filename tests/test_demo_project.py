@@ -1,10 +1,11 @@
 """La obra de ejemplo: el primer botón que ve un taller vacío tiene que abrir
-una obra, no un error. Se crea una vez por workspace y se procesa como trabajo."""
+una obra, no un error. Se crea una vez por persona y se procesa como trabajo."""
 
 import pytest
 from fastapi import HTTPException, Request
 from klave_engine.common import config as config_module
 from klave_engine.common.config import get_settings
+from klave_engine.ejemplo import sample_project_id
 
 from apps.api import jobs as jobs_module
 from apps.api import tenancy
@@ -44,7 +45,7 @@ def test_sample_obra_is_created_once_and_processed_as_a_job(data_dir, monkeypatc
     project_id = body["project_id"]
     assert project_id.startswith("obra_de_ejemplo_")
     info = client.get(f"/projects/{project_id}").json()
-    assert info["project_name"] == "Obra de ejemplo (sintética)"
+    assert info["project_name"] == "Obra de ejemplo"
     assert calls and calls[0][0] == project_id and calls[0][1] is not None
 
     again = client.post("/projects/demo", json={})
@@ -119,3 +120,109 @@ def test_sample_obra_is_not_published_when_ownership_cannot_be_saved(data_dir, m
         projects_module.create_demo_project(_request("ws-b"), store=store, settings=settings)
     assert caught.value.status_code == 503
     assert store.list_projects() == {}
+
+
+# --- Recorrido guiado: una obra de ejemplo por persona, privada ------------------
+
+
+def _request_user(workspace, user_id, role="member"):
+    return Request({
+        "type": "http", "headers": [], "client": ("127.0.0.1", 1),
+        "state": {"user": {"user_id": user_id, "workspace_id": workspace, "role": role}},
+    })
+
+
+def _patch_users(monkeypatch, users):
+    for module in (projects_module, access, tenancy):
+        monkeypatch.setattr(module, "get_user_store", lambda _url: users)
+
+
+def test_two_people_in_one_workspace_get_two_samples(data_dir, monkeypatch):
+    settings = get_settings()
+    store = ProjectStore(settings)
+    users = _Users()
+    _patch_users(monkeypatch, users)
+    _fake_enqueue(monkeypatch)
+    ana = projects_module.create_demo_project(
+        _request_user("ws-1", "u-ana"), store=store, settings=settings
+    )
+    beto = projects_module.create_demo_project(
+        _request_user("ws-1", "u-beto"), store=store, settings=settings
+    )
+    assert ana["project_id"] != beto["project_id"]
+    assert ana["project_id"] == sample_project_id("ws-1", "u-ana")
+
+
+def test_fresh_sample_is_the_teaching_obra_with_teaching_prices(data_dir, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from apps.api.main import create_app
+
+    _fake_enqueue(monkeypatch)
+    client = TestClient(create_app())
+    body = client.post("/projects/demo", json={}).json()
+    project_id = body["project_id"]
+    assert project_id == "obra_de_ejemplo_local"
+    info = client.get(f"/projects/{project_id}").json()
+    assert info["project_name"] == "Obra de ejemplo"
+    drawings = sorted(p.name for p in (data_dir / "uploads" / project_id / "drawings").iterdir())
+    assert drawings == ["S-101 Cimentacion.dxf", "S-201 Estructura.dxf"]
+    catalog = tenancy.store_for_project(get_settings(), project_id)
+    priced = {row["code"] for row in catalog.list_insumos() if row.get("unit_cost")}
+    assert {"MAT-CONC250", "MAT-ACERO", "MO-CUAD-FIE"} <= priced
+
+
+def test_a_processed_sample_is_not_processed_again(data_dir, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from apps.api.main import create_app
+
+    calls = _fake_enqueue(monkeypatch)
+    client = TestClient(create_app())
+    client.post("/projects/demo", json={})
+    monkeypatch.setattr(
+        projects_module.JOB_STORE, "get",
+        lambda *_a, **_k: jobs_module.Job(
+            project_id="x", job_id="j", run_id="r", state="processed"
+        ),
+    )
+    monkeypatch.setattr(projects_module, "_ya_procesada", lambda *_a: True)
+    again = client.post("/projects/demo", json={}).json()
+    assert again["fresh"] is False and again["job_id"] is None
+    assert len(calls) == 1
+
+
+def test_sample_is_private_even_to_admins(data_dir, monkeypatch):
+    settings = get_settings()
+    store = ProjectStore(settings)
+    users = _Users()
+    users.project_workspace_map = lambda: {}
+    users.project_ids_for_user = lambda _uid: set()
+    _patch_users(monkeypatch, users)
+    own = sample_project_id("ws-a", "u-admin")
+    other = sample_project_id("ws-a", "u-ana")
+    keep = projects_module.visible_project_filter(_request_user("ws-a", "u-admin", "admin"), store)
+    assert keep(own) is True
+    assert keep(other) is False
+
+
+def test_open_mode_sees_its_sample(data_dir):
+    store = ProjectStore(get_settings())
+    request = Request({"type": "http", "headers": [], "client": ("127.0.0.1", 1), "state": {}})
+    assert projects_module.visible_project_filter(request, store)("obra_de_ejemplo_local")
+
+
+def test_overview_counters_ignore_samples_and_onboarding_is_gone(data_dir, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from apps.api.main import create_app
+
+    _fake_enqueue(monkeypatch)
+    client = TestClient(create_app())
+    client.post("/projects/demo", json={})
+    body = client.get("/workspace/overview").json()
+    assert "onboarding" not in body
+    assert [p["project_id"] for p in body["projects"]] == ["obra_de_ejemplo_local"]
+    attention = body["attention"]
+    assert attention["processing"] == 0 and attention["unverified"] == 0
+    assert attention["failed"] == 0 and attention["stale_runs"] == 0

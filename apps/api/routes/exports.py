@@ -148,7 +148,7 @@ def _guard_export(
 def _mark_exported(
     store: ProjectStore, project_id: str, formato: str = "", actor: str | None = None,
 ) -> None:
-    """A tiny marker so onboarding can tell a delivery has happened, an entry
+    """A tiny marker (the overview shows a delivery happened), an entry
     in the activity log (when and in what format), and an ``export_completed``
     event so the recorrido advances on a delivery that actually went out."""
     try:
