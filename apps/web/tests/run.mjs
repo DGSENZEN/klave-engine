@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 const output = mkdtempSync(join(tmpdir(), 'klave-web-tests-'));
 try {
   const compile = spawnSync(process.execPath, [
-    'node_modules/typescript/bin/tsc', 'lib/api.ts', 'lib/uploads.ts', 'lib/httpErrors.ts', 'lib/sessionReturn.ts', 'lib/apiProxy.ts', 'lib/collab.ts',
+    'node_modules/typescript/bin/tsc', 'lib/api.ts', 'lib/uploads.ts', 'lib/httpErrors.ts', 'lib/sessionReturn.ts', 'lib/apiProxy.ts', 'lib/collab.ts', 'lib/recorrido/motor.ts', 'lib/recorrido/colocar.ts', 'lib/recorrido/progreso.ts',
     '--outDir', output, '--module', 'commonjs', '--target', 'ES2022', '--skipLibCheck',
   ], { stdio: 'inherit' });
   if (compile.status !== 0) process.exitCode = compile.status ?? 1;
