@@ -47,7 +47,12 @@ def _detection_snapshot(detection: dict | None) -> dict:
 
 
 def append_labels(control_dir: Path, records: Iterable[dict]) -> int:
-    """Añade registros al diario de etiquetas; devuelve cuántos escribió."""
+    """Añade registros al diario de etiquetas; devuelve cuántos escribió. La
+    obra de ejemplo no deja etiquetas: sus decisiones son de práctica."""
+    from klave_engine.ejemplo import es_obra_de_ejemplo
+
+    if es_obra_de_ejemplo(control_dir.parent.name):
+        return 0
     path = control_dir / LABELS_FILENAME
     path.parent.mkdir(parents=True, exist_ok=True)
     now = datetime.now(UTC).isoformat()
