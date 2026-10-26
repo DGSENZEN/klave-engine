@@ -247,6 +247,7 @@ export default function PresupuestoPage() {
         title="Presupuesto"
         sub="Cantidades deducidas del plano · precios de referencia (MXN)"
         actions={
+<span data-tour="presupuesto.exportar">
           <ButtonMenu
             label={exporting ? `Generando ${exporting}…` : "Exportar"}
             icon={
@@ -327,6 +328,7 @@ export default function PresupuestoPage() {
               </>
             )}
           </ButtonMenu>
+          </span>
         }
       />
 
@@ -453,7 +455,10 @@ export default function PresupuestoPage() {
         ]}
       />
 
-      <TableCard className={`mb-6 ${tab !== "partidas" || costs.boq.lines.length === 0 ? "hidden" : ""}`}>
+      <TableCard
+        tour="presupuesto.lineas"
+        className={`mb-6 ${tab !== "partidas" || costs.boq.lines.length === 0 ? "hidden" : ""}`}
+      >
         <thead>
           <tr className="border-b border-border bg-surface-2">
             <Th>Clave</Th>
@@ -665,6 +670,7 @@ function PhaseGroup({
         return (
           <Fragment key={l.concept_code}>
             <tr
+              data-tour={(l.variants?.length ?? 0) > 1 ? "presupuesto.renglon" : undefined}
               className={`border-b border-border transition-colors hover:bg-surface-2/60 ${
                 open ? "bg-surface-2/40" : ""
               }`}
@@ -798,7 +804,7 @@ function PhaseGroup({
                     </div>
                   )}
                   {(l.variants?.length ?? 0) > 1 && (
-                    <div className="mb-3">
+                    <div className="mb-3" data-tour="presupuesto.variantes">
                       <div className="mb-1 flex items-center gap-2 font-medium text-foreground">
                         Lo que el plano distingue: {l.variants!.length} variantes
                         <Link
@@ -838,6 +844,7 @@ function PhaseGroup({
                         <Link
                           href={`/proyecto/${projectId}/plano?concept=${encodeURIComponent(l.concept_code)}`}
                           className="underline"
+                          data-tour="presupuesto.alplano"
                           onClick={(e) => e.stopPropagation()}
                         >
                           verlos en el plano

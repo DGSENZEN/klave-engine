@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { cargarRevisionB, createDemoProject } from "@/lib/api";
+import { cargarRevisionB, createDemoProject, listProjects } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
 import { CAPITULOS } from "@/lib/recorrido/capitulos";
 import type { Rect } from "@/lib/recorrido/colocar";
@@ -59,6 +59,16 @@ export function RecorridoProvider() {
       const progreso = await almacen.cargar();
       if (vivo) despachar({ tipo: "progreso", progreso });
     });
+    // La obra de ejemplo de esta persona, si ya existe: así un capítulo
+    // salteado no la vuelve a crear (ni a procesar).
+    void listProjects()
+      .then((proyectos) => {
+        const obra = proyectos.find((p) => p.project_id.startsWith("obra_de_ejemplo"));
+        if (vivo && obra) {
+          despachar({ tipo: "obra", projectId: obra.project_id, lista: obra.status === "processed" });
+        }
+      })
+      .catch(() => {});
     return () => {
       vivo = false;
     };

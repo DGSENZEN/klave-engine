@@ -668,7 +668,7 @@ function InsumosSection({
                       commitInsumo(insumo.code, { description: value })
                     }
                   />
-                  <div className="flex items-center gap-2 font-mono text-xs text-muted">
+                  <div data-tour="catalogo.origen" className="flex items-center gap-2 font-mono text-xs text-muted">
                     {insumo.code}
                     <OrigenBadge origin={insumo.origin} originRef={insumo.origin_ref} />
                     {(insumo.kind ?? "insumo") !== "insumo" && (
@@ -717,7 +717,7 @@ function InsumosSection({
                       commitInsumo(insumo.code, { source: value })
                     }
                   />
-                  <div className="mt-1 flex items-center gap-1.5">
+                  <div data-tour="catalogo.procedencia" className="mt-1 flex items-center gap-1.5">
                     <Select
                       value={insumo.source_type}
                       onChange={(e) =>

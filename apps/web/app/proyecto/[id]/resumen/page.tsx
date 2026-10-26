@@ -144,7 +144,7 @@ export default function Resumen() {
     <div className="px-6 py-7 lg:px-8">
       <PageHeader
         title={
-          <span className="flex items-center gap-2.5">
+          <span className="flex items-center gap-2.5" data-tour="resumen.sello">
             Resumen del proyecto
             {reviews &&
               (verified ? (
@@ -545,7 +545,7 @@ function VerificationPath({
   ];
 
   return (
-    <Card className="rise-in mb-6 p-5">
+    <Card className="rise-in mb-6 p-5" tour="resumen.verificacion">
       <SectionTitle sub="Verifica la lectura del plano antes de confiar en las cifras. Tres pasos, una vez por procesamiento.">
         Ruta de verificación
       </SectionTitle>

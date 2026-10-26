@@ -317,7 +317,7 @@ export default function LecturaPage() {
         sub="Qué leyó Klave de tus archivos: conversión, entidades, capas, bloques y lo que se omitió. Aquí se decide si puedes confiar en lo demás."
       />
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div data-tour="lectura.metricas" className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric
           label="Unidades"
           value={lectura.units?.unit ?? "—"}
@@ -356,6 +356,7 @@ export default function LecturaPage() {
         />
       </div>
 
+<div data-tour="lectura.pestanas">
       <Tabs
         className="mb-5"
         value={tab}
@@ -387,6 +388,7 @@ export default function LecturaPage() {
           },
         ]}
       />
+      </div>
 
       <div className={`space-y-3 ${tab !== "hojas" ? "hidden" : ""}`}>
         {lectura.sheets.map((sheet) => (

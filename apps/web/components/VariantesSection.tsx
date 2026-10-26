@@ -135,7 +135,7 @@ export function VariantesSection({
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-        <span className="text-muted">
+        <span className="text-muted" data-tour="variantes.resumen">
           {total} variantes del plano ·{" "}
           <Badge tone="success">{(c.confirmada ?? 0) + (c.automatica ?? 0)} en tu catálogo</Badge>{" "}
           <Badge tone="warning">{c.propuesta ?? 0} por confirmar</Badge>{" "}
@@ -197,7 +197,7 @@ export function VariantesSection({
             : "Nada que mostrar con este filtro."}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+        <div className="overflow-x-auto rounded-lg border border-border bg-surface" data-tour="variantes.lista">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-surface-2">
@@ -342,7 +342,7 @@ function LineRows({
                     <span className="text-xs text-muted">{v.mapped_description.slice(0, 70)}</span>
                   </span>
                 )}
-                <span className="ml-auto flex gap-1 opacity-70 group-hover:opacity-100">
+                <span data-tour="variantes.mapear" className="ml-auto flex gap-1 opacity-70 group-hover:opacity-100">
                   {v.mapping === "propuesta" && (
                     <Button size="sm" variant="primary" disabled={busy} onClick={() => onAccept(v)}>
                       Confirmar

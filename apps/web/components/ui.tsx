@@ -12,11 +12,18 @@ import { CaretDown, Info, Warning, WarningCircle } from "@phosphor-icons/react";
 export function Card({
   children,
   className = "",
+  tour,
 }: {
   children: ReactNode;
   className?: string;
+  /** Ancla del recorrido guiado (data-tour). */
+  tour?: string;
 }) {
-  return <div className={`card ${className}`}>{children}</div>;
+  return (
+    <div className={`card ${className}`} data-tour={tour}>
+      {children}
+    </div>
+  );
 }
 
 export function PageHeader({
@@ -394,12 +401,14 @@ export function Avatar({
 export function TableCard({
   children,
   className = "",
+  tour,
 }: {
   children: ReactNode;
   className?: string;
+  tour?: string;
 }) {
   return (
-    <Card className={`overflow-hidden ${className}`}>
+    <Card className={`overflow-hidden ${className}`} tour={tour}>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">{children}</table>
       </div>

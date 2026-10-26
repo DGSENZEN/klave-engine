@@ -470,7 +470,7 @@ export default function RevisionPage() {
           </span>
         </div>
 
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-2">
+        <div data-tour="revision.masivo" className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-2">
           <span className="text-sm font-medium tabular">
             {selectedVisible.length} seleccionado
             {selectedVisible.length === 1 ? "" : "s"}
@@ -537,7 +537,7 @@ export default function RevisionPage() {
           </span>
         </div>
 
-        <TableCard>
+        <TableCard tour="revision.tabla">
           <thead>
             <tr className="border-b border-border bg-surface-2">
               <Th>
