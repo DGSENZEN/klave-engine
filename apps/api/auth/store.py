@@ -126,6 +126,14 @@ CREATE TABLE IF NOT EXISTS audit_log (
     detail JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS recorrido_eventos (
+    evento_id BIGSERIAL PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    paso_id TEXT NOT NULL,
+    estado TEXT NOT NULL CHECK (estado IN ('hecho', 'saltado', 'no_encontrado', 'reiniciado')),
+    at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS recorrido_eventos_user ON recorrido_eventos (user_id, at);
 """
 
 # Idempotent upgrades for databases created before the workspace schema.
@@ -916,6 +924,34 @@ class UserStore:
                 (workspace_id, max(1, min(limit, 500))),
             ).fetchall()
         return [dict(row) for row in rows]
+
+
+    # ------------------------------------------------------------ recorrido
+
+    def record_recorrido(self, user_id: str, paso_id: str, estado: str) -> None:
+        """Una fila más en la bitácora del recorrido: nunca se reescribe, así
+        el historial completo dice dónde se atora la gente."""
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO recorrido_eventos (user_id, paso_id, estado) VALUES (%s, %s, %s)",
+                (user_id, paso_id, estado),
+            )
+
+    def reiniciar_recorrido(self, user_id: str) -> None:
+        self.record_recorrido(user_id, "", "reiniciado")
+
+    def recorrido_progreso(self, user_id: str) -> dict[str, str]:
+        """El último hecho/saltado de cada paso, desde el último reinicio."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT ON (paso_id) paso_id, estado FROM recorrido_eventos "
+                "WHERE user_id = %s AND estado IN ('hecho', 'saltado') AND evento_id > "
+                "COALESCE((SELECT max(evento_id) FROM recorrido_eventos "
+                "WHERE user_id = %s AND estado = 'reiniciado'), 0) "
+                "ORDER BY paso_id, evento_id DESC",
+                (user_id, user_id),
+            ).fetchall()
+        return {row["paso_id"]: row["estado"] for row in rows}
 
 
 _STORE: UserStore | None = None

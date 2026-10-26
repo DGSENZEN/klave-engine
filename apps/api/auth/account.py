@@ -1,6 +1,8 @@
 """The signed-in user's own account: profile, password, sessions, Google
 link — plus the admin-only activity log."""
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.exceptions import HTTPException
 from pydantic import BaseModel, Field
@@ -26,6 +28,11 @@ class ProfileInput(BaseModel):
     name: str = Field(min_length=2, max_length=80)
 
 
+class RecorridoPaso(BaseModel):
+    paso_id: str = Field(min_length=1, max_length=80)
+    estado: Literal["hecho", "saltado", "no_encontrado"]
+
+
 class PasswordInput(BaseModel):
     current_password: str = Field(default="", max_length=128)
     new_password: str = Field(min_length=8, max_length=128)
@@ -43,6 +50,39 @@ def me(request: Request, users: UserStore = Depends(users_dependency)) -> dict:
         "workspace": {"slug": workspace["slug"], "name": workspace["name"]} if workspace else None,
         "created_at": user["created_at"].isoformat(),
     }
+
+
+@router.get("/me/recorrido")
+def get_recorrido(request: Request, users: UserStore = Depends(users_dependency)) -> dict:
+    """Hasta dónde llegó esta persona en el recorrido guiado."""
+    try:
+        user = require_user(request, users)
+        return {"pasos": users.recorrido_progreso(str(user["user_id"]))}
+    except UsersDbUnavailable as exc:
+        raise db_unavailable() from exc
+
+
+@router.put("/me/recorrido")
+def put_recorrido(
+    body: RecorridoPaso, request: Request, users: UserStore = Depends(users_dependency)
+) -> dict:
+    try:
+        user = require_user(request, users)
+        users.record_recorrido(str(user["user_id"]), body.paso_id, body.estado)
+    except UsersDbUnavailable as exc:
+        raise db_unavailable() from exc
+    return {"ok": True}
+
+
+@router.delete("/me/recorrido")
+def delete_recorrido(request: Request, users: UserStore = Depends(users_dependency)) -> dict:
+    """Empezar de cero: la bitácora se queda, el progreso vuelve a vacío."""
+    try:
+        user = require_user(request, users)
+        users.reiniciar_recorrido(str(user["user_id"]))
+    except UsersDbUnavailable as exc:
+        raise db_unavailable() from exc
+    return {"ok": True}
 
 
 @router.put("/me")
