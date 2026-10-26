@@ -15,7 +15,10 @@ from klave_engine.ejemplo.catalogo import sembrar_catalogo_didactico
 from klave_engine.ejemplo.obra import build_obra_ejemplo
 from klave_engine.pipeline import run_full_pipeline
 
-GOLD = Path(__file__).resolve().parents[1] / "packages" / "klave_engine" / "ejemplo" / "etiquetas_gold.json"
+GOLD = (
+    Path(__file__).resolve().parents[1] / "packages" / "klave_engine" / "ejemplo"
+    / "etiquetas_gold.json"
+)
 
 
 def _procesar(base: Path, revision: str):
@@ -94,8 +97,8 @@ def test_rev_a_has_a_captura_list(corridas):
 
 
 def test_rev_b_has_aditivas_and_deductivas(corridas):
-    antes = {l.concept_code: l.quantity for l in corridas["A"][0].cost_report.boq.lines}
-    despues = {l.concept_code: l.quantity for l in corridas["B"][0].cost_report.boq.lines}
+    antes = {ln.concept_code: ln.quantity for ln in corridas["A"][0].cost_report.boq.lines}
+    despues = {ln.concept_code: ln.quantity for ln in corridas["B"][0].cost_report.boq.lines}
     deltas = {c: despues.get(c, 0.0) - antes.get(c, 0.0) for c in set(antes) | set(despues)}
     assert any(v > 0.001 for v in deltas.values()), deltas
     assert any(v < -0.001 for v in deltas.values()), deltas

@@ -51,7 +51,7 @@ def _trabe(msp, marca: str, y: float, ancho: float) -> None:
     paño = y + ancho / 2
     msp.add_line((0, paño), (1800, paño), dxfattribs={"layer": "S-BEAM"})
     xs = sorted(EJES_X.values())
-    for a, b in zip(xs, xs[1:]):
+    for a, b in zip(xs, xs[1:], strict=False):
         _texto(msp, marca, (a + b) / 2 - 20, y + ancho / 2 + 10, "S-BEAM")
 
 
