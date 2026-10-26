@@ -292,3 +292,23 @@ def test_flat_rows_use_office_claves_never_rule_codes(data_dir):
     )
     assert abs(total_qty - line.quantity) < 1e-6
     assert "Lo que el plano no dio" in workbook.sheetnames
+
+
+def test_export_publishes_export_completed(tmp_path):
+    """El recorrido avanza cuando una entrega de verdad sale: el marcador de
+    exportación también se anuncia en el bus, con su formato."""
+    from types import SimpleNamespace
+
+    from apps.api.events import BUS
+    from apps.api.routes.exports import _mark_exported
+
+    store = SimpleNamespace(
+        get_root=lambda project_id: tmp_path / project_id,
+        settings=SimpleNamespace(processed_dir_name="processed"),
+    )
+    before = BUS.latest_seq()
+    _mark_exported(store, "obra_x", "opus", "Ana")
+    events = [e for e in BUS.since(before, project_id="obra_x") if e.type == "export_completed"]
+    assert len(events) == 1
+    assert events[0].project_id == "obra_x" and events[0].data == {"formato": "opus"}
+    assert (tmp_path / "obra_x" / "processed" / "last_export.json").exists()
