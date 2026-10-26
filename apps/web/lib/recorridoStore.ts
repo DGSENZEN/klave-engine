@@ -85,3 +85,33 @@ function suscribir(oyente: () => void): () => void {
 export function useRecorrido(): EstadoRecorrido {
   return useSyncExternalStore(suscribir, () => estado, () => ESTADO_INICIAL);
 }
+
+// El menú del recorrido (capítulos, continuar, empezar de cero): uno para
+// toda la app, abierto desde el «?» de cualquier encabezado o desde ⌘K.
+let menuAbierto = false;
+const oyentesMenu = new Set<() => void>();
+
+export function abrirMenuRecorrido(abierto = true): void {
+  menuAbierto = abierto;
+  oyentesMenu.forEach((oyente) => oyente());
+}
+
+function suscribirMenu(oyente: () => void): () => void {
+  oyentesMenu.add(oyente);
+  return () => oyentesMenu.delete(oyente);
+}
+
+export function useMenuRecorrido(): boolean {
+  return useSyncExternalStore(suscribirMenu, () => menuAbierto, () => false);
+}
+
+/** Un capítulo cuenta como hecho cuando cada uno de sus pasos tiene progreso. */
+export function capituloHecho(id: CapituloId, progreso: EstadoRecorrido["progreso"]): boolean {
+  const capitulo = CAPITULOS.find((c) => c.id === id);
+  return Boolean(capitulo && capitulo.pasos.every((p) => progreso[p.id] !== undefined));
+}
+
+/** El primer capítulo sin terminar: por donde se continúa. */
+export function capituloPendiente(progreso: EstadoRecorrido["progreso"]): CapituloId | null {
+  return CAPITULOS.find((c) => !capituloHecho(c.id, progreso))?.id ?? null;
+}

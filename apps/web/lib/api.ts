@@ -2745,18 +2745,9 @@ export type ProjectOverview = ProjectSummary & {
   exported: boolean;
 };
 
-export type OnboardingState = {
-  sample_explored: boolean;
-  first_project: boolean;
-  any_verified: boolean;
-  aliases: number;
-  any_exported: boolean;
-};
-
 export type WorkspaceOverview = {
   projects: ProjectOverview[];
   upload_limits?: { max_files: number; max_file_bytes: number };
-  onboarding?: OnboardingState;
   attention: {
     processing: number;
     failed: number;

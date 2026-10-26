@@ -10,7 +10,7 @@ import {
   SealCheck,
 } from "@phosphor-icons/react";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
-import { Card, PageHeader, SectionTitle } from "@/components/ui";
+import { Card, PageHeader } from "@/components/ui";
 
 /** The "why" behind the product: not a feature tour, the rules the app
  * refuses to break. Each principle names what would go wrong without it. */
@@ -57,34 +57,6 @@ const PRINCIPLES: {
   },
 ];
 
-const STEPS: { title: string; body: string }[] = [
-  {
-    title: "Subes los planos de una obra",
-    body:
-      "Sube planos DWG o DXF. Si un DWG no se puede convertir, expórtalo a DXF desde tu programa de dibujo. Todas las hojas juntas: cimentación, estructura y plantas se leen como un solo conjunto y se complementan.",
-  },
-  {
-    title: "Klave lee y muestra su trabajo",
-    body:
-      "Detecta ejes, marcos, cuadros y elementos; arma el levantamiento con confianza por lectura. En el visor ves exactamente qué leyó y de dónde.",
-  },
-  {
-    title: "Verificas — unidades, elementos, supuestos",
-    body:
-      "Excluyes lo que no va, ajustas lo que leyó mal, confirmas los supuestos. Hasta aquí todo está sellado SIN VERIFICAR.",
-  },
-  {
-    title: "El presupuesto se arma con tu catálogo",
-    body:
-      "Conceptos con matrices (APU), explosión de insumos, programa y flujo. Tus claves y tus precios si los adoptaste; los huecos, visibles.",
-  },
-  {
-    title: "Entregas en Excel",
-    body:
-      "Presupuesto con generadores, APUs, explosión, catálogo de licitación con P.U. con letra, o layouts para OPUS/Neodata.",
-  },
-];
-
 export default function ComoFuncionaPage() {
   return (
     <div className="min-h-screen">
@@ -94,23 +66,6 @@ export default function ComoFuncionaPage() {
           title="Cómo funciona — y por qué así"
           sub="Klave convierte planos DWG/DXF en presupuestos de obra. Estas son las reglas que la app no rompe, porque un presupuesto vale lo que vale su evidencia."
         />
-
-        <Card className="mb-4 p-5">
-          <SectionTitle>El camino</SectionTitle>
-          <ol className="space-y-3">
-            {STEPS.map((step, index) => (
-              <li key={step.title} className="flex gap-3">
-                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-3 text-xs font-semibold">
-                  {index + 1}
-                </span>
-                <div>
-                  <div className="text-sm font-medium">{step.title}</div>
-                  <p className="text-sm text-muted">{step.body}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </Card>
 
         <div className="space-y-4">
           {PRINCIPLES.map((principle) => (
@@ -129,11 +84,8 @@ export default function ComoFuncionaPage() {
           <Link href="/glosario" className="font-medium text-foreground underline">
             glosario
           </Link>{" "}
-          explica cada uno. La guía paso a paso vive en{" "}
-          <Link href="/" className="font-medium text-foreground underline">
-            la página principal
-          </Link>
-          , que te acompaña hasta tu primera entrega.
+          explica cada uno. Para aprender el camino haciéndolo, abre el recorrido guiado
+          desde Ayuda, arriba: una obra de ejemplo tuya, del plano al Excel.
         </p>
       </main>
     </div>

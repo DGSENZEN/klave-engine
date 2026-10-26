@@ -15,6 +15,7 @@ import {
 } from "@/lib/recorridoStore";
 import { deleteRecorrido, fetchAuthStatus, getRecorrido, putRecorridoPaso } from "@/lib/session";
 import { Foco } from "@/components/recorrido/Foco";
+import { DialogoRecorrido } from "@/components/recorrido/MenuRecorrido";
 import { TarjetaPaso } from "@/components/recorrido/TarjetaPaso";
 
 const ESPERA_ANCLA_MS = 4000;
@@ -168,10 +169,11 @@ export function RecorridoProvider() {
     if (destino) router.push(destino);
   }
 
-  if (!estado.activo || !capitulo) return null;
+  if (!estado.activo || !capitulo) return <DialogoRecorrido />;
   const ultimo = CAPITULOS[CAPITULOS.length - 1]?.id === capitulo.id;
   return (
     <>
+      <DialogoRecorrido />
       {paso && !estado.fueraDeRuta && (
         <Foco rect={estado.anclaPerdida ? null : rect} tipo={estado.repaso ? "mirar" : paso.tipo} />
       )}

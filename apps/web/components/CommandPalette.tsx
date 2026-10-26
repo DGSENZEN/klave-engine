@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Books, Gauge, GearSix, MagnifyingGlass, SquaresFour } from "@phosphor-icons/react";
+import { Books, Compass, Gauge, GearSix, MagnifyingGlass, SquaresFour } from "@phosphor-icons/react";
+import { CAPITULOS } from "@/lib/recorrido/capitulos";
+import { iniciarCapitulo } from "@/lib/recorridoStore";
 import { entryHref, NODE_NAV } from "@/lib/nodeNav";
 
 /**
@@ -18,6 +20,8 @@ type Destino = {
   grupo: string;
   icon: React.ReactNode;
   href: string;
+  /** En vez de navegar, hace algo (empezar un capítulo del recorrido). */
+  run?: () => void;
 };
 
 function destinos(base: string): Destino[] {
@@ -68,6 +72,14 @@ function destinos(base: string): Destino[] {
       icon: <GearSix size={16} />,
       href: `${base}/configuracion`,
     },
+    ...CAPITULOS.map((capitulo) => ({
+      key: `recorrido-${capitulo.id}`,
+      label: `Recorrido: ${capitulo.titulo}`,
+      grupo: "Ayuda",
+      icon: <Compass size={16} />,
+      href: "",
+      run: () => iniciarCapitulo(capitulo.id),
+    })),
   ];
 }
 
@@ -136,7 +148,8 @@ export function CommandPalette({ projectId }: { projectId: string }) {
   function go(destino: Destino | undefined) {
     if (!destino) return;
     setOpen(false);
-    router.push(destino.href);
+    if (destino.run) destino.run();
+    else router.push(destino.href);
   }
 
   return (

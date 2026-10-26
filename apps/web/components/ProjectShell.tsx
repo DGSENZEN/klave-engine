@@ -17,6 +17,7 @@ import { useProjectLive } from "@/components/ProjectLive";
 import { CommandPalette, openCommandPalette } from "@/components/CommandPalette";
 import { ChangesPanel, ChangesTrigger, LiveToasts } from "@/components/LiveOverlay";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { BotonRecorrido } from "@/components/recorrido/MenuRecorrido";
 import { Avatar } from "@/components/ui";
 import { entryHref, nodeForPath, NODE_NAV } from "@/lib/nodeNav";
 
@@ -338,6 +339,7 @@ function TopBar({
         >
           <GearSix size={18} />
         </Link>
+        <BotonRecorrido ancla="shell.ayuda" />
         <ThemeToggle />
       </div>
     </header>
