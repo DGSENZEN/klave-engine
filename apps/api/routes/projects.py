@@ -200,6 +200,10 @@ def create_project(
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
+    # Importar una carpeta del servidor es de quien opera la máquina, no de un
+    # usuario de la web: en producción la ruta no existe (la web no la usa).
+    if settings.env == "production":
+        raise HTTPException(status_code=404, detail="Not Found")
     root = Path(body.root_path)
     if not root.is_dir():
         raise HTTPException(
@@ -358,6 +362,68 @@ async def upload_project(
         "state": job.state,
         "warnings": warnings,
     }
+
+
+@router.post("/demo", status_code=202)
+def create_demo_project(
+    request: Request,
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """A small synthetic obra, created once per workspace and processed as a
+    job, so a firm sees a finished reading — with its evidence and its
+    warnings — before uploading anything of its own."""
+    rate_limit(request, "process", max_attempts=30, window_seconds=3600.0)
+    from klave_engine.evals.fixtures import write_demo_project
+
+    # El workspace completo, no un prefijo: dos talleres nunca comparten obra.
+    suffix = slugify(request_workspace_id(request) or "local")[:48] or "local"
+    project_id = f"obra_de_ejemplo_{suffix}"
+    root = (settings.data_dir / "uploads" / project_id).resolve()
+    fresh = not root.exists()
+    try:
+        if fresh:
+            write_demo_project(root, declare_units=True)
+        manifest = ingest_project(
+            root,
+            project_name="Obra de ejemplo (sintética)",
+            project_id=project_id,
+            processed_dir_name=settings.processed_dir_name,
+        )
+        _grant_owner(request, settings, project_id)
+    except Exception:
+        if fresh:
+            shutil.rmtree(root, ignore_errors=True)
+        raise
+
+    store.register(project_id, root)
+    if fresh:
+        apply_workspace_defaults(
+            defaults_scope(settings, request_workspace_id(request)),
+            root / settings.processed_dir_name,
+        )
+        BUS.publish(
+            "project_created",
+            project_id=project_id,
+            actor=clean_actor(x_actor),
+            data={"project_name": manifest.project_name},
+        )
+    try:
+        job, _ = JOB_STORE.enqueue(
+            project_id, root, settings, context=context_from_request(request, project_id=project_id)
+        )
+    except JobQueueFullError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error_type": "processing_queue_full",
+                "project_id": project_id,
+                "message": "La cola de procesamiento está llena. Inténtalo de nuevo pronto.",
+            },
+            headers={"Retry-After": "30"},
+        ) from exc
+    return {"project_id": project_id, "job_id": job.job_id, "fresh": fresh}
 
 
 @router.get("/{project_id}/status")

@@ -268,6 +268,41 @@ def test_generadores_reference_each_element_without_confidence(data_dir):
     assert "S-101" in values
 
 
+def test_generadores_measure_each_element_in_metres_like_its_line(data_dir):
+    # Un plano en centímetros: la losa mide 120 000 cm², o sea 12 m². El
+    # respaldo tiene que sumar lo que dice el renglón, no la cifra del dibujo.
+    from klave_engine.costing.exports import build_generadores_workbook, claves_visibles
+
+    sembrar(get_catalog_store(data_dir))
+    losa = Detection(
+        detection_id="det_losa",
+        detection_type=DetectionType.slab_region,
+        label="Losa",
+        bbox=(0.0, 0.0, 400.0, 300.0),
+        confidence=0.9,
+        evidence=EvidencePacket(source="S-101.dxf", method="test"),
+        properties={"estimated_area": 120000.0},
+    )
+    inputs = CostingInputs(
+        project_id="p", detections=[losa],
+        units=DrawingUnits(unit="cm", source="dxf_header", confidence=0.9),
+        segmentation=None, dimensions=None,
+    )
+    reviews = ProjectReviews()
+    report = build_cost_report(inputs, CostingOverrides(), reviews=reviews)
+    line = next(x for x in report.boq.lines if x.concept_code == "PRE-001")
+    assert abs(line.raw_quantity - 12.0) < 1e-6
+
+    ws = load_workbook(io.BytesIO(
+        build_generadores_workbook(report, [losa], reviews)
+    ))["Generadores"]
+    rows = [[cell.value for cell in row] for row in ws.iter_rows()]
+    title = f"{claves_visibles(report)['PRE-001']} {line.description}"
+    start = next(i for i, r in enumerate(rows) if r[0] == title)
+    header = next(i for i in range(start, len(rows)) if rows[i][5] == "Medida base")
+    assert rows[header + 1][5] == 12.0
+
+
 def test_flat_rows_use_office_claves_never_rule_codes(data_dir):
     from klave_engine.costing.models import BoqVariant
 
