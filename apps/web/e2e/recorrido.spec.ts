@@ -74,10 +74,15 @@ test("el recorrido guiado completo, y empezar de cero", async ({ page }) => {
   await siguiente(page, 2);
   // El aviso en vivo llega antes que la respuesta que repinta los botones:
   // se fija esa carrera para que la prueba no dependa de la velocidad de CI.
-  await page.route(/\/reviews(\/verification)?$/, async (route) => {
-    const respuesta = await route.fetch();
-    await new Promise((r) => setTimeout(r, 1500));
-    await route.fulfill({ response: respuesta });
+  const retener = /\/reviews(\/verification)?$/;
+  await page.route(retener, async (route) => {
+    try {
+      const respuesta = await route.fetch();
+      await new Promise((r) => setTimeout(r, 1500));
+      await route.fulfill({ response: respuesta });
+    } catch {
+      // La página ya no la esperaba (cambió de pantalla): nada que entregar.
+    }
   });
   const marcar = page.getByRole("button", { name: "Marcar como verificado", exact: true });
   const verificar = ["Verifica las unidades", "Verifica los elementos", "Verifica los supuestos"];
@@ -87,6 +92,7 @@ test("el recorrido guiado completo, y empezar de cero", async ({ page }) => {
     await expect(marcar).toHaveCount(verificar.length - i);
     await marcar.first().click();
   }
+  await page.unrouteAll({ behavior: "ignoreErrors" });
   await paso(page, "Verificado");
   await siguiente(page);
   await siguienteCapitulo(page);
