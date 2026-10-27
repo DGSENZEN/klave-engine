@@ -196,6 +196,10 @@ class BoqLine(BaseModel):
     raw_kind: QuantityKind
     source_detection_count: int
     source_detections: list[str] = Field(default_factory=list)
+    # Lo que aporta cada elemento a ``raw_quantity``, en sus unidades: sólo
+    # cuando las partes suman el total (si el renglón sale de una altura, una
+    # vista o una regla que no se reparte, queda vacío y el respaldo lo dice).
+    por_elemento: dict[str, float] = Field(default_factory=dict)
     confidence: float
     assumptions: list[str] = Field(default_factory=list)
     # Quantity per plan view (view title → quantity in the concept unit) on
