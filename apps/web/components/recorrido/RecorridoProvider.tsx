@@ -12,6 +12,7 @@ import {
   almacen,
   configurarAlmacen,
   despachar,
+  senalRecorrido,
   useRecorrido,
 } from "@/lib/recorridoStore";
 import { deleteRecorrido, fetchAuthStatus, getRecorrido, putRecorridoPaso } from "@/lib/session";
@@ -47,6 +48,11 @@ export function RecorridoProvider() {
   const paso = pasoActual(estado, CAPITULOS);
   const clavePaso = estado.activo ? `${estado.capitulo}:${estado.indice}` : "";
   const navegado = useRef("");
+  // La obra cuyo procesamiento lanzó una acción del recorrido: cuando quede
+  // lista (aunque termine antes de que la pantalla alcance a verla procesar),
+  // el paso que la espera avanza.
+  const esperandoObra = useRef<string | null>(null);
+  const listaAntes = useRef(estado.obraLista);
 
   // El progreso vive en la cuenta cuando hay cuentas; si no, en el navegador.
   useEffect(() => {
@@ -88,6 +94,15 @@ export function RecorridoProvider() {
   useEffect(() => {
     if (pathname) despachar({ tipo: "ruta", pathname });
   }, [pathname]);
+
+  useEffect(() => {
+    const recien = !listaAntes.current && estado.obraLista;
+    listaAntes.current = estado.obraLista;
+    if (recien && esperandoObra.current && esperandoObra.current === estado.projectId) {
+      esperandoObra.current = null;
+      senalRecorrido("obra.lista");
+    }
+  }, [estado.obraLista, estado.projectId]);
 
   // El ancla: se busca hasta 4 s y luego se sigue su caja mientras el paso dure.
   const ancla = paso?.ancla ?? null;
@@ -171,10 +186,16 @@ export function RecorridoProvider() {
     try {
       if (paso.accion === "crear_obra") {
         const obra = await createDemoProject(getBrowserActor());
-        despachar({ tipo: "obra", projectId: obra.project_id, lista: false });
+        // Sin trabajo nuevo, la obra ya estaba leída: lista desde ya.
+        const yaLista = !obra.job_id;
+        despachar({ tipo: "obra", projectId: obra.project_id, lista: yaLista });
+        if (yaLista) senalRecorrido("obra.lista");
+        else esperandoObra.current = obra.project_id;
         router.push(`/proyecto/${encodeURIComponent(obra.project_id)}`);
       } else if (estado.projectId) {
         await cargarRevisionB(estado.projectId);
+        esperandoObra.current = estado.projectId;
+        despachar({ tipo: "obra", projectId: estado.projectId, lista: false });
       }
     } catch {
       // La tarjeta sigue: la persona puede reintentar o saltar el paso.

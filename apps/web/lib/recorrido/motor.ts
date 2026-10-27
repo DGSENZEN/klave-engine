@@ -60,13 +60,13 @@ function iniciar(estado: EstadoRecorrido, id: Capitulo["id"], capitulos: Capitul
   }
   const hacer = capitulo.pasos.filter((p) => p.tipo === "hacer");
   const repaso = hacer.length > 0 && hacer.every((p) => estado.progreso[p.id] !== undefined);
-  // A medias, se retoma donde se quedó; un capítulo hecho se repasa desde el inicio.
+  // A medias, se retoma donde se quedó; un capítulo terminado se repasa desde el inicio.
   const pendiente = capitulo.pasos.findIndex((p) => estado.progreso[p.id] === undefined);
   return {
     ...estado,
     activo: true,
     capitulo: capitulo.id,
-    indice: repaso || pendiente < 0 ? 0 : pendiente,
+    indice: pendiente < 0 ? 0 : pendiente,
     repaso,
     anclaPerdida: false,
     fueraDeRuta: false,

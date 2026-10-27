@@ -566,7 +566,7 @@ export type Dimensions = {
 
 /** Create (or reopen) the synthetic sample obra and process it. */
 export const createDemoProject = (actor?: string) =>
-  postJSON<{ project_id: string; job_id: string; fresh: boolean }>(
+  postJSON<{ project_id: string; job_id: string | null; fresh: boolean }>(
     "/projects/demo",
     {},
     actor ? { "X-Actor": actor } : undefined,

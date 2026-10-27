@@ -205,3 +205,27 @@ test("retomar un paso sin ruta propia lleva a la ruta del paso anterior", () => 
   assert.equal(rutaHeredada(CAPS[1], 0, "obra_1"), "/proyecto/obra_1/lectura");
   assert.equal(rutaHeredada(CAPS[2], 1, "obra_1"), "/proyecto/obra_1/presupuesto");
 });
+
+const { obraRecienLista } = require(join(process.env.KLAVE_TEST_LIB_DIR, "recorrido", "obra.js"));
+
+test("«obra.lista» sólo cuando la obra termina de procesarse, no al abrirla ya lista", () => {
+  assert.equal(obraRecienLista(null, "processed"), false);       // abrir una obra ya leída
+  assert.equal(obraRecienLista("running", "processed"), true);   // terminó mientras mirabas
+  assert.equal(obraRecienLista("queued", "processed"), true);
+  assert.equal(obraRecienLista("processed", "processed"), false);
+  assert.equal(obraRecienLista("running", "failed"), false);
+});
+
+test("con los «hacer» hechos y un «mirar» pendiente, retoma el pendiente en repaso", () => {
+  const caps = [{
+    id: "revisiones", titulo: "R", minutos: 1, requiereObra: false, transferencia: "t",
+    pasos: [
+      paso("r.b", "revisiones", "hacer", { con: "senal", nombre: "obra.lista" }),
+      paso("r.ver", "revisiones", "mirar", { con: "siguiente" }),
+    ],
+  }];
+  const casi = avanzar(ESTADO_INICIAL, { tipo: "progreso", progreso: { "r.b": "hecho" } }, caps);
+  const e = avanzar(casi, { tipo: "iniciar", capitulo: "revisiones" }, caps);
+  assert.equal(e.repaso, true);
+  assert.equal(e.indice, 1);
+});
