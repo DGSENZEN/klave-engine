@@ -69,6 +69,11 @@ export function despachar(entrada: Entrada): void {
   if (estado !== antes) oyentes.forEach((oyente) => oyente());
 }
 
+/** El estado de este momento, fuera de React (para unir progresos). */
+export function estadoActual(): EstadoRecorrido {
+  return estado;
+}
+
 export function iniciarCapitulo(id: CapituloId): void {
   despachar({ tipo: "iniciar", capitulo: id });
 }

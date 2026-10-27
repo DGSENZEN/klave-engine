@@ -92,6 +92,11 @@ export default function PlanoPage() {
   );
   const [minConfidence, setMinConfidence] = useState(0);
   const [selected, setSelected] = useState<DetectionOverlay | null>(null);
+  // El recorrido avanza con cualquier selección: clic en el plano o ← →.
+  const seleccionId = selected?.id ?? null;
+  useEffect(() => {
+    if (seleccionId) senalRecorrido("visor.seleccion");
+  }, [seleccionId]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showExcluded, setShowExcluded] = useState(true);
   // Una hoja a la vez: las hojas de un juego comparten origen y encimadas no
@@ -658,10 +663,7 @@ export default function PlanoPage() {
             visibleFamilies={effectiveFamilies}
             minConfidence={minConfidence}
             selectedId={selected?.id ?? null}
-            onSelect={(detection) => {
-              setSelected(detection);
-              if (detection) senalRecorrido("visor.seleccion");
-            }}
+            onSelect={setSelected}
             measure={
               measureMode ? { mode: measureMode, points: measurePoints } : null
             }

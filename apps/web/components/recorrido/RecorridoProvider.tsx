@@ -12,6 +12,7 @@ import {
   almacen,
   configurarAlmacen,
   despachar,
+  estadoActual,
   senalRecorrido,
   useRecorrido,
 } from "@/lib/recorridoStore";
@@ -55,32 +56,42 @@ export function RecorridoProvider() {
   const listaAntes = useRef(estado.obraLista);
 
   // El progreso vive en la cuenta cuando hay cuentas; si no, en el navegador.
+  // Mientras no haya sesión (la pantalla de entrada), se vuelve a preguntar en
+  // cada cambio de pantalla: el proveedor vive arriba de todo y no se vuelve a
+  // montar al iniciar sesión.
+  const sesionResuelta = useRef(false);
   useEffect(() => {
+    if (sesionResuelta.current) return;
     let vivo = true;
     void fetchAuthStatus().then(async (status) => {
       const conCuenta = status.mode === "protected" && Boolean(status.user);
+      if (!vivo || (status.mode !== "open" && !conCuenta)) return;
+      sesionResuelta.current = true;
       configurarAlmacen(
         conCuenta
           ? { cargar: getRecorrido, guardar: putRecorridoPaso, borrar: deleteRecorrido }
           : null,
       );
-      const progreso = await almacen.cargar();
-      if (vivo) despachar({ tipo: "progreso", progreso });
+      // Lo que se hizo antes de conocer la cuenta (un clic rápido tras entrar)
+      // se une a lo guardado y se sube; nada hecho se pierde.
+      const guardado = await almacen.cargar();
+      const enMemoria = estadoActual().progreso;
+      for (const [id, valor] of Object.entries(enMemoria)) {
+        if (guardado[id] === undefined) void almacen.guardar(id, valor);
+      }
+      if (vivo) despachar({ tipo: "progreso", progreso: { ...guardado, ...enMemoria } });
+      // La obra de ejemplo de esta persona, si ya existe: así un capítulo
+      // salteado no la vuelve a crear (ni a procesar).
+      const proyectos = await listProjects().catch(() => []);
+      const obra = proyectos.find((p) => p.project_id.startsWith("obra_de_ejemplo"));
+      if (vivo && obra) {
+        despachar({ tipo: "obra", projectId: obra.project_id, lista: obra.status === "processed" });
+      }
     });
-    // La obra de ejemplo de esta persona, si ya existe: así un capítulo
-    // salteado no la vuelve a crear (ni a procesar).
-    void listProjects()
-      .then((proyectos) => {
-        const obra = proyectos.find((p) => p.project_id.startsWith("obra_de_ejemplo"));
-        if (vivo && obra) {
-          despachar({ tipo: "obra", projectId: obra.project_id, lista: obra.status === "processed" });
-        }
-      })
-      .catch(() => {});
     return () => {
       vivo = false;
     };
-  }, []);
+  }, [pathname]);
 
   // Cada paso nuevo lleva a su pantalla (una vez: si la persona se va, el
   // recorrido no la arrastra de regreso; la tarjeta le ofrece volver).
