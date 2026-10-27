@@ -16,6 +16,33 @@ Vercel's separate Git integration may create previews, but its direct `main`
 deployments are disabled in `apps/web/vercel.json` so it cannot publish a
 frontend before the required checks and API release have completed.
 
+## Manual API releases
+
+GitHub's hosted runners cannot reach the server's SSH ingress, so the
+deployment job runs with `EC2_DEPLOY_MODE=manual` unless the repository
+variable says `ssh`. In manual mode it skips the SSH steps, records that in
+the run summary, checks that the running API is ready, and promotes the
+verified frontend. The frontend can therefore be ahead of the API: a frontend
+change that needs a new endpoint must tolerate its absence until the API is
+released.
+
+To release the API, run the same steps from a machine that can reach SSH,
+using the commit that passed verification on `main`:
+
+```bash
+sha=$(git rev-parse origin/main)
+git archive --format=tar.gz -o "/tmp/klave-release-$sha.tar.gz" "$sha" \
+  apps/api apps/__init__.py packages pyproject.toml uv.lock README.md \
+  .dockerignore docker-compose.ec2.yml deploy
+scp -i /path/to/klave-key.pem "/tmp/klave-release-$sha.tar.gz" "ubuntu@EC2_HOST:klave-release-$sha.tar.gz"
+git show "$sha:deploy/ec2-release.sh" | ssh -i /path/to/klave-key.pem ubuntu@EC2_HOST \
+  "bash -s -- '$sha' \"\$HOME/klave-release-$sha.tar.gz\""
+curl --fail https://api.klave.space/ready
+```
+
+The script backs up, swaps the image, waits for readiness, and restores the
+previous image if anything fails, exactly as it does from CI.
+
 ## Configuration
 
 The existing `KLAVE_ENV` environment contains `VERCEL_TOKEN` and `EC2_SSH_KEY`.

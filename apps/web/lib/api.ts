@@ -3484,6 +3484,112 @@ export const rejectPropuesta = (projectId: string, key: string, actor?: string) 
     actorClientHeaders(actor, null),
   );
 
+/** La lectura estructural: un valor del plano con quién lo dijo y dónde. */
+export type FuenteEstructural =
+  | "humano"
+  | "cuadro"
+  | "detalle"
+  | "seccion_dibujada"
+  | "nota"
+  | "medido"
+  | "regla"
+  | "supuesto"
+  | "ia";
+
+export type DatoEstructural = {
+  valor: unknown;
+  fuente: FuenteEstructural;
+  hoja: string;
+  hojas: string[];
+  texto: string;
+  en_conflicto: boolean;
+  ilegible: boolean;
+};
+
+/** Un hallazgo del propio plano; el id no se mueve entre corridas. */
+export type Verificacion = {
+  id: string;
+  numero: number;
+  severidad: "bloquea" | "duda" | "aviso";
+  mensaje: string;
+  marcas: string[];
+  elementos: string[];
+  datos: DatoEstructural[];
+  hoja: string;
+  bbox: [number, number, number, number] | null;
+  campo: string;
+  en_juego: Record<string, number>;
+  cantidad: "conocida" | "desconocida" | "estimada";
+};
+
+/** La tarjeta de una familia. `en_juego_mxn` null nunca es $0: hay algo sin cifra. */
+export type ResumenFamilia = {
+  familia: string;
+  colocaciones: number;
+  con_definicion: number;
+  criticos_total: number;
+  criticos_del_plano: number;
+  criticos_humanos: number;
+  bloquea: number;
+  duda: number;
+  aviso: number;
+  en_juego_mxn: number | null;
+  en_juego_mxn_conocido: number;
+  en_juego_cantidad: Record<string, number>;
+  en_juego_desconocido: number;
+};
+
+export type DecisionEstructural = {
+  marca: string;
+  campo: string;
+  valor: unknown;
+  nota: string;
+  actor: string;
+  fecha: string;
+  para_muro_cm: number | null;
+};
+
+export type Estructura = {
+  disponible: boolean;
+  motivo: "" | "anterior" | "ilegible" | "sin_procesar";
+  al_dia: boolean;
+  avisos: string[];
+  resumen: ResumenFamilia[];
+  verificaciones: Verificacion[];
+  decisiones_guardadas: DecisionEstructural[];
+  campos_decidibles: { campo: string; nombre: string }[];
+};
+
+export const getEstructura = (projectId: string) =>
+  getJSON<Estructura>(`/projects/${encodeURIComponent(projectId)}/estructura`);
+
+/** Guarda la decisión y recalcula; contesta la lectura nueva. */
+export const decidirEstructura = (
+  projectId: string,
+  body: { marca: string; campo: string; valor: unknown; nota: string; para_muro_cm?: number | null },
+  actor?: string,
+  clientId?: string | null,
+) =>
+  postJSON<Estructura>(
+    `/projects/${encodeURIComponent(projectId)}/estructura/decisiones`,
+    body,
+    actorClientHeaders(actor, clientId),
+  );
+
+export const quitarDecisionEstructural = (
+  projectId: string,
+  d: { marca: string; campo: string; para_muro_cm?: number | null },
+  actor?: string,
+  clientId?: string | null,
+) => {
+  const params = new URLSearchParams({ marca: d.marca, campo: d.campo });
+  if (d.para_muro_cm != null) params.set("para_muro_cm", String(d.para_muro_cm));
+  return deleteJSON<Estructura>(
+    `/projects/${encodeURIComponent(projectId)}/estructura/decisiones?${params}`,
+    actorClientHeaders(actor, clientId),
+  );
+};
+
 /** La medición del piloto: lo que el proyecto guarda, convertido en tiempos. */
 export type Piloto = {
   inicio: string | null;

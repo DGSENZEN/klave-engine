@@ -78,6 +78,8 @@ RAW_KIND_LABELS = {
     "count": "conteo (pza)",
     "length": "longitud (m)",
     "area": "área (m²)",
+    "volume": "volumen (m³)",
+    "linear_volume": "volumen (m³)",
 }
 
 KIND_PROPERTY = {
@@ -786,6 +788,31 @@ def _croquis_rows(ws: Worksheet, row: int, items: list[tuple[str, Path]]) -> int
     return row
 
 
+def _medidas_propias(
+    line: BoqLine, by_id: dict[str, Detection], meters: float, power: dict[str, int]
+) -> dict[str, float]:
+    """Para corridas anteriores a ``por_elemento``: la longitud o el área de cada
+    elemento, sólo si juntas dan la base del renglón (la cimbra de una zapata no
+    es su área; ahí no se dice nada)."""
+    exponente = power.get(line.raw_kind.value)
+    if exponente is None:
+        return {}
+    medidas: dict[str, float] = {}
+    for detection_id in line.source_detections:
+        detection = by_id.get(detection_id)
+        if detection is None:
+            continue
+        for prop in KIND_PROPERTY.get(line.raw_kind.value, ()):
+            if detection.properties.get(prop) is not None:
+                medidas[detection_id] = float(detection.properties[prop]) * meters**exponente
+                break
+    if not medidas or not math.isclose(
+        sum(medidas.values()), line.raw_quantity, rel_tol=1e-3, abs_tol=0.01
+    ):
+        return {}
+    return medidas
+
+
 def _generadores(
     ws: Worksheet,
     report: CostReport,
@@ -833,6 +860,7 @@ def _generadores(
             f"cantidad: {line.quantity:,.2f} {line.unit}",
         )
         row += 1
+        medidas = line.por_elemento or _medidas_propias(line, by_id, meters, power)
         variants = line.variants or []
         groups: list[tuple[str, str, float | None, list[str]]] = (
             [
@@ -860,12 +888,11 @@ def _generadores(
                 detection = by_id.get(detection_id)
                 if detection is None:
                     continue
-                measure: Any = 1
-                for prop in KIND_PROPERTY.get(line.raw_kind.value, ()):
-                    if detection.properties.get(prop) is not None:
-                        scale = meters ** power.get(line.raw_kind.value, 0)
-                        measure = round(float(detection.properties[prop]) * scale, 3)
-                        break
+                # Lo que este elemento aporta a la base del renglón, o «—»:
+                # un 1 o un área que no suman confunden más que nada.
+                measure: Any = 1 if line.raw_kind.value == "count" else "—"
+                if detection_id in medidas:
+                    measure = round(medidas[detection_id], 3)
                 ref = refs.get(detection_id)
                 values: list[Any] = [
                     detection.display_label or detection.label,
