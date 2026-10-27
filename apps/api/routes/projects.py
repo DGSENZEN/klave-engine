@@ -439,6 +439,11 @@ def create_demo_project(
             actor=clean_actor(x_actor),
             data={"project_name": manifest.project_name},
         )
+    job_id = _encolar_ejemplo(request, settings, project_id, root)
+    return {"project_id": project_id, "job_id": job_id, "fresh": fresh}
+
+
+def _encolar_ejemplo(request: Request, settings: Settings, project_id: str, root: Path) -> str:
     try:
         job, _ = JOB_STORE.enqueue(
             project_id, root, settings, context=context_from_request(request, project_id=project_id)
@@ -453,7 +458,83 @@ def create_demo_project(
             },
             headers={"Retry-After": "30"},
         ) from exc
-    return {"project_id": project_id, "job_id": job.job_id, "fresh": fresh}
+    return job.job_id
+
+
+def _obra_de_ejemplo_quieta(store: ProjectStore, project_id: str, settings: Settings) -> Path:
+    """La raíz de una obra de ejemplo que no se está procesando: 404 si no es
+    una obra de ejemplo, 409 si un trabajo la está leyendo (nunca se borran
+    archivos debajo de un trabajo vivo)."""
+    if not es_obra_de_ejemplo(project_id):
+        raise HTTPException(status_code=404, detail="Not found")
+    root = store.get_root(project_id)
+    job = JOB_STORE.get(project_id, root, settings)
+    if job is not None and job.state in ("queued", "running"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_type": "sample_busy",
+                "message": "La obra de ejemplo se está procesando; espera a que termine.",
+            },
+        )
+    return root
+
+
+@router.post("/{project_id}/demo/reiniciar", status_code=202)
+def reiniciar_obra_de_ejemplo(
+    project_id: str,
+    request: Request,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Empezar de cero: la Rev A otra vez, sin revisiones, mapeos ni lecturas,
+    con su catálogo didáctico recién sembrado, y el recorrido desde el inicio."""
+    root = _obra_de_ejemplo_quieta(store, project_id, settings)
+    shutil.rmtree(root, ignore_errors=True)
+    drop_catalog_store(settings.data_dir, project_id)
+    build_obra_ejemplo(root, "A")
+    sembrar_catalogo_didactico(store_for_project(settings, project_id))
+    ingest_project(
+        root,
+        project_name="Obra de ejemplo",
+        project_id=project_id,
+        processed_dir_name=settings.processed_dir_name,
+    )
+    _grant_owner(request, settings, project_id)
+    store.register(project_id, root)
+    apply_workspace_defaults(
+        defaults_scope(settings, request_workspace_id(request)),
+        root / settings.processed_dir_name,
+    )
+    user = _state_user(request)
+    if user is not None:
+        try:
+            get_user_store(settings.users_database_url).reiniciar_recorrido(str(user["user_id"]))
+        except UsersDbUnavailable:
+            pass  # el navegador también borra el progreso; la cuenta se pondrá al día
+    job_id = _encolar_ejemplo(request, settings, project_id, root)
+    return {"project_id": project_id, "job_id": job_id}
+
+
+@router.post("/{project_id}/demo/revision-b", status_code=202)
+def cargar_revision_b(
+    project_id: str,
+    request: Request,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """La Rev B de la obra de ejemplo: reescribe sus hojas y la vuelve a leer,
+    así Cambios compara una lectura contra la otra."""
+    root = _obra_de_ejemplo_quieta(store, project_id, settings)
+    build_obra_ejemplo(root, "B")
+    ingest_project(
+        root,
+        project_name="Obra de ejemplo",
+        project_id=project_id,
+        processed_dir_name=settings.processed_dir_name,
+    )
+    job_id = _encolar_ejemplo(request, settings, project_id, root)
+    return {"project_id": project_id, "job_id": job_id}
 
 
 @router.get("/{project_id}/status")

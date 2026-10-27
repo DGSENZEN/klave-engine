@@ -85,7 +85,7 @@ def _required_project_role(segments: list[str], method: str) -> str | None:
         return None
     if len(segments) == 2:
         return "owner" if method in ("PATCH", "DELETE") else "viewer"
-    if segments[2] in ("files", "access", "compartir"):
+    if segments[2] in ("files", "access", "compartir", "demo"):
         return "owner"
     if method in _MUTATING:
         return "editor"

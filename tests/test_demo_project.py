@@ -226,3 +226,105 @@ def test_overview_counters_ignore_samples_and_onboarding_is_gone(data_dir, monke
     attention = body["attention"]
     assert attention["processing"] == 0 and attention["unverified"] == 0
     assert attention["failed"] == 0 and attention["stale_runs"] == 0
+
+
+# --- Reiniciar la obra y cargar su Rev B -------------------------------------------
+
+
+def _cliente_con_obra(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from apps.api.main import create_app
+
+    calls = _fake_enqueue(monkeypatch)
+    client = TestClient(create_app())
+    project_id = client.post("/projects/demo", json={}).json()["project_id"]
+    return client, project_id, calls
+
+
+def _hojas(root):
+    return {p.name: p.read_bytes() for p in sorted((root / "drawings").glob("*.dxf"))}
+
+
+def _referencia(tmp_path, revision):
+    from klave_engine.ejemplo.obra import build_obra_ejemplo
+
+    ref = tmp_path / f"ref_{revision}"
+    build_obra_ejemplo(ref, "A")
+    if revision == "B":
+        build_obra_ejemplo(ref, "B")
+    return {k: len(v) for k, v in _hojas(ref).items()}
+
+
+def test_reset_restores_rev_a_and_clears_reviews(data_dir, monkeypatch, tmp_path):
+    client, project_id, calls = _cliente_con_obra(monkeypatch)
+    root = data_dir / "uploads" / project_id
+    from klave_engine.ejemplo.obra import build_obra_ejemplo
+
+    build_obra_ejemplo(root, "B")
+    (root / "processed" / "reviews.json").write_text("{}")
+    catalog = tenancy.store_for_project(get_settings(), project_id)
+    catalog.upsert_insumo("MAT-ACERO", unit_cost=1.0)
+
+    response = client.post(f"/projects/{project_id}/demo/reiniciar")
+    assert response.status_code == 202, response.text
+    assert response.json()["project_id"] == project_id
+    assert {k: len(v) for k, v in _hojas(root).items()} == _referencia(tmp_path, "A")
+    assert not (root / "processed" / "reviews.json").exists()
+    fresh = tenancy.store_for_project(get_settings(), project_id)
+    acero = next(r for r in fresh.list_insumos() if r["code"] == "MAT-ACERO")
+    assert acero["unit_cost"] == 24500.0
+    assert len(calls) == 2
+
+
+def test_reset_refused_while_processing(data_dir, monkeypatch):
+    client, project_id, _ = _cliente_con_obra(monkeypatch)
+    root = data_dir / "uploads" / project_id
+    antes = _hojas(root)
+    monkeypatch.setattr(
+        projects_module.JOB_STORE, "get",
+        lambda *_a, **_k: jobs_module.Job(
+            project_id=project_id, job_id="j", run_id="r", state="running"
+        ),
+    )
+    for ruta in ("reiniciar", "revision-b"):
+        response = client.post(f"/projects/{project_id}/demo/{ruta}")
+        assert response.status_code == 409
+        assert response.json()["detail"]["error_type"] == "sample_busy"
+    assert _hojas(root) == antes
+
+
+def test_rev_b_rewrites_sheets_and_enqueues(data_dir, monkeypatch, tmp_path):
+    client, project_id, calls = _cliente_con_obra(monkeypatch)
+    response = client.post(f"/projects/{project_id}/demo/revision-b")
+    assert response.status_code == 202, response.text
+    root = data_dir / "uploads" / project_id
+    assert {k: len(v) for k, v in _hojas(root).items()} == _referencia(tmp_path, "B")
+    assert len(calls) == 2
+
+
+def test_demo_routes_refuse_real_projects(data_dir, monkeypatch):
+    client, _, _ = _cliente_con_obra(monkeypatch)
+    assert client.post("/projects/marina/demo/reiniciar").status_code == 404
+    assert client.post("/projects/marina/demo/revision-b").status_code == 404
+
+
+def test_demo_routes_need_the_owner():
+    assert _required_project_role(["projects", "obra_x", "demo", "reiniciar"], "POST") == "owner"
+    assert _required_project_role(["projects", "obra_x", "demo", "revision-b"], "POST") == "owner"
+
+
+def test_reset_route_restarts_the_tour_progress(data_dir, monkeypatch):
+    settings = get_settings()
+    store = ProjectStore(settings)
+    users = _Users()
+    reinicios = []
+    users.reiniciar_recorrido = reinicios.append
+    _patch_users(monkeypatch, users)
+    _fake_enqueue(monkeypatch)
+    request = _request_user("ws-1", "u-ana")
+    project_id = projects_module.create_demo_project(request, store=store, settings=settings)[
+        "project_id"
+    ]
+    projects_module.reiniciar_obra_de_ejemplo(project_id, request, store=store, settings=settings)
+    assert reinicios == ["u-ana"]
