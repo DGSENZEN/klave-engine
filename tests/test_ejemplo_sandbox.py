@@ -98,3 +98,38 @@ def test_variant_picker_lists_the_project_catalog_concepts(data_dir, monkeypatch
 class _SinRenglones:
     class boq:  # noqa: N801 — imita report.boq
         lines: list = []
+
+
+def _cliente_con_obra(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from apps.api import jobs as jobs_module
+    from apps.api.main import create_app
+    from apps.api.routes import projects as projects_module
+
+    fake = jobs_module.Job(project_id="x", job_id="j", run_id="r")
+    monkeypatch.setattr(projects_module.JOB_STORE, "enqueue", lambda *_a, **_k: (fake, True))
+    client = TestClient(create_app())
+    return client, client.post("/projects/demo", json={}).json()["project_id"]
+
+
+def test_an_alias_made_on_the_sample_stays_in_its_catalog(data_dir, monkeypatch):
+    """«Elegir de mi catálogo» en la obra de ejemplo no escribe en el taller."""
+    client, project_id = _cliente_con_obra(monkeypatch)
+    response = client.post("/catalog/aliases", json={
+        "concept_code": "EST-001", "kind": "concept", "target_code": "E-COL-4040",
+        "project_id": project_id,
+    })
+    assert response.status_code == 201, response.text
+    office = get_catalog_store(data_dir)
+    sample = store_for_project(get_settings(), project_id)
+    assert "EST-001" not in office.load_concept_aliases()
+    assert "EST-001" in sample.load_concept_aliases()
+
+
+def test_the_sample_mapping_offers_no_office_references(data_dir, monkeypatch):
+    from apps.api.routes import variantes as variantes_module
+
+    client, project_id = _cliente_con_obra(monkeypatch)
+    monkeypatch.setattr(variantes_module, "_report", lambda *_a: _SinRenglones())
+    assert client.get(f"/projects/{project_id}/variantes").json()["referencias"] is False

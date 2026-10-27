@@ -6,7 +6,6 @@ import { CaretDown, MagicWand, MagnifyingGlass } from "@phosphor-icons/react";
 import {
   apiMessage,
   forgetVariantMapping,
-
   getVariants,
   mapVariants,
   money2,
@@ -224,6 +223,7 @@ export function VariantesSection({
                   onPick={setPicking}
                   busy={busy}
                   concepts={concepts}
+                  conReferencias={state?.referencias ?? true}
                   onConfirm={(v, cand) =>
                     void run(async () => {
                       await setVariantMapping(
@@ -273,6 +273,7 @@ function LineRows({
   onPick,
   busy,
   concepts,
+  conReferencias,
   onConfirm,
   onAccept,
   onNone,
@@ -286,6 +287,7 @@ function LineRows({
   onPick: (key: string | null) => void;
   busy: boolean;
   concepts: ConceptoMapeable[];
+  conReferencias: boolean;
   onConfirm: (v: BoqVariantDetail, c: Candidate) => void;
   onAccept: (v: BoqVariantDetail) => void;
   onNone: (v: BoqVariantDetail) => void;
@@ -373,6 +375,7 @@ function LineRows({
             <tr className="border-b border-border bg-surface-2/30">
               <td colSpan={4} className="px-4 py-3">
                 <Picker
+                  conReferencias={conReferencias}
                   unit={line.unit}
                   description={v.description}
                   concepts={concepts}
@@ -390,6 +393,7 @@ function LineRows({
 }
 
 function Picker({
+  conReferencias,
   unit,
   description,
   concepts,
@@ -397,6 +401,8 @@ function Picker({
   onPick,
   onCancel,
 }: {
+  /** Sin bases de referencia (la obra de ejemplo): sólo los conceptos. */
+  conReferencias: boolean;
   unit: string;
   description: string;
   concepts: ConceptoMapeable[];
@@ -424,7 +430,7 @@ function Picker({
     const q = query.trim();
     let alive = true;
     const handle = window.setTimeout(() => {
-      if (q.length < 3) {
+      if (q.length < 3 || !conReferencias) {
         if (alive) setRefs([]);
         return;
       }
@@ -452,7 +458,7 @@ function Picker({
       alive = false;
       window.clearTimeout(handle);
     };
-  }, [query, unit]);
+  }, [query, unit, conReferencias]);
 
   const all: Candidate[] = [...own, ...refs];
   return (

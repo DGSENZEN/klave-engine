@@ -3201,6 +3201,8 @@ export type VariantsState = {
   counts: Record<string, number>;
   /** A qué se puede mapear: los conceptos del catálogo donde se guarda el mapeo. */
   conceptos: ConceptoMapeable[];
+  /** Si se ofrecen las bases de referencia del taller (no en la obra de ejemplo). */
+  referencias: boolean;
 };
 
 export const getVariants = (projectId: string) =>

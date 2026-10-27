@@ -5,6 +5,7 @@ import Link from "next/link";
 import { CheckCircle, Circle, Question } from "@phosphor-icons/react";
 import { reiniciarObraDeEjemplo } from "@/lib/api";
 import { CAPITULOS } from "@/lib/recorrido/capitulos";
+import { empezarDeCero } from "@/lib/recorrido/reinicio";
 import {
   abrirMenuRecorrido,
   almacen,
@@ -17,7 +18,7 @@ import {
 } from "@/lib/recorridoStore";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
-import { Button } from "@/components/ui";
+import { Button, Callout } from "@/components/ui";
 
 /** El «?» de un encabezado: abre el menú del recorrido. */
 export function BotonRecorrido({ ancla }: { ancla: string }) {
@@ -39,6 +40,7 @@ export function DialogoRecorrido() {
   const abierto = useMenuRecorrido();
   const estado = useRecorrido();
   const [confirmar, setConfirmar] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
   const pendiente = capituloPendiente(estado.progreso);
   const cerrar = () => abrirMenuRecorrido(false);
 
@@ -49,15 +51,17 @@ export function DialogoRecorrido() {
 
   async function deCero() {
     setConfirmar(false);
-    cerrar();
-    if (estado.projectId) {
-      try {
-        await reiniciarObraDeEjemplo(estado.projectId);
-      } catch {
-        // Si la obra está procesando, el servidor lo dice; el progreso igual se borra.
-      }
+    const resultado = await empezarDeCero(estado.projectId, {
+      reiniciar: reiniciarObraDeEjemplo,
+      borrar: () => almacen.borrar(),
+    });
+    if (!resultado.ok) {
+      // La obra no volvió a la Rev A: el progreso se queda y se dice por qué.
+      setAviso(resultado.mensaje);
+      return;
     }
-    await almacen.borrar();
+    setAviso(null);
+    cerrar();
     despachar({ tipo: "progreso", progreso: {} });
     iniciarCapitulo("arranque");
   }
@@ -83,6 +87,11 @@ export function DialogoRecorrido() {
           </div>
         }
       >
+        {aviso && (
+          <div className="mb-3">
+            <Callout tone="warning">{aviso}</Callout>
+          </div>
+        )}
         <ol className="space-y-1">
           {CAPITULOS.map((capitulo, i) => {
             const hecho = capituloHecho(capitulo.id, estado.progreso);

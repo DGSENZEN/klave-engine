@@ -16,6 +16,7 @@ from klave_engine.costing.models import CostReport
 from klave_engine.costing.reviews import load_reviews
 from klave_engine.detection.results import Detection
 from klave_engine.detection.views import SheetSegmentation
+from klave_engine.ejemplo import es_obra_de_ejemplo
 from pydantic import BaseModel
 
 from apps.api.dependencies import ProjectStore, get_settings, get_store, project_recompute_lock
@@ -75,7 +76,10 @@ def list_variants(
         for row in store_for_project(settings, project_id).load_concepts()
         if not row.get("rule_key")
     ]
-    return {"lines": lines, "counts": counts, "conceptos": conceptos}
+    # Las bases de referencia del taller no se ofrecen en la obra de ejemplo:
+    # su mapeo se guarda en su propio catálogo, que no las tiene.
+    referencias = not es_obra_de_ejemplo(project_id)
+    return {"lines": lines, "counts": counts, "conceptos": conceptos, "referencias": referencias}
 
 
 @router.post("/{project_id}/variantes/mapear")

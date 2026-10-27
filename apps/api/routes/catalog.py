@@ -62,6 +62,7 @@ from klave_engine.costing.vigencia import (
     price_ages,
     roll_forward_factor,
 )
+from klave_engine.ejemplo import es_obra_de_ejemplo
 from pydantic import BaseModel, Field, FiniteFloat, ValidationError
 
 from apps.api.auth.access import require_project_role
@@ -1775,6 +1776,14 @@ def _unit_mismatch(exc: UnitMismatch) -> HTTPException:
     )
 
 
+def _catalogo_para(catalog: CatalogStore, settings: Settings, project_id: str) -> CatalogStore:
+    """El catálogo donde vive un alias pedido desde un proyecto: el del taller,
+    salvo en la obra de ejemplo, que tiene el suyo y no escribe en el taller."""
+    if project_id and es_obra_de_ejemplo(project_id):
+        return store_for_project(settings, project_id)
+    return catalog
+
+
 def _set_alias(catalog: CatalogStore, item: AliasInput, actor: str, project_id: str) -> dict:
     _forced_without_reason(item.force, item.note)
     try:
@@ -1804,6 +1813,7 @@ def set_alias(
     # El alias se recalcula sobre ese proyecto: hace falta poder editarlo.
     require_project_role(request, body.project_id, "editor")
     actor = clean_actor(x_actor) or ""
+    catalog = _catalogo_para(catalog, settings, body.project_id)
     alias = _set_alias(catalog, body, actor, body.project_id)
     _publish_catalog_updated(
         x_actor, "alias_set", f"{body.concept_code} → {alias['clave']}", catalog=catalog
@@ -1823,6 +1833,7 @@ def set_aliases_bulk(
 ) -> dict:
     require_project_role(request, body.project_id, "editor")
     actor = clean_actor(x_actor) or ""
+    catalog = _catalogo_para(catalog, settings, body.project_id)
     saved = [_set_alias(catalog, item, actor, body.project_id) for item in body.items]
     _publish_catalog_updated(
         x_actor, "aliases_set", f"{len(saved)} conceptos del taller", catalog=catalog
@@ -1842,6 +1853,7 @@ def clear_alias(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     require_project_role(request, project_id, "editor")
+    catalog = _catalogo_para(catalog, settings, project_id)
     if not catalog.clear_concept_alias(code.upper()):
         raise HTTPException(status_code=404, detail={"error_type": "alias_not_found"})
     actor = clean_actor(x_actor) or ""
