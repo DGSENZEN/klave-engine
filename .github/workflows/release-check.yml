@@ -147,7 +147,42 @@ jobs:
       - name: Verify public API
         run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://api.klave.space/ready
       - name: Promote tested frontend
-        run: vercel promote "$DEPLOYMENT_URL" --yes
+        # `vercel promote` first asks GET /v2/user who owns the token, and this
+        # project's token answers 404 «User not found». The same calls the CLI
+        # makes after that lookup need only the team and project, like deploy.
+        run: |
+          set -euo pipefail
+          api=https://api.vercel.com
+          team="teamId=$VERCEL_ORG_ID"
+          vercel_api() {
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer $VERCEL_TOKEN" "$@"
+          }
+          deployment=$(vercel_api "$api/v13/deployments/${DEPLOYMENT_URL#https://}?$team")
+          id=$(jq -r .id <<<"$deployment")
+          if [ "$(jq -r .projectId <<<"$deployment")" != "$VERCEL_PROJECT_ID" ] \
+            || [ "$(jq -r .target <<<"$deployment")" != production ]; then
+            echo "$DEPLOYMENT_URL is not a production deployment of this project." >&2
+            exit 1
+          fi
+          status=$(vercel_api -X POST -o /dev/null -w '%{http_code}' \
+            "$api/v10/projects/$VERCEL_PROJECT_ID/promote/$id?$team")
+          if [ "$status" = 202 ]; then
+            echo "Promotion of $id queued behind an active rolling release."
+            exit 0
+          fi
+          # As the CLI does: wait for the project's alias job to name this deployment.
+          for _ in $(seq 60); do
+            job=$(vercel_api "$api/v9/projects/$VERCEL_PROJECT_ID?$team" \
+              | jq -r '.lastAliasRequest // {} | "\(.toDeploymentId) \(.jobStatus)"')
+            case "$job" in
+              "$id succeeded") echo "Promoted $id."; exit 0 ;;
+              "$id failed") echo "Vercel reports the promotion of $id failed." >&2; exit 1 ;;
+            esac
+            sleep 3
+          done
+          echo "The promotion of $id did not finish within 3 minutes." >&2
+          exit 1
         env:
           DEPLOYMENT_URL: ${{ steps.stage.outputs.url }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
