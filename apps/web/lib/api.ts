@@ -3194,9 +3194,13 @@ export type VariantLine = {
   variants: BoqVariantDetail[];
 };
 
+export type ConceptoMapeable = { code: string; description: string; unit: string };
+
 export type VariantsState = {
   lines: VariantLine[];
   counts: Record<string, number>;
+  /** A qué se puede mapear: los conceptos del catálogo donde se guarda el mapeo. */
+  conceptos: ConceptoMapeable[];
 };
 
 export const getVariants = (projectId: string) =>

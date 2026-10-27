@@ -72,3 +72,29 @@ def test_drop_catalog_store_removes_file_and_cache(data_dir):
     assert store.db_path.resolve() not in catalog_store_module._STORES
     fresh = get_catalog_store(data_dir, workspace_id="obra_de_ejemplo_local")
     assert fresh is not store
+
+
+def test_variant_picker_lists_the_project_catalog_concepts(data_dir, monkeypatch):
+    """El selector de «Tu catálogo» lee del mismo catálogo donde se guarda el
+    mapeo: en la obra de ejemplo, el suyo (con las claves del taller ficticio)."""
+    from fastapi.testclient import TestClient
+
+    from apps.api import jobs as jobs_module
+    from apps.api.main import create_app
+    from apps.api.routes import projects as projects_module
+    from apps.api.routes import variantes as variantes_module
+
+    fake = jobs_module.Job(project_id="x", job_id="j", run_id="r")
+    monkeypatch.setattr(projects_module.JOB_STORE, "enqueue", lambda *_a, **_k: (fake, True))
+    monkeypatch.setattr(variantes_module, "_report", lambda *_a: _SinRenglones())
+    client = TestClient(create_app())
+    project_id = client.post("/projects/demo", json={}).json()["project_id"]
+    body = client.get(f"/projects/{project_id}/variantes").json()
+    codes = {c["code"] for c in body["conceptos"]}
+    assert {"E-COL-3040", "E-COL-4040", "E-TRB-3050", "E-TRB-3060"} <= codes
+    assert all(set(c) == {"code", "description", "unit"} for c in body["conceptos"])
+
+
+class _SinRenglones:
+    class boq:  # noqa: N801 — imita report.boq
+        lines: list = []

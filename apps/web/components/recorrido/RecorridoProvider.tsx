@@ -115,6 +115,7 @@ export function RecorridoProvider() {
     const observador = new MutationObserver(() => {
       const encontrado = buscar();
       if (encontrado && encontrado !== nodo) {
+        if (nodo) tamano.unobserve(nodo);
         nodo?.removeEventListener("click", alClic, true);
         enganchar(encontrado);
       } else if (!encontrado && nodo) {
@@ -123,7 +124,12 @@ export function RecorridoProvider() {
         seguir();
       }
     });
-    observador.observe(document.body, { childList: true, subtree: true });
+    observador.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-tour"],
+    });
     const inicial = buscar();
     if (inicial) enganchar(inicial);
     const espera = window.setTimeout(() => {

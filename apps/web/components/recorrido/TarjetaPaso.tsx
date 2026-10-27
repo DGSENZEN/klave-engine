@@ -65,7 +65,7 @@ export function TarjetaPaso({
 
   const hoja = vista.w < 768;
   const lugar = colocarTarjeta(
-    fueraDeRuta || anclaPerdida ? null : rect,
+    fueraDeRuta || anclaPerdida || paso === null ? null : rect,
     { w: ANCHO, h: alto },
     vista,
   );

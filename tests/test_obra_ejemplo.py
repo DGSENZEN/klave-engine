@@ -113,3 +113,17 @@ def test_labels_match_gold(corridas):
 def test_no_ai_read_is_involved(corridas):
     for _, root, _ in corridas.values():
         assert not list(root.rglob("ai_read*.json"))
+
+
+def test_teaching_catalog_has_office_claves_to_map_to(tmp_path):
+    """Mapear sólo enseña algo si hay claves del taller a las cuales mapear."""
+    from klave_engine.costing.mapeo import candidatos_del_taller
+
+    store = get_catalog_store(tmp_path, workspace_id="t")
+    sembrar_catalogo_didactico(store)
+    candidatos = candidatos_del_taller(store)
+    columnas = [c for c in candidatos if c.unit == "M3" and "Columnas" in c.description]
+    trabes = [c for c in candidatos if c.unit == "M3" and "Trabes" in c.description]
+    assert len(columnas) == 2 and len(trabes) == 2
+    sembrar_catalogo_didactico(store)  # sembrar dos veces no duplica ni falla
+    assert len(candidatos_del_taller(store)) == len(candidatos)

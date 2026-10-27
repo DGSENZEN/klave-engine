@@ -1,5 +1,5 @@
 {
-  "_nota": "Precios didácticos de la obra de ejemplo (MXN, 2026-10). Sirven para que el recorrido muestre un presupuesto con precio; no son precios de referencia ni de mercado. Lo que queda sin precio (la losa sin sistema declarado, la pintura) es el hallazgo de dinero que el recorrido enseña.",
+  "_nota": "Precios didácticos de la obra de ejemplo (MXN, 2026-10). Sirven para que el recorrido muestre un presupuesto con precio; no son precios de referencia ni de mercado. Lo que queda sin precio (la losa sin sistema declarado, la pintura) es el hallazgo de dinero que el recorrido enseña. «conceptos_del_taller» son claves de un taller ficticio: lo que el recorrido enseña a mapear.",
   "insumos": {
     "EQ-BAILARINA": 650.0,
     "EQ-CAMION": 950.0,
@@ -37,5 +37,139 @@
     "MO-FIERRERO": 820.0,
     "MO-OF-ALB": 780.0,
     "MO-PEON": 480.0
-  }
+  },
+  "conceptos_del_taller": [
+    {
+      "code": "E-COL-3040",
+      "description": "Columnas de concreto armado 30×40 cm, f'c=250, 8 vars. #5",
+      "unit": "M3",
+      "phase": "Estructura",
+      "production_rate_per_day": 2.0,
+      "components": [
+        [
+          "MAT-CONC250",
+          1.05
+        ],
+        [
+          "MAT-ACERO",
+          0.16
+        ],
+        [
+          "MAT-CIMBRA",
+          10.0
+        ],
+        [
+          "MO-CUAD-FIE",
+          0.9
+        ],
+        [
+          "MO-CUAD-ALB",
+          1.0
+        ],
+        [
+          "EQ-VIBRADOR",
+          0.2
+        ]
+      ]
+    },
+    {
+      "code": "E-COL-4040",
+      "description": "Columnas de concreto armado 40×40 cm, f'c=250, 12 vars. #5",
+      "unit": "M3",
+      "phase": "Estructura",
+      "production_rate_per_day": 2.2,
+      "components": [
+        [
+          "MAT-CONC250",
+          1.05
+        ],
+        [
+          "MAT-ACERO",
+          0.18
+        ],
+        [
+          "MAT-CIMBRA",
+          10.0
+        ],
+        [
+          "MO-CUAD-FIE",
+          0.9
+        ],
+        [
+          "MO-CUAD-ALB",
+          1.0
+        ],
+        [
+          "EQ-VIBRADOR",
+          0.2
+        ]
+      ]
+    },
+    {
+      "code": "E-TRB-3050",
+      "description": "Trabes de concreto armado 30×50 cm, f'c=250",
+      "unit": "M3",
+      "phase": "Estructura",
+      "production_rate_per_day": 2.5,
+      "components": [
+        [
+          "MAT-CONC250",
+          1.05
+        ],
+        [
+          "MAT-ACERO",
+          0.13
+        ],
+        [
+          "MAT-CIMBRA",
+          10.0
+        ],
+        [
+          "MO-CUAD-FIE",
+          0.8
+        ],
+        [
+          "MO-CUAD-ALB",
+          0.9
+        ],
+        [
+          "EQ-VIBRADOR",
+          0.2
+        ]
+      ]
+    },
+    {
+      "code": "E-TRB-3060",
+      "description": "Trabes de concreto armado 30×60 cm, f'c=250",
+      "unit": "M3",
+      "phase": "Estructura",
+      "production_rate_per_day": 2.5,
+      "components": [
+        [
+          "MAT-CONC250",
+          1.05
+        ],
+        [
+          "MAT-ACERO",
+          0.14
+        ],
+        [
+          "MAT-CIMBRA",
+          10.0
+        ],
+        [
+          "MO-CUAD-FIE",
+          0.8
+        ],
+        [
+          "MO-CUAD-ALB",
+          0.9
+        ],
+        [
+          "EQ-VIBRADOR",
+          0.2
+        ]
+      ]
+    }
+  ]
 }

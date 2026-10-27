@@ -6,14 +6,14 @@ import { CaretDown, MagicWand, MagnifyingGlass } from "@phosphor-icons/react";
 import {
   apiMessage,
   forgetVariantMapping,
-  getCatalog,
+
   getVariants,
   mapVariants,
   money2,
   searchReference,
   setVariantMapping,
   type BoqVariantDetail,
-  type CatalogConcept,
+  type ConceptoMapeable,
   type VariantLine,
   type VariantsState,
 } from "@/lib/api";
@@ -58,7 +58,6 @@ export function VariantesSection({
 }) {
   const [state, setState] = useState<VariantsState | null>(null);
   const [failed, setFailed] = useState(false);
-  const [concepts, setConcepts] = useState<CatalogConcept[]>([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,15 +76,14 @@ export function VariantesSection({
           setFailed(false);
         })
         .catch(() => alive && setFailed(true));
-      getCatalog()
-        .then((c) => alive && setConcepts(c.concepts.filter((x) => !x.detection_backed)))
-        .catch(() => alive && setConcepts([]));
     }, 0);
     return () => {
       alive = false;
       window.clearTimeout(handle);
     };
   }, [projectId, reloadKey, version]);
+
+  const concepts = useMemo(() => state?.conceptos ?? [], [state]);
 
   const lines = useMemo(() => {
     if (!state) return [];
@@ -287,7 +285,7 @@ function LineRows({
   picking: string | null;
   onPick: (key: string | null) => void;
   busy: boolean;
-  concepts: CatalogConcept[];
+  concepts: ConceptoMapeable[];
   onConfirm: (v: BoqVariantDetail, c: Candidate) => void;
   onAccept: (v: BoqVariantDetail) => void;
   onNone: (v: BoqVariantDetail) => void;
@@ -342,7 +340,9 @@ function LineRows({
                     <span className="text-xs text-muted">{v.mapped_description.slice(0, 70)}</span>
                   </span>
                 )}
-                <span data-tour="variantes.mapear" className="ml-auto flex gap-1 opacity-70 group-hover:opacity-100">
+                <span
+                  data-tour={line.variants.length > 1 ? "variantes.mapear" : undefined}
+                  className="ml-auto flex gap-1 opacity-70 group-hover:opacity-100">
                   {v.mapping === "propuesta" && (
                     <Button size="sm" variant="primary" disabled={busy} onClick={() => onAccept(v)}>
                       Confirmar
@@ -399,7 +399,7 @@ function Picker({
 }: {
   unit: string;
   description: string;
-  concepts: CatalogConcept[];
+  concepts: ConceptoMapeable[];
   busy: boolean;
   onPick: (c: Candidate) => void;
   onCancel: () => void;
