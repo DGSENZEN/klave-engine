@@ -40,7 +40,7 @@ import { eventsUrl, getBrowserActor, parseProjectEvent } from "@/lib/collab";
 import { isProfileComplete } from "@/lib/identity";
 import { fetchAuthStatus } from "@/lib/session";
 import { timeAgo } from "@/lib/time";
-import { validateDrawingFiles } from "@/lib/uploads";
+import { uploadErrorMessage, validateDrawingFiles } from "@/lib/uploads";
 import {
   Badge,
   Button,
@@ -238,7 +238,7 @@ export default function Home() {
       setPendingFiles(null);
       router.push(`/proyecto/${encodeURIComponent(project_id)}`);
     } catch (e) {
-      setUploadError(apiMessage(e, "No se pudo confirmar la subida. Revisa la lista de proyectos antes de volver a subirlos; conservamos tu selección."));
+      setUploadError(uploadErrorMessage(e, "No se pudo confirmar la subida. Revisa la lista de proyectos antes de volver a subirlos; conservamos tu selección."));
       uploadInFlight.current = false;
       setUploading(false);
     }

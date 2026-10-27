@@ -2701,11 +2701,62 @@ export const uploadProject = async (
   }
 };
 
-export const addProjectFiles = (id: string, files: File[], actor?: string) =>
+/**
+ * Agregar hojas. Una hoja cuyo número ya está contesta 409 `hoja_repetida`
+ * (con sus parejas) salvo que se diga qué hacer: `reemplazar` pone cada
+ * revisión en el lugar de su hoja; `agregar` las suma tal cual.
+ */
+export const addProjectFiles = (
+  id: string,
+  files: File[],
+  actor?: string,
+  repetidas?: "reemplazar" | "agregar",
+) =>
   postFiles<{ project_id: string; sheet_count: number; warnings: string[] }>(
-    `/projects/${id}/files`,
+    `/projects/${id}/files${repetidas ? `?repetidas=${repetidas}` : ""}`,
     files,
     actor,
+  );
+
+/** Las parejas de un 409 `hoja_repetida`, o null si el error es otro. */
+export function hojasRepetidas(error: unknown): { nueva: string; existente: string }[] | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null;
+  const detail = error.detail as { error_type?: unknown; repetidas?: unknown } | undefined;
+  if (detail?.error_type !== "hoja_repetida" || !Array.isArray(detail.repetidas)) return null;
+  return detail.repetidas as { nueva: string; existente: string }[];
+}
+
+/** La revisión nueva de una hoja ocupa su lugar; la vieja se aparta. */
+export const replaceProjectFile = async (
+  id: string,
+  filename: string,
+  file: File,
+  actor?: string,
+) => {
+  const path = `/projects/${encodeURIComponent(id)}/files/${encodeURIComponent(filename)}`;
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "PUT",
+    credentials: "include",
+    headers: actor ? { "X-Actor": actor } : undefined,
+    body: form,
+  });
+  if (!res.ok) {
+    let detail: unknown;
+    try {
+      detail = (await res.json())?.detail;
+    } catch {}
+    throw await errorFromResponse(res, path, true, detail);
+  }
+  return res.json() as Promise<{ project_id: string; hoja: string; sheet_count: number }>;
+};
+
+/** Saca la hoja de la lectura (apartada, no borrada) y reprocesa. */
+export const retireProjectFile = (id: string, filename: string, actor?: string) =>
+  deleteJSON<{ project_id: string; retirada: string; sheet_count: number }>(
+    `/projects/${encodeURIComponent(id)}/files/${encodeURIComponent(filename)}`,
+    actor ? { "X-Actor": actor } : undefined,
   );
 
 export const patchProject = (
@@ -3281,7 +3332,9 @@ export async function getShared<T>(token: string, path = ""): Promise<T> {
   const res = await fetch(`${API_BASE}/compartido/${encodeURIComponent(token)}${path}`, {
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(String(res.status));
+  // Sin sesión: un 401 aquí no es «tu sesión terminó». El token no viaja en
+  // la ruta del error para que no acabe en un registro.
+  if (!res.ok) throw await errorFromResponse(res, `/compartido/[token]${path}`, false);
   return (await res.json()) as T;
 }
 
@@ -3441,6 +3494,112 @@ export const rejectPropuesta = (projectId: string, key: string, actor?: string) 
     {},
     actorClientHeaders(actor, null),
   );
+
+/** La lectura estructural: un valor del plano con quién lo dijo y dónde. */
+export type FuenteEstructural =
+  | "humano"
+  | "cuadro"
+  | "detalle"
+  | "seccion_dibujada"
+  | "nota"
+  | "medido"
+  | "regla"
+  | "supuesto"
+  | "ia";
+
+export type DatoEstructural = {
+  valor: unknown;
+  fuente: FuenteEstructural;
+  hoja: string;
+  hojas: string[];
+  texto: string;
+  en_conflicto: boolean;
+  ilegible: boolean;
+};
+
+/** Un hallazgo del propio plano; el id no se mueve entre corridas. */
+export type Verificacion = {
+  id: string;
+  numero: number;
+  severidad: "bloquea" | "duda" | "aviso";
+  mensaje: string;
+  marcas: string[];
+  elementos: string[];
+  datos: DatoEstructural[];
+  hoja: string;
+  bbox: [number, number, number, number] | null;
+  campo: string;
+  en_juego: Record<string, number>;
+  cantidad: "conocida" | "desconocida" | "estimada";
+};
+
+/** La tarjeta de una familia. `en_juego_mxn` null nunca es $0: hay algo sin cifra. */
+export type ResumenFamilia = {
+  familia: string;
+  colocaciones: number;
+  con_definicion: number;
+  criticos_total: number;
+  criticos_del_plano: number;
+  criticos_humanos: number;
+  bloquea: number;
+  duda: number;
+  aviso: number;
+  en_juego_mxn: number | null;
+  en_juego_mxn_conocido: number;
+  en_juego_cantidad: Record<string, number>;
+  en_juego_desconocido: number;
+};
+
+export type DecisionEstructural = {
+  marca: string;
+  campo: string;
+  valor: unknown;
+  nota: string;
+  actor: string;
+  fecha: string;
+  para_muro_cm: number | null;
+};
+
+export type Estructura = {
+  disponible: boolean;
+  motivo: "" | "anterior" | "ilegible" | "sin_procesar";
+  al_dia: boolean;
+  avisos: string[];
+  resumen: ResumenFamilia[];
+  verificaciones: Verificacion[];
+  decisiones_guardadas: DecisionEstructural[];
+  campos_decidibles: { campo: string; nombre: string }[];
+};
+
+export const getEstructura = (projectId: string) =>
+  getJSON<Estructura>(`/projects/${encodeURIComponent(projectId)}/estructura`);
+
+/** Guarda la decisión y recalcula; contesta la lectura nueva. */
+export const decidirEstructura = (
+  projectId: string,
+  body: { marca: string; campo: string; valor: unknown; nota: string; para_muro_cm?: number | null },
+  actor?: string,
+  clientId?: string | null,
+) =>
+  postJSON<Estructura>(
+    `/projects/${encodeURIComponent(projectId)}/estructura/decisiones`,
+    body,
+    actorClientHeaders(actor, clientId),
+  );
+
+export const quitarDecisionEstructural = (
+  projectId: string,
+  d: { marca: string; campo: string; para_muro_cm?: number | null },
+  actor?: string,
+  clientId?: string | null,
+) => {
+  const params = new URLSearchParams({ marca: d.marca, campo: d.campo });
+  if (d.para_muro_cm != null) params.set("para_muro_cm", String(d.para_muro_cm));
+  return deleteJSON<Estructura>(
+    `/projects/${encodeURIComponent(projectId)}/estructura/decisiones?${params}`,
+    actorClientHeaders(actor, clientId),
+  );
+};
 
 /** La medición del piloto: lo que el proyecto guarda, convertido en tiempos. */
 export type Piloto = {

@@ -374,6 +374,7 @@ export function TableroBoard({ id }: { id: string }) {
   const menuCanOpen =
     menuFor && tablero ? GATED_NODES.includes(menuFor) && !menuGate && canApprove : false;
   const menuBox = menuFor ? layout[menuFor] : null;
+  const menuEntries = (menuNode?.entries ?? []).filter((entry) => !menuLocked || entry.sinCandado);
 
   const edges = EDGES.flatMap(([from, to]) => {
     const a = boxRect(layout[from], layout[from].h ?? heights[from] ?? 180);
@@ -463,7 +464,9 @@ export function TableroBoard({ id }: { id: string }) {
           const gated = ROUTE_GUARDED_NODES.includes(node.key);
           const gate = tablero?.gates?.[node.key];
           const locked = gated && tablero ? !gate : false;
-          const untouchable = locked && !canApprove;
+          // Con el nodo cerrado, quien no aprueba aún puede entrar a lo que no espera candado.
+          const untouchable =
+            locked && !canApprove && !node.entries.some((entry) => entry.sinCandado);
           const open = menuFor === node.key;
           const box = layout[node.key];
           const nodeViewers = otherViewers.filter((viewer) =>
@@ -583,20 +586,19 @@ export function TableroBoard({ id }: { id: string }) {
             }}
             onPointerDown={(event) => event.stopPropagation()}
           >
-            {!menuLocked &&
-              menuNode.entries.map((entry) => (
-                <Link
-                  key={entry.key}
-                  href={entryHref(base, entry)}
-                  className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
-                >
-                  {entry.icon}
-                  <span className="flex-1">{entry.label}</span>
-                  <CaretRight size={12} className="opacity-60" />
-                </Link>
-              ))}
+            {menuEntries.map((entry) => (
+              <Link
+                key={entry.key}
+                href={entryHref(base, entry)}
+                className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+              >
+                {entry.icon}
+                <span className="flex-1">{entry.label}</span>
+                <CaretRight size={12} className="opacity-60" />
+              </Link>
+            ))}
             {menuCanOpen && (
-              <div className={menuLocked ? "px-2.5 py-2" : "mt-1 border-t border-border px-1 pt-1"}>
+              <div className={menuEntries.length === 0 ? "px-2.5 py-2" : "mt-1 border-t border-border px-1 pt-1"}>
                 <Button
                   size="sm"
                   variant={menuLocked ? "secondary" : "ghost"}

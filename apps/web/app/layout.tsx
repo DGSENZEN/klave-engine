@@ -27,7 +27,8 @@ const spaceGrotesk = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Klave — Ingeniería de Costos",
+  // Cada ruta pone su nombre («Presupuesto · Klave»); la portada se queda con el completo.
+  title: { template: "%s · Klave", default: "Klave — Ingeniería de Costos" },
   description:
     "Lee planos estructurales (DWG/DXF) y genera presupuesto, programa de obra y flujo financiero con evidencia inspeccionable.",
   applicationName: "Klave",

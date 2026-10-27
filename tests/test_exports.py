@@ -329,6 +329,50 @@ def test_flat_rows_use_office_claves_never_rule_codes(data_dir):
     assert "Lo que el plano no dio" in workbook.sheetnames
 
 
+def test_generadores_rows_add_up_to_their_line_on_the_demo_obra(data_dir):
+    # El respaldo de cada renglón suma lo que dice su «Base medida»: un
+    # supervisor que suma la columna llega al mismo número. Donde la medida de
+    # un elemento no sale sola (cimbra, columnas por altura), «—», nunca un 1.
+    import re
+
+    from klave_engine.common.config import get_settings
+    from klave_engine.costing.exports import build_generadores_workbook
+    from klave_engine.evals.fixtures import write_demo_project
+    from klave_engine.pipeline import run_full_pipeline
+
+    root = data_dir / "uploads" / "demo_generadores"
+    write_demo_project(root, declare_units=True)
+    result = run_full_pipeline(root, get_settings(), record_history=False)
+    report = result.cost_report
+    assert report is not None
+    ws = load_workbook(io.BytesIO(
+        build_generadores_workbook(report, result.detections, ProjectReviews())
+    ))["Generadores"]
+    rows = [[cell.value for cell in row] for row in ws.iter_rows()]
+    base = re.compile(r"^Base medida: ([\d,.]+) (\S+)")
+    checked = 0
+    for i, row in enumerate(rows):
+        m = base.match(str(row[0] or ""))
+        if not m or m.group(2).startswith("conteo"):
+            continue
+        expected = float(m.group(1).replace(",", ""))
+        medidas, j = [], i + 1
+        while j < len(rows) and not base.match(str(rows[j][0] or "")):
+            if rows[j][5] not in (None, "Medida base"):
+                medidas.append(rows[j][5])
+            j += 1
+        titulo = rows[i - 1][0]
+        assert all(isinstance(v, float | int) or v == "—" for v in medidas), (titulo, medidas)
+        assert 1 not in medidas or expected == len(medidas), (rows[i - 1][0], medidas)
+        numeros = [v for v in medidas if v != "—"]
+        if numeros and len(numeros) == len(medidas):
+            assert abs(sum(numeros) - expected) <= 0.01 + 0.0005 * len(numeros), (
+                rows[i - 1][0], expected, numeros,
+            )
+            checked += 1
+    assert checked >= 5
+
+
 def test_export_publishes_export_completed(tmp_path):
     """El recorrido avanza cuando una entrega de verdad sale: el marcador de
     exportación también se anuncia en el bus, con su formato."""

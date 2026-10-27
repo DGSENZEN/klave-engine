@@ -61,7 +61,9 @@ export function GateGuard({ node, children }: { node: TableroNodeKey; children: 
           <div>
             <h1 className="text-lg font-semibold">Este nodo tiene candado</h1>
             <p className="text-sm text-muted">
-              Se abre desde aquí o desde el tablero cuando los requisitos estén listos.
+              {canApprove
+                ? "Se abre desde aquí o desde el tablero cuando los requisitos estén listos."
+                : "Lo abre el propietario del proyecto o un administrador del taller. Pídeselo cuando los requisitos estén listos."}
             </p>
           </div>
         </div>
