@@ -53,6 +53,17 @@ export const presupuesto: Capitulo = {
       avanza: { con: "ruta", ruta: "/plano" },
     },
     {
+      id: "presupuesto.enplano",
+      tipo: "mirar",
+      ruta: "/plano",
+      ancla: "visor.lienzo",
+      lado: "esquina",
+      titulo: "Los elementos de esa cantidad",
+      cuerpo:
+        "Resaltados en el plano, los elementos que suman este renglón. Si alguno no va, exclúyelo aquí y el presupuesto se corrige solo.",
+      avanza: { con: "siguiente" },
+    },
+    {
       id: "presupuesto.apus",
       tipo: "mirar",
       ruta: "/apus",
@@ -87,6 +98,7 @@ export const presupuesto: Capitulo = {
       tipo: "hacer",
       ruta: "/presupuesto",
       ancla: "presupuesto.exportar",
+      lado: "esquina",
       titulo: "Entrega",
       cuerpo:
         "Exporta en el formato que uses: Klave, OPUS o Neodata. El f'c del plano no coincide con el del catálogo: Klave te detiene y te pide escribir por qué entregas así, y ese motivo queda en el Excel.",

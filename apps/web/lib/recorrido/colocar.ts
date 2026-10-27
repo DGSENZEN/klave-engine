@@ -3,7 +3,7 @@
 // que no deja lugar (el lienzo del visor) recibe la tarjeta en su esquina.
 
 export type Rect = { top: number; left: number; width: number; height: number };
-export type Lado = "abajo" | "arriba" | "derecha" | "izquierda" | "centro";
+export type Lado = "abajo" | "arriba" | "derecha" | "izquierda" | "centro" | "esquina";
 
 const acotar = (valor: number, min: number, max: number) => Math.min(Math.max(valor, min), max);
 
@@ -12,6 +12,7 @@ export function colocarTarjeta(
   tarjeta: { w: number; h: number },
   vista: { w: number; h: number },
   margen = 12,
+  preferido?: Exclude<Lado, "centro">,
 ): { top: number; left: number; lado: Lado } {
   if (!ancla) {
     return {
@@ -22,16 +23,25 @@ export function colocarTarjeta(
   }
   const maxLeft = vista.w - tarjeta.w - margen;
   const maxTop = vista.h - tarjeta.h - margen;
+  // Abajo a la izquierda: fuera del camino de un menú o un diálogo que el paso abre.
+  if (preferido === "esquina") return { top: maxTop, left: margen, lado: "esquina" };
   const centroX = acotar(ancla.left + ancla.width / 2 - tarjeta.w / 2, margen, maxLeft);
   const centroY = acotar(ancla.top + ancla.height / 2 - tarjeta.h / 2, margen, maxTop);
 
   const abajo = ancla.top + ancla.height + margen;
-  if (abajo <= maxTop) return { top: abajo, left: centroX, lado: "abajo" };
   const arriba = ancla.top - margen - tarjeta.h;
-  if (arriba >= margen) return { top: arriba, left: centroX, lado: "arriba" };
   const derecha = ancla.left + ancla.width + margen;
-  if (derecha <= maxLeft) return { top: centroY, left: derecha, lado: "derecha" };
   const izquierda = ancla.left - margen - tarjeta.w;
-  if (izquierda >= margen) return { top: centroY, left: izquierda, lado: "izquierda" };
+  const lados: Record<Exclude<Lado, "centro" | "esquina">, { cabe: boolean; top: number; left: number }> = {
+    abajo: { cabe: abajo <= maxTop, top: abajo, left: centroX },
+    arriba: { cabe: arriba >= margen, top: arriba, left: centroX },
+    derecha: { cabe: derecha <= maxLeft, top: centroY, left: derecha },
+    izquierda: { cabe: izquierda >= margen, top: centroY, left: izquierda },
+  };
+  // Un paso puede pedir su lado (p. ej. junto a un menú que se abre hacia abajo).
+  const orden = [preferido, "abajo", "arriba", "derecha", "izquierda"] as const;
+  for (const lado of orden) {
+    if (lado && lados[lado].cabe) return { top: lados[lado].top, left: lados[lado].left, lado };
+  }
   return { top: maxTop, left: maxLeft, lado: "centro" };
 }

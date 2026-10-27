@@ -39,3 +39,18 @@ test("sin ancla va al centro", () => {
   const c = colocarTarjeta(null, tarjeta, vista);
   assert.deepEqual(c, { top: 320, left: 480, lado: "centro" });
 });
+
+test("respeta el lado que pide el paso cuando cabe (un menú se abre abajo)", () => {
+  const ancla = { top: 80, left: 1100, width: 120, height: 36 };
+  const c = colocarTarjeta(ancla, tarjeta, vista, 12, "izquierda");
+  assert.equal(c.lado, "izquierda");
+  assert.equal(c.left, 1100 - 12 - 320);
+  // Si no cabe donde pide, vuelve al orden normal.
+  const pegado = colocarTarjeta({ top: 80, left: 20, width: 120, height: 36 }, tarjeta, vista, 12, "izquierda");
+  assert.equal(pegado.lado, "abajo");
+});
+
+test("«esquina» deja la tarjeta abajo a la izquierda, lejos de menús y diálogos", () => {
+  const c = colocarTarjeta({ top: 80, left: 1100, width: 120, height: 36 }, tarjeta, vista, 12, "esquina");
+  assert.deepEqual(c, { top: 800 - 160 - 12, left: 12, lado: "esquina" });
+});

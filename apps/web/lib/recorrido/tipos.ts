@@ -37,6 +37,8 @@ export type Paso = {
   cuerpo: string;
   avanza: Avance;
   accion?: AccionPaso;
+  /** Dónde prefiere su tarjeta, si el ancla abre algo hacia abajo (un menú). */
+  lado?: "abajo" | "arriba" | "derecha" | "izquierda" | "esquina";
 };
 
 export type Capitulo = {

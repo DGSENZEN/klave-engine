@@ -36,6 +36,17 @@ export const revisiones: Capitulo = {
         "«Ver en el plano» marca lo que cambió sobre el dibujo nuevo, con la huella del anterior.",
       avanza: { con: "ruta", ruta: "/plano" },
     },
+    {
+      id: "revisiones.huella",
+      tipo: "mirar",
+      ruta: "/plano",
+      ancla: "visor.lienzo",
+      lado: "esquina",
+      titulo: "La revisión sobre el dibujo",
+      cuerpo:
+        "Lo agregado, lo modificado y lo eliminado, cada uno con su color; la leyenda de abajo los cuenta. Revísalo antes de aceptar las cantidades nuevas.",
+      avanza: { con: "siguiente" },
+    },
   ]),
   transferencia:
     "En tu obra, sube cada revisión al mismo proyecto: Klave compara lectura contra lectura y te da las aditivas y deductivas en Excel.",

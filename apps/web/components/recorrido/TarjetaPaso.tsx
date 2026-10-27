@@ -68,6 +68,8 @@ export function TarjetaPaso({
     fueraDeRuta || anclaPerdida || paso === null ? null : rect,
     { w: ANCHO, h: alto },
     vista,
+    12,
+    paso?.lado,
   );
   const transferencia = paso === null;
   const total = capitulo.pasos.length;
