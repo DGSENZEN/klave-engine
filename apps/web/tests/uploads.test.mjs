@@ -45,3 +45,35 @@ test('selection uses the configured byte boundary', () => {
   assert.equal(validateDrawingFiles([{ name: 'plan.dxf', size: 101 }],
     { max_files: 40, max_file_bytes: 200 }), null);
 });
+
+const { uploadErrorMessage, MAX_BATCH_BYTES, DEFAULT_MAX_FILE_BYTES } =
+  createRequire(import.meta.url)(join(process.env.KLAVE_TEST_LIB_DIR, 'uploads.js'));
+const MIB = 1024 * 1024;
+
+test('without workspace limits a file over 100 MB is rejected by name', () => {
+  assert.equal(DEFAULT_MAX_FILE_BYTES, 100 * MIB);
+  assert.equal(validateDrawingFiles([{ name: 'plan.dwg', size: 100 * MIB }]), null);
+  const message = validateDrawingFiles([{ name: 'grande.dwg', size: 100 * MIB + 1 }]);
+  assert.match(message, /«grande\.dwg»/);
+  assert.match(message, /100 MB/);
+});
+
+test('a batch over the request cap is rejected with its total and the parts hint', () => {
+  // Cada archivo cabe; la suma no. Debe quedar bajo los 120 MB decimales del proxy.
+  assert.ok(MAX_BATCH_BYTES < 120 * 1000 * 1000);
+  const half = Math.floor(MAX_BATCH_BYTES / 2);
+  assert.equal(validateDrawingFiles([{ name: 'a.dwg', size: half }, { name: 'b.dwg', size: half }]), null);
+  const message = validateDrawingFiles([
+    { name: 'a.dwg', size: half }, { name: 'b.dwg', size: half }, { name: 'c.dwg', size: 2 * MIB },
+  ]);
+  assert.match(message, /suma 112 MB/);
+  assert.match(message, /Hojas del proyecto/);
+});
+
+test('a 413 from the API explains the size limit instead of a generic failure', () => {
+  const tooLarge = new ApiError(413, '/projects/upload', { error_type: 'upload_too_large', max_upload_bytes: 100 * MIB });
+  assert.match(uploadErrorMessage(tooLarge, 'genérico'), /100 MB por archivo/);
+  const tooMany = new ApiError(413, '/projects/upload', { error_type: 'too_many_files', message: 'Un proyecto lleva hasta 40 hojas.' });
+  assert.equal(uploadErrorMessage(tooMany, 'genérico'), 'Un proyecto lleva hasta 40 hojas.');
+  assert.equal(uploadErrorMessage(new TypeError('Failed to fetch'), 'genérico'), 'genérico');
+});
