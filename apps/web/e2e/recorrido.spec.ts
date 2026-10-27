@@ -72,10 +72,27 @@ test("el recorrido guiado completo, y empezar de cero", async ({ page }) => {
   // 3 · Revisión
   await paso(page, "Todos los elementos, en una tabla");
   await siguiente(page, 2);
-  for (const titulo of ["Verifica las unidades", "Verifica los elementos", "Verifica los supuestos"]) {
+  // El aviso en vivo llega antes que la respuesta que repinta los botones:
+  // se fija esa carrera para que la prueba no dependa de la velocidad de CI.
+  const retener = /\/reviews(\/verification)?$/;
+  await page.route(retener, async (route) => {
+    try {
+      const respuesta = await route.fetch();
+      await new Promise((r) => setTimeout(r, 1500));
+      await route.fulfill({ response: respuesta });
+    } catch {
+      // La página ya no la esperaba (cambió de pantalla): nada que entregar.
+    }
+  });
+  const marcar = page.getByRole("button", { name: "Marcar como verificado", exact: true });
+  const verificar = ["Verifica las unidades", "Verifica los elementos", "Verifica los supuestos"];
+  for (const [i, titulo] of verificar.entries()) {
     await paso(page, titulo);
-    await page.getByRole("button", { name: "Marcar como verificado", exact: true }).first().click();
+    // El paso anterior ya no ofrece su botón: el primero es el de este paso.
+    await expect(marcar).toHaveCount(verificar.length - i);
+    await marcar.first().click();
   }
+  await page.unrouteAll({ behavior: "ignoreErrors" });
   await paso(page, "Verificado");
   await siguiente(page);
   await siguienteCapitulo(page);
@@ -137,8 +154,12 @@ test("el recorrido guiado completo, y empezar de cero", async ({ page }) => {
   await expect(tarjeta(page)).toHaveCount(0);
 
   const hacer = CAPITULOS.flatMap((c) => c.pasos).filter((p) => p.tipo === "hacer").map((p) => p.id);
-  const progreso = await (await page.request.get(state.api_url + "/auth/me/recorrido")).json();
-  for (const id of hacer) expect(progreso.pasos[id], id).toBe("hecho");
+  // El progreso se guarda en segundo plano: el último paso puede seguir en
+  // camino cuando la tarjeta se cierra.
+  await expect.poll(async () => {
+    const r = await (await page.request.get(state.api_url + "/auth/me/recorrido")).json();
+    return hacer.filter((id) => r.pasos[id] !== "hecho");
+  }).toEqual([]);
 
   // Empezar de cero: la obra vuelve a la Rev A y el progreso a vacío.
   await page.goto("/");
