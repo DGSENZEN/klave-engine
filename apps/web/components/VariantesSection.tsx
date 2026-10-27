@@ -6,14 +6,13 @@ import { CaretDown, MagicWand, MagnifyingGlass } from "@phosphor-icons/react";
 import {
   apiMessage,
   forgetVariantMapping,
-  getCatalog,
   getVariants,
   mapVariants,
   money2,
   searchReference,
   setVariantMapping,
   type BoqVariantDetail,
-  type CatalogConcept,
+  type ConceptoMapeable,
   type VariantLine,
   type VariantsState,
 } from "@/lib/api";
@@ -58,7 +57,6 @@ export function VariantesSection({
 }) {
   const [state, setState] = useState<VariantsState | null>(null);
   const [failed, setFailed] = useState(false);
-  const [concepts, setConcepts] = useState<CatalogConcept[]>([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,15 +75,14 @@ export function VariantesSection({
           setFailed(false);
         })
         .catch(() => alive && setFailed(true));
-      getCatalog()
-        .then((c) => alive && setConcepts(c.concepts.filter((x) => !x.detection_backed)))
-        .catch(() => alive && setConcepts([]));
     }, 0);
     return () => {
       alive = false;
       window.clearTimeout(handle);
     };
   }, [projectId, reloadKey, version]);
+
+  const concepts = useMemo(() => state?.conceptos ?? [], [state]);
 
   const lines = useMemo(() => {
     if (!state) return [];
@@ -135,7 +132,7 @@ export function VariantesSection({
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-        <span className="text-muted">
+        <span className="text-muted" data-tour="variantes.resumen">
           {total} variantes del plano ·{" "}
           <Badge tone="success">{(c.confirmada ?? 0) + (c.automatica ?? 0)} en tu catálogo</Badge>{" "}
           <Badge tone="warning">{c.propuesta ?? 0} por confirmar</Badge>{" "}
@@ -197,7 +194,7 @@ export function VariantesSection({
             : "Nada que mostrar con este filtro."}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+        <div className="overflow-x-auto rounded-lg border border-border bg-surface" data-tour="variantes.lista">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-surface-2">
@@ -226,6 +223,7 @@ export function VariantesSection({
                   onPick={setPicking}
                   busy={busy}
                   concepts={concepts}
+                  conReferencias={state?.referencias ?? true}
                   onConfirm={(v, cand) =>
                     void run(async () => {
                       await setVariantMapping(
@@ -275,6 +273,7 @@ function LineRows({
   onPick,
   busy,
   concepts,
+  conReferencias,
   onConfirm,
   onAccept,
   onNone,
@@ -287,7 +286,8 @@ function LineRows({
   picking: string | null;
   onPick: (key: string | null) => void;
   busy: boolean;
-  concepts: CatalogConcept[];
+  concepts: ConceptoMapeable[];
+  conReferencias: boolean;
   onConfirm: (v: BoqVariantDetail, c: Candidate) => void;
   onAccept: (v: BoqVariantDetail) => void;
   onNone: (v: BoqVariantDetail) => void;
@@ -342,7 +342,9 @@ function LineRows({
                     <span className="text-xs text-muted">{v.mapped_description.slice(0, 70)}</span>
                   </span>
                 )}
-                <span className="ml-auto flex gap-1 opacity-70 group-hover:opacity-100">
+                <span
+                  data-tour={line.variants.length > 1 ? "variantes.mapear" : undefined}
+                  className="ml-auto flex gap-1 opacity-70 group-hover:opacity-100">
                   {v.mapping === "propuesta" && (
                     <Button size="sm" variant="primary" disabled={busy} onClick={() => onAccept(v)}>
                       Confirmar
@@ -373,6 +375,7 @@ function LineRows({
             <tr className="border-b border-border bg-surface-2/30">
               <td colSpan={4} className="px-4 py-3">
                 <Picker
+                  conReferencias={conReferencias}
                   unit={line.unit}
                   description={v.description}
                   concepts={concepts}
@@ -390,6 +393,7 @@ function LineRows({
 }
 
 function Picker({
+  conReferencias,
   unit,
   description,
   concepts,
@@ -397,9 +401,11 @@ function Picker({
   onPick,
   onCancel,
 }: {
+  /** Sin bases de referencia (la obra de ejemplo): sólo los conceptos. */
+  conReferencias: boolean;
   unit: string;
   description: string;
-  concepts: CatalogConcept[];
+  concepts: ConceptoMapeable[];
   busy: boolean;
   onPick: (c: Candidate) => void;
   onCancel: () => void;
@@ -424,7 +430,7 @@ function Picker({
     const q = query.trim();
     let alive = true;
     const handle = window.setTimeout(() => {
-      if (q.length < 3) {
+      if (q.length < 3 || !conReferencias) {
         if (alive) setRefs([]);
         return;
       }
@@ -452,7 +458,7 @@ function Picker({
       alive = false;
       window.clearTimeout(handle);
     };
-  }, [query, unit]);
+  }, [query, unit, conReferencias]);
 
   const all: Candidate[] = [...own, ...refs];
   return (

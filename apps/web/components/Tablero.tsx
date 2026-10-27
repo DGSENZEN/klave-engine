@@ -388,6 +388,7 @@ export function TableroBoard({ id }: { id: string }) {
   return (
     <div
       ref={canvasRef}
+      data-tour="tablero.nodos"
       className={`relative flex-1 touch-none overflow-hidden ${
         dragging === "pan" ? "cursor-grabbing" : "cursor-grab"
       }`}
@@ -408,6 +409,7 @@ export function TableroBoard({ id }: { id: string }) {
         // Lo que sigue: un solo botón principal por proyecto. Los nodos siguen
         // ahí para quien quiera ir a otro lado; éste dice qué hacer ahora.
         <div
+          data-tour="tablero.sigue"
           className="absolute left-4 top-4 z-30 max-w-sm rounded-xl border border-border bg-surface/95 p-3 shadow-sm backdrop-blur"
           onPointerDown={(event) => event.stopPropagation()}
         >
@@ -481,6 +483,7 @@ export function TableroBoard({ id }: { id: string }) {
                 if (el) cardRefs.current.set(node.key, el);
                 else cardRefs.current.delete(node.key);
               }}
+              data-tour={locked ? "tablero.candado" : undefined}
               role={untouchable ? undefined : "button"}
               tabIndex={untouchable ? undefined : 0}
               aria-disabled={untouchable || undefined}

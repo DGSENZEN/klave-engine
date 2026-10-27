@@ -566,10 +566,24 @@ export type Dimensions = {
 
 /** Create (or reopen) the synthetic sample obra and process it. */
 export const createDemoProject = (actor?: string) =>
-  postJSON<{ project_id: string; job_id: string; fresh: boolean }>(
+  postJSON<{ project_id: string; job_id: string | null; fresh: boolean }>(
     "/projects/demo",
     {},
     actor ? { "X-Actor": actor } : undefined,
+  );
+
+/** Empezar de cero con la obra de ejemplo: Rev A, sin revisiones ni mapeos. */
+export const reiniciarObraDeEjemplo = (projectId: string) =>
+  postJSON<{ project_id: string; job_id: string }>(
+    `/projects/${encodeURIComponent(projectId)}/demo/reiniciar`,
+    {},
+  );
+
+/** La Rev B de la obra de ejemplo: reescribe sus hojas y la vuelve a leer. */
+export const cargarRevisionB = (projectId: string) =>
+  postJSON<{ project_id: string; job_id: string }>(
+    `/projects/${encodeURIComponent(projectId)}/demo/revision-b`,
+    {},
   );
 
 export const listProjects = () =>
@@ -2782,18 +2796,9 @@ export type ProjectOverview = ProjectSummary & {
   exported: boolean;
 };
 
-export type OnboardingState = {
-  sample_explored: boolean;
-  first_project: boolean;
-  any_verified: boolean;
-  aliases: number;
-  any_exported: boolean;
-};
-
 export type WorkspaceOverview = {
   projects: ProjectOverview[];
   upload_limits?: { max_files: number; max_file_bytes: number };
-  onboarding?: OnboardingState;
   attention: {
     processing: number;
     failed: number;
@@ -3240,9 +3245,15 @@ export type VariantLine = {
   variants: BoqVariantDetail[];
 };
 
+export type ConceptoMapeable = { code: string; description: string; unit: string };
+
 export type VariantsState = {
   lines: VariantLine[];
   counts: Record<string, number>;
+  /** A qué se puede mapear: los conceptos del catálogo donde se guarda el mapeo. */
+  conceptos: ConceptoMapeable[];
+  /** Si se ofrecen las bases de referencia del taller (no en la obra de ejemplo). */
+  referencias: boolean;
 };
 
 export const getVariants = (projectId: string) =>

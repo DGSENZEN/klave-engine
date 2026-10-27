@@ -3269,6 +3269,16 @@ class CatalogStore:
 _STORES: dict[Path, CatalogStore] = {}
 
 
+def drop_catalog_store(data_dir: Path, workspace_id: str) -> None:
+    """Forget a workspace catalog and delete its file (with its WAL): only for
+    disposable catalogs, such as the obra de ejemplo's, when it starts over."""
+    path = (data_dir / "catalogs" / f"{workspace_id}.db").resolve()
+    with _LOCK:
+        _STORES.pop(path, None)
+    for suffix in ("", "-wal", "-shm"):
+        Path(f"{path}{suffix}").unlink(missing_ok=True)
+
+
 def get_catalog_store(data_dir: Path, workspace_id: str | None = None) -> CatalogStore:
     """One store per taller (``catalogs/<workspace_id>.db``); without a
     workspace — the open, local-first mode — the single legacy file."""

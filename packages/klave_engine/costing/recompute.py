@@ -159,7 +159,9 @@ def apply_taller_history(
     if not report.indicators:
         return
     report.indicators = con_historia(report.indicators, store.load_project_indices(project_id))
-    if save and report.boq.units_reliable:
+    from klave_engine.ejemplo import es_obra_de_ejemplo
+
+    if save and report.boq.units_reliable and not es_obra_de_ejemplo(project_id):
         store.save_project_indices(project_id, valores_de(report.indicators))
 
 

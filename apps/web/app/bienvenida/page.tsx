@@ -28,7 +28,6 @@ import {
   type AuthUser,
 } from "@/lib/session";
 import { AuthFrame } from "@/components/AuthFrame";
-import { HowItWorks } from "@/components/HowItWorks";
 import {
   Avatar,
   Badge,
@@ -143,8 +142,6 @@ export default function BienvenidaPage() {
       ) : auth.mode === "open" ? (
         <OpenModeCards googleEnabled={auth.google_enabled} />
       ) : null}
-
-      <HowItWorks />
 
       {auth?.mode === "open" && (
         <p className="mt-6 flex items-center gap-2 text-xs text-faint">

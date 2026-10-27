@@ -95,7 +95,7 @@ export function GateGuard({ node, children }: { node: TableroNodeKey; children: 
         {actionError && <p className="text-sm text-danger">{actionError}</p>}
         <div className="flex items-center gap-2">
           {canApprove && (
-            <Button onClick={abrir} disabled={busy}>
+            <Button onClick={abrir} disabled={busy} data-tour="gate.abrir">
               {busy ? "Abriendo…" : "Abrir nodo"}
             </Button>
           )}

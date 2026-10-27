@@ -115,6 +115,7 @@ export default function CambiosPage() {
     return (
       <div className="p-6">
         <PageHeader title="Cambios entre revisiones" sub="Qué cambió entre una revisión del plano y otra." />
+<div data-tour="cambios.vacio">
         <EmptyState
           icon={<GitDiff size={22} weight="duotone" />}
           title="Hace falta una segunda lectura"
@@ -125,6 +126,7 @@ export default function CambiosPage() {
             </Link>
           }
         />
+        </div>
       </div>
     );
   }
@@ -244,7 +246,7 @@ export default function CambiosPage() {
         <Skeleton className="h-64 w-full" />
       ) : (
         <>
-          <div className="mb-6 grid gap-4 sm:grid-cols-5">
+          <div className="mb-6 grid gap-4 sm:grid-cols-5" data-tour="cambios.resumen">
             <Metric label="Diferencia a precio de hoy" value={money2(data.importe_diferencia)}
               hint={data.importe_sin_precio ? `${data.importe_sin_precio} conceptos cambiaron sin precio: no están en la suma.` : undefined} />
             {(["agregado", "eliminado", "movido", "modificado"] as const).map((t) => (
@@ -258,7 +260,7 @@ export default function CambiosPage() {
           {data.conceptos.length === 0 ? (
             <p className="mb-6 text-sm text-muted">Ninguna cantidad cambió.</p>
           ) : (
-            <div className="mb-8 overflow-x-auto rounded-lg border border-border bg-surface">
+            <div data-tour="cambios.lista" className="mb-8 overflow-x-auto rounded-lg border border-border bg-surface">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-surface-2">
@@ -282,6 +284,7 @@ export default function CambiosPage() {
                           <Link
                             href={`/proyecto/${id}/plano?concept=${encodeURIComponent(c.concept_code)}&cambios=${encodeURIComponent(data.antes)}`}
                             className="underline"
+                            data-tour="cambios.alplano"
                           >
                             ver en el plano
                           </Link>

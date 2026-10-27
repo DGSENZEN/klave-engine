@@ -183,7 +183,7 @@ export default function ProgramaPage() {
       />
       <UnverifiedBanner id={id} costs={costs} />
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid gap-4 sm:grid-cols-3" data-tour="programa.plazo">
         <Metric
           label="Plazo contractual"
           value={`${costs.schedule.calendar_days ?? totalDays} días naturales`}
@@ -284,7 +284,7 @@ export default function ProgramaPage() {
           hint="Vuelve a procesar el proyecto para generar el programa de obra."
         />
       ) : (
-        <Card className="p-5">
+        <Card className="p-5" tour="programa.barras">
           <SectionTitle sub="Cada barra abarca del día de inicio al de término de la actividad.">
             Diagrama de barras
           </SectionTitle>

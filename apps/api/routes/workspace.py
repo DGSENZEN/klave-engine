@@ -23,6 +23,7 @@ from klave_engine.costing.models import CostingConfig
 from klave_engine.costing.presentation import MoneyBasis, resolve_money_state
 from klave_engine.costing.reviews import REVIEWS_FILENAME, load_reviews
 from klave_engine.costing.vigencia import FRESH_MONTHS, freshness
+from klave_engine.ejemplo import es_obra_de_ejemplo
 from klave_engine.llm.tarifas import consumo_del_mes
 from pydantic import BaseModel, Field
 
@@ -177,7 +178,10 @@ def overview(
         if keep(project_id)
     ]
     projects.sort(key=lambda p: p.get("last_activity") or "", reverse=True)
-    active = [p for p in projects if not p["archived"]]
+    # La obra de ejemplo se lista para quien la hizo, pero no pide atención.
+    active = [
+        p for p in projects if not p["archived"] and not es_obra_de_ejemplo(p["project_id"])
+    ]
 
     user = _state_user(request)
     pending_users: int | None = None
@@ -201,23 +205,12 @@ def overview(
     except Exception:
         stale = 0
 
-    catalog_store = store_for_request(settings, request)
-    onboarding = {
-        "sample_explored": any(p["project_id"].startswith("obra_de_ejemplo") for p in projects),
-        "first_project": any(
-            not p["project_id"].startswith("obra_de_ejemplo") for p in projects
-        ),
-        "any_verified": any(p["verified"] for p in projects),
-        "aliases": len(catalog_store.load_concept_aliases()),
-        "any_exported": any(p.get("exported") for p in projects),
-    }
     return {
         "projects": projects,
         "upload_limits": {
             "max_files": MAX_FILES_PER_PROJECT,
             "max_file_bytes": settings.max_upload_bytes,
         },
-        "onboarding": onboarding,
         "attention": {
             "processing": sum(1 for p in active if p["status"] in ("queued", "running")),
             "failed": sum(1 for p in active if p["status"] == "failed"),

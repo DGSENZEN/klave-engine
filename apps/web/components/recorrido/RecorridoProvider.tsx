@@ -1,0 +1,260 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { cargarRevisionB, createDemoProject, listProjects } from "@/lib/api";
+import { getBrowserActor } from "@/lib/collab";
+import { CAPITULOS } from "@/lib/recorrido/capitulos";
+import type { Rect } from "@/lib/recorrido/colocar";
+import { pasoActual, rutaHeredada } from "@/lib/recorrido/motor";
+import { esCampoDeTexto, teclaDelRecorrido } from "@/lib/recorrido/teclas";
+import {
+  almacen,
+  configurarAlmacen,
+  despachar,
+  estadoActual,
+  senalRecorrido,
+  useRecorrido,
+} from "@/lib/recorridoStore";
+import { deleteRecorrido, fetchAuthStatus, getRecorrido, putRecorridoPaso } from "@/lib/session";
+import { Foco } from "@/components/recorrido/Foco";
+import { DialogoRecorrido } from "@/components/recorrido/MenuRecorrido";
+import { TarjetaPaso } from "@/components/recorrido/TarjetaPaso";
+
+const ESPERA_ANCLA_MS = 4000;
+
+function rectDe(nodo: Element): Rect {
+  const r = nodo.getBoundingClientRect();
+  return { top: r.top, left: r.left, width: r.width, height: r.height };
+}
+
+function escribiendo(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el?.tagName) return false;
+  return esCampoDeTexto(el.tagName, el.isContentEditable, el.getAttribute("type") ?? undefined);
+}
+
+/**
+ * El recorrido guiado: navega a la pantalla de cada paso, encuentra su ancla
+ * (data-tour), la señala y pone la tarjeta al lado. Escucha rutas, clics y
+ * teclas; los eventos del servidor llegan por RecorridoPuente.
+ */
+export function RecorridoProvider() {
+  const estado = useRecorrido();
+  const router = useRouter();
+  const pathname = usePathname();
+  const [rect, setRect] = useState<Rect | null>(null);
+  const [ocupada, setOcupada] = useState(false);
+  const capitulo = CAPITULOS.find((c) => c.id === estado.capitulo) ?? null;
+  const paso = pasoActual(estado, CAPITULOS);
+  const clavePaso = estado.activo ? `${estado.visita}:${estado.capitulo}:${estado.indice}` : "";
+  const navegado = useRef("");
+  // La obra cuyo procesamiento lanzó una acción del recorrido: cuando quede
+  // lista (aunque termine antes de que la pantalla alcance a verla procesar),
+  // el paso que la espera avanza.
+  const esperandoObra = useRef<string | null>(null);
+  const listaAntes = useRef(estado.obraLista);
+
+  // El progreso vive en la cuenta cuando hay cuentas; si no, en el navegador.
+  // Mientras no haya sesión (la pantalla de entrada), se vuelve a preguntar en
+  // cada cambio de pantalla: el proveedor vive arriba de todo y no se vuelve a
+  // montar al iniciar sesión.
+  const sesionResuelta = useRef(false);
+  useEffect(() => {
+    if (sesionResuelta.current) return;
+    let vivo = true;
+    void fetchAuthStatus().then(async (status) => {
+      const conCuenta = status.mode === "protected" && Boolean(status.user);
+      if (!vivo || (status.mode !== "open" && !conCuenta)) return;
+      sesionResuelta.current = true;
+      configurarAlmacen(
+        conCuenta
+          ? { cargar: getRecorrido, guardar: putRecorridoPaso, borrar: deleteRecorrido }
+          : null,
+      );
+      // Lo que se hizo antes de conocer la cuenta (un clic rápido tras entrar)
+      // se une a lo guardado y se sube; nada hecho se pierde.
+      const guardado = await almacen.cargar();
+      const enMemoria = estadoActual().progreso;
+      for (const [id, valor] of Object.entries(enMemoria)) {
+        if (guardado[id] === undefined) void almacen.guardar(id, valor);
+      }
+      if (vivo) despachar({ tipo: "progreso", progreso: { ...guardado, ...enMemoria } });
+      // La obra de ejemplo de esta persona, si ya existe: así un capítulo
+      // salteado no la vuelve a crear (ni a procesar).
+      const proyectos = await listProjects().catch(() => []);
+      const obra = proyectos.find((p) => p.project_id.startsWith("obra_de_ejemplo"));
+      if (vivo && obra) {
+        despachar({ tipo: "obra", projectId: obra.project_id, lista: obra.status === "processed" });
+      }
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [pathname]);
+
+  // Cada paso nuevo lleva a su pantalla (una vez: si la persona se va, el
+  // recorrido no la arrastra de regreso; la tarjeta le ofrece volver).
+  useEffect(() => {
+    if (!paso || !capitulo || navegado.current === clavePaso) return;
+    navegado.current = clavePaso;
+    const destino = rutaHeredada(capitulo, estado.indice, estado.projectId);
+    if (destino && destino.split("?")[0] !== pathname) router.push(destino);
+  }, [clavePaso, paso, capitulo, estado.indice, estado.projectId, pathname, router]);
+
+  useEffect(() => {
+    if (pathname) despachar({ tipo: "ruta", pathname });
+  }, [pathname]);
+
+  useEffect(() => {
+    const recien = !listaAntes.current && estado.obraLista;
+    listaAntes.current = estado.obraLista;
+    if (recien && esperandoObra.current && esperandoObra.current === estado.projectId) {
+      esperandoObra.current = null;
+      senalRecorrido("obra.lista");
+    }
+  }, [estado.obraLista, estado.projectId]);
+
+  // El ancla: se busca hasta 4 s y luego se sigue su caja mientras el paso dure.
+  const ancla = paso?.ancla ?? null;
+  useEffect(() => {
+    if (!ancla || estado.fueraDeRuta) return;
+    let nodo: Element | null = null;
+    let cuadro = 0;
+    const seguir = () => {
+      cancelAnimationFrame(cuadro);
+      cuadro = requestAnimationFrame(() => setRect(nodo ? rectDe(nodo) : null));
+    };
+    const alClic = () => despachar({ tipo: "clic", ancla });
+    const tamano = new ResizeObserver(seguir);
+    const enganchar = (encontrado: Element) => {
+      nodo = encontrado;
+      nodo.scrollIntoView({
+        block: "center",
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      });
+      nodo.addEventListener("click", alClic, true);
+      tamano.observe(nodo);
+      seguir();
+      despachar({ tipo: "ancla_encontrada" });
+    };
+    const buscar = () => document.querySelector(`[data-tour="${CSS.escape(ancla)}"]`);
+    const observador = new MutationObserver(() => {
+      const encontrado = buscar();
+      if (encontrado && encontrado !== nodo) {
+        if (nodo) tamano.unobserve(nodo);
+        nodo?.removeEventListener("click", alClic, true);
+        enganchar(encontrado);
+      } else if (!encontrado && nodo) {
+        nodo.removeEventListener("click", alClic, true);
+        nodo = null;
+        seguir();
+      }
+    });
+    observador.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-tour"],
+    });
+    const inicial = buscar();
+    if (inicial) enganchar(inicial);
+    const espera = window.setTimeout(() => {
+      if (!nodo) despachar({ tipo: "ancla_perdida" });
+    }, ESPERA_ANCLA_MS);
+    window.addEventListener("scroll", seguir, true);
+    window.addEventListener("resize", seguir);
+    return () => {
+      window.clearTimeout(espera);
+      cancelAnimationFrame(cuadro);
+      observador.disconnect();
+      tamano.disconnect();
+      nodo?.removeEventListener("click", alClic, true);
+      window.removeEventListener("scroll", seguir, true);
+      window.removeEventListener("resize", seguir);
+      requestAnimationFrame(() => setRect(null));
+    };
+  }, [ancla, clavePaso, estado.fueraDeRuta]);
+
+  // La pantalla manda sobre las teclas (ver teclaDelRecorrido). Se escucha en
+  // window, en burbuja: llega después que los manejadores de la pantalla, así
+  // que defaultPrevented ya dice si alguien la usó.
+  const tipo = paso?.tipo ?? null;
+  const anclaActual = paso?.ancla ?? null;
+  useEffect(() => {
+    if (!estado.activo) return;
+    function alTeclear(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const objetivo = event.target as HTMLElement | null;
+      const accion = teclaDelRecorrido({
+        key: event.key,
+        defaultPrevented: event.defaultPrevented,
+        enTarjeta: Boolean(objetivo?.closest?.("[data-recorrido-tarjeta]")),
+        escribiendo: escribiendo(event.target),
+        tipo,
+        ancla: anclaActual,
+      });
+      if (accion) despachar({ tipo: accion });
+    }
+    window.addEventListener("keydown", alTeclear);
+    return () => window.removeEventListener("keydown", alTeclear);
+  }, [estado.activo, tipo, anclaActual]);
+
+  async function accion() {
+    if (!paso?.accion) return;
+    setOcupada(true);
+    try {
+      if (paso.accion === "crear_obra") {
+        const obra = await createDemoProject(getBrowserActor());
+        // Sin trabajo nuevo, la obra ya estaba leída: lista desde ya.
+        const yaLista = !obra.job_id;
+        despachar({ tipo: "obra", projectId: obra.project_id, lista: yaLista });
+        if (yaLista) senalRecorrido("obra.lista");
+        else esperandoObra.current = obra.project_id;
+        router.push(`/proyecto/${encodeURIComponent(obra.project_id)}`);
+      } else if (estado.projectId) {
+        await cargarRevisionB(estado.projectId);
+        esperandoObra.current = estado.projectId;
+        despachar({ tipo: "obra", projectId: estado.projectId, lista: false });
+      }
+    } catch {
+      // La tarjeta sigue: la persona puede reintentar o saltar el paso.
+    } finally {
+      setOcupada(false);
+    }
+  }
+
+  function volver() {
+    if (!capitulo) return;
+    const destino = rutaHeredada(capitulo, estado.indice, estado.projectId);
+    if (destino) router.push(destino);
+  }
+
+  if (!estado.activo || !capitulo) return <DialogoRecorrido />;
+  const ultimo = CAPITULOS[CAPITULOS.length - 1]?.id === capitulo.id;
+  return (
+    <>
+      <DialogoRecorrido />
+      {paso && !estado.fueraDeRuta && (
+        <Foco rect={estado.anclaPerdida ? null : rect} tipo={estado.repaso ? "mirar" : paso.tipo} />
+      )}
+      <TarjetaPaso
+        capitulo={capitulo}
+        paso={paso}
+        indice={estado.indice}
+        rect={rect}
+        repaso={estado.repaso}
+        anclaPerdida={estado.anclaPerdida}
+        fueraDeRuta={estado.fueraDeRuta}
+        ocupada={ocupada}
+        esUltimoCapitulo={ultimo}
+        onSiguiente={() => despachar({ tipo: "siguiente" })}
+        onAtras={() => despachar({ tipo: "atras" })}
+        onSaltar={() => despachar({ tipo: "saltar" })}
+        onPausar={() => despachar({ tipo: "pausar" })}
+        onVolver={volver}
+        onAccion={() => void accion()}
+      />
+    </>
+  );
+}

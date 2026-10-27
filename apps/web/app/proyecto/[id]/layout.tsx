@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import { parseProjectEvent, projectEventsUrl } from "@/lib/collab";
 import { ProjectLiveProvider } from "@/components/ProjectLive";
+import { RecorridoPuente, useRecorridoObra } from "@/components/recorrido/RecorridoPuente";
 import { ProjectShell } from "@/components/ProjectShell";
 import { Button, Callout, Skeleton, SkeletonHeader, buttonClasses } from "@/components/ui";
 
@@ -167,6 +168,8 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
     return () => window.clearInterval(timer);
   }, [processing]);
 
+  useRecorridoObra(id, status?.state ?? null);
+
   const failed = status?.state === "failed";
   const notStarted =
     status !== null && !processing && status.state !== "processed" && status.state !== "failed";
@@ -189,6 +192,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   if (status?.state === "processed" || (failed && status.artifacts_available)) {
     return (
       <ProjectLiveProvider projectId={id}>
+        <RecorridoPuente />
         <ProjectShell id={id} name={name}>
           {uploadWarning && <div className="px-6 pt-5"><Callout tone="warning">{uploadWarning}</Callout></div>}
           {failed && (

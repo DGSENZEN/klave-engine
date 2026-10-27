@@ -19,6 +19,7 @@ from fastapi import Request
 from klave_engine.common.config import Settings
 from klave_engine.common.logging import get_logger
 from klave_engine.costing.catalog_store import CATALOG_DB_FILENAME, CatalogStore, get_catalog_store
+from klave_engine.ejemplo import es_obra_de_ejemplo
 
 from apps.api.auth.store import UsersDbUnavailable, get_user_store
 
@@ -105,6 +106,10 @@ def store_for_request(settings: Settings, request: Request | None) -> CatalogSto
 
 
 def store_for_project(settings: Settings, project_id: str) -> CatalogStore:
+    """El catálogo del taller del proyecto; la obra de ejemplo tiene el suyo
+    (``catalogs/<project_id>.db``) para que nada del recorrido toque el taller."""
+    if es_obra_de_ejemplo(project_id):
+        return get_catalog_store(settings.data_dir, workspace_id=project_id)
     return workspace_store(settings, project_workspace_id(settings, project_id))
 
 

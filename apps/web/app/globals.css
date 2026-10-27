@@ -389,3 +389,8 @@ input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+/* Recorrido guiado: el foco de un paso «mirar» oscurece todo menos su ancla. */
+.recorrido-foco {
+  box-shadow: 0 0 0 9999px color-mix(in oklab, var(--foreground) 35%, transparent);
+}

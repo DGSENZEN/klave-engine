@@ -17,6 +17,7 @@ import { useProjectLive } from "@/components/ProjectLive";
 import { CommandPalette, openCommandPalette } from "@/components/CommandPalette";
 import { ChangesPanel, ChangesTrigger, LiveToasts } from "@/components/LiveOverlay";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { BotonRecorrido } from "@/components/recorrido/MenuRecorrido";
 import { Avatar } from "@/components/ui";
 import { entryHref, nodeForPath, NODE_NAV } from "@/lib/nodeNav";
 
@@ -249,6 +250,7 @@ function TopBar({
         <button
           type="button"
           onClick={openCommandPalette}
+          data-tour="shell.paleta"
           aria-label="Ir a cualquier pantalla (⌘K)"
           className="ml-1 hidden items-center gap-1 rounded-lg border border-border px-1.5 py-0.5 text-[11px] text-faint transition-colors hover:bg-surface-2 hover:text-foreground sm:inline-flex"
         >
@@ -338,6 +340,7 @@ function TopBar({
         >
           <GearSix size={18} />
         </Link>
+        <BotonRecorrido ancla="shell.ayuda" />
         <ThemeToggle />
       </div>
     </header>
