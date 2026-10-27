@@ -72,9 +72,20 @@ test("el recorrido guiado completo, y empezar de cero", async ({ page }) => {
   // 3 · Revisión
   await paso(page, "Todos los elementos, en una tabla");
   await siguiente(page, 2);
-  for (const titulo of ["Verifica las unidades", "Verifica los elementos", "Verifica los supuestos"]) {
+  // El aviso en vivo llega antes que la respuesta que repinta los botones:
+  // se fija esa carrera para que la prueba no dependa de la velocidad de CI.
+  await page.route(/\/reviews(\/verification)?$/, async (route) => {
+    const respuesta = await route.fetch();
+    await new Promise((r) => setTimeout(r, 1500));
+    await route.fulfill({ response: respuesta });
+  });
+  const marcar = page.getByRole("button", { name: "Marcar como verificado", exact: true });
+  const verificar = ["Verifica las unidades", "Verifica los elementos", "Verifica los supuestos"];
+  for (const [i, titulo] of verificar.entries()) {
     await paso(page, titulo);
-    await page.getByRole("button", { name: "Marcar como verificado", exact: true }).first().click();
+    // El paso anterior ya no ofrece su botón: el primero es el de este paso.
+    await expect(marcar).toHaveCount(verificar.length - i);
+    await marcar.first().click();
   }
   await paso(page, "Verificado");
   await siguiente(page);
