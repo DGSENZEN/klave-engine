@@ -37,6 +37,9 @@ export type Paso = {
   cuerpo: string;
   avanza: Avance;
   accion?: AccionPaso;
+  /** El paso lleva a otra pantalla por sí mismo (crear la obra): salir de la
+   * suya no es «salir del recorrido». */
+  libre?: boolean;
   /** Dónde prefiere su tarjeta, si el ancla abre algo hacia abajo (un menú). */
   lado?: "abajo" | "arriba" | "derecha" | "izquierda" | "esquina";
 };
@@ -72,6 +75,8 @@ export type EstadoRecorrido = {
   repaso: boolean;
   anclaPerdida: boolean;
   fueraDeRuta: boolean;
+  /** Cambia en cada «iniciar»: retomar el mismo paso vuelve a su pantalla. */
+  visita: number;
 };
 
 export type Entrada =
@@ -85,5 +90,6 @@ export type Entrada =
   | { tipo: "clic"; ancla: string }
   | { tipo: "ruta"; pathname: string }
   | { tipo: "ancla_perdida" }
+  | { tipo: "ancla_encontrada" }
   | { tipo: "obra"; projectId: string; lista: boolean }
   | { tipo: "progreso"; progreso: Progreso };

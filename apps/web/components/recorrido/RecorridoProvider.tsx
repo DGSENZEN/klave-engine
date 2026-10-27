@@ -7,7 +7,7 @@ import { getBrowserActor } from "@/lib/collab";
 import { CAPITULOS } from "@/lib/recorrido/capitulos";
 import type { Rect } from "@/lib/recorrido/colocar";
 import { pasoActual, rutaHeredada } from "@/lib/recorrido/motor";
-import { esCampoDeTexto } from "@/lib/recorrido/teclas";
+import { esCampoDeTexto, teclaDelRecorrido } from "@/lib/recorrido/teclas";
 import {
   almacen,
   configurarAlmacen,
@@ -47,7 +47,7 @@ export function RecorridoProvider() {
   const [ocupada, setOcupada] = useState(false);
   const capitulo = CAPITULOS.find((c) => c.id === estado.capitulo) ?? null;
   const paso = pasoActual(estado, CAPITULOS);
-  const clavePaso = estado.activo ? `${estado.capitulo}:${estado.indice}` : "";
+  const clavePaso = estado.activo ? `${estado.visita}:${estado.capitulo}:${estado.indice}` : "";
   const navegado = useRef("");
   // La obra cuyo procesamiento lanzó una acción del recorrido: cuando quede
   // lista (aunque termine antes de que la pantalla alcance a verla procesar),
@@ -136,6 +136,7 @@ export function RecorridoProvider() {
       nodo.addEventListener("click", alClic, true);
       tamano.observe(nodo);
       seguir();
+      despachar({ tipo: "ancla_encontrada" });
     };
     const buscar = () => document.querySelector(`[data-tour="${CSS.escape(ancla)}"]`);
     const observador = new MutationObserver(() => {
@@ -175,21 +176,29 @@ export function RecorridoProvider() {
     };
   }, [ancla, clavePaso, estado.fueraDeRuta]);
 
-  // Esc pausa; ← → sólo mueven pasos «mirar» y nunca mientras se escribe.
+  // La pantalla manda sobre las teclas (ver teclaDelRecorrido). Se escucha en
+  // window, en burbuja: llega después que los manejadores de la pantalla, así
+  // que defaultPrevented ya dice si alguien la usó.
   const tipo = paso?.tipo ?? null;
+  const anclaActual = paso?.ancla ?? null;
   useEffect(() => {
     if (!estado.activo) return;
     function alTeclear(event: KeyboardEvent) {
-      if (event.metaKey || event.ctrlKey || event.altKey || escribiendo(event.target)) return;
-      // La tarjeta de transferencia (sin paso) también avanza con →.
-      const conFlechas = tipo === "mirar" || tipo === null;
-      if (event.key === "Escape") despachar({ tipo: "pausar" });
-      else if (conFlechas && event.key === "ArrowRight") despachar({ tipo: "siguiente" });
-      else if (conFlechas && event.key === "ArrowLeft") despachar({ tipo: "atras" });
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const objetivo = event.target as HTMLElement | null;
+      const accion = teclaDelRecorrido({
+        key: event.key,
+        defaultPrevented: event.defaultPrevented,
+        enTarjeta: Boolean(objetivo?.closest?.("[data-recorrido-tarjeta]")),
+        escribiendo: escribiendo(event.target),
+        tipo,
+        ancla: anclaActual,
+      });
+      if (accion) despachar({ tipo: accion });
     }
-    document.addEventListener("keydown", alTeclear);
-    return () => document.removeEventListener("keydown", alTeclear);
-  }, [estado.activo, tipo]);
+    window.addEventListener("keydown", alTeclear);
+    return () => window.removeEventListener("keydown", alTeclear);
+  }, [estado.activo, tipo, anclaActual]);
 
   async function accion() {
     if (!paso?.accion) return;

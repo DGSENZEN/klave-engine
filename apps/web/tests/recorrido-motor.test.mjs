@@ -17,7 +17,8 @@ const CAPS = [
     id: "arranque", titulo: "Arranque", minutos: 2, requiereObra: false, transferencia: "t0",
     pasos: [
       paso("a.hola", "arranque", "mirar", { con: "siguiente" }, { ruta: "~/" }),
-      paso("a.crear", "arranque", "hacer", { con: "evento", tipo: "run_published" }),
+      paso("a.crear", "arranque", "hacer", { con: "evento", tipo: "run_published" },
+        { accion: "crear_obra", libre: true }),
     ],
   },
   {
@@ -228,4 +229,54 @@ test("con los «hacer» hechos y un «mirar» pendiente, retoma el pendiente en 
   const e = avanzar(casi, { tipo: "iniciar", capitulo: "revisiones" }, caps);
   assert.equal(e.repaso, true);
   assert.equal(e.indice, 1);
+});
+
+
+// --- Revisión final ------------------------------------------------------------
+
+test("sin obra lista, el arranque abre en «crear» y no en repaso (no hay bucle)", () => {
+  const hecho = run(ESTADO_INICIAL, { tipo: "progreso", progreso: { "a.hola": "hecho", "a.crear": "saltado" } });
+  const e = run(hecho, { tipo: "iniciar", capitulo: "planos" });
+  assert.equal(e.capitulo, "arranque");
+  assert.equal(e.indice, 1);
+  assert.equal(e.repaso, false);
+});
+
+test("fuera de ruta también en un paso que hereda su pantalla", () => {
+  // pr.exp no dice ruta: vive en /presupuesto, la del paso anterior.
+  const enExportar = { ...run(conObra, { tipo: "iniciar", capitulo: "presupuesto" }), indice: 1 };
+  const e = run(enExportar, { tipo: "ruta", pathname: "/proyecto/obra_1/revision" });
+  assert.equal(e.fueraDeRuta, true);
+  assert.equal(run(e, { tipo: "ruta", pathname: "/proyecto/obra_1/presupuesto" }).fueraDeRuta, false);
+});
+
+test("un paso «libre» (crear la obra) puede llevarte a otra pantalla sin salir del recorrido", () => {
+  const e = { ...run(ESTADO_INICIAL, { tipo: "iniciar", capitulo: "arranque" }), indice: 1 };
+  assert.equal(run(e, { tipo: "ruta", pathname: "/proyecto/obra_1" }).fueraDeRuta, false);
+});
+
+test("retomar el mismo paso cuenta como otra visita (para volver a su pantalla)", () => {
+  const a = run(conObra, { tipo: "iniciar", capitulo: "planos" });
+  const b = run(run(a, { tipo: "pausar" }), { tipo: "iniciar", capitulo: "planos" });
+  assert.equal(a.indice, b.indice);
+  assert.notEqual(a.visita, b.visita);
+});
+
+test("un ancla que aparece tarde deja de estar perdida", () => {
+  const e = run(enPlanos(0), { tipo: "ancla_perdida" });
+  assert.equal(run(e, { tipo: "ancla_encontrada" }).anclaPerdida, false);
+});
+
+const { teclaDelRecorrido } = require(join(process.env.KLAVE_TEST_LIB_DIR, "recorrido", "teclas.js"));
+
+test("las teclas de la pantalla mandan: Esc y flechas sólo cuando nadie más las usó", () => {
+  const base = { defaultPrevented: false, enTarjeta: false, escribiendo: false, tipo: "mirar", ancla: "lectura.metricas" };
+  assert.equal(teclaDelRecorrido({ ...base, key: "ArrowRight" }), "siguiente");
+  assert.equal(teclaDelRecorrido({ ...base, key: "ArrowRight", defaultPrevented: true }), null);
+  assert.equal(teclaDelRecorrido({ ...base, key: "ArrowRight", ancla: "visor.lienzo" }), null);
+  assert.equal(teclaDelRecorrido({ ...base, key: "ArrowRight", tipo: "hacer" }), null);
+  assert.equal(teclaDelRecorrido({ ...base, key: "ArrowRight", tipo: null }), "siguiente");
+  assert.equal(teclaDelRecorrido({ ...base, key: "Escape" }), null);
+  assert.equal(teclaDelRecorrido({ ...base, key: "Escape", enTarjeta: true }), "pausar");
+  assert.equal(teclaDelRecorrido({ ...base, key: "ArrowLeft", escribiendo: true }), null);
 });

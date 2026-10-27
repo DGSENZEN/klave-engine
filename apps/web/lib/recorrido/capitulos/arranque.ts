@@ -21,6 +21,7 @@ export const arranque: Capitulo = {
       id: "arranque.crear",
       tipo: "hacer",
       accion: "crear_obra",
+      libre: true,
       titulo: "Crea tu obra de ejemplo",
       cuerpo:
         "Dos hojas en centímetros —cimentación y estructura— que Klave lee como cualquier plano tuyo. Mientras se procesa verás en qué etapa va.",

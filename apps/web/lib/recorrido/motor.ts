@@ -13,6 +13,7 @@ export const ESTADO_INICIAL: EstadoRecorrido = {
   repaso: false,
   anclaPerdida: false,
   fueraDeRuta: false,
+  visita: 0,
 };
 
 function capituloDe(estado: EstadoRecorrido, capitulos: Capitulo[]): Capitulo | null {
@@ -54,9 +55,22 @@ function mismaRuta(pathname: string, ruta: string | null): boolean {
 }
 
 function iniciar(estado: EstadoRecorrido, id: Capitulo["id"], capitulos: Capitulo[]): EstadoRecorrido {
-  let capitulo = capitulos.find((c) => c.id === id) ?? capitulos[0];
+  const capitulo = capitulos.find((c) => c.id === id) ?? capitulos[0];
   if (capitulo.requiereObra && !estado.obraLista) {
-    capitulo = capitulos.find((c) => c.id === "arranque") ?? capitulos[0];
+    // Sin obra lista, directo a crearla (en vivo, no en repaso): si no, el
+    // arranque ya hecho se repasaba y devolvía aquí sin fin.
+    const arranque = capitulos.find((c) => c.id === "arranque") ?? capitulos[0];
+    const crear = arranque.pasos.findIndex((p) => p.accion === "crear_obra");
+    return {
+      ...estado,
+      activo: true,
+      capitulo: arranque.id,
+      indice: Math.max(0, crear),
+      repaso: false,
+      anclaPerdida: false,
+      fueraDeRuta: false,
+      visita: estado.visita + 1,
+    };
   }
   const hacer = capitulo.pasos.filter((p) => p.tipo === "hacer");
   const repaso = hacer.length > 0 && hacer.every((p) => estado.progreso[p.id] !== undefined);
@@ -70,6 +84,7 @@ function iniciar(estado: EstadoRecorrido, id: Capitulo["id"], capitulos: Capitul
     repaso,
     anclaPerdida: false,
     fueraDeRuta: false,
+    visita: estado.visita + 1,
   };
 }
 
@@ -143,11 +158,14 @@ export function avanzar(
       if (avanza.con === "ruta" && mismaRuta(entrada.pathname, resolverRuta(avanza.ruta, estado.projectId))) {
         return completar(estado, paso, "hecho");
       }
-      const propia = rutaDelPaso(paso, estado.projectId);
+      if (paso.libre) return { ...estado, fueraDeRuta: false };
+      const propia = rutaHeredada(capitulo, estado.indice, estado.projectId);
       return { ...estado, fueraDeRuta: propia !== null && !mismaRuta(entrada.pathname, propia) };
     }
     case "ancla_perdida":
       return { ...estado, anclaPerdida: true };
+    case "ancla_encontrada":
+      return { ...estado, anclaPerdida: false };
   }
   return estado;
 }
