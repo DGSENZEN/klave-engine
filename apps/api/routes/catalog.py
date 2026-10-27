@@ -73,7 +73,23 @@ from apps.api.tenancy import store_for_project, store_for_request
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 
-MAX_IMPORT_BYTES = 1_000_000
+# Una base de oficina con sus matrices exportada a Excel pasa de 1 MB sin
+# esfuerzo; 10 MB la deja entrar y sigue leyéndose en memoria sin problema.
+MAX_IMPORT_BYTES = 10_000_000
+
+
+def _demasiado_grande(limite: int) -> HTTPException:
+    """413 con el límite dicho, para que la pantalla no muestre un error genérico."""
+    tamano = f"{limite / 1_000_000:g} MB" if limite >= 1_000_000 else f"{limite / 1_000:g} KB"
+    return HTTPException(
+        status_code=413,
+        detail={
+            "error_type": "import_too_large",
+            "max_bytes": limite,
+            "message": f"El archivo pasa del límite de {tamano} para importar. "
+            "Divídelo o exporta sólo lo que vas a usar.",
+        },
+    )
 
 
 def _actor(x_actor: str | None) -> str | None:
@@ -677,10 +693,7 @@ async def import_prices(
     # Read at most the limit plus one byte: a bigger body never lands in memory.
     raw = await file.read(MAX_IMPORT_BYTES + 1)
     if len(raw) > MAX_IMPORT_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail={"error_type": "import_too_large", "max_bytes": MAX_IMPORT_BYTES},
-        )
+        raise _demasiado_grande(MAX_IMPORT_BYTES)
     filename = (file.filename or "").lower()
     if filename.endswith((".xlsx", ".xlsm")) or raw[:2] == b"PK":
         rows = _rows_from_xlsx(raw)
@@ -834,10 +847,7 @@ async def import_custom_source(
     # Read at most the limit plus one byte: a bigger body never lands in memory.
     raw = await file.read(MAX_IMPORT_BYTES + 1)
     if len(raw) > MAX_IMPORT_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail={"error_type": "import_too_large", "max_bytes": MAX_IMPORT_BYTES},
-        )
+        raise _demasiado_grande(MAX_IMPORT_BYTES)
     title = name.strip() or Path(file.filename or "catalogo").stem[:80]
     try:
         rows = parse_concept_workbook(raw, file.filename or "")
@@ -935,10 +945,7 @@ async def import_destajos(
     require_catalog_admin(request)
     raw = await file.read(MAX_IMPORT_BYTES + 1)
     if len(raw) > MAX_IMPORT_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail={"error_type": "import_too_large", "max_bytes": MAX_IMPORT_BYTES},
-        )
+        raise _demasiado_grande(MAX_IMPORT_BYTES)
     try:
         parse = parse_destajos_workbook(raw, file.filename or "")
     except CustomCatalogError as exc:
@@ -971,10 +978,7 @@ async def import_matrices(
     # Read at most the limit plus one byte: a bigger body never lands in memory.
     raw = await file.read(limit + 1)
     if len(raw) > limit:
-        raise HTTPException(
-            status_code=413,
-            detail={"error_type": "import_too_large", "max_bytes": limit},
-        )
+        raise _demasiado_grande(limit)
     label = source.strip() or Path(file.filename or "matrices").stem[:80]
     extras: dict | None = None
     try:
@@ -1427,10 +1431,7 @@ async def create_plantilla(
     # Read at most the limit plus one byte: a bigger body never lands in memory.
     raw = await file.read(MAX_IMPORT_BYTES + 1)
     if len(raw) > MAX_IMPORT_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail={"error_type": "import_too_large", "max_bytes": MAX_IMPORT_BYTES},
-        )
+        raise _demasiado_grande(MAX_IMPORT_BYTES)
     label = name.strip() or Path(file.filename or "plantilla").stem[:80]
     try:
         result = import_plantilla(
