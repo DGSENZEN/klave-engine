@@ -58,9 +58,9 @@ export const planos: Capitulo = {
       id: "planos.decidir",
       tipo: "hacer",
       ancla: "visor.lienzo",
-      titulo: "Decide una duda",
+      titulo: "Confirma o excluye",
       cuerpo:
-        "Junto al cuadro de columnas, Klave leyó las marcas «C-1» y «C-2» del cuadro como si fueran columnas, y duda. Selecciona una y presiona X para excluirla (C confirma, ← → recorren).",
+        "Con un elemento seleccionado, presiona C si es correcto o X si no es un elemento real; ← → pasan al siguiente. Así se revisa un plano entero sin soltar el teclado.",
       avanza: {
         con: "evento",
         tipo: "review_updated",

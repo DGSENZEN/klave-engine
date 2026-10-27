@@ -36,6 +36,18 @@ export function rutaDelPaso(paso: Paso, projectId: string | null): string | null
   return paso.ruta ? resolverRuta(paso.ruta, projectId) : null;
 }
 
+/** La pantalla donde vive un paso: la suya, o la del último paso anterior
+ * del capítulo que dijo una. Sirve para retomar un capítulo a medias. */
+export function rutaHeredada(
+  capitulo: Capitulo, indice: number, projectId: string | null,
+): string | null {
+  for (let i = Math.min(indice, capitulo.pasos.length - 1); i >= 0; i--) {
+    const ruta = capitulo.pasos[i].ruta;
+    if (ruta) return resolverRuta(ruta, projectId);
+  }
+  return null;
+}
+
 function mismaRuta(pathname: string, ruta: string | null): boolean {
   if (ruta === null) return false;
   return decodeURIComponent(pathname) === decodeURIComponent(ruta.split("?")[0]);
@@ -47,12 +59,15 @@ function iniciar(estado: EstadoRecorrido, id: Capitulo["id"], capitulos: Capitul
     capitulo = capitulos.find((c) => c.id === "arranque") ?? capitulos[0];
   }
   const hacer = capitulo.pasos.filter((p) => p.tipo === "hacer");
+  const repaso = hacer.length > 0 && hacer.every((p) => estado.progreso[p.id] !== undefined);
+  // A medias, se retoma donde se quedó; un capítulo hecho se repasa desde el inicio.
+  const pendiente = capitulo.pasos.findIndex((p) => estado.progreso[p.id] === undefined);
   return {
     ...estado,
     activo: true,
     capitulo: capitulo.id,
-    indice: 0,
-    repaso: hacer.length > 0 && hacer.every((p) => estado.progreso[p.id] !== undefined),
+    indice: repaso || pendiente < 0 ? 0 : pendiente,
+    repaso,
     anclaPerdida: false,
     fueraDeRuta: false,
   };

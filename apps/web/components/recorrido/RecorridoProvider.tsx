@@ -6,7 +6,8 @@ import { cargarRevisionB, createDemoProject, listProjects } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
 import { CAPITULOS } from "@/lib/recorrido/capitulos";
 import type { Rect } from "@/lib/recorrido/colocar";
-import { pasoActual, rutaDelPaso } from "@/lib/recorrido/motor";
+import { pasoActual, rutaHeredada } from "@/lib/recorrido/motor";
+import { esCampoDeTexto } from "@/lib/recorrido/teclas";
 import {
   almacen,
   configurarAlmacen,
@@ -27,7 +28,8 @@ function rectDe(nodo: Element): Rect {
 
 function escribiendo(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
-  return Boolean(el && ("value" in el || el.isContentEditable));
+  if (!el?.tagName) return false;
+  return esCampoDeTexto(el.tagName, el.isContentEditable, el.getAttribute("type") ?? undefined);
 }
 
 /**
@@ -77,11 +79,11 @@ export function RecorridoProvider() {
   // Cada paso nuevo lleva a su pantalla (una vez: si la persona se va, el
   // recorrido no la arrastra de regreso; la tarjeta le ofrece volver).
   useEffect(() => {
-    if (!paso || navegado.current === clavePaso) return;
+    if (!paso || !capitulo || navegado.current === clavePaso) return;
     navegado.current = clavePaso;
-    const destino = rutaDelPaso(paso, estado.projectId);
+    const destino = rutaHeredada(capitulo, estado.indice, estado.projectId);
     if (destino && destino.split("?")[0] !== pathname) router.push(destino);
-  }, [clavePaso, paso, estado.projectId, pathname, router]);
+  }, [clavePaso, paso, capitulo, estado.indice, estado.projectId, pathname, router]);
 
   useEffect(() => {
     if (pathname) despachar({ tipo: "ruta", pathname });
@@ -147,9 +149,11 @@ export function RecorridoProvider() {
     if (!estado.activo) return;
     function alTeclear(event: KeyboardEvent) {
       if (event.metaKey || event.ctrlKey || event.altKey || escribiendo(event.target)) return;
+      // La tarjeta de transferencia (sin paso) también avanza con →.
+      const conFlechas = tipo === "mirar" || tipo === null;
       if (event.key === "Escape") despachar({ tipo: "pausar" });
-      else if (tipo === "mirar" && event.key === "ArrowRight") despachar({ tipo: "siguiente" });
-      else if (tipo === "mirar" && event.key === "ArrowLeft") despachar({ tipo: "atras" });
+      else if (conFlechas && event.key === "ArrowRight") despachar({ tipo: "siguiente" });
+      else if (conFlechas && event.key === "ArrowLeft") despachar({ tipo: "atras" });
     }
     document.addEventListener("keydown", alTeclear);
     return () => document.removeEventListener("keydown", alTeclear);
@@ -174,8 +178,8 @@ export function RecorridoProvider() {
   }
 
   function volver() {
-    if (!paso) return;
-    const destino = rutaDelPaso(paso, estado.projectId);
+    if (!capitulo) return;
+    const destino = rutaHeredada(capitulo, estado.indice, estado.projectId);
     if (destino) router.push(destino);
   }
 

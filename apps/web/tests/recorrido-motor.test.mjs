@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 
 const require = createRequire(import.meta.url);
-const { avanzar, pasoActual, rutaDelPaso, ESTADO_INICIAL } = require(
+const { avanzar, pasoActual, rutaDelPaso, rutaHeredada, ESTADO_INICIAL } = require(
   join(process.env.KLAVE_TEST_LIB_DIR, "recorrido", "motor.js"),
 );
 const { crearAlmacen } = require(join(process.env.KLAVE_TEST_LIB_DIR, "recorrido", "progreso.js"));
@@ -182,4 +182,26 @@ test("progreso remoto gana cuando responde", async () => {
   assert.deepEqual(await crearAlmacen(remoto, local).cargar(), { "a.crear": "hecho" });
   assert.deepEqual(await crearAlmacen(null, local).cargar(), { "a.crear": "hecho" });  // quedó en lo local
   assert.deepEqual(await crearAlmacen(null, memoria()).cargar(), {});
+});
+
+const { esCampoDeTexto } = require(join(process.env.KLAVE_TEST_LIB_DIR, "recorrido", "teclas.js"));
+
+test("las flechas siguen funcionando después de hacer clic en un botón", () => {
+  assert.equal(esCampoDeTexto("BUTTON", false), false);
+  assert.equal(esCampoDeTexto("INPUT", false, "checkbox"), false);
+  assert.equal(esCampoDeTexto("INPUT", false, "text"), true);
+  assert.equal(esCampoDeTexto("TEXTAREA", false), true);
+  assert.equal(esCampoDeTexto("SELECT", false), true);
+  assert.equal(esCampoDeTexto("DIV", true), true);
+});
+
+test("continuar un capítulo a medias retoma el primer paso sin hacer", () => {
+  const conAvance = run(conObra, { tipo: "progreso", progreso: { "p.lectura": "hecho" } });
+  assert.equal(run(conAvance, { tipo: "iniciar", capitulo: "planos" }).indice, 1);
+});
+
+test("retomar un paso sin ruta propia lleva a la ruta del paso anterior", () => {
+  assert.equal(rutaHeredada(CAPS[1], 2, "obra_1"), "/proyecto/obra_1/plano");
+  assert.equal(rutaHeredada(CAPS[1], 0, "obra_1"), "/proyecto/obra_1/lectura");
+  assert.equal(rutaHeredada(CAPS[2], 1, "obra_1"), "/proyecto/obra_1/presupuesto");
 });
