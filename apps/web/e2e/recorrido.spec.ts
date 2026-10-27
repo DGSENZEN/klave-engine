@@ -137,8 +137,12 @@ test("el recorrido guiado completo, y empezar de cero", async ({ page }) => {
   await expect(tarjeta(page)).toHaveCount(0);
 
   const hacer = CAPITULOS.flatMap((c) => c.pasos).filter((p) => p.tipo === "hacer").map((p) => p.id);
-  const progreso = await (await page.request.get(state.api_url + "/auth/me/recorrido")).json();
-  for (const id of hacer) expect(progreso.pasos[id], id).toBe("hecho");
+  // El progreso se guarda en segundo plano: el último paso puede seguir en
+  // camino cuando la tarjeta se cierra.
+  await expect.poll(async () => {
+    const r = await (await page.request.get(state.api_url + "/auth/me/recorrido")).json();
+    return hacer.filter((id) => r.pasos[id] !== "hecho");
+  }).toEqual([]);
 
   // Empezar de cero: la obra vuelve a la Rev A y el progreso a vacío.
   await page.goto("/");
