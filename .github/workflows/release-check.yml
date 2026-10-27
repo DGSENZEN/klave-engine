@@ -171,15 +171,22 @@ jobs:
             echo "Promotion of $id queued behind an active rolling release."
             exit 0
           fi
-          # As the CLI does: wait for the project's alias job to name this deployment.
+          # The CLI's own wait (promoteStatus): no recent alias job means Vercel
+          # already applied it; otherwise wait for succeeded, skipped or failed.
+          recent=$(( ($(date +%s) - 180) * 1000 ))
           for _ in $(seq 60); do
-            job=$(vercel_api "$api/v9/projects/$VERCEL_PROJECT_ID?$team" \
-              | jq -r '.lastAliasRequest // {} | "\(.toDeploymentId) \(.jobStatus)"')
-            case "$job" in
-              "$id succeeded") echo "Promoted $id."; exit 0 ;;
-              "$id failed") echo "Vercel reports the promotion of $id failed." >&2; exit 1 ;;
+            job=$(vercel_api "$api/v9/projects/$VERCEL_PROJECT_ID?$team" | jq -c '.lastAliasRequest')
+            echo "Alias job: $job"
+            state=$(jq -r --argjson recent "$recent" '
+              if (.jobStatus and .requestedAt and .toDeploymentId | not)
+                or .requestedAt < $recent then "applied"
+              else .jobStatus end' <<<"$job")
+            case "$state" in
+              applied|succeeded|skipped) echo "Promoted $id."; exit 0 ;;
+              failed) echo "Vercel reports the promotion failed." >&2; exit 1 ;;
+              pending|in-progress) sleep 3 ;;
+              *) echo "Unknown promotion status «$state»." >&2; exit 1 ;;
             esac
-            sleep 3
           done
           echo "The promotion of $id did not finish within 3 minutes." >&2
           exit 1
