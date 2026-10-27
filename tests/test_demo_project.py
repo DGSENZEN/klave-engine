@@ -1,6 +1,8 @@
 """La obra de ejemplo: el primer botón que ve un taller vacío tiene que abrir
 una obra, no un error. Se crea una vez por persona y se procesa como trabajo."""
 
+from pathlib import Path
+
 import pytest
 from fastapi import HTTPException, Request
 from klave_engine.common import config as config_module
@@ -328,3 +330,72 @@ def test_reset_route_restarts_the_tour_progress(data_dir, monkeypatch):
     ]
     projects_module.reiniciar_obra_de_ejemplo(project_id, request, store=store, settings=settings)
     assert reinicios == ["u-ana"]
+
+
+# --- Revisión final: la obra de ejemplo se reconoce por su id exacto ---------------
+
+
+def test_an_upload_named_like_the_sample_never_gets_the_sample_prefix(data_dir, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from apps.api.main import create_app
+
+    _fake_enqueue(monkeypatch)
+    client = TestClient(create_app())
+    dxf = (Path(__file__).resolve().parents[1] / "apps/web/e2e/fixtures/structural-meters.dxf")
+    response = client.post(
+        "/projects/upload",
+        files=[("files", ("plano.dxf", dxf.read_bytes(), "application/dxf"))],
+        data={"project_name": "Obra de ejemplo – Torre 2"},
+    )
+    assert response.status_code in (200, 201, 202), response.text
+    project_id = response.json()["project_id"]
+    assert not project_id.startswith("obra_de_ejemplo")
+
+
+def test_reset_and_rev_b_only_touch_the_callers_own_sample(data_dir, monkeypatch):
+    settings = get_settings()
+    store = ProjectStore(settings)
+    users = _Users()
+    users.reiniciar_recorrido = lambda _uid: None
+    _patch_users(monkeypatch, users)
+    _fake_enqueue(monkeypatch)
+    ana = _request_user("ws-1", "u-ana")
+    beto = _request_user("ws-1", "u-beto", role="admin")
+    project_id = projects_module.create_demo_project(ana, store=store, settings=settings)[
+        "project_id"
+    ]
+    for route in (projects_module.reiniciar_obra_de_ejemplo, projects_module.cargar_revision_b):
+        with pytest.raises(HTTPException) as caught:
+            route(project_id, beto, store=store, settings=settings)
+        assert caught.value.status_code == 404
+    # A real project whose id happens to carry the prefix is never treated as a sample.
+    root = data_dir / "uploads" / "obra_de_ejemplo_torre_2_ab12cd"
+    (root / "drawings").mkdir(parents=True)
+    (root / "drawings" / "x.dxf").write_text("0\nEOF\n")
+    store.register("obra_de_ejemplo_torre_2_ab12cd", root)
+    with pytest.raises(HTTPException) as caught:
+        projects_module.reiniciar_obra_de_ejemplo(
+            "obra_de_ejemplo_torre_2_ab12cd", ana, store=store, settings=settings
+        )
+    assert caught.value.status_code == 404
+    assert (root / "drawings" / "x.dxf").exists()
+
+
+def test_creating_the_sample_while_it_processes_does_not_touch_its_files(data_dir, monkeypatch):
+    client, project_id, calls = _cliente_con_obra(monkeypatch)
+    from klave_engine.ingestion.manifest import manifest_path
+
+    root = data_dir / "uploads" / project_id
+    path = manifest_path(root, get_settings().processed_dir_name)
+    manifest = path.read_bytes()
+    monkeypatch.setattr(
+        projects_module.JOB_STORE, "get",
+        lambda *_a, **_k: jobs_module.Job(
+            project_id=project_id, job_id="j-vivo", run_id="r", state="running"
+        ),
+    )
+    body = client.post("/projects/demo", json={}).json()
+    assert body["job_id"] == "j-vivo" and body["fresh"] is False
+    assert path.read_bytes() == manifest
+    assert len(calls) == 1

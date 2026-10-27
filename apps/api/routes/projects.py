@@ -316,7 +316,11 @@ async def upload_project(
     rate_limit(request, "upload", max_attempts=20, window_seconds=3600.0)
     first_name, _ = _validated_upload_name(files[0].filename or "plano.dxf")
     name = " ".join((project_name or "").split())[:120] or Path(first_name).stem
-    project_id = f"{slugify(name)[:32] or 'plano'}_{short_uuid('p')[2:]}"
+    slug = slugify(name)[:32] or "plano"
+    if es_obra_de_ejemplo(slug):
+        # Ese prefijo es de la obra de ejemplo: un plano real nunca lo lleva.
+        slug = f"p_{slug}"[:32]
+    project_id = f"{slug}_{short_uuid('p')[2:]}"
     root = (settings.data_dir / "uploads" / project_id).resolve()
     drawings = root / "drawings"
     drawings.mkdir(parents=True, exist_ok=True)
@@ -406,6 +410,11 @@ def create_demo_project(
     )
     root = (settings.data_dir / "uploads" / project_id).resolve()
     fresh = not root.exists()
+    activo = None if fresh else JOB_STORE.get(project_id, root, settings)
+    if activo is not None and activo.state in ("queued", "running"):
+        # Ya se está leyendo (p. ej. tras «Empezar de cero»): no se toca nada.
+        store.register(project_id, root)
+        return {"project_id": project_id, "job_id": activo.job_id, "fresh": False}
     if not fresh and _ya_procesada(store, project_id, root, settings):
         _grant_owner(request, settings, project_id)
         store.register(project_id, root)
@@ -461,11 +470,19 @@ def _encolar_ejemplo(request: Request, settings: Settings, project_id: str, root
     return job.job_id
 
 
-def _obra_de_ejemplo_quieta(store: ProjectStore, project_id: str, settings: Settings) -> Path:
-    """La raíz de una obra de ejemplo que no se está procesando: 404 si no es
-    una obra de ejemplo, 409 si un trabajo la está leyendo (nunca se borran
-    archivos debajo de un trabajo vivo)."""
-    if not es_obra_de_ejemplo(project_id):
+def _obra_propia(request: Request) -> str:
+    user = _state_user(request)
+    return sample_project_id(request_workspace_id(request), str(user["user_id"]) if user else None)
+
+
+def _obra_de_ejemplo_quieta(
+    request: Request, store: ProjectStore, project_id: str, settings: Settings
+) -> Path:
+    """La raíz de la obra de ejemplo de quien llama y que no se está
+    procesando: 404 si no es exactamente la suya (ni la de otra persona ni un
+    plano real que empiece igual), 409 si un trabajo la está leyendo (nunca se
+    borran archivos debajo de un trabajo vivo)."""
+    if project_id != _obra_propia(request):
         raise HTTPException(status_code=404, detail="Not found")
     root = store.get_root(project_id)
     job = JOB_STORE.get(project_id, root, settings)
@@ -489,7 +506,7 @@ def reiniciar_obra_de_ejemplo(
 ) -> dict:
     """Empezar de cero: la Rev A otra vez, sin revisiones, mapeos ni lecturas,
     con su catálogo didáctico recién sembrado, y el recorrido desde el inicio."""
-    root = _obra_de_ejemplo_quieta(store, project_id, settings)
+    root = _obra_de_ejemplo_quieta(request, store, project_id, settings)
     shutil.rmtree(root, ignore_errors=True)
     drop_catalog_store(settings.data_dir, project_id)
     build_obra_ejemplo(root, "A")
@@ -525,7 +542,7 @@ def cargar_revision_b(
 ) -> dict:
     """La Rev B de la obra de ejemplo: reescribe sus hojas y la vuelve a leer,
     así Cambios compara una lectura contra la otra."""
-    root = _obra_de_ejemplo_quieta(store, project_id, settings)
+    root = _obra_de_ejemplo_quieta(request, store, project_id, settings)
     build_obra_ejemplo(root, "B")
     ingest_project(
         root,
