@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useState } from "react";
 import { Sparkle } from "@phosphor-icons/react";
 import { getAllMatches, setAliasesBulk, type ConceptMatch } from "@/lib/api";
@@ -24,6 +25,7 @@ export function SuggestionsBar({
   conceptCodes: Set<string>;
 }) {
   const { latestEvent } = useProjectLive();
+  const { editProject } = useCapabilities();
   const [items, setItems] = useState<Suggestion[] | null>(null);
   const [open, setOpen] = useState(false);
   const [skipped, setSkipped] = useState<Set<string>>(() => new Set());
@@ -56,7 +58,8 @@ export function SuggestionsBar({
   );
   // Nothing while the matches load: a grey bar held open for the length of a
   // slow match read as broken. Most loads find nothing to suggest anyway.
-  if (!items) return null;
+  // Accepting suggestions adds taller aliases from this project: an editor's act.
+  if (!items || !editProject) return null;
   if (loadError) {
     return (
       <div className="mb-4">

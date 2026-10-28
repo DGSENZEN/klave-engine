@@ -562,3 +562,13 @@ def test_workspace_overview_carries_my_role(variantes, monkeypatch):
     body = como("ana").get("/workspace/overview").json()
     roles = {p["project_id"]: p["my_role"] for p in body["projects"]}
     assert roles[VARIANTES] == "editor"
+
+
+def test_variant_list_marks_human_decisions(variantes):
+    como, _ = variantes
+    assert como("ana").post(f"/projects/{VARIANTES}/variantes/mapear", json={}).status_code == 200
+    assert como("admin").put(f"/projects/{VARIANTES}/variantes/{GRANDE}", json=CONFIRMAR).status_code == 200
+    listed = como("ana").get(f"/projects/{VARIANTES}/variantes").json()
+    decidida = {v["key"]: v["decidida"] for line in listed["lines"] for v in line["variants"]}
+    assert decidida[GRANDE] is True
+    assert decidida[CHICA] is False  # an engine proposal, still the editor's to settle

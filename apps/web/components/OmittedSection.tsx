@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useState } from "react";
 import { PlusCircle, Trash } from "@phosphor-icons/react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -49,6 +50,7 @@ export function OmittedSection({
   clientId: string | null;
   reloadKey?: unknown;
 }) {
+  const caps = useCapabilities();
   const [omitted, setOmitted] = useState<OmittedElement[] | null>(null);
   const [open, setOpen] = useState(false);
   const [family, setFamily] = useState("castillo");
@@ -167,7 +169,7 @@ export function OmittedSection({
               <span className="shrink-0 text-xs text-muted">
                 {element.actor}
               </span>
-              <button
+              {caps.editProject && <button
                 type="button"
                 aria-label="Quitar elemento omitido"
                 disabled={busy}
@@ -175,7 +177,7 @@ export function OmittedSection({
                 className={iconButtonClasses("sm", "text-faint hover:text-danger")}
               >
                 <Trash size={14} />
-              </button>
+              </button>}
             </li>
           ))}
         </ul>
@@ -290,9 +292,11 @@ export function OmittedSection({
           </div>
         </div>
       ) : (
-        <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
-          <PlusCircle /> Agregar elemento omitido
-        </Button>
+        caps.editProject && (
+          <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
+            <PlusCircle /> Agregar elemento omitido
+          </Button>
+        )
       )}
     </Card>
   );

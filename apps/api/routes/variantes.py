@@ -68,6 +68,7 @@ def list_variants(
     más los conceptos a los que se puede mapear: los del mismo catálogo donde
     se guarda el mapeo (en la obra de ejemplo, el suyo)."""
     report = _report(store, project_id)
+    mappings = store_for_project(settings, project_id).load_variant_mappings()
     counts = {"automatica": 0, "propuesta": 0, "confirmada": 0, "sin_equivalente": 0,
               "sin_mapear": 0}
     lines = []
@@ -78,7 +79,12 @@ def list_variants(
             "concept_code": line.concept_code, "description": line.description,
             "unit": line.unit, "phase": line.phase, "quantity": line.quantity,
             "unpriced": line.unpriced,
-            "variants": [v.model_dump() for v in line.variants],
+            # «decidida»: a person's decision, which only an admin changes
+            # in the taller catálogo (role design, decision 3).
+            "variants": [
+                {**v.model_dump(), "decidida": is_human_decision(mappings.get(v.key))}
+                for v in line.variants
+            ],
         })
     conceptos = [
         {"code": row["code"], "description": row["description"], "unit": row["unit"]}

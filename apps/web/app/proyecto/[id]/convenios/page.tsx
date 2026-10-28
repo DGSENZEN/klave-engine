@@ -16,6 +16,7 @@
  * ese campo nace vacío y se queda vacío hasta que una persona lo llene.
  */
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { FilePlus, Scales, Trash, Warning } from "@phosphor-icons/react";
@@ -127,6 +128,7 @@ function FilasConvenio({ convenio }: { convenio: Convenio }) {
 }
 
 export default function ConveniosPage() {
+  const caps = useCapabilities();
   const { id } = useParams<{ id: string }>();
   const [convenios, setConvenios] = useState<Convenio[]>([]);
   const [estado, setEstado] = useState<EstadoContrato | null>(null);
@@ -263,7 +265,7 @@ export default function ConveniosPage() {
             convenio, esa obra se ejecuta y no se cobra.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {conExcedente.map((e) => (
+            {caps.editProject && conExcedente.map((e) => (
               <Button
                 key={e.estimacion.numero}
                 variant="secondary"
@@ -343,7 +345,7 @@ export default function ConveniosPage() {
               <Button variant="ghost" onClick={() => setBorrador(null)}>
                 Cancelar
               </Button>
-              <Button onClick={() => void guardar()}>Guardar convenio</Button>
+              {caps.editProject && <Button onClick={() => void guardar()}>Guardar convenio</Button>}
             </div>
           </div>
         </Card>
@@ -385,13 +387,15 @@ export default function ConveniosPage() {
                   )}
                 </div>
               </div>
-              <IconButton
-                size="sm"
-                aria-label={`Eliminar el convenio ${c.numero}`}
-                onClick={() => setConfirmar(c.numero)}
-              >
-                <Trash />
-              </IconButton>
+              {caps.editProject && (
+                <IconButton
+                  size="sm"
+                  aria-label={`Eliminar el convenio ${c.numero}`}
+                  onClick={() => setConfirmar(c.numero)}
+                >
+                  <Trash />
+                </IconButton>
+              )}
             </div>
           </div>
           {!c.motivo && (

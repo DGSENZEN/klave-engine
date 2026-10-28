@@ -11,6 +11,7 @@
  * firmar.
  */
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -63,6 +64,7 @@ function Diferencia({ renglon }: { renglon: RenglonConvocante }) {
  * Contrato, ya firmado.
  */
 export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
+  const caps = useCapabilities();
   const { id } = useParams<{ id: string }>();
   const [catalogo, setCatalogo] = useState<CatalogoConvocante | null>(null);
   const [cargando, setCargando] = useState(false);
@@ -156,14 +158,16 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
             else void subir(f);
           }}
         />
-        <Button onClick={() => archivo.current?.click()} disabled={cargando}>
-          <FileArrowUp />
-          {cargando
-            ? "Leyendo…"
-            : renglones.length
-              ? "Reemplazar catálogo"
-              : "Cargar catálogo de la convocante"}
-        </Button>
+        {caps.editProject && (
+          <Button onClick={() => archivo.current?.click()} disabled={cargando}>
+            <FileArrowUp />
+            {cargando
+              ? "Leyendo…"
+              : renglones.length
+                ? "Reemplazar catálogo"
+                : "Cargar catálogo de la convocante"}
+          </Button>
+        )}
         {renglones.length > 0 && (
           <Button
             variant="ghost"

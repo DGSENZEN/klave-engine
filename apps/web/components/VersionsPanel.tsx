@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useState } from "react";
 import {
   ArrowCounterClockwise,
@@ -28,6 +29,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
  * list reloads on version events from any client and on reconnect.
  */
 export function VersionsPanel({ projectId }: { projectId: string }) {
+  const { editProject } = useCapabilities();
   const { latestEvent, connectionEpoch, actorName, clientId } = useProjectLive();
   const [versions, setVersions] = useState<VersionSummary[] | null>(null);
   const [activeRun, setActiveRun] = useState<string | null>(null);
@@ -147,6 +149,7 @@ export function VersionsPanel({ projectId }: { projectId: string }) {
         }}
         onCancel={() => setConfirmDelete(null)}
       />
+      {editProject && (
       <div className="flex flex-wrap items-center gap-2">
         <Input
           value={label}
@@ -168,6 +171,7 @@ export function VersionsPanel({ projectId }: { projectId: string }) {
           <BookmarkSimple size={14} /> Guardar versión
         </Button>
       </div>
+      )}
       {error && <p className="mt-2 text-sm text-danger">{error}</p>}
 
       {versions === null ? (
@@ -233,7 +237,7 @@ export function VersionsPanel({ projectId }: { projectId: string }) {
                         </Button>
                       </>
                     ) : (
-                      <Button
+                      editProject && <Button
                         size="sm"
                         onClick={() => setConfirmRestore(v.version_id)}
                         disabled={busy}
@@ -242,14 +246,16 @@ export function VersionsPanel({ projectId }: { projectId: string }) {
                         <ArrowCounterClockwise size={14} /> Restaurar
                       </Button>
                     )}
-                    <button
-                      type="button"
-                      aria-label={`Eliminar versión ${v.number}`}
-                      onClick={() => setConfirmDelete(v)}
-                      className="rounded-md p-1 text-faint transition-colors hover:bg-danger-soft hover:text-danger"
-                    >
-                      <Trash size={14} />
-                    </button>
+                    {editProject && (
+                      <button
+                        type="button"
+                        aria-label={`Eliminar versión ${v.number}`}
+                        onClick={() => setConfirmDelete(v)}
+                        className="rounded-md p-1 text-faint transition-colors hover:bg-danger-soft hover:text-danger"
+                      >
+                        <Trash size={14} />
+                      </button>
+                    )}
                   </div>
                 </div>
                 {v.note && <p className="mt-1 text-xs text-muted">{v.note}</p>}

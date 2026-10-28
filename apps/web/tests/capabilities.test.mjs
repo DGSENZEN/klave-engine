@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 
-const { capabilities } = createRequire(import.meta.url)(
+const { capabilities, isHumanDecision } = createRequire(import.meta.url)(
   join(process.env.KLAVE_TEST_LIB_DIR, "capabilities.js"),
 );
 
@@ -41,4 +41,14 @@ test("lector: solo lee", () => {
 
 test("miembro fuera de un proyecto: el catálogo solo lo lee", () => {
   assert.deepEqual(capabilities({ mode: "protected", tallerRole: "member" }), NONE);
+});
+
+test("una decisión es de una persona: confirmada, o sin equivalente que no puso el motor", () => {
+  assert.equal(isHumanDecision({ status: "confirmada", actor: "motor" }), true);
+  assert.equal(isHumanDecision({ status: "sin_equivalente", actor: "Ana" }), true);
+  assert.equal(isHumanDecision({ status: "sin_equivalente", actor: "motor" }), false);
+  assert.equal(isHumanDecision({ status: "sin_equivalente", actor: "" }), false);
+  assert.equal(isHumanDecision({ status: "propuesta", actor: "Ana" }), false);
+  assert.equal(isHumanDecision({ status: "automatica", actor: "motor" }), false);
+  assert.equal(isHumanDecision(null), false);
 });

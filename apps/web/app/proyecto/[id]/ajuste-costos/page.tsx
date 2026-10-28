@@ -19,6 +19,7 @@
  * teclearlo es donde se cuelan las cantidades que no cuadran con lo cobrado.
  */
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { ChartLineUp, Plus, Trash } from "@phosphor-icons/react";
@@ -240,6 +241,7 @@ function EditorAjuste({
 }
 
 export default function AjusteCostosPage() {
+  const caps = useCapabilities();
   const { id } = useParams<{ id: string }>();
   const [lista, setLista] = useState<AjusteConResumen[]>([]);
   const [editando, setEditando] = useState<AjusteConResumen | null>(null);
@@ -302,9 +304,11 @@ export default function AjusteCostosPage() {
         title="Ajuste de costos"
         sub="Lo que subieron los insumos sobre la obra que falta por ejecutar (LOPSRM art. 57–58)."
         actions={
-          <Button onClick={() => void nueva()}>
-            <Plus /> Nueva solicitud
-          </Button>
+          caps.editProject && (
+            <Button onClick={() => void nueva()}>
+              <Plus /> Nueva solicitud
+            </Button>
+          )
         }
       />
 
@@ -349,19 +353,23 @@ export default function AjusteCostosPage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                onClick={() => setEditando({ solicitud, resumen })}
-              >
-                Editar
-              </Button>
-              <IconButton
-                size="sm"
-                aria-label={`Eliminar la solicitud de ajuste ${solicitud.numero}`}
-                onClick={() => setConfirmar(solicitud.numero)}
-              >
-                <Trash />
-              </IconButton>
+              {caps.editProject && (
+                <>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setEditando({ solicitud, resumen })}
+                  >
+                    Editar
+                  </Button>
+                  <IconButton
+                    size="sm"
+                    aria-label={`Eliminar la solicitud de ajuste ${solicitud.numero}`}
+                    onClick={() => setConfirmar(solicitud.numero)}
+                  >
+                    <Trash />
+                  </IconButton>
+                </>
+              )}
             </div>
           </div>
 

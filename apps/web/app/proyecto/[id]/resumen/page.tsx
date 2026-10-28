@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -59,6 +60,7 @@ import { uploadErrorMessage, validateDrawingFiles } from "@/lib/uploads";
 import { moneyState, UnitsGate } from "@/components/MoneyGate";
 
 export default function Resumen() {
+  const caps = useCapabilities();
   const { id } = useParams<{ id: string }>();
   const { costs, error } = useCostReport(id);
   const [views, setViews] = useState<Views | null>(null);
@@ -215,7 +217,7 @@ export default function Resumen() {
           <Callout
             tone="info"
             action={
-              <Button size="sm" onClick={() => setConfirmReprocess(true)} disabled={reprocessing}>
+              caps.editProject && <Button size="sm" onClick={() => setConfirmReprocess(true)} disabled={reprocessing}>
                 {reprocessing ? (
                   <CircleNotch size={14} className="animate-spin" />
                 ) : (
@@ -384,6 +386,7 @@ export default function Resumen() {
 }
 
 function SheetsCard({ id, project }: { id: string; project: ProjectInfo }) {
+  const caps = useCapabilities();
   const inputRef = useRef<HTMLInputElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -488,14 +491,14 @@ function SheetsCard({ id, project }: { id: string; project: ProjectInfo }) {
             e.target.value = "";
           }}
         />
-        <Button size="sm" onClick={() => inputRef.current?.click()} disabled={busy}>
+        {caps.manageProject && <Button size="sm" onClick={() => inputRef.current?.click()} disabled={busy}>
           {busy ? (
             <CircleNotch size={14} className="animate-spin" />
           ) : (
             <FilePlus size={14} />
           )}
           {busy ? "Procesando…" : "Agregar hojas y reprocesar"}
-        </Button>
+        </Button>}
       </div>
       {error && <p className="mb-2 text-sm text-danger">{error}</p>}
       {repetidas && (
@@ -553,7 +556,7 @@ function SheetsCard({ id, project }: { id: string; project: ProjectInfo }) {
                 )}
               </span>
               <span className="text-xs uppercase text-faint">{sheet.file_type}</span>
-              <KebabMenu label={`Opciones de ${sheet.sheet_number ?? archivo}`}>
+              {caps.manageProject && <KebabMenu label={`Opciones de ${sheet.sheet_number ?? archivo}`}>
                 {(close) => (
                   <>
                     <MenuItem
@@ -580,7 +583,7 @@ function SheetsCard({ id, project }: { id: string; project: ProjectInfo }) {
                     )}
                   </>
                 )}
-              </KebabMenu>
+              </KebabMenu>}
             </li>
           );
         })}
@@ -669,6 +672,7 @@ function VerificationPath({
   reviews: ProjectReviews;
   onConfirm: (step: "units" | "detections" | "assumptions", value: boolean) => void;
 }) {
+  const caps = useCapabilities();
   const v = reviews.verification;
   const steps = [
     {
@@ -746,7 +750,7 @@ function VerificationPath({
                   {step.linkLabel}
                 </Link>
               )}
-              {step.done ? (
+              {!caps.editProject ? null : step.done ? (
                 <Button size="sm" variant="ghost" onClick={() => onConfirm(step.key, false)}>
                   Deshacer
                 </Button>

@@ -31,8 +31,12 @@ const NONE: Capabilities = {
  * the project role) is known everything is false and `ready` is false, so a
  * control appears once known instead of flashing in and then vanishing.
  */
-export function useCapabilities(): Capabilities & { ready: boolean } {
-  const project = useContext(ProjectRoleContext);
+export function useCapabilities(
+  /** Outside a project page (e.g. a row on Inicio): that project's role. */
+  projectRoleOverride?: ProjectRole,
+): Capabilities & { ready: boolean } {
+  const context = useContext(ProjectRoleContext);
+  const project = projectRoleOverride !== undefined ? { role: projectRoleOverride } : context;
   const status = useSyncExternalStore(subscribeAuthStatus, authStatusSnapshot, () => null);
   if (!status || (project && project.role === undefined)) return { ...NONE, ready: false };
   return {

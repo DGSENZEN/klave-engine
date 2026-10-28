@@ -3244,6 +3244,8 @@ export type BoqVariantDetail = {
   mapped_description: string;
   mapping: VariantMapping;
   mapping_reason: string;
+  /** A person decided it: in the taller catálogo only an admin changes it. */
+  decidida?: boolean;
   unit_price: number | null;
   amount: number | null;
   price_source: string;

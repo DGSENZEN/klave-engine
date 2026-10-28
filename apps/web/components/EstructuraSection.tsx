@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
@@ -222,6 +223,7 @@ export function EstructuraSection({
   clientId: string | null;
   reloadKey?: unknown;
 }) {
+  const caps = useCapabilities();
   const [state, setState] = useState<Estructura | null>(null);
   // "no_disponible": el servidor todavía no tiene esta lectura (404 de la ruta).
   const [failed, setFailed] = useState<null | "error" | "no_disponible">(null);
@@ -444,9 +446,11 @@ export function EstructuraSection({
                   {d.nota && <span className="text-muted"> — «{d.nota}»</span>}
                   {d.actor && <span className="text-muted"> · {d.actor}</span>}
                 </span>
-                <Button size="sm" variant="ghost" disabled={busy} onClick={() => setQuitar(d)}>
-                  Quitar
-                </Button>
+                {caps.editProject && (
+                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => setQuitar(d)}>
+                    Quitar
+                  </Button>
+                )}
               </li>
             ))}
           </ul>
@@ -552,6 +556,7 @@ function Hallazgo({
   onCancelar: () => void;
   onDecidir: (dato: DatoEstructural, nota: string) => void;
 }) {
+  const caps = useCapabilities();
   const juego = enJuego(v);
   const marcas =
     v.marcas.length > 8
@@ -597,7 +602,7 @@ function Hallazgo({
                   <div className="mt-1 font-medium tabular-nums text-foreground">{valor}</div>
                 )}
                 {d.texto && <div className="mt-0.5 text-xs text-muted">{d.texto}</div>}
-                {opciones.length > 0 && !eleccion && (
+                {caps.editProject && opciones.length > 0 && !eleccion && (
                   <Button
                     size="sm"
                     variant="ghost"

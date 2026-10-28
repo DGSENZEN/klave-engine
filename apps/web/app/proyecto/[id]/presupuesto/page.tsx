@@ -1,5 +1,7 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
+import { mayChangeSharedMapping } from "@/lib/capabilities";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { CapturaCallout } from "@/components/CapturaCallout";
@@ -87,6 +89,7 @@ function idSeguro(code: string): string {
 }
 
 export default function PresupuestoPage() {
+  const caps = useCapabilities();
   const { id } = useParams<{ id: string }>();
   const { costs, error } = useCostReport(id);
   const [dims, setDims] = useState<Dimensions | null>(null);
@@ -307,15 +310,17 @@ export default function PresupuestoPage() {
                 >
                   <FileXls /> Licitación con descripciones LOPSRM
                 </MenuItem>
-                <MenuItem
-                  onSelect={() => {
-                    close();
-                    void crearLiga();
-                  }}
-                  hint="El plano con sus elementos y los generadores, sin cuenta y sin dinero; caduca en 14 días."
-                >
-                  <LinkSimple /> Liga para compartir (supervisor o socio)
-                </MenuItem>
+                {caps.manageProject && (
+                  <MenuItem
+                    onSelect={() => {
+                      close();
+                      void crearLiga();
+                    }}
+                    hint="El plano con sus elementos y los generadores, sin cuenta y sin dinero; caduca en 14 días."
+                  >
+                    <LinkSimple /> Liga para compartir (supervisor o socio)
+                  </MenuItem>
+                )}
                 <MenuItem
                   onSelect={() => {
                     close();
@@ -656,6 +661,7 @@ function PhaseGroup({
   clientId: string | null;
   onReviews: (reviews: ProjectReviews) => void;
 }) {
+  const caps = useCapabilities();
   const [openCode, setOpenCode] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [picking, setPicking] = useState<string | null>(null);
@@ -771,7 +777,7 @@ function PhaseGroup({
                       </span>
                     )}
                     {num(l.quantity)} <span className="text-xs text-muted">{l.unit}</span>
-                    <button
+                    {caps.editProject && <button
                       type="button"
                       aria-label={`Editar cantidad de ${l.concept_code}`}
                       title="Fijar la cantidad a mano (con motivo)"
@@ -782,7 +788,7 @@ function PhaseGroup({
                       className="rounded-md p-0.5 text-faint opacity-0 transition-opacity hover:text-accent group-hover/qty:opacity-100 focus:opacity-100"
                     >
                       <PencilSimpleLine size={14} />
-                    </button>
+                    </button>}
                   </span>
                 }
               </Td>
@@ -837,16 +843,20 @@ function PhaseGroup({
                         <span className="text-muted">ninguno (clave Klave {l.concept_code})</span>
                       )}
                     </span>
-                    <button
-                      type="button"
-                      className="text-xs underline"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setPicking(picking === l.concept_code ? null : l.concept_code);
-                      }}
-                    >
-                      {picking === l.concept_code ? "cerrar" : l.taller_clave ? "cambiar" : "elegir de mi catálogo"}
-                    </button>
+                    {/* Adding a taller alias is an editor's; changing one the
+                        taller already has is the administrator's. */}
+                    {caps.editProject && (!l.taller_clave || mayChangeSharedMapping(caps, projectId)) && (
+                      <button
+                        type="button"
+                        className="text-xs underline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPicking(picking === l.concept_code ? null : l.concept_code);
+                        }}
+                      >
+                        {picking === l.concept_code ? "cerrar" : l.taller_clave ? "cambiar" : "elegir de mi catálogo"}
+                      </button>
+                    )}
                   </div>
                   {picking === l.concept_code && (
                     <div className="mb-3" onClick={(e) => e.stopPropagation()}>
@@ -1103,6 +1113,7 @@ function AdjustmentsPanel({
   clientId: string | null;
   onChanged: (reviews: ProjectReviews) => void;
 }) {
+  const caps = useCapabilities();
   const [conceptCode, setConceptCode] = useState("");
   const [delta, setDelta] = useState("");
   const [note, setNote] = useState("");
@@ -1201,18 +1212,19 @@ function AdjustmentsPanel({
                   <span className="text-xs text-faint"> — {adjustment.actor}</span>
                 )}
               </div>
-              <button
+              {caps.editProject && <button
                 type="button"
                 aria-label={`Eliminar el ajuste de ${adjustment.concept_code}`}
                 onClick={() => setPorEliminar(adjustment)}
                 className="rounded-md p-1 text-faint transition-colors hover:bg-danger-soft hover:text-danger"
               >
                 <Trash size={14} />
-              </button>
+              </button>}
             </li>
           ))}
         </ul>
       )}
+      {caps.editProject && (
       <div className="flex flex-wrap items-center gap-2">
         <Select
           value={conceptCode}
@@ -1247,6 +1259,7 @@ function AdjustmentsPanel({
           Agregar concepto
         </Button>
       </div>
+      )}
       {formError && <p className="mt-2 text-sm text-danger">{formError}</p>}
       {conceptCode && inBoq.has(conceptCode) && !formError && (
         <p className="mt-2 text-xs text-muted">

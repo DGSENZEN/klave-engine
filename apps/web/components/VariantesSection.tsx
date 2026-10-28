@@ -1,5 +1,7 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
+import { mayChangeSharedMapping } from "@/lib/capabilities";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CaretDown, MagicWand, MagnifyingGlass } from "@phosphor-icons/react";
@@ -55,6 +57,7 @@ export function VariantesSection({
   actorName: string;
   reloadKey?: number;
 }) {
+  const { editProject } = useCapabilities();
   const [state, setState] = useState<VariantsState | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -158,7 +161,7 @@ export function VariantesSection({
         </div>
       </div>
 
-      {(c.sin_mapear ?? 0) > 0 && (
+      {editProject && (c.sin_mapear ?? 0) > 0 && (
         <div className="mb-4">
           <Callout
             tone="info"
@@ -293,6 +296,9 @@ function LineRows({
   onNone: (v: BoqVariantDetail) => void;
   onForget: (v: BoqVariantDetail) => void;
 }) {
+  const caps = useCapabilities();
+  const editProject = caps.editProject;
+  const mayChange = mayChangeSharedMapping(caps, projectId);
   const shown =
     open ? line.variants : [];
   return (
@@ -352,6 +358,11 @@ function LineRows({
                     <span className="text-xs text-muted">{v.mapped_description.slice(0, 70)}</span>
                   </span>
                 )}
+                {v.decidida && !mayChange ? (
+                  <span className="ml-auto text-xs text-muted">
+                    Decisión del taller; la cambia un administrador.
+                  </span>
+                ) : editProject && (
                 <span
                   data-tour={line.variants.length > 1 ? "variantes.mapear" : undefined}
                   className="ml-auto flex gap-1 opacity-70 group-hover:opacity-100">
@@ -374,6 +385,7 @@ function LineRows({
                     </Button>
                   )}
                 </span>
+                )}
               </div>
             </Td>
             <Td align="right" className="tabular px-4 whitespace-nowrap">

@@ -1,5 +1,7 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
+import { mayChangeSharedMapping } from "@/lib/capabilities";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { senalRecorrido } from "@/lib/recorridoStore";
 import Link from "next/link";
@@ -66,6 +68,7 @@ import { ConceptPicker } from "@/components/ConceptPicker";
 const PROPUESTA_COLOR = "#7c3aed";
 
 export default function PlanoPage() {
+  const caps = useCapabilities();
   const { id } = useParams<{ id: string }>();
   const [geom, setGeom] = useState<Geometry | null>(null);
   const [visibleLayers, setVisibleLayers] = useState<Set<string>>(new Set());
@@ -480,7 +483,8 @@ export default function PlanoPage() {
         });
         return;
       }
-      if (!selected) return;
+      // Reviewing writes the project: a viewer's keys only move the selection.
+      if (!selected || !caps.editProject) return;
       const accion = accionDeTecla(event.key, {
         enCampo: false,
         seleccionado: true,
@@ -503,6 +507,7 @@ export default function PlanoPage() {
     selected,
     effectiveFamilies,
     pidiendoMotivo,
+    caps.editProject,
   ]);
 
   const reviewCounts = useMemo(() => {
@@ -549,13 +554,15 @@ export default function PlanoPage() {
           tone={missing ? "warning" : "danger"}
           action={
             missing ? (
-              <Button
-                size="sm"
-                disabled={reprocessing}
-                onClick={() => setConfirmReprocess(true)}
-              >
-                {reprocessing ? "Encolando…" : "Reprocesar"}
-              </Button>
+              caps.editProject ? (
+                <Button
+                  size="sm"
+                  disabled={reprocessing}
+                  onClick={() => setConfirmReprocess(true)}
+                >
+                  {reprocessing ? "Encolando…" : "Reprocesar"}
+                </Button>
+              ) : undefined
             ) : (
               <Button size="sm" onClick={() => window.location.reload()}>
                 Reintentar
@@ -835,6 +842,8 @@ export default function PlanoPage() {
                 actorName={actorName}
                 clientId={clientId}
               />
+              {caps.editProject && (
+              <>
               <div className="mt-3 flex items-center gap-2 border-t border-border pt-3">
                 {selected.review !== "confirmed" && (
                   <Button
@@ -887,6 +896,8 @@ export default function PlanoPage() {
                   onCommit={(note) => review(selected, "excluded", note)}
                 />
               )}
+              </>
+              )}
             </div>
           )}
         </div>
@@ -912,6 +923,7 @@ function ConceptoDelElemento({
   actorName: string;
   clientId: string | null;
 }) {
+  const caps = useCapabilities();
   const [mode, setMode] = useState<"idle" | "picker" | "ajuste">("idle");
   const [cantidad, setCantidad] = useState("");
   const [nota, setNota] = useState("");
@@ -973,6 +985,7 @@ function ConceptoDelElemento({
       )}
       {error && <p className="mt-1.5 text-xs text-danger">{error}</p>}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {caps.editProject && (!line.taller_clave || mayChangeSharedMapping(caps, projectId)) && (
         <button
           type="button"
           onClick={() => setMode(mode === "picker" ? "idle" : "picker")}
@@ -980,6 +993,8 @@ function ConceptoDelElemento({
         >
           Buscar en catálogo
         </button>
+        )}
+        {caps.editProject && (
         <button
           type="button"
           onClick={() => {
@@ -990,6 +1005,7 @@ function ConceptoDelElemento({
         >
           Ajustar cantidad
         </button>
+        )}
         <Link
           href={`/proyecto/${projectId}/presupuesto`}
           className="rounded-md px-2 py-1 text-xs text-muted underline-offset-2 transition-colors hover:text-foreground hover:underline"
@@ -1128,6 +1144,7 @@ function MeasureResult({
   onUndo: () => void;
   onClear: () => void;
 }) {
+  const caps = useCapabilities();
   const [concepts, setConcepts] = useState<CatalogConcept[] | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [conceptCode, setConceptCode] = useState("");
@@ -1211,9 +1228,11 @@ function MeasureResult({
           >
             Limpiar
           </Button>
-          <Button size="sm" onClick={openForm} disabled={!ready}>
-            <PencilSimpleLine size={14} /> Crear ajuste
-          </Button>
+          {caps.editProject && (
+            <Button size="sm" onClick={openForm} disabled={!ready}>
+              <PencilSimpleLine size={14} /> Crear ajuste
+            </Button>
+          )}
         </div>
       </div>
       <p className="mt-1 text-[11px] text-faint">

@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -52,6 +53,7 @@ const TIPO_TONE: Record<CambioElemento["tipo"], BadgeTone> = {
  * lectura, no el proyecto.
  */
 export default function CambiosPage() {
+  const caps = useCapabilities();
   const { id } = useParams<{ id: string }>();
   const { latestEvent } = useProjectLive();
   const [revs, setRevs] = useState<Revision[] | null>(null);
@@ -202,7 +204,7 @@ export default function CambiosPage() {
             </Button>
           </span>
         ) : (
-          data && (
+          data && caps.editProject && (
             <Button
               size="sm"
               variant="ghost"

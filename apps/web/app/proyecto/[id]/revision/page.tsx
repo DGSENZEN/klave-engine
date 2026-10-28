@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -64,6 +65,7 @@ import { useProjectLive } from "@/components/ProjectLive";
  * where a firm signs off hundreds.
  */
 export default function RevisionPage() {
+  const caps = useCapabilities();
   const { id } = useParams<{ id: string }>();
   const { latestEvent, connectionEpoch, actorName, clientId } =
     useProjectLive();
@@ -448,6 +450,7 @@ export default function RevisionPage() {
           </span>
         </div>
 
+        {caps.editProject && (
         <div data-tour="revision.masivo" className="mb-2 flex min-h-11 flex-wrap items-center gap-2 rounded-[10px] border border-border bg-surface-2/60 px-3 py-1.5">
           <span className="text-sm font-medium tabular">
             {selectedVisible.length} seleccionado
@@ -518,16 +521,19 @@ export default function RevisionPage() {
             Shift+clic selecciona un rango
           </span>
         </div>
+        )}
 
         <TableCard tour="revision.tabla" sticky>
           <thead>
             <tr className="border-b border-border bg-surface-2">
               <Th className="w-10">
-                <Checkbox
-                  checked={allSelected}
-                  onChange={toggleAll}
-                  aria-label="Seleccionar todos los visibles"
-                />
+                {caps.editProject && (
+                  <Checkbox
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    aria-label="Seleccionar todos los visibles"
+                  />
+                )}
               </Th>
               <Th>
                 <SortButton
@@ -599,10 +605,12 @@ export default function RevisionPage() {
                   className={`group border-b border-border transition-colors hover:bg-surface-2/60 ${
                     on ? "bg-accent-soft/50" : ""
                   }`}
-                  onClick={(e) => toggle(r, index, e.shiftKey)}
+                  onClick={(e) => {
+                    if (caps.editProject) toggle(r, index, e.shiftKey);
+                  }}
                 >
                   <Td>
-                    <Checkbox
+                    {caps.editProject && <Checkbox
                       checked={on}
                       onChange={() => undefined}
                       onClick={(e) => {
@@ -610,7 +618,7 @@ export default function RevisionPage() {
                         toggle(r, index, (e as React.MouseEvent).shiftKey);
                       }}
                       aria-label={`Seleccionar ${r.label}`}
-                    />
+                    />}
                   </Td>
                   <Td className="whitespace-nowrap">
                     <span className="font-medium">{r.label}</span>
@@ -671,7 +679,7 @@ export default function RevisionPage() {
                           <MapTrifold size={14} /> plano
                         </Link>
                       )}
-                      {r.status !== "excluded" && (
+                      {caps.editProject && r.status !== "excluded" && (
                         <Reasignar
                           projectId={id}
                           rowKey={r.key}
@@ -879,6 +887,7 @@ function ConteoSection({
   actorName: string;
   reloadKey?: unknown;
 }) {
+  const caps = useCapabilities();
   const [conteos, setConteosState] = useState<ConteosDeProyecto | null>(null);
   const [cargaFallida, setCargaFallida] = useState(false);
   const [intento, setIntento] = useState(0);
@@ -1151,7 +1160,7 @@ function ConteoSection({
                   min={0}
                   defaultValue={fila.dibujados ?? undefined}
                   onBlur={(e) => commitDibujados(fila, e.target.value)}
-                  disabled={sinBase}
+                  disabled={sinBase || !caps.editProject}
                   className="w-20 px-2 py-1 text-right tabular"
                   aria-label={`Dibujados en ${fila.hoja}, ${familyLabel(fila.familia)}`}
                 />
@@ -1161,6 +1170,7 @@ function ConteoSection({
         </tbody>
       </TableCard>
 
+      {caps.editProject && (
       <div className="mt-4 border-t border-border pt-3">
         <p className="text-sm text-muted">
           Lo más importante son las familias que no aparecen arriba. Si el plano
@@ -1218,6 +1228,7 @@ function ConteoSection({
           </Button>
         </div>
       </div>
+      )}
     </Card>
   );
 }

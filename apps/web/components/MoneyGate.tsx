@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useState } from "react";
 import Link from "next/link";
 import { Ruler, Warning } from "@phosphor-icons/react";
@@ -74,6 +75,7 @@ export function UnitsGate({
   actorName: string;
   onConfirmed?: (reprocessing: boolean) => void;
 }) {
+  const caps = useCapabilities();
   const detected = costs.drawing_units;
   const [unit, setUnit] = useState<"m" | "cm" | "mm" | "ft" | "in">(
     (UNITS.find((u) => u.value === detected.unit)?.value ?? "m"),
@@ -120,6 +122,11 @@ export function UnitsGate({
         {Math.round(detected.confidence * 100)} % de confianza ({detected.source}).
         {detected.notes?.[0] ? ` ${detected.notes[0]}` : ""}
       </Callout>
+      {!caps.editProject ? (
+        <p className="mt-4 text-[13px] text-muted">
+          Un editor del proyecto confirma las unidades.
+        </p>
+      ) : (
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Select
           value={unit}
@@ -136,6 +143,7 @@ export function UnitsGate({
           {busy ? "Confirmando…" : "Confirmar unidades y calcular"}
         </Button>
       </div>
+      )}
       <p className="mt-3 flex items-start gap-1.5 text-xs text-muted">
         <Warning size={14} className="mt-0.5 shrink-0" />
         Mide una cota conocida en el visor si dudas: una puerta de 0.90 debe medir 0.90 en

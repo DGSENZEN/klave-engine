@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
@@ -38,6 +39,7 @@ export function PropuestasSection({
   clientId: string | null;
   reloadKey?: unknown;
 }) {
+  const caps = useCapabilities();
   const [state, setState] = useState<{ familias: string[]; propuestas: Propuesta[] } | null>(null);
   const [failed, setFailed] = useState(false);
   const [version, setVersion] = useState(0);
@@ -163,7 +165,7 @@ export function PropuestasSection({
                       {p.bloque ? ` · ${p.bloque}` : ""}
                     </Td>
                     <Td>
-                      <div className="flex flex-wrap items-center gap-2">
+                      {caps.editProject && <div className="flex flex-wrap items-center gap-2">
                         <Select
                           size="sm"
                           aria-label="Qué elemento es"
@@ -191,7 +193,7 @@ export function PropuestasSection({
                         >
                           No es elemento
                         </Button>
-                      </div>
+                      </div>}
                     </Td>
                   </tr>
                 ))}

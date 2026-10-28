@@ -38,3 +38,28 @@ export function capabilities(input: {
     approveGate: manage,
   };
 }
+
+/**
+ * A variant mapping a person decided — the server's rule
+ * (``auth.shared_mappings.is_human_decision``). Engine proposals stay open to
+ * editors; changing a person's decision in the taller catálogo is the admin's.
+ */
+export function isHumanDecision(row: { status: string; actor?: string | null } | null | undefined): boolean {
+  if (!row) return false;
+  if (row.status === "confirmada") return true;
+  return row.status === "sin_equivalente" && Boolean(row.actor) && row.actor !== "motor";
+}
+
+/** The example obra keeps its own sandbox catálogo (server: es_obra_de_ejemplo). */
+export function isSampleProject(projectId: string): boolean {
+  return projectId.startsWith("obra_de_ejemplo");
+}
+
+/**
+ * Change or remove an alias / variant mapping the taller already has: the
+ * administrator's, except in the example obra where its owner decides.
+ * Adding a new one only needs `editProject`.
+ */
+export function mayChangeSharedMapping(caps: Capabilities, projectId: string): boolean {
+  return caps.editCatalog || (isSampleProject(projectId) && caps.editProject);
+}
