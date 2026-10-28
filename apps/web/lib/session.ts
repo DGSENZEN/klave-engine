@@ -84,22 +84,70 @@ export async function fetchAuthStatus(): Promise<AuthStatus> {
   }
 }
 
+// ---- One shared status per page load ----
+// Screens that only need "who is this and what may they do" read this cached
+// copy instead of each asking /auth/session again. Signing in or out clears it.
+
+let cachedStatus: Promise<AuthStatus> | null = null;
+let statusSnapshot: AuthStatus | null = null;
+const statusListeners = new Set<() => void>();
+
+export function getAuthStatusOnce(): Promise<AuthStatus> {
+  if (!cachedStatus) {
+    cachedStatus = fetchAuthStatus().then((status) => {
+      statusSnapshot = status;
+      statusListeners.forEach((listener) => listener());
+      return status;
+    });
+  }
+  return cachedStatus;
+}
+
+/** For useSyncExternalStore: the cached status, null until it arrives. */
+export function authStatusSnapshot(): AuthStatus | null {
+  return statusSnapshot;
+}
+
+export function subscribeAuthStatus(listener: () => void): () => void {
+  statusListeners.add(listener);
+  void getAuthStatusOnce();
+  return () => {
+    statusListeners.delete(listener);
+  };
+}
+
+export function resetAuthStatus(): void {
+  cachedStatus = null;
+  statusSnapshot = null;
+  statusListeners.forEach((listener) => listener());
+}
+
+function afterSignIn<T>(result: Promise<T>): Promise<T> {
+  return result.then((value) => {
+    resetAuthStatus();
+    return value;
+  });
+}
+
 export const googleLoginUrl = (invite?: string) =>
   `${API_BASE}/auth/google${invite ? `?invite=${encodeURIComponent(invite)}` : ""}`;
 
 /** With `workspaceName`, the account founds that taller and is its admin at once. */
 export const register = (email: string, name: string, password: string, workspaceName?: string) =>
-  authFetch<AuthUser>("/auth/register", {
-    json: { email, name, password, workspace_name: workspaceName || undefined },
-  });
+  afterSignIn(
+    authFetch<AuthUser>("/auth/register", {
+      json: { email, name, password, workspace_name: workspaceName || undefined },
+    }),
+  );
 
 export const login = (email: string, password: string, remember = false) =>
-  authFetch<AuthUser>("/auth/login", { json: { email, password, remember } });
+  afterSignIn(authFetch<AuthUser>("/auth/login", { json: { email, password, remember } }));
 
 export async function logout(): Promise<void> {
   try {
     await authFetch("/auth/logout", { method: "POST" });
   } catch {}
+  resetAuthStatus();
 }
 
 // ---- Own account ----
@@ -253,9 +301,11 @@ export const invitationInfo = (token: string) =>
   });
 
 export const acceptInvitation = (token: string, name: string, password: string) =>
-  authFetch<AuthUser>(`/auth/invitations/by-token/${encodeURIComponent(token)}/accept`, {
-    json: { name, password },
-  });
+  afterSignIn(
+    authFetch<AuthUser>(`/auth/invitations/by-token/${encodeURIComponent(token)}/accept`, {
+      json: { name, password },
+    }),
+  );
 
 // ---- Admin confirmation loop ----
 

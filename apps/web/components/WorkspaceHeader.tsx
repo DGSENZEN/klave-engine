@@ -13,7 +13,8 @@ import {
   UsersThree,
 } from "@phosphor-icons/react";
 import { peekBrowserActor } from "@/lib/collab";
-import { fetchAuthStatus } from "@/lib/session";
+import { getAuthStatusOnce } from "@/lib/session";
+import { useCapabilities } from "@/components/Capabilities";
 import { Avatar, PRESS } from "@/components/ui";
 import { KebabMenu, MenuItem } from "@/components/Menu";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -26,15 +27,15 @@ export function WorkspaceHeader({ active }: { active: Section }) {
   const router = useRouter();
   const [actorName, setActorName] = useState("");
   const [avatarSrc, setAvatarSrc] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  // "Admin" here means: may change the taller (its catálogo, its team).
+  const { editCatalog: isAdmin } = useCapabilities();
 
   useEffect(() => {
     let mounted = true;
-    fetchAuthStatus().then((status) => {
+    getAuthStatusOnce().then((status) => {
       if (!mounted) return;
       setActorName(status.user?.name || peekBrowserActor());
       setAvatarSrc(status.user?.picture ?? null);
-      setIsAdmin(status.mode === "open" || status.user?.role === "admin");
     });
     return () => {
       mounted = false;

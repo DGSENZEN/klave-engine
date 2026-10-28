@@ -22,6 +22,8 @@ import { parseProjectEvent, projectEventsUrl } from "@/lib/collab";
 import { ProjectLiveProvider } from "@/components/ProjectLive";
 import { RecorridoPuente, useRecorridoObra } from "@/components/recorrido/RecorridoPuente";
 import { ProjectShell } from "@/components/ProjectShell";
+import { CapabilitiesProvider } from "@/components/Capabilities";
+import type { ProjectRole } from "@/lib/capabilities";
 import { vista } from "@/lib/procesando";
 import { Button, Callout, Skeleton, SkeletonHeader, buttonClasses } from "@/components/ui";
 
@@ -46,6 +48,8 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const [yaAbierta, setYaAbierta] = useState(false);
   if (!yaAbierta && status?.state === "processed") setYaAbierta(true);
   const [name, setName] = useState<string | undefined>(undefined);
+  // The viewer's role here; undefined while it loads (see useCapabilities).
+  const [myRole, setMyRole] = useState<ProjectRole | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [noAccess, setNoAccess] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -90,9 +94,15 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       });
     getProject(id)
       .then((p) => {
-        if (active) setName(p.project_name || undefined);
+        if (!active) return;
+        setName(p.project_name || undefined);
+        setMyRole(p.my_role ?? null);
       })
-      .catch(() => {});
+      // Without the project's role, fall back to the taller's: admins and open
+      // mode keep everything, a member gets the read-only screens.
+      .catch(() => {
+        if (active) setMyRole(null);
+      });
 
     // Stay subscribed even when processed: adding sheets re-enqueues the
     // project and the gate must flip back to the processing timeline.
@@ -203,27 +213,29 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
     return (
       <ProjectLiveProvider projectId={id}>
         <RecorridoPuente />
-        <ProjectShell id={id} name={name}>
-          {uploadWarning && <div className="px-6 pt-5"><Callout tone="warning">{uploadWarning}</Callout></div>}
-          {reprocesando && (
-            <div className="sticky top-0 z-20 px-6 pt-5 lg:px-8">
-              <Callout tone="info">
-                Se está reprocesando. Lo que ves es la lectura anterior; se actualiza al terminar.
-              </Callout>
-            </div>
-          )}
-          {failed && (
-            <div className="px-6 pt-5 lg:px-8">
-              <Callout tone="danger">
-                El último procesamiento falló
-                {status?.error ? `: ${status.error}` : "."} Estás viendo los datos del
-                último procesamiento legible; revisa la Lectura del Plano y corrige el
-                archivo.
-              </Callout>
-            </div>
-          )}
-          {children}
-        </ProjectShell>
+        <CapabilitiesProvider projectRole={myRole}>
+          <ProjectShell id={id} name={name}>
+            {uploadWarning && <div className="px-6 pt-5"><Callout tone="warning">{uploadWarning}</Callout></div>}
+            {reprocesando && (
+              <div className="sticky top-0 z-20 px-6 pt-5 lg:px-8">
+                <Callout tone="info">
+                  Se está reprocesando. Lo que ves es la lectura anterior; se actualiza al terminar.
+                </Callout>
+              </div>
+            )}
+            {failed && (
+              <div className="px-6 pt-5 lg:px-8">
+                <Callout tone="danger">
+                  El último procesamiento falló
+                  {status?.error ? `: ${status.error}` : "."} Estás viendo los datos del
+                  último procesamiento legible; revisa la Lectura del Plano y corrige el
+                  archivo.
+                </Callout>
+              </div>
+            )}
+            {children}
+          </ProjectShell>
+        </CapabilitiesProvider>
       </ProjectLiveProvider>
     );
   }
