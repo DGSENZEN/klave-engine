@@ -278,7 +278,7 @@ function ApuCard({
       ) : open && (
         <div className="border-t border-border">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr className="border-b border-border bg-surface-2">
                   <Th>Recurso</Th>

@@ -195,7 +195,7 @@ export function VariantesSection({
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border bg-surface" data-tour="variantes.lista">
-          <table className="w-full text-sm">
+          <table className="w-full text-data">
             <thead>
               <tr className="border-b border-border bg-surface-2">
                 <Th className="px-4">Lo que dice el plano</Th>

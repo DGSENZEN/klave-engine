@@ -261,7 +261,7 @@ export default function CambiosPage() {
             <p className="mb-6 text-sm text-muted">Ninguna cantidad cambió.</p>
           ) : (
             <div data-tour="cambios.lista" className="mb-8 overflow-x-auto rounded-lg border border-border bg-surface">
-              <table className="w-full text-sm">
+              <table className="w-full text-data">
                 <thead>
                   <tr className="border-b border-border bg-surface-2">
                     <Th className="px-4">Concepto</Th>
@@ -315,7 +315,7 @@ export default function CambiosPage() {
             )}
           </h3>
           <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <tbody>
                 {elementos.slice(0, 500).map((e, i) => {
                   const bbox = e.bbox_despues ?? e.bbox_antes;

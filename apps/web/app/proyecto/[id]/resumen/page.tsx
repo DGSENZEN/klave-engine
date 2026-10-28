@@ -12,10 +12,6 @@ import {
   FileText,
   Ruler,
   Stack,
-  Money,
-  TrendUp,
-  ShieldCheck,
-  CalendarBlank,
 } from "@phosphor-icons/react";
 import {
   addProjectFiles,
@@ -48,7 +44,7 @@ import {
   buttonClasses,
   Callout,
   Card,
-  Metric,
+  StatStrip,
   PageHeader,
   SectionTitle,
   Skeleton,
@@ -184,7 +180,7 @@ export default function Resumen() {
         </Callout>
       )}
       {actionError && (
-        <div className="mb-6">
+        <div className="mb-4">
           <Callout
             tone="danger"
             action={
@@ -198,7 +194,7 @@ export default function Resumen() {
         </div>
       )}
       {failed.size > 0 && (
-        <div className="mb-6">
+        <div className="mb-4">
           <Callout
             tone="warning"
             action={
@@ -215,7 +211,7 @@ export default function Resumen() {
       )}
 
       {project?.engine?.stale && (
-        <div className="mb-6">
+        <div className="mb-4">
           <Callout
             tone="info"
             action={
@@ -263,42 +259,37 @@ export default function Resumen() {
       )}
 
       {costs && moneyState(costs) !== "blocked" && (
-        <div className="rise-in">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Metric
-              label="Costo directo"
-              value={money(costs.integration.direct_cost)}
-              icon={<Money size={16} weight="duotone" />}
-            />
-            <Metric
-              label="Precio de venta"
-              value={money(costs.integration.sale_price)}
-              hint={`factor ${costs.integration.overcost_factor.toFixed(3)}`}
-              icon={<TrendUp size={16} weight="duotone" />}
-            />
-            <Metric
-              label="Total c/ contingencia"
-              value={money(costs.integration.grand_total)}
-              accent="accent"
-              icon={<ShieldCheck size={16} weight="duotone" />}
-            />
-            <Metric
-              label="Plazo estimado"
-              value={`${costs.schedule.total_duration_days} días`}
-              hint={`~${months} meses · ${costs.schedule.phases.length} fases`}
-              icon={<CalendarBlank size={16} weight="duotone" />}
-            />
-          </div>
+        <div>
+          <StatStrip
+            stats={[
+              { label: "Costo directo", value: money(costs.integration.direct_cost) },
+              {
+                label: "Precio de venta",
+                value: money(costs.integration.sale_price),
+                hint: `factor ${costs.integration.overcost_factor.toFixed(3)}`,
+              },
+              {
+                label: "Total c/ contingencia",
+                value: money(costs.integration.grand_total),
+                tone: "accent",
+              },
+              {
+                label: "Plazo estimado",
+                value: `${costs.schedule.total_duration_days} días`,
+                hint: `~${months} meses · ${costs.schedule.phases.length} fases`,
+              },
+            ]}
+          />
 
-          <div className="mt-6 grid gap-4 lg:grid-cols-3">
-            <Card className="p-5 lg:col-span-2">
+          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+            <Card className="p-4 lg:col-span-2">
               <SectionTitle sub="Importe del costo directo por fase de obra">
                 Costo directo por fase
               </SectionTitle>
               <PhaseBars totals={costs.boq.totals_by_phase} />
             </Card>
 
-            <Card className="p-5">
+            <Card className="p-4">
               <div className="flex items-start justify-between gap-3">
                 <SectionTitle>Lectura del plano</SectionTitle>
                 <Link
@@ -308,7 +299,7 @@ export default function Resumen() {
                   Ver lectura completa
                 </Link>
               </div>
-              <dl className="space-y-3 text-sm">
+              <dl className="space-y-2 text-[13px]">
                 <Row
                   icon={<Ruler size={15} />}
                   label="Unidades"
@@ -374,7 +365,7 @@ export default function Resumen() {
                 ))}
               </div>
             </Card>
-            <Card className="p-5">
+            <Card className="p-4">
               <Skeleton className="h-4 w-32" />
               <div className="mt-5 space-y-3">
                 {Array.from({ length: 4 }, (_, i) => (
@@ -621,7 +612,7 @@ function RunDiffCard({ diff, blocked }: { diff: RunDiff; blocked: boolean }) {
     (totalDelta != null && Math.abs(totalDelta) > 0.5);
   if (!changed) return null;
   return (
-    <Card className="rise-in mb-6 p-5">
+    <Card className="mb-4 p-4">
       <SectionTitle sub="Comparado con el procesamiento anterior de este proyecto.">
         Cambios del último procesamiento
       </SectionTitle>
@@ -716,15 +707,17 @@ function VerificationPath({
   ];
 
   return (
-    <Card className="rise-in mb-6 p-5" tour="resumen.verificacion">
+    <Card className="mb-4 p-4" tour="resumen.verificacion">
       <SectionTitle sub="Verifica la lectura del plano antes de confiar en las cifras. Tres pasos, una vez por procesamiento.">
         Ruta de verificación
       </SectionTitle>
-      <div className="space-y-1">
+      <div className="divide-y divide-border">
         {steps.map((step, index) => (
           <div
             key={step.key}
-            className="flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-surface-2/50"
+            // The actions drop under the text on narrow screens rather than
+            // squeezing «Unidades del plano» into a one-word column.
+            className="flex flex-wrap items-start gap-x-3 gap-y-2 py-2.5"
           >
             {step.done ? (
               <span
@@ -734,20 +727,20 @@ function VerificationPath({
                 <CheckCircle size={20} weight="fill" />
               </span>
             ) : (
-              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border-strong text-[11px] font-semibold text-muted">
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border-strong text-xs font-semibold text-muted">
                 {index + 1}
               </span>
             )}
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 basis-64">
               <div className={`text-sm font-medium ${step.done ? "text-muted line-through" : ""}`}>
                 {step.title}
               </div>
-              <p className="mt-0.5 text-sm text-muted">
+              <p className="mt-0.5 text-[13px] text-muted">
                 {step.done && step.by ? `Verificado por ${step.by}. ` : ""}
                 {step.detail}
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="ml-8 flex shrink-0 items-center gap-2 sm:ml-0">
               {step.href && !step.done && (
                 <Link href={step.href} className={buttonClasses("ghost", "sm")}>
                   {step.linkLabel}

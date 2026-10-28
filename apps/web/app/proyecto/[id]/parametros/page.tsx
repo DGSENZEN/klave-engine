@@ -473,7 +473,7 @@ export default function ParametrosPage() {
           </SectionTitle>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-data">
             <thead>
               <tr className="bg-surface-2">
                 <Th className="px-5">Insumo</Th>

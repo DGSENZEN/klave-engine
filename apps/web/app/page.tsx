@@ -451,7 +451,7 @@ export default function Home() {
             ))}
           </div>
         )) : projects.length === 0 ? (
-          <div className="rise-in">
+          <div>
             <EmptyState
               icon={<CloudArrowUp size={22} weight="duotone" />}
               title="Sube tu primer plano"

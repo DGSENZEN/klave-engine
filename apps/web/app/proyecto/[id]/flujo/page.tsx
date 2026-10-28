@@ -143,7 +143,7 @@ export default function FlujoPage() {
               </SectionTitle>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-data">
                 <thead>
                   <tr className="border-b border-border bg-surface-2">
                     <Th>Periodo</Th>
@@ -206,7 +206,7 @@ export default function FlujoPage() {
             </SectionTitle>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr className="border-b border-border bg-surface-2">
                   <Th>Año</Th>

@@ -307,7 +307,7 @@ export default function ConveniosPage() {
             </label>
           </div>
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr>
                   <Th>Clave</Th>
@@ -400,7 +400,7 @@ export default function ConveniosPage() {
             </Callout>
           )}
           <div className="mt-3 overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr>
                   <Th>Clave</Th>

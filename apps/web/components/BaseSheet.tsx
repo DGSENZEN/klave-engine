@@ -244,7 +244,7 @@ export function BaseSheet({
         </p>
       ) : (
         <div className={`mt-3 overflow-x-auto ${loading ? "opacity-60" : ""}`} aria-busy={loading}>
-          <table className="w-full text-sm">
+          <table className="w-full text-data">
             <thead>
               <tr className="border-b border-border bg-surface-2">
                 <Th className="w-8 px-3">

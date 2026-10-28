@@ -501,7 +501,7 @@ export function Th({
   return (
     <th
       {...props}
-      className={`microlabel h-9 px-3 font-medium ${alignCls} ${className}`}
+      className={`microlabel h-9 px-3 font-medium first:pl-4 last:pr-4 ${alignCls} ${className}`}
     />
   );
 }
@@ -513,7 +513,7 @@ export function Td({
 }: TdHTMLAttributes<HTMLTableCellElement> & { align?: "left" | "right" | "center" }) {
   const alignCls =
     align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left";
-  return <td {...props} className={`px-3 py-1.5 ${alignCls} ${className}`} />;
+  return <td {...props} className={`px-3 py-1.5 first:pl-4 last:pr-4 ${alignCls} ${className}`} />;
 }
 
 /* ---- Form controls that match <Input>: one look for every select and checkbox. ---- */

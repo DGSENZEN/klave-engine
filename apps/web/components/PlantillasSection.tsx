@@ -314,7 +314,7 @@ export function PlantillasSection({
             )}
           </div>
           <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr className="bg-surface-2">
                   <Th>Concepto</Th>

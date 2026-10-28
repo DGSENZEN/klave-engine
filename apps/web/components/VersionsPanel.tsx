@@ -349,7 +349,7 @@ function DiffTable({
         <p className="px-3 py-2 text-xs text-muted">Sin movimiento entre las dos.</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-data">
             <thead>
               <tr className="border-b border-border">
                 <Th>Concepto</Th>

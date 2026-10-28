@@ -530,7 +530,7 @@ export default function PresupuestoPage() {
           </TableCard>
 
           <div className={`grid gap-4 lg:grid-cols-2 ${tab !== "integracion" ? "hidden" : ""}`}>
-            <Card className="p-5">
+            <Card className="p-4">
               <SectionTitle>Integración del precio</SectionTitle>
               <div className="space-y-2 text-sm">
                 <Line label="Costo directo" value={money2(costs.integration.direct_cost)} bold />
@@ -558,7 +558,7 @@ export default function PresupuestoPage() {
               </div>
             </Card>
 
-            <Card className="p-5">
+            <Card className="p-4">
               <SectionTitle sub="Fuente de verdad leída del archivo">
                 Dimensiones detectadas
               </SectionTitle>
@@ -617,7 +617,7 @@ export default function PresupuestoPage() {
           </Card>
 
           {tab === "partidas" && costs.boq.warnings.length > 0 && (
-            <Card className="mt-6 p-5">
+            <Card className="mt-4 p-4">
               <SectionTitle sub="Revisar antes de usar el presupuesto como referencia.">
                 Advertencias ({costs.boq.warnings.length})
               </SectionTitle>

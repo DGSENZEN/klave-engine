@@ -226,7 +226,7 @@ export default function PilotoPage() {
         <Card className="p-5">
           <h2 className="mb-3 text-base font-semibold">Por hoja</h2>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr>
                   <Th>Hoja</Th>

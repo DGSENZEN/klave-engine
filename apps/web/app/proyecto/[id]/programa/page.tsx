@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { CalendarBlank, Stack, ListChecks } from "@phosphor-icons/react";
+import { CalendarBlank } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import {
   getCostingConfig,
@@ -24,7 +24,7 @@ import {
   Card,
   EmptyState,
   Input,
-  Metric,
+  StatStrip,
   PageHeader,
   SectionTitle,
   Skeleton,
@@ -131,7 +131,7 @@ export default function ProgramaPage() {
       <div className="px-4 py-5 sm:px-6">
         <SkeletonHeader />
         <SkeletonMetrics count={3} />
-        <Card className="p-5">
+        <Card className="p-4">
           <Skeleton className="h-4 w-40" />
           <div className="mt-6 space-y-3">
             {Array.from({ length: 6 }, (_, i) => (
@@ -175,6 +175,8 @@ export default function ProgramaPage() {
     activities.some((a) => a.phase === phase),
   );
 
+  const casiTodoCritico = criticalCount >= activities.length * 0.8;
+
   return (
     <div className="px-4 py-5 sm:px-6">
       <PageHeader
@@ -183,44 +185,35 @@ export default function ProgramaPage() {
       />
       <UnverifiedBanner id={id} costs={costs} />
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-3" data-tour="programa.plazo">
-        <Metric
-          label="Plazo contractual"
-          value={`${costs.schedule.calendar_days ?? totalDays} días naturales`}
-          hint={`${totalDays} días hábiles en semana de seis días · ≈ ${months} ${
-            months === 1 ? "mes" : "meses"
-          }. El contrato se cuenta en naturales (LOPSRM art. 31 fr. V).`}
-          icon={<CalendarBlank size={16} weight="duotone" />}
-          accent="accent"
-        />
-        <Metric
-          label={costs.schedule.end_date ? "Termina" : "Actividades"}
-          value={
-            costs.schedule.end_date
+      <StatStrip
+        tour="programa.plazo"
+        className="mb-4"
+        stats={[
+          {
+            label: "Plazo contractual",
+            value: `${costs.schedule.calendar_days ?? totalDays} días naturales`,
+            hint: `${totalDays} hábiles en semana de seis días · ≈ ${months} ${
+              months === 1 ? "mes" : "meses"
+            } · LOPSRM art. 31 fr. V`,
+            tone: "accent",
+          },
+          {
+            label: costs.schedule.end_date ? "Termina" : "Actividades",
+            value: costs.schedule.end_date
               ? formatDate(costs.schedule.end_date)
-              : activities.length
-          }
-          hint={
-            costs.schedule.end_date
-              ? `${activities.length} actividades`
-              : undefined
-          }
-          icon={<ListChecks size={16} weight="duotone" />}
-        />
-        <Metric
-          label="En ruta crítica"
-          value={`${criticalCount} de ${activities.length}`}
-          hint={
-            criticalCount >= activities.length * 0.8
-              ? "Casi todo es crítico: con una cuadrilla por actividad y un solo frente, el programa es una cadena sin holgura. Sube cuadrillas o abre frentes para ganar margen."
-              : `${activities.length - criticalCount} actividades tienen holgura`
-          }
-          icon={<Stack size={16} weight="duotone" />}
-          accent={
-            criticalCount >= activities.length * 0.8 ? "danger" : undefined
-          }
-        />
-      </div>
+              : activities.length,
+            hint: costs.schedule.end_date ? `${activities.length} actividades` : undefined,
+          },
+          {
+            label: "En ruta crítica",
+            value: `${criticalCount} de ${activities.length}`,
+            hint: casiTodoCritico
+              ? "Casi todo es crítico"
+              : `${activities.length - criticalCount} actividades tienen holgura`,
+            tone: casiTodoCritico ? "danger" : undefined,
+          },
+        ]}
+      />
 
       {costs.schedule.assumptions.length > 0 && (
         <div className="mb-3 text-xs text-muted">
@@ -228,7 +221,17 @@ export default function ProgramaPage() {
         </div>
       )}
 
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+      {/* The lever sits under the diagnosis it answers. */}
+      {casiTodoCritico && activities.length > 0 && (
+        <div className="mb-3">
+          <Callout tone="warning">
+            Casi todo es crítico: con una cuadrilla por actividad y un solo frente, el programa
+            es una cadena sin holgura. Sube cuadrillas o abre frentes para ganar margen.
+          </Callout>
+        </div>
+      )}
+
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 text-sm">
           <span className="text-muted">Fecha de arranque</span>
           <Input
@@ -236,7 +239,6 @@ export default function ProgramaPage() {
             defaultValue={costs.schedule.start_date ?? ""}
             onChange={(e) => void setStartDate(e.target.value)}
             disabled={dateBusy}
-            className="px-2 py-1.5"
             aria-label="Fecha de arranque de la obra"
           />
         </label>
@@ -263,7 +265,7 @@ export default function ProgramaPage() {
             defaultValue={frentes ?? ""}
             onBlur={(e) => commitFrentes(e.target.value)}
             disabled={frentesBusy || frentes === null}
-            className="w-16 px-2 py-1.5 text-right tabular"
+            className="w-16 text-right tabular"
             aria-label="Frentes de trabajo"
           />
         </label>
@@ -284,7 +286,7 @@ export default function ProgramaPage() {
           hint="Vuelve a procesar el proyecto para generar el programa de obra."
         />
       ) : (
-        <Card className="p-5" tour="programa.barras">
+        <Card className="p-4" tour="programa.barras">
           <SectionTitle sub="Cada barra abarca del día de inicio al de término de la actividad.">
             Diagrama de barras
           </SectionTitle>
@@ -300,7 +302,7 @@ export default function ProgramaPage() {
                   0,
                 );
                 return (
-                  <div key={phase} className="mt-4 first:mt-2">
+                  <div key={phase} className="mt-3 first:mt-2">
                     <div className="mb-1.5 flex items-baseline justify-between gap-3">
                       <span className="microlabel flex items-center gap-2">
                         <span
@@ -331,7 +333,7 @@ export default function ProgramaPage() {
 
       {/* El quinto programa del art. 45-A: el único que no sale del
           presupuesto, porque el personal de campo es costo indirecto. */}
-      <div className="mt-6">
+      <div className="mt-4">
         <PlantillaCampo id={id} />
       </div>
     </div>
@@ -345,11 +347,11 @@ function DayScale({ totalDays }: { totalDays: number }) {
   const ticks: number[] = [];
   for (let day = 0; day <= totalDays; day += step) ticks.push(day);
   return (
-    <div className="relative ml-[240px] h-5 border-b border-border">
+    <div className="relative ml-[240px] h-5 border-b border-border lg:ml-[340px]">
       {ticks.map((day) => (
         <span
           key={day}
-          className="absolute top-0 -translate-x-1/2 text-[10px] tabular text-faint"
+          className="absolute top-0 -translate-x-1/2 text-[11px] tabular text-muted"
           style={{ left: `${(day / totalDays) * 100}%` }}
         >
           {day === 0 ? "día 0" : day}
@@ -390,22 +392,22 @@ function GanttRow({
   const float = activity.total_float_days ?? 0;
   const floatWidth = (float / totalDays) * 100;
   return (
-    <div className="group flex items-center gap-0 py-1">
-      <div className="w-[240px] shrink-0 pr-4">
+    <div className="group flex items-center gap-0 py-0.5">
+      <div className="w-[240px] shrink-0 pr-4 lg:w-[340px]">
         <div className="flex items-center gap-1.5">
-          <span className="truncate text-sm" title={activity.description}>
+          <span className="truncate text-[13px]" title={activity.description}>
             {activity.description}
           </span>
           {activity.critical && (
             <span
-              className="shrink-0 rounded bg-danger-soft px-1 text-[10px] font-semibold text-danger"
+              className="shrink-0 text-xs font-medium text-danger"
               title="En la ruta crítica: retrasarla retrasa toda la obra"
             >
-              CRÍTICA
+              crítica
             </span>
           )}
         </div>
-        <div className="text-[11px] tabular text-faint">
+        <div className="text-xs tabular text-muted">
           {num(activity.quantity)} {activity.unit} · {activity.duration_days}{" "}
           días
           {float > 0 && ` · ${float} d de holgura`}
