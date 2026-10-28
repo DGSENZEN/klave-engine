@@ -1,5 +1,7 @@
 "use client";
 
+import { refreshOnRoleRefusal } from "@/lib/session";
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowClockwise, DownloadSimple } from "@phosphor-icons/react";
 import {
@@ -53,6 +55,7 @@ export function VigenciaSection({
   onError: (message: string) => void;
   onNotice: (message: string) => void;
 }) {
+  const { editCatalog } = useCapabilities();
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [indices, setIndices] = useState<PriceIndices | null>(null);
   const [open, setOpen] = useState(false);
@@ -96,8 +99,9 @@ export function VigenciaSection({
       setIndices(saved);
       setText("");
       onNotice(`Índices guardados: ${Object.keys(saved.values).length} meses (${saved.source || "sin fuente"})`);
-    } catch {
-      onError("No se pudieron guardar los índices.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudieron guardar los índices."));
     } finally {
       setBusy(false);
     }
@@ -108,6 +112,7 @@ export function VigenciaSection({
     try {
       await downloadFile(cotizacionPath(scope), `solicitud_cotizacion_${scope}.xlsx`);
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo generar la solicitud de cotización."));
     } finally {
       setDownloading(null);
@@ -118,8 +123,9 @@ export function VigenciaSection({
     setBusy(true);
     try {
       setPreview(await rollForwardPrices({ status, dry_run: true }, getBrowserActor()));
-    } catch {
-      onError("No se pudo calcular la actualización por índice; captura primero la tabla.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudo calcular la actualización por índice; captura primero la tabla."));
     } finally {
       setBusy(false);
     }
@@ -141,8 +147,9 @@ export function VigenciaSection({
       setPreview(null);
       reload();
       onChanged();
-    } catch {
-      onError("No se pudieron actualizar los precios por índice.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudieron actualizar los precios por índice."));
     } finally {
       setBusy(false);
     }
@@ -265,22 +272,28 @@ export function VigenciaSection({
           <DownloadSimple size={14} />
           {downloading === "all" ? "Generando…" : "Solicitud de cotización: todo el catálogo"}
         </Button>
-        <Button
-          size="sm"
-          onClick={() => previewRoll("vencido")}
-          disabled={busy || vencidos === 0 || monthCount === 0}
-        >
-          <ArrowClockwise size={14} /> Actualizar vencidos por índice…
-        </Button>
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="text-xs font-medium text-muted hover:text-foreground"
-        >
-          {open ? "Ocultar índices" : `Índices (${monthCount} meses${indices?.source ? ` · ${indices.source}` : ""})`}
-        </button>
+        {/* Repricing by index and editing the index are the administrator's;
+            the quote requests above only export. */}
+        {editCatalog && (
+          <>
+            <Button
+              size="sm"
+              onClick={() => previewRoll("vencido")}
+              disabled={busy || vencidos === 0 || monthCount === 0}
+            >
+              <ArrowClockwise size={14} /> Actualizar vencidos por índice…
+            </Button>
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              className="text-xs font-medium text-muted hover:text-foreground"
+            >
+              {open ? "Ocultar índices" : `Índices (${monthCount} meses${indices?.source ? ` · ${indices.source}` : ""})`}
+            </button>
+          </>
+        )}
       </div>
-      {open && (
+      {editCatalog && open && (
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <div>
             <Input

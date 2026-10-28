@@ -1,3 +1,4 @@
+import type { ProjectRole } from "./capabilities";
 import { ApiError, errorFromResponse } from "./httpErrors";
 export { ApiError } from "./httpErrors";
 
@@ -187,6 +188,10 @@ export async function downloadFile(path: string, fallbackName: string): Promise<
 
 // ---- Types (mirror the backend artifacts) ----
 
+/** The viewer's role on a project: «admin» of the taller, their grant, or
+ * null in open mode (no accounts: everyone can). */
+export type { ProjectRole };
+
 export type ProjectSummary = {
   project_id: string;
   name: string;
@@ -195,6 +200,7 @@ export type ProjectSummary = {
   client?: string | null;
   archived?: boolean;
   sheet_count?: number;
+  my_role?: ProjectRole;
 };
 
 export type ProjectStatus = {
@@ -591,6 +597,7 @@ export const listProjects = () =>
 
 export type ProjectInfo = {
   project_id: string;
+  my_role: ProjectRole;
   project_name: string;
   client: string | null;
   archived: boolean;
@@ -3237,6 +3244,8 @@ export type BoqVariantDetail = {
   mapped_description: string;
   mapping: VariantMapping;
   mapping_reason: string;
+  /** A person decided it: in the taller catálogo only an admin changes it. */
+  decidida?: boolean;
   unit_price: number | null;
   amount: number | null;
   price_source: string;

@@ -18,6 +18,7 @@
  *   bajo el art. 64-A-I, y sale en pantalla antes que en su escritorio.
  */
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useEffect, useState } from "react";
 import { Plus, Trash, UsersThree, Warning } from "@phosphor-icons/react";
 import {
@@ -57,6 +58,7 @@ function notaTone(nota: string): "danger" | "warning" | "info" {
 }
 
 export function PlantillaCampo({ id }: { id: string }) {
+  const caps = useCapabilities();
   const { actorName, clientId, latestEvent, connectionEpoch } = useProjectLive();
   const [data, setData] = useState<PersonalTecnico | null>(null);
   const [borrador, setBorrador] = useState<CargoCampo[] | null>(null);
@@ -135,7 +137,7 @@ export function PlantillaCampo({ id }: { id: string }) {
           Personal técnico, administrativo y de servicio
         </SectionTitle>
         <div className="flex shrink-0 gap-2">
-          {editando ? (
+          {!caps.editProject ? null : editando ? (
             <>
               <Button variant="ghost" onClick={() => setBorrador(null)} disabled={busy}>
                 Descartar
@@ -163,7 +165,7 @@ export function PlantillaCampo({ id }: { id: string }) {
           <Callout
             tone="warning"
             action={
-              <Button
+              caps.editProject && <Button
                 onClick={() => setBorrador(data.sugerida.map((c) => ({ ...c })))}
                 disabled={busy}
               >

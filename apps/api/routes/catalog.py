@@ -8,6 +8,7 @@ A global ``catalog_updated`` event tells open projects to offer a recompute.
 import csv
 import hashlib
 import io
+import threading
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -65,14 +66,24 @@ from klave_engine.costing.vigencia import (
 from klave_engine.ejemplo import es_obra_de_ejemplo
 from pydantic import BaseModel, Field, FiniteFloat, ValidationError
 
-from apps.api.auth.access import require_project_role
+from apps.api.auth.access import require_project_role, require_taller_admin
 from apps.api.auth.common import rate_limit
+from apps.api.auth.shared_mappings import (
+    alias_target,
+    audit_mapping,
+    check_alias_writes,
+    check_mapping_removal,
+    require_mapping_project,
+)
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
+from apps.api.routes.catalog_rules import catalog_write_rule
 from apps.api.routes.projects import visible_project_filter
 from apps.api.tenancy import store_for_project, store_for_request
 
-router = APIRouter(prefix="/catalog", tags=["catalog"])
+router = APIRouter(
+    prefix="/catalog", tags=["catalog"], dependencies=[Depends(catalog_write_rule)]
+)
 
 # Una base de oficina con sus matrices exportada a Excel pasa de 1 MB sin
 # esfuerzo; 10 MB la deja entrar y sigue leyéndose en memoria sin problema.
@@ -104,20 +115,9 @@ MAX_OPUS_BYTES = 25_000_000
 
 
 def require_catalog_admin(request: Request) -> None:
-    """Structural catálogo changes — imports, deletions, repricing sweeps,
-    labor/equipment engines — are the administrator's. Daily estimator work
-    (a price from a cotización, an alias, a mapping, a factor) stays open to
-    every active member: it is their own taller's catálogo. Open mode (no
-    accounts) keeps the local-first freedom."""
-    user = getattr(request.state, "user", None)
-    if user is not None and user.get("role") != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "error_type": "admin_required",
-                "message": "Esta operación del catálogo requiere un administrador del taller.",
-            },
-        )
+    """Every catálogo change is the taller administrator's (role design,
+    decision 1); open mode (no accounts) keeps the local-first freedom."""
+    require_taller_admin(request)
 
 
 def get_catalog(request: Request, settings: Settings = Depends(get_settings)) -> CatalogStore:
@@ -1777,12 +1777,34 @@ def _unit_mismatch(exc: UnitMismatch) -> HTTPException:
     )
 
 
+# One API process serves the taller (apps/api/Dockerfile runs a single
+# uvicorn worker), so a process lock is enough to make check-then-write atomic.
+_SHARED_MAPPING_LOCK = threading.Lock()
+
+
 def _catalogo_para(catalog: CatalogStore, settings: Settings, project_id: str) -> CatalogStore:
     """El catálogo donde vive un alias pedido desde un proyecto: el del taller,
     salvo en la obra de ejemplo, que tiene el suyo y no escribe en el taller."""
     if project_id and es_obra_de_ejemplo(project_id):
         return store_for_project(settings, project_id)
     return catalog
+
+
+def _adopted_prices(catalog: CatalogStore) -> dict[str, float]:
+    """Concepts priced by an adopted reference (price_override), by code."""
+    return {
+        row["code"]: float(row["price_override"])
+        for row in catalog.load_concepts(include_inactive=True)
+        if row.get("price_override") is not None
+    }
+
+
+def _requested_target(item: AliasInput) -> tuple[str, int | None, str | None]:
+    """The (kind, ref_id, target_code) an alias request asks for, shaped like
+    ``shared_mappings.alias_target`` of a stored row."""
+    if item.kind == "reference":
+        return ("reference", item.ref_id, None)
+    return ("concept", None, (item.target_code or "").strip().upper() or None)
 
 
 def _set_alias(catalog: CatalogStore, item: AliasInput, actor: str, project_id: str) -> dict:
@@ -1812,10 +1834,26 @@ def set_alias(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     # El alias se recalcula sobre ese proyecto: hace falta poder editarlo.
+    require_mapping_project(request, body.project_id)
     require_project_role(request, body.project_id, "editor")
     actor = clean_actor(x_actor) or ""
     catalog = _catalogo_para(catalog, settings, body.project_id)
-    alias = _set_alias(catalog, body, actor, body.project_id)
+    code = body.concept_code.strip().upper()
+    # Check and write under one lock: two editors adding different targets
+    # for the same code must not let the second silently re-point the first.
+    with _SHARED_MAPPING_LOCK:
+        existing = catalog.load_concept_aliases()
+        check_alias_writes(
+            request, body.project_id, existing, [(code, _requested_target(body))],
+            _adopted_prices(catalog),
+        )
+        if alias_target(existing.get(code)) == _requested_target(body):
+            return existing[code]  # the same alias again: nothing changes
+        alias = _set_alias(catalog, body, actor, body.project_id)
+    audit_mapping(
+        request, body.project_id, "alias_changed" if code in existing else "alias_added",
+        code, existing.get(code), alias,
+    )
     _publish_catalog_updated(
         x_actor, "alias_set", f"{body.concept_code} → {alias['clave']}", catalog=catalog
     )
@@ -1832,10 +1870,41 @@ def set_aliases_bulk(
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
+    require_mapping_project(request, body.project_id)
     require_project_role(request, body.project_id, "editor")
     actor = clean_actor(x_actor) or ""
     catalog = _catalogo_para(catalog, settings, body.project_id)
-    saved = [_set_alias(catalog, item, actor, body.project_id) for item in body.items]
+    requested = [
+        (item.concept_code.strip().upper(), _requested_target(item)) for item in body.items
+    ]
+    codes = [code for code, _ in requested]
+    if len(set(codes)) != len(codes):
+        # Two targets for one concept in one batch is a re-point in disguise.
+        raise HTTPException(
+            status_code=422,
+            detail={"error_type": "duplicate_alias",
+                    "message": "Cada concepto puede aparecer una sola vez en el lote."},
+        )  # fmt: skip
+    saved = []
+    written: list[tuple[str, dict | None, dict]] = []
+    with _SHARED_MAPPING_LOCK:
+        existing = catalog.load_concept_aliases()
+        # All or nothing: a batch that would re-point any existing alias is refused whole.
+        check_alias_writes(
+            request, body.project_id, existing, requested, _adopted_prices(catalog)
+        )
+        for item, (code, target) in zip(body.items, requested, strict=True):
+            if alias_target(existing.get(code)) == target:
+                saved.append(existing[code])
+                continue
+            alias = _set_alias(catalog, item, actor, body.project_id)
+            written.append((code, existing.get(code), alias))
+            saved.append(alias)
+    for code, previous, alias in written:
+        audit_mapping(
+            request, body.project_id, "alias_changed" if previous else "alias_added",
+            code, previous, alias,
+        )
     _publish_catalog_updated(
         x_actor, "aliases_set", f"{len(saved)} conceptos del taller", catalog=catalog
     )
@@ -1854,9 +1923,12 @@ def clear_alias(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     require_project_role(request, project_id, "editor")
+    check_mapping_removal(request, project_id)
     catalog = _catalogo_para(catalog, settings, project_id)
+    previous = catalog.load_concept_aliases().get(code.upper())
     if not catalog.clear_concept_alias(code.upper()):
         raise HTTPException(status_code=404, detail={"error_type": "alias_not_found"})
+    audit_mapping(request, project_id, "alias_cleared", code.upper(), previous, None)
     actor = clean_actor(x_actor) or ""
     _publish_catalog_updated(x_actor, "alias_cleared", code, catalog=catalog)
     _recompute_project(store, settings, project_id, actor)

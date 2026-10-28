@@ -1,5 +1,8 @@
 "use client";
 
+import { apiMessage } from "@/lib/api";
+import { refreshOnRoleRefusal } from "@/lib/session";
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useState } from "react";
 import { Sparkle } from "@phosphor-icons/react";
 import { getAllMatches, setAliasesBulk, type ConceptMatch } from "@/lib/api";
@@ -24,6 +27,7 @@ export function SuggestionsBar({
   conceptCodes: Set<string>;
 }) {
   const { latestEvent } = useProjectLive();
+  const { editProject } = useCapabilities();
   const [items, setItems] = useState<Suggestion[] | null>(null);
   const [open, setOpen] = useState(false);
   const [skipped, setSkipped] = useState<Set<string>>(() => new Set());
@@ -56,7 +60,8 @@ export function SuggestionsBar({
   );
   // Nothing while the matches load: a grey bar held open for the length of a
   // slow match read as broken. Most loads find nothing to suggest anyway.
-  if (!items) return null;
+  // Accepting suggestions adds taller aliases from this project: an editor's act.
+  if (!items || !editProject) return null;
   if (loadError) {
     return (
       <div className="mb-4">
@@ -91,8 +96,13 @@ export function SuggestionsBar({
         actorName,
       );
       reload();
-    } catch {
-      setError("No se pudieron guardar los conceptos del taller.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      setError(
+        // Another person may have mapped one of these first: name which.
+        apiMessage(e, "No se pudieron guardar los conceptos del taller.") +
+          cambiosDe(e),
+      );
     } finally {
       setBusy(false);
     }
@@ -151,4 +161,15 @@ export function SuggestionsBar({
       )}
     </div>
   );
+}
+
+/** «CIM-001 → CIM-002, …» from a 403 that lists the aliases the taller already has. */
+function cambiosDe(error: unknown): string {
+  const cambios = (error as { detail?: { cambios?: { concept_code: string; actual?: { clave?: string; target_code?: string | null } }[] } })
+    ?.detail?.cambios;
+  if (!cambios?.length) return "";
+  const lista = cambios
+    .map((c) => `${c.concept_code} → ${c.actual?.clave ?? c.actual?.target_code ?? "otro"}`)
+    .join(", ");
+  return ` Ya en el taller: ${lista}.`;
 }

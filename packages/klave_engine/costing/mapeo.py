@@ -19,6 +19,8 @@ de una persona se respeta en el siguiente proyecto con la misma firma.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from klave_engine.costing.catalog_store import CatalogStore
 from klave_engine.costing.matching import Candidate, Match, rank
 from klave_engine.costing.models import (
@@ -167,7 +169,8 @@ def consolidar_variantes(
 
 
 def mapear(
-    boq: BillOfQuantities, store: CatalogStore, *, actor: str = "", rematch: bool = False
+    boq: BillOfQuantities, store: CatalogStore, *, actor: str = "", rematch: bool = False,
+    keep: Callable[[dict], bool] | None = None,
 ) -> dict:
     """Propone y guarda un destino para cada variante que todavía no tiene
     uno (o para todas las que no confirmó una persona, con ``rematch``)."""
@@ -183,7 +186,10 @@ def mapear(
                 continue
             seen.add(variant.key)
             existing = known.get(variant.key)
-            if existing and (existing["status"] == "confirmada" or not rematch):
+            if existing and (
+                existing["status"] == "confirmada" or not rematch
+                or (keep is not None and keep(existing))
+            ):
                 counts["conservadas"] += 1
                 continue
             pool = [

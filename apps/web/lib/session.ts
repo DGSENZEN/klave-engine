@@ -6,6 +6,7 @@ export { apiMessage } from "./api";
 // "protected" (accounts + roles enforced), "unavailable" (users DB down).
 
 import { API_BASE, ApiError } from "@/lib/api";
+import { isRoleRefusal, keepStatus } from "@/lib/capabilities";
 
 /** Mirrors MIN_LENGTH in apps/api/auth/passwords.py; the server still has the last word. */
 export const PASSWORD_MIN = 10;
@@ -84,19 +85,85 @@ export async function fetchAuthStatus(): Promise<AuthStatus> {
   }
 }
 
+// ---- One shared status per page load ----
+// Screens that only need "who is this and what may they do" read this cached
+// copy instead of each asking /auth/session again. Signing in or out clears it.
+
+let cachedStatus: Promise<AuthStatus> | null = null;
+let statusSnapshot: AuthStatus | null = null;
+const statusListeners = new Set<() => void>();
+
+export function getAuthStatusOnce(): Promise<AuthStatus> {
+  if (!cachedStatus) {
+    cachedStatus = fetchAuthStatus().then((status) => {
+      statusSnapshot = status;
+      // A blip (network, users DB) is shown but not kept: the next screen asks again.
+      if (!keepStatus(status)) cachedStatus = null;
+      statusListeners.forEach((listener) => listener());
+      return status;
+    });
+  }
+  return cachedStatus;
+}
+
+/** For useSyncExternalStore: the cached status, null until it arrives. */
+export function authStatusSnapshot(): AuthStatus | null {
+  return statusSnapshot;
+}
+
+export function subscribeAuthStatus(listener: () => void): () => void {
+  statusListeners.add(listener);
+  void getAuthStatusOnce();
+  return () => {
+    statusListeners.delete(listener);
+  };
+}
+
+export function resetAuthStatus(): void {
+  cachedStatus = null;
+  statusSnapshot = null;
+  statusListeners.forEach((listener) => listener());
+  // Screens still showing read again at once, so they settle on the new
+  // role instead of waiting with nothing offered.
+  if (statusListeners.size > 0) void getAuthStatusOnce();
+}
+
+/**
+ * After a write fails: if the server refused for the caller's role, forget
+ * the cached session so every screen re-reads it and drops what it can no
+ * longer offer. Returns the error untouched for the caller's message.
+ */
+export function refreshOnRoleRefusal(error: unknown): unknown {
+  if (isRoleRefusal(error)) resetAuthStatus();
+  return error;
+}
+
+function afterSignIn<T>(result: Promise<T>): Promise<T> {
+  return result.then((value) => {
+    resetAuthStatus();
+    return value;
+  });
+}
+
+export const googleLoginUrl = (invite?: string) =>
+  `${API_BASE}/auth/google${invite ? `?invite=${encodeURIComponent(invite)}` : ""}`;
+
 /** With `workspaceName`, the account founds that taller and is its admin at once. */
 export const register = (email: string, name: string, password: string, workspaceName?: string) =>
-  authFetch<AuthUser>("/auth/register", {
-    json: { email, name, password, workspace_name: workspaceName || undefined },
-  });
+  afterSignIn(
+    authFetch<AuthUser>("/auth/register", {
+      json: { email, name, password, workspace_name: workspaceName || undefined },
+    }),
+  );
 
 export const login = (email: string, password: string, remember = false) =>
-  authFetch<AuthUser>("/auth/login", { json: { email, password, remember } });
+  afterSignIn(authFetch<AuthUser>("/auth/login", { json: { email, password, remember } }));
 
 export async function logout(): Promise<void> {
   try {
     await authFetch("/auth/logout", { method: "POST" });
   } catch {}
+  resetAuthStatus();
 }
 
 // ---- Own account ----
@@ -247,9 +314,11 @@ export const invitationInfo = (token: string) =>
   });
 
 export const acceptInvitation = (token: string, name: string, password: string) =>
-  authFetch<AuthUser>(`/auth/invitations/by-token/${encodeURIComponent(token)}/accept`, {
-    json: { name, password },
-  });
+  afterSignIn(
+    authFetch<AuthUser>(`/auth/invitations/by-token/${encodeURIComponent(token)}/accept`, {
+      json: { name, password },
+    }),
+  );
 
 // ---- Admin confirmation loop ----
 

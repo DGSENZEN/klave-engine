@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useParams } from "next/navigation";
 import { CalendarBlank } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
@@ -33,6 +34,7 @@ import {
 } from "@/components/ui";
 
 export default function ProgramaPage() {
+  const caps = useCapabilities();
   const { id } = useParams<{ id: string }>();
   const { costs, error } = useCostReport(id);
   const { actorName, clientId } = useProjectLive();
@@ -238,7 +240,7 @@ export default function ProgramaPage() {
             type="date"
             defaultValue={costs.schedule.start_date ?? ""}
             onChange={(e) => void setStartDate(e.target.value)}
-            disabled={dateBusy}
+            disabled={dateBusy || !caps.editProject}
             aria-label="Fecha de arranque de la obra"
           />
         </label>
@@ -264,7 +266,7 @@ export default function ProgramaPage() {
             step={1}
             defaultValue={frentes ?? ""}
             onBlur={(e) => commitFrentes(e.target.value)}
-            disabled={frentesBusy || frentes === null}
+            disabled={frentesBusy || frentes === null || !caps.editProject}
             className="w-16 text-right tabular"
             aria-label="Frentes de trabajo"
           />

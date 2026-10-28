@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -641,6 +642,8 @@ function ProjectRow({
   onChanged: () => void;
   onError: (message: string) => void;
 }) {
+  // An overview from an API without role enforcement has no my_role.
+  const caps = useCapabilities(project.my_role === undefined ? "legacy" : project.my_role);
   const [editing, setEditing] = useState<"name" | "client" | null>(null);
   const [draft, setDraft] = useState("");
   const [removeOpen, setRemoveOpen] = useState(false);
@@ -780,36 +783,45 @@ function ProjectRow({
           {STATUS_LABELS[project.status ?? ""] ?? project.status ?? "—"}
         </Badge>
       )}
+      {(caps.editProject || caps.manageProject) && (
       <KebabMenu label={`Opciones de ${project.name}`}>
         {(close) => (
           <>
-            <MenuItem
-              onSelect={() => {
-                setDraft(project.name);
-                setEditing("name");
-                close();
-              }}
-            >
-              <PencilSimple /> Renombrar
-            </MenuItem>
-            <MenuItem
-              onSelect={() => {
-                setDraft(project.client ?? "");
-                setEditing("client");
-                close();
-              }}
-            >
-              <UserSwitch /> Cliente…
-            </MenuItem>
-            <MenuItem
-              onSelect={() => {
-                setConfirmReprocess(true);
-                close();
-              }}
-            >
-              <ArrowsClockwise className={reprocessing ? "animate-spin" : ""} />{" "}
-              {reprocessing ? "Encolando…" : "Reprocesar"}
-            </MenuItem>
+            {caps.manageProject && (
+              <>
+                <MenuItem
+                  onSelect={() => {
+                    setDraft(project.name);
+                    setEditing("name");
+                    close();
+                  }}
+                >
+                  <PencilSimple /> Renombrar
+                </MenuItem>
+                <MenuItem
+                  onSelect={() => {
+                    setDraft(project.client ?? "");
+                    setEditing("client");
+                    close();
+                  }}
+                >
+                  <UserSwitch /> Cliente…
+                </MenuItem>
+              </>
+            )}
+            {caps.editProject && (
+              <MenuItem
+                onSelect={() => {
+                  setConfirmReprocess(true);
+                  close();
+                }}
+              >
+                <ArrowsClockwise className={reprocessing ? "animate-spin" : ""} />{" "}
+                {reprocessing ? "Encolando…" : "Reprocesar"}
+              </MenuItem>
+            )}
+            {caps.manageProject && (
+            <>
             <MenuItem
               onSelect={() => {
                 toggleArchived();
@@ -835,9 +847,12 @@ function ProjectRow({
             >
               <Trash /> Quitar de la lista…
             </MenuItem>
+            </>
+            )}
           </>
         )}
       </KebabMenu>
+      )}
       <CaretRight
         size={14}
         aria-hidden

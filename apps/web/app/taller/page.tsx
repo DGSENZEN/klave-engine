@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
 import { apiMessage, fetchAuthStatus, type AuthStatus } from "@/lib/session";
+import { capabilities } from "@/lib/capabilities";
 import { timeAgo } from "@/lib/time";
 import { CONFIG_GROUPS, ConfigGroup } from "@/components/CostingConfigForm";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -54,7 +55,10 @@ export default function TallerPage() {
     let active = true;
     fetchAuthStatus().then((status) => {
       if (!active) return;
-      const allowed = status.mode === "open" || status.user?.role === "admin";
+      const allowed = capabilities({
+        mode: status.mode,
+        tallerRole: status.user?.role ?? null,
+      }).editCatalog;
       if (!allowed) {
         router.replace("/");
         return;

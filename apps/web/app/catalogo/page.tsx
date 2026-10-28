@@ -1,5 +1,6 @@
 "use client";
 
+import { refreshOnRoleRefusal } from "@/lib/session";
 import { LectorSection } from "@/components/LectorSection";
 import { PerfilTallerSection } from "@/components/PerfilTallerSection";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -110,11 +111,13 @@ import { Modal } from "@/components/Modal";
 import { PlantillasSection } from "@/components/PlantillasSection";
 import { VigenciaChip, VigenciaSection } from "@/components/VigenciaSection";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
+import { useCapabilities } from "@/components/Capabilities";
 
 type CatalogTab = "insumos" | "conceptos" | "fuentes" | "plantillas" | "salario";
 const TABS: CatalogTab[] = ["conceptos", "insumos", "fuentes", "plantillas", "salario"];
 
 export default function CatalogoPage() {
+  const { editCatalog, ready } = useCapabilities();
   const [catalog, setCatalog] = useState<CatalogState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -194,6 +197,7 @@ export default function CatalogoPage() {
       setNotice(`${result.updated} precios actualizados${skipped}`);
       reload();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       setError(apiMessage(e, "No se pudo importar el CSV."));
     }
   }
@@ -217,6 +221,7 @@ export default function CatalogoPage() {
       );
       reload();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       setError(apiMessage(e, "No se pudieron importar las matrices."));
     }
   }
@@ -237,6 +242,7 @@ export default function CatalogoPage() {
       );
       reload();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       setError(apiMessage(e, "No se pudieron importar los destajos."));
     }
   }
@@ -323,6 +329,7 @@ export default function CatalogoPage() {
                   e.target.value = "";
                 }}
               />
+              {editCatalog && (
               <ButtonMenu
                 label="Importar…"
                 icon={<UploadSimple />}
@@ -387,6 +394,7 @@ export default function CatalogoPage() {
                   </>
                 )}
               </ButtonMenu>
+              )}
               <Button onClick={exportCsv} disabled={!catalog}>
                 <DownloadSimple /> Exportar insumos (CSV)
               </Button>
@@ -394,6 +402,11 @@ export default function CatalogoPage() {
           }
         />
 
+        {ready && !editCatalog && (
+          <p className="-mt-2 mb-4 text-[13px] text-muted">
+            Solo un administrador del taller cambia el catálogo. Puedes consultarlo y exportarlo.
+          </p>
+        )}
         {error && (
           <div className="mb-4">
             <Callout tone="danger">{error}</Callout>
@@ -508,6 +521,13 @@ export default function CatalogoPage() {
 
 /* ------------------------------------------------------------- insumos --- */
 
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  referencia: "Referencia",
+  cotizacion: "Cotización",
+  publicacion: "Publicación",
+  calculado: "Calculado",
+};
+
 function InsumosSection({
   catalog,
   onChanged,
@@ -519,6 +539,7 @@ function InsumosSection({
   onError: (message: string) => void;
   onNotice: (message: string) => void;
 }) {
+  const { editCatalog } = useCapabilities();
   const [adding, setAdding] = useState(false);
   const [equipmentCode, setEquipmentCode] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -556,6 +577,7 @@ function InsumosSection({
       clearSelection();
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudieron ajustar los precios."));
     } finally {
       setLotBusy(false);
@@ -572,6 +594,7 @@ function InsumosSection({
       clearSelection();
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo sustituir el insumo."));
     } finally {
       setLotBusy(false);
@@ -601,8 +624,9 @@ function InsumosSection({
     try {
       await updateInsumo(code, patch, getBrowserActor());
       onChanged();
-    } catch {
-      onError(`No se pudo guardar el insumo ${code}.`);
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, `No se pudo guardar el insumo ${code}.`));
     }
   }
 
@@ -643,6 +667,7 @@ function InsumosSection({
         <table className="w-full text-data">
           <thead>
             <tr className="border-b border-border bg-surface-2">
+              {editCatalog && (
               <Th className="w-8 px-3">
                 <Checkbox
                   aria-label="Seleccionar los visibles"
@@ -659,6 +684,7 @@ function InsumosSection({
                   }
                 />
               </Th>
+              )}
               <Th>Insumo</Th>
               <Th>Tipo</Th>
               <Th>Unidad</Th>
@@ -681,6 +707,7 @@ function InsumosSection({
                   selected.has(insumo.code) ? "bg-surface-2/60" : ""
                 } ${inspecting === insumo.code ? "shadow-[inset_3px_0_0_var(--accent)]" : ""}`}
               >
+                {editCatalog && (
                 <Td className="px-3">
                   <Checkbox
                     aria-label={`Seleccionar ${insumo.code}`}
@@ -695,6 +722,7 @@ function InsumosSection({
                     }
                   />
                 </Td>
+                )}
                 <Td>
                   <CommitText
                     value={insumo.description}
@@ -753,6 +781,9 @@ function InsumosSection({
                     }
                   />
                   <div data-tour="catalogo.procedencia" className="mt-1 flex items-center gap-1.5">
+                    {!editCatalog ? (
+                      <Badge>{SOURCE_TYPE_LABELS[insumo.source_type] ?? insumo.source_type}</Badge>
+                    ) : (
                     <Select
                       value={insumo.source_type}
                       onChange={(e) =>
@@ -769,7 +800,8 @@ function InsumosSection({
                       <option value="publicacion">Publicación</option>
                       <option value="calculado">Calculado</option>
                     </Select>
-                    {insumo.resource_type === "equipo" &&
+                    )}
+                    {editCatalog && insumo.resource_type === "equipo" &&
                       !insumo.is_labor_percentage && (
                         <button
                           type="button"
@@ -780,6 +812,7 @@ function InsumosSection({
                           Costo horario
                         </button>
                       )}
+                    {editCatalog ? (
                     <input
                       type="month"
                       value={insumo.vigencia}
@@ -789,6 +822,9 @@ function InsumosSection({
                       title="Vigencia del precio"
                       className="rounded-md border border-border bg-surface px-1.5 py-0.5 text-[11px] text-muted"
                     />
+                    ) : (
+                      insumo.vigencia && <span className="text-xs text-muted">{insumo.vigencia}</span>
+                    )}
                     <VigenciaChip vigencia={insumo.vigencia} />
                   </div>
                 </Td>
@@ -796,7 +832,7 @@ function InsumosSection({
             ))}
             <tr>
               <td colSpan={6} className="px-0 py-0">
-                {adding ? (
+                {!editCatalog ? null : adding ? (
                   <NewInsumoRow
                     onDone={() => {
                       setAdding(false);
@@ -930,6 +966,7 @@ function InsumosSection({
                     </ul>
                   )}
                 </InspectorSection>
+                {editCatalog && (
                 <InspectorSection title="Acciones">
                   <div className="flex flex-wrap gap-2">
                     <Button
@@ -950,6 +987,7 @@ function InsumosSection({
                     )}
                   </div>
                 </InspectorSection>
+                )}
               </>
             );
           })()}
@@ -992,6 +1030,7 @@ function AjustesRecientes({
   onError: (message: string) => void;
   onNotice: (message: string) => void;
 }) {
+  const { editCatalog } = useCapabilities();
   const [lista, setLista] = useState<PriceAdjustment[]>([]);
   const [busy, setBusy] = useState<number | null>(null);
   // El catálogo cambia después de cada ajuste: se vuelve a leer el diario.
@@ -1017,6 +1056,7 @@ function AjustesRecientes({
       onNotice(`${describirAjuste(a)} deshecho: ${r.restored} filas restauradas`);
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo deshacer ese ajuste."));
     } finally {
       setBusy(null);
@@ -1036,14 +1076,16 @@ function AjustesRecientes({
                 {a.actor ? ` · ${a.actor}` : ""} · {a.at.slice(0, 16).replace("T", " ")}
               </span>
             </span>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy !== null}
-              onClick={() => void deshacer(a)}
-            >
-              Deshacer
-            </Button>
+            {editCatalog && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy !== null}
+                onClick={() => void deshacer(a)}
+              >
+                Deshacer
+              </Button>
+            )}
           </li>
         ))}
       </ul>
@@ -1169,6 +1211,7 @@ function ApusSection({
   onNotice: (message: string) => void;
   onGoToBase: () => void;
 }) {
+  const { editCatalog } = useCapabilities();
   // Varios conceptos abiertos a la vez: la matriz es un renglón hijo de la
   // hoja, no un panel aparte — el idioma de OPUS con nuestra piel.
   const [open, setOpen] = useState<Set<string>>(() => new Set());
@@ -1248,6 +1291,7 @@ function ApusSection({
       onNotice(`Tolerancia de validación ±${saved.tolerance_pct} %; los veredictos se recalcularon`);
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo guardar la tolerancia."));
     }
   }
@@ -1270,6 +1314,7 @@ function ApusSection({
       );
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudieron generar las matrices."));
     } finally {
       setWorking(false);
@@ -1289,6 +1334,7 @@ function ApusSection({
       );
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudieron validar las matrices."));
     } finally {
       setWorking(false);
@@ -1376,7 +1422,7 @@ function ApusSection({
           Ningún concepto coincide con «{query.trim()}».
         </p>
       )}
-      {catalog.concepts.every((c) => c.origin === "generada") && (
+      {editCatalog && catalog.concepts.every((c) => c.origin === "generada") && (
         <div className="mb-4">
           <Callout
             tone="info"
@@ -1392,7 +1438,7 @@ function ApusSection({
           </Callout>
         </div>
       )}
-      {sinMatriz.length > 0 && (
+      {editCatalog && sinMatriz.length > 0 && (
         <div className="mb-4">
           <Callout
             tone="info"
@@ -1419,6 +1465,10 @@ function ApusSection({
             <Badge tone="warning">{veredictos.fuera_de_rango} fuera de rango</Badge>{" "}
             <Badge tone="default">{veredictos.sin_referencia} sin referencia</Badge>
           </span>
+          {!editCatalog ? (
+            <span>tolerancia ±{tolerance} %</span>
+          ) : (
+          <>
           <label className="flex items-center gap-1">
             tolerancia ±
             <Input
@@ -1440,6 +1490,8 @@ function ApusSection({
           <Button size="sm" variant="ghost" disabled={working} onClick={validateAll}>
             Validar de nuevo
           </Button>
+          </>
+          )}
         </div>
       )}
       <TableCard sticky>
@@ -1504,6 +1556,7 @@ function PhaseRows({
   onError: (message: string) => void;
   onNotice: (message: string) => void;
 }) {
+  const { editCatalog } = useCapabilities();
   return (
     <>
       <tr className="border-b border-border bg-surface-2/60">
@@ -1515,17 +1568,19 @@ function PhaseRows({
                 {concepts.length === 1 ? "1 concepto" : `${concepts.length} conceptos`}
               </span>
             </span>
-            <button
-              type="button"
-              onClick={() => onCreating(!creating)}
-              className="rounded-md px-1.5 py-0.5 text-xs text-faint transition-colors hover:bg-surface-2 hover:text-foreground"
-            >
-              + concepto
-            </button>
+            {editCatalog && (
+              <button
+                type="button"
+                onClick={() => onCreating(!creating)}
+                className="rounded-md px-1.5 py-0.5 text-xs text-faint transition-colors hover:bg-surface-2 hover:text-foreground"
+              >
+                + concepto
+              </button>
+            )}
           </div>
         </td>
       </tr>
-      {creating && (
+      {editCatalog && creating && (
         <NewConceptRow
           phase={phase}
           insumos={catalog.insumos}
@@ -1672,6 +1727,7 @@ function NewConceptRow({
       );
       onDone();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo crear el concepto."));
     } finally {
       setBusy(false);
@@ -1833,6 +1889,7 @@ function ConceptRows({
   onError: (message: string) => void;
   onNotice: (message: string) => void;
 }) {
+  const { editCatalog } = useCapabilities();
   const [draft, setDraft] = useState<ApuComponent[]>(components);
   // Un básico o cuadrilla en la matriz se despliega en su lugar, de solo
   // lectura: su matriz vive en la hoja de insumos.
@@ -1865,8 +1922,9 @@ function ConceptRows({
     try {
       await updateApu(concept.code, next, getBrowserActor());
       onChanged();
-    } catch {
-      onError(`No se pudo guardar la matriz de ${concept.code}.`);
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, `No se pudo guardar la matriz de ${concept.code}.`));
       setDraft(components);
     } finally {
       setBusy(false);
@@ -1917,8 +1975,9 @@ function ConceptRows({
     try {
       await updateRendimiento(concept.code, value, getBrowserActor());
       onChanged();
-    } catch {
-      onError(`No se pudo guardar el rendimiento de ${concept.code}.`);
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, `No se pudo guardar el rendimiento de ${concept.code}.`));
     }
   }
 
@@ -1953,6 +2012,7 @@ function ConceptRows({
       );
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, `No se pudo generar la matriz de ${concept.code}.`));
     } finally {
       setBusy(false);
@@ -1972,6 +2032,7 @@ function ConceptRows({
       );
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, `No se pudo validar ${concept.code}.`));
     } finally {
       setBusy(false);
@@ -2061,6 +2122,7 @@ function ConceptRows({
                 {concept.price_vigencia ? ` · vigencia ${concept.price_vigencia}` : ""}. La
                 matriz no se usa mientras el precio adoptado esté activo.
               </span>
+              {editCatalog && (
               <Button
                 size="sm"
                 variant="ghost"
@@ -2071,8 +2133,9 @@ function ConceptRows({
                   try {
                     await clearConceptPrice(concept.code, getBrowserActor());
                     onChanged();
-                  } catch {
-                    onError(`No se pudo quitar el precio adoptado de ${concept.code}.`);
+                  } catch (e) {
+                    refreshOnRoleRefusal(e);
+                    onError(apiMessage(e, `No se pudo quitar el precio adoptado de ${concept.code}.`));
                   } finally {
                     setBusy(false);
                   }
@@ -2080,11 +2143,12 @@ function ConceptRows({
               >
                 Volver a la matriz
               </Button>
+              )}
             </div>
           </td>
         </tr>
       )}
-      {open && draft.length === 0 && concept.price_override == null && (
+      {editCatalog && open && draft.length === 0 && concept.price_override == null && (
         <tr className="border-b border-border bg-surface-2/20">
           <td colSpan={4} className="px-4 py-2 text-sm">
             <div className="flex flex-wrap items-center gap-3 pl-6">
@@ -2158,17 +2222,22 @@ function ConceptRows({
                       <div className="text-[11px] text-faint">{component.source}</div>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    aria-label={`Quitar ${insumo.code} de la matriz`}
-                    onClick={() => setPorQuitar(component.resource_code)}
-                    className="rounded-md p-1 text-faint transition hover:bg-danger-soft hover:text-danger"
-                  >
-                    <Trash size={14} />
-                  </button>
+                  {editCatalog && (
+                    <button
+                      type="button"
+                      aria-label={`Quitar ${insumo.code} de la matriz`}
+                      onClick={() => setPorQuitar(component.resource_code)}
+                      className="rounded-md p-1 text-faint transition hover:bg-danger-soft hover:text-danger"
+                    >
+                      <Trash size={14} />
+                    </button>
+                  )}
                 </div>
               </Td>
               <Td align="right">
+                {!editCatalog ? (
+                  <span className="tabular">{component.quantity}</span>
+                ) : (
                 <Input
                   type="number"
                   step="any"
@@ -2183,6 +2252,7 @@ function ConceptRows({
                   aria-label={`Cantidad de ${insumo.code} por ${concept.unit}`}
                   className="w-24 px-2 py-1 text-right tabular"
                 />
+                )}
               </Td>
               <Td align="right" className="tabular text-muted">
                 {insumo.is_labor_percentage
@@ -2233,14 +2303,16 @@ function ConceptRows({
           <Td>
             <div className="flex items-center gap-2 pl-6">
               <div className="min-w-0 flex-1">
-                <InsumoSearch
-                  insumos={insumos}
-                  exclude={enMatriz}
-                  placeholder="+ recurso (teclea para buscar)…"
-                  onPick={addComponent}
-                />
+                {editCatalog && (
+                  <InsumoSearch
+                    insumos={insumos}
+                    exclude={enMatriz}
+                    placeholder="+ recurso (teclea para buscar)…"
+                    onPick={addComponent}
+                  />
+                )}
               </div>
-              {generada && draft.length > 0 && (
+              {editCatalog && generada && draft.length > 0 && (
                 <>
                   <Button size="sm" variant="ghost" disabled={busy} onClick={runValidate}>
                     Validar de nuevo
@@ -2261,6 +2333,9 @@ function ConceptRows({
           <Td align="right" colSpan={2}>
             <label className="flex items-center justify-end gap-2 text-xs text-muted">
               Rendimiento
+              {!editCatalog ? (
+                <span className="tabular text-foreground">{rate}</span>
+              ) : (
               <Input
                 type="number"
                 step="any"
@@ -2273,6 +2348,7 @@ function ConceptRows({
                 aria-label={`Rendimiento de ${concept.code}`}
                 className="w-24 px-2 py-1 text-right tabular"
               />
+              )}
               {concept.unit}/día
             </label>
           </Td>
@@ -2295,12 +2371,14 @@ function CommitNumber({
   value: number;
   onCommit: (value: number) => void;
 }) {
+  const { editCatalog } = useCapabilities();
   const [draft, setDraft] = useState(String(value));
   const [lastValue, setLastValue] = useState(value);
   if (lastValue !== value) {
     setLastValue(value);
     setDraft(String(value));
   }
+  if (!editCatalog) return <span className="tabular">{value}</span>;
   return (
     <Input
       type="number"
@@ -2331,11 +2409,19 @@ function CommitText({
   placeholder?: string;
   reference?: boolean;
 }) {
+  const { editCatalog } = useCapabilities();
   const [draft, setDraft] = useState(value);
   const [lastValue, setLastValue] = useState(value);
   if (lastValue !== value) {
     setLastValue(value);
     setDraft(value);
+  }
+  if (!editCatalog) {
+    return (
+      <span className={`text-xs ${reference ? "text-warning" : "text-muted"}`}>
+        {value || placeholder}
+      </span>
+    );
   }
   return (
     <Input
@@ -2369,6 +2455,7 @@ function FuentesSection({
   onError: (message: string) => void;
   onNotice: (message: string) => void;
 }) {
+  const { editCatalog } = useCapabilities();
   const [sources, setSources] = useState<ReferenceSource[] | null>(null);
   const [importing, setImporting] = useState<string | null>(null);
   const [ownFile, setOwnFile] = useState<File | null>(null);
@@ -2404,6 +2491,7 @@ function FuentesSection({
       loadSources();
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, `No se pudo descargar ${source.name}.`));
     } finally {
       setDownloading(null);
@@ -2419,6 +2507,7 @@ function FuentesSection({
       );
       loadSources();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, `No se pudo importar ${source.name}.`));
     } finally {
       setImporting(null);
@@ -2442,6 +2531,7 @@ function FuentesSection({
       setOwnName("");
       loadSources();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo importar el catálogo."));
     } finally {
       setOwnBusy(false);
@@ -2511,7 +2601,7 @@ function FuentesSection({
               ) : (
                 <span className="text-xs text-muted">No descargada</span>
               )}
-              {source.custom ? (
+              {!editCatalog ? null : source.custom ? (
                 <span className="text-xs text-muted">
                   Vuelve a subir el archivo para actualizarlo
                 </span>
@@ -2552,6 +2642,7 @@ function FuentesSection({
           ))
         )}
       </ul>
+      {editCatalog && (
       <div className="border-t border-border px-5 py-4">
         <div className="mb-2 text-sm font-medium">Catálogo propio</div>
         <p className="mb-3 text-xs text-muted">
@@ -2592,6 +2683,7 @@ function FuentesSection({
           </Button>
         </div>
       </div>
+      )}
       <div className="border-t border-border px-5 py-4">
         <BaseSheet
           onChanged={onChanged}
@@ -2621,6 +2713,7 @@ function Importaciones({
   onNotice: (message: string) => void;
   onChanged: () => void;
 }) {
+  const { editCatalog } = useCapabilities();
   const [lista, setLista] = useState<CatalogImport[] | null>(null);
   const [quitando, setQuitando] = useState<string | null>(null);
   const [confirmar, setConfirmar] = useState<string | null>(null);
@@ -2652,6 +2745,7 @@ function Importaciones({
       leer();
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo deshacer esa importación."));
     } finally {
       setQuitando(null);
@@ -2678,7 +2772,7 @@ function Importaciones({
                 {imp.with_price > 0 && ` · ${imp.with_price} con precio adoptado`}
               </span>
             </span>
-            {confirmar === imp.source ? (
+            {!editCatalog ? null : confirmar === imp.source ? (
               <span className="flex items-center gap-2">
                 <span className="text-xs text-danger">
                   ¿Quitar {imp.concepts - imp.with_price} conceptos?
@@ -2740,6 +2834,7 @@ function CuadrillasSection({
   onError: (message: string) => void;
   onNotice: (message: string) => void;
 }) {
+  const { editCatalog } = useCapabilities();
   const cuadrillas = catalog.insumos.filter((i) => i.kind === "cuadrilla");
   const categorias = catalog.insumos.filter(
     (i) => i.resource_type === "mano_de_obra" && (i.kind ?? "insumo") === "insumo" && !i.is_labor_percentage,
@@ -2781,6 +2876,7 @@ function CuadrillasSection({
       setMembers([]);
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo crear la cuadrilla."));
     } finally {
       setBusy(false);
@@ -2795,6 +2891,7 @@ function CuadrillasSection({
       setEditing(null);
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo guardar la cuadrilla."));
     } finally {
       setBusy(false);
@@ -2857,7 +2954,7 @@ function CuadrillasSection({
         <SectionTitle sub="Mano de obra compuesta: cada cuadrilla es un insumo con su matriz de categorías; su jornada se deriva del salario real y cambia con él.">
           Cuadrillas
         </SectionTitle>
-        {!creating && (
+        {editCatalog && !creating && (
           <Button size="sm" variant="secondary" onClick={() => setCreating(true)}>
             Nueva cuadrilla
           </Button>
@@ -2915,7 +3012,7 @@ function CuadrillasSection({
                   </div>
                   <span className="tabular text-sm font-semibold">{money2(c.unit_cost)} / jor</span>
                   <OrigenBadge origin={c.origin} originRef={c.origin_ref} />
-                  {!isEditing && (
+                  {editCatalog && !isEditing && (
                     <Button
                       size="sm"
                       variant="ghost"
@@ -2959,6 +3056,7 @@ function SalarioRealSection({
   onError: (message: string) => void;
   onNotice: (message: string) => void;
 }) {
+  const { editCatalog } = useCapabilities();
   const [state, setState] = useState<LaborState | null>(null);
   const [params, setParams] = useState<FsrParameters | null>(null);
   const [categories, setCategories] = useState<LaborCategory[]>([]);
@@ -3017,8 +3115,9 @@ function SalarioRealSection({
     setBusy(true);
     try {
       setPreview((await previewLabor(params, categories)).rows);
-    } catch {
-      onError("No se pudo calcular el salario real.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudo calcular el salario real."));
     } finally {
       setBusy(false);
     }
@@ -3043,6 +3142,7 @@ function SalarioRealSection({
       setPresetKey("");
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo aplicar el salario real."));
     } finally {
       setBusy(false);
@@ -3252,13 +3352,17 @@ function SalarioRealSection({
                 ))}
               </ul>
             )}
-            <div className="mt-4 flex justify-end">
-              <Button variant="primary" onClick={openPreview} disabled={busy}>
-                {busy && !preview
-                  ? "Calculando…"
-                  : "Aplicar salario real al catálogo…"}
-              </Button>
-            </div>
+            {/* Members may still use the form as a calculator (the preview
+                writes nothing); applying it to the catálogo is the admin's. */}
+            {editCatalog && (
+              <div className="mt-4 flex justify-end">
+                <Button variant="primary" onClick={openPreview} disabled={busy}>
+                  {busy && !preview
+                    ? "Calculando…"
+                    : "Aplicar salario real al catálogo…"}
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </Disclosure>
@@ -3460,8 +3564,9 @@ function EquipmentDialog({
       );
       setBreakdown(row.breakdown);
       onSaved();
-    } catch {
-      onError(`No se pudo guardar el costo horario de ${insumo.code}.`);
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, `No se pudo guardar el costo horario de ${insumo.code}.`));
     } finally {
       setBusy(false);
     }

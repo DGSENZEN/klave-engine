@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from klave_engine.common.config import Settings
 from klave_engine.costing.reviews import GATED_NODES, load_reviews
 
+from apps.api.auth.access import viewer_project_role
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.jobs import JOB_STORE
 
@@ -40,22 +41,8 @@ def _fact(label: str, value: str | None, tone: str, href: str | None = None) -> 
 
 
 def _my_role(request: Request, project_id: str, settings: Settings) -> str | None:
-    """El rol del que mira: admin del taller, o su rol en el proyecto.
-
-    En modo abierto no hay cuentas y el rol es None — el frontend lo lee
-    como «todos pueden», la misma libertad local-first de siempre."""
-    user = getattr(request.state, "user", None)
-    if user is None:
-        return None
-    if user.get("role") == "admin":
-        return "admin"
-    try:
-        from apps.api.auth.store import get_user_store
-
-        users = get_user_store(settings.users_database_url)
-        return users.project_role(project_id, str(user["user_id"]))
-    except Exception:  # noqa: BLE001 — sin base de usuarios, sin veredicto
-        return None
+    """El rol del que mira (ver ``auth.access.viewer_project_role``)."""
+    return viewer_project_role(request, project_id)
 
 
 @router.get("/{project_id}/tablero")

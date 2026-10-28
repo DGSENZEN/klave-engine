@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Archive, ArrowCounterClockwise, Trash, UsersThree } from "@phosphor-icons/react";
@@ -43,6 +44,7 @@ const PROJECT_ROLE_LABELS: Record<string, string> = {
 };
 
 export default function ConfiguracionPage() {
+  const caps = useCapabilities();
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [project, setProject] = useState<ProjectInfo | null>(null);
@@ -141,6 +143,11 @@ export default function ConfiguracionPage() {
         title="Configuración del proyecto"
         sub="Organización, acceso del equipo y acciones sobre este proyecto."
       />
+      {caps.ready && !caps.manageProject && (
+        <p className="-mt-2 mb-4 text-[13px] text-muted">
+          Solo el propietario del proyecto o un administrador del taller cambia esta configuración.
+        </p>
+      )}
 
       {error && (
         <div className="mb-4">
@@ -164,7 +171,7 @@ export default function ConfiguracionPage() {
 
       <Card className="mb-4 p-5">
         <SectionTitle>Organización</SectionTitle>
-        <div className="space-y-3">
+        <fieldset disabled={!caps.manageProject} className="space-y-3">
           <label className="block">
             <span className="mb-1 block text-sm font-medium">Nombre del proyecto</span>
             <Input
@@ -184,16 +191,19 @@ export default function ConfiguracionPage() {
               className="w-full"
             />
           </label>
-          <div className="flex justify-end">
-            <Button variant="primary" onClick={save} disabled={!name.trim()}>
-              Guardar
-            </Button>
-          </div>
-        </div>
+          {caps.manageProject && (
+            <div className="flex justify-end">
+              <Button variant="primary" onClick={save} disabled={!name.trim()}>
+                Guardar
+              </Button>
+            </div>
+          )}
+        </fieldset>
       </Card>
 
-      {protectedMode && <AccessCard projectId={id} />}
+      {protectedMode && caps.manageProject && <AccessCard projectId={id} />}
 
+      {caps.manageProject && (
       <Card className="p-5">
         <SectionTitle sub="Archivar lo oculta de la lista activa. Quitarlo lo saca de la lista y, si lo eliges, también borra sus archivos del disco.">
           Acciones
@@ -215,6 +225,7 @@ export default function ConfiguracionPage() {
           </Button>
         </div>
       </Card>
+      )}
 
       <ConfirmDialog
         open={removeOpen}

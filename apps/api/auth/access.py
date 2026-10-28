@@ -48,3 +48,40 @@ def require_project_role(request: Request, project_id: str, required: str = "vie
         raise HTTPException(
             status_code=status, detail={"error_type": error_type, "message": message}
         )
+
+
+CATALOG_ADMIN_MESSAGE = "Esta operación del catálogo requiere un administrador del taller."
+
+
+def is_taller_admin(request: Request) -> bool:
+    """¿Quien llama administra su taller? Falso en modo local sin cuentas:
+    quien necesite dejar pasar ese modo lo pregunta aparte."""
+    user = getattr(request.state, "user", None)
+    return user is not None and user.get("role") == "admin"
+
+
+def require_taller_admin(request: Request, message: str = CATALOG_ADMIN_MESSAGE) -> None:
+    """Lo que sólo decide un administrador del taller. En modo local sin
+    cuentas no hay a quién negar."""
+    user = getattr(request.state, "user", None)
+    if user is not None and user.get("role") != "admin":
+        raise HTTPException(
+            status_code=403, detail={"error_type": "admin_required", "message": message}
+        )
+
+
+def viewer_project_role(request: Request, project_id: str) -> str | None:
+    """El rol del que mira: «admin» del taller, o su rol en el proyecto.
+
+    En modo abierto no hay cuentas y el rol es None — el frontend lo lee
+    como «todos pueden», la misma libertad local-first de siempre."""
+    user = getattr(request.state, "user", None)
+    if user is None:
+        return None
+    if user.get("role") == "admin":
+        return "admin"
+    try:
+        store = get_user_store(get_settings().users_database_url)
+        return store.project_role(project_id, str(user["user_id"]))
+    except Exception:  # noqa: BLE001 — sin base de usuarios, sin veredicto
+        return None

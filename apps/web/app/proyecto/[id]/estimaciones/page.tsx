@@ -14,6 +14,7 @@
  * — un avance inventado se paga y luego se descuenta.
  */
 
+import { useCapabilities } from "@/components/Capabilities";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -61,6 +62,7 @@ function finDeMes(iso: string): string {
 }
 
 export default function EstimacionesPage() {
+  const caps = useCapabilities();
   const { id } = useParams<{ id: string }>();
   const [lista, setLista] = useState<EstimacionConResumen[] | null>(null);
   const [abierta, setAbierta] = useState<number | null>(null);
@@ -221,7 +223,7 @@ export default function EstimacionesPage() {
         </div>
       )}
 
-      {lista.length > 0 && (
+      {caps.editProject && lista.length > 0 && (
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <Button onClick={() => void crearSiguiente()} disabled={busy}>
             <Plus size={14} /> {busy ? "Preparando…" : "Nueva estimación"}
@@ -243,7 +245,7 @@ export default function EstimacionesPage() {
               : "La estimación 1 sale del catálogo del contrato. Cárgalo primero; después capturas lo medido en el periodo."
           }
           action={
-            renglonesCatalogo ? (
+            !caps.editProject ? undefined : renglonesCatalogo ? (
               <Button onClick={() => void crearPrimera()} disabled={busy}>
                 <Plus size={14} />{" "}
                 {busy ? "Preparando…" : "Capturar la estimación 1"}
@@ -374,6 +376,7 @@ function EditorEstimacion({
   onGuardar: (e: Estimacion) => void;
   onCancelar: () => void;
 }) {
+  const caps = useCapabilities();
   // La estimación que se edita se identifica por su número: cambiar de
   // estimación monta otro editor en vez de reiniciar éste, que es lo que pedía
   // un efecto y lo que React 19 desaconseja.
@@ -424,9 +427,11 @@ function EditorEstimacion({
           <Button variant="ghost" onClick={onCancelar} disabled={busy}>
             Cerrar
           </Button>
-          <Button onClick={() => onGuardar(local)} disabled={busy}>
-            {busy ? "Guardando…" : "Guardar estimación"}
-          </Button>
+          {caps.editProject && (
+            <Button onClick={() => onGuardar(local)} disabled={busy}>
+              {busy ? "Guardando…" : "Guardar estimación"}
+            </Button>
+          )}
         </div>
       </div>
 

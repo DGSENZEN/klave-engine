@@ -1,5 +1,6 @@
 "use client";
 
+import { refreshOnRoleRefusal } from "@/lib/session";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Trash, UploadSimple } from "@phosphor-icons/react";
 import {
@@ -27,6 +28,7 @@ import {
   Th,
 } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useCapabilities } from "@/components/Capabilities";
 
 const BASIS_LABEL: Record<string, string> = {
   m2_construida: "por m² construido",
@@ -51,6 +53,7 @@ export function PlantillasSection({
   onError: (message: string) => void;
   onNotice: (message: string) => void;
 }) {
+  const { editCatalog } = useCapabilities();
   const fileRef = useRef<HTMLInputElement>(null);
   const [plantillas, setPlantillas] = useState<Plantilla[]>([]);
   const [rules, setRules] = useState<ParametricRule[]>([]);
@@ -112,6 +115,7 @@ export function PlantillasSection({
       reload();
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo importar la plantilla."));
     } finally {
       setBusy(false);
@@ -123,8 +127,9 @@ export function PlantillasSection({
       await deletePlantilla(key, getBrowserActor());
       reload();
       onChanged();
-    } catch {
-      onError("No se pudo eliminar la plantilla.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudo eliminar la plantilla."));
     }
   }
 
@@ -134,8 +139,9 @@ export function PlantillasSection({
       await updateParametricRule(rule.id, { factor: value }, getBrowserActor());
       reload();
       onChanged();
-    } catch {
-      onError("No se pudo actualizar la regla.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudo actualizar la regla."));
     }
   }
 
@@ -144,8 +150,9 @@ export function PlantillasSection({
       await updateParametricRule(rule.id, { active: !rule.active }, getBrowserActor());
       reload();
       onChanged();
-    } catch {
-      onError("No se pudo actualizar la regla.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudo actualizar la regla."));
     }
   }
 
@@ -169,6 +176,7 @@ export function PlantillasSection({
       reload();
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo crear la regla."));
     } finally {
       setRuleBusy(false);
@@ -180,8 +188,9 @@ export function PlantillasSection({
       await deleteParametricRule(rule.id, getBrowserActor());
       reload();
       onChanged();
-    } catch {
-      onError("No se pudo eliminar la regla.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudo eliminar la regla."));
     }
   }
 
@@ -216,6 +225,7 @@ export function PlantillasSection({
       <SectionTitle sub="Un presupuesto terminado y sus m² se vuelven reglas por m²: los conceptos que el plano no lee se proponen en cada proyecto nuevo, marcados como paramétricos.">
         Plantillas y paramétricos
       </SectionTitle>
+      {editCatalog && (
       <div className="flex flex-wrap items-center gap-2">
         <input
           ref={fileRef}
@@ -256,6 +266,7 @@ export function PlantillasSection({
           <UploadSimple /> Importar presupuesto anterior
         </Button>
       </div>
+      )}
       {loadError && (
         <div className="mt-3">
           <Callout
@@ -287,6 +298,7 @@ export function PlantillasSection({
                 {p.rows} renglones · {rules.filter((r) => r.plantilla_key === p.key && !r.engine_read).length} reglas
                 {p.actor && ` · ${p.actor}`}
               </span>
+              {editCatalog && (
               <button
                 type="button"
                 aria-label={`Eliminar plantilla ${p.name}`}
@@ -295,6 +307,7 @@ export function PlantillasSection({
               >
                 <Trash size={14} />
               </button>
+              )}
             </li>
           ))}
         </ul>
@@ -334,6 +347,9 @@ export function PlantillasSection({
                     </Td>
                     <Td className="text-xs text-muted">{basisLabel(r.basis)}</Td>
                     <Td align="right">
+                      {!editCatalog ? (
+                        <span className="tabular">{Number(r.factor.toFixed(4))}</span>
+                      ) : (
                       <Input
                         type="number"
                         step="any"
@@ -343,11 +359,16 @@ export function PlantillasSection({
                         className="w-24 px-2 py-0.5 text-right tabular"
                         aria-label={`Factor de ${r.concept_code}`}
                       />
+                      )}
                     </Td>
                     <Td className="text-xs text-muted">{r.source}</Td>
                     <Td>
                       {r.engine_read ? (
                         <Badge tone="default">comparación</Badge>
+                      ) : !editCatalog ? (
+                        <Badge tone={r.active ? "success" : "warning"}>
+                          {r.active ? "activa" : "pausada"}
+                        </Badge>
                       ) : (
                         <button type="button" onClick={() => toggle(r)} className="text-xs">
                           <Badge tone={r.active ? "success" : "warning"}>
@@ -357,6 +378,7 @@ export function PlantillasSection({
                       )}
                     </Td>
                     <Td>
+                      {editCatalog && (
                       <button
                         type="button"
                         aria-label="Eliminar regla"
@@ -365,6 +387,7 @@ export function PlantillasSection({
                       >
                         <Trash size={14} />
                       </button>
+                      )}
                     </Td>
                   </tr>
                 ))}
@@ -373,7 +396,7 @@ export function PlantillasSection({
           </div>
         </div>
       )}
-      {loaded && (
+      {editCatalog && loaded && (
         <div className="mt-4 rounded-lg border border-dashed border-border-strong p-3">
           <div className="mb-2 text-xs font-medium text-muted">
             Regla a mano — cuando sabes el rendimiento sin un presupuesto anterior
@@ -425,7 +448,7 @@ export function PlantillasSection({
           </div>
         </div>
       )}
-      {loaded && plantillas.length === 0 && (
+      {editCatalog && loaded && plantillas.length === 0 && (
         <p className="mt-3 text-xs text-faint">
           Sube el presupuesto de un proyecto terminado con sus m²: cada renglón que el plano no
           lee se vuelve una regla por m² y un concepto con su precio.

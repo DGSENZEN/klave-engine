@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
@@ -65,6 +66,7 @@ const LECTURA_TABS = [
 type LecturaTab = (typeof LECTURA_TABS)[number];
 
 export default function LecturaPage() {
+  const caps = useCapabilities();
   const { id } = useParams<{ id: string }>();
   // Una vista a la vez (?tab=): hojas, capas y familias, levantamiento,
   // cuadros del plano o avisos. Antes todo iba apilado en dos columnas y
@@ -484,7 +486,7 @@ export default function LecturaPage() {
               </p>
             )}
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <Button
+              {caps.editProject && <Button
                 size="sm"
                 variant="secondary"
                 disabled={!aiReads?.available || aiReads.running}
@@ -497,8 +499,8 @@ export default function LecturaPage() {
                 ) : (
                   "Leer hojas con IA"
                 )}
-              </Button>
-              {!aiReads?.running && (aiReads?.failed?.length ?? 0) > 0 && (
+              </Button>}
+              {caps.editProject && !aiReads?.running && (aiReads?.failed?.length ?? 0) > 0 && (
                 <Button
                   size="sm"
                   variant="primary"
@@ -509,7 +511,7 @@ export default function LecturaPage() {
                   {aiReads?.failed.length === 1 ? "" : "s"} sin lectura
                 </Button>
               )}
-              {aiReads?.running && (
+              {caps.editProject && aiReads?.running && (
                 <Button size="sm" variant="ghost" onClick={cancelAi}>
                   Cancelar
                 </Button>
@@ -853,9 +855,15 @@ function MappingControl({
   ) => void;
   onUnassign: (mapping: InventoryMapping) => void;
 }) {
+  // Inventory mappings live in the taller catálogo: the administrator's.
+  const { editCatalog } = useCapabilities();
   const current = mappings.find(
     (m) => m.kind === kind && m.pattern.toLowerCase() === pattern.toLowerCase(),
   );
+  if (current && !editCatalog) {
+    return <Badge tone="success">→ {current.concept_code}</Badge>;
+  }
+  if (!editCatalog) return null;
   if (current) {
     return (
       <span className="inline-flex items-center gap-1 text-[11px]">

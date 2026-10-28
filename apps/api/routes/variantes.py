@@ -7,7 +7,7 @@ pertenece el proyecto); una decisión aquí vale para el siguiente proyecto.
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from klave_engine.common.config import Settings
 from klave_engine.costing.captura import lo_que_el_plano_no_dio, plantas_de
 from klave_engine.costing.etiquetas import append_labels, mapping_label
@@ -19,6 +19,15 @@ from klave_engine.detection.views import SheetSegmentation
 from klave_engine.ejemplo import es_obra_de_ejemplo
 from pydantic import BaseModel
 
+from apps.api.auth.access import is_taller_admin
+from apps.api.auth.shared_mappings import (
+    VARIANT_CHANGE_MESSAGE,
+    audit_mapping,
+    check_mapping_removal,
+    check_variant_write,
+    is_human_decision,
+    mapping_target,
+)
 from apps.api.dependencies import ProjectStore, get_settings, get_store, project_recompute_lock
 from apps.api.events import clean_actor
 from apps.api.routes.catalog import _recompute_project
@@ -59,6 +68,7 @@ def list_variants(
     más los conceptos a los que se puede mapear: los del mismo catálogo donde
     se guarda el mapeo (en la obra de ejemplo, el suyo)."""
     report = _report(store, project_id)
+    mappings = store_for_project(settings, project_id).load_variant_mappings()
     counts = {"automatica": 0, "propuesta": 0, "confirmada": 0, "sin_equivalente": 0,
               "sin_mapear": 0}
     lines = []
@@ -69,7 +79,12 @@ def list_variants(
             "concept_code": line.concept_code, "description": line.description,
             "unit": line.unit, "phase": line.phase, "quantity": line.quantity,
             "unpriced": line.unpriced,
-            "variants": [v.model_dump() for v in line.variants],
+            # «decidida»: a person's decision, which only an admin changes
+            # in the taller catálogo (role design, decision 3).
+            "variants": [
+                {**v.model_dump(), "decidida": is_human_decision(mappings.get(v.key))}
+                for v in line.variants
+            ],
         })
     conceptos = [
         {"code": row["code"], "description": row["description"], "unit": row["unit"]}
@@ -85,6 +100,7 @@ def list_variants(
 @router.post("/{project_id}/variantes/mapear")
 def map_variants(
     project_id: str,
+    request: Request,
     body: MapearBody | None = None,
     x_actor: Annotated[str | None, Header()] = None,
     store: ProjectStore = Depends(get_store),
@@ -95,7 +111,12 @@ def map_variants(
     report = _report(store, project_id)
     catalog = store_for_project(settings, project_id)
     with project_recompute_lock(project_id):
-        result = mapear(report.boq, catalog, actor="motor", rematch=bool(body and body.rematch))
+        # A non-admin's rematch never overwrites a person's decision in the
+        # taller catálogo (role design, decision 3).
+        keep = None if _shared_free(request, project_id) else is_human_decision
+        result = mapear(
+            report.boq, catalog, actor="motor", rematch=bool(body and body.rematch), keep=keep
+        )
         _recompute_project(store, settings, project_id, actor, action="mapeo")
     return result
 
@@ -105,6 +126,7 @@ def set_variant_mapping(
     project_id: str,
     variant_key: str,
     body: MapeoBody,
+    request: Request,
     x_actor: Annotated[str | None, Header()] = None,
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
@@ -149,9 +171,26 @@ def set_variant_mapping(
                 detail={"error_type": "target_required",
                         "message": "Confirmar necesita el concepto o el renglón de tu catálogo."},
             )
+    requested = mapping_target(
+        fields["status"], fields.get("target_kind"), fields.get("target_code"),
+        fields.get("ref_id"),
+    )  # fmt: skip
+    check_variant_write(request, project_id, previous, requested)
+    if is_human_decision(previous) and requested == mapping_target(
+        previous["status"], previous.get("target_kind"), previous.get("target_code"),
+        previous.get("ref_id"),
+    ):  # fmt: skip
+        # The same decision again (a retry, a double click): nothing changes,
+        # and it stays the person's who made it.
+        return previous
     control_dir = store.get_root(project_id) / settings.processed_dir_name
     with project_recompute_lock(project_id):
         saved = catalog.set_variant_mapping(variant_key, **fields)
+        audit_mapping(
+            request, project_id,
+            "variant_remapped" if is_human_decision(previous) else "variant_mapped",
+            variant_key, previous, saved,
+        )  # fmt: skip
         append_labels(control_dir, [
             mapping_label(variant_key, previous, saved, actor, variant.description)
         ])
@@ -163,14 +202,22 @@ def set_variant_mapping(
 def forget_variant_mapping(
     project_id: str,
     variant_key: str,
+    request: Request,
     x_actor: Annotated[str | None, Header()] = None,
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
     actor = clean_actor(x_actor) or ""
     catalog = store_for_project(settings, project_id)
+    previous = catalog.load_variant_mappings().get(variant_key)
+    # Forgetting an engine proposal is part of review; forgetting a person's
+    # decision is the administrator's.
+    if is_human_decision(previous):
+        check_mapping_removal(request, project_id, VARIANT_CHANGE_MESSAGE)
     with project_recompute_lock(project_id):
         removed = catalog.delete_variant_mapping(variant_key)
+        if removed:
+            audit_mapping(request, project_id, "variant_forgotten", variant_key, previous, None)
         _recompute_project(store, settings, project_id, actor, action="mapeo")
     return {"removed": removed}
 
@@ -204,3 +251,12 @@ def get_captura(
         report, detections, reviews, inventory, plantas_de(segmentation)
     )
     return {**captura.model_dump(), "total": captura.total}
+
+
+def _shared_free(request: Request, project_id: str) -> bool:
+    """Open mode, an administrator, or the example obra's own sandbox."""
+    return (
+        getattr(request.state, "user", None) is None
+        or is_taller_admin(request)
+        or es_obra_de_ejemplo(project_id)
+    )

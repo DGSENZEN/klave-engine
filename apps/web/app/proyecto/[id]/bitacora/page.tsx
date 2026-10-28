@@ -19,6 +19,7 @@
  * sirviendo de diario y no de prueba, y eso la pantalla lo dice.
  */
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { ArrowBendUpLeft, NotePencil, Plus } from "@phosphor-icons/react";
@@ -72,6 +73,7 @@ function Nota({
   nota: NotaBitacora;
   onAclarar: (numero: number) => void;
 }) {
+  const caps = useCapabilities();
   return (
     <div className="border-t border-border py-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -99,19 +101,22 @@ function Nota({
           {nota.autor}
           {nota.cargo ? ` · ${nota.cargo}` : ""}
         </span>
-        <button
-          type="button"
-          onClick={() => onAclarar(nota.numero)}
-          className="underline-offset-2 hover:text-foreground hover:underline"
-        >
-          Aclarar esta nota
-        </button>
+        {caps.editProject && (
+          <button
+            type="button"
+            onClick={() => onAclarar(nota.numero)}
+            className="underline-offset-2 hover:text-foreground hover:underline"
+          >
+            Aclarar esta nota
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
 export default function BitacoraPage() {
+  const caps = useCapabilities();
   const { id } = useParams<{ id: string }>();
   const [notas, setNotas] = useState<NotaBitacora[]>([]);
   const [estado, setEstado] = useState<EstadoBitacora | null>(null);
@@ -183,7 +188,7 @@ export default function BitacoraPage() {
         title="Bitácora de obra"
         sub="El medio oficial de comunicación entre las partes (RLOPSRM art. 123). Lo asentado obliga a las partes y es lo único que cuenta como constancia."
         actions={
-          !estado?.cerrada && (
+          caps.editProject && !estado?.cerrada && (
             <Button onClick={() => nueva()} disabled={!estado || !!borrador}>
               <Plus />
               {estado?.abierta ? "Asentar nota" : "Abrir la bitácora"}
@@ -338,7 +343,7 @@ export default function BitacoraPage() {
           icon={<NotePencil size={20} />}
           title="La bitácora no está abierta"
           hint="Su primera nota es la de apertura, con los datos del contrato (RLOPSRM art. 125)."
-          action={<Button onClick={() => nueva()}>Abrir la bitácora</Button>}
+          action={caps.editProject ? <Button onClick={() => nueva()}>Abrir la bitácora</Button> : undefined}
         />
       )}
 

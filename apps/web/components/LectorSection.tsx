@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useEffect, useState } from "react";
 import { apiMessage, getLector, resumeLector, type LectorEstado } from "@/lib/api";
 import { Button, Callout, Skeleton } from "@/components/ui";
@@ -16,6 +17,7 @@ export function LectorSection({
   onError: (message: string | null) => void;
   onNotice: (message: string | null) => void;
 }) {
+  const { editCatalog } = useCapabilities();
   const [estado, setEstado] = useState<LectorEstado | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -78,9 +80,11 @@ export function LectorSection({
             <Callout
               tone="warning"
               action={
-                <Button size="sm" onClick={reanudar}>
-                  Reanudar
-                </Button>
+                editCatalog ? (
+                  <Button size="sm" onClick={reanudar}>
+                    Reanudar
+                  </Button>
+                ) : undefined
               }
             >
               En pausa: de las últimas {estado.decisiones} propuestas tu taller confirmó{" "}

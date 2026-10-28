@@ -1,5 +1,8 @@
 "use client";
 
+import { refreshOnRoleRefusal } from "@/lib/session";
+import { useCapabilities } from "@/components/Capabilities";
+import { mayChangeSharedMapping } from "@/lib/capabilities";
 import { useEffect, useState } from "react";
 import { Check, MagnifyingGlass, X } from "@phosphor-icons/react";
 import {
@@ -37,6 +40,9 @@ export function ConceptPicker({
   actorName: string;
   onDone: () => void;
 }) {
+  const caps = useCapabilities();
+  // An existing taller alias is changed or removed by an administrator only.
+  const locked = Boolean(currentClave) && !mayChangeSharedMapping(caps, projectId);
   const [matches, setMatches] = useState<ConceptMatch[] | null>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ConceptMatch[]>([]);
@@ -134,8 +140,9 @@ export function ConceptPicker({
     try {
       await clearAlias(conceptCode, projectId, actorName);
       onDone();
-    } catch {
-      setError("No se pudo quitar el alias.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      setError(apiMessage(e, "No se pudo quitar el alias."));
       setBusy(false);
     }
   }
@@ -152,7 +159,7 @@ export function ConceptPicker({
           <Badge tone="accent">actual: {currentClave}</Badge>
         )}
         <span className="ml-auto flex items-center gap-1">
-          {currentClave && (
+          {currentClave && !locked && (
             <Button size="sm" onClick={clear} disabled={busy}>
               Volver al concepto Klave
             </Button>
@@ -162,88 +169,96 @@ export function ConceptPicker({
           </Button>
         </span>
       </div>
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        <span className="relative">
-          <MagnifyingGlass size={14} className="absolute left-2 top-2 text-faint" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar en tu catálogo…"
-            className="w-64 py-1 pl-7 pr-2"
-            aria-label="Buscar concepto del taller"
-          />
-        </span>
-        <Input
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Nota (opcional)"
-          maxLength={300}
-          className="min-w-48 flex-1 px-2 py-1"
-          aria-label="Nota del alias"
-        />
-      </div>
-      {error && (
-        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-danger">
-          <span>{error}</span>
-          {pendingForce && (
-            <Button
-              size="sm"
-              variant="danger"
-              onClick={() => choose(pendingForce, true)}
-              disabled={busy}
-            >
-              Usar de todos modos ({pendingForce.unit} → {unit})
-            </Button>
-          )}
-        </div>
-      )}
-      {matches === null && query.trim().length < 2 ? (
-        <div className="space-y-2" aria-busy="true">
-          <Skeleton className="h-12" />
-          <Skeleton className="h-12" />
-          <Skeleton className="h-12 w-2/3" />
-        </div>
-      ) : list.length === 0 ? (
-        <p className="text-xs text-faint">
-          {query.trim().length >= 2
-            ? `Nada con unidad ${unit} para «${query.trim()}».`
-            : "Sin coincidencias claras; busca por palabras de tu catálogo."}
+      {locked ? (
+        <p className="text-[13px] text-muted">
+          Esta clave ya está en el catálogo del taller; la cambia un administrador.
         </p>
       ) : (
-        // Con un catálogo grande la lista crecía sin fin y tapaba la
-        // pantalla: aquí adentro se hace scroll, el resto sigue a la mano.
-        <ul className="max-h-72 divide-y divide-border overflow-y-auto overscroll-contain pr-1">
-          {list.map((m) => (
-            <li key={`${m.kind}-${m.key}`} className="flex items-start gap-3 py-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-xs">{m.clave}</span>
-                  {m.score > 0 && (
-                    <Badge tone={m.score >= 0.8 ? "success" : m.score >= 0.5 ? "warning" : "default"}>
-                      {(m.score * 100).toFixed(0)}%
-                    </Badge>
+        <>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className="relative">
+            <MagnifyingGlass size={14} className="absolute left-2 top-2 text-faint" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar en tu catálogo…"
+              className="w-64 py-1 pl-7 pr-2"
+              aria-label="Buscar concepto del taller"
+            />
+          </span>
+          <Input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Nota (opcional)"
+            maxLength={300}
+            className="min-w-48 flex-1 px-2 py-1"
+            aria-label="Nota del alias"
+          />
+        </div>
+        {error && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-danger">
+            <span>{error}</span>
+            {pendingForce && (
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() => choose(pendingForce, true)}
+                disabled={busy}
+              >
+                Usar de todos modos ({pendingForce.unit} → {unit})
+              </Button>
+            )}
+          </div>
+        )}
+        {matches === null && query.trim().length < 2 ? (
+          <div className="space-y-2" aria-busy="true">
+            <Skeleton className="h-12" />
+            <Skeleton className="h-12" />
+            <Skeleton className="h-12 w-2/3" />
+          </div>
+        ) : list.length === 0 ? (
+          <p className="text-xs text-faint">
+            {query.trim().length >= 2
+              ? `Nada con unidad ${unit} para «${query.trim()}».`
+              : "Sin coincidencias claras; busca por palabras de tu catálogo."}
+          </p>
+        ) : (
+          // Con un catálogo grande la lista crecía sin fin y tapaba la
+          // pantalla: aquí adentro se hace scroll, el resto sigue a la mano.
+          <ul className="max-h-72 divide-y divide-border overflow-y-auto overscroll-contain pr-1">
+            {list.map((m) => (
+              <li key={`${m.kind}-${m.key}`} className="flex items-start gap-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs">{m.clave}</span>
+                    {m.score > 0 && (
+                      <Badge tone={m.score >= 0.8 ? "success" : m.score >= 0.5 ? "warning" : "default"}>
+                        {(m.score * 100).toFixed(0)}%
+                      </Badge>
+                    )}
+                    <span className="text-xs text-muted">
+                      {m.kind === "concept" ? "matriz del taller" : m.source}
+                      {m.vigencia && ` · ${m.vigencia}`}
+                    </span>
+                  </div>
+                  <div className="text-sm">{m.description}</div>
+                  {m.reasons.length > 0 && (
+                    <div className="text-[11px] text-faint">{m.reasons.join(" · ")}</div>
                   )}
-                  <span className="text-xs text-muted">
-                    {m.kind === "concept" ? "matriz del taller" : m.source}
-                    {m.vigencia && ` · ${m.vigencia}`}
-                  </span>
                 </div>
-                <div className="text-sm">{m.description}</div>
-                {m.reasons.length > 0 && (
-                  <div className="text-[11px] text-faint">{m.reasons.join(" · ")}</div>
-                )}
-              </div>
-              <div className="flex shrink-0 flex-col items-end gap-1">
-                <span className="tabular text-sm">
-                  {m.price != null ? `${money2(m.price)} / ${m.unit}` : "sin precio"}
-                </span>
-                <Button size="sm" variant="primary" onClick={() => choose(m)} disabled={busy}>
-                  <Check size={14} /> Usar esta clave
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <span className="tabular text-sm">
+                    {m.price != null ? `${money2(m.price)} / ${m.unit}` : "sin precio"}
+                  </span>
+                  <Button size="sm" variant="primary" onClick={() => choose(m)} disabled={busy}>
+                    <Check size={14} /> Usar esta clave
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        </>
       )}
     </div>
   );

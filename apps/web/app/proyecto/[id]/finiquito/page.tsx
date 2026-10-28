@@ -18,6 +18,7 @@
  * los escriba: una pena inventada es dinero que se le quita a alguien.
  */
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Flag, FloppyDisk } from "@phosphor-icons/react";
@@ -98,6 +99,7 @@ function Saldo({ saldo }: { saldo: SaldoFiniquito }) {
 }
 
 export default function FiniquitoPage() {
+  const caps = useCapabilities();
   const { id } = useParams<{ id: string }>();
   const [fin, setFin] = useState<Finiquito | null>(null);
   const [resumen, setResumen] = useState<ResumenFiniquito | null>(null);
@@ -191,10 +193,12 @@ export default function FiniquitoPage() {
         title="Finiquito"
         sub="Lo ejecutado en la obra contra lo pagado, con cada saldo por su nombre."
         actions={
-          <Button onClick={() => void guardar()} disabled={guardando}>
-            <FloppyDisk />
-            {guardando ? "Guardando…" : "Guardar finiquito"}
-          </Button>
+          caps.editProject && (
+            <Button onClick={() => void guardar()} disabled={guardando}>
+              <FloppyDisk />
+              {guardando ? "Guardando…" : "Guardar finiquito"}
+            </Button>
+          )
         }
       />
 

@@ -1,5 +1,8 @@
 "use client";
 
+import { apiMessage } from "@/lib/api";
+import { refreshOnRoleRefusal } from "@/lib/session";
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useState } from "react";
 import { Trash } from "@phosphor-icons/react";
 import { clearAlias, getAliases, money2, type ConceptAlias } from "@/lib/api";
@@ -21,6 +24,7 @@ export function AliasesSection({
   onChanged: () => void;
   onError: (message: string) => void;
 }) {
+  const { editCatalog } = useCapabilities();
   const [aliases, setAliases] = useState<ConceptAlias[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [confirm, setConfirm] = useState<ConceptAlias | null>(null);
@@ -46,8 +50,9 @@ export function AliasesSection({
       await clearAlias(alias.concept_code, alias.project_id, getBrowserActor());
       reload();
       onChanged();
-    } catch {
-      onError(`No se pudo quitar la clave del taller de ${alias.concept_code}.`);
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, `No se pudo quitar la clave del taller de ${alias.concept_code}.`));
     }
   }
 
@@ -126,14 +131,17 @@ export function AliasesSection({
                     {alias.created_at && ` · ${timeAgo(alias.created_at)}`}
                   </Td>
                   <Td>
-                    <button
-                      type="button"
-                      aria-label={`Quitar la clave del taller de ${alias.concept_code}`}
-                      onClick={() => setConfirm(alias)}
-                      className="rounded-md p-1 text-faint transition-colors hover:bg-danger-soft hover:text-danger"
-                    >
-                      <Trash size={14} />
-                    </button>
+                    {/* Removing a taller alias moves every project: the admin's. */}
+                    {editCatalog && (
+                      <button
+                        type="button"
+                        aria-label={`Quitar la clave del taller de ${alias.concept_code}`}
+                        onClick={() => setConfirm(alias)}
+                        className="rounded-md p-1 text-faint transition-colors hover:bg-danger-soft hover:text-danger"
+                      >
+                        <Trash size={14} />
+                      </button>
+                    )}
                   </Td>
                 </tr>
               ))}

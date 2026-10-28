@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -20,6 +21,7 @@ import {
 import {
   Badge,
   Button,
+  buttonClasses,
   Callout,
   Card,
   Input,
@@ -60,6 +62,7 @@ const PARAMETROS_TABS = ["supuestos", "indirectos", "insumos"] as const;
 type ParametrosTab = (typeof PARAMETROS_TABS)[number];
 
 export default function ParametrosPage() {
+  const caps = useCapabilities();
   const { id } = useParams<{ id: string }>();
   // Una vista a la vez (?tab=): supuestos, análisis de indirectos o insumos.
   const [tab, setTabState] = useState<ParametrosTab>("supuestos");
@@ -393,8 +396,8 @@ export default function ParametrosPage() {
           <Callout
             tone="warning"
             action={
-              <Link href={`/proyecto/${id}`} className="inline-flex">
-                <Button size="sm">Ruta de verificación</Button>
+              <Link href={`/proyecto/${id}`} className={buttonClasses("secondary", "sm")}>
+                Ruta de verificación
               </Link>
             }
           >
@@ -540,7 +543,7 @@ export default function ParametrosPage() {
               />
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          {caps.editProject && <div className="flex items-center gap-2">
             <Button onClick={() => setConfirm("reset")} disabled={busy || !!conflict}>
               <ArrowCounterClockwise /> Restablecer
             </Button>
@@ -557,7 +560,7 @@ export default function ParametrosPage() {
               )}
               {dirty ? "Recalcular" : "Actualizado"}
             </Button>
-          </div>
+          </div>}
         </div>
       </div>
 

@@ -13,6 +13,8 @@
  * "Guardar" de una tarjeta también sube lo que esté tecleado en la otra.
  */
 
+import { refreshOnRoleRefusal } from "@/lib/session";
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useState } from "react";
 import {
   apiMessage,
@@ -35,6 +37,7 @@ export function IntegracionSection({
   onError: (message: string) => void;
   onNotice: (message: string) => void;
 }) {
+  const { editCatalog } = useCapabilities();
   const [rubros, setRubros] = useState<RubroIndirecto[]>([]);
   const [volumen, setVolumen] = useState(0);
   const [financiamiento, setFinanciamiento] = useState<AnalisisFinanciamiento>({
@@ -77,6 +80,7 @@ export function IntegracionSection({
       onNotice(notice);
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo guardar la integración del precio."));
     } finally {
       busySetter(false);
@@ -115,7 +119,8 @@ export function IntegracionSection({
           </div>
         )}
         {loaded && (
-          <>
+          // Members read the taller's figures; changing them is the admin's.
+          <fieldset disabled={!editCatalog} className="contents">
             <RubrosEditor rubros={rubros} onChange={setRubros} baseAnual />
             <label className="mt-4 flex items-center justify-between gap-3 text-sm">
               <span className="text-muted">Volumen anual contratado (MXN)</span>
@@ -135,7 +140,7 @@ export function IntegracionSection({
                 {money2(costoAnual)} ÷ {money2(volumen)} = {pctDerivado.toFixed(4)} %
               </p>
             )}
-            <Button
+            {editCatalog && <Button
               size="sm"
               variant="primary"
               className="mt-4"
@@ -143,8 +148,8 @@ export function IntegracionSection({
               onClick={() => save(setOficinaBusy, "Oficina central guardada.")}
             >
               {oficinaBusy ? "Guardando…" : "Guardar oficina central"}
-            </Button>
-          </>
+            </Button>}
+          </fieldset>
         )}
       </Card>
 
@@ -159,7 +164,8 @@ export function IntegracionSection({
           </div>
         )}
         {loaded && (
-          <>
+          // Members read the taller's figures; changing them is the admin's.
+          <fieldset disabled={!editCatalog} className="contents">
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="microlabel">Tasa anual (%)</span>
@@ -214,7 +220,7 @@ export function IntegracionSection({
               Si falta alguno de los cuatro datos, el financiamiento se queda en el porcentaje
               declarado.
             </p>
-            <Button
+            {editCatalog && <Button
               size="sm"
               variant="primary"
               className="mt-4"
@@ -222,8 +228,8 @@ export function IntegracionSection({
               onClick={() => save(setFinanciamientoBusy, "Financiamiento guardado.")}
             >
               {financiamientoBusy ? "Guardando…" : "Guardar financiamiento"}
-            </Button>
-          </>
+            </Button>}
+          </fieldset>
         )}
       </Card>
     </div>
