@@ -7,6 +7,9 @@ export { apiMessage } from "./api";
 
 import { API_BASE, ApiError } from "@/lib/api";
 
+/** Mirrors MIN_LENGTH in apps/api/auth/passwords.py; the server still has the last word. */
+export const PASSWORD_MIN = 10;
+
 export type AuthUser = {
   user_id: string;
   email: string;

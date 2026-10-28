@@ -5,7 +5,7 @@ import Link from "next/link";
 import { CheckCircle } from "@phosphor-icons/react";
 import { apiMessage, confirmVerification } from "@/lib/session";
 import { AuthFrame, useQueryParam } from "@/components/AuthFrame";
-import { buttonClasses, Callout, Card, Skeleton } from "@/components/ui";
+import { buttonClasses, Callout, Skeleton } from "@/components/ui";
 
 type State =
   | { kind: "loading" }
@@ -44,32 +44,32 @@ export default function VerificarPage() {
   return (
     <AuthFrame title="Confirmar correo">
       {state.kind === "loading" ? (
-        <Card className="p-6">
+        <div>
           <Skeleton className="h-4 w-40" />
           <Skeleton className="mt-3 h-9" />
-        </Card>
+        </div>
       ) : state.kind === "error" ? (
-        <Card className="p-6">
+        <div>
           <Callout tone="danger">{state.message}</Callout>
           <Link href="/cuenta" className={buttonClasses("secondary", "md", "mt-4 w-full")}>
             Ir a mi cuenta
           </Link>
-        </Card>
+        </div>
       ) : (
-        <Card className="p-6 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success-soft text-success">
+        <div>
+          <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-success-soft text-success">
             <CheckCircle size={24} weight="duotone" />
           </div>
           <p className="font-medium">Correo confirmado</p>
-          <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
+          <p className="mt-1 text-sm text-muted">
             {state.changed
               ? `Desde ahora entras con ${state.email}.`
               : `${state.email} queda verificado en tu cuenta.`}
           </p>
-          <Link href="/" className={buttonClasses("primary", "md", "mt-4")}>
+          <Link href="/" className={buttonClasses("primary", "md", "mt-6 w-full")}>
             Ir a los proyectos
           </Link>
-        </Card>
+        </div>
       )}
     </AuthFrame>
   );

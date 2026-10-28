@@ -13,7 +13,8 @@ import {
   type InvitationInfo,
 } from "@/lib/session";
 import { AuthFrame, useQueryParam } from "@/components/AuthFrame";
-import { Badge, buttonClasses, Callout, Card, Input, Skeleton } from "@/components/ui";
+import { Divider, Field, PasswordField } from "@/components/AuthFields";
+import { Badge, buttonClasses, Callout, Input, Skeleton } from "@/components/ui";
 
 type State =
   | { kind: "loading" }
@@ -63,13 +64,13 @@ export default function InvitacionPage() {
       }
     >
       {state.kind === "loading" ? (
-        <Card className="p-6">
+        <div>
           <Skeleton className="h-4 w-56" />
           <Skeleton className="mt-3 h-9" />
           <Skeleton className="mt-2 h-9" />
-        </Card>
+        </div>
       ) : state.kind === "service-error" ? (
-        <Card className="p-6">
+        <div>
           <Callout tone="warning">
             No pudimos consultar la invitación. Revisa tu conexión e inténtalo de nuevo.
           </Callout>
@@ -77,13 +78,13 @@ export default function InvitacionPage() {
             onClick={() => { setState({ kind: "loading" }); setAttempt((n) => n + 1); }}>
             Reintentar
           </button>
-        </Card>
+        </div>
       ) : state.kind === "missing" ? (
-        <Card className="p-6">
+        <div>
           <Callout tone="danger">
             No encontramos esta invitación. Pide a tu administrador que la genere de nuevo.
           </Callout>
-        </Card>
+        </div>
       ) : state.info.state !== "open" ? (
         <ClosedCard state={state.info.state} />
       ) : (
@@ -95,7 +96,7 @@ export default function InvitacionPage() {
 
 function ClosedCard({ state }: { state: InvitationInfo["state"] }) {
   return (
-    <Card className="p-6">
+    <div>
       <Callout tone={state === "accepted" ? "info" : "warning"}>
         {state === "accepted"
           ? "Esta invitación ya se usó. Entra con tu correo y contraseña."
@@ -106,7 +107,7 @@ function ClosedCard({ state }: { state: InvitationInfo["state"] }) {
           Entrar
         </Link>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -114,16 +115,11 @@ function AcceptCard({ info, token }: { info: InvitationInfo; token: string }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (password !== confirm) {
-      setError("Las contraseñas no coinciden.");
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
@@ -139,7 +135,7 @@ function AcceptCard({ info, token }: { info: InvitationInfo; token: string }) {
   const projects = info.project_count;
 
   return (
-    <Card className="p-6">
+    <div>
       <div className="mb-5 flex items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent">
           <HandWaving size={20} weight="duotone" />
@@ -168,48 +164,36 @@ function AcceptCard({ info, token }: { info: InvitationInfo; token: string }) {
           <p className="mt-2 text-center text-xs text-muted">
             Debe ser la cuenta de Google de {info.email}.
           </p>
-          <div className="my-5 flex items-center gap-3 text-xs text-faint">
-            <span className="h-px flex-1 bg-border" />
-            o con contraseña
-            <span className="h-px flex-1 bg-border" />
-          </div>
+          <Divider>o con contraseña</Divider>
         </>
       )}
 
-      <form onSubmit={submit} className="space-y-3">
-        <Input
-          aria-label="Nombre y apellido"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Nombre y apellido"
-          maxLength={80}
-          autoFocus
-          required
-          className="w-full"
-        />
-        <Input
-          type="password"
-          aria-label="Contraseña"
+      <form onSubmit={submit} className="space-y-4">
+        <Field label="Nombre y apellido" htmlFor="nombre">
+          <Input
+            id="nombre"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoComplete="name"
+            maxLength={80}
+            autoFocus
+            required
+            className="w-full"
+          />
+        </Field>
+        <PasswordField
+          id="contrasena"
+          label="Contraseña"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Contraseña (mínimo 8 caracteres)"
+          onChange={setPassword}
           autoComplete="new-password"
-          minLength={8}
-          required
-          className="w-full"
+          rule
         />
-        <Input
-          type="password"
-          aria-label="Repite la contraseña"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          placeholder="Repite la contraseña"
-          autoComplete="new-password"
-          minLength={8}
-          required
-          className="w-full"
-        />
-        {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+        {error && (
+          <div role="alert">
+            <Callout tone="danger">{error}</Callout>
+          </div>
+        )}
         <button
           type="submit"
           className={buttonClasses(info.google_enabled ? "secondary" : "primary", "md", "w-full")}
@@ -218,6 +202,6 @@ function AcceptCard({ info, token }: { info: InvitationInfo; token: string }) {
           Crear cuenta y entrar <ArrowRight size={15} weight="bold" />
         </button>
       </form>
-    </Card>
+    </div>
   );
 }

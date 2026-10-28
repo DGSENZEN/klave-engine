@@ -20,6 +20,7 @@ import { Copilot } from "@/components/Copilot";
 const SIN_COPILOTO = [
   "/compartido",
   "/bienvenida",
+  "/registro",
   "/invitacion",
   "/recuperar",
   "/restablecer",

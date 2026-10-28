@@ -24,6 +24,7 @@ from apps.api.auth.common import (
     users_dependency,
     web_link,
 )
+from apps.api.auth.passwords import password_problem
 from apps.api.auth.store import UsersDbUnavailable, UserStore
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS
@@ -256,6 +257,12 @@ def accept_invitation(
                     "error_type": "invitation_closed",
                     "message": "La invitación ya no está abierta; pide una nueva.",
                 },
+            )
+        # Same policy as register and reset: an invitation is not a side door.
+        problem = password_problem(body.password, invite["email"])
+        if problem:
+            raise HTTPException(
+                status_code=422, detail={"error_type": "weak_password", "message": problem}
             )
         if users.get_by_email(invite["email"]):
             raise HTTPException(
