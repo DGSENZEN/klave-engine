@@ -131,3 +131,29 @@ test("X en el visor pide el motivo y Enter excluye con él", async ({ page }) =>
     })
     .toBe(true);
 });
+
+test("la primera estimación sale del catálogo del contrato", async ({ page }) => {
+  test.setTimeout(180_000);
+  const id = await obraLista(page);
+
+  await page.goto(`/proyecto/${id}/contrato`);
+  await expect(page.getByRole("heading", { name: "Catálogo del contrato" })).toBeVisible();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "catalogo-contrato.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(
+      "Clave,Descripción,Unidad,Cantidad\nCON-001,Concreto en zapatas,m3,12.5\nCON-002,Acero de refuerzo,kg,850\n",
+    ),
+  });
+  // Si ya había catálogo (una corrida anterior), reemplazarlo pide confirmación.
+  const reemplazo = page.getByRole("alertdialog");
+  if (await reemplazo.isVisible().catch(() => false)) {
+    await reemplazo.getByRole("button", { name: "Reemplazar catálogo" }).click();
+  }
+  await expect(page.getByText("CON-002").first()).toBeVisible({ timeout: 30_000 });
+
+  await page.goto(`/proyecto/${id}/estimaciones`);
+  await page.getByRole("button", { name: "Capturar la estimación 1" }).click();
+  await expect(page.getByText("CON-001").first()).toBeVisible();
+  await expect(page.getByText("CON-002").first()).toBeVisible();
+});
