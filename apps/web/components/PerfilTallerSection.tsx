@@ -64,8 +64,8 @@ export function PerfilTallerSection({
           Cada vez que alguien confirma, excluye o reasigna un elemento en Revisión, Klave anota el
           bloque y la capa con que estaba dibujado. Con {state?.firme ?? 3} a favor y ninguna en
           contra, un bloque de castillo, columna o pilote entra solo a la lectura del siguiente
-          proceso — dicho en el renglón y excluible como cualquier otro. Lo que tu taller excluye
-          nunca se quita: entra con una duda. Nada de esto sale de tu taller.
+          proceso. El renglón lo dice y se puede excluir como cualquier otro. Lo que tu taller
+          excluye sigue en la lectura, marcado con una duda. Nada de esto sale de tu taller.
         </p>
       </div>
       {failed ? (
@@ -78,7 +78,7 @@ export function PerfilTallerSection({
         </Callout>
       ) : (
         <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-sm">
+          <table className="w-full text-data">
             <thead>
               <tr>
                 <Th>Dibujado como</Th>

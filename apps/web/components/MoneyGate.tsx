@@ -8,7 +8,7 @@ import {
   type CostReport,
   type MoneyGateState,
 } from "@/lib/api";
-import { Button, Callout, Card, Select } from "@/components/ui";
+import { Button, buttonClasses, Callout, Card, Select } from "@/components/ui";
 
 // Re-exported so the existing `import { MoneyGateState } from
 // "@/components/MoneyGate"` call sites keep working: the type itself now
@@ -41,14 +41,14 @@ export function UnverifiedBanner({
       <Callout
         tone="warning"
         action={
-          <Link href={`/proyecto/${id}/resumen`} className="inline-flex">
-            <Button size="sm">Ruta de verificación</Button>
+          <Link href={`/proyecto/${id}/resumen`} className={buttonClasses("secondary", "sm")}>
+            Ruta de verificación
           </Link>
         }
       >
-        <span className="font-medium">Sin verificar.</span> Importes calculados con unidades
+        <span className="font-medium">Sin verificar.</span> Los importes usan unidades
         leídas del archivo ({units?.unit} · {Math.round((units?.confidence ?? 0) * 100)} %)
-        que nadie ha confirmado; el Excel sale marcado SIN VERIFICAR hasta que se confirmen
+        que nadie ha confirmado. El Excel sale marcado SIN VERIFICAR hasta que se confirmen
         unidades y detecciones.
       </Callout>
     </div>
@@ -111,7 +111,7 @@ export function UnitsGate({
           <h2 className="text-[0.95rem] font-semibold">Primero, las unidades</h2>
           <p className="text-sm text-muted">
             Todo el dinero se multiplica por esta escala. El plano no la declara con
-            certeza, así que no mostramos importes hasta que la confirmes.
+            certeza; los importes aparecen cuando la confirmes.
           </p>
         </div>
       </div>
@@ -137,7 +137,7 @@ export function UnitsGate({
         </Button>
       </div>
       <p className="mt-3 flex items-start gap-1.5 text-xs text-muted">
-        <Warning size={13} className="mt-0.5 shrink-0" />
+        <Warning size={14} className="mt-0.5 shrink-0" />
         Mide una cota conocida en el visor si dudas: una puerta de 0.90 debe medir 0.90 en
         metros, 90 en centímetros.
       </p>

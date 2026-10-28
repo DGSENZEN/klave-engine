@@ -77,7 +77,7 @@ export default function ApusPage() {
 
   if (error) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Precios unitarios" />
         <Callout tone="danger">
           No se pudo cargar el análisis de precios unitarios. Revisa que el servidor esté
@@ -89,7 +89,7 @@ export default function ApusPage() {
 
   if (!costs) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <SkeletonHeader />
         <SkeletonMetrics count={3} />
         <SkeletonCards count={4} />
@@ -99,7 +99,7 @@ export default function ApusPage() {
 
   if (moneyState(costs) === "blocked") {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Precios unitarios" />
         <UnitsGate id={id} costs={costs} actorName={actorName} />
       </div>
@@ -116,16 +116,16 @@ export default function ApusPage() {
   const dominant = Object.entries(resourceTotals).sort((a, b) => b[1] - a[1])[0];
 
   return (
-    <div className="rise-in px-6 py-7 lg:px-8">
+    <div className="px-4 py-5 sm:px-6">
       <PageHeader
         title="Precios unitarios"
         sub="Análisis de precio unitario (APU) por concepto: recursos, rendimientos e importes por unidad de obra."
         actions={
           <Button onClick={exportApus} disabled={exporting || allApus.length === 0}>
             {exporting ? (
-              <CircleNotch size={15} className="animate-spin" />
+              <CircleNotch className="animate-spin" />
             ) : (
-              <DownloadSimple size={15} weight="bold" />
+              <DownloadSimple />
             )}
             {exporting ? "Generando…" : "Exportar APUs (Excel)"}
           </Button>
@@ -151,7 +151,7 @@ export default function ApusPage() {
         <Metric
           label="Conceptos analizados"
           value={allApus.length}
-          icon={<Calculator size={16} weight="duotone" />}
+          icon={<Calculator />}
         />
         <Metric
           label="P.U. adoptados de referencia"
@@ -194,7 +194,7 @@ export default function ApusPage() {
 
       {allApus.length === 0 ? (
         <EmptyState
-          icon={<Calculator size={22} weight="duotone" />}
+          icon={<Calculator size={20} weight="duotone" />}
           title="Este procesamiento no incluye APUs"
           hint="Vuelve a procesar el proyecto para generar el análisis de precios unitarios."
         />
@@ -263,8 +263,7 @@ function ApuCard({
           <div className="text-xs text-muted">por {apu.unit}</div>
         </div>
         <CaretDown
-          size={16}
-          weight="bold"
+          size={12}
           className={`shrink-0 text-faint transition-transform ${open ? "rotate-180" : ""}`}
         />
       </button>
@@ -272,13 +271,13 @@ function ApuCard({
       {open && apu.price_source && apu.lines.length === 0 ? (
         <div className="border-t border-border px-5 py-4 text-sm text-muted">
           Precio unitario adoptado de <span className="text-foreground">{apu.price_source}</span>:
-          este concepto no se integra por matriz mientras el precio adoptado esté activo
-          (se cambia en el Catálogo).
+          mientras esté activo, este concepto no se integra por matriz. Se cambia en el
+          Catálogo.
         </div>
       ) : open && (
         <div className="border-t border-border">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr className="border-b border-border bg-surface-2">
                   <Th>Recurso</Th>

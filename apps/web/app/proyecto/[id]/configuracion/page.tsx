@@ -120,7 +120,7 @@ export default function ConfiguracionPage() {
 
   if (!project && error) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Configuración del proyecto" />
         <Callout tone="danger">{error}</Callout>
       </div>
@@ -128,7 +128,7 @@ export default function ConfiguracionPage() {
   }
   if (!project) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <SkeletonHeader />
         <Skeleton className="h-64" />
       </div>
@@ -136,7 +136,7 @@ export default function ConfiguracionPage() {
   }
 
   return (
-    <div className="rise-in mx-auto max-w-3xl px-6 py-7 lg:px-8">
+    <div className="max-w-3xl px-4 py-5 sm:px-6">
       <PageHeader
         title="Configuración del proyecto"
         sub="Organización, acceso del equipo y acciones sobre este proyecto."
@@ -195,23 +195,23 @@ export default function ConfiguracionPage() {
       {protectedMode && <AccessCard projectId={id} />}
 
       <Card className="p-5">
-        <SectionTitle sub="Archivar lo oculta de la lista activa; quitarlo lo saca de la lista, y puede además borrar sus archivos del disco.">
+        <SectionTitle sub="Archivar lo oculta de la lista activa. Quitarlo lo saca de la lista y, si lo eliges, también borra sus archivos del disco.">
           Acciones
         </SectionTitle>
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={toggleArchived}>
             {project.archived ? (
               <>
-                <ArrowCounterClockwise size={15} weight="bold" /> Restaurar
+                <ArrowCounterClockwise /> Restaurar
               </>
             ) : (
               <>
-                <Archive size={15} weight="bold" /> Archivar
+                <Archive /> Archivar
               </>
             )}
           </Button>
           <Button variant="danger" onClick={() => setRemoveOpen(true)}>
-            <Trash size={15} weight="bold" /> Quitar de la lista…
+            <Trash /> Quitar de la lista…
           </Button>
         </div>
       </Card>
@@ -277,6 +277,8 @@ function AccessCard({ projectId }: { projectId: string }) {
     reload();
   }, [reload]);
 
+  const [confirmarPropietario, setConfirmarPropietario] = useState(false);
+
   async function grant() {
     if (!email.trim()) return;
     setError(null);
@@ -321,7 +323,7 @@ function AccessCard({ projectId }: { projectId: string }) {
         <>
           {access.members.length === 0 ? (
             <p className="mb-4 flex items-center gap-2 text-sm text-muted">
-              <UsersThree size={16} /> Nadie más tiene acceso todavía.
+              <UsersThree /> Nadie más tiene acceso todavía.
             </p>
           ) : (
             <ul className="mb-4 divide-y divide-border">
@@ -365,10 +367,25 @@ function AccessCard({ projectId }: { projectId: string }) {
               <option value="editor">Edición</option>
               <option value="owner">Propietario</option>
             </Select>
-            <Button variant="primary" onClick={grant} disabled={!email.trim()}>
+            <Button
+              variant="primary"
+              onClick={() => (role === "owner" ? setConfirmarPropietario(true) : void grant())}
+              disabled={!email.trim()}
+            >
               Compartir
             </Button>
           </div>
+          <ConfirmDialog
+            open={confirmarPropietario}
+            title={`Dar Propietario a ${(access.invitable.find((u) => u.email === email.trim())?.name ?? email.trim()) || "esta persona"} — podrá compartir, cerrar nodos y eliminar el proyecto`}
+            description="El propietario tiene el mismo control que tú sobre este proyecto. Para trabajar en él basta con Edición."
+            confirmLabel="Dar Propietario"
+            onCancel={() => setConfirmarPropietario(false)}
+            onConfirm={() => {
+              setConfirmarPropietario(false);
+              void grant();
+            }}
+          />
           <ConfirmDialog
             open={revokeTarget !== null}
             title="Quitar acceso al proyecto"

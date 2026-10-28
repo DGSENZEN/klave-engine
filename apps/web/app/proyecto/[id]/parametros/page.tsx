@@ -149,7 +149,7 @@ export default function ParametrosPage() {
     if (!latestEvent) return;
     if (latestEvent.type === "costing_updated" && isRemoteEvent(latestEvent) && dirty) {
       const handle = window.setTimeout(() => {
-        setConflict(`${actorLabel(latestEvent.actor)} actualizó los parámetros — recargar`);
+        setConflict(`${actorLabel(latestEvent.actor)} actualizó los parámetros.`);
       }, 0);
       return () => window.clearTimeout(handle);
     }
@@ -209,7 +209,7 @@ export default function ParametrosPage() {
   }
 
   function conflictMessage(detail: ConflictDetail | undefined) {
-    return `${actorLabel(detail?.updated_by)} actualizó los parámetros — recargar`;
+    return `${actorLabel(detail?.updated_by)} actualizó los parámetros.`;
   }
 
   function handleSaveError(err: unknown) {
@@ -327,7 +327,7 @@ export default function ParametrosPage() {
 
   if (!config && error) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Parámetros e insumos" />
         <Callout tone="danger">{error}</Callout>
       </div>
@@ -335,7 +335,7 @@ export default function ParametrosPage() {
   }
   if (!config) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <SkeletonHeader />
         <div className="grid gap-4 lg:grid-cols-3">
           {Array.from({ length: 3 }, (_, card) => (
@@ -357,7 +357,7 @@ export default function ParametrosPage() {
   }
 
   return (
-    <div className="rise-in px-6 py-7 pb-32 lg:px-8">
+    <div className="px-4 py-5 pb-32 sm:px-6">
       <PageHeader
         title="Parámetros e insumos"
         sub="Ajusta supuestos, porcentajes y precios; el presupuesto se recalcula al instante (sin volver a detectar)."
@@ -399,8 +399,8 @@ export default function ParametrosPage() {
             }
           >
             <span className="font-medium">Sin precio.</span> Puedes ajustar parámetros y
-            precios, pero no mostramos importes mientras la escala del plano no esté
-            confirmada: todo el dinero se multiplica por ella.
+            precios. Los importes se ocultan hasta confirmar la escala del plano, porque todo
+            el dinero se multiplica por ella.
           </Callout>
         </div>
       )}
@@ -473,7 +473,7 @@ export default function ParametrosPage() {
           </SectionTitle>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-data">
             <thead>
               <tr className="bg-surface-2">
                 <Th className="px-5">Insumo</Th>
@@ -542,7 +542,7 @@ export default function ParametrosPage() {
           </div>
           <div className="flex items-center gap-2">
             <Button onClick={() => setConfirm("reset")} disabled={busy || !!conflict}>
-              <ArrowCounterClockwise size={15} weight="bold" /> Restablecer
+              <ArrowCounterClockwise /> Restablecer
             </Button>
             <Button
               variant="primary"
@@ -551,9 +551,9 @@ export default function ParametrosPage() {
               className="px-4"
             >
               {busy ? (
-                <CircleNotch size={15} className="animate-spin" />
+                <CircleNotch className="animate-spin" />
               ) : (
-                <Calculator size={15} weight="bold" />
+                <Calculator />
               )}
               {dirty ? "Recalcular" : "Actualizado"}
             </Button>

@@ -1262,6 +1262,13 @@ export const siguienteEstimacion = (id: string, inicio: string, fin: string) =>
     {},
   );
 
+/** La estimación 1, sembrada del catálogo del contrato (borrador sin guardar). */
+export const primeraEstimacion = (id: string, inicio: string, fin: string) =>
+  postJSON<EstimacionConResumen>(
+    `/projects/${id}/estimaciones/primera?inicio=${inicio}&fin=${fin}`,
+    {},
+  );
+
 /**
  * Convenios modificatorios y finiquito: el contrato cuando cambia y cuando
  * termina.

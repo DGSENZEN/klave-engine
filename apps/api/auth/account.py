@@ -1,5 +1,5 @@
-"""The signed-in user's own account: profile, password, sessions, Google
-link — plus the admin-only activity log."""
+"""The signed-in user's own account: profile, password, sessions — plus the
+admin-only activity log."""
 
 from typing import Literal
 
@@ -104,7 +104,7 @@ def change_password(
     request: Request,
     users: UserStore = Depends(users_dependency),
 ) -> dict:
-    """Change (or set, for Google-only accounts) the password. Every other
+    """Change (or set, for an account without one) the password. Every other
     session is revoked; the current one stays signed in."""
     rate_limit(request, "password")
     try:
@@ -185,29 +185,6 @@ def logout_all(
     except UsersDbUnavailable as exc:
         raise db_unavailable() from exc
     return {"ok": True, "sessions_revoked": revoked}
-
-
-@router.post("/google/unlink")
-def unlink_google(request: Request, users: UserStore = Depends(users_dependency)) -> dict:
-    try:
-        user = require_user(request, users)
-        if not user.get("google_sub"):
-            raise HTTPException(
-                status_code=422,
-                detail={"error_type": "not_linked", "message": "Esta cuenta no usa Google."},
-            )
-        if not users.unlink_google(str(user["user_id"])):
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "error_type": "needs_password",
-                    "message": "Define una contraseña antes de desvincular Google.",
-                },
-            )
-        audit(users, user, "google_unlinked", target_type="user", target_id=str(user["user_id"]))
-    except UsersDbUnavailable as exc:
-        raise db_unavailable() from exc
-    return {"ok": True}
 
 
 @router.get("/audit")

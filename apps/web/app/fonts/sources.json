@@ -16,5 +16,11 @@
     "file": "SpaceGrotesk.woff2",
     "source": "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2",
     "license": "https://raw.githubusercontent.com/google/fonts/main/ofl/spacegrotesk/OFL.txt"
+  },
+  {
+    "family": "Archivo",
+    "file": "Archivo.woff2",
+    "source": "https://cdn.jsdelivr.net/npm/@fontsource-variable/archivo@5.2.6/files/archivo-latin-standard-normal.woff2",
+    "license": "https://raw.githubusercontent.com/google/fonts/main/ofl/archivo/OFL.txt"
   }
 ]

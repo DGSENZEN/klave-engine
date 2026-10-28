@@ -307,7 +307,7 @@ export function EstructuraSection({
       <p className="mt-1 max-w-2xl text-sm text-muted">
         Lo que el plano dice de cada familia y de dónde sale cada valor. Los hallazgos son del
         propio plano: lo que falta, lo que se supone y lo que se contradice. Cuando el plano da dos
-        valores, la lectura no escoge: decide tú, con una nota.
+        valores, eliges tú y dejas una nota.
       </p>
     </div>
   );
@@ -367,7 +367,7 @@ export function EstructuraSection({
       {error && <Callout tone="danger">{error}</Callout>}
 
       <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full text-sm">
+        <table className="w-full text-data">
           <thead>
             <tr>
               <Th>Familia</Th>
@@ -394,7 +394,7 @@ export function EstructuraSection({
                 <Td
                   align="right"
                   className="tabular-nums"
-                  title="Datos críticos que da el plano (ni supuesto, ni regla, ni IA), de los que la familia necesita"
+                  title="De los datos críticos que la familia necesita, cuántos da el plano. Supuestos, reglas e IA no cuentan aquí."
                 >
                   {r.criticos_total
                     ? `${num(r.criticos_del_plano, 0)} de ${num(r.criticos_total, 0)}`
@@ -518,7 +518,7 @@ export function EstructuraSection({
         title="Quitar la decisión"
         description={
           quitar
-            ? `${quitar.marca} · ${nombreCampo(quitar.campo)}: vuelve a lo que dice el plano, y el presupuesto se recalcula como si la decisión nunca hubiera estado.`
+            ? `${quitar.marca} · ${nombreCampo(quitar.campo)}: vuelve a lo que dice el plano y el presupuesto se recalcula sin la decisión.`
             : ""
         }
         confirmLabel="Quitar la decisión"

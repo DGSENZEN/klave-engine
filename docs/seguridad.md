@@ -14,8 +14,8 @@ Todo lo de esta página está implementado y probado; nada es aspiracional.
 nuevo** (queda como su administrador, activo al instante) o **pedir unirse**
 al taller existente (queda pendiente hasta que un administrador apruebe).
 `KLAVE_REGISTRATION=invite_only`: solo los enlaces de invitación crean
-cuentas — el registro y el alta por Google sin invitación se rechazan con
-un mensaje claro, y la pantalla de entrada lo dice.
+cuentas — el registro sin invitación se rechaza con un mensaje claro, y la
+pantalla de entrada lo dice.
 
 ## Cuentas y sesiones
 
@@ -26,9 +26,6 @@ un mensaje claro, y la pantalla de entrada lo dice.
   SameSite configurable); lista de sesiones con dispositivo/IP y "cerrar las
   demás" (con confirmación). Cambiar la contraseña o restablecerla revoca
   todas las demás sesiones.
-- **Google**: `iss`/`aud`/`exp` validados y `email_verified` exigido. Una
-  cuenta existente **nunca** se liga por coincidencia de correo: se liga
-  desde *Tu cuenta* con la sesión abierta.
 - **Recuperación**: enlaces de un solo uso con expiración; sin proveedor de
   correo, el enlace se muestra al administrador (y el outbox local es solo
   texto, permisos 600, barrido a los 7 días).

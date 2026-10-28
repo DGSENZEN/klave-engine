@@ -131,7 +131,7 @@ export function PlantillaCampo({ id }: { id: string }) {
   return (
     <Card className="p-5">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <SectionTitle sub="RLOPSRM art. 45-A-XI-d. Es costo indirecto de campo: no sale del presupuesto, se captura y se calendariza sobre el mismo programa.">
+        <SectionTitle sub="RLOPSRM art. 45-A-XI-d. Es costo indirecto de campo: se captura a mano y se calendariza sobre el mismo programa.">
           Personal técnico, administrativo y de servicio
         </SectionTitle>
         <div className="flex shrink-0 gap-2">
@@ -175,15 +175,14 @@ export function PlantillaCampo({ id }: { id: string }) {
             y se desecha en la apertura.
           </Callout>
           <p className="text-sm text-muted">
-            El motor puede proponer <strong>qué puestos</strong> lleva una obra de esta
-            duración y con estos frentes — un residente por frente, un velador siempre, un
-            topógrafo mientras se traza. No propone sueldos: eso es dinero de tu taller y
-            lo capturas tú.
+            Klave puede proponer <strong>qué puestos</strong> lleva una obra de esta
+            duración y con estos frentes: un residente por frente, un velador siempre, un
+            topógrafo mientras se traza. Los sueldos son dinero de tu taller y los capturas tú.
           </p>
           <ul className="grid gap-1.5 text-sm sm:grid-cols-2">
             {data.sugerida.map((c) => (
               <li key={c.puesto} className="flex gap-2">
-                <UsersThree size={15} weight="duotone" className="mt-0.5 shrink-0 text-muted" />
+                <UsersThree className="mt-0.5 shrink-0 text-muted" />
                 <span>
                   <span className="font-medium">
                     {c.cantidad > 1 ? `${c.cantidad}× ` : ""}
@@ -324,7 +323,7 @@ export function PlantillaCampo({ id }: { id: string }) {
                       className="text-muted transition hover:text-danger"
                       aria-label={`Quitar ${cargo.puesto || `renglón ${index + 1}`}`}
                     >
-                      <Trash size={15} weight="duotone" />
+                      <Trash />
                     </button>
                   </Td>
                 </tr>
@@ -336,7 +335,7 @@ export function PlantillaCampo({ id }: { id: string }) {
               variant="ghost"
               onClick={() => setBorrador([...cargos, { ...CARGO_NUEVO }])}
             >
-              <Plus size={14} weight="bold" /> Agregar puesto
+              <Plus size={14} /> Agregar puesto
             </Button>
             {!data.plantilla.length && (
               <Button
@@ -399,7 +398,7 @@ export function PlantillaCampo({ id }: { id: string }) {
                       <Td align="right" className="tabular-nums">
                         {r.sin_sueldo ? (
                           <span className="inline-flex items-center gap-1 text-warning">
-                            <Warning size={13} weight="bold" /> sin sueldo
+                            <Warning size={14} /> sin sueldo
                           </span>
                         ) : (
                           money(r.importe)

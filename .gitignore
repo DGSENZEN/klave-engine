@@ -52,3 +52,11 @@ apps/web/.env.local
 data/
 apps/web/test-results/
 apps/web/playwright-report/
+
+# Session worktrees created by Claude Code
+.claude/worktrees/
+
+# Impeccable: local captures, decision-page state and hook cache
+.impeccable/review/
+.impeccable/questions/
+.impeccable/hook.cache.json

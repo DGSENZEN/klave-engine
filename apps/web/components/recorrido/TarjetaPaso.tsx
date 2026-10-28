@@ -79,7 +79,7 @@ export function TarjetaPaso({
   let cuerpo = paso?.cuerpo ?? capitulo.transferencia;
   if (fueraDeRuta) {
     titulo = "Saliste del recorrido";
-    cuerpo = "Sigue explorando con calma; cuando quieras, vuelve al paso donde ibas.";
+    cuerpo = "Sigue explorando; cuando quieras, vuelve al paso donde ibas.";
   } else if (anclaPerdida) {
     cuerpo = `No encuentro esto en esta pantalla. ${paso?.cuerpo ?? ""}`;
   }
@@ -131,7 +131,7 @@ export function TarjetaPaso({
                     ? "Terminar"
                     : "Siguiente capítulo"
                   : "Siguiente"}
-                <ArrowRight size={14} weight="bold" />
+                <ArrowRight size={14} />
               </Button>
             )}
             {hacerVivo && (
@@ -144,11 +144,11 @@ export function TarjetaPaso({
         <span className="ml-auto flex items-center gap-1">
           {indice > 0 && !fueraDeRuta && (
             <Button variant="ghost" size="sm" onClick={onAtras} aria-label="Paso anterior">
-              <ArrowLeft size={14} weight="bold" />
+              <ArrowLeft size={14} />
             </Button>
           )}
           <Button variant="ghost" size="sm" onClick={onPausar} aria-label="Pausar el recorrido">
-            <Pause size={14} weight="bold" />
+            <Pause size={14} />
           </Button>
         </span>
       </div>

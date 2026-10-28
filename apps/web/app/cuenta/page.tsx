@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import {
   CheckCircle,
   DeviceMobile,
-  GoogleLogo,
   SignOut,
   UsersThree,
   Warning,
@@ -18,13 +17,11 @@ import {
   changePassword,
   fetchAuthStatus,
   getMe,
-  googleLoginUrl,
   listSessions,
   logout,
   logoutOthers,
   revokeSession,
   sendVerification,
-  unlinkGoogle,
   updateMe,
   type AuthStatus,
   type AuthUser,
@@ -85,13 +82,13 @@ export default function CuentaPage() {
   return (
     <div className="min-h-screen">
       <WorkspaceHeader active="cuenta" />
-      <main className="mx-auto max-w-3xl px-5 py-8 sm:px-6">
+      <main className="mx-auto max-w-6xl px-5 py-8 sm:px-6 *:max-w-3xl">
         <PageHeader
           title="Tu cuenta"
           sub="Perfil, acceso y sesiones. Lo que cambies aquí aplica en todos tus dispositivos."
           actions={
             <Button variant="ghost" size="sm" onClick={signOut}>
-              <SignOut size={14} weight="bold" /> Cerrar sesión
+              <SignOut size={14} /> Cerrar sesión
             </Button>
           }
         />
@@ -105,7 +102,7 @@ export default function CuentaPage() {
         ) : (
           <div className="space-y-4">
             <ProfileCard me={me} auth={auth} onChanged={reload} />
-            <AccessCard me={me} auth={auth} onChanged={reload} />
+            <AccessCard me={me} onChanged={reload} />
             <SessionsCard />
             <WorkspaceCard me={me} />
           </div>
@@ -211,11 +208,11 @@ function ProfileCard({
               <span className="font-medium">{me.email}</span>
               {me.email_verified ? (
                 <Badge tone="success">
-                  <CheckCircle size={12} weight="bold" /> Verificado
+                  <CheckCircle size={14} /> Verificado
                 </Badge>
               ) : (
                 <Badge tone="warning">
-                  <Warning size={12} weight="bold" /> Sin verificar
+                  <Warning size={14} /> Sin verificar
                 </Badge>
               )}
             </div>
@@ -277,20 +274,11 @@ function ProfileCard({
 
 /* ----------------------------------------------------------------- access -- */
 
-function AccessCard({
-  me,
-  auth,
-  onChanged,
-}: {
-  me: Me;
-  auth: AuthStatus;
-  onChanged: () => void;
-}) {
+function AccessCard({ me, onChanged }: { me: Me; onChanged: () => void }) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [confirmUnlink, setConfirmUnlink] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -308,16 +296,6 @@ function AccessCard({
       onChanged();
     } catch (e) {
       setError(apiMessage(e, "No se pudo cambiar la contraseña."));
-    }
-  }
-
-  async function doUnlink() {
-    setConfirmUnlink(false);
-    try {
-      await unlinkGoogle();
-      onChanged();
-    } catch (e) {
-      setError(apiMessage(e, "No se pudo desvincular Google."));
     }
   }
 
@@ -353,39 +331,6 @@ function AccessCard({
       {note && <p className="mt-2 text-xs text-success">{note}</p>}
       {error && <p className="mt-2 text-xs text-danger">{error}</p>}
 
-      {auth.google_enabled && (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-          <div className="flex items-center gap-2 text-sm">
-            <GoogleLogo size={16} weight="bold" />
-            {me.has_google ? "Google vinculado a esta cuenta" : "Google no vinculado"}
-          </div>
-          {me.has_google ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={!me.has_password}
-              title={me.has_password ? undefined : "Define una contraseña antes de desvincular"}
-              onClick={() => setConfirmUnlink(true)}
-            >
-              Desvincular
-            </Button>
-          ) : (
-            <a href={googleLoginUrl()} className={buttonClasses("secondary", "sm")}>
-              Vincular Google
-            </a>
-          )}
-        </div>
-      )}
-      {confirmUnlink && (
-        <ConfirmDialog
-          open
-          title="Desvincular Google"
-          description="Dejarás de poder entrar con Google; seguirás entrando con tu contraseña."
-          confirmLabel="Desvincular"
-          onCancel={() => setConfirmUnlink(false)}
-          onConfirm={doUnlink}
-        />
-      )}
     </Card>
   );
 }
@@ -462,7 +407,7 @@ function SessionsCard() {
           {sessions.map((session) => (
             <li key={session.session_id} className="flex items-center gap-3 px-5 py-3">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-foreground">
-                <DeviceMobile size={16} weight="duotone" />
+                <DeviceMobile />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -495,7 +440,7 @@ function WorkspaceCard({ me }: { me: Me }) {
     <Card className="flex flex-wrap items-center justify-between gap-3 p-5">
       <div className="flex items-center gap-3">
         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-surface-2 text-foreground">
-          <UsersThree size={18} weight="duotone" />
+          <UsersThree />
         </span>
         <div>
           <div className="text-sm font-medium">{me.workspace?.name ?? "Taller"}</div>

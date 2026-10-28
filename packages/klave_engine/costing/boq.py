@@ -760,8 +760,8 @@ def generate_bill_of_quantities(
             # stays on the presupuesto marked unpriced so nobody misses it.
             boq.warnings.append(
                 f"Concepto {concept.code} ({concept.description[:40]}…): {result.quantity:,.2f} "
-                f"{concept.unit} contados, sin matriz ni precio adoptado — sin costo hasta que "
-                "el catálogo le dé precio."
+                f"{concept.unit} contados, sin matriz ni precio adoptado; queda sin costo "
+                "hasta que el catálogo le dé precio."
             )
         contributing = result.dets
         # Lo que el plano declaró de esta línea —material y diámetro— va en su
@@ -864,7 +864,7 @@ def generate_bill_of_quantities(
     if stacks_sin_nivel:
         boq.warnings.append(
             f"{len(stacks_sin_nivel)} tiros de bajada ligados sin niveles N.P.T. "
-            "de dónde medir su tramo vertical."
+            "para medir su tramo vertical."
         )
 
     boq.direct_cost_total = round(sum(line.amount for line in boq.lines), 2)

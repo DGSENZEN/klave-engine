@@ -2,50 +2,55 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Buildings } from "@phosphor-icons/react";
-import { ThemeToggle } from "@/components/ThemeToggle";
 
 /**
- * The one frame for every standalone auth screen (bienvenida, recuperar,
- * restablecer, invitación, verificar). Same mark, same place, same width —
- * a user recovering a password at 7 a.m. should not have to re-learn a layout.
+ * What one access screen puts in the frame (app/(acceso)/layout.tsx): a
+ * heading, the task, and at most one line below it. Keep `sub` to a sentence.
  */
 export function AuthFrame({
   title,
   sub,
   children,
   footer,
-  width = "md",
 }: {
   title: string;
   sub?: string;
   children: ReactNode;
   footer?: ReactNode;
-  width?: "md" | "lg";
 }) {
   return (
-    <div
-      className={`mx-auto flex min-h-screen ${
-        width === "lg" ? "max-w-2xl" : "max-w-md"
-      } flex-col justify-center px-5 py-10 sm:px-6`}
-    >
-      <div className="rise-in">
-        <div className="mb-8 flex items-start justify-between gap-4">
-          <Link href="/bienvenida" className="flex items-center gap-3.5">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-fg">
-              <Buildings size={22} weight="duotone" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-              {sub && <p className="text-sm text-muted">{sub}</p>}
-            </div>
-          </Link>
-          <ThemeToggle />
-        </div>
-        {children}
-        {footer && <div className="mt-6 text-center text-sm text-muted">{footer}</div>}
-      </div>
+    <div className="rise-in">
+      <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+      {sub && <p className="mt-1.5 text-sm text-muted">{sub}</p>}
+      <div className="mt-7">{children}</div>
+      {footer && <div className="mt-8 text-center text-sm text-muted">{footer}</div>}
     </div>
+  );
+}
+
+/** Entrar / Crear cuenta as two routes, so either is one click and the back button works. */
+export function AuthSwitch({ current }: { current: "entrar" | "registro" }) {
+  const tabs = [
+    { key: "entrar", href: "/bienvenida", label: "Entrar" },
+    { key: "registro", href: "/registro", label: "Crear cuenta" },
+  ] as const;
+  return (
+    <nav aria-label="Acceso" className="mb-6 flex rounded-lg bg-surface-2 p-0.5">
+      {tabs.map((tab) => (
+        <Link
+          key={tab.key}
+          href={tab.href}
+          aria-current={tab.key === current ? "page" : undefined}
+          className={`flex-1 rounded-md px-3 py-1.5 text-center text-sm font-medium transition-colors ${
+            tab.key === current
+              ? "bg-surface text-foreground shadow-xs"
+              : "text-muted hover:text-foreground"
+          }`}
+        >
+          {tab.label}
+        </Link>
+      ))}
+    </nav>
   );
 }
 

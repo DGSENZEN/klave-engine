@@ -203,7 +203,7 @@ def fila_de_varilla(numero: str, reglas: Reglas) -> tuple[FilaVarilla | None, st
     donde = "ni la del plano" if tabla.fuente == "cuadro" else "el plano no trae tabla"
     return None, (
         f"la tabla de varillas no trae el #{numero} ({donde}, ni la estándar): en E0 su acero "
-        "sólo usa su diámetro y su peso por metro (NMX-B-506), ninguna fila de la tabla"
+        "sólo usa su diámetro y su peso por metro (NMX-B-506)"
     )
 
 

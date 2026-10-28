@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CaretDown, DotsThreeVertical } from "@phosphor-icons/react";
-import { buttonClasses } from "@/components/ui";
+import { buttonClasses, iconButtonClasses } from "@/components/ui";
 
 /** Minimal kebab menu: closes on outside click and Escape. */
 export function KebabMenu({
@@ -45,12 +45,13 @@ export function KebabMenu({
           e.stopPropagation();
           setOpen((current) => !current);
         }}
-        className="rounded-md p-1.5 text-faint transition-colors hover:bg-surface-2 hover:text-foreground"
+        data-tip={label}
+        className={iconButtonClasses("sm", "text-faint")}
       >
-        {icon ?? <DotsThreeVertical size={18} weight="bold" />}
+        {icon ?? <DotsThreeVertical />}
       </button>
       {open && (
-        <div className="toast-in absolute right-0 top-full z-40 mt-1 w-52 overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg">
+        <div className="menu-pop absolute right-0 top-full z-40 mt-1 w-52 origin-top-right overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg">
           {children(() => setOpen(false))}
         </div>
       )}
@@ -100,12 +101,12 @@ export function ButtonMenu({
       >
         {icon}
         {label}
-        <CaretDown size={13} weight="bold" className={open ? "rotate-180" : ""} />
+        <CaretDown size={12} className={`transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
         <div
           ref={keepOnScreen}
-          className={`toast-in absolute right-0 top-full z-40 mt-1 ${width} max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg`}
+          className={`menu-pop absolute right-0 top-full z-40 mt-1 origin-top-right ${width} max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg`}
         >
           {children(() => setOpen(false))}
         </div>

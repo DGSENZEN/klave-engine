@@ -71,7 +71,7 @@ def test_un_cargo_sin_sueldo_sale_visible_y_sin_importe():
     assert velador.importe == 0.0
     assert programa.cargos_sin_sueldo == 1
     assert any("sin sueldo capturado" in n for n in programa.notas)
-    assert any("no es que ese personal salga gratis" in n.lower() for n in programa.notas)
+    assert any("queda corto por lo que cueste ese personal" in n.lower() for n in programa.notas)
 
 
 def test_el_periodo_cambia_el_sueldo_del_renglon_no_el_total():

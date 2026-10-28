@@ -30,6 +30,7 @@ import {
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
 import { isoDateLocal } from "@/lib/time";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   Badge,
   Button,
@@ -84,7 +85,7 @@ function Nota({
           {nota.tipo !== "ordinaria" && <Badge tone="warning">{nota.tipo}</Badge>}
           {nota.referencia !== null && (
             <span className="flex items-center gap-1 text-xs text-muted">
-              <ArrowBendUpLeft size={12} /> aclara la nota {nota.referencia}
+              <ArrowBendUpLeft size={14} /> aclara la nota {nota.referencia}
             </span>
           )}
         </div>
@@ -117,6 +118,8 @@ export default function BitacoraPage() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [borrador, setBorrador] = useState<NotaBitacora | null>(null);
+  const [confirmar, setConfirmar] = useState(false);
+  const [asentando, setAsentando] = useState(false);
 
   const leer = useCallback(async () => {
     const r = await getBitacora(id);
@@ -157,7 +160,10 @@ export default function BitacoraPage() {
   }
 
   async function asentar() {
-    if (!borrador) return;
+    // Una nota asentada no se edita ni se quita: un segundo envío sería un
+    // duplicado permanente en el registro.
+    if (!borrador || asentando) return;
+    setAsentando(true);
     setError(null);
     try {
       await asentarNota(id, borrador, getBrowserActor());
@@ -166,18 +172,20 @@ export default function BitacoraPage() {
     } catch (err) {
       const detalle = (err as { detail?: { message?: string } })?.detail?.message;
       setError(detalle ?? "No se pudo asentar la nota.");
+    } finally {
+      setAsentando(false);
     }
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 py-5 sm:px-6">
       <PageHeader
         title="Bitácora de obra"
-        sub="El medio oficial de comunicación entre las partes (RLOPSRM art. 123). Lo que se asienta obliga; lo que no se asentó no pasó."
+        sub="El medio oficial de comunicación entre las partes (RLOPSRM art. 123). Lo asentado obliga a las partes y es lo único que cuenta como constancia."
         actions={
           !estado?.cerrada && (
             <Button onClick={() => nueva()} disabled={!estado || !!borrador}>
-              <Plus size={16} />
+              <Plus />
               {estado?.abierta ? "Asentar nota" : "Abrir la bitácora"}
             </Button>
           )
@@ -197,7 +205,7 @@ export default function BitacoraPage() {
           <SectionTitle
             sub={
               borrador.referencia !== null
-                ? `Aclara la nota ${borrador.referencia}, que se queda asentada tal como está: así es como una bitácora prueba algo.`
+                ? `Aclara la nota ${borrador.referencia}, que queda asentada tal como está.`
                 : "Una vez asentada no se edita. Si sale mal, se aclara con otra nota."
             }
           >
@@ -302,14 +310,32 @@ export default function BitacoraPage() {
             <Button variant="ghost" onClick={() => setBorrador(null)}>
               Cancelar
             </Button>
-            <Button onClick={() => void asentar()}>Asentar nota</Button>
+            <Button onClick={() => setConfirmar(true)} disabled={asentando}>
+              {asentando ? "Asentando…" : "Asentar nota"}
+            </Button>
           </div>
         </Card>
       )}
 
+      <ConfirmDialog
+        open={confirmar && !!borrador}
+        title={
+          borrador?.tipo === "apertura"
+            ? "Asentar la nota de apertura — no se podrá editar ni quitar"
+            : `Asentar la nota ${borrador?.numero ?? ""} — no se podrá editar ni quitar`
+        }
+        description="Lo que se asienta obliga. Si algo sale mal, se aclara con otra nota y las dos se quedan."
+        confirmLabel="Asentar"
+        onConfirm={() => {
+          setConfirmar(false);
+          void asentar();
+        }}
+        onCancel={() => setConfirmar(false)}
+      />
+
       {!cargando && notas.length === 0 && !borrador && (
         <EmptyState
-          icon={<NotePencil size={28} />}
+          icon={<NotePencil size={20} />}
           title="La bitácora no está abierta"
           hint="Su primera nota es la de apertura, con los datos del contrato (RLOPSRM art. 125)."
           action={<Button onClick={() => nueva()}>Abrir la bitácora</Button>}

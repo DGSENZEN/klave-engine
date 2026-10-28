@@ -115,7 +115,7 @@ def _require_gate_authority(request: Request, project_id: str, settings: Setting
         detail={
             "error_type": "gate_authority_required",
             "message": "Abrir o cerrar un nodo requiere al administrador del "
-            "taller o al owner del proyecto.",
+            "taller o al propietario del proyecto.",
         },
     )
 

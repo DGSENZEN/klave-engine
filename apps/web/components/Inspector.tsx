@@ -40,7 +40,7 @@ export function Inspector({
           {subtitle && <div className="mt-0.5 text-xs text-muted">{subtitle}</div>}
         </div>
         <IconButton aria-label="Cerrar inspector (Esc)" onClick={onClose}>
-          <X size={16} />
+          <X />
         </IconButton>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>

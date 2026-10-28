@@ -106,8 +106,18 @@ export default function PilotoPage() {
     }
   };
 
-  if (failed) return <Callout tone="warning">No se pudo leer la medición del piloto.</Callout>;
-  if (!data || !form) return <Skeleton className="h-64" />;
+  if (failed)
+    return (
+      <div className="px-4 py-5 sm:px-6">
+        <Callout tone="warning">No se pudo leer la medición del piloto.</Callout>
+      </div>
+    );
+  if (!data || !form)
+    return (
+      <div className="px-4 py-5 sm:px-6">
+        <Skeleton className="h-64" />
+      </div>
+    );
 
   const resumen = [
     `Piloto — tiempo de una persona en Klave: ${horas(data.revision.minutos_activos)} en ${data.revision.sesiones} sesiones, ${data.revision.decisiones} decisiones.`,
@@ -126,10 +136,10 @@ export default function PilotoPage() {
     .join("\n");
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 py-5 sm:px-6">
       <PageHeader
         title="Medición del piloto"
-        sub="Cuánto le tomó a tu oficina ir del plano a los generadores con Klave, junto a lo que le toma a su modo. Las horas se estiman de lo que el proyecto guarda; la base la declaras tú."
+        sub="Cuánto le tomó a tu oficina ir del plano a los generadores con Klave, frente a su método anterior. Las horas se estiman con lo que guarda el proyecto; la base la declaras tú."
       />
 
       {!data.inicio && (
@@ -216,7 +226,7 @@ export default function PilotoPage() {
         <Card className="p-5">
           <h2 className="mb-3 text-base font-semibold">Por hoja</h2>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr>
                   <Th>Hoja</Th>

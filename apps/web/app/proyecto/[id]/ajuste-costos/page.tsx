@@ -39,12 +39,14 @@ import {
   Callout,
   Card,
   EmptyState,
+  IconButton,
   Input,
   Metric,
   PageHeader,
   SectionTitle,
   Skeleton,
 } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 /** El factor, o el hueco que impide calcularlo. */
 function Factor({ resumen }: { resumen: ResumenAjuste }) {
@@ -54,7 +56,7 @@ function Factor({ resumen }: { resumen: ResumenAjuste }) {
         label="Factor de ajuste"
         value="sin índice"
         hint="Captura los dos valores publicados y el factor sale solo."
-        icon={<ChartLineUp size={18} />}
+        icon={<ChartLineUp />}
       />
     );
   }
@@ -67,7 +69,7 @@ function Factor({ resumen }: { resumen: ResumenAjuste }) {
       hint={`${resumen.indice_base} → ${resumen.indice_ajuste} · ${
         sube ? "a favor del contratista" : "a favor de la contratante"
       }`}
-      icon={<ChartLineUp size={18} />}
+      icon={<ChartLineUp />}
     />
   );
 }
@@ -123,8 +125,8 @@ function EditorAjuste({
             onChange={(e) => setLocal({ ...local, periodo_base: e.target.value })}
           />
           <span className="mt-1 block text-xs text-muted">
-            Del acto de presentación y apertura de proposiciones — no de la firma del
-            contrato ni del arranque de la obra.
+            Es el mes del acto de presentación y apertura de proposiciones. La firma del
+            contrato y el arranque de la obra no sirven como base.
           </span>
         </label>
         <label className="block">
@@ -204,8 +206,8 @@ function EditorAjuste({
         <span>
           El atraso es imputable al contratista
           <span className="block text-xs text-muted">
-            Su obra atrasada se ajusta con los índices que le tocaban según el programa, no
-            con los de este periodo (RLOPSRM art. 176). De otro modo atrasarse pagaría.
+            Su obra atrasada se ajusta con los índices del periodo que le tocaba según el
+            programa (RLOPSRM art. 176), para que el atraso no le dé un ajuste mayor.
           </span>
         </span>
       </label>
@@ -283,13 +285,25 @@ export default function AjusteCostosPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 py-5 sm:px-6">
+      <ConfirmDialog
+        open={confirmar !== null}
+        title={`Eliminar la solicitud de ajuste ${confirmar ?? ""}`}
+        description="La solicitud y su cálculo dejan de existir; si se presentó a la contratante, conserva tu copia."
+        confirmLabel="Eliminar solicitud"
+        onCancel={() => setConfirmar(null)}
+        onConfirm={() => {
+          const numero = confirmar;
+          setConfirmar(null);
+          if (numero !== null) void eliminar(numero);
+        }}
+      />
       <PageHeader
         title="Ajuste de costos"
         sub="Lo que subieron los insumos sobre la obra que falta por ejecutar (LOPSRM art. 57–58)."
         actions={
           <Button onClick={() => void nueva()}>
-            <Plus size={16} /> Nueva solicitud
+            <Plus /> Nueva solicitud
           </Button>
         }
       />
@@ -309,7 +323,7 @@ export default function AjusteCostosPage() {
 
       {!cargando && lista.length === 0 && !editando && (
         <EmptyState
-          icon={<ChartLineUp size={28} />}
+          icon={<ChartLineUp size={20} />}
           title="Sin solicitudes de ajuste"
           hint="Una solicitud se prepara con lo que falta por ejecutar; los índices los traes de la publicación del INEGI."
         />
@@ -341,24 +355,13 @@ export default function AjusteCostosPage() {
               >
                 Editar
               </Button>
-              {confirmar === solicitud.numero ? (
-                <>
-                  <span className="text-xs text-muted">¿Quitarla?</span>
-                  <Button variant="ghost" onClick={() => setConfirmar(null)}>
-                    No
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => void eliminar(solicitud.numero)}
-                  >
-                    Sí, quitar
-                  </Button>
-                </>
-              ) : (
-                <Button variant="ghost" onClick={() => setConfirmar(solicitud.numero)}>
-                  <Trash size={16} />
-                </Button>
-              )}
+              <IconButton
+                size="sm"
+                aria-label={`Eliminar la solicitud de ajuste ${solicitud.numero}`}
+                onClick={() => setConfirmar(solicitud.numero)}
+              >
+                <Trash />
+              </IconButton>
             </div>
           </div>
 

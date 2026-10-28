@@ -61,6 +61,31 @@ def test_missing_source_is_reported_not_failed(data_dir, tmp_path):
     assert not outcome.available and outcome.passed and "no disponible" in outcome.message
 
 
+def test_missing_selected_gold_cannot_claim_release_pass(data_dir, tmp_path):
+    from datetime import UTC, datetime
+
+    from klave_engine.evals.gold import GoldEntry, render_markdown, run
+
+    gold_dir = tmp_path / "gold"
+    save_entry(GoldEntry(
+        drawing_id="unavailable", source=str(tmp_path / "missing"), files={},
+        status="baseline", captured_at=datetime.now(UTC),
+    ), gold_dir)
+    summary = run(gold_dir, reports_dir=tmp_path / "reports")
+    assert summary["all_passed"] is False
+    assert summary["status"] == "PENDING"
+    assert summary["unavailable"] == ["unavailable"]
+    assert "Overall: PENDING" in render_markdown(summary)
+
+
+def test_empty_gold_selection_cannot_claim_release_pass(data_dir, tmp_path):
+    from klave_engine.evals.gold import run
+
+    summary = run(tmp_path / "empty", reports_dir=tmp_path / "reports")
+    assert summary["all_passed"] is False
+    assert summary["status"] == "PENDING"
+
+
 # ------------------------------------------------------------- la cerca estructural
 
 import json  # noqa: E402

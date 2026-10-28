@@ -158,13 +158,13 @@ export function ConceptPicker({
             </Button>
           )}
           <Button size="sm" onClick={onDone} disabled={busy} aria-label="Cerrar">
-            <X size={13} weight="bold" />
+            <X size={14} />
           </Button>
         </span>
       </div>
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <span className="relative">
-          <MagnifyingGlass size={13} className="absolute left-2 top-2 text-faint" />
+          <MagnifyingGlass size={14} className="absolute left-2 top-2 text-faint" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -238,7 +238,7 @@ export function ConceptPicker({
                   {m.price != null ? `${money2(m.price)} / ${m.unit}` : "sin precio"}
                 </span>
                 <Button size="sm" variant="primary" onClick={() => choose(m)} disabled={busy}>
-                  <Check size={13} weight="bold" /> Usar esta clave
+                  <Check size={14} /> Usar esta clave
                 </Button>
               </div>
             </li>

@@ -165,7 +165,7 @@ export function VersionsPanel({ projectId }: { projectId: string }) {
           aria-label="Nota de la versión"
         />
         <Button size="sm" variant="primary" onClick={save} disabled={busy}>
-          <BookmarkSimple size={14} weight="bold" /> Guardar versión
+          <BookmarkSimple size={14} /> Guardar versión
         </Button>
       </div>
       {error && <p className="mt-2 text-sm text-danger">{error}</p>}
@@ -215,7 +215,7 @@ export function VersionsPanel({ projectId }: { projectId: string }) {
                   </span>
                   <div className="flex items-center gap-1">
                     <Button size="sm" onClick={() => compare(v.version_id)} disabled={busy}>
-                      <ArrowsLeftRight size={13} weight="bold" />
+                      <ArrowsLeftRight size={14} />
                       {open ? "Cerrar" : "Comparar"}
                     </Button>
                     {confirmRestore === v.version_id ? (
@@ -239,7 +239,7 @@ export function VersionsPanel({ projectId }: { projectId: string }) {
                         disabled={busy}
                         title="Reaplica las decisiones de esta versión sobre la lectura actual; el estado de ahora se guarda antes."
                       >
-                        <ArrowCounterClockwise size={13} weight="bold" /> Restaurar
+                        <ArrowCounterClockwise size={14} /> Restaurar
                       </Button>
                     )}
                     <button
@@ -349,7 +349,7 @@ function DiffTable({
         <p className="px-3 py-2 text-xs text-muted">Sin movimiento entre las dos.</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-data">
             <thead>
               <tr className="border-b border-border">
                 <Th>Concepto</Th>

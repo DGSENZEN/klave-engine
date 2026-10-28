@@ -105,17 +105,16 @@ def asentar(notas: list[NotaBitacora], nueva: NotaBitacora) -> list[NotaBitacora
 
     if nueva.numero in numeros:
         raise BitacoraError(
-            f"La nota {nueva.numero} ya está asentada y una nota no se reescribe. "
-            "Si salió mal, asienta otra que la aclare: las dos se quedan, que es "
-            "lo que hace que la bitácora pruebe algo."
+            f"La nota {nueva.numero} ya está asentada y no se reescribe. Si salió "
+            "mal, asienta otra que la aclare; las dos quedan en la bitácora."
         )
 
     esperado = max(numeros, default=0) + 1
     if nueva.numero != esperado:
         raise BitacoraError(
-            f"La siguiente nota es la {esperado}, no la {nueva.numero}. El consecutivo va "
-            "sin huecos: un salto es la señal de una nota retirada y es lo primero que "
-            "se revisa."
+            f"La siguiente nota es la {esperado} y capturaste la {nueva.numero}. El "
+            "consecutivo va sin huecos: un salto señala una nota retirada y es lo primero "
+            "que se revisa."
         )
 
     if nueva.tipo == "apertura" and notas:
@@ -126,8 +125,7 @@ def asentar(notas: list[NotaBitacora], nueva: NotaBitacora) -> list[NotaBitacora
     if nueva.tipo != "apertura" and not notas:
         raise BitacoraError(
             "La bitácora no está abierta. La primera nota es la de apertura, con los "
-            "datos del contrato; sin ella lo que se escriba está en un cuaderno "
-            "cualquiera."
+            "datos del contrato; lo que se escriba antes no cuenta como bitácora."
         )
     if any(n.tipo == "cierre" for n in notas):
         raise BitacoraError(
@@ -136,11 +134,11 @@ def asentar(notas: list[NotaBitacora], nueva: NotaBitacora) -> list[NotaBitacora
         )
 
     if not nueva.texto.strip():
-        raise BitacoraError("Una nota sin texto no comunica nada y no se asienta.")
+        raise BitacoraError("La nota no tiene texto y no se puede asentar.")
     if not nueva.autor.strip():
         raise BitacoraError(
             "Falta quién firma la nota. La bitácora es comunicación entre dos partes y "
-            "una nota sin autor no comunica nada."
+            "una nota sin autor no se asienta."
         )
     if nueva.referencia is not None and nueva.referencia not in numeros:
         raise BitacoraError(
@@ -185,7 +183,7 @@ def estado(notas: list[NotaBitacora]) -> EstadoBitacora:
         st.avisos.append(
             f"Las {len(ordenadas)} notas las asentó una sola parte ({quien}). La bitácora "
             "es el medio de comunicación entre las dos (RLOPSRM art. 123); si sólo escribe "
-            "una, está sirviendo de diario, no de prueba."
+            "una, pierde valor como prueba."
         )
 
     return st

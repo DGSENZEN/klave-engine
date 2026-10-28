@@ -7,7 +7,7 @@ import type {
   TdHTMLAttributes,
   ThHTMLAttributes,
 } from "react";
-import { CaretDown, Info, Warning, WarningCircle } from "@phosphor-icons/react";
+import { CaretDown, CircleNotch, Info, Warning, WarningCircle } from "@phosphor-icons/react";
 
 export function Card({
   children,
@@ -36,10 +36,10 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
       <div className="min-w-0">
-        <h1 className="text-[1.4rem] font-semibold leading-tight">{title}</h1>
-        {sub && <p className="mt-1 max-w-2xl text-sm text-muted">{sub}</p>}
+        <h1 className="text-[1.25rem] font-semibold leading-tight">{title}</h1>
+        {sub && <p className="mt-1 max-w-3xl text-[13px] text-muted">{sub}</p>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>
@@ -68,18 +68,94 @@ export function Metric({
           ? "text-success"
           : "text-foreground";
   return (
-    <Card className="card-hover p-4">
+    <Card className="px-4 py-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="microlabel">{label}</div>
+        <div className="text-xs text-muted">{label}</div>
         {icon && <div className="text-faint">{icon}</div>}
       </div>
       <div
-        className={`mt-2 font-display text-[1.55rem] font-medium leading-none tracking-tight tabular ${color}`}
+        className={`mt-1.5 font-display text-[1.375rem] font-medium leading-none tracking-tight tabular ${color}`}
       >
         {value}
       </div>
       {hint && <div className="mt-1.5 text-xs text-muted">{hint}</div>}
     </Card>
+  );
+}
+
+export type Stat = {
+  label: string;
+  value: ReactNode;
+  hint?: ReactNode;
+  tone?: "accent" | "danger" | "success" | "warning";
+  /** A stat that filters: clicking it shows exactly the rows it counts. */
+  onClick?: () => void;
+  active?: boolean;
+};
+
+/**
+ * A row of figures read as one instrument, not a row of cards: hairline
+ * dividers, one baseline. On phones it folds into two columns; the -1px
+ * offsets tuck each cell's top/left rule under the frame so only inner
+ * dividers show at any column count.
+ */
+export function StatStrip({
+  stats,
+  className = "",
+  tour,
+}: {
+  stats: Stat[];
+  className?: string;
+  tour?: string;
+}) {
+  const tones = {
+    accent: "text-accent",
+    danger: "text-danger",
+    success: "text-success",
+    warning: "text-warning",
+  } as const;
+  return (
+    <div
+      data-tour={tour}
+      className={`grid grid-cols-2 overflow-clip rounded-[10px] border border-border bg-surface max-sm:[&>*:last-child:nth-child(odd)]:col-span-2 sm:auto-cols-fr sm:grid-flow-col sm:grid-cols-none ${className}`}
+    >
+      {stats.map((stat) => {
+        const body = (
+          <>
+            <span className="block text-xs text-muted">{stat.label}</span>
+            <span
+              className={`mt-1 block font-display text-[1.25rem] font-medium leading-tight tracking-tight tabular ${
+                stat.tone ? tones[stat.tone] : "text-foreground"
+              }`}
+            >
+              {stat.value}
+            </span>
+            {stat.hint && <span className="mt-0.5 block text-xs text-muted">{stat.hint}</span>}
+          </>
+        );
+        const cell = "relative -ml-px -mt-px min-w-0 border-l border-t border-border px-4 py-2.5 text-left";
+        return stat.onClick ? (
+          <button
+            key={stat.label}
+            type="button"
+            onClick={stat.onClick}
+            aria-pressed={!!stat.active}
+            className={`${cell} transition-colors hover:bg-surface-2/70 ${
+              stat.active ? "bg-accent-soft/40" : ""
+            }`}
+          >
+            {body}
+            {stat.active && (
+              <span className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" aria-hidden />
+            )}
+          </button>
+        ) : (
+          <div key={stat.label} className={cell}>
+            {body}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -113,7 +189,7 @@ export function Badge({
   return (
     <span
       title={title}
-      className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium ${tones[tone]}`}
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded px-1.5 text-xs font-medium leading-5 ${tones[tone]}`}
     >
       {dot && <span className={`h-1.5 w-1.5 rounded-full ${dots[tone]}`} />}
       {children}
@@ -123,31 +199,40 @@ export function Badge({
 
 export function SectionTitle({ children, sub }: { children: ReactNode; sub?: string }) {
   return (
-    <div className="mb-4">
-      <h2 className="text-[0.95rem] font-semibold">{children}</h2>
-      {sub && <p className="mt-0.5 text-sm text-muted">{sub}</p>}
+    <div className="mb-3">
+      <h2 className="text-[0.9375rem] font-semibold">{children}</h2>
+      {sub && <p className="mt-0.5 text-[13px] text-muted">{sub}</p>}
     </div>
   );
 }
 
-/* ---- Buttons: one flat system shared by <Button> and link-buttons. ---- */
+/* ---- Buttons: one system shared by <Button>, link-buttons and icon buttons.
+ * Three heights (28 / 32 / 36), one press: a 75 ms sink to 97 % that
+ * releases on a 150 ms ease-out. Ink carries a lit top edge; outlined
+ * buttons a hairline lift. Nothing bounces. ---- */
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "accent";
-export type ButtonSize = "sm" | "md";
+export type ButtonSize = "sm" | "md" | "lg";
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
-  primary: "bg-primary text-primary-fg hover:bg-primary-hover",
+  primary: "bg-primary text-primary-fg shadow-btn-ink hover:bg-primary-hover",
   secondary:
-    "border border-border bg-surface text-foreground hover:border-border-strong hover:bg-surface-2",
-  ghost: "text-muted hover:bg-surface-2 hover:text-foreground",
-  danger: "bg-danger-soft text-danger hover:opacity-85",
-  accent: "bg-accent text-white hover:bg-accent-hover",
+    "border border-border bg-surface text-foreground shadow-btn hover:border-border-strong hover:bg-surface-2 active:bg-surface-3",
+  ghost: "text-muted hover:bg-surface-2 hover:text-foreground active:bg-surface-3",
+  danger: "bg-danger-soft text-danger hover:brightness-[0.97] active:brightness-95",
+  accent: "bg-accent text-accent-fg shadow-btn-ink hover:bg-accent-hover",
 };
 
 const BUTTON_SIZES: Record<ButtonSize, string> = {
-  sm: "h-8 px-3 text-[13px]",
-  md: "h-9 px-3.5 text-sm",
+  sm: "h-7 gap-1.5 px-2.5 text-[13px]",
+  md: "h-8 gap-2 px-3 text-[13px]",
+  /** Single-task forms (access, new project): matches an Input with `h-10`. */
+  lg: "h-10 gap-2 px-4 text-sm",
 };
+
+/** The press shared by every clickable control that is not a link of text. */
+export const PRESS =
+  "transition-[color,background-color,border-color,box-shadow,scale,filter] duration-150 ease-out active:scale-[0.97] active:duration-75 motion-reduce:active:scale-100";
 
 /** Shared classes so <Link> can look identical to <Button>. */
 export function buttonClasses(
@@ -155,36 +240,79 @@ export function buttonClasses(
   size: ButtonSize = "md",
   className = "",
 ): string {
-  return `inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-lg font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 ${BUTTON_SIZES[size]} ${BUTTON_VARIANTS[variant]} ${className}`;
+  return `relative inline-flex select-none items-center justify-center whitespace-nowrap rounded-md font-medium ${PRESS} disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none aria-disabled:pointer-events-none aria-disabled:opacity-50 ${BUTTON_SIZES[size]} ${BUTTON_VARIANTS[variant]} ${className}`;
 }
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  /** Working: the label stays (so the button keeps its width) under a spinner. */
+  loading?: boolean;
 };
 
 export function Button({
   variant = "secondary",
   size = "md",
   className = "",
+  loading = false,
+  disabled,
+  children,
   ...props
 }: ButtonProps) {
-  return <button {...props} className={buttonClasses(variant, size, className)} />;
+  return (
+    <button
+      {...props}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      className={buttonClasses(variant, size, className)}
+    >
+      {loading ? (
+        <>
+          <span className="invisible contents">{children}</span>
+          <span className="absolute inset-0 flex items-center justify-center">
+            <CircleNotch size={size === "sm" ? 14 : 16} className="animate-spin" />
+          </span>
+        </>
+      ) : (
+        children
+      )}
+    </button>
+  );
 }
 
 type IconButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   "aria-label": string;
+  size?: "sm" | "md";
+  /** Tooltip text; defaults to the aria-label. Pass false for none. */
+  tip?: string | false;
+  /** Anchor the tooltip to the right edge (controls at the screen's edge). */
+  tipAlign?: "end";
 };
 
-/** Icon-only action; aria-label is required by the type. */
-export function IconButton({ className = "", ...props }: IconButtonProps) {
+/** Square icon-only action (28 or 32 px); aria-label is required by the type. */
+export function IconButton({
+  className = "",
+  size = "md",
+  tip,
+  tipAlign,
+  ...props
+}: IconButtonProps) {
   return (
     <button
       type="button"
+      data-tip={tip === false ? undefined : (tip ?? props["aria-label"])}
+      data-tip-align={tipAlign}
       {...props}
-      className={`rounded-md p-1 text-muted transition-colors hover:bg-surface-2 hover:text-foreground disabled:pointer-events-none disabled:opacity-50 ${className}`}
+      className={iconButtonClasses(size, className)}
     />
   );
+}
+
+/** Shared classes so a <Link> can be an icon button too. */
+export function iconButtonClasses(size: "sm" | "md" = "md", className = ""): string {
+  return `relative inline-flex shrink-0 items-center justify-center rounded-md text-muted ${PRESS} hover:bg-surface-2 hover:text-foreground active:bg-surface-3 disabled:pointer-events-none disabled:opacity-50 aria-expanded:bg-surface-2 aria-expanded:text-foreground ${
+    size === "sm" ? "h-7 w-7" : "h-8 w-8"
+  } ${className}`;
 }
 
 export function Input({
@@ -194,8 +322,36 @@ export function Input({
   return (
     <input
       {...props}
-      className={`rounded-lg border border-border bg-surface px-3 py-2 text-sm transition-colors placeholder:text-faint focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring ${className}`}
+      className={`rounded-md border border-border bg-surface px-2.5 py-[5px] text-data transition-colors placeholder:text-faint focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring ${className}`}
     />
+  );
+}
+
+/** Label above, control, optional hint below. Labels stay visible while typing. */
+export function Field({
+  label,
+  htmlFor,
+  aside,
+  hint,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  aside?: ReactNode;
+  hint?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <div className="mb-1.5 flex items-baseline justify-between gap-3">
+        <label htmlFor={htmlFor} className="text-sm font-medium">
+          {label}
+        </label>
+        {aside}
+      </div>
+      {children}
+      {hint && <div className="mt-1.5 text-xs text-muted">{hint}</div>}
+    </div>
   );
 }
 
@@ -224,17 +380,12 @@ export function SkeletonHeader() {
 /** A row of Metric-shaped cards: real card frames, shimmering content. */
 export function SkeletonMetrics({ count = 3 }: { count?: number }) {
   return (
-    <div
-      className={`mb-6 grid gap-4 sm:grid-cols-2 ${
-        count >= 4 ? "lg:grid-cols-4" : "lg:grid-cols-3"
-      }`}
-    >
+    <div className="mb-5 grid grid-cols-2 overflow-clip rounded-[10px] border border-border bg-surface sm:auto-cols-fr sm:grid-flow-col sm:grid-cols-none">
       {Array.from({ length: count }, (_, i) => (
-        <Card key={i} className="p-4">
-          <Skeleton className="h-3 w-24" />
-          <Skeleton className="mt-3 h-7 w-32" />
-          <Skeleton className="mt-2 h-3 w-20" />
-        </Card>
+        <div key={i} className="-ml-px -mt-px border-l border-t border-border px-4 py-2.5">
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="mt-2 h-5 w-28" />
+        </div>
       ))}
     </div>
   );
@@ -244,14 +395,14 @@ export function SkeletonMetrics({ count = 3 }: { count?: number }) {
 export function SkeletonTable({ rows = 6 }: { rows?: number }) {
   return (
     <Card className="overflow-hidden">
-      <div className="flex gap-4 border-b border-border bg-surface-2 px-4 py-3">
+      <div className="flex gap-4 border-b border-border bg-surface-2 px-3 py-3">
         <Skeleton className="h-3 w-16" />
         <Skeleton className="h-3 w-40 flex-1" />
         <Skeleton className="h-3 w-20" />
         <Skeleton className="h-3 w-24" />
       </div>
       {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="flex items-center gap-4 border-b border-border px-4 py-3 last:border-0">
+        <div key={i} className="flex items-center gap-4 border-b border-border px-3 py-2.5 last:border-0">
           <Skeleton className="h-3.5 w-14" />
           <Skeleton className={`h-3.5 flex-1 ${i % 3 === 0 ? "max-w-[70%]" : i % 3 === 1 ? "max-w-[55%]" : "max-w-[80%]"}`} />
           <Skeleton className="h-3.5 w-16" />
@@ -294,7 +445,7 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border-strong px-6 py-12 text-center">
+    <div className="flex flex-col items-center justify-center gap-2 rounded-[10px] border border-dashed border-border-strong px-6 py-10 text-center">
       {icon && (
         <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-full bg-surface-2 text-muted">
           {icon}
@@ -319,22 +470,23 @@ export function Callout({
   const tones: Record<string, { box: string; icon: ReactNode }> = {
     danger: {
       box: "bg-danger-soft text-danger",
-      icon: <WarningCircle size={16} weight="bold" className="shrink-0" />,
+      icon: <WarningCircle className="shrink-0" />,
     },
     warning: {
       box: "bg-warning-soft text-warning",
-      icon: <Warning size={16} weight="bold" className="shrink-0" />,
+      icon: <Warning className="shrink-0" />,
     },
     info: {
       box: "bg-accent-soft text-accent",
-      icon: <Info size={16} weight="bold" className="shrink-0" />,
+      icon: <Info className="shrink-0" />,
     },
   };
   return (
     <div
-      className={`flex items-center justify-between gap-3 rounded-lg px-4 py-3 text-sm ${tones[tone].box}`}
+      role={tone === "danger" ? "alert" : "status"}
+      className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md px-3.5 py-2.5 text-[13px] ${tones[tone].box}`}
     >
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 flex-1 basis-64 items-center gap-2">
         {tones[tone].icon}
         <span className="min-w-0">{children}</span>
       </div>
@@ -364,7 +516,7 @@ export function Avatar({
   self?: boolean;
   size?: "xs" | "sm" | "md";
   title?: string;
-  /** Optional photo (e.g. Google account); falls back to initials. */
+  /** Optional photo; falls back to initials. */
   src?: string | null;
 }) {
   const sizes: Record<string, string> = {
@@ -388,7 +540,7 @@ export function Avatar({
     <span
       title={title ?? name}
       className={`flex shrink-0 items-center justify-center rounded-full border-2 border-surface font-semibold ${sizes[size]} ${
-        self ? "bg-accent text-white" : "bg-primary text-primary-fg"
+        self ? "bg-accent text-accent-fg" : "bg-primary text-primary-fg"
       }`}
     >
       {initials(name)}
@@ -402,15 +554,18 @@ export function TableCard({
   children,
   className = "",
   tour,
+  sticky,
 }: {
   children: ReactNode;
   className?: string;
   tour?: string;
+  /** Long tables: the header stays under the shell while you scroll (lg+). */
+  sticky?: boolean;
 }) {
   return (
-    <Card className={`overflow-hidden ${className}`} tour={tour}>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">{children}</table>
+    <Card className={`overflow-clip ${className}`} tour={tour}>
+      <div className="table-scroll" data-sticky={sticky ? "" : undefined}>
+        <table className="w-full text-data">{children}</table>
       </div>
     </Card>
   );
@@ -426,7 +581,7 @@ export function Th({
   return (
     <th
       {...props}
-      className={`microlabel px-4 py-3 font-medium ${alignCls} ${className}`}
+      className={`microlabel h-9 px-3 font-medium first:pl-4 last:pr-4 ${alignCls} ${className}`}
     />
   );
 }
@@ -438,7 +593,7 @@ export function Td({
 }: TdHTMLAttributes<HTMLTableCellElement> & { align?: "left" | "right" | "center" }) {
   const alignCls =
     align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left";
-  return <td {...props} className={`px-4 py-3 ${alignCls} ${className}`} />;
+  return <td {...props} className={`px-3 py-1.5 first:pl-4 last:pr-4 ${alignCls} ${className}`} />;
 }
 
 /* ---- Form controls that match <Input>: one look for every select and checkbox. ---- */
@@ -448,10 +603,10 @@ export function Select({
   size = "md",
   ...props
 }: Omit<SelectHTMLAttributes<HTMLSelectElement>, "size"> & { size?: "sm" | "md" }) {
-  const pad = size === "sm" ? "px-2 py-1 text-xs" : "px-2.5 py-1.5 text-sm";
+  const pad = size === "sm" ? "px-2 py-1 text-xs" : "px-2 py-[5px] text-data";
   return (
     <select
-      className={`rounded-lg border border-border bg-surface text-foreground outline-none transition focus:border-border-strong focus:ring-2 focus:ring-accent/20 disabled:opacity-60 ${pad} ${className}`}
+      className={`max-w-full rounded-md border border-border bg-surface text-foreground outline-none transition focus:border-border-strong focus:ring-2 focus:ring-accent/20 disabled:opacity-60 ${pad} ${className}`}
       {...props}
     />
   );
@@ -491,8 +646,19 @@ export function confidenceTone(value: number): BadgeTone {
 }
 
 export function ConfidenceBadge({ value, dot = true }: { value: number; dot?: boolean }) {
+  const tone = confidenceTone(value);
+  // A firm read is the expected case: it stays quiet so the doubts stand out
+  // down a column of hundreds. Only dudosa/débil get a fill.
+  if (tone === "success") {
+    return (
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs leading-5 text-muted">
+        {dot && <span className="h-1.5 w-1.5 rounded-full bg-success" />}
+        {Math.round(value * 100)}%
+      </span>
+    );
+  }
   return (
-    <Badge dot={dot} tone={confidenceTone(value)}>
+    <Badge dot={dot} tone={tone}>
       {Math.round(value * 100)}%
     </Badge>
   );
@@ -522,10 +688,10 @@ export function Disclosure({
         type="button"
         aria-expanded={open}
         onClick={onToggle}
-        className="flex w-full items-center gap-3 px-5 py-4 text-left"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left"
       >
         {icon && (
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-foreground">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-surface-2 text-foreground">
             {icon}
           </span>
         )}
@@ -534,11 +700,11 @@ export function Disclosure({
           {summary && <div className="text-xs text-muted">{summary}</div>}
         </div>
         <CaretDown
-          size={14}
+          size={12}
           className={`shrink-0 text-muted transition ${open ? "rotate-180" : ""}`}
         />
       </button>
-      {open && <div className="border-t border-border px-5 py-4">{children}</div>}
+      {open && <div className="border-t border-border px-4 py-3">{children}</div>}
     </Card>
   );
 }
@@ -566,7 +732,7 @@ export function Tabs<K extends string>({
             role="tab"
             aria-selected={active}
             onClick={() => onChange(item.key)}
-            className={`inline-flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm transition-colors ${
+            className={`inline-flex shrink-0 items-center gap-1.5 border-b-2 px-2.5 py-2 text-[13px] transition-colors ${
               active
                 ? "border-foreground font-medium text-foreground"
                 : "border-transparent text-muted hover:text-foreground"

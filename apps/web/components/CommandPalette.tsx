@@ -26,14 +26,14 @@ type Destino = {
 
 function destinos(base: string): Destino[] {
   return [
-    { key: "tablero", label: "Tablero", grupo: "Proyecto", icon: <SquaresFour size={16} />, href: base },
-    { key: "resumen", label: "Resumen", grupo: "Proyecto", icon: <Gauge size={16} />, href: `${base}/resumen` },
+    { key: "tablero", label: "Tablero", grupo: "Proyecto", icon: <SquaresFour />, href: base },
+    { key: "resumen", label: "Resumen", grupo: "Proyecto", icon: <Gauge />, href: `${base}/resumen` },
     ...NODE_NAV.flatMap((node) =>
       node.entries.map((entry) => ({
         key: `${node.key}-${entry.key}`,
         label: entry.label,
         grupo: node.label,
-        icon: entry.icon,
+        icon: <entry.glyph />,
         href: entryHref(base, entry),
       })),
     ),
@@ -41,42 +41,42 @@ function destinos(base: string): Destino[] {
       key: "revision-catalogo",
       label: "Tu catálogo: mapear las variantes del plano a tus conceptos",
       grupo: "Revisión",
-      icon: <Books size={16} />,
+      icon: <Books />,
       href: `${base}/revision?tab=catalogo`,
     },
     {
       key: "insumos-ajuste",
       label: "Insumos: ajustar precios o sustituir en matrices",
       grupo: "Catálogo",
-      icon: <Books size={16} />,
+      icon: <Books />,
       href: "/catalogo?tab=insumos",
     },
     {
       key: "matrices-generar",
       label: "Matrices: generar las que faltan y validar contra el precio publicado",
       grupo: "Catálogo",
-      icon: <Books size={16} />,
+      icon: <Books />,
       href: "/catalogo?tab=conceptos",
     },
     {
       key: "base",
       label: "Base de precios: buscar en las publicaciones",
       grupo: "Catálogo",
-      icon: <Books size={16} />,
+      icon: <Books />,
       href: "/catalogo?tab=fuentes",
     },
     {
       key: "configuracion",
       label: "Configuración del proyecto",
       grupo: "Ajustes",
-      icon: <GearSix size={16} />,
+      icon: <GearSix />,
       href: `${base}/configuracion`,
     },
     ...CAPITULOS.map((capitulo) => ({
       key: `recorrido-${capitulo.id}`,
       label: `Recorrido: ${capitulo.titulo}`,
       grupo: "Ayuda",
-      icon: <Compass size={16} />,
+      icon: <Compass />,
       href: "",
       run: () => iniciarCapitulo(capitulo.id),
     })),
@@ -162,7 +162,7 @@ export function CommandPalette({ projectId }: { projectId: string }) {
       />
       <div className="menu-pop absolute left-1/2 top-24 w-[min(34rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-xl border border-border-strong bg-surface shadow-2xl">
         <div className="flex items-center gap-2 border-b border-border px-3.5 py-2.5">
-          <MagnifyingGlass size={16} className="shrink-0 text-faint" />
+          <MagnifyingGlass className="shrink-0 text-faint" />
           <input
             ref={inputRef}
             value={term}

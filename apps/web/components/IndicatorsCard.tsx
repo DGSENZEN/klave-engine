@@ -32,7 +32,7 @@ export function IndicatorsCard({ indicators }: { indicators: Partial<Indicators>
   return (
     <Card className="mt-6 p-5">
       <SectionTitle
-        sub={`Razones típicas de la tipología y participación por partida contra ${indicators.reference ?? "rangos típicos"}. Fuera de rango es una señal para revisar, no una corrección.`}
+        sub={`Razones típicas de la tipología y participación por partida contra ${indicators.reference ?? "rangos típicos"}. Un valor fuera de rango es una señal para revisar.`}
       >
         Indicadores de sanidad
         {flagged > 0 && (

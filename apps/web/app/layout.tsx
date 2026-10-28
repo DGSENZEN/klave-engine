@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { ApiBaseWarning } from "@/components/ApiBaseWarning";
 import { CopilotFab } from "@/components/CopilotFab";
+import { IconDefaults } from "@/components/IconDefaults";
 import { RecorridoProvider } from "@/components/recorrido/RecorridoProvider";
 import { SessionRecovery } from "@/components/SessionRecovery";
 import localFont from "next/font/local";
@@ -54,13 +55,15 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body className="min-h-full">
-        <ApiBaseWarning />
-        <SessionRecovery />
-        {children}
-        {/* Siempre a la mano, en cualquier pantalla de trabajo. */}
-        <CopilotFab />
-        {/* El recorrido guiado: encima de todo, nunca bloquea el trabajo. */}
-        <RecorridoProvider />
+        <IconDefaults>
+          <ApiBaseWarning />
+          <SessionRecovery />
+          {children}
+          {/* Siempre a la mano, en cualquier pantalla de trabajo. */}
+          <CopilotFab />
+          {/* El recorrido guiado: encima de todo, nunca bloquea el trabajo. */}
+          <RecorridoProvider />
+        </IconDefaults>
       </body>
     </html>
   );

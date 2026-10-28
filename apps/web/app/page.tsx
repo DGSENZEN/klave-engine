@@ -7,6 +7,7 @@ import {
   Archive,
   ArrowCounterClockwise,
   ArrowRight,
+  CaretRight,
   ArrowsClockwise,
   Books,
   CircleNotch,
@@ -17,7 +18,6 @@ import {
   Plus,
   SealCheck,
   Stack,
-  CaretDown,
   Trash,
   UserSwitch,
   UsersThree,
@@ -26,8 +26,6 @@ import {
 import {
   apiMessage,
   getWorkspaceOverview,
-  previewDisciplinas,
-  type DisciplinePreview,
   money,
   patchProject,
   processProject,
@@ -45,13 +43,14 @@ import {
   Badge,
   Button,
   Callout,
-  EmptyState,
   Input,
   Skeleton,
   type BadgeTone,
 } from "@/components/ui";
 import { KebabMenu, MenuItem } from "@/components/Menu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { COMPOSER_PICK_ID, NewProjectComposer } from "@/components/NewProjectComposer";
+import { ReprocesarDialog } from "@/components/ReprocesarDialog";
 import { Modal } from "@/components/Modal";
 import { InicioRecorrido } from "@/components/recorrido/InicioRecorrido";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
@@ -101,7 +100,9 @@ export default function Home() {
   const [showArchived, setShowArchived] = useState(false);
   const [focus, setFocus] = useState<Focus>("all");
   const [ready, setReady] = useState(false);
-  const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
+  /** Sheets chosen for a new project; null while the composer is closed. */
+  const [draft, setDraft] = useState<File[] | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<{ id: string; text: string; href: string; tone: "success" | "warning" }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -112,12 +113,18 @@ export default function Home() {
   }, [overview]);
 
   // The gate: protected workspaces require an active session; open mode only
-  // needs the local first-run profile. Both land on /bienvenida otherwise.
+  // needs the local first-run profile. A visitor with no account at all gets
+  // the public portada; an account still waiting for approval, or an open
+  // workspace without a profile, lands on /bienvenida.
   useEffect(() => {
     let active = true;
     fetchAuthStatus().then((status) => {
       if (!active) return;
-      if (status.mode === "protected" && (!status.user || status.user.status !== "active")) {
+      if (status.mode === "protected" && !status.user) {
+        router.replace("/portada");
+        return;
+      }
+      if (status.mode === "protected" && status.user?.status !== "active") {
         router.replace("/bienvenida");
         return;
       }
@@ -209,17 +216,37 @@ export default function Home() {
     };
   }, [ready]);
 
-  function handleFiles(list: FileList | File[]) {
-    if (uploadInFlight.current || pendingFiles) return;
-    const files = [...list];
-    const validation = validateDrawingFiles(files, overview?.upload_limits);
-    if (validation) {
-      setError(validation);
-      return;
-    }
-    setError(null);
+  function addFiles(list: FileList | File[]) {
+    if (uploadInFlight.current) return;
+    const current = draft ?? [];
+    const seen = new Set(current.map((f) => `${f.name}:${f.size}`));
+    const files = [...current, ...[...list].filter((f) => !seen.has(`${f.name}:${f.size}`))];
     setUploadError(null);
-    setPendingFiles(files);
+    const validation = validateDrawingFiles(files, overview?.upload_limits);
+    setDraftError(validation);
+    setDraft(validation ? current : files);
+  }
+
+  function removeFile(index: number) {
+    setDraft((current) => (current ?? []).filter((_, i) => i !== index));
+    setDraftError(null);
+    setUploadError(null);
+  }
+
+  function openComposer() {
+    setDraft((current) => current ?? []);
+    // After it renders: bring it into view and put the keyboard on "choose sheets".
+    window.setTimeout(() => {
+      const pick = document.getElementById(COMPOSER_PICK_ID);
+      pick?.scrollIntoView({ block: "center", behavior: "smooth" });
+      pick?.focus({ preventScroll: true });
+    }, 0);
+  }
+
+  function closeComposer() {
+    setDraft(null);
+    setDraftError(null);
+    setUploadError(null);
   }
 
   async function createProject(files: File[], name: string, client: string) {
@@ -235,7 +262,7 @@ export default function Home() {
       if (warnings.length) {
         try { sessionStorage.setItem("klave.upload.warning." + project_id, warnings.join(" ")); } catch {}
       }
-      setPendingFiles(null);
+      setDraft(null);
       router.push(`/proyecto/${encodeURIComponent(project_id)}`);
     } catch (e) {
       setUploadError(uploadErrorMessage(e, "No se pudo confirmar la subida. Revisa la lista de proyectos antes de volver a subirlos; conservamos tu selección."));
@@ -266,7 +293,7 @@ export default function Home() {
 
   if (!ready) {
     return (
-      <div className="mx-auto max-w-4xl px-5 py-10">
+      <div className="mx-auto max-w-6xl px-5 py-10 sm:px-6">
         <Skeleton className="mb-10 h-12 w-64" />
         <Skeleton className="h-56" />
       </div>
@@ -290,7 +317,7 @@ export default function Home() {
         e.preventDefault();
         dragDepth.current = 0;
         setDragging(false);
-        if (e.dataTransfer.files?.length) handleFiles(e.dataTransfer.files);
+        if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
       }}
     >
       {/* Drop overlay: the whole home accepts planos. */}
@@ -306,16 +333,6 @@ export default function Home() {
 
       <WorkspaceHeader active="proyectos" />
 
-      {pendingFiles && (
-        <NewProjectDialog
-          files={pendingFiles}
-          busy={uploading}
-          error={uploadError}
-          onCancel={() => setPendingFiles(null)}
-          onCreate={(name, client) => createProject(pendingFiles, name, client)}
-        />
-      )}
-
       {toasts.length > 0 && (
         <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
           {toasts.map((toast) => (
@@ -329,18 +346,18 @@ export default function Home() {
               }`}
             >
               {toast.tone === "success" ? (
-                <SealCheck size={15} weight="bold" className="text-success" />
+                <SealCheck className="text-success" />
               ) : (
-                <Warning size={15} weight="bold" className="text-warning" />
+                <Warning className="text-warning" />
               )}
               <span className="max-w-72 truncate">{toast.text}</span>
-              <ArrowRight size={13} weight="bold" className="text-faint" />
+              <ArrowRight size={14} className="text-faint" />
             </Link>
           ))}
         </div>
       )}
 
-      <main className="mx-auto max-w-4xl px-5 pb-16 pt-8">
+      <main className="mx-auto max-w-6xl px-5 pb-16 pt-8 sm:px-6">
         <input
           ref={inputRef}
           type="file"
@@ -348,7 +365,7 @@ export default function Home() {
           multiple
           className="hidden"
           onChange={(e) => {
-            if (e.target.files?.length) handleFiles(e.target.files);
+            if (e.target.files?.length) addFiles(e.target.files);
             e.target.value = "";
           }}
         />
@@ -366,17 +383,17 @@ export default function Home() {
           </div>
           <Button
             variant="primary"
-            onClick={() => inputRef.current?.click()}
+            onClick={openComposer}
             disabled={uploading}
             data-tour="inicio.subir"
           >
             {uploading ? (
               <>
-                <CircleNotch size={16} className="animate-spin" /> Subiendo…
+                <CircleNotch className="animate-spin" /> Subiendo…
               </>
             ) : (
               <>
-                <Plus size={16} weight="bold" /> Nuevo proyecto
+                <Plus /> Nuevo proyecto
               </>
             )}
           </Button>
@@ -392,7 +409,7 @@ export default function Home() {
             <Callout tone="danger">
               <p>{loadError}</p>
               <Button className="mt-2" onClick={refreshNow} disabled={refreshing}>
-                <ArrowCounterClockwise size={15} /> {refreshing ? "Cargando…" : "Volver a intentar"}
+                <ArrowCounterClockwise /> {refreshing ? "Cargando…" : "Volver a intentar"}
               </Button>
             </Callout>
           </div>
@@ -402,11 +419,24 @@ export default function Home() {
 
         {projects !== null && <InicioRecorrido />}
 
+        {projects !== null && (draft !== null || projects.length === 0) && (
+          <NewProjectComposer
+            title={projects.length === 0 ? "Sube tu primera obra" : "Nuevo proyecto"}
+            files={draft ?? []}
+            limits={overview?.upload_limits}
+            busy={uploading}
+            error={draftError ?? uploadError}
+            onPick={() => inputRef.current?.click()}
+            onRemove={removeFile}
+            onCreate={(name, client) => createProject(draft ?? [], name, client)}
+            onClose={projects.length > 0 ? closeComposer : undefined}
+          />
+        )}
+
         {projects !== null && projects.length > 0 && (
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <div className="relative min-w-56 flex-1">
               <MagnifyingGlass
-                size={15}
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
               />
               <Input
@@ -437,10 +467,10 @@ export default function Home() {
         )}
 
         {projects === null ? (loadError ? null : (
-          <div className="space-y-2">
+          <div className="card divide-y divide-border overflow-clip">
             {Array.from({ length: 3 }, (_, i) => (
-              <div key={i} className="card flex items-center gap-3 p-4">
-                <Skeleton className="h-9 w-9 rounded-lg" />
+              <div key={i} className="flex items-center gap-3 px-4 py-3">
+                <Skeleton className="h-8 w-8 rounded-md" />
                 <div className="flex-1">
                   <Skeleton className="h-4 w-48" />
                   <Skeleton className="mt-2 h-3 w-32" />
@@ -449,22 +479,7 @@ export default function Home() {
               </div>
             ))}
           </div>
-        )) : projects.length === 0 ? (
-          <div className="rise-in">
-            <EmptyState
-              icon={<CloudArrowUp size={22} weight="duotone" />}
-              title="Sube tu primer plano"
-              hint="Sube hasta 40 hojas DWG o DXF de una misma obra. Si un DWG no se puede convertir, expórtalo a DXF desde tu programa de dibujo e inténtalo de nuevo."
-              action={
-                <span className="flex flex-wrap items-center justify-center gap-2">
-                  <Button variant="primary" onClick={() => inputRef.current?.click()}>
-                    <Plus size={16} weight="bold" /> Nuevo proyecto
-                  </Button>
-                </span>
-              }
-            />
-          </div>
-        ) : filtered && filtered.length === 0 ? (
+        )) : projects.length === 0 ? null : filtered && filtered.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted">
             {focus !== "all"
               ? "Nada pendiente en este filtro."
@@ -485,16 +500,18 @@ export default function Home() {
             )}
           </p>
         ) : (
-          <div className="space-y-2">
+          // One list, divided rows: projects are entries in a register, not
+          // separate objects to admire.
+          // No overflow clip: each row's options menu hangs below it, and on
+          // the last row it must reach past the card. The rows round the
+          // corners instead.
+          <ul className="card divide-y divide-border [&>li:first-child>*]:rounded-t-[11px] [&>li:last-child>*]:rounded-b-[11px]">
             {filtered?.map((project) => (
-              <ProjectRow
-                key={project.project_id}
-                project={project}
-                onChanged={refreshNow}
-                onError={setError}
-              />
+              <li key={project.project_id}>
+                <ProjectRow project={project} onChanged={refreshNow} onError={setError} />
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </main>
     </div>
@@ -532,7 +549,7 @@ function AttentionStrip({
     chips.push({
       key: "failed",
       label: attention.failed === 1 ? "1 con errores" : `${attention.failed} con errores`,
-      icon: <Warning size={14} weight="bold" />,
+      icon: <Warning size={14} />,
       tone: "warning",
     });
   }
@@ -541,7 +558,7 @@ function AttentionStrip({
       key: "unverified",
       label:
         attention.unverified === 1 ? "1 sin verificar" : `${attention.unverified} sin verificar`,
-      icon: <SealCheck size={14} weight="bold" />,
+      icon: <SealCheck size={14} />,
       tone: "default",
     });
   }
@@ -552,7 +569,7 @@ function AttentionStrip({
         attention.stale_runs === 1
           ? "1 con lectura anterior"
           : `${attention.stale_runs} con lectura anterior`,
-      icon: <ArrowsClockwise size={14} weight="bold" />,
+      icon: <ArrowsClockwise size={14} />,
       tone: "default",
     });
   }
@@ -563,7 +580,7 @@ function AttentionStrip({
         attention.pending_users === 1
           ? "1 cuenta por aprobar"
           : `${attention.pending_users} cuentas por aprobar`,
-      icon: <UsersThree size={14} weight="bold" />,
+      icon: <UsersThree size={14} />,
       tone: "warning",
       href: "/equipo",
     });
@@ -572,7 +589,7 @@ function AttentionStrip({
     chips.push({
       key: "catalog",
       label: `${attention.stale_insumos} precios con más de ${attention.stale_threshold_months} meses`,
-      icon: <Books size={14} weight="bold" />,
+      icon: <Books size={14} />,
       tone: "default",
       href: "/catalogo",
     });
@@ -592,11 +609,11 @@ function AttentionStrip({
 
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
-      <span className="microlabel mr-1">Atención</span>
+      <span className="mr-1 text-xs text-muted">Atención</span>
       {chips.map((chip) =>
         chip.href ? (
           <Link key={chip.key} href={chip.href} className={classes(chip.tone, false)}>
-            {chip.icon} {chip.label} <ArrowRight size={12} weight="bold" />
+            {chip.icon} {chip.label} <ArrowRight size={14} />
           </Link>
         ) : (
           <button
@@ -665,6 +682,7 @@ function ProjectRow({
   }
 
   const [reprocessing, setReprocessing] = useState(false);
+  const [confirmReprocess, setConfirmReprocess] = useState(false);
   async function reprocess() {
     setReprocessing(true);
     try {
@@ -683,9 +701,6 @@ function ProjectRow({
 
   const inner = (
     <>
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-2">
-        <FileText size={17} weight="duotone" className="text-foreground" />
-      </div>
       <div className="min-w-0 flex-1">
         {editing ? (
           <Input
@@ -708,7 +723,7 @@ function ProjectRow({
               {processed &&
                 (project.verified ? (
                   <Badge tone="success">
-                    <SealCheck size={12} weight="bold" /> Verificado
+                    <SealCheck size={14} /> Verificado
                   </Badge>
                 ) : (
                   <span title="Unidades, elementos y supuestos por confirmar">
@@ -721,7 +736,7 @@ function ProjectRow({
               {project.client && <span className="text-faint">·</span>}
               {(project.sheet_count ?? 0) > 1 && (
                 <span className="inline-flex items-center gap-1">
-                  <Stack size={12} /> {project.sheet_count} hojas
+                  <Stack size={14} /> {project.sheet_count} hojas
                 </span>
               )}
               {(project.sheet_count ?? 0) > 1 && <span className="text-faint">·</span>}
@@ -736,7 +751,7 @@ function ProjectRow({
                 <>
                   <span className="text-faint">·</span>
                   <span className="inline-flex items-center gap-1" title="Procesado con una versión anterior de Klave">
-                    <ArrowsClockwise size={12} /> lectura anterior
+                    <ArrowsClockwise size={14} /> lectura anterior
                   </span>
                 </>
               )}
@@ -746,16 +761,16 @@ function ProjectRow({
       </div>
       {project.money_state === "blocked" ? (
         <div className="hidden text-right sm:block">
-          <div className="text-sm text-muted">sin unidades</div>
-          <div className="microlabel">confirma la escala</div>
+          <div className="text-[13px] text-muted">sin unidades</div>
+          <div className="text-xs text-warning">confirma la escala</div>
         </div>
       ) : (
         project.grand_total != null && (
           <div className="hidden text-right sm:block">
-            <div className="font-display text-sm font-semibold tabular">
+            <div className="font-display text-[15px] font-medium tabular">
               {money(project.grand_total, project.currency)}
             </div>
-            <div className="microlabel">total</div>
+            <div className="text-xs text-muted">total</div>
           </div>
         )
       )}
@@ -775,7 +790,7 @@ function ProjectRow({
                 close();
               }}
             >
-              <PencilSimple size={15} /> Renombrar
+              <PencilSimple /> Renombrar
             </MenuItem>
             <MenuItem
               onSelect={() => {
@@ -784,15 +799,15 @@ function ProjectRow({
                 close();
               }}
             >
-              <UserSwitch size={15} /> Cliente…
+              <UserSwitch /> Cliente…
             </MenuItem>
             <MenuItem
               onSelect={() => {
-                reprocess();
+                setConfirmReprocess(true);
                 close();
               }}
             >
-              <ArrowsClockwise size={15} className={reprocessing ? "animate-spin" : ""} />{" "}
+              <ArrowsClockwise className={reprocessing ? "animate-spin" : ""} />{" "}
               {reprocessing ? "Encolando…" : "Reprocesar"}
             </MenuItem>
             <MenuItem
@@ -803,11 +818,11 @@ function ProjectRow({
             >
               {project.archived ? (
                 <>
-                  <ArrowCounterClockwise size={15} /> Restaurar
+                  <ArrowCounterClockwise /> Restaurar
                 </>
               ) : (
                 <>
-                  <Archive size={15} /> Archivar
+                  <Archive /> Archivar
                 </>
               )}
             </MenuItem>
@@ -818,20 +833,29 @@ function ProjectRow({
                 setRemoveOpen(true);
               }}
             >
-              <Trash size={15} /> Quitar de la lista…
+              <Trash /> Quitar de la lista…
             </MenuItem>
           </>
         )}
       </KebabMenu>
-      <ArrowRight
-        size={15}
-        weight="bold"
-        className="text-faint transition group-hover:translate-x-0.5 group-hover:text-foreground"
+      <CaretRight
+        size={14}
+        aria-hidden
+        className="shrink-0 text-faint transition-transform duration-150 ease-out group-hover:translate-x-0.5 group-hover:text-foreground"
       />
     </>
   );
 
   const dialog = (
+    <>
+    <ReprocesarDialog
+      open={confirmReprocess}
+      onConfirm={() => {
+        setConfirmReprocess(false);
+        void reprocess();
+      }}
+      onCancel={() => setConfirmReprocess(false)}
+    />
     <ConfirmDialog
       open={removeOpen}
       title="Quitar proyecto de la lista"
@@ -849,12 +873,13 @@ function ProjectRow({
         remove();
       }}
     />
+    </>
   );
 
   if (editing) {
     return (
       <>
-        <div className="card flex items-center gap-3 p-3.5">{inner}</div>
+        <div className="flex items-center gap-3 px-4 py-2.5">{inner}</div>
         {dialog}
       </>
     );
@@ -863,148 +888,11 @@ function ProjectRow({
     <>
       <Link
         href={`/proyecto/${project.project_id}`}
-        className="card card-hover group flex items-center gap-3 p-3.5"
+        className="group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2/60"
       >
         {inner}
       </Link>
       {dialog}
     </>
-  );
-}
-
-
-/* ------------------------------------------------------------ new project -- */
-
-function suggestName(file: File): string {
-  const stem = file.name.replace(/\.(dwg|dxf)$/i, "").replace(/[_\-]+/g, " ").trim();
-  return stem.replace(/\s+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 80);
-}
-
-function NewProjectDialog({
-  files,
-  busy,
-  error,
-  onCancel,
-  onCreate,
-}: {
-  files: File[];
-  busy: boolean;
-  error: string | null;
-  onCancel: () => void;
-  onCreate: (name: string, client: string) => void;
-}) {
-  const [name, setName] = useState(() => suggestName(files[0]));
-  const [client, setClient] = useState("");
-  const totalMb = files.reduce((sum, f) => sum + f.size, 0) / 1e6;
-  const formId = "nuevo-proyecto";
-  // Qué datos jala cada hoja: el ruteo real del motor, consultado por
-  // nombre. Si la consulta falla, la lista simple sigue sirviendo.
-  const [previews, setPreviews] = useState<Map<string, DisciplinePreview> | null>(null);
-  const [openFile, setOpenFile] = useState<string | null>(null);
-  useEffect(() => {
-    let active = true;
-    previewDisciplinas(files.map((f) => f.name))
-      .then((rows) => {
-        if (active) setPreviews(new Map(rows.map((row) => [row.filename, row])));
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [files]);
-
-  return (
-    <Modal
-      open
-      busy={busy}
-      onClose={onCancel}
-      title="Nuevo proyecto"
-      sub={`${files.length === 1 ? "1 hoja" : `${files.length} hojas`} · ${totalMb.toFixed(1)} MB. Las hojas se procesan juntas como una sola obra.`}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onCancel} disabled={busy}>
-            Cancelar
-          </Button>
-          <Button type="submit" form={formId} variant="primary" disabled={busy || name.trim().length < 2}>
-            {busy ? (
-              <>
-                <CircleNotch size={15} className="animate-spin" /> Subiendo…
-              </>
-            ) : (
-              <>
-                <Plus size={15} weight="bold" /> Crear y procesar
-              </>
-            )}
-          </Button>
-        </>
-      }
-    >
-      <form
-        id={formId}
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!busy && name.trim().length >= 2) onCreate(name.trim(), client.trim());
-        }}
-      >
-        {error && <div role="alert" className="mb-4"><Callout tone="danger">{error}</Callout></div>}
-        <label htmlFor="project-name" className="mb-1 block text-xs font-medium text-muted">Nombre del proyecto</label>
-        <Input
-          id="project-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          autoFocus
-          maxLength={120}
-          required
-          className="mb-3 w-full"
-        />
-        <label htmlFor="project-client" className="mb-1 block text-xs font-medium text-muted">Cliente (opcional)</label>
-        <Input
-          id="project-client"
-          value={client}
-          onChange={(e) => setClient(e.target.value)}
-          placeholder="Constructora, dependencia, particular…"
-          maxLength={120}
-          className="mb-3 w-full"
-        />
-        <ul className="max-h-56 space-y-0.5 overflow-y-auto text-xs">
-          {files.map((file, index) => {
-            const preview = previews?.get(file.name);
-            const open = openFile === file.name;
-            return (
-              <li key={`${index}-${file.name}`}>
-                <button
-                  type="button"
-                  onClick={() => setOpenFile(open ? null : file.name)}
-                  aria-expanded={open}
-                  className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-muted transition-colors hover:bg-surface-2"
-                >
-                  <FileText size={12} className="shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">{file.name}</span>
-                  {preview && (
-                    <Badge tone={preview.structural ? "accent" : "default"}>
-                      {preview.label}
-                    </Badge>
-                  )}
-                  <CaretDown
-                    size={10}
-                    className={`shrink-0 text-faint transition-transform ${open ? "" : "-rotate-90"}`}
-                  />
-                </button>
-                {open && (
-                  <ul className="mb-1 ml-6 space-y-0.5 border-l border-border pl-2.5 text-muted">
-                    {(preview?.jala ?? ["Consultando qué datos jala…"]).map((dato) => (
-                      <li key={dato} className="flex items-start gap-1.5">
-                        <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-faint" />
-                        {dato}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </form>
-    </Modal>
   );
 }

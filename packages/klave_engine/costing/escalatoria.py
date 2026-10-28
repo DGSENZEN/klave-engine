@@ -124,14 +124,13 @@ def _pedir_indices(sol: SolicitudAjuste, res: ResumenAjuste) -> bool:
     if sol.indice is None:
         res.avisos.append(
             "No hay índice cargado. El factor sale de índices del INPP publicados por el "
-            "INEGI y el motor no guarda ninguno: captura la publicación que vas a usar. "
-            "Un ajuste con índices inventados es un cobro sin sustento."
+            "INEGI y Klave no guarda ninguno: captura la publicación que vas a usar."
         )
         return False
     if not sol.periodo_base or not sol.periodo_ajuste:
         res.avisos.append(
             "Falta el periodo base o el de ajuste. La fecha base es la del acto de "
-            "presentación y apertura de proposiciones, no la de la firma del contrato."
+            "presentación y apertura de proposiciones, anterior a la firma del contrato."
         )
         return False
 
@@ -145,8 +144,8 @@ def _pedir_indices(sol: SolicitudAjuste, res: ResumenAjuste) -> bool:
     if faltan:
         res.avisos.append(
             f"El índice «{sol.indice.nombre}» no tiene valor para {', '.join(faltan)}. "
-            "No se interpola entre dos periodos: un índice interpolado no lo publicó "
-            "nadie y en una revisión no hay dónde ir a comprobarlo."
+            "Captura el valor publicado: no se interpola entre periodos, porque un valor "
+            "interpolado no se puede comprobar en una revisión."
         )
         return False
     if not res.indice_base:
@@ -187,8 +186,8 @@ def calcular(sol: SolicitudAjuste) -> ResumenAjuste:
             ajustable = round(ajustable - atrasado, 2)
             res.avisos.append(
                 f"${atrasado:,.2f} corresponden a obra atrasada por causa del contratista y "
-                "se ajustan con los índices que les tocaban según el programa, no con los "
-                "de este periodo (RLOPSRM art. 176)."
+                "se ajustan con los índices del periodo que les tocaba según el programa "
+                "(RLOPSRM art. 176)."
             )
         elif not any(r.quantity_programada is not None for r in sol.renglones):
             res.avisos.append(
@@ -215,7 +214,7 @@ def calcular(sol: SolicitudAjuste) -> ResumenAjuste:
         )
     if not sol.renglones:
         res.avisos.append(
-            "No hay renglones en la solicitud: sin obra pendiente el factor no se aplica "
-            "a nada."
+            "La solicitud no tiene renglones: sin obra pendiente, el factor no tiene a qué "
+            "aplicarse."
         )
     return res

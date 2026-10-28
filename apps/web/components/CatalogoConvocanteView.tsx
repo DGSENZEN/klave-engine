@@ -37,6 +37,7 @@ import {
   Td,
   Th,
 } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 /** Una diferencia de cantidad, dicha en la dirección en que duele. */
 function Diferencia({ renglon }: { renglon: RenglonConvocante }) {
@@ -86,6 +87,10 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
     };
   }, [id]);
 
+  // Replacing a catalog that already has rows replaces the signed contract
+  // the estimaciones are measured against: it asks first.
+  const [porReemplazar, setPorReemplazar] = useState<File | null>(null);
+
   async function subir(file: File) {
     setCargando(true);
     setError(null);
@@ -111,7 +116,7 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
   );
 
   return (
-    <div className="rise-in px-6 py-7 lg:px-8" data-tour="convocante.vista">
+    <div className="px-4 py-5 sm:px-6" data-tour="convocante.vista">
       <PageHeader
         title={titulo}
         sub="El catálogo que manda la convocante: sus claves, su orden y sus cantidades. Klave le pone al lado la cantidad que sostiene el plano, y no lo modifica."
@@ -122,6 +127,21 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
           <Callout tone="danger">{error}</Callout>
         </div>
       )}
+      <ConfirmDialog
+        open={porReemplazar !== null}
+        title={`Reemplazar los ${renglones.length} renglones del catálogo del contrato`}
+        description={`Se cambian por los de «${porReemplazar?.name ?? ""}». Las estimaciones y los convenios se miden contra este catálogo.`}
+        confirmLabel="Reemplazar catálogo"
+        onConfirm={() => {
+          const f = porReemplazar;
+          setPorReemplazar(null);
+          if (f) void subir(f);
+        }}
+        onCancel={() => {
+          setPorReemplazar(null);
+          if (archivo.current) archivo.current.value = "";
+        }}
+      />
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <input
@@ -131,11 +151,13 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
-            if (f) void subir(f);
+            if (!f) return;
+            if (renglones.length > 0) setPorReemplazar(f);
+            else void subir(f);
           }}
         />
         <Button onClick={() => archivo.current?.click()} disabled={cargando}>
-          <FileArrowUp size={15} weight="bold" />
+          <FileArrowUp />
           {cargando
             ? "Leyendo…"
             : renglones.length
@@ -152,7 +174,7 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
               )
             }
           >
-            <DownloadSimple size={15} weight="bold" /> Convocante contra plano (Excel)
+            <DownloadSimple /> Convocante contra plano (Excel)
           </Button>
         )}
         <span className="text-xs text-muted">
@@ -173,7 +195,7 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
 
       {catalogo && renglones.length === 0 && (
         <EmptyState
-          icon={<Scales size={22} weight="duotone" />}
+          icon={<Scales size={20} weight="duotone" />}
           title="Sin catálogo del contrato"
           hint="En obra pública la convocante manda el catálogo y tú devuelves ese mismo documento con precios. Cárgalo y Klave comparará sus cantidades contra las que leyó del plano."
         />
@@ -186,7 +208,7 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
               label="Renglones del catálogo"
               value={renglones.length}
               hint={`${comparables.length} los mide Klave del plano`}
-              icon={<Scales size={16} weight="duotone" />}
+              icon={<Scales />}
             />
             <Metric
               label="Cantidades que no cuadran"
@@ -197,7 +219,7 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
                   : "Ninguna se aparta más de 5 % del plano"
               }
               accent={discrepantes.length ? "danger" : undefined}
-              icon={<Warning size={16} weight="duotone" />}
+              icon={<Warning />}
             />
             <Metric
               label="Importe con tus precios"
@@ -301,8 +323,8 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
                 <p key={n}>{n}</p>
               ))}
               <p>
-                Las cantidades de la convocante son el contrato: Klave no las corrige.
-                Una diferencia se aclara en junta y se firma, o no.
+                Las cantidades de la convocante son el contrato y Klave no las corrige.
+                Una diferencia se aclara en junta; ahí se decide si se firma.
               </p>
             </div>
           </Card>

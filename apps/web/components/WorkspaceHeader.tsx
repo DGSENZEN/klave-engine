@@ -14,7 +14,7 @@ import {
 } from "@phosphor-icons/react";
 import { peekBrowserActor } from "@/lib/collab";
 import { fetchAuthStatus } from "@/lib/session";
-import { Avatar } from "@/components/ui";
+import { Avatar, PRESS } from "@/components/ui";
 import { KebabMenu, MenuItem } from "@/components/Menu";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -42,7 +42,7 @@ export function WorkspaceHeader({ active }: { active: Section }) {
   }, []);
 
   const linkClass = (section: Section) =>
-    `inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium transition-colors ${
+    `inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium ${PRESS} ${
       active === section
         ? "bg-surface-2 text-foreground"
         : "text-muted hover:bg-surface-2/70 hover:text-foreground"
@@ -50,34 +50,34 @@ export function WorkspaceHeader({ active }: { active: Section }) {
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-4xl items-center justify-between gap-2 px-4 sm:px-5">
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-2 px-5 sm:px-6">
         <div className="flex min-w-0 items-center gap-2 sm:gap-4">
           <Link href="/" className="flex shrink-0 items-center gap-2.5">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-fg">
-              <Buildings size={17} weight="duotone" />
+            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-fg shadow-btn-ink">
+              <Buildings />
             </span>
             <span className="hidden font-display text-[1.05rem] font-semibold tracking-tight sm:inline">
               Klave
             </span>
           </Link>
           <nav className="flex items-center gap-0.5 sm:gap-1">
-            <Link href="/" className={linkClass("proyectos")}>
-              <FolderOpen size={15} weight="duotone" />
+            <Link href="/" className={linkClass("proyectos")} aria-current={active === "proyectos" ? "page" : undefined}>
+              <FolderOpen />
               <span className="hidden sm:inline">Proyectos</span>
             </Link>
-            <Link href="/catalogo" className={linkClass("catalogo")}>
-              <Books size={15} weight="duotone" />
+            <Link href="/catalogo" className={linkClass("catalogo")} aria-current={active === "catalogo" ? "page" : undefined}>
+              <Books />
               <span className="hidden sm:inline">Catálogo</span>
             </Link>
             {isAdmin && (
-              <Link href="/equipo" className={linkClass("equipo")}>
-                <UsersThree size={15} weight="duotone" />
+              <Link href="/equipo" className={linkClass("equipo")} aria-current={active === "equipo" ? "page" : undefined}>
+                <UsersThree />
                 <span className="hidden sm:inline">Equipo</span>
               </Link>
             )}
             {isAdmin && (
-              <Link href="/taller" className={linkClass("taller")}>
-                <GearSix size={15} weight="duotone" />
+              <Link href="/taller" className={linkClass("taller")} aria-current={active === "taller" ? "page" : undefined}>
+                <GearSix />
                 <span className="hidden sm:inline">Taller</span>
               </Link>
             )}
@@ -85,7 +85,7 @@ export function WorkspaceHeader({ active }: { active: Section }) {
         </div>
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <span data-tour="workspace.ayuda">
-          <KebabMenu label="Ayuda" icon={<Question size={17} weight="duotone" />}>
+          <KebabMenu label="Ayuda" icon={<Question />}>
             {(close) => (
               <>
                 <MenuItem
@@ -102,7 +102,7 @@ export function WorkspaceHeader({ active }: { active: Section }) {
                     close();
                     router.push("/como-funciona");
                   }}
-                  hint="Las reglas que la app no rompe"
+                  hint="Las reglas que la app siempre cumple"
                 >
                   Cómo funciona
                 </MenuItem>

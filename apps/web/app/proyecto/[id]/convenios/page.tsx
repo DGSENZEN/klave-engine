@@ -39,6 +39,7 @@ import {
   Callout,
   Card,
   EmptyState,
+  IconButton,
   Input,
   Metric,
   PageHeader,
@@ -47,6 +48,7 @@ import {
   Td,
   Th,
 } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 /** Qué tan cerca del techo del art. 59, dicho como barra y como número. */
 function Medidor({ estado }: { estado: EstadoContrato }) {
@@ -81,8 +83,8 @@ function Medidor({ estado }: { estado: EstadoContrato }) {
         <div className={`h-full rounded-full ${tono}`} style={{ width: `${lleno}%` }} />
       </div>
       <div className="mt-1.5 text-xs text-muted">
-        Contrato vigente {money(estado.monto_vigente)}. El art. 59 de la LOPSRM cuenta
-        todos los convenios juntos, no uno por uno.
+        Contrato vigente {money(estado.monto_vigente)}. El art. 59 de la LOPSRM suma
+        todos los convenios para medir el techo.
       </div>
     </Card>
   );
@@ -204,11 +206,25 @@ export default function ConveniosPage() {
     await cargar();
   }
 
+  const porEliminar = confirmar !== null ? convenios.find((c) => c.numero === confirmar) : undefined;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 py-5 sm:px-6">
+      <ConfirmDialog
+        open={confirmar !== null}
+        title={`Eliminar el convenio ${confirmar ?? ""}${porEliminar?.motivo ? ` — ${porEliminar.motivo}` : ""}`}
+        description="Lo convenido deja de contar: la siguiente estimación vuelve a medir contra el catálogo anterior."
+        confirmLabel="Eliminar convenio"
+        onCancel={() => setConfirmar(null)}
+        onConfirm={() => {
+          const numero = confirmar;
+          setConfirmar(null);
+          if (numero !== null) void eliminar(numero);
+        }}
+      />
       <PageHeader
         title="Convenios modificatorios"
-        sub="Lo que cambió del contrato después de firmarlo, y qué tanto margen queda antes del techo de ley."
+        sub="Lo que cambió del contrato después de firmarlo y el margen que queda antes del techo de ley."
       />
 
       {cargando && <Skeleton className="h-28 w-full" />}
@@ -226,7 +242,7 @@ export default function ConveniosPage() {
                 ? `${estado.plazo_pct.toFixed(1)} % sobre ${estado.plazo_original_dias} días originales`
                 : "Captura el plazo del contrato para medirlo contra el techo."
             }
-            icon={<Scales size={18} />}
+            icon={<Scales />}
           />
         </div>
       )}
@@ -253,7 +269,7 @@ export default function ConveniosPage() {
                 variant="secondary"
                 onClick={() => void proponer(e.estimacion.numero)}
               >
-                <FilePlus size={16} />
+                <FilePlus />
                 Armar convenio de la estimación {e.estimacion.numero}
               </Button>
             ))}
@@ -265,8 +281,8 @@ export default function ConveniosPage() {
         <Card className="p-4">
           <SectionTitle>Borrador del convenio {borrador.numero}</SectionTitle>
           <p className="mt-1 text-sm text-muted">
-            Las cantidades vienen de lo que ya se midió en obra. El motivo no: la ley pide
-            causa justificada y eso lo escribe quien la conoce.
+            Las cantidades vienen de lo medido en obra. El motivo lo escribes tú, porque la
+            ley pide causa justificada.
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
             <label className="block">
@@ -291,7 +307,7 @@ export default function ConveniosPage() {
             </label>
           </div>
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr>
                   <Th>Clave</Th>
@@ -335,7 +351,7 @@ export default function ConveniosPage() {
 
       {!cargando && convenios.length === 0 && !borrador && (
         <EmptyState
-          icon={<Scales size={28} />}
+          icon={<Scales size={20} />}
           title="El contrato sigue como se firmó"
           hint="Cuando una estimación mida más de lo contratado, aquí se arma el convenio que lo respalda."
         />
@@ -369,31 +385,23 @@ export default function ConveniosPage() {
                   )}
                 </div>
               </div>
-              {confirmar === c.numero ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted">¿Quitarlo?</span>
-                  <Button variant="ghost" onClick={() => setConfirmar(null)}>
-                    No
-                  </Button>
-                  <Button variant="secondary" onClick={() => void eliminar(c.numero)}>
-                    Sí, quitar
-                  </Button>
-                </div>
-              ) : (
-                <Button variant="ghost" onClick={() => setConfirmar(c.numero)}>
-                  <Trash size={16} />
-                </Button>
-              )}
+              <IconButton
+                size="sm"
+                aria-label={`Eliminar el convenio ${c.numero}`}
+                onClick={() => setConfirmar(c.numero)}
+              >
+                <Trash />
+              </IconButton>
             </div>
           </div>
           {!c.motivo && (
             <Callout tone="warning">
-              <Warning size={16} /> Este convenio no tiene causa escrita. La ley pide que
+              <Warning /> Este convenio no tiene causa escrita. La ley pide que
               esté justificado y una revisión lo va a buscar.
             </Callout>
           )}
           <div className="mt-3 overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr>
                   <Th>Clave</Th>

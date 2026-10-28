@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { PlusCircle, Trash } from "@phosphor-icons/react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   addOmittedElement,
   apiMessage,
@@ -9,14 +10,7 @@ import {
   removeOmittedElement,
   type OmittedElement,
 } from "@/lib/api";
-import {
-  Button,
-  Callout,
-  Card,
-  Input,
-  SectionTitle,
-  Select,
-} from "@/components/ui";
+import { Button, Callout, Card, Input, SectionTitle, Select, iconButtonClasses } from "@/components/ui";
 
 /** What each family needs from the engineer: nothing beyond the count, a
  * total length, or a total area. Mirrors the API's validation. */
@@ -114,6 +108,8 @@ export function OmittedSection({
     }
   }
 
+  const [porQuitar, setPorQuitar] = useState<OmittedElement | null>(null);
+
   async function remove(elementId: string) {
     setBusy(true);
     try {
@@ -133,7 +129,19 @@ export function OmittedSection({
 
   return (
     <Card className="p-5">
-      <SectionTitle sub="¿Klave no vio algo que está en el plano? Regístralo aquí: entra al presupuesto como levantamiento manual, con tu nombre — y le enseña al motor dónde falló.">
+      <ConfirmDialog
+        open={porQuitar !== null}
+        title={`Quitar ${porQuitar ? `${porQuitar.count} × ${porQuitar.mark || porQuitar.family}` : "el elemento"} de los omitidos`}
+        description="Su cantidad sale del presupuesto. Si de verdad está en el plano, habrá que volver a registrarlo."
+        confirmLabel="Quitar"
+        onConfirm={() => {
+          const el = porQuitar;
+          setPorQuitar(null);
+          if (el) void remove(el.element_id);
+        }}
+        onCancel={() => setPorQuitar(null)}
+      />
+      <SectionTitle sub="¿Klave no vio algo que está en el plano? Regístralo aquí. Entra al presupuesto como levantamiento manual con tu nombre y le enseña al motor dónde falló.">
         Elementos omitidos por el motor
       </SectionTitle>
 
@@ -163,8 +171,8 @@ export function OmittedSection({
                 type="button"
                 aria-label="Quitar elemento omitido"
                 disabled={busy}
-                onClick={() => remove(element.element_id)}
-                className="shrink-0 rounded-md p-1 text-faint transition-colors hover:bg-surface-2 hover:text-danger"
+                onClick={() => setPorQuitar(element)}
+                className={iconButtonClasses("sm", "text-faint hover:text-danger")}
               >
                 <Trash size={14} />
               </button>
@@ -283,7 +291,7 @@ export function OmittedSection({
         </div>
       ) : (
         <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
-          <PlusCircle size={15} weight="bold" /> Agregar elemento omitido
+          <PlusCircle /> Agregar elemento omitido
         </Button>
       )}
     </Card>

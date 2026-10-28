@@ -22,6 +22,7 @@ import { parseProjectEvent, projectEventsUrl } from "@/lib/collab";
 import { ProjectLiveProvider } from "@/components/ProjectLive";
 import { RecorridoPuente, useRecorridoObra } from "@/components/recorrido/RecorridoPuente";
 import { ProjectShell } from "@/components/ProjectShell";
+import { vista } from "@/lib/procesando";
 import { Button, Callout, Skeleton, SkeletonHeader, buttonClasses } from "@/components/ui";
 
 const STEPS = [
@@ -40,6 +41,10 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const [status, setStatus] = useState<ProjectStatus | null>(null);
+  // Once the project has been open in this tab, reprocessing never swaps it
+  // for the processing screen: what someone is typing stays mounted.
+  const [yaAbierta, setYaAbierta] = useState(false);
+  if (!yaAbierta && status?.state === "processed") setYaAbierta(true);
   const [name, setName] = useState<string | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [noAccess, setNoAccess] = useState(false);
@@ -107,7 +112,10 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       if (!event || !active) return;
       if (event.type === "job_updated") {
         const data = event.data;
-        setStatus({
+        // The event carries the job, not the artifacts: keep what the last
+        // status said about a readable previous run.
+        setStatus((prev) => ({
+          artifacts_available: prev?.artifacts_available,
           project_id: id,
           job_id: typeof data.job_id === "string" ? data.job_id : undefined,
           run_id: typeof data.run_id === "string" ? data.run_id : undefined,
@@ -117,7 +125,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
           entity_count: typeof data.entity_count === "number" ? data.entity_count : undefined,
           detection_count:
             typeof data.detection_count === "number" ? data.detection_count : undefined,
-        });
+        }));
       } else if (event.type === "run_published") {
         getStatus(id)
           .then((s) => {
@@ -189,12 +197,21 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   // Failure stays useful: with readable artifacts from a previous (or
   // partial) run, the full shell opens — viewer, lectura, adjustments —
   // behind an explicit warning instead of a dead end.
-  if (status?.state === "processed" || (failed && status.artifacts_available)) {
+  const v = status ? vista(status.state, Boolean(status.artifacts_available), yaAbierta) : null;
+  const reprocesando = !notStarted && v === "shell-reprocesando";
+  if (v === "shell" || reprocesando) {
     return (
       <ProjectLiveProvider projectId={id}>
         <RecorridoPuente />
         <ProjectShell id={id} name={name}>
           {uploadWarning && <div className="px-6 pt-5"><Callout tone="warning">{uploadWarning}</Callout></div>}
+          {reprocesando && (
+            <div className="sticky top-0 z-20 px-6 pt-5 lg:px-8">
+              <Callout tone="info">
+                Se está reprocesando. Lo que ves es la lectura anterior; se actualiza al terminar.
+              </Callout>
+            </div>
+          )}
           {failed && (
             <div className="px-6 pt-5 lg:px-8">
               <Callout tone="danger">
@@ -223,7 +240,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       <div className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6">
         {uploadWarning && <Callout tone="warning">{uploadWarning}</Callout>}
         <Link href="/" className="mb-8 inline-flex items-center gap-2 text-sm text-muted">
-          <Buildings size={16} weight="duotone" /> Klave
+          <Buildings /> Klave
         </Link>
         <h1 className="text-xl font-semibold">
           {noAccess ? "No tienes acceso a esta obra" : "No se pudo abrir el proyecto"}
@@ -263,7 +280,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       <div className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6">
         {uploadWarning && <Callout tone="warning">{uploadWarning}</Callout>}
         <Link href="/" className="mb-8 inline-flex items-center gap-2 text-sm text-muted">
-          <Buildings size={16} weight="duotone" /> Klave
+          <Buildings /> Klave
         </Link>
         <h1 className="text-xl font-semibold">
           {failed ? "No se pudo procesar el plano" : "Este proyecto aún no se procesa"}
@@ -291,7 +308,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         href="/"
         className="mb-8 inline-flex items-center gap-2 text-sm text-muted transition hover:text-foreground"
       >
-        <Buildings size={16} weight="duotone" /> Klave
+        <Buildings /> Klave
       </Link>
       <h1 className="flex items-baseline gap-3 text-xl font-semibold">
         {failed ? "No se pudo procesar el plano" : status.state === "queued" ? "En cola de procesamiento" : "Procesando tu plano…"}
@@ -370,7 +387,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       )}
       {failed && (
         <Link href="/" className={buttonClasses("primary", "md", "mt-6 w-fit")}>
-          <ArrowLeft size={15} weight="bold" /> Volver e intentar de nuevo
+          <ArrowLeft /> Volver e intentar de nuevo
         </Link>
       )}
     </div>

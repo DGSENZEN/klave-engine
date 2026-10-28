@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendored verbatim from upstream; see lib/ascii-pond/pond.d.ts.
+    "lib/ascii-pond/*.js",
   ]),
 ]);
 

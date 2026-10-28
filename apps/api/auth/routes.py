@@ -1,19 +1,16 @@
-"""Sessions, registration, Google sign-in, the admin confirmation loop, and
+"""Sessions, registration, the admin confirmation loop, and
 project sharing. Session cookies live on the API origin (HttpOnly, Lax);
 localhost ports are same-site, so the browser sends them on fetch/SSE.
 
 Invitations, recovery, and the account page live in sibling routers.
 """
 
-import base64
-import json
 import secrets
 from typing import Any, Literal
-from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.exceptions import HTTPException
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import Response
 from klave_engine.common.config import Settings
 from klave_engine.common.ids import slugify
 from pydantic import BaseModel, EmailStr, Field
@@ -28,7 +25,6 @@ from apps.api.auth.common import (
     session_user,
     start_session,
     users_dependency,
-    web_link,
 )
 from apps.api.auth.passwords import password_problem
 from apps.api.auth.recovery import send_verification
@@ -43,37 +39,6 @@ from apps.api.events import BUS
 from apps.api.mail import get_mailer
 
 router = APIRouter(tags=["auth"])
-
-GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-GOOGLE_ISSUERS = ("https://accounts.google.com", "accounts.google.com")
-
-
-def google_claims_problem(claims: dict[str, Any], client_id: str | None) -> str | None:
-    """Why an id_token must not sign anyone in, or None when it may: the
-    token must be issued by Google for this app, still valid, and carry an
-    email Google has verified."""
-    import time
-
-    if claims.get("iss") not in GOOGLE_ISSUERS:
-        return "google"
-    aud = claims.get("aud")
-    audiences = aud if isinstance(aud, list) else [aud]
-    if not client_id or client_id not in audiences:
-        return "google"
-    try:
-        if float(claims.get("exp") or 0) < time.time():
-            return "google"
-    except (TypeError, ValueError):
-        return "google"
-    if not claims.get("sub") or not claims.get("email"):
-        return "google"
-    if claims.get("email_verified") is not True:
-        return "google_unverified"
-    return None
-STATE_COOKIE = "klave_oauth_state"
-INVITE_COOKIE = "klave_oauth_invite"
-
 
 class RegisterInput(BaseModel):
     email: EmailStr
@@ -122,7 +87,6 @@ def auth_session(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     """Deployment auth state: mode, current user, workspace, and methods."""
-    google_enabled = bool(settings.auth_google_id and settings.auth_google_secret)
     mail_enabled = get_mailer(settings).enabled
     try:
         protected = users.has_users()
@@ -133,7 +97,6 @@ def auth_session(
             "mode": "unavailable",
             "user": None,
             "workspace": None,
-            "google_enabled": google_enabled,
             "mail_enabled": mail_enabled,
             "registration": settings.registration,
         }
@@ -141,7 +104,6 @@ def auth_session(
         "mode": "protected" if protected else "open",
         "user": public_user(user) if user else None,
         "workspace": workspace,
-        "google_enabled": google_enabled,
         "mail_enabled": mail_enabled,
         "registration": settings.registration,
     }
@@ -260,171 +222,6 @@ def logout(
         pass
     response.delete_cookie(SESSION_COOKIE, path="/")
     return {"ok": True}
-
-
-# ------------------------------------------------------------------ google
-
-def _google_callback_url(request: Request, settings: Settings) -> str:
-    if settings.api_public_prefix:
-        return (
-            settings.web_origin.rstrip("/") + settings.api_public_prefix + "/auth/google/callback"
-        )
-    return str(request.base_url).rstrip("/") + "/auth/google/callback"
-
-
-@router.get("/auth/google")
-def google_start(
-    request: Request,
-    invite: str | None = None,
-    settings: Settings = Depends(get_settings),
-) -> Response:
-    if not (settings.auth_google_id and settings.auth_google_secret):
-        raise HTTPException(status_code=404, detail={"error_type": "google_not_configured"})
-    state = secrets.token_urlsafe(24)
-    redirect_uri = _google_callback_url(request, settings)
-    url = GOOGLE_AUTH_URL + "?" + urlencode(
-        {
-            "client_id": settings.auth_google_id,
-            "redirect_uri": redirect_uri,
-            "response_type": "code",
-            "scope": "openid email profile",
-            "state": state,
-        }
-    )
-    response = RedirectResponse(url)
-    response.set_cookie(
-        STATE_COOKIE, state, httponly=True, samesite="lax", max_age=600,
-        path=settings.api_public_prefix + "/auth",
-    )
-    if invite:
-        # Accepting an invitation with Google: the token rides a short-lived
-        # cookie and is honored only when the Google email matches it.
-        response.set_cookie(
-            INVITE_COOKIE, invite, httponly=True, samesite="lax", max_age=600,
-            path=settings.api_public_prefix + "/auth",
-        )
-    return response
-
-
-@router.get("/auth/google/callback")
-async def google_callback(
-    request: Request,
-    users: UserStore = Depends(users_dependency),
-    settings: Settings = Depends(get_settings),
-) -> Response:
-    def fail(reason: str) -> Response:
-        response = RedirectResponse(web_link(settings, f"/bienvenida?error={reason}"))
-        response.delete_cookie(STATE_COOKIE, path=settings.api_public_prefix + "/auth")
-        response.delete_cookie(INVITE_COOKIE, path=settings.api_public_prefix + "/auth")
-        return response
-
-    if not (settings.auth_google_id and settings.auth_google_secret):
-        return fail("google")
-    code = request.query_params.get("code")
-    state = request.query_params.get("state")
-    if not code or not state or state != request.cookies.get(STATE_COOKIE):
-        return fail("google")
-
-    import httpx
-
-    redirect_uri = _google_callback_url(request, settings)
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            token_response = await client.post(
-                GOOGLE_TOKEN_URL,
-                data={
-                    "code": code,
-                    "client_id": settings.auth_google_id,
-                    "client_secret": settings.auth_google_secret,
-                    "redirect_uri": redirect_uri,
-                    "grant_type": "authorization_code",
-                },
-            )
-    except httpx.HTTPError:
-        return fail("google")
-    if token_response.status_code != 200:
-        return fail("google")
-    id_token = token_response.json().get("id_token")
-    if not id_token:
-        return fail("google")
-    # The id_token arrives straight from Google's token endpoint over TLS, so
-    # its signature is not re-checked; its claims still must be ours (iss,
-    # aud, exp) and the email must be one Google itself verified.
-    try:
-        payload = id_token.split(".")[1]
-        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
-    except (ValueError, IndexError):
-        return fail("google")
-    problem = google_claims_problem(claims, settings.auth_google_id)
-    if problem is not None:
-        return fail(problem)
-    sub = claims["sub"]
-    email = claims["email"].lower()
-    name = claims.get("name") or email.split("@")[0]
-    picture = claims.get("picture")
-    invite_token = request.cookies.get(INVITE_COOKIE)
-
-    try:
-        user = users.get_by_google_sub(sub)
-        if user is None:
-            # Linking Google to an account that already exists needs proof of
-            # that account: a live session (the user came from Tu cuenta).
-            # An unauthenticated sign-in with a matching email is not proof.
-            signed_in = session_user(request, users)
-            existing = users.get_by_email(email)
-            if signed_in is not None:
-                users.link_google(str(signed_in["user_id"]), sub, picture)
-                audit(
-                    users, signed_in, "google_linked",
-                    target_type="user", target_id=str(signed_in["user_id"]),
-                    detail={"email": email},
-                )
-                user = users.get_by_google_sub(sub) or signed_in
-            elif existing is not None:
-                return fail("google_link_required")
-            elif (
-                settings.registration == "invite_only" and not invite_token
-                and users.has_users()
-            ):
-                return fail("invite")
-            elif invite_token:
-                invite = users.get_invitation_by_token(invite_token)
-                if invite is None or invite["state"] != "open":
-                    return fail("invite")
-                if invite["email"] != email:
-                    return fail("invite_email")
-                user = users.accept_invitation(
-                    invite, name=name, google_sub=sub, picture=picture
-                )
-                audit(
-                    users, user, "invitation_accepted",
-                    target_type="invitation", target_id=str(invite["invite_id"]),
-                    detail={"email": email, "via": "google"},
-                )
-            else:
-                user = users.create_user(
-                    email=email, name=name, google_sub=sub, picture=picture,
-                    email_verified=True,
-                )
-                if user["status"] == "pending":
-                    BUS.publish(
-                        "user_pending", data={"user_id": str(user["user_id"])},
-                        workspace_id=str(user["workspace_id"]),
-                    )
-        if user["status"] == "disabled":
-            return fail("disabled")
-        response = RedirectResponse(
-            web_link(settings, "/")
-            if user["status"] == "active"
-            else web_link(settings, "/bienvenida?pending=1")
-        )
-        if user["status"] == "active":
-            start_session(request, response, users, settings, str(user["user_id"]))
-        response.delete_cookie(STATE_COOKIE, path=settings.api_public_prefix + "/auth")
-        response.delete_cookie(INVITE_COOKIE, path=settings.api_public_prefix + "/auth")
-        return response
-    except UsersDbUnavailable:
-        return fail("db")
 
 
 # ------------------------------------------------- admin confirmation loop

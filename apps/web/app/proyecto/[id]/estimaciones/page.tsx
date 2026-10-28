@@ -15,14 +15,18 @@
  */
 
 import { Fragment, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { DownloadSimple, Plus, Receipt, Ruler, TrendUp } from "@phosphor-icons/react";
 import {
+  apiMessage,
   descargarEstimacion,
+  getCatalogoConvocante,
   getEstimaciones,
   getUnidadesGenerador,
   guardarEstimacion,
   money,
+  primeraEstimacion,
   siguienteEstimacion,
   type Estimacion,
   type EstimacionConResumen,
@@ -33,6 +37,7 @@ import { isoDateLocal } from "@/lib/time";
 import { GeneradorEditor } from "@/components/GeneradorEditor";
 import {
   Button,
+  buttonClasses,
   Callout,
   Card,
   EmptyState,
@@ -62,6 +67,10 @@ export default function EstimacionesPage() {
   const [borrador, setBorrador] = useState<Estimacion | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cargaFallida, setCargaFallida] = useState(false);
+  const [intento, setIntento] = useState(0);
+  // Renglones del catálogo del contrato: de ahí sale la estimación 1.
+  const [renglonesCatalogo, setRenglonesCatalogo] = useState<number | null>(null);
 
   const leer = useCallback(async () => {
     const r = await getEstimaciones(id);
@@ -72,12 +81,19 @@ export default function EstimacionesPage() {
   useEffect(() => {
     let vivo = true;
     getEstimaciones(id)
-      .then((r) => vivo && setLista(r.estimaciones))
-      .catch(() => vivo && setError("No se pudieron leer las estimaciones."));
+      .then((r) => {
+        if (!vivo) return;
+        setLista(r.estimaciones);
+        setCargaFallida(false);
+      })
+      .catch(() => vivo && setCargaFallida(true));
+    getCatalogoConvocante(id)
+      .then((c) => vivo && setRenglonesCatalogo(c.renglones.length))
+      .catch(() => vivo && setRenglonesCatalogo(null));
     return () => {
       vivo = false;
     };
-  }, [id]);
+  }, [id, intento]);
 
   async function crearSiguiente() {
     setBusy(true);
@@ -87,11 +103,23 @@ export default function EstimacionesPage() {
       const r = await siguienteEstimacion(id, inicio, finDeMes(inicio));
       setBorrador(r.estimacion);
       setAbierta(r.estimacion.numero);
-    } catch {
-      setError(
-        "No hay una estimación anterior de la cual continuar. La primera se captura con " +
-        "el catálogo contratado.",
-      );
+    } catch (err) {
+      setError(apiMessage(err, "No se pudo preparar la siguiente estimación."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function crearPrimera() {
+    setBusy(true);
+    setError(null);
+    try {
+      const inicio = hoy();
+      const r = await primeraEstimacion(id, inicio, finDeMes(inicio));
+      setBorrador(r.estimacion);
+      setAbierta(r.estimacion.numero);
+    } catch (err) {
+      setError(apiMessage(err, "No se pudo preparar la estimación 1."));
     } finally {
       setBusy(false);
     }
@@ -112,9 +140,27 @@ export default function EstimacionesPage() {
     }
   }
 
+  if (!lista && cargaFallida) {
+    return (
+      <div className="px-4 py-5 sm:px-6">
+        <PageHeader title="Estimaciones" />
+        <Callout
+          tone="danger"
+          action={
+            <Button size="sm" variant="secondary" onClick={() => setIntento((n) => n + 1)}>
+              Reintentar
+            </Button>
+          }
+        >
+          No se pudieron leer las estimaciones.
+        </Callout>
+      </div>
+    );
+  }
+
   if (!lista) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Estimaciones" />
         <Card className="p-5">
           <Skeleton className="h-4 w-48" />
@@ -134,7 +180,7 @@ export default function EstimacionesPage() {
   );
 
   return (
-    <div className="rise-in px-6 py-7 lg:px-8">
+    <div className="px-4 py-5 sm:px-6">
       <PageHeader
         title="Estimaciones"
         sub="Lo ejecutado en el periodo, menos la amortización del anticipo y la retención del fondo de garantía (RLOPSRM art. 130–132)."
@@ -154,14 +200,14 @@ export default function EstimacionesPage() {
             hint={`${money(ultima.resumen.acumulado)} estimados de ${money(
               ultima.estimacion.monto_contrato,
             )}`}
-            icon={<TrendUp size={16} weight="duotone" />}
+            icon={<TrendUp />}
             accent="accent"
           />
           <Metric
             label={`Última estimación (#${ultima.resumen.numero})`}
             value={money(ultima.resumen.liquido)}
             hint={`líquido a pagar · ${ultima.resumen.periodo}`}
-            icon={<Receipt size={16} weight="duotone" />}
+            icon={<Receipt />}
           />
           <Metric
             label="Anticipo amortizado"
@@ -175,21 +221,39 @@ export default function EstimacionesPage() {
         </div>
       )}
 
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <Button onClick={() => void crearSiguiente()} disabled={busy}>
-          <Plus size={14} weight="bold" /> Nueva estimación
-        </Button>
-        <span className="text-xs text-muted">
-          Se genera con lo acumulado y lo amortizado ya cargados: encadenar a mano es como
-          se cobra dos veces el mismo metro.
-        </span>
-      </div>
+      {lista.length > 0 && (
+        <div className="mb-6 flex flex-wrap items-center gap-3">
+          <Button onClick={() => void crearSiguiente()} disabled={busy}>
+            <Plus size={14} /> {busy ? "Preparando…" : "Nueva estimación"}
+          </Button>
+          <span className="text-xs text-muted">
+            Se genera con lo acumulado y lo amortizado ya cargados, para no cobrar dos veces
+            el mismo metro.
+          </span>
+        </div>
+      )}
 
       {lista.length === 0 && !borrador && (
         <EmptyState
-          icon={<Receipt size={22} weight="duotone" />}
+          icon={<Receipt size={20} weight="duotone" />}
           title="Sin estimaciones todavía"
-          hint="La primera se captura con el catálogo contratado, sus precios y lo medido en el periodo. Klave calcula la amortización, la retención y el líquido."
+          hint={
+            renglonesCatalogo
+              ? `La estimación 1 sale de los ${renglonesCatalogo} renglones del catálogo del contrato; tú capturas lo medido en el periodo. Klave calcula la amortización, la retención y el líquido.`
+              : "La estimación 1 sale del catálogo del contrato. Cárgalo primero; después capturas lo medido en el periodo."
+          }
+          action={
+            renglonesCatalogo ? (
+              <Button onClick={() => void crearPrimera()} disabled={busy}>
+                <Plus size={14} />{" "}
+                {busy ? "Preparando…" : "Capturar la estimación 1"}
+              </Button>
+            ) : (
+              <Link href={`/proyecto/${id}/contrato`} className={buttonClasses("primary", "md")}>
+                Cargar el catálogo del contrato
+              </Link>
+            )
+          }
         />
       )}
 
@@ -257,10 +321,11 @@ export default function EstimacionesPage() {
                     </Td>
                     <Td align="right">
                       <IconButton
+                        size="sm"
                         onClick={() => void descargarEstimacion(id, resumen.numero)}
                         aria-label={`Descargar la estimación ${resumen.numero}`}
                       >
-                        <DownloadSimple size={16} />
+                        <DownloadSimple />
                       </IconButton>
                     </Td>
                   </tr>
@@ -352,7 +417,7 @@ function EditorEstimacion({
   return (
     <Card className="p-5">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <SectionTitle sub="Cada renglón lleva la cantidad que alguien midió en obra, con su generador detrás. Lo que no se midió no entra.">
+        <SectionTitle sub="Cada renglón lleva la cantidad medida en obra, con su generador detrás. Lo que no se midió no entra.">
           Estimación {local.numero}
         </SectionTitle>
         <div className="flex shrink-0 gap-2">
@@ -421,7 +486,7 @@ function EditorEstimacion({
                       onClick={() => setAbierto(abierto === r.clave ? null : r.clave)}
                       className="mt-0.5 flex items-center gap-1 text-[11px] text-muted underline-offset-2 hover:text-foreground hover:underline"
                     >
-                      <Ruler size={12} />
+                      <Ruler size={14} />
                       {respaldo > 0
                         ? `Generador · ${respaldo} ${respaldo === 1 ? "línea" : "líneas"}`
                         : "Sin generador"}

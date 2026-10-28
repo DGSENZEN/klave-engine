@@ -118,8 +118,10 @@ export function familyOf(d: DetectionOverlay): string {
 }
 
 /** Families that start hidden in the visor: cuadro labels are text on the
- * sheet, not elements, and only matter when checking what was read. */
-export const HIDDEN_BY_DEFAULT = new Set(["cuadro"]);
+ * sheet, not elements, and grid intersections are scaffolding the reader
+ * uses, not things anyone prices — hundreds of markers that bury the plan.
+ * Both stay one click away in the filter panel. */
+export const HIDDEN_BY_DEFAULT = new Set(["cuadro", "interseccion_ejes", "grid_intersection"]);
 
 export function detectionTitle(d: DetectionOverlay): string {
   const base = d.family_label || FAMILY_LABELS[d.type] || d.type;

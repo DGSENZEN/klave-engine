@@ -13,7 +13,7 @@ Caddy obtiene y renueva el TLS solo.
 2. `cp .env.example .env.prod` y llena `KLAVE_DOMAIN`,
    `KLAVE_ACME_EMAIL` y `KLAVE_USERS_DB_PASSWORD` (32 o más caracteres
    aleatorios: letras, números, `_`, `~` o `-`; Compose lo usa dentro de una URL).
-   Correo (Resend o SMTP) y Google son opcionales: sin correo, los enlaces
+   El correo (Resend o SMTP) es opcional: sin correo, los enlaces
    de invitación/recuperación se muestran al administrador para copiarlos.
 3. Ejecuta `make prod-check` para validar la configuración sin mostrar secretos.
    Después, `make prod-up` construye y arranca los contenedores.
@@ -41,8 +41,8 @@ usuarios).
 Para que un grupo cerrado (cofundadores, un taller piloto) pruebe desde cero
 sin que nadie más pueda registrarse:
 
-1. En `.env.prod`: `KLAVE_REGISTRATION=invite_only`. El registro abierto y el
-   alta por Google sin invitación se rechazan; la pantalla de entrada lo dice.
+1. En `.env.prod`: `KLAVE_REGISTRATION=invite_only`. El registro sin invitación
+   se rechaza; la pantalla de entrada lo dice.
    Sin correo configurado, cada enlace se muestra en pantalla para copiarlo.
 2. Arranca con `make prod-up`. El volumen `klave-data` nace vacío: no copies
    tu `data/` local si quieres que prueben en limpio.

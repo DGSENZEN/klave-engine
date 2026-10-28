@@ -1055,10 +1055,16 @@ def run(
     settings = settings or get_settings()
     entries = [e for e in load_entries(gold_dir) if only is None or e.drawing_id == only]
     results = [evaluate_entry(entry, settings) for entry in entries]
+    status = (
+        "FAIL" if any(r.available and not r.passed for r in results)
+        else "PENDING" if not results or any(not r.available for r in results)
+        else "PASS"
+    )
     summary = {
         "evaluated_at": datetime.now(UTC).isoformat(),
         "entries": [r.model_dump() for r in results],
-        "all_passed": all(r.passed for r in results),
+        "all_passed": status == "PASS",
+        "status": status,
         "unavailable": [r.drawing_id for r in results if not r.available],
     }
     out = reports_dir or settings.reports_dir
@@ -1068,10 +1074,11 @@ def run(
 
 
 def render_markdown(summary: dict) -> str:
+    status = summary.get("status", "PASS" if summary["all_passed"] else "FAIL")
     lines = [
         "# Gold set",
         "",
-        f"Overall: {'PASS' if summary['all_passed'] else 'FAIL'} — {summary['evaluated_at']}",
+        f"Overall: {status} — {summary['evaluated_at']}",
         "",
     ]
     for entry in summary["entries"]:
@@ -1197,6 +1204,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     summary = run(Path(args.gold), only=args.only)
     print(render_markdown(summary))
+    if summary["status"] == "PENDING":
+        return 2
     return 0 if summary["all_passed"] else 1
 
 

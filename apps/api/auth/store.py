@@ -346,8 +346,6 @@ class UserStore:
         email: str,
         name: str,
         password: str | None = None,
-        google_sub: str | None = None,
-        picture: str | None = None,
         workspace_id: str | None = None,
         role: str | None = None,
         status: str | None = None,
@@ -367,15 +365,13 @@ class UserStore:
             resolved_status = status or ("active" if first else "pending")
             now = _now()
             row = conn.execute(
-                "INSERT INTO users (email, name, password_hash, google_sub, picture, "
+                "INSERT INTO users (email, name, password_hash, "
                 "role, status, approved_at, workspace_id, email_verified_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
                 (
                     email,
                     name.strip(),
                     hash_password(password) if password else None,
-                    google_sub,
-                    picture,
                     resolved_role,
                     resolved_status,
                     now if resolved_status == "active" else None,
@@ -401,31 +397,6 @@ class UserStore:
                 "SELECT * FROM users WHERE email = %s", (email.strip().lower(),)
             ).fetchone()
         return dict(row) if row else None
-
-    def get_by_google_sub(self, sub: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM users WHERE google_sub = %s", (sub,)
-            ).fetchone()
-        return dict(row) if row else None
-
-    def link_google(self, user_id: str, sub: str, picture: str | None) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                "UPDATE users SET google_sub = %s, picture = COALESCE(%s, picture), "
-                "email_verified_at = COALESCE(email_verified_at, now()) WHERE user_id = %s",
-                (sub, picture, user_id),
-            )
-
-    def unlink_google(self, user_id: str) -> bool:
-        """Only linked accounts that can still sign in with a password may unlink."""
-        with self._connect() as conn:
-            result = conn.execute(
-                "UPDATE users SET google_sub = NULL WHERE user_id = %s "
-                "AND password_hash IS NOT NULL AND google_sub IS NOT NULL",
-                (user_id,),
-            )
-        return result.rowcount > 0
 
     def update_profile(self, user_id: str, *, name: str) -> dict[str, Any] | None:
         with self._connect() as conn:
@@ -468,7 +439,7 @@ class UserStore:
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT user_id, email, name, picture, role, status, created_at, "
-                "approved_at, email_verified_at, google_sub IS NOT NULL AS has_google, "
+                "approved_at, email_verified_at, "
                 "password_hash IS NOT NULL AS has_password FROM users "
                 "WHERE workspace_id = %s ORDER BY created_at",
                 (workspace_id,),
@@ -766,14 +737,10 @@ class UserStore:
         invite: dict[str, Any],
         *,
         name: str,
-        password: str | None = None,
-        google_sub: str | None = None,
-        picture: str | None = None,
+        password: str,
     ) -> dict[str, Any]:
         """Create the invited account: active, verified, with its grants —
         all in one transaction so a half-accepted invitation cannot exist."""
-        if not password and not google_sub:
-            raise ValueError("se requiere contraseña o cuenta de Google")
         now = _now()
         with self._connect() as conn, conn.transaction():
             # Re-read under lock: the caller's copy may be stale, and two
@@ -789,13 +756,12 @@ class UserStore:
             ).fetchone():
                 raise ValueError("ese correo ya tiene cuenta")
             row = conn.execute(
-                "INSERT INTO users (email, name, password_hash, google_sub, picture, role, "
+                "INSERT INTO users (email, name, password_hash, role, "
                 "status, approved_at, approved_by, workspace_id, email_verified_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, 'active', %s, %s, %s, %s) RETURNING *",
+                "VALUES (%s, %s, %s, %s, 'active', %s, %s, %s, %s) RETURNING *",
                 (
-                    invite["email"], name.strip(),
-                    hash_password(password) if password else None,
-                    google_sub, picture, invite["role"], now, invite.get("invited_by"),
+                    invite["email"], name.strip(), hash_password(password),
+                    invite["role"], now, invite.get("invited_by"),
                     invite["workspace_id"], now,
                 ),
             ).fetchone()

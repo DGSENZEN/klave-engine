@@ -184,7 +184,7 @@ export function RubrosEditor({
                         className="text-muted transition hover:text-danger"
                         aria-label={`Quitar ${rubro.concepto || `renglón ${index + 1}`}`}
                       >
-                        <Trash size={15} weight="duotone" />
+                        <Trash />
                       </button>
                     )}
                   </Td>
@@ -214,7 +214,7 @@ export function DesgloseCampoCard({
 
   return (
     <Card className="p-5">
-      <SectionTitle sub="RLOPSRM arts. 211-220. Cada renglón es un gasto real de la obra, con su importe y su categoría contable — un porcentaje desnudo no es un desglose.">
+      <SectionTitle sub="RLOPSRM arts. 211-220. Cada renglón es un gasto real de la obra, con su importe y su categoría contable.">
         Desglose de indirectos de campo
       </SectionTitle>
       <RubrosEditor
@@ -223,7 +223,7 @@ export function DesgloseCampoCard({
       >
         <tr className="border-b border-border/60">
           <Td colSpan={5} className="text-xs italic text-muted">
-            Personal técnico, administrativo y de servicio — se calcula de la plantilla de
+            Personal técnico, administrativo y de servicio: se calcula de la plantilla de
             campo (abajo)
           </Td>
         </tr>
@@ -279,8 +279,7 @@ export function OficinaShareCard({
             className="w-full px-3 py-2 text-sm"
           />
           <p className="mt-1 text-xs text-muted">
-            Obligatorio, mínimo 15 caracteres — sin motivo escrito se usa el prorrateo
-            derivado.
+            Obligatorio, mínimo 15 caracteres.
           </p>
         </div>
       </div>

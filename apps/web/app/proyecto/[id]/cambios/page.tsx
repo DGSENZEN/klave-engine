@@ -113,11 +113,11 @@ export default function CambiosPage() {
 
   if (revs.length < 2) {
     return (
-      <div className="p-6">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Cambios entre revisiones" sub="Qué cambió entre una revisión del plano y otra." />
 <div data-tour="cambios.vacio">
         <EmptyState
-          icon={<GitDiff size={22} weight="duotone" />}
+          icon={<GitDiff size={20} weight="duotone" />}
           title="Hace falta una segunda lectura"
           hint="Cuando llegue la siguiente revisión del plano, súbela en el Resumen y reprocesa: aquí verás qué cambió, en cantidades y en pesos, elemento por elemento."
           action={
@@ -135,7 +135,7 @@ export default function CambiosPage() {
   const r = data?.resumen ?? {};
 
   return (
-    <div className="rise-in px-6 py-7 lg:px-8">
+    <div className="px-4 py-5 sm:px-6">
       <PageHeader
         title="Cambios entre revisiones"
         sub="Por concepto en cantidades y pesos, por elemento con su lugar en el plano."
@@ -149,7 +149,7 @@ export default function CambiosPage() {
                 )
               }
             >
-              <DownloadSimple size={15} weight="bold" /> Aditivas y deductivas (Excel)
+              <DownloadSimple /> Aditivas y deductivas (Excel)
             </Button>
           )
         }
@@ -226,8 +226,8 @@ export default function CambiosPage() {
       {data && data.mismo_plano === true && (
         <div className="mb-4">
           <Callout tone="info">
-            Las dos lecturas leyeron <strong>los mismos planos</strong>: estos cambios son de
-            Klave (una versión que lee distinto), no del proyecto. No son aditivas ni deductivas.
+            Las dos lecturas leyeron <strong>los mismos planos</strong>: estos cambios vienen
+            de una versión de Klave que lee distinto y no cuentan como aditivas ni deductivas.
           </Callout>
         </div>
       )}
@@ -235,7 +235,7 @@ export default function CambiosPage() {
         <div className="mb-4">
           <Callout tone="warning">
             {data.misma_version === false
-              ? "Entre estas lecturas cambió la versión de Klave y la lectura anterior no guardó qué planos leyó: no se sabe si estos cambios son del plano o de la lectura. "
+              ? "Entre estas lecturas cambió la versión de Klave, y la lectura anterior no guardó qué planos leyó. No se sabe si estos cambios son del plano o de la lectura. "
               : "La lectura anterior no guardó qué planos leyó: no se sabe si cambió el plano. "}
             Las lecturas nuevas ya lo guardan.
           </Callout>
@@ -261,7 +261,7 @@ export default function CambiosPage() {
             <p className="mb-6 text-sm text-muted">Ninguna cantidad cambió.</p>
           ) : (
             <div data-tour="cambios.lista" className="mb-8 overflow-x-auto rounded-lg border border-border bg-surface">
-              <table className="w-full text-sm">
+              <table className="w-full text-data">
                 <thead>
                   <tr className="border-b border-border bg-surface-2">
                     <Th className="px-4">Concepto</Th>
@@ -315,7 +315,7 @@ export default function CambiosPage() {
             )}
           </h3>
           <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <tbody>
                 {elementos.slice(0, 500).map((e, i) => {
                   const bbox = e.bbox_despues ?? e.bbox_antes;
@@ -335,7 +335,7 @@ export default function CambiosPage() {
                             href={`/proyecto/${id}/plano?bbox=${bbox.map((v) => v.toFixed(3)).join(",")}&cambios=${encodeURIComponent(data.antes)}`}
                             className="inline-flex items-center gap-1 text-xs text-muted underline"
                           >
-                            <MapTrifold size={12} /> plano
+                            <MapTrifold size={14} /> plano
                           </Link>
                         )}
                       </Td>

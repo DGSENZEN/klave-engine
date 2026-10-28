@@ -5,6 +5,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import secrets
 import shutil
 import sqlite3
@@ -45,9 +46,20 @@ def safe_members(archive: tarfile.TarFile) -> list[tarfile.TarInfo]:
 def verify_backup(directory: Path) -> dict:
     if directory.is_symlink() or not (directory / "COMPLETE").is_file():
         raise ValueError("Backup is not complete")
+    for name in ("COMPLETE", "manifest.json"):
+        if (directory / name).is_symlink():
+            raise ValueError("Unsafe backup metadata symlink")
     manifest = json.loads((directory / "manifest.json").read_text())
-    if manifest.get("format_version") != 1 or set(manifest.get("archives", {})) != set(ARCHIVES):
+    if (not isinstance(manifest, dict) or manifest.get("format_version") != 1
+            or not isinstance(manifest.get("stamp"), str)
+            or not isinstance(manifest.get("archives"), dict)
+            or set(manifest["archives"]) != set(ARCHIVES)):
         raise ValueError("Invalid backup manifest")
+    for expected in manifest["archives"].values():
+        if (not isinstance(expected, dict) or type(expected.get("size")) is not int
+                or expected["size"] < 0 or not isinstance(expected.get("sha256"), str)
+                or not re.fullmatch(r"[0-9a-f]{64}", expected["sha256"])):
+            raise ValueError("Invalid backup manifest archive metadata")
     if (directory / "COMPLETE").read_text().strip() != manifest["stamp"]:
         raise ValueError("Invalid completion marker")
     for name in ARCHIVES:
@@ -135,6 +147,7 @@ def run_backup(data_dir: Path, backup_dir: Path, keep_days: int) -> Path:
         shutil.rmtree(snapshots)
         manifest = {
             "format_version": 1, "stamp": stamp, "created_at": now.isoformat(),
+            "source_commit": os.environ.get("KLAVE_SOURCE_COMMIT", "unknown"),
             "archives": {
                 name: {"size": (staging / name).stat().st_size,
                        "sha256": _digest(staging / name)} for name in ARCHIVES

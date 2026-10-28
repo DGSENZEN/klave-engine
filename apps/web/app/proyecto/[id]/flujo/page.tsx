@@ -32,7 +32,7 @@ export default function FlujoPage() {
 
   if (error) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Flujo financiero" />
         <Callout tone="danger">
           No se pudo cargar el flujo financiero. Revisa que el servidor esté
@@ -44,7 +44,7 @@ export default function FlujoPage() {
 
   if (!costs) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <SkeletonHeader />
         <SkeletonMetrics count={4} />
         <Card className="mb-6 p-5">
@@ -66,7 +66,7 @@ export default function FlujoPage() {
 
   if (moneyState(costs) === "blocked") {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Flujo financiero" />
         <UnitsGate id={id} costs={costs} actorName={actorName} />
       </div>
@@ -78,7 +78,7 @@ export default function FlujoPage() {
   const operating = fin.operating_projection ?? [];
 
   return (
-    <div className="rise-in px-6 py-7 lg:px-8">
+    <div className="px-4 py-5 sm:px-6">
       <PageHeader
         title="Flujo financiero"
         sub="Estimaciones por periodo a precio de venta: anticipo, amortización, retenciones y flujo neto."
@@ -94,7 +94,7 @@ export default function FlujoPage() {
               ? `${fin.advance_payment_pct}% del monto`
               : undefined
           }
-          icon={<Money size={16} weight="duotone" />}
+          icon={<Money />}
           accent="accent"
         />
         <Metric
@@ -105,25 +105,25 @@ export default function FlujoPage() {
               ? `${fin.retention_pct}% por estimación`
               : undefined
           }
-          icon={<PiggyBank size={16} weight="duotone" />}
+          icon={<PiggyBank />}
         />
         <Metric
           label="Periodos"
           value={periods.length}
           hint="estimaciones mensuales"
-          icon={<CalendarBlank size={16} weight="duotone" />}
+          icon={<CalendarBlank />}
         />
         <Metric
           label="O&M anual"
           value={money(fin.annual_operating_cost)}
           hint="operación y mantenimiento"
-          icon={<Wrench size={16} weight="duotone" />}
+          icon={<Wrench />}
         />
       </div>
 
       {periods.length === 0 ? (
         <EmptyState
-          icon={<CalendarBlank size={22} weight="duotone" />}
+          icon={<CalendarBlank size={20} weight="duotone" />}
           title="Este procesamiento no incluye flujo por periodos"
           hint="Vuelve a procesar el proyecto para generar el flujo financiero."
         />
@@ -143,7 +143,7 @@ export default function FlujoPage() {
               </SectionTitle>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-data">
                 <thead>
                   <tr className="border-b border-border bg-surface-2">
                     <Th>Periodo</Th>
@@ -206,7 +206,7 @@ export default function FlujoPage() {
             </SectionTitle>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr className="border-b border-border bg-surface-2">
                   <Th>Año</Th>

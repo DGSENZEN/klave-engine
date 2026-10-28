@@ -4,14 +4,63 @@
     {
       "name": "web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "apps/web", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "apps/web",
+        "run",
+        "dev"
+      ],
       "port": 3000
+    },
+    {
+      "name": "web-design",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd .worktrees/densidad/apps/web && KLAVE_APP_URL=http://127.0.0.1:8100 exec npx next dev --hostname 127.0.0.1 --port 3200"
+      ],
+      "port": 3200
     },
     {
       "name": "api",
       "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": ["-m", "uvicorn", "apps.api.main:app", "--port", "8000"],
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "apps.api.main:app",
+        "--port",
+        "8000"
+      ],
       "port": 8000
+    },
+    {
+      "name": "ux-api",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/tinkertailorr/KlaveProjects/klave-engine-ux && KLAVE_DATA_DIR=data KLAVE_USERS_DATABASE_URL=postgresql://klave_users:klave@127.0.0.1:5433/klave_ux KLAVE_WEB_ORIGIN=http://127.0.0.1:3100 KLAVE_AI_PROVIDER=none exec .venv/bin/python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8100"
+      ],
+      "port": 8100
+    },
+    {
+      "name": "ux-web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/tinkertailorr/KlaveProjects/klave-engine-ux/apps/web && NEXT_PUBLIC_API_URL=http://127.0.0.1:8100 exec npx next dev --hostname 127.0.0.1 --port 3100"
+      ],
+      "port": 3100,
+      "url": "http://127.0.0.1:3100"
+    },
+    {
+      "name": "ux-web-prod",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/tinkertailorr/KlaveProjects/klave-engine-ux/apps/web && exec npx next start --hostname 127.0.0.1 --port 3100"
+      ],
+      "port": 3100,
+      "url": "http://127.0.0.1:3100"
     }
   ]
 }

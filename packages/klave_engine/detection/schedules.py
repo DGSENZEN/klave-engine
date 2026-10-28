@@ -5510,7 +5510,7 @@ def mark_cuadro_detections(detections: list[Detection], inventory: ScheduleInven
                 # R145: the title of a detail (its section is drawn, or a leader points at it).
                 detection.properties["titulo_de_detalle"] = True
             detection.evidence.notes.append(
-                "Marca dentro de un cuadro/detalle dibujado en la planta: nombra un tipo, "
+                "Marca dentro de un cuadro/detalle dibujado en la planta: nombra un tipo y "
                 "no cuenta como elemento."
             )
             tagged += 1

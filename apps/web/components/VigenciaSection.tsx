@@ -158,7 +158,7 @@ export function VigenciaSection({
         title="Actualizar precios vencidos por índice"
         sub={
           preview
-            ? `${preview.updated.length === 1 ? "1 precio pasa" : `${preview.updated.length} precios pasan`} a ${preview.to_month} con el índice ${indices?.source || "del taller"}; queda marcado como calculado, no como cotización.`
+            ? `${preview.updated.length === 1 ? "1 precio pasa" : `${preview.updated.length} precios pasan`} a ${preview.to_month} con el índice ${indices?.source || "del taller"}; queda marcado como calculado.`
             : undefined
         }
         onClose={() => setPreview(null)}
@@ -185,7 +185,7 @@ export function VigenciaSection({
       >
         {preview && preview.updated.length > 0 && (
           <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr className="bg-surface-2">
                   <Th>Insumo</Th>
@@ -227,7 +227,7 @@ export function VigenciaSection({
           </div>
         )}
       </Modal>
-      <SectionTitle sub="Cada precio dice cuántos meses tiene. Pide cotización de los vencidos, importa la respuesta, o tráelos a hoy por el índice que tu taller mantiene (queda marcado como calculado, nunca como cotización).">
+      <SectionTitle sub="Cada precio dice cuántos meses tiene. Pide cotización de los vencidos, importa la respuesta, o tráelos a hoy por el índice que tu taller mantiene (queda marcado como calculado).">
         Vigencia de precios
       </SectionTitle>
       {loadError && (
@@ -258,11 +258,11 @@ export function VigenciaSection({
           disabled={vencidos === 0 || downloading !== null}
           onClick={() => downloadCotizacion("vencido")}
         >
-          <DownloadSimple size={14} weight="bold" />
+          <DownloadSimple size={14} />
           {downloading === "vencido" ? "Generando…" : `Solicitud de cotización: vencidos (${vencidos})`}
         </Button>
         <Button size="sm" disabled={downloading !== null} onClick={() => downloadCotizacion("all")}>
-          <DownloadSimple size={14} weight="bold" />
+          <DownloadSimple size={14} />
           {downloading === "all" ? "Generando…" : "Solicitud de cotización: todo el catálogo"}
         </Button>
         <Button
@@ -270,7 +270,7 @@ export function VigenciaSection({
           onClick={() => previewRoll("vencido")}
           disabled={busy || vencidos === 0 || monthCount === 0}
         >
-          <ArrowClockwise size={14} weight="bold" /> Actualizar vencidos por índice…
+          <ArrowClockwise size={14} /> Actualizar vencidos por índice…
         </Button>
         <button
           type="button"
@@ -306,7 +306,7 @@ export function VigenciaSection({
             {monthCount === 0 ? (
               <p>
                 Sin índices todavía. Klave no precarga cifras oficiales: pega los valores publicados
-                (INEGI INPP construcción u otro) con su fuente; el factor aplicado queda escrito en cada
+                (INEGI INPP construcción u otro) con su fuente. El factor aplicado queda escrito en cada
                 precio actualizado.
               </p>
             ) : (

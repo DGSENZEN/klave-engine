@@ -146,6 +146,20 @@ def test_invitation_lifecycle(app, data_dir):
     assert duplicate.status_code == 409
 
 
+def test_invitation_accept_applies_the_password_policy(app):
+    admin = bootstrap_admin(app)
+    link = admin.post("/auth/invitations", json={"email": "rosa@taller.mx"}).json()["link"]
+    anonymous = TestClient(app)
+    accept = f"/auth/invitations/by-token/{token_of(link)}/accept"
+    for weak in ("corta-123", "1234567890", "rosa-del-taller"):
+        refused = anonymous.post(accept, json={"name": "Rosa", "password": weak})
+        assert refused.status_code == 422, weak
+        assert refused.json()["detail"]["error_type"] == "weak_password"
+    # A refused password leaves the invitation open for a better one.
+    accepted = anonymous.post(accept, json={"name": "Rosa", "password": "pilotes-y-trabes"})
+    assert accepted.status_code == 201, accepted.text
+
+
 def test_invitation_revoke_and_resend(app):
     admin = bootstrap_admin(app)
     first = admin.post("/auth/invitations", json={"email": "luis@taller.mx"}).json()
@@ -319,9 +333,6 @@ def test_admin_guards_and_profile(app):
     assert renamed.status_code == 200 and renamed.json()["name"] == "Jefa Torres"
     profile = admin.get("/auth/me").json()
     assert profile["workspace"]["slug"] == "taller" and profile["has_password"] is True
-    # Google-only accounts must set a password before unlinking; password
-    # accounts without Google have nothing to unlink either.
-    assert admin.post("/auth/google/unlink").status_code == 422
 
 
 # ------------------------------------------------------------ workspaces

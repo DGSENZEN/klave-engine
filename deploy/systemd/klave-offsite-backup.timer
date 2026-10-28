@@ -1,0 +1,11 @@
+[Unit]
+Description=Copy new Klave backups and report health hourly
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+RandomizedDelaySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

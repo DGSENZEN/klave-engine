@@ -96,7 +96,7 @@ export function PropuestasSection({
         <p className="mt-1 max-w-2xl text-sm text-muted">
           Figuras que ninguna regla tomó y que se parecen a los elementos que sí se leen. Están
           punteadas en el plano y no cuentan en ninguna cantidad hasta que alguien diga qué son.
-          Cada decisión, de un lado o del otro, le enseña al lector.
+          Cada decisión le enseña al lector.
         </p>
       </div>
       <label className="flex items-center gap-2 text-sm text-muted">
@@ -108,7 +108,7 @@ export function PropuestasSection({
             setState(null);
           }}
         />
-        Calificar todas las figuras, también las que el lector no propuso — para medirlo
+        Calificar todas las figuras, incluidas las que el lector no propuso, para medirlo
       </label>
       {notice && <Callout tone="info">{notice}</Callout>}
       {error && <Callout tone="danger">{error}</Callout>}
@@ -135,7 +135,7 @@ export function PropuestasSection({
             </Link>
           )}
           <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr>
                   <Th>Lo que se ve</Th>

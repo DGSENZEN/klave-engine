@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import {
   Buildings,
   CaretDown,
   Gauge,
   GearSix,
+  LockSimple,
+  MagnifyingGlass,
   SquaresFour,
   User,
   WifiHigh,
@@ -18,14 +20,16 @@ import { CommandPalette, openCommandPalette } from "@/components/CommandPalette"
 import { ChangesPanel, ChangesTrigger, LiveToasts } from "@/components/LiveOverlay";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { BotonRecorrido } from "@/components/recorrido/MenuRecorrido";
-import { Avatar } from "@/components/ui";
-import { entryHref, nodeForPath, NODE_NAV } from "@/lib/nodeNav";
+import { Avatar, iconButtonClasses, PRESS } from "@/components/ui";
+import { ROUTE_GUARDED_NODES } from "@/lib/gates";
+import { useTablero } from "@/lib/useProjectReport";
+import { entryHref, nodeForPath, NODE_NAV, type NodeNav } from "@/lib/nodeNav";
 
 /**
- * Sin barra lateral: el proyecto entero vive bajo UNA barra delgada. La
- * miga de pan (proyecto / nodo / entrada) es la navegación — el nombre
- * regresa al tablero, el nodo abre el mapa completo y la entrada salta
- * entre hermanas. El tablero es el mapa; la barra solo el camino de vuelta.
+ * Sin barra lateral: el proyecto entero vive bajo UNA barra delgada. Su
+ * centro es la franja del proceso — los seis nodos en orden, siempre a un
+ * clic, con lo que pide atención marcado — y debajo, las entradas del nodo
+ * donde estás. El tablero sigue siendo el mapa; la franja, el camino.
  */
 export function ProjectShell({
   id,
@@ -39,6 +43,7 @@ export function ProjectShell({
   const pathname = usePathname();
   const base = `/proyecto/${id}`;
   const onTablero = pathname === base;
+  const hasNodeBar = (nodeForPath(base, pathname)?.entries.length ?? 0) >= 2;
   const { timeline } = useProjectLive();
 
   // Change-history panel: trigger lives in the chrome; "unseen" counts the
@@ -61,7 +66,11 @@ export function ProjectShell({
         onOpenChanges={() => setChangesOpen(true)}
       />
       <NodeWorkspaceBar id={id} />
-      <main className={`min-w-0 flex-1 ${onTablero ? "flex flex-col" : "overflow-x-hidden pb-24"}`}>
+      <main
+        className={`min-w-0 flex-1 ${onTablero ? "flex flex-col" : "overflow-x-clip pb-24"}`}
+        // Sticky table headers sit just under the bars above (48 + 40 px).
+        style={{ "--chrome-h": hasNodeBar ? "88px" : "48px" } as CSSProperties}
+      >
         {children}
       </main>
       {changesOpen && <ChangesPanel onClose={closeChanges} />}
@@ -84,7 +93,7 @@ function NodeWorkspaceBar({ id }: { id: string }) {
   return (
     <nav
       aria-label={`Pantallas de ${node.label}`}
-      className="sticky top-12 z-30 flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-sidebar px-3 sm:px-4"
+      className="sticky top-12 z-30 flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-sidebar px-3 [scrollbar-width:none] sm:px-4"
     >
       {node.entries.map((item) => {
         const targets = [item.href, ...(item.also ?? [])].map((href) =>
@@ -100,7 +109,7 @@ function NodeWorkspaceBar({ id }: { id: string }) {
               active ? "font-medium text-foreground" : "text-muted hover:text-foreground"
             }`}
           >
-            {item.icon}
+            <item.glyph size={14} className={active ? "text-foreground" : "text-faint"} />
             {item.label}
             {active && (
               <span className="absolute inset-x-2 bottom-0 h-[2px] rounded-t-full bg-accent" />
@@ -157,28 +166,29 @@ function TopBar({
     if (openMenu) setOpenMenu(null);
   }
 
-  // Cada miga es su propia ancla: el menú cuelga de la flecha que tocaste,
-  // no del origen de la barra. Con un menú abierto, pasar el cursor por la
-  // otra miga lo cambia — comportamiento de barra de menús, cero clics extra.
-  function crumbButton(label: ReactNode, which: "nodo", menu: ReactNode) {
-    const isOpen = openMenu === which;
+  // El índice completo (tablero, resumen, cada entrada, configuración) cuelga
+  // de la flecha junto al nombre. En el teléfono, donde la franja no cabe, la
+  // flecha lleva además el nombre del nodo donde estás.
+  function screensMenu(menu: ReactNode) {
+    const isOpen = openMenu === "nodo";
+    const here = onTablero ? null : (node?.label ?? pageLabel);
     return (
-      // Con un menú abierto las migas suben sobre el velo de cierre para que
-      // el hover pueda cambiar de menú sin cerrar primero.
       <span className={`relative ${openMenu ? "z-40" : ""}`}>
         <button
           type="button"
-          onClick={() => setOpenMenu(isOpen ? null : which)}
-          onPointerEnter={() => {
-            if (openMenu && openMenu !== which && openMenu !== "yo") setOpenMenu(which);
-          }}
+          onClick={() => setOpenMenu(isOpen ? null : "nodo")}
           aria-expanded={isOpen}
-          className={`flex max-w-40 items-center gap-1 truncate rounded-lg px-2 py-1 text-sm transition-colors hover:bg-surface-2 sm:max-w-none ${
-            isOpen ? "bg-surface-2" : ""
-          }`}
+          aria-label="Todas las pantallas del proyecto"
+          data-tip="Todas las pantallas"
+          className={`flex h-8 min-w-8 items-center justify-center gap-1 rounded-md px-1.5 text-sm text-muted ${PRESS} hover:bg-surface-2 hover:text-foreground aria-expanded:bg-surface-2 aria-expanded:text-foreground`}
         >
-          {label}
-          <CaretDown size={11} className="shrink-0 text-faint" />
+          {here && (
+            <span className="max-w-32 truncate text-foreground md:hidden">
+              <span className="mr-1 text-faint">/</span>
+              {here}
+            </span>
+          )}
+          <CaretDown size={12} className="shrink-0" />
         </button>
         {isOpen && (
           <div className="menu-pop absolute left-0 top-full z-50 mt-1 origin-top-left rounded-xl border border-border-strong bg-surface shadow-xl">
@@ -195,13 +205,13 @@ function TopBar({
         href={base}
         className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
       >
-        <SquaresFour size={16} /> Tablero
+        <SquaresFour /> Tablero
       </Link>
       <Link
         href={`${base}/resumen`}
         className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
       >
-        <Gauge size={16} /> Resumen
+        <Gauge /> Resumen
       </Link>
       {NODE_NAV.map((group) => (
         <div key={group.key} className="mt-1.5">
@@ -212,7 +222,7 @@ function TopBar({
               href={entryHref(base, item)}
               className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
             >
-              {item.icon}
+              <item.glyph />
               {item.label}
             </Link>
           ))}
@@ -223,45 +233,34 @@ function TopBar({
           href={`${base}/configuracion`}
           className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
         >
-          <GearSix size={16} /> Configuración del proyecto
+          <GearSix /> Configuración del proyecto
         </Link>
       </div>
     </div>
   );
 
   return (
-    <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center justify-between border-b border-border bg-sidebar px-3 sm:px-4">
-      <div className="relative flex min-w-0 items-center gap-0.5">
+    <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border bg-sidebar px-3 sm:px-4">
+      <div className="relative flex min-w-0 items-center gap-1">
         <Link
           href="/"
           aria-label="Todos los proyectos"
-          className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-fg transition hover:brightness-110"
+          data-tip="Todos los proyectos"
+          className={`mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-fg shadow-btn-ink ${PRESS} hover:bg-primary-hover`}
         >
-          <Buildings size={14} weight="duotone" />
+          <Buildings size={14} />
         </Link>
         <Link
           href={base}
-          className={`flex min-w-0 items-center gap-1.5 truncate rounded-lg px-2 py-1 text-sm font-medium transition-colors hover:bg-surface-2 ${
-            onTablero ? "" : "max-w-36 sm:max-w-none"
+          aria-current={onTablero ? "page" : undefined}
+          title={name ?? id}
+          className={`flex h-8 min-w-0 items-center truncate rounded-md px-2 text-sm font-medium transition-colors hover:bg-surface-2 ${
+            onTablero ? "" : "max-w-36 md:max-w-44 xl:max-w-64"
           }`}
         >
-          {name ?? id}
+          <span className="truncate">{name ?? id}</span>
         </Link>
-        <button
-          type="button"
-          onClick={openCommandPalette}
-          data-tour="shell.paleta"
-          aria-label="Ir a cualquier pantalla (⌘K)"
-          className="ml-1 hidden items-center gap-1 rounded-lg border border-border px-1.5 py-0.5 text-[11px] text-faint transition-colors hover:bg-surface-2 hover:text-foreground sm:inline-flex"
-        >
-          ⌘K
-        </button>
-        {!onTablero && (
-          <>
-            <span className="text-faint">/</span>
-            {crumbButton(node?.label ?? pageLabel ?? "…", "nodo", mapa)}
-          </>
-        )}
+        {screensMenu(mapa)}
         {openMenu === "nodo" && (
           <button
             type="button"
@@ -270,10 +269,12 @@ function TopBar({
             className="fixed inset-0 z-30 cursor-default"
           />
         )}
+        <span aria-hidden className="mx-2 hidden h-5 w-px bg-border md:block" />
+        <ProcessStrip id={id} active={node?.key} />
       </div>
-      <div className="relative flex shrink-0 items-center gap-1">
+      <div className="relative flex shrink-0 items-center gap-0.5">
         {otherViewers.length > 0 && (
-          <span className="mr-1 hidden -space-x-1.5 sm:flex">
+          <span className="mr-1.5 hidden -space-x-1.5 sm:flex">
             {otherViewers.slice(0, 4).map((viewer) => (
               <Avatar key={viewer.client_id} name={viewer.actor} size="xs" />
             ))}
@@ -281,14 +282,25 @@ function TopBar({
         )}
         <button
           type="button"
+          onClick={openCommandPalette}
+          data-tour="shell.paleta"
+          aria-label="Ir a cualquier pantalla (⌘K)"
+          data-tip="Ir a… ⌘K"
+          className={iconButtonClasses("md", "max-sm:hidden")}
+        >
+          <MagnifyingGlass />
+        </button>
+        <button
+          type="button"
           onClick={() => setOpenMenu(openMenu === "yo" ? null : "yo")}
           aria-label="Tu nombre y conexión"
+          data-tip={connected ? "Tu nombre · en vivo" : "Tu nombre · reconectando"}
           aria-expanded={openMenu === "yo"}
-          className="relative rounded-md p-2 text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+          className={iconButtonClasses()}
         >
-          <User size={18} weight="bold" />
+          <User />
           <span
-            className={`absolute right-1 top-1 inline-block h-1.5 w-1.5 rounded-full ${
+            className={`absolute right-1.5 top-1.5 inline-block h-1.5 w-1.5 rounded-full ring-2 ring-sidebar ${
               connected ? "bg-success" : "bg-warning"
             }`}
           />
@@ -301,9 +313,9 @@ function TopBar({
               onClick={() => setOpenMenu(null)}
               className="fixed inset-0 z-40 cursor-default"
             />
-            <div className="menu-pop absolute right-0 top-full z-50 mt-1 w-60 origin-top rounded-xl border border-border-strong bg-surface p-3 shadow-xl">
+            <div className="menu-pop absolute right-0 top-full z-50 mt-1 w-60 origin-top-right rounded-xl border border-border-strong bg-surface p-3 shadow-xl">
               <label className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-2 text-sm transition focus-within:border-border-strong focus-within:ring-2 focus-within:ring-ring">
-                <User size={16} className="shrink-0 text-muted" />
+                <User className="shrink-0 text-muted" />
                 <input
                   value={nameDraft}
                   onChange={(e) => setNameDraft(e.target.value)}
@@ -316,16 +328,7 @@ function TopBar({
                 />
               </label>
               <div className="mt-2 flex items-center gap-1.5 text-xs text-muted">
-                <span
-                  className={`inline-block h-1.5 w-1.5 rounded-full ${
-                    connected ? "bg-success" : "bg-warning"
-                  }`}
-                />
-                {connected ? (
-                  <WifiHigh size={13} weight="bold" />
-                ) : (
-                  <WifiSlash size={13} weight="bold" />
-                )}
+                {connected ? <WifiHigh size={14} /> : <WifiSlash size={14} />}
                 {connected ? "En vivo" : "Reconectando"}
                 {viewers.length > 1 && <span>· {viewers.length} viendo</span>}
               </div>
@@ -336,13 +339,79 @@ function TopBar({
         <Link
           href={`${base}/configuracion`}
           aria-label="Configuración del proyecto"
-          className="rounded-md p-2 text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+          data-tip="Configuración"
+          aria-current={pathname === `${base}/configuracion` ? "page" : undefined}
+          className={iconButtonClasses(
+            "md",
+            "max-sm:hidden aria-[current=page]:bg-surface-2 aria-[current=page]:text-foreground",
+          )}
         >
-          <GearSix size={18} />
+          <GearSix />
         </Link>
-        <BotonRecorrido ancla="shell.ayuda" />
+        <span className="contents max-sm:hidden">
+          <BotonRecorrido ancla="shell.ayuda" />
+        </span>
         <ThemeToggle />
       </div>
     </header>
+  );
+}
+
+/**
+ * La franja del proceso: los seis nodos en el orden del trabajo, cada uno a
+ * un clic de su pantalla principal. Solo se marca lo que pide algo — un punto
+ * para «atención», un candado para lo cerrado; «en orden» no hace ruido.
+ * Debajo de xl los nodos inactivos quedan en su glifo (con su nombre al
+ * pasar el cursor); el activo siempre se nombra.
+ */
+function ProcessStrip({ id, active }: { id: string; active: NodeNav["key"] | undefined }) {
+  const base = `/proyecto/${id}`;
+  const { tablero } = useTablero(id);
+  return (
+    <nav aria-label="Proceso del proyecto" className="hidden min-w-0 md:block">
+      <ol className="flex items-center">
+        {NODE_NAV.map((item, index) => {
+          const isActive = item.key === active;
+          const estado = tablero?.nodes?.[item.key]?.estado;
+          const locked = tablero
+            ? ROUTE_GUARDED_NODES.includes(item.key) && !tablero.gates?.[item.key]
+            : false;
+          const atencion = !locked && estado === "atencion";
+          const note = locked ? "con candado" : atencion ? "pide atención" : null;
+          return (
+            <li key={item.key} className="flex items-center">
+              {index > 0 && <span aria-hidden className="h-px w-1.5 bg-border-strong" />}
+              <Link
+                href={entryHref(base, item.entries[0])}
+                aria-current={isActive ? "page" : undefined}
+                data-tip={isActive ? undefined : note ? `${item.label} · ${note}` : item.label}
+                className={`relative flex h-8 items-center gap-1.5 rounded-md px-2 text-[13px] xl:after:hidden ${PRESS} ${
+                  isActive
+                    ? "bg-surface-2 font-medium text-foreground"
+                    : "text-muted hover:bg-surface-2 hover:text-foreground"
+                }`}
+              >
+                <item.glyph
+                  weight={isActive ? "duotone" : "bold"}
+                  className={isActive ? "text-accent" : undefined}
+                />
+                <span className={isActive ? "whitespace-nowrap" : "hidden whitespace-nowrap xl:inline"}>
+                  {item.label}
+                </span>
+                {locked && <LockSimple size={12} weight="fill" className="text-faint" />}
+                {atencion && (
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full bg-warning ${
+                      isActive ? "" : "max-xl:absolute max-xl:right-1 max-xl:top-1.5"
+                    }`}
+                  />
+                )}
+                {note && <span className="sr-only">({note})</span>}
+              </Link>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }

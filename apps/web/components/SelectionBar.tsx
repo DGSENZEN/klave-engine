@@ -42,7 +42,7 @@ export function SelectionBar({
       <span className="h-5 w-px bg-border" />
       <div className="flex items-center gap-2">{children}</div>
       <IconButton aria-label="Quitar selección (Esc)" onClick={onClear}>
-        <X size={16} />
+        <X />
       </IconButton>
     </div>
   );
