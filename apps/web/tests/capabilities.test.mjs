@@ -66,3 +66,13 @@ test("una caída momentánea no se queda guardada como la sesión", () => {
   assert.equal(keepStatus({ mode: "protected" }), true);
   assert.equal(keepStatus({ mode: "open" }), true);
 });
+
+test("una API anterior que no dice el rol: la pantalla se comporta como antes y decide el servidor", () => {
+  assert.deepEqual(capabilities({ mode: "protected", tallerRole: "member", projectRole: "legacy" }), {
+    editCatalog: false, editProject: true, manageProject: true, approveGate: true,
+  });
+  assert.deepEqual(
+    capabilities({ mode: "protected", tallerRole: "admin", projectRole: "legacy" }),
+    { editCatalog: true, editProject: true, manageProject: true, approveGate: true },
+  );
+});

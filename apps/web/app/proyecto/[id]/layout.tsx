@@ -23,7 +23,7 @@ import { ProjectLiveProvider } from "@/components/ProjectLive";
 import { RecorridoPuente, useRecorridoObra } from "@/components/recorrido/RecorridoPuente";
 import { ProjectShell } from "@/components/ProjectShell";
 import { CapabilitiesProvider } from "@/components/Capabilities";
-import type { ProjectRole } from "@/lib/capabilities";
+import type { LegacyRole, ProjectRole } from "@/lib/capabilities";
 import { vista } from "@/lib/procesando";
 import { Button, Callout, Skeleton, SkeletonHeader, buttonClasses } from "@/components/ui";
 
@@ -49,7 +49,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   if (!yaAbierta && status?.state === "processed") setYaAbierta(true);
   const [name, setName] = useState<string | undefined>(undefined);
   // The viewer's role here; undefined while it loads (see useCapabilities).
-  const [myRole, setMyRole] = useState<ProjectRole | undefined>(undefined);
+  const [myRole, setMyRole] = useState<ProjectRole | LegacyRole | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [noAccess, setNoAccess] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -96,7 +96,8 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       .then((p) => {
         if (!active) return;
         setName(p.project_name || undefined);
-        setMyRole(p.my_role ?? null);
+        // An API released before role enforcement sends no my_role.
+        setMyRole("my_role" in p ? (p.my_role ?? null) : "legacy");
       })
       // Without the project's role, fall back to the taller's: admins and open
       // mode keep everything, a member gets the read-only screens.

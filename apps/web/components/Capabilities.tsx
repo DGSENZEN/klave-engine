@@ -1,17 +1,17 @@
 "use client";
 
 import { createContext, useContext, useSyncExternalStore, type ReactNode } from "react";
-import { capabilities, type Capabilities, type ProjectRole } from "@/lib/capabilities";
+import { capabilities, type Capabilities, type LegacyRole, type ProjectRole } from "@/lib/capabilities";
 import { authStatusSnapshot, subscribeAuthStatus } from "@/lib/session";
 
 /** Inside a project: the viewer's role there (undefined while it loads). */
-const ProjectRoleContext = createContext<{ role: ProjectRole | undefined } | null>(null);
+const ProjectRoleContext = createContext<{ role: ProjectRole | LegacyRole | undefined } | null>(null);
 
 export function CapabilitiesProvider({
   projectRole,
   children,
 }: {
-  projectRole: ProjectRole | undefined;
+  projectRole: ProjectRole | LegacyRole | undefined;
   children: ReactNode;
 }) {
   return (
@@ -33,7 +33,7 @@ const NONE: Capabilities = {
  */
 export function useCapabilities(
   /** Outside a project page (e.g. a row on Inicio): that project's role. */
-  projectRoleOverride?: ProjectRole,
+  projectRoleOverride?: ProjectRole | LegacyRole,
 ): Capabilities & { ready: boolean } {
   const context = useContext(ProjectRoleContext);
   const project = projectRoleOverride !== undefined ? { role: projectRoleOverride } : context;

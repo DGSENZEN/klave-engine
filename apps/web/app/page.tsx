@@ -642,7 +642,8 @@ function ProjectRow({
   onChanged: () => void;
   onError: (message: string) => void;
 }) {
-  const caps = useCapabilities(project.my_role ?? null);
+  // An overview from an API without role enforcement has no my_role.
+  const caps = useCapabilities(project.my_role === undefined ? "legacy" : project.my_role);
   const [editing, setEditing] = useState<"name" | "client" | null>(null);
   const [draft, setDraft] = useState("");
   const [removeOpen, setRemoveOpen] = useState(false);

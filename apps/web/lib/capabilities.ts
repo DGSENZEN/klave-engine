@@ -7,6 +7,14 @@
 
 export type ProjectRole = "admin" | "owner" | "editor" | "viewer" | null;
 
+/**
+ * The project payload came from an API older than role enforcement (no
+ * `my_role` field): screens behave as they did before it and the server,
+ * which still enforces project roles, decides. Lets the frontend ship
+ * before the API is released.
+ */
+export type LegacyRole = "legacy";
+
 export type Capabilities = {
   /** Change the taller catálogo (prices, matrices, imports, mappings already decided). */
   editCatalog: boolean;
@@ -24,11 +32,12 @@ const NONE: Capabilities = { editCatalog: false, editProject: false, manageProje
 export function capabilities(input: {
   mode: "open" | "protected" | "unavailable";
   tallerRole: "admin" | "member" | null;
-  projectRole?: ProjectRole;
+  projectRole?: ProjectRole | LegacyRole;
 }): Capabilities {
   if (input.mode === "open") return ALL;
   if (input.mode === "unavailable") return NONE;
   if (input.tallerRole === "admin") return ALL;
+  if (input.projectRole === "legacy") return { ...ALL, editCatalog: false };
   const role = input.projectRole ?? null;
   const manage = role === "owner" || role === "admin";
   return {
