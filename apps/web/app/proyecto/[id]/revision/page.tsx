@@ -274,17 +274,6 @@ export default function RevisionPage() {
   if (error !== "none") {
     return (
       <div className="p-6">
-      <ConfirmDialog
-        open={confirmarQuitar}
-        title={`Quitar la revisión de ${selectedVisible.length} elementos`}
-        description="Vuelven a «sin revisar», sin la decisión ni el motivo que tenían. Es la forma de deshacer un lote, no de corregir uno."
-        confirmLabel="Quitar revisión"
-        onCancel={() => setConfirmarQuitar(false)}
-        onConfirm={() => {
-          setConfirmarQuitar(false);
-          void apply("none");
-        }}
-      />
         <Callout
           tone={error === "not_processed" ? "info" : "danger"}
           action={
@@ -322,6 +311,17 @@ export default function RevisionPage() {
   const pending = table.total - table.confirmed - table.excluded;
   return (
     <div className="p-6">
+      <ConfirmDialog
+        open={confirmarQuitar}
+        title={`Quitar la revisión de ${selectedVisible.length} elementos`}
+        description="Vuelven a «sin revisar», sin la decisión ni el motivo que tenían. Es la forma de deshacer un lote, no de corregir uno."
+        confirmLabel="Quitar revisión"
+        onCancel={() => setConfirmarQuitar(false)}
+        onConfirm={() => {
+          setConfirmarQuitar(false);
+          void apply("none");
+        }}
+      />
       <PageHeader
         title="Revisión del presupuesto"
         sub="Cada elemento que alimenta una cantidad. Empieza por las dudas; confirma o excluye en lote, con motivo."

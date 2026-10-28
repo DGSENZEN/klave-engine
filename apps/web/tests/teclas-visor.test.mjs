@@ -7,7 +7,7 @@ const { accionDeTecla } = createRequire(import.meta.url)(
   join(process.env.KLAVE_TEST_LIB_DIR, "teclasVisor.js"),
 );
 
-const base = { enCampo: false, seleccionado: true, motivoAbierto: false, midiendo: false };
+const base = { enCampo: false, seleccionado: true, motivoAbierto: false, midiendo: false, excluido: false };
 
 test("X pide el motivo en vez de excluir", () => {
   assert.equal(accionDeTecla("x", base), "pedir-motivo");
@@ -45,4 +45,11 @@ test("Escape cancela; midiendo, sólo Escape cuenta", () => {
   assert.equal(accionDeTecla("Escape", base), "cancelar");
   assert.equal(accionDeTecla("x", { ...base, midiendo: true }), null);
   assert.equal(accionDeTecla("Escape", { ...base, midiendo: true }), "cancelar");
+});
+
+test("X sobre un elemento ya excluido no abre nada y C y Q siguen vivas", () => {
+  const excluido = { ...base, excluido: true };
+  assert.equal(accionDeTecla("x", excluido), null);
+  assert.equal(accionDeTecla("c", excluido), "confirmar");
+  assert.equal(accionDeTecla("q", excluido), "quitar");
 });

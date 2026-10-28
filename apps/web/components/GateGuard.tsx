@@ -8,6 +8,8 @@ import { apiMessage, putGate, type TableroNodeKey } from "@/lib/api";
 import { canApproveGate } from "@/lib/gates";
 import { getBrowserActor } from "@/lib/collab";
 import { useTablero } from "@/lib/useProjectReport";
+import { quienCerro } from "@/lib/candado";
+import { useProjectLive } from "@/components/ProjectLive";
 import { Button, Callout, Card, Skeleton } from "@/components/ui";
 
 /**
@@ -26,17 +28,32 @@ export function GateGuard({ node, children }: { node: TableroNodeKey; children: 
   // the lock card is for the next entry, not for unsaved work.
   const [estabaAbierto, setEstabaAbierto] = useState(false);
   if (!estabaAbierto && tablero?.gates?.[node]) setEstabaAbierto(true);
+  // Who closed it, from the live gate event (the tablero itself only knows
+  // who approved).
+  const { latestEvent } = useProjectLive();
+  const [cerradoPor, setCerradoPor] = useState<string | null>(null);
+  const [ultimoEvento, setUltimoEvento] = useState<number | null>(null);
+  if (latestEvent && latestEvent.seq !== ultimoEvento) {
+    setUltimoEvento(latestEvent.seq);
+    const quien = quienCerro(latestEvent, node);
+    if (quien) setCerradoPor(quien);
+  }
 
-  if (error && !tablero) return <>{children}</>;
-  if (tablero && !tablero.gates?.[node] && estabaAbierto) {
+  const cerradoMientras = !!tablero && !tablero.gates?.[node] && estabaAbierto;
+  // One shape on every path that shows the page: a fragment whose children
+  // keep their positions, so React never remounts what someone is typing.
+  if (cerradoMientras || (error && !tablero) || tablero?.gates?.[node]) {
     return (
       <>
-        <div className="sticky top-0 z-20 px-6 pt-5 lg:px-8">
-          <Callout tone="warning">
-            Este nodo se cerró mientras trabajabas. Lo que guardes se conserva; la próxima
-            vez que entres verás el candado.
-          </Callout>
-        </div>
+        {cerradoMientras ? (
+          <div className="sticky top-0 z-20 px-6 pt-5 lg:px-8">
+            <Callout tone="warning">
+              {cerradoPor ? `${cerradoPor} cerró este nodo` : "Este nodo se cerró"} mientras
+              trabajabas. Lo que guardes se conserva; la próxima vez que entres verás el
+              candado.
+            </Callout>
+          </div>
+        ) : null}
         {children}
       </>
     );
@@ -49,8 +66,6 @@ export function GateGuard({ node, children }: { node: TableroNodeKey; children: 
       </div>
     );
   }
-  if (tablero.gates?.[node]) return <>{children}</>;
-
   const nodeData = tablero.nodes?.[node];
   const requisitos = (nodeData?.facts ?? []).filter((fact) => fact.tone === "warn");
   const canApprove = canApproveGate(tablero.my_role);

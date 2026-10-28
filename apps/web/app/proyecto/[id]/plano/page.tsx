@@ -486,6 +486,7 @@ export default function PlanoPage() {
         seleccionado: true,
         motivoAbierto: pidiendoMotivo,
         midiendo: false,
+        excluido: selected.review === "excluded",
       });
       if (accion === "confirmar") void review(selected, "confirmed");
       else if (accion === "pedir-motivo") {

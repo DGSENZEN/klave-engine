@@ -58,6 +58,15 @@ test.afterAll(async ({ browser }) => {
     const state = pilotState();
     const demo = await context.request.post(state.api_url + "/projects/demo", { data: {} });
     const { project_id: id } = await demo.json();
+    // Reiniciar answers 409 while a job runs (a reprocess test may have left
+    // one queued): wait it out so the gates never stay open for the tour.
+    await expect
+      .poll(
+        async () =>
+          (await (await context.request.get(`${state.api_url}/projects/${id}/status`)).json()).state,
+        { timeout: 120_000 },
+      )
+      .not.toMatch(/^(queued|running)$/);
     const r = await context.request.post(`${state.api_url}/projects/${id}/demo/reiniciar`, { data: {} });
     expect(r.ok(), await r.text()).toBeTruthy();
   } finally {
@@ -189,4 +198,76 @@ test("la primera estimación sale del catálogo del contrato", async ({ page }) 
   await page.getByRole("button", { name: "Capturar la estimación 1" }).click();
   await expect(page.getByText("CON-001").first()).toBeVisible();
   await expect(page.getByText("CON-002").first()).toBeVisible();
+});
+
+test("quitar la revisión de un lote chico no pregunta", async ({ page }) => {
+  // La obra de ejemplo tiene menos de 51 elementos que revisar: aquí se
+  // prueba el lado del umbral sin diálogo; el de más de 50 se cubre en la
+  // prueba unitaria del umbral y a mano sobre una obra grande.
+  test.setTimeout(180_000);
+  const id = await obraLista(page);
+  await page.goto(`/proyecto/${id}/revision`);
+  await page.getByLabel("Seleccionar todos los visibles").check();
+  await expect(page.getByText(/\b([1-9]|[1-4]\d|50) seleccionados/)).toBeVisible();
+  await page.getByRole("button", { name: "Quitar revisión" }).click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.getByText("0 seleccionados")).toBeVisible();
+});
+
+test("quitar un mapeo del taller pide confirmación y lo quita", async ({ page }) => {
+  test.setTimeout(180_000);
+  const id = await obraLista(page);
+  await page.goto(`/proyecto/${id}/lectura?tab=levantamiento`);
+  await page.getByRole("button", { name: /S-201 Estructura/ }).first().click();
+  const elegir = page.locator("select").filter({ has: page.locator("option:nth-child(2)") }).first();
+  await expect(elegir).toBeVisible({ timeout: 30_000 });
+  await elegir.selectOption({ index: 1 });
+  const quitar = page.getByRole("button", { name: "quitar", exact: true }).first();
+  await expect(quitar).toBeVisible({ timeout: 30_000 });
+  await quitar.click();
+  const dialogo = page.getByRole("alertdialog");
+  await expect(dialogo).toContainText("afecta a todos los proyectos del taller");
+  await dialogo.getByRole("button", { name: "Quitar mapeo" }).click();
+  await expect(page.getByRole("button", { name: "quitar", exact: true })).toHaveCount(0, { timeout: 30_000 });
+});
+
+test("cerrar un nodo no desmonta lo que se está capturando", async ({ page }) => {
+  test.setTimeout(180_000);
+  const state = pilotState();
+  const id = await obraLista(page);
+  await page.goto(`/proyecto/${id}/bitacora`);
+  await page.getByRole("button", { name: /^(Abrir la bitácora|Asentar nota)$/ }).first().click();
+  const texto = page.locator("textarea");
+  await texto.fill("Borrador que no se debe perder.");
+
+  // The server names the signed-in person who closed it.
+  const cerrar = await page.request.put(`${state.api_url}/projects/${id}/gates/contrato`, {
+    data: { approved: false },
+  });
+  expect(cerrar.ok(), await cerrar.text()).toBeTruthy();
+  await expect(page.getByText("Pilot administrator cerró este nodo mientras trabajabas")).toBeVisible({ timeout: 30_000 });
+  await expect(texto).toHaveValue("Borrador que no se debe perder.");
+
+  // Volver a abrirlo tampoco desmonta.
+  await page.request.put(`${state.api_url}/projects/${id}/gates/contrato`, { data: { approved: true } });
+  await expect(page.getByText("cerró este nodo")).toHaveCount(0, { timeout: 30_000 });
+  await expect(texto).toHaveValue("Borrador que no se debe perder.");
+});
+
+test("invitar con Propietario en un proyecto pide confirmación", async ({ page }) => {
+  test.setTimeout(180_000);
+  await obraLista(page);
+  await page.goto("/equipo");
+  await page.getByRole("button", { name: "Invitar", exact: true }).click();
+  const invitar = page.getByRole("dialog");
+  await invitar.getByPlaceholder("correo@taller.mx").fill("propietaria@ejemplo.mx");
+  await invitar.getByRole("listitem").filter({ hasText: "Obra de ejemplo" }).first().locator('input[type="checkbox"]').check();
+  await invitar.locator("select").filter({ has: page.locator('option[value="owner"]') }).first().selectOption("owner");
+  await invitar.getByRole("button", { name: "Invitar", exact: true }).click();
+  const confirmar = page.getByRole("alertdialog");
+  await expect(confirmar).toContainText("Propietario");
+  await confirmar.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await expect(confirmar).toHaveCount(0);
+  // Cancelar no crea la invitación.
+  await expect(invitar.locator("code")).toHaveCount(0);
 });

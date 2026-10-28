@@ -16,6 +16,8 @@ export type ContextoTecla = {
   seleccionado: boolean;
   motivoAbierto: boolean;
   midiendo: boolean;
+  /** Already excluded: X has nothing to ask for (its motivo is edited in place). */
+  excluido?: boolean;
 };
 
 export function accionDeTecla(key: string, ctx: ContextoTecla): AccionTecla | null {
@@ -27,7 +29,7 @@ export function accionDeTecla(key: string, ctx: ContextoTecla): AccionTecla | nu
   if (!ctx.seleccionado) return null;
   const k = key.toLowerCase();
   if (k === "c") return "confirmar";
-  if (k === "x") return "pedir-motivo";
+  if (k === "x") return ctx.excluido ? null : "pedir-motivo";
   if (k === "q") return "quitar";
   return null;
 }

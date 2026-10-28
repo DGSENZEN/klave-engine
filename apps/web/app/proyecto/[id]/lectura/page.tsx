@@ -287,18 +287,6 @@ export default function LecturaPage() {
   if (error) {
     return (
       <div className="px-6 py-7 lg:px-8">
-      <ConfirmDialog
-        open={porQuitarMapeo !== null}
-        title={`Quitar el mapeo ${porQuitarMapeo?.pattern ?? ""} → ${porQuitarMapeo?.concept_code ?? ""}; afecta a todos los proyectos del taller`}
-        description="Los proyectos que lo usan dejan de contar esas piezas en ese concepto al recalcularse."
-        confirmLabel="Quitar mapeo"
-        onCancel={() => setPorQuitarMapeo(null)}
-        onConfirm={() => {
-          const m = porQuitarMapeo;
-          setPorQuitarMapeo(null);
-          if (m) void unassign(m);
-        }}
-      />
         <PageHeader title="Lectura del plano" />
         <Callout tone="danger">
           No se pudo cargar la lectura. Revisa que el servidor esté activo.
@@ -328,6 +316,18 @@ export default function LecturaPage() {
 
   return (
     <div className="rise-in px-6 py-7 lg:px-8">
+      <ConfirmDialog
+        open={porQuitarMapeo !== null}
+        title={`Quitar el mapeo ${porQuitarMapeo?.pattern ?? ""} → ${porQuitarMapeo?.concept_code ?? ""}; afecta a todos los proyectos del taller`}
+        description="Los proyectos que lo usan dejan de contar esas piezas en ese concepto al recalcularse."
+        confirmLabel="Quitar mapeo"
+        onCancel={() => setPorQuitarMapeo(null)}
+        onConfirm={() => {
+          const m = porQuitarMapeo;
+          setPorQuitarMapeo(null);
+          if (m) void unassign(m);
+        }}
+      />
       <PageHeader
         title="Lectura del plano"
         sub="Qué leyó Klave de tus archivos: conversión, entidades, capas, bloques y lo que se omitió. Aquí se decide si puedes confiar en lo demás."
