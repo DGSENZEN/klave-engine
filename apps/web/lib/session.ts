@@ -126,6 +126,23 @@ export const getMe = () =>
 export const updateMe = (name: string) =>
   authFetch<AuthUser>("/auth/me", { method: "PUT", json: { name } });
 
+export type EstadoPasoRecorrido = "hecho" | "saltado" | "no_encontrado";
+
+/** Progreso del recorrido guiado en la cuenta (sólo con cuentas). */
+export const getRecorrido = () =>
+  authFetch<{ pasos: Record<string, "hecho" | "saltado"> }>("/auth/me/recorrido", {
+    cache: "no-store",
+  }).then((r) => r.pasos);
+
+export const putRecorridoPaso = (pasoId: string, estado: EstadoPasoRecorrido) =>
+  authFetch<{ ok: true }>("/auth/me/recorrido", {
+    method: "PUT",
+    json: { paso_id: pasoId, estado },
+  }).then(() => undefined);
+
+export const deleteRecorrido = () =>
+  authFetch<{ ok: true }>("/auth/me/recorrido", { method: "DELETE" }).then(() => undefined);
+
 export const changePassword = (currentPassword: string, newPassword: string) =>
   authFetch<{ ok: true; sessions_revoked: number }>("/auth/password", {
     json: { current_password: currentPassword, new_password: newPassword },

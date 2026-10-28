@@ -69,6 +69,10 @@ jobs:
       KLAVE_LOAD_DOTENV: '0'
       EC2_HOST: ${{ vars.EC2_HOST }}
       EC2_USER: ubuntu
+      # Hosted runners cannot reach the server's SSH ingress, so the operator
+      # releases the API by hand (deploy/ec2-release.sh). Set the repository
+      # variable EC2_DEPLOY_MODE=ssh once a runner can reach port 22 again.
+      EC2_DEPLOY_MODE: ${{ vars.EC2_DEPLOY_MODE || 'manual' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -109,6 +113,7 @@ jobs:
           DEPLOYMENT_URL: ${{ steps.stage.outputs.url }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       - name: Prepare SSH credentials
+        if: env.EC2_DEPLOY_MODE == 'ssh'
         run: |
           set -euo pipefail
           test -n "$SSH_PRIVATE_KEY" && test -n "$SSH_KNOWN_HOSTS" && test -n "$EC2_HOST"
@@ -121,6 +126,7 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
           SSH_KNOWN_HOSTS: ${{ vars.EC2_KNOWN_HOSTS }}
       - name: Back up and deploy tested API commit
+        if: env.EC2_DEPLOY_MODE == 'ssh'
         run: |
           set -euo pipefail
           archive="$RUNNER_TEMP/klave-release-$GITHUB_SHA.tar.gz"
@@ -130,10 +136,60 @@ jobs:
           options=(-i "$RUNNER_TEMP/klave-ssh/key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/klave-ssh/known_hosts" -o ConnectTimeout=15)
           scp "${options[@]}" "$archive" "$EC2_USER@$EC2_HOST:klave-release-$GITHUB_SHA.tar.gz"
           ssh "${options[@]}" "$EC2_USER@$EC2_HOST" "bash -s -- '$GITHUB_SHA' \"\$HOME/klave-release-$GITHUB_SHA.tar.gz\"" < deploy/ec2-release.sh
+      - name: Record manual API release
+        if: env.EC2_DEPLOY_MODE != 'ssh'
+        run: |
+          {
+            echo '### API not deployed by CI'
+            echo "EC2_DEPLOY_MODE is \`$EC2_DEPLOY_MODE\`: the frontend ships against the API already running."
+            echo "Release \`$GITHUB_SHA\` to EC2 with deploy/ec2-release.sh when it changes the backend."
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Verify public API
         run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://api.klave.space/ready
       - name: Promote tested frontend
-        run: vercel promote "$DEPLOYMENT_URL" --yes
+        # `vercel promote` first asks GET /v2/user who owns the token, and this
+        # project's token answers 404 «User not found». The same calls the CLI
+        # makes after that lookup need only the team and project, like deploy.
+        run: |
+          set -euo pipefail
+          api=https://api.vercel.com
+          team="teamId=$VERCEL_ORG_ID"
+          vercel_api() {
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer $VERCEL_TOKEN" "$@"
+          }
+          deployment=$(vercel_api "$api/v13/deployments/${DEPLOYMENT_URL#https://}?$team")
+          id=$(jq -r .id <<<"$deployment")
+          if [ "$(jq -r .projectId <<<"$deployment")" != "$VERCEL_PROJECT_ID" ] \
+            || [ "$(jq -r .target <<<"$deployment")" != production ]; then
+            echo "$DEPLOYMENT_URL is not a production deployment of this project." >&2
+            exit 1
+          fi
+          status=$(vercel_api -X POST -o /dev/null -w '%{http_code}' \
+            "$api/v10/projects/$VERCEL_PROJECT_ID/promote/$id?$team")
+          if [ "$status" = 202 ]; then
+            echo "Promotion of $id queued behind an active rolling release."
+            exit 0
+          fi
+          # The CLI's own wait (promoteStatus): no recent alias job means Vercel
+          # already applied it; otherwise wait for succeeded, skipped or failed.
+          recent=$(( ($(date +%s) - 180) * 1000 ))
+          for _ in $(seq 60); do
+            job=$(vercel_api "$api/v9/projects/$VERCEL_PROJECT_ID?$team" | jq -c '.lastAliasRequest')
+            echo "Alias job: $job"
+            state=$(jq -r --argjson recent "$recent" '
+              if (.jobStatus and .requestedAt and .toDeploymentId | not)
+                or .requestedAt < $recent then "applied"
+              else .jobStatus end' <<<"$job")
+            case "$state" in
+              applied|succeeded|skipped) echo "Promoted $id."; exit 0 ;;
+              failed) echo "Vercel reports the promotion failed." >&2; exit 1 ;;
+              pending|in-progress) sleep 3 ;;
+              *) echo "Unknown promotion status «$state»." >&2; exit 1 ;;
+            esac
+          done
+          echo "The promotion of $id did not finish within 3 minutes." >&2
+          exit 1
         env:
           DEPLOYMENT_URL: ${{ steps.stage.outputs.url }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { PlusCircle, Trash } from "@phosphor-icons/react";
 import {
   addOmittedElement,
+  apiMessage,
   getProjectReviews,
   removeOmittedElement,
   type OmittedElement,
@@ -107,11 +108,7 @@ export function OmittedSection({
       setSectionCm("");
       setNote("");
     } catch (e) {
-      setError(
-        e instanceof Error && e.message
-          ? e.message
-          : "No se pudo agregar el elemento.",
-      );
+      setError(apiMessage(e, "No se pudo agregar el elemento."));
     } finally {
       setBusy(false);
     }

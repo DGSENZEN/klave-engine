@@ -87,3 +87,63 @@ def test_production_with_users_db_down_fails_closed_even_after_restart(monkeypat
 def test_dev_keeps_the_local_open_mode(monkeypatch, data_dir):
     client = _client_with(monkeypatch, data_dir, "dev", _Store(has_users=False))
     assert client.get("/catalog").status_code == 200
+
+
+def _production(monkeypatch):
+    from klave_engine.common import config as config_module
+
+    monkeypatch.setenv("KLAVE_ENV", "production")
+    monkeypatch.setenv("KLAVE_WEB_ORIGIN", "https://app.taller.mx")
+    monkeypatch.setenv("KLAVE_REGISTRATION", "invite_only")
+    monkeypatch.setenv(
+        "KLAVE_USERS_DATABASE_URL", "postgresql://nobody:x@127.0.0.1:1/none"
+    )
+    config_module.get_settings.cache_clear()
+
+
+def test_production_publishes_no_api_map(monkeypatch, data_dir):
+    # El mapa entero de la API (192 rutas) no es para el público.
+    from fastapi.testclient import TestClient
+
+    from apps.api.main import create_app
+
+    _production(monkeypatch)
+    app = create_app()
+    assert app.openapi_url is None and app.docs_url is None and app.redoc_url is None
+    client = TestClient(app)
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path).status_code in (401, 403, 404, 503), path
+
+
+def test_development_keeps_the_api_docs(monkeypatch, data_dir):
+    from klave_engine.common import config as config_module
+
+    from apps.api.main import create_app
+
+    monkeypatch.setenv("KLAVE_ENV", "dev")
+    config_module.get_settings.cache_clear()
+    app = create_app()
+    assert app.docs_url == "/docs" and app.openapi_url == "/openapi.json"
+
+
+def test_production_refuses_server_folder_import(monkeypatch, data_dir):
+    # Importar una carpeta del servidor es de quien opera la máquina, no de
+    # un usuario de la web: en producción no existe.
+    from fastapi import HTTPException, Request
+    from klave_engine.common.config import get_settings
+
+    from apps.api.dependencies import ProjectStore
+    from apps.api.routes import projects
+
+    _production(monkeypatch)
+    settings = get_settings()
+    root = data_dir / "uploads" / "server-folder"
+    (root / "drawings").mkdir(parents=True)
+    request = Request({"type": "http", "headers": [], "state": {}})
+    with pytest.raises(HTTPException) as caught:
+        projects.create_project(
+            projects.CreateProjectRequest(project_name="X", root_path=str(root)),
+            request, store=ProjectStore(settings), settings=settings,
+        )
+    assert caught.value.status_code == 404
+    assert ProjectStore(settings).list_projects() == {}

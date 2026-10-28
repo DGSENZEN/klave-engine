@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { senalRecorrido } from "@/lib/recorridoStore";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -91,6 +92,11 @@ export default function PlanoPage() {
   );
   const [minConfidence, setMinConfidence] = useState(0);
   const [selected, setSelected] = useState<DetectionOverlay | null>(null);
+  // El recorrido avanza con cualquier selección: clic en el plano o ← →.
+  const seleccionId = selected?.id ?? null;
+  useEffect(() => {
+    if (seleccionId) senalRecorrido("visor.seleccion");
+  }, [seleccionId]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showExcluded, setShowExcluded] = useState(true);
   // Una hoja a la vez: las hojas de un juego comparten origen y encimadas no
@@ -642,7 +648,7 @@ export default function PlanoPage() {
           </div>
         )}
 
-        <div className="relative min-w-0 flex-1 bg-surface-2">
+        <div data-tour="visor.lienzo" className="relative min-w-0 flex-1 bg-surface-2">
           <MeasureToolbar
             mode={measureMode}
             onMode={(mode) => {
@@ -728,7 +734,7 @@ export default function PlanoPage() {
             />
           )}
           {selected && (
-            <div className="rise-in absolute bottom-4 left-4 z-10 max-h-[calc(100%-6rem)] w-[380px] max-w-[calc(100%-2rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-surface p-4 shadow-lg">
+            <div data-tour="visor.inspector" className="rise-in absolute bottom-4 left-4 z-10 max-h-[calc(100%-6rem)] w-[380px] max-w-[calc(100%-2rem)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-surface p-4 shadow-lg">
               <div className="mb-2 flex items-start justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <span

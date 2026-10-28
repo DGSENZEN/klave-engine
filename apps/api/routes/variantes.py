@@ -16,6 +16,7 @@ from klave_engine.costing.models import CostReport
 from klave_engine.costing.reviews import load_reviews
 from klave_engine.detection.results import Detection
 from klave_engine.detection.views import SheetSegmentation
+from klave_engine.ejemplo import es_obra_de_ejemplo
 from pydantic import BaseModel
 
 from apps.api.dependencies import ProjectStore, get_settings, get_store, project_recompute_lock
@@ -49,8 +50,14 @@ def _report(store: ProjectStore, project_id: str) -> CostReport:
 
 
 @router.get("/{project_id}/variantes")
-def list_variants(project_id: str, store: ProjectStore = Depends(get_store)) -> dict:
-    """Cada renglón con sus variantes y a qué de tu catálogo apunta cada una."""
+def list_variants(
+    project_id: str,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Cada renglón con sus variantes y a qué de tu catálogo apunta cada una,
+    más los conceptos a los que se puede mapear: los del mismo catálogo donde
+    se guarda el mapeo (en la obra de ejemplo, el suyo)."""
     report = _report(store, project_id)
     counts = {"automatica": 0, "propuesta": 0, "confirmada": 0, "sin_equivalente": 0,
               "sin_mapear": 0}
@@ -64,7 +71,15 @@ def list_variants(project_id: str, store: ProjectStore = Depends(get_store)) -> 
             "unpriced": line.unpriced,
             "variants": [v.model_dump() for v in line.variants],
         })
-    return {"lines": lines, "counts": counts}
+    conceptos = [
+        {"code": row["code"], "description": row["description"], "unit": row["unit"]}
+        for row in store_for_project(settings, project_id).load_concepts()
+        if not row.get("rule_key")
+    ]
+    # Las bases de referencia del taller no se ofrecen en la obra de ejemplo:
+    # su mapeo se guarda en su propio catálogo, que no las tiene.
+    referencias = not es_obra_de_ejemplo(project_id)
+    return {"lines": lines, "counts": counts, "conceptos": conceptos, "referencias": referencias}
 
 
 @router.post("/{project_id}/variantes/mapear")

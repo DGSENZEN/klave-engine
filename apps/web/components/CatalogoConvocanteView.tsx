@@ -111,7 +111,7 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
   );
 
   return (
-    <div className="rise-in px-6 py-7 lg:px-8">
+    <div className="rise-in px-6 py-7 lg:px-8" data-tour="convocante.vista">
       <PageHeader
         title={titulo}
         sub="El catálogo que manda la convocante: sus claves, su orden y sus cantidades. Klave le pone al lado la cantidad que sostiene el plano, y no lo modifica."

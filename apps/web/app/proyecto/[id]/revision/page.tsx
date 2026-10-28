@@ -50,6 +50,7 @@ import { FAMILIES, FAMILY_LABELS } from "@/lib/families";
 import { isDoubtful, LoteDeRevision } from "@/components/LoteDeRevision";
 import { FAMILIES as OMITTED_FAMILIES, OmittedSection } from "@/components/OmittedSection";
 import { PropuestasSection } from "@/components/PropuestasSection";
+import { EstructuraSection } from "@/components/EstructuraSection";
 import { VariantesSection } from "@/components/VariantesSection";
 import { useProjectLive } from "@/components/ProjectLive";
 
@@ -323,6 +324,7 @@ export default function RevisionPage() {
           { key: "catalogo", label: "Tu catálogo" },
           { key: "omitidos", label: "Lo que Klave no vio" },
           { key: "propuestas", label: "Propuestas del lector" },
+          { key: "estructura", label: "Lectura estructural" },
           { key: "conteo", label: "Cuántos hay dibujados" },
         ]}
       />
@@ -470,7 +472,7 @@ export default function RevisionPage() {
           </span>
         </div>
 
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-2">
+        <div data-tour="revision.masivo" className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-2">
           <span className="text-sm font-medium tabular">
             {selectedVisible.length} seleccionado
             {selectedVisible.length === 1 ? "" : "s"}
@@ -537,7 +539,7 @@ export default function RevisionPage() {
           </span>
         </div>
 
-        <TableCard>
+        <TableCard tour="revision.tabla">
           <thead>
             <tr className="border-b border-border bg-surface-2">
               <Th>
@@ -756,6 +758,17 @@ export default function RevisionPage() {
         )}
       </div>
 
+      <div className={tab !== "estructura" ? "hidden" : ""}>
+        {tab === "estructura" && (
+          <EstructuraSection
+            projectId={id}
+            actorName={actorName}
+            clientId={clientId}
+            reloadKey={latestEvent?.seq}
+          />
+        )}
+      </div>
+
       <div className={tab !== "conteo" ? "hidden" : ""}>
         <ConteoSection
           projectId={id}
@@ -770,7 +783,14 @@ export default function RevisionPage() {
 
 const PAGE_SIZE = 500;
 
-const REVISION_TABS = ["elementos", "catalogo", "omitidos", "propuestas", "conteo"] as const;
+const REVISION_TABS = [
+  "elementos",
+  "catalogo",
+  "omitidos",
+  "propuestas",
+  "estructura",
+  "conteo",
+] as const;
 type RevisionTab = (typeof REVISION_TABS)[number];
 
 type SortKey =

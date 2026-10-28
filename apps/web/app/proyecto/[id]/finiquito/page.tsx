@@ -22,6 +22,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Flag, FloppyDisk } from "@phosphor-icons/react";
 import {
+  apiMessage,
   getFiniquito,
   guardarFiniquito,
   money,
@@ -103,6 +104,9 @@ export default function FiniquitoPage() {
   const [guardado, setGuardado] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  const [errorGuardado, setErrorGuardado] = useState<string | null>(null);
+  const [intento, setIntento] = useState(0);
 
   useEffect(() => {
     let vivo = true;
@@ -112,21 +116,35 @@ export default function FiniquitoPage() {
         setFin(cuerpo.finiquito);
         setResumen(cuerpo.resumen);
         setGuardado(cuerpo.guardado);
+        setErrorCarga(null);
+      })
+      .catch((e) => {
+        if (vivo) setErrorCarga(apiMessage(e, "No se pudo cargar el finiquito. Revisa tu conexión e inténtalo de nuevo."));
       })
       .finally(() => vivo && setCargando(false));
     return () => {
       vivo = false;
     };
-  }, [id]);
+  }, [id, intento]);
+
+  function reintentar() {
+    setErrorCarga(null);
+    setCargando(true);
+    setIntento((n) => n + 1);
+  }
 
   async function guardar() {
     if (!fin) return;
     setGuardando(true);
+    setErrorGuardado(null);
     try {
       const cuerpo = await guardarFiniquito(id, fin, getBrowserActor());
       setFin(cuerpo.finiquito);
       setResumen(cuerpo.resumen);
       setGuardado(true);
+    } catch (e) {
+      // Un guardado que falla en silencio deja creer que el finiquito quedó firme.
+      setErrorGuardado(apiMessage(e, "No se pudo guardar el finiquito. Tus cambios siguen en pantalla; inténtalo de nuevo."));
     } finally {
       setGuardando(false);
     }
@@ -134,6 +152,26 @@ export default function FiniquitoPage() {
 
   function set<K extends keyof Finiquito>(campo: K, valor: Finiquito[K]) {
     setFin((prev) => (prev ? { ...prev, [campo]: valor } : prev));
+  }
+
+  if (errorCarga && !cargando) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Finiquito" sub="La cuenta que cierra el contrato." />
+        <div role="alert">
+          <Callout
+            tone="danger"
+            action={
+              <Button size="sm" variant="secondary" onClick={reintentar}>
+                Reintentar
+              </Button>
+            }
+          >
+            {errorCarga}
+          </Callout>
+        </div>
+      </div>
+    );
   }
 
   if (cargando || !fin || !resumen) {
@@ -159,6 +197,12 @@ export default function FiniquitoPage() {
           </Button>
         }
       />
+
+      {errorGuardado && (
+        <div role="alert">
+          <Callout tone="danger">{errorGuardado}</Callout>
+        </div>
+      )}
 
       {!guardado && (
         <Callout tone="info">

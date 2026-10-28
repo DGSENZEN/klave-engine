@@ -20,8 +20,10 @@
   --sidebar: #fafafa;
 
   --foreground: #161618;
-  --muted: #6e6e76;
-  --faint: #a3a3ab;
+  /* Texto secundario y terciario: ambos pasan AA (≥ 4.5:1) sobre background,
+   * surface y surface-2; faint queda un escalón más claro que muted. */
+  --muted: #5c5c64;
+  --faint: #6c6c74;
 
   --border: #e6e6e9;
   --border-strong: #d2d2d7;
@@ -76,8 +78,8 @@
   --sidebar: #0f0f11;
 
   --foreground: #ededf0;
-  --muted: #8f8f98;
-  --faint: #5e5e67;
+  --muted: #9a9aa3;
+  --faint: #82828a;
 
   --border: #232328;
   --border-strong: #333339;
@@ -386,4 +388,9 @@ input[type="number"]::-webkit-inner-spin-button {
 input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
+}
+
+/* Recorrido guiado: el foco de un paso «mirar» oscurece todo menos su ancla. */
+.recorrido-foco {
+  box-shadow: 0 0 0 9999px color-mix(in oklab, var(--foreground) 35%, transparent);
 }

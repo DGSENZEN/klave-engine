@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { abrirMenuRecorrido } from "@/lib/recorridoStore";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -83,9 +84,19 @@ export function WorkspaceHeader({ active }: { active: Section }) {
           </nav>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          <span data-tour="workspace.ayuda">
           <KebabMenu label="Ayuda" icon={<Question size={17} weight="duotone" />}>
             {(close) => (
               <>
+                <MenuItem
+                  onSelect={() => {
+                    close();
+                    abrirMenuRecorrido();
+                  }}
+                  hint="Una obra de ejemplo, paso a paso"
+                >
+                  Recorrido guiado
+                </MenuItem>
                 <MenuItem
                   onSelect={() => {
                     close();
@@ -107,6 +118,7 @@ export function WorkspaceHeader({ active }: { active: Section }) {
               </>
             )}
           </KebabMenu>
+          </span>
           {actorName && (
             <Link
               href="/cuenta"

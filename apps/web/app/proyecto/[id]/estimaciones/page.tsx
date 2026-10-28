@@ -29,6 +29,7 @@ import {
   type LineaGenerador,
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
+import { isoDateLocal } from "@/lib/time";
 import { GeneradorEditor } from "@/components/GeneradorEditor";
 import {
   Button,
@@ -46,12 +47,12 @@ import {
 } from "@/components/ui";
 
 function hoy(): string {
-  return new Date().toISOString().slice(0, 10);
+  return isoDateLocal();
 }
 
 function finDeMes(iso: string): string {
   const d = new Date(`${iso}T12:00:00`);
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10);
+  return isoDateLocal(new Date(d.getFullYear(), d.getMonth() + 1, 0));
 }
 
 export default function EstimacionesPage() {

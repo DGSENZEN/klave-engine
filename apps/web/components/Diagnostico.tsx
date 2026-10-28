@@ -532,7 +532,7 @@ export function DiagnosticoPanel({
   }
 
   return (
-    <section className="mb-5" aria-label="Estado del presupuesto">
+    <section className="mb-5" aria-label="Estado del presupuesto" data-tour="diagnostico.niveles">
       <Card className="overflow-hidden p-0">
         <div className="border-b border-border px-4 py-3">
           <p className="text-[15px] font-medium leading-snug">{diagnostico.resumen}</p>
@@ -643,7 +643,7 @@ function Criterios({ items }: { items: string[] }) {
   const [open, setOpen] = useState(false);
   if (items.length === 0) return null;
   return (
-    <div className="border-t border-border">
+    <div className="border-t border-border" data-tour="diagnostico.criterios">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

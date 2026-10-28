@@ -1,8 +1,9 @@
 import re
 import shutil
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request, UploadFile
 from klave_engine.common.config import Settings
@@ -10,9 +11,17 @@ from klave_engine.common.errors import ProjectManifestError
 from klave_engine.common.ids import short_uuid, slugify
 from klave_engine.common.io import read_json, write_text
 from klave_engine.common.version import engine_fingerprint
+from klave_engine.costing.catalog_store import drop_catalog_store
 from klave_engine.costing.defaults import apply_workspace_defaults
+from klave_engine.ejemplo import es_obra_de_ejemplo, sample_project_id
+from klave_engine.ejemplo.catalogo import sembrar_catalogo_didactico
+from klave_engine.ejemplo.obra import build_obra_ejemplo
 from klave_engine.ingestion.manifest import load_manifest, manifest_path, save_manifest
-from klave_engine.ingestion.project_loader import find_drawing_files, ingest_project
+from klave_engine.ingestion.project_loader import (
+    clave_de_hoja,
+    find_drawing_files,
+    ingest_project,
+)
 from pydantic import BaseModel
 
 from apps.api.auth.access import require_project_role
@@ -20,8 +29,9 @@ from apps.api.auth.common import db_unavailable, rate_limit
 from apps.api.auth.store import UsersDbUnavailable, get_user_store
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
-from apps.api.jobs import JOB_STORE, JobQueueFullError
-from apps.api.tenancy import defaults_scope, request_workspace_id
+from apps.api.jobs import ACTIVE_STATES, JOB_STORE, JobQueueFullError
+from apps.api.observability import context_from_request
+from apps.api.tenancy import defaults_scope, request_workspace_id, store_for_project
 
 router = APIRouter(prefix="/projects")
 
@@ -29,6 +39,9 @@ ALLOWED_SUFFIXES = {".dwg", ".dxf"}
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 # A residential set is ~16 sheets; 40 leaves room without inviting abuse.
 MAX_FILES_PER_PROJECT = 40
+# Lo que se reemplaza o se retira se guarda aquí, fuera de lo que se lee: la
+# búsqueda de hojas no baja a subcarpetas de drawings/.
+RETIRADAS = "retiradas"
 
 
 class CreateProjectRequest(BaseModel):
@@ -143,6 +156,15 @@ def visible_project_filter(request: Request, store: ProjectStore) -> Callable[[s
     user = _state_user(request)
     if user is None:
         return lambda project_id: True
+    propia = sample_project_id(str(user["workspace_id"]), str(user["user_id"]))
+    filtro = _filtro_de_cuentas(user, store)
+    # La obra de ejemplo es de quien la hizo: ni un administrador ve la ajena.
+    return lambda project_id: (
+        project_id == propia if es_obra_de_ejemplo(project_id) else filtro(project_id)
+    )
+
+
+def _filtro_de_cuentas(user: dict, store: ProjectStore) -> Callable[[str], bool]:
     try:
         users = get_user_store(store.settings.users_database_url)
         if user["role"] == "admin":
@@ -199,6 +221,10 @@ def create_project(
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
+    # Importar una carpeta del servidor es de quien opera la máquina, no de un
+    # usuario de la web: en producción la ruta no existe (la web no la usa).
+    if settings.env == "production":
+        raise HTTPException(status_code=404, detail="Not Found")
     root = Path(body.root_path)
     if not root.is_dir():
         raise HTTPException(
@@ -298,7 +324,11 @@ async def upload_project(
     rate_limit(request, "upload", max_attempts=20, window_seconds=3600.0)
     first_name, _ = _validated_upload_name(files[0].filename or "plano.dxf")
     name = " ".join((project_name or "").split())[:120] or Path(first_name).stem
-    project_id = f"{slugify(name)[:32] or 'plano'}_{short_uuid('p')[2:]}"
+    slug = slugify(name)[:32] or "plano"
+    if es_obra_de_ejemplo(slug):
+        # Ese prefijo es de la obra de ejemplo: un plano real nunca lo lleva.
+        slug = f"p_{slug}"[:32]
+    project_id = f"{slug}_{short_uuid('p')[2:]}"
     root = (settings.data_dir / "uploads" / project_id).resolve()
     drawings = root / "drawings"
     drawings.mkdir(parents=True, exist_ok=True)
@@ -336,7 +366,9 @@ async def upload_project(
         data={"project_name": manifest.project_name},
     )
     try:
-        job, _ = JOB_STORE.enqueue(project_id, root, settings)
+        job, _ = JOB_STORE.enqueue(
+            project_id, root, settings, context=context_from_request(request, project_id=project_id)
+        )
     except JobQueueFullError as exc:
         raise HTTPException(
             status_code=429,
@@ -355,6 +387,179 @@ async def upload_project(
         "state": job.state,
         "warnings": warnings,
     }
+
+
+def _ya_procesada(store: ProjectStore, project_id: str, root: Path, settings: Settings) -> bool:
+    """La obra de ejemplo ya está leída: volver a abrirla no la reprocesa."""
+    job = JOB_STORE.get(project_id, root, settings)
+    if job is not None:
+        return job.state == "processed"
+    try:
+        manifest = load_manifest(root, settings.processed_dir_name)
+    except ProjectManifestError:
+        return False
+    return manifest.processing_status.value == "processed"
+
+
+@router.post("/demo", status_code=202)
+def create_demo_project(
+    request: Request,
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """La obra de ejemplo de esta persona: la obra didáctica del recorrido
+    guiado, con su propio catálogo, creada una vez y procesada como trabajo.
+    Abrirla otra vez no la vuelve a leer si ya está leída."""
+    rate_limit(request, "process", max_attempts=30, window_seconds=3600.0)
+    user = _state_user(request)
+    project_id = sample_project_id(
+        request_workspace_id(request), str(user["user_id"]) if user else None
+    )
+    root = (settings.data_dir / "uploads" / project_id).resolve()
+    fresh = not root.exists()
+    activo = None if fresh else JOB_STORE.get(project_id, root, settings)
+    if activo is not None and activo.state in ("queued", "running"):
+        # Ya se está leyendo (p. ej. tras «Empezar de cero»): no se toca nada.
+        store.register(project_id, root)
+        return {"project_id": project_id, "job_id": activo.job_id, "fresh": False}
+    if not fresh and _ya_procesada(store, project_id, root, settings):
+        _grant_owner(request, settings, project_id)
+        store.register(project_id, root)
+        return {"project_id": project_id, "job_id": None, "fresh": False}
+    try:
+        if fresh:
+            build_obra_ejemplo(root, "A")
+            sembrar_catalogo_didactico(store_for_project(settings, project_id))
+        manifest = ingest_project(
+            root,
+            project_name="Obra de ejemplo",
+            project_id=project_id,
+            processed_dir_name=settings.processed_dir_name,
+        )
+        _grant_owner(request, settings, project_id)
+    except Exception:
+        if fresh:
+            shutil.rmtree(root, ignore_errors=True)
+            drop_catalog_store(settings.data_dir, project_id)
+        raise
+
+    store.register(project_id, root)
+    if fresh:
+        apply_workspace_defaults(
+            defaults_scope(settings, request_workspace_id(request)),
+            root / settings.processed_dir_name,
+        )
+        BUS.publish(
+            "project_created",
+            project_id=project_id,
+            actor=clean_actor(x_actor),
+            data={"project_name": manifest.project_name},
+        )
+    job_id = _encolar_ejemplo(request, settings, project_id, root)
+    return {"project_id": project_id, "job_id": job_id, "fresh": fresh}
+
+
+def _encolar_ejemplo(request: Request, settings: Settings, project_id: str, root: Path) -> str:
+    try:
+        job, _ = JOB_STORE.enqueue(
+            project_id, root, settings, context=context_from_request(request, project_id=project_id)
+        )
+    except JobQueueFullError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error_type": "processing_queue_full",
+                "project_id": project_id,
+                "message": "La cola de procesamiento está llena. Inténtalo de nuevo pronto.",
+            },
+            headers={"Retry-After": "30"},
+        ) from exc
+    return job.job_id
+
+
+def _obra_propia(request: Request) -> str:
+    user = _state_user(request)
+    return sample_project_id(request_workspace_id(request), str(user["user_id"]) if user else None)
+
+
+def _obra_de_ejemplo_quieta(
+    request: Request, store: ProjectStore, project_id: str, settings: Settings
+) -> Path:
+    """La raíz de la obra de ejemplo de quien llama y que no se está
+    procesando: 404 si no es exactamente la suya (ni la de otra persona ni un
+    plano real que empiece igual), 409 si un trabajo la está leyendo (nunca se
+    borran archivos debajo de un trabajo vivo)."""
+    if project_id != _obra_propia(request):
+        raise HTTPException(status_code=404, detail="Not found")
+    root = store.get_root(project_id)
+    job = JOB_STORE.get(project_id, root, settings)
+    if job is not None and job.state in ("queued", "running"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_type": "sample_busy",
+                "message": "La obra de ejemplo se está procesando; espera a que termine.",
+            },
+        )
+    return root
+
+
+@router.post("/{project_id}/demo/reiniciar", status_code=202)
+def reiniciar_obra_de_ejemplo(
+    project_id: str,
+    request: Request,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Empezar de cero: la Rev A otra vez, sin revisiones, mapeos ni lecturas,
+    con su catálogo didáctico recién sembrado, y el recorrido desde el inicio."""
+    root = _obra_de_ejemplo_quieta(request, store, project_id, settings)
+    shutil.rmtree(root, ignore_errors=True)
+    drop_catalog_store(settings.data_dir, project_id)
+    build_obra_ejemplo(root, "A")
+    sembrar_catalogo_didactico(store_for_project(settings, project_id))
+    ingest_project(
+        root,
+        project_name="Obra de ejemplo",
+        project_id=project_id,
+        processed_dir_name=settings.processed_dir_name,
+    )
+    _grant_owner(request, settings, project_id)
+    store.register(project_id, root)
+    apply_workspace_defaults(
+        defaults_scope(settings, request_workspace_id(request)),
+        root / settings.processed_dir_name,
+    )
+    user = _state_user(request)
+    if user is not None:
+        try:
+            get_user_store(settings.users_database_url).reiniciar_recorrido(str(user["user_id"]))
+        except UsersDbUnavailable:
+            pass  # el navegador también borra el progreso; la cuenta se pondrá al día
+    job_id = _encolar_ejemplo(request, settings, project_id, root)
+    return {"project_id": project_id, "job_id": job_id}
+
+
+@router.post("/{project_id}/demo/revision-b", status_code=202)
+def cargar_revision_b(
+    project_id: str,
+    request: Request,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """La Rev B de la obra de ejemplo: reescribe sus hojas y la vuelve a leer,
+    así Cambios compara una lectura contra la otra."""
+    root = _obra_de_ejemplo_quieta(request, store, project_id, settings)
+    build_obra_ejemplo(root, "B")
+    ingest_project(
+        root,
+        project_name="Obra de ejemplo",
+        project_id=project_id,
+        processed_dir_name=settings.processed_dir_name,
+    )
+    job_id = _encolar_ejemplo(request, settings, project_id, root)
+    return {"project_id": project_id, "job_id": job_id}
 
 
 @router.get("/{project_id}/status")
@@ -450,7 +655,9 @@ def process_project(
     rate_limit(request, "process", max_attempts=30, window_seconds=3600.0)
     root = store.get_root(project_id)
     try:
-        job, _ = JOB_STORE.enqueue(project_id, root, settings)
+        job, _ = JOB_STORE.enqueue(
+            project_id, root, settings, context=context_from_request(request, project_id=project_id)
+        )
     except JobQueueFullError as exc:
         raise HTTPException(
             status_code=429,
@@ -477,19 +684,68 @@ async def add_project_files(
     project_id: str,
     request: Request,
     files: list[UploadFile],
+    repetidas: Literal["preguntar", "reemplazar", "agregar"] = "preguntar",
     x_actor: Annotated[str | None, Header()] = None,
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    """Add sheets to an existing project and reprocess it as one drawing set."""
+    """Add sheets to an existing project and reprocess it as one drawing set.
+
+    Una hoja cuyo número ya está en el proyecto es casi siempre una revisión:
+    sumarla duplicaría sus cantidades. Con ``repetidas=preguntar`` se contesta
+    409 con las parejas; ``reemplazar`` pone cada revisión en el lugar de su
+    hoja (y agrega las demás) en un solo cambio; ``agregar`` las suma tal cual."""
     rate_limit(request, "upload", max_attempts=20, window_seconds=3600.0)
     root = store.get_root(project_id)
+    _sin_trabajo_activo(project_id, root, settings)
     drawings = root / "drawings"
     drawings.mkdir(parents=True, exist_ok=True)
-    existing = len(find_drawing_files(root))
-    saved = await _save_sheet_uploads(
-        files, drawings, settings.max_upload_bytes, existing + 1
-    )
+    current = find_drawing_files(root)
+    por_clave = {clave_de_hoja(p.name).casefold(): p for p in current}
+    parejas = [
+        (f, por_clave[clave])
+        for f in files
+        if f.filename and (clave := clave_de_hoja(f.filename).casefold()) in por_clave
+    ]
+    if parejas and repetidas == "preguntar":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_type": "hoja_repetida",
+                "message": "Estas hojas ya están en el proyecto: "
+                + ", ".join(f"{f.filename} (como {viejo.name})" for f, viejo in parejas)
+                + ". Reemplázalas para no contar dos veces la misma hoja.",
+                "repetidas": [{"nueva": f.filename, "existente": v.name} for f, v in parejas],
+            },
+        )
+    reemplazos = parejas if repetidas == "reemplazar" else []
+    reemplazadas = {id(f) for f, _ in reemplazos}
+    nuevas = [f for f in files if id(f) not in reemplazadas]
+    # Cada revisión ocupa el lugar de su hoja; si algo falla, todo vuelve.
+    saved: list[Path] = []
+    apartadas: list[tuple[Path, Path]] = []
+    try:
+        for file, viejo in reemplazos:
+            _, suffix = _validated_upload_name(file.filename or "plano.dxf")
+            destino = viejo.with_suffix(suffix)
+            if destino != viejo and destino.exists():
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error_type": "sheet_name_taken",
+                        "message": f"Ya hay otra hoja llamada {destino.name} en el proyecto.",
+                    },
+                )
+            apartadas.append((_apartar(root, viejo), viejo))
+            await _save_upload(file, destino, settings.max_upload_bytes)
+            saved.append(destino)
+        if nuevas:
+            saved += await _save_sheet_uploads(
+                nuevas, drawings, settings.max_upload_bytes, len(current) + 1
+            )
+    except BaseException:
+        _deshacer(saved, apartadas)
+        raise
     # Streaming yields to other requests: preserve the manifest as it stands
     # after the upload, including metadata edits acknowledged in the meantime.
     previous_manifest_path = manifest_path(root, settings.processed_dir_name)
@@ -500,8 +756,7 @@ async def add_project_files(
             else None
         )
     except Exception:
-        for path in saved:
-            path.unlink(missing_ok=True)
+        _deshacer(saved, apartadas)
         raise
     try:
         manifest = ingest_project(
@@ -509,14 +764,15 @@ async def add_project_files(
         )
         warnings: list[str] = []  # se convierten en el trabajo (ver upload_project)
     except Exception:
-        for path in saved:
-            path.unlink(missing_ok=True)
+        _deshacer(saved, apartadas)
         # Re-ingesting would reset the original processing status and metadata.
         if previous_manifest is None:
             previous_manifest_path.unlink(missing_ok=True)
         else:
             write_text(previous_manifest_path, previous_manifest)
         raise
+    for _apartada, viejo in apartadas:
+        _quitar_conversion(root, settings, viejo)
     BUS.publish(
         "project_updated",
         project_id=project_id,
@@ -524,7 +780,9 @@ async def add_project_files(
         data={"action": "sheets_added", "sheet_count": len(manifest.source_files)},
     )
     try:
-        job, _ = JOB_STORE.enqueue(project_id, root, settings)
+        job, _ = JOB_STORE.enqueue(
+            project_id, root, settings, context=context_from_request(request, project_id=project_id)
+        )
     except JobQueueFullError as exc:
         raise HTTPException(
             status_code=429,
@@ -537,6 +795,200 @@ async def add_project_files(
         "job_id": job.job_id,
         "state": job.state,
         "warnings": warnings,
+    }
+
+
+def _sin_trabajo_activo(project_id: str, root: Path, settings: Settings) -> None:
+    """Las hojas no cambian mientras se leen: el reproceso devolvería el trabajo
+    en curso y el cambio se quedaría sin leer."""
+    job = JOB_STORE.get(project_id, root, settings)
+    if job is not None and job.state in ACTIVE_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_type": "processing_in_progress",
+                "message": "El proyecto se está procesando: espera a que termine para "
+                "cambiar sus hojas.",
+            },
+        )
+
+
+def _deshacer(guardadas: list[Path], apartadas: list[tuple[Path, Path]]) -> None:
+    """Quita lo que se guardó y devuelve cada hoja apartada a su lugar."""
+    for path in guardadas:
+        path.unlink(missing_ok=True)
+    for apartada, original in reversed(apartadas):
+        if apartada.exists() and not original.exists():
+            apartada.rename(original)
+
+
+def _hoja_del_proyecto(root: Path, filename: str) -> Path:
+    """La hoja con ese nombre, de las que el proyecto lee; nunca una ruta."""
+    if not filename or len(filename) > 255 or any(c in filename for c in "/\\\x00") or (
+        filename in (".", "..")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail={"error_type": "invalid_filename", "message": "Nombre de hoja inválido."},
+        )
+    for path in find_drawing_files(root):
+        if path.name == filename:
+            return path
+    raise HTTPException(
+        status_code=404,
+        detail={"error_type": "sheet_not_found", "message": "Esa hoja no está en el proyecto."},
+    )
+
+
+def _apartar(root: Path, path: Path) -> Path:
+    """Mueve la hoja a drawings/retiradas/<momento>/: fuera de la lectura, pero
+    a mano si alguien la necesita."""
+    momento = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
+    destino = root / "drawings" / RETIRADAS / momento / path.name
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    path.rename(destino)
+    return destino
+
+
+def _quitar_conversion(root: Path, settings: Settings, path: Path) -> None:
+    """La conversión de una hoja que ya no es la misma no se vuelve a usar."""
+    converted = root / settings.converted_dir_name
+    if not converted.is_dir():
+        return
+    for folder in converted.glob(f"{slugify(path.stem)}_*"):
+        if (folder / f"{path.stem}.dxf").exists():
+            shutil.rmtree(folder, ignore_errors=True)
+
+
+def _foto_del_manifiesto(root: Path, settings: Settings) -> str | None:
+    path = manifest_path(root, settings.processed_dir_name)
+    return path.read_text(encoding="utf-8") if path.exists() else None
+
+
+def _restaurar_manifiesto(root: Path, settings: Settings, foto: str | None) -> None:
+    path = manifest_path(root, settings.processed_dir_name)
+    if foto is None:
+        path.unlink(missing_ok=True)
+    else:
+        write_text(path, foto)
+
+
+def _reprocesar(request: Request, settings: Settings, project_id: str, root: Path):
+    try:
+        job, _ = JOB_STORE.enqueue(
+            project_id, root, settings, context=context_from_request(request, project_id=project_id)
+        )
+    except JobQueueFullError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={"error_type": "processing_queue_full", "project_id": project_id},
+            headers={"Retry-After": "30"},
+        ) from exc
+    return job
+
+
+@router.put("/{project_id}/files/{filename}", status_code=202)
+async def replace_project_file(
+    project_id: str,
+    filename: str,
+    request: Request,
+    file: UploadFile,
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """La revisión nueva de una hoja ocupa su lugar: conserva su nombre (así
+    «Cambios» la compara con la anterior), la vieja se aparta y el proyecto se
+    vuelve a procesar. Nunca se suman las dos."""
+    rate_limit(request, "upload", max_attempts=20, window_seconds=3600.0)
+    root = store.get_root(project_id)
+    _sin_trabajo_activo(project_id, root, settings)
+    path = _hoja_del_proyecto(root, filename)
+    _, suffix = _validated_upload_name(file.filename or "plano.dxf")
+    destino = path.with_suffix(suffix)
+    if destino != path and destino.exists():
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_type": "sheet_name_taken",
+                "message": f"Ya hay otra hoja llamada {destino.name} en el proyecto.",
+            },
+        )
+    foto = _foto_del_manifiesto(root, settings)
+    apartada = _apartar(root, path)
+    try:
+        await _save_upload(file, destino, settings.max_upload_bytes)
+        manifest = ingest_project(
+            root, project_id=project_id, processed_dir_name=settings.processed_dir_name
+        )
+    except BaseException:
+        destino.unlink(missing_ok=True)
+        apartada.rename(path)
+        _restaurar_manifiesto(root, settings, foto)
+        raise
+    _quitar_conversion(root, settings, path)
+    BUS.publish(
+        "project_updated",
+        project_id=project_id,
+        actor=clean_actor(x_actor),
+        data={"action": "sheet_replaced", "sheet": destino.name},
+    )
+    job = _reprocesar(request, settings, project_id, root)
+    return {
+        "project_id": project_id,
+        "reemplazada": path.name,
+        "hoja": destino.name,
+        "sheet_count": len(manifest.source_files),
+        "job_id": job.job_id,
+        "state": job.state,
+    }
+
+
+@router.delete("/{project_id}/files/{filename}", status_code=202)
+def retire_project_file(
+    project_id: str,
+    filename: str,
+    request: Request,
+    x_actor: Annotated[str | None, Header()] = None,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Saca una hoja de la lectura (se aparta, no se borra) y reprocesa."""
+    root = store.get_root(project_id)
+    _sin_trabajo_activo(project_id, root, settings)
+    path = _hoja_del_proyecto(root, filename)
+    if len(find_drawing_files(root)) <= 1:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_type": "ultima_hoja",
+                "message": "Es la única hoja del proyecto: reemplázala en vez de retirarla.",
+            },
+        )
+    foto = _foto_del_manifiesto(root, settings)
+    apartada = _apartar(root, path)
+    try:
+        manifest = ingest_project(
+            root, project_id=project_id, processed_dir_name=settings.processed_dir_name
+        )
+    except BaseException:
+        apartada.rename(path)
+        _restaurar_manifiesto(root, settings, foto)
+        raise
+    _quitar_conversion(root, settings, path)
+    BUS.publish(
+        "project_updated",
+        project_id=project_id,
+        actor=clean_actor(x_actor),
+        data={"action": "sheet_retired", "sheet": path.name},
+    )
+    job = _reprocesar(request, settings, project_id, root)
+    return {
+        "project_id": project_id,
+        "retirada": path.name,
+        "sheet_count": len(manifest.source_files),
+        "job_id": job.job_id,
+        "state": job.state,
     }
 
 

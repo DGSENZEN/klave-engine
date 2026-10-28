@@ -36,6 +36,25 @@ def infer_sheet_number(filename: str) -> str | None:
     return match.group(1).upper() if match else None
 
 
+# «NN-» es el orden que Klave le pone a cada hoja al subirla; una revisión al
+# final del nombre («rev C», «_r2», «-v3») es de la entrega, no de la hoja.
+_ORDEN_DE_SUBIDA = re.compile(r"^\d{2}-")
+_REVISION = re.compile(
+    r"[\s_.-]+(?:rev(?:isi[oó]n)?|ver|r|v)[\s_.-]*[a-z0-9]{1,3}$", re.IGNORECASE
+)
+
+
+def clave_de_hoja(filename: str) -> str:
+    """La identidad de una hoja entre revisiones: su número («S-101») si el
+    nombre lo trae, si no el nombre sin el orden de subida ni la revisión.
+    Dos archivos con la misma clave son la misma hoja en dos entregas."""
+    stem = _ORDEN_DE_SUBIDA.sub("", Path(filename).stem)
+    anterior = None
+    while anterior != stem:
+        anterior, stem = stem, _REVISION.sub("", stem)
+    return infer_sheet_number(stem) or stem.strip(" _.-") or Path(filename).stem
+
+
 def infer_discipline(sheet_number: str | None) -> str | None:
     if not sheet_number:
         return None
@@ -123,7 +142,10 @@ def ingest_project(
             / source_file.file_id
             / f"{Path(source_file.path).stem}.dxf"
         )
-        if converted.is_file():
+        source = project_root / source_file.path
+        # Una conversión más vieja que su DWG es de otro dibujo: la hoja se
+        # reemplazó (o alguien cambió el archivo) y hay que convertirla de nuevo.
+        if converted.is_file() and converted.stat().st_mtime >= source.stat().st_mtime:
             manifest.converted_files.append(
                 ConvertedFile(
                     source_file_id=source_file.file_id,

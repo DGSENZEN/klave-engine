@@ -31,7 +31,6 @@ import {
   money,
   patchProject,
   processProject,
-  createDemoProject,
   removeProject,
   uploadProject,
   type ProjectOverview,
@@ -41,7 +40,7 @@ import { eventsUrl, getBrowserActor, parseProjectEvent } from "@/lib/collab";
 import { isProfileComplete } from "@/lib/identity";
 import { fetchAuthStatus } from "@/lib/session";
 import { timeAgo } from "@/lib/time";
-import { validateDrawingFiles } from "@/lib/uploads";
+import { uploadErrorMessage, validateDrawingFiles } from "@/lib/uploads";
 import {
   Badge,
   Button,
@@ -54,8 +53,7 @@ import {
 import { KebabMenu, MenuItem } from "@/components/Menu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
-import { HowItWorks } from "@/components/HowItWorks";
-import { OnboardingChecklist } from "@/components/OnboardingChecklist";
+import { InicioRecorrido } from "@/components/recorrido/InicioRecorrido";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 
 const STATUS_TONE: Record<string, BadgeTone> = {
@@ -104,7 +102,6 @@ export default function Home() {
   const [focus, setFocus] = useState<Focus>("all");
   const [ready, setReady] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
-  const [demoBusy, setDemoBusy] = useState(false);
   const [toasts, setToasts] = useState<{ id: string; text: string; href: string; tone: "success" | "warning" }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -134,18 +131,6 @@ export default function Home() {
       active = false;
     };
   }, [router]);
-
-  async function openDemo() {
-    setDemoBusy(true);
-    setError(null);
-    try {
-      const result = await createDemoProject(getBrowserActor());
-      router.push(`/proyecto/${encodeURIComponent(result.project_id)}`);
-    } catch {
-      setError("No se pudo preparar la obra de ejemplo.");
-      setDemoBusy(false);
-    }
-  }
 
   // "/" jumps to search from anywhere on the page (never while typing).
   useEffect(() => {
@@ -253,7 +238,7 @@ export default function Home() {
       setPendingFiles(null);
       router.push(`/proyecto/${encodeURIComponent(project_id)}`);
     } catch (e) {
-      setUploadError(apiMessage(e, "No se pudo confirmar la subida. Revisa la lista de proyectos antes de volver a subirlos; conservamos tu selección."));
+      setUploadError(uploadErrorMessage(e, "No se pudo confirmar la subida. Revisa la lista de proyectos antes de volver a subirlos; conservamos tu selección."));
       uploadInFlight.current = false;
       setUploading(false);
     }
@@ -379,7 +364,12 @@ export default function Home() {
               Sube un plano o arrastra varias hojas a esta ventana: un proyecto por obra.
             </p>
           </div>
-          <Button variant="primary" onClick={() => inputRef.current?.click()} disabled={uploading}>
+          <Button
+            variant="primary"
+            onClick={() => inputRef.current?.click()}
+            disabled={uploading}
+            data-tour="inicio.subir"
+          >
             {uploading ? (
               <>
                 <CircleNotch size={16} className="animate-spin" /> Subiendo…
@@ -410,14 +400,7 @@ export default function Home() {
 
         {overview && <AttentionStrip overview={overview} focus={focus} onFocus={setFocus} />}
 
-        {overview && projects !== null && projects.length > 0 && (
-          <OnboardingChecklist
-            overview={overview}
-            onExploreSample={openDemo}
-            onUpload={() => inputRef.current?.click()}
-            sampleBusy={demoBusy}
-          />
-        )}
+        {projects !== null && <InicioRecorrido />}
 
         {projects !== null && projects.length > 0 && (
           <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -477,15 +460,9 @@ export default function Home() {
                   <Button variant="primary" onClick={() => inputRef.current?.click()}>
                     <Plus size={16} weight="bold" /> Nuevo proyecto
                   </Button>
-                  <Button onClick={openDemo} disabled={demoBusy}>
-                    {demoBusy ? "Preparando…" : "Explorar una obra de ejemplo"}
-                  </Button>
                 </span>
               }
             />
-            <div className="mt-10">
-              <HowItWorks />
-            </div>
           </div>
         ) : filtered && filtered.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted">

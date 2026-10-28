@@ -19,6 +19,10 @@ import {
 } from "@phosphor-icons/react";
 import {
   addProjectFiles,
+  apiMessage,
+  hojasRepetidas,
+  replaceProjectFile,
+  retireProjectFile,
   getViews,
   getDimensions,
   getProject,
@@ -51,7 +55,10 @@ import {
   SkeletonMetrics,
 } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { KebabMenu, MenuItem } from "@/components/Menu";
 import { timeAgo } from "@/lib/time";
+import { uploadErrorMessage, validateDrawingFiles } from "@/lib/uploads";
 import { moneyState, UnitsGate } from "@/components/MoneyGate";
 
 export default function Resumen() {
@@ -144,7 +151,7 @@ export default function Resumen() {
     <div className="px-6 py-7 lg:px-8">
       <PageHeader
         title={
-          <span className="flex items-center gap-2.5">
+          <span className="flex items-center gap-2.5" data-tour="resumen.sello">
             Resumen del proyecto
             {reviews &&
               (verified ? (
@@ -239,6 +246,9 @@ export default function Resumen() {
       {costs && moneyState(costs) === "blocked" && (
         <div className="mb-6">
           <UnitsGate id={id} costs={costs} actorName={actorName} />
+          {/* El arreglo que el candado pide —corregir el archivo— es
+              reemplazar la hoja: la lista no se esconde tras él. */}
+          {project && <SheetsCard id={id} project={project} />}
         </div>
       )}
 
@@ -374,27 +384,85 @@ export default function Resumen() {
 
 function SheetsCard({ id, project }: { id: string; project: ProjectInfo }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const replaceRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Una hoja con un número que ya está: casi siempre es su revisión, y
+  // sumarla contaría dos veces la misma hoja. Se pregunta antes.
+  const [repetidas, setRepetidas] = useState<{
+    files: File[];
+    pares: { nueva: string; existente: string }[];
+  } | null>(null);
+  const [reemplazar, setReemplazar] = useState<string | null>(null);
+  const [retirar, setRetirar] = useState<string | null>(null);
 
-  async function onFiles(list: FileList) {
-    const files = [...list].filter((f) => /\.(dwg|dxf)$/i.test(f.name));
-    if (files.length === 0) return;
+  const nombre = (path: string) => path.split("/").pop() ?? path;
+  const etiqueta = (path: string) =>
+    project.source_files.find((s) => nombre(s.path) === path)?.sheet_number ?? path;
+
+  async function subir(files: File[], modo?: "reemplazar" | "agregar") {
     setBusy(true);
     setError(null);
     try {
-      await addProjectFiles(id, files, getBrowserActor());
+      await addProjectFiles(id, files, getBrowserActor(), modo);
+      setRepetidas(null);
       // The re-enqueued job flips the project gate to the processing screen.
-    } catch {
-      setError("No se pudieron agregar las hojas.");
+    } catch (e) {
+      const pares = modo ? null : hojasRepetidas(e);
+      if (pares) setRepetidas({ files, pares });
+      else setError(uploadErrorMessage(e, "No se pudieron agregar las hojas."));
       setBusy(false);
     }
   }
 
+  function onFiles(list: FileList) {
+    const files = [...list].filter((f) => /\.(dwg|dxf)$/i.test(f.name));
+    if (files.length === 0) return;
+    // Mismo límite que la subida inicial: todo viaja en una sola petición.
+    const invalid = validateDrawingFiles(files);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
+    void subir(files);
+  }
+
+  async function onReplacement(file: File) {
+    const hoja = reemplazar;
+    setReemplazar(null);
+    if (!hoja) return;
+    const invalid = validateDrawingFiles([file]);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await replaceProjectFile(id, hoja, file, getBrowserActor());
+    } catch (e) {
+      setError(uploadErrorMessage(e, "No se pudo reemplazar la hoja."));
+      setBusy(false);
+    }
+  }
+
+  async function onRetire(hoja: string) {
+    setRetirar(null);
+    setBusy(true);
+    setError(null);
+    try {
+      await retireProjectFile(id, hoja, getBrowserActor());
+    } catch (e) {
+      setError(apiMessage(e, "No se pudo retirar la hoja."));
+      setBusy(false);
+    }
+  }
+
+  const unica = project.source_files.length <= 1;
   return (
     <Card className="mt-4 p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <SectionTitle sub="Todas las hojas se leen como un solo conjunto; agregar hojas vuelve a procesar el proyecto.">
+        <SectionTitle sub="Todas las hojas se leen como un solo conjunto. Una revisión nueva reemplaza a su hoja; agregar, reemplazar o retirar vuelve a procesar el proyecto.">
           Hojas del proyecto ({project.source_files.length})
         </SectionTitle>
         <input
@@ -408,6 +476,17 @@ function SheetsCard({ id, project }: { id: string; project: ProjectInfo }) {
             e.target.value = "";
           }}
         />
+        <input
+          ref={replaceRef}
+          type="file"
+          accept=".dwg,.dxf"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void onReplacement(file);
+            e.target.value = "";
+          }}
+        />
         <Button size="sm" onClick={() => inputRef.current?.click()} disabled={busy}>
           {busy ? (
             <CircleNotch size={14} className="animate-spin" />
@@ -418,19 +497,101 @@ function SheetsCard({ id, project }: { id: string; project: ProjectInfo }) {
         </Button>
       </div>
       {error && <p className="mb-2 text-sm text-danger">{error}</p>}
-      <div className="flex flex-wrap gap-2">
-        {project.source_files.map((sheet) => (
-          <span
-            key={sheet.file_id}
-            title={sheet.path}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-2/60 px-2.5 py-1.5 text-xs"
-          >
-            <FileText size={13} className="text-muted" />
-            {sheet.sheet_number ?? sheet.path.split("/").pop()}
-            <span className="uppercase text-faint">{sheet.file_type}</span>
-          </span>
-        ))}
-      </div>
+      {repetidas && (
+        <div className="mb-3 space-y-2 rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning">
+          <p className="font-medium">
+            {repetidas.pares.length === 1
+              ? "Esta hoja ya está en el proyecto:"
+              : `Estas ${repetidas.pares.length} hojas ya están en el proyecto:`}
+          </p>
+          <ul className="space-y-0.5">
+            {repetidas.pares.map((p) => (
+              <li key={p.nueva}>
+                {p.nueva} → {etiqueta(p.existente)} ({p.existente})
+              </li>
+            ))}
+          </ul>
+          <p>
+            Si son su revisión nueva, reemplázalas: la anterior se guarda aparte y «Cambios»
+            compara las dos. Agregarlas como hojas nuevas contaría dos veces lo que repiten.
+          </p>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={busy}
+              onClick={() => void subir(repetidas.files, "reemplazar")}
+            >
+              Reemplazar y reprocesar
+            </Button>
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => void subir(repetidas.files, "agregar")}
+            >
+              Agregar como hojas nuevas
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setRepetidas(null)}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
+      <ul className="divide-y divide-border rounded-lg border border-border">
+        {project.source_files.map((sheet) => {
+          const archivo = nombre(sheet.path);
+          return (
+            <li key={sheet.file_id} className="flex items-center gap-3 px-3 py-2 text-sm">
+              <FileText size={15} className="shrink-0 text-muted" />
+              <span className="min-w-0 flex-1 truncate">
+                <span className="font-medium text-foreground">
+                  {sheet.sheet_number ?? archivo}
+                </span>
+                {sheet.sheet_number && (
+                  <span className="ml-2 text-xs text-muted">{archivo}</span>
+                )}
+              </span>
+              <span className="text-xs uppercase text-faint">{sheet.file_type}</span>
+              <KebabMenu label={`Opciones de ${sheet.sheet_number ?? archivo}`}>
+                {(close) => (
+                  <>
+                    <MenuItem
+                      onSelect={() => {
+                        close();
+                        setReemplazar(archivo);
+                        replaceRef.current?.click();
+                      }}
+                      hint="La revisión nueva ocupa su lugar; la anterior se guarda aparte."
+                    >
+                      Reemplazar con otra revisión
+                    </MenuItem>
+                    {!unica && (
+                      <MenuItem
+                        danger
+                        onSelect={() => {
+                          close();
+                          setRetirar(archivo);
+                        }}
+                        hint="Deja de leerse; el archivo se guarda aparte."
+                      >
+                        Retirar del proyecto
+                      </MenuItem>
+                    )}
+                  </>
+                )}
+              </KebabMenu>
+            </li>
+          );
+        })}
+      </ul>
+      <ConfirmDialog
+        open={retirar !== null}
+        title={`Retirar ${retirar ? etiqueta(retirar) : "la hoja"}`}
+        description="Deja de leerse y el proyecto se vuelve a procesar sin ella: sus cantidades salen del presupuesto. El archivo se guarda aparte; para volver a usarlo, súbelo de nuevo."
+        confirmLabel="Retirar y reprocesar"
+        onConfirm={() => retirar && void onRetire(retirar)}
+        onCancel={() => setRetirar(null)}
+      />
     </Card>
   );
 }
@@ -545,7 +706,7 @@ function VerificationPath({
   ];
 
   return (
-    <Card className="rise-in mb-6 p-5">
+    <Card className="rise-in mb-6 p-5" tour="resumen.verificacion">
       <SectionTitle sub="Verifica la lectura del plano antes de confiar en las cifras. Tres pasos, una vez por procesamiento.">
         Ruta de verificación
       </SectionTitle>

@@ -21,12 +21,13 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import threading
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+from klave_engine.common.diagnostics import sanitize_text
 
 _LOCK = threading.Lock()
 
@@ -34,18 +35,10 @@ USO_DIRNAME = "bitacora/uso"
 ERRORES_DIRNAME = "bitacora/errores"
 RETENCION_DIAS = 90
 
-# Nunca escribimos secretos en la bitácora, ni siquiera por accidente.
-_SECRETO = re.compile(
-    r"(AIza[0-9A-Za-z_\-]{10,}|sk-[A-Za-z0-9_\-]{10,}|Bearer\s+[A-Za-z0-9._\-]{10,})"
-)
-_CORREO = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
-
 
 def redactar(texto: str, limite: int = 600) -> str:
-    """El texto sin llaves ni correos, recortado."""
-    limpio = _SECRETO.sub("«clave»", texto)
-    limpio = _CORREO.sub("«correo»", limpio)
-    return limpio[:limite]
+    """Redact token URLs, keys and email addresses before persistence."""
+    return sanitize_text(texto, limite)
 
 
 @dataclass
@@ -80,6 +73,12 @@ class ErrorRegistrado:
     workspace: str = ""
     project_id: str = ""
     contexto: dict[str, Any] = field(default_factory=dict)
+    user_id: str = ""
+    job_id: str = ""
+    run_id: str = ""
+    operation: str = ""
+    error_code: str = ""
+    stage: str = ""
 
 
 def _archivo(data_dir: Path, sub: str, dia: date | None = None) -> Path:
@@ -120,7 +119,22 @@ def anotar_uso(data_dir: Path, uso: UsoIA) -> None:
 
 
 def anotar_error(data_dir: Path, error: ErrorRegistrado) -> None:
-    _anotar(data_dir, ERRORES_DIRNAME, error)
+    # Do not persist arbitrary context or unsanitized details from any caller.
+    from dataclasses import replace
+
+    from klave_engine.common.diagnostics import sanitize_path
+
+    _anotar(
+        data_dir,
+        ERRORES_DIRNAME,
+        replace(
+            error,
+            ruta=sanitize_path(error.ruta),
+            mensaje=redactar(error.mensaje),
+            traza=redactar(error.traza, 2400),
+            contexto={},
+        ),
+    )
 
 
 def _leer(data_dir: Path, sub: str, desde: date, hasta: date) -> list[dict]:
@@ -150,9 +164,13 @@ def uso_del_periodo(
     return filas
 
 
-def errores_recientes(data_dir: Path, dias: int = 7, limite: int = 200) -> list[dict]:
+def errores_recientes(
+    data_dir: Path, dias: int = 7, limite: int = 200, *, workspace: str | None = None
+) -> list[dict]:
     hasta = datetime.now(UTC).date()
     filas = _leer(data_dir, ERRORES_DIRNAME, hasta - timedelta(days=dias), hasta)
+    if workspace is not None:
+        filas = [fila for fila in filas if fila.get("workspace") == workspace]
     filas.sort(key=lambda f: str(f.get("ts", "")), reverse=True)
     return filas[:limite]
 

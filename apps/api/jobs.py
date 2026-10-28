@@ -8,18 +8,28 @@ only this module with a queue adapter because routes deal in ``Job`` records,
 not executor details.
 """
 
+import logging
 import threading
+import time
+import traceback
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from klave_engine.common.bitacora import ErrorRegistrado, anotar_error, redactar
 from klave_engine.common.config import Settings
+from klave_engine.common.diagnostics import (
+    DiagnosticContext,
+    bind_context,
+    emit_job_event,
+    safe_log,
+)
 from klave_engine.common.errors import ConversionError
 from klave_engine.common.ids import short_uuid
 from klave_engine.common.io import read_json, write_json
-from klave_engine.common.logging import get_logger
+from klave_engine.common.logging import get_logger, request_id_var
 from klave_engine.costing.versions import snapshot_before_reprocess
 from klave_engine.ingestion.manifest import ProcessingStatus, load_manifest, save_manifest
 from klave_engine.pipeline import run_full_pipeline
@@ -50,6 +60,7 @@ class Job:
     error: str | None = None
     entity_count: int = 0
     detection_count: int = 0
+    diagnostic_context: DiagnosticContext = field(default_factory=DiagnosticContext)
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
@@ -67,10 +78,14 @@ class Job:
             "updated_at": self.updated_at.isoformat(),
         }
 
+    def to_record(self) -> dict[str, Any]:
+        return {**self.to_json(), "diagnostic_context": asdict(self.diagnostic_context)}
+
     @classmethod
     def from_json(cls, value: dict[str, Any]) -> "Job":
         return cls(
             project_id=str(value["project_id"]),
+            diagnostic_context=DiagnosticContext.from_record(value.get("diagnostic_context")),
             job_id=str(value["job_id"]),
             run_id=str(value["run_id"]),
             state=str(value.get("state", "failed")),
@@ -113,11 +128,32 @@ class JobStore:
             job.error = "El servidor se reinició antes de terminar el procesamiento."
             job.updated_at = datetime.now(UTC)
             self._persist(job, root, settings)
+            self._emit(
+                job,
+                "job_interrupted",
+                outcome="failed",
+                stage="interrupted",
+                error_code="processing_interrupted",
+            )
+            self._record_failure(
+                job,
+                settings,
+                "processing_interrupted",
+                "interrupted",
+                RuntimeError("Processing interrupted by server restart"),
+            )
         with self._lock:
             self._jobs[project_id] = job
         return job
 
-    def enqueue(self, project_id: str, root: Path, settings: Settings) -> tuple[Job, bool]:
+    def enqueue(
+        self,
+        project_id: str,
+        root: Path,
+        settings: Settings,
+        *,
+        context: DiagnosticContext | None = None,
+    ) -> tuple[Job, bool]:
         """Schedule a run, or return the already-active run for idempotency."""
         self.get(project_id, root, settings)  # hydrate from disk before deciding
 
@@ -136,6 +172,12 @@ class JobStore:
                 job_id=short_uuid("job"),
                 run_id=short_uuid("run"),
             )
+            job.diagnostic_context = replace(
+                context or DiagnosticContext(),
+                project_id=project_id,
+                job_id=job.job_id,
+                run_id=job.run_id,
+            )
             self._jobs[project_id] = job
             if self._executor is None:
                 self._executor = ThreadPoolExecutor(
@@ -146,6 +188,7 @@ class JobStore:
         self._persist(job, root, settings)
         BUS.publish("job_updated", project_id=project_id, data=job.to_json())
         assert self._executor is not None
+        self._emit(job, "job_admitted", outcome="queued", stage="queued")
         self._executor.submit(self._run, job.project_id, root, settings)
         return job, True
 
@@ -159,16 +202,53 @@ class JobStore:
             if job is not None and job.error and job.stage == "Interrumpido":
                 repaired += 1
         if repaired:
-            logger.warning("%d trabajos interrumpidos por un reinicio se marcaron fallidos",
-                           repaired)
+            logger.warning(
+                "%d trabajos interrumpidos por un reinicio se marcaron fallidos", repaired
+            )
         return repaired
 
     def _run(self, project_id: str, root: Path, settings: Settings) -> None:
+        with self._lock:
+            current = self._jobs.get(project_id)
+        if current is None:
+            return
+        token = request_id_var.set(current.diagnostic_context.request_id or "-")
+        try:
+            with bind_context(current.diagnostic_context):
+                self._run_bound(project_id, root, settings)
+        finally:
+            request_id_var.reset(token)
+
+    def _run_bound(self, project_id: str, root: Path, settings: Settings) -> None:
         job = self._update(
             project_id, root, settings, state="running", stage="Procesando dibujo", error=None
         )
         if job is None:
             return
+        started = time.perf_counter()
+        stage = "processing"
+        self._emit(job, "job_started", outcome="running", stage=stage)
+
+        def progress(text: str) -> None:
+            nonlocal stage
+            self._update(project_id, root, settings, stage=text)
+            mapped = (
+                "converting"
+                if text.startswith("Convirtiendo planos")
+                else "reading"
+                if text.startswith("Leyendo el dibujo")
+                else "processing"
+            )
+            if mapped != stage:
+                stage = mapped
+                self._emit(
+                    job,
+                    "job_stage_changed",
+                    outcome="running",
+                    stage=stage,
+                    duration_ms=(time.perf_counter() - started) * 1000,
+                )
+
         control_dir = self._control_dir(root, settings)
         run_dir = control_dir / RUNS_DIR_NAME / job.run_id
         try:
@@ -181,14 +261,19 @@ class JobStore:
                 artifact_dir=run_dir,
                 reports_dir=run_dir / "reports",
                 catalog_store=store_for_project(settings, project_id),
-                progreso=lambda texto: self._update(project_id, root, settings, stage=texto),
+                progreso=progress,
             )
             # The presupuesto as it stood becomes an automatic version, so the
             # engineer can compare this corrida with the last one line by line.
             try:
                 snapshot_before_reprocess(control_dir, None)
             except Exception:  # noqa: BLE001 — a failed snapshot must not block the run
-                logger.warning("No se pudo guardar la versión previa de %s", project_id)
+                safe_log(
+                    logger,
+                    logging.WARNING,
+                    "No se pudo guardar la versión previa de %s",
+                    project_id,
+                )
             # Publish exactly once, after every artifact/report has been
             # written. Readers resolve this atomically replaced pointer.
             write_json(
@@ -210,7 +295,12 @@ class JobStore:
                     control_dir, keep_runs=settings.keep_runs, keep_jobs=settings.keep_jobs
                 )
             except Exception:  # noqa: BLE001 — cleanup must never fail a publish
-                logger.warning("No se pudo depurar el almacenamiento de %s", project_id)
+                safe_log(
+                    logger,
+                    logging.WARNING,
+                    "No se pudo depurar el almacenamiento de %s",
+                    project_id,
+                )
             self._update(
                 project_id,
                 root,
@@ -222,18 +312,48 @@ class JobStore:
             )
             # Ya publicado: con la persona viendo su proyecto, se dibujan los
             # croquis de los generadores para que la primera exportación no espere.
-            from apps.api.routes.exports import precalentar_croquis
+            self._emit(
+                job,
+                "job_completed",
+                outcome="succeeded",
+                stage="completed",
+                duration_ms=(time.perf_counter() - started) * 1000,
+            )
+            try:
+                from apps.api.routes.exports import precalentar_croquis
 
-            precalentar_croquis(project_id, settings)
+                precalentar_croquis(project_id, settings)
+            except Exception:  # noqa: BLE001 — prewarming cannot invalidate a published run
+                safe_log(logger, logging.WARNING, "Export prewarming failed for %s", project_id)
         except ConversionError as exc:
             # Ninguna hoja se pudo convertir: se dice por qué, no un error genérico.
-            logger.warning("Sin hojas legibles en %s: %s", project_id, exc)
+            safe_log(
+                logger,
+                logging.WARNING,
+                "Conversion failed for %s: %s",
+                project_id,
+                redactar(str(exc)),
+            )
             self._mark_manifest_failed(root, settings)
             self._update(
-                project_id, root, settings, state="failed", stage="Error", error=str(exc)[:400],
+                project_id,
+                root,
+                settings,
+                state="failed",
+                stage="Error",
+                error=redactar(str(exc), 400),
             )
-        except Exception:  # noqa: BLE001 - convert all pipeline failures into durable job state
-            logger.exception("Processing failed for %s", project_id)
+            self._record_failure(job, settings, "conversion_failed", stage, exc)
+            self._emit(
+                job,
+                "job_failed",
+                outcome="failed",
+                stage=stage,
+                error_code="conversion_failed",
+                duration_ms=(time.perf_counter() - started) * 1000,
+            )
+        except Exception as exc:  # noqa: BLE001 — persist unexpected processing failures
+            safe_log(logger, logging.ERROR, "Processing failed for %s", project_id)
             self._mark_manifest_failed(root, settings)
             self._update(
                 project_id,
@@ -243,6 +363,51 @@ class JobStore:
                 stage="Error",
                 error="No se pudo procesar el dibujo. Revisa el archivo e inténtalo de nuevo.",
             )
+            self._record_failure(job, settings, "processing_failed", stage, exc)
+            self._emit(
+                job,
+                "job_failed",
+                outcome="failed",
+                stage=stage,
+                error_code="processing_failed",
+                duration_ms=(time.perf_counter() - started) * 1000,
+            )
+
+    @staticmethod
+    def _emit(job: Job, event: str, **fields: Any) -> None:
+        try:
+            emit_job_event(event, job.diagnostic_context, **fields)
+        except Exception:  # noqa: BLE001 — includes broken diagnostic adapters
+            pass
+
+    @staticmethod
+    def _record_failure(
+        job: Job, settings: Settings, code: str, stage: str, exc: Exception
+    ) -> None:
+        context = job.diagnostic_context
+        try:
+            anotar_error(
+                settings.data_dir,
+                ErrorRegistrado(
+                    ts=datetime.now(UTC).isoformat(),
+                    request_id=context.request_id,
+                    workspace=context.workspace_id,
+                    user_id=context.user_id,
+                    project_id=job.project_id,
+                    job_id=job.job_id,
+                    run_id=job.run_id,
+                    ruta="/projects/{project_id}/process",
+                    metodo="WORKER",
+                    tipo=type(exc).__name__,
+                    mensaje=redactar(str(exc)),
+                    traza=redactar("".join(traceback.format_tb(exc.__traceback__)[-4:]), 2400),
+                    operation="processing",
+                    error_code=code,
+                    stage=stage,
+                ),
+            )
+        except Exception:  # noqa: BLE001 — failure reporting cannot replace durable job state
+            pass
 
     def _update(
         self, project_id: str, root: Path, settings: Settings, **fields: object
@@ -264,8 +429,8 @@ class JobStore:
 
     def _persist(self, job: Job, root: Path, settings: Settings) -> None:
         control_dir = self._control_dir(root, settings)
-        write_json(control_dir / JOBS_DIR_NAME / f"{job.job_id}.json", job.to_json())
-        write_json(control_dir / LATEST_JOB_FILENAME, job.to_json())
+        write_json(control_dir / JOBS_DIR_NAME / f"{job.job_id}.json", job.to_record())
+        write_json(control_dir / LATEST_JOB_FILENAME, job.to_record())
 
     @staticmethod
     def _mark_manifest_failed(root: Path, settings: Settings) -> None:
@@ -274,7 +439,7 @@ class JobStore:
             manifest.processing_status = ProcessingStatus.failed
             save_manifest(manifest, settings.processed_dir_name)
         except Exception:  # noqa: BLE001 - preserve the original processing error
-            logger.exception("Could not persist failed processing status for %s", root)
+            safe_log(logger, logging.ERROR, "Could not persist failed processing status")
 
 
 JOB_STORE = JobStore()

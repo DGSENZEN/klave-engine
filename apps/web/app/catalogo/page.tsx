@@ -4,6 +4,7 @@ import { LectorSection } from "@/components/LectorSection";
 import { PerfilTallerSection } from "@/components/PerfilTallerSection";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowLeft,
   Books,
   CaretDown,
   Check,
@@ -74,6 +75,7 @@ import {
 } from "@/lib/api";
 import Link from "next/link";
 import { getBrowserActor } from "@/lib/collab";
+import { isProjectSlug } from "@/lib/nodeNav";
 import { BaseSheet } from "@/components/BaseSheet";
 import { Inspector, InspectorSection } from "@/components/Inspector";
 import { SelectionBar } from "@/components/SelectionBar";
@@ -118,17 +120,31 @@ export default function CatalogoPage() {
   // El camino de v1 empieza por los conceptos: lo que el plano mide y la
   // oficina cobra. Los insumos, la base y el salario están a una pestaña.
   const [tab, setTabState] = useState<CatalogTab>("conceptos");
+  // ?desde= es la obra de la que se llegó (el tablero lo pone). Sólo se
+  // acepta un id con forma de id: nunca se arma un enlace con lo que venga.
+  const [desde, setDesde] = useState<string | null>(null);
   useEffect(() => {
     const handle = window.setTimeout(() => {
-      const param = new URLSearchParams(window.location.search).get("tab");
+      const search = new URLSearchParams(window.location.search);
+      const param = search.get("tab");
       if (TABS.includes(param as CatalogTab)) setTabState(param as CatalogTab);
+      const origen = search.get("desde");
+      if (isProjectSlug(origen)) setDesde(origen);
     }, 0);
     return () => window.clearTimeout(handle);
   }, []);
-  const setTab = useCallback((next: CatalogTab) => {
-    setTabState(next);
-    window.history.replaceState(null, "", next === "conceptos" ? "/catalogo" : `/catalogo?tab=${next}`);
-  }, []);
+  const setTab = useCallback(
+    (next: CatalogTab) => {
+      setTabState(next);
+      const search = new URLSearchParams();
+      if (next !== "conceptos") search.set("tab", next);
+      if (desde) search.set("desde", desde);
+      const query = search.toString();
+      window.history.replaceState(null, "", query ? `/catalogo?${query}` : "/catalogo");
+    },
+    [desde],
+  );
+  const obraDeOrigen = desde ? projects.find((p) => p.project_id === desde) : undefined;
   const fileRef = useRef<HTMLInputElement>(null);
   const matricesRef = useRef<HTMLInputElement>(null);
   const destajosRef = useRef<HTMLInputElement>(null);
@@ -250,6 +266,17 @@ export default function CatalogoPage() {
     <div className="min-h-screen">
       <WorkspaceHeader active="catalogo" />
       <main className="mx-auto max-w-5xl px-5 py-8 sm:px-6">
+        {desde && (
+          <Link
+            href={`/proyecto/${desde}`}
+            className="mb-4 inline-flex max-w-full items-center gap-1.5 text-sm text-muted hover:text-foreground"
+          >
+            <ArrowLeft size={14} weight="bold" className="shrink-0" />
+            <span className="truncate">
+              Volver a la obra{obraDeOrigen?.name ? ` · ${obraDeOrigen.name}` : ""}
+            </span>
+          </Link>
+        )}
         <PageHeader
           title="Catálogo del taller"
           sub="Insumos, matrices de precio unitario y rendimientos que usa cada cálculo. Cada precio indica su fuente: sustituye las referencias por tus cotizaciones. Los términos viven en el glosario (/glosario)."
@@ -668,7 +695,7 @@ function InsumosSection({
                       commitInsumo(insumo.code, { description: value })
                     }
                   />
-                  <div className="flex items-center gap-2 font-mono text-xs text-muted">
+                  <div data-tour="catalogo.origen" className="flex items-center gap-2 font-mono text-xs text-muted">
                     {insumo.code}
                     <OrigenBadge origin={insumo.origin} originRef={insumo.origin_ref} />
                     {(insumo.kind ?? "insumo") !== "insumo" && (
@@ -717,7 +744,7 @@ function InsumosSection({
                       commitInsumo(insumo.code, { source: value })
                     }
                   />
-                  <div className="mt-1 flex items-center gap-1.5">
+                  <div data-tour="catalogo.procedencia" className="mt-1 flex items-center gap-1.5">
                     <Select
                       value={insumo.source_type}
                       onChange={(e) =>

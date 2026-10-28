@@ -12,6 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import {
   ApiError,
+  apiMessage,
   getProject,
   getStatus,
   processProject,
@@ -19,6 +20,7 @@ import {
 } from "@/lib/api";
 import { parseProjectEvent, projectEventsUrl } from "@/lib/collab";
 import { ProjectLiveProvider } from "@/components/ProjectLive";
+import { RecorridoPuente, useRecorridoObra } from "@/components/recorrido/RecorridoPuente";
 import { ProjectShell } from "@/components/ProjectShell";
 import { Button, Callout, Skeleton, SkeletonHeader, buttonClasses } from "@/components/ui";
 
@@ -40,6 +42,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<ProjectStatus | null>(null);
   const [name, setName] = useState<string | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [noAccess, setNoAccess] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [starting, setStarting] = useState(false);
   const [uploadWarning, setUploadWarning] = useState<string | null>(null);
@@ -66,10 +69,18 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       .catch((e: unknown) => {
         if (!active) return;
         const notFound = e instanceof ApiError && e.status === 404;
+        // Un 403 no es el servidor caído: la obra existe y es de alguien más.
+        // Reintentar no sirve; lo que sirve es pedir acceso a quien la tiene.
+        const forbidden = e instanceof ApiError && e.status === 403;
+        setNoAccess(forbidden);
         setLoadError(
-          notFound
-            ? "Este proyecto no existe o no tienes acceso a él."
-            : "No se pudo consultar el estado del proyecto. ¿Está activo el servidor?",
+          forbidden
+            ? "Tu cuenta no tiene permiso para abrir esta obra. Pídele acceso al propietario del proyecto o a un administrador de su taller."
+            : notFound
+              ? "Este proyecto no existe o no tienes acceso a él."
+              : e instanceof ApiError && e.status < 500
+                ? apiMessage(e, "No se pudo consultar el estado del proyecto.")
+                : apiMessage(e, "No se pudo consultar el estado del proyecto. ¿Está activo el servidor?"),
         );
       });
     getProject(id)
@@ -157,6 +168,8 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
     return () => window.clearInterval(timer);
   }, [processing]);
 
+  useRecorridoObra(id, status?.state ?? null);
+
   const failed = status?.state === "failed";
   const notStarted =
     status !== null && !processing && status.state !== "processed" && status.state !== "failed";
@@ -179,6 +192,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
   if (status?.state === "processed" || (failed && status.artifacts_available)) {
     return (
       <ProjectLiveProvider projectId={id}>
+        <RecorridoPuente />
         <ProjectShell id={id} name={name}>
           {uploadWarning && <div className="px-6 pt-5"><Callout tone="warning">{uploadWarning}</Callout></div>}
           {failed && (
@@ -211,15 +225,25 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         <Link href="/" className="mb-8 inline-flex items-center gap-2 text-sm text-muted">
           <Buildings size={16} weight="duotone" /> Klave
         </Link>
-        <h1 className="text-xl font-semibold">No se pudo abrir el proyecto</h1>
+        <h1 className="text-xl font-semibold">
+          {noAccess ? "No tienes acceso a esta obra" : "No se pudo abrir el proyecto"}
+        </h1>
         <p className="mt-1 text-sm text-muted">{loadError}</p>
         <div className="mt-5 flex gap-2">
-          <Button variant="primary" onClick={() => setAttempt((n) => n + 1)}>
-            Reintentar
-          </Button>
-          <Link href="/" className="inline-flex">
-            <Button>Volver a proyectos</Button>
-          </Link>
+          {noAccess ? (
+            <Link href="/" className={buttonClasses("primary")}>
+              Volver a proyectos
+            </Link>
+          ) : (
+            <>
+              <Button variant="primary" onClick={() => setAttempt((n) => n + 1)}>
+                Reintentar
+              </Button>
+              <Link href="/" className="inline-flex">
+                <Button>Volver a proyectos</Button>
+              </Link>
+            </>
+          )}
         </div>
       </div>
     );

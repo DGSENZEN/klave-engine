@@ -233,7 +233,7 @@ function ApuCard({
   const total = breakdown.reduce((s, [, v]) => s + v, 0) || 1;
 
   return (
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden" tour="apus.matriz">
       <button
         type="button"
         onClick={onToggle}

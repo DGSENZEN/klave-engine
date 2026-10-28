@@ -7,6 +7,16 @@ const DATE_TIME = new Intl.DateTimeFormat("es-MX", {
   minute: "2-digit",
 });
 
+/**
+ * La fecha del calendario local en AAAA-MM-DD. `toISOString()` da la fecha
+ * en UTC: en México, después de las 18:00 ya es «mañana».
+ */
+export function isoDateLocal(date: Date = new Date()): string {
+  const mes = String(date.getMonth() + 1).padStart(2, "0");
+  const dia = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${mes}-${dia}`;
+}
+
 export function formatDateTime(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? iso : DATE_TIME.format(date);

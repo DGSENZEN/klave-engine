@@ -61,7 +61,9 @@ export function GateGuard({ node, children }: { node: TableroNodeKey; children: 
           <div>
             <h1 className="text-lg font-semibold">Este nodo tiene candado</h1>
             <p className="text-sm text-muted">
-              Se abre desde aquí o desde el tablero cuando los requisitos estén listos.
+              {canApprove
+                ? "Se abre desde aquí o desde el tablero cuando los requisitos estén listos."
+                : "Lo abre el propietario del proyecto o un administrador del taller. Pídeselo cuando los requisitos estén listos."}
             </p>
           </div>
         </div>
@@ -93,7 +95,7 @@ export function GateGuard({ node, children }: { node: TableroNodeKey; children: 
         {actionError && <p className="text-sm text-danger">{actionError}</p>}
         <div className="flex items-center gap-2">
           {canApprove && (
-            <Button onClick={abrir} disabled={busy}>
+            <Button onClick={abrir} disabled={busy} data-tour="gate.abrir">
               {busy ? "Abriendo…" : "Abrir nodo"}
             </Button>
           )}

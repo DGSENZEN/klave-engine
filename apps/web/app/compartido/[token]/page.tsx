@@ -5,8 +5,14 @@ import { useParams, useSearchParams } from "next/navigation";
 import { DownloadSimple, Eye } from "@phosphor-icons/react";
 import { PlanoCanvas } from "@/components/PlanoCanvas";
 import { familyOf, HIDDEN_BY_DEFAULT } from "@/lib/families";
-import { getShared, sharedGeneradoresUrl, type DetectionOverlay, type Geometry } from "@/lib/api";
-import { Callout, Skeleton } from "@/components/ui";
+import {
+  ApiError,
+  getShared,
+  sharedGeneradoresUrl,
+  type DetectionOverlay,
+  type Geometry,
+} from "@/lib/api";
+import { Button, Callout, Skeleton } from "@/components/ui";
 
 /**
  * Lo que ve quien abre una liga de Klave: el plano con sus elementos y los
@@ -26,7 +32,10 @@ function Compartido() {
   const searchParams = useSearchParams();
   const [meta, setMeta] = useState<{ project_name: string } | null>(null);
   const [geometry, setGeometry] = useState<Geometry | null>(null);
-  const [failed, setFailed] = useState(false);
+  // «gone»: la liga ya no sirve (404/410). «unreachable»: red o servidor;
+  // la liga puede estar perfectamente vigente y no hay que decir lo contrario.
+  const [failed, setFailed] = useState<"gone" | "unreachable" | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [selected, setSelected] = useState<DetectionOverlay | null>(null);
 
   useEffect(() => {
@@ -41,13 +50,17 @@ function Compartido() {
           setMeta(m);
           setGeometry(g);
         })
-        .catch(() => alive && setFailed(true));
+        .catch((e: unknown) => {
+          if (!alive) return;
+          const gone = e instanceof ApiError && (e.status === 404 || e.status === 410);
+          setFailed(gone ? "gone" : "unreachable");
+        });
     }, 0);
     return () => {
       alive = false;
       window.clearTimeout(handle);
     };
-  }, [token]);
+  }, [token, attempt]);
 
   const layers = useMemo(
     () => new Set((geometry?.layers ?? []).slice(0, 14).map((l) => l.name)),
@@ -68,11 +81,34 @@ function Compartido() {
     return { bbox: [x0 - pad, y0 - pad, x1 + pad, y1 + pad] as [number, number, number, number], nonce: 1 };
   }, [searchParams]);
 
-  if (failed) {
+  if (failed === "gone") {
     return (
       <main className="mx-auto max-w-xl px-6 py-16">
         <Callout tone="warning">
           Esta liga no existe, caducó o la revocaron. Pide una nueva a quien te la compartió.
+        </Callout>
+      </main>
+    );
+  }
+  if (failed === "unreachable") {
+    return (
+      <main className="mx-auto max-w-xl px-6 py-16">
+        <Callout
+          tone="warning"
+          action={
+            <Button
+              size="sm"
+              onClick={() => {
+                setFailed(null);
+                setAttempt((n) => n + 1);
+              }}
+            >
+              Reintentar
+            </Button>
+          }
+        >
+          No pudimos contactar al servicio de Klave. La liga puede seguir vigente; inténtalo de
+          nuevo en unos minutos.
         </Callout>
       </main>
     );

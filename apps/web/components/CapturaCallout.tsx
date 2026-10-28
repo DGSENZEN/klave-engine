@@ -35,7 +35,7 @@ export function CapturaCallout({ projectId, reloadKey }: { projectId: string; re
     data.hojas_sin_lectura.length ? `${data.hojas_sin_lectura.length} hojas sin lectura` : "",
   ].filter(Boolean);
   return (
-    <div className="mb-4">
+    <div className="mb-4" data-tour="presupuesto.captura">
       <Callout
         tone="warning"
         action={

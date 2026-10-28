@@ -268,6 +268,41 @@ def test_generadores_reference_each_element_without_confidence(data_dir):
     assert "S-101" in values
 
 
+def test_generadores_measure_each_element_in_metres_like_its_line(data_dir):
+    # Un plano en centímetros: la losa mide 120 000 cm², o sea 12 m². El
+    # respaldo tiene que sumar lo que dice el renglón, no la cifra del dibujo.
+    from klave_engine.costing.exports import build_generadores_workbook, claves_visibles
+
+    sembrar(get_catalog_store(data_dir))
+    losa = Detection(
+        detection_id="det_losa",
+        detection_type=DetectionType.slab_region,
+        label="Losa",
+        bbox=(0.0, 0.0, 400.0, 300.0),
+        confidence=0.9,
+        evidence=EvidencePacket(source="S-101.dxf", method="test"),
+        properties={"estimated_area": 120000.0},
+    )
+    inputs = CostingInputs(
+        project_id="p", detections=[losa],
+        units=DrawingUnits(unit="cm", source="dxf_header", confidence=0.9),
+        segmentation=None, dimensions=None,
+    )
+    reviews = ProjectReviews()
+    report = build_cost_report(inputs, CostingOverrides(), reviews=reviews)
+    line = next(x for x in report.boq.lines if x.concept_code == "PRE-001")
+    assert abs(line.raw_quantity - 12.0) < 1e-6
+
+    ws = load_workbook(io.BytesIO(
+        build_generadores_workbook(report, [losa], reviews)
+    ))["Generadores"]
+    rows = [[cell.value for cell in row] for row in ws.iter_rows()]
+    title = f"{claves_visibles(report)['PRE-001']} {line.description}"
+    start = next(i for i, r in enumerate(rows) if r[0] == title)
+    header = next(i for i in range(start, len(rows)) if rows[i][5] == "Medida base")
+    assert rows[header + 1][5] == 12.0
+
+
 def test_flat_rows_use_office_claves_never_rule_codes(data_dir):
     from klave_engine.costing.models import BoqVariant
 
@@ -292,3 +327,67 @@ def test_flat_rows_use_office_claves_never_rule_codes(data_dir):
     )
     assert abs(total_qty - line.quantity) < 1e-6
     assert "Lo que el plano no dio" in workbook.sheetnames
+
+
+def test_generadores_rows_add_up_to_their_line_on_the_demo_obra(data_dir):
+    # El respaldo de cada renglón suma lo que dice su «Base medida»: un
+    # supervisor que suma la columna llega al mismo número. Donde la medida de
+    # un elemento no sale sola (cimbra, columnas por altura), «—», nunca un 1.
+    import re
+
+    from klave_engine.common.config import get_settings
+    from klave_engine.costing.exports import build_generadores_workbook
+    from klave_engine.evals.fixtures import write_demo_project
+    from klave_engine.pipeline import run_full_pipeline
+
+    root = data_dir / "uploads" / "demo_generadores"
+    write_demo_project(root, declare_units=True)
+    result = run_full_pipeline(root, get_settings(), record_history=False)
+    report = result.cost_report
+    assert report is not None
+    ws = load_workbook(io.BytesIO(
+        build_generadores_workbook(report, result.detections, ProjectReviews())
+    ))["Generadores"]
+    rows = [[cell.value for cell in row] for row in ws.iter_rows()]
+    base = re.compile(r"^Base medida: ([\d,.]+) (\S+)")
+    checked = 0
+    for i, row in enumerate(rows):
+        m = base.match(str(row[0] or ""))
+        if not m or m.group(2).startswith("conteo"):
+            continue
+        expected = float(m.group(1).replace(",", ""))
+        medidas, j = [], i + 1
+        while j < len(rows) and not base.match(str(rows[j][0] or "")):
+            if rows[j][5] not in (None, "Medida base"):
+                medidas.append(rows[j][5])
+            j += 1
+        titulo = rows[i - 1][0]
+        assert all(isinstance(v, float | int) or v == "—" for v in medidas), (titulo, medidas)
+        assert 1 not in medidas or expected == len(medidas), (rows[i - 1][0], medidas)
+        numeros = [v for v in medidas if v != "—"]
+        if numeros and len(numeros) == len(medidas):
+            assert abs(sum(numeros) - expected) <= 0.01 + 0.0005 * len(numeros), (
+                rows[i - 1][0], expected, numeros,
+            )
+            checked += 1
+    assert checked >= 5
+
+
+def test_export_publishes_export_completed(tmp_path):
+    """El recorrido avanza cuando una entrega de verdad sale: el marcador de
+    exportación también se anuncia en el bus, con su formato."""
+    from types import SimpleNamespace
+
+    from apps.api.events import BUS
+    from apps.api.routes.exports import _mark_exported
+
+    store = SimpleNamespace(
+        get_root=lambda project_id: tmp_path / project_id,
+        settings=SimpleNamespace(processed_dir_name="processed"),
+    )
+    before = BUS.latest_seq()
+    _mark_exported(store, "obra_x", "opus", "Ana")
+    events = [e for e in BUS.since(before, project_id="obra_x") if e.type == "export_completed"]
+    assert len(events) == 1
+    assert events[0].project_id == "obra_x" and events[0].data == {"formato": "opus"}
+    assert (tmp_path / "obra_x" / "processed" / "last_export.json").exists()

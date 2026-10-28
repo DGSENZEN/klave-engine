@@ -12,6 +12,7 @@ from klave_engine.common.config import Settings
 from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.results import Detection
 from klave_engine.dxf.entities import NormalizedEntity
+from klave_engine.ejemplo import es_obra_de_ejemplo
 from klave_engine.llm.coverage import coverage_flags
 from klave_engine.llm.evidencia import crop_from_frame_render, find_mark_region
 from klave_engine.llm.reader import active_model, configured_reader, credentials_available
@@ -164,6 +165,14 @@ def start_ai_read(
 
     ``only_failed=true`` resumes: the sheets already read are kept as they
     are and only the failures are asked for again."""
+    if es_obra_de_ejemplo(project_id):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_type": "sample_project",
+                "message": "La obra de ejemplo se lee sin IA, para que siempre sea igual.",
+            },
+        )
     rate_limit(request, "ai_read", max_attempts=10, window_seconds=3600.0)
     workspace = workspace_de(request, settings)
     revisar_presupuesto(settings, workspace)

@@ -129,7 +129,7 @@ export default function FlujoPage() {
         />
       ) : (
         <>
-          <Card className="mb-6 p-5">
+          <Card className="mb-6 p-5" tour="flujo.curva">
             <SectionTitle sub="Flujo neto por periodo; la primera barra suele reflejar el anticipo.">
               Flujo neto
             </SectionTitle>

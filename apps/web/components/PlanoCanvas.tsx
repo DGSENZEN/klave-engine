@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { senalRecorrido } from "@/lib/recorridoStore";
 import { CornersOut } from "@phosphor-icons/react";
 import type { DetectionOverlay, Geometry } from "@/lib/api";
 import { FAMILY_COLORS, detectionTitle, familyOf } from "@/lib/families";
@@ -327,6 +328,7 @@ export function PlanoCanvas({
       settleRef.current = window.setTimeout(() => {
         staticDirtyRef.current = true;
         schedule();
+        senalRecorrido("visor.mover");
       }, 140);
     } else {
       ctx.drawImage(layer.canvas, 0, 0, w, h);
