@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowClockwise, DownloadSimple } from "@phosphor-icons/react";
 import {
@@ -53,6 +54,7 @@ export function VigenciaSection({
   onError: (message: string) => void;
   onNotice: (message: string) => void;
 }) {
+  const { editCatalog } = useCapabilities();
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [indices, setIndices] = useState<PriceIndices | null>(null);
   const [open, setOpen] = useState(false);
@@ -265,22 +267,28 @@ export function VigenciaSection({
           <DownloadSimple size={14} />
           {downloading === "all" ? "Generando…" : "Solicitud de cotización: todo el catálogo"}
         </Button>
-        <Button
-          size="sm"
-          onClick={() => previewRoll("vencido")}
-          disabled={busy || vencidos === 0 || monthCount === 0}
-        >
-          <ArrowClockwise size={14} /> Actualizar vencidos por índice…
-        </Button>
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="text-xs font-medium text-muted hover:text-foreground"
-        >
-          {open ? "Ocultar índices" : `Índices (${monthCount} meses${indices?.source ? ` · ${indices.source}` : ""})`}
-        </button>
+        {/* Repricing by index and editing the index are the administrator's;
+            the quote requests above only export. */}
+        {editCatalog && (
+          <>
+            <Button
+              size="sm"
+              onClick={() => previewRoll("vencido")}
+              disabled={busy || vencidos === 0 || monthCount === 0}
+            >
+              <ArrowClockwise size={14} /> Actualizar vencidos por índice…
+            </Button>
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              className="text-xs font-medium text-muted hover:text-foreground"
+            >
+              {open ? "Ocultar índices" : `Índices (${monthCount} meses${indices?.source ? ` · ${indices.source}` : ""})`}
+            </button>
+          </>
+        )}
       </div>
-      {open && (
+      {editCatalog && open && (
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <div>
             <Input

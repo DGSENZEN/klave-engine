@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, Check, MagnifyingGlass } from "@phosphor-icons/react";
 import {
@@ -48,6 +49,8 @@ export function BaseSheet({
   onError: (message: string) => void;
   onNotice: (message: string) => void;
 }) {
+  // Members browse the base; bringing rows into the taller is the admin's.
+  const { editCatalog } = useCapabilities();
   const [query, setQuery] = useState("");
   const [partida, setPartida] = useState(initialPartida ?? "");
   const [source, setSource] = useState("");
@@ -247,7 +250,7 @@ export function BaseSheet({
             <thead>
               <tr className="border-b border-border bg-surface-2">
                 <Th className="w-8 px-3">
-                  <Checkbox
+                  {editCatalog && <Checkbox
                     aria-label="Seleccionar la página"
                     checked={rows.every((r) => selected.has(r.ref_id) || r.in_taller)}
                     onChange={(e) =>
@@ -261,7 +264,7 @@ export function BaseSheet({
                         return next;
                       })
                     }
-                  />
+                  />}
                 </Th>
                 <Th>Clave</Th>
                 <Th>Concepto</Th>
@@ -300,13 +303,13 @@ export function BaseSheet({
                     <Td className="px-3">
                       {row.in_taller ? (
                         <Check size={14} className="text-success" aria-label="Ya en el taller" />
-                      ) : (
+                      ) : editCatalog ? (
                         <Checkbox
                           aria-label={`Seleccionar ${row.clave}`}
                           checked={selected.has(row.ref_id)}
                           onChange={() => toggle(row.ref_id)}
                         />
-                      )}
+                      ) : null}
                     </Td>
                     <Td className="font-mono text-xs">{row.clave}</Td>
                     <Td>
@@ -332,7 +335,7 @@ export function BaseSheet({
                     <Td className="px-3">
                       {row.in_taller ? (
                         <span className="text-xs text-muted">en el taller</span>
-                      ) : (
+                      ) : editCatalog ? (
                         <Button
                           size="sm"
                           variant="secondary"
@@ -341,7 +344,7 @@ export function BaseSheet({
                         >
                           Traer <ArrowRight size={14} />
                         </Button>
-                      )}
+                      ) : null}
                     </Td>
                   </tr>
                 );

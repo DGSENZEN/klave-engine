@@ -1,5 +1,6 @@
 "use client";
 
+import { useCapabilities } from "@/components/Capabilities";
 import { useEffect, useState } from "react";
 import { apiMessage, forgetPerfil, getPerfil, type PerfilEntrada } from "@/lib/api";
 import { Badge, Button, Callout, Skeleton, Td, Th } from "@/components/ui";
@@ -25,6 +26,7 @@ export function PerfilTallerSection({
   onError: (message: string | null) => void;
   onNotice: (message: string | null) => void;
 }) {
+  const { editCatalog } = useCapabilities();
   const [state, setState] = useState<{ firme: number; entradas: PerfilEntrada[] } | null>(null);
   const [failed, setFailed] = useState(false);
   const [version, setVersion] = useState(0);
@@ -103,9 +105,11 @@ export function PerfilTallerSection({
                     <Badge tone={ACTUA[e.actua].tone}>{ACTUA[e.actua].label}</Badge>
                   </Td>
                   <Td className="text-right">
-                    <Button size="sm" variant="ghost" onClick={() => olvidar(e)}>
-                      Olvidar
-                    </Button>
+                    {editCatalog && (
+                      <Button size="sm" variant="ghost" onClick={() => olvidar(e)}>
+                        Olvidar
+                      </Button>
+                    )}
                   </Td>
                 </tr>
               ))}
