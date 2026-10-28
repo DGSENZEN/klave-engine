@@ -46,8 +46,10 @@ import {
   Td,
   Th,
 } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { FAMILIES, FAMILY_LABELS } from "@/lib/families";
 import { alCargar, puedeGuardar } from "@/lib/conteos";
+import { pideConfirmarQuitarEnLote } from "@/lib/confirmar";
 import { isDoubtful, LoteDeRevision } from "@/components/LoteDeRevision";
 import { FAMILIES as OMITTED_FAMILIES, OmittedSection } from "@/components/OmittedSection";
 import { PropuestasSection } from "@/components/PropuestasSection";
@@ -231,6 +233,8 @@ export default function RevisionPage() {
     });
   }
 
+  const [confirmarQuitar, setConfirmarQuitar] = useState(false);
+
   async function apply(status: "confirmed" | "excluded" | "none") {
     if (selectedVisible.length === 0) return;
     if (status === "excluded" && !reason.trim()) {
@@ -270,6 +274,17 @@ export default function RevisionPage() {
   if (error !== "none") {
     return (
       <div className="p-6">
+      <ConfirmDialog
+        open={confirmarQuitar}
+        title={`Quitar la revisión de ${selectedVisible.length} elementos`}
+        description="Vuelven a «sin revisar», sin la decisión ni el motivo que tenían. Es la forma de deshacer un lote, no de corregir uno."
+        confirmLabel="Quitar revisión"
+        onCancel={() => setConfirmarQuitar(false)}
+        onConfirm={() => {
+          setConfirmarQuitar(false);
+          void apply("none");
+        }}
+      />
         <Callout
           tone={error === "not_processed" ? "info" : "danger"}
           action={
@@ -527,7 +542,11 @@ export default function RevisionPage() {
           )}
           <Button
             size="sm"
-            onClick={() => apply("none")}
+            onClick={() =>
+              pideConfirmarQuitarEnLote(selectedVisible.length)
+                ? setConfirmarQuitar(true)
+                : void apply("none")
+            }
             disabled={busy || selectedVisible.length === 0}
           >
             <ArrowCounterClockwise size={14} weight="bold" /> Quitar revisión

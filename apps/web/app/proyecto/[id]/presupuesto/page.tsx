@@ -42,6 +42,7 @@ import {
   createShareLink,
   revokeShareLink,
   type ShareLink,
+  type ManualAdjustment,
 } from "@/lib/api";
 import { useCostReport } from "@/lib/useProjectReport";
 import { downloadCsv } from "@/lib/format";
@@ -68,6 +69,7 @@ import {
   Th,
 } from "@/components/ui";
 import { ButtonMenu, MenuItem } from "@/components/Menu";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useProjectLive } from "@/components/ProjectLive";
 import { moneyState, UnitsGate, UnverifiedBanner } from "@/components/MoneyGate";
 import { VersionsPanel } from "@/components/VersionsPanel";
@@ -1123,6 +1125,8 @@ function AdjustmentsPanel({
     }
   }
 
+  const [porEliminar, setPorEliminar] = useState<ManualAdjustment | null>(null);
+
   async function remove(adjustmentId: string) {
     try {
       onChanged(await removeAdjustment(projectId, adjustmentId, actorName, clientId));
@@ -1133,6 +1137,22 @@ function AdjustmentsPanel({
 
   return (
     <div>
+      <ConfirmDialog
+        open={porEliminar !== null}
+        title={`Eliminar el ajuste de ${porEliminar?.concept_code ?? ""}`}
+        description={
+          porEliminar
+            ? `${porEliminar.quantity_set != null ? `= ${num(porEliminar.quantity_set)}` : `${porEliminar.quantity_delta > 0 ? "+" : ""}${num(porEliminar.quantity_delta)}`} ${unitOf.get(porEliminar.concept_code) ?? ""}${porEliminar.note ? ` · «${porEliminar.note}»` : ""}. La cantidad del concepto vuelve a la del plano y el motivo se pierde.`
+            : ""
+        }
+        confirmLabel="Eliminar ajuste"
+        onConfirm={() => {
+          const ajuste = porEliminar;
+          setPorEliminar(null);
+          if (ajuste) void remove(ajuste.adjustment_id);
+        }}
+        onCancel={() => setPorEliminar(null)}
+      />
       {adjustments.length > 0 && (
         <ul className="mb-4 divide-y divide-border">
           {adjustments.map((adjustment) => (
@@ -1155,8 +1175,8 @@ function AdjustmentsPanel({
               </div>
               <button
                 type="button"
-                aria-label="Eliminar ajuste"
-                onClick={() => remove(adjustment.adjustment_id)}
+                aria-label={`Eliminar el ajuste de ${adjustment.concept_code}`}
+                onClick={() => setPorEliminar(adjustment)}
                 className="rounded-md p-1 text-faint transition-colors hover:bg-danger-soft hover:text-danger"
               >
                 <Trash size={14} />

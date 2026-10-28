@@ -39,12 +39,14 @@ import {
   Callout,
   Card,
   EmptyState,
+  IconButton,
   Input,
   Metric,
   PageHeader,
   SectionTitle,
   Skeleton,
 } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 /** El factor, o el hueco que impide calcularlo. */
 function Factor({ resumen }: { resumen: ResumenAjuste }) {
@@ -284,6 +286,18 @@ export default function AjusteCostosPage() {
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        open={confirmar !== null}
+        title={`Eliminar la solicitud de ajuste ${confirmar ?? ""}`}
+        description="La solicitud y su cálculo dejan de existir; si se presentó a la contratante, conserva tu copia."
+        confirmLabel="Eliminar solicitud"
+        onCancel={() => setConfirmar(null)}
+        onConfirm={() => {
+          const numero = confirmar;
+          setConfirmar(null);
+          if (numero !== null) void eliminar(numero);
+        }}
+      />
       <PageHeader
         title="Ajuste de costos"
         sub="Lo que subieron los insumos sobre la obra que falta por ejecutar (LOPSRM art. 57–58)."
@@ -341,24 +355,12 @@ export default function AjusteCostosPage() {
               >
                 Editar
               </Button>
-              {confirmar === solicitud.numero ? (
-                <>
-                  <span className="text-xs text-muted">¿Quitarla?</span>
-                  <Button variant="ghost" onClick={() => setConfirmar(null)}>
-                    No
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => void eliminar(solicitud.numero)}
-                  >
-                    Sí, quitar
-                  </Button>
-                </>
-              ) : (
-                <Button variant="ghost" onClick={() => setConfirmar(solicitud.numero)}>
-                  <Trash size={16} />
-                </Button>
-              )}
+              <IconButton
+                aria-label={`Eliminar la solicitud de ajuste ${solicitud.numero}`}
+                onClick={() => setConfirmar(solicitud.numero)}
+              >
+                <Trash size={16} />
+              </IconButton>
             </div>
           </div>
 

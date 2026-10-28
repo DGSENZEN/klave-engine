@@ -39,6 +39,7 @@ import {
   Callout,
   Card,
   EmptyState,
+  IconButton,
   Input,
   Metric,
   PageHeader,
@@ -47,6 +48,7 @@ import {
   Td,
   Th,
 } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 /** Qué tan cerca del techo del art. 59, dicho como barra y como número. */
 function Medidor({ estado }: { estado: EstadoContrato }) {
@@ -204,8 +206,22 @@ export default function ConveniosPage() {
     await cargar();
   }
 
+  const porEliminar = confirmar !== null ? convenios.find((c) => c.numero === confirmar) : undefined;
+
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        open={confirmar !== null}
+        title={`Eliminar el convenio ${confirmar ?? ""}${porEliminar?.motivo ? ` — ${porEliminar.motivo}` : ""}`}
+        description="Lo convenido deja de contar: la siguiente estimación vuelve a medir contra el catálogo anterior."
+        confirmLabel="Eliminar convenio"
+        onCancel={() => setConfirmar(null)}
+        onConfirm={() => {
+          const numero = confirmar;
+          setConfirmar(null);
+          if (numero !== null) void eliminar(numero);
+        }}
+      />
       <PageHeader
         title="Convenios modificatorios"
         sub="Lo que cambió del contrato después de firmarlo, y qué tanto margen queda antes del techo de ley."
@@ -369,21 +385,12 @@ export default function ConveniosPage() {
                   )}
                 </div>
               </div>
-              {confirmar === c.numero ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted">¿Quitarlo?</span>
-                  <Button variant="ghost" onClick={() => setConfirmar(null)}>
-                    No
-                  </Button>
-                  <Button variant="secondary" onClick={() => void eliminar(c.numero)}>
-                    Sí, quitar
-                  </Button>
-                </div>
-              ) : (
-                <Button variant="ghost" onClick={() => setConfirmar(c.numero)}>
-                  <Trash size={16} />
-                </Button>
-              )}
+              <IconButton
+                aria-label={`Eliminar el convenio ${c.numero}`}
+                onClick={() => setConfirmar(c.numero)}
+              >
+                <Trash size={16} />
+              </IconButton>
             </div>
           </div>
           {!c.motivo && (

@@ -75,6 +75,8 @@ import {
 } from "@/lib/api";
 import { inicialCostoHorario } from "@/lib/costoHorario";
 import Link from "next/link";
+import { createPortal } from "react-dom";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { getBrowserActor } from "@/lib/collab";
 import { isProjectSlug } from "@/lib/nodeNav";
 import { BaseSheet } from "@/components/BaseSheet";
@@ -1889,6 +1891,8 @@ function ConceptRows({
     void saveDraft(draft);
   }
 
+  const [porQuitar, setPorQuitar] = useState<string | null>(null);
+
   function removeComponent(resourceCode: string) {
     const next = draft.filter((component) => component.resource_code !== resourceCode);
     setDraft(next);
@@ -1975,6 +1979,22 @@ function ConceptRows({
 
   return (
     <>
+      {porQuitar !== null &&
+        createPortal(
+          <ConfirmDialog
+            open
+            title={`Quitar ${porQuitar} de la matriz de ${concept.code}`}
+            description="El precio unitario del concepto se recalcula sin ese insumo."
+            confirmLabel="Quitar de la matriz"
+            onConfirm={() => {
+              const code = porQuitar;
+              setPorQuitar(null);
+              removeComponent(code);
+            }}
+            onCancel={() => setPorQuitar(null)}
+          />,
+          document.body,
+        )}
       <tr
         data-concept-row={concept.code}
         className={`cursor-pointer border-b border-border transition-colors hover:bg-surface-2/50 ${
@@ -2141,9 +2161,9 @@ function ConceptRows({
                   </div>
                   <button
                     type="button"
-                    aria-label={`Quitar ${insumo.code}`}
-                    onClick={() => removeComponent(component.resource_code)}
-                    className="rounded-md p-1 text-faint opacity-0 transition group-hover:opacity-100 hover:bg-danger-soft hover:text-danger"
+                    aria-label={`Quitar ${insumo.code} de la matriz`}
+                    onClick={() => setPorQuitar(component.resource_code)}
+                    className="rounded-md p-1 text-faint transition hover:bg-danger-soft hover:text-danger"
                   >
                     <Trash size={14} />
                   </button>
