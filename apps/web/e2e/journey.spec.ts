@@ -18,8 +18,7 @@ test("an invited customer reviews, prices and downloads an actual workbook", asy
     const customer = await context.newPage();
     await customer.goto(invitation!.trim());
     await customer.getByLabel("Nombre y apellido").fill("Pilot customer");
-    await customer.getByLabel("Contraseña", { exact: true }).fill("Synthetic-customer-123!");
-    await customer.getByLabel("Repite la contraseña").fill("Synthetic-customer-123!");
+    await customer.getByLabel("Contraseña", { exact: true }).fill("Synthetic-invitee-123!");
     await customer.getByRole("button", { name: "Crear cuenta y entrar" }).click();
     await customer.waitForURL("/");
     await customer.locator('input[type="file"]').setInputFiles(join(__dirname, "fixtures/structural-meters.dxf"));
