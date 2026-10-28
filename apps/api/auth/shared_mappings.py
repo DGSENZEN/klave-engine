@@ -42,6 +42,16 @@ def _free(request: Request, project_id: str) -> bool:
     )
 
 
+def require_mapping_project(request: Request, project_id: str) -> None:
+    """A member adds a shared mapping from a project they edit; without one
+    there is no project role to check, so only an administrator may."""
+    if project_id or getattr(request.state, "user", None) is None:
+        return
+    access.require_taller_admin(
+        request, "Un alias se agrega desde un proyecto en el que puedas editar."
+    )
+
+
 def alias_target(row: dict | None) -> tuple[str | None, int | None, str | None] | None:
     """What an alias points at, comparable across a stored row and a request."""
     if not row:
@@ -50,16 +60,27 @@ def alias_target(row: dict | None) -> tuple[str | None, int | None, str | None] 
 
 
 def check_alias_writes(
-    request: Request, project_id: str, existing: dict[str, dict], items: list[tuple[str, tuple]]
+    request: Request,
+    project_id: str,
+    existing: dict[str, dict],
+    items: list[tuple[str, tuple]],
+    adopted_prices: dict[str, float] | None = None,
 ) -> None:
-    """Refuse the whole request when any item would re-point an existing taller
-    alias and the caller may not; re-sending the same target is no change."""
+    """Refuse the whole request when any item would change what the taller
+    already decided and the caller may not: re-point an existing alias, or —
+    since setting an alias re-prices the concept — replace a price an
+    administrator adopted. Re-sending the same target is no change."""
     if _free(request, project_id):
         return
+    adopted_prices = adopted_prices or {}
     cambios = [
         {"concept_code": code, "actual": _alias_view(existing[code])}
         for code, target in items
         if code in existing and alias_target(existing[code]) != target
+    ] + [
+        {"concept_code": code, "actual": {"price_override": adopted_prices[code]}}
+        for code, _target in items
+        if code not in existing and code in adopted_prices
     ]
     if cambios:
         raise HTTPException(

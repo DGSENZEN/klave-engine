@@ -171,10 +171,18 @@ def set_variant_mapping(
                 detail={"error_type": "target_required",
                         "message": "Confirmar necesita el concepto o el renglón de tu catálogo."},
             )
-    check_variant_write(request, project_id, previous, mapping_target(
+    requested = mapping_target(
         fields["status"], fields.get("target_kind"), fields.get("target_code"),
         fields.get("ref_id"),
-    ))  # fmt: skip
+    )  # fmt: skip
+    check_variant_write(request, project_id, previous, requested)
+    if is_human_decision(previous) and requested == mapping_target(
+        previous["status"], previous.get("target_kind"), previous.get("target_code"),
+        previous.get("ref_id"),
+    ):  # fmt: skip
+        # The same decision again (a retry, a double click): nothing changes,
+        # and it stays the person's who made it.
+        return previous
     control_dir = store.get_root(project_id) / settings.processed_dir_name
     with project_recompute_lock(project_id):
         saved = catalog.set_variant_mapping(variant_key, **fields)

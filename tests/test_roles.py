@@ -403,10 +403,14 @@ def test_editor_cannot_change_confirmed_mapping(variantes):
 
 
 def test_editor_reconfirms_same_decision(variantes):
-    como, _ = variantes
+    como, store = variantes
     assert como("admin").put(f"/projects/{VARIANTES}/variantes/{GRANDE}", json=CONFIRMAR).status_code == 200
+    store.auditoria.clear()
     r = como("ana").put(f"/projects/{VARIANTES}/variantes/{GRANDE}", json=CONFIRMAR)
     assert r.status_code == 200, r.text
+    # Nothing changed: no write, no audit entry, still the admin's decision.
+    assert store.auditoria == []
+    assert _autor(GRANDE) == "Admin"
 
 
 def test_editor_cannot_flip_human_sin_equivalente(variantes):
@@ -572,3 +576,71 @@ def test_variant_list_marks_human_decisions(variantes):
     decidida = {v["key"]: v["decidida"] for line in listed["lines"] for v in line["variants"]}
     assert decidida[GRANDE] is True
     assert decidida[CHICA] is False  # an engine proposal, still the editor's to settle
+
+
+# ------------------------------------------------------- final review fixes --
+
+
+def test_alias_without_project_is_refused_for_members(api):
+    como, store = api
+    body = _alias("CIM-001", "CIM-002", proyecto="")
+    for quien in ("beto", "ana"):
+        r = como(quien).post("/catalog/aliases", json=body)
+        assert r.status_code in (403, 422), (quien, r.status_code, r.text)
+        r = como(quien).post("/catalog/aliases/bulk", json={"project_id": "", "items": [body]})
+        assert r.status_code in (403, 422), (quien, r.status_code, r.text)
+    assert _alias_actual("CIM-001") is None
+    assert store.auditoria == []
+
+
+def test_viewer_cannot_add_alias(api):
+    como, _ = api
+    r = como("beto").post("/catalog/aliases", json=_alias("CIM-001", "CIM-002"))
+    assert r.status_code == 403, r.text
+    assert _alias_actual("CIM-001") is None
+
+
+def _adoptar_precio(codigo, precio=4321.0):
+    """An admin adopted a published price for this concept (taller catálogo)."""
+    from klave_engine.common.config import get_settings
+
+    from apps.api.tenancy import workspace_store
+
+    catalog = workspace_store(get_settings(), "ws-a")
+    catalog.import_reference(
+        {"key": "pub", "name": "Publicación", "publisher": "Pub", "region": "MX",
+         "vigencia": "2026-01", "kind": "precios_unitarios", "url": ""},
+        [{"clave": "PUB-1", "description": "Concreto publicado", "unit": "M3", "price": precio,
+          "group_clave": "", "group_description": ""}],
+    )  # fmt: skip
+    ref = catalog.search_reference("Concreto publicado", source_key="pub")[0]
+    catalog.adopt_concept_reference(codigo, ref["ref_id"])
+    return catalog
+
+
+def _precio_adoptado(codigo):
+    from klave_engine.common.config import get_settings
+
+    from apps.api.tenancy import workspace_store
+
+    row = next(c for c in workspace_store(get_settings(), "ws-a").load_concepts() if c["code"] == codigo)
+    return row.get("price_override")
+
+
+def test_editor_alias_cannot_overwrite_an_adopted_price(api):
+    como, store = api
+    _adoptar_precio("CIM-001")
+    r = como("ana").post("/catalog/aliases", json=_alias("CIM-001", "CIM-002"))
+    assert r.status_code == 403, r.text
+    assert r.json()["detail"]["cambios"][0]["concept_code"] == "CIM-001"
+    assert _precio_adoptado("CIM-001") == 4321.0
+    assert _alias_actual("CIM-001") is None
+
+
+def test_bulk_with_the_same_concept_twice_is_refused(api):
+    como, store = api
+    body = {"project_id": "obra", "items": [_alias("CIM-001", "CIM-002"), _alias("CIM-001", "CIM-007")]}
+    r = como("ana").post("/catalog/aliases/bulk", json=body)
+    assert r.status_code == 422, r.text
+    assert _alias_actual("CIM-001") is None
+    assert store.auditoria == []

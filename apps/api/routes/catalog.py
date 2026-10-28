@@ -8,6 +8,7 @@ A global ``catalog_updated`` event tells open projects to offer a recompute.
 import csv
 import hashlib
 import io
+import threading
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -72,6 +73,7 @@ from apps.api.auth.shared_mappings import (
     audit_mapping,
     check_alias_writes,
     check_mapping_removal,
+    require_mapping_project,
 )
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
@@ -1775,12 +1777,26 @@ def _unit_mismatch(exc: UnitMismatch) -> HTTPException:
     )
 
 
+# One API process serves the taller (apps/api/Dockerfile runs a single
+# uvicorn worker), so a process lock is enough to make check-then-write atomic.
+_SHARED_MAPPING_LOCK = threading.Lock()
+
+
 def _catalogo_para(catalog: CatalogStore, settings: Settings, project_id: str) -> CatalogStore:
     """El catálogo donde vive un alias pedido desde un proyecto: el del taller,
     salvo en la obra de ejemplo, que tiene el suyo y no escribe en el taller."""
     if project_id and es_obra_de_ejemplo(project_id):
         return store_for_project(settings, project_id)
     return catalog
+
+
+def _adopted_prices(catalog: CatalogStore) -> dict[str, float]:
+    """Concepts priced by an adopted reference (price_override), by code."""
+    return {
+        row["code"]: float(row["price_override"])
+        for row in catalog.load_concepts(include_inactive=True)
+        if row.get("price_override") is not None
+    }
 
 
 def _requested_target(item: AliasInput) -> tuple[str, int | None, str | None]:
@@ -1818,15 +1834,22 @@ def set_alias(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     # El alias se recalcula sobre ese proyecto: hace falta poder editarlo.
+    require_mapping_project(request, body.project_id)
     require_project_role(request, body.project_id, "editor")
     actor = clean_actor(x_actor) or ""
     catalog = _catalogo_para(catalog, settings, body.project_id)
-    existing = catalog.load_concept_aliases()
     code = body.concept_code.strip().upper()
-    check_alias_writes(request, body.project_id, existing, [(code, _requested_target(body))])
-    if alias_target(existing.get(code)) == _requested_target(body):
-        return existing[code]  # the same alias again: nothing changes
-    alias = _set_alias(catalog, body, actor, body.project_id)
+    # Check and write under one lock: two editors adding different targets
+    # for the same code must not let the second silently re-point the first.
+    with _SHARED_MAPPING_LOCK:
+        existing = catalog.load_concept_aliases()
+        check_alias_writes(
+            request, body.project_id, existing, [(code, _requested_target(body))],
+            _adopted_prices(catalog),
+        )
+        if alias_target(existing.get(code)) == _requested_target(body):
+            return existing[code]  # the same alias again: nothing changes
+        alias = _set_alias(catalog, body, actor, body.project_id)
     audit_mapping(
         request, body.project_id, "alias_changed" if code in existing else "alias_added",
         code, existing.get(code), alias,
@@ -1847,26 +1870,41 @@ def set_aliases_bulk(
     store: ProjectStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
+    require_mapping_project(request, body.project_id)
     require_project_role(request, body.project_id, "editor")
     actor = clean_actor(x_actor) or ""
     catalog = _catalogo_para(catalog, settings, body.project_id)
-    existing = catalog.load_concept_aliases()
     requested = [
         (item.concept_code.strip().upper(), _requested_target(item)) for item in body.items
     ]
-    # All or nothing: a batch that would re-point any existing alias is refused whole.
-    check_alias_writes(request, body.project_id, existing, requested)
+    codes = [code for code, _ in requested]
+    if len(set(codes)) != len(codes):
+        # Two targets for one concept in one batch is a re-point in disguise.
+        raise HTTPException(
+            status_code=422,
+            detail={"error_type": "duplicate_alias",
+                    "message": "Cada concepto puede aparecer una sola vez en el lote."},
+        )  # fmt: skip
     saved = []
-    for item, (code, target) in zip(body.items, requested, strict=True):
-        if alias_target(existing.get(code)) == target:
-            saved.append(existing[code])
-            continue
-        alias = _set_alias(catalog, item, actor, body.project_id)
-        audit_mapping(
-            request, body.project_id, "alias_changed" if code in existing else "alias_added",
-            code, existing.get(code), alias,
+    written: list[tuple[str, dict | None, dict]] = []
+    with _SHARED_MAPPING_LOCK:
+        existing = catalog.load_concept_aliases()
+        # All or nothing: a batch that would re-point any existing alias is refused whole.
+        check_alias_writes(
+            request, body.project_id, existing, requested, _adopted_prices(catalog)
         )
-        saved.append(alias)
+        for item, (code, target) in zip(body.items, requested, strict=True):
+            if alias_target(existing.get(code)) == target:
+                saved.append(existing[code])
+                continue
+            alias = _set_alias(catalog, item, actor, body.project_id)
+            written.append((code, existing.get(code), alias))
+            saved.append(alias)
+    for code, previous, alias in written:
+        audit_mapping(
+            request, body.project_id, "alias_changed" if previous else "alias_added",
+            code, previous, alias,
+        )
     _publish_catalog_updated(
         x_actor, "aliases_set", f"{len(saved)} conceptos del taller", catalog=catalog
     )
