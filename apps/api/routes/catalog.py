@@ -67,6 +67,12 @@ from pydantic import BaseModel, Field, FiniteFloat, ValidationError
 
 from apps.api.auth.access import require_project_role, require_taller_admin
 from apps.api.auth.common import rate_limit
+from apps.api.auth.shared_mappings import (
+    alias_target,
+    audit_mapping,
+    check_alias_writes,
+    check_mapping_removal,
+)
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
 from apps.api.routes.catalog_rules import catalog_write_rule
@@ -1777,6 +1783,14 @@ def _catalogo_para(catalog: CatalogStore, settings: Settings, project_id: str) -
     return catalog
 
 
+def _requested_target(item: AliasInput) -> tuple[str, int | None, str | None]:
+    """The (kind, ref_id, target_code) an alias request asks for, shaped like
+    ``shared_mappings.alias_target`` of a stored row."""
+    if item.kind == "reference":
+        return ("reference", item.ref_id, None)
+    return ("concept", None, (item.target_code or "").strip().upper() or None)
+
+
 def _set_alias(catalog: CatalogStore, item: AliasInput, actor: str, project_id: str) -> dict:
     _forced_without_reason(item.force, item.note)
     try:
@@ -1807,7 +1821,16 @@ def set_alias(
     require_project_role(request, body.project_id, "editor")
     actor = clean_actor(x_actor) or ""
     catalog = _catalogo_para(catalog, settings, body.project_id)
+    existing = catalog.load_concept_aliases()
+    code = body.concept_code.strip().upper()
+    check_alias_writes(request, body.project_id, existing, [(code, _requested_target(body))])
+    if alias_target(existing.get(code)) == _requested_target(body):
+        return existing[code]  # the same alias again: nothing changes
     alias = _set_alias(catalog, body, actor, body.project_id)
+    audit_mapping(
+        request, body.project_id, "alias_changed" if code in existing else "alias_added",
+        code, existing.get(code), alias,
+    )
     _publish_catalog_updated(
         x_actor, "alias_set", f"{body.concept_code} → {alias['clave']}", catalog=catalog
     )
@@ -1827,7 +1850,23 @@ def set_aliases_bulk(
     require_project_role(request, body.project_id, "editor")
     actor = clean_actor(x_actor) or ""
     catalog = _catalogo_para(catalog, settings, body.project_id)
-    saved = [_set_alias(catalog, item, actor, body.project_id) for item in body.items]
+    existing = catalog.load_concept_aliases()
+    requested = [
+        (item.concept_code.strip().upper(), _requested_target(item)) for item in body.items
+    ]
+    # All or nothing: a batch that would re-point any existing alias is refused whole.
+    check_alias_writes(request, body.project_id, existing, requested)
+    saved = []
+    for item, (code, target) in zip(body.items, requested, strict=True):
+        if alias_target(existing.get(code)) == target:
+            saved.append(existing[code])
+            continue
+        alias = _set_alias(catalog, item, actor, body.project_id)
+        audit_mapping(
+            request, body.project_id, "alias_changed" if code in existing else "alias_added",
+            code, existing.get(code), alias,
+        )
+        saved.append(alias)
     _publish_catalog_updated(
         x_actor, "aliases_set", f"{len(saved)} conceptos del taller", catalog=catalog
     )
@@ -1846,9 +1885,12 @@ def clear_alias(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     require_project_role(request, project_id, "editor")
+    check_mapping_removal(request, project_id)
     catalog = _catalogo_para(catalog, settings, project_id)
+    previous = catalog.load_concept_aliases().get(code.upper())
     if not catalog.clear_concept_alias(code.upper()):
         raise HTTPException(status_code=404, detail={"error_type": "alias_not_found"})
+    audit_mapping(request, project_id, "alias_cleared", code.upper(), previous, None)
     actor = clean_actor(x_actor) or ""
     _publish_catalog_updated(x_actor, "alias_cleared", code, catalog=catalog)
     _recompute_project(store, settings, project_id, actor)

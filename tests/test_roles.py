@@ -4,9 +4,12 @@ quitan con un administrador. Ver docs/superpowers/specs/2026-10-23-role-enforcem
 
 import pytest
 from fastapi import HTTPException
+from klave_engine.ejemplo import SAMPLE_PREFIX
 from starlette.requests import Request
 
 from apps.api.auth import access
+
+EJEMPLO = f"{SAMPLE_PREFIX}_ws-a_ana"
 
 
 class Usuarios:
@@ -35,8 +38,12 @@ class Usuarios:
     def project_workspace_id(self, project_id):
         return "ws-a"
 
+    def default_workspace(self):
+        return {"workspace_id": "ws-a"}
+
     def project_role(self, project_id, user_id):
-        return self.roles.get(user_id) if project_id == self.pid else None
+        # Same grants on the real obra and on the example obra (the sandbox).
+        return self.roles.get(user_id) if project_id in (self.pid, EJEMPLO) else None
 
     def record_audit(self, **entry):
         self.auditoria.append(entry)
@@ -118,8 +125,11 @@ def api(data_dir, monkeypatch):
     from apps.api.main import create_app
 
     store = Usuarios()
+    from apps.api import tenancy
+
     monkeypatch.setattr(middleware, "get_user_store", lambda _url: store)
     monkeypatch.setattr(access, "get_user_store", lambda _url: store)
+    monkeypatch.setattr(tenancy, "get_user_store", lambda _url: store)
     client = TestClient(create_app())
 
     def como(quien):
@@ -184,8 +194,113 @@ def test_users_db_down_does_not_open_catalog(api, monkeypatch):
     def caida(*_a, **_k):
         raise UsersDbUnavailable("caída")
 
-    monkeypatch.setattr(store, "has_users", caida)
     antes = _catalogo_del_taller()
-    r = como("ana").put("/catalog/indices", json={})
+    with monkeypatch.context() as caido:
+        caido.setattr(store, "has_users", caida)
+        r = como("ana").put("/catalog/indices", json={})
     assert r.status_code == 503
     assert _catalogo_del_taller() == antes
+
+
+# ------------------------------------------------------------------- alias --
+
+
+def _alias(codigo, destino, proyecto="obra"):
+    return {"concept_code": codigo, "kind": "concept", "target_code": destino,
+            "project_id": proyecto}  # fmt: skip
+
+
+def _alias_actual(codigo, proyecto=None):
+    from klave_engine.common.config import get_settings
+
+    from apps.api.tenancy import store_for_project, workspace_store
+
+    settings = get_settings()
+    catalog = (
+        store_for_project(settings, proyecto) if proyecto else workspace_store(settings, "ws-a")
+    )
+    fila = catalog.load_concept_aliases().get(codigo)
+    return fila and fila["target_code"]
+
+
+def test_editor_adds_new_alias(api):
+    como, store = api
+    r = como("ana").post("/catalog/aliases", json=_alias("CIM-001", "CIM-002"))
+    assert r.status_code == 201, r.text
+    assert _alias_actual("CIM-001") == "CIM-002"
+    assert [e["action"] for e in store.auditoria] == ["alias_added"]
+
+
+def test_editor_cannot_repoint_alias(api):
+    como, store = api
+    assert como("admin").post("/catalog/aliases", json=_alias("CIM-001", "CIM-002")).status_code == 201
+    r = como("ana").post("/catalog/aliases", json=_alias("CIM-001", "CIM-007"))
+    assert r.status_code == 403, r.text
+    detail = r.json()["detail"]
+    assert detail["error_type"] == "admin_required"
+    assert detail["cambios"][0]["concept_code"] == "CIM-001"
+    assert detail["cambios"][0]["actual"]["target_code"] == "CIM-002"
+    assert _alias_actual("CIM-001") == "CIM-002"
+
+
+def test_editor_resends_same_alias_is_noop(api):
+    como, store = api
+    assert como("ana").post("/catalog/aliases", json=_alias("CIM-001", "CIM-002")).status_code == 201
+    store.auditoria.clear()
+    r = como("ana").post("/catalog/aliases", json=_alias("CIM-001", "CIM-002"))
+    assert r.status_code == 201, r.text
+    assert store.auditoria == []
+
+
+def test_bulk_mixed_is_all_or_nothing(api):
+    como, _ = api
+    assert como("admin").post("/catalog/aliases", json=_alias("CIM-001", "CIM-002")).status_code == 201
+    body = {"project_id": "obra", "items": [
+        _alias("CIM-004", "CIM-002"), _alias("CIM-007", "CIM-002"), _alias("CIM-001", "CIM-007"),
+    ]}  # fmt: skip
+    r = como("ana").post("/catalog/aliases/bulk", json=body)
+    assert r.status_code == 403, r.text
+    assert [c["concept_code"] for c in r.json()["detail"]["cambios"]] == ["CIM-001"]
+    assert _alias_actual("CIM-004") is None and _alias_actual("CIM-007") is None
+    assert _alias_actual("CIM-001") == "CIM-002"
+
+
+def test_editor_cannot_clear_taller_alias(api):
+    como, _ = api
+    assert como("admin").post("/catalog/aliases", json=_alias("CIM-001", "CIM-002")).status_code == 201
+    r = como("ana").delete("/catalog/aliases/CIM-001", params={"project_id": "obra"})
+    assert r.status_code == 403
+    assert r.json()["detail"]["error_type"] == "admin_required"
+    assert _alias_actual("CIM-001") == "CIM-002"
+
+
+def test_admin_repoints_and_clears(api):
+    como, store = api
+    assert como("admin").post("/catalog/aliases", json=_alias("CIM-001", "CIM-002")).status_code == 201
+    assert como("admin").post("/catalog/aliases", json=_alias("CIM-001", "CIM-007")).status_code == 201
+    assert _alias_actual("CIM-001") == "CIM-007"
+    r = como("admin").delete("/catalog/aliases/CIM-001", params={"project_id": "obra"})
+    assert r.status_code == 200, r.text
+    assert _alias_actual("CIM-001") is None
+    assert [e["action"] for e in store.auditoria] == ["alias_added", "alias_changed", "alias_cleared"]
+
+
+def test_example_obra_editor_can_repoint_and_clear(api):
+    como, store = api
+    ana = como("ana")
+    assert ana.post("/catalog/aliases", json=_alias("CIM-001", "CIM-002", EJEMPLO)).status_code == 201
+    assert ana.post("/catalog/aliases", json=_alias("CIM-001", "CIM-007", EJEMPLO)).status_code == 201
+    assert _alias_actual("CIM-001", EJEMPLO) == "CIM-007"
+    r = ana.delete("/catalog/aliases/CIM-001", params={"project_id": EJEMPLO})
+    assert r.status_code == 200, r.text
+    assert _alias_actual("CIM-001") is None  # the office never saw it
+    assert store.auditoria == []
+
+
+def test_each_taller_alias_write_audits_once(api):
+    como, store = api
+    body = {"project_id": "obra", "items": [_alias("CIM-004", "CIM-002"), _alias("CIM-007", "CIM-002")]}
+    assert como("ana").post("/catalog/aliases/bulk", json=body).status_code == 201
+    assert sorted(e["target_id"] for e in store.auditoria) == ["CIM-004", "CIM-007"]
+    assert all(e["action"] == "alias_added" for e in store.auditoria)
+    assert store.auditoria[0]["detail"]["project_id"] == "obra"
