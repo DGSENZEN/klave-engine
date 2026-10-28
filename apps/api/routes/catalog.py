@@ -65,7 +65,7 @@ from klave_engine.costing.vigencia import (
 from klave_engine.ejemplo import es_obra_de_ejemplo
 from pydantic import BaseModel, Field, FiniteFloat, ValidationError
 
-from apps.api.auth.access import require_project_role
+from apps.api.auth.access import require_project_role, require_taller_admin
 from apps.api.auth.common import rate_limit
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
@@ -104,20 +104,9 @@ MAX_OPUS_BYTES = 25_000_000
 
 
 def require_catalog_admin(request: Request) -> None:
-    """Structural catálogo changes — imports, deletions, repricing sweeps,
-    labor/equipment engines — are the administrator's. Daily estimator work
-    (a price from a cotización, an alias, a mapping, a factor) stays open to
-    every active member: it is their own taller's catálogo. Open mode (no
-    accounts) keeps the local-first freedom."""
-    user = getattr(request.state, "user", None)
-    if user is not None and user.get("role") != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "error_type": "admin_required",
-                "message": "Esta operación del catálogo requiere un administrador del taller.",
-            },
-        )
+    """Every catálogo change is the taller administrator's (role design,
+    decision 1); open mode (no accounts) keeps the local-first freedom."""
+    require_taller_admin(request)
 
 
 def get_catalog(request: Request, settings: Settings = Depends(get_settings)) -> CatalogStore:
