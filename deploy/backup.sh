@@ -20,7 +20,8 @@ Backup $stamp verified. Restore only into fresh, isolated volumes/database.
 Copy the complete backup directory off-host and verify its checksums there.
 Restore users.dump with pg_restore into a NEW PostgreSQL 16 database, then
 extract sqlite.tar.gz and data.tar.gz into a NEW application data volume.
-See docs/despliegue.md for the manual recovery commands and remaining drill.
+See docs/milestone-0-operations.md for the executable owned scratch drill.
+This restore subcommand only verifies and prints instructions; it restores nothing.
 Do not extract over an active pilot volume. Database migrations are not
 reversed by changing images; use the matching pre-upgrade data snapshot.
 INSTRUCTIONS

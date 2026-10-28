@@ -42,8 +42,21 @@ jobs:
         with:
           version: '0.9.24'
       - run: uv sync --frozen
+      - name: Use trusted HTTPS Ubuntu mirror for runner dependencies
+        run: |
+          set -euo pipefail
+          # The hosted runner's Azure mirror repeatedly stalled font/library
+          # downloads. Select its official HTTPS fallback; apt signatures stay on.
+          if test -f /etc/apt/apt-mirrors.txt; then
+            printf '%s\n' 'https://archive.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors.txt > /dev/null
+          fi
+          printf '%s\n' 'Acquire::Retries "2";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/99-klave-ci-network > /dev/null
+      - name: Install matching PostgreSQL archive verifier
+        run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client-16
       - run: npm --prefix apps/web ci
-      - run: npm --prefix apps/web exec -- playwright install --with-deps chromium
+      - name: Install Chromium and system dependencies
+        timeout-minutes: 10
+        run: npm --prefix apps/web exec -- playwright install --with-deps chromium
       - name: Create synthetic release configuration
         run: |
           cat > /tmp/klave-ci.env <<'ENV'
@@ -55,6 +68,9 @@ jobs:
       - run: make release-check ENV_FILE=/tmp/klave-ci.env
 
   deploy:
+    permissions:
+      contents: read
+      id-token: write
     needs: verify
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -70,13 +86,42 @@ jobs:
       EC2_HOST: ${{ vars.EC2_HOST }}
       EC2_USER: ubuntu
       # Hosted runners cannot reach the server's SSH ingress, so the operator
-      # releases the API by hand (deploy/ec2-release.sh). Set the repository
-      # variable EC2_DEPLOY_MODE=ssh once a runner can reach port 22 again.
+      # releases the API by hand (deploy/ec2-release.sh). The repository
+      # variable EC2_DEPLOY_MODE switches CI on: `ssh` once a runner can reach
+      # port 22, or `ssm` to tunnel SSH through Session Manager (needs the
+      # AWS_DEPLOY_ROLE_ARN, AWS_REGION, AWS_ACCOUNT_ID and EC2_INSTANCE_ID
+      # variables). Unset, it stays `manual`.
       EC2_DEPLOY_MODE: ${{ vars.EC2_DEPLOY_MODE || 'manual' }}
+      EC2_TRANSPORT: ${{ vars.EC2_DEPLOY_MODE == 'ssm' && 'ssm' || 'ssh' }}
+      EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: Authenticate to AWS with repository-scoped OIDC
+        if: env.EC2_DEPLOY_MODE == 'ssm'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: klave-deploy-${{ github.run_id }}-${{ github.run_attempt }}
+          role-duration-seconds: 3600
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          mask-aws-account-id: true
+      - name: Install pinned official Session Manager plugin
+        if: env.EC2_DEPLOY_MODE == 'ssm'
+        run: |
+          set -euo pipefail
+          package="$RUNNER_TEMP/session-manager-plugin.deb"
+          curl --fail --silent --show-error --location --connect-timeout 10 --max-time 90 \
+            https://s3.amazonaws.com/session-manager-downloads/plugin/1.2.896.0/ubuntu_64bit/session-manager-plugin.deb --output "$package"
+          printf '%s  %s\n' '53f51fcc67314a4bf85888a38a3967cd41f8d0f28a60a9469a63acf935ba713e' "$package" | sha256sum --check --status
+          sudo dpkg -i "$package"
+          session-manager-plugin --version
+      - name: Preflight approved SSM and SSH transport
+        if: env.EC2_DEPLOY_MODE == 'ssm'
+        run: python3 deploy/transport_check.py
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.13.0'
@@ -113,7 +158,7 @@ jobs:
           DEPLOYMENT_URL: ${{ steps.stage.outputs.url }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       - name: Prepare SSH credentials
-        if: env.EC2_DEPLOY_MODE == 'ssh'
+        if: env.EC2_DEPLOY_MODE == 'ssh' || env.EC2_DEPLOY_MODE == 'ssm'
         run: |
           set -euo pipefail
           test -n "$SSH_PRIVATE_KEY" && test -n "$SSH_KNOWN_HOSTS" && test -n "$EC2_HOST"
@@ -126,18 +171,21 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
           SSH_KNOWN_HOSTS: ${{ vars.EC2_KNOWN_HOSTS }}
       - name: Back up and deploy tested API commit
-        if: env.EC2_DEPLOY_MODE == 'ssh'
+        if: env.EC2_DEPLOY_MODE == 'ssh' || env.EC2_DEPLOY_MODE == 'ssm'
         run: |
           set -euo pipefail
           archive="$RUNNER_TEMP/klave-release-$GITHUB_SHA.tar.gz"
           git archive --format=tar.gz -o "$archive" HEAD \
             apps/api apps/__init__.py packages pyproject.toml uv.lock README.md \
             .dockerignore docker-compose.ec2.yml deploy
-          options=(-i "$RUNNER_TEMP/klave-ssh/key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/klave-ssh/known_hosts" -o ConnectTimeout=15)
+          options=(-i "$RUNNER_TEMP/klave-ssh/key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/klave-ssh/known_hosts" -o ConnectTimeout=15 -o ConnectionAttempts=1 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
+          if test "$EC2_DEPLOY_MODE" = ssm; then
+            options=(-o "ProxyCommand=python3 deploy/ssm_proxy.py" "${options[@]}")
+          fi
           scp "${options[@]}" "$archive" "$EC2_USER@$EC2_HOST:klave-release-$GITHUB_SHA.tar.gz"
           ssh "${options[@]}" "$EC2_USER@$EC2_HOST" "bash -s -- '$GITHUB_SHA' \"\$HOME/klave-release-$GITHUB_SHA.tar.gz\"" < deploy/ec2-release.sh
       - name: Record manual API release
-        if: env.EC2_DEPLOY_MODE != 'ssh'
+        if: env.EC2_DEPLOY_MODE != 'ssh' && env.EC2_DEPLOY_MODE != 'ssm'
         run: |
           {
             echo '### API not deployed by CI'
