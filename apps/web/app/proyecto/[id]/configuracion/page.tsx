@@ -277,6 +277,8 @@ function AccessCard({ projectId }: { projectId: string }) {
     reload();
   }, [reload]);
 
+  const [confirmarPropietario, setConfirmarPropietario] = useState(false);
+
   async function grant() {
     if (!email.trim()) return;
     setError(null);
@@ -365,10 +367,25 @@ function AccessCard({ projectId }: { projectId: string }) {
               <option value="editor">Edición</option>
               <option value="owner">Propietario</option>
             </Select>
-            <Button variant="primary" onClick={grant} disabled={!email.trim()}>
+            <Button
+              variant="primary"
+              onClick={() => (role === "owner" ? setConfirmarPropietario(true) : void grant())}
+              disabled={!email.trim()}
+            >
               Compartir
             </Button>
           </div>
+          <ConfirmDialog
+            open={confirmarPropietario}
+            title={`Dar Propietario a ${(access.invitable.find((u) => u.email === email.trim())?.name ?? email.trim()) || "esta persona"} — podrá compartir, cerrar nodos y eliminar el proyecto`}
+            description="El propietario tiene el mismo control que tú sobre este proyecto. Para trabajar en él basta con Edición."
+            confirmLabel="Dar Propietario"
+            onCancel={() => setConfirmarPropietario(false)}
+            onConfirm={() => {
+              setConfirmarPropietario(false);
+              void grant();
+            }}
+          />
           <ConfirmDialog
             open={revokeTarget !== null}
             title="Quitar acceso al proyecto"

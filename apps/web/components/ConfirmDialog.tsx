@@ -47,8 +47,12 @@ export function ConfirmDialog({
   const dialogRef = useRef<HTMLDivElement>(null);
   const onDialogKeyDown = useDialogFocus(open, dialogRef, cancelRef);
 
+  // The second click of a double-click lands on the backdrop the first one
+  // just opened: without this window the dialog closes before anyone sees it.
+  const abiertoEn = useRef(0);
   useEffect(() => {
     if (!open) return;
+    abiertoEn.current = Date.now();
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onCancel();
     }
@@ -64,7 +68,10 @@ export function ConfirmDialog({
       <button
         type="button"
         aria-label="Cancelar"
-        onClick={onCancel}
+        onClick={() => {
+          if (Date.now() - abiertoEn.current < 500) return;
+          onCancel();
+        }}
         className="absolute inset-0 bg-foreground/40 backdrop-blur-[2px]"
       />
       <div

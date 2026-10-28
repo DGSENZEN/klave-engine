@@ -56,6 +56,7 @@ import {
 } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ReprocesarDialog } from "@/components/ReprocesarDialog";
 import { KebabMenu, MenuItem } from "@/components/Menu";
 import { timeAgo } from "@/lib/time";
 import { uploadErrorMessage, validateDrawingFiles } from "@/lib/uploads";
@@ -74,6 +75,7 @@ export default function Resumen() {
   const [attempt, setAttempt] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
   const [reprocessing, setReprocessing] = useState(false);
+  const [confirmReprocess, setConfirmReprocess] = useState(false);
   const { latestEvent, connectionEpoch, actorName } = useProjectLive();
 
   function markFailed(key: "reviews" | "diff", value: boolean) {
@@ -149,6 +151,14 @@ export default function Resumen() {
 
   return (
     <div className="px-6 py-7 lg:px-8">
+      <ReprocesarDialog
+        open={confirmReprocess}
+        onConfirm={() => {
+          setConfirmReprocess(false);
+          void reprocessNow();
+        }}
+        onCancel={() => setConfirmReprocess(false)}
+      />
       <PageHeader
         title={
           <span className="flex items-center gap-2.5" data-tour="resumen.sello">
@@ -209,7 +219,7 @@ export default function Resumen() {
           <Callout
             tone="info"
             action={
-              <Button size="sm" onClick={reprocessNow} disabled={reprocessing}>
+              <Button size="sm" onClick={() => setConfirmReprocess(true)} disabled={reprocessing}>
                 {reprocessing ? (
                   <CircleNotch size={14} className="animate-spin" />
                 ) : (

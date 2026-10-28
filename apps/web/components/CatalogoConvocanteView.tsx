@@ -37,6 +37,7 @@ import {
   Td,
   Th,
 } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 /** Una diferencia de cantidad, dicha en la dirección en que duele. */
 function Diferencia({ renglon }: { renglon: RenglonConvocante }) {
@@ -86,6 +87,10 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
     };
   }, [id]);
 
+  // Replacing a catalog that already has rows replaces the signed contract
+  // the estimaciones are measured against: it asks first.
+  const [porReemplazar, setPorReemplazar] = useState<File | null>(null);
+
   async function subir(file: File) {
     setCargando(true);
     setError(null);
@@ -122,6 +127,21 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
           <Callout tone="danger">{error}</Callout>
         </div>
       )}
+      <ConfirmDialog
+        open={porReemplazar !== null}
+        title={`Reemplazar los ${renglones.length} renglones del catálogo del contrato`}
+        description={`Se cambian por los de «${porReemplazar?.name ?? ""}». Las estimaciones y los convenios se miden contra este catálogo.`}
+        confirmLabel="Reemplazar catálogo"
+        onConfirm={() => {
+          const f = porReemplazar;
+          setPorReemplazar(null);
+          if (f) void subir(f);
+        }}
+        onCancel={() => {
+          setPorReemplazar(null);
+          if (archivo.current) archivo.current.value = "";
+        }}
+      />
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <input
@@ -131,7 +151,9 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
-            if (f) void subir(f);
+            if (!f) return;
+            if (renglones.length > 0) setPorReemplazar(f);
+            else void subir(f);
           }}
         />
         <Button onClick={() => archivo.current?.click()} disabled={cargando}>

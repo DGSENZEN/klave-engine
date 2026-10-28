@@ -300,12 +300,22 @@ function LineRows({
       <tr className="cursor-pointer border-b border-border bg-surface-2/50" onClick={onToggle}>
         <td colSpan={4} className="px-4 py-1.5">
           <span className="flex items-center gap-2">
-            <CaretDown size={12} weight="bold" className={`text-faint transition-transform ${open ? "" : "-rotate-90"}`} />
-            <span className="microlabel">{line.phase}</span>
-            <span className="font-medium">{line.description}</span>
-            <span className="text-xs text-muted">
-              · {line.variants.length} {line.variants.length === 1 ? "variante" : "variantes"}
-            </span>
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle();
+              }}
+              className="flex items-center gap-2 rounded-sm text-left"
+            >
+              <CaretDown size={12} weight="bold" className={`text-faint transition-transform ${open ? "" : "-rotate-90"}`} />
+              <span className="microlabel">{line.phase}</span>
+              <span className="font-medium">{line.description}</span>
+              <span className="text-xs text-muted">
+                · {line.variants.length} {line.variants.length === 1 ? "variante" : "variantes"}
+              </span>
+            </button>
             <Link
               href={`/proyecto/${projectId}/plano?concept=${encodeURIComponent(line.concept_code)}`}
               className="text-xs text-muted underline"

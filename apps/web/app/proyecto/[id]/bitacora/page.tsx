@@ -30,6 +30,7 @@ import {
 } from "@/lib/api";
 import { getBrowserActor } from "@/lib/collab";
 import { isoDateLocal } from "@/lib/time";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   Badge,
   Button,
@@ -117,6 +118,8 @@ export default function BitacoraPage() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [borrador, setBorrador] = useState<NotaBitacora | null>(null);
+  const [confirmar, setConfirmar] = useState(false);
+  const [asentando, setAsentando] = useState(false);
 
   const leer = useCallback(async () => {
     const r = await getBitacora(id);
@@ -157,7 +160,10 @@ export default function BitacoraPage() {
   }
 
   async function asentar() {
-    if (!borrador) return;
+    // Una nota asentada no se edita ni se quita: un segundo envío sería un
+    // duplicado permanente en el registro.
+    if (!borrador || asentando) return;
+    setAsentando(true);
     setError(null);
     try {
       await asentarNota(id, borrador, getBrowserActor());
@@ -166,6 +172,8 @@ export default function BitacoraPage() {
     } catch (err) {
       const detalle = (err as { detail?: { message?: string } })?.detail?.message;
       setError(detalle ?? "No se pudo asentar la nota.");
+    } finally {
+      setAsentando(false);
     }
   }
 
@@ -302,10 +310,28 @@ export default function BitacoraPage() {
             <Button variant="ghost" onClick={() => setBorrador(null)}>
               Cancelar
             </Button>
-            <Button onClick={() => void asentar()}>Asentar nota</Button>
+            <Button onClick={() => setConfirmar(true)} disabled={asentando}>
+              {asentando ? "Asentando…" : "Asentar nota"}
+            </Button>
           </div>
         </Card>
       )}
+
+      <ConfirmDialog
+        open={confirmar && !!borrador}
+        title={
+          borrador?.tipo === "apertura"
+            ? "Asentar la nota de apertura — no se podrá editar ni quitar"
+            : `Asentar la nota ${borrador?.numero ?? ""} — no se podrá editar ni quitar`
+        }
+        description="Lo que se asienta obliga. Si algo sale mal, se aclara con otra nota y las dos se quedan."
+        confirmLabel="Asentar"
+        onConfirm={() => {
+          setConfirmar(false);
+          void asentar();
+        }}
+        onCancel={() => setConfirmar(false)}
+      />
 
       {!cargando && notas.length === 0 && !borrador && (
         <EmptyState

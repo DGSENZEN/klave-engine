@@ -126,3 +126,23 @@ def test_la_siguiente_estimacion_carga_sola_lo_acumulado():
 def test_el_avance_de_la_obra_es_contra_el_contrato():
     est = _estimacion(renglones=[_renglon("A", 10_000.0, 2_500.0)])
     assert calcular(est).avance_pct == 25.0
+
+
+def test_primera_estimacion_sale_del_catalogo():
+    from klave_engine.costing.estimaciones import primera_desde_catalogo
+
+    renglones = [
+        {"clave": "OP-001", "description": "Muro de tabique", "unit": "m2",
+         "quantity": 100.0, "unit_price": 500.0},
+        {"clave": "OP-002", "description": "Aplanado", "unit": "m2",
+         "quantity": 40.0, "unit_price": None},
+    ]
+    est = primera_desde_catalogo(renglones, "2026-01-01", "2026-01-31", 50_000.0)
+    assert est.numero == 1
+    assert [r.clave for r in est.renglones] == ["OP-001", "OP-002"]
+    assert [r.quantity_contract for r in est.renglones] == [100.0, 40.0]
+    # Un renglón sin precio no detiene la estimación: entra en cero y se ve.
+    assert est.renglones[1].unit_price == 0.0
+    assert est.renglones[0].quantity_period == 0.0
+    assert est.monto_contrato == 50_000.0
+    assert (est.periodo_inicio, est.periodo_fin) == ("2026-01-01", "2026-01-31")

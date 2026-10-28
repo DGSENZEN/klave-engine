@@ -46,7 +46,10 @@ import {
   Td,
   Th,
 } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { FAMILIES, FAMILY_LABELS } from "@/lib/families";
+import { alCargar, puedeGuardar } from "@/lib/conteos";
+import { pideConfirmarQuitarEnLote } from "@/lib/confirmar";
 import { isDoubtful, LoteDeRevision } from "@/components/LoteDeRevision";
 import { FAMILIES as OMITTED_FAMILIES, OmittedSection } from "@/components/OmittedSection";
 import { PropuestasSection } from "@/components/PropuestasSection";
@@ -230,6 +233,8 @@ export default function RevisionPage() {
     });
   }
 
+  const [confirmarQuitar, setConfirmarQuitar] = useState(false);
+
   async function apply(status: "confirmed" | "excluded" | "none") {
     if (selectedVisible.length === 0) return;
     if (status === "excluded" && !reason.trim()) {
@@ -306,6 +311,17 @@ export default function RevisionPage() {
   const pending = table.total - table.confirmed - table.excluded;
   return (
     <div className="p-6">
+      <ConfirmDialog
+        open={confirmarQuitar}
+        title={`Quitar la revisión de ${selectedVisible.length} elementos`}
+        description="Vuelven a «sin revisar», sin la decisión ni el motivo que tenían. Es la forma de deshacer un lote, no de corregir uno."
+        confirmLabel="Quitar revisión"
+        onCancel={() => setConfirmarQuitar(false)}
+        onConfirm={() => {
+          setConfirmarQuitar(false);
+          void apply("none");
+        }}
+      />
       <PageHeader
         title="Revisión del presupuesto"
         sub="Cada elemento que alimenta una cantidad. Empieza por las dudas; confirma o excluye en lote, con motivo."
@@ -526,7 +542,11 @@ export default function RevisionPage() {
           )}
           <Button
             size="sm"
-            onClick={() => apply("none")}
+            onClick={() =>
+              pideConfirmarQuitarEnLote(selectedVisible.length)
+                ? setConfirmarQuitar(true)
+                : void apply("none")
+            }
             disabled={busy || selectedVisible.length === 0}
           >
             <ArrowCounterClockwise size={14} weight="bold" /> Quitar revisión
@@ -892,6 +912,8 @@ function ConteoSection({
   reloadKey?: unknown;
 }) {
   const [conteos, setConteosState] = useState<ConteosDeProyecto | null>(null);
+  const [cargaFallida, setCargaFallida] = useState(false);
+  const [intento, setIntento] = useState(0);
   const [cobertura, setCobertura] = useState<CoverageFlag[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -917,17 +939,22 @@ function ConteoSection({
   useEffect(() => {
     let cancelled = false;
     getConteos(projectId)
-      .then((c) => !cancelled && setConteos(c))
+      .then((c) => {
+        if (cancelled) return;
+        setConteos(c);
+        setCargaFallida(false);
+      })
       .catch(() => {
         if (cancelled) return;
-        // Still render with what the engine detected — but say so: a
-        // silent empty table here would look identical to "nadie ha
-        // contado nada", and someone could re-enter counts that already
-        // exist and just failed to load.
-        setConteos(CONTEOS_VACIOS);
-        setError(
-          "No se pudieron cargar los conteos guardados; lo que se ve aquí puede estar incompleto.",
+        // A failed reload keeps what is already on screen (alCargar); with
+        // nothing loaded yet the table is read-only, because a save would
+        // replace everyone's counts with a single row.
+        const carga = alCargar(
+          { base: conteosRef.current, error: true },
+          { ok: false },
         );
+        if (carga.base) setConteos(carga.base);
+        setCargaFallida(true);
       });
     // The AI coverage comparison is only ever a pre-fill hint, never the
     // primary data: failing to load it just means no suggestions, silently.
@@ -937,7 +964,7 @@ function ConteoSection({
     return () => {
       cancelled = true;
     };
-  }, [projectId, reloadKey, setConteos]);
+  }, [projectId, reloadKey, intento, setConteos]);
 
   // Live engine counts, per hoja + familia — always the current run, never
   // the possibly-stale snapshot a ConteoHoja happened to save last time.
@@ -957,16 +984,18 @@ function ConteoSection({
   }, [detections]);
 
   const filas = useMemo<Fila[]>(() => {
-    if (!conteos) return [];
+    // Without a loaded base the engine's rows still show, read-only.
+    const vista = conteos ?? (cargaFallida ? CONTEOS_VACIOS : null);
+    if (!vista) return [];
     const saved = new Map(
-      conteos.hojas.map((h) => [filaKey(h.hoja, h.familia), h]),
+      vista.hojas.map((h) => [filaKey(h.hoja, h.familia), h]),
     );
     const aiCount = new Map<string, number>();
     for (const flag of cobertura) {
       aiCount.set(filaKey(flag.frame_code, flag.family), flag.ai_count);
     }
     const pares = new Map(engineInfo.pares);
-    for (const h of conteos.hojas) {
+    for (const h of vista.hojas) {
       // Store the normalized form, not whatever happens to be on disk: a
       // row saved before this fix (or by hand) shows and re-saves in
       // canonical form from here on, healing itself on the next edit.
@@ -990,7 +1019,8 @@ function ConteoSection({
         familyLabel(a.familia).localeCompare(familyLabel(b.familia), "es"),
     );
     return out;
-  }, [conteos, cobertura, engineInfo]);
+  }, [conteos, cargaFallida, cobertura, engineInfo]);
+  const sinBase = conteos === null;
 
   const hojasConocidas = useMemo(
     () =>
@@ -1015,7 +1045,8 @@ function ConteoSection({
     // caller passes in, and matching a pre-existing non-normalized row
     // (saved before this fix, or by hand) still finds it as the same row.
     const row = { ...fila, hoja: normalizarHoja(fila.hoja) };
-    const current = conteosRef.current ?? CONTEOS_VACIOS;
+    const current = conteosRef.current;
+    if (!puedeGuardar({ base: current, error: cargaFallida }) || !current) return false;
     const resto = current.hojas.filter(
       (h) =>
         !(normalizarHoja(h.hoja) === row.hoja && h.familia === row.familia),
@@ -1083,6 +1114,22 @@ function ConteoSection({
         Cuántos hay dibujados
       </SectionTitle>
 
+      {cargaFallida && (
+        <div className="mb-3">
+          <Callout
+            tone="danger"
+            action={
+              <Button size="sm" variant="secondary" onClick={() => setIntento((n) => n + 1)}>
+                Reintentar
+              </Button>
+            }
+          >
+            {sinBase
+              ? "No se pudieron cargar los conteos guardados. Hasta que carguen no se puede capturar: guardar ahora borraría los de los demás."
+              : "No se pudieron actualizar los conteos; lo que ves puede estar desfasado."}
+          </Callout>
+        </div>
+      )}
       {error && (
         <div className="mb-3">
           <Callout tone="danger">{error}</Callout>
@@ -1099,7 +1146,7 @@ function ConteoSection({
           </tr>
         </thead>
         <tbody>
-          {conteos === null && (
+          {conteos === null && !cargaFallida && (
             <tr>
               <td
                 colSpan={4}
@@ -1136,6 +1183,7 @@ function ConteoSection({
                   min={0}
                   defaultValue={fila.dibujados ?? undefined}
                   onBlur={(e) => commitDibujados(fila, e.target.value)}
+                  disabled={sinBase}
                   className="w-20 px-2 py-1 text-right tabular"
                   aria-label={`Dibujados en ${fila.hoja}, ${familyLabel(fila.familia)}`}
                 />
@@ -1195,7 +1243,7 @@ function ConteoSection({
           <Button
             size="sm"
             variant="secondary"
-            disabled={busy || !puedeAgregar}
+            disabled={busy || !puedeAgregar || sinBase}
             onClick={() => void agregar()}
           >
             <PlusCircle size={14} weight="bold" /> Agregar

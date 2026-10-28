@@ -49,6 +49,8 @@ import {
 import { KebabMenu, MenuItem } from "@/components/Menu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { COMPOSER_PICK_ID, NewProjectComposer } from "@/components/NewProjectComposer";
+import { ReprocesarDialog } from "@/components/ReprocesarDialog";
+import { Modal } from "@/components/Modal";
 import { InicioRecorrido } from "@/components/recorrido/InicioRecorrido";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 
@@ -678,6 +680,7 @@ function ProjectRow({
   }
 
   const [reprocessing, setReprocessing] = useState(false);
+  const [confirmReprocess, setConfirmReprocess] = useState(false);
   async function reprocess() {
     setReprocessing(true);
     try {
@@ -801,7 +804,7 @@ function ProjectRow({
             </MenuItem>
             <MenuItem
               onSelect={() => {
-                reprocess();
+                setConfirmReprocess(true);
                 close();
               }}
             >
@@ -845,6 +848,15 @@ function ProjectRow({
   );
 
   const dialog = (
+    <>
+    <ReprocesarDialog
+      open={confirmReprocess}
+      onConfirm={() => {
+        setConfirmReprocess(false);
+        void reprocess();
+      }}
+      onCancel={() => setConfirmReprocess(false)}
+    />
     <ConfirmDialog
       open={removeOpen}
       title="Quitar proyecto de la lista"
@@ -862,6 +874,7 @@ function ProjectRow({
         remove();
       }}
     />
+    </>
   );
 
   if (editing) {

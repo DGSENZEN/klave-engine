@@ -38,6 +38,7 @@ from klave_engine.costing.estimaciones import (
     Estimacion,
     RenglonEstimado,
     calcular,
+    primera_desde_catalogo,
     siguiente,
 )
 from klave_engine.costing.exports import build_estimacion_workbook
@@ -243,6 +244,40 @@ def guardar_estimacion(
     datos.sort(key=lambda d: int(d.get("numero", 0)))
     _guardar(store, settings, project_id, ESTIMACIONES, datos)
     BUS.publish("estimacion_guardada", project_id, clean_actor(x_actor))
+    return {"estimacion": est.model_dump(mode="json"), "resumen": vars(calcular(est))}
+
+
+@router.post("/{project_id}/estimaciones/primera")
+def crear_primera(
+    project_id: str,
+    inicio: str,
+    fin: str,
+    store: ProjectStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """La estimación 1, del catálogo del contrato. Es borrador: se guarda con
+    el PUT de siempre, igual que la siguiente."""
+    if _leer(store, settings, project_id, ESTIMACIONES):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_type": "ya_hay_estimaciones",
+                "message": "Ya hay estimaciones; la que sigue se encadena de la anterior.",
+            },
+        )
+    catalogo = _leer(store, settings, project_id, CATALOGO) or {}
+    renglones = catalogo.get("renglones") or []
+    if not renglones:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_type": "sin_catalogo",
+                "message": "Carga el catálogo del contrato para capturar la primera estimación.",
+            },
+        )
+    est = primera_desde_catalogo(
+        renglones, inicio, fin, _monto_contrato(store, settings, project_id)
+    )
     return {"estimacion": est.model_dump(mode="json"), "resumen": vars(calcular(est))}
 
 

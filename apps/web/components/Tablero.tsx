@@ -24,6 +24,7 @@ import { useTablero } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
 import { timeAgo } from "@/lib/time";
 import { Avatar, Button, Skeleton } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 /**
  * El tablero como lienzo de verdad: los nodos viven en coordenadas, se
@@ -352,6 +353,8 @@ export function TableroBoard({ id }: { id: string }) {
     persist(id, stateRef.current.layout, next);
   }
 
+  const [cerrarNodo, setCerrarNodo] = useState<TableroNodeKey | null>(null);
+
   async function toggleGate(node: TableroNodeKey, approved: boolean) {
     setGateBusy(node);
     setGateError(null);
@@ -617,7 +620,7 @@ export function TableroBoard({ id }: { id: string }) {
                   variant="ghost"
                   disabled={gateBusy === menuFor}
                   className="w-full"
-                  onClick={() => toggleGate(menuFor, false)}
+                  onClick={() => setCerrarNodo(menuFor)}
                 >
                   Cerrar nodo
                 </Button>
@@ -659,6 +662,19 @@ export function TableroBoard({ id }: { id: string }) {
         </button>
       </div>
       <ActivityDock activities={activities} timeline={timeline} />
+      <ConfirmDialog
+        open={cerrarNodo !== null}
+        title={`Cerrar ${NODE_NAV.find((n) => n.key === cerrarNodo)?.label ?? "el nodo"} — quien esté trabajando ahí verá el aviso`}
+        description="Lo que ya guardaron se conserva. Quien entre después verá el candado hasta que se vuelva a abrir."
+        confirmLabel="Cerrar nodo"
+        onConfirm={() => {
+          const nodo = cerrarNodo;
+          setCerrarNodo(null);
+          setMenuFor(null);
+          if (nodo) void toggleGate(nodo, false);
+        }}
+        onCancel={() => setCerrarNodo(null)}
+      />
     </div>
   );
 }

@@ -73,7 +73,10 @@ import {
   undoImport,
   type CatalogImport,
 } from "@/lib/api";
+import { inicialCostoHorario } from "@/lib/costoHorario";
 import Link from "next/link";
+import { createPortal } from "react-dom";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { getBrowserActor } from "@/lib/collab";
 import { isProjectSlug } from "@/lib/nodeNav";
 import { BaseSheet } from "@/components/BaseSheet";
@@ -1888,6 +1891,8 @@ function ConceptRows({
     void saveDraft(draft);
   }
 
+  const [porQuitar, setPorQuitar] = useState<string | null>(null);
+
   function removeComponent(resourceCode: string) {
     const next = draft.filter((component) => component.resource_code !== resourceCode);
     setDraft(next);
@@ -1974,6 +1979,22 @@ function ConceptRows({
 
   return (
     <>
+      {porQuitar !== null &&
+        createPortal(
+          <ConfirmDialog
+            open
+            title={`Quitar ${porQuitar} de la matriz de ${concept.code}`}
+            description="El precio unitario del concepto se recalcula sin ese insumo."
+            confirmLabel="Quitar de la matriz"
+            onConfirm={() => {
+              const code = porQuitar;
+              setPorQuitar(null);
+              removeComponent(code);
+            }}
+            onCancel={() => setPorQuitar(null)}
+          />,
+          document.body,
+        )}
       <tr
         data-concept-row={concept.code}
         className={`cursor-pointer border-b border-border transition-colors hover:bg-surface-2/50 ${
@@ -2140,9 +2161,9 @@ function ConceptRows({
                   </div>
                   <button
                     type="button"
-                    aria-label={`Quitar ${insumo.code}`}
-                    onClick={() => removeComponent(component.resource_code)}
-                    className="rounded-md p-1 text-faint opacity-0 transition group-hover:opacity-100 hover:bg-danger-soft hover:text-danger"
+                    aria-label={`Quitar ${insumo.code} de la matriz`}
+                    onClick={() => setPorQuitar(component.resource_code)}
+                    className="rounded-md p-1 text-faint transition hover:bg-danger-soft hover:text-danger"
                   >
                     <Trash size={14} />
                   </button>
@@ -3387,17 +3408,32 @@ function EquipmentDialog({
   onError: (message: string) => void;
 }) {
   const [params, setParams] = useState<EquipmentParameters | null>(null);
+  const [origen, setOrigen] = useState<"guardado" | "partida" | "error" | null>(null);
+  const [intento, setIntento] = useState(0);
   const [breakdown, setBreakdown] = useState<EquipmentBreakdown | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    let vivo = true;
     getEquipment(insumo.code)
       .then((r) => {
-        setParams(r.params ?? EQ_DEFAULTS);
+        if (!vivo) return;
+        const inicial = inicialCostoHorario({ ok: true, data: r.params }, EQ_DEFAULTS);
+        setParams(inicial.params);
+        setOrigen(inicial.origen);
         setBreakdown(r.breakdown);
       })
-      .catch(() => setParams(EQ_DEFAULTS));
-  }, [insumo.code]);
+      .catch((err: unknown) => {
+        if (!vivo) return;
+        const status = err instanceof ApiError ? err.status : undefined;
+        const inicial = inicialCostoHorario<EquipmentParameters>({ ok: false, status }, EQ_DEFAULTS);
+        setParams(inicial.params);
+        setOrigen(inicial.origen);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [insumo.code, intento]);
 
   const estimate = useMemo(() => {
     if (!params) return null;
@@ -3453,7 +3489,26 @@ function EquipmentDialog({
         )
       }
     >
-      {params === null ? (
+      {origen === "error" ? (
+        <Callout
+          tone="danger"
+          action={
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setOrigen(null);
+                setIntento((n) => n + 1);
+              }}
+            >
+              Reintentar
+            </Button>
+          }
+        >
+          No se pudo cargar el costo horario guardado de {insumo.code}. No se muestran
+          valores de partida para no escribirlos encima del análisis real.
+        </Callout>
+      ) : params === null ? (
         <div className="grid gap-2 sm:grid-cols-2" aria-busy="true">
           {Array.from({ length: 6 }, (_, i) => (
             <Skeleton key={i} className="h-7" />
@@ -3461,6 +3516,11 @@ function EquipmentDialog({
         </div>
       ) : (
         <>
+          {origen === "partida" && (
+            <div className="mb-3">
+              <Callout tone="info">Sin análisis guardado: valores de partida</Callout>
+            </div>
+          )}
           <div className="grid gap-2 sm:grid-cols-2">
             {EQ_FIELDS.map((field) => (
               <label

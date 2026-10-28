@@ -56,6 +56,7 @@ import {
   SkeletonMetrics,
   Tabs,
 } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const LECTURA_TABS = [
   "hojas",
@@ -232,6 +233,9 @@ export default function LecturaPage() {
     }
   }
 
+  // A workshop mapping applies to every project: removing it asks first.
+  const [porQuitarMapeo, setPorQuitarMapeo] = useState<InventoryMapping | null>(null);
+
   async function unassign(mapping: InventoryMapping) {
     try {
       await deleteInventoryMapping(mapping.id, getBrowserActor());
@@ -312,6 +316,18 @@ export default function LecturaPage() {
 
   return (
     <div className="rise-in px-6 py-7 lg:px-8">
+      <ConfirmDialog
+        open={porQuitarMapeo !== null}
+        title={`Quitar el mapeo ${porQuitarMapeo?.pattern ?? ""} → ${porQuitarMapeo?.concept_code ?? ""}; afecta a todos los proyectos del taller`}
+        description="Los proyectos que lo usan dejan de contar esas piezas en ese concepto al recalcularse."
+        confirmLabel="Quitar mapeo"
+        onCancel={() => setPorQuitarMapeo(null)}
+        onConfirm={() => {
+          const m = porQuitarMapeo;
+          setPorQuitarMapeo(null);
+          if (m) void unassign(m);
+        }}
+      />
       <PageHeader
         title="Lectura del plano"
         sub="Qué leyó Klave de tus archivos: conversión, entidades, capas, bloques y lo que se omitió. Con esto sabes si puedes confiar en lo demás."
@@ -646,7 +662,7 @@ export default function LecturaPage() {
                   concepts={concepts}
                   mappings={mappings}
                   onAssign={assign}
-                  onUnassign={unassign}
+                  onUnassign={setPorQuitarMapeo}
                   busy={mappingBusy !== null}
                 />
               ))}

@@ -56,6 +56,8 @@ import {
   Select,
   Skeleton,
 } from "@/components/ui";
+import { ReprocesarDialog } from "@/components/ReprocesarDialog";
+import { accionDeTecla } from "@/lib/teclasVisor";
 import { useProjectLive } from "@/components/ProjectLive";
 import { useCostReport } from "@/lib/useProjectReport";
 import { ConceptPicker } from "@/components/ConceptPicker";
@@ -92,6 +94,15 @@ export default function PlanoPage() {
   );
   const [minConfidence, setMinConfidence] = useState(0);
   const [selected, setSelected] = useState<DetectionOverlay | null>(null);
+  // X (and «Excluir») open the motivo before anything is excluded.
+  const [pidiendoMotivo, setPidiendoMotivo] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [ultimoSeleccionado, setUltimoSeleccionado] = useState<string | null>(null);
+  if ((selected?.id ?? null) !== ultimoSeleccionado) {
+    setUltimoSeleccionado(selected?.id ?? null);
+    setPidiendoMotivo(false);
+    setReviewError(null);
+  }
   // El recorrido avanza con cualquier selección: clic en el plano o ← →.
   const seleccionId = selected?.id ?? null;
   useEffect(() => {
@@ -203,6 +214,7 @@ export default function PlanoPage() {
       : null;
   const [geomError, setGeomError] = useState<"missing" | "failed" | null>(null);
   const [reprocessing, setReprocessing] = useState(false);
+  const [confirmReprocess, setConfirmReprocess] = useState(false);
   const router = useRouter();
 
   // connectionEpoch: a reconnect may have skipped events, so reload everything.
@@ -329,8 +341,10 @@ export default function PlanoPage() {
           clientId,
         );
       } catch {
-        return;
+        setReviewError("No se guardó la revisión; reintenta.");
+        return false;
       }
+      setReviewError(null);
       setGeom((current) => {
         if (!current) return current;
         const detections = current.detections.map((d) =>
@@ -353,6 +367,7 @@ export default function PlanoPage() {
             }
           : current,
       );
+      return true;
     },
     [actorName, clientId, id],
   );
@@ -466,10 +481,18 @@ export default function PlanoPage() {
         return;
       }
       if (!selected) return;
-      const key = event.key.toLowerCase();
-      if (key === "c") void review(selected, "confirmed");
-      else if (key === "x") void review(selected, "excluded");
-      else if (key === "q") void review(selected, "none");
+      const accion = accionDeTecla(event.key, {
+        enCampo: false,
+        seleccionado: true,
+        motivoAbierto: pidiendoMotivo,
+        midiendo: false,
+        excluido: selected.review === "excluded",
+      });
+      if (accion === "confirmar") void review(selected, "confirmed");
+      else if (accion === "pedir-motivo") {
+        event.preventDefault();
+        setPidiendoMotivo(true);
+      } else if (accion === "quitar") void review(selected, "none");
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
@@ -480,6 +503,7 @@ export default function PlanoPage() {
     review,
     selected,
     effectiveFamilies,
+    pidiendoMotivo,
   ]);
 
   const reviewCounts = useMemo(() => {
@@ -510,6 +534,17 @@ export default function PlanoPage() {
     const missing = geomError === "missing";
     return (
       <div className="px-6 py-7 lg:px-8">
+        <ReprocesarDialog
+          open={confirmReprocess}
+          onConfirm={() => {
+            setConfirmReprocess(false);
+            setReprocessing(true);
+            processProject(id)
+              .then(() => router.push(`/proyecto/${id}`))
+              .catch(() => setReprocessing(false));
+          }}
+          onCancel={() => setConfirmReprocess(false)}
+        />
         <PageHeader title="Visor del plano" />
         <Callout
           tone={missing ? "warning" : "danger"}
@@ -518,12 +553,7 @@ export default function PlanoPage() {
               <Button
                 size="sm"
                 disabled={reprocessing}
-                onClick={() => {
-                  setReprocessing(true);
-                  processProject(id)
-                    .then(() => router.push(`/proyecto/${id}`))
-                    .catch(() => setReprocessing(false));
-                }}
+                onClick={() => setConfirmReprocess(true)}
               >
                 {reprocessing ? "Encolando…" : "Reprocesar"}
               </Button>
@@ -819,7 +849,7 @@ export default function PlanoPage() {
                   <Button
                     size="sm"
                     variant="danger"
-                    onClick={() => review(selected, "excluded")}
+                    onClick={() => setPidiendoMotivo(true)}
                   >
                     <Prohibit size={14} weight="bold" /> Excluir
                   </Button>
@@ -834,8 +864,22 @@ export default function PlanoPage() {
                   </Button>
                 )}
               </div>
+              {pidiendoMotivo && selected.review !== "excluded" && (
+                <MotivoExclusion
+                  key={selected.review_key}
+                  onExcluir={async (motivo) => {
+                    if (await review(selected, "excluded", motivo)) setPidiendoMotivo(false);
+                  }}
+                  onCancelar={() => setPidiendoMotivo(false)}
+                />
+              )}
+              {reviewError && (
+                <div className="mt-2">
+                  <Callout tone="danger">{reviewError}</Callout>
+                </div>
+              )}
               <p className="mt-2 text-[11px] text-faint">
-                Teclas: C confirmar · X excluir · Q quitar · ← → siguiente
+                Teclas: C confirmar · X excluir (pide motivo) · Q quitar · ← → siguiente
               </p>
               {selected.review === "excluded" && (
                 <ReviewNote
@@ -1208,6 +1252,49 @@ function MeasureResult({
   );
 }
 
+/** El motivo antes de excluir: Enter excluye con él, Esc cancela. Sin
+ * motivo no se excluye — es lo que defiende el número meses después. */
+function MotivoExclusion({
+  onExcluir,
+  onCancelar,
+}: {
+  onExcluir: (motivo: string) => void | Promise<void>;
+  onCancelar: () => void;
+}) {
+  const [motivo, setMotivo] = useState("");
+  const [falta, setFalta] = useState(false);
+  return (
+    <div className="mt-2">
+      <Input
+        autoFocus
+        value={motivo}
+        onChange={(e) => {
+          setMotivo(e.target.value);
+          setFalta(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            if (motivo.trim() === "") setFalta(true);
+            else void onExcluir(motivo.trim());
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            onCancelar();
+          }
+        }}
+        aria-label="Motivo de la exclusión"
+        placeholder="Motivo de la exclusión · Enter excluye · Esc cancela"
+        maxLength={300}
+        className="w-full px-2.5 py-1.5 text-xs"
+      />
+      {falta && (
+        <p className="mt-1 text-xs text-danger">Escribe el motivo para excluir.</p>
+      )}
+    </div>
+  );
+}
+
 function ReviewNote({
   initial,
   onCommit,
@@ -1221,12 +1308,13 @@ function ReviewNote({
       value={note}
       onChange={(e) => setNote(e.target.value)}
       onBlur={() => {
-        if (note.trim() !== initial) onCommit(note.trim());
+        // An exclusion keeps its motivo: clearing the field does not erase it.
+        if (note.trim() !== "" && note.trim() !== initial) onCommit(note.trim());
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter") e.currentTarget.blur();
       }}
-      placeholder="Motivo de la exclusión (opcional)"
+      placeholder="Motivo de la exclusión"
       maxLength={300}
       className="mt-2 w-full px-2.5 py-1.5 text-xs"
     />

@@ -354,3 +354,41 @@ def test_la_bitacora_se_lee_de_corrido_con_su_estado(client, data_dir):
     assert cuerpo["estado"]["cerrada"] is False
     assert cuerpo["estado"]["siguiente_numero"] == 3
     assert cuerpo["estado"]["por_parte"] == {"contratante": 1, "contratista": 1}
+
+
+def test_primera_estimacion_sin_catalogo_es_409(client, data_dir):
+    pid = _proyecto(data_dir)
+    r = client.post(f"/projects/{pid}/estimaciones/primera",
+                    params={"inicio": "2026-01-01", "fin": "2026-01-31"})
+    assert r.status_code == 409
+    assert r.json()["detail"]["error_type"] == "sin_catalogo"
+
+
+def test_primera_estimacion_con_estimaciones_es_409(client, data_dir):
+    pid = _proyecto(data_dir)
+    _escribir(data_dir, pid, "estimaciones.json", [ESTIMACION_1])
+    _escribir(data_dir, pid, "catalogo_convocante.json",
+              {"renglones": [{"clave": "OP-001", "quantity": 100.0, "unit_price": 500.0}]})
+    r = client.post(f"/projects/{pid}/estimaciones/primera",
+                    params={"inicio": "2026-01-01", "fin": "2026-01-31"})
+    assert r.status_code == 409
+    assert r.json()["detail"]["error_type"] == "ya_hay_estimaciones"
+
+
+def test_primera_estimacion_trae_los_renglones_del_catalogo(client, data_dir):
+    pid = _proyecto(data_dir)
+    _escribir(data_dir, pid, "catalogo_convocante.json", {"renglones": [
+        {"clave": "OP-001", "description": "Muro de tabique", "unit": "m2",
+         "quantity": 100.0, "unit_price": 500.0},
+        {"clave": "OP-002", "description": "Aplanado", "unit": "m2",
+         "quantity": 40.0},
+    ]})
+    r = client.post(f"/projects/{pid}/estimaciones/primera",
+                    params={"inicio": "2026-01-01", "fin": "2026-01-31"})
+    assert r.status_code == 200, r.text
+    est = r.json()["estimacion"]
+    assert est["numero"] == 1
+    assert [x["clave"] for x in est["renglones"]] == ["OP-001", "OP-002"]
+    assert est["monto_contrato"] == 50_000.0
+    # Es un borrador: no se guarda hasta que la persona lo guarde.
+    assert client.get(f"/projects/{pid}/estimaciones").json()["estimaciones"] == []

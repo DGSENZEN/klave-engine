@@ -15,14 +15,18 @@
  */
 
 import { Fragment, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { DownloadSimple, Plus, Receipt, Ruler, TrendUp } from "@phosphor-icons/react";
 import {
+  apiMessage,
   descargarEstimacion,
+  getCatalogoConvocante,
   getEstimaciones,
   getUnidadesGenerador,
   guardarEstimacion,
   money,
+  primeraEstimacion,
   siguienteEstimacion,
   type Estimacion,
   type EstimacionConResumen,
@@ -33,6 +37,7 @@ import { isoDateLocal } from "@/lib/time";
 import { GeneradorEditor } from "@/components/GeneradorEditor";
 import {
   Button,
+  buttonClasses,
   Callout,
   Card,
   EmptyState,
@@ -62,6 +67,10 @@ export default function EstimacionesPage() {
   const [borrador, setBorrador] = useState<Estimacion | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cargaFallida, setCargaFallida] = useState(false);
+  const [intento, setIntento] = useState(0);
+  // Renglones del catálogo del contrato: de ahí sale la estimación 1.
+  const [renglonesCatalogo, setRenglonesCatalogo] = useState<number | null>(null);
 
   const leer = useCallback(async () => {
     const r = await getEstimaciones(id);
@@ -72,12 +81,19 @@ export default function EstimacionesPage() {
   useEffect(() => {
     let vivo = true;
     getEstimaciones(id)
-      .then((r) => vivo && setLista(r.estimaciones))
-      .catch(() => vivo && setError("No se pudieron leer las estimaciones."));
+      .then((r) => {
+        if (!vivo) return;
+        setLista(r.estimaciones);
+        setCargaFallida(false);
+      })
+      .catch(() => vivo && setCargaFallida(true));
+    getCatalogoConvocante(id)
+      .then((c) => vivo && setRenglonesCatalogo(c.renglones.length))
+      .catch(() => vivo && setRenglonesCatalogo(null));
     return () => {
       vivo = false;
     };
-  }, [id]);
+  }, [id, intento]);
 
   async function crearSiguiente() {
     setBusy(true);
@@ -87,11 +103,23 @@ export default function EstimacionesPage() {
       const r = await siguienteEstimacion(id, inicio, finDeMes(inicio));
       setBorrador(r.estimacion);
       setAbierta(r.estimacion.numero);
-    } catch {
-      setError(
-        "No hay una estimación anterior de la cual continuar. La primera se captura con " +
-        "el catálogo contratado.",
-      );
+    } catch (err) {
+      setError(apiMessage(err, "No se pudo preparar la siguiente estimación."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function crearPrimera() {
+    setBusy(true);
+    setError(null);
+    try {
+      const inicio = hoy();
+      const r = await primeraEstimacion(id, inicio, finDeMes(inicio));
+      setBorrador(r.estimacion);
+      setAbierta(r.estimacion.numero);
+    } catch (err) {
+      setError(apiMessage(err, "No se pudo preparar la estimación 1."));
     } finally {
       setBusy(false);
     }
@@ -110,6 +138,24 @@ export default function EstimacionesPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (!lista && cargaFallida) {
+    return (
+      <div className="px-6 py-7 lg:px-8">
+        <PageHeader title="Estimaciones" />
+        <Callout
+          tone="danger"
+          action={
+            <Button size="sm" variant="secondary" onClick={() => setIntento((n) => n + 1)}>
+              Reintentar
+            </Button>
+          }
+        >
+          No se pudieron leer las estimaciones.
+        </Callout>
+      </div>
+    );
   }
 
   if (!lista) {
@@ -175,21 +221,39 @@ export default function EstimacionesPage() {
         </div>
       )}
 
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <Button onClick={() => void crearSiguiente()} disabled={busy}>
-          <Plus size={14} weight="bold" /> Nueva estimación
-        </Button>
-        <span className="text-xs text-muted">
-          Se genera con lo acumulado y lo amortizado ya cargados, para no cobrar dos veces
-          el mismo metro.
-        </span>
-      </div>
+      {lista.length > 0 && (
+        <div className="mb-6 flex flex-wrap items-center gap-3">
+          <Button onClick={() => void crearSiguiente()} disabled={busy}>
+            <Plus size={14} weight="bold" /> {busy ? "Preparando…" : "Nueva estimación"}
+          </Button>
+          <span className="text-xs text-muted">
+            Se genera con lo acumulado y lo amortizado ya cargados, para no cobrar dos veces
+            el mismo metro.
+          </span>
+        </div>
+      )}
 
       {lista.length === 0 && !borrador && (
         <EmptyState
           icon={<Receipt size={22} weight="duotone" />}
           title="Sin estimaciones todavía"
-          hint="La primera se captura con el catálogo contratado, sus precios y lo medido en el periodo. Klave calcula la amortización, la retención y el líquido."
+          hint={
+            renglonesCatalogo
+              ? `La estimación 1 sale de los ${renglonesCatalogo} renglones del catálogo del contrato; tú capturas lo medido en el periodo. Klave calcula la amortización, la retención y el líquido.`
+              : "La estimación 1 sale del catálogo del contrato. Cárgalo primero; después capturas lo medido en el periodo."
+          }
+          action={
+            renglonesCatalogo ? (
+              <Button onClick={() => void crearPrimera()} disabled={busy}>
+                <Plus size={14} weight="bold" />{" "}
+                {busy ? "Preparando…" : "Capturar la estimación 1"}
+              </Button>
+            ) : (
+              <Link href={`/proyecto/${id}/contrato`} className={buttonClasses("primary", "md")}>
+                Cargar el catálogo del contrato
+              </Link>
+            )
+          }
         />
       )}
 
