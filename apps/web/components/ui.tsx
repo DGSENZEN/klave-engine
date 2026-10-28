@@ -394,7 +394,7 @@ export function Avatar({
   self?: boolean;
   size?: "xs" | "sm" | "md";
   title?: string;
-  /** Optional photo (e.g. Google account); falls back to initials. */
+  /** Optional photo; falls back to initials. */
   src?: string | null;
 }) {
   const sizes: Record<string, string> = {

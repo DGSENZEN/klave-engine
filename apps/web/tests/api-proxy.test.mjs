@@ -104,12 +104,12 @@ test("redirects stay manual and internal redirect URLs map to the public prefix"
   assert.equal(res.headers.get("location"), "/api/projects/?page=2");
 });
 
-test("Google redirects are returned to the browser rather than followed internally", async (t) => {
+test("external redirects are returned to the browser rather than followed internally", async (t) => {
   binding(t);
   t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 307,
-    headers: { location: "https://accounts.google.com/o/oauth2/v2/auth?state=synthetic" } }));
-  const res = await proxyAPI(new Request("https://pilot.example/api/auth/google"));
-  assert.equal(res.headers.get("location"), "https://accounts.google.com/o/oauth2/v2/auth?state=synthetic");
+    headers: { location: "https://elsewhere.example/landing?state=synthetic" } }));
+  const res = await proxyAPI(new Request("https://pilot.example/api/projects"));
+  assert.equal(res.headers.get("location"), "https://elsewhere.example/landing?state=synthetic");
 });
 
 test("export bytes, filenames and empty 204 responses survive forwarding", async (t) => {

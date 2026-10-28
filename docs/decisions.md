@@ -75,3 +75,9 @@
 - Why: inputs rendered at 38 px and buttons at 36 px, so stacked fields and buttons did not share an edge; single-task forms get a tall size, the rest of the app keeps its density.
 - Rejected: changing the app-wide Input and Button heights.
 - Rests on: ButtonSize "lg" in apps/web/components/ui.tsx; AUTH_INPUT in apps/web/components/AuthFields.tsx.
+
+## 2026-10-27 · Accounts are email and password only; Google sign-in is removed
+- Decided by: the designer
+- Why: production never had Google credentials, and with invite-only registration it could not sign anyone up; one sign-in path is less to test and explain during the pilot.
+- Rejected: leaving the code dormant behind missing keys.
+- Rests on: apps/api/auth/routes.py and apps/web/app/(acceso)/; the users.google_sub column stays so existing tables need no migration. Supersedes the Google step of the recovery decision above.

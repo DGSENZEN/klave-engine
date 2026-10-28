@@ -8,7 +8,6 @@ import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   CaretDown,
-  GoogleLogo,
   HourglassMedium,
   SignOut,
   UserCircle,
@@ -18,7 +17,6 @@ import { completeProfile } from "@/lib/identity";
 import {
   apiMessage,
   fetchAuthStatus,
-  googleLoginUrl,
   login,
   logout,
   register,
@@ -28,7 +26,6 @@ import {
 import { AuthFrame, AuthSwitch } from "@/components/AuthFrame";
 import {
   AUTH_INPUT,
-  Divider,
   Field,
   PasswordField,
   recallAuthEmail,
@@ -40,13 +37,7 @@ import { Avatar, Badge, buttonClasses, Callout, Checkbox, Input, Skeleton } from
 type UrlNotice =
   | "session_expired"
   | "pending"
-  | "google"
-  | "google_unverified"
-  | "google_link_required"
   | "db"
-  | "disabled"
-  | "invite"
-  | "invite_email"
   | null;
 
 const NOTICES: Record<Exclude<UrlNotice, null>, { tone: "info" | "danger"; text: string }> = {
@@ -55,24 +46,9 @@ const NOTICES: Record<Exclude<UrlNotice, null>, { tone: "info" | "danger"; text:
     tone: "info",
     text: "Tu cuenta fue creada y espera la aprobación de un administrador del taller.",
   },
-  google: { tone: "danger", text: "No se pudo iniciar sesión con Google. Inténtalo de nuevo." },
-  google_unverified: {
-    tone: "danger",
-    text: "Google no ha verificado el correo de esa cuenta; verifica tu correo en Google o entra con contraseña.",
-  },
-  google_link_required: {
-    tone: "info",
-    text: "Ya existe una cuenta con ese correo. Entra con tu contraseña y vincula Google desde Tu cuenta; así nadie puede tomar tu cuenta solo con un correo parecido.",
-  },
   db: {
     tone: "danger",
     text: "La base de datos de usuarios no está disponible; inténtalo de nuevo o contacta al administrador del taller.",
-  },
-  disabled: { tone: "danger", text: "Tu cuenta está deshabilitada." },
-  invite: { tone: "danger", text: "La invitación ya no es válida; pide una nueva a tu administrador." },
-  invite_email: {
-    tone: "danger",
-    text: "La cuenta de Google no coincide con el correo invitado. Usa esa cuenta o crea la contraseña.",
   },
 };
 
@@ -138,9 +114,9 @@ export default function BienvenidaPage() {
       ) : auth.user ? (
         <SessionPanel user={auth.user} />
       ) : auth.mode === "protected" ? (
-        <SignInForm googleEnabled={auth.google_enabled} />
+        <SignInForm />
       ) : auth.mode === "open" ? (
-        <OpenModePanel googleEnabled={auth.google_enabled} />
+        <OpenModePanel />
       ) : null}
     </AuthFrame>
   );
@@ -231,7 +207,7 @@ function SessionPanel({ user }: { user: AuthUser }) {
 
 /* -------------------------------------------------------------- sign in --- */
 
-function SignInForm({ googleEnabled }: { googleEnabled: boolean }) {
+function SignInForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -263,16 +239,7 @@ function SignInForm({ googleEnabled }: { googleEnabled: boolean }) {
   }
 
   return (
-    <>
-      {googleEnabled && (
-        <>
-          <a href={googleLoginUrl()} className={buttonClasses("secondary", "lg", "w-full")}>
-            <GoogleLogo size={16} weight="bold" /> Continuar con Google
-          </a>
-          <Divider>o</Divider>
-        </>
-      )}
-      <form onSubmit={submit} className="space-y-4">
+    <form onSubmit={submit} className="space-y-4">
         <Field label="Correo electrónico" htmlFor="correo">
           <Input
             id="correo"
@@ -312,14 +279,13 @@ function SignInForm({ googleEnabled }: { googleEnabled: boolean }) {
           </div>
         )}
         <SubmitButton busy={busy} label="Entrar" busyLabel="Entrando…" />
-      </form>
-    </>
+    </form>
   );
 }
 
 /* ------------------------------------------------------------ open mode --- */
 
-function OpenModePanel({ googleEnabled }: { googleEnabled: boolean }) {
+function OpenModePanel() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [touched, setTouched] = useState(false);
@@ -404,8 +370,7 @@ function OpenModePanel({ googleEnabled }: { googleEnabled: boolean }) {
         {showAccounts && (
           <form onSubmit={createAdmin} className="mt-5 space-y-4">
             <p className="text-xs text-muted">
-              La primera cuenta es la de administrador
-              {googleEnabled ? "; después también podrás entrar con Google." : "."}
+              La primera cuenta es la de administrador.
             </p>
             <Field label="Nombre y apellido" htmlFor="admin-nombre">
               <Input

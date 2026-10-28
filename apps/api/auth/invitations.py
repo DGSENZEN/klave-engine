@@ -3,8 +3,7 @@
 An admin invites an address with a role and optional project grants. The
 link (mailed when a provider exists, always returned to the admin so it can
 be handed over by other means) lands on /invitacion, where the invitee sets
-a name and password — or continues with Google on the same address — and
-comes out active and verified. Open invitations can be resent or revoked.
+a name and password and comes out active and verified. Open invitations can be resent or revoked.
 """
 
 from typing import Any, Literal
@@ -218,7 +217,6 @@ def resend_invitation(
 def invitation_info(
     token: str,
     users: UserStore = Depends(users_dependency),
-    settings: Settings = Depends(get_settings),
 ) -> dict:
     try:
         invite = users.get_invitation_by_token(token)
@@ -234,7 +232,6 @@ def invitation_info(
         "inviter_name": invite.get("inviter_name"),
         "project_count": len(invite.get("project_grants") or []),
         "expires_at": invite["expires_at"].isoformat(),
-        "google_enabled": bool(settings.auth_google_id and settings.auth_google_secret),
     }
 
 

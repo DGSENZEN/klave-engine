@@ -65,9 +65,6 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
     has_password = (
         bool(user["has_password"]) if "has_password" in user else bool(user.get("password_hash"))
     )
-    has_google = (
-        bool(user["has_google"]) if "has_google" in user else bool(user.get("google_sub"))
-    )
     return {
         "user_id": str(user["user_id"]),
         "email": user["email"],
@@ -78,7 +75,6 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
         "email_verified": user.get("email_verified_at") is not None,
         "pending_email": user.get("pending_email"),
         "has_password": has_password,
-        "has_google": has_google,
     }
 
 

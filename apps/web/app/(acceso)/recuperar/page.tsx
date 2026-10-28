@@ -2,8 +2,8 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { ArrowLeft, EnvelopeSimple, GoogleLogo } from "@phosphor-icons/react";
-import { apiMessage, fetchAuthStatus, googleLoginUrl, requestRecovery, type AuthStatus } from "@/lib/session";
+import { ArrowLeft, EnvelopeSimple } from "@phosphor-icons/react";
+import { apiMessage, fetchAuthStatus, requestRecovery, type AuthStatus } from "@/lib/session";
 import { AuthFrame } from "@/components/AuthFrame";
 import {
   AUTH_INPUT,
@@ -148,13 +148,6 @@ export default function RecuperarPage() {
         <>
           <Divider>o</Divider>
           <ul className="space-y-3 text-sm">
-            {auth.google_enabled && (
-              <li>
-                <a href={googleLoginUrl()} className={buttonClasses("secondary", "lg", "w-full")}>
-                  <GoogleLogo size={16} weight="bold" /> Entrar con Google
-                </a>
-              </li>
-            )}
             <li className="text-muted">
               <span className="font-medium text-foreground">¿Ya no usas ese correo?</span> Un
               administrador puede generarte un enlace en Equipo y pasártelo por otro medio.

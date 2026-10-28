@@ -3,17 +3,16 @@
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, CircleNotch, GoogleLogo, HandWaving } from "@phosphor-icons/react";
+import { ArrowRight, CircleNotch, HandWaving } from "@phosphor-icons/react";
 import { completeProfile } from "@/lib/identity";
 import {
   acceptInvitation,
   apiMessage,
-  googleLoginUrl,
   invitationInfo,
   type InvitationInfo,
 } from "@/lib/session";
 import { AuthFrame, useQueryParam } from "@/components/AuthFrame";
-import { AUTH_INPUT, Divider, Field, PasswordField } from "@/components/AuthFields";
+import { AUTH_INPUT, Field, PasswordField } from "@/components/AuthFields";
 import { Badge, buttonClasses, Callout, Input, Skeleton } from "@/components/ui";
 
 type State =
@@ -156,18 +155,6 @@ function AcceptCard({ info, token }: { info: InvitationInfo; token: string }) {
         </div>
       </div>
 
-      {info.google_enabled && (
-        <>
-          <a href={googleLoginUrl(token)} className={buttonClasses("primary", "lg", "w-full")}>
-            <GoogleLogo size={16} weight="bold" /> Continuar con Google
-          </a>
-          <p className="mt-2 text-center text-xs text-muted">
-            Debe ser la cuenta de Google de {info.email}.
-          </p>
-          <Divider>o con contraseña</Divider>
-        </>
-      )}
-
       <form onSubmit={submit} className="space-y-4">
         <Field label="Nombre y apellido" htmlFor="nombre">
           <Input
@@ -196,7 +183,7 @@ function AcceptCard({ info, token }: { info: InvitationInfo; token: string }) {
         )}
         <button
           type="submit"
-          className={buttonClasses(info.google_enabled ? "secondary" : "primary", "lg", "w-full")}
+          className={buttonClasses("primary", "lg", "w-full")}
           disabled={busy}
           aria-busy={busy}
         >

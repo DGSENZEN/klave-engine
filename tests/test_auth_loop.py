@@ -333,9 +333,6 @@ def test_admin_guards_and_profile(app):
     assert renamed.status_code == 200 and renamed.json()["name"] == "Jefa Torres"
     profile = admin.get("/auth/me").json()
     assert profile["workspace"]["slug"] == "taller" and profile["has_password"] is True
-    # Google-only accounts must set a password before unlinking; password
-    # accounts without Google have nothing to unlink either.
-    assert admin.post("/auth/google/unlink").status_code == 422
 
 
 # ------------------------------------------------------------ workspaces

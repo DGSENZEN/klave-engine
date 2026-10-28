@@ -5,13 +5,12 @@ import { consumeSessionReturn } from "@/lib/sessionReturn";
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, GoogleLogo, HourglassMedium } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowRight, HourglassMedium } from "@phosphor-icons/react";
 import { completeProfile } from "@/lib/identity";
-import { apiMessage, fetchAuthStatus, googleLoginUrl, register, type AuthStatus } from "@/lib/session";
+import { apiMessage, fetchAuthStatus, register, type AuthStatus } from "@/lib/session";
 import { AuthFrame, AuthSwitch } from "@/components/AuthFrame";
 import {
   AUTH_INPUT,
-  Divider,
   Field,
   PasswordField,
   recallAuthEmail,
@@ -91,7 +90,7 @@ export default function RegistroPage() {
           back
         />
       ) : (
-        <SignUpForm googleEnabled={auth.google_enabled} onPending={setCreated} />
+        <SignUpForm onPending={setCreated} />
       )}
     </AuthFrame>
   );
@@ -110,13 +109,7 @@ function Elsewhere({ text, action, back = false }: { text: string; action: strin
   );
 }
 
-function SignUpForm({
-  googleEnabled,
-  onPending,
-}: {
-  googleEnabled: boolean;
-  onPending: (created: { email: string }) => void;
-}) {
+function SignUpForm({ onPending }: { onPending: (created: { email: string }) => void }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -154,14 +147,6 @@ function SignUpForm({
 
   return (
     <>
-      {googleEnabled && (
-        <>
-          <a href={googleLoginUrl()} className={buttonClasses("secondary", "lg", "w-full")}>
-            <GoogleLogo size={16} weight="bold" /> Continuar con Google
-          </a>
-          <Divider>o</Divider>
-        </>
-      )}
       <form onSubmit={submit} className="space-y-4">
         <Field label="Nombre y apellido" htmlFor="nombre">
           <Input

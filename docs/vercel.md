@@ -51,8 +51,7 @@ Referencias: [Services](https://vercel.com/docs/services),
 
 Deja `NEXT_PUBLIC_API_URL` y `KLAVE_COOKIE_DOMAIN` sin definir: el navegador
 usa `/api` y cookies del mismo dominio. No reutilices un override público que
-apunte a localhost o al hostname de Docker. Para Google, registra
-`<KLAVE_WEB_ORIGIN>/api/auth/google/callback` y configura sus credenciales.
+apunte a localhost o al hostname de Docker.
 Correo y proveedores de IA son opcionales, con las mismas variables de
 `.env.example`. Los archivos `.env`, datos y artefactos locales se excluyen
 de la carga con `.vercelignore`; las credenciales se gestionan en Vercel.
