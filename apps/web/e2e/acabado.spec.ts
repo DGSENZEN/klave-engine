@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import { loginAdmin, pilotState } from "./fixtures";
 
@@ -9,9 +10,25 @@ test.describe.configure({ mode: "serial" });
 
 const NODOS = ["planos", "revision", "catalogo", "presupuesto", "programa", "contrato"];
 
+// One login for the whole spec: the API rate-limits sign-ins, and the other
+// specs in the run need theirs.
+const sesion = () => join(process.env.PILOT_TEST_STATE_DIR ?? ".", "acabado-admin.json");
+
+test.beforeAll(async ({ browser }) => {
+  // Its own context: the spec-wide storageState below doesn't exist yet.
+  const context = await browser.newContext({ storageState: undefined });
+  try {
+    await loginAdmin(await context.newPage());
+    await context.storageState({ path: sesion() });
+  } finally {
+    await context.close();
+  }
+});
+
+test.use({ storageState: async ({}, entregar) => entregar(sesion()) });
+
 async function obraLista(page: Page): Promise<string> {
   const state = pilotState();
-  await loginAdmin(page);
   const demo = await page.request.post(state.api_url + "/projects/demo", { data: {} });
   expect(demo.ok(), await demo.text()).toBeTruthy();
   const { project_id: id } = await demo.json();
@@ -36,16 +53,15 @@ async function obraLista(page: Page): Promise<string> {
 // demás pruebas (el recorrido espera sus candados cerrados): al terminar se
 // deja como nueva.
 test.afterAll(async ({ browser }) => {
-  const page = await browser.newPage();
+  const context = await browser.newContext({ storageState: sesion() });
   try {
     const state = pilotState();
-    await loginAdmin(page);
-    const demo = await page.request.post(state.api_url + "/projects/demo", { data: {} });
+    const demo = await context.request.post(state.api_url + "/projects/demo", { data: {} });
     const { project_id: id } = await demo.json();
-    const r = await page.request.post(`${state.api_url}/projects/${id}/demo/reiniciar`, { data: {} });
+    const r = await context.request.post(`${state.api_url}/projects/${id}/demo/reiniciar`, { data: {} });
     expect(r.ok(), await r.text()).toBeTruthy();
   } finally {
-    await page.close();
+    await context.close();
   }
 });
 
