@@ -1,4 +1,5 @@
 import type { Tablero, TableroEstado, TableroNodeKey } from "@/lib/api";
+import { capabilities } from "@/lib/capabilities";
 
 /**
  * The board's one rule, as a pure function (the moneyGate style): a node's
@@ -25,5 +26,10 @@ export const ROUTE_GUARDED_NODES: TableroNodeKey[] = ["programa", "contrato"];
  * libertad local-first del resto de la app.
  */
 export function canApproveGate(myRole: Tablero["my_role"]): boolean {
-  return myRole === null || myRole === "admin" || myRole === "owner";
+  if (myRole === null) return true;
+  return capabilities({
+    mode: "protected",
+    tallerRole: myRole === "admin" ? "admin" : "member",
+    projectRole: myRole,
+  }).approveGate;
 }

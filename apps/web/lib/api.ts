@@ -1,3 +1,4 @@
+import type { ProjectRole } from "./capabilities";
 import { ApiError, errorFromResponse } from "./httpErrors";
 export { ApiError } from "./httpErrors";
 
@@ -189,7 +190,7 @@ export async function downloadFile(path: string, fallbackName: string): Promise<
 
 /** The viewer's role on a project: «admin» of the taller, their grant, or
  * null in open mode (no accounts: everyone can). */
-export type ProjectRole = "admin" | "owner" | "editor" | "viewer" | null;
+export type { ProjectRole };
 
 export type ProjectSummary = {
   project_id: string;
