@@ -3,11 +3,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, LockKey } from "@phosphor-icons/react";
+import { LockKey } from "@phosphor-icons/react";
 import { completeProfile } from "@/lib/identity";
 import { apiMessage, resetInfo, resetPassword } from "@/lib/session";
 import { AuthFrame, useQueryParam } from "@/components/AuthFrame";
-import { PasswordField } from "@/components/AuthFields";
+import { PasswordField, SubmitButton } from "@/components/AuthFields";
 import { buttonClasses, Callout, Skeleton } from "@/components/ui";
 
 export default function RestablecerPage() {
@@ -69,7 +69,7 @@ export default function RestablecerPage() {
           <Callout tone="danger">
             Este enlace ya no es válido: caducó, ya se usó o se generó uno más nuevo.
           </Callout>
-          <Link href="/recuperar" className={buttonClasses("primary", "md", "mt-6 w-full")}>
+          <Link href="/recuperar" className={buttonClasses("primary", "lg", "mt-6 w-full")}>
             Pedir otro enlace
           </Link>
         </>
@@ -99,9 +99,7 @@ export default function RestablecerPage() {
                 <Callout tone="danger">{error}</Callout>
               </div>
             )}
-            <button type="submit" className={buttonClasses("primary", "md", "w-full")} disabled={busy}>
-              Guardar y entrar <ArrowRight size={15} weight="bold" />
-            </button>
+            <SubmitButton busy={busy} label="Guardar y entrar" busyLabel="Guardando…" />
           </form>
         </>
       )}

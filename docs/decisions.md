@@ -57,3 +57,21 @@
 - Why: invitation accept only checked 8 characters and skipped the common-password and own-email checks.
 - Rejected: leaving invitations on the looser rule.
 - Rests on: apps/api/auth/invitations.py; tests/test_auth_loop.py::test_invitation_accept_applies_the_password_policy.
+
+## 2026-10-27 · New project is an inline composer above the list, not a file picker followed by a modal
+- Decided by: Claude (default)
+- Why: the old button went straight to the operating system's file picker and the modal that followed could not add or remove sheets; inline, the list stays in view and the sheet set can be corrected before uploading.
+- Rejected: keeping the modal and adding add/remove to it, because creating a project needs neither interruption nor protected focus.
+- Rests on: apps/web/components/NewProjectComposer.tsx; apps/web/app/page.tsx.
+
+## 2026-10-27 · An empty workspace shows the composer open as its first screen
+- Decided by: Claude (default)
+- Why: with no projects, uploading the first obra is the only task; an empty-state card that leads to the same picker adds a step.
+- Rejected: the dashed empty-state card with a "Nuevo proyecto" button.
+- Rests on: apps/web/app/page.tsx (composer shown when projects.length === 0).
+
+## 2026-10-27 · Access forms and the new-project form use 40 px controls
+- Decided by: Claude (default)
+- Why: inputs rendered at 38 px and buttons at 36 px, so stacked fields and buttons did not share an edge; single-task forms get a tall size, the rest of the app keeps its density.
+- Rejected: changing the app-wide Input and Button heights.
+- Rests on: ButtonSize "lg" in apps/web/components/ui.tsx; AUTH_INPUT in apps/web/components/AuthFields.tsx.

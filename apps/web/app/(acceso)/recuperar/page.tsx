@@ -5,7 +5,14 @@ import Link from "next/link";
 import { ArrowLeft, EnvelopeSimple, GoogleLogo } from "@phosphor-icons/react";
 import { apiMessage, fetchAuthStatus, googleLoginUrl, requestRecovery, type AuthStatus } from "@/lib/session";
 import { AuthFrame } from "@/components/AuthFrame";
-import { Divider, Field, recallAuthEmail, rememberAuthEmail } from "@/components/AuthFields";
+import {
+  AUTH_INPUT,
+  Divider,
+  Field,
+  recallAuthEmail,
+  rememberAuthEmail,
+  SubmitButton,
+} from "@/components/AuthFields";
 import { buttonClasses, Callout, Input, Skeleton } from "@/components/ui";
 
 /** Seconds before the same address may ask again; mail can take a minute to land. */
@@ -85,7 +92,7 @@ export default function RecuperarPage() {
             type="button"
             onClick={() => send(sentTo)}
             disabled={wait > 0 || busy}
-            className={buttonClasses("secondary", "md", "w-full tabular")}
+            className={buttonClasses("secondary", "lg", "w-full tabular")}
           >
             {wait > 0 ? `Reenviar en ${wait} s` : "Reenviar"}
           </button>
@@ -95,7 +102,7 @@ export default function RecuperarPage() {
               setSentTo(null);
               setError(null);
             }}
-            className={buttonClasses("ghost", "md", "w-full")}
+            className={buttonClasses("ghost", "lg", "w-full")}
           >
             Usar otro correo
           </button>
@@ -124,13 +131,11 @@ export default function RecuperarPage() {
               autoComplete="email"
               autoFocus
               required
-              className="w-full"
+              className={AUTH_INPUT}
             />
           </Field>
           {failure}
-          <button type="submit" className={buttonClasses("primary", "md", "w-full")} disabled={busy}>
-            Enviar enlace
-          </button>
+          <SubmitButton busy={busy} label="Enviar enlace" busyLabel="Enviando…" arrow={false} />
         </form>
       ) : (
         <p className="text-sm text-muted">
@@ -145,7 +150,7 @@ export default function RecuperarPage() {
           <ul className="space-y-3 text-sm">
             {auth.google_enabled && (
               <li>
-                <a href={googleLoginUrl()} className={buttonClasses("secondary", "md", "w-full")}>
+                <a href={googleLoginUrl()} className={buttonClasses("secondary", "lg", "w-full")}>
                   <GoogleLogo size={16} weight="bold" /> Entrar con Google
                 </a>
               </li>

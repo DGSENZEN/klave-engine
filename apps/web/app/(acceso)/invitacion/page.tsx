@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, GoogleLogo, HandWaving } from "@phosphor-icons/react";
+import { ArrowRight, CircleNotch, GoogleLogo, HandWaving } from "@phosphor-icons/react";
 import { completeProfile } from "@/lib/identity";
 import {
   acceptInvitation,
@@ -13,7 +13,7 @@ import {
   type InvitationInfo,
 } from "@/lib/session";
 import { AuthFrame, useQueryParam } from "@/components/AuthFrame";
-import { Divider, Field, PasswordField } from "@/components/AuthFields";
+import { AUTH_INPUT, Divider, Field, PasswordField } from "@/components/AuthFields";
 import { Badge, buttonClasses, Callout, Input, Skeleton } from "@/components/ui";
 
 type State =
@@ -74,7 +74,7 @@ export default function InvitacionPage() {
           <Callout tone="warning">
             No pudimos consultar la invitación. Revisa tu conexión e inténtalo de nuevo.
           </Callout>
-          <button type="button" className={buttonClasses("secondary", "md", "mt-4")}
+          <button type="button" className={buttonClasses("secondary", "lg", "mt-4")}
             onClick={() => { setState({ kind: "loading" }); setAttempt((n) => n + 1); }}>
             Reintentar
           </button>
@@ -103,7 +103,7 @@ function ClosedCard({ state }: { state: InvitationInfo["state"] }) {
           : "Esta invitación ya no es válida; pide una nueva a tu administrador."}
       </Callout>
       {state === "accepted" && (
-        <Link href="/bienvenida" className={buttonClasses("primary", "md", "mt-4 w-full")}>
+        <Link href="/bienvenida" className={buttonClasses("primary", "lg", "mt-4 w-full")}>
           Entrar
         </Link>
       )}
@@ -158,7 +158,7 @@ function AcceptCard({ info, token }: { info: InvitationInfo; token: string }) {
 
       {info.google_enabled && (
         <>
-          <a href={googleLoginUrl(token)} className={buttonClasses("primary", "md", "w-full")}>
+          <a href={googleLoginUrl(token)} className={buttonClasses("primary", "lg", "w-full")}>
             <GoogleLogo size={16} weight="bold" /> Continuar con Google
           </a>
           <p className="mt-2 text-center text-xs text-muted">
@@ -178,7 +178,7 @@ function AcceptCard({ info, token }: { info: InvitationInfo; token: string }) {
             maxLength={80}
             autoFocus
             required
-            className="w-full"
+            className={AUTH_INPUT}
           />
         </Field>
         <PasswordField
@@ -196,10 +196,19 @@ function AcceptCard({ info, token }: { info: InvitationInfo; token: string }) {
         )}
         <button
           type="submit"
-          className={buttonClasses(info.google_enabled ? "secondary" : "primary", "md", "w-full")}
+          className={buttonClasses(info.google_enabled ? "secondary" : "primary", "lg", "w-full")}
           disabled={busy}
+          aria-busy={busy}
         >
-          Crear cuenta y entrar <ArrowRight size={15} weight="bold" />
+          {busy ? (
+            <>
+              <CircleNotch size={15} className="animate-spin" /> Creando cuenta…
+            </>
+          ) : (
+            <>
+              Crear cuenta y entrar <ArrowRight size={15} weight="bold" />
+            </>
+          )}
         </button>
       </form>
     </div>

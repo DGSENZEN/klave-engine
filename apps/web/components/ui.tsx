@@ -133,7 +133,7 @@ export function SectionTitle({ children, sub }: { children: ReactNode; sub?: str
 /* ---- Buttons: one flat system shared by <Button> and link-buttons. ---- */
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "accent";
-export type ButtonSize = "sm" | "md";
+export type ButtonSize = "sm" | "md" | "lg";
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   primary: "bg-primary text-primary-fg hover:bg-primary-hover",
@@ -147,6 +147,8 @@ const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
 const BUTTON_SIZES: Record<ButtonSize, string> = {
   sm: "h-8 px-3 text-[13px]",
   md: "h-9 px-3.5 text-sm",
+  /** Single-task forms (access, new project): matches an Input with `h-10`. */
+  lg: "h-10 px-4 text-sm",
 };
 
 /** Shared classes so <Link> can look identical to <Button>. */
@@ -196,6 +198,34 @@ export function Input({
       {...props}
       className={`rounded-lg border border-border bg-surface px-3 py-2 text-sm transition-colors placeholder:text-faint focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring ${className}`}
     />
+  );
+}
+
+/** Label above, control, optional hint below. Labels stay visible while typing. */
+export function Field({
+  label,
+  htmlFor,
+  aside,
+  hint,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  aside?: ReactNode;
+  hint?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <div className="mb-1.5 flex items-baseline justify-between gap-3">
+        <label htmlFor={htmlFor} className="text-sm font-medium">
+          {label}
+        </label>
+        {aside}
+      </div>
+      {children}
+      {hint && <div className="mt-1.5 text-xs text-muted">{hint}</div>}
+    </div>
   );
 }
 

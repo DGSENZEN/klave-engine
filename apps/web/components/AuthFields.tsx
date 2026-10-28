@@ -1,41 +1,19 @@
 "use client";
 
-import { useId, useState, type ReactNode } from "react";
-import { Check, Eye, EyeSlash } from "@phosphor-icons/react";
+import { useId, useState, type KeyboardEvent, type ReactNode } from "react";
+import { ArrowRight, Check, CircleNotch, Eye, EyeSlash, Warning } from "@phosphor-icons/react";
 import { PASSWORD_MIN } from "@/lib/session";
-import { Input } from "@/components/ui";
+import { buttonClasses, Field, Input } from "@/components/ui";
 
-/** Label above, control, optional hint below. Labels stay visible while typing. */
-export function Field({
-  label,
-  htmlFor,
-  aside,
-  hint,
-  children,
-}: {
-  label: string;
-  htmlFor: string;
-  aside?: ReactNode;
-  hint?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <div>
-      <div className="mb-1.5 flex items-baseline justify-between gap-3">
-        <label htmlFor={htmlFor} className="text-sm font-medium">
-          {label}
-        </label>
-        {aside}
-      </div>
-      {children}
-      {hint && <div className="mt-1.5 text-xs text-muted">{hint}</div>}
-    </div>
-  );
-}
+export { Field };
+
+/** Access forms use the tall control size so inputs and buttons share one edge. */
+export const AUTH_INPUT = "h-10 w-full";
 
 /**
- * Password field with a show/hide toggle. With `rule`, a live line says
- * whether the length the server requires is met, before anyone submits.
+ * Password field with a show/hide toggle and a Caps Lock warning. With
+ * `rule`, a live line says whether the length the server requires is met,
+ * before anyone submits.
  */
 export function PasswordField({
   label,
@@ -60,7 +38,12 @@ export function PasswordField({
   const inputId = id ?? generated;
   const ruleId = `${inputId}-regla`;
   const [visible, setVisible] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
   const long = value.length >= PASSWORD_MIN;
+
+  function readCapsLock(event: KeyboardEvent<HTMLInputElement>) {
+    setCapsLock(event.getModifierState("CapsLock"));
+  }
 
   return (
     <Field
@@ -68,12 +51,16 @@ export function PasswordField({
       htmlFor={inputId}
       aside={aside}
       hint={
-        rule && (
+        capsLock ? (
+          <span className="inline-flex items-center gap-1.5 text-warning">
+            <Warning size={12} weight="bold" /> Bloq Mayús está activado
+          </span>
+        ) : rule ? (
           <span id={ruleId} className={`inline-flex items-center gap-1.5 ${long ? "text-success" : ""}`}>
             {long && <Check size={12} weight="bold" />}
             Al menos {PASSWORD_MIN} caracteres
           </span>
-        )
+        ) : undefined
       }
     >
       <div className="relative">
@@ -82,12 +69,15 @@ export function PasswordField({
           type={visible ? "text" : "password"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onKeyDown={readCapsLock}
+          onKeyUp={readCapsLock}
+          onBlur={() => setCapsLock(false)}
           autoComplete={autoComplete}
           minLength={rule ? PASSWORD_MIN : undefined}
           aria-describedby={rule ? ruleId : undefined}
           autoFocus={autoFocus}
           required
-          className="w-full pr-10"
+          className={`${AUTH_INPUT} pr-10`}
         />
         <button
           type="button"
@@ -103,13 +93,45 @@ export function PasswordField({
   );
 }
 
-/** Thin rule with a word in the middle ("o con tu correo"). */
+/** The one primary action of an access form; says what it is doing while it works. */
+export function SubmitButton({
+  busy,
+  label,
+  busyLabel,
+  arrow = true,
+}: {
+  busy: boolean;
+  label: string;
+  busyLabel: string;
+  arrow?: boolean;
+}) {
+  return (
+    <button
+      type="submit"
+      className={buttonClasses("primary", "lg", "w-full")}
+      disabled={busy}
+      aria-busy={busy}
+    >
+      {busy ? (
+        <>
+          <CircleNotch size={15} className="animate-spin" /> {busyLabel}
+        </>
+      ) : (
+        <>
+          {label} {arrow && <ArrowRight size={15} weight="bold" />}
+        </>
+      )}
+    </button>
+  );
+}
+
+/** Thin rule with a word in the middle ("o"). */
 export function Divider({ children }: { children: ReactNode }) {
   return (
-    <div className="my-5 flex items-center gap-3 text-xs text-faint">
-      <span className="h-px flex-1 bg-border" />
+    <div className="my-5 flex items-center gap-3 text-xs text-muted">
+      <span className="h-px flex-1 bg-border-strong" />
       {children}
-      <span className="h-px flex-1 bg-border" />
+      <span className="h-px flex-1 bg-border-strong" />
     </div>
   );
 }

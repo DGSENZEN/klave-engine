@@ -51,7 +51,7 @@ export default function VerificarPage() {
       ) : state.kind === "error" ? (
         <div>
           <Callout tone="danger">{state.message}</Callout>
-          <Link href="/cuenta" className={buttonClasses("secondary", "md", "mt-4 w-full")}>
+          <Link href="/cuenta" className={buttonClasses("secondary", "lg", "mt-4 w-full")}>
             Ir a mi cuenta
           </Link>
         </div>
@@ -66,7 +66,7 @@ export default function VerificarPage() {
               ? `Desde ahora entras con ${state.email}.`
               : `${state.email} queda verificado en tu cuenta.`}
           </p>
-          <Link href="/" className={buttonClasses("primary", "md", "mt-6 w-full")}>
+          <Link href="/" className={buttonClasses("primary", "lg", "mt-6 w-full")}>
             Ir a los proyectos
           </Link>
         </div>

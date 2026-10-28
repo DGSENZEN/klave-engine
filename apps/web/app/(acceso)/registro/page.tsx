@@ -10,11 +10,13 @@ import { completeProfile } from "@/lib/identity";
 import { apiMessage, fetchAuthStatus, googleLoginUrl, register, type AuthStatus } from "@/lib/session";
 import { AuthFrame, AuthSwitch } from "@/components/AuthFrame";
 import {
+  AUTH_INPUT,
   Divider,
   Field,
   PasswordField,
   recallAuthEmail,
   rememberAuthEmail,
+  SubmitButton,
 } from "@/components/AuthFields";
 import { buttonClasses, Callout, Checkbox, Input, Skeleton } from "@/components/ui";
 
@@ -99,7 +101,7 @@ function Elsewhere({ text, action, back = false }: { text: string; action: strin
   return (
     <>
       <p className="text-sm text-muted">{text}</p>
-      <Link href="/bienvenida" className={buttonClasses(back ? "secondary" : "primary", "md", "mt-6 w-full")}>
+      <Link href="/bienvenida" className={buttonClasses(back ? "secondary" : "primary", "lg", "mt-6 w-full")}>
         {back && <ArrowLeft size={15} weight="bold" />}
         {action}
         {!back && <ArrowRight size={15} weight="bold" />}
@@ -154,7 +156,7 @@ function SignUpForm({
     <>
       {googleEnabled && (
         <>
-          <a href={googleLoginUrl()} className={buttonClasses("secondary", "md", "w-full")}>
+          <a href={googleLoginUrl()} className={buttonClasses("secondary", "lg", "w-full")}>
             <GoogleLogo size={16} weight="bold" /> Continuar con Google
           </a>
           <Divider>o</Divider>
@@ -171,7 +173,7 @@ function SignUpForm({
             maxLength={80}
             autoFocus
             required
-            className="w-full"
+            className={AUTH_INPUT}
           />
         </Field>
         <Field label="Correo electrónico" htmlFor="correo">
@@ -186,7 +188,7 @@ function SignUpForm({
             placeholder="correo@taller.mx"
             autoComplete="email"
             required
-            className="w-full"
+            className={AUTH_INPUT}
           />
         </Field>
         <PasswordField
@@ -214,7 +216,7 @@ function SignUpForm({
               minLength={2}
               maxLength={80}
               required
-              className="w-full"
+              className={AUTH_INPUT}
             />
           </Field>
         )}
@@ -224,9 +226,7 @@ function SignUpForm({
             <Callout tone="danger">{error}</Callout>
           </div>
         )}
-        <button type="submit" className={buttonClasses("primary", "md", "w-full")} disabled={busy}>
-          Crear cuenta <ArrowRight size={15} weight="bold" />
-        </button>
+        <SubmitButton busy={busy} label="Crear cuenta" busyLabel="Creando cuenta…" />
         <p className="text-center text-xs text-faint">
           {founding
             ? "Entras de inmediato como administrador."

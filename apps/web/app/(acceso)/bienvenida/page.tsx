@@ -27,11 +27,13 @@ import {
 } from "@/lib/session";
 import { AuthFrame, AuthSwitch } from "@/components/AuthFrame";
 import {
+  AUTH_INPUT,
   Divider,
   Field,
   PasswordField,
   recallAuthEmail,
   rememberAuthEmail,
+  SubmitButton,
 } from "@/components/AuthFields";
 import { Avatar, Badge, buttonClasses, Callout, Checkbox, Input, Skeleton } from "@/components/ui";
 
@@ -173,7 +175,7 @@ function SessionPanel({ user }: { user: AuthUser }) {
           Un administrador del taller debe aprobar tu cuenta ({user.email}) antes de que
           puedas entrar a los proyectos.
         </p>
-        <button type="button" onClick={onLogout} className={buttonClasses("secondary", "md", "mt-6 w-full")}>
+        <button type="button" onClick={onLogout} className={buttonClasses("secondary", "lg", "mt-6 w-full")}>
           <SignOut size={14} weight="bold" /> Cerrar sesión
         </button>
       </div>
@@ -210,10 +212,10 @@ function SessionPanel({ user }: { user: AuthUser }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={40}
-            className="w-full"
+            className={AUTH_INPUT}
           />
         </Field>
-        <button type="submit" className={buttonClasses("primary", "md", "w-full")}>
+        <button type="submit" className={buttonClasses("primary", "lg", "w-full")}>
           Continuar <ArrowRight size={15} weight="bold" />
         </button>
       </form>
@@ -264,7 +266,7 @@ function SignInForm({ googleEnabled }: { googleEnabled: boolean }) {
     <>
       {googleEnabled && (
         <>
-          <a href={googleLoginUrl()} className={buttonClasses("secondary", "md", "w-full")}>
+          <a href={googleLoginUrl()} className={buttonClasses("secondary", "lg", "w-full")}>
             <GoogleLogo size={16} weight="bold" /> Continuar con Google
           </a>
           <Divider>o</Divider>
@@ -284,7 +286,7 @@ function SignInForm({ googleEnabled }: { googleEnabled: boolean }) {
             autoComplete="email"
             autoFocus
             required
-            className="w-full"
+            className={AUTH_INPUT}
           />
         </Field>
         <PasswordField
@@ -309,9 +311,7 @@ function SignInForm({ googleEnabled }: { googleEnabled: boolean }) {
             <Callout tone="danger">{error}</Callout>
           </div>
         )}
-        <button type="submit" className={buttonClasses("primary", "md", "w-full")} disabled={busy}>
-          Entrar <ArrowRight size={15} weight="bold" />
-        </button>
+        <SubmitButton busy={busy} label="Entrar" busyLabel="Entrando…" />
       </form>
     </>
   );
@@ -375,7 +375,7 @@ function OpenModePanel({ googleEnabled }: { googleEnabled: boolean }) {
             autoComplete="name"
             autoFocus
             maxLength={40}
-            className="w-full"
+            className={AUTH_INPUT}
           />
         </Field>
         {touched && !valid && (
@@ -383,7 +383,7 @@ function OpenModePanel({ googleEnabled }: { googleEnabled: boolean }) {
             Escribe un nombre de al menos 2 caracteres.
           </p>
         )}
-        <button type="submit" className={buttonClasses("primary", "md", "w-full")} disabled={touched && !valid}>
+        <button type="submit" className={buttonClasses("primary", "lg", "w-full")} disabled={touched && !valid}>
           Comenzar <ArrowRight size={15} weight="bold" />
         </button>
       </form>
@@ -415,7 +415,7 @@ function OpenModePanel({ googleEnabled }: { googleEnabled: boolean }) {
                 autoComplete="name"
                 maxLength={80}
                 required
-                className="w-full"
+                className={AUTH_INPUT}
               />
             </Field>
             <Field label="Correo electrónico" htmlFor="admin-correo">
@@ -427,7 +427,7 @@ function OpenModePanel({ googleEnabled }: { googleEnabled: boolean }) {
                 placeholder="correo@taller.mx"
                 autoComplete="email"
                 required
-                className="w-full"
+                className={AUTH_INPUT}
               />
             </Field>
             <PasswordField
@@ -443,9 +443,12 @@ function OpenModePanel({ googleEnabled }: { googleEnabled: boolean }) {
                 <Callout tone="danger">{error}</Callout>
               </div>
             )}
-            <button type="submit" className={buttonClasses("primary", "md", "w-full")} disabled={busy}>
-              Crear cuenta de administrador
-            </button>
+            <SubmitButton
+              busy={busy}
+              label="Crear cuenta de administrador"
+              busyLabel="Creando cuenta…"
+              arrow={false}
+            />
           </form>
         )}
       </div>
