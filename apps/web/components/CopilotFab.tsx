@@ -29,6 +29,7 @@ const SIN_COPILOTO = [
   "/verificar",
   "/glosario",
   "/como-funciona",
+  "/portada",
 ];
 
 export function CopilotFab() {

@@ -110,12 +110,18 @@ export default function Home() {
   }, [overview]);
 
   // The gate: protected workspaces require an active session; open mode only
-  // needs the local first-run profile. Both land on /bienvenida otherwise.
+  // needs the local first-run profile. A visitor with no account at all gets
+  // the public portada; an account still waiting for approval, or an open
+  // workspace without a profile, lands on /bienvenida.
   useEffect(() => {
     let active = true;
     fetchAuthStatus().then((status) => {
       if (!active) return;
-      if (status.mode === "protected" && (!status.user || status.user.status !== "active")) {
+      if (status.mode === "protected" && !status.user) {
+        router.replace("/portada");
+        return;
+      }
+      if (status.mode === "protected" && status.user?.status !== "active") {
         router.replace("/bienvenida");
         return;
       }
