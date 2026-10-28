@@ -55,7 +55,7 @@ import {
   ConfidenceBadge,
   EmptyState,
   Input,
-  Metric,
+  StatStrip,
   PageHeader,
   SectionTitle,
   Select,
@@ -176,7 +176,7 @@ export default function PresupuestoPage() {
 
   if (error) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Presupuesto" />
         <Callout tone="danger">
           No se pudo cargar el presupuesto. Revisa que el servidor esté activo.
@@ -187,7 +187,7 @@ export default function PresupuestoPage() {
 
   if (!costs) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <SkeletonHeader />
         <SkeletonMetrics count={3} />
         <SkeletonTable rows={8} />
@@ -197,7 +197,7 @@ export default function PresupuestoPage() {
 
   if (moneyState(costs) === "blocked") {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Presupuesto" />
         <UnitsGate id={id} costs={costs} actorName={actorName} />
       </div>
@@ -249,7 +249,7 @@ export default function PresupuestoPage() {
   }
 
   return (
-    <div className="rise-in px-6 py-7 lg:px-8">
+    <div className="px-4 py-5 sm:px-6">
       <PageHeader
         title="Presupuesto"
         sub="Cantidades deducidas del plano · precios de referencia (MXN)"
@@ -259,9 +259,9 @@ export default function PresupuestoPage() {
             label={exporting ? `Generando ${exporting}…` : "Exportar"}
             icon={
               exporting ? (
-                <CircleNotch size={16} className="animate-spin" />
+                <CircleNotch className="animate-spin" />
               ) : (
-                <DownloadSimple size={16} weight="bold" />
+                <DownloadSimple />
               )
             }
           >
@@ -273,7 +273,7 @@ export default function PresupuestoPage() {
                     void exportFile("Excel Klave", `/projects/${id}/export/presupuesto.xlsx`, "presupuesto.xlsx");
                   }}
                 >
-                  <FileXls size={15} weight="duotone" /> Excel completo (Klave)
+                  <FileXls /> Excel completo (Klave)
                 </MenuItem>
                 <MenuItem
                   onSelect={() => {
@@ -281,7 +281,7 @@ export default function PresupuestoPage() {
                     void exportFile("Excel OPUS", `/projects/${id}/export/presupuesto.xlsx?format=opus`, "presupuesto.xlsx");
                   }}
                 >
-                  <FileXls size={15} weight="duotone" /> Excel para OPUS
+                  <FileXls /> Excel para OPUS
                 </MenuItem>
                 <MenuItem
                   onSelect={() => {
@@ -289,7 +289,7 @@ export default function PresupuestoPage() {
                     void exportFile("Excel Neodata", `/projects/${id}/export/presupuesto.xlsx?format=neodata`, "presupuesto.xlsx");
                   }}
                 >
-                  <FileXls size={15} weight="duotone" /> Excel para Neodata
+                  <FileXls /> Excel para Neodata
                 </MenuItem>
                 <MenuItem
                   onSelect={() => {
@@ -297,7 +297,7 @@ export default function PresupuestoPage() {
                     void exportFile("Catálogo de licitación", `/projects/${id}/export/presupuesto.xlsx?format=licitacion`, "presupuesto.xlsx");
                   }}
                 >
-                  <FileXls size={15} weight="duotone" /> Catálogo de licitación (P.U. con letra)
+                  <FileXls /> Catálogo de licitación (P.U. con letra)
                 </MenuItem>
                 <MenuItem
                   onSelect={() => {
@@ -305,7 +305,7 @@ export default function PresupuestoPage() {
                     void exportFile("Catálogo de licitación (descripciones largas)", `/projects/${id}/export/presupuesto.xlsx?format=licitacion_larga`, "presupuesto.xlsx");
                   }}
                 >
-                  <FileXls size={15} weight="duotone" /> Licitación con descripciones LOPSRM
+                  <FileXls /> Licitación con descripciones LOPSRM
                 </MenuItem>
                 <MenuItem
                   onSelect={() => {
@@ -314,7 +314,7 @@ export default function PresupuestoPage() {
                   }}
                   hint="Muestra el plano con sus elementos y los generadores, sin importes. Se abre sin cuenta y caduca en 14 días."
                 >
-                  <LinkSimple size={15} weight="duotone" /> Liga para compartir (supervisor o socio)
+                  <LinkSimple /> Liga para compartir (supervisor o socio)
                 </MenuItem>
                 <MenuItem
                   onSelect={() => {
@@ -322,7 +322,7 @@ export default function PresupuestoPage() {
                     void exportFile("Explosión de insumos", `/projects/${id}/export/explosion.xlsx`, "explosion_insumos.xlsx");
                   }}
                 >
-                  <FileXls size={15} weight="duotone" /> Explosión de insumos
+                  <FileXls /> Explosión de insumos
                 </MenuItem>
                 <MenuItem
                   onSelect={() => {
@@ -330,7 +330,7 @@ export default function PresupuestoPage() {
                     exportCsv();
                   }}
                 >
-                  <DownloadSimple size={15} weight="bold" /> CSV simple
+                  <DownloadSimple /> CSV simple
                 </MenuItem>
               </>
             )}
@@ -367,17 +367,6 @@ export default function PresupuestoPage() {
           }}
         />
       )}
-      {diagnostico && (
-        <DiagnosticoPanel
-          diagnostico={diagnostico}
-          projectId={id}
-          acciones={acciones}
-          onApplied={() => {
-            getDiagnostico(id).then(setDiagnostico).catch(() => {});
-            getAcciones(id).then((r) => setAcciones(r.acciones)).catch(() => {});
-          }}
-        />
-      )}
       {liga && (
         <div className="mb-4">
           <Callout
@@ -409,204 +398,239 @@ export default function PresupuestoPage() {
           </Callout>
         </div>
       )}
-      <SuggestionsBar projectId={id} actorName={actorName} conceptCodes={conceptCodes} />
-      <CapturaCallout projectId={id} reloadKey={latestEvent?.seq} />
-      {parametricCount > 0 && (
-        <div className="mb-4">
-          <Callout tone="info">
-            {parametricCount} concepto{parametricCount === 1 ? "" : "s"} paramétrico
-            {parametricCount === 1 ? "" : "s"}: cantidades propuestas con la historia del
-            taller (por m², por planta o por local); el plano no las mide. Revísalos o fíjalos;
-            las reglas están en Catálogo → Plantillas.
-          </Callout>
-        </div>
-      )}
-
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
-        <Metric label="Costo directo" value={money(costs.boq.direct_cost_total)} />
-        <Metric label="Conceptos" value={costs.boq.lines.length} />
-        <Metric
-          label="Importe en lecturas firmes"
-          value={<ConfidenceBands bands={costs.money_basis?.confidence_bands} />}
-          hint="Reparte el costo directo según la confianza de sus lecturas: alta, justo en el umbral de 70 % y por debajo. Se pondera por importe; en un promedio simple, cien tornillos seguros taparían una trabe dudosa."
-        />
-      </div>
-
-      {costs.boq.lines.length === 0 && (
-        <div className="mb-6">
-          <EmptyState
-            icon={<FileXls size={22} weight="duotone" />}
-            title="El plano no produjo ningún concepto"
-            hint={
-              costs.boq.warnings[0] ??
-              "No se detectaron elementos estructurales ni de albañilería que el catálogo sepa costear. Revisa la lectura del plano o agrega los conceptos en «Ajustes a mano»."
-            }
-            action={
-              <Link href={`/proyecto/${id}/lectura`} className={buttonClasses("secondary", "sm")}>
-                Ver la lectura del plano
-              </Link>
-            }
-          />
-        </div>
-      )}
-
-      <Tabs
-        className="mb-5"
-        value={tab}
-        onChange={setTab}
-        items={[
-          { key: "partidas", label: "Partidas", count: costs.boq.lines.length },
-          { key: "integracion", label: "Integración del precio" },
-          { key: "ajustes", label: "Ajustes a mano", count: reviews?.adjustments.length },
-          { key: "versiones", label: "Versiones" },
-        ]}
-      />
-
-      <TableCard
-        tour="presupuesto.lineas"
-        className={`mb-6 ${tab !== "partidas" || costs.boq.lines.length === 0 ? "hidden" : ""}`}
-      >
-        <thead>
-          <tr className="border-b border-border bg-surface-2">
-            <Th>Clave</Th>
-            <Th>Concepto</Th>
-            <Th align="right">Cantidad</Th>
-            <Th align="right">P.U.</Th>
-            <Th align="right">Importe</Th>
-            <Th align="center">Conf.</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {phases.map((phase) => {
-            const lines = costs.boq.lines.filter((l) => l.phase === phase);
-            const subtotal = lines.reduce((s, l) => s + l.amount, 0);
-            return (
-              <PhaseGroup
-                key={phase}
-                phase={phase}
-                lines={lines}
-                subtotal={subtotal}
-                total={costs.boq.direct_cost_total}
-                projectId={id}
-                actorName={actorName}
-                clientId={clientId}
-                onReviews={setReviews}
-              />
-            );
-          })}
-        </tbody>
-        <tfoot>
-          <tr className="bg-surface-2 font-semibold">
-            <Td colSpan={4}>Costo directo</Td>
-            <Td align="right" className="tabular" colSpan={2}>
-              {money2(costs.boq.direct_cost_total)}
-            </Td>
-          </tr>
-        </tfoot>
-      </TableCard>
-
-      <div className={`grid gap-4 lg:grid-cols-2 ${tab !== "integracion" ? "hidden" : ""}`}>
-        <Card className="p-5">
-          <SectionTitle>Integración del precio</SectionTitle>
-          <div className="space-y-2 text-sm">
-            <Line label="Costo directo" value={money2(costs.integration.direct_cost)} bold />
-            {costs.integration.lines.map((l) => (
-              <Line
-                key={l.description}
-                label={`${l.description} (${l.percentage}%)`}
-                value={money2(l.amount)}
-                muted
-              />
-            ))}
-            <div className="my-2 border-t border-border" />
-            <Line
-              label={`Precio de venta · factor ${costs.integration.overcost_factor.toFixed(3)}`}
-              value={money2(costs.integration.sale_price)}
-              bold
+      {/* On wide screens the findings ride beside the lines as margin notes,
+          sticky, so a blocker stays in view while you read the budget it
+          qualifies. Narrower, they stack above as before. */}
+      <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_23rem] xl:items-start xl:gap-5">
+        {diagnostico && (
+          <aside className="xl:sticky xl:top-[calc(var(--chrome-h)+1.25rem)] xl:order-2 xl:max-h-[calc(100vh-var(--chrome-h)-2.5rem)] xl:overflow-y-auto xl:pb-14">
+            <DiagnosticoPanel
+              diagnostico={diagnostico}
+              projectId={id}
+              acciones={acciones}
+              onApplied={() => {
+                getDiagnostico(id).then(setDiagnostico).catch(() => {});
+                getAcciones(id).then((r) => setAcciones(r.acciones)).catch(() => {});
+              }}
             />
-            <Line label="Contingencia" value={money2(costs.integration.contingency)} muted />
-            <Line
-              label="Total con contingencia"
-              value={money2(costs.integration.grand_total)}
-              bold
-              accent
-            />
-          </div>
-        </Card>
-
-        <Card className="p-5">
-          <SectionTitle sub="Fuente de verdad leída del archivo">
-            Dimensiones detectadas
-          </SectionTitle>
-          {dims ? (
-            <div className="space-y-2.5 text-sm">
-              <Line
-                label="Sección típica"
-                value={
-                  dims.typical_section_cm
-                    ? `${dims.typical_section_cm[0]}×${dims.typical_section_cm[1]} cm`
-                    : "—"
-                }
-              />
-              <Line
-                label="Espesor de muro"
-                value={
-                  dims.typical_wall_thickness_cm ? `${dims.typical_wall_thickness_cm} cm` : "—"
-                }
-              />
-              <Line label="Sistema de losa" value={dims.vigueta_system ?? "—"} />
-              <Line label="Cotas leídas" value={`${dims.dimension_count}`} />
-              {dims.typical_wall_thickness_source && (
-                <p className="pt-1 text-xs text-muted">
-                  Espesor de muro · fuente: {dims.typical_wall_thickness_source}
-                </p>
-              )}
+          </aside>
+        )}
+        <div className="min-w-0 xl:order-1">
+          <SuggestionsBar projectId={id} actorName={actorName} conceptCodes={conceptCodes} />
+          <CapturaCallout projectId={id} reloadKey={latestEvent?.seq} />
+          {parametricCount > 0 && (
+            <div className="mb-4">
+              <Callout tone="info">
+                {parametricCount} concepto{parametricCount === 1 ? "" : "s"} paramétrico
+                {parametricCount === 1 ? "" : "s"}: cantidades propuestas con la historia del
+                taller (por m², por planta o por local); el plano no las mide. Revísalos o fíjalos;
+                las reglas están en Catálogo → Plantillas.
+              </Callout>
             </div>
-          ) : (
-            <p className="text-sm text-muted">Sin dimensiones detectadas.</p>
           )}
-        </Card>
+
+          <StatStrip
+            className="mb-4"
+            stats={[
+              { label: "Costo directo", value: money(costs.boq.direct_cost_total) },
+              { label: "Conceptos", value: costs.boq.lines.length.toLocaleString("es-MX") },
+              {
+                label: "Importe en lecturas firmes",
+                value: <ConfidenceBands bands={costs.money_basis?.confidence_bands} />,
+                hint: (
+                  <details className="group/why">
+                    <summary className="cursor-pointer list-none text-muted underline-offset-2 hover:text-foreground hover:underline">
+                      Pesa el dinero, no los elementos · por qué
+                    </summary>
+                    <span className="mt-1 block max-w-prose">
+                      Reparte el costo directo según la confianza de sus lecturas: alta, justo en el
+                      umbral de 70 % y por debajo. Se pondera por importe; en un promedio simple, cien
+                      tornillos seguros taparían una trabe dudosa.
+                    </span>
+                  </details>
+                ),
+              },
+            ]}
+          />
+
+          {costs.boq.lines.length === 0 && (
+            <div className="mb-6">
+              <EmptyState
+                icon={<FileXls size={20} weight="duotone" />}
+                title="El plano no produjo ningún concepto"
+                hint={
+                  costs.boq.warnings[0] ??
+                  "No se detectaron elementos estructurales ni de albañilería que el catálogo sepa costear. Revisa la lectura del plano o agrega los conceptos en «Ajustes a mano»."
+                }
+                action={
+                  <Link href={`/proyecto/${id}/lectura`} className={buttonClasses("secondary", "sm")}>
+                    Ver la lectura del plano
+                  </Link>
+                }
+              />
+            </div>
+          )}
+
+          <Tabs
+            className="mb-4"
+            value={tab}
+            onChange={setTab}
+            items={[
+              { key: "partidas", label: "Partidas", count: costs.boq.lines.length },
+              { key: "integracion", label: "Integración del precio" },
+              { key: "ajustes", label: "Ajustes a mano", count: reviews?.adjustments.length },
+              { key: "versiones", label: "Versiones" },
+            ]}
+          />
+
+          <TableCard
+            sticky
+            tour="presupuesto.lineas"
+            className={`mb-6 ${tab !== "partidas" || costs.boq.lines.length === 0 ? "hidden" : ""}`}
+          >
+            <thead>
+              <tr className="border-b border-border bg-surface-2">
+                <Th>Clave</Th>
+                <Th>Concepto</Th>
+                <Th align="right">Cantidad</Th>
+                <Th align="right">P.U.</Th>
+                <Th align="right">Importe</Th>
+                <Th align="center">Conf.</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {phases.map((phase) => {
+                const lines = costs.boq.lines.filter((l) => l.phase === phase);
+                const subtotal = lines.reduce((s, l) => s + l.amount, 0);
+                return (
+                  <PhaseGroup
+                    key={phase}
+                    phase={phase}
+                    lines={lines}
+                    subtotal={subtotal}
+                    total={costs.boq.direct_cost_total}
+                    projectId={id}
+                    actorName={actorName}
+                    clientId={clientId}
+                    onReviews={setReviews}
+                  />
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="bg-surface-2 font-semibold">
+                <Td colSpan={4}>Costo directo</Td>
+                <Td align="right" className="tabular" colSpan={2}>
+                  {money2(costs.boq.direct_cost_total)}
+                </Td>
+              </tr>
+            </tfoot>
+          </TableCard>
+
+          <div className={`grid gap-4 lg:grid-cols-2 ${tab !== "integracion" ? "hidden" : ""}`}>
+            <Card className="p-4">
+              <SectionTitle>Integración del precio</SectionTitle>
+              <div className="space-y-2 text-sm">
+                <Line label="Costo directo" value={money2(costs.integration.direct_cost)} bold />
+                {costs.integration.lines.map((l) => (
+                  <Line
+                    key={l.description}
+                    label={`${l.description} (${l.percentage}%)`}
+                    value={money2(l.amount)}
+                    muted
+                  />
+                ))}
+                <div className="my-2 border-t border-border" />
+                <Line
+                  label={`Precio de venta · factor ${costs.integration.overcost_factor.toFixed(3)}`}
+                  value={money2(costs.integration.sale_price)}
+                  bold
+                />
+                <Line label="Contingencia" value={money2(costs.integration.contingency)} muted />
+                <Line
+                  label="Total con contingencia"
+                  value={money2(costs.integration.grand_total)}
+                  bold
+                  accent
+                />
+              </div>
+            </Card>
+
+            <Card className="p-4">
+              <SectionTitle sub="Fuente de verdad leída del archivo">
+                Dimensiones detectadas
+              </SectionTitle>
+              {dims ? (
+                <div className="space-y-2.5 text-sm">
+                  <Line
+                    label="Sección típica"
+                    value={
+                      dims.typical_section_cm
+                        ? `${dims.typical_section_cm[0]}×${dims.typical_section_cm[1]} cm`
+                        : "—"
+                    }
+                  />
+                  <Line
+                    label="Espesor de muro"
+                    value={
+                      dims.typical_wall_thickness_cm ? `${dims.typical_wall_thickness_cm} cm` : "—"
+                    }
+                  />
+                  <Line label="Sistema de losa" value={dims.vigueta_system ?? "—"} />
+                  <Line label="Cotas leídas" value={`${dims.dimension_count}`} />
+                  {dims.typical_wall_thickness_source && (
+                    <p className="pt-1 text-xs text-muted">
+                      Espesor de muro · fuente: {dims.typical_wall_thickness_source}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted">Sin dimensiones detectadas.</p>
+              )}
+            </Card>
+          </div>
+
+          {tab === "integracion" && costs.indicators && <IndicatorsCard indicators={costs.indicators} />}
+
+          <Card className={`mt-6 p-5 ${tab !== "ajustes" ? "hidden" : ""}`}>
+            <SectionTitle sub="Agrega lo que el presupuesto necesita y el plano no trae: el concepto, su cantidad y el motivo, con tu nombre. Para corregir una cantidad leída, usa el lápiz de su línea.">
+              Conceptos agregados a mano
+            </SectionTitle>
+            <AdjustmentsPanel
+              projectId={id}
+              reviews={reviews}
+              boqLines={costs.boq.lines}
+              concepts={concepts}
+              actorName={actorName}
+              clientId={clientId}
+              onChanged={setReviews}
+            />
+          </Card>
+
+          <Card className={`mt-6 p-5 ${tab !== "versiones" ? "hidden" : ""}`}>
+            <SectionTitle sub="Guarda el presupuesto actual, con tus revisiones, ajustes y parámetros, para compararlo o volver a él después.">
+              Versiones del presupuesto
+            </SectionTitle>
+            <VersionsPanel projectId={id} />
+          </Card>
+
+          {tab === "partidas" && costs.boq.warnings.length > 0 && (
+            <Card className="mt-4 p-4">
+              <SectionTitle sub="Revisar antes de usar el presupuesto como referencia.">
+                Advertencias ({costs.boq.warnings.length})
+              </SectionTitle>
+              <ul className="space-y-1.5 text-sm text-warning">
+                {costs.boq.warnings.slice(0, 8).map((w, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <Warning className="mt-0.5 shrink-0" />
+                    {w}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+        </div>
       </div>
-
-      {tab === "integracion" && costs.indicators && <IndicatorsCard indicators={costs.indicators} />}
-
-      <Card className={`mt-6 p-5 ${tab !== "ajustes" ? "hidden" : ""}`}>
-        <SectionTitle sub="Agrega lo que el presupuesto necesita y el plano no trae: el concepto, su cantidad y el motivo, con tu nombre. Para corregir una cantidad leída, usa el lápiz de su línea.">
-          Conceptos agregados a mano
-        </SectionTitle>
-        <AdjustmentsPanel
-          projectId={id}
-          reviews={reviews}
-          boqLines={costs.boq.lines}
-          concepts={concepts}
-          actorName={actorName}
-          clientId={clientId}
-          onChanged={setReviews}
-        />
-      </Card>
-
-      <Card className={`mt-6 p-5 ${tab !== "versiones" ? "hidden" : ""}`}>
-        <SectionTitle sub="Guarda el presupuesto actual, con tus revisiones, ajustes y parámetros, para compararlo o volver a él después.">
-          Versiones del presupuesto
-        </SectionTitle>
-        <VersionsPanel projectId={id} />
-      </Card>
-
-      {tab === "partidas" && costs.boq.warnings.length > 0 && (
-        <Card className="mt-6 p-5">
-          <SectionTitle sub="Revisar antes de usar el presupuesto como referencia.">
-            Advertencias ({costs.boq.warnings.length})
-          </SectionTitle>
-          <ul className="space-y-1.5 text-sm text-warning">
-            {costs.boq.warnings.slice(0, 8).map((w, i) => (
-              <li key={i} className="flex items-start gap-2">
-                <Warning size={15} weight="bold" className="mt-0.5 shrink-0" />
-                {w}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
     </div>
   );
 }
@@ -645,7 +669,7 @@ function PhaseGroup({
       >
         <td
           colSpan={4}
-          className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted"
+          className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted"
         >
           <button
             type="button"
@@ -657,8 +681,7 @@ function PhaseGroup({
             className="inline-flex items-center gap-1.5 rounded-sm uppercase"
           >
             <CaretDown
-              size={11}
-              weight="bold"
+              size={12}
               className={`transition-transform ${collapsed ? "-rotate-90" : ""}`}
             />
             {phase}
@@ -669,7 +692,7 @@ function PhaseGroup({
         </td>
         <td
           colSpan={2}
-          className="px-4 py-2 text-right text-xs font-semibold tabular text-muted"
+          className="px-3 py-1.5 text-right text-xs font-semibold tabular text-muted"
         >
           {total > 0 && (
             <span className="mr-2 font-normal text-faint">{pct.toFixed(1)} %</span>
@@ -694,7 +717,7 @@ function PhaseGroup({
                 {l.taller_clave ? (
                   <span title={`Concepto del taller (Klave ${l.concept_code})`}>
                     {l.taller_clave}
-                    <span className="block text-[10px] text-faint">{l.concept_code}</span>
+                    <span className="block text-[11px] leading-4 text-faint">{l.concept_code}</span>
                   </span>
                 ) : (
                   l.concept_code
@@ -720,19 +743,12 @@ function PhaseGroup({
                     <Badge tone="warning">paramétrico</Badge>
                   </span>
                 )}
-                {l.unpriced && (
-                  <span className="ml-1.5 align-middle">
-                    <Badge tone="danger" dot title="Sin matriz ni precio adoptado: el importe se desconoce">
-                      sin precio
-                    </Badge>
-                  </span>
-                )}
                 {levels.length > 1 && (
                   <div className="mt-1 flex flex-wrap gap-1.5">
                     {levels.map(([title, qty]) => (
                       <span
                         key={title}
-                        className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] tabular text-muted"
+                        className="rounded bg-surface-2 px-1.5 text-xs leading-5 tabular text-muted"
                         title={`${title}: ${num(qty)} ${l.unit}`}
                       >
                         {title.replace(/^[A-Z]{1,3}-\d{2,4}[A-Z]?\s*·\s*/, "")} {num(qty)}
@@ -763,16 +779,26 @@ function PhaseGroup({
                       }}
                       className="rounded-md p-0.5 text-faint opacity-0 transition-opacity hover:text-accent group-hover/qty:opacity-100 focus:opacity-100"
                     >
-                      <PencilSimpleLine size={13} />
+                      <PencilSimpleLine size={14} />
                     </button>
                   </span>
                 }
               </Td>
               <Td align="right" className="tabular text-muted">
-                {l.unpriced ? <span className="text-danger">sin precio</span> : money2(l.unit_price)}
+                {/* Said once per row, where the price would be. */}
+                {l.unpriced ? (
+                  <span
+                    className="text-danger"
+                    title="Sin matriz ni precio adoptado: el importe se desconoce"
+                  >
+                    sin precio
+                  </span>
+                ) : (
+                  money2(l.unit_price)
+                )}
               </Td>
               <Td align="right" className="font-medium tabular">
-                {l.unpriced ? <span className="text-danger">—</span> : money2(l.amount)}
+                {l.unpriced ? <span className="text-faint">—</span> : money2(l.amount)}
               </Td>
               <Td align="center">
                 <ConfidenceBadge value={l.confidence} />
@@ -1046,10 +1072,10 @@ function QuantityEditor({
         className="min-w-48 flex-1 px-2 py-1"
       />
       <Button size="sm" variant="primary" onClick={save} disabled={busy}>
-        <Check size={13} weight="bold" /> Fijar
+        <Check size={14} /> Fijar
       </Button>
       <Button size="sm" onClick={() => onDone(null)} disabled={busy} aria-label="Cancelar">
-        <X size={13} weight="bold" />
+        <X size={14} />
       </Button>
       {error && <span className="text-xs text-danger">{error}</span>}
     </div>
@@ -1157,7 +1183,7 @@ function AdjustmentsPanel({
         <ul className="mb-4 divide-y divide-border">
           {adjustments.map((adjustment) => (
             <li key={adjustment.adjustment_id} className="flex items-center gap-3 py-2.5">
-              <PencilSimpleLine size={15} className="shrink-0 text-muted" />
+              <PencilSimpleLine className="shrink-0 text-muted" />
               <div className="min-w-0 flex-1 text-sm">
                 <span className="font-mono text-xs text-muted">
                   {adjustment.concept_code}

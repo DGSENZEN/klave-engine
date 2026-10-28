@@ -168,6 +168,7 @@ export function GeneradorEditor({
                     </td>
                     <td className="px-1 py-1 text-right">
                       <IconButton
+                        size="sm"
                         onClick={() => onChange(lineas.filter((_, j) => j !== i))}
                         aria-label={`Quitar la línea ${i + 1}`}
                       >

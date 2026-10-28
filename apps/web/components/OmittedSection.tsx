@@ -10,14 +10,7 @@ import {
   removeOmittedElement,
   type OmittedElement,
 } from "@/lib/api";
-import {
-  Button,
-  Callout,
-  Card,
-  Input,
-  SectionTitle,
-  Select,
-} from "@/components/ui";
+import { Button, Callout, Card, Input, SectionTitle, Select, iconButtonClasses } from "@/components/ui";
 
 /** What each family needs from the engineer: nothing beyond the count, a
  * total length, or a total area. Mirrors the API's validation. */
@@ -179,7 +172,7 @@ export function OmittedSection({
                 aria-label="Quitar elemento omitido"
                 disabled={busy}
                 onClick={() => setPorQuitar(element)}
-                className="shrink-0 rounded-md p-1 text-faint transition-colors hover:bg-surface-2 hover:text-danger"
+                className={iconButtonClasses("sm", "text-faint hover:text-danger")}
               >
                 <Trash size={14} />
               </button>
@@ -298,7 +291,7 @@ export function OmittedSection({
         </div>
       ) : (
         <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
-          <PlusCircle size={15} weight="bold" /> Agregar elemento omitido
+          <PlusCircle /> Agregar elemento omitido
         </Button>
       )}
     </Card>

@@ -2,7 +2,7 @@
 
 import { LectorSection } from "@/components/LectorSection";
 import { PerfilTallerSection } from "@/components/PerfilTallerSection";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   ArrowLeft,
   Books,
@@ -99,6 +99,7 @@ import {
   SkeletonHeader,
   SkeletonTable,
   Tabs,
+  TableCard,
   Td,
   Th,
 } from "@/components/ui";
@@ -268,13 +269,17 @@ export default function CatalogoPage() {
   return (
     <div className="min-h-screen">
       <WorkspaceHeader active="catalogo" />
-      <main className="mx-auto max-w-5xl px-5 py-8 sm:px-6">
+      <main
+        className="mx-auto max-w-6xl px-5 py-8 sm:px-6"
+        // Sticky table headers stop under the workspace header (h-14).
+        style={{ "--chrome-h": "56px" } as CSSProperties}
+      >
         {desde && (
           <Link
             href={`/proyecto/${desde}`}
             className="mb-4 inline-flex max-w-full items-center gap-1.5 text-sm text-muted hover:text-foreground"
           >
-            <ArrowLeft size={14} weight="bold" className="shrink-0" />
+            <ArrowLeft size={14} className="shrink-0" />
             <span className="truncate">
               Volver a la obra{obraDeOrigen?.name ? ` · ${obraDeOrigen.name}` : ""}
             </span>
@@ -320,7 +325,7 @@ export default function CatalogoPage() {
               />
               <ButtonMenu
                 label="Importar…"
-                icon={<UploadSimple size={15} weight="bold" />}
+                icon={<UploadSimple />}
                 width="w-80"
               >
                 {(close) => (
@@ -383,7 +388,7 @@ export default function CatalogoPage() {
                 )}
               </ButtonMenu>
               <Button onClick={exportCsv} disabled={!catalog}>
-                <DownloadSimple size={15} weight="bold" /> Exportar insumos (CSV)
+                <DownloadSimple /> Exportar insumos (CSV)
               </Button>
             </>
           }
@@ -404,7 +409,7 @@ export default function CatalogoPage() {
                   variant="ghost"
                   onClick={() => setNotice(null)}
                 >
-                  <Check size={14} weight="bold" /> Entendido
+                  <Check size={14} /> Entendido
                 </Button>
               }
             >
@@ -635,7 +640,7 @@ function InsumosSection({
         </span>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-data">
           <thead>
             <tr className="border-b border-border bg-surface-2">
               <Th className="w-8 px-3">
@@ -654,17 +659,17 @@ function InsumosSection({
                   }
                 />
               </Th>
-              <Th className="px-5">Insumo</Th>
+              <Th>Insumo</Th>
               <Th>Tipo</Th>
               <Th>Unidad</Th>
               <Th align="right">Costo unitario</Th>
-              <Th className="px-5">Fuente</Th>
+              <Th>Fuente</Th>
             </tr>
           </thead>
           <tbody>
             {visible.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-5 py-6 text-center text-sm text-muted">
+                <td colSpan={6} className="px-4 py-6 text-center text-sm text-muted">
                   Ningún insumo coincide con «{query.trim()}».
                 </td>
               </tr>
@@ -690,7 +695,7 @@ function InsumosSection({
                     }
                   />
                 </Td>
-                <Td className="px-5">
+                <Td>
                   <CommitText
                     value={insumo.description}
                     placeholder="Descripción"
@@ -738,7 +743,7 @@ function InsumosSection({
                     />
                   )}
                 </Td>
-                <Td className="px-5">
+                <Td>
                   <CommitText
                     value={insumo.source}
                     placeholder="p. ej. cotización proveedor"
@@ -1393,7 +1398,7 @@ function ApusSection({
             tone="info"
             action={
               <Button size="sm" variant="primary" disabled={working} onClick={generateAll}>
-                <MagicWand size={14} weight="bold" /> Generar las que faltan ({sinMatriz.length})
+                <MagicWand size={14} /> Generar las que faltan ({sinMatriz.length})
               </Button>
             }
           >
@@ -1437,15 +1442,13 @@ function ApusSection({
           </Button>
         </div>
       )}
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+      <TableCard sticky>
             <thead>
               <tr className="border-b border-border bg-surface-2">
-                <Th className="px-5">Concepto / recurso</Th>
+                <Th>Concepto / recurso</Th>
                 <Th align="right">Cantidad</Th>
                 <Th align="right">Costo</Th>
-                <Th align="right" className="px-5">
+                <Th align="right">
                   Importe
                 </Th>
               </tr>
@@ -1469,9 +1472,7 @@ function ApusSection({
                 />
               ))}
             </tbody>
-          </table>
-        </div>
-      </Card>
+      </TableCard>
     </div>
   );
 }
@@ -1506,7 +1507,7 @@ function PhaseRows({
   return (
     <>
       <tr className="border-b border-border bg-surface-2/60">
-        <td colSpan={4} className="px-5 py-1.5">
+        <td colSpan={4} className="px-4 py-1.5">
           <div className="flex items-center justify-between">
             <span className="microlabel">
               {phase}
@@ -1679,7 +1680,7 @@ function NewConceptRow({
 
   return (
     <tr className="border-b border-border bg-surface-2/40">
-      <td colSpan={4} className="px-5 py-2.5">
+      <td colSpan={4} className="px-4 py-2.5">
         <div className="flex flex-wrap items-center gap-2">
           <Input
             value={code}
@@ -2006,17 +2007,16 @@ function ConceptRows({
         }}
         aria-expanded={open}
       >
-        <Td className="px-5">
+        <Td>
           <div className="flex items-center gap-2">
             <CaretDown
-              size={13}
-              weight="bold"
+              size={12}
               className={`shrink-0 text-faint transition-transform ${open ? "" : "-rotate-90"}`}
             />
             <div className="min-w-0">
               <span className="font-mono text-xs text-muted">{concept.code}</span>{" "}
               <span className="font-medium">{concept.description}</span>{" "}
-              {concept.detection_backed && <Badge tone="accent">Del plano</Badge>}{" "}
+              {concept.detection_backed && <Badge>Del plano</Badge>}{" "}
               <OrigenBadge
                 origin={concept.origin}
                 originRef={concept.origin_ref}
@@ -2029,7 +2029,7 @@ function ConceptRows({
                 </Badge>
               )}
               {(concept.ficha?.length ?? 0) > 0 && (
-                <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
+                <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
                   {concept.ficha!.slice(0, 6).map((dato) => (
                     <span key={dato.campo} className="whitespace-nowrap">
                       <span className="text-faint">{dato.campo}</span>{" "}
@@ -2041,19 +2041,19 @@ function ConceptRows({
             </div>
           </div>
         </Td>
-        <Td align="right" className="text-muted">
+        <Td align="right" className="whitespace-nowrap text-muted">
           por {concept.unit}
         </Td>
-        <Td align="right" className="tabular text-muted">
+        <Td align="right" className="whitespace-nowrap tabular text-muted">
           {draft.length} recursos
         </Td>
-        <Td align="right" className="tabular px-5 font-semibold">
+        <Td align="right" className="tabular font-semibold">
           {money2(concept.price_override != null ? concept.price_override : preview)}
         </Td>
       </tr>
       {open && concept.price_override != null && (
         <tr className="border-b border-border bg-warning-soft/60">
-          <td colSpan={4} className="px-5 py-2 text-sm">
+          <td colSpan={4} className="px-4 py-2 text-sm">
             <div className="flex flex-wrap items-center gap-3">
               <span className="min-w-0 flex-1">
                 Se costea a <strong>{money2(concept.price_override)}</strong> por {concept.unit},
@@ -2086,7 +2086,7 @@ function ConceptRows({
       )}
       {open && draft.length === 0 && concept.price_override == null && (
         <tr className="border-b border-border bg-surface-2/20">
-          <td colSpan={4} className="px-5 py-2 text-sm">
+          <td colSpan={4} className="px-4 py-2 text-sm">
             <div className="flex flex-wrap items-center gap-3 pl-6">
               <span className="min-w-0 flex-1 text-muted">
                 Sin matriz: genera una desde la plantilla de su familia. Cada línea dirá de dónde
@@ -2101,7 +2101,7 @@ function ConceptRows({
                   void runGenerate(false);
                 }}
               >
-                <MagicWand size={14} weight="bold" /> Generar matriz
+                <MagicWand size={14} /> Generar matriz
               </Button>
             </div>
           </td>
@@ -2122,7 +2122,7 @@ function ConceptRows({
             <tr
               className="group border-b border-border bg-surface-2/20 last:border-0"
             >
-              <Td className="px-5">
+              <Td>
                 <div className="flex items-center gap-2 pl-6">
                   {isBasico && (
                     <button
@@ -2141,7 +2141,6 @@ function ConceptRows({
                     >
                       <CaretDown
                         size={12}
-                        weight="bold"
                         className={`transition-transform ${isExpanded ? "" : "-rotate-90"}`}
                       />
                     </button>
@@ -2190,7 +2189,7 @@ function ConceptRows({
                   ? `${(insumo.unit_cost * 100).toFixed(1)}% MO`
                   : money2(insumo.unit_cost)}
               </Td>
-              <Td align="right" className="tabular px-5">
+              <Td align="right" className="tabular">
                 {amount == null ? "—" : money2(amount)}
               </Td>
             </tr>
@@ -2206,7 +2205,7 @@ function ConceptRows({
                     key={`${insumo.code}:${sub.resource_code}`}
                     className="border-b border-border bg-surface-2/40 text-xs last:border-0"
                   >
-                    <Td className="px-5">
+                    <Td>
                       <div className="pl-14 text-muted">
                         {member.description}{" "}
                         <span className="font-mono text-[11px] text-faint">{member.code}</span>
@@ -2220,7 +2219,7 @@ function ConceptRows({
                         ? `${(member.unit_cost * 100).toFixed(1)}% MO`
                         : money2(member.unit_cost)}
                     </Td>
-                    <Td align="right" className="tabular px-5 text-muted">
+                    <Td align="right" className="tabular text-muted">
                       {subAmount == null ? "—" : money2(subAmount)}
                     </Td>
                   </tr>
@@ -2231,7 +2230,7 @@ function ConceptRows({
         })}
       {open && (
         <tr className="border-b border-border bg-surface-2/20">
-          <Td className="px-5">
+          <Td>
             <div className="flex items-center gap-2 pl-6">
               <div className="min-w-0 flex-1">
                 <InsumoSearch
@@ -2277,7 +2276,7 @@ function ConceptRows({
               {concept.unit}/día
             </label>
           </Td>
-          <Td align="right" className="px-5">
+          <Td align="right">
             <span className="text-xs text-muted">CD </span>
             <span className="tabular text-sm font-semibold">{money2(preview)}</span>
           </Td>
@@ -2487,11 +2486,11 @@ function FuentesSection({
             >
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-foreground">
                 {source.custom ? (
-                  <UploadSimple size={16} weight="duotone" />
+                  <UploadSimple />
                 ) : source.kind === "costo_horario" ? (
-                  <Crane size={16} weight="duotone" />
+                  <Crane />
                 ) : (
-                  <Books size={16} weight="duotone" />
+                  <Books />
                 )}
               </span>
               <div className="min-w-0 flex-1">
@@ -3058,7 +3057,7 @@ function SalarioRealSection({
         className="mb-8"
         open={open}
         onToggle={() => setOpen((v) => !v)}
-        icon={<HardHat size={16} weight="duotone" />}
+        icon={<HardHat />}
         title="Salario real (Fsr) — RLOPSRM art. 190–191"
         summary={
           (first
@@ -3090,7 +3089,7 @@ function SalarioRealSection({
         )}
         {params && (
           <div>
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr className="text-left text-xs text-muted">
                   <th className="py-1.5 pr-3 font-medium">Categoría</th>
@@ -3297,7 +3296,7 @@ function SalarioRealSection({
         )}
         {preview && (
           <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr className="bg-surface-2">
                   <Th>Categoría</Th>

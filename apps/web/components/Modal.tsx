@@ -1,5 +1,6 @@
 "use client";
 
+import { iconButtonClasses } from "@/components/ui";
 import {
   useCallback,
   useEffect,
@@ -130,7 +131,7 @@ export function Modal({
         aria-label={title}
         tabIndex={-1}
         onKeyDown={onDialogKeyDown}
-        className={`toast-in relative flex outline-none max-h-[90vh] w-full ${width} flex-col rounded-xl border border-border bg-surface shadow-lg`}
+        className={`menu-pop relative flex outline-none max-h-[90vh] w-full ${width} flex-col rounded-xl border border-border bg-surface shadow-lg`}
       >
         <div className="flex items-start gap-3 border-b border-border px-5 py-4">
           <div className="min-w-0 flex-1">
@@ -141,9 +142,9 @@ export function Modal({
             type="button"
             aria-label="Cerrar"
             onClick={() => !busy && onClose()}
-            className="rounded-md p-1 text-faint transition-colors hover:bg-surface-2 hover:text-foreground"
+            className={iconButtonClasses("sm", "text-faint")}
           >
-            <X size={16} weight="bold" />
+            <X />
           </button>
         </div>
         <div data-dialog-body className="min-h-0 flex-1 overflow-y-auto px-5 py-4 text-sm">

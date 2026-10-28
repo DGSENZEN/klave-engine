@@ -120,7 +120,7 @@ export default function ConfiguracionPage() {
 
   if (!project && error) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Configuración del proyecto" />
         <Callout tone="danger">{error}</Callout>
       </div>
@@ -128,7 +128,7 @@ export default function ConfiguracionPage() {
   }
   if (!project) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <SkeletonHeader />
         <Skeleton className="h-64" />
       </div>
@@ -136,7 +136,7 @@ export default function ConfiguracionPage() {
   }
 
   return (
-    <div className="rise-in mx-auto max-w-3xl px-6 py-7 lg:px-8">
+    <div className="max-w-3xl px-4 py-5 sm:px-6">
       <PageHeader
         title="Configuración del proyecto"
         sub="Organización, acceso del equipo y acciones sobre este proyecto."
@@ -202,16 +202,16 @@ export default function ConfiguracionPage() {
           <Button onClick={toggleArchived}>
             {project.archived ? (
               <>
-                <ArrowCounterClockwise size={15} weight="bold" /> Restaurar
+                <ArrowCounterClockwise /> Restaurar
               </>
             ) : (
               <>
-                <Archive size={15} weight="bold" /> Archivar
+                <Archive /> Archivar
               </>
             )}
           </Button>
           <Button variant="danger" onClick={() => setRemoveOpen(true)}>
-            <Trash size={15} weight="bold" /> Quitar de la lista…
+            <Trash /> Quitar de la lista…
           </Button>
         </div>
       </Card>
@@ -323,7 +323,7 @@ function AccessCard({ projectId }: { projectId: string }) {
         <>
           {access.members.length === 0 ? (
             <p className="mb-4 flex items-center gap-2 text-sm text-muted">
-              <UsersThree size={16} /> Nadie más tiene acceso todavía.
+              <UsersThree /> Nadie más tiene acceso todavía.
             </p>
           ) : (
             <ul className="mb-4 divide-y divide-border">

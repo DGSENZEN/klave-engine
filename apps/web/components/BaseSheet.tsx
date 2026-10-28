@@ -138,7 +138,6 @@ export function BaseSheet({
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-64 flex-1">
           <MagnifyingGlass
-            size={15}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
           />
           <Input
@@ -244,7 +243,7 @@ export function BaseSheet({
         </p>
       ) : (
         <div className={`mt-3 overflow-x-auto ${loading ? "opacity-60" : ""}`} aria-busy={loading}>
-          <table className="w-full text-sm">
+          <table className="w-full text-data">
             <thead>
               <tr className="border-b border-border bg-surface-2">
                 <Th className="w-8 px-3">
@@ -300,7 +299,7 @@ export function BaseSheet({
                   >
                     <Td className="px-3">
                       {row.in_taller ? (
-                        <Check size={14} weight="bold" className="text-success" aria-label="Ya en el taller" />
+                        <Check size={14} className="text-success" aria-label="Ya en el taller" />
                       ) : (
                         <Checkbox
                           aria-label={`Seleccionar ${row.clave}`}
@@ -340,7 +339,7 @@ export function BaseSheet({
                           disabled={bringing}
                           onClick={() => bring([row.ref_id])}
                         >
-                          Traer <ArrowRight size={13} />
+                          Traer <ArrowRight size={14} />
                         </Button>
                       )}
                     </Td>

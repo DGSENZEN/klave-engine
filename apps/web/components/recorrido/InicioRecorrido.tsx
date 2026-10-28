@@ -58,7 +58,7 @@ export function InicioRecorrido() {
           </p>
         </div>
         <IconButton aria-label="Más tarde" onClick={masTarde}>
-          <X size={15} />
+          <X />
         </IconButton>
       </div>
       {empezado && (

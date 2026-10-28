@@ -1,36 +1,41 @@
-import type { ReactNode } from "react";
+import type { Icon } from "@phosphor-icons/react";
 import {
+  Blueprint,
   Books,
   Calculator,
-  CalendarBlank,
+  ChartBarHorizontal,
   ChartLineUp,
+  ClipboardText,
   Coins,
   FileMagnifyingGlass,
-  GitDiff,
   Flag,
-  ListChecks,
+  GitDiff,
+  Handshake,
+  Invoice,
   MapTrifold,
   Notebook,
-  NotePencil,
-  Receipt,
-  Scales,
+  SealCheck,
+  Signature,
+  Tag,
+  Timer,
   Wallet,
   Warning,
-  Timer,
 } from "@phosphor-icons/react";
 import type { TableroNodeKey } from "@/lib/api";
 
 /**
  * La navegación vive en los nodos: cada nodo del tablero carga sus propias
- * entradas (lo que antes era la barra lateral completa). El tablero las
- * muestra dentro de cada tarjeta y la barra lateral de las subpantallas se
- * vuelve contextual — solo el nodo donde estás parado.
+ * entradas. La franja del proceso (ProjectShell) muestra los seis nodos
+ * siempre; la barra del nodo, sus entradas.
+ *
+ * Cada nodo tiene UN glifo y es suyo: el mismo en el tablero, la franja y la
+ * paleta, y ninguna otra entrada lo usa salvo la principal de ese nodo.
  */
 
 export type NodeEntry = {
   key: string;
   label: string;
-  icon: ReactNode;
+  glyph: Icon;
   /** Fragmento de ruta del proyecto, o ruta absoluta (catálogo del taller). */
   href: string;
   /** Rutas hermanas que también cuentan como esta entrada (p.ej. /flujo). */
@@ -43,7 +48,7 @@ export type NodeEntry = {
 export type NodeNav = {
   key: TableroNodeKey;
   label: string;
-  icon: ReactNode;
+  glyph: Icon;
   entries: NodeEntry[];
 };
 
@@ -51,112 +56,60 @@ export const NODE_NAV: NodeNav[] = [
   {
     key: "planos",
     label: "Planos",
-    icon: <FileMagnifyingGlass size={18} />,
+    glyph: Blueprint,
     entries: [
-      {
-        key: "lectura",
-        label: "Lectura del plano",
-        icon: <FileMagnifyingGlass size={16} />,
-        href: "/lectura",
-      },
-      {
-        key: "plano",
-        label: "Visor del plano",
-        icon: <MapTrifold size={16} />,
-        href: "/plano",
-      },
-      {
-        key: "cambios",
-        label: "Cambios entre revisiones",
-        icon: <GitDiff size={16} />,
-        href: "/cambios",
-      },
+      { key: "lectura", label: "Lectura del plano", glyph: FileMagnifyingGlass, href: "/lectura" },
+      { key: "plano", label: "Visor del plano", glyph: MapTrifold, href: "/plano" },
+      { key: "cambios", label: "Cambios entre revisiones", glyph: GitDiff, href: "/cambios" },
     ],
   },
   {
     key: "revision",
     label: "Revisión",
-    icon: <ListChecks size={18} />,
+    glyph: SealCheck,
     entries: [
-      {
-        key: "revision",
-        label: "Revisión",
-        icon: <ListChecks size={16} />,
-        href: "/revision",
-      },
-      {
-        key: "riesgos",
-        label: "Riesgos",
-        icon: <Warning size={16} />,
-        href: "/riesgos",
-      },
+      { key: "revision", label: "Revisión", glyph: SealCheck, href: "/revision" },
+      { key: "riesgos", label: "Riesgos", glyph: Warning, href: "/riesgos" },
     ],
   },
   {
     key: "catalogo",
     label: "Catálogo",
-    icon: <Books size={18} />,
-    entries: [
-      {
-        key: "catalogo",
-        label: "Catálogo del taller",
-        icon: <Books size={16} />,
-        href: "/catalogo",
-      },
-    ],
+    glyph: Books,
+    entries: [{ key: "catalogo", label: "Catálogo del taller", glyph: Books, href: "/catalogo" }],
   },
   {
     key: "presupuesto",
     label: "Presupuesto",
-    icon: <Receipt size={18} />,
+    glyph: Calculator,
     entries: [
-      {
-        key: "presupuesto",
-        label: "Presupuesto",
-        icon: <Receipt size={16} />,
-        href: "/presupuesto",
-      },
+      { key: "presupuesto", label: "Presupuesto", glyph: Calculator, href: "/presupuesto" },
       {
         key: "convocante",
         label: "Catálogo de la convocante",
-        icon: <Scales size={16} />,
+        glyph: ClipboardText,
         href: "/convocante",
       },
-      {
-        key: "apu",
-        label: "Precios unitarios",
-        icon: <Calculator size={16} />,
-        href: "/apus",
-      },
-      {
-        key: "piloto",
-        label: "Medición del piloto",
-        icon: <Timer size={16} />,
-        href: "/piloto",
-      },
+      { key: "apu", label: "Precios unitarios", glyph: Tag, href: "/apus" },
+      { key: "piloto", label: "Medición del piloto", glyph: Timer, href: "/piloto" },
     ],
   },
   {
     key: "programa",
     label: "Programa",
-    icon: <CalendarBlank size={18} />,
+    glyph: ChartBarHorizontal,
     entries: [
       {
         key: "programa",
         label: "Programa de obra",
-        icon: <CalendarBlank size={16} />,
+        glyph: ChartBarHorizontal,
         href: "/programa",
       },
-      {
-        key: "flujo",
-        label: "Flujo financiero",
-        icon: <Wallet size={16} />,
-        href: "/flujo",
-      },
+      { key: "flujo", label: "Flujo financiero", glyph: Wallet, href: "/flujo" },
       {
         key: "parametros",
         label: "Parámetros e insumos",
-        icon: <Coins size={16} />,
+        glyph: Coins,
         href: "/parametros",
         // Los supuestos alimentan al presupuesto y son el paso 3 de la ruta
         // de verificación: no pueden esperar a que se abra el programa.
@@ -167,44 +120,14 @@ export const NODE_NAV: NodeNav[] = [
   {
     key: "contrato",
     label: "Contrato",
-    icon: <Scales size={18} />,
+    glyph: Signature,
     entries: [
-      {
-        key: "contrato",
-        label: "Catálogo del contrato",
-        icon: <Scales size={16} />,
-        href: "/contrato",
-      },
-      {
-        key: "estimaciones",
-        label: "Estimaciones",
-        icon: <Receipt size={16} />,
-        href: "/estimaciones",
-      },
-      {
-        key: "convenios",
-        label: "Convenios",
-        icon: <NotePencil size={16} />,
-        href: "/convenios",
-      },
-      {
-        key: "bitacora",
-        label: "Bitácora",
-        icon: <Notebook size={16} />,
-        href: "/bitacora",
-      },
-      {
-        key: "ajuste-costos",
-        label: "Ajuste de costos",
-        icon: <ChartLineUp size={16} />,
-        href: "/ajuste-costos",
-      },
-      {
-        key: "finiquito",
-        label: "Finiquito",
-        icon: <Flag size={16} />,
-        href: "/finiquito",
-      },
+      { key: "contrato", label: "Catálogo del contrato", glyph: Signature, href: "/contrato" },
+      { key: "estimaciones", label: "Estimaciones", glyph: Invoice, href: "/estimaciones" },
+      { key: "convenios", label: "Convenios", glyph: Handshake, href: "/convenios" },
+      { key: "bitacora", label: "Bitácora", glyph: Notebook, href: "/bitacora" },
+      { key: "ajuste-costos", label: "Ajuste de costos", glyph: ChartLineUp, href: "/ajuste-costos" },
+      { key: "finiquito", label: "Finiquito", glyph: Flag, href: "/finiquito" },
     ],
   },
 ];

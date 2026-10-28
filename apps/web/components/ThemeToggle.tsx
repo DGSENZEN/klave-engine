@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { Moon, Sun } from "@phosphor-icons/react";
 import { getTheme, setTheme, subscribeTheme, type Theme } from "@/lib/theme";
+import { iconButtonClasses } from "@/components/ui";
 
 function subscribe(onStoreChange: () => void): () => void {
   return subscribeTheme(onStoreChange);
@@ -18,9 +19,11 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
       type="button"
       onClick={() => setTheme(next)}
       aria-label={theme === "dark" ? "Cambiar a tema claro" : "Cambiar a tema oscuro"}
-      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-muted transition hover:bg-surface-2 hover:text-foreground ${className}`}
+      data-tip={theme === "dark" ? "Tema claro" : "Tema oscuro"}
+      data-tip-align="end"
+      className={iconButtonClasses("md", className)}
     >
-      {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+      {theme === "dark" ? <Sun /> : <Moon />}
     </button>
   );
 }

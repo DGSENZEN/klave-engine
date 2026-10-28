@@ -156,7 +156,7 @@ export default function FiniquitoPage() {
 
   if (errorCarga && !cargando) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-5 sm:px-6">
         <PageHeader title="Finiquito" sub="La cuenta que cierra el contrato." />
         <div role="alert">
           <Callout
@@ -176,7 +176,7 @@ export default function FiniquitoPage() {
 
   if (cargando || !fin || !resumen) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 px-4 py-5 sm:px-6">
         <PageHeader title="Finiquito" sub="La cuenta que cierra el contrato." />
         <Skeleton className="h-40 w-full" />
       </div>
@@ -186,13 +186,13 @@ export default function FiniquitoPage() {
   const aFavor = resumen.saldo_final;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 py-5 sm:px-6">
       <PageHeader
         title="Finiquito"
         sub="Lo ejecutado en la obra contra lo pagado, con cada saldo por su nombre."
         actions={
           <Button onClick={() => void guardar()} disabled={guardando}>
-            <FloppyDisk size={16} />
+            <FloppyDisk />
             {guardando ? "Guardando…" : "Guardar finiquito"}
           </Button>
         }
@@ -232,7 +232,7 @@ export default function FiniquitoPage() {
               ? "El contrato cierra en ceros."
               : `A favor ${resumen.a_favor_de === "contratista" ? "del contratista" : "de la contratante"}.`
           }
-          icon={<Flag size={18} />}
+          icon={<Flag />}
         />
       </div>
 

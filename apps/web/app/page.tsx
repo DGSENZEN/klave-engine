@@ -7,6 +7,7 @@ import {
   Archive,
   ArrowCounterClockwise,
   ArrowRight,
+  CaretRight,
   ArrowsClockwise,
   Books,
   CircleNotch,
@@ -292,7 +293,7 @@ export default function Home() {
 
   if (!ready) {
     return (
-      <div className="mx-auto max-w-4xl px-5 py-10">
+      <div className="mx-auto max-w-6xl px-5 py-10 sm:px-6">
         <Skeleton className="mb-10 h-12 w-64" />
         <Skeleton className="h-56" />
       </div>
@@ -345,18 +346,18 @@ export default function Home() {
               }`}
             >
               {toast.tone === "success" ? (
-                <SealCheck size={15} weight="bold" className="text-success" />
+                <SealCheck className="text-success" />
               ) : (
-                <Warning size={15} weight="bold" className="text-warning" />
+                <Warning className="text-warning" />
               )}
               <span className="max-w-72 truncate">{toast.text}</span>
-              <ArrowRight size={13} weight="bold" className="text-faint" />
+              <ArrowRight size={14} className="text-faint" />
             </Link>
           ))}
         </div>
       )}
 
-      <main className="mx-auto max-w-4xl px-5 pb-16 pt-8">
+      <main className="mx-auto max-w-6xl px-5 pb-16 pt-8 sm:px-6">
         <input
           ref={inputRef}
           type="file"
@@ -388,11 +389,11 @@ export default function Home() {
           >
             {uploading ? (
               <>
-                <CircleNotch size={16} className="animate-spin" /> Subiendo…
+                <CircleNotch className="animate-spin" /> Subiendo…
               </>
             ) : (
               <>
-                <Plus size={16} weight="bold" /> Nuevo proyecto
+                <Plus /> Nuevo proyecto
               </>
             )}
           </Button>
@@ -408,7 +409,7 @@ export default function Home() {
             <Callout tone="danger">
               <p>{loadError}</p>
               <Button className="mt-2" onClick={refreshNow} disabled={refreshing}>
-                <ArrowCounterClockwise size={15} /> {refreshing ? "Cargando…" : "Volver a intentar"}
+                <ArrowCounterClockwise /> {refreshing ? "Cargando…" : "Volver a intentar"}
               </Button>
             </Callout>
           </div>
@@ -436,7 +437,6 @@ export default function Home() {
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <div className="relative min-w-56 flex-1">
               <MagnifyingGlass
-                size={15}
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
               />
               <Input
@@ -467,10 +467,10 @@ export default function Home() {
         )}
 
         {projects === null ? (loadError ? null : (
-          <div className="space-y-2">
+          <div className="card divide-y divide-border overflow-clip">
             {Array.from({ length: 3 }, (_, i) => (
-              <div key={i} className="card flex items-center gap-3 p-4">
-                <Skeleton className="h-9 w-9 rounded-lg" />
+              <div key={i} className="flex items-center gap-3 px-4 py-3">
+                <Skeleton className="h-8 w-8 rounded-md" />
                 <div className="flex-1">
                   <Skeleton className="h-4 w-48" />
                   <Skeleton className="mt-2 h-3 w-32" />
@@ -500,16 +500,15 @@ export default function Home() {
             )}
           </p>
         ) : (
-          <div className="space-y-2">
+          // One list, divided rows: projects are entries in a register, not
+          // separate objects to admire.
+          <ul className="card divide-y divide-border overflow-clip">
             {filtered?.map((project) => (
-              <ProjectRow
-                key={project.project_id}
-                project={project}
-                onChanged={refreshNow}
-                onError={setError}
-              />
+              <li key={project.project_id}>
+                <ProjectRow project={project} onChanged={refreshNow} onError={setError} />
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </main>
     </div>
@@ -547,7 +546,7 @@ function AttentionStrip({
     chips.push({
       key: "failed",
       label: attention.failed === 1 ? "1 con errores" : `${attention.failed} con errores`,
-      icon: <Warning size={14} weight="bold" />,
+      icon: <Warning size={14} />,
       tone: "warning",
     });
   }
@@ -556,7 +555,7 @@ function AttentionStrip({
       key: "unverified",
       label:
         attention.unverified === 1 ? "1 sin verificar" : `${attention.unverified} sin verificar`,
-      icon: <SealCheck size={14} weight="bold" />,
+      icon: <SealCheck size={14} />,
       tone: "default",
     });
   }
@@ -567,7 +566,7 @@ function AttentionStrip({
         attention.stale_runs === 1
           ? "1 con lectura anterior"
           : `${attention.stale_runs} con lectura anterior`,
-      icon: <ArrowsClockwise size={14} weight="bold" />,
+      icon: <ArrowsClockwise size={14} />,
       tone: "default",
     });
   }
@@ -578,7 +577,7 @@ function AttentionStrip({
         attention.pending_users === 1
           ? "1 cuenta por aprobar"
           : `${attention.pending_users} cuentas por aprobar`,
-      icon: <UsersThree size={14} weight="bold" />,
+      icon: <UsersThree size={14} />,
       tone: "warning",
       href: "/equipo",
     });
@@ -587,7 +586,7 @@ function AttentionStrip({
     chips.push({
       key: "catalog",
       label: `${attention.stale_insumos} precios con más de ${attention.stale_threshold_months} meses`,
-      icon: <Books size={14} weight="bold" />,
+      icon: <Books size={14} />,
       tone: "default",
       href: "/catalogo",
     });
@@ -607,11 +606,11 @@ function AttentionStrip({
 
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
-      <span className="microlabel mr-1">Atención</span>
+      <span className="mr-1 text-xs text-muted">Atención</span>
       {chips.map((chip) =>
         chip.href ? (
           <Link key={chip.key} href={chip.href} className={classes(chip.tone, false)}>
-            {chip.icon} {chip.label} <ArrowRight size={12} weight="bold" />
+            {chip.icon} {chip.label} <ArrowRight size={14} />
           </Link>
         ) : (
           <button
@@ -699,9 +698,6 @@ function ProjectRow({
 
   const inner = (
     <>
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-2">
-        <FileText size={17} weight="duotone" className="text-foreground" />
-      </div>
       <div className="min-w-0 flex-1">
         {editing ? (
           <Input
@@ -724,7 +720,7 @@ function ProjectRow({
               {processed &&
                 (project.verified ? (
                   <Badge tone="success">
-                    <SealCheck size={12} weight="bold" /> Verificado
+                    <SealCheck size={14} /> Verificado
                   </Badge>
                 ) : (
                   <span title="Unidades, elementos y supuestos por confirmar">
@@ -737,7 +733,7 @@ function ProjectRow({
               {project.client && <span className="text-faint">·</span>}
               {(project.sheet_count ?? 0) > 1 && (
                 <span className="inline-flex items-center gap-1">
-                  <Stack size={12} /> {project.sheet_count} hojas
+                  <Stack size={14} /> {project.sheet_count} hojas
                 </span>
               )}
               {(project.sheet_count ?? 0) > 1 && <span className="text-faint">·</span>}
@@ -752,7 +748,7 @@ function ProjectRow({
                 <>
                   <span className="text-faint">·</span>
                   <span className="inline-flex items-center gap-1" title="Procesado con una versión anterior de Klave">
-                    <ArrowsClockwise size={12} /> lectura anterior
+                    <ArrowsClockwise size={14} /> lectura anterior
                   </span>
                 </>
               )}
@@ -762,16 +758,16 @@ function ProjectRow({
       </div>
       {project.money_state === "blocked" ? (
         <div className="hidden text-right sm:block">
-          <div className="text-sm text-muted">sin unidades</div>
-          <div className="microlabel">confirma la escala</div>
+          <div className="text-[13px] text-muted">sin unidades</div>
+          <div className="text-xs text-warning">confirma la escala</div>
         </div>
       ) : (
         project.grand_total != null && (
           <div className="hidden text-right sm:block">
-            <div className="font-display text-sm font-semibold tabular">
+            <div className="font-display text-[15px] font-medium tabular">
               {money(project.grand_total, project.currency)}
             </div>
-            <div className="microlabel">total</div>
+            <div className="text-xs text-muted">total</div>
           </div>
         )
       )}
@@ -791,7 +787,7 @@ function ProjectRow({
                 close();
               }}
             >
-              <PencilSimple size={15} /> Renombrar
+              <PencilSimple /> Renombrar
             </MenuItem>
             <MenuItem
               onSelect={() => {
@@ -800,7 +796,7 @@ function ProjectRow({
                 close();
               }}
             >
-              <UserSwitch size={15} /> Cliente…
+              <UserSwitch /> Cliente…
             </MenuItem>
             <MenuItem
               onSelect={() => {
@@ -808,7 +804,7 @@ function ProjectRow({
                 close();
               }}
             >
-              <ArrowsClockwise size={15} className={reprocessing ? "animate-spin" : ""} />{" "}
+              <ArrowsClockwise className={reprocessing ? "animate-spin" : ""} />{" "}
               {reprocessing ? "Encolando…" : "Reprocesar"}
             </MenuItem>
             <MenuItem
@@ -819,11 +815,11 @@ function ProjectRow({
             >
               {project.archived ? (
                 <>
-                  <ArrowCounterClockwise size={15} /> Restaurar
+                  <ArrowCounterClockwise /> Restaurar
                 </>
               ) : (
                 <>
-                  <Archive size={15} /> Archivar
+                  <Archive /> Archivar
                 </>
               )}
             </MenuItem>
@@ -834,15 +830,15 @@ function ProjectRow({
                 setRemoveOpen(true);
               }}
             >
-              <Trash size={15} /> Quitar de la lista…
+              <Trash /> Quitar de la lista…
             </MenuItem>
           </>
         )}
       </KebabMenu>
-      <ArrowRight
-        size={15}
-        weight="bold"
-        className="text-faint transition group-hover:translate-x-0.5 group-hover:text-foreground"
+      <CaretRight
+        size={14}
+        aria-hidden
+        className="shrink-0 text-faint transition-transform duration-150 ease-out group-hover:translate-x-0.5 group-hover:text-foreground"
       />
     </>
   );
@@ -880,7 +876,7 @@ function ProjectRow({
   if (editing) {
     return (
       <>
-        <div className="card flex items-center gap-3 p-3.5">{inner}</div>
+        <div className="flex items-center gap-3 px-4 py-2.5">{inner}</div>
         {dialog}
       </>
     );
@@ -889,7 +885,7 @@ function ProjectRow({
     <>
       <Link
         href={`/proyecto/${project.project_id}`}
-        className="card card-hover group flex items-center gap-3 p-3.5"
+        className="group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2/60"
       >
         {inner}
       </Link>

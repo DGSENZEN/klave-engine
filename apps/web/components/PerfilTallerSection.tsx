@@ -78,7 +78,7 @@ export function PerfilTallerSection({
         </Callout>
       ) : (
         <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-sm">
+          <table className="w-full text-data">
             <thead>
               <tr>
                 <Th>Dibujado como</Th>

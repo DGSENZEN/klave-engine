@@ -7,9 +7,6 @@ import {
   CircleNotch,
   FileText,
   Layout,
-  Ruler,
-  Scan,
-  Stack,
   Warning,
 } from "@phosphor-icons/react";
 import {
@@ -47,7 +44,7 @@ import {
   Callout,
   Card,
   CONFIDENCE_FIRM,
-  Metric,
+  StatStrip,
   PageHeader,
   SectionTitle,
   Select,
@@ -286,7 +283,7 @@ export default function LecturaPage() {
 
   if (error) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Lectura del plano" />
         <Callout tone="danger">
           No se pudo cargar la lectura. Revisa que el servidor esté activo.
@@ -297,7 +294,7 @@ export default function LecturaPage() {
 
   if (!lectura) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <SkeletonHeader />
         <SkeletonMetrics count={4} />
         <SkeletonCards count={2} />
@@ -315,7 +312,7 @@ export default function LecturaPage() {
   );
 
   return (
-    <div className="rise-in px-6 py-7 lg:px-8">
+    <div className="px-4 py-5 sm:px-6">
       <ConfirmDialog
         open={porQuitarMapeo !== null}
         title={`Quitar el mapeo ${porQuitarMapeo?.pattern ?? ""} → ${porQuitarMapeo?.concept_code ?? ""}; afecta a todos los proyectos del taller`}
@@ -333,48 +330,39 @@ export default function LecturaPage() {
         sub="Qué leyó Klave de tus archivos: conversión, entidades, capas, bloques y lo que se omitió. Con esto sabes si puedes confiar en lo demás."
       />
 
-      <div data-tour="lectura.metricas" className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric
-          label="Unidades"
-          value={lectura.units?.unit ?? "—"}
-          hint={
-            lectura.units
+      <StatStrip
+        tour="lectura.metricas"
+        className="mb-4"
+        stats={[
+          {
+            label: "Unidades",
+            value: lectura.units?.unit ?? "—",
+            hint: lectura.units
               ? `${Math.round(lectura.units.confidence * 100)}% · ${lectura.units.source_label}`
-              : undefined
-          }
-          icon={<Ruler size={16} weight="duotone" />}
-          accent={
-            lectura.units && lectura.units.confidence >= CONFIDENCE_FIRM
-              ? "success"
-              : undefined
-          }
-        />
-        <Metric
-          label={
-            lectura.frames && lectura.frames.total > 0 ? "Hojas" : "Archivos"
-          }
-          value={
-            lectura.frames && lectura.frames.total > 0
-              ? lectura.frames.total
-              : lectura.sheets.length
-          }
-          icon={<FileText size={16} weight="duotone" />}
-        />
-        <Metric
-          label="Entidades leídas"
-          value={num(totalEntities, 0)}
-          icon={<Stack size={16} weight="duotone" />}
-        />
-        <Metric
-          label="Elementos leídos"
-          value={lectura.detection_total}
-          icon={<Scan size={16} weight="duotone" />}
-        />
-      </div>
+              : undefined,
+            tone:
+              lectura.units && lectura.units.confidence >= CONFIDENCE_FIRM
+                ? "success"
+                : undefined,
+          },
+          {
+            label: lectura.frames && lectura.frames.total > 0 ? "Hojas" : "Archivos",
+            value:
+              lectura.frames && lectura.frames.total > 0
+                ? lectura.frames.total
+                : lectura.sheets.length,
+          },
+          { label: "Entidades leídas", value: num(totalEntities, 0) },
+          {
+            label: "Elementos leídos",
+            value: lectura.detection_total.toLocaleString("es-MX"),
+          },
+        ]}
+      />
 
-<div data-tour="lectura.pestanas">
+      <div data-tour="lectura.pestanas">
       <Tabs
-        className="mb-5"
+        className="mb-4"
         value={tab}
         onChange={setTab}
         items={[
@@ -406,7 +394,11 @@ export default function LecturaPage() {
       />
       </div>
 
-      <div className={`space-y-3 ${tab !== "hojas" ? "hidden" : ""}`}>
+      {/* One register of files, divided rows: twelve sheets read as a list,
+          not twelve objects. */}
+      <div
+        className={`card divide-y divide-border overflow-clip ${tab !== "hojas" ? "hidden" : ""}`}
+      >
         {lectura.sheets.map((sheet) => (
           <SheetCard
             key={sheet.name}
@@ -419,7 +411,7 @@ export default function LecturaPage() {
       <div
         className={`grid gap-4 lg:grid-cols-2 ${tab !== "capas" ? "hidden" : ""}`}
       >
-        <Card className="p-5">
+        <Card className="p-4">
           <SectionTitle
             sub={
               lectura.layer_total > lectura.layers.length
@@ -454,7 +446,7 @@ export default function LecturaPage() {
         </Card>
 
         <div className="space-y-4">
-          <Card className="p-5">
+          <Card className="p-4">
             <SectionTitle sub="Familias estructurales que la lectura encontró.">
               Detecciones por familia
             </SectionTitle>
@@ -480,7 +472,7 @@ export default function LecturaPage() {
             )}
           </Card>
 
-          <Card className="p-5">
+          <Card className="p-4">
             <SectionTitle sub="Un modelo de visión lee la imagen de cada hoja: cajetín, cuadros, notas y marcas. Lo que lee entra como sugerencia con procedencia, por debajo de lo que leyeron las reglas, y se aplica al reprocesar.">
               Lectura asistida por IA
             </SectionTitle>
@@ -636,7 +628,7 @@ export default function LecturaPage() {
         />
 
         {!lectura.inventory || lectura.inventory.sheets.length === 0 ? (
-          <Card className="p-5">
+          <Card className="p-4">
             <SectionTitle sub="Lo que cada hoja contiene, contado: símbolos por bloque y metros de trazo por capa.">
               Levantamiento por hoja
             </SectionTitle>
@@ -646,7 +638,7 @@ export default function LecturaPage() {
             </p>
           </Card>
         ) : (
-          <Card className="p-5">
+          <Card className="p-4">
             <SectionTitle sub="Lo que cada hoja contiene, contado: símbolos por bloque y metros de trazo por capa. Un conteo se vuelve cantidad cuando lo asignas a un concepto del catálogo.">
               Levantamiento por hoja
             </SectionTitle>
@@ -671,7 +663,7 @@ export default function LecturaPage() {
         )}
 
         {lectura.blocks.length > 0 && (
-          <Card className="p-5">
+          <Card className="p-4">
             <SectionTitle sub="Definiciones de bloque más usadas; su geometría interna se expande para la lectura.">
               Bloques
             </SectionTitle>
@@ -696,12 +688,12 @@ export default function LecturaPage() {
         {lectura.schedules &&
         (lectura.schedules.by_mark.length > 0 ||
           lectura.schedules.by_family.length > 0) ? (
-          <Card className="p-5">
+          <Card className="p-4">
             <SectionTitle sub="Secciones y armados que el plano declara por marca; mandan sobre el marcador medido y sobre los supuestos.">
               Especificaciones del plano
             </SectionTitle>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-data">
                 <thead>
                   <tr className="text-left text-xs text-muted">
                     <th className="py-1.5 pr-3 font-medium">Marca</th>
@@ -759,7 +751,7 @@ export default function LecturaPage() {
             </div>
           </Card>
         ) : (
-          <Card className="p-5">
+          <Card className="p-4">
             <SectionTitle sub="Secciones y armados que el plano declara por marca; mandan sobre el marcador medido y sobre los supuestos.">
               Especificaciones del plano
             </SectionTitle>
@@ -773,7 +765,7 @@ export default function LecturaPage() {
 
       <div className={tab !== "avisos" ? "hidden" : ""}>
         {lectura.warning_groups.length > 0 ? (
-          <Card className="p-5">
+          <Card className="p-4">
             <SectionTitle sub="Aquí queda todo lo que no se pudo leer o se ajustó.">
               Avisos de lectura
             </SectionTitle>
@@ -782,8 +774,6 @@ export default function LecturaPage() {
                 <li key={group.type} className="text-sm">
                   <div className="flex items-center gap-2">
                     <Warning
-                      size={15}
-                      weight="bold"
                       className="shrink-0 text-warning"
                     />
                     <span className="font-medium">{group.label}</span>
@@ -801,7 +791,7 @@ export default function LecturaPage() {
             </ul>
           </Card>
         ) : (
-          <Card className="p-5">
+          <Card className="p-4">
             <SectionTitle sub="Aquí queda todo lo que no se pudo leer o se ajustó.">
               Avisos de lectura
             </SectionTitle>
@@ -1311,9 +1301,9 @@ function SheetCard({
 }) {
   const parse = sheet.parse;
   return (
-    <Card className="p-5">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <FileText size={16} weight="duotone" className="text-muted" />
+    <div className="px-4 py-3">
+      <div className="mb-1.5 flex flex-wrap items-center gap-2">
+        <FileText className="text-muted" />
         <span className="font-medium">{sheet.sheet_number ?? sheet.name}</span>
         <span className="text-xs text-faint">{sheet.name}</span>
         <span className="uppercase text-xs text-faint">{sheet.file_type}</span>
@@ -1328,24 +1318,21 @@ function SheetCard({
         )}
         {parse?.recovered && (
           <Badge tone="warning" dot>
-            <ArrowsClockwise size={11} weight="bold" /> Leído en recuperación
+            <ArrowsClockwise size={14} /> Leído en recuperación
           </Badge>
         )}
       </div>
       {parse ? (
         <>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs">
             {Object.entries(parse.entities_by_type).map(([type, count]) => (
-              <span
-                key={type}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2/70 px-2.5 py-1.5 text-xs"
-              >
-                {labels[type] ?? type}
-                <span className="tabular font-semibold">{count}</span>
+              <span key={type} className="whitespace-nowrap">
+                <span className="text-muted">{labels[type] ?? type}</span>{" "}
+                <span className="tabular font-medium">{count.toLocaleString("es-MX")}</span>
               </span>
             ))}
           </div>
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
             {parse.from_block_count > 0 && (
               <span>
                 {parse.from_block_count} entidades expandidas de bloques
@@ -1366,15 +1353,15 @@ function SheetCard({
             )}
           </div>
           {(parse.layouts?.length ?? 0) > 0 && (
-            <div className="mt-3 space-y-1.5 border-t border-border pt-3">
-              <div className="microlabel">Presentaciones (espacio papel)</div>
+            <div className="mt-2 space-y-1 border-t border-border pt-2">
+              <div className="text-xs font-medium text-muted">Presentaciones (espacio papel)</div>
               {parse.layouts!.map((layout) => (
                 <div
                   key={layout.name}
                   className="flex flex-wrap items-center gap-x-2 text-xs text-muted"
                 >
                   <span className="inline-flex items-center gap-1 font-medium text-foreground">
-                    <Layout size={13} weight="duotone" /> {layout.name}
+                    <Layout size={14} /> {layout.name}
                   </span>
                   <span>
                     {layout.viewports.length === 0
@@ -1407,8 +1394,8 @@ function SheetCard({
             </div>
           )}
           {(parse.xrefs?.length ?? 0) > 0 && (
-            <div className="mt-3 space-y-1.5 border-t border-border pt-3">
-              <div className="microlabel">Referencias externas</div>
+            <div className="mt-2 space-y-1 border-t border-border pt-2">
+              <div className="text-xs font-medium text-muted">Referencias externas</div>
               {parse.xrefs!.map((xref) => (
                 <div
                   key={xref.name}
@@ -1436,6 +1423,6 @@ function SheetCard({
           versión; vuelve a procesar el proyecto).
         </p>
       )}
-    </Card>
+    </div>
   );
 }

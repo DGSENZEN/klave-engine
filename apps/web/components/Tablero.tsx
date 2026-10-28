@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  ArrowRight,
   ArrowsInSimple,
   CaretRight,
   LockSimple,
@@ -23,7 +24,7 @@ import { entryHref, NODE_NAV } from "@/lib/nodeNav";
 import { useTablero } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
 import { timeAgo } from "@/lib/time";
-import { Avatar, Button, Skeleton } from "@/components/ui";
+import { Avatar, Button, buttonClasses, Skeleton, iconButtonClasses } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 /**
@@ -416,16 +417,25 @@ export function TableroBoard({ id }: { id: string }) {
           className="absolute left-4 top-4 z-30 max-w-sm rounded-xl border border-border bg-surface/95 p-3 shadow-sm backdrop-blur"
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <div className="microlabel mb-1">Lo que sigue</div>
-          <div className="text-sm font-semibold">{tablero.siguiente.label}</div>
-          <div className="mt-0.5 text-xs text-muted">{tablero.siguiente.detail}</div>
-          {tablero.siguiente.href && tablero.siguiente.accion !== "esperar" && (
-            <Link
-              href={`${base}${tablero.siguiente.href}`}
-              className="mt-2 inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
-            >
-              {tablero.siguiente.label}
-            </Link>
+          {/* The step is named once: as the action when there is one to
+              take, as the heading when the only thing to do is wait. */}
+          <div className="text-xs text-muted">Lo que sigue</div>
+          {tablero.siguiente.href && tablero.siguiente.accion !== "esperar" ? (
+            <>
+              <div className="mt-0.5 text-[13px] text-muted">{tablero.siguiente.detail}</div>
+              <Link
+                href={`${base}${tablero.siguiente.href}`}
+                className={buttonClasses("primary", "sm", "mt-2.5")}
+              >
+                {tablero.siguiente.label}
+                <ArrowRight size={14} />
+              </Link>
+            </>
+          ) : (
+            <>
+              <div className="text-sm font-semibold">{tablero.siguiente.label}</div>
+              <div className="mt-0.5 text-[13px] text-muted">{tablero.siguiente.detail}</div>
+            </>
           )}
         </div>
       )}
@@ -523,7 +533,11 @@ export function TableroBoard({ id }: { id: string }) {
             >
               <div className="flex items-start gap-2.5">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-muted">
-                  {locked ? <LockSimple size={18} weight="fill" /> : node.icon}
+                  {locked ? (
+                    <LockSimple size={20} weight="fill" />
+                  ) : (
+                    <node.glyph size={20} weight="duotone" />
+                  )}
                 </span>
                 <span className="min-w-0 flex-1 pt-1.5 text-[15px] font-semibold leading-none">
                   {node.label}
@@ -549,7 +563,7 @@ export function TableroBoard({ id }: { id: string }) {
               </div>
               {gate && (
                 <div className="mt-auto flex items-center gap-1.5 truncate border-t border-border pt-2.5 text-xs text-muted">
-                  <LockSimpleOpen size={13} className="shrink-0 text-success" />
+                  <LockSimpleOpen size={14} className="shrink-0 text-success" />
                   {gate.approved_by || "—"}
                   {gate.approved_at ? ` · ${timeAgo(gate.approved_at)}` : ""}
                 </div>
@@ -595,7 +609,7 @@ export function TableroBoard({ id }: { id: string }) {
                 href={entryHref(base, entry)}
                 className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
               >
-                {entry.icon}
+                <entry.glyph />
                 <span className="flex-1">{entry.label}</span>
                 <CaretRight size={12} className="opacity-60" />
               </Link>
@@ -637,9 +651,9 @@ export function TableroBoard({ id }: { id: string }) {
           type="button"
           aria-label="Alejar"
           onClick={() => setZoom(1 / 1.2)}
-          className="rounded-md p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+          className={iconButtonClasses("sm")}
         >
-          <Minus size={14} weight="bold" />
+          <Minus size={14} />
         </button>
         <span className="tabular min-w-10 text-center text-xs text-muted">
           {Math.round((view?.z ?? 1) * 100)} %
@@ -648,17 +662,17 @@ export function TableroBoard({ id }: { id: string }) {
           type="button"
           aria-label="Acercar"
           onClick={() => setZoom(1.2)}
-          className="rounded-md p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+          className={iconButtonClasses("sm")}
         >
-          <Plus size={14} weight="bold" />
+          <Plus size={14} />
         </button>
         <button
           type="button"
           aria-label="Ajustar a la pantalla"
           onClick={() => setZoom(null)}
-          className="rounded-md p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+          className={iconButtonClasses("sm")}
         >
-          <ArrowsInSimple size={14} weight="bold" />
+          <ArrowsInSimple size={14} />
         </button>
       </div>
       <ActivityDock activities={activities} timeline={timeline} />

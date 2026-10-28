@@ -116,7 +116,7 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
   );
 
   return (
-    <div className="rise-in px-6 py-7 lg:px-8" data-tour="convocante.vista">
+    <div className="px-4 py-5 sm:px-6" data-tour="convocante.vista">
       <PageHeader
         title={titulo}
         sub="El catálogo que manda la convocante: sus claves, su orden y sus cantidades. Klave le pone al lado la cantidad que sostiene el plano, y no lo modifica."
@@ -157,7 +157,7 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
           }}
         />
         <Button onClick={() => archivo.current?.click()} disabled={cargando}>
-          <FileArrowUp size={15} weight="bold" />
+          <FileArrowUp />
           {cargando
             ? "Leyendo…"
             : renglones.length
@@ -174,7 +174,7 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
               )
             }
           >
-            <DownloadSimple size={15} weight="bold" /> Convocante contra plano (Excel)
+            <DownloadSimple /> Convocante contra plano (Excel)
           </Button>
         )}
         <span className="text-xs text-muted">
@@ -195,7 +195,7 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
 
       {catalogo && renglones.length === 0 && (
         <EmptyState
-          icon={<Scales size={22} weight="duotone" />}
+          icon={<Scales size={20} weight="duotone" />}
           title="Sin catálogo del contrato"
           hint="En obra pública la convocante manda el catálogo y tú devuelves ese mismo documento con precios. Cárgalo y Klave comparará sus cantidades contra las que leyó del plano."
         />
@@ -208,7 +208,7 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
               label="Renglones del catálogo"
               value={renglones.length}
               hint={`${comparables.length} los mide Klave del plano`}
-              icon={<Scales size={16} weight="duotone" />}
+              icon={<Scales />}
             />
             <Metric
               label="Cantidades que no cuadran"
@@ -219,7 +219,7 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
                   : "Ninguna se aparta más de 5 % del plano"
               }
               accent={discrepantes.length ? "danger" : undefined}
-              icon={<Warning size={16} weight="duotone" />}
+              icon={<Warning />}
             />
             <Metric
               label="Importe con tus precios"

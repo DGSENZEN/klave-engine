@@ -82,13 +82,13 @@ export default function CuentaPage() {
   return (
     <div className="min-h-screen">
       <WorkspaceHeader active="cuenta" />
-      <main className="mx-auto max-w-3xl px-5 py-8 sm:px-6">
+      <main className="mx-auto max-w-6xl px-5 py-8 sm:px-6 *:max-w-3xl">
         <PageHeader
           title="Tu cuenta"
           sub="Perfil, acceso y sesiones. Lo que cambies aquí aplica en todos tus dispositivos."
           actions={
             <Button variant="ghost" size="sm" onClick={signOut}>
-              <SignOut size={14} weight="bold" /> Cerrar sesión
+              <SignOut size={14} /> Cerrar sesión
             </Button>
           }
         />
@@ -208,11 +208,11 @@ function ProfileCard({
               <span className="font-medium">{me.email}</span>
               {me.email_verified ? (
                 <Badge tone="success">
-                  <CheckCircle size={12} weight="bold" /> Verificado
+                  <CheckCircle size={14} /> Verificado
                 </Badge>
               ) : (
                 <Badge tone="warning">
-                  <Warning size={12} weight="bold" /> Sin verificar
+                  <Warning size={14} /> Sin verificar
                 </Badge>
               )}
             </div>
@@ -407,7 +407,7 @@ function SessionsCard() {
           {sessions.map((session) => (
             <li key={session.session_id} className="flex items-center gap-3 px-5 py-3">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-foreground">
-                <DeviceMobile size={16} weight="duotone" />
+                <DeviceMobile />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -440,7 +440,7 @@ function WorkspaceCard({ me }: { me: Me }) {
     <Card className="flex flex-wrap items-center justify-between gap-3 p-5">
       <div className="flex items-center gap-3">
         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-surface-2 text-foreground">
-          <UsersThree size={18} weight="duotone" />
+          <UsersThree />
         </span>
         <div>
           <div className="text-sm font-medium">{me.workspace?.name ?? "Taller"}</div>

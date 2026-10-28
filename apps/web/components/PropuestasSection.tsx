@@ -135,7 +135,7 @@ export function PropuestasSection({
             </Link>
           )}
           <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr>
                   <Th>Lo que se ve</Th>

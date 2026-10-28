@@ -34,12 +34,12 @@ import {
   Checkbox,
   ConfidenceBadge,
   Input,
-  Metric,
   PageHeader,
   SectionTitle,
   Select,
   SkeletonHeader,
   SkeletonMetrics,
+  StatStrip,
   SkeletonTable,
   TableCard,
   Tabs,
@@ -273,7 +273,7 @@ export default function RevisionPage() {
 
   if (error !== "none") {
     return (
-      <div className="p-6">
+      <div className="px-4 py-5 sm:px-6">
         <Callout
           tone={error === "not_processed" ? "info" : "danger"}
           action={
@@ -300,7 +300,7 @@ export default function RevisionPage() {
   }
   if (!table) {
     return (
-      <div className="p-6">
+      <div className="px-4 py-5 sm:px-6">
         <SkeletonHeader />
         <SkeletonMetrics />
         <SkeletonTable rows={10} />
@@ -310,7 +310,7 @@ export default function RevisionPage() {
 
   const pending = table.total - table.confirmed - table.excluded;
   return (
-    <div className="p-6">
+    <div className="px-4 py-5 sm:px-6">
       <ConfirmDialog
         open={confirmarQuitar}
         title={`Quitar la revisión de ${selectedVisible.length} elementos`}
@@ -328,7 +328,7 @@ export default function RevisionPage() {
       />
 
       <Tabs
-        className="mb-5"
+        className="mb-4"
         value={tab}
         onChange={setTab}
         items={[
@@ -348,82 +348,42 @@ export default function RevisionPage() {
       <div className={tab !== "elementos" ? "hidden" : ""}>
         {/* The overview is the filter, not a caption above it: clicking a figure
           takes you to exactly the rows it counts (Shneiderman 1996). */}
-        <div className="mb-6 grid gap-4 sm:grid-cols-5">
-          {(
-            [
-              {
-                label: "Elementos",
-                value: table.total,
-                accent: undefined,
-                active: !onlyDoubts && !onlyPending && !lote,
-                on: () => clearFilters(),
+        <StatStrip
+          className="mb-4"
+          stats={[
+            {
+              label: "Elementos",
+              value: table.total.toLocaleString("es-MX"),
+              active: !onlyDoubts && !onlyPending && !lote,
+              onClick: () => clearFilters(),
+            },
+            {
+              label: "Con dudas",
+              value: table.with_doubts.toLocaleString("es-MX"),
+              tone: table.with_doubts === 0 ? "success" : "warning",
+              active: onlyDoubts,
+              onClick: () => {
+                clearFilters();
+                setOnlyDoubts(true);
               },
-              {
-                label: "Con dudas",
-                value: table.with_doubts,
-                accent: table.with_doubts === 0 ? "success" : undefined,
-                active: onlyDoubts,
-                on: () => {
-                  clearFilters();
-                  setOnlyDoubts(true);
-                },
+            },
+            {
+              label: "Confirmados",
+              value: table.confirmed.toLocaleString("es-MX"),
+              tone: "success",
+            },
+            { label: "Excluidos", value: table.excluded.toLocaleString("es-MX") },
+            {
+              label: "Sin revisar",
+              value: pending.toLocaleString("es-MX"),
+              active: onlyPending,
+              onClick: () => {
+                clearFilters();
+                setOnlyPending(true);
               },
-              {
-                label: "Confirmados",
-                value: table.confirmed,
-                accent: "success",
-                active: false,
-              },
-              {
-                label: "Excluidos",
-                value: table.excluded,
-                accent: undefined,
-                active: false,
-              },
-              {
-                label: "Sin revisar",
-                value: pending,
-                accent: undefined,
-                active: onlyPending,
-                on: () => {
-                  clearFilters();
-                  setOnlyPending(true);
-                },
-              },
-            ] as {
-              label: string;
-              value: number;
-              accent?: "accent" | "danger" | "success" | "primary";
-              active: boolean;
-              on?: () => void;
-            }[]
-          ).map((card) =>
-            card.on ? (
-              <button
-                key={card.label}
-                type="button"
-                onClick={card.on}
-                className={`rounded-xl text-left transition ${
-                  card.active ? "ring-2 ring-accent" : "hover:brightness-105"
-                }`}
-                aria-pressed={card.active}
-              >
-                <Metric
-                  label={card.label}
-                  value={card.value}
-                  accent={card.accent}
-                />
-              </button>
-            ) : (
-              <Metric
-                key={card.label}
-                label={card.label}
-                value={card.value}
-                accent={card.accent}
-              />
-            ),
-          )}
-        </div>
+            },
+          ]}
+        />
 
         <LoteDeRevision
           rows={table.rows}
@@ -432,7 +392,7 @@ export default function RevisionPage() {
           onShowAll={() => setLote(false)}
         />
 
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
           <Select
             value={concept}
             onChange={(e) => setConcept(e.target.value)}
@@ -480,15 +440,15 @@ export default function RevisionPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar etiqueta o marca"
-            className="w-48 px-2 py-1.5"
+            className="w-52"
             aria-label="Buscar"
           />
-          <span className="ml-auto text-xs text-muted">
-            {rows.length} de {table.total}
+          <span className="ml-auto text-xs text-muted tabular">
+            {rows.length.toLocaleString("es-MX")} de {table.total.toLocaleString("es-MX")}
           </span>
         </div>
 
-        <div data-tour="revision.masivo" className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-2">
+        <div data-tour="revision.masivo" className="mb-2 flex min-h-11 flex-wrap items-center gap-2 rounded-[10px] border border-border bg-surface-2/60 px-3 py-1.5">
           <span className="text-sm font-medium tabular">
             {selectedVisible.length} seleccionado
             {selectedVisible.length === 1 ? "" : "s"}
@@ -499,7 +459,7 @@ export default function RevisionPage() {
             onClick={() => apply("confirmed")}
             disabled={busy || selectedVisible.length === 0}
           >
-            <CheckCircle size={14} weight="bold" /> Confirmar
+            <CheckCircle size={14} /> Confirmar
           </Button>
           {excluding ? (
             <>
@@ -521,7 +481,7 @@ export default function RevisionPage() {
                 onClick={() => apply("excluded")}
                 disabled={busy}
               >
-                <Prohibit size={14} weight="bold" /> Excluir
+                <Prohibit size={14} /> Excluir
               </Button>
               <Button
                 size="sm"
@@ -537,7 +497,7 @@ export default function RevisionPage() {
               onClick={() => setExcluding(true)}
               disabled={busy || selectedVisible.length === 0}
             >
-              <Prohibit size={14} weight="bold" /> Excluir…
+              <Prohibit size={14} /> Excluir…
             </Button>
           )}
           <Button
@@ -549,7 +509,7 @@ export default function RevisionPage() {
             }
             disabled={busy || selectedVisible.length === 0}
           >
-            <ArrowCounterClockwise size={14} weight="bold" /> Quitar revisión
+            <ArrowCounterClockwise size={14} /> Quitar revisión
           </Button>
           {actionError && (
             <span className="text-sm text-danger">{actionError}</span>
@@ -559,10 +519,10 @@ export default function RevisionPage() {
           </span>
         </div>
 
-        <TableCard tour="revision.tabla">
+        <TableCard tour="revision.tabla" sticky>
           <thead>
             <tr className="border-b border-border bg-surface-2">
-              <Th>
+              <Th className="w-10">
                 <Checkbox
                   checked={allSelected}
                   onChange={toggleAll}
@@ -636,7 +596,7 @@ export default function RevisionPage() {
               return (
                 <tr
                   key={r.key}
-                  className={`border-b border-border transition-colors hover:bg-surface-2/60 ${
+                  className={`group border-b border-border transition-colors hover:bg-surface-2/60 ${
                     on ? "bg-accent-soft/50" : ""
                   }`}
                   onClick={(e) => toggle(r, index, e.shiftKey)}
@@ -652,27 +612,25 @@ export default function RevisionPage() {
                       aria-label={`Seleccionar ${r.label}`}
                     />
                   </Td>
-                  <Td>
+                  <Td className="whitespace-nowrap">
                     <span className="font-medium">{r.label}</span>
                     {r.mark && r.mark !== r.label && (
                       <span className="ml-1.5 font-mono text-xs text-muted">
                         {r.mark}
                       </span>
                     )}
-                    <div className="text-[11px] text-faint">
-                      {r.family_label}
-                    </div>
+                    <span className="ml-2 text-xs text-muted">{r.family_label}</span>
                   </Td>
                   <Td className="font-mono text-xs text-muted">
                     {r.concept_code || "—"}
                   </Td>
-                  <Td className="text-xs text-muted">
+                  <Td className="max-w-64 truncate text-xs text-muted" title={r.view_title}>
                     {r.view_title.replace(
                       /^[A-Z]{1,3}-\d{2,4}[A-Z]?\s*·\s*/,
                       "",
                     ) || r.sheet}
                   </Td>
-                  <Td className="whitespace-nowrap tabular text-xs">
+                  <Td className="whitespace-nowrap tabular">
                     {r.measure || "—"}
                   </Td>
                   <Td align="center">
@@ -689,39 +647,49 @@ export default function RevisionPage() {
                     </div>
                   </Td>
                   <Td>
-                    {r.status === "confirmed" && (
-                      <Badge tone="success">confirmado</Badge>
-                    )}
-                    {r.status === "excluded" && (
-                      <Badge tone="danger">excluido</Badge>
-                    )}
-                    {r.status === "" && (
-                      <span className="text-xs text-faint">sin revisar</span>
-                    )}
+                    {/* One line: the verdict, then what you can do about it. */}
+                    <div className="flex items-center gap-3 whitespace-nowrap">
+                      {r.status === "confirmed" && (
+                        <Badge tone="success">confirmado</Badge>
+                      )}
+                      {r.status === "excluded" && (
+                        <Badge tone="danger">excluido</Badge>
+                      )}
+                      {r.status === "" && (
+                        <span className="text-xs text-muted">sin revisar</span>
+                      )}
+                      {/* Row actions surface on hover or focus where there is a
+                          pointer; touch screens always show them. */}
+                      <span className="flex items-center gap-3 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100">
+                      {r.concept_code && (
+                        <Link
+                          // El elemento mismo, encuadrado — no el concepto entero.
+                          href={`/proyecto/${id}/plano?bbox=${r.bbox.map((v) => v.toFixed(3)).join(",")}`}
+                          className="flex items-center gap-1 text-xs text-muted underline-offset-2 hover:text-foreground hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MapTrifold size={14} /> plano
+                        </Link>
+                      )}
+                      {r.status !== "excluded" && (
+                        <Reasignar
+                          projectId={id}
+                          rowKey={r.key}
+                          actorName={actorName}
+                          clientId={clientId}
+                          onDone={reload}
+                        />
+                      )}
+                      </span>
+                    </div>
                     {(r.note || r.actor) && (
-                      <div className="text-[11px] text-faint">
+                      <div
+                        className="max-w-72 truncate text-xs text-muted"
+                        title={`${r.note ?? ""}${r.actor ? ` — ${r.actor}` : ""}`}
+                      >
                         {r.note}
                         {r.actor && ` — ${r.actor}`}
                       </div>
-                    )}
-                    {r.concept_code && (
-                      <Link
-                        // El elemento mismo, encuadrado — no el concepto entero.
-                        href={`/proyecto/${id}/plano?bbox=${r.bbox.map((v) => v.toFixed(3)).join(",")}`}
-                        className="mt-0.5 flex w-fit items-center gap-1 text-[11px] text-muted underline"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <MapTrifold size={11} /> plano
-                      </Link>
-                    )}
-                    {r.status !== "excluded" && (
-                      <Reasignar
-                        projectId={id}
-                        rowKey={r.key}
-                        actorName={actorName}
-                        clientId={clientId}
-                        onDone={reload}
-                      />
                     )}
                   </Td>
                 </tr>
@@ -1246,7 +1214,7 @@ function ConteoSection({
             disabled={busy || !puedeAgregar || sinBase}
             onClick={() => void agregar()}
           >
-            <PlusCircle size={14} weight="bold" /> Agregar
+            <PlusCircle size={14} /> Agregar
           </Button>
         </div>
       </div>
@@ -1281,7 +1249,7 @@ function Reasignar({
     return (
       <button
         type="button"
-        className="mt-0.5 block text-[11px] text-muted underline"
+        className="text-xs text-muted underline-offset-2 hover:text-foreground hover:underline"
         onClick={(e) => {
           e.stopPropagation();
           setOpen(true);
@@ -1292,7 +1260,7 @@ function Reasignar({
     );
   }
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+    <div className="flex flex-wrap items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
       <Select
         value={family}
         onChange={(e) => setFamily(e.target.value)}
@@ -1328,7 +1296,7 @@ function Reasignar({
       <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
         Cancelar
       </Button>
-      {error && <span className="w-full text-[11px] text-danger">{error}</span>}
+      {error && <span className="w-full text-xs text-danger">{error}</span>}
     </div>
   );
 }

@@ -101,7 +101,7 @@ export function MapeosSugeridos({
                   </Td>
                   <Td className="whitespace-nowrap text-muted">
                     <span className="inline-flex items-center gap-1.5">
-                      <Plugs size={13} weight="duotone" />
+                      <Plugs size={14} />
                       {DISCIPLINA_LABEL[s.discipline] ?? s.discipline}
                     </span>
                   </Td>
@@ -111,7 +111,7 @@ export function MapeosSugeridos({
                   </Td>
                   <Td>
                     <span className="inline-flex items-center gap-1.5 font-medium">
-                      <Link size={13} weight="bold" className="text-muted" />
+                      <Link size={14} className="text-muted" />
                       {s.concept_code}
                     </span>
                     <span className="mt-0.5 block max-w-[38ch] text-xs text-muted">

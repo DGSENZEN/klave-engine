@@ -8,7 +8,7 @@ import {
   type CostReport,
   type MoneyGateState,
 } from "@/lib/api";
-import { Button, Callout, Card, Select } from "@/components/ui";
+import { Button, buttonClasses, Callout, Card, Select } from "@/components/ui";
 
 // Re-exported so the existing `import { MoneyGateState } from
 // "@/components/MoneyGate"` call sites keep working: the type itself now
@@ -41,8 +41,8 @@ export function UnverifiedBanner({
       <Callout
         tone="warning"
         action={
-          <Link href={`/proyecto/${id}/resumen`} className="inline-flex">
-            <Button size="sm">Ruta de verificación</Button>
+          <Link href={`/proyecto/${id}/resumen`} className={buttonClasses("secondary", "sm")}>
+            Ruta de verificación
           </Link>
         }
       >
@@ -137,7 +137,7 @@ export function UnitsGate({
         </Button>
       </div>
       <p className="mt-3 flex items-start gap-1.5 text-xs text-muted">
-        <Warning size={13} className="mt-0.5 shrink-0" />
+        <Warning size={14} className="mt-0.5 shrink-0" />
         Mide una cota conocida en el visor si dudas: una puerta de 0.90 debe medir 0.90 en
         metros, 90 en centímetros.
       </p>

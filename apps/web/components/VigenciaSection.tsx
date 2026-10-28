@@ -185,7 +185,7 @@ export function VigenciaSection({
       >
         {preview && preview.updated.length > 0 && (
           <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full text-sm">
+            <table className="w-full text-data">
               <thead>
                 <tr className="bg-surface-2">
                   <Th>Insumo</Th>
@@ -258,11 +258,11 @@ export function VigenciaSection({
           disabled={vencidos === 0 || downloading !== null}
           onClick={() => downloadCotizacion("vencido")}
         >
-          <DownloadSimple size={14} weight="bold" />
+          <DownloadSimple size={14} />
           {downloading === "vencido" ? "Generando…" : `Solicitud de cotización: vencidos (${vencidos})`}
         </Button>
         <Button size="sm" disabled={downloading !== null} onClick={() => downloadCotizacion("all")}>
-          <DownloadSimple size={14} weight="bold" />
+          <DownloadSimple size={14} />
           {downloading === "all" ? "Generando…" : "Solicitud de cotización: todo el catálogo"}
         </Button>
         <Button
@@ -270,7 +270,7 @@ export function VigenciaSection({
           onClick={() => previewRoll("vencido")}
           disabled={busy || vencidos === 0 || monthCount === 0}
         >
-          <ArrowClockwise size={14} weight="bold" /> Actualizar vencidos por índice…
+          <ArrowClockwise size={14} /> Actualizar vencidos por índice…
         </Button>
         <button
           type="button"

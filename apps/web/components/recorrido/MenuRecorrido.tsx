@@ -18,7 +18,7 @@ import {
 } from "@/lib/recorridoStore";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Modal } from "@/components/Modal";
-import { Button, Callout } from "@/components/ui";
+import { Button, Callout, iconButtonClasses } from "@/components/ui";
 
 /** El «?» de un encabezado: abre el menú del recorrido. */
 export function BotonRecorrido({ ancla }: { ancla: string }) {
@@ -27,10 +27,11 @@ export function BotonRecorrido({ ancla }: { ancla: string }) {
       type="button"
       data-tour={ancla}
       aria-label="Recorrido guiado"
+      data-tip="Recorrido guiado"
       onClick={() => abrirMenuRecorrido()}
-      className="rounded-md p-2 text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+      className={iconButtonClasses()}
     >
-      <Question size={18} weight="duotone" />
+      <Question />
     </button>
   );
 }
@@ -103,9 +104,9 @@ export function DialogoRecorrido() {
                   className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-surface-2"
                 >
                   {hecho ? (
-                    <CheckCircle size={18} weight="fill" className="shrink-0 text-success" />
+                    <CheckCircle weight="fill" className="shrink-0 text-success" />
                   ) : (
-                    <Circle size={18} className="shrink-0 text-faint" />
+                    <Circle className="shrink-0 text-faint" />
                   )}
                   <span className="flex-1 text-sm font-medium">
                     {i}. {capitulo.titulo}

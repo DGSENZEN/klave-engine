@@ -52,10 +52,10 @@ export function LoteDeRevision({
   if (pending.length < 200 || doubtful.length === 0 || density > 0.4) return null;
 
   return (
-    <Card className="mb-4 p-4">
-      <div className="flex flex-wrap items-start gap-3">
-        <Target size={20} weight="duotone" className="mt-0.5 shrink-0 text-accent" />
-        <div className="min-w-0 flex-1">
+    <Card className="mb-3 px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-3">
+        <Target className="shrink-0 text-accent" />
+        <div className="min-w-0 flex-1 basis-64">
           {/* Por qué un lote y no la lista pareja (Wolfe et al., Nature 2005):
               con 1 % de objetivos la vista pasa por alto el 30 %, y avisarlo
               no lo corrige. La pantalla da la conclusión, no la cátedra. */}
@@ -63,7 +63,7 @@ export function LoteDeRevision({
             Empieza por {doubtful.length.toLocaleString("es-MX")} de{" "}
             {pending.length.toLocaleString("es-MX")}: ahí está la duda
           </div>
-          <p className="mt-0.5 text-sm text-muted">
+          <p className="text-[13px] text-muted">
             Lectura débil, motor inseguro o cantidad tomada de tu historia. En una lista
             pareja lo raro se pasa por alto; la lista completa sigue a un clic.
           </p>

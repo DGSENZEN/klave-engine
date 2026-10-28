@@ -56,7 +56,7 @@ function Factor({ resumen }: { resumen: ResumenAjuste }) {
         label="Factor de ajuste"
         value="sin índice"
         hint="Captura los dos valores publicados y el factor sale solo."
-        icon={<ChartLineUp size={18} />}
+        icon={<ChartLineUp />}
       />
     );
   }
@@ -69,7 +69,7 @@ function Factor({ resumen }: { resumen: ResumenAjuste }) {
       hint={`${resumen.indice_base} → ${resumen.indice_ajuste} · ${
         sube ? "a favor del contratista" : "a favor de la contratante"
       }`}
-      icon={<ChartLineUp size={18} />}
+      icon={<ChartLineUp />}
     />
   );
 }
@@ -285,7 +285,7 @@ export default function AjusteCostosPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 py-5 sm:px-6">
       <ConfirmDialog
         open={confirmar !== null}
         title={`Eliminar la solicitud de ajuste ${confirmar ?? ""}`}
@@ -303,7 +303,7 @@ export default function AjusteCostosPage() {
         sub="Lo que subieron los insumos sobre la obra que falta por ejecutar (LOPSRM art. 57–58)."
         actions={
           <Button onClick={() => void nueva()}>
-            <Plus size={16} /> Nueva solicitud
+            <Plus /> Nueva solicitud
           </Button>
         }
       />
@@ -323,7 +323,7 @@ export default function AjusteCostosPage() {
 
       {!cargando && lista.length === 0 && !editando && (
         <EmptyState
-          icon={<ChartLineUp size={28} />}
+          icon={<ChartLineUp size={20} />}
           title="Sin solicitudes de ajuste"
           hint="Una solicitud se prepara con lo que falta por ejecutar; los índices los traes de la publicación del INEGI."
         />
@@ -356,10 +356,11 @@ export default function AjusteCostosPage() {
                 Editar
               </Button>
               <IconButton
+                size="sm"
                 aria-label={`Eliminar la solicitud de ajuste ${solicitud.numero}`}
                 onClick={() => setConfirmar(solicitud.numero)}
               >
-                <Trash size={16} />
+                <Trash />
               </IconButton>
             </div>
           </div>
