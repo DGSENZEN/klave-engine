@@ -31,7 +31,7 @@ from klave_engine.llm.reader import (
 )
 from pydantic import BaseModel, Field
 
-from apps.api.auth.access import require_project_role
+from apps.api.auth.access import is_taller_admin, require_project_role, require_taller_admin
 from apps.api.auth.common import rate_limit
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
@@ -40,6 +40,9 @@ from apps.api.routes.catalog import get_catalog
 from apps.api.tenancy import store_for_project
 
 router = APIRouter(prefix="/copilot", tags=["copilot"])
+
+# Copilot actions whose requests write the taller catálogo.
+CATALOG_ACTIONS: frozenset[str] = frozenset({"adoptar_precio_publicado"})
 
 # The repo's own docs are half the knowledge base: they explain the app.
 DOCS_DIR = Path(__file__).resolve().parents[3] / "docs"
@@ -92,6 +95,10 @@ def acciones_del_proyecto(
     y auditable."""
     require_project_role(request, project_id, "viewer")
     contexto = _acciones(store, settings, catalog, project_id)
+    # Never offer what the caller's role can't do: the taller catálogo is the
+    # administrator's (role design, decision 1).
+    if getattr(request.state, "user", None) is not None and not is_taller_admin(request):
+        contexto = [a for a in contexto if a.tipo not in CATALOG_ACTIONS]
     return {"acciones": [_serializar(a) for a in contexto]}
 
 
@@ -138,6 +145,10 @@ def aplicar(
     rate_limit(request, "copilot_apply", max_attempts=60, window_seconds=3600.0)
     # Aplicar cambia el presupuesto: hace falta poder editar ese proyecto.
     require_project_role(request, body.project_id, "editor")
+    # …and an action that writes the taller catálogo is the administrator's:
+    # the copilot is not a side door around /catalog.
+    if body.tipo in CATALOG_ACTIONS:
+        require_taller_admin(request)
     actor = clean_actor(x_actor) or ""
     disponibles = _acciones(store, settings, catalog, body.project_id)
     accion = next(

@@ -469,3 +469,54 @@ def test_example_obra_editor_free(variantes):
     assert _mapeo(GRANDE, EJEMPLO) is None
     assert _mapeo(GRANDE) is None  # the office never saw it
     assert store.auditoria == []
+
+
+# ----------------------------------------------------------------- copiloto --
+
+
+@pytest.fixture
+def copiloto(api, monkeypatch):
+    """The copilot with two actions on offer: one that writes the taller
+    catálogo, one that only asks for a project-level datum."""
+    from klave_engine.copilot.acciones import Accion
+
+    from apps.api.routes import copilot
+
+    adoptar = Accion(
+        tipo="adoptar_precio_publicado", titulo="Adoptar", descripcion="d", endpoint="/catalog",
+        peticiones=[{"concepto": "CIM-002", "body": {"ref_id": 999}}],
+    )  # fmt: skip
+    definir = Accion(
+        tipo="definir_parametro", titulo="Definir", descripcion="d", endpoint="/projects",
+        requiere="la altura de entrepiso",
+    )  # fmt: skip
+    monkeypatch.setattr(copilot, "_acciones", lambda *_a, **_k: [adoptar, definir])
+    return api
+
+
+def test_editor_cannot_apply_catalog_action(copiloto):
+    como, _ = copiloto
+    antes = _catalogo_del_taller()
+    r = como("ana").post(
+        "/copilot/aplicar", json={"project_id": "obra", "tipo": "adoptar_precio_publicado"}
+    )
+    assert r.status_code == 403, r.text
+    assert r.json()["detail"]["error_type"] == "admin_required"
+    assert _catalogo_del_taller() == antes
+
+
+def test_acciones_omit_catalog_actions_for_member(copiloto):
+    como, _ = copiloto
+    tipos = [a["tipo"] for a in como("ana").get("/copilot/acciones/obra").json()["acciones"]]
+    assert tipos == ["definir_parametro"]
+
+
+def test_admin_still_gets_and_applies_them(copiloto):
+    como, _ = copiloto
+    admin = como("admin")
+    tipos = [a["tipo"] for a in admin.get("/copilot/acciones/obra").json()["acciones"]]
+    assert tipos == ["adoptar_precio_publicado", "definir_parametro"]
+    r = admin.post(
+        "/copilot/aplicar", json={"project_id": "obra", "tipo": "adoptar_precio_publicado"}
+    )
+    assert r.status_code not in (401, 403), r.text
