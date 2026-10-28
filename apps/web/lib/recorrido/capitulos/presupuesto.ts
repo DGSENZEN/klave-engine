@@ -23,7 +23,7 @@ export const presupuesto: Capitulo = {
       ancla: "presupuesto.lineas",
       titulo: "Las partidas",
       cuerpo:
-        "Cada renglón es un concepto con su cantidad medida del plano y su precio unitario. Lo que falta dice «sin precio», nunca $0.",
+        "Cada renglón es un concepto con su cantidad medida del plano y su precio unitario. Lo que falta dice «sin precio».",
       avanza: { con: "siguiente" },
     },
     {
@@ -49,7 +49,7 @@ export const presupuesto: Capitulo = {
       ancla: "presupuesto.alplano",
       titulo: "Del número al dibujo",
       cuerpo:
-        "«Verlos en el plano» te lleva a los elementos que sostienen esta cantidad. Así defiendes cada número.",
+        "«Verlos en el plano» te lleva a los elementos que sostienen esta cantidad.",
       avanza: { con: "ruta", ruta: "/plano" },
     },
     {
@@ -101,7 +101,7 @@ export const presupuesto: Capitulo = {
       lado: "esquina",
       titulo: "Entrega",
       cuerpo:
-        "Exporta en el formato que uses: Klave, OPUS o Neodata. El f'c del plano no coincide con el del catálogo: Klave te detiene y te pide escribir por qué entregas así, y ese motivo queda en el Excel.",
+        "Exporta en el formato que uses: Klave, OPUS o Neodata. El f'c del plano no coincide con el del catálogo, así que Klave te detiene y te pide el motivo. Ese motivo queda en el Excel.",
       avanza: { con: "evento", tipo: "export_completed" },
     },
   ]),

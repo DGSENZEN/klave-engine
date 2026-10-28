@@ -149,7 +149,7 @@ export default function ParametrosPage() {
     if (!latestEvent) return;
     if (latestEvent.type === "costing_updated" && isRemoteEvent(latestEvent) && dirty) {
       const handle = window.setTimeout(() => {
-        setConflict(`${actorLabel(latestEvent.actor)} actualizó los parámetros — recargar`);
+        setConflict(`${actorLabel(latestEvent.actor)} actualizó los parámetros.`);
       }, 0);
       return () => window.clearTimeout(handle);
     }
@@ -209,7 +209,7 @@ export default function ParametrosPage() {
   }
 
   function conflictMessage(detail: ConflictDetail | undefined) {
-    return `${actorLabel(detail?.updated_by)} actualizó los parámetros — recargar`;
+    return `${actorLabel(detail?.updated_by)} actualizó los parámetros.`;
   }
 
   function handleSaveError(err: unknown) {
@@ -399,8 +399,8 @@ export default function ParametrosPage() {
             }
           >
             <span className="font-medium">Sin precio.</span> Puedes ajustar parámetros y
-            precios, pero no mostramos importes mientras la escala del plano no esté
-            confirmada: todo el dinero se multiplica por ella.
+            precios. Los importes se ocultan hasta confirmar la escala del plano, porque todo
+            el dinero se multiplica por ella.
           </Callout>
         </div>
       )}

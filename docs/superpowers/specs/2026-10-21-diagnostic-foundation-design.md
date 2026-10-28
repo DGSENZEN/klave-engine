@@ -2,8 +2,7 @@
 
 Date: 2026-10-21
 
-Status: approved by the user on 2026-10-21; implemented and locally verified on
-2026-10-21. Not merged or deployed.
+Status: approved by the user on 2026-10-21; implementation has not started.
 
 ## Outcome and scope
 

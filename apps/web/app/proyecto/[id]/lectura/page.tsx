@@ -314,7 +314,7 @@ export default function LecturaPage() {
     <div className="rise-in px-6 py-7 lg:px-8">
       <PageHeader
         title="Lectura del plano"
-        sub="Qué leyó Klave de tus archivos: conversión, entidades, capas, bloques y lo que se omitió. Aquí se decide si puedes confiar en lo demás."
+        sub="Qué leyó Klave de tus archivos: conversión, entidades, capas, bloques y lo que se omitió. Con esto sabes si puedes confiar en lo demás."
       />
 
       <div data-tour="lectura.metricas" className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -465,7 +465,7 @@ export default function LecturaPage() {
           </Card>
 
           <Card className="p-5">
-            <SectionTitle sub="Un modelo de visión lee la imagen de cada hoja — cajetín, cuadros, notas, marcas — y lo que lee entra como sugerencia con procedencia, por debajo de lo que las reglas leyeron; se aplica al reprocesar.">
+            <SectionTitle sub="Un modelo de visión lee la imagen de cada hoja: cajetín, cuadros, notas y marcas. Lo que lee entra como sugerencia con procedencia, por debajo de lo que leyeron las reglas, y se aplica al reprocesar.">
               Lectura asistida por IA
             </SectionTitle>
             {aiReads && !aiReads.available && (
@@ -563,7 +563,7 @@ export default function LecturaPage() {
                     <span className="font-medium">
                       Cobertura: posibles elementos no detectados.
                     </span>{" "}
-                    El conteo de la IA no cuantifica nada — señala dónde mirar.
+                    El conteo de la IA solo señala dónde mirar: no se suma a las cantidades.
                     <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
                       {(aiReads.cobertura ?? [])
                         .filter((f) => f.kind === "faltante")
@@ -631,7 +631,7 @@ export default function LecturaPage() {
           </Card>
         ) : (
           <Card className="p-5">
-            <SectionTitle sub="Lo que cada hoja contiene, contado: símbolos por bloque y metros de trazo por capa. Un conteo no es una cantidad hasta que se asigna a un concepto del catálogo.">
+            <SectionTitle sub="Lo que cada hoja contiene, contado: símbolos por bloque y metros de trazo por capa. Un conteo se vuelve cantidad cuando lo asignas a un concepto del catálogo.">
               Levantamiento por hoja
             </SectionTitle>
             {mappingNotice && (
@@ -758,7 +758,7 @@ export default function LecturaPage() {
       <div className={tab !== "avisos" ? "hidden" : ""}>
         {lectura.warning_groups.length > 0 ? (
           <Card className="p-5">
-            <SectionTitle sub="Nada se omite en silencio: esto es lo que no se pudo leer o se ajustó.">
+            <SectionTitle sub="Aquí queda todo lo que no se pudo leer o se ajustó.">
               Avisos de lectura
             </SectionTitle>
             <ul className="space-y-3">
@@ -786,7 +786,7 @@ export default function LecturaPage() {
           </Card>
         ) : (
           <Card className="p-5">
-            <SectionTitle sub="Nada se omite en silencio: esto es lo que no se pudo leer o se ajustó.">
+            <SectionTitle sub="Aquí queda todo lo que no se pudo leer o se ajustó.">
               Avisos de lectura
             </SectionTitle>
             <p className="text-sm text-muted">
@@ -1035,7 +1035,7 @@ function ElementoLeido({
           <p className="mt-1 text-[11px] text-faint">
             Lo que dice el plano en ese punto manda.{" "}
             {claims.length > 0
-              ? `La IA leyó ${claims.join(" · ")} — compruébalo aquí.`
+              ? `La IA leyó ${claims.join(" · ")}; compruébalo aquí.`
               : "Compara contra lo que la IA propuso."}
           </p>
         </div>

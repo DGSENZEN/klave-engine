@@ -693,7 +693,7 @@ export default function PlanoPage() {
                 ┅ {propuestasHoja.length} propuestas del lector en esta hoja
               </div>
               <p className="mt-1 text-muted">
-                No cuentan hasta que alguien diga qué son, en{" "}
+                Cuentan cuando alguien confirma qué son, en{" "}
                 <Link href={`/proyecto/${id}/revision?tab=propuestas`} className="text-accent hover:underline">
                   Revisión → Propuestas
                 </Link>
@@ -710,7 +710,7 @@ export default function PlanoPage() {
                 <p className="mt-1 text-muted">
                   Se dibuja la geometría tal cual. Suele pasar cuando las capas
                   no siguen una convención conocida o el archivo es un
-                  levantamiento; la lectura dice qué se reconoció por capa.
+                  levantamiento. La lectura dice qué se reconoció por capa.
                 </p>
                 <Link
                   href={`/proyecto/${id}/lectura`}

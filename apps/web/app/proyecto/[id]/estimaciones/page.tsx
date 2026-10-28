@@ -180,8 +180,8 @@ export default function EstimacionesPage() {
           <Plus size={14} weight="bold" /> Nueva estimación
         </Button>
         <span className="text-xs text-muted">
-          Se genera con lo acumulado y lo amortizado ya cargados: encadenar a mano es como
-          se cobra dos veces el mismo metro.
+          Se genera con lo acumulado y lo amortizado ya cargados, para no cobrar dos veces
+          el mismo metro.
         </span>
       </div>
 
@@ -352,7 +352,7 @@ function EditorEstimacion({
   return (
     <Card className="p-5">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <SectionTitle sub="Cada renglón lleva la cantidad que alguien midió en obra, con su generador detrás. Lo que no se midió no entra.">
+        <SectionTitle sub="Cada renglón lleva la cantidad medida en obra, con su generador detrás. Lo que no se midió no entra.">
           Estimación {local.numero}
         </SectionTitle>
         <div className="flex shrink-0 gap-2">

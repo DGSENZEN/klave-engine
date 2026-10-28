@@ -71,7 +71,7 @@ def test_el_presupuesto_avisa_cuando_suma_destajos_como_si_fueran_completos():
     aviso = next(w for w in boq.warnings if "destajo" in w)
     assert "$10,359.97" in aviso
     assert "SAN-002" in aviso
-    assert "no el material" in aviso
+    assert "sin material" in aviso
 
 
 # ------------------------------------------------- quitar una fuente -------

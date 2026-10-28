@@ -79,7 +79,7 @@ export function TarjetaPaso({
   let cuerpo = paso?.cuerpo ?? capitulo.transferencia;
   if (fueraDeRuta) {
     titulo = "Saliste del recorrido";
-    cuerpo = "Sigue explorando con calma; cuando quieras, vuelve al paso donde ibas.";
+    cuerpo = "Sigue explorando; cuando quieras, vuelve al paso donde ibas.";
   } else if (anclaPerdida) {
     cuerpo = `No encuentro esto en esta pantalla. ${paso?.cuerpo ?? ""}`;
   }

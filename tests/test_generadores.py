@@ -42,7 +42,7 @@ def test_una_dimension_que_falta_no_se_rellena_con_uno() -> None:
     assert res.lineas[0].falta == ("ancho",)
     assert res.total == 0.0
     assert not res.cuadra
-    assert any("no se rellenan con 1.00" in a for a in res.avisos)
+    assert any("se dejan vacías" in a for a in res.avisos)
 
 
 def test_una_linea_incompleta_impide_cuadrar_aunque_el_resto_de_el_numero() -> None:
@@ -62,7 +62,7 @@ def test_la_diferencia_se_dice_con_las_dos_cifras_y_su_direccion() -> None:
     aviso = next(a for a in res.avisos if "suma" in a)
     assert "100" in aviso and "120" in aviso
     assert "en la cantidad cobrada" in aviso
-    assert "La cantidad sale del generador, no al revés." in aviso
+    assert "La cantidad cobrada debe salir del generador." in aviso
 
 
 def test_cobrar_sin_una_sola_linea_de_generador_se_dice() -> None:
@@ -153,7 +153,7 @@ def test_un_generador_que_no_cuadra_sale_con_las_dos_cifras() -> None:
     )
     aviso = next(a for a in resumen.avisos if "no cuadra" in a)
     assert "80" in aviso and "100" in aviso
-    assert "La cantidad sale del generador, no al revés." in aviso
+    assert "La cantidad cobrada debe salir del generador." in aviso
 
 
 def test_la_estimacion_no_corrige_la_cantidad_por_su_cuenta() -> None:

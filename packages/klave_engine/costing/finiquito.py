@@ -192,6 +192,6 @@ def calcular(fin: Finiquito) -> ResumenFiniquito:
             res.avisos.append(
                 f"Se ejecutó el {ejercido_pct:.1f} % del monto contratado. Un finiquito por "
                 "debajo de lo pactado necesita explicar qué no se hizo: conceptos cancelados, "
-                "cantidades menores, o una terminación anticipada."
+                "cantidades menores o una terminación anticipada."
             )
     return res

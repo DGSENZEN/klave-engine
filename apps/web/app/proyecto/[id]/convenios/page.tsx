@@ -81,8 +81,8 @@ function Medidor({ estado }: { estado: EstadoContrato }) {
         <div className={`h-full rounded-full ${tono}`} style={{ width: `${lleno}%` }} />
       </div>
       <div className="mt-1.5 text-xs text-muted">
-        Contrato vigente {money(estado.monto_vigente)}. El art. 59 de la LOPSRM cuenta
-        todos los convenios juntos, no uno por uno.
+        Contrato vigente {money(estado.monto_vigente)}. El art. 59 de la LOPSRM suma
+        todos los convenios para medir el techo.
       </div>
     </Card>
   );
@@ -208,7 +208,7 @@ export default function ConveniosPage() {
     <div className="space-y-6">
       <PageHeader
         title="Convenios modificatorios"
-        sub="Lo que cambió del contrato después de firmarlo, y qué tanto margen queda antes del techo de ley."
+        sub="Lo que cambió del contrato después de firmarlo y el margen que queda antes del techo de ley."
       />
 
       {cargando && <Skeleton className="h-28 w-full" />}
@@ -265,8 +265,8 @@ export default function ConveniosPage() {
         <Card className="p-4">
           <SectionTitle>Borrador del convenio {borrador.numero}</SectionTitle>
           <p className="mt-1 text-sm text-muted">
-            Las cantidades vienen de lo que ya se midió en obra. El motivo no: la ley pide
-            causa justificada y eso lo escribe quien la conoce.
+            Las cantidades vienen de lo medido en obra. El motivo lo escribes tú, porque la
+            ley pide causa justificada.
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
             <label className="block">

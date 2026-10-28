@@ -168,7 +168,7 @@ def calcular(
     if dimensiones_de(unidad) is None and lineas:
         res.avisos.append(
             f"La unidad «{unidad}» no tiene una fórmula conocida, así que cada línea se "
-            "captura con su medida directa. El motor no va a suponer cómo se multiplica."
+            "captura con su medida directa y Klave no supone ninguna multiplicación."
         )
 
     if res.incompletas:
@@ -177,8 +177,8 @@ def calcular(
             f"{res.incompletas} de {len(res.lineas)} línea"
             f"{'s' if len(res.lineas) > 1 else ''} no se "
             f"{'pueden' if res.incompletas > 1 else 'puede'} calcular: falta "
-            f"{', '.join(sin_dato)}. Esas líneas no suman, y no se rellenan con 1.00 "
-            "porque un hueco se ve y un número inventado se cobra."
+            f"{', '.join(sin_dato)}. Esas líneas no suman y se dejan vacías: un hueco "
+            "se ve, y un 1.00 de relleno se cobraría."
         )
 
     if lineas and abs(res.diferencia) > TOLERANCIA:
@@ -187,7 +187,7 @@ def calcular(
             f"{cantidad_capturada:,.4g} {unidad}: sobran "
             f"{abs(res.diferencia):,.4g}"
             f"{' en el generador' if res.diferencia > 0 else ' en la cantidad cobrada'}. "
-            "La cantidad sale del generador, no al revés."
+            "La cantidad cobrada debe salir del generador."
         )
     elif not lineas and cantidad_capturada > 0:
         res.avisos.append(

@@ -400,10 +400,10 @@ export function AccionDeKlave({
       <p className="mt-1.5 flex items-center gap-1.5 text-sm text-success">
         <CheckCircle size={14} weight="fill" className="shrink-0" />
         {hecho.despues == null ? (
-          <>Hecho. El total sigue sin mostrarse hasta que se confirme la unidad del plano.</>
+          <>Hecho: el total sigue oculto hasta que se confirme la unidad del plano.</>
         ) : (
           <>
-            Hecho. El total pasó de {hecho.antes != null ? money(hecho.antes) : "—"} a{" "}
+            Hecho: el total pasó de {hecho.antes != null ? money(hecho.antes) : "—"} a{" "}
             {money(hecho.despues)}.
           </>
         )}

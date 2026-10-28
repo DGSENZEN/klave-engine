@@ -195,7 +195,7 @@ export default function ConfiguracionPage() {
       {protectedMode && <AccessCard projectId={id} />}
 
       <Card className="p-5">
-        <SectionTitle sub="Archivar lo oculta de la lista activa; quitarlo lo saca de la lista, y puede además borrar sus archivos del disco.">
+        <SectionTitle sub="Archivar lo oculta de la lista activa. Quitarlo lo saca de la lista y, si lo eliges, también borra sus archivos del disco.">
           Acciones
         </SectionTitle>
         <div className="flex flex-wrap items-center gap-2">

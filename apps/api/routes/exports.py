@@ -134,10 +134,10 @@ def _guard_export(
                 "error_type": "export_blocked",
                 "message": (
                     "Este presupuesto tiene "
-                    + (f"{len(blocking)} hallazgos bloqueantes"
-                       if len(blocking) > 1 else "un hallazgo bloqueante")
-                    + ": entregarlo así estaría mal. Resuélvelo, o escribe por qué "
-                    "lo entregas de todos modos (queda escrito en el Excel)."
+                    + (f"{len(blocking)} hallazgos bloqueantes: resuélvelos"
+                       if len(blocking) > 1 else "un hallazgo bloqueante: resuélvelo")
+                    + " o escribe por qué lo entregas así; la razón queda escrita en "
+                    "el Excel."
                 ),
                 "bloqueantes": blocking,
             },

@@ -244,9 +244,9 @@ def build_personal_tecnico(
     if not renglones:
         notas.append(
             "Sin plantilla de campo capturada. Este programa es obligatorio "
-            "(RLOPSRM art. 45-A-XI-d) y no se puede derivar del presupuesto: el "
-            "personal técnico y administrativo es costo indirecto, no está en "
-            "ninguna matriz. Captura la plantilla o parte de la sugerida."
+            "(RLOPSRM art. 45-A-XI-d) y el presupuesto no lo da: el personal "
+            "técnico y administrativo es costo indirecto y queda fuera de las "
+            "matrices. Captura la plantilla o parte de la sugerida."
         )
         return ProgramaPersonal(renglones=[], total=0.0, total_por_periodo=[], notas=notas)
 
@@ -259,7 +259,7 @@ def build_personal_tecnico(
             f"{sin_sueldo} "
             f"{'cargo' if sin_sueldo == 1 else 'cargos'} sin sueldo capturado: "
             "aparecen con su participación en el calendario y sin importe. El total "
-            "de abajo está incompleto en esa medida — no es que ese personal salga gratis."
+            "de abajo queda corto por lo que cueste ese personal."
         )
     if indirectos_campo > 0 and total > 0 and not sin_sueldo:
         diferencia = desajuste_de_indirectos(total, indirectos_campo, sin_sueldo)
@@ -277,7 +277,7 @@ def build_personal_tecnico(
                 f"que los ${indirectos_campo:,.2f} de indirectos de campo que declara "
                 "la integración del precio. Un revisor compara estos dos números "
                 "(RLOPSRM art. 64-A-I): ajusta el porcentaje de indirectos de campo o "
-                "la plantilla, para que la propuesta no se contradiga."
+                "la plantilla, para que la propuesta sea congruente."
             )
     elif indirectos_campo > 0 and sin_sueldo:
         notas.append(

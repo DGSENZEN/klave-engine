@@ -53,8 +53,8 @@ export function InicioRecorrido() {
         <div className="min-w-0 flex-1">
           <div className="font-medium">Recorrido guiado · ~{minutos} min</div>
           <p className="text-sm text-muted">
-            Haz una obra completa — del plano al Excel para OPUS — en una obra de ejemplo tuya.
-            Cada paso lo haces tú, en la pantalla de verdad.
+            Haz una obra completa, del plano al Excel para OPUS, en una obra de ejemplo tuya.
+            Cada paso lo haces tú, en la pantalla real.
           </p>
         </div>
         <IconButton aria-label="Más tarde" onClick={masTarde}>

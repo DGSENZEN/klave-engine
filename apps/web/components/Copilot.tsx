@@ -54,7 +54,7 @@ type Turno = {
 function sugerencias(pathname: string, hayProyecto: boolean): string[] {
   if (pathname.includes("/programa")) {
     return [
-      "¿Por qué casi todo es ruta crítica?",
+      "¿Por qué tantas actividades están en ruta crítica?",
       "¿Días naturales o hábiles?",
       "¿Qué programas pide una licitación?",
     ];
@@ -69,7 +69,7 @@ function sugerencias(pathname: string, hayProyecto: boolean): string[] {
   if (pathname.includes("/revision") || pathname.includes("/lectura")) {
     return [
       "¿Qué significa SIN VERIFICAR?",
-      "¿Qué puede y qué no la lectura con IA?",
+      "¿Qué puede y qué no puede hacer la lectura con IA?",
       "¿Por qué revisar solo un lote?",
     ];
   }

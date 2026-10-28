@@ -129,7 +129,7 @@ export default function PilotoPage() {
     <div className="space-y-6">
       <PageHeader
         title="Medición del piloto"
-        sub="Cuánto le tomó a tu oficina ir del plano a los generadores con Klave, junto a lo que le toma a su modo. Las horas se estiman de lo que el proyecto guarda; la base la declaras tú."
+        sub="Cuánto le tomó a tu oficina ir del plano a los generadores con Klave, frente a su método anterior. Las horas se estiman con lo que guarda el proyecto; la base la declaras tú."
       />
 
       {!data.inicio && (

@@ -173,7 +173,7 @@ export default function BitacoraPage() {
     <div className="space-y-6">
       <PageHeader
         title="Bitácora de obra"
-        sub="El medio oficial de comunicación entre las partes (RLOPSRM art. 123). Lo que se asienta obliga; lo que no se asentó no pasó."
+        sub="El medio oficial de comunicación entre las partes (RLOPSRM art. 123). Lo asentado obliga a las partes y es lo único que cuenta como constancia."
         actions={
           !estado?.cerrada && (
             <Button onClick={() => nueva()} disabled={!estado || !!borrador}>
@@ -197,7 +197,7 @@ export default function BitacoraPage() {
           <SectionTitle
             sub={
               borrador.referencia !== null
-                ? `Aclara la nota ${borrador.referencia}, que se queda asentada tal como está: así es como una bitácora prueba algo.`
+                ? `Aclara la nota ${borrador.referencia}, que queda asentada tal como está.`
                 : "Una vez asentada no se edita. Si sale mal, se aclara con otra nota."
             }
           >

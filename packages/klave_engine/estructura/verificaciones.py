@@ -755,9 +755,8 @@ def _sin_definir(ctx: _Contexto) -> list[Verificacion]:
                 _hallazgo(
                     1,
                     "bloquea",
-                    f"{marca} está colocada en planta ({donde}) y no está definida en ninguna "
-                    f"parte del plano: ni un cuadro, ni un detalle, ni una nota general de la "
-                    f"familia {familia} la describen. {usa}",
+                    f"{marca} está colocada en planta ({donde}) y el plano no la define: ningún "
+                    f"cuadro, detalle ni nota general de la familia {familia} la describe. {usa}",
                     clave="sin definición",
                     marca=marca,
                     hoja=_hoja_unica(els),
@@ -1180,9 +1179,9 @@ def _nervaduras(ctx: _Contexto, marcas: dict[str, list[NormalizedEntity]]) -> li
                 "aviso",
                 f"Marcas de losa nervada sin lector, familia {letra}: {len(todos)} textos en "
                 f"{', '.join(f'{h} ({n})' for h, n in sorted(hojas.items()))}, capa "
-                f"{', '.join(capas)}: {cuantas}. Son de las nervaduras de la losa, no castillos, "
-                "trabes ni zapatas: la lectura estructural no las lee y sus cantidades no salen de "
-                f"aquí. Textos: {', '.join(handles[:_EJEMPLOS])}"
+                f"{', '.join(capas)}: {cuantas}. Son de las nervaduras de la losa: la lectura "
+                "estructural no las lee y sus cantidades no salen de aquí. Textos: "
+                f"{', '.join(handles[:_EJEMPLOS])}"
                 + (f" y {len(handles) - _EJEMPLOS} más" if len(handles) > _EJEMPLOS else "")
                 + ". Cantidad desconocida.",
                 clave=f"nervaduras: {letra}",
@@ -1320,7 +1319,7 @@ def _sin_colocar(
         solo = (
             " En planta sólo aparece como etiqueta de cuadro o título de detalle ("
             + ", ".join(titulos_de_vista.get(v, v).split(" · ")[0] for v in en_cuadro)
-            + "), nunca como colocación."
+            + ")."
             if en_cuadro
             else ""
         )
@@ -1433,7 +1432,7 @@ def _escritas_sin_elemento(
             estado = "Tampoco está definida en el plano: ningún dibujo la titula."
         if colocadas.get(marca):
             otras = sorted({_nombre_de_hoja(e.hoja) for e in colocadas[marca]})
-            estado += f" Sí tiene colocaciones en {', '.join(otras)}, no junto a estos textos."
+            estado += f" Sus colocaciones están en {', '.join(otras)}, lejos de estos textos."
         junto = [t for t in textos if t.junto_sin_marca]
         if junto:
             familias = ", ".join(sorted({f for t in junto for f in t.junto_sin_marca}))
@@ -2514,7 +2513,7 @@ def _dudosas_de_colocacion(ctx: _Contexto) -> list[Verificacion]:
         els = [e for e, _ in pares]
         ejemplos = [f"{e.marca or 'sin marca'} {_etiqueta(ctx, e)}: {t}" for e, t in pares]
         que = {
-            "vista dudosa": "no se sabe bien a qué planta pertenecen (su altura y su nivel "
+            "vista dudosa": "no se sabe a qué planta pertenecen (su altura y su nivel "
             "dependen de ello)",
             "claro dudoso": "su claro se midió con una línea dudosa",
             "marcador dudoso": "su marcador (de donde se mide su sección en planta) lo alcanza "
@@ -3064,11 +3063,12 @@ def _entrepisos(ctx: _Contexto) -> list[Verificacion]:
         f"niveles ({lista_niveles}: {len(niveles) - 1} entrepisos) y dibuja "
         f"{len(juegos)} juegos de castillos y columnas, uno por planta ({', '.join(juegos)}). "
         f"Las alturas suponen que cada juego sube desde su losa ({alturas_txt(supuestas)}"
-        f"; la de {nombre[tope.view_id]} repite la de abajo porque no hay nivel encima), pero "
-        f"las cantidades dejan fuera el juego de {base} como si fuera el mismo de la planta de "
-        f"arriba en su base. Las dos lecturas que se sostienen: (A) cada juego sube desde su "
-        f"losa: el de {base} es el del primer entrepiso y sobre {nombre[tope.view_id]} no se "
-        f"cuenta nada ({alturas_txt(sube)}): acero {kg_a:,.2f} kg, concreto {m3_a:,.2f} m³; (B) "
+        f"; la de {nombre[tope.view_id]} repite la de abajo porque no hay nivel encima). Las "
+        f"cantidades, en cambio, dejan fuera el juego de {base}: lo toman por el mismo de la "
+        f"planta de arriba en su base. Las dos lecturas que se sostienen: (A) cada juego sube "
+        f"desde su losa: el de {base} es el del primer entrepiso y sobre "
+        f"{nombre[tope.view_id]} no se cuenta nada ({alturas_txt(sube)}): "
+        f"acero {kg_a:,.2f} kg, concreto {m3_a:,.2f} m³; (B) "
         f"cada juego está bajo su losa: el de {base} no se cuenta y las alturas son "
         f"{alturas_txt(baja)}: acero {kg_b:,.2f} kg, concreto {m3_b:,.2f} m³. Hoy se cuenta "
         f"acero {kg_hoy:,.2f} kg y concreto {m3_hoy:,.2f} m³, que no es ninguna de las dos. "
@@ -3595,7 +3595,7 @@ def _junto_a_su_seccion(ctx: _Contexto) -> tuple[list[Verificacion], set[str]]:
             _hallazgo(
                 11,
                 "duda",
-                f"{cabeza} ({donde}), por leer — "
+                f"{cabeza} ({donde}), por leer: "
                 + "; ".join(partes)
                 + ". No se lee como su pila: se lee a mano o cuando se lean los cortes dibujados.",
                 clave="armado junto a su sección",

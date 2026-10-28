@@ -305,7 +305,7 @@ export default function PresupuestoPage() {
                     close();
                     void crearLiga();
                   }}
-                  hint="El plano con sus elementos y los generadores, sin cuenta y sin dinero; caduca en 14 días."
+                  hint="Muestra el plano con sus elementos y los generadores, sin importes. Se abre sin cuenta y caduca en 14 días."
                 >
                   <LinkSimple size={15} weight="duotone" /> Liga para compartir (supervisor o socio)
                 </MenuItem>
@@ -408,9 +408,9 @@ export default function PresupuestoPage() {
         <div className="mb-4">
           <Callout tone="info">
             {parametricCount} concepto{parametricCount === 1 ? "" : "s"} paramétrico
-            {parametricCount === 1 ? "" : "s"}: cantidades propuestas desde la historia del
-            taller (por m², por planta o por local), no leídas del plano. Revísalos o fíjalos;
-            las reglas viven en Catálogo → Plantillas.
+            {parametricCount === 1 ? "" : "s"}: cantidades propuestas con la historia del
+            taller (por m², por planta o por local); el plano no las mide. Revísalos o fíjalos;
+            las reglas están en Catálogo → Plantillas.
           </Callout>
         </div>
       )}
@@ -421,7 +421,7 @@ export default function PresupuestoPage() {
         <Metric
           label="Importe en lecturas firmes"
           value={<ConfidenceBands bands={costs.money_basis?.confidence_bands} />}
-          hint="Del costo directo, cuánto descansa en lecturas de confianza alta, cuánto queda justo en el umbral de 70 % y cuánto por debajo. Pesa el dinero, no cuenta elementos: un promedio simple deja que cien tornillos seguros tapen una trabe dudosa. Una sola tasa de aprobación escondería que un cuarto del importe está exactamente en la raya."
+          hint="Reparte el costo directo según la confianza de sus lecturas: alta, justo en el umbral de 70 % y por debajo. Se pondera por importe; en un promedio simple, cien tornillos seguros taparían una trabe dudosa."
         />
       </div>
 
@@ -432,7 +432,7 @@ export default function PresupuestoPage() {
             title="El plano no produjo ningún concepto"
             hint={
               costs.boq.warnings[0] ??
-              "No se detectaron elementos estructurales ni de albañilería que el catálogo sepa costear. Revisa la lectura del plano o agrega los conceptos a mano abajo."
+              "No se detectaron elementos estructurales ni de albañilería que el catálogo sepa costear. Revisa la lectura del plano o agrega los conceptos en «Ajustes a mano»."
             }
             action={
               <Link href={`/proyecto/${id}/lectura`} className={buttonClasses("secondary", "sm")}>
@@ -564,7 +564,7 @@ export default function PresupuestoPage() {
       {tab === "integracion" && costs.indicators && <IndicatorsCard indicators={costs.indicators} />}
 
       <Card className={`mt-6 p-5 ${tab !== "ajustes" ? "hidden" : ""}`}>
-        <SectionTitle sub="Lo que el plano no trae y el presupuesto necesita: un concepto con su cantidad y el motivo, con autor. Para corregir una cantidad leída usa el lápiz de su línea.">
+        <SectionTitle sub="Agrega lo que el presupuesto necesita y el plano no trae: el concepto, su cantidad y el motivo, con tu nombre. Para corregir una cantidad leída, usa el lápiz de su línea.">
           Conceptos agregados a mano
         </SectionTitle>
         <AdjustmentsPanel
@@ -579,7 +579,7 @@ export default function PresupuestoPage() {
       </Card>
 
       <Card className={`mt-6 p-5 ${tab !== "versiones" ? "hidden" : ""}`}>
-        <SectionTitle sub="Guarda el presupuesto tal como está — con tus revisiones, ajustes y parámetros — para compararlo después y volver a él.">
+        <SectionTitle sub="Guarda el presupuesto actual, con tus revisiones, ajustes y parámetros, para compararlo o volver a él después.">
           Versiones del presupuesto
         </SectionTitle>
         <VersionsPanel projectId={id} />
@@ -695,7 +695,7 @@ function PhaseGroup({
                 )}
                 {l.unpriced && (
                   <span className="ml-1.5 align-middle">
-                    <Badge tone="danger" dot title="Sin matriz ni precio adoptado: el importe no es cero, es desconocido">
+                    <Badge tone="danger" dot title="Sin matriz ni precio adoptado: el importe se desconoce">
                       sin precio
                     </Badge>
                   </span>

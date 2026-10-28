@@ -101,7 +101,7 @@ export function BaseSheet({
     try {
       const result = await adoptFromBase(refIds, getBrowserActor());
       const skipped = result.skipped.length
-        ? ` · ${result.skipped.length} no: ${result.skipped
+        ? ` · ${result.skipped.length} sin traer: ${result.skipped
             .slice(0, 2)
             .map((s) => s.reason)
             .join(" / ")}${result.skipped.length > 2 ? "…" : ""}`

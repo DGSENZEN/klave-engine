@@ -290,12 +290,12 @@ def _separar(
         if (d.properties or {}).get("titulo_de_detalle"):
             motivo = "titulo_de_detalle"
             texto = (
-                "título de detalle: su sección está dibujada (o la señala una flecha); define la "
-                "marca, no la coloca"
+                "título de detalle: su sección está dibujada (o la señala una flecha); sólo define "
+                "la marca"
             )
         elif (d.properties or {}).get("role") == "cuadro":
             motivo = "cuadro"
-            texto = "marca de cuadro o de detalle: define la marca, no la coloca"
+            texto = "marca de cuadro o de detalle: sólo define la marca"
         elif segmentada and vista is None:
             motivo = "sin_vista"
             texto = "la segmentación no la asignó a ninguna vista"
@@ -735,7 +735,7 @@ class _Resolutor:
                 )
             if medida is not None:
                 avisos.append(
-                    "sección: el plano la dibuja; no se leyó; se usa la medida en planta "
+                    "sección: el plano la dibuja y no se leyó; se usa la medida en planta "
                     f"({_lado(medida.valor)} cm)"
                 )
                 dudas.append(
@@ -744,12 +744,12 @@ class _Resolutor:
                 )
                 return _como_supuesto(
                     medida,
-                    f"el plano la dibuja; no se leyó: se usa la medida en planta ({medida.texto})",
+                    f"el plano la dibuja y no se leyó; se usa la medida en planta ({medida.texto})",
                     [de_la_marca, medida],
                 )
             if supuesta is not None:
                 avisos.append(
-                    "sección: el plano la dibuja; no se leyó; se usa la sección supuesta de la "
+                    "sección: el plano la dibuja y no se leyó; se usa la sección supuesta de la "
                     f"familia ({_lado(supuesta)} cm)"
                 )
                 dudas.append(
@@ -758,7 +758,7 @@ class _Resolutor:
                 )
                 return _supuesta(supuesta, familia, [de_la_marca], dibujada=True)
             avisos.append(
-                "sección: el plano la dibuja; no se leyó, y no hay nota de la familia, medida ni "
+                "sección: el plano la dibuja y no se leyó; no hay nota de la familia, medida ni "
                 "sección supuesta: sin sección"
             )
             dudas.append(

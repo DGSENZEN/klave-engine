@@ -158,7 +158,7 @@ export function VigenciaSection({
         title="Actualizar precios vencidos por índice"
         sub={
           preview
-            ? `${preview.updated.length === 1 ? "1 precio pasa" : `${preview.updated.length} precios pasan`} a ${preview.to_month} con el índice ${indices?.source || "del taller"}; queda marcado como calculado, no como cotización.`
+            ? `${preview.updated.length === 1 ? "1 precio pasa" : `${preview.updated.length} precios pasan`} a ${preview.to_month} con el índice ${indices?.source || "del taller"}; queda marcado como calculado.`
             : undefined
         }
         onClose={() => setPreview(null)}
@@ -227,7 +227,7 @@ export function VigenciaSection({
           </div>
         )}
       </Modal>
-      <SectionTitle sub="Cada precio dice cuántos meses tiene. Pide cotización de los vencidos, importa la respuesta, o tráelos a hoy por el índice que tu taller mantiene (queda marcado como calculado, nunca como cotización).">
+      <SectionTitle sub="Cada precio dice cuántos meses tiene. Pide cotización de los vencidos, importa la respuesta, o tráelos a hoy por el índice que tu taller mantiene (queda marcado como calculado).">
         Vigencia de precios
       </SectionTitle>
       {loadError && (
@@ -306,7 +306,7 @@ export function VigenciaSection({
             {monthCount === 0 ? (
               <p>
                 Sin índices todavía. Klave no precarga cifras oficiales: pega los valores publicados
-                (INEGI INPP construcción u otro) con su fuente; el factor aplicado queda escrito en cada
+                (INEGI INPP construcción u otro) con su fuente. El factor aplicado queda escrito en cada
                 precio actualizado.
               </p>
             ) : (

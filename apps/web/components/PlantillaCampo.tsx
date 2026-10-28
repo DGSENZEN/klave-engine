@@ -131,7 +131,7 @@ export function PlantillaCampo({ id }: { id: string }) {
   return (
     <Card className="p-5">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <SectionTitle sub="RLOPSRM art. 45-A-XI-d. Es costo indirecto de campo: no sale del presupuesto, se captura y se calendariza sobre el mismo programa.">
+        <SectionTitle sub="RLOPSRM art. 45-A-XI-d. Es costo indirecto de campo: se captura a mano y se calendariza sobre el mismo programa.">
           Personal técnico, administrativo y de servicio
         </SectionTitle>
         <div className="flex shrink-0 gap-2">
@@ -175,10 +175,9 @@ export function PlantillaCampo({ id }: { id: string }) {
             y se desecha en la apertura.
           </Callout>
           <p className="text-sm text-muted">
-            El motor puede proponer <strong>qué puestos</strong> lleva una obra de esta
-            duración y con estos frentes — un residente por frente, un velador siempre, un
-            topógrafo mientras se traza. No propone sueldos: eso es dinero de tu taller y
-            lo capturas tú.
+            Klave puede proponer <strong>qué puestos</strong> lleva una obra de esta
+            duración y con estos frentes: un residente por frente, un velador siempre, un
+            topógrafo mientras se traza. Los sueldos son dinero de tu taller y los capturas tú.
           </p>
           <ul className="grid gap-1.5 text-sm sm:grid-cols-2">
             {data.sugerida.map((c) => (

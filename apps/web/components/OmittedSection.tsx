@@ -133,7 +133,7 @@ export function OmittedSection({
 
   return (
     <Card className="p-5">
-      <SectionTitle sub="¿Klave no vio algo que está en el plano? Regístralo aquí: entra al presupuesto como levantamiento manual, con tu nombre — y le enseña al motor dónde falló.">
+      <SectionTitle sub="¿Klave no vio algo que está en el plano? Regístralo aquí. Entra al presupuesto como levantamiento manual con tu nombre y le enseña al motor dónde falló.">
         Elementos omitidos por el motor
       </SectionTitle>
 

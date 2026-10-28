@@ -148,8 +148,8 @@ def estado(
         st.avisos.append(
             f"Los convenios suman {st.monto_pct:.1f} % del monto original "
             f"(${st.monto_convenido:,.2f} sobre ${monto_original:,.2f}) y el art. 59 de la "
-            f"LOPSRM los limita al {TECHO_PCT:g} % en conjunto. Pasado ese punto no hay "
-            "convenio que valga: se requiere un contrato nuevo."
+            f"LOPSRM los limita al {TECHO_PCT:g} % en conjunto. Pasado ese punto se "
+            "requiere un contrato nuevo."
         )
     elif st.monto_pct > TECHO_PCT * 0.8:
         margen = round(monto_original * TECHO_PCT / 100 - st.monto_convenido, 2)
@@ -184,7 +184,7 @@ def estado(
             f"{'entran' if nuevos > 1 else 'entra'} por convenio y no "
             f"{'estaban' if nuevos > 1 else 'estaba'} en el catálogo original. "
             "El art. 59 también prohíbe las variaciones sustanciales al proyecto: revisa "
-            "que sean del mismo trabajo y no de otro."
+            "que pertenezcan al mismo trabajo."
         )
     return st
 

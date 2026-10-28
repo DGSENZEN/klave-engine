@@ -1079,7 +1079,7 @@ function ConteoSection({
 
   return (
     <Card className="p-5">
-      <SectionTitle sub="Klave se compara contra sí mismo en todo lo demás. Esto es lo único que dice cuánto de lo dibujado encuentra, y sólo lo puede contestar alguien contando.">
+      <SectionTitle sub="En todo lo demás Klave se compara contra sí mismo. Este conteo, hecho por una persona, es lo único que mide cuánto de lo dibujado encuentra.">
         Cuántos hay dibujados
       </SectionTitle>
 

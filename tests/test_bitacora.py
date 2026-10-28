@@ -64,7 +64,7 @@ def test_aclarar_una_nota_que_no_existe_se_rechaza() -> None:
 
 
 def test_una_nota_sin_texto_no_se_asienta() -> None:
-    with pytest.raises(bit.BitacoraError, match="no comunica nada"):
+    with pytest.raises(bit.BitacoraError, match="no tiene texto"):
         bit.asentar(_abierta(), _nota(2, texto="   "))
 
 

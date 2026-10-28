@@ -37,7 +37,7 @@ export function GastoIACard() {
 
   return (
     <Card className="p-5">
-      <SectionTitle sub="Estimado con las tarifas que declaró quien administra este servidor, no un cargo leído del proveedor. Sirve para ver tendencia y frenar a tiempo, no para conciliar una factura.">
+      <SectionTitle sub="Estimado con las tarifas que declaró quien administra este servidor; el cargo real está en la factura del proveedor. Sirve para ver la tendencia y frenar a tiempo.">
         <span className="inline-flex items-center gap-2">
           <CurrencyDollar size={17} weight="duotone" /> Gasto de IA este mes
         </span>
@@ -85,7 +85,7 @@ export function GastoIACard() {
           {gasto.sin_tarifar > 0 && (
             <p className="mt-1.5 text-xs text-warning">
               {gasto.sin_tarifar} llamada(s) usaron un modelo sin tarifa declarada: su
-              costo no está en este número, no es que fueran gratis.
+              costo existe, pero queda fuera de este número.
             </p>
           )}
           {gasto.por_proyecto.length > 0 && (
@@ -118,7 +118,7 @@ export function ErroresCard() {
 
   return (
     <Card className="p-5">
-      <SectionTitle sub="Los últimos siete días, agrupados. Se guarda aquí y no se manda a ningún tercero: en una traza viajan nombres de obra y de cliente.">
+      <SectionTitle sub="Los últimos siete días, agrupados. Se guarda sólo en este servidor, porque una traza lleva nombres de obra y de cliente.">
         <span className="inline-flex items-center gap-2">
           <Bug size={17} weight="duotone" /> Qué se ha roto
         </span>

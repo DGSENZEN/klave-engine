@@ -202,9 +202,9 @@ _RULES: list[Rule] = [
         target="/catalogo",
         momento="cotizar",
         verificar=(
-            "Un catálogo de destajos paga la mano de obra y nada más. En una "
-            "línea sanitaria de 4 pulgadas el tubo cuesta cinco veces el destajo, "
-            "y el presupuesto está sumando sólo el destajo."
+            "Un catálogo de destajos paga solo la mano de obra. En una línea "
+            "sanitaria de 4 pulgadas el tubo cuesta cinco veces el destajo, y el "
+            "presupuesto suma solo el destajo."
         ),
     ),
     Rule(
@@ -231,8 +231,8 @@ _RULES: list[Rule] = [
         plural="{n} hojas con locales sin clave de acabado",
         momento="cotizar",
         verificar=(
-            "El local sin marca no declara acabado: su área existe pero no "
-            "pertenece a ningún concepto todavía."
+            "El local sin marca no declara acabado, así que su área todavía no "
+            "entra en ningún concepto."
         ),
     ),
     Rule(
@@ -244,8 +244,8 @@ _RULES: list[Rule] = [
         plural="{n} hojas con piezas de cancelería sin clave legible",
         momento="cotizar",
         verificar=(
-            "El globo sin clave no declara qué pieza es: no puede entrar al "
-            "cuadro ni al presupuesto. Sigue contado en el levantamiento."
+            "El globo sin clave no dice qué pieza es, así que queda fuera del "
+            "cuadro y del presupuesto; en el levantamiento sí se cuenta."
         ),
     ),
     Rule(
@@ -257,8 +257,8 @@ _RULES: list[Rule] = [
         plural="{n} hojas con corridas sin diámetro legible",
         momento="cotizar",
         verificar=(
-            "Nadie publica precio de «tubería» a secas: sin diámetro, esos "
-            "metros no se pueden cotizar contra ninguna publicación."
+            "Las publicaciones de precios cotizan la tubería por diámetro; sin "
+            "él, esos metros no se pueden cotizar."
         ),
     ),
     Rule(
@@ -267,11 +267,11 @@ _RULES: list[Rule] = [
         action="Declara los N.P.T. de cada planta para medir el tramo vertical.",
         target="lectura",
         group="bajadas_sin_nivel",
-        plural="{n} hojas con tiros de bajada sin nivel de dónde medirse",
+        plural="{n} hojas con tiros de bajada sin nivel para medirlos",
         momento="entregar",
         verificar=(
-            "El tiro está ligado por posición entre plantas; lo que falta es "
-            "el nivel que convierte los niveles en metros verticales."
+            "El tiro ya está ligado por posición entre plantas; falta el N.P.T. "
+            "de cada planta para convertirlo en metros verticales."
         ),
     ),
     Rule(
@@ -331,7 +331,7 @@ _RULES: list[Rule] = [
     Rule(
         pattern=r"costo de financiamiento no convergió",
         severity="dinero",
-        action="Revisa tasa y calendario del flujo; el residual indica cuánto baila el total.",
+        action="Revisa tasa y calendario del flujo; el residual indica cuánto varía el total.",
         target="parametros",
         momento="entregar",
         verificar="Compara el total de dos recomputos seguidos.",
@@ -443,8 +443,8 @@ def diagnose(
                 title=f"{line.concept_code} tiene cantidad pero no precio",
                 detail=(
                     f"{line.description[:80]} — {line.quantity:,.2f} {line.unit} "
-                    "cuantificados que el costo directo no incluye. Cuánto suman no se "
-                    "puede saber desde aquí: depende del precio que le des."
+                    "cuantificados que el costo directo no incluye. Su importe "
+                    "depende del precio que le des."
                 ),
                 action=f"Dale precio a {line.concept_code} en el catálogo del taller.",
                 target="/catalogo",
@@ -473,10 +473,9 @@ def diagnose(
                     severity="revisar",
                     title=f"Faltan {len(pending)} de 3 pasos de verificación",
                     detail=(
-                        "Sin firmar " + ", ".join(pending) + ". Hasta entonces las "
-                        "pantallas y el Excel salen sellados SIN VERIFICAR: el "
-                        "presupuesto es tuyo cuando tú lo confirmas, no cuando el "
-                        "motor lo calcula."
+                        "Sin firmar: " + ", ".join(pending) + ". Hasta que los "
+                        "firmes, las pantallas y el Excel salen sellados SIN "
+                        "VERIFICAR; el presupuesto es tuyo cuando lo confirmas."
                     ),
                     action="Recorre la ruta de verificación en el Resumen.",
                     target="",
@@ -498,8 +497,7 @@ def diagnose(
                 detail=(
                     f"El peor caso: en {peor['frame_code']} la lectura por imagen "
                     f"cuenta {peor['ai_count']} × {peor['family']} y el motor detectó "
-                    f"{peor['engine_count']}. Un conteo no es una cantidad — señala "
-                    "dónde mirar."
+                    f"{peor['engine_count']}. El conteo solo señala dónde mirar."
                 ),
                 action="Revisa esas hojas y registra lo que falte como elemento omitido.",
                 target="revision",

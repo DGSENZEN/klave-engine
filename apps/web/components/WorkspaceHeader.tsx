@@ -102,7 +102,7 @@ export function WorkspaceHeader({ active }: { active: Section }) {
                     close();
                     router.push("/como-funciona");
                   }}
-                  hint="Las reglas que la app no rompe"
+                  hint="Las reglas que la app siempre cumple"
                 >
                   Cómo funciona
                 </MenuItem>

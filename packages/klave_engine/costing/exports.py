@@ -1280,7 +1280,8 @@ def build_cambios_workbook(
     ws.title = "Aditivas y deductivas"
     _title(ws, 1, f"Cambios de «{antes_label}» a «{despues_label}»", size=13)
     nota = (
-        "Mismo plano, lectura distinta: estos cambios son de Klave, no del proyecto."
+        "Mismo plano, lectura distinta: estos cambios vienen de la lectura de Klave; "
+        "el proyecto es el mismo."
         if cambios.mismo_plano
         else "Cantidades leídas de cada revisión; importes a precio unitario de hoy."
     )

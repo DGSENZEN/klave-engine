@@ -23,7 +23,7 @@ export const planos: Capitulo = {
       ancla: "lectura.pestanas",
       titulo: "Qué leyó, hoja por hoja",
       cuerpo:
-        "Hojas, capas y familias, el levantamiento y, en Avisos, lo que no pudo leer. Nada se omite en silencio.",
+        "Hojas, capas y familias, el levantamiento y, en Avisos, todo lo que no pudo leer.",
       avanza: { con: "siguiente" },
     },
     {

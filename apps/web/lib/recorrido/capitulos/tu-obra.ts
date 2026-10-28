@@ -23,7 +23,7 @@ export const tuObra: Capitulo = {
       ancla: "inicio.subir",
       titulo: "Tu primera obra",
       cuerpo:
-        "Nuevo proyecto, con todas las hojas juntas (DWG o DXF). Lo que hiciste en la obra de ejemplo es lo mismo que harás con ella; con un juego grande, el procesamiento tarda más.",
+        "Nuevo proyecto, con todas las hojas juntas (DWG o DXF). Harás lo mismo que en la obra de ejemplo; con un juego grande, el procesamiento tarda más.",
       avanza: { con: "siguiente" },
     },
   ]),

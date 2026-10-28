@@ -74,14 +74,14 @@ _JALA: dict[str, list[str]] = {
     ],
     "arquitectura": [
         "Sustrato: se dibuja y ancla locales",
-        "Sus muros no cobran (cobran en albañilería)",
+        "Sus muros cobran en albañilería",
     ],
     "electrica": [
         "Levantamiento por capas (el detector eléctrico está pendiente)",
         *_LEVANTAMIENTO,
     ],
     "indice": [
-        "Portada o índice: se registra, no genera cantidades",
+        "Portada o índice: se registra sin generar cantidades",
     ],
 }
 

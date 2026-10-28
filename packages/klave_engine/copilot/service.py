@@ -173,10 +173,9 @@ def responder(
         return Respuesta(
             texto=(
                 "No encontré nada en la normativa que tengo cargada ni en la "
-                "documentación de Klave que responda eso. Prefiero decírtelo a "
-                "inventarte una respuesta: si es un punto de ley, búscalo en el "
-                "texto vigente; si es de la aplicación, dime en qué pantalla estás "
-                "y lo vemos."
+                "documentación de Klave que responda eso. Si es un punto de ley, "
+                "búscalo en el texto vigente; si es de la aplicación, dime en qué "
+                "pantalla estás y lo vemos."
             ),
             fundamentada=False,
         )
