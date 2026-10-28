@@ -502,7 +502,10 @@ export default function Home() {
         ) : (
           // One list, divided rows: projects are entries in a register, not
           // separate objects to admire.
-          <ul className="card divide-y divide-border overflow-clip">
+          // No overflow clip: each row's options menu hangs below it, and on
+          // the last row it must reach past the card. The rows round the
+          // corners instead.
+          <ul className="card divide-y divide-border [&>li:first-child>*]:rounded-t-[11px] [&>li:last-child>*]:rounded-b-[11px]">
             {filtered?.map((project) => (
               <li key={project.project_id}>
                 <ProjectRow project={project} onChanged={refreshNow} onError={setError} />

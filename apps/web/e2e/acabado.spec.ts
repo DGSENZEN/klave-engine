@@ -122,9 +122,15 @@ test("reprocesar pide confirmación y deja la pantalla abierta con el aviso", as
   // pantalla se queda, con el aviso, y vuelve sola al terminar.
   await page.goto(`/proyecto/${id}/resumen`);
   await expect(page.getByRole("heading", { name: "Resumen del proyecto" })).toBeVisible();
+  // The sample obra reprocesses in about a second: watch for the notice
+  // before asking for the run, or a fast runner shows and clears it between
+  // two assertion polls.
+  const aviso = page
+    .getByText("Se está reprocesando. Lo que ves es la lectura anterior")
+    .waitFor({ state: "visible", timeout: 30_000 });
   const r = await page.request.post(`${state.api_url}/projects/${id}/process`, { data: {} });
   expect(r.ok(), await r.text()).toBeTruthy();
-  await expect(page.getByText("Se está reprocesando. Lo que ves es la lectura anterior")).toBeVisible({ timeout: 30_000 });
+  await aviso;
   await expect(page.getByRole("heading", { name: "Resumen del proyecto" })).toBeVisible();
   await expect(page.getByText("Se está reprocesando.")).toHaveCount(0, { timeout: 120_000 });
 });
