@@ -57,7 +57,7 @@ export default function GlosarioPage() {
   return (
     <div className="min-h-screen">
       <WorkspaceHeader active={null} />
-      <main className="mx-auto max-w-3xl px-5 py-8 sm:px-6">
+      <main className="mx-auto max-w-6xl px-5 py-8 sm:px-6 *:max-w-3xl">
         <PageHeader
           title="Glosario"
           sub="Los términos que la aplicación usa, en el orden en que aparecen: del plano a la cantidad, de la cantidad al precio, del precio a la entrega."

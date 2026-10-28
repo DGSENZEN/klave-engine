@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Sparkle } from "@phosphor-icons/react";
 import { getAllMatches, setAliasesBulk, type ConceptMatch } from "@/lib/api";
-import { Badge, Button, Callout, Skeleton } from "@/components/ui";
+import { Badge, Button, Callout } from "@/components/ui";
 import { useProjectLive } from "@/components/ProjectLive";
 
 type Suggestion = { concept_code: string; description: string; unit: string; match: ConceptMatch };
@@ -54,15 +54,9 @@ export function SuggestionsBar({
   const pending = (items ?? []).filter(
     (s) => !skipped.has(s.concept_code) && conceptCodes.has(s.concept_code),
   );
-  // Reserve the bar's height while the matches load so the table below does
-  // not jump when suggestions appear.
-  if (!items) {
-    return (
-      <div className="mb-4" aria-busy="true">
-        <Skeleton className="h-11 w-full" />
-      </div>
-    );
-  }
+  // Nothing while the matches load: a grey bar held open for the length of a
+  // slow match read as broken. Most loads find nothing to suggest anyway.
+  if (!items) return null;
   if (loadError) {
     return (
       <div className="mb-4">

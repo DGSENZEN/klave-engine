@@ -85,7 +85,7 @@ export default function CuentaPage() {
   return (
     <div className="min-h-screen">
       <WorkspaceHeader active="cuenta" />
-      <main className="mx-auto max-w-3xl px-5 py-8 sm:px-6">
+      <main className="mx-auto max-w-6xl px-5 py-8 sm:px-6 *:max-w-3xl">
         <PageHeader
           title="Tu cuenta"
           sub="Perfil, acceso y sesiones. Lo que cambies aquí aplica en todos tus dispositivos."

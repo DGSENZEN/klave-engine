@@ -268,7 +268,7 @@ export default function CatalogoPage() {
   return (
     <div className="min-h-screen">
       <WorkspaceHeader active="catalogo" />
-      <main className="mx-auto max-w-5xl px-5 py-8 sm:px-6">
+      <main className="mx-auto max-w-6xl px-5 py-8 sm:px-6">
         {desde && (
           <Link
             href={`/proyecto/${desde}`}
@@ -2041,10 +2041,10 @@ function ConceptRows({
             </div>
           </div>
         </Td>
-        <Td align="right" className="text-muted">
+        <Td align="right" className="whitespace-nowrap text-muted">
           por {concept.unit}
         </Td>
-        <Td align="right" className="tabular text-muted">
+        <Td align="right" className="whitespace-nowrap tabular text-muted">
           {draft.length} recursos
         </Td>
         <Td align="right" className="tabular px-5 font-semibold">

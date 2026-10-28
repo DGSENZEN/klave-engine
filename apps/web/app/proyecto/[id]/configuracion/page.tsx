@@ -120,7 +120,7 @@ export default function ConfiguracionPage() {
 
   if (!project && error) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Configuración del proyecto" />
         <Callout tone="danger">{error}</Callout>
       </div>
@@ -128,7 +128,7 @@ export default function ConfiguracionPage() {
   }
   if (!project) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <SkeletonHeader />
         <Skeleton className="h-64" />
       </div>
@@ -136,7 +136,7 @@ export default function ConfiguracionPage() {
   }
 
   return (
-    <div className="rise-in mx-auto max-w-3xl px-6 py-7 lg:px-8">
+    <div className="max-w-3xl px-4 py-5 sm:px-6">
       <PageHeader
         title="Configuración del proyecto"
         sub="Organización, acceso del equipo y acciones sobre este proyecto."

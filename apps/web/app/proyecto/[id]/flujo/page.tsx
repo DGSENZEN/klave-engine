@@ -32,7 +32,7 @@ export default function FlujoPage() {
 
   if (error) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Flujo financiero" />
         <Callout tone="danger">
           No se pudo cargar el flujo financiero. Revisa que el servidor esté
@@ -44,7 +44,7 @@ export default function FlujoPage() {
 
   if (!costs) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <SkeletonHeader />
         <SkeletonMetrics count={4} />
         <Card className="mb-6 p-5">
@@ -66,7 +66,7 @@ export default function FlujoPage() {
 
   if (moneyState(costs) === "blocked") {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Flujo financiero" />
         <UnitsGate id={id} costs={costs} actorName={actorName} />
       </div>
@@ -78,7 +78,7 @@ export default function FlujoPage() {
   const operating = fin.operating_projection ?? [];
 
   return (
-    <div className="rise-in px-6 py-7 lg:px-8">
+    <div className="px-4 py-5 sm:px-6">
       <PageHeader
         title="Flujo financiero"
         sub="Estimaciones por periodo a precio de venta: anticipo, amortización, retenciones y flujo neto."

@@ -142,7 +142,7 @@ export default function EstimacionesPage() {
 
   if (!lista && cargaFallida) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Estimaciones" />
         <Callout
           tone="danger"
@@ -160,7 +160,7 @@ export default function EstimacionesPage() {
 
   if (!lista) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Estimaciones" />
         <Card className="p-5">
           <Skeleton className="h-4 w-48" />
@@ -180,7 +180,7 @@ export default function EstimacionesPage() {
   );
 
   return (
-    <div className="rise-in px-6 py-7 lg:px-8">
+    <div className="px-4 py-5 sm:px-6">
       <PageHeader
         title="Estimaciones"
         sub="Lo ejecutado en el periodo, menos la amortización del anticipo y la retención del fondo de garantía (RLOPSRM art. 130–132)."

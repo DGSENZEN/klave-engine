@@ -116,7 +116,7 @@ export default function ProgramaPage() {
 
   if (error) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Programa de obra" />
         <Callout tone="danger">
           No se pudo cargar el programa de obra. Revisa que el servidor esté
@@ -128,7 +128,7 @@ export default function ProgramaPage() {
 
   if (!costs) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <SkeletonHeader />
         <SkeletonMetrics count={3} />
         <Card className="p-5">
@@ -156,7 +156,7 @@ export default function ProgramaPage() {
 
   if (moneyState(costs) === "blocked") {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Programa de obra" />
         <UnitsGate id={id} costs={costs} actorName={actorName} />
       </div>
@@ -176,7 +176,7 @@ export default function ProgramaPage() {
   );
 
   return (
-    <div className="rise-in px-6 py-7 lg:px-8">
+    <div className="px-4 py-5 sm:px-6">
       <PageHeader
         title="Programa de obra"
         sub="Red de actividades derivada de las cantidades y del rendimiento de cada matriz; holguras y ruta crítica conforme al RLOPSRM art. 224."

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  ArrowRight,
   ArrowsInSimple,
   CaretRight,
   LockSimple,
@@ -23,7 +24,7 @@ import { entryHref, NODE_NAV } from "@/lib/nodeNav";
 import { useTablero } from "@/lib/useProjectReport";
 import { useProjectLive } from "@/components/ProjectLive";
 import { timeAgo } from "@/lib/time";
-import { Avatar, Button, Skeleton } from "@/components/ui";
+import { Avatar, Button, buttonClasses, Skeleton } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 /**
@@ -416,16 +417,25 @@ export function TableroBoard({ id }: { id: string }) {
           className="absolute left-4 top-4 z-30 max-w-sm rounded-xl border border-border bg-surface/95 p-3 shadow-sm backdrop-blur"
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <div className="microlabel mb-1">Lo que sigue</div>
-          <div className="text-sm font-semibold">{tablero.siguiente.label}</div>
-          <div className="mt-0.5 text-xs text-muted">{tablero.siguiente.detail}</div>
-          {tablero.siguiente.href && tablero.siguiente.accion !== "esperar" && (
-            <Link
-              href={`${base}${tablero.siguiente.href}`}
-              className="mt-2 inline-flex items-center rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
-            >
-              {tablero.siguiente.label}
-            </Link>
+          {/* The step is named once: as the action when there is one to
+              take, as the heading when the only thing to do is wait. */}
+          <div className="text-xs text-muted">Lo que sigue</div>
+          {tablero.siguiente.href && tablero.siguiente.accion !== "esperar" ? (
+            <>
+              <div className="mt-0.5 text-[13px] text-muted">{tablero.siguiente.detail}</div>
+              <Link
+                href={`${base}${tablero.siguiente.href}`}
+                className={buttonClasses("primary", "sm", "mt-2.5")}
+              >
+                {tablero.siguiente.label}
+                <ArrowRight size={13} weight="bold" />
+              </Link>
+            </>
+          ) : (
+            <>
+              <div className="text-sm font-semibold">{tablero.siguiente.label}</div>
+              <div className="mt-0.5 text-[13px] text-muted">{tablero.siguiente.detail}</div>
+            </>
           )}
         </div>
       )}

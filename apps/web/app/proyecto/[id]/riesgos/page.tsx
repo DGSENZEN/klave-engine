@@ -60,7 +60,7 @@ export default function RiesgosPage() {
 
   if (error) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Riesgos" />
         <Callout tone="danger">
           No se pudo cargar el reporte de riesgos. Revisa que el servidor esté activo.
@@ -71,7 +71,7 @@ export default function RiesgosPage() {
 
   if (!risks) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <SkeletonHeader />
         <SkeletonMetrics count={3} />
         <SkeletonCards count={3} />
@@ -82,7 +82,7 @@ export default function RiesgosPage() {
   const counts = risks.counts_by_severity;
 
   return (
-    <div className="rise-in px-6 py-7 lg:px-8">
+    <div className="px-4 py-5 sm:px-6">
       <PageHeader
         title="Riesgos"
         sub="Hallazgos deterministas sobre el plano y la cuantificación; cada uno indica su evidencia y la acción humana recomendada."

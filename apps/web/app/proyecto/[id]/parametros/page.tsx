@@ -327,7 +327,7 @@ export default function ParametrosPage() {
 
   if (!config && error) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Parámetros e insumos" />
         <Callout tone="danger">{error}</Callout>
       </div>
@@ -335,7 +335,7 @@ export default function ParametrosPage() {
   }
   if (!config) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <SkeletonHeader />
         <div className="grid gap-4 lg:grid-cols-3">
           {Array.from({ length: 3 }, (_, card) => (
@@ -357,7 +357,7 @@ export default function ParametrosPage() {
   }
 
   return (
-    <div className="rise-in px-6 py-7 pb-32 lg:px-8">
+    <div className="px-4 py-5 pb-32 sm:px-6">
       <PageHeader
         title="Parámetros e insumos"
         sub="Ajusta supuestos, porcentajes y precios; el presupuesto se recalcula al instante (sin volver a detectar)."

@@ -209,7 +209,7 @@ export default function ConveniosPage() {
   const porEliminar = confirmar !== null ? convenios.find((c) => c.numero === confirmar) : undefined;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 py-5 sm:px-6">
       <ConfirmDialog
         open={confirmar !== null}
         title={`Eliminar el convenio ${confirmar ?? ""}${porEliminar?.motivo ? ` — ${porEliminar.motivo}` : ""}`}

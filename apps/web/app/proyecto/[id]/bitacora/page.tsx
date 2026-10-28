@@ -178,7 +178,7 @@ export default function BitacoraPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 py-5 sm:px-6">
       <PageHeader
         title="Bitácora de obra"
         sub="El medio oficial de comunicación entre las partes (RLOPSRM art. 123). Lo que se asienta obliga; lo que no se asentó no pasó."

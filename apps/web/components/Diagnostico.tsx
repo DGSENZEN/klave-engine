@@ -535,12 +535,12 @@ export function DiagnosticoPanel({
     <section className="mb-5" aria-label="Estado del presupuesto" data-tour="diagnostico.niveles">
       <Card className="overflow-hidden p-0">
         <div className="border-b border-border px-4 py-3">
-          <p className="text-[15px] font-medium leading-snug">{diagnostico.resumen}</p>
+          <p className="text-sm font-medium leading-snug">{diagnostico.resumen}</p>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {groups.map(({ severity, count }) => (
               <span
                 key={severity}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${TIERS[severity].box} ${TIERS[severity].text}`}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${TIERS[severity].box} ${TIERS[severity].text}`}
                 title={TIERS[severity].sub}
               >
                 {TIERS[severity].icon}
@@ -595,17 +595,17 @@ function TierGroup({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 px-4 py-2 text-left transition-colors hover:bg-surface-2/50"
+        className="flex w-full flex-wrap items-center gap-x-2 px-4 py-2 text-left transition-colors hover:bg-surface-2/50"
       >
         <span className={tier.text}>{tier.icon}</span>
         <span className="text-xs font-semibold uppercase tracking-wide">{tier.label}</span>
-        <span className="text-xs text-muted">· {tier.sub}</span>
-        <span className="tabular ml-auto text-xs text-faint">{count}</span>
+        <span className="tabular ml-auto text-xs text-muted">{count}</span>
         <CaretDown
           size={12}
           weight="bold"
           className={`text-faint ${open ? "rotate-180" : ""}`}
         />
+        <span className="basis-full pl-6 text-xs text-muted">{tier.sub}</span>
       </button>
       {open && (
         <ul>
@@ -648,15 +648,15 @@ function Criterios({ items }: { items: string[] }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 px-4 py-2 text-left transition-colors hover:bg-surface-2/50"
+        className="flex w-full flex-wrap items-center gap-x-2 px-4 py-2 text-left transition-colors hover:bg-surface-2/50"
       >
         <Info size={15} weight="bold" className="text-faint" />
         <span className="text-xs font-semibold uppercase tracking-wide text-muted">
           Criterios adoptados
         </span>
-        <span className="text-xs text-muted">· lo que Klave decidió, y por qué</span>
-        <span className="tabular ml-auto text-xs text-faint">{items.length}</span>
+        <span className="tabular ml-auto text-xs text-muted">{items.length}</span>
         <CaretDown size={12} weight="bold" className={`text-faint ${open ? "rotate-180" : ""}`} />
+        <span className="basis-full pl-6 text-xs text-muted">lo que Klave decidió, y por qué</span>
       </button>
       {open && (
         <ul className="space-y-1.5 px-4 pb-3">

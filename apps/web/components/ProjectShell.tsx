@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import {
   Buildings,
   CaretDown,
@@ -39,6 +39,7 @@ export function ProjectShell({
   const pathname = usePathname();
   const base = `/proyecto/${id}`;
   const onTablero = pathname === base;
+  const hasNodeBar = (nodeForPath(base, pathname)?.entries.length ?? 0) >= 2;
   const { timeline } = useProjectLive();
 
   // Change-history panel: trigger lives in the chrome; "unseen" counts the
@@ -61,7 +62,11 @@ export function ProjectShell({
         onOpenChanges={() => setChangesOpen(true)}
       />
       <NodeWorkspaceBar id={id} />
-      <main className={`min-w-0 flex-1 ${onTablero ? "flex flex-col" : "overflow-x-hidden pb-24"}`}>
+      <main
+        className={`min-w-0 flex-1 ${onTablero ? "flex flex-col" : "overflow-x-clip pb-24"}`}
+        // Sticky table headers sit just under the bars above (48 + 40 px).
+        style={{ "--chrome-h": hasNodeBar ? "88px" : "48px" } as CSSProperties}
+      >
         {children}
       </main>
       {changesOpen && <ChangesPanel onClose={closeChanges} />}
@@ -84,7 +89,7 @@ function NodeWorkspaceBar({ id }: { id: string }) {
   return (
     <nav
       aria-label={`Pantallas de ${node.label}`}
-      className="sticky top-12 z-30 flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-sidebar px-3 sm:px-4"
+      className="sticky top-12 z-30 flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-sidebar px-3 [scrollbar-width:none] sm:px-4"
     >
       {node.entries.map((item) => {
         const targets = [item.href, ...(item.also ?? [])].map((href) =>

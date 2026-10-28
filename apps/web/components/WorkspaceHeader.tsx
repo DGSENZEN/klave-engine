@@ -50,7 +50,7 @@ export function WorkspaceHeader({ active }: { active: Section }) {
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-4xl items-center justify-between gap-2 px-4 sm:px-5">
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-2 px-5 sm:px-6">
         <div className="flex min-w-0 items-center gap-2 sm:gap-4">
           <Link href="/" className="flex shrink-0 items-center gap-2.5">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-fg">

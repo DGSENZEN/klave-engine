@@ -113,7 +113,7 @@ export default function CambiosPage() {
 
   if (revs.length < 2) {
     return (
-      <div className="p-6">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Cambios entre revisiones" sub="Qué cambió entre una revisión del plano y otra." />
 <div data-tour="cambios.vacio">
         <EmptyState
@@ -135,7 +135,7 @@ export default function CambiosPage() {
   const r = data?.resumen ?? {};
 
   return (
-    <div className="rise-in px-6 py-7 lg:px-8">
+    <div className="px-4 py-5 sm:px-6">
       <PageHeader
         title="Cambios entre revisiones"
         sub="Por concepto en cantidades y pesos, por elemento con su lugar en el plano."

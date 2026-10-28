@@ -267,7 +267,7 @@ export default function Home() {
 
   if (!ready) {
     return (
-      <div className="mx-auto max-w-4xl px-5 py-10">
+      <div className="mx-auto max-w-6xl px-5 py-10 sm:px-6">
         <Skeleton className="mb-10 h-12 w-64" />
         <Skeleton className="h-56" />
       </div>
@@ -341,7 +341,7 @@ export default function Home() {
         </div>
       )}
 
-      <main className="mx-auto max-w-4xl px-5 pb-16 pt-8">
+      <main className="mx-auto max-w-6xl px-5 pb-16 pt-8 sm:px-6">
         <input
           ref={inputRef}
           type="file"
@@ -438,10 +438,10 @@ export default function Home() {
         )}
 
         {projects === null ? (loadError ? null : (
-          <div className="space-y-2">
+          <div className="card divide-y divide-border overflow-clip">
             {Array.from({ length: 3 }, (_, i) => (
-              <div key={i} className="card flex items-center gap-3 p-4">
-                <Skeleton className="h-9 w-9 rounded-lg" />
+              <div key={i} className="flex items-center gap-3 px-4 py-3">
+                <Skeleton className="h-8 w-8 rounded-md" />
                 <div className="flex-1">
                   <Skeleton className="h-4 w-48" />
                   <Skeleton className="mt-2 h-3 w-32" />
@@ -486,16 +486,15 @@ export default function Home() {
             )}
           </p>
         ) : (
-          <div className="space-y-2">
+          // One list, divided rows: projects are entries in a register, not
+          // separate objects to admire.
+          <ul className="card divide-y divide-border overflow-clip">
             {filtered?.map((project) => (
-              <ProjectRow
-                key={project.project_id}
-                project={project}
-                onChanged={refreshNow}
-                onError={setError}
-              />
+              <li key={project.project_id}>
+                <ProjectRow project={project} onChanged={refreshNow} onError={setError} />
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </main>
     </div>
@@ -593,7 +592,7 @@ function AttentionStrip({
 
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
-      <span className="microlabel mr-1">Atención</span>
+      <span className="mr-1 text-xs text-muted">Atención</span>
       {chips.map((chip) =>
         chip.href ? (
           <Link key={chip.key} href={chip.href} className={classes(chip.tone, false)}>
@@ -685,8 +684,8 @@ function ProjectRow({
 
   const inner = (
     <>
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-2">
-        <FileText size={17} weight="duotone" className="text-foreground" />
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-2">
+        <FileText size={16} weight="duotone" className="text-foreground" />
       </div>
       <div className="min-w-0 flex-1">
         {editing ? (
@@ -748,16 +747,16 @@ function ProjectRow({
       </div>
       {project.money_state === "blocked" ? (
         <div className="hidden text-right sm:block">
-          <div className="text-sm text-muted">sin unidades</div>
-          <div className="microlabel">confirma la escala</div>
+          <div className="text-[13px] text-muted">sin unidades</div>
+          <div className="text-xs text-warning">confirma la escala</div>
         </div>
       ) : (
         project.grand_total != null && (
           <div className="hidden text-right sm:block">
-            <div className="font-display text-sm font-semibold tabular">
+            <div className="font-display text-[15px] font-medium tabular">
               {money(project.grand_total, project.currency)}
             </div>
-            <div className="microlabel">total</div>
+            <div className="text-xs text-muted">total</div>
           </div>
         )
       )}
@@ -866,7 +865,7 @@ function ProjectRow({
   if (editing) {
     return (
       <>
-        <div className="card flex items-center gap-3 p-3.5">{inner}</div>
+        <div className="flex items-center gap-3 px-4 py-2.5">{inner}</div>
         {dialog}
       </>
     );
@@ -875,7 +874,7 @@ function ProjectRow({
     <>
       <Link
         href={`/proyecto/${project.project_id}`}
-        className="card card-hover group flex items-center gap-3 p-3.5"
+        className="group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2/60"
       >
         {inner}
       </Link>

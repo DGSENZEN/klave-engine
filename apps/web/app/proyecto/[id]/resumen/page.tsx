@@ -150,7 +150,7 @@ export default function Resumen() {
   }
 
   return (
-    <div className="px-6 py-7 lg:px-8">
+    <div className="px-4 py-5 sm:px-6">
       <ReprocesarDialog
         open={confirmReprocess}
         onConfirm={() => {

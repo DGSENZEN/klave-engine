@@ -166,7 +166,7 @@ export default function EquipoPage() {
   return (
     <div className="min-h-screen">
       <WorkspaceHeader active="equipo" />
-      <main className="mx-auto max-w-3xl px-5 py-8 sm:px-6">
+      <main className="mx-auto max-w-6xl px-5 py-8 sm:px-6 *:max-w-3xl">
         <PageHeader
           title={auth?.workspace ? `Equipo de ${auth.workspace.name}` : "Equipo del taller"}
           sub="Invita, aprueba, asigna roles y recupera accesos. El acceso a cada proyecto se administra desde su configuración."

@@ -61,7 +61,7 @@ export default function ComoFuncionaPage() {
   return (
     <div className="min-h-screen">
       <WorkspaceHeader active={null} />
-      <main className="mx-auto max-w-3xl px-5 py-8 sm:px-6">
+      <main className="mx-auto max-w-6xl px-5 py-8 sm:px-6 *:max-w-3xl">
         <PageHeader
           title="Cómo funciona — y por qué así"
           sub="Klave convierte planos DWG/DXF en presupuestos de obra. Estas son las reglas que la app no rompe, porque un presupuesto vale lo que vale su evidencia."

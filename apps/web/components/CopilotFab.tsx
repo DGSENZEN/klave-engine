@@ -79,7 +79,7 @@ export function CopilotFab() {
         <Sparkle size={20} weight="duotone" />
         {pendientes > 0 && (
           <span
-            className="tabular absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-semibold text-white shadow-sm"
+            className="tabular absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-semibold text-accent-fg shadow-sm"
             aria-hidden
           >
             {pendientes}

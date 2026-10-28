@@ -77,7 +77,7 @@ export default function ApusPage() {
 
   if (error) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Precios unitarios" />
         <Callout tone="danger">
           No se pudo cargar el análisis de precios unitarios. Revisa que el servidor esté
@@ -89,7 +89,7 @@ export default function ApusPage() {
 
   if (!costs) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <SkeletonHeader />
         <SkeletonMetrics count={3} />
         <SkeletonCards count={4} />
@@ -99,7 +99,7 @@ export default function ApusPage() {
 
   if (moneyState(costs) === "blocked") {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <PageHeader title="Precios unitarios" />
         <UnitsGate id={id} costs={costs} actorName={actorName} />
       </div>
@@ -116,7 +116,7 @@ export default function ApusPage() {
   const dominant = Object.entries(resourceTotals).sort((a, b) => b[1] - a[1])[0];
 
   return (
-    <div className="rise-in px-6 py-7 lg:px-8">
+    <div className="px-4 py-5 sm:px-6">
       <PageHeader
         title="Precios unitarios"
         sub="Análisis de precio unitario (APU) por concepto: recursos, rendimientos e importes por unidad de obra."

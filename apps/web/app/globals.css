@@ -38,6 +38,8 @@
   --accent: #2b4acb;
   --accent-hover: #223cae;
   --accent-soft: #eef1fc;
+  /* Text on a solid accent fill (button, own avatar, counters). */
+  --accent-fg: #ffffff;
 
   --danger: #b42318;
   --danger-soft: #fbf1f0;
@@ -93,6 +95,7 @@
   --accent: #8296ff;
   --accent-hover: #9dadff;
   --accent-soft: #191e33;
+  --accent-fg: #0a0a0b;
 
   --danger: #e5766c;
   --danger-soft: #271514;
@@ -139,6 +142,7 @@
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-fg: var(--accent-fg);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-warning: var(--warning);
@@ -158,6 +162,10 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-space-grotesk);
+
+  /* Data type: tables, filters, dense controls. Prose stays at text-sm. */
+  --text-data: 0.8125rem;
+  --text-data--line-height: 1.25rem;
 }
 
 html,
@@ -172,7 +180,7 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   letter-spacing: -0.004em;
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
 }
 
 h1,
@@ -218,11 +226,12 @@ h3 {
   display: none;
 }
 
+/* Surfaces are drawn by a hairline, not a shadow: depth is reserved for
+   things that float (menus, dialogs, toasts) and for hover on what clicks. */
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow-xs);
+  border-radius: 10px;
 }
 
 .card-hover {
@@ -233,8 +242,29 @@ h3 {
   box-shadow: var(--shadow-md);
 }
 
-.tabular {
+.tabular,
+table {
   font-variant-numeric: tabular-nums;
+}
+
+/* A long table keeps its column names in view. The header sticks under the
+   shell's bars (--chrome-h, set by ProjectShell). Sticking needs the wrapper
+   not to be a scroll box, so on wide screens it clips instead of scrolling;
+   below lg the table scrolls sideways and the header scrolls with it. */
+.table-scroll {
+  overflow-x: auto;
+}
+@media (min-width: 1024px) {
+  .table-scroll[data-sticky] {
+    overflow-x: clip;
+  }
+  .table-scroll[data-sticky] thead th {
+    position: sticky;
+    top: var(--chrome-h, 0px);
+    z-index: 10;
+    background: var(--surface-2);
+    box-shadow: inset 0 -1px 0 var(--border);
+  }
 }
 
 /* Micro-label: the uppercase eyebrow used across cards and tables. */

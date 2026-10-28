@@ -286,7 +286,7 @@ export default function LecturaPage() {
 
   if (error) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
       <ConfirmDialog
         open={porQuitarMapeo !== null}
         title={`Quitar el mapeo ${porQuitarMapeo?.pattern ?? ""} → ${porQuitarMapeo?.concept_code ?? ""}; afecta a todos los proyectos del taller`}
@@ -309,7 +309,7 @@ export default function LecturaPage() {
 
   if (!lectura) {
     return (
-      <div className="px-6 py-7 lg:px-8">
+      <div className="px-4 py-5 sm:px-6">
         <SkeletonHeader />
         <SkeletonMetrics count={4} />
         <SkeletonCards count={2} />
@@ -327,7 +327,7 @@ export default function LecturaPage() {
   );
 
   return (
-    <div className="rise-in px-6 py-7 lg:px-8">
+    <div className="px-4 py-5 sm:px-6">
       <PageHeader
         title="Lectura del plano"
         sub="Qué leyó Klave de tus archivos: conversión, entidades, capas, bloques y lo que se omitió. Aquí se decide si puedes confiar en lo demás."
