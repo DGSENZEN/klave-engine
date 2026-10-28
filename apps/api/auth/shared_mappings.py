@@ -108,3 +108,41 @@ def _plain(row: dict | None) -> dict[str, Any] | None:
         return None
     keep = ("kind", "ref_id", "target_code", "target_kind", "clave", "status")
     return {k: row[k] for k in keep if k in row}
+
+
+def is_human_decision(row: dict | None) -> bool:
+    """A person decided this mapping. Engine proposals (``automatica``,
+    ``propuesta``, and ``sin_equivalente`` written by ``motor``) are not
+    decisions: editors confirm or replace them as part of review."""
+    if not row:
+        return False
+    if row.get("status") == "confirmada":
+        return True
+    return row.get("status") == "sin_equivalente" and (row.get("actor") or "") not in ("", "motor")
+
+
+def mapping_target(
+    status: str, target_kind: str | None, target_code: str | None, ref_id: int | None
+) -> tuple[str, str | None, str | None, int | None]:
+    """A variant mapping's decision, comparable across a stored row (empty
+    strings) and a request (None)."""
+    return (status, target_kind or None, target_code or None, ref_id)
+
+
+def check_variant_write(
+    request: Request,
+    project_id: str,
+    previous: dict | None,
+    new: tuple[str, str | None, str | None, int | None],
+) -> None:
+    """Changing a person's decision on a taller variant is the administrator's;
+    re-sending the same decision is no change."""
+    if _free(request, project_id) or not is_human_decision(previous):
+        return
+    assert previous is not None
+    stored = mapping_target(
+        previous["status"], previous.get("target_kind"), previous.get("target_code"),
+        previous.get("ref_id"),
+    )  # fmt: skip
+    if stored != new:
+        access.require_taller_admin(request, VARIANT_CHANGE_MESSAGE)

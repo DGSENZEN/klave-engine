@@ -304,3 +304,168 @@ def test_each_taller_alias_write_audits_once(api):
     assert sorted(e["target_id"] for e in store.auditoria) == ["CIM-004", "CIM-007"]
     assert all(e["action"] == "alias_added" for e in store.auditoria)
     assert store.auditoria[0]["detail"]["project_id"] == "obra"
+
+
+# ---------------------------------------------------------------- variantes --
+
+VARIANTES = "obra-variantes"
+GRANDE, CHICA = "EST-001.30X40-8N5", "EST-001.15X15-4N3"
+CONFIRMAR = {"status": "confirmada", "target_kind": "concept", "target_code": "EMC-30X40"}
+
+
+def _proyecto_con_variantes(data_dir, pid, catalog):
+    """Three columns in two sections → two variants of EST-001, and a taller
+    concept to map the big one to (as in tests/test_variantes_api.py)."""
+    import json
+
+    from klave_engine.costing.models import CostingOverrides
+    from klave_engine.costing.recompute import recompute_and_persist
+    from klave_engine.detection.results import DetectionType, make_detection
+
+    root = data_dir / "projects" / pid
+    processed = root / "processed"
+    processed.mkdir(parents=True, exist_ok=True)
+    (processed / "project_manifest.json").write_text(json.dumps({
+        "project_id": pid, "project_name": "Obra", "root_path": str(root), "drawings": [],
+    }))
+    registry = data_dir / "projects_registry.json"
+    known = json.loads(registry.read_text()) if registry.exists() else {}
+    registry.write_text(json.dumps({**known, pid: str(root)}))
+    dets = [
+        make_detection(
+            f"c{i}", DetectionType.column_tag, "EST-COL", (i * 5, 0, i * 5 + 0.4, 0.4), 0.9,
+            [f"c{i}"], "tag", [],
+            {"section_cm": sec, "spec_rebar": arm, "section_area_du2": 0.0,
+             "section_source": "cuadro", "has_nearby_grid": True}, "e.dxf",
+        ).model_dump(mode="json")
+        for i, (sec, arm) in enumerate([("30x40", "8#5"), ("30x40", "8#5"), ("15x15", "4#3")])
+    ]  # fmt: skip
+    (processed / "detections.json").write_text(json.dumps(dets))
+    (processed / "drawing_units.json").write_text(
+        json.dumps({"unit": "m", "source": "declared", "confidence": 1.0})
+    )
+    catalog.upsert_insumo("MAT-X", description="X", unit="M3", resource_type="material",
+                          unit_cost=100.0)  # fmt: skip
+    catalog.create_concept(
+        code="EMC-30X40", description="Columna de concreto armado f'c=250 kg/cm2 30x40 cm",
+        unit="M3", phase="Estructura", production_rate_per_day=2.0, components=[("MAT-X", 40.0)],
+    )
+    recompute_and_persist(processed, processed, root / "reports", pid, CostingOverrides(),
+                          catalog_store=catalog)  # fmt: skip
+
+
+@pytest.fixture
+def variantes(api, data_dir):
+    from klave_engine.common.config import get_settings
+    from klave_engine.costing.catalog_store import get_catalog_store
+
+    from apps.api.tenancy import workspace_store
+
+    como, store = api
+    store.pid = VARIANTES
+    _proyecto_con_variantes(data_dir, VARIANTES, workspace_store(get_settings(), "ws-a"))
+    _proyecto_con_variantes(data_dir, EJEMPLO, get_catalog_store(data_dir, workspace_id=EJEMPLO))
+    return como, store
+
+
+def _mapeo(variant_key, pid=VARIANTES):
+    from klave_engine.common.config import get_settings
+
+    from apps.api.tenancy import store_for_project
+
+    fila = store_for_project(get_settings(), pid).load_variant_mappings().get(variant_key)
+    return fila and (fila["status"], fila["target_code"] or None)
+
+
+def test_editor_confirms_engine_proposal(variantes):
+    como, _ = variantes
+    assert como("ana").post(f"/projects/{VARIANTES}/variantes/mapear", json={}).status_code == 200
+    r = como("ana").put(f"/projects/{VARIANTES}/variantes/{GRANDE}", json=CONFIRMAR)
+    assert r.status_code == 200, r.text
+    assert _mapeo(GRANDE) == ("confirmada", "EMC-30X40")
+
+
+def test_editor_cannot_change_confirmed_mapping(variantes):
+    como, _ = variantes
+    assert como("admin").put(f"/projects/{VARIANTES}/variantes/{GRANDE}", json=CONFIRMAR).status_code == 200
+    r = como("ana").put(f"/projects/{VARIANTES}/variantes/{GRANDE}", json={"status": "sin_equivalente"})
+    assert r.status_code == 403, r.text
+    assert r.json()["detail"]["error_type"] == "admin_required"
+    assert _mapeo(GRANDE) == ("confirmada", "EMC-30X40")
+
+
+def test_editor_reconfirms_same_decision(variantes):
+    como, _ = variantes
+    assert como("admin").put(f"/projects/{VARIANTES}/variantes/{GRANDE}", json=CONFIRMAR).status_code == 200
+    r = como("ana").put(f"/projects/{VARIANTES}/variantes/{GRANDE}", json=CONFIRMAR)
+    assert r.status_code == 200, r.text
+
+
+def test_editor_cannot_flip_human_sin_equivalente(variantes):
+    como, _ = variantes
+    sin = {"status": "sin_equivalente"}
+    assert como("admin").put(f"/projects/{VARIANTES}/variantes/{CHICA}", json=sin).status_code == 200
+    r = como("ana").put(f"/projects/{VARIANTES}/variantes/{CHICA}", json=CONFIRMAR)
+    assert r.status_code == 403, r.text
+    assert _mapeo(CHICA) == ("sin_equivalente", None)
+
+
+def test_editor_forgets_engine_proposal_but_not_decision(variantes):
+    como, _ = variantes
+    assert como("ana").post(f"/projects/{VARIANTES}/variantes/mapear", json={}).status_code == 200
+    assert _mapeo(CHICA) is not None
+    assert como("ana").delete(f"/projects/{VARIANTES}/variantes/{CHICA}").status_code == 200
+    assert _mapeo(CHICA) is None
+    assert como("admin").put(f"/projects/{VARIANTES}/variantes/{GRANDE}", json=CONFIRMAR).status_code == 200
+    r = como("ana").delete(f"/projects/{VARIANTES}/variantes/{GRANDE}")
+    assert r.status_code == 403, r.text
+    assert _mapeo(GRANDE) == ("confirmada", "EMC-30X40")
+
+
+def test_editor_rematch_keeps_human_decisions(variantes):
+    como, _ = variantes
+    admin = como("admin")
+    assert admin.put(f"/projects/{VARIANTES}/variantes/{GRANDE}", json=CONFIRMAR).status_code == 200
+    assert admin.put(
+        f"/projects/{VARIANTES}/variantes/{CHICA}", json={"status": "sin_equivalente"}
+    ).status_code == 200
+    r = como("ana").post(f"/projects/{VARIANTES}/variantes/mapear", json={"rematch": True})
+    assert r.status_code == 200, r.text
+    assert _mapeo(GRANDE) == ("confirmada", "EMC-30X40")
+    assert _mapeo(CHICA) == ("sin_equivalente", None)
+    assert _autor(CHICA) == "Admin"  # still the person's decision, not the engine's
+
+
+def _autor(variant_key, pid=VARIANTES):
+    from klave_engine.common.config import get_settings
+
+    from apps.api.tenancy import store_for_project
+
+    return store_for_project(get_settings(), pid).load_variant_mappings()[variant_key]["actor"]
+
+
+def test_admin_changes_and_forgets(variantes):
+    como, store = variantes
+    admin = como("admin")
+    assert admin.put(f"/projects/{VARIANTES}/variantes/{GRANDE}", json=CONFIRMAR).status_code == 200
+    assert admin.put(
+        f"/projects/{VARIANTES}/variantes/{GRANDE}", json={"status": "sin_equivalente"}
+    ).status_code == 200
+    assert admin.delete(f"/projects/{VARIANTES}/variantes/{GRANDE}").status_code == 200
+    assert _mapeo(GRANDE) is None
+    assert [e["action"] for e in store.auditoria] == [
+        "variant_mapped", "variant_remapped", "variant_forgotten",
+    ]
+
+
+def test_example_obra_editor_free(variantes):
+    como, store = variantes
+    ana = como("ana")
+    assert ana.put(f"/projects/{EJEMPLO}/variantes/{GRANDE}", json=CONFIRMAR).status_code == 200
+    assert ana.put(
+        f"/projects/{EJEMPLO}/variantes/{GRANDE}", json={"status": "sin_equivalente"}
+    ).status_code == 200
+    assert ana.delete(f"/projects/{EJEMPLO}/variantes/{GRANDE}").status_code == 200
+    assert _mapeo(GRANDE, EJEMPLO) is None
+    assert _mapeo(GRANDE) is None  # the office never saw it
+    assert store.auditoria == []
