@@ -32,6 +32,23 @@ async function obraLista(page: Page): Promise<string> {
   return id;
 }
 
+// La obra de ejemplo es de la cuenta de administración y la comparten las
+// demás pruebas (el recorrido espera sus candados cerrados): al terminar se
+// deja como nueva.
+test.afterAll(async ({ browser }) => {
+  const page = await browser.newPage();
+  try {
+    const state = pilotState();
+    await loginAdmin(page);
+    const demo = await page.request.post(state.api_url + "/projects/demo", { data: {} });
+    const { project_id: id } = await demo.json();
+    const r = await page.request.post(`${state.api_url}/projects/${id}/demo/reiniciar`, { data: {} });
+    expect(r.ok(), await r.text()).toBeTruthy();
+  } finally {
+    await page.close();
+  }
+});
+
 async function notas(page: Page, id: string): Promise<number> {
   const r = await page.request.get(`${pilotState().api_url}/projects/${id}/bitacora`);
   return (await r.json()).notas.length;
