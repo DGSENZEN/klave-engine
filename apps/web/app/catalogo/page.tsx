@@ -1,5 +1,6 @@
 "use client";
 
+import { refreshOnRoleRefusal } from "@/lib/session";
 import { LectorSection } from "@/components/LectorSection";
 import { PerfilTallerSection } from "@/components/PerfilTallerSection";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -196,6 +197,7 @@ export default function CatalogoPage() {
       setNotice(`${result.updated} precios actualizados${skipped}`);
       reload();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       setError(apiMessage(e, "No se pudo importar el CSV."));
     }
   }
@@ -219,6 +221,7 @@ export default function CatalogoPage() {
       );
       reload();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       setError(apiMessage(e, "No se pudieron importar las matrices."));
     }
   }
@@ -239,6 +242,7 @@ export default function CatalogoPage() {
       );
       reload();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       setError(apiMessage(e, "No se pudieron importar los destajos."));
     }
   }
@@ -573,6 +577,7 @@ function InsumosSection({
       clearSelection();
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudieron ajustar los precios."));
     } finally {
       setLotBusy(false);
@@ -589,6 +594,7 @@ function InsumosSection({
       clearSelection();
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo sustituir el insumo."));
     } finally {
       setLotBusy(false);
@@ -618,8 +624,9 @@ function InsumosSection({
     try {
       await updateInsumo(code, patch, getBrowserActor());
       onChanged();
-    } catch {
-      onError(`No se pudo guardar el insumo ${code}.`);
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, `No se pudo guardar el insumo ${code}.`));
     }
   }
 
@@ -1049,6 +1056,7 @@ function AjustesRecientes({
       onNotice(`${describirAjuste(a)} deshecho: ${r.restored} filas restauradas`);
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo deshacer ese ajuste."));
     } finally {
       setBusy(null);
@@ -1283,6 +1291,7 @@ function ApusSection({
       onNotice(`Tolerancia de validación ±${saved.tolerance_pct} %; los veredictos se recalcularon`);
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo guardar la tolerancia."));
     }
   }
@@ -1305,6 +1314,7 @@ function ApusSection({
       );
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudieron generar las matrices."));
     } finally {
       setWorking(false);
@@ -1324,6 +1334,7 @@ function ApusSection({
       );
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudieron validar las matrices."));
     } finally {
       setWorking(false);
@@ -1716,6 +1727,7 @@ function NewConceptRow({
       );
       onDone();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo crear el concepto."));
     } finally {
       setBusy(false);
@@ -1910,8 +1922,9 @@ function ConceptRows({
     try {
       await updateApu(concept.code, next, getBrowserActor());
       onChanged();
-    } catch {
-      onError(`No se pudo guardar la matriz de ${concept.code}.`);
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, `No se pudo guardar la matriz de ${concept.code}.`));
       setDraft(components);
     } finally {
       setBusy(false);
@@ -1962,8 +1975,9 @@ function ConceptRows({
     try {
       await updateRendimiento(concept.code, value, getBrowserActor());
       onChanged();
-    } catch {
-      onError(`No se pudo guardar el rendimiento de ${concept.code}.`);
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, `No se pudo guardar el rendimiento de ${concept.code}.`));
     }
   }
 
@@ -1998,6 +2012,7 @@ function ConceptRows({
       );
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, `No se pudo generar la matriz de ${concept.code}.`));
     } finally {
       setBusy(false);
@@ -2017,6 +2032,7 @@ function ConceptRows({
       );
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, `No se pudo validar ${concept.code}.`));
     } finally {
       setBusy(false);
@@ -2117,8 +2133,9 @@ function ConceptRows({
                   try {
                     await clearConceptPrice(concept.code, getBrowserActor());
                     onChanged();
-                  } catch {
-                    onError(`No se pudo quitar el precio adoptado de ${concept.code}.`);
+                  } catch (e) {
+                    refreshOnRoleRefusal(e);
+                    onError(apiMessage(e, `No se pudo quitar el precio adoptado de ${concept.code}.`));
                   } finally {
                     setBusy(false);
                   }
@@ -2474,6 +2491,7 @@ function FuentesSection({
       loadSources();
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, `No se pudo descargar ${source.name}.`));
     } finally {
       setDownloading(null);
@@ -2489,6 +2507,7 @@ function FuentesSection({
       );
       loadSources();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, `No se pudo importar ${source.name}.`));
     } finally {
       setImporting(null);
@@ -2512,6 +2531,7 @@ function FuentesSection({
       setOwnName("");
       loadSources();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo importar el catálogo."));
     } finally {
       setOwnBusy(false);
@@ -2726,6 +2746,7 @@ function Importaciones({
       leer();
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo deshacer esa importación."));
     } finally {
       setQuitando(null);
@@ -2856,6 +2877,7 @@ function CuadrillasSection({
       setMembers([]);
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo crear la cuadrilla."));
     } finally {
       setBusy(false);
@@ -2870,6 +2892,7 @@ function CuadrillasSection({
       setEditing(null);
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo guardar la cuadrilla."));
     } finally {
       setBusy(false);
@@ -3093,8 +3116,9 @@ function SalarioRealSection({
     setBusy(true);
     try {
       setPreview((await previewLabor(params, categories)).rows);
-    } catch {
-      onError("No se pudo calcular el salario real.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudo calcular el salario real."));
     } finally {
       setBusy(false);
     }
@@ -3119,6 +3143,7 @@ function SalarioRealSection({
       setPresetKey("");
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo aplicar el salario real."));
     } finally {
       setBusy(false);
@@ -3540,8 +3565,9 @@ function EquipmentDialog({
       );
       setBreakdown(row.breakdown);
       onSaved();
-    } catch {
-      onError(`No se pudo guardar el costo horario de ${insumo.code}.`);
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, `No se pudo guardar el costo horario de ${insumo.code}.`));
     } finally {
       setBusy(false);
     }

@@ -1,5 +1,6 @@
 "use client";
 
+import { refreshOnRoleRefusal } from "@/lib/session";
 import { useCapabilities } from "@/components/Capabilities";
 import { mayChangeSharedMapping } from "@/lib/capabilities";
 import { useEffect, useState } from "react";
@@ -139,8 +140,9 @@ export function ConceptPicker({
     try {
       await clearAlias(conceptCode, projectId, actorName);
       onDone();
-    } catch {
-      setError("No se pudo quitar el alias.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      setError(apiMessage(e, "No se pudo quitar el alias."));
       setBusy(false);
     }
   }

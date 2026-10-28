@@ -1,5 +1,6 @@
 "use client";
 
+import { refreshOnRoleRefusal } from "@/lib/session";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Trash, UploadSimple } from "@phosphor-icons/react";
 import {
@@ -114,6 +115,7 @@ export function PlantillasSection({
       reload();
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo importar la plantilla."));
     } finally {
       setBusy(false);
@@ -125,8 +127,9 @@ export function PlantillasSection({
       await deletePlantilla(key, getBrowserActor());
       reload();
       onChanged();
-    } catch {
-      onError("No se pudo eliminar la plantilla.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudo eliminar la plantilla."));
     }
   }
 
@@ -136,8 +139,9 @@ export function PlantillasSection({
       await updateParametricRule(rule.id, { factor: value }, getBrowserActor());
       reload();
       onChanged();
-    } catch {
-      onError("No se pudo actualizar la regla.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudo actualizar la regla."));
     }
   }
 
@@ -146,8 +150,9 @@ export function PlantillasSection({
       await updateParametricRule(rule.id, { active: !rule.active }, getBrowserActor());
       reload();
       onChanged();
-    } catch {
-      onError("No se pudo actualizar la regla.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudo actualizar la regla."));
     }
   }
 
@@ -171,6 +176,7 @@ export function PlantillasSection({
       reload();
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo crear la regla."));
     } finally {
       setRuleBusy(false);
@@ -182,8 +188,9 @@ export function PlantillasSection({
       await deleteParametricRule(rule.id, getBrowserActor());
       reload();
       onChanged();
-    } catch {
-      onError("No se pudo eliminar la regla.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudo eliminar la regla."));
     }
   }
 

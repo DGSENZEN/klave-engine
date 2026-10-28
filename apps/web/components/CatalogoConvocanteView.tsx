@@ -11,6 +11,8 @@
  * firmar.
  */
 
+import { apiMessage } from "@/lib/api";
+import { refreshOnRoleRefusal } from "@/lib/session";
 import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
@@ -74,8 +76,9 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
   const leer = useCallback(async () => {
     try {
       setCatalogo(await getCatalogoConvocante(id));
-    } catch {
-      setError("No se pudo leer el catálogo del contrato.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      setError(apiMessage(e, "No se pudo leer el catálogo del contrato."));
     }
   }, [id]);
 
@@ -99,10 +102,14 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
     try {
       setCatalogo(await subirCatalogoConvocante(id, file, file.name.replace(/\.\w+$/, ""),
         getBrowserActor()));
-    } catch {
+    } catch (e) {
+      refreshOnRoleRefusal(e);
       setError(
-        "No se pudo leer el archivo. Necesita un encabezado con clave, descripción, " +
-        "unidad y cantidad.",
+        apiMessage(
+          e,
+          "No se pudo leer el archivo. Necesita un encabezado con clave, descripción, " +
+            "unidad y cantidad.",
+        ),
       );
       await leer();
     } finally {

@@ -13,6 +13,7 @@
  * "Guardar" de una tarjeta también sube lo que esté tecleado en la otra.
  */
 
+import { refreshOnRoleRefusal } from "@/lib/session";
 import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -79,6 +80,7 @@ export function IntegracionSection({
       onNotice(notice);
       onChanged();
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo guardar la integración del precio."));
     } finally {
       busySetter(false);

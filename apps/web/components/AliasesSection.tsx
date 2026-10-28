@@ -1,5 +1,7 @@
 "use client";
 
+import { apiMessage } from "@/lib/api";
+import { refreshOnRoleRefusal } from "@/lib/session";
 import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useState } from "react";
 import { Trash } from "@phosphor-icons/react";
@@ -48,8 +50,9 @@ export function AliasesSection({
       await clearAlias(alias.concept_code, alias.project_id, getBrowserActor());
       reload();
       onChanged();
-    } catch {
-      onError(`No se pudo quitar la clave del taller de ${alias.concept_code}.`);
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, `No se pudo quitar la clave del taller de ${alias.concept_code}.`));
     }
   }
 

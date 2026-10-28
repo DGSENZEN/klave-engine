@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 
-const { capabilities, isHumanDecision } = createRequire(import.meta.url)(
+const { capabilities, isHumanDecision, isRoleRefusal, keepStatus } = createRequire(import.meta.url)(
   join(process.env.KLAVE_TEST_LIB_DIR, "capabilities.js"),
 );
 
@@ -51,4 +51,18 @@ test("una decisión es de una persona: confirmada, o sin equivalente que no puso
   assert.equal(isHumanDecision({ status: "propuesta", actor: "Ana" }), false);
   assert.equal(isHumanDecision({ status: "automatica", actor: "motor" }), false);
   assert.equal(isHumanDecision(null), false);
+});
+
+test("una negativa por rol se reconoce para refrescar la sesión", () => {
+  assert.equal(isRoleRefusal({ status: 403, detail: { error_type: "admin_required" } }), true);
+  assert.equal(isRoleRefusal({ status: 403, detail: { error_type: "forbidden_project" } }), true);
+  assert.equal(isRoleRefusal({ status: 403, detail: { error_type: "origin_not_allowed" } }), false);
+  assert.equal(isRoleRefusal({ status: 500 }), false);
+  assert.equal(isRoleRefusal(new Error("red")), false);
+});
+
+test("una caída momentánea no se queda guardada como la sesión", () => {
+  assert.equal(keepStatus({ mode: "unavailable" }), false);
+  assert.equal(keepStatus({ mode: "protected" }), true);
+  assert.equal(keepStatus({ mode: "open" }), true);
 });

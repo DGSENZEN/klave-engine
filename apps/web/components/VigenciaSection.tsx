@@ -1,5 +1,6 @@
 "use client";
 
+import { refreshOnRoleRefusal } from "@/lib/session";
 import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowClockwise, DownloadSimple } from "@phosphor-icons/react";
@@ -98,8 +99,9 @@ export function VigenciaSection({
       setIndices(saved);
       setText("");
       onNotice(`Índices guardados: ${Object.keys(saved.values).length} meses (${saved.source || "sin fuente"})`);
-    } catch {
-      onError("No se pudieron guardar los índices.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudieron guardar los índices."));
     } finally {
       setBusy(false);
     }
@@ -110,6 +112,7 @@ export function VigenciaSection({
     try {
       await downloadFile(cotizacionPath(scope), `solicitud_cotizacion_${scope}.xlsx`);
     } catch (e) {
+      refreshOnRoleRefusal(e);
       onError(apiMessage(e, "No se pudo generar la solicitud de cotización."));
     } finally {
       setDownloading(null);
@@ -120,8 +123,9 @@ export function VigenciaSection({
     setBusy(true);
     try {
       setPreview(await rollForwardPrices({ status, dry_run: true }, getBrowserActor()));
-    } catch {
-      onError("No se pudo calcular la actualización por índice; captura primero la tabla.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudo calcular la actualización por índice; captura primero la tabla."));
     } finally {
       setBusy(false);
     }
@@ -143,8 +147,9 @@ export function VigenciaSection({
       setPreview(null);
       reload();
       onChanged();
-    } catch {
-      onError("No se pudieron actualizar los precios por índice.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudieron actualizar los precios por índice."));
     } finally {
       setBusy(false);
     }

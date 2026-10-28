@@ -1,5 +1,7 @@
 "use client";
 
+import { apiMessage } from "@/lib/api";
+import { refreshOnRoleRefusal } from "@/lib/session";
 import { useCapabilities } from "@/components/Capabilities";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, Check, MagnifyingGlass } from "@phosphor-icons/react";
@@ -117,8 +119,9 @@ export function BaseSheet({
       clearSelection();
       setAttempt((n) => n + 1);
       onChanged();
-    } catch {
-      onError("No se pudieron traer los renglones al taller.");
+    } catch (e) {
+      refreshOnRoleRefusal(e);
+      onError(apiMessage(e, "No se pudieron traer los renglones al taller."));
     } finally {
       setBringing(false);
     }

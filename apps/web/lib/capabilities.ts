@@ -63,3 +63,21 @@ export function isSampleProject(projectId: string): boolean {
 export function mayChangeSharedMapping(caps: Capabilities, projectId: string): boolean {
   return caps.editCatalog || (isSampleProject(projectId) && caps.editProject);
 }
+
+/**
+ * The server refused because of the caller's role (it changed mid-session,
+ * or a screen offered too much). Screens use it to refresh what they offer.
+ */
+export function isRoleRefusal(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const { status, detail } = error as { status?: number; detail?: { error_type?: string } };
+  return (
+    status === 403 &&
+    (detail?.error_type === "admin_required" || detail?.error_type === "forbidden_project")
+  );
+}
+
+/** A session status worth keeping for the page's life: never a momentary outage. */
+export function keepStatus(status: { mode: string }): boolean {
+  return status.mode !== "unavailable";
+}

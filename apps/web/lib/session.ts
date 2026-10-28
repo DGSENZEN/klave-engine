@@ -6,6 +6,7 @@ export { apiMessage } from "./api";
 // "protected" (accounts + roles enforced), "unavailable" (users DB down).
 
 import { API_BASE, ApiError } from "@/lib/api";
+import { isRoleRefusal, keepStatus } from "@/lib/capabilities";
 
 export type AuthUser = {
   user_id: string;
@@ -96,6 +97,8 @@ export function getAuthStatusOnce(): Promise<AuthStatus> {
   if (!cachedStatus) {
     cachedStatus = fetchAuthStatus().then((status) => {
       statusSnapshot = status;
+      // A blip (network, users DB) is shown but not kept: the next screen asks again.
+      if (!keepStatus(status)) cachedStatus = null;
       statusListeners.forEach((listener) => listener());
       return status;
     });
@@ -120,6 +123,19 @@ export function resetAuthStatus(): void {
   cachedStatus = null;
   statusSnapshot = null;
   statusListeners.forEach((listener) => listener());
+  // Screens still showing read again at once, so they settle on the new
+  // role instead of waiting with nothing offered.
+  if (statusListeners.size > 0) void getAuthStatusOnce();
+}
+
+/**
+ * After a write fails: if the server refused for the caller's role, forget
+ * the cached session so every screen re-reads it and drops what it can no
+ * longer offer. Returns the error untouched for the caller's message.
+ */
+export function refreshOnRoleRefusal(error: unknown): unknown {
+  if (isRoleRefusal(error)) resetAuthStatus();
+  return error;
 }
 
 function afterSignIn<T>(result: Promise<T>): Promise<T> {
