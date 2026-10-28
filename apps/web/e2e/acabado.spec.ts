@@ -86,3 +86,18 @@ test("reprocesar pide confirmación y deja la pantalla abierta con el aviso", as
   await expect(page.getByRole("heading", { name: "Resumen del proyecto" })).toBeVisible();
   await expect(page.getByText("Se está reprocesando.")).toHaveCount(0, { timeout: 120_000 });
 });
+
+test("el detalle de un concepto se abre con el teclado", async ({ page }) => {
+  test.setTimeout(180_000);
+  const id = await obraLista(page);
+  await page.goto(`/proyecto/${id}/presupuesto`);
+  const abrir = page.locator('button[aria-controls^="detalle-concepto-"]').first();
+  await expect(abrir).toHaveAttribute("aria-expanded", "false", { timeout: 30_000 });
+  await abrir.focus();
+  await page.keyboard.press("Enter");
+  await expect(abrir).toHaveAttribute("aria-expanded", "true");
+  const detalle = page.locator(`#${await abrir.getAttribute("aria-controls")}`);
+  await expect(detalle).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(abrir).toHaveAttribute("aria-expanded", "false");
+});

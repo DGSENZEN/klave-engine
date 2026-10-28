@@ -79,6 +79,11 @@ import { SuggestionsBar } from "@/components/SuggestionsBar";
 const PRESUPUESTO_TABS = ["partidas", "integracion", "ajustes", "versiones"] as const;
 type PresupuestoTab = (typeof PRESUPUESTO_TABS)[number];
 
+/** Concept codes carry dots and slashes; ids for aria-controls must not. */
+function idSeguro(code: string): string {
+  return code.replace(/[^A-Za-z0-9_-]/g, "_");
+}
+
 export default function PresupuestoPage() {
   const { id } = useParams<{ id: string }>();
   const { costs, error } = useCostReport(id);
@@ -635,13 +640,20 @@ function PhaseGroup({
       <tr
         className="cursor-pointer border-b border-border bg-surface-2/60 transition-colors hover:bg-surface-2"
         onClick={() => setCollapsed((value) => !value)}
-        aria-expanded={!collapsed}
       >
         <td
           colSpan={4}
           className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted"
         >
-          <span className="inline-flex items-center gap-1.5">
+          <button
+            type="button"
+            aria-expanded={!collapsed}
+            onClick={(e) => {
+              e.stopPropagation();
+              setCollapsed((value) => !value);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-sm uppercase"
+          >
             <CaretDown
               size={11}
               weight="bold"
@@ -651,7 +663,7 @@ function PhaseGroup({
             <span className="font-normal normal-case tracking-normal text-faint">
               {lines.length === 1 ? "1 concepto" : `${lines.length} conceptos`}
             </span>
-          </span>
+          </button>
         </td>
         <td
           colSpan={2}
@@ -687,7 +699,20 @@ function PhaseGroup({
                 )}
               </Td>
               <Td>
-                {l.description}
+                {/* The row still opens on click; this button is the way in
+                    from the keyboard and for screen readers. */}
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  aria-controls={`detalle-concepto-${idSeguro(l.concept_code)}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenCode(open ? null : l.concept_code);
+                  }}
+                  className="rounded-sm text-left hover:underline focus-visible:underline"
+                >
+                  {l.description}
+                </button>
                 {l.parametric && (
                   <span className="ml-1.5 align-middle">
                     <Badge tone="warning">paramétrico</Badge>
@@ -768,7 +793,10 @@ function PhaseGroup({
               </tr>
             )}
             {open && (
-              <tr className="border-b border-border bg-surface-2/30">
+              <tr
+                id={`detalle-concepto-${idSeguro(l.concept_code)}`}
+                className="border-b border-border bg-surface-2/30"
+              >
                 <td colSpan={6} className="px-4 py-3 text-xs text-muted">
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     <span className="font-medium text-foreground">
