@@ -80,3 +80,112 @@ def test_viewer_project_role_matches_tablero(usuarios):
     assert access.viewer_project_role(peticion(usuarios.usuarios["ana"]), "obra") == "editor"
     assert access.viewer_project_role(peticion(usuarios.usuarios["beto"]), "otra") is None
     assert access.viewer_project_role(peticion(None), "obra") is None
+
+
+# ---------------------------------------------------------------- catálogo --
+
+# One write per category of decision 1 (and the two validations, which persist
+# their verdict). The rule answers before the body is read, so bodies are empty.
+CATALOGO_ESCRITURAS = [
+    ("post", "/catalog/insumos"),
+    ("put", "/catalog/insumos/MAT-001"),
+    ("put", "/catalog/apus/EST-001"),
+    ("put", "/catalog/rendimientos/EST-001"),
+    ("post", "/catalog/concepts"),
+    ("put", "/catalog/concepts/EST-001"),
+    ("post", "/catalog/concepts/EST-001/generar"),
+    ("post", "/catalog/concepts/EST-001/validar"),
+    ("post", "/catalog/matrices/validar"),
+    ("post", "/catalog/concepts/EST-001/adopt"),
+    ("delete", "/catalog/concepts/EST-001/price"),
+    ("post", "/catalog/sources/custom"),
+    ("post", "/catalog/import-prices"),
+    ("put", "/catalog/labor"),
+    ("put", "/catalog/equipment/EQ-001"),
+    ("put", "/catalog/indices"),
+    ("post", "/catalog/plantillas"),
+    ("post", "/catalog/parametrics"),
+    ("post", "/catalog/inventory-mappings"),
+]
+
+
+@pytest.fixture
+def api(data_dir, monkeypatch):
+    """La app completa con la base de usuarios en memoria."""
+    from fastapi.testclient import TestClient
+
+    from apps.api.auth import middleware
+    from apps.api.main import create_app
+
+    store = Usuarios()
+    monkeypatch.setattr(middleware, "get_user_store", lambda _url: store)
+    monkeypatch.setattr(access, "get_user_store", lambda _url: store)
+    client = TestClient(create_app())
+
+    def como(quien):
+        client.cookies.clear()
+        if quien:
+            client.cookies.set(middleware.SESSION_COOKIE, quien)
+        return client
+
+    return como, store
+
+
+def _catalogo_del_taller():
+    from klave_engine.common.config import get_settings
+
+    from apps.api.tenancy import workspace_store
+
+    catalog = workspace_store(get_settings(), "ws-a")
+    return (
+        catalog.load_concepts(include_inactive=True),
+        catalog.load_price_book(),
+        catalog.load_concept_aliases(),
+    )
+
+
+@pytest.mark.parametrize(("metodo", "ruta"), CATALOGO_ESCRITURAS)
+def test_member_cannot_write_catalog(api, metodo, ruta):
+    como, _ = api
+    antes = _catalogo_del_taller()
+    r = getattr(como("ana"), metodo)(ruta)
+    assert r.status_code == 403, (ruta, r.status_code, r.text)
+    assert r.json()["detail"]["error_type"] == "admin_required"
+    assert _catalogo_del_taller() == antes
+
+
+@pytest.mark.parametrize(("metodo", "ruta"), CATALOGO_ESCRITURAS)
+def test_admin_passes_the_catalog_rule(api, metodo, ruta):
+    como, _ = api
+    r = getattr(como("admin"), metodo)(ruta)
+    assert r.status_code not in (401, 403), (ruta, r.status_code, r.text)
+
+
+def test_preview_is_open_to_members(api):
+    como, _ = api
+    r = como("ana").post("/catalog/labor/preview")
+    assert r.status_code not in (401, 403), r.text
+
+
+def test_open_mode_writes_catalog(data_dir):
+    from fastapi.testclient import TestClient
+
+    from apps.api.main import create_app
+
+    r = TestClient(create_app()).put("/catalog/indices")
+    assert r.status_code not in (401, 403), r.text
+
+
+def test_users_db_down_does_not_open_catalog(api, monkeypatch):
+    from apps.api.auth.store import UsersDbUnavailable
+
+    como, store = api
+
+    def caida(*_a, **_k):
+        raise UsersDbUnavailable("caída")
+
+    monkeypatch.setattr(store, "has_users", caida)
+    antes = _catalogo_del_taller()
+    r = como("ana").put("/catalog/indices", json={})
+    assert r.status_code == 503
+    assert _catalogo_del_taller() == antes

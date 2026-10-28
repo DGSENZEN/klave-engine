@@ -69,10 +69,13 @@ from apps.api.auth.access import require_project_role, require_taller_admin
 from apps.api.auth.common import rate_limit
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
+from apps.api.routes.catalog_rules import catalog_write_rule
 from apps.api.routes.projects import visible_project_filter
 from apps.api.tenancy import store_for_project, store_for_request
 
-router = APIRouter(prefix="/catalog", tags=["catalog"])
+router = APIRouter(
+    prefix="/catalog", tags=["catalog"], dependencies=[Depends(catalog_write_rule)]
+)
 
 # Una base de oficina con sus matrices exportada a Excel pasa de 1 MB sin
 # esfuerzo; 10 MB la deja entrar y sigue leyéndose en memoria sin problema.
