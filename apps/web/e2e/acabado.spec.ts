@@ -101,3 +101,33 @@ test("el detalle de un concepto se abre con el teclado", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(abrir).toHaveAttribute("aria-expanded", "false");
 });
+
+test("X en el visor pide el motivo y Enter excluye con él", async ({ page }) => {
+  test.setTimeout(180_000);
+  const id = await obraLista(page);
+  await page.goto(`/proyecto/${id}/plano`);
+  const lienzo = page.locator('[data-tour="visor.lienzo"] canvas').first();
+  await expect(lienzo).toBeVisible({ timeout: 30_000 });
+  await lienzo.click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press("ArrowRight");
+
+  await page.keyboard.press("x");
+  const motivo = page.getByLabel("Motivo de la exclusión");
+  await expect(motivo).toBeFocused();
+  // Sin motivo no se excluye.
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Escribe el motivo para excluir.")).toBeVisible();
+  await motivo.fill("Duplicado del eje A");
+  await page.keyboard.press("Enter");
+
+  await expect
+    .poll(async () => {
+      const r = await page.request.get(`${pilotState().api_url}/projects/${id}/reviews`);
+      const det = (await r.json()).detections ?? {};
+      return Object.values(det).some(
+        (d) => (d as { status?: string; note?: string }).status === "excluded" &&
+          (d as { note?: string }).note === "Duplicado del eje A",
+      );
+    })
+    .toBe(true);
+});
