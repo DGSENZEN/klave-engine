@@ -41,6 +41,9 @@ class Usuarios:
     def default_workspace(self):
         return {"workspace_id": "ws-a"}
 
+    def get_workspace(self, workspace_id):
+        return {"workspace_id": workspace_id, "slug": "taller-a", "name": "Taller A"}
+
     def project_role(self, project_id, user_id):
         # Same grants on the real obra and on the example obra (the sandbox).
         return self.roles.get(user_id) if project_id in (self.pid, EJEMPLO) else None
@@ -130,6 +133,11 @@ def api(data_dir, monkeypatch):
     monkeypatch.setattr(middleware, "get_user_store", lambda _url: store)
     monkeypatch.setattr(access, "get_user_store", lambda _url: store)
     monkeypatch.setattr(tenancy, "get_user_store", lambda _url: store)
+    from apps.api.routes import projects as projects_routes
+    from apps.api.routes import workspace as workspace_routes
+
+    monkeypatch.setattr(projects_routes, "get_user_store", lambda _url: store)
+    monkeypatch.setattr(workspace_routes, "get_user_store", lambda _url: store)
     client = TestClient(create_app())
 
     def como(quien):
@@ -520,3 +528,37 @@ def test_admin_still_gets_and_applies_them(copiloto):
         "/copilot/aplicar", json={"project_id": "obra", "tipo": "adoptar_precio_publicado"}
     )
     assert r.status_code not in (401, 403), r.text
+
+
+# ------------------------------------------------------------ rol a la vista --
+
+
+def test_get_project_carries_my_role(variantes):
+    como, _ = variantes
+    assert como("ana").get(f"/projects/{VARIANTES}").json()["my_role"] == "editor"
+    assert como("admin").get(f"/projects/{VARIANTES}").json()["my_role"] == "admin"
+
+
+def test_get_project_open_mode_has_no_role(data_dir):
+    from fastapi.testclient import TestClient
+    from klave_engine.costing.catalog_store import get_catalog_store
+
+    from apps.api.main import create_app
+
+    _proyecto_con_variantes(data_dir, VARIANTES, get_catalog_store(data_dir))
+    assert TestClient(create_app()).get(f"/projects/{VARIANTES}").json()["my_role"] is None
+
+
+def test_project_list_carries_my_role(variantes, monkeypatch):
+    como, store = variantes
+    monkeypatch.setattr(store, "project_ids_for_user", lambda _uid: {VARIANTES}, raising=False)
+    roles = {p["project_id"]: p["my_role"] for p in como("ana").get("/projects").json()["projects"]}
+    assert roles[VARIANTES] == "editor"
+
+
+def test_workspace_overview_carries_my_role(variantes, monkeypatch):
+    como, store = variantes
+    monkeypatch.setattr(store, "project_ids_for_user", lambda _uid: {VARIANTES}, raising=False)
+    body = como("ana").get("/workspace/overview").json()
+    roles = {p["project_id"]: p["my_role"] for p in body["projects"]}
+    assert roles[VARIANTES] == "editor"

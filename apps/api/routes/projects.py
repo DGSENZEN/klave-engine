@@ -24,7 +24,7 @@ from klave_engine.ingestion.project_loader import (
 )
 from pydantic import BaseModel
 
-from apps.api.auth.access import require_project_role
+from apps.api.auth.access import require_project_role, viewer_project_role
 from apps.api.auth.common import db_unavailable, rate_limit
 from apps.api.auth.store import UsersDbUnavailable, get_user_store
 from apps.api.dependencies import ProjectStore, get_settings, get_store
@@ -194,6 +194,8 @@ def list_projects(request: Request, store: ProjectStore = Depends(get_store)) ->
             "project_id": project_id,
             "root_path": root,
             "name": project_id,
+            # One users-DB lookup per visible project; admins short-circuit.
+            "my_role": viewer_project_role(request, project_id),
         }
         try:
             manifest = store.get_manifest(project_id)
@@ -605,8 +607,12 @@ def project_status(
 
 
 @router.get("/{project_id}")
-def get_project(project_id: str, store: ProjectStore = Depends(get_store)) -> dict:
+def get_project(
+    project_id: str, request: Request, store: ProjectStore = Depends(get_store)
+) -> dict:
     payload = store.get_manifest(project_id).model_dump(mode="json")
+    # Every project screen needs it to offer only what the role allows.
+    payload["my_role"] = viewer_project_role(request, project_id)
     engine_path = store.artifact_root(project_id) / "engine.json"
     stamp: dict = {}
     if engine_path.exists():

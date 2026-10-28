@@ -27,6 +27,7 @@ from klave_engine.ejemplo import es_obra_de_ejemplo
 from klave_engine.llm.tarifas import consumo_del_mes
 from pydantic import BaseModel, Field
 
+from apps.api.auth.access import viewer_project_role
 from apps.api.auth.store import UsersDbUnavailable, get_user_store
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS, clean_actor
@@ -173,7 +174,10 @@ def overview(
     and totals, plus the counts that deserve attention."""
     keep = visible_project_filter(request, store)
     projects = [
-        _project_overview(store, settings, project_id, Path(root))
+        {
+            **_project_overview(store, settings, project_id, Path(root)),
+            "my_role": viewer_project_role(request, project_id),
+        }
         for project_id, root in store.list_projects().items()
         if keep(project_id)
     ]

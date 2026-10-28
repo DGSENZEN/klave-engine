@@ -187,6 +187,10 @@ export async function downloadFile(path: string, fallbackName: string): Promise<
 
 // ---- Types (mirror the backend artifacts) ----
 
+/** The viewer's role on a project: «admin» of the taller, their grant, or
+ * null in open mode (no accounts: everyone can). */
+export type ProjectRole = "admin" | "owner" | "editor" | "viewer" | null;
+
 export type ProjectSummary = {
   project_id: string;
   name: string;
@@ -195,6 +199,7 @@ export type ProjectSummary = {
   client?: string | null;
   archived?: boolean;
   sheet_count?: number;
+  my_role?: ProjectRole;
 };
 
 export type ProjectStatus = {
@@ -591,6 +596,7 @@ export const listProjects = () =>
 
 export type ProjectInfo = {
   project_id: string;
+  my_role: ProjectRole;
   project_name: string;
   client: string | null;
   archived: boolean;
