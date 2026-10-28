@@ -279,7 +279,7 @@ export default function CatalogoPage() {
             href={`/proyecto/${desde}`}
             className="mb-4 inline-flex max-w-full items-center gap-1.5 text-sm text-muted hover:text-foreground"
           >
-            <ArrowLeft size={14} weight="bold" className="shrink-0" />
+            <ArrowLeft size={14} className="shrink-0" />
             <span className="truncate">
               Volver a la obra{obraDeOrigen?.name ? ` · ${obraDeOrigen.name}` : ""}
             </span>
@@ -325,7 +325,7 @@ export default function CatalogoPage() {
               />
               <ButtonMenu
                 label="Importar…"
-                icon={<UploadSimple size={15} weight="bold" />}
+                icon={<UploadSimple />}
                 width="w-80"
               >
                 {(close) => (
@@ -388,7 +388,7 @@ export default function CatalogoPage() {
                 )}
               </ButtonMenu>
               <Button onClick={exportCsv} disabled={!catalog}>
-                <DownloadSimple size={15} weight="bold" /> Exportar insumos (CSV)
+                <DownloadSimple /> Exportar insumos (CSV)
               </Button>
             </>
           }
@@ -409,7 +409,7 @@ export default function CatalogoPage() {
                   variant="ghost"
                   onClick={() => setNotice(null)}
                 >
-                  <Check size={14} weight="bold" /> Entendido
+                  <Check size={14} /> Entendido
                 </Button>
               }
             >
@@ -1398,7 +1398,7 @@ function ApusSection({
             tone="info"
             action={
               <Button size="sm" variant="primary" disabled={working} onClick={generateAll}>
-                <MagicWand size={14} weight="bold" /> Generar las que faltan ({sinMatriz.length})
+                <MagicWand size={14} /> Generar las que faltan ({sinMatriz.length})
               </Button>
             }
           >
@@ -2010,8 +2010,7 @@ function ConceptRows({
         <Td>
           <div className="flex items-center gap-2">
             <CaretDown
-              size={13}
-              weight="bold"
+              size={12}
               className={`shrink-0 text-faint transition-transform ${open ? "" : "-rotate-90"}`}
             />
             <div className="min-w-0">
@@ -2102,7 +2101,7 @@ function ConceptRows({
                   void runGenerate(false);
                 }}
               >
-                <MagicWand size={14} weight="bold" /> Generar matriz
+                <MagicWand size={14} /> Generar matriz
               </Button>
             </div>
           </td>
@@ -2142,7 +2141,6 @@ function ConceptRows({
                     >
                       <CaretDown
                         size={12}
-                        weight="bold"
                         className={`transition-transform ${isExpanded ? "" : "-rotate-90"}`}
                       />
                     </button>
@@ -2488,11 +2486,11 @@ function FuentesSection({
             >
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-foreground">
                 {source.custom ? (
-                  <UploadSimple size={16} weight="duotone" />
+                  <UploadSimple />
                 ) : source.kind === "costo_horario" ? (
-                  <Crane size={16} weight="duotone" />
+                  <Crane />
                 ) : (
-                  <Books size={16} weight="duotone" />
+                  <Books />
                 )}
               </span>
               <div className="min-w-0 flex-1">
@@ -3060,7 +3058,7 @@ function SalarioRealSection({
         className="mb-8"
         open={open}
         onToggle={() => setOpen((v) => !v)}
-        icon={<HardHat size={16} weight="duotone" />}
+        icon={<HardHat />}
         title="Salario real (Fsr) — RLOPSRM art. 190–191"
         summary={
           (first

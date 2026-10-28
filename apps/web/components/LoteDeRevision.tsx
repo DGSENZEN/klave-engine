@@ -54,7 +54,7 @@ export function LoteDeRevision({
   return (
     <Card className="mb-3 px-4 py-2.5">
       <div className="flex flex-wrap items-center gap-3">
-        <Target size={18} weight="duotone" className="shrink-0 text-accent" />
+        <Target className="shrink-0 text-accent" />
         <div className="min-w-0 flex-1 basis-64">
           {/* Por qué un lote y no la lista pareja (Wolfe et al., Nature 2005):
               con 1 % de objetivos la vista pasa por alto el 30 %, y avisarlo

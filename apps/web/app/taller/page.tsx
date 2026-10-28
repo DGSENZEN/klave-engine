@@ -132,7 +132,7 @@ export default function TallerPage() {
             <Card className="flex flex-wrap items-center justify-between gap-3 p-5">
               <div className="flex items-center gap-3">
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-surface-2 text-foreground">
-                  <GearSix size={18} weight="duotone" />
+                  <GearSix />
                 </span>
                 <div>
                   <div className="flex items-center gap-2 text-sm font-medium">
@@ -154,7 +154,7 @@ export default function TallerPage() {
               </div>
               {defaults.customized && (
                 <Button size="sm" variant="ghost" onClick={() => setConfirmReset(true)}>
-                  <ArrowCounterClockwise size={14} weight="bold" /> Restablecer
+                  <ArrowCounterClockwise size={14} /> Restablecer
                 </Button>
               )}
             </Card>
@@ -177,7 +177,7 @@ export default function TallerPage() {
             <span className="text-sm text-muted">
               {note ? (
                 <span className="inline-flex items-center gap-1.5 text-success">
-                  <CheckCircle size={15} weight="bold" /> {note}
+                  <CheckCircle /> {note}
                 </span>
               ) : dirty ? (
                 "Cambios sin guardar."

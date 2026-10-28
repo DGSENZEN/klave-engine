@@ -172,7 +172,7 @@ export default function EquipoPage() {
           sub="Invita, aprueba, asigna roles y recupera accesos. El acceso a cada proyecto se administra desde su configuración."
           actions={
             <Button variant="primary" onClick={() => setInviting(true)}>
-              <UserPlus size={15} weight="bold" /> Invitar
+              <UserPlus /> Invitar
             </Button>
           }
         />
@@ -227,10 +227,10 @@ export default function EquipoPage() {
                           run(() => setUserStatus(user.user_id, "active"), `No se pudo aprobar a ${user.name}.`)
                         }
                       >
-                        <Check size={14} weight="bold" /> Aprobar
+                        <Check size={14} /> Aprobar
                       </Button>
                       <Button size="sm" variant="danger" onClick={() => setConfirm({ kind: "reject", user })}>
-                        <Prohibit size={14} weight="bold" /> Rechazar
+                        <Prohibit size={14} /> Rechazar
                       </Button>
                     </UserRow>
                   ))}
@@ -250,7 +250,7 @@ export default function EquipoPage() {
 
             {users.length === 0 ? (
               <EmptyState
-                icon={<UsersThree size={22} weight="duotone" />}
+                icon={<UsersThree size={20} weight="duotone" />}
                 title="Sin cuentas todavía"
                 hint="Invita a tu equipo; cada persona entra con su propio enlace."
               />
@@ -279,7 +279,7 @@ export default function EquipoPage() {
                                   setConfirm({ kind: "recovery", user });
                                 }}
                               >
-                                <Key size={14} weight="bold" /> Enlace de recuperación
+                                <Key size={14} /> Enlace de recuperación
                               </MenuItem>
                               {user.status === "disabled" ? (
                                 <MenuItem
@@ -291,7 +291,7 @@ export default function EquipoPage() {
                                     );
                                   }}
                                 >
-                                  <Check size={14} weight="bold" /> Habilitar
+                                  <Check size={14} /> Habilitar
                                 </MenuItem>
                               ) : (
                                 <MenuItem
@@ -301,7 +301,7 @@ export default function EquipoPage() {
                                     setConfirm({ kind: "disable", user });
                                   }}
                                 >
-                                  <Prohibit size={14} weight="bold" /> Deshabilitar
+                                  <Prohibit size={14} /> Deshabilitar
                                 </MenuItem>
                               )}
                             </>
@@ -476,7 +476,7 @@ function InvitationsCard({
   return (
     <Card className="overflow-hidden">
       <div className="flex items-center gap-2 border-b border-border px-5 py-3">
-        <EnvelopeSimple size={16} weight="duotone" className="text-muted" />
+        <EnvelopeSimple className="text-muted" />
         <span className="text-sm font-medium">
           {invitations.length === 1 ? "1 invitación" : `${invitations.length} invitaciones`} sin aceptar
         </span>
@@ -500,7 +500,7 @@ function InvitationsCard({
               </div>
             </div>
             <Button size="sm" variant="ghost" onClick={() => resend(invite)}>
-              <PaperPlaneTilt size={14} weight="bold" /> Reenviar
+              <PaperPlaneTilt size={14} /> Reenviar
             </Button>
             <Button size="sm" variant="ghost" onClick={() => onRevoke(invite)}>
               Revocar
@@ -590,7 +590,7 @@ function InviteDialog({
               Cancelar
             </Button>
             <Button type="submit" form={formId} variant="primary" disabled={busy}>
-              <PaperPlaneTilt size={14} weight="bold" /> {busy ? "Invitando…" : "Invitar"}
+              <PaperPlaneTilt size={14} /> {busy ? "Invitando…" : "Invitar"}
             </Button>
           </>
         )
@@ -709,7 +709,7 @@ function LinkPanel({
           {link}
         </code>
         <Button size="sm" variant="secondary" onClick={copy}>
-          <Copy size={14} weight="bold" /> {copied ? "Copiado" : "Copiar"}
+          <Copy size={14} /> {copied ? "Copiado" : "Copiar"}
         </Button>
         {onClose && (
           <Button size="sm" variant="ghost" onClick={onClose}>
@@ -745,7 +745,7 @@ function ActivityCard() {
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-5 py-3 text-left text-sm font-medium"
       >
-        <ClockCounterClockwise size={16} weight="duotone" className="text-muted" />
+        <ClockCounterClockwise className="text-muted" />
         Registro de actividad
         <span className="ml-auto text-xs font-normal text-muted">{open ? "Ocultar" : "Ver"}</span>
       </button>

@@ -110,7 +110,7 @@ export default function RestablecerPage() {
             />
             {error && <p className="text-sm text-danger">{error}</p>}
             <button type="submit" className={buttonClasses("primary", "md", "w-full")} disabled={busy}>
-              Guardar y entrar <ArrowRight size={15} weight="bold" />
+              Guardar y entrar <ArrowRight />
             </button>
           </form>
         </Card>

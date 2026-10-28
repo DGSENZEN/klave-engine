@@ -81,11 +81,11 @@ export function ConfirmDialog({
         aria-label={title}
         tabIndex={-1}
         onKeyDown={onDialogKeyDown}
-        className="toast-in relative w-full outline-none max-w-md rounded-xl border border-border bg-surface p-5 shadow-lg"
+        className="menu-pop relative w-full outline-none max-w-md rounded-xl border border-border bg-surface p-5 shadow-lg"
       >
         <div className="mb-2 flex items-center gap-2.5">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger">
-            <Warning size={16} weight="bold" />
+            <Warning />
           </span>
           <h2 className="text-[0.95rem] font-semibold">{title}</h2>
         </div>

@@ -85,7 +85,7 @@ function Nota({
           {nota.tipo !== "ordinaria" && <Badge tone="warning">{nota.tipo}</Badge>}
           {nota.referencia !== null && (
             <span className="flex items-center gap-1 text-xs text-muted">
-              <ArrowBendUpLeft size={12} /> aclara la nota {nota.referencia}
+              <ArrowBendUpLeft size={14} /> aclara la nota {nota.referencia}
             </span>
           )}
         </div>
@@ -185,7 +185,7 @@ export default function BitacoraPage() {
         actions={
           !estado?.cerrada && (
             <Button onClick={() => nueva()} disabled={!estado || !!borrador}>
-              <Plus size={16} />
+              <Plus />
               {estado?.abierta ? "Asentar nota" : "Abrir la bitácora"}
             </Button>
           )
@@ -335,7 +335,7 @@ export default function BitacoraPage() {
 
       {!cargando && notas.length === 0 && !borrador && (
         <EmptyState
-          icon={<NotePencil size={28} />}
+          icon={<NotePencil size={20} />}
           title="La bitácora no está abierta"
           hint="Su primera nota es la de apertura, con los datos del contrato (RLOPSRM art. 125)."
           action={<Button onClick={() => nueva()}>Abrir la bitácora</Button>}

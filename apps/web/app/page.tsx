@@ -7,6 +7,7 @@ import {
   Archive,
   ArrowCounterClockwise,
   ArrowRight,
+  CaretRight,
   ArrowsClockwise,
   Books,
   CircleNotch,
@@ -330,12 +331,12 @@ export default function Home() {
               }`}
             >
               {toast.tone === "success" ? (
-                <SealCheck size={15} weight="bold" className="text-success" />
+                <SealCheck className="text-success" />
               ) : (
-                <Warning size={15} weight="bold" className="text-warning" />
+                <Warning className="text-warning" />
               )}
               <span className="max-w-72 truncate">{toast.text}</span>
-              <ArrowRight size={13} weight="bold" className="text-faint" />
+              <ArrowRight size={14} className="text-faint" />
             </Link>
           ))}
         </div>
@@ -373,11 +374,11 @@ export default function Home() {
           >
             {uploading ? (
               <>
-                <CircleNotch size={16} className="animate-spin" /> Subiendo…
+                <CircleNotch className="animate-spin" /> Subiendo…
               </>
             ) : (
               <>
-                <Plus size={16} weight="bold" /> Nuevo proyecto
+                <Plus /> Nuevo proyecto
               </>
             )}
           </Button>
@@ -393,7 +394,7 @@ export default function Home() {
             <Callout tone="danger">
               <p>{loadError}</p>
               <Button className="mt-2" onClick={refreshNow} disabled={refreshing}>
-                <ArrowCounterClockwise size={15} /> {refreshing ? "Cargando…" : "Volver a intentar"}
+                <ArrowCounterClockwise /> {refreshing ? "Cargando…" : "Volver a intentar"}
               </Button>
             </Callout>
           </div>
@@ -407,7 +408,6 @@ export default function Home() {
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <div className="relative min-w-56 flex-1">
               <MagnifyingGlass
-                size={15}
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
               />
               <Input
@@ -453,13 +453,13 @@ export default function Home() {
         )) : projects.length === 0 ? (
           <div>
             <EmptyState
-              icon={<CloudArrowUp size={22} weight="duotone" />}
+              icon={<CloudArrowUp size={20} weight="duotone" />}
               title="Sube tu primer plano"
               hint="Sube hasta 40 hojas DWG o DXF de una misma obra. Si un DWG no se puede convertir, expórtalo a DXF desde tu programa de dibujo e inténtalo de nuevo."
               action={
                 <span className="flex flex-wrap items-center justify-center gap-2">
                   <Button variant="primary" onClick={() => inputRef.current?.click()}>
-                    <Plus size={16} weight="bold" /> Nuevo proyecto
+                    <Plus /> Nuevo proyecto
                   </Button>
                 </span>
               }
@@ -532,7 +532,7 @@ function AttentionStrip({
     chips.push({
       key: "failed",
       label: attention.failed === 1 ? "1 con errores" : `${attention.failed} con errores`,
-      icon: <Warning size={14} weight="bold" />,
+      icon: <Warning size={14} />,
       tone: "warning",
     });
   }
@@ -541,7 +541,7 @@ function AttentionStrip({
       key: "unverified",
       label:
         attention.unverified === 1 ? "1 sin verificar" : `${attention.unverified} sin verificar`,
-      icon: <SealCheck size={14} weight="bold" />,
+      icon: <SealCheck size={14} />,
       tone: "default",
     });
   }
@@ -552,7 +552,7 @@ function AttentionStrip({
         attention.stale_runs === 1
           ? "1 con lectura anterior"
           : `${attention.stale_runs} con lectura anterior`,
-      icon: <ArrowsClockwise size={14} weight="bold" />,
+      icon: <ArrowsClockwise size={14} />,
       tone: "default",
     });
   }
@@ -563,7 +563,7 @@ function AttentionStrip({
         attention.pending_users === 1
           ? "1 cuenta por aprobar"
           : `${attention.pending_users} cuentas por aprobar`,
-      icon: <UsersThree size={14} weight="bold" />,
+      icon: <UsersThree size={14} />,
       tone: "warning",
       href: "/equipo",
     });
@@ -572,7 +572,7 @@ function AttentionStrip({
     chips.push({
       key: "catalog",
       label: `${attention.stale_insumos} precios con más de ${attention.stale_threshold_months} meses`,
-      icon: <Books size={14} weight="bold" />,
+      icon: <Books size={14} />,
       tone: "default",
       href: "/catalogo",
     });
@@ -596,7 +596,7 @@ function AttentionStrip({
       {chips.map((chip) =>
         chip.href ? (
           <Link key={chip.key} href={chip.href} className={classes(chip.tone, false)}>
-            {chip.icon} {chip.label} <ArrowRight size={12} weight="bold" />
+            {chip.icon} {chip.label} <ArrowRight size={14} />
           </Link>
         ) : (
           <button
@@ -684,9 +684,6 @@ function ProjectRow({
 
   const inner = (
     <>
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-2">
-        <FileText size={16} weight="duotone" className="text-foreground" />
-      </div>
       <div className="min-w-0 flex-1">
         {editing ? (
           <Input
@@ -709,7 +706,7 @@ function ProjectRow({
               {processed &&
                 (project.verified ? (
                   <Badge tone="success">
-                    <SealCheck size={12} weight="bold" /> Verificado
+                    <SealCheck size={14} /> Verificado
                   </Badge>
                 ) : (
                   <span title="Unidades, elementos y supuestos por confirmar">
@@ -722,7 +719,7 @@ function ProjectRow({
               {project.client && <span className="text-faint">·</span>}
               {(project.sheet_count ?? 0) > 1 && (
                 <span className="inline-flex items-center gap-1">
-                  <Stack size={12} /> {project.sheet_count} hojas
+                  <Stack size={14} /> {project.sheet_count} hojas
                 </span>
               )}
               {(project.sheet_count ?? 0) > 1 && <span className="text-faint">·</span>}
@@ -737,7 +734,7 @@ function ProjectRow({
                 <>
                   <span className="text-faint">·</span>
                   <span className="inline-flex items-center gap-1" title="Procesado con una versión anterior de Klave">
-                    <ArrowsClockwise size={12} /> lectura anterior
+                    <ArrowsClockwise size={14} /> lectura anterior
                   </span>
                 </>
               )}
@@ -776,7 +773,7 @@ function ProjectRow({
                 close();
               }}
             >
-              <PencilSimple size={15} /> Renombrar
+              <PencilSimple /> Renombrar
             </MenuItem>
             <MenuItem
               onSelect={() => {
@@ -785,7 +782,7 @@ function ProjectRow({
                 close();
               }}
             >
-              <UserSwitch size={15} /> Cliente…
+              <UserSwitch /> Cliente…
             </MenuItem>
             <MenuItem
               onSelect={() => {
@@ -793,7 +790,7 @@ function ProjectRow({
                 close();
               }}
             >
-              <ArrowsClockwise size={15} className={reprocessing ? "animate-spin" : ""} />{" "}
+              <ArrowsClockwise className={reprocessing ? "animate-spin" : ""} />{" "}
               {reprocessing ? "Encolando…" : "Reprocesar"}
             </MenuItem>
             <MenuItem
@@ -804,11 +801,11 @@ function ProjectRow({
             >
               {project.archived ? (
                 <>
-                  <ArrowCounterClockwise size={15} /> Restaurar
+                  <ArrowCounterClockwise /> Restaurar
                 </>
               ) : (
                 <>
-                  <Archive size={15} /> Archivar
+                  <Archive /> Archivar
                 </>
               )}
             </MenuItem>
@@ -819,15 +816,15 @@ function ProjectRow({
                 setRemoveOpen(true);
               }}
             >
-              <Trash size={15} /> Quitar de la lista…
+              <Trash /> Quitar de la lista…
             </MenuItem>
           </>
         )}
       </KebabMenu>
-      <ArrowRight
-        size={15}
-        weight="bold"
-        className="text-faint transition group-hover:translate-x-0.5 group-hover:text-foreground"
+      <CaretRight
+        size={14}
+        aria-hidden
+        className="shrink-0 text-faint transition-transform duration-150 ease-out group-hover:translate-x-0.5 group-hover:text-foreground"
       />
     </>
   );
@@ -939,11 +936,11 @@ function NewProjectDialog({
           <Button type="submit" form={formId} variant="primary" disabled={busy || name.trim().length < 2}>
             {busy ? (
               <>
-                <CircleNotch size={15} className="animate-spin" /> Subiendo…
+                <CircleNotch className="animate-spin" /> Subiendo…
               </>
             ) : (
               <>
-                <Plus size={15} weight="bold" /> Crear y procesar
+                <Plus /> Crear y procesar
               </>
             )}
           </Button>
@@ -989,7 +986,7 @@ function NewProjectDialog({
                   aria-expanded={open}
                   className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-muted transition-colors hover:bg-surface-2"
                 >
-                  <FileText size={12} className="shrink-0" />
+                  <FileText size={14} className="shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{file.name}</span>
                   {preview && (
                     <Badge tone={preview.structural ? "accent" : "default"}>
@@ -997,7 +994,7 @@ function NewProjectDialog({
                     </Badge>
                   )}
                   <CaretDown
-                    size={10}
+                    size={12}
                     className={`shrink-0 text-faint transition-transform ${open ? "" : "-rotate-90"}`}
                   />
                 </button>

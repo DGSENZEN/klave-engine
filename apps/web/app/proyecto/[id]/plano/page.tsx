@@ -669,7 +669,7 @@ export default function PlanoPage() {
                   aria-label="Cerrar filtros"
                   onClick={() => setFiltersOpen(false)}
                 >
-                  <X size={18} />
+                  <X />
                 </IconButton>
               </div>
               {filterPanel}
@@ -841,7 +841,7 @@ export default function PlanoPage() {
                     size="sm"
                     onClick={() => review(selected, "confirmed")}
                   >
-                    <Check size={14} weight="bold" /> Confirmar
+                    <Check size={14} /> Confirmar
                   </Button>
                 )}
                 {selected.review !== "excluded" && (
@@ -850,7 +850,7 @@ export default function PlanoPage() {
                     variant="danger"
                     onClick={() => setPidiendoMotivo(true)}
                   >
-                    <Prohibit size={14} weight="bold" /> Excluir
+                    <Prohibit size={14} /> Excluir
                   </Button>
                 )}
                 {selected.review && (
@@ -1054,10 +1054,10 @@ function MeasureToolbar({
     label: string;
     icon: React.ReactNode;
   }[] = [
-    { key: null, label: "Navegar", icon: <Cursor size={15} /> },
-    { key: "distancia", label: "Distancia", icon: <Ruler size={15} /> },
-    { key: "area", label: "Área", icon: <Polygon size={15} /> },
-    { key: "conteo", label: "Conteo", icon: <Hash size={15} /> },
+    { key: null, label: "Navegar", icon: <Cursor /> },
+    { key: "distancia", label: "Distancia", icon: <Ruler /> },
+    { key: "area", label: "Área", icon: <Polygon /> },
+    { key: "conteo", label: "Conteo", icon: <Hash /> },
   ];
   return (
     <div className="absolute left-3 top-3 z-10 flex rounded-lg border border-border bg-surface p-0.5 shadow-sm">
@@ -1212,7 +1212,7 @@ function MeasureResult({
             Limpiar
           </Button>
           <Button size="sm" onClick={openForm} disabled={!ready}>
-            <PencilSimpleLine size={14} weight="bold" /> Crear ajuste
+            <PencilSimpleLine size={14} /> Crear ajuste
           </Button>
         </div>
       </div>

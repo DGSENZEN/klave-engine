@@ -183,7 +183,7 @@ export function PlantillaCampo({ id }: { id: string }) {
           <ul className="grid gap-1.5 text-sm sm:grid-cols-2">
             {data.sugerida.map((c) => (
               <li key={c.puesto} className="flex gap-2">
-                <UsersThree size={15} weight="duotone" className="mt-0.5 shrink-0 text-muted" />
+                <UsersThree className="mt-0.5 shrink-0 text-muted" />
                 <span>
                   <span className="font-medium">
                     {c.cantidad > 1 ? `${c.cantidad}× ` : ""}
@@ -324,7 +324,7 @@ export function PlantillaCampo({ id }: { id: string }) {
                       className="text-muted transition hover:text-danger"
                       aria-label={`Quitar ${cargo.puesto || `renglón ${index + 1}`}`}
                     >
-                      <Trash size={15} weight="duotone" />
+                      <Trash />
                     </button>
                   </Td>
                 </tr>
@@ -336,7 +336,7 @@ export function PlantillaCampo({ id }: { id: string }) {
               variant="ghost"
               onClick={() => setBorrador([...cargos, { ...CARGO_NUEVO }])}
             >
-              <Plus size={14} weight="bold" /> Agregar puesto
+              <Plus size={14} /> Agregar puesto
             </Button>
             {!data.plantilla.length && (
               <Button
@@ -399,7 +399,7 @@ export function PlantillaCampo({ id }: { id: string }) {
                       <Td align="right" className="tabular-nums">
                         {r.sin_sueldo ? (
                           <span className="inline-flex items-center gap-1 text-warning">
-                            <Warning size={13} weight="bold" /> sin sueldo
+                            <Warning size={14} /> sin sueldo
                           </span>
                         ) : (
                           money(r.importe)

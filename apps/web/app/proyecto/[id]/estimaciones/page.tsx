@@ -200,14 +200,14 @@ export default function EstimacionesPage() {
             hint={`${money(ultima.resumen.acumulado)} estimados de ${money(
               ultima.estimacion.monto_contrato,
             )}`}
-            icon={<TrendUp size={16} weight="duotone" />}
+            icon={<TrendUp />}
             accent="accent"
           />
           <Metric
             label={`Última estimación (#${ultima.resumen.numero})`}
             value={money(ultima.resumen.liquido)}
             hint={`líquido a pagar · ${ultima.resumen.periodo}`}
-            icon={<Receipt size={16} weight="duotone" />}
+            icon={<Receipt />}
           />
           <Metric
             label="Anticipo amortizado"
@@ -224,7 +224,7 @@ export default function EstimacionesPage() {
       {lista.length > 0 && (
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <Button onClick={() => void crearSiguiente()} disabled={busy}>
-            <Plus size={14} weight="bold" /> {busy ? "Preparando…" : "Nueva estimación"}
+            <Plus size={14} /> {busy ? "Preparando…" : "Nueva estimación"}
           </Button>
           <span className="text-xs text-muted">
             Se genera con lo acumulado y lo amortizado ya cargados: encadenar a mano es como
@@ -235,7 +235,7 @@ export default function EstimacionesPage() {
 
       {lista.length === 0 && !borrador && (
         <EmptyState
-          icon={<Receipt size={22} weight="duotone" />}
+          icon={<Receipt size={20} weight="duotone" />}
           title="Sin estimaciones todavía"
           hint={
             renglonesCatalogo
@@ -245,7 +245,7 @@ export default function EstimacionesPage() {
           action={
             renglonesCatalogo ? (
               <Button onClick={() => void crearPrimera()} disabled={busy}>
-                <Plus size={14} weight="bold" />{" "}
+                <Plus size={14} />{" "}
                 {busy ? "Preparando…" : "Capturar la estimación 1"}
               </Button>
             ) : (
@@ -321,10 +321,11 @@ export default function EstimacionesPage() {
                     </Td>
                     <Td align="right">
                       <IconButton
+                        size="sm"
                         onClick={() => void descargarEstimacion(id, resumen.numero)}
                         aria-label={`Descargar la estimación ${resumen.numero}`}
                       >
-                        <DownloadSimple size={16} />
+                        <DownloadSimple />
                       </IconButton>
                     </Td>
                   </tr>
@@ -485,7 +486,7 @@ function EditorEstimacion({
                       onClick={() => setAbierto(abierto === r.clave ? null : r.clave)}
                       className="mt-0.5 flex items-center gap-1 text-[11px] text-muted underline-offset-2 hover:text-foreground hover:underline"
                     >
-                      <Ruler size={12} />
+                      <Ruler size={14} />
                       {respaldo > 0
                         ? `Generador · ${respaldo} ${respaldo === 1 ? "línea" : "líneas"}`
                         : "Sin generador"}

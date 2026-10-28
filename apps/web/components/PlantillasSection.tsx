@@ -253,7 +253,7 @@ export function PlantillasSection({
           aria-label="m² construidos del proyecto"
         />
         <Button onClick={() => fileRef.current?.click()} disabled={busy} variant="primary">
-          <UploadSimple size={15} weight="bold" /> Importar presupuesto anterior
+          <UploadSimple /> Importar presupuesto anterior
         </Button>
       </div>
       {loadError && (

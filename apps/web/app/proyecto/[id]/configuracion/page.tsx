@@ -202,16 +202,16 @@ export default function ConfiguracionPage() {
           <Button onClick={toggleArchived}>
             {project.archived ? (
               <>
-                <ArrowCounterClockwise size={15} weight="bold" /> Restaurar
+                <ArrowCounterClockwise /> Restaurar
               </>
             ) : (
               <>
-                <Archive size={15} weight="bold" /> Archivar
+                <Archive /> Archivar
               </>
             )}
           </Button>
           <Button variant="danger" onClick={() => setRemoveOpen(true)}>
-            <Trash size={15} weight="bold" /> Quitar de la lista…
+            <Trash /> Quitar de la lista…
           </Button>
         </div>
       </Card>
@@ -323,7 +323,7 @@ function AccessCard({ projectId }: { projectId: string }) {
         <>
           {access.members.length === 0 ? (
             <p className="mb-4 flex items-center gap-2 text-sm text-muted">
-              <UsersThree size={16} /> Nadie más tiene acceso todavía.
+              <UsersThree /> Nadie más tiene acceso todavía.
             </p>
           ) : (
             <ul className="mb-4 divide-y divide-border">

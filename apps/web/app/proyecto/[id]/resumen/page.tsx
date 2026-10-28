@@ -219,7 +219,7 @@ export default function Resumen() {
                 {reprocessing ? (
                   <CircleNotch size={14} className="animate-spin" />
                 ) : (
-                  <ArrowsClockwise size={14} weight="bold" />
+                  <ArrowsClockwise size={14} />
                 )}
                 {reprocessing ? "Encolando…" : "Reprocesar"}
               </Button>
@@ -301,7 +301,7 @@ export default function Resumen() {
               </div>
               <dl className="space-y-2 text-[13px]">
                 <Row
-                  icon={<Ruler size={15} />}
+                  icon={<Ruler />}
                   label="Unidades"
                   value={`${costs.drawing_units.unit} · ${Math.round(
                     costs.drawing_units.confidence * 100,
@@ -309,7 +309,7 @@ export default function Resumen() {
                 />
                 {views?.is_segmented && (
                   <Row
-                    icon={<Stack size={15} />}
+                    icon={<Stack />}
                     label="Vistas de planta"
                     value={`${views.views.filter((v) => v.kind === "plan").length} · NPT ${
                       views.npt_levels.length
@@ -319,7 +319,7 @@ export default function Resumen() {
                 {dims && (
                   <>
                     <Row
-                      icon={<Ruler size={15} />}
+                      icon={<Ruler />}
                       label="Cotas leídas"
                       value={`${dims.dimension_count}`}
                     />
@@ -492,7 +492,7 @@ function SheetsCard({ id, project }: { id: string; project: ProjectInfo }) {
           {busy ? (
             <CircleNotch size={14} className="animate-spin" />
           ) : (
-            <FilePlus size={14} weight="bold" />
+            <FilePlus size={14} />
           )}
           {busy ? "Procesando…" : "Agregar hojas y reprocesar"}
         </Button>
@@ -543,7 +543,7 @@ function SheetsCard({ id, project }: { id: string; project: ProjectInfo }) {
           const archivo = nombre(sheet.path);
           return (
             <li key={sheet.file_id} className="flex items-center gap-3 px-3 py-2 text-sm">
-              <FileText size={15} className="shrink-0 text-muted" />
+              <FileText className="shrink-0 text-muted" />
               <span className="min-w-0 flex-1 truncate">
                 <span className="font-medium text-foreground">
                   {sheet.sheet_number ?? archivo}

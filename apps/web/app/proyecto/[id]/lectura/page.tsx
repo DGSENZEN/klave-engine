@@ -774,8 +774,6 @@ export default function LecturaPage() {
                 <li key={group.type} className="text-sm">
                   <div className="flex items-center gap-2">
                     <Warning
-                      size={15}
-                      weight="bold"
                       className="shrink-0 text-warning"
                     />
                     <span className="font-medium">{group.label}</span>
@@ -1305,7 +1303,7 @@ function SheetCard({
   return (
     <div className="px-4 py-3">
       <div className="mb-1.5 flex flex-wrap items-center gap-2">
-        <FileText size={16} weight="duotone" className="text-muted" />
+        <FileText className="text-muted" />
         <span className="font-medium">{sheet.sheet_number ?? sheet.name}</span>
         <span className="text-xs text-faint">{sheet.name}</span>
         <span className="uppercase text-xs text-faint">{sheet.file_type}</span>
@@ -1320,7 +1318,7 @@ function SheetCard({
         )}
         {parse?.recovered && (
           <Badge tone="warning" dot>
-            <ArrowsClockwise size={11} weight="bold" /> Leído en recuperación
+            <ArrowsClockwise size={14} /> Leído en recuperación
           </Badge>
         )}
       </div>
@@ -1363,7 +1361,7 @@ function SheetCard({
                   className="flex flex-wrap items-center gap-x-2 text-xs text-muted"
                 >
                   <span className="inline-flex items-center gap-1 font-medium text-foreground">
-                    <Layout size={13} weight="duotone" /> {layout.name}
+                    <Layout size={14} /> {layout.name}
                   </span>
                   <span>
                     {layout.viewports.length === 0

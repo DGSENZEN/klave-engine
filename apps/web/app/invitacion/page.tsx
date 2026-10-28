@@ -163,7 +163,7 @@ function AcceptCard({ info, token }: { info: InvitationInfo; token: string }) {
       {info.google_enabled && (
         <>
           <a href={googleLoginUrl(token)} className={buttonClasses("primary", "md", "w-full")}>
-            <GoogleLogo size={16} weight="bold" /> Continuar con Google
+            <GoogleLogo /> Continuar con Google
           </a>
           <p className="mt-2 text-center text-xs text-muted">
             Debe ser la cuenta de Google de {info.email}.
@@ -215,7 +215,7 @@ function AcceptCard({ info, token }: { info: InvitationInfo; token: string }) {
           className={buttonClasses(info.google_enabled ? "secondary" : "primary", "md", "w-full")}
           disabled={busy}
         >
-          Crear cuenta y entrar <ArrowRight size={15} weight="bold" />
+          Crear cuenta y entrar <ArrowRight />
         </button>
       </form>
     </Card>

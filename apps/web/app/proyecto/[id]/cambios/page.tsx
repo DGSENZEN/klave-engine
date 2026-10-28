@@ -117,7 +117,7 @@ export default function CambiosPage() {
         <PageHeader title="Cambios entre revisiones" sub="Qué cambió entre una revisión del plano y otra." />
 <div data-tour="cambios.vacio">
         <EmptyState
-          icon={<GitDiff size={22} weight="duotone" />}
+          icon={<GitDiff size={20} weight="duotone" />}
           title="Hace falta una segunda lectura"
           hint="Cuando llegue la siguiente revisión del plano, súbela en el Resumen y reprocesa: aquí verás qué cambió, en cantidades y en pesos, elemento por elemento."
           action={
@@ -149,7 +149,7 @@ export default function CambiosPage() {
                 )
               }
             >
-              <DownloadSimple size={15} weight="bold" /> Aditivas y deductivas (Excel)
+              <DownloadSimple /> Aditivas y deductivas (Excel)
             </Button>
           )
         }
@@ -335,7 +335,7 @@ export default function CambiosPage() {
                             href={`/proyecto/${id}/plano?bbox=${bbox.map((v) => v.toFixed(3)).join(",")}&cambios=${encodeURIComponent(data.antes)}`}
                             className="inline-flex items-center gap-1 text-xs text-muted underline"
                           >
-                            <MapTrifold size={12} /> plano
+                            <MapTrifold size={14} /> plano
                           </Link>
                         )}
                       </Td>

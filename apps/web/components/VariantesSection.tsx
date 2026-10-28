@@ -164,7 +164,7 @@ export function VariantesSection({
             tone="info"
             action={
               <Button size="sm" variant="primary" disabled={busy} onClick={() => autoMap(false)}>
-                <MagicWand size={14} weight="bold" /> Buscar en mi catálogo
+                <MagicWand size={14} /> Buscar en mi catálogo
               </Button>
             }
           >
@@ -309,7 +309,7 @@ function LineRows({
               }}
               className="flex items-center gap-2 rounded-sm text-left"
             >
-              <CaretDown size={12} weight="bold" className={`text-faint transition-transform ${open ? "" : "-rotate-90"}`} />
+              <CaretDown size={12} className={`text-faint transition-transform ${open ? "" : "-rotate-90"}`} />
               <span className="microlabel">{line.phase}</span>
               <span className="font-medium">{line.description}</span>
               <span className="text-xs text-muted">

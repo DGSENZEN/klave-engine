@@ -459,7 +459,7 @@ export default function RevisionPage() {
             onClick={() => apply("confirmed")}
             disabled={busy || selectedVisible.length === 0}
           >
-            <CheckCircle size={14} weight="bold" /> Confirmar
+            <CheckCircle size={14} /> Confirmar
           </Button>
           {excluding ? (
             <>
@@ -481,7 +481,7 @@ export default function RevisionPage() {
                 onClick={() => apply("excluded")}
                 disabled={busy}
               >
-                <Prohibit size={14} weight="bold" /> Excluir
+                <Prohibit size={14} /> Excluir
               </Button>
               <Button
                 size="sm"
@@ -497,7 +497,7 @@ export default function RevisionPage() {
               onClick={() => setExcluding(true)}
               disabled={busy || selectedVisible.length === 0}
             >
-              <Prohibit size={14} weight="bold" /> Excluir…
+              <Prohibit size={14} /> Excluir…
             </Button>
           )}
           <Button
@@ -509,7 +509,7 @@ export default function RevisionPage() {
             }
             disabled={busy || selectedVisible.length === 0}
           >
-            <ArrowCounterClockwise size={14} weight="bold" /> Quitar revisión
+            <ArrowCounterClockwise size={14} /> Quitar revisión
           </Button>
           {actionError && (
             <span className="text-sm text-danger">{actionError}</span>
@@ -668,7 +668,7 @@ export default function RevisionPage() {
                           className="flex items-center gap-1 text-xs text-muted underline-offset-2 hover:text-foreground hover:underline"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <MapTrifold size={12} /> plano
+                          <MapTrifold size={14} /> plano
                         </Link>
                       )}
                       {r.status !== "excluded" && (
@@ -1214,7 +1214,7 @@ function ConteoSection({
             disabled={busy || !puedeAgregar || sinBase}
             onClick={() => void agregar()}
           >
-            <PlusCircle size={14} weight="bold" /> Agregar
+            <PlusCircle size={14} /> Agregar
           </Button>
         </div>
       </div>

@@ -94,7 +94,7 @@ export default function FlujoPage() {
               ? `${fin.advance_payment_pct}% del monto`
               : undefined
           }
-          icon={<Money size={16} weight="duotone" />}
+          icon={<Money />}
           accent="accent"
         />
         <Metric
@@ -105,25 +105,25 @@ export default function FlujoPage() {
               ? `${fin.retention_pct}% por estimación`
               : undefined
           }
-          icon={<PiggyBank size={16} weight="duotone" />}
+          icon={<PiggyBank />}
         />
         <Metric
           label="Periodos"
           value={periods.length}
           hint="estimaciones mensuales"
-          icon={<CalendarBlank size={16} weight="duotone" />}
+          icon={<CalendarBlank />}
         />
         <Metric
           label="O&M anual"
           value={money(fin.annual_operating_cost)}
           hint="operación y mantenimiento"
-          icon={<Wrench size={16} weight="duotone" />}
+          icon={<Wrench />}
         />
       </div>
 
       {periods.length === 0 ? (
         <EmptyState
-          icon={<CalendarBlank size={22} weight="duotone" />}
+          icon={<CalendarBlank size={20} weight="duotone" />}
           title="Este procesamiento no incluye flujo por periodos"
           hint="Vuelve a procesar el proyecto para generar el flujo financiero."
         />

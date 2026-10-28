@@ -137,7 +137,7 @@ export function UnitsGate({
         </Button>
       </div>
       <p className="mt-3 flex items-start gap-1.5 text-xs text-muted">
-        <Warning size={13} className="mt-0.5 shrink-0" />
+        <Warning size={14} className="mt-0.5 shrink-0" />
         Mide una cota conocida en el visor si dudas: una puerta de 0.90 debe medir 0.90 en
         metros, 90 en centímetros.
       </p>

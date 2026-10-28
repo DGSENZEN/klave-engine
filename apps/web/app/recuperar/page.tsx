@@ -51,7 +51,7 @@ export default function RecuperarPage() {
       }
       footer={
         <Link href="/bienvenida" className="inline-flex items-center gap-1.5 hover:text-foreground">
-          <ArrowLeft size={14} weight="bold" /> Volver a entrar
+          <ArrowLeft size={14} /> Volver a entrar
         </Link>
       }
     >
@@ -75,7 +75,7 @@ export default function RecuperarPage() {
       ) : sent ? (
         <Card className="p-6 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success-soft text-success">
-            <EnvelopeSimple size={22} weight="duotone" />
+            <EnvelopeSimple size={20} weight="duotone" />
           </div>
           <p className="font-medium">Revisa tu correo</p>
           <p className="mx-auto mt-1 max-w-sm text-sm text-muted">

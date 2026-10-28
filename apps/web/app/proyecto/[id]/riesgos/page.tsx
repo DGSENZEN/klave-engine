@@ -126,13 +126,13 @@ export default function RiesgosPage() {
 
       {risks.findings.length === 0 ? (
         <EmptyState
-          icon={<ShieldCheck size={22} weight="duotone" />}
+          icon={<ShieldCheck size={20} weight="duotone" />}
           title="Sin riesgos detectados"
           hint="El análisis determinista no encontró hallazgos en este procesamiento. Revisa igualmente las advertencias del presupuesto."
         />
       ) : filtered.length === 0 ? (
         <EmptyState
-          icon={<Warning size={22} weight="duotone" />}
+          icon={<Warning size={20} weight="duotone" />}
           title="Sin hallazgos con este filtro"
           hint="Cambia el filtro de severidad para ver el resto de los hallazgos."
         />
@@ -175,7 +175,7 @@ function RiskCard({ finding, projectId }: { finding: RiskFinding; projectId: str
           href={`/proyecto/${projectId}/plano?bbox=${finding.bbox.map((v) => v.toFixed(2)).join(",")}`}
           className="mt-1 inline-flex items-center gap-1 text-xs text-accent underline"
         >
-          <MapTrifold size={12} /> ver en el plano
+          <MapTrifold size={14} /> ver en el plano
         </Link>
       )}
       <p className="mt-1.5 text-[13px]">
@@ -191,8 +191,7 @@ function RiskCard({ finding, projectId }: { finding: RiskFinding; projectId: str
             className="flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-foreground"
           >
             <CaretDown
-              size={11}
-              weight="bold"
+              size={12}
               className={`transition-transform ${open ? "" : "-rotate-90"}`}
             />
             {open ? "Ocultar los elementos" : `Ver los ${finding.member_count} elementos`}
@@ -209,7 +208,7 @@ function RiskCard({ finding, projectId }: { finding: RiskFinding; projectId: str
                         .join(",")}`}
                       className="inline-flex items-center gap-1 text-accent underline"
                     >
-                      <MapTrifold size={11} /> ver
+                      <MapTrifold size={14} /> ver
                     </Link>
                   )}
                 </li>

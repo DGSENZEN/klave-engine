@@ -259,9 +259,9 @@ export default function PresupuestoPage() {
             label={exporting ? `Generando ${exporting}…` : "Exportar"}
             icon={
               exporting ? (
-                <CircleNotch size={16} className="animate-spin" />
+                <CircleNotch className="animate-spin" />
               ) : (
-                <DownloadSimple size={16} weight="bold" />
+                <DownloadSimple />
               )
             }
           >
@@ -273,7 +273,7 @@ export default function PresupuestoPage() {
                     void exportFile("Excel Klave", `/projects/${id}/export/presupuesto.xlsx`, "presupuesto.xlsx");
                   }}
                 >
-                  <FileXls size={15} weight="duotone" /> Excel completo (Klave)
+                  <FileXls /> Excel completo (Klave)
                 </MenuItem>
                 <MenuItem
                   onSelect={() => {
@@ -281,7 +281,7 @@ export default function PresupuestoPage() {
                     void exportFile("Excel OPUS", `/projects/${id}/export/presupuesto.xlsx?format=opus`, "presupuesto.xlsx");
                   }}
                 >
-                  <FileXls size={15} weight="duotone" /> Excel para OPUS
+                  <FileXls /> Excel para OPUS
                 </MenuItem>
                 <MenuItem
                   onSelect={() => {
@@ -289,7 +289,7 @@ export default function PresupuestoPage() {
                     void exportFile("Excel Neodata", `/projects/${id}/export/presupuesto.xlsx?format=neodata`, "presupuesto.xlsx");
                   }}
                 >
-                  <FileXls size={15} weight="duotone" /> Excel para Neodata
+                  <FileXls /> Excel para Neodata
                 </MenuItem>
                 <MenuItem
                   onSelect={() => {
@@ -297,7 +297,7 @@ export default function PresupuestoPage() {
                     void exportFile("Catálogo de licitación", `/projects/${id}/export/presupuesto.xlsx?format=licitacion`, "presupuesto.xlsx");
                   }}
                 >
-                  <FileXls size={15} weight="duotone" /> Catálogo de licitación (P.U. con letra)
+                  <FileXls /> Catálogo de licitación (P.U. con letra)
                 </MenuItem>
                 <MenuItem
                   onSelect={() => {
@@ -305,7 +305,7 @@ export default function PresupuestoPage() {
                     void exportFile("Catálogo de licitación (descripciones largas)", `/projects/${id}/export/presupuesto.xlsx?format=licitacion_larga`, "presupuesto.xlsx");
                   }}
                 >
-                  <FileXls size={15} weight="duotone" /> Licitación con descripciones LOPSRM
+                  <FileXls /> Licitación con descripciones LOPSRM
                 </MenuItem>
                 <MenuItem
                   onSelect={() => {
@@ -314,7 +314,7 @@ export default function PresupuestoPage() {
                   }}
                   hint="El plano con sus elementos y los generadores, sin cuenta y sin dinero; caduca en 14 días."
                 >
-                  <LinkSimple size={15} weight="duotone" /> Liga para compartir (supervisor o socio)
+                  <LinkSimple /> Liga para compartir (supervisor o socio)
                 </MenuItem>
                 <MenuItem
                   onSelect={() => {
@@ -322,7 +322,7 @@ export default function PresupuestoPage() {
                     void exportFile("Explosión de insumos", `/projects/${id}/export/explosion.xlsx`, "explosion_insumos.xlsx");
                   }}
                 >
-                  <FileXls size={15} weight="duotone" /> Explosión de insumos
+                  <FileXls /> Explosión de insumos
                 </MenuItem>
                 <MenuItem
                   onSelect={() => {
@@ -330,7 +330,7 @@ export default function PresupuestoPage() {
                     exportCsv();
                   }}
                 >
-                  <DownloadSimple size={15} weight="bold" /> CSV simple
+                  <DownloadSimple /> CSV simple
                 </MenuItem>
               </>
             )}
@@ -458,7 +458,7 @@ export default function PresupuestoPage() {
           {costs.boq.lines.length === 0 && (
             <div className="mb-6">
               <EmptyState
-                icon={<FileXls size={22} weight="duotone" />}
+                icon={<FileXls size={20} weight="duotone" />}
                 title="El plano no produjo ningún concepto"
                 hint={
                   costs.boq.warnings[0] ??
@@ -624,7 +624,7 @@ export default function PresupuestoPage() {
               <ul className="space-y-1.5 text-sm text-warning">
                 {costs.boq.warnings.slice(0, 8).map((w, i) => (
                   <li key={i} className="flex items-start gap-2">
-                    <Warning size={15} weight="bold" className="mt-0.5 shrink-0" />
+                    <Warning className="mt-0.5 shrink-0" />
                     {w}
                   </li>
                 ))}
@@ -683,8 +683,7 @@ function PhaseGroup({
             className="inline-flex items-center gap-1.5 rounded-sm uppercase"
           >
             <CaretDown
-              size={11}
-              weight="bold"
+              size={12}
               className={`transition-transform ${collapsed ? "-rotate-90" : ""}`}
             />
             {phase}
@@ -782,7 +781,7 @@ function PhaseGroup({
                       }}
                       className="rounded-md p-0.5 text-faint opacity-0 transition-opacity hover:text-accent group-hover/qty:opacity-100 focus:opacity-100"
                     >
-                      <PencilSimpleLine size={13} />
+                      <PencilSimpleLine size={14} />
                     </button>
                   </span>
                 }
@@ -1075,10 +1074,10 @@ function QuantityEditor({
         className="min-w-48 flex-1 px-2 py-1"
       />
       <Button size="sm" variant="primary" onClick={save} disabled={busy}>
-        <Check size={13} weight="bold" /> Fijar
+        <Check size={14} /> Fijar
       </Button>
       <Button size="sm" onClick={() => onDone(null)} disabled={busy} aria-label="Cancelar">
-        <X size={13} weight="bold" />
+        <X size={14} />
       </Button>
       {error && <span className="text-xs text-danger">{error}</span>}
     </div>
@@ -1186,7 +1185,7 @@ function AdjustmentsPanel({
         <ul className="mb-4 divide-y divide-border">
           {adjustments.map((adjustment) => (
             <li key={adjustment.adjustment_id} className="flex items-center gap-3 py-2.5">
-              <PencilSimpleLine size={15} className="shrink-0 text-muted" />
+              <PencilSimpleLine className="shrink-0 text-muted" />
               <div className="min-w-0 flex-1 text-sm">
                 <span className="font-mono text-xs text-muted">
                   {adjustment.concept_code}

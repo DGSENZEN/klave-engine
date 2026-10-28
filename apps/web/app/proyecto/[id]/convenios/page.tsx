@@ -242,7 +242,7 @@ export default function ConveniosPage() {
                 ? `${estado.plazo_pct.toFixed(1)} % sobre ${estado.plazo_original_dias} días originales`
                 : "Captura el plazo del contrato para medirlo contra el techo."
             }
-            icon={<Scales size={18} />}
+            icon={<Scales />}
           />
         </div>
       )}
@@ -269,7 +269,7 @@ export default function ConveniosPage() {
                 variant="secondary"
                 onClick={() => void proponer(e.estimacion.numero)}
               >
-                <FilePlus size={16} />
+                <FilePlus />
                 Armar convenio de la estimación {e.estimacion.numero}
               </Button>
             ))}
@@ -351,7 +351,7 @@ export default function ConveniosPage() {
 
       {!cargando && convenios.length === 0 && !borrador && (
         <EmptyState
-          icon={<Scales size={28} />}
+          icon={<Scales size={20} />}
           title="El contrato sigue como se firmó"
           hint="Cuando una estimación mida más de lo contratado, aquí se arma el convenio que lo respalda."
         />
@@ -386,16 +386,17 @@ export default function ConveniosPage() {
                 </div>
               </div>
               <IconButton
+                size="sm"
                 aria-label={`Eliminar el convenio ${c.numero}`}
                 onClick={() => setConfirmar(c.numero)}
               >
-                <Trash size={16} />
+                <Trash />
               </IconButton>
             </div>
           </div>
           {!c.motivo && (
             <Callout tone="warning">
-              <Warning size={16} /> Este convenio no tiene causa escrita. La ley pide que
+              <Warning /> Este convenio no tiene causa escrita. La ley pide que
               esté justificado y una revisión lo va a buscar.
             </Callout>
           )}

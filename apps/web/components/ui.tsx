@@ -7,7 +7,7 @@ import type {
   TdHTMLAttributes,
   ThHTMLAttributes,
 } from "react";
-import { CaretDown, Info, Warning, WarningCircle } from "@phosphor-icons/react";
+import { CaretDown, CircleNotch, Info, Warning, WarningCircle } from "@phosphor-icons/react";
 
 export function Card({
   children,
@@ -206,24 +206,32 @@ export function SectionTitle({ children, sub }: { children: ReactNode; sub?: str
   );
 }
 
-/* ---- Buttons: one flat system shared by <Button> and link-buttons. ---- */
+/* ---- Buttons: one system shared by <Button>, link-buttons and icon buttons.
+ * Three heights (28 / 32 / 36), one press: a 75 ms sink to 97 % that
+ * releases on a 150 ms ease-out. Ink carries a lit top edge; outlined
+ * buttons a hairline lift. Nothing bounces. ---- */
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "accent";
-export type ButtonSize = "sm" | "md";
+export type ButtonSize = "sm" | "md" | "lg";
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
-  primary: "bg-primary text-primary-fg hover:bg-primary-hover",
+  primary: "bg-primary text-primary-fg shadow-btn-ink hover:bg-primary-hover",
   secondary:
-    "border border-border bg-surface text-foreground hover:border-border-strong hover:bg-surface-2",
-  ghost: "text-muted hover:bg-surface-2 hover:text-foreground",
-  danger: "bg-danger-soft text-danger hover:opacity-85",
-  accent: "bg-accent text-accent-fg hover:bg-accent-hover",
+    "border border-border bg-surface text-foreground shadow-btn hover:border-border-strong hover:bg-surface-2 active:bg-surface-3",
+  ghost: "text-muted hover:bg-surface-2 hover:text-foreground active:bg-surface-3",
+  danger: "bg-danger-soft text-danger hover:brightness-[0.97] active:brightness-95",
+  accent: "bg-accent text-accent-fg shadow-btn-ink hover:bg-accent-hover",
 };
 
 const BUTTON_SIZES: Record<ButtonSize, string> = {
   sm: "h-7 gap-1.5 px-2.5 text-[13px]",
-  md: "h-8 px-3 text-[13px]",
+  md: "h-8 gap-2 px-3 text-[13px]",
+  lg: "h-9 gap-2 px-4 text-sm",
 };
+
+/** The press shared by every clickable control that is not a link of text. */
+export const PRESS =
+  "transition-[color,background-color,border-color,box-shadow,scale,filter] duration-150 ease-out active:scale-[0.97] active:duration-75 motion-reduce:active:scale-100";
 
 /** Shared classes so <Link> can look identical to <Button>. */
 export function buttonClasses(
@@ -231,36 +239,79 @@ export function buttonClasses(
   size: ButtonSize = "md",
   className = "",
 ): string {
-  return `inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 ${BUTTON_SIZES[size]} ${BUTTON_VARIANTS[variant]} ${className}`;
+  return `relative inline-flex select-none items-center justify-center whitespace-nowrap rounded-md font-medium ${PRESS} disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none aria-disabled:pointer-events-none aria-disabled:opacity-50 ${BUTTON_SIZES[size]} ${BUTTON_VARIANTS[variant]} ${className}`;
 }
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  /** Working: the label stays (so the button keeps its width) under a spinner. */
+  loading?: boolean;
 };
 
 export function Button({
   variant = "secondary",
   size = "md",
   className = "",
+  loading = false,
+  disabled,
+  children,
   ...props
 }: ButtonProps) {
-  return <button {...props} className={buttonClasses(variant, size, className)} />;
+  return (
+    <button
+      {...props}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      className={buttonClasses(variant, size, className)}
+    >
+      {loading ? (
+        <>
+          <span className="invisible contents">{children}</span>
+          <span className="absolute inset-0 flex items-center justify-center">
+            <CircleNotch size={size === "sm" ? 14 : 16} className="animate-spin" />
+          </span>
+        </>
+      ) : (
+        children
+      )}
+    </button>
+  );
 }
 
 type IconButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   "aria-label": string;
+  size?: "sm" | "md";
+  /** Tooltip text; defaults to the aria-label. Pass false for none. */
+  tip?: string | false;
+  /** Anchor the tooltip to the right edge (controls at the screen's edge). */
+  tipAlign?: "end";
 };
 
-/** Icon-only action; aria-label is required by the type. */
-export function IconButton({ className = "", ...props }: IconButtonProps) {
+/** Square icon-only action (28 or 32 px); aria-label is required by the type. */
+export function IconButton({
+  className = "",
+  size = "md",
+  tip,
+  tipAlign,
+  ...props
+}: IconButtonProps) {
   return (
     <button
       type="button"
+      data-tip={tip === false ? undefined : (tip ?? props["aria-label"])}
+      data-tip-align={tipAlign}
       {...props}
-      className={`rounded-md p-1 text-muted transition-colors hover:bg-surface-2 hover:text-foreground disabled:pointer-events-none disabled:opacity-50 ${className}`}
+      className={iconButtonClasses(size, className)}
     />
   );
+}
+
+/** Shared classes so a <Link> can be an icon button too. */
+export function iconButtonClasses(size: "sm" | "md" = "md", className = ""): string {
+  return `relative inline-flex shrink-0 items-center justify-center rounded-md text-muted ${PRESS} hover:bg-surface-2 hover:text-foreground active:bg-surface-3 disabled:pointer-events-none disabled:opacity-50 aria-expanded:bg-surface-2 aria-expanded:text-foreground ${
+    size === "sm" ? "h-7 w-7" : "h-8 w-8"
+  } ${className}`;
 }
 
 export function Input({
@@ -390,15 +441,15 @@ export function Callout({
   const tones: Record<string, { box: string; icon: ReactNode }> = {
     danger: {
       box: "bg-danger-soft text-danger",
-      icon: <WarningCircle size={16} weight="bold" className="shrink-0" />,
+      icon: <WarningCircle className="shrink-0" />,
     },
     warning: {
       box: "bg-warning-soft text-warning",
-      icon: <Warning size={16} weight="bold" className="shrink-0" />,
+      icon: <Warning className="shrink-0" />,
     },
     info: {
       box: "bg-accent-soft text-accent",
-      icon: <Info size={16} weight="bold" className="shrink-0" />,
+      icon: <Info className="shrink-0" />,
     },
   };
   return (
@@ -620,7 +671,7 @@ export function Disclosure({
           {summary && <div className="text-xs text-muted">{summary}</div>}
         </div>
         <CaretDown
-          size={14}
+          size={12}
           className={`shrink-0 text-muted transition ${open ? "rotate-180" : ""}`}
         />
       </button>

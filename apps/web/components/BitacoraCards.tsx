@@ -39,7 +39,7 @@ export function GastoIACard() {
     <Card className="p-5">
       <SectionTitle sub="Estimado con las tarifas que declaró quien administra este servidor, no un cargo leído del proveedor. Sirve para ver tendencia y frenar a tiempo, no para conciliar una factura.">
         <span className="inline-flex items-center gap-2">
-          <CurrencyDollar size={17} weight="duotone" /> Gasto de IA este mes
+          <CurrencyDollar /> Gasto de IA este mes
         </span>
       </SectionTitle>
       {!gasto ? (
@@ -120,7 +120,7 @@ export function ErroresCard() {
     <Card className="p-5">
       <SectionTitle sub="Los últimos siete días, agrupados. Se guarda aquí y no se manda a ningún tercero: en una traza viajan nombres de obra y de cliente.">
         <span className="inline-flex items-center gap-2">
-          <Bug size={17} weight="duotone" /> Qué se ha roto
+          <Bug /> Qué se ha roto
         </span>
       </SectionTitle>
       {!errores ? (

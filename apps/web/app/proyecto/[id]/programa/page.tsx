@@ -281,7 +281,7 @@ export default function ProgramaPage() {
 
       {activities.length === 0 ? (
         <EmptyState
-          icon={<CalendarBlank size={22} weight="duotone" />}
+          icon={<CalendarBlank size={20} weight="duotone" />}
           title="Este procesamiento no incluye programa"
           hint="Vuelve a procesar el proyecto para generar el programa de obra."
         />

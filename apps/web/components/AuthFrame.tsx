@@ -33,7 +33,7 @@ export function AuthFrame({
         <div className="mb-8 flex items-start justify-between gap-4">
           <Link href="/bienvenida" className="flex items-center gap-3.5">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-fg">
-              <Buildings size={22} weight="duotone" />
+              <Buildings size={20} weight="duotone" />
             </div>
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>

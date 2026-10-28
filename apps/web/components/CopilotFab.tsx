@@ -5,6 +5,7 @@ import { usePathname, useParams } from "next/navigation";
 import { Sparkle } from "@phosphor-icons/react";
 import { getAcciones } from "@/lib/api";
 import { Copilot } from "@/components/Copilot";
+import { PRESS } from "@/components/ui";
 
 /**
  * El copiloto, siempre a la mano.
@@ -74,7 +75,7 @@ export function CopilotFab() {
             ? `Pregúntale a Klave — ${pendientes} cosa(s) que puede hacer`
             : "Pregúntale a Klave"
         }
-        className="toast-in fixed bottom-5 right-5 z-[60] flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-fg shadow-lg transition hover:scale-105 hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        className={`toast-in fixed bottom-5 right-5 z-[60] flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-fg shadow-lg ${PRESS} hover:bg-primary-hover`}
       >
         <Sparkle size={20} weight="duotone" />
         {pendientes > 0 && (

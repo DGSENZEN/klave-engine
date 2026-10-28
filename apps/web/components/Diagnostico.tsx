@@ -55,7 +55,7 @@ const TIERS: Record<
     label: "Bloqueante",
     count: (n) => `${n} bloqueante${n === 1 ? "" : "s"}`,
     sub: "entregarlo así estaría mal",
-    icon: <Prohibit size={15} weight="bold" />,
+    icon: <Prohibit />,
     box: "border-danger/35 bg-danger-soft",
     text: "text-danger",
   },
@@ -63,7 +63,7 @@ const TIERS: Record<
     label: "Dinero faltante",
     count: (n) => `${n} con dinero faltante`,
     sub: "hay cantidad sin costo: el total va corto",
-    icon: <WarningCircle size={15} weight="bold" />,
+    icon: <WarningCircle />,
     box: "border-warning/40 bg-warning-soft",
     text: "text-warning",
   },
@@ -71,7 +71,7 @@ const TIERS: Record<
     label: "Por revisar",
     count: (n) => `${n} por revisar`,
     sub: "falta una decisión tuya; el número se sostiene sin ella",
-    icon: <Warning size={15} weight="bold" />,
+    icon: <Warning />,
     box: "border-border bg-surface-2/60",
     text: "text-foreground",
   },
@@ -178,8 +178,7 @@ function FindingHeadline({
     >
       {children}
       <CaretDown
-        size={11}
-        weight="bold"
+        size={12}
         className={`self-center text-faint transition-transform group-hover:text-foreground ${
           open ? "rotate-180" : ""
         }`}
@@ -245,7 +244,7 @@ function HallazgoCard({
         </div>
         {link && (
           <Link href={link} className={`${buttonClasses("ghost", "sm")} shrink-0`}>
-            Ir <ArrowRight size={13} weight="bold" />
+            Ir <ArrowRight size={14} />
           </Link>
         )}
       </div>
@@ -324,7 +323,7 @@ function HallazgoGrupoCard({
                 className="mt-1.5 inline-flex items-center gap-1 text-xs text-muted hover:text-foreground"
               >
                 Ver los {grupo.count} conceptos
-                <CaretDown size={11} weight="bold" className={expanded ? "rotate-180" : ""} />
+                <CaretDown size={12} className={expanded ? "rotate-180" : ""} />
               </button>
               {expanded && (
                 <ul className="mt-1.5 space-y-2 rounded-lg border border-border/60 bg-surface-2/40 p-2">
@@ -360,7 +359,7 @@ function HallazgoGrupoCard({
         </div>
         {link && (
           <Link href={link} className={`${buttonClasses("ghost", "sm")} shrink-0`}>
-            Ir <ArrowRight size={13} weight="bold" />
+            Ir <ArrowRight size={14} />
           </Link>
         )}
       </div>
@@ -428,7 +427,7 @@ export function AccionDeKlave({
         aria-expanded={abierto}
         className={buttonClasses("secondary", "sm")}
       >
-        <Sparkle size={14} weight="duotone" /> Que Klave lo haga
+        <Sparkle size={14} /> Que Klave lo haga
       </button>
       {abierto && (
         <div className="mt-2 rounded-lg border border-border bg-surface-2/50 p-3">
@@ -521,7 +520,7 @@ export function DiagnosticoPanel({
     return (
       <Card className="mb-5 p-4">
         <div className="flex items-center gap-2.5">
-          <CheckCircle size={18} weight="fill" className="shrink-0 text-success" />
+          <CheckCircle weight="fill" className="shrink-0 text-success" />
           <div>
             <div className="text-sm font-medium">Sin hallazgos abiertos</div>
             <p className="text-sm text-muted">{diagnostico.resumen}</p>
@@ -602,7 +601,6 @@ function TierGroup({
         <span className="tabular ml-auto text-xs text-muted">{count}</span>
         <CaretDown
           size={12}
-          weight="bold"
           className={`text-faint ${open ? "rotate-180" : ""}`}
         />
         <span className="basis-full pl-6 text-xs text-muted">{tier.sub}</span>
@@ -650,12 +648,12 @@ function Criterios({ items }: { items: string[] }) {
         aria-expanded={open}
         className="flex w-full flex-wrap items-center gap-x-2 px-4 py-2 text-left transition-colors hover:bg-surface-2/50"
       >
-        <Info size={15} weight="bold" className="text-faint" />
+        <Info className="text-faint" />
         <span className="text-xs font-semibold uppercase tracking-wide text-muted">
           Criterios adoptados
         </span>
         <span className="tabular ml-auto text-xs text-muted">{items.length}</span>
-        <CaretDown size={12} weight="bold" className={`text-faint ${open ? "rotate-180" : ""}`} />
+        <CaretDown size={12} className={`text-faint ${open ? "rotate-180" : ""}`} />
         <span className="basis-full pl-6 text-xs text-muted">lo que Klave decidió, y por qué</span>
       </button>
       {open && (
@@ -700,7 +698,7 @@ export function ExportBlockedDialog({
     <div className="mb-5">
       <Card className="border-danger/40 p-5">
         <div className="mb-2 flex items-center gap-2">
-          <Prohibit size={17} weight="bold" className="shrink-0 text-danger" />
+          <Prohibit className="shrink-0 text-danger" />
           <h2 className="font-medium">«{label}» no se generó</h2>
         </div>
         <p className="text-sm text-muted">{message}</p>
@@ -775,7 +773,7 @@ export function DiagnosticoStrip({
     >
       <span className={tier.text}>{tier.icon}</span>
       <span className="min-w-0 flex-1">{diagnostico.resumen}</span>
-      <ArrowRight size={14} weight="bold" className={`shrink-0 ${tier.text}`} />
+      <ArrowRight size={14} className={`shrink-0 ${tier.text}`} />
     </Link>
   );
 }

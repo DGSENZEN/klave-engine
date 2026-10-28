@@ -619,7 +619,7 @@ export function PlanoCanvas({
         onClick={fit}
         className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium shadow-sm transition hover:bg-surface-2"
       >
-        <CornersOut size={13} weight="bold" /> Ajustar vista
+        <CornersOut size={14} /> Ajustar vista
       </button>
       {tooltip && (
         <div

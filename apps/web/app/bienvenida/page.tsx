@@ -175,7 +175,7 @@ function SessionCard({ user }: { user: AuthUser }) {
     return (
       <Card className="mb-6 p-6 text-center">
         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-warning-soft text-warning">
-          <HourglassMedium size={22} weight="duotone" />
+          <HourglassMedium size={20} weight="duotone" />
         </div>
         <p className="font-medium">Tu cuenta espera aprobación</p>
         <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
@@ -183,7 +183,7 @@ function SessionCard({ user }: { user: AuthUser }) {
           puedas entrar a los proyectos.
         </p>
         <button type="button" onClick={onLogout} className={buttonClasses("ghost", "sm", "mt-4")}>
-          <SignOut size={14} weight="bold" /> Cerrar sesión
+          <SignOut size={14} /> Cerrar sesión
         </button>
       </Card>
     );
@@ -209,7 +209,7 @@ function SessionCard({ user }: { user: AuthUser }) {
           </div>
         </div>
         <button type="button" onClick={onLogout} className={buttonClasses("ghost", "sm")}>
-          <SignOut size={14} weight="bold" /> Cerrar sesión
+          <SignOut size={14} /> Cerrar sesión
         </button>
       </div>
       <form onSubmit={continueToWorkspace}>
@@ -225,7 +225,7 @@ function SessionCard({ user }: { user: AuthUser }) {
             className="flex-1"
           />
           <button type="submit" className={buttonClasses("primary")}>
-            Continuar <ArrowRight size={15} weight="bold" />
+            Continuar <ArrowRight />
           </button>
         </div>
       </form>
@@ -233,7 +233,7 @@ function SessionCard({ user }: { user: AuthUser }) {
         href="/cuenta"
         className="mt-4 flex items-center gap-2 border-t border-border pt-3 text-xs font-medium text-muted transition hover:text-foreground"
       >
-        <UserCircle size={14} weight="bold" /> Tu cuenta: contraseña, correo y sesiones
+        <UserCircle size={14} /> Tu cuenta: contraseña, correo y sesiones
       </Link>
     </Card>
   );
@@ -298,7 +298,7 @@ function AuthCard({
     return (
       <Card className="mb-6 p-6 text-center">
         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-warning-soft text-warning">
-          <HourglassMedium size={22} weight="duotone" />
+          <HourglassMedium size={20} weight="duotone" />
         </div>
         <p className="font-medium">Cuenta creada</p>
         <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
@@ -339,7 +339,7 @@ function AuthCard({
       {googleEnabled && (
         <>
           <a href={googleLoginUrl()} className={buttonClasses("primary", "md", "w-full")}>
-            <GoogleLogo size={16} weight="bold" /> Continuar con Google
+            <GoogleLogo /> Continuar con Google
           </a>
           <div className="my-5 flex items-center gap-3 text-xs text-faint">
             <span className="h-px flex-1 bg-border" />
@@ -419,7 +419,7 @@ function AuthCard({
         )}
         {error && <p className="text-sm text-danger">{error}</p>}
         <button type="submit" className={buttonClasses("primary", "md", "w-full")} disabled={busy}>
-          {tab === "login" ? "Entrar" : "Crear cuenta"} <ArrowRight size={15} weight="bold" />
+          {tab === "login" ? "Entrar" : "Crear cuenta"} <ArrowRight />
         </button>
       </form>
       {tab === "register" && (
@@ -499,7 +499,7 @@ function OpenModeCards({ googleEnabled }: { googleEnabled: boolean }) {
               className="flex-1"
             />
             <button type="submit" className={buttonClasses("primary")} disabled={touched && !valid}>
-              Comenzar <ArrowRight size={15} weight="bold" />
+              Comenzar <ArrowRight />
             </button>
           </div>
           {touched && !valid && (
@@ -517,7 +517,7 @@ function OpenModeCards({ googleEnabled }: { googleEnabled: boolean }) {
           className="flex w-full items-center gap-3 text-left"
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-foreground">
-            <UsersThree size={18} weight="duotone" />
+            <UsersThree />
           </div>
           <div className="flex-1">
             <div className="text-sm font-medium">Activar cuentas del taller</div>

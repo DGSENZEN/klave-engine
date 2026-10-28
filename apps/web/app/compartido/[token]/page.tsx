@@ -118,7 +118,7 @@ function Compartido() {
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex flex-wrap items-center gap-3 border-b border-border bg-surface px-5 py-3">
-        <Eye size={18} className="text-muted" />
+        <Eye className="text-muted" />
         <div className="min-w-0 flex-1">
           <div className="truncate font-semibold">{meta.project_name}</div>
           <div className="text-xs text-muted">
@@ -129,7 +129,7 @@ function Compartido() {
           href={sharedGeneradoresUrl(token)}
           className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface-2"
         >
-          <DownloadSimple size={15} weight="bold" /> Generadores (Excel)
+          <DownloadSimple /> Generadores (Excel)
         </a>
       </header>
       <div className="relative min-h-0 flex-1">

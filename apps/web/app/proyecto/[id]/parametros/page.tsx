@@ -542,7 +542,7 @@ export default function ParametrosPage() {
           </div>
           <div className="flex items-center gap-2">
             <Button onClick={() => setConfirm("reset")} disabled={busy || !!conflict}>
-              <ArrowCounterClockwise size={15} weight="bold" /> Restablecer
+              <ArrowCounterClockwise /> Restablecer
             </Button>
             <Button
               variant="primary"
@@ -551,9 +551,9 @@ export default function ParametrosPage() {
               className="px-4"
             >
               {busy ? (
-                <CircleNotch size={15} className="animate-spin" />
+                <CircleNotch className="animate-spin" />
               ) : (
-                <Calculator size={15} weight="bold" />
+                <Calculator />
               )}
               {dirty ? "Recalcular" : "Actualizado"}
             </Button>

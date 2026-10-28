@@ -240,7 +240,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       <div className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6">
         {uploadWarning && <Callout tone="warning">{uploadWarning}</Callout>}
         <Link href="/" className="mb-8 inline-flex items-center gap-2 text-sm text-muted">
-          <Buildings size={16} weight="duotone" /> Klave
+          <Buildings /> Klave
         </Link>
         <h1 className="text-xl font-semibold">
           {noAccess ? "No tienes acceso a esta obra" : "No se pudo abrir el proyecto"}
@@ -280,7 +280,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       <div className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6">
         {uploadWarning && <Callout tone="warning">{uploadWarning}</Callout>}
         <Link href="/" className="mb-8 inline-flex items-center gap-2 text-sm text-muted">
-          <Buildings size={16} weight="duotone" /> Klave
+          <Buildings /> Klave
         </Link>
         <h1 className="text-xl font-semibold">
           {failed ? "No se pudo procesar el plano" : "Este proyecto aún no se procesa"}
@@ -308,7 +308,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
         href="/"
         className="mb-8 inline-flex items-center gap-2 text-sm text-muted transition hover:text-foreground"
       >
-        <Buildings size={16} weight="duotone" /> Klave
+        <Buildings /> Klave
       </Link>
       <h1 className="flex items-baseline gap-3 text-xl font-semibold">
         {failed ? "No se pudo procesar el plano" : status.state === "queued" ? "En cola de procesamiento" : "Procesando tu plano…"}
@@ -387,7 +387,7 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
       )}
       {failed && (
         <Link href="/" className={buttonClasses("primary", "md", "mt-6 w-fit")}>
-          <ArrowLeft size={15} weight="bold" /> Volver e intentar de nuevo
+          <ArrowLeft /> Volver e intentar de nuevo
         </Link>
       )}
     </div>

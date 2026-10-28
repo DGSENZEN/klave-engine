@@ -184,7 +184,7 @@ export function RubrosEditor({
                         className="text-muted transition hover:text-danger"
                         aria-label={`Quitar ${rubro.concepto || `renglón ${index + 1}`}`}
                       >
-                        <Trash size={15} weight="duotone" />
+                        <Trash />
                       </button>
                     )}
                   </Td>

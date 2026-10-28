@@ -192,7 +192,7 @@ export default function FiniquitoPage() {
         sub="Todo lo que pasó en la obra contra todo lo que se pagó, con cada saldo por su nombre."
         actions={
           <Button onClick={() => void guardar()} disabled={guardando}>
-            <FloppyDisk size={16} />
+            <FloppyDisk />
             {guardando ? "Guardando…" : "Guardar finiquito"}
           </Button>
         }
@@ -232,7 +232,7 @@ export default function FiniquitoPage() {
               ? "El contrato cierra en ceros."
               : `A favor ${resumen.a_favor_de === "contratista" ? "del contratista" : "de la contratante"}.`
           }
-          icon={<Flag size={18} />}
+          icon={<Flag />}
         />
       </div>
 

@@ -114,7 +114,7 @@ export function SuggestionsBar({
         }
       >
         <span className="inline-flex items-center gap-1.5">
-          <Sparkle size={15} weight="fill" />
+          <Sparkle weight="fill" />
           {pending.length === 1
             ? "1 concepto coincide con tu catálogo al 80 % o más. Usar tu clave pone tu descripción y tu precio en este y en los próximos proyectos."
             : `${pending.length} conceptos coinciden con tu catálogo al 80 % o más. Usar tus claves pone tu descripción y tu precio en este y en los próximos proyectos.`}

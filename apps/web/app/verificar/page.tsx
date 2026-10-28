@@ -58,7 +58,7 @@ export default function VerificarPage() {
       ) : (
         <Card className="p-6 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success-soft text-success">
-            <CheckCircle size={24} weight="duotone" />
+            <CheckCircle size={20} weight="duotone" />
           </div>
           <p className="font-medium">Correo confirmado</p>
           <p className="mx-auto mt-1 max-w-sm text-sm text-muted">

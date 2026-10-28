@@ -1,5 +1,6 @@
 "use client";
 
+import { iconButtonClasses, PRESS } from "@/components/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, usePathname } from "next/navigation";
 import {
@@ -189,7 +190,7 @@ export function Copilot({ open, onClose }: { open: boolean; onClose: () => void 
     >
       <header className="flex items-center gap-2.5 border-b border-border px-3 py-2.5">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
-          <Sparkle size={15} weight="duotone" />
+          <Sparkle />
         </span>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-semibold leading-tight">Klave</div>
@@ -203,7 +204,7 @@ export function Copilot({ open, onClose }: { open: boolean; onClose: () => void 
           type="button"
           onClick={onClose}
           aria-label="Cerrar"
-          className="shrink-0 rounded-md p-1 text-faint transition-colors hover:bg-surface-2 hover:text-foreground"
+          className={iconButtonClasses("sm", "text-faint")}
         >
           <X size={14} />
         </button>
@@ -220,7 +221,7 @@ export function Copilot({ open, onClose }: { open: boolean; onClose: () => void 
         {projectId && (aplicables.length > 0 || pendientes.length > 0) && (
           <section className="mb-3">
             <h3 className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
-              <Lightning size={11} weight="fill" className="text-accent" />
+              <Lightning size={14} weight="fill" className="text-accent" />
               Puedo hacer
             </h3>
             <div className="space-y-1.5">
@@ -285,7 +286,7 @@ export function Copilot({ open, onClose }: { open: boolean; onClose: () => void 
                 <div className="mt-1">
                   {turno.fundamentada === false && (
                     <p className="mb-1 flex items-start gap-1 text-[11px] leading-snug text-warning">
-                      <Warning size={11} weight="bold" className="mt-0.5 shrink-0" />
+                      <Warning size={14} className="mt-0.5 shrink-0" />
                       Sin buen respaldo en mis fuentes: tómalo como pista.
                     </p>
                   )}
@@ -304,7 +305,7 @@ export function Copilot({ open, onClose }: { open: boolean; onClose: () => void 
           ))}
           {pensando && (
             <p className="flex items-center gap-1.5 text-[13px] text-muted">
-              <CircleNotch size={13} className="animate-spin" /> Buscando…
+              <CircleNotch size={14} className="animate-spin" /> Buscando…
             </p>
           )}
         </div>
@@ -330,9 +331,9 @@ export function Copilot({ open, onClose }: { open: boolean; onClose: () => void 
             type="submit"
             disabled={pensando || !texto.trim()}
             aria-label="Preguntar"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-fg transition disabled:opacity-40"
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-fg shadow-btn-ink ${PRESS} hover:bg-primary-hover disabled:opacity-40 disabled:shadow-none`}
           >
-            <ArrowUp size={13} weight="bold" />
+            <ArrowUp size={14} />
           </button>
         </div>
       </form>
@@ -359,13 +360,12 @@ function AccionCompacta({
         aria-expanded={abierto}
         className="flex w-full items-start gap-1.5 px-2.5 py-1.5 text-left"
       >
-        <Lightning size={12} weight="fill" className="mt-1 shrink-0 text-accent" />
+        <Lightning size={14} weight="fill" className="mt-1 shrink-0 text-accent" />
         <span className="min-w-0 flex-1 text-[13px] font-medium leading-snug">
           {accion.titulo}
         </span>
         <CaretDown
           size={12}
-          weight="bold"
           className={`mt-1 shrink-0 text-faint ${abierto ? "rotate-180" : ""}`}
         />
       </button>

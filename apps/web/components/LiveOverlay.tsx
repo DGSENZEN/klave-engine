@@ -2,7 +2,7 @@
 
 import { ClockCounterClockwise, X, Check } from "@phosphor-icons/react";
 import { useProjectLive } from "@/components/ProjectLive";
-import { Avatar, IconButton, Skeleton } from "@/components/ui";
+import { Avatar, IconButton, iconButtonClasses, Skeleton } from "@/components/ui";
 import { timeAgo } from "@/lib/time";
 
 /*
@@ -28,11 +28,12 @@ export function ChangesTrigger({
         type="button"
         onClick={onClick}
         aria-label="Ver cambios recientes"
-        className="relative rounded-md p-2 text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+        data-tip="Cambios recientes"
+        className={iconButtonClasses()}
       >
-        <ClockCounterClockwise size={18} weight="bold" />
+        <ClockCounterClockwise />
         {unseen > 0 && (
-          <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold tabular text-accent-fg">
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold tabular text-accent-fg">
             {unseen}
           </span>
         )}
@@ -45,7 +46,7 @@ export function ChangesTrigger({
       onClick={onClick}
       className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
     >
-      <ClockCounterClockwise size={16} weight="bold" />
+      <ClockCounterClockwise />
       Cambios
       {unseen > 0 && (
         <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold tabular text-accent-fg">
@@ -62,7 +63,7 @@ export function ChangesPanel({ onClose }: { onClose: () => void }) {
     <div className="toast-in fixed right-3 top-16 z-50 w-[calc(100vw-1.5rem)] max-w-80 overflow-hidden rounded-xl border border-border bg-surface shadow-lg lg:bottom-14 lg:left-3 lg:right-auto lg:top-auto">
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div className="flex items-center gap-2 text-sm font-semibold">
-          <ClockCounterClockwise size={15} weight="bold" className="text-accent" />
+          <ClockCounterClockwise className="text-accent" />
           Cambios
           {timeline.length > 0 && (
             <span className="tabular text-xs font-normal text-muted">{timeline.length}</span>
@@ -74,11 +75,11 @@ export function ChangesPanel({ onClose }: { onClose: () => void }) {
               aria-label="Limpiar historial"
               onClick={clearTimeline}
             >
-              <Check size={14} weight="bold" />
+              <Check size={14} />
             </IconButton>
           )}
           <IconButton aria-label="Ocultar cambios" onClick={onClose}>
-            <X size={14} weight="bold" />
+            <X size={14} />
           </IconButton>
         </div>
       </div>
@@ -133,7 +134,7 @@ export function LiveToasts() {
           <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent" />
           <div className="min-w-0 flex-1">{toast.message}</div>
           <IconButton aria-label="Cerrar aviso" onClick={() => dismissToast(toast.id)}>
-            <X size={14} weight="bold" />
+            <X size={14} />
           </IconButton>
         </div>
       ))}
