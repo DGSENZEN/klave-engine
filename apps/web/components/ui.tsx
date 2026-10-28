@@ -226,7 +226,8 @@ const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
 const BUTTON_SIZES: Record<ButtonSize, string> = {
   sm: "h-7 gap-1.5 px-2.5 text-[13px]",
   md: "h-8 gap-2 px-3 text-[13px]",
-  lg: "h-9 gap-2 px-4 text-sm",
+  /** Single-task forms (access, new project): matches an Input with `h-10`. */
+  lg: "h-10 gap-2 px-4 text-sm",
 };
 
 /** The press shared by every clickable control that is not a link of text. */
@@ -323,6 +324,34 @@ export function Input({
       {...props}
       className={`rounded-md border border-border bg-surface px-2.5 py-[5px] text-data transition-colors placeholder:text-faint focus:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring ${className}`}
     />
+  );
+}
+
+/** Label above, control, optional hint below. Labels stay visible while typing. */
+export function Field({
+  label,
+  htmlFor,
+  aside,
+  hint,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  aside?: ReactNode;
+  hint?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <div className="mb-1.5 flex items-baseline justify-between gap-3">
+        <label htmlFor={htmlFor} className="text-sm font-medium">
+          {label}
+        </label>
+        {aside}
+      </div>
+      {children}
+      {hint && <div className="mt-1.5 text-xs text-muted">{hint}</div>}
+    </div>
   );
 }
 
@@ -487,7 +516,7 @@ export function Avatar({
   self?: boolean;
   size?: "xs" | "sm" | "md";
   title?: string;
-  /** Optional photo (e.g. Google account); falls back to initials. */
+  /** Optional photo; falls back to initials. */
   src?: string | null;
 }) {
   const sizes: Record<string, string> = {

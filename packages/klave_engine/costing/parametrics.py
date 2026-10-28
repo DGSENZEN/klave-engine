@@ -158,7 +158,7 @@ def apply_parametrics(
         }.get(basis_key, basis_key.replace("local:", "local "))
         note = (
             f"Paramétrico: {factor:g} {concept.unit} por {basis_label} × {value:,.2f} "
-            f"({how}) — fuente: {source}. Propuesta para revisar, no lectura del plano."
+            f"({how}), fuente: {source}. Propuesta para revisar: el plano no la da."
         )
         if rule.get("note"):
             note += f" {rule['note']}"

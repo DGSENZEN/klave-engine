@@ -181,9 +181,9 @@ def proponer(
                 )
             if cambios:
                 falta = (
-                    f" No traigo referencia en la unidad de {', '.join(sin_referencia)} "
-                    f"para f'c={', '.join(str(f) for f in sorted(sin_fuente))}: esos los "
-                    "ajustas tú."
+                    f" No tengo referencia en la unidad de {', '.join(sin_referencia)} "
+                    f"para f'c={', '.join(str(f) for f in sorted(sin_fuente))}: ajusta esos "
+                    "conceptos a mano."
                     if sin_referencia
                     else ""
                 )
@@ -193,7 +193,7 @@ def proponer(
                         titulo="Adoptar el P.U. publicado del f'c que declara el plano",
                         descripcion=(
                             f"Cambia el P.U. de {len(cambios)} concepto(s) al precio "
-                            "publicado del tabulador para el f'c correcto, y corrige su "
+                            "publicado del tabulador para el f'c correcto y corrige su "
                             "descripción al f'c que se está cobrando. El importe cambia y "
                             "el presupuesto se recalcula." + falta
                         ),
@@ -226,8 +226,8 @@ def proponer(
                     ),
                     endpoint=f"/catalog/concepts/{codigo}/adopt",
                     requiere=(
-                        "Elige de dónde sale el precio: no tengo forma de saber cuánto "
-                        "cuesta sin que me lo digas o me apuntes a una fuente."
+                        "Elige de dónde sale el precio; sin una fuente no puedo saber "
+                        "cuánto cuesta."
                     ),
                     reversible="Se quita con «Volver a la matriz».",
                     hallazgo_id=hallazgo.id,
@@ -241,9 +241,9 @@ def proponer(
                     tipo="definir_parametro",
                     titulo="Definir el nivel de plataforma",
                     descripcion=(
-                        "Con el nivel de proyecto, el motor calcula corte y terraplén "
-                        "contra la topografía del plano. Sin él no los calcula contra "
-                        "un nivel supuesto."
+                        "Con el nivel de proyecto, Klave calcula corte y terraplén "
+                        "contra la topografía del plano. Mientras falte, no los calcula "
+                        "ni supone un nivel."
                     ),
                     endpoint=f"/projects/{project_id}/recompute",
                     requiere="El nivel de plataforma en metros, como lo fija el proyecto.",

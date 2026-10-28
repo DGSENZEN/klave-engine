@@ -17,34 +17,49 @@ def release(tmp_path, failure):
     (root / ".env.prod").write_text("KEEP=private\n")
     (root / "docker-compose.ec2.yml").write_text("previous compose\n")
     (root / ".release-current").write_text("previous\n")
+    (root / "active-source.py").write_text("healthy source\n")
     source = tmp_path / "source"
     source.mkdir()
     (source / "docker-compose.ec2.yml").write_text("candidate compose\n")
     archive = tmp_path / "release.tar.gz"
     with tarfile.open(archive, "w:gz") as output:
         output.add(source / "docker-compose.ec2.yml", arcname="docker-compose.ec2.yml")
+        if failure == "archive":
+            output.add(root / "active-source.py", arcname="../escaped.py")
+        else:
+            candidate = source / "active-source.py"
+            candidate.write_text("candidate source\n")
+            output.add(candidate, arcname="active-source.py")
     binaries = tmp_path / "bin"
     binaries.mkdir()
     (binaries / "sudo").write_text(
         '#!/bin/sh\ncase "$1" in --preserve-env=*) shift;; esac\nexec "$@"\n'
     )
     (binaries / "docker").write_text(
-        '#!/bin/sh\n'
+        "#!/bin/sh\n"
         'printf "%s %s\\n" "${KLAVE_API_IMAGE:-legacy}" "$*" >> "$CALLS"\n'
         'case "$1" in inspect) echo sha256:previous; exit 0;; esac\n'
         'case "$*" in\n'
+        '  *"build api backup"*) [ "$FAILURE" != build ];;\n'
         '  *"run --rm --no-deps backup once"*) '
         'if [ "$FAILURE" = stdin ]; then cat > /dev/null; fi; '
         '[ "$FAILURE" != backup ];;\n'
+        '  *"stop -t 120 api"*) if [ "$FAILURE" = interrupt ]; then '
+        'kill -TERM "$PPID"; fi;;\n'
         '  *"up -d"*) [ "$FAILURE" != readiness ] || '
         '[ "${KLAVE_API_IMAGE:-}" = sha256:previous ];;\n'
-        '  *) exit 0;;\n'
-        'esac\n'
+        "  *) exit 0;;\n"
+        "esac\n"
     )
     for path in binaries.iterdir():
         path.chmod(0o755)
-    env = {**os.environ, "PATH": str(binaries) + ":" + os.environ["PATH"],
-           "KLAVE_DEPLOY_DIR": str(root), "FAILURE": failure, "CALLS": str(tmp_path / "calls")}
+    env = {
+        **os.environ,
+        "PATH": str(binaries) + ":" + os.environ["PATH"],
+        "KLAVE_DEPLOY_DIR": str(root),
+        "FAILURE": failure,
+        "CALLS": str(tmp_path / "calls"),
+    }
     # macOS has no flock; the production host and CI runner are Linux.
     (binaries / "flock").write_text("#!/bin/sh\nexit 0\n")
     (binaries / "flock").chmod(0o755)
@@ -57,15 +72,19 @@ def release(tmp_path, failure):
     return root, (tmp_path / "calls"), result
 
 
-@pytest.mark.parametrize("failure", ["backup", "readiness"])
+@pytest.mark.parametrize("failure", ["backup", "readiness", "build", "interrupt", "archive"])
 def test_failed_release_recovers_previous_api_without_changing_revision(tmp_path, failure):
     root, calls, result = release(tmp_path, failure)
     assert result.returncode != 0
     assert (root / ".release-current").read_text() == "previous\n"
     assert (root / ".env.prod").read_text() == "KEEP=private\n"
     assert (root / "docker-compose.ec2.yml").read_text() == "previous compose\n"
-    assert "sha256:previous" in calls.read_text()
-    assert "down" not in calls.read_text()
+    assert (root / "active-source.py").read_text() == "healthy source\n"
+    assert not (root.parent / "escaped.py").exists()
+    if failure in {"backup", "readiness", "interrupt"}:
+        assert "sha256:previous" in calls.read_text()
+    if calls.exists():
+        assert "down" not in calls.read_text()
 
 
 def test_successful_release_records_only_ready_revision(tmp_path):
@@ -73,6 +92,8 @@ def test_successful_release_records_only_ready_revision(tmp_path):
     assert result.returncode == 0, result.stderr
     assert (root / ".release-current").read_text().strip() == SHA
     assert (root / ".env.prod").read_text() == "KEEP=private\n"
+    assert (root / "active-source.py").read_text() == "healthy source\n"
+    assert (root / ".releases" / SHA / "active-source.py").read_text() == "candidate source\n"
 
 
 def test_release_over_ssh_stdin_finishes_after_attached_backup(tmp_path):
@@ -83,7 +104,10 @@ def test_release_over_ssh_stdin_finishes_after_attached_backup(tmp_path):
 
 
 def test_invalid_revision_does_not_touch_server(tmp_path):
-    result = subprocess.run(["bash", str(SCRIPT), "../not-a-commit", str(tmp_path / "missing")],
-                            capture_output=True, text=True)
+    result = subprocess.run(
+        ["bash", str(SCRIPT), "../not-a-commit", str(tmp_path / "missing")],
+        capture_output=True,
+        text=True,
+    )
     assert result.returncode != 0
     assert list(tmp_path.iterdir()) == []

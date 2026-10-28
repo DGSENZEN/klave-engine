@@ -191,7 +191,7 @@ export default function FiniquitoPage() {
     <div className="space-y-6 px-4 py-5 sm:px-6">
       <PageHeader
         title="Finiquito"
-        sub="Todo lo que pasó en la obra contra todo lo que se pagó, con cada saldo por su nombre."
+        sub="Lo ejecutado en la obra contra lo pagado, con cada saldo por su nombre."
         actions={
           caps.editProject && (
             <Button onClick={() => void guardar()} disabled={guardando}>
@@ -210,8 +210,8 @@ export default function FiniquitoPage() {
 
       {!guardado && (
         <Callout tone="info">
-          Este finiquito está precargado con lo que suman las estimaciones capturadas y
-          todavía no lo guarda nadie. Revisa los importes contra tus papeles antes de
+          Este finiquito viene precargado con la suma de las estimaciones capturadas y
+          todavía no se ha guardado. Revisa los importes contra tus papeles antes de
           cerrarlo.
         </Callout>
       )}
@@ -225,7 +225,7 @@ export default function FiniquitoPage() {
         <Metric
           label="Pagado"
           value={money(resumen.pagado)}
-          hint="Suma de los líquidos que efectivamente se cobraron."
+          hint="Suma de los líquidos cobrados."
         />
         <Metric
           label="Saldo final"
@@ -249,8 +249,7 @@ export default function FiniquitoPage() {
       <Card className="p-4">
         <SectionTitle>La cuenta</SectionTitle>
         <p className="mt-1 text-sm text-muted">
-          Nada se compensa antes de mostrarse: cada saldo con su signo, y la resta al
-          final.
+          Cada saldo aparece por separado y con su signo; la resta va al final.
         </p>
         <div className="mt-3">
           {resumen.saldos.length === 0 ? (
@@ -334,7 +333,7 @@ export default function FiniquitoPage() {
           <Campo
             label="Pena diaria (%)"
             step="0.01"
-            hint="La fija el contrato, no la ley: sin este dato no se calcula."
+            hint="La fija el contrato; sin este dato no se calcula la pena."
             value={fin.pena_pct_diario}
             onChange={(v) => set("pena_pct_diario", v)}
           />

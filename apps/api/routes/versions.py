@@ -154,8 +154,8 @@ def get_version_diff(
     saved_on = version.summary.run_id
     if against == "current" and saved_on and active and saved_on != active:
         diff.notes.append(
-            "La versión se guardó sobre otra corrida de detección; parte del movimiento "
-            "puede venir de una nueva lectura del plano, no de decisiones humanas."
+            "La versión se guardó sobre otra corrida de detección: parte del movimiento "
+            "puede venir de la nueva lectura del plano."
         )
     return diff.model_dump(mode="json")
 

@@ -160,8 +160,8 @@ def calcular(estimacion: Estimacion) -> ResumenEstimacion:
             f"{'rebasan' if n > 1 else 'rebasa'} la cantidad del catálogo contratado; "
             f"el {'mayor' if n > 1 else 'renglón'} es {peor.clave}: contratado "
             f"{peor.quantity_contract:,.2f} "
-            f"{peor.unit}, estimado {peor.quantity_accumulated:,.2f}. Rebasar el "
-            "catálogo necesita convenio, no una estimación más (RLOPSRM art. 132)."
+            f"{peor.unit}, estimado {peor.quantity_accumulated:,.2f}. Lo que rebasa el "
+            "catálogo se cobra con un convenio (RLOPSRM art. 132)."
         )
     if liquido < 0:
         avisos.append(
@@ -178,8 +178,8 @@ def calcular(estimacion: Estimacion) -> ResumenEstimacion:
         )
     if not estimacion.renglones:
         avisos.append(
-            "Estimación sin renglones medidos. Una estimación se formula sobre lo que "
-            "alguien midió en obra, no sobre un porcentaje de avance."
+            "La estimación no tiene renglones medidos. Una estimación se formula sobre lo "
+            "que alguien midió en obra."
         )
 
     # El generador es lo que una contratante revisa antes de autorizar el pago.
@@ -204,7 +204,7 @@ def calcular(estimacion: Estimacion) -> ResumenEstimacion:
         avisos.append(
             f"{n} concepto{'s' if n > 1 else ''} no "
             f"{'cuadran' if n > 1 else 'cuadra'} con su generador: {detalle}. "
-            "La cantidad sale del generador, no al revés."
+            "La cantidad cobrada debe salir del generador."
         )
 
     sin_respaldo = [

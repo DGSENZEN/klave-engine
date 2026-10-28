@@ -968,7 +968,7 @@ def retire_project_file(
             status_code=409,
             detail={
                 "error_type": "ultima_hoja",
-                "message": "Es la única hoja del proyecto: reemplázala en vez de retirarla.",
+                "message": "Es la única hoja del proyecto y no se puede retirar; reemplázala.",
             },
         )
     foto = _foto_del_manifiesto(root, settings)

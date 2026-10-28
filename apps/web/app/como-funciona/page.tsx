@@ -23,37 +23,37 @@ const PRINCIPLES: {
     icon: <MagnifyingGlass size={20} weight="duotone" />,
     title: "Todo sale del plano, con evidencia",
     body:
-      "Cada cantidad apunta al elemento del que salió: qué marca, en qué hoja, con qué medida. Si Klave supuso algo (un vano típico, una altura), el supuesto está escrito junto al número. Nunca vas a encontrar una cantidad que no puedas rastrear hasta un trazo del dibujo o un supuesto declarado.",
+      "Cada cantidad apunta al elemento del que salió: qué marca, en qué hoja, con qué medida. Si Klave supuso algo (un vano típico, una altura), el supuesto está escrito junto al número. Toda cantidad se rastrea hasta un trazo del dibujo o un supuesto declarado.",
   },
   {
     icon: <Prohibit size={20} weight="duotone" />,
-    title: "Lo que no se sabe, no se inventa",
+    title: "Lo que falta queda a la vista",
     body:
-      "Un plano sin unidades confiables sale marcado SIN UNIDADES y sin precios — no con precios equivocados. Un insumo sin precio aparece como «sin precio», jamás como $0. Un total que esconde huecos es peor que un total incompleto que los enseña.",
+      "Un plano sin unidades confiables sale marcado SIN UNIDADES y sin precios. Un insumo sin precio aparece como «sin precio». Un total incompleto muestra qué le falta.",
   },
   {
     icon: <SealCheck size={20} weight="duotone" />,
     title: "El dinero pasa por tu firma",
     body:
-      "Pantallas y Excel llevan el sello SIN VERIFICAR hasta que confirmas tres cosas en el Resumen: las unidades del dibujo, las detecciones (con sus exclusiones) y los supuestos. La app propone; el perito dispone. Un presupuesto sin verificar no se entrega.",
+      "Pantallas y Excel llevan el sello SIN VERIFICAR hasta que confirmas tres cosas en el Resumen: las unidades del dibujo, las detecciones (con sus exclusiones) y los supuestos. Un presupuesto sin verificar no se entrega.",
   },
   {
     icon: <Scales size={20} weight="duotone" />,
     title: "Cada precio dice de dónde viene",
     body:
-      "Referencia de Klave, cotización de tu proveedor, publicación oficial (CDMX, SICT) o calculado (salario real RLOPSRM, costo horario, índice). La vigencia también: vigente, por revisar o vencido. Los precios de referencia son punto de partida, no «precios de mercado» — esos los pones tú.",
+      "Cada precio lleva su procedencia: referencia de Klave, cotización de tu proveedor, publicación oficial (CDMX, SICT) o calculado (salario real RLOPSRM, costo horario, índice). También lleva su vigencia: vigente, por revisar o vencido. Los precios de referencia son un punto de partida; los precios de mercado los pones tú.",
   },
   {
     icon: <Eye size={20} weight="duotone" />,
-    title: "La IA sugiere, nunca decide",
+    title: "La IA sugiere; tú decides",
     body:
-      "Si el servidor tiene credenciales, un modelo de visión lee las hojas y completa lo que las reglas no alcanzaron (una sección, un armado). Cada lectura queda marcada «por confirmar» con su procedencia. La IA jamás cuantifica ni pone un precio por sí sola.",
+      "Si el servidor tiene credenciales, un modelo de visión lee las hojas y completa lo que las reglas no alcanzaron (una sección, un armado). Cada lectura queda marcada «por confirmar» con su procedencia. La IA no cuantifica ni pone precios por sí sola.",
   },
   {
     icon: <FileXls size={20} weight="duotone" />,
     title: "La entrega es tuya, con tu catálogo",
     body:
-      "El Excel sale con generadores y croquis para defender cada número, en el layout de Klave o en los que importan OPUS y Neodata. Si adoptaste tus claves y precios en el catálogo, el presupuesto habla el idioma de tu taller, no el nuestro.",
+      "El Excel sale con generadores y croquis para defender cada número, en el layout de Klave o en los que importan OPUS y Neodata. Si adoptaste tus claves y precios en el catálogo, el presupuesto sale con ellos.",
   },
 ];
 
@@ -63,8 +63,8 @@ export default function ComoFuncionaPage() {
       <WorkspaceHeader active={null} />
       <main className="mx-auto max-w-6xl px-5 py-8 sm:px-6 *:max-w-3xl">
         <PageHeader
-          title="Cómo funciona — y por qué así"
-          sub="Klave convierte planos DWG/DXF en presupuestos de obra. Estas son las reglas que la app no rompe, porque un presupuesto vale lo que vale su evidencia."
+          title="Cómo funciona y por qué"
+          sub="Klave convierte planos DWG/DXF en presupuestos de obra. Estas son las reglas que la app siempre cumple, porque un presupuesto vale lo que vale su evidencia."
         />
 
         <div className="space-y-4">
@@ -80,12 +80,12 @@ export default function ComoFuncionaPage() {
         </div>
 
         <p className="mt-8 text-sm text-muted">
-          ¿Términos nuevos? El{" "}
+          El{" "}
           <Link href="/glosario" className="font-medium text-foreground underline">
             glosario
           </Link>{" "}
-          explica cada uno. Para aprender el camino haciéndolo, abre el recorrido guiado
-          desde Ayuda, arriba: una obra de ejemplo tuya, del plano al Excel.
+          explica cada término. Para aprender haciendo, abre el recorrido guiado desde
+          Ayuda, arriba: lleva una obra de ejemplo tuya del plano al Excel.
         </p>
       </main>
     </div>

@@ -921,3 +921,47 @@ def test_estructura_fence_is_exact(tmp_path):
 ## After E0
 
 Diego's spot-check list (spec §12) is produced from the Marina run: the findings tab plus the transcription's `dudas`. E1 (cimentación complete) gets its own plan once this round is merged.
+
+---
+
+## E0 close-out addendum (2026-10-27) — runs before Task 16
+
+Added by the controller from Task 15's review (R248, the PRUEBA-1 overlap note, the Task 12 variant-split note). Diego approved closing these on 2026-10-27; gold recaptures are allowed when each moved value is raw-verified and the commit says why.
+
+### Task 15b: D-n labels join their dados, and dado heights come from their cortes
+
+**Why:** On Marina the 23 `EST-DADOS` tags (D-1…D-5B, D-X) sit 0.07–0.46 m beside the 23 dado outlines, but the engine never joins them («puede ser la suya, sin juntar»). So dado placements carry no definition, 14 of check 10's 21 dudas are this gap, zapata/dado and `verificaciones.1/aviso` cannot be fenced, and CIM-002 uses a supposed dado height although each dado's corte X-X'/Y-Y' (ES-005/006/007) dimensions it with a vertical cota on `COTAS-100` (e.g. handle 42766 «100» on D-1, 429EA on D-3; the plan view beside it shows «55»/«60»).
+
+**Files (expected; follow the code):** `packages/klave_engine/estructura/elementos.py` and/or the association that joins tags to outlines; the dado/zapata family path (`detection/schedules.py::family_of_mark`, `footing_detector.py`); `estructura/definiciones.py` for the height Dato; `evals/gold/marina-estructural.json`; tests under `tests/`.
+
+- [ ] **Step 1 (raw truth first):** an independent script (ezdxf + `virtual_entities()`, not the engine's association) lists, for every D-n tag on Marina `02 ESTRUCTURAL`, its nearest dado outline, distance, and the corte cota(s) that dimension that mark's height (by the corte's title naming the mark). Save it under `scripts/` only if it is reused by the gold; otherwise in the scratchpad.
+- [ ] **Step 2:** join a D-n tag to the dado outline it labels when it is on that outline's own layer family (`EST-DADOS`), within reach of that outline and no nearer outline of the same family competes; a contested tag stays a `duda` naming both outlines. `D-` is a dado ONLY where the drawing states it (title word DADO, the `EST-DADOS` layer, or a cuadro heading); elsewhere D- stays ambiguous (R159 stands — never a dala/dado guess from the prefix alone).
+- [ ] **Step 3:** the dado height Dato: source `detalle` when its corte dimensions it (value from the cota text, not measured length), else `supuesto` with check 7. A plan-view cota beside the outline («55»/«60») is a side, never the height. CIM-002 uses the joined height.
+- [ ] **Step 4:** D-X (drawn nested inside D-4) is NOT decided by the engine: report it as a `duda` «D-X dentro de D-4: ¿pedestal o dado aparte?» and price neither twice. Diego answers this in the spot-check.
+- [ ] **Step 5:** tests from the real case (a synthetic fixture shaped like D-1 + its corte, a contested tag, D-X nested), then recapture `marina-estructural`: fence zapata/dado placements and their definitions, `verificaciones.1/aviso`, the new 10/duda count, and CIM-002 — each raw-verified; the commit states old → new values and why.
+
+**Done when:** every Marina dado placement is joined to its D-n definition or carries a `duda`/`bloquea` naming what is missing; every dado height is the corte's cota or a visible `supuesto`; CIM-002 is fenced; gold green with stated recapture.
+
+### Task 15c: a castillo tag belongs to one view (PRUEBA-1 overlap)
+
+**Why:** On PRUEBA-1 (four plan views on one sheet: cimentación, PB, PA, azotea) 20 castillo tags fall inside both the planta-alta and the azotea view boxes; the engine splits castillos 69/65/65/18 against about 22 tags actually in the azotea area. A tag counted in the wrong storey moves heights and money (EST-001).
+
+**Files (expected):** `packages/klave_engine/detection/views.py` (view boxes and assignment), any caller that assigns detections to views; `evals/gold/prueba-1.json`; tests.
+
+- [ ] **Step 1 (raw truth):** an independent script lists PRUEBA-1's view titles and the drawn extent of each view (its linework, not the title box), and for each castillo tag the view(s) whose box contains it. Confirm by rendering the sheet region to an image and looking at it.
+- [ ] **Step 2:** assignment never puts one tag in two views: overlapping boxes are resolved by the view whose own drawn content (grid/walls/outlines of that view) contains the tag, else the nearest view title below/above per the sheet's layout; an unresolvable tag is a `duda`, never counted twice and never dropped silently.
+- [ ] **Step 3:** tests (two overlapping view boxes with tags in the overlap), Marina/Torre unchanged (they have no overlapping boxes — confirm), recapture `prueba-1` with each moved castillo count and EST-001 raw-verified; commit states old → new.
+
+**Done when:** each PRUEBA-1 castillo tag is in exactly one view, the per-view counts equal the raw count, gold green with stated recapture.
+
+### Task 15d: variants are split over the detections a line counts (all families)
+
+**Why:** In Task 12 the fix «a line's variants are grouped only over the detections that line counts» was narrowed to `COLUMN_VOLUME` lines in `costing/boq.py` because the general form moved gold (PRUEBA-1 EST-004 variants). The defect is real for every other family: a detection that a line does NOT count can still shape that line's variant split pro rata, silently (Marina K-15A on ES-000 invented 0.44 m³ before the column fix).
+
+**Files:** `packages/klave_engine/costing/boq.py` (`dividir` and its callers), `tests/test_story_heights.py` or a new focused test, `evals/gold/prueba-1.json` (and any other entry that moves).
+
+- [ ] **Step 1:** make the general form: every line's variants are grouped over exactly the detections it counts; remove the column-only narrowing.
+- [ ] **Step 2:** for each gold value that moves, show from the raw drawing which detections the line counts and that the new split is the right one; recapture with the reason.
+- [ ] **Step 3:** tests: one per family kind that has variants (column volume, wall area, beam length…) with an uncounted detection that must not shape the split.
+
+**Done when:** no line's variant split includes a detection the line does not count; gold green with stated recapture.

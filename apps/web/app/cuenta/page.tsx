@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import {
   CheckCircle,
   DeviceMobile,
-  GoogleLogo,
   SignOut,
   UsersThree,
   Warning,
@@ -18,13 +17,11 @@ import {
   changePassword,
   fetchAuthStatus,
   getMe,
-  googleLoginUrl,
   listSessions,
   logout,
   logoutOthers,
   revokeSession,
   sendVerification,
-  unlinkGoogle,
   updateMe,
   type AuthStatus,
   type AuthUser,
@@ -105,7 +102,7 @@ export default function CuentaPage() {
         ) : (
           <div className="space-y-4">
             <ProfileCard me={me} auth={auth} onChanged={reload} />
-            <AccessCard me={me} auth={auth} onChanged={reload} />
+            <AccessCard me={me} onChanged={reload} />
             <SessionsCard />
             <WorkspaceCard me={me} />
           </div>
@@ -277,20 +274,11 @@ function ProfileCard({
 
 /* ----------------------------------------------------------------- access -- */
 
-function AccessCard({
-  me,
-  auth,
-  onChanged,
-}: {
-  me: Me;
-  auth: AuthStatus;
-  onChanged: () => void;
-}) {
+function AccessCard({ me, onChanged }: { me: Me; onChanged: () => void }) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [confirmUnlink, setConfirmUnlink] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -308,16 +296,6 @@ function AccessCard({
       onChanged();
     } catch (e) {
       setError(apiMessage(e, "No se pudo cambiar la contraseña."));
-    }
-  }
-
-  async function doUnlink() {
-    setConfirmUnlink(false);
-    try {
-      await unlinkGoogle();
-      onChanged();
-    } catch (e) {
-      setError(apiMessage(e, "No se pudo desvincular Google."));
     }
   }
 
@@ -353,39 +331,6 @@ function AccessCard({
       {note && <p className="mt-2 text-xs text-success">{note}</p>}
       {error && <p className="mt-2 text-xs text-danger">{error}</p>}
 
-      {auth.google_enabled && (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-          <div className="flex items-center gap-2 text-sm">
-            <GoogleLogo />
-            {me.has_google ? "Google vinculado a esta cuenta" : "Google no vinculado"}
-          </div>
-          {me.has_google ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={!me.has_password}
-              title={me.has_password ? undefined : "Define una contraseña antes de desvincular"}
-              onClick={() => setConfirmUnlink(true)}
-            >
-              Desvincular
-            </Button>
-          ) : (
-            <a href={googleLoginUrl()} className={buttonClasses("secondary", "sm")}>
-              Vincular Google
-            </a>
-          )}
-        </div>
-      )}
-      {confirmUnlink && (
-        <ConfirmDialog
-          open
-          title="Desvincular Google"
-          description="Dejarás de poder entrar con Google; seguirás entrando con tu contraseña."
-          confirmLabel="Desvincular"
-          onCancel={() => setConfirmUnlink(false)}
-          onConfirm={doUnlink}
-        />
-      )}
     </Card>
   );
 }

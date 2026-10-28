@@ -282,7 +282,7 @@ def test_integracion_incompleta_es_revisar_y_se_agrupa():
 def test_utilidad_declarada_es_criterio_no_alarma():
     from klave_engine.costing.hallazgos import _classify
 
-    rule = _classify("Utilidad declarada: 10 % — criterio del taller, no un análisis.")
+    rule = _classify("Utilidad declarada: 10 % (criterio del taller, sin análisis).")
     assert rule.criterio is True
 
 

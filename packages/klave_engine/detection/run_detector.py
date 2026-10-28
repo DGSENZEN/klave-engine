@@ -326,10 +326,10 @@ def detect_runs(
                             f"{metros_t:,.2f} m de {que_es} en «{layer}», tramo de "
                             f"{diametro_t[1]}",
                             f"La capa trae {sum(1 for t in tramos if t[1] is not None)} "
-                            "diámetros rotulados; cada segmento se adjudicó al rótulo legible "
-                            "más cercano (un ducto flexible entero, al suyo), un ducto sin "
-                            "rótulo al del ducto con el que se conecta y lo demás al tramo "
-                            "mayor (R170).",
+                            "diámetros rotulados. Cada segmento se adjudicó al rótulo legible "
+                            "más cercano (un ducto flexible entero, al suyo); un ducto sin "
+                            "rótulo, al del ducto con el que se conecta, y lo demás, al tramo "
+                            "mayor.",
                         ],
                         {
                             "run_family": familia,

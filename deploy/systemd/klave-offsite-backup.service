@@ -1,0 +1,14 @@
+[Unit]
+Description=Klave verified off-host backup and heartbeat
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/klave/backup-ops.env
+# Host networking lets this operator container use IMDSv2 with hop limit 1.
+# API containers retain their existing network isolation from instance credentials.
+ExecStart=/usr/bin/docker run --rm --name klave-offsite-ops --network host --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,size=16m --mount type=volume,src=klave_backups,dst=/backups,readonly --mount type=bind,src=/var/lib/klave-ops,dst=/state --mount type=bind,src=/var/lib/klave-ops/scratch,dst=/scratch --env-file /etc/klave/backup-ops.env ${KLAVE_BACKUP_OPS_IMAGE}
+TimeoutStartSec=45min
+UMask=0077

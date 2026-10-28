@@ -165,10 +165,10 @@ def _warn_solo_mano_de_obra(
     total = round(sum(line.amount for line in afectados), 2)
     claves = ", ".join(sorted(line.concept_code for line in afectados)[:6])
     boq.warnings.append(
-        f"{len(afectados)} conceptos por ${total:,.2f} tienen un P.U. de destajo: pagan la "
-        f"mano de obra y no el material ({claves}"
-        f"{'…' if len(afectados) > 6 else ''}). El presupuesto los suma como si estuvieran "
-        "completos; cárgales el material o adopta un precio unitario que lo incluya."
+        f"{len(afectados)} conceptos por ${total:,.2f} tienen un P.U. de destajo: pagan "
+        f"solo la mano de obra ({claves}"
+        f"{'…' if len(afectados) > 6 else ''}). El presupuesto los suma sin material; "
+        "cárgales el material o adopta un precio unitario que lo incluya."
     )
 
 
@@ -301,8 +301,8 @@ def _integrate_with_analyses(
             warnings.append(f"Integración ({comp.code}): {falta}. {cola}")
     if any(c.fuente == "analisis" for c in resolved):
         warnings.append(
-            f"Utilidad declarada: {config.indirects.profit_pct:g} % — criterio "
-            "del taller, no un análisis."
+            f"Utilidad declarada: {config.indirects.profit_pct:g} % (criterio "
+            "del taller, sin análisis)."
         )
     oficina = next(c for c in resolved if c.code == "CI-O")
     if oficina.documento.get("override") is not None:

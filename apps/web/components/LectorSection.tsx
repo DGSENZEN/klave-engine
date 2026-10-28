@@ -52,8 +52,8 @@ export function LectorSection({
       <div>
         <h2 className="text-base font-semibold text-foreground">El lector</h2>
         <p className="mt-1 max-w-2xl text-sm text-muted">
-          Propone figuras que ninguna regla tomó; nunca cuentan hasta que alguien diga qué son. Si
-          tu taller descarta casi todo lo que propone, se pausa solo para no cargarte la revisión.
+          Propone figuras que ninguna regla tomó; cuentan cuando alguien confirma qué son. Si tu
+          taller descarta la mayor parte de lo que propone, se pausa solo para no cargarte la revisión.
         </p>
       </div>
       {failed ? (

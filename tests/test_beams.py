@@ -353,7 +353,7 @@ def test_a_short_piece_of_the_supporting_wall_is_a_doubtful_span(capa, dudoso):
     if dudoso:
         assert viga.properties["claro_dudoso"] == (
             "claro dudoso: el tramo tomado mide 0.45, menos que una viga (1.5), y es de la capa en "
-            "que se apoya (EST-MURO CONCRETO), no de la suya; otras líneas alineadas: "
+            "que se apoya (EST-MURO CONCRETO), distinta de la suya; otras líneas alineadas: "
             "EST-MURO CONCRETO 0.45 a 0.11"
         )
     else:

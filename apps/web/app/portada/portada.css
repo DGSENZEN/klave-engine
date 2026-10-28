@@ -1,0 +1,1716 @@
+/*
+ * Portada (Línea 68). The bid drawn as one metro line: four parallel strokes,
+ * three ink and one accent, with the stations of the process sitting on it.
+ * Colours come from the --l68-* tokens in globals.css; this file owns only
+ * geometry, type and motion, all scoped under .l68.
+ *
+ * Line geometry: strokes are 4px on a 10px pitch, so the bundle is 34px.
+ * The corner bends down with radii 100/90/80/70, which lands the vertical
+ * strokes exactly at right: 0/10/20/30 of the route.
+ */
+
+.l68 {
+  --pad: clamp(20px, 4vw, 56px);
+  --gutter: 120px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  min-height: 100%;
+  background: var(--l68-paper);
+  color: var(--l68-ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 1rem;
+  line-height: 1.55;
+  overflow-x: clip;
+}
+
+.l68 ::selection {
+  background: var(--l68-accent);
+  color: var(--l68-accent-fg);
+}
+
+/* The brick-brown text accent: the orange fill alone is under 3:1 on paper. */
+.l68 :focus-visible {
+  outline: 3px solid var(--l68-accent-text);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.l68 a {
+  text-underline-offset: 0.22em;
+  text-decoration-thickness: 1.5px;
+}
+
+.l68-wrap {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding-inline: var(--pad);
+}
+
+/* ---------- Type ---------- */
+
+.l68-display,
+.l68 h1,
+.l68 h2,
+.l68 h3 {
+  font-family: var(--font-archivo), var(--font-sans), sans-serif;
+  font-stretch: 112%;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.l68 h1 {
+  font-size: clamp(2.6rem, 6.4vw, 6rem);
+  line-height: 0.95;
+  max-width: 13ch;
+}
+
+.l68 h2 {
+  font-size: clamp(2rem, 4vw, 3.6rem);
+  line-height: 1;
+  max-width: 16ch;
+}
+
+.l68 h3,
+.l68 h2.l68-stage-title {
+  font-size: clamp(1.6rem, 2.4vw, 2.2rem);
+  line-height: 1.05;
+  max-width: none;
+}
+
+.l68-lede {
+  font-size: clamp(1.06rem, 1.3vw, 1.25rem);
+  line-height: 1.5;
+  color: var(--l68-ink-2);
+  max-width: 54ch;
+}
+
+.l68-note {
+  font-size: 0.875rem;
+  color: var(--l68-ink-2);
+}
+
+.l68-mono {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+/* ---------- Controls ---------- */
+
+.l68-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6em;
+  height: 52px;
+  padding: 0 26px;
+  border-radius: 999px;
+  font-weight: 650;
+  font-size: 1rem;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 180ms var(--ease-out),
+    color 180ms var(--ease-out),
+    box-shadow 320ms var(--ease-out),
+    transform 180ms var(--ease-out);
+}
+.l68-btn:active {
+  transform: translateY(1px);
+}
+/* Hover and focus grow the button's own 68 outlines: paper, accent, paper,
+ * accent, the same parallel-stroke rhythm as the line. */
+.l68-btn--accent {
+  background: var(--l68-accent);
+  color: var(--l68-accent-fg);
+  box-shadow:
+    0 0 0 0 var(--l68-paper),
+    0 0 0 0 var(--l68-accent),
+    0 0 0 0 var(--l68-paper),
+    0 0 0 0 var(--l68-accent);
+}
+.l68-btn--accent:hover,
+.l68-btn--accent:focus-visible {
+  background: var(--l68-accent-hover);
+  box-shadow:
+    0 0 0 3px var(--l68-paper),
+    0 0 0 5px var(--l68-accent),
+    0 0 0 8px var(--l68-paper),
+    0 0 0 10px var(--l68-accent);
+}
+.l68-btn--line {
+  color: var(--l68-ink);
+  box-shadow:
+    inset 0 0 0 2px var(--l68-ink),
+    0 0 0 0 var(--l68-paper),
+    0 0 0 0 var(--l68-ink);
+}
+.l68-btn--line:hover,
+.l68-btn--line:focus-visible {
+  background: var(--l68-ink);
+  color: var(--l68-paper);
+  box-shadow:
+    inset 0 0 0 2px var(--l68-ink),
+    0 0 0 3px var(--l68-paper),
+    0 0 0 5px var(--l68-ink);
+}
+.l68-btn:focus-visible {
+  outline: none;
+}
+.l68-btn--sm {
+  height: 40px;
+  padding: 0 18px;
+  font-size: 0.9375rem;
+}
+.l68-btn svg {
+  transition: transform 220ms var(--ease-out);
+}
+.l68-btn:hover svg {
+  transform: translateX(3px);
+}
+
+/* ---------- Nav ---------- */
+
+.l68-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  height: 84px;
+}
+.l68-word {
+  font-family: var(--font-archivo), sans-serif;
+  font-stretch: 125%;
+  font-weight: 800;
+  font-size: 1.6rem;
+  letter-spacing: -0.04em;
+  color: var(--l68-ink);
+  text-decoration: none;
+}
+.l68-nav ul {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.9375rem;
+}
+.l68-nav a.l68-link {
+  color: var(--l68-ink);
+  text-decoration: none;
+  padding-bottom: 7px;
+  background:
+    linear-gradient(currentColor, currentColor) 0 100% / 0 1.5px no-repeat,
+    linear-gradient(currentColor, currentColor) 0 calc(100% - 4px) / 0 1.5px no-repeat;
+  transition: background-size 280ms var(--ease-out);
+}
+.l68-nav a.l68-link:hover,
+.l68-nav a.l68-link:focus-visible {
+  background-size: 100% 1.5px, 100% 1.5px;
+}
+
+/* ---------- Hero ---------- */
+
+.l68-hero {
+  position: relative;
+  padding-top: clamp(24px, 5vh, 64px);
+  padding-bottom: clamp(48px, 8vh, 88px);
+}
+.l68-hero .l68-lede {
+  margin-top: 28px;
+}
+.l68-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-top: 36px;
+}
+.l68-actions .l68-note {
+  flex-basis: 100%;
+  margin-top: 4px;
+}
+
+/* Op-art emblem: two ring sets, one drifting over the other (moiré). */
+.l68-emblem {
+  position: absolute;
+  right: 0;
+  top: clamp(0px, 1vh, 24px);
+  width: clamp(300px, 31vw, 480px);
+  height: auto;
+  pointer-events: none;
+  overflow: visible;
+}
+.l68-emblem circle {
+  fill: none;
+  stroke: var(--l68-ink);
+  stroke-width: 6;
+}
+.l68-emblem .drift {
+  transform: translate(12px, 0);
+}
+
+/* ---------- The route: the line and its stages ---------- */
+
+.l68-route {
+  position: relative;
+  padding-right: var(--gutter);
+}
+
+/* Horizontal bundle (hero map) */
+.l68-hbundle {
+  position: absolute;
+  top: 0;
+  left: calc(-1 * var(--pad) - 50vw);
+  right: 102px;
+  height: 34px;
+  pointer-events: none;
+}
+.l68-hbundle span,
+.l68-vbundle span {
+  position: absolute;
+  background: var(--l68-ink);
+}
+.l68-hbundle span {
+  left: 0;
+  right: 0;
+  height: 4px;
+}
+.l68-hbundle span:nth-child(1) { top: 0; }
+.l68-hbundle span:nth-child(2) { top: 10px; }
+.l68-hbundle span:nth-child(3) { top: 20px; }
+.l68-hbundle span:nth-child(4) {
+  top: 30px;
+  background: var(--l68-accent);
+}
+
+.l68-corner {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 102px;
+  height: 102px;
+  overflow: visible;
+  pointer-events: none;
+}
+.l68-corner path {
+  fill: none;
+  stroke: var(--l68-ink);
+  stroke-width: 4;
+}
+.l68-corner path.is-accent {
+  stroke: var(--l68-accent);
+}
+
+/* Vertical bundle (the rest of the page) */
+.l68-vbundle {
+  position: absolute;
+  top: 102px;
+  /* Ends inside the terminus ring, level with the closing actions. */
+  bottom: 66px;
+  right: 0;
+  width: 34px;
+  pointer-events: none;
+}
+.l68-vbundle span {
+  top: 0;
+  bottom: 0;
+  width: 4px;
+}
+.l68-vbundle span:nth-child(1) { right: 0; }
+.l68-vbundle span:nth-child(2) { right: 10px; }
+.l68-vbundle span:nth-child(3) { right: 20px; }
+.l68-vbundle span:nth-child(4) {
+  right: 30px;
+  background: var(--l68-accent);
+}
+/* The train: rides the bundle to where the visitor is reading. */
+.l68-vbundle i {
+  position: absolute;
+  right: -6px;
+  top: calc(var(--l68-progress, 0) * (100% - 22px));
+  width: 46px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--l68-accent);
+  box-shadow: 0 0 0 4px var(--l68-paper);
+  transition: top 120ms linear;
+  display: grid;
+  place-items: center;
+  font-style: normal;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--l68-accent-fg);
+}
+/* The hero train: runs the accent stroke and rounds the bend. */
+.l68-htrain {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 44px;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--l68-accent);
+  box-shadow: 0 0 0 3px var(--l68-paper);
+  offset-anchor: center;
+  offset-rotate: auto;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Station ripples: two accent rings spreading out from a ring. */
+.l68-ring::before,
+.l68-ring::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 3px solid var(--l68-accent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Stage sections */
+
+.l68-ring {
+  display: block;
+  box-sizing: border-box;
+  width: 58px;
+  height: 58px;
+  margin-top: -12px;
+  border-radius: 50%;
+  background: var(--l68-paper);
+  border: 5px solid var(--l68-ink);
+  position: relative;
+  transition:
+    background-color 200ms var(--ease-out),
+    border-color 200ms var(--ease-out),
+    transform 260ms var(--ease-out);
+}
+
+/* Station sections */
+.l68-station {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: clamp(32px, 5vw, 88px);
+  align-items: start;
+  padding-block: clamp(56px, 9vh, 112px);
+  scroll-margin-top: 24px;
+}
+.l68-station + .l68-station {
+  border-top: 1px solid var(--l68-rule);
+}
+.l68-station-text {
+  position: relative;
+}
+.l68-station-text .l68-num {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--l68-ink-2);
+  margin-bottom: 14px;
+}
+.l68-station-text p {
+  margin-top: 18px;
+  max-width: 44ch;
+  color: var(--l68-ink-2);
+}
+.l68-station-text p strong {
+  color: var(--l68-ink);
+  font-weight: 600;
+}
+/* The ring sits on the vertical bundle, level with the station name. */
+.l68-station > .l68-ring {
+  position: absolute;
+  right: calc(-1 * var(--gutter) + 17px - 29px);
+  top: calc(clamp(56px, 9vh, 112px) + 22px);
+  margin: 0;
+}
+.l68-station.is-here > .l68-ring {
+  background: var(--l68-accent);
+}
+
+/* ---------- Specimens (illustrative material) ---------- */
+
+/* ---------- Refusals ---------- */
+
+.l68-refuse {
+  padding-block: clamp(72px, 12vh, 140px);
+  border-top: 1px solid var(--l68-rule);
+}
+.l68-refuse ul {
+  list-style: none;
+  margin: clamp(40px, 6vh, 72px) 0 0;
+  padding: 0;
+}
+.l68-refuse li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: clamp(20px, 5vw, 88px);
+  align-items: baseline;
+  padding-block: 26px;
+  border-top: 1px solid var(--l68-rule);
+}
+.l68-refuse s {
+  font-family: var(--font-archivo), sans-serif;
+  font-stretch: 112%;
+  font-weight: 750;
+  font-size: clamp(1.5rem, 3vw, 2.6rem);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  text-decoration-line: line-through;
+  text-decoration-color: var(--l68-ink);
+  text-decoration-thickness: 0.09em;
+}
+.l68-refuse p {
+  color: var(--l68-ink-2);
+  max-width: 44ch;
+}
+
+/* ---------- Practice ---------- */
+
+.l68-practice {
+  padding-block: clamp(72px, 12vh, 140px);
+  border-top: 1px solid var(--l68-rule);
+}
+.l68-practice ul {
+  list-style: none;
+  padding: 0;
+  margin: clamp(40px, 6vh, 72px) 0 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 clamp(24px, 4vw, 64px);
+}
+.l68-practice li {
+  padding-block: 22px;
+  border-top: 2px solid var(--l68-ink);
+  font-family: var(--font-archivo), sans-serif;
+  font-stretch: 112%;
+  font-weight: 700;
+  font-size: clamp(1.25rem, 2vw, 1.75rem);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+/* ---------- Terminus ---------- */
+
+.l68-end {
+  position: relative;
+  padding-top: clamp(80px, 13vh, 150px);
+  padding-bottom: 40px;
+  border-top: 1px solid var(--l68-rule);
+}
+.l68-end > .l68-ring {
+  position: absolute;
+  right: calc(-1 * var(--gutter) + 17px - 29px);
+  bottom: 37px;
+  margin: 0;
+  width: 58px;
+  height: 58px;
+  background: var(--l68-accent);
+}
+
+/* The wordmark in 68 lettering: one word drawn as concentric strokes. */
+.l68-mark {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: clamp(64px, 10vh, 120px);
+}
+.l68-mark text {
+  font-family: var(--font-archivo), sans-serif;
+  font-stretch: 125%;
+  font-weight: 900;
+  font-size: 300px;
+  stroke-linejoin: round;
+}
+.l68-mark .w1 { fill: var(--l68-ink); stroke: var(--l68-ink); stroke-width: 74; }
+.l68-mark .w2 { fill: var(--l68-paper); stroke: var(--l68-paper); stroke-width: 62; }
+.l68-mark .w3 { fill: var(--l68-ink); stroke: var(--l68-ink); stroke-width: 50; }
+.l68-mark .w4 { fill: var(--l68-paper); stroke: var(--l68-paper); stroke-width: 38; }
+.l68-mark .w5 { fill: var(--l68-ink); stroke: var(--l68-ink); stroke-width: 26; }
+.l68-mark .w6 { fill: var(--l68-paper); stroke: var(--l68-paper); stroke-width: 14; }
+.l68-mark .w7 { fill: var(--l68-ink); stroke: none; }
+
+.l68-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px 32px;
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 2px solid var(--l68-ink);
+  font-size: 0.875rem;
+  color: var(--l68-ink-2);
+}
+.l68-foot ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.l68-foot a {
+  color: var(--l68-ink);
+}
+
+/* ---------- Feature lists beside each stage ---------- */
+
+.l68-feats {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+}
+.l68-feats li {
+  position: relative;
+  padding: 11px 0 11px 26px;
+  border-top: 1px solid var(--l68-rule);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+/* Two short parallel strokes: the line's own mark as the bullet. */
+.l68-feats li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 1.05em;
+  width: 14px;
+  height: 7px;
+  background:
+    linear-gradient(var(--l68-ink), var(--l68-ink)) 0 0 / 100% 2px no-repeat,
+    linear-gradient(var(--l68-accent), var(--l68-accent)) 0 100% / 100% 2px no-repeat;
+}
+.l68-team h2 {
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+}
+.l68-team .l68-station-text p {
+  margin-top: 18px;
+}
+
+/* ---------- Drawn app screens ---------- */
+
+.l68-app {
+  margin: 0;
+  min-width: 0;
+}
+.l68-app-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 46px;
+  padding: 0 16px;
+  border: 2px solid var(--l68-ink);
+  font-size: 0.8125rem;
+  color: var(--l68-ink-2);
+}
+.l68-app-crumb {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.l68-app-crumb b {
+  color: var(--l68-ink);
+  font-weight: 650;
+}
+/* The obra's tablero as a small line of six stops. */
+.l68-app-nodes {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+.l68-app-nodes i {
+  position: relative;
+  width: 11px;
+  height: 11px;
+  margin-left: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--l68-ink);
+  background: var(--l68-paper);
+}
+.l68-app-nodes i:first-child {
+  margin-left: 0;
+}
+.l68-app-nodes i + i::before {
+  content: "";
+  position: absolute;
+  right: calc(100% + 2px);
+  top: 2.5px;
+  width: 12px;
+  height: 2px;
+  background: var(--l68-ink);
+}
+.l68-app-nodes i.is-done {
+  background: var(--l68-ink);
+}
+.l68-app-nodes i.is-now {
+  background: var(--l68-accent);
+}
+.l68-app-body {
+  padding: clamp(14px, 2vw, 22px);
+  border: 2px solid var(--l68-ink);
+  border-top: 0;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+.l68-app figcaption {
+  margin-top: 12px;
+  font-size: 0.8125rem;
+  color: var(--l68-ink-2);
+}
+.l68-app kbd {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.75rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1.5px var(--l68-ink);
+}
+.l68-app .l68-mono {
+  font-size: 0.8125rem;
+}
+
+/* Planos */
+.v-drop {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 2px dashed var(--l68-ink-2);
+  color: var(--l68-ink-2);
+}
+.v-drop svg {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: var(--l68-ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.v-sheets {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.v-sheets li {
+  display: grid;
+  grid-template-columns: 3.4rem minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--l68-rule);
+}
+.v-file {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.v-state {
+  display: grid;
+  justify-items: end;
+}
+.v-state > * {
+  grid-area: 1 / 1;
+}
+.v-state i {
+  font-style: normal;
+  font-size: 0.75rem;
+  color: var(--l68-ink-2);
+  opacity: 0;
+}
+.v-state b {
+  padding: 2px 9px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px var(--l68-ink-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--l68-ink-2);
+  white-space: nowrap;
+}
+.v-state b.is-deep {
+  background: var(--l68-ink);
+  box-shadow: none;
+  color: var(--l68-paper);
+}
+.v-sum {
+  margin-top: 12px;
+  color: var(--l68-ink-2);
+}
+.v-sum b {
+  color: var(--l68-ink);
+}
+
+/* Disciplinas: the visor */
+.v-visor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 13rem;
+  gap: 14px 18px;
+}
+.v-tools {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+}
+.v-tools span {
+  padding: 3px 11px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px var(--l68-ink);
+}
+.v-tools span.is-on {
+  background: var(--l68-ink);
+  color: var(--l68-paper);
+}
+.v-tools .v-tool-end {
+  margin-left: auto;
+  box-shadow: none;
+  color: var(--l68-ink-2);
+}
+.v-plan {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.v-plan .axis {
+  stroke: var(--l68-ink-2);
+  stroke-width: 1.2;
+  stroke-dasharray: 12 4 3 4;
+}
+.v-plan .bubble {
+  fill: var(--l68-paper);
+  stroke: var(--l68-ink);
+  stroke-width: 1.5;
+}
+.v-plan text {
+  fill: var(--l68-ink);
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+}
+.v-plan .fam-zap rect {
+  fill: none;
+  stroke: var(--l68-ink-2);
+  stroke-width: 1.3;
+  stroke-dasharray: 5 4;
+}
+.v-plan .fam-beam rect {
+  fill: var(--l68-paper);
+  stroke: var(--l68-ink);
+  stroke-width: 2;
+}
+.v-plan .fam-col rect {
+  fill: var(--l68-ink);
+}
+.v-plan .v-pick {
+  fill: var(--l68-accent-soft);
+  stroke: var(--l68-accent);
+  stroke-width: 4;
+}
+.v-plan .scan {
+  fill: var(--l68-accent);
+  opacity: 0;
+}
+.v-insp {
+  margin: 0;
+  border-top: 2px solid var(--l68-ink);
+  font-size: 0.8125rem;
+}
+.v-insp div {
+  display: grid;
+  grid-template-columns: 4.6rem minmax(0, 1fr);
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--l68-rule);
+}
+.v-insp dt {
+  color: var(--l68-ink-2);
+}
+.v-insp dd {
+  margin: 0;
+}
+.v-insp .is-key {
+  font-family: var(--font-archivo), sans-serif;
+  font-stretch: 112%;
+  font-weight: 800;
+  font-size: 1.2rem;
+  line-height: 1;
+  color: var(--l68-accent-text);
+}
+
+/* Revisión: the queue */
+.v-queue-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  color: var(--l68-ink-2);
+}
+.v-queue-head b {
+  color: var(--l68-ink);
+}
+.v-queue ol {
+  position: relative;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  border-top: 2px solid var(--l68-ink);
+}
+.v-queue li {
+  display: grid;
+  grid-template-columns: 3rem 5rem 6.5rem minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  height: 47px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--l68-rule);
+}
+.v-queue li.is-traced {
+  background: var(--l68-accent-soft);
+}
+.v-queue li.is-traced .l68-mono:first-child {
+  color: var(--l68-accent-text);
+  font-weight: 700;
+}
+.v-cursor {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 47px;
+  box-shadow: inset 0 0 0 2px var(--l68-accent);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 1;
+}
+.v-verdict {
+  justify-self: end;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.v-verdict.is-ok {
+  box-shadow: inset 0 0 0 1.5px var(--l68-ink);
+}
+.v-verdict.is-no {
+  background: var(--l68-ink);
+  color: var(--l68-paper);
+}
+.v-verdict.is-q {
+  border: 1.5px dashed var(--l68-ink);
+}
+.v-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 14px;
+  font-size: 0.8125rem;
+  color: var(--l68-ink-2);
+}
+.v-keys kbd {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-right: 6px;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 2px var(--l68-ink);
+  color: var(--l68-ink);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+.v-lock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--l68-rule);
+  color: var(--l68-ink-2);
+}
+.v-lock svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: var(--l68-ink);
+  stroke-width: 2;
+}
+
+/* Catálogo */
+.v-from {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 12px 14px;
+  background: var(--l68-accent-soft);
+}
+.v-from-k {
+  font-size: 0.75rem;
+  color: var(--l68-ink-2);
+}
+.v-from b {
+  font-weight: 650;
+}
+.v-from .l68-mono {
+  margin-left: auto;
+}
+.v-cat-h {
+  margin: 16px 0 6px;
+  font-size: 0.8125rem;
+  color: var(--l68-ink-2);
+}
+.v-sug {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 2px solid var(--l68-ink);
+}
+.v-sug li {
+  display: grid;
+  grid-template-columns: 4.2rem minmax(0, 1fr) 8rem;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--l68-rule);
+}
+.v-sug li.is-best > .l68-mono {
+  color: var(--l68-accent-text);
+  font-weight: 700;
+}
+.v-score {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.6rem;
+  gap: 8px;
+  align-items: center;
+  text-align: right;
+}
+.v-score i {
+  position: relative;
+  height: 6px;
+  background: var(--l68-rule);
+}
+.v-score i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--l68-ink);
+  transform-origin: left center;
+  transform: scaleX(var(--score));
+}
+.v-sug li.is-best .v-score i::after {
+  background: var(--l68-accent);
+}
+.v-adopt {
+  display: grid;
+  margin-top: 12px;
+}
+.v-adopt > span {
+  grid-area: 1 / 1;
+  justify-self: start;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.8125rem;
+}
+.v-adopt-btn {
+  background: var(--l68-accent);
+  color: var(--l68-accent-fg);
+  opacity: 0;
+}
+.v-adopted {
+  box-shadow: inset 0 0 0 1.5px var(--l68-ink);
+}
+.v-prov {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+}
+.v-prov li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--l68-rule);
+}
+.v-chip {
+  justify-self: end;
+  padding: 2px 9px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px var(--l68-ink-2);
+  font-size: 0.75rem;
+  color: var(--l68-ink-2);
+  white-space: nowrap;
+}
+.v-chip.is-ok {
+  box-shadow: inset 0 0 0 1.5px var(--l68-ink);
+  color: var(--l68-ink);
+}
+.v-chip.is-warn {
+  box-shadow: none;
+  border: 1.5px dashed var(--l68-ink);
+  color: var(--l68-ink);
+}
+.v-chip.is-gap {
+  box-shadow: inset 0 0 0 2px var(--l68-ink);
+  color: var(--l68-ink);
+  font-weight: 700;
+}
+
+/* Presupuesto */
+.v-total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+}
+.v-total > span:first-child {
+  color: var(--l68-ink-2);
+}
+.v-total b.l68-mono {
+  font-weight: 700;
+  font-size: clamp(1.25rem, 2.1vw, 1.8rem);
+  letter-spacing: -0.02em;
+}
+.v-delta {
+  color: var(--l68-accent-text);
+  font-weight: 700;
+}
+.v-tiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin-top: 10px;
+  color: var(--l68-ink-2);
+  font-size: 0.8125rem;
+}
+.v-tiers b {
+  color: var(--l68-ink);
+  font-family: var(--font-mono), monospace;
+}
+.v-swap {
+  display: inline-grid;
+}
+.v-swap i {
+  grid-area: 1 / 1;
+  font-style: normal;
+}
+.v-swap i:first-child {
+  opacity: 0;
+}
+.v-finding {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 2px solid var(--l68-ink);
+}
+.v-finding-t {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  opacity: 0.55;
+}
+.v-tag {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--l68-ink);
+  color: var(--l68-paper);
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+.v-action {
+  position: relative;
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: var(--l68-accent-soft);
+  font-size: 0.8125rem;
+}
+.v-fromto {
+  margin-top: 4px;
+  color: var(--l68-ink-2);
+}
+.v-apply {
+  display: grid;
+  margin-top: 10px;
+}
+.v-apply i {
+  grid-area: 1 / 1;
+  justify-self: start;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-style: normal;
+  font-weight: 600;
+}
+.v-apply i:first-child {
+  background: var(--l68-accent);
+  color: var(--l68-accent-fg);
+  opacity: 0;
+}
+.v-apply i:last-child {
+  box-shadow: inset 0 0 0 1.5px var(--l68-ink);
+}
+.v-export {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+.v-export-lock {
+  display: grid;
+  flex-basis: 100%;
+  color: var(--l68-ink-2);
+  font-size: 0.8125rem;
+}
+.v-export-lock i {
+  grid-area: 1 / 1;
+  font-style: normal;
+}
+.v-export-lock i:first-child {
+  opacity: 0;
+}
+.v-fmt {
+  padding: 4px 12px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px var(--l68-ink);
+  font-weight: 600;
+  font-size: 0.8125rem;
+}
+
+/* Programa */
+.v-gantt {
+  font-size: 0.75rem;
+}
+.v-weeks,
+.v-gantt li,
+.v-flow {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+.v-week-row {
+  display: grid;
+  grid-template-columns: repeat(var(--weeks), minmax(0, 1fr));
+}
+.v-week-row i {
+  font-style: normal;
+  padding-left: 4px;
+  border-left: 1px solid var(--l68-rule);
+  color: var(--l68-ink-2);
+}
+.v-gantt ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  border-top: 2px solid var(--l68-ink);
+}
+.v-gantt li {
+  height: 32px;
+  border-bottom: 1px solid var(--l68-rule);
+  font-size: 0.8125rem;
+}
+.v-gantt li > span:first-child {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.v-lane {
+  position: relative;
+  height: 12px;
+}
+.v-lane i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--s) / var(--weeks) * 100%);
+  width: calc(var(--d) / var(--weeks) * 100%);
+  border-radius: 999px;
+  background: var(--l68-ink);
+  transform-origin: left center;
+}
+.v-gantt li.is-traced > span:first-child {
+  color: var(--l68-accent-text);
+  font-weight: 700;
+}
+.v-gantt li.is-traced .v-lane i {
+  background: var(--l68-accent);
+}
+.v-flow {
+  margin-top: 14px;
+  align-items: end;
+}
+.v-flow > span:first-child {
+  font-size: 0.8125rem;
+  padding-bottom: 20px;
+}
+.v-flow svg {
+  width: 100%;
+  height: 72px;
+  display: block;
+}
+.v-curve {
+  fill: none;
+  stroke: var(--l68-ink);
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
+}
+.v-est {
+  stroke: var(--l68-ink-2);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+.v-est-labels {
+  position: relative;
+  grid-column: 2;
+  height: 16px;
+  color: var(--l68-ink-2);
+}
+.v-est-labels i {
+  position: absolute;
+  font-style: normal;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+/* Equipo */
+.v-people {
+  display: flex;
+  flex: none;
+}
+.v-people i {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-left: -6px;
+  border-radius: 50%;
+  border: 2px solid var(--l68-ink);
+  background: var(--l68-paper);
+  color: var(--l68-ink);
+  font-style: normal;
+  font-size: 0.625rem;
+  font-weight: 700;
+}
+.v-people i.is-you {
+  background: var(--l68-accent);
+  color: var(--l68-accent-fg);
+}
+.v-feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.v-feed li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--l68-rule);
+}
+.v-feed li:last-child {
+  border-bottom: 0;
+}
+.v-feed li > span:not(.v-feed-d) {
+  grid-column: 1;
+  color: var(--l68-ink-2);
+  font-size: 0.8125rem;
+}
+.v-feed-d {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: var(--l68-accent-text);
+  font-weight: 700;
+}
+
+/* ---------- Screens in motion ----------
+ * Each screen's sequence is written as plain CSS animations that end on the
+ * finished state. Until a screen is seen, the script holds it at its first
+ * frame (.is-armed); without the script the sequence has simply already run. */
+
+@media (prefers-reduced-motion: no-preference) {
+  .l68-app.is-armed *,
+  .l68-app.is-armed *::before,
+  .l68-app.is-armed *::after {
+    animation-play-state: paused !important;
+  }
+
+  /* Planos: files arrive, are read, and land where they belong. */
+  .v-drop svg {
+    animation: l68-drop 900ms var(--ease-out) 100ms both;
+  }
+  .v-sheets li {
+    animation: l68-in 450ms var(--ease-out) calc(250ms + var(--i) * 220ms) both;
+  }
+  .v-state i {
+    animation: l68-read 1100ms linear calc(250ms + var(--i) * 220ms) both;
+  }
+  .v-state b {
+    animation: l68-pop 320ms var(--ease-out) calc(1150ms + var(--i) * 220ms) both;
+  }
+  .v-sum {
+    animation: l68-in 400ms var(--ease-out) 2600ms both;
+  }
+
+  /* Disciplinas: a reading sweep, then each family, then the selection. */
+  .v-plan .scan {
+    animation: l68-sweep 1300ms cubic-bezier(0.45, 0, 0.2, 1) 150ms both;
+  }
+  .v-plan .fam rect {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .v-plan .fam-zap rect {
+    animation: l68-pop 380ms var(--ease-out) 650ms both;
+  }
+  .v-plan .fam-beam rect {
+    animation: l68-fade 420ms ease-out 1000ms both;
+  }
+  .v-plan .fam-col rect {
+    animation: l68-pop 380ms var(--ease-out) 1300ms both;
+  }
+  .v-plan .v-pick {
+    animation: l68-pick 700ms var(--ease-out) 1800ms both;
+  }
+  .v-insp div {
+    animation: l68-in 360ms var(--ease-out) both;
+  }
+  .v-insp div:nth-child(1) { animation-delay: 2100ms; }
+  .v-insp div:nth-child(2) { animation-delay: 2180ms; }
+  .v-insp div:nth-child(3) { animation-delay: 2260ms; }
+  .v-insp div:nth-child(4) { animation-delay: 2340ms; }
+  .v-insp div:nth-child(5) { animation-delay: 2420ms; }
+  .v-insp div:nth-child(6) { animation-delay: 2500ms; }
+  .v-insp div:nth-child(7) { animation-delay: 2580ms; }
+
+  /* Revisión: the cursor walks the queue; each key leaves its verdict. */
+  .v-cursor {
+    animation: l68-cursor 4200ms linear both;
+  }
+  .v-verdict {
+    animation: l68-pop 300ms var(--ease-out) calc(600ms + var(--i) * 700ms) both;
+  }
+  .v-keys .k-c kbd { animation: l68-key-c 4200ms linear both; }
+  .v-keys .k-x kbd { animation: l68-key-x 4200ms linear both; }
+  .v-keys .k-q kbd { animation: l68-key-q 4200ms linear both; }
+  .v-lock {
+    animation: l68-in 420ms var(--ease-out) 3900ms both;
+  }
+
+  /* Catálogo: suggestions rank themselves, the best one is adopted. */
+  .v-sug li {
+    animation: l68-in 380ms var(--ease-out) calc(200ms + var(--i) * 140ms) both;
+  }
+  .v-score i::after {
+    animation: l68-grow 900ms var(--ease-out) calc(450ms + var(--i) * 140ms) both;
+  }
+  .v-adopt-btn {
+    animation: l68-press 1500ms var(--ease-out) 1300ms both;
+  }
+  .v-adopted {
+    animation: l68-pop 340ms var(--ease-out) 2750ms both;
+  }
+  .v-prov li {
+    animation: l68-in 380ms var(--ease-out) both;
+  }
+  .v-prov li:nth-child(1) { animation-delay: 3000ms; }
+  .v-prov li:nth-child(2) { animation-delay: 3120ms; }
+  .v-prov li:nth-child(3) { animation-delay: 3240ms; }
+
+  /* Presupuesto: a blocker, the proposed fix, the fix applied, export opens. */
+  .v-delta {
+    animation: l68-pop 360ms var(--ease-out) 3050ms both;
+  }
+  .v-swap i:first-child {
+    animation: l68-hold-out 2900ms linear both;
+  }
+  .v-swap i:last-child {
+    animation: l68-pop 300ms var(--ease-out) 2900ms both;
+  }
+  .v-action {
+    animation: l68-in 420ms var(--ease-out) 700ms both;
+  }
+  .v-apply i:first-child {
+    animation: l68-press 1500ms var(--ease-out) 1300ms both;
+  }
+  .v-apply i:last-child {
+    animation: l68-pop 340ms var(--ease-out) 2800ms both;
+  }
+  .v-finding-t {
+    animation: l68-settle 3000ms linear both;
+  }
+  .v-export-lock i:first-child {
+    animation: l68-hold-out 3000ms linear both;
+  }
+  .v-export-lock i:last-child {
+    animation: l68-fade 300ms ease-out 3000ms both;
+  }
+  .v-fmt {
+    animation: l68-unlock 3300ms linear both;
+  }
+
+  /* Programa: bars are laid along the weeks, then the cash curve rises. */
+  .v-lane i {
+    animation: l68-grow 650ms var(--ease-out) calc(250ms + var(--i) * 170ms) both;
+  }
+  .v-curve {
+    stroke-dasharray: 1;
+    animation: l68-draw 1500ms var(--ease-out) 1500ms both;
+  }
+  .v-est-labels i {
+    animation: l68-fade 400ms ease-out 2800ms both;
+  }
+
+  /* Equipo: people arrive, then changes stream in as they happen. */
+  .v-people i {
+    animation: l68-pop 340ms var(--ease-out) both;
+  }
+  .v-people i:nth-child(2) { animation-delay: 120ms; }
+  .v-people i:nth-child(3) { animation-delay: 240ms; }
+  .v-feed li {
+    animation: l68-toast 480ms var(--ease-out) calc(400ms + var(--i) * 750ms) both;
+  }
+}
+
+@keyframes l68-in {
+  from { opacity: 0; transform: translateY(8px); }
+}
+@keyframes l68-fade {
+  from { opacity: 0; }
+}
+@keyframes l68-pop {
+  from { opacity: 0; transform: scale(0.4); }
+}
+@keyframes l68-grow {
+  from { transform: scaleX(0); }
+}
+@keyframes l68-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes l68-toast {
+  from { opacity: 0; transform: translateX(18px); }
+}
+@keyframes l68-drop {
+  0% { transform: translateY(-10px); opacity: 0; }
+  60% { transform: translateY(2px); opacity: 1; }
+}
+/* Visible while the file is read, then gone. */
+@keyframes l68-read {
+  0%, 78% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes l68-sweep {
+  0% { transform: translateX(0); opacity: 0; }
+  8%, 90% { opacity: 0.85; }
+  100% { transform: translateX(506px); opacity: 0; }
+}
+@keyframes l68-pick {
+  0% { fill: var(--l68-paper); stroke: var(--l68-ink); stroke-width: 2; }
+  40% { stroke-width: 7; }
+}
+@keyframes l68-cursor {
+  0% { opacity: 0; transform: translateY(0); }
+  5%, 20% { opacity: 1; transform: translateY(0); }
+  22%, 37% { transform: translateY(47px); }
+  39%, 53% { transform: translateY(94px); }
+  56%, 70% { transform: translateY(141px); }
+  73%, 88% { opacity: 1; transform: translateY(188px); }
+  100% { opacity: 0; transform: translateY(188px); }
+}
+@keyframes l68-key-c {
+  0%, 13%, 19%, 30%, 36%, 63%, 69%, 100% { background: transparent; color: var(--l68-ink); }
+  14.3%, 18%, 31%, 35%, 64.3%, 68% { background: var(--l68-ink); color: var(--l68-paper); }
+}
+@keyframes l68-key-x {
+  0%, 46.5%, 53%, 100% { background: transparent; color: var(--l68-ink); }
+  47.6%, 52% { background: var(--l68-ink); color: var(--l68-paper); }
+}
+@keyframes l68-key-q {
+  0%, 80%, 86.5%, 100% { background: transparent; color: var(--l68-ink); }
+  81%, 85.5% { background: var(--l68-ink); color: var(--l68-paper); }
+}
+/* A button appears, is pressed, and gives way to its result. */
+@keyframes l68-press {
+  0% { opacity: 0; transform: none; }
+  12%, 72% { opacity: 1; transform: none; }
+  80% { opacity: 1; transform: scale(0.92); }
+  88% { opacity: 1; transform: none; }
+  100% { opacity: 0; }
+}
+@keyframes l68-hold-out {
+  0%, 96% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes l68-settle {
+  0%, 92% { opacity: 1; }
+  100% { opacity: 0.55; }
+}
+@keyframes l68-unlock {
+  0%, 91% { opacity: 0.35; }
+  100% { opacity: 1; }
+}
+
+/* ---------- Motion ---------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .l68-emblem.is-live .drift {
+    animation: l68-orbit 16s linear infinite;
+  }
+
+  .l68-station.is-here > .l68-ring::before {
+    animation: l68-ping 1000ms var(--ease-out);
+  }
+  .l68-station.is-here > .l68-ring::after {
+    animation: l68-ping 1000ms var(--ease-out) 160ms;
+  }
+
+  .l68-mark.is-live .w5 { animation: l68-pulse 3.6s ease-in-out infinite; }
+  .l68-mark.is-live .w3 { animation: l68-pulse 3.6s ease-in-out 180ms infinite; }
+  .l68-mark.is-live .w1 { animation: l68-pulse 3.6s ease-in-out 360ms infinite; }
+}
+
+/* The refusals get struck as they scroll in, where the browser can tie an
+ * animation to scroll; elsewhere the strike is simply there. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .l68-refuse s {
+      text-decoration: none;
+      background: linear-gradient(var(--l68-ink), var(--l68-ink)) no-repeat 0 60% / 100% 0.09em;
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+      animation: l68-strike linear both;
+      animation-timeline: view();
+      animation-range: entry 60% cover 40%;
+    }
+  }
+}
+
+@keyframes l68-strike {
+  from { background-size: 0% 0.09em; }
+  to { background-size: 100% 0.09em; }
+}
+@keyframes l68-orbit {
+  from { transform: rotate(0deg) translateX(12px) rotate(0deg); }
+  to { transform: rotate(360deg) translateX(12px) rotate(-360deg); }
+}
+@keyframes l68-ping {
+  from { transform: scale(1); opacity: 0.95; }
+  to { transform: scale(2.2); opacity: 0; }
+}
+@keyframes l68-pulse {
+  0%, 26%, 100% { fill: var(--l68-ink); stroke: var(--l68-ink); }
+  10% { fill: var(--l68-accent); stroke: var(--l68-accent); }
+}
+
+/* ---------- Narrow screens: the line runs down the left ---------- */
+
+@media (max-width: 1179px) {
+  .l68-emblem {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .l68-htrain {
+    display: none;
+  }
+  .l68 {
+    --gutter: 0px;
+  }
+  .l68-nav .l68-hide-sm {
+    display: none;
+  }
+  .l68-nav ul {
+    gap: 16px;
+  }
+  .l68-route {
+    padding-right: 0;
+    padding-left: 64px;
+  }
+  .l68-hbundle,
+  .l68-corner {
+    display: none;
+  }
+  .l68-vbundle {
+    top: 0;
+    right: auto;
+    left: 0;
+  }
+  .l68-vbundle span:nth-child(1) { right: auto; left: 30px; }
+  .l68-vbundle span:nth-child(2) { right: auto; left: 20px; }
+  .l68-vbundle span:nth-child(3) { right: auto; left: 10px; }
+  .l68-vbundle span:nth-child(4) { right: auto; left: 0; }
+
+  .l68-station,
+  .l68-refuse li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .l68-station-text {
+    order: -1;
+  }
+  .l68-station > .l68-ring,
+  .l68-end > .l68-ring {
+    right: auto;
+    left: -73px;
+    width: 52px;
+    height: 52px;
+  }
+  .l68-end > .l68-ring {
+    bottom: 40px;
+  }
+  .l68-practice ul {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .v-visor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .v-obra,
+  .v-long {
+    display: none;
+  }
+  .v-queue li {
+    grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+  }
+  .v-queue li > :nth-child(3) {
+    display: none;
+  }
+  .v-sug li {
+    grid-template-columns: 3.75rem minmax(0, 1fr) 4.5rem;
+  }
+  .v-score {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .v-score .l68-mono {
+    display: none;
+  }
+  .v-gantt li,
+  .v-weeks,
+  .v-flow {
+    grid-template-columns: 6.25rem minmax(0, 1fr);
+  }
+  .v-week-row i:nth-child(even) {
+    color: transparent;
+  }
+  .v-prov li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .v-prov li > :nth-child(3) {
+    grid-column: 2;
+  }
+}

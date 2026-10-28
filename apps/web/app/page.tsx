@@ -19,7 +19,6 @@ import {
   Plus,
   SealCheck,
   Stack,
-  CaretDown,
   Trash,
   UserSwitch,
   UsersThree,
@@ -28,8 +27,6 @@ import {
 import {
   apiMessage,
   getWorkspaceOverview,
-  previewDisciplinas,
-  type DisciplinePreview,
   money,
   patchProject,
   processProject,
@@ -47,13 +44,13 @@ import {
   Badge,
   Button,
   Callout,
-  EmptyState,
   Input,
   Skeleton,
   type BadgeTone,
 } from "@/components/ui";
 import { KebabMenu, MenuItem } from "@/components/Menu";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { COMPOSER_PICK_ID, NewProjectComposer } from "@/components/NewProjectComposer";
 import { ReprocesarDialog } from "@/components/ReprocesarDialog";
 import { Modal } from "@/components/Modal";
 import { InicioRecorrido } from "@/components/recorrido/InicioRecorrido";
@@ -104,7 +101,9 @@ export default function Home() {
   const [showArchived, setShowArchived] = useState(false);
   const [focus, setFocus] = useState<Focus>("all");
   const [ready, setReady] = useState(false);
-  const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
+  /** Sheets chosen for a new project; null while the composer is closed. */
+  const [draft, setDraft] = useState<File[] | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<{ id: string; text: string; href: string; tone: "success" | "warning" }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -115,12 +114,18 @@ export default function Home() {
   }, [overview]);
 
   // The gate: protected workspaces require an active session; open mode only
-  // needs the local first-run profile. Both land on /bienvenida otherwise.
+  // needs the local first-run profile. A visitor with no account at all gets
+  // the public portada; an account still waiting for approval, or an open
+  // workspace without a profile, lands on /bienvenida.
   useEffect(() => {
     let active = true;
     fetchAuthStatus().then((status) => {
       if (!active) return;
-      if (status.mode === "protected" && (!status.user || status.user.status !== "active")) {
+      if (status.mode === "protected" && !status.user) {
+        router.replace("/portada");
+        return;
+      }
+      if (status.mode === "protected" && status.user?.status !== "active") {
         router.replace("/bienvenida");
         return;
       }
@@ -212,17 +217,37 @@ export default function Home() {
     };
   }, [ready]);
 
-  function handleFiles(list: FileList | File[]) {
-    if (uploadInFlight.current || pendingFiles) return;
-    const files = [...list];
-    const validation = validateDrawingFiles(files, overview?.upload_limits);
-    if (validation) {
-      setError(validation);
-      return;
-    }
-    setError(null);
+  function addFiles(list: FileList | File[]) {
+    if (uploadInFlight.current) return;
+    const current = draft ?? [];
+    const seen = new Set(current.map((f) => `${f.name}:${f.size}`));
+    const files = [...current, ...[...list].filter((f) => !seen.has(`${f.name}:${f.size}`))];
     setUploadError(null);
-    setPendingFiles(files);
+    const validation = validateDrawingFiles(files, overview?.upload_limits);
+    setDraftError(validation);
+    setDraft(validation ? current : files);
+  }
+
+  function removeFile(index: number) {
+    setDraft((current) => (current ?? []).filter((_, i) => i !== index));
+    setDraftError(null);
+    setUploadError(null);
+  }
+
+  function openComposer() {
+    setDraft((current) => current ?? []);
+    // After it renders: bring it into view and put the keyboard on "choose sheets".
+    window.setTimeout(() => {
+      const pick = document.getElementById(COMPOSER_PICK_ID);
+      pick?.scrollIntoView({ block: "center", behavior: "smooth" });
+      pick?.focus({ preventScroll: true });
+    }, 0);
+  }
+
+  function closeComposer() {
+    setDraft(null);
+    setDraftError(null);
+    setUploadError(null);
   }
 
   async function createProject(files: File[], name: string, client: string) {
@@ -238,7 +263,7 @@ export default function Home() {
       if (warnings.length) {
         try { sessionStorage.setItem("klave.upload.warning." + project_id, warnings.join(" ")); } catch {}
       }
-      setPendingFiles(null);
+      setDraft(null);
       router.push(`/proyecto/${encodeURIComponent(project_id)}`);
     } catch (e) {
       setUploadError(uploadErrorMessage(e, "No se pudo confirmar la subida. Revisa la lista de proyectos antes de volver a subirlos; conservamos tu selección."));
@@ -293,7 +318,7 @@ export default function Home() {
         e.preventDefault();
         dragDepth.current = 0;
         setDragging(false);
-        if (e.dataTransfer.files?.length) handleFiles(e.dataTransfer.files);
+        if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
       }}
     >
       {/* Drop overlay: the whole home accepts planos. */}
@@ -308,16 +333,6 @@ export default function Home() {
       )}
 
       <WorkspaceHeader active="proyectos" />
-
-      {pendingFiles && (
-        <NewProjectDialog
-          files={pendingFiles}
-          busy={uploading}
-          error={uploadError}
-          onCancel={() => setPendingFiles(null)}
-          onCreate={(name, client) => createProject(pendingFiles, name, client)}
-        />
-      )}
 
       {toasts.length > 0 && (
         <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
@@ -351,7 +366,7 @@ export default function Home() {
           multiple
           className="hidden"
           onChange={(e) => {
-            if (e.target.files?.length) handleFiles(e.target.files);
+            if (e.target.files?.length) addFiles(e.target.files);
             e.target.value = "";
           }}
         />
@@ -369,7 +384,7 @@ export default function Home() {
           </div>
           <Button
             variant="primary"
-            onClick={() => inputRef.current?.click()}
+            onClick={openComposer}
             disabled={uploading}
             data-tour="inicio.subir"
           >
@@ -404,6 +419,20 @@ export default function Home() {
         {overview && <AttentionStrip overview={overview} focus={focus} onFocus={setFocus} />}
 
         {projects !== null && <InicioRecorrido />}
+
+        {projects !== null && (draft !== null || projects.length === 0) && (
+          <NewProjectComposer
+            title={projects.length === 0 ? "Sube tu primera obra" : "Nuevo proyecto"}
+            files={draft ?? []}
+            limits={overview?.upload_limits}
+            busy={uploading}
+            error={draftError ?? uploadError}
+            onPick={() => inputRef.current?.click()}
+            onRemove={removeFile}
+            onCreate={(name, client) => createProject(draft ?? [], name, client)}
+            onClose={projects.length > 0 ? closeComposer : undefined}
+          />
+        )}
 
         {projects !== null && projects.length > 0 && (
           <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -451,22 +480,7 @@ export default function Home() {
               </div>
             ))}
           </div>
-        )) : projects.length === 0 ? (
-          <div>
-            <EmptyState
-              icon={<CloudArrowUp size={20} weight="duotone" />}
-              title="Sube tu primer plano"
-              hint="Sube hasta 40 hojas DWG o DXF de una misma obra. Si un DWG no se puede convertir, expórtalo a DXF desde tu programa de dibujo e inténtalo de nuevo."
-              action={
-                <span className="flex flex-wrap items-center justify-center gap-2">
-                  <Button variant="primary" onClick={() => inputRef.current?.click()}>
-                    <Plus /> Nuevo proyecto
-                  </Button>
-                </span>
-              }
-            />
-          </div>
-        ) : filtered && filtered.length === 0 ? (
+        )) : projects.length === 0 ? null : filtered && filtered.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted">
             {focus !== "all"
               ? "Nada pendiente en este filtro."
@@ -489,7 +503,10 @@ export default function Home() {
         ) : (
           // One list, divided rows: projects are entries in a register, not
           // separate objects to admire.
-          <ul className="card divide-y divide-border overflow-clip">
+          // No overflow clip: each row's options menu hangs below it, and on
+          // the last row it must reach past the card. The rows round the
+          // corners instead.
+          <ul className="card divide-y divide-border [&>li:first-child>*]:rounded-t-[11px] [&>li:last-child>*]:rounded-b-[11px]">
             {filtered?.map((project) => (
               <li key={project.project_id}>
                 <ProjectRow project={project} onChanged={refreshNow} onError={setError} />
@@ -891,142 +908,5 @@ function ProjectRow({
       </Link>
       {dialog}
     </>
-  );
-}
-
-
-/* ------------------------------------------------------------ new project -- */
-
-function suggestName(file: File): string {
-  const stem = file.name.replace(/\.(dwg|dxf)$/i, "").replace(/[_\-]+/g, " ").trim();
-  return stem.replace(/\s+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 80);
-}
-
-function NewProjectDialog({
-  files,
-  busy,
-  error,
-  onCancel,
-  onCreate,
-}: {
-  files: File[];
-  busy: boolean;
-  error: string | null;
-  onCancel: () => void;
-  onCreate: (name: string, client: string) => void;
-}) {
-  const [name, setName] = useState(() => suggestName(files[0]));
-  const [client, setClient] = useState("");
-  const totalMb = files.reduce((sum, f) => sum + f.size, 0) / 1e6;
-  const formId = "nuevo-proyecto";
-  // Qué datos jala cada hoja: el ruteo real del motor, consultado por
-  // nombre. Si la consulta falla, la lista simple sigue sirviendo.
-  const [previews, setPreviews] = useState<Map<string, DisciplinePreview> | null>(null);
-  const [openFile, setOpenFile] = useState<string | null>(null);
-  useEffect(() => {
-    let active = true;
-    previewDisciplinas(files.map((f) => f.name))
-      .then((rows) => {
-        if (active) setPreviews(new Map(rows.map((row) => [row.filename, row])));
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [files]);
-
-  return (
-    <Modal
-      open
-      busy={busy}
-      onClose={onCancel}
-      title="Nuevo proyecto"
-      sub={`${files.length === 1 ? "1 hoja" : `${files.length} hojas`} · ${totalMb.toFixed(1)} MB. Las hojas se procesan juntas como una sola obra.`}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onCancel} disabled={busy}>
-            Cancelar
-          </Button>
-          <Button type="submit" form={formId} variant="primary" disabled={busy || name.trim().length < 2}>
-            {busy ? (
-              <>
-                <CircleNotch className="animate-spin" /> Subiendo…
-              </>
-            ) : (
-              <>
-                <Plus /> Crear y procesar
-              </>
-            )}
-          </Button>
-        </>
-      }
-    >
-      <form
-        id={formId}
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!busy && name.trim().length >= 2) onCreate(name.trim(), client.trim());
-        }}
-      >
-        {error && <div role="alert" className="mb-4"><Callout tone="danger">{error}</Callout></div>}
-        <label htmlFor="project-name" className="mb-1 block text-xs font-medium text-muted">Nombre del proyecto</label>
-        <Input
-          id="project-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          autoFocus
-          maxLength={120}
-          required
-          className="mb-3 w-full"
-        />
-        <label htmlFor="project-client" className="mb-1 block text-xs font-medium text-muted">Cliente (opcional)</label>
-        <Input
-          id="project-client"
-          value={client}
-          onChange={(e) => setClient(e.target.value)}
-          placeholder="Constructora, dependencia, particular…"
-          maxLength={120}
-          className="mb-3 w-full"
-        />
-        <ul className="max-h-56 space-y-0.5 overflow-y-auto text-xs">
-          {files.map((file, index) => {
-            const preview = previews?.get(file.name);
-            const open = openFile === file.name;
-            return (
-              <li key={`${index}-${file.name}`}>
-                <button
-                  type="button"
-                  onClick={() => setOpenFile(open ? null : file.name)}
-                  aria-expanded={open}
-                  className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-muted transition-colors hover:bg-surface-2"
-                >
-                  <FileText size={14} className="shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">{file.name}</span>
-                  {preview && (
-                    <Badge tone={preview.structural ? "accent" : "default"}>
-                      {preview.label}
-                    </Badge>
-                  )}
-                  <CaretDown
-                    size={12}
-                    className={`shrink-0 text-faint transition-transform ${open ? "" : "-rotate-90"}`}
-                  />
-                </button>
-                {open && (
-                  <ul className="mb-1 ml-6 space-y-0.5 border-l border-border pl-2.5 text-muted">
-                    {(preview?.jala ?? ["Consultando qué datos jala…"]).map((dato) => (
-                      <li key={dato} className="flex items-start gap-1.5">
-                        <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-faint" />
-                        {dato}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </form>
-    </Modal>
   );
 }

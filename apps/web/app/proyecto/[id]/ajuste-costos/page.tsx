@@ -126,8 +126,8 @@ function EditorAjuste({
             onChange={(e) => setLocal({ ...local, periodo_base: e.target.value })}
           />
           <span className="mt-1 block text-xs text-muted">
-            Del acto de presentación y apertura de proposiciones — no de la firma del
-            contrato ni del arranque de la obra.
+            Es el mes del acto de presentación y apertura de proposiciones. La firma del
+            contrato y el arranque de la obra no sirven como base.
           </span>
         </label>
         <label className="block">
@@ -207,8 +207,8 @@ function EditorAjuste({
         <span>
           El atraso es imputable al contratista
           <span className="block text-xs text-muted">
-            Su obra atrasada se ajusta con los índices que le tocaban según el programa, no
-            con los de este periodo (RLOPSRM art. 176). De otro modo atrasarse pagaría.
+            Su obra atrasada se ajusta con los índices del periodo que le tocaba según el
+            programa (RLOPSRM art. 176), para que el atraso no le dé un ajuste mayor.
           </span>
         </span>
       </label>

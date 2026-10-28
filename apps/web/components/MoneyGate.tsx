@@ -47,9 +47,9 @@ export function UnverifiedBanner({
           </Link>
         }
       >
-        <span className="font-medium">Sin verificar.</span> Importes calculados con unidades
+        <span className="font-medium">Sin verificar.</span> Los importes usan unidades
         leídas del archivo ({units?.unit} · {Math.round((units?.confidence ?? 0) * 100)} %)
-        que nadie ha confirmado; el Excel sale marcado SIN VERIFICAR hasta que se confirmen
+        que nadie ha confirmado. El Excel sale marcado SIN VERIFICAR hasta que se confirmen
         unidades y detecciones.
       </Callout>
     </div>
@@ -113,7 +113,7 @@ export function UnitsGate({
           <h2 className="text-[0.95rem] font-semibold">Primero, las unidades</h2>
           <p className="text-sm text-muted">
             Todo el dinero se multiplica por esta escala. El plano no la declara con
-            certeza, así que no mostramos importes hasta que la confirmes.
+            certeza; los importes aparecen cuando la confirmes.
           </p>
         </div>
       </div>

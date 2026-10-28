@@ -293,7 +293,7 @@ export default function CatalogoPage() {
         )}
         <PageHeader
           title="Catálogo del taller"
-          sub="Insumos, matrices de precio unitario y rendimientos que usa cada cálculo. Cada precio indica su fuente: sustituye las referencias por tus cotizaciones. Los términos viven en el glosario (/glosario)."
+          sub="Insumos, matrices de precio unitario y rendimientos que usa cada cálculo. Cada precio indica su fuente: sustituye las referencias por tus cotizaciones. Los términos están en el glosario (/glosario)."
           actions={
             <>
               <input
@@ -351,7 +351,7 @@ export default function CatalogoPage() {
                         close();
                         matricesRef.current?.click();
                       }}
-                      hint="La base OPUS tal cual (un .zip de su carpeta con los .DBF y .FPT) o el catálogo de conceptos con insumos exportado de OPUS o Neodata (XLSX/CSV): crea conceptos con su matriz."
+                      hint="La base OPUS tal cual (un .zip de su carpeta con los .DBF y .FPT) o el catálogo de conceptos con insumos exportado de OPUS o Neodata (XLSX/CSV). Crea conceptos con su matriz."
                     >
                       Base o matrices de OPUS / Neodata
                     </MenuItem>
@@ -1451,9 +1451,9 @@ function ApusSection({
             {sinMatriz.length === 1
               ? "Un concepto no tiene matriz ni precio adoptado."
               : `${sinMatriz.length} conceptos no tienen matriz ni precio adoptado.`}{" "}
-            Una matriz generada sale de la plantilla de su familia, cada línea dice de dónde
-            viene y el veredicto contra el precio publicado queda en la fila; lo que ninguna
-            plantilla reconoce se queda como está y se dice.
+            Cada matriz generada sale de la plantilla de su familia y cada línea dice de dónde
+            viene. El veredicto contra el precio publicado queda en la fila. Los conceptos sin
+            plantilla se quedan como están y el aviso los nombra.
           </Callout>
         </div>
       )}
@@ -1709,7 +1709,7 @@ function NewConceptRow({
       return;
     }
     if (!resourceCode) {
-      onError("Un concepto nace con al menos un recurso en su APU (sin precio no hay costo).");
+      onError("Agrega al menos un recurso al APU: un concepto sin recursos no tiene costo.");
       return;
     }
     setBusy(true);
@@ -2153,7 +2153,7 @@ function ConceptRows({
           <td colSpan={4} className="px-4 py-2 text-sm">
             <div className="flex flex-wrap items-center gap-3 pl-6">
               <span className="min-w-0 flex-1 text-muted">
-                Sin matriz. Genera una desde la plantilla de su familia: cada línea dirá de dónde
+                Sin matriz: genera una desde la plantilla de su familia. Cada línea dirá de dónde
                 sale y el veredicto contra el precio publicado quedará en la fila.
               </span>
               <Button
@@ -2647,8 +2647,7 @@ function FuentesSection({
         <div className="mb-2 text-sm font-medium">Catálogo propio</div>
         <p className="mb-3 text-xs text-muted">
           Tu libro de precios en XLSX o CSV (clave, descripción, unidad, precio
-          unitario). Entra a la biblioteca marcado como catálogo propio, nunca
-          como publicación.
+          unitario). Entra a la biblioteca marcado como catálogo propio.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <input

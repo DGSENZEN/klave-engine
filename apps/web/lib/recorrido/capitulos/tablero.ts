@@ -46,5 +46,5 @@ export const tablero: Capitulo = {
     },
   ]),
   transferencia:
-    "En tu obra, vuelve al tablero cuando te pierdas: el nodo en «Atención» es el que pide tu mano.",
+    "En tu obra, vuelve al tablero cuando te pierdas: el nodo en «Atención» es el que necesita tu trabajo.",
 };

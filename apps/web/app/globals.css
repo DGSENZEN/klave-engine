@@ -71,6 +71,20 @@
   --chart-3: #a6a6af;
   --chart-4: #23232a;
   --chart-5: #cfcfd6;
+
+  /* Portada pública (Línea 68): its own world, ink on white and one
+   * naranja tabique line. Used only by app/portada. */
+  --l68-paper: #fbfbfa;
+  --l68-ink: #121212;
+  --l68-ink-2: #4a4a50;
+  --l68-rule: #dcdcdf;
+  --l68-accent: #e8742a;
+  --l68-accent-hover: #d9651c;
+  /* The accent as text is a fired-brick brown: ≥ 4.5:1 on paper and soft. */
+  --l68-accent-text: #a94a0f;
+  /* Ink, not white, on the orange: white would fail contrast. */
+  --l68-accent-fg: #121212;
+  --l68-accent-soft: #fcebdc;
 }
 
 [data-theme="dark"] {
@@ -127,6 +141,16 @@
   --chart-3: #5e5e67;
   --chart-4: #d8d8de;
   --chart-5: #3a3a42;
+
+  --l68-paper: #0d0d0e;
+  --l68-ink: #f1f1ef;
+  --l68-ink-2: #a9a9af;
+  --l68-rule: #2a2a2f;
+  --l68-accent: #f08a3e;
+  --l68-accent-hover: #f59d5b;
+  --l68-accent-text: #f08a3e;
+  --l68-accent-fg: #0d0d0e;
+  --l68-accent-soft: #2a1a0e;
 }
 
 @theme inline {

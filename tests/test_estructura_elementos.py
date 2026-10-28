@@ -405,7 +405,7 @@ def test_an_unread_drawn_section_without_a_note_takes_the_measure_then_the_defau
     assert (sin.seccion_cm.valor, sin.seccion_cm.fuente) == (SECCION_SUPUESTA_CM["castillo"],
                                                              "supuesto")  # fmt: skip
     for e in (con, sin):
-        assert any(a.startswith("sección: el plano la dibuja; no se leyó") for a in e.avisos)
+        assert any(a.startswith("sección: el plano la dibuja y no se leyó") for a in e.avisos)
         assert any(a.ilegible for a in e.seccion_cm.alternativas)
         assert e.dudas
 

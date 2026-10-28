@@ -3,8 +3,7 @@
 An admin invites an address with a role and optional project grants. The
 link (mailed when a provider exists, always returned to the admin so it can
 be handed over by other means) lands on /invitacion, where the invitee sets
-a name and password — or continues with Google on the same address — and
-comes out active and verified. Open invitations can be resent or revoked.
+a name and password and comes out active and verified. Open invitations can be resent or revoked.
 """
 
 from typing import Any, Literal
@@ -24,6 +23,7 @@ from apps.api.auth.common import (
     users_dependency,
     web_link,
 )
+from apps.api.auth.passwords import password_problem
 from apps.api.auth.store import UsersDbUnavailable, UserStore
 from apps.api.dependencies import ProjectStore, get_settings, get_store
 from apps.api.events import BUS
@@ -217,7 +217,6 @@ def resend_invitation(
 def invitation_info(
     token: str,
     users: UserStore = Depends(users_dependency),
-    settings: Settings = Depends(get_settings),
 ) -> dict:
     try:
         invite = users.get_invitation_by_token(token)
@@ -233,7 +232,6 @@ def invitation_info(
         "inviter_name": invite.get("inviter_name"),
         "project_count": len(invite.get("project_grants") or []),
         "expires_at": invite["expires_at"].isoformat(),
-        "google_enabled": bool(settings.auth_google_id and settings.auth_google_secret),
     }
 
 
@@ -256,6 +254,12 @@ def accept_invitation(
                     "error_type": "invitation_closed",
                     "message": "La invitación ya no está abierta; pide una nueva.",
                 },
+            )
+        # Same policy as register and reset: an invitation is not a side door.
+        problem = password_problem(body.password, invite["email"])
+        if problem:
+            raise HTTPException(
+                status_code=422, detail={"error_type": "weak_password", "message": problem}
             )
         if users.get_by_email(invite["email"]):
             raise HTTPException(

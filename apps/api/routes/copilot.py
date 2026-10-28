@@ -175,7 +175,7 @@ def aplicar(
             detail={
                 "error_type": "accion_incompleta",
                 "message": accion.requiere
-                or "Esa acción necesita un dato que el motor no puede suponer.",
+                or "Esa acción necesita un dato que Klave no puede suponer.",
             },
         )
 

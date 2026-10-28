@@ -8,6 +8,9 @@ export { apiMessage } from "./api";
 import { API_BASE, ApiError } from "@/lib/api";
 import { isRoleRefusal, keepStatus } from "@/lib/capabilities";
 
+/** Mirrors MIN_LENGTH in apps/api/auth/passwords.py; the server still has the last word. */
+export const PASSWORD_MIN = 10;
+
 export type AuthUser = {
   user_id: string;
   email: string;
@@ -18,7 +21,6 @@ export type AuthUser = {
   email_verified: boolean;
   pending_email: string | null;
   has_password: boolean;
-  has_google: boolean;
 };
 
 export type Workspace = { slug: string; name: string };
@@ -28,7 +30,6 @@ export type AuthStatus = {
   failure?: "network" | "service" | "users_db";
   user: AuthUser | null;
   workspace: Workspace | null;
-  google_enabled: boolean;
   /** Whether a mail provider is configured; otherwise links are handed over by admins. */
   mail_enabled: boolean;
   /** "open": anyone founds or asks to join; "invite_only": only invitation links. */
@@ -79,7 +80,6 @@ export async function fetchAuthStatus(): Promise<AuthStatus> {
         : detail?.error_type === "users_db_unavailable" ? "users_db" : "service",
       user: null,
       workspace: null,
-      google_enabled: false,
       mail_enabled: false,
     };
   }
@@ -220,8 +220,6 @@ export const revokeSession = (sessionId: string) =>
 export const logoutOthers = () =>
   authFetch<{ ok: true; sessions_revoked: number }>("/auth/logout-all", { method: "POST" });
 
-export const unlinkGoogle = () => authFetch("/auth/google/unlink", { method: "POST" });
-
 export const sendVerification = () =>
   authFetch<{ delivered: boolean; mail_enabled: boolean; already_verified?: boolean }>(
     "/auth/verify/send",
@@ -308,7 +306,6 @@ export type InvitationInfo = {
   inviter_name: string | null;
   project_count: number;
   expires_at: string;
-  google_enabled: boolean;
 };
 
 export const invitationInfo = (token: string) =>

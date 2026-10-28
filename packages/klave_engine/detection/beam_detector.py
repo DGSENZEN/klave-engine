@@ -309,7 +309,7 @@ def detect_beams(
                     # R182: Marina 71656, 71658 and 7165B sit on MUROS1 boxes between castillos.
                     sin_claro = (
                         "longitud: el muro bajo la etiqueta está dibujado en cajas cerradas "
-                        f"({', '.join(cajas)}), no en líneas: no se lee su claro; sin claro"
+                        f"({', '.join(cajas)}) y su claro no se lee; sin claro"
                     )
             properties["sin_claro"] = sin_claro
             notes.append(sin_claro)
@@ -1335,7 +1335,7 @@ def _corto_de_apoyo(
     return (
         f"claro dudoso: el tramo tomado mide {round(elegida.tramo.largo, 3):g}, menos que una "
         f"viga ({config.min_beam_length:g}), y es de la capa en que se apoya "
-        f"({elegida.tramo.linea.layer}), no de la suya; otras líneas alineadas: "
+        f"({elegida.tramo.linea.layer}), distinta de la suya; otras líneas alineadas: "
         + ("; ".join(otras) if otras else "ninguna")
     )
 

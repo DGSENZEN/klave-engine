@@ -154,7 +154,7 @@ export function IntegracionSection({
       </Card>
 
       <Card className="p-5">
-        <SectionTitle sub="RLOPSRM art. 195. Una tasa sin indicador, fuente y fecha de publicación no es un análisis: es un invento.">
+        <SectionTitle sub="RLOPSRM art. 195. El análisis necesita la tasa con su indicador, su fuente y su fecha de publicación.">
           Financiamiento
         </SectionTitle>
         {!loaded && !loadError && (
@@ -217,7 +217,7 @@ export function IntegracionSection({
               </label>
             </div>
             <p className="mt-3 text-xs text-muted">
-              Sin los cuatro datos no hay análisis: el financiamiento se queda en porcentaje
+              Si falta alguno de los cuatro datos, el financiamiento se queda en el porcentaje
               declarado.
             </p>
             {editCatalog && <Button

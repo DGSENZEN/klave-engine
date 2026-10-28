@@ -1,5 +1,5 @@
 const AUTH_PAGES = new Set([
-  "/bienvenida", "/invitacion", "/recuperar", "/restablecer", "/verificar",
+  "/bienvenida", "/registro", "/invitacion", "/recuperar", "/restablecer", "/verificar",
 ]);
 export const SESSION_RETURN_KEY = "klave.session.return";
 

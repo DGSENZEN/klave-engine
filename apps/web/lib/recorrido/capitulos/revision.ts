@@ -67,5 +67,5 @@ export const revision: Capitulo = {
     },
   ]),
   transferencia:
-    "En tu obra, nada sale sin estos tres pasos: un presupuesto sin verificar se entrega sellado, a propósito.",
+    "En tu obra, haz siempre estos tres pasos: un presupuesto sin verificar sale con el sello SIN VERIFICAR.",
 };

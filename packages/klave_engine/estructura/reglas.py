@@ -1149,7 +1149,7 @@ def _primer_estribo(o: _Origen, lectura: Lectura, lecturas: _Lecturas) -> None:
         if not familias:
             lecturas.avisar(
                 f"{o.donde} da el primer estribo a {centimetros:g} cm pero no dice en qué "
-                "elementos; no se sabe a cuáles aplica y no se usa."
+                "elementos; no se usa."
             )
         for familia in familias:
             lecturas.poner(f"primer_estribo:{familia}", o.dato(_metros(centimetros), cita))
@@ -1672,7 +1672,7 @@ def _primer_estribo_sin_familias(
             continue
         lecturas.avisar(
             f"{o.donde} da el primer estribo a {_numero(m.group(1)):g} cm pero no dice en qué "
-            "elementos; no se sabe a cuáles aplica y no se usa."
+            "elementos; no se usa."
         )
         return True
     return False

@@ -84,8 +84,6 @@ const AUDIT_LABELS: Record<string, string> = {
   password_reset_requested: "pidió restablecer su contraseña",
   password_changed: "cambió su contraseña",
   email_changed: "cambió su correo",
-  google_unlinked: "desvinculó Google",
-  google_linked: "vinculó Google",
   project_access_granted: "compartió un proyecto con",
   project_access_revoked: "quitó acceso a un proyecto",
   project_removed: "quitó un proyecto de la lista",
@@ -539,8 +537,18 @@ function InviteDialog({
     };
   }, []);
 
-  async function submit(event: FormEvent) {
+  // Propietario on a project is full control of it: the invitation asks
+  // before granting it, like sharing from the project does.
+  const [confirmarPropietario, setConfirmarPropietario] = useState(false);
+  const daPropietario = Object.values(grants).some((g) => g === "owner");
+
+  function submit(event: FormEvent) {
     event.preventDefault();
+    if (daPropietario) setConfirmarPropietario(true);
+    else void invitar();
+  }
+
+  async function invitar() {
     setBusy(true);
     setError(null);
     try {
@@ -559,6 +567,7 @@ function InviteDialog({
 
   const formId = "invitar-al-taller";
   return (
+    <>
     <Modal
       open
       busy={busy}
@@ -674,6 +683,18 @@ function InviteDialog({
           </form>
         )}
     </Modal>
+    <ConfirmDialog
+      open={confirmarPropietario}
+      title={`Dar Propietario a ${email.trim() || "esta persona"} — podrá compartir, cerrar nodos y eliminar ${Object.values(grants).filter((g) => g === "owner").length === 1 ? "ese proyecto" : "esos proyectos"}`}
+      description="El propietario tiene el mismo control que tú sobre el proyecto. Para trabajar en él basta con Editar."
+      confirmLabel="Dar Propietario e invitar"
+      onCancel={() => setConfirmarPropietario(false)}
+      onConfirm={() => {
+        setConfirmarPropietario(false);
+        void invitar();
+      }}
+    />
+    </>
   );
 }
 

@@ -23,7 +23,7 @@ export const catalogo: Capitulo = {
       ancla: "variantes.mapear",
       titulo: "Mapea una variante",
       cuerpo:
-        "Con «Elegir…» asigna el concepto de tu catálogo que le corresponde, o márcala sin equivalente. Así el presupuesto habla con tus claves.",
+        "Con «Elegir…» asigna el concepto de tu catálogo que le corresponde, o márcala sin equivalente. Así el presupuesto usa tus claves.",
       avanza: {
         con: "evento",
         tipo: "costing_updated",
@@ -35,7 +35,7 @@ export const catalogo: Capitulo = {
       tipo: "mirar",
       ancla: "variantes.resumen",
       titulo: "Klave lo recuerda",
-      cuerpo: "Lo que mapeas se aplica solo en tus siguientes obras. Decides una vez.",
+      cuerpo: "Lo que mapeas se aplica solo en tus siguientes obras: decides una vez.",
       avanza: { con: "siguiente" },
     },
     {
@@ -59,5 +59,5 @@ export const catalogo: Capitulo = {
     },
   ]),
   transferencia:
-    "En tu obra, importa tus precios (o tu base de OPUS) antes de cotizar: los de referencia son un punto de partida, no precio de mercado.",
+    "En tu obra, importa tus precios (o tu base de OPUS) antes de cotizar. Los precios de referencia sirven para empezar y no son precios de mercado.",
 };

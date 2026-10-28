@@ -1,0 +1,950 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-28T04:30:33.000Z",
+  "title": "Design System: Klave",
+  "extensions": {
+    "colorMeta": {
+      "app-background": {
+        "role": "neutral",
+        "displayName": "App Ground",
+        "canonical": "#f7f7f8",
+        "cssVar": "--background",
+        "dark": "#0a0a0b",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.001 286.4)",
+          "oklch(25% 0.001 286.4)",
+          "oklch(36% 0.001 286.4)",
+          "oklch(48% 0.001 286.4)",
+          "oklch(60% 0.001 286.4)",
+          "oklch(72% 0.001 286.4)",
+          "oklch(84% 0.001 286.4)",
+          "oklch(95% 0.001 286.4)"
+        ]
+      },
+      "app-surface": {
+        "role": "neutral",
+        "displayName": "App Surface",
+        "canonical": "#ffffff",
+        "cssVar": "--surface",
+        "dark": "#131316",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(25% 0 89.9)",
+          "oklch(36% 0 89.9)",
+          "oklch(48% 0 89.9)",
+          "oklch(60% 0 89.9)",
+          "oklch(72% 0 89.9)",
+          "oklch(84% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "app-surface-2": {
+        "role": "neutral",
+        "displayName": "App Surface 2",
+        "canonical": "#f2f2f3",
+        "cssVar": "--surface-2",
+        "dark": "#1b1b1f",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.001 286.4)",
+          "oklch(25% 0.001 286.4)",
+          "oklch(36% 0.001 286.4)",
+          "oklch(48% 0.001 286.4)",
+          "oklch(60% 0.001 286.4)",
+          "oklch(72% 0.001 286.4)",
+          "oklch(84% 0.001 286.4)",
+          "oklch(95% 0.001 286.4)"
+        ]
+      },
+      "app-surface-3": {
+        "role": "neutral",
+        "displayName": "App Surface 3",
+        "canonical": "#e8e8ea",
+        "cssVar": "--surface-3",
+        "dark": "#242429",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.001 286.3)",
+          "oklch(25% 0.002 286.3)",
+          "oklch(36% 0.002 286.3)",
+          "oklch(48% 0.003 286.3)",
+          "oklch(60% 0.003 286.3)",
+          "oklch(72% 0.003 286.3)",
+          "oklch(84% 0.002 286.3)",
+          "oklch(95% 0.001 286.3)"
+        ]
+      },
+      "app-foreground": {
+        "role": "neutral",
+        "displayName": "App Ink Text",
+        "canonical": "#161618",
+        "cssVar": "--foreground",
+        "dark": "#ededf0",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.002 286)",
+          "oklch(25% 0.003 286)",
+          "oklch(36% 0.004 286)",
+          "oklch(48% 0.004 286)",
+          "oklch(60% 0.004 286)",
+          "oklch(72% 0.004 286)",
+          "oklch(84% 0.003 286)",
+          "oklch(95% 0.002 286)"
+        ]
+      },
+      "app-muted": {
+        "role": "neutral",
+        "displayName": "App Muted Text",
+        "canonical": "#5c5c64",
+        "cssVar": "--muted",
+        "dark": "#9a9aa3",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.005 285.9)",
+          "oklch(25% 0.008 285.9)",
+          "oklch(36% 0.012 285.9)",
+          "oklch(48% 0.013 285.9)",
+          "oklch(60% 0.013 285.9)",
+          "oklch(72% 0.012 285.9)",
+          "oklch(84% 0.008 285.9)",
+          "oklch(95% 0.005 285.9)"
+        ]
+      },
+      "app-faint": {
+        "role": "neutral",
+        "displayName": "App Faint Text",
+        "canonical": "#6c6c74",
+        "cssVar": "--faint",
+        "dark": "#82828a",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.005 286)",
+          "oklch(25% 0.008 286)",
+          "oklch(36% 0.011 286)",
+          "oklch(48% 0.012 286)",
+          "oklch(60% 0.012 286)",
+          "oklch(72% 0.012 286)",
+          "oklch(84% 0.008 286)",
+          "oklch(95% 0.005 286)"
+        ]
+      },
+      "app-border": {
+        "role": "neutral",
+        "displayName": "App Hairline",
+        "canonical": "#e6e6e9",
+        "cssVar": "--border",
+        "dark": "#232328",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.002 286.3)",
+          "oklch(25% 0.003 286.3)",
+          "oklch(36% 0.004 286.3)",
+          "oklch(48% 0.004 286.3)",
+          "oklch(60% 0.004 286.3)",
+          "oklch(72% 0.004 286.3)",
+          "oklch(84% 0.003 286.3)",
+          "oklch(95% 0.002 286.3)"
+        ]
+      },
+      "app-border-strong": {
+        "role": "neutral",
+        "displayName": "App Strong Hairline",
+        "canonical": "#d2d2d7",
+        "cssVar": "--border-strong",
+        "dark": "#333339",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.003 286.3)",
+          "oklch(25% 0.004 286.3)",
+          "oklch(36% 0.006 286.3)",
+          "oklch(48% 0.007 286.3)",
+          "oklch(60% 0.007 286.3)",
+          "oklch(72% 0.007 286.3)",
+          "oklch(84% 0.005 286.3)",
+          "oklch(95% 0.003 286.3)"
+        ]
+      },
+      "app-primary": {
+        "role": "neutral",
+        "displayName": "App Ink",
+        "canonical": "#18181b",
+        "cssVar": "--primary",
+        "dark": "#ededf0",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.002 285.9)",
+          "oklch(25% 0.004 285.9)",
+          "oklch(36% 0.005 285.9)",
+          "oklch(48% 0.006 285.9)",
+          "oklch(60% 0.006 285.9)",
+          "oklch(72% 0.006 285.9)",
+          "oklch(84% 0.004 285.9)",
+          "oklch(95% 0.002 285.9)"
+        ]
+      },
+      "app-primary-hover": {
+        "role": "neutral",
+        "displayName": "App Ink Hover",
+        "canonical": "#2c2c30",
+        "cssVar": "--primary-hover",
+        "dark": "#ffffff",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.003 286)",
+          "oklch(25% 0.005 286)",
+          "oklch(36% 0.007 286)",
+          "oklch(48% 0.007 286)",
+          "oklch(60% 0.007 286)",
+          "oklch(72% 0.007 286)",
+          "oklch(84% 0.005 286)",
+          "oklch(95% 0.003 286)"
+        ]
+      },
+      "app-primary-fg": {
+        "role": "neutral",
+        "displayName": "App Ink Foreground",
+        "canonical": "#ffffff",
+        "cssVar": "--primary-fg",
+        "dark": "#0a0a0b",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(25% 0 89.9)",
+          "oklch(36% 0 89.9)",
+          "oklch(48% 0 89.9)",
+          "oklch(60% 0 89.9)",
+          "oklch(72% 0 89.9)",
+          "oklch(84% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "app-accent": {
+        "role": "primary",
+        "displayName": "Cobalt",
+        "canonical": "#2b4acb",
+        "cssVar": "--accent",
+        "dark": "#8296ff",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.077 267.3)",
+          "oklch(25% 0.129 267.3)",
+          "oklch(36% 0.185 267.3)",
+          "oklch(48% 0.202 267.3)",
+          "oklch(60% 0.202 267.3)",
+          "oklch(72% 0.196 267.3)",
+          "oklch(84% 0.134 267.3)",
+          "oklch(95% 0.077 267.3)"
+        ]
+      },
+      "app-accent-hover": {
+        "role": "primary",
+        "displayName": "Cobalt Deep",
+        "canonical": "#223cae",
+        "cssVar": "--accent-hover",
+        "dark": "#9dadff",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.07 267.3)",
+          "oklch(25% 0.117 267.3)",
+          "oklch(36% 0.168 267.3)",
+          "oklch(48% 0.183 267.3)",
+          "oklch(60% 0.183 267.3)",
+          "oklch(72% 0.177 267.3)",
+          "oklch(84% 0.121 267.3)",
+          "oklch(95% 0.07 267.3)"
+        ]
+      },
+      "app-accent-soft": {
+        "role": "neutral",
+        "displayName": "Cobalt Tint",
+        "canonical": "#eef1fc",
+        "cssVar": "--accent-soft",
+        "dark": "#191e33",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.006 273.9)",
+          "oklch(25% 0.01 273.9)",
+          "oklch(36% 0.014 273.9)",
+          "oklch(48% 0.015 273.9)",
+          "oklch(60% 0.015 273.9)",
+          "oklch(72% 0.015 273.9)",
+          "oklch(84% 0.01 273.9)",
+          "oklch(95% 0.006 273.9)"
+        ]
+      },
+      "app-danger": {
+        "role": "neutral",
+        "displayName": "Desaturated Brick",
+        "canonical": "#b42318",
+        "cssVar": "--danger",
+        "dark": "#e5766c",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.07 29.5)",
+          "oklch(25% 0.116 29.5)",
+          "oklch(36% 0.167 29.5)",
+          "oklch(48% 0.182 29.5)",
+          "oklch(60% 0.182 29.5)",
+          "oklch(72% 0.176 29.5)",
+          "oklch(84% 0.12 29.5)",
+          "oklch(95% 0.07 29.5)"
+        ]
+      },
+      "app-danger-soft": {
+        "role": "neutral",
+        "displayName": "Brick Tint",
+        "canonical": "#fbf1f0",
+        "cssVar": "--danger-soft",
+        "dark": "#271514",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.004 24.3)",
+          "oklch(25% 0.007 24.3)",
+          "oklch(36% 0.01 24.3)",
+          "oklch(48% 0.011 24.3)",
+          "oklch(60% 0.011 24.3)",
+          "oklch(72% 0.011 24.3)",
+          "oklch(84% 0.007 24.3)",
+          "oklch(95% 0.004 24.3)"
+        ]
+      },
+      "app-warning": {
+        "role": "neutral",
+        "displayName": "Desaturated Ochre",
+        "canonical": "#935e0c",
+        "cssVar": "--warning",
+        "dark": "#d9a13e",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.042 70.1)",
+          "oklch(25% 0.07 70.1)",
+          "oklch(36% 0.101 70.1)",
+          "oklch(48% 0.11 70.1)",
+          "oklch(60% 0.11 70.1)",
+          "oklch(72% 0.107 70.1)",
+          "oklch(84% 0.073 70.1)",
+          "oklch(95% 0.042 70.1)"
+        ]
+      },
+      "app-warning-soft": {
+        "role": "neutral",
+        "displayName": "Ochre Tint",
+        "canonical": "#faf5ea",
+        "cssVar": "--warning-soft",
+        "dark": "#241c0e",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.006 86.4)",
+          "oklch(25% 0.01 86.4)",
+          "oklch(36% 0.014 86.4)",
+          "oklch(48% 0.015 86.4)",
+          "oklch(60% 0.015 86.4)",
+          "oklch(72% 0.015 86.4)",
+          "oklch(84% 0.01 86.4)",
+          "oklch(95% 0.006 86.4)"
+        ]
+      },
+      "app-success": {
+        "role": "neutral",
+        "displayName": "Desaturated Green",
+        "canonical": "#1e7048",
+        "cssVar": "--success",
+        "dark": "#57b483",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.039 157.4)",
+          "oklch(25% 0.064 157.4)",
+          "oklch(36% 0.093 157.4)",
+          "oklch(48% 0.101 157.4)",
+          "oklch(60% 0.101 157.4)",
+          "oklch(72% 0.098 157.4)",
+          "oklch(84% 0.067 157.4)",
+          "oklch(95% 0.039 157.4)"
+        ]
+      },
+      "app-success-soft": {
+        "role": "neutral",
+        "displayName": "Green Tint",
+        "canonical": "#eff6f1",
+        "cssVar": "--success-soft",
+        "dark": "#12231a",
+        "system": "app",
+        "tonalRamp": [
+          "oklch(15% 0.004 155.1)",
+          "oklch(25% 0.006 155.1)",
+          "oklch(36% 0.009 155.1)",
+          "oklch(48% 0.01 155.1)",
+          "oklch(60% 0.01 155.1)",
+          "oklch(72% 0.01 155.1)",
+          "oklch(84% 0.007 155.1)",
+          "oklch(95% 0.004 155.1)"
+        ]
+      },
+      "l68-paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "#fbfbfa",
+        "cssVar": "--l68-paper",
+        "dark": "#0d0d0e",
+        "system": "portada (Línea 68)",
+        "tonalRamp": [
+          "oklch(15% 0.001 106.4)",
+          "oklch(25% 0.001 106.4)",
+          "oklch(36% 0.001 106.4)",
+          "oklch(48% 0.001 106.4)",
+          "oklch(60% 0.001 106.4)",
+          "oklch(72% 0.001 106.4)",
+          "oklch(84% 0.001 106.4)",
+          "oklch(95% 0.001 106.4)"
+        ]
+      },
+      "l68-ink": {
+        "role": "neutral",
+        "displayName": "Línea Ink",
+        "canonical": "#121212",
+        "cssVar": "--l68-ink",
+        "dark": "#f1f1ef",
+        "system": "portada (Línea 68)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(25% 0 89.9)",
+          "oklch(36% 0 89.9)",
+          "oklch(48% 0 89.9)",
+          "oklch(60% 0 89.9)",
+          "oklch(72% 0 89.9)",
+          "oklch(84% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "l68-ink-2": {
+        "role": "neutral",
+        "displayName": "Second Ink",
+        "canonical": "#4a4a50",
+        "cssVar": "--l68-ink-2",
+        "dark": "#a9a9af",
+        "system": "portada (Línea 68)",
+        "tonalRamp": [
+          "oklch(15% 0.004 286)",
+          "oklch(25% 0.006 286)",
+          "oklch(36% 0.009 286)",
+          "oklch(48% 0.01 286)",
+          "oklch(60% 0.01 286)",
+          "oklch(72% 0.01 286)",
+          "oklch(84% 0.007 286)",
+          "oklch(95% 0.004 286)"
+        ]
+      },
+      "l68-rule": {
+        "role": "neutral",
+        "displayName": "Rule",
+        "canonical": "#dcdcdf",
+        "cssVar": "--l68-rule",
+        "dark": "#2a2a2f",
+        "system": "portada (Línea 68)",
+        "tonalRamp": [
+          "oklch(15% 0.002 286.3)",
+          "oklch(25% 0.003 286.3)",
+          "oklch(36% 0.004 286.3)",
+          "oklch(48% 0.004 286.3)",
+          "oklch(60% 0.004 286.3)",
+          "oklch(72% 0.004 286.3)",
+          "oklch(84% 0.003 286.3)",
+          "oklch(95% 0.002 286.3)"
+        ]
+      },
+      "l68-accent": {
+        "role": "primary",
+        "displayName": "Naranja Tabique",
+        "canonical": "#e8742a",
+        "cssVar": "--l68-accent",
+        "dark": "#f08a3e",
+        "system": "portada (Línea 68)",
+        "tonalRamp": [
+          "oklch(15% 0.071 48.6)",
+          "oklch(25% 0.118 48.6)",
+          "oklch(36% 0.165 48.6)",
+          "oklch(48% 0.165 48.6)",
+          "oklch(60% 0.165 48.6)",
+          "oklch(72% 0.132 48.6)",
+          "oklch(84% 0.076 48.6)",
+          "oklch(95% 0.024 48.6)"
+        ]
+      },
+      "l68-accent-hover": {
+        "role": "primary",
+        "displayName": "Naranja Tabique Deep",
+        "canonical": "#d9651c",
+        "cssVar": "--l68-accent-hover",
+        "dark": "#f59d5b",
+        "system": "portada (Línea 68)",
+        "tonalRamp": [
+          "oklch(15% 0.071 47.0)",
+          "oklch(25% 0.118 47.0)",
+          "oklch(36% 0.165 47.0)",
+          "oklch(48% 0.165 47.0)",
+          "oklch(60% 0.165 47.0)",
+          "oklch(72% 0.132 47.0)",
+          "oklch(84% 0.075 47.0)",
+          "oklch(95% 0.024 47.0)"
+        ]
+      },
+      "l68-accent-text": {
+        "role": "primary",
+        "displayName": "Fired Brick",
+        "canonical": "#a94a0f",
+        "cssVar": "--l68-accent-text",
+        "dark": "#f08a3e",
+        "system": "portada (Línea 68)",
+        "tonalRamp": [
+          "oklch(15% 0.06 46.0)",
+          "oklch(25% 0.1 46.0)",
+          "oklch(36% 0.14 46.0)",
+          "oklch(48% 0.14 46.0)",
+          "oklch(60% 0.14 46.0)",
+          "oklch(72% 0.112 46.0)",
+          "oklch(84% 0.064 46.0)",
+          "oklch(95% 0.02 46.0)"
+        ]
+      },
+      "l68-accent-fg": {
+        "role": "neutral",
+        "displayName": "Ink on Tabique",
+        "canonical": "#121212",
+        "cssVar": "--l68-accent-fg",
+        "dark": "#0d0d0e",
+        "system": "portada (Línea 68)",
+        "tonalRamp": [
+          "oklch(15% 0.0 89.9)",
+          "oklch(25% 0.0 89.9)",
+          "oklch(36% 0.0 89.9)",
+          "oklch(48% 0.0 89.9)",
+          "oklch(60% 0.0 89.9)",
+          "oklch(72% 0.0 89.9)",
+          "oklch(84% 0.0 89.9)",
+          "oklch(95% 0.0 89.9)"
+        ]
+      },
+      "l68-accent-soft": {
+        "role": "neutral",
+        "displayName": "Tabique Tint",
+        "canonical": "#fcebdc",
+        "cssVar": "--l68-accent-soft",
+        "dark": "#2a1a0e",
+        "system": "portada (Línea 68)",
+        "tonalRamp": [
+          "oklch(15% 0.012 64.0)",
+          "oklch(25% 0.019 64.0)",
+          "oklch(36% 0.027 64.0)",
+          "oklch(48% 0.027 64.0)",
+          "oklch(60% 0.027 64.0)",
+          "oklch(72% 0.022 64.0)",
+          "oklch(84% 0.012 64.0)",
+          "oklch(95% 0.004 64.0)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "app-display": {
+        "displayName": "App Display",
+        "purpose": "h1–h3 across the app and access screens (Space Grotesk via --font-display)."
+      },
+      "app-headline": {
+        "displayName": "App Headline",
+        "purpose": "Page titles (PageHeader)."
+      },
+      "app-title": {
+        "displayName": "App Title",
+        "purpose": "Section titles."
+      },
+      "app-metric": {
+        "displayName": "App Metric",
+        "purpose": "Stat values with tabular figures."
+      },
+      "app-body": {
+        "displayName": "App Body",
+        "purpose": "15px interface base."
+      },
+      "app-mono": {
+        "displayName": "App Mono",
+        "purpose": "Claves, quantities, ids."
+      },
+      "l68-display": {
+        "displayName": "Línea Display",
+        "purpose": "Portada hero headline, max 13ch."
+      },
+      "l68-headline": {
+        "displayName": "Línea Headline",
+        "purpose": "Portada section headings, max 16ch."
+      },
+      "l68-title": {
+        "displayName": "Línea Title",
+        "purpose": "Portada stage headings (Planos … Programa)."
+      },
+      "l68-wordmark": {
+        "displayName": "Línea Wordmark",
+        "purpose": "Nav wordmark; the foot wordmark is the same face at weight 900 drawn as concentric strokes."
+      },
+      "l68-lede": {
+        "displayName": "Línea Lede",
+        "purpose": "Hero and closing ledes, max 54ch."
+      },
+      "l68-body": {
+        "displayName": "Línea Body",
+        "purpose": "Portada base text; station copy max 44ch."
+      },
+      "l68-note": {
+        "displayName": "Línea Note",
+        "purpose": "The approval note under the hero actions."
+      },
+      "l68-mono": {
+        "displayName": "Línea Mono",
+        "purpose": "Sheet keys, marks, claves, ejes, hojas, quantities, amounts, stage numbers 01–06, the train's number."
+      },
+      "l68-refusal": {
+        "displayName": "Línea Refusal",
+        "purpose": "The struck refusals."
+      },
+      "l68-practice": {
+        "displayName": "Línea Practice",
+        "purpose": "The practice list under a 2px ink rule."
+      },
+      "l68-feature": {
+        "displayName": "Línea Feature",
+        "purpose": "Rows of the ruled feature list beside each stage."
+      },
+      "l68-screen": {
+        "displayName": "Línea Screen",
+        "purpose": "All text inside the drawn app screens."
+      },
+      "l68-caption": {
+        "displayName": "Línea Caption",
+        "purpose": "Screen captions, breadcrumbs and chips in second ink."
+      }
+    },
+    "shadows": [
+      {
+        "name": "app-shadow-xs",
+        "value": "0 1px 2px rgba(22, 22, 24, 0.05)",
+        "purpose": "App cards at rest."
+      },
+      {
+        "name": "app-shadow-sm",
+        "value": "0 1px 2px rgba(22, 22, 24, 0.05), 0 1px 3px rgba(22, 22, 24, 0.06)",
+        "purpose": "Small raised app controls (slider thumb)."
+      },
+      {
+        "name": "app-shadow-md",
+        "value": "0 2px 6px -1px rgba(22, 22, 24, 0.06), 0 8px 20px -6px rgba(22, 22, 24, 0.1)",
+        "purpose": "Interactive app cards on hover."
+      },
+      {
+        "name": "app-shadow-lg",
+        "value": "0 10px 15px -5px rgba(22, 22, 24, 0.08), 0 24px 40px -10px rgba(22, 22, 24, 0.14)",
+        "purpose": "App menus, dialogs, floating panels."
+      },
+      {
+        "name": "l68-knockout",
+        "value": "0 0 0 4px var(--l68-paper)",
+        "purpose": "Portada only: paper gap around the scroll train (4px) and the hero train (3px). Not elevation; the portada casts no shadows."
+      },
+      {
+        "name": "l68-inset-stroke",
+        "value": "inset 0 0 0 2px var(--l68-ink)",
+        "purpose": "Portada only: outline for the line button, keycaps and the review cursor (accent); 1.5px for chips, verdicts and format pills."
+      },
+      {
+        "name": "l68-outline-rings",
+        "value": "0 0 0 3px var(--l68-paper), 0 0 0 5px var(--l68-accent), 0 0 0 8px var(--l68-paper), 0 0 0 10px var(--l68-accent)",
+        "purpose": "Portada only: the 68 outlines the primary button grows on hover and focus (ink for the line button). Line drawing, not elevation."
+      }
+    ],
+    "motion": [
+      {
+        "name": "l68-ease-out",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "All portada transitions and screen sequences (buttons 180ms, outline rings 320ms, ring fill 200ms, arrow 220ms, screen steps 300–900ms)."
+      },
+      {
+        "name": "l68-train",
+        "value": "top 120ms linear",
+        "purpose": "The scroll train following scroll progress, carrying the stage number in view."
+      },
+      {
+        "name": "l68-hero-train",
+        "value": "0.9px/ms cubic-bezier(0.45, 0, 0.2, 1), every 8s",
+        "purpose": "The hero train runs the accent stroke without stops, rounds the bend and fades into the vertical bundle; starts 400ms after the route enters view and repeats while it stays in view. Hidden under 860px."
+      },
+      {
+        "name": "l68-ripple",
+        "value": "1000ms cubic-bezier(0.16, 1, 0.3, 1), second ring +160ms",
+        "purpose": "Two accent rings spread from a station ring (scale 1 → 2.2) when its stage becomes the one in view."
+      },
+      {
+        "name": "l68-screen-arm",
+        "value": "IntersectionObserver threshold 0.35",
+        "purpose": "Drawn screens below the fold are held at their first frame (animation-play-state: paused) until 35% visible; then they play once and data-cuenta figures count from zero (whole counts linear, money expo ease-out)."
+      },
+      {
+        "name": "l68-emblem-orbit",
+        "value": "16s linear infinite",
+        "purpose": "Top ring set of the op-art emblem orbits 12px and follows the pointer up to 26px. ≥1180px, paused off screen."
+      },
+      {
+        "name": "l68-wordmark-pulse",
+        "value": "3.6s ease-in-out infinite, 180ms between rings",
+        "purpose": "Accent pulse through the wordmark's ink rings while on screen."
+      },
+      {
+        "name": "l68-strike",
+        "value": "animation-timeline: view(); range entry 60% → cover 40%",
+        "purpose": "Refusal strikes drawn left to right on scroll where supported; a plain line-through elsewhere."
+      },
+      {
+        "name": "app-rise-in",
+        "value": "240ms ease-out",
+        "purpose": "App entry: 6px rise with fade."
+      },
+      {
+        "name": "app-card-hover",
+        "value": "160ms ease",
+        "purpose": "App card border and shadow on hover."
+      },
+      {
+        "name": "app-menu-pop",
+        "value": "220ms cubic-bezier(0.2, 0.9, 0.3, 1.1)",
+        "purpose": "Tablero node menu."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "l68-xs",
+        "value": "560px",
+        "purpose": "Portada: drawn screens drop the obra crumb, long labels and secondary columns."
+      },
+      {
+        "name": "l68-narrow",
+        "value": "860px",
+        "purpose": "Portada: line moves to the left, stages stack with text above the screen, hero train hidden."
+      },
+      {
+        "name": "l68-emblem",
+        "value": "1180px",
+        "purpose": "Portada: op-art emblem shown at this width and wider."
+      },
+      {
+        "name": "tailwind-sm",
+        "value": "640px"
+      },
+      {
+        "name": "tailwind-md",
+        "value": "768px"
+      },
+      {
+        "name": "tailwind-lg",
+        "value": "1024px"
+      }
+    ],
+    "systems": [
+      {
+        "name": "app",
+        "displayName": "Ink and Cobalt",
+        "governs": [
+          "app/page.tsx (taller home)",
+          "app/proyecto/[id]/*",
+          "app/catalogo",
+          "app/equipo",
+          "app/cuenta",
+          "app/compartido",
+          "app/taller",
+          "app/(acceso)/* (bienvenida, registro, recuperar, restablecer, invitacion, verificar)",
+          "app/como-funciona",
+          "app/glosario"
+        ],
+        "tokens": "unprefixed custom properties in apps/web/app/globals.css via @theme inline"
+      },
+      {
+        "name": "portada",
+        "displayName": "Línea 68",
+        "governs": [
+          "app/portada/page.tsx",
+          "app/portada/portada.css",
+          "components/portada/RutaPortada.tsx",
+          "components/portada/Vistas.tsx",
+          "components/portada/Emblema68.tsx",
+          "components/portada/MarcaKlave.tsx"
+        ],
+        "tokens": "--l68-* in apps/web/app/globals.css; geometry, type and motion under .l68 in portada.css; Archivo loaded by the portada page only"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "App Primary Button",
+      "kind": "button",
+      "refersTo": "app-button-primary",
+      "description": "Ink action button used across the app and access screens; 36px default, 40px on single-task forms.",
+      "html": "<button class=\"ds-app-btn\">Guardar cambios</button>",
+      "css": ".ds-app-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border:0;border-radius:8px;background:var(--primary,#18181b);color:var(--primary-fg,#fff);font-family:Geist,system-ui,sans-serif;font-size:14px;font-weight:500;white-space:nowrap;cursor:pointer;transition:background-color 150ms ease}.ds-app-btn:hover{background:var(--primary-hover,#2c2c30)}.ds-app-btn:focus-visible{outline:2px solid var(--ring,rgba(43,74,203,.35));outline-offset:2px}"
+    },
+    {
+      "name": "App Secondary Button",
+      "kind": "button",
+      "refersTo": "app-button-secondary",
+      "description": "Surface button with a hairline border for secondary actions.",
+      "html": "<button class=\"ds-app-btn-sec\">Cancelar</button>",
+      "css": ".ds-app-btn-sec{display:inline-flex;align-items:center;height:36px;padding:0 14px;border:1px solid var(--border,#e6e6e9);border-radius:8px;background:var(--surface,#fff);color:var(--foreground,#161618);font-family:Geist,system-ui,sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:background-color 150ms ease,border-color 150ms ease}.ds-app-btn-sec:hover{border-color:var(--border-strong,#d2d2d7);background:var(--surface-2,#f2f2f3)}.ds-app-btn-sec:focus-visible{outline:2px solid var(--ring,rgba(43,74,203,.35));outline-offset:2px}"
+    },
+    {
+      "name": "App Input",
+      "kind": "input",
+      "refersTo": "app-input",
+      "description": "Text field with hairline border and cobalt focus ring.",
+      "html": "<input class=\"ds-app-input\" placeholder=\"Nombre de la obra\">",
+      "css": ".ds-app-input{width:260px;padding:8px 12px;border:1px solid var(--border,#e6e6e9);border-radius:8px;background:var(--surface,#fff);color:var(--foreground,#161618);font-family:Geist,system-ui,sans-serif;font-size:14px;transition:border-color 150ms ease}.ds-app-input::placeholder{color:var(--faint,#6c6c74)}.ds-app-input:focus{outline:none;border-color:var(--border-strong,#d2d2d7);box-shadow:0 0 0 2px var(--ring,rgba(43,74,203,.35))}"
+    },
+    {
+      "name": "App Card",
+      "kind": "card",
+      "refersTo": "app-card",
+      "description": "Surface container with 12px corners, rest shadow, deeper shadow on hover when interactive.",
+      "html": "<div class=\"ds-app-card\"><div class=\"ds-app-card-v\">1,284</div><div class=\"ds-app-card-h\">detecciones confirmadas</div></div>",
+      "css": ".ds-app-card{width:220px;padding:16px;background:var(--surface,#fff);border:1px solid var(--border,#e6e6e9);border-radius:12px;box-shadow:var(--shadow-xs,0 1px 2px rgba(22,22,24,.05));transition:box-shadow 160ms ease,border-color 160ms ease}.ds-app-card:hover{border-color:var(--border-strong,#d2d2d7);box-shadow:var(--shadow-md,0 2px 6px -1px rgba(22,22,24,.06),0 8px 20px -6px rgba(22,22,24,.1))}.ds-app-card-v{font-family:'Space Grotesk',Geist,sans-serif;font-size:1.55rem;font-weight:500;line-height:1;font-variant-numeric:tabular-nums;color:var(--foreground,#161618)}.ds-app-card-h{margin-top:6px;font-family:Geist,sans-serif;font-size:12px;color:var(--muted,#5c5c64)}"
+    },
+    {
+      "name": "Portada Accent Button",
+      "kind": "button",
+      "refersTo": "l68-button-accent",
+      "description": "The portada primary action (Crear cuenta): naranja tabique pill, ink text, sliding arrow; hover and focus grow the 68 outline rings.",
+      "html": "<a class=\"ds-l68-btn\" href=\"#\">Crear cuenta <svg width=\"18\" height=\"18\" viewBox=\"0 0 256 256\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M224.49 136.49l-72 72a12 12 0 0 1-17-17L187 140H40a12 12 0 0 1 0-24h147l-51.49-51.52a12 12 0 0 1 17-17l72 72a12 12 0 0 1-.02 17.01z\"/></svg></a>",
+      "css": ".ds-l68-btn{display:inline-flex;align-items:center;gap:.6em;height:52px;padding:0 26px;border-radius:999px;background:var(--l68-accent,#e8742a);color:var(--l68-accent-fg,#121212);font-family:Geist,system-ui,sans-serif;font-size:1rem;font-weight:650;text-decoration:none;white-space:nowrap;box-shadow:0 0 0 0 var(--l68-paper,#fbfbfa),0 0 0 0 var(--l68-accent,#e8742a),0 0 0 0 var(--l68-paper,#fbfbfa),0 0 0 0 var(--l68-accent,#e8742a);transition:background-color 180ms cubic-bezier(.16,1,.3,1),box-shadow 320ms cubic-bezier(.16,1,.3,1),transform 180ms cubic-bezier(.16,1,.3,1)}.ds-l68-btn svg{transition:transform 220ms cubic-bezier(.16,1,.3,1)}.ds-l68-btn:hover,.ds-l68-btn:focus-visible{background:var(--l68-accent-hover,#d9651c);outline:none;box-shadow:0 0 0 3px var(--l68-paper,#fbfbfa),0 0 0 5px var(--l68-accent,#e8742a),0 0 0 8px var(--l68-paper,#fbfbfa),0 0 0 10px var(--l68-accent,#e8742a)}.ds-l68-btn:hover svg{transform:translateX(3px)}.ds-l68-btn:active{transform:translateY(1px)}"
+    },
+    {
+      "name": "Portada Line Button",
+      "kind": "button",
+      "refersTo": "l68-button-line",
+      "description": "Secondary portada action (Entrar): pill outlined with a 2px inset ink stroke, fills ink and grows ink outline rings on hover.",
+      "html": "<a class=\"ds-l68-line\" href=\"#\">Entrar</a>",
+      "css": ".ds-l68-line{display:inline-flex;align-items:center;height:52px;padding:0 26px;border-radius:999px;box-shadow:inset 0 0 0 2px var(--l68-ink,#121212),0 0 0 0 var(--l68-paper,#fbfbfa),0 0 0 0 var(--l68-ink,#121212);color:var(--l68-ink,#121212);font-family:Geist,system-ui,sans-serif;font-size:1rem;font-weight:650;text-decoration:none;transition:background-color 180ms cubic-bezier(.16,1,.3,1),color 180ms cubic-bezier(.16,1,.3,1),box-shadow 320ms cubic-bezier(.16,1,.3,1),transform 180ms cubic-bezier(.16,1,.3,1)}.ds-l68-line:hover,.ds-l68-line:focus-visible{background:var(--l68-ink,#121212);color:var(--l68-paper,#fbfbfa);outline:none;box-shadow:inset 0 0 0 2px var(--l68-ink,#121212),0 0 0 3px var(--l68-paper,#fbfbfa),0 0 0 5px var(--l68-ink,#121212)}.ds-l68-line:active{transform:translateY(1px)}"
+    },
+    {
+      "name": "Portada Nav",
+      "kind": "nav",
+      "refersTo": "l68-wordmark",
+      "description": "84px bar: expanded Archivo wordmark, text links with a double underline on hover, small naranja tabique pill.",
+      "html": "<nav class=\"ds-l68-nav\"><a class=\"ds-l68-word\" href=\"#\">Klave</a><ul><li><a class=\"ds-l68-link\" href=\"#\">Cómo funciona</a></li><li><a class=\"ds-l68-link\" href=\"#\">Glosario</a></li><li><a class=\"ds-l68-link\" href=\"#\">Entrar</a></li><li><a class=\"ds-l68-pill\" href=\"#\">Crear cuenta</a></li></ul></nav>",
+      "css": ".ds-l68-nav{display:flex;align-items:center;justify-content:space-between;gap:24px;height:84px;padding:0 24px;background:var(--l68-paper,#fbfbfa)}.ds-l68-word{font-family:Archivo,sans-serif;font-stretch:125%;font-weight:800;font-size:1.6rem;letter-spacing:-.04em;color:var(--l68-ink,#121212);text-decoration:none}.ds-l68-nav ul{display:flex;align-items:center;gap:28px;list-style:none;margin:0;padding:0;font-family:Geist,sans-serif;font-size:.9375rem}.ds-l68-link{color:var(--l68-ink,#121212);text-decoration:none;padding-bottom:7px;background:linear-gradient(currentColor,currentColor) 0 100%/0 1.5px no-repeat,linear-gradient(currentColor,currentColor) 0 calc(100% - 4px)/0 1.5px no-repeat;transition:background-size 280ms cubic-bezier(.16,1,.3,1)}.ds-l68-link:hover,.ds-l68-link:focus-visible{background-size:100% 1.5px,100% 1.5px}.ds-l68-pill{display:inline-flex;align-items:center;height:40px;padding:0 18px;border-radius:999px;background:var(--l68-accent,#e8742a);color:var(--l68-accent-fg,#121212);font-weight:650;text-decoration:none}.ds-l68-pill:hover{background:var(--l68-accent-hover,#d9651c)}.ds-l68-nav a:focus-visible{outline:3px solid var(--l68-accent,#e8742a);outline-offset:3px;border-radius:2px}"
+    },
+    {
+      "name": "Portada Screen Chips",
+      "kind": "chip",
+      "refersTo": "l68-screen-chip",
+      "description": "Chips inside the drawn screens: status drawn in ink, never coloured (outlined, dashed, bold «Sin precio», solid).",
+      "html": "<span class=\"ds-l68-chip\">Publicación oficial</span> <span class=\"ds-l68-chip is-ok\">vigente</span> <span class=\"ds-l68-chip is-warn\">por revisar</span> <span class=\"ds-l68-chip is-gap\">Sin precio</span> <span class=\"ds-l68-chip is-solid\">Bloqueante</span>",
+      "css": ".ds-l68-chip{display:inline-block;padding:2px 9px;border-radius:999px;box-shadow:inset 0 0 0 1.5px var(--l68-ink-2,#4a4a50);color:var(--l68-ink-2,#4a4a50);font-family:Geist,sans-serif;font-size:.75rem;white-space:nowrap}.ds-l68-chip.is-ok{box-shadow:inset 0 0 0 1.5px var(--l68-ink,#121212);color:var(--l68-ink,#121212)}.ds-l68-chip.is-warn{box-shadow:none;border:1.5px dashed var(--l68-ink,#121212);color:var(--l68-ink,#121212)}.ds-l68-chip.is-gap{box-shadow:inset 0 0 0 2px var(--l68-ink,#121212);color:var(--l68-ink,#121212);font-weight:700}.ds-l68-chip.is-solid{box-shadow:none;background:var(--l68-ink,#121212);color:var(--l68-paper,#fbfbfa);font-weight:600}"
+    },
+    {
+      "name": "Línea 68 Station",
+      "kind": "custom",
+      "refersTo": "l68-station-ring",
+      "description": "Four-stroke bundle (three ink, one naranja tabique, 4px on a 10px pitch) with a station ring; the stage in view lights it and two accent rings ripple out. The scroll train carries the stage number.",
+      "html": "<div class=\"ds-l68-st\"><span class=\"ds-l68-bundle\"><i></i><i></i><i></i><i></i></span><span class=\"ds-l68-ring\"></span><span class=\"ds-l68-train\">03</span></div>",
+      "css": ".ds-l68-st{position:relative;width:120px;height:200px}.ds-l68-bundle{position:absolute;top:0;bottom:0;right:20px;width:34px}.ds-l68-bundle i{position:absolute;top:0;bottom:0;width:4px;background:var(--l68-ink,#121212)}.ds-l68-bundle i:nth-child(1){right:0}.ds-l68-bundle i:nth-child(2){right:10px}.ds-l68-bundle i:nth-child(3){right:20px}.ds-l68-bundle i:nth-child(4){right:30px;background:var(--l68-accent,#e8742a)}.ds-l68-ring{position:absolute;top:40px;right:8px;box-sizing:border-box;width:58px;height:58px;border-radius:50%;background:var(--l68-paper,#fbfbfa);border:5px solid var(--l68-ink,#121212);transition:background-color 200ms cubic-bezier(.16,1,.3,1)}.ds-l68-st:hover .ds-l68-ring{background:var(--l68-accent,#e8742a)}.ds-l68-ring::after{content:'';position:absolute;inset:-5px;border-radius:50%;border:3px solid var(--l68-accent,#e8742a);opacity:0}.ds-l68-st:hover .ds-l68-ring::after{animation:ds-ping 1000ms cubic-bezier(.16,1,.3,1)}@keyframes ds-ping{from{transform:scale(1);opacity:.95}to{transform:scale(2.2);opacity:0}}.ds-l68-train{position:absolute;top:140px;right:14px;display:grid;place-items:center;width:46px;height:22px;border-radius:999px;background:var(--l68-accent,#e8742a);color:var(--l68-accent-fg,#121212);box-shadow:0 0 0 4px var(--l68-paper,#fbfbfa);font:700 11px 'Geist Mono',ui-monospace,monospace}"
+    },
+    {
+      "name": "Drawn App Screen",
+      "kind": "card",
+      "refersTo": "l68-screen-bar",
+      "description": "An app screen drawn in the portada's ink line: 2px ink frame, 46px bar with breadcrumb and the six-node tablero line (done ink, current accent), sample data, and a caption. Plays its sequence once and ends on the finished state.",
+      "html": "<figure class=\"ds-l68-app\"><div class=\"ds-l68-bar\"><span>Obra de ejemplo / <b>Revisión</b></span><span class=\"ds-l68-nodes\" aria-label=\"Etapa 3 de 6: Revisión\"><i class=\"d\"></i><i class=\"d\"></i><i class=\"n\"></i><i></i><i></i><i></i></span></div><div class=\"ds-l68-body\"><ol><li><span class=\"k\">Z-1</span><span>Zapata</span><span class=\"v\">Confirmada</span></li><li class=\"t\"><span class=\"k\">T-3</span><span>Trabe</span><span class=\"v\">Confirmada</span></li><li><span class=\"k\">L-2</span><span>Losa</span><span class=\"v q\">En duda</span></li></ol></div><figcaption>Pantalla ilustrativa con datos de ejemplo.</figcaption></figure>",
+      "css": ".ds-l68-app{margin:0;max-width:520px;font-family:Geist,system-ui,sans-serif;color:var(--l68-ink,#121212)}.ds-l68-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;height:46px;padding:0 16px;border:2px solid var(--l68-ink,#121212);font-size:.8125rem;color:var(--l68-ink-2,#4a4a50)}.ds-l68-bar b{color:var(--l68-ink,#121212);font-weight:650}.ds-l68-nodes{display:flex;align-items:center}.ds-l68-nodes i{position:relative;width:11px;height:11px;margin-left:12px;box-sizing:border-box;border-radius:50%;border:2px solid var(--l68-ink,#121212);background:var(--l68-paper,#fbfbfa)}.ds-l68-nodes i:first-child{margin-left:0}.ds-l68-nodes i+i::before{content:'';position:absolute;right:calc(100% + 2px);top:2.5px;width:12px;height:2px;background:var(--l68-ink,#121212)}.ds-l68-nodes i.d{background:var(--l68-ink,#121212)}.ds-l68-nodes i.n{background:var(--l68-accent,#e8742a)}.ds-l68-body{padding:18px;border:2px solid var(--l68-ink,#121212);border-top:0;font-size:.875rem;line-height:1.4}.ds-l68-body ol{list-style:none;margin:0;padding:0;border-top:2px solid var(--l68-ink,#121212)}.ds-l68-body li{display:grid;grid-template-columns:3rem 1fr auto;gap:10px;align-items:center;height:47px;padding:0 10px;border-bottom:1px solid var(--l68-rule,#dcdcdf)}.ds-l68-body li.t{background:var(--l68-accent-soft,#fcebdc)}.ds-l68-body li.t .k{color:var(--l68-accent-text,#a94a0f);font-weight:700}.ds-l68-body .k{font-family:'Geist Mono',ui-monospace,monospace;font-size:.8125rem}.ds-l68-body .v{padding:2px 10px;border-radius:999px;box-shadow:inset 0 0 0 1.5px var(--l68-ink,#121212);font-size:.75rem;font-weight:600}.ds-l68-body .v.q{box-shadow:none;border:1.5px dashed var(--l68-ink,#121212)}.ds-l68-app figcaption{margin-top:12px;font-size:.8125rem;color:var(--l68-ink-2,#4a4a50)}"
+    },
+    {
+      "name": "Portada Feature List",
+      "kind": "custom",
+      "refersTo": "l68-feature",
+      "description": "Ruled list beside each stage; the bullet is two short parallel strokes, ink over naranja tabique.",
+      "html": "<ul class=\"ds-l68-feats\"><li>Conversión de DWG automática</li><li>Lectura del plano: unidades, capas, bloques y advertencias</li><li>Lo que no tiene precio queda a la vista, nunca como $0</li></ul>",
+      "css": ".ds-l68-feats{list-style:none;margin:0;padding:0;max-width:420px;font-family:Geist,sans-serif;color:var(--l68-ink,#121212)}.ds-l68-feats li{position:relative;padding:11px 0 11px 26px;border-top:1px solid var(--l68-rule,#dcdcdf);font-size:.9375rem;line-height:1.45}.ds-l68-feats li::before{content:'';position:absolute;left:0;top:1.05em;width:14px;height:7px;background:linear-gradient(var(--l68-ink,#121212),var(--l68-ink,#121212)) 0 0/100% 2px no-repeat,linear-gradient(var(--l68-accent,#e8742a),var(--l68-accent,#e8742a)) 0 100%/100% 2px no-repeat}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Ink and one colour",
+    "overview": "**Creative North Star: \"Ink and one colour\"**\n\nKlave runs two visual systems that share one discipline: ink neutrals carry everything, and exactly one chromatic voice is allowed to speak. In the working application that voice is cobalt and it means \"interactive or live data\". On the public landing it is naranja tabique, a warm brick orange, and it means \"the line\": the path of the obra through its stages, and the one thing the page is following. Neither system borrows the other's colour, type or form.\n\n**Which system governs which surface.**\n\n\nThe app system is dense, quiet and near-monochrome: soft tonal surfaces, hairline borders, small type, a light ambient shadow on cards, Phosphor icons. Línea 68 is large, flat and graphic: a Mexico 68 metro bundle of four parallel strokes runs under the hero, bends down the right edge with rounded metro corners and carries every section to a terminus ring at the closing actions. Six stages sit on it, named after the obra's real tablero (Planos, Disciplinas, Revisión, Catálogo, Presupuesto, Programa); each pairs a drawn, animated screen of the app with its text. Display type is a heavy, expanded grotesk.",
+    "keyCharacteristics": [
+      "Ink neutrals carry both systems; one accent per system (cobalt in the app, naranja tabique on the portada).",
+      "Two committed palettes per system, light and dark, switched by `data-theme` on `<html>`.",
+      "App: Geist body, Space Grotesk display, Geist Mono tabular figures, Phosphor icons, cards with 12px corners.",
+      "Portada: Archivo expanded display, Geist body, Geist Mono tabular measures, a four-stroke metro bundle, station rings, pills, ruled lists, and app screens drawn in ink line instead of screenshots or cards.",
+      "Every figure that is a measure or a key is set in tabular mono in both systems."
+    ],
+    "rules": [
+      {
+        "name": "The One Voice Rule",
+        "body": "Each system has exactly one chromatic accent. Cobalt never appears on the portada; naranja tabique never appears in the app.",
+        "section": "colors"
+      },
+      {
+        "name": "The Line Owns the Accent Rule",
+        "body": "On the portada, naranja tabique marks only the line (fourth stroke, corner, trains, the lit and terminus rings), the primary action, focus and selection, and inside a drawn screen the stage it is on, the traced element (T-3 → EST-12), the one action being performed and the money it moved. Secondary actions, chips, verdicts, tables and headings stay ink. Status inside a screen is drawn in ink (solid, outlined, dashed), never coloured.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ink on Tabique Rule",
+        "body": "Text on an orange fill is ink (`l68-accent-fg`); orange as text is fired brick (`l68-accent-text`). Never white on orange, never the raw accent as light-mode text.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ink Action Rule",
+        "body": "In the app, the primary button is ink; cobalt is for interactivity and data, not for the main call to action.",
+        "section": "colors"
+      },
+      {
+        "name": "The Expanded Grotesk Rule",
+        "body": "Portada display text is Archivo with `font-stretch` 112% (125% for the wordmark), weight 700–900, negative tracking between -0.02em and -0.04em. The shipped `Archivo.woff2` carries the width axis (62–125) and weight axis (100–900). Inside the drawn screens Archivo appears only on the inspector's T-3 mark and the Presupuesto total; everything else is Geist and Geist Mono, as in the app.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Measure Rule",
+        "body": "Every key, clave, eje, hoja, quantity and amount is set in Geist Mono with tabular figures.",
+        "section": "typography"
+      },
+      {
+        "name": "The Four Strokes Rule",
+        "body": "The line is always a bundle of four equal 4px strokes on a 10px pitch: three ink, one naranja tabique. Bends are concentric arcs, never mitred corners.",
+        "section": "layout"
+      },
+      {
+        "name": "The Screen Left Rule",
+        "body": "A stage shows the product first: the drawn screen takes the wider left column and the words sit to its right. On narrow screens the words come first so the screen is read with its caption.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat Line Rule",
+        "body": "On the portada, depth is drawn with strokes and knockouts, never cast. If a `box-shadow` has a blur or an offset, it does not belong on the portada.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** decide the system by surface first: `/portada` is Línea 68; every other route, including access screens, como-funciona and glosario, is the app system.",
+      "**Do** take portada colours only from the `--l68-*` tokens and keep portada geometry, type and motion scoped under `.l68`.",
+      "**Do** draw the portada line as four 4px strokes on a 10px pitch, three ink and one naranja tabique, with concentric rounded bends.",
+      "**Do** set every key, eje, hoja, quantity and amount in Geist Mono with tabular figures.",
+      "**Do** use `l68-accent-text` whenever the accent is set as text, and `l68-accent-fg` (ink) for text on an orange fill.",
+      "**Do** show the product as drawn screens in the portada's ink line, with sample data, a caption that says so, and a sequence that ends on the finished state.",
+      "**Do** draw status inside a screen with ink (solid, outlined, dashed, bold outline), leaving the accent for the stage, the traced element and the action.",
+      "**Do** keep app primary actions ink and reserve cobalt for interactivity, focus and live data.",
+      "**Do** honour `prefers-reduced-motion`: the portada drops the trains' travel, the ripples, the screen sequences and counters (screens show their finished state), the emblem drift, the drawn strikes and the wordmark pulse; the app disables its entry and flow animations."
+    ],
+    "donts": [
+      "**Don't** use naranja tabique on the portada for anything other than the line, the trains, the lit or terminus station, the primary action, focus and selection, and inside a screen the current stage, the traced element, the action being performed, the money it moved and the visitor's own presence.",
+      "**Don't** put cards, icon tiles, colour gradients or cast shadows on the portada; inset strokes, the paper knockout and hard-stop gradients that draw a stroke (the bullet, the nav underline, the strike) are line drawing, not elevation or colour gradients.",
+      "**Don't** put screenshots on the portada; the product is shown as drawn screens.",
+      "**Don't** use eyebrows or kickers above portada headings; the only text above a stage heading is its two-digit number.",
+      "**Don't** set white text on the orange or the raw accent as light-mode text.",
+      "**Don't** carry Archivo, naranja tabique or the bundle into the app, or cobalt, Space Grotesk and cards onto the portada.",
+      "**Don't** write raw hex outside `apps/web/app/globals.css`."
+    ]
+  }
+}

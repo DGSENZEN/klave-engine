@@ -30,8 +30,6 @@ roles managed from its Configuración screen. With open registration, founding
 a new taller activates its admin immediately; joining an existing taller waits
 for approval in `/equipo`. Production requires invitation-only registration
 after the first account has been created.
-Google sign-in activates when `KLAVE_AUTH_GOOGLE_ID`/`KLAVE_AUTH_GOOGLE_SECRET`
-are set for the API (redirect URI `http://localhost:8000/auth/google/callback`).
 Production servers without accounts require setup and keep project data closed.
 
 ## Structure

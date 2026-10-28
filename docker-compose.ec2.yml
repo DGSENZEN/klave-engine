@@ -87,6 +87,7 @@ services:
     environment:
       PGPASSWORD: ${KLAVE_USERS_DB_PASSWORD}
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
+      KLAVE_SOURCE_COMMIT: ${KLAVE_SOURCE_COMMIT:-unknown}
     volumes:
       # SQLite read-only connections still create WAL shared-memory sidecars.
       - klave-data:/data

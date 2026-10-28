@@ -228,8 +228,8 @@ export default function CambiosPage() {
       {data && data.mismo_plano === true && (
         <div className="mb-4">
           <Callout tone="info">
-            Las dos lecturas leyeron <strong>los mismos planos</strong>: estos cambios son de
-            Klave (una versión que lee distinto), no del proyecto. No son aditivas ni deductivas.
+            Las dos lecturas leyeron <strong>los mismos planos</strong>: estos cambios vienen
+            de una versión de Klave que lee distinto y no cuentan como aditivas ni deductivas.
           </Callout>
         </div>
       )}
@@ -237,7 +237,7 @@ export default function CambiosPage() {
         <div className="mb-4">
           <Callout tone="warning">
             {data.misma_version === false
-              ? "Entre estas lecturas cambió la versión de Klave y la lectura anterior no guardó qué planos leyó: no se sabe si estos cambios son del plano o de la lectura. "
+              ? "Entre estas lecturas cambió la versión de Klave, y la lectura anterior no guardó qué planos leyó. No se sabe si estos cambios son del plano o de la lectura. "
               : "La lectura anterior no guardó qué planos leyó: no se sabe si cambió el plano. "}
             Las lecturas nuevas ya lo guardan.
           </Callout>

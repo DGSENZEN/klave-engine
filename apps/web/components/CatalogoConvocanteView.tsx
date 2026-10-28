@@ -334,8 +334,8 @@ export function CatalogoConvocanteView({ titulo }: { titulo: string }) {
                 <p key={n}>{n}</p>
               ))}
               <p>
-                Las cantidades de la convocante son el contrato: Klave no las corrige.
-                Una diferencia se aclara en junta y se firma, o no.
+                Las cantidades de la convocante son el contrato y Klave no las corrige.
+                Una diferencia se aclara en junta; ahí se decide si se firma.
               </p>
             </div>
           </Card>

@@ -103,7 +103,7 @@ export default function ProgramaPage() {
       setFrentesValue(value);
     } catch {
       setFrentesError(
-        "No se pudo guardar los frentes de trabajo; inténtalo de nuevo.",
+        "No se pudieron guardar los frentes de trabajo; inténtalo de nuevo.",
       );
     } finally {
       setFrentesBusy(false);
@@ -274,7 +274,7 @@ export default function ProgramaPage() {
         <span className="text-xs text-muted">
           {frentesBusy
             ? "Recalculando el plazo…"
-            : "Cuántos frentes simultáneos tendrá la obra. Un frente con una cuadrilla por actividad es el supuesto por omisión, y es el que produce los plazos largos."}
+            : "Cuántos frentes simultáneos tendrá la obra. El supuesto por omisión es un frente con una cuadrilla por actividad, y es el que alarga los plazos."}
         </span>
         {frentesError && (
           <span className="text-xs text-danger">{frentesError}</span>

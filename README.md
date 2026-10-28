@@ -136,8 +136,7 @@ make users-db-up      # Postgres dedicado para cuentas (puerto 5433)
 ```
 
 La primera cuenta registrada es el administrador y activa el modo
-protegido. Google OAuth es opcional (`KLAVE_AUTH_GOOGLE_ID/SECRET`). La
-base de cuentas es deliberadamente independiente de los datos de obra.
+protegido. La base de cuentas es deliberadamente independiente de los datos de obra.
 
 ### Proyecto de demostración y CLI
 

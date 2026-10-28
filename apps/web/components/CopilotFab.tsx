@@ -23,12 +23,14 @@ import { PRESS } from "@/components/ui";
 const SIN_COPILOTO = [
   "/compartido",
   "/bienvenida",
+  "/registro",
   "/invitacion",
   "/recuperar",
   "/restablecer",
   "/verificar",
   "/glosario",
   "/como-funciona",
+  "/portada",
 ];
 
 export function CopilotFab() {

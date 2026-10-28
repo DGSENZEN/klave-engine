@@ -712,7 +712,7 @@ function VerificationPath({
 
   return (
     <Card className="mb-4 p-4" tour="resumen.verificacion">
-      <SectionTitle sub="Verifica la lectura del plano antes de confiar en las cifras. Tres pasos, una vez por procesamiento.">
+      <SectionTitle sub="Verifica la lectura del plano antes de confiar en las cifras: tres pasos, una vez por procesamiento.">
         Ruta de verificación
       </SectionTitle>
       <div className="divide-y divide-border">

@@ -413,8 +413,8 @@ def run_full_pipeline(
     )
     for sheet in skipped_sheets:
         result.warnings.append(
-            f"Hoja «{sheet}» leída como instalaciones: se detectan sus muebles, "
-            "salidas y corridas, no elementos estructurales."
+            f"Hoja «{sheet}» leída como instalaciones: se detectan sólo sus muebles, "
+            "salidas y corridas."
         )
     # El nombre propone y el contenido vota: cuando contradicen, se avisa.
     # El reruteo espera a que cada suite tenga su propio gold.

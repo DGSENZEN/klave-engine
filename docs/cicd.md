@@ -52,8 +52,14 @@ the Vercel team and project through the protected environment variables
 are not authentication credentials, but deployment targets belong in
 environment configuration rather than hardcoded source.
 Repository variables `EC2_HOST` and `EC2_KNOWN_HOSTS` select the existing API
-host and pin its verified SSH public key. SSH must be reachable from the
-runner; host-key checking is mandatory. Never disable it to fix a connection.
+host-key identity and pin its verified SSH public key. Deployment now routes
+SSH/SCP through a fixed-port SSM tunnel, using short-lived GitHub OIDC credentials.
+Set `AWS_REGION`, `AWS_ACCOUNT_ID`, `AWS_DEPLOY_ROLE_ARN` and `EC2_INSTANCE_ID`
+in `KLAVE_ENV` only after reviewed provisioning. Authentication and the redacted
+SSM/SSH preflight run before staging the frontend. Missing authorization fails
+closed. Keep the PR unmerged while provisioning is blocked. See
+[AWS setup](milestone-0-aws-setup.md) for exact trust, permissions and approval steps.
+Host-key checking remains mandatory; never disable it to fix a connection.
 
 The backend deployment keeps the server's `.env.prod`, database, drawings,
 and existing Docker volumes. It builds images tagged with the commit SHA
@@ -77,3 +83,11 @@ gh run list --workflow release-check.yml --branch main
 Keep at least the previous API image and matching verified backup until the
 next release is accepted. Off-server backup copies and a complete restore
 drill remain operational requirements; a passing CI run does not prove them.
+
+Milestone 0 adds bounded, redacted SSH preflight and stages source under
+`.releases/` before building. Accepted SHA directories are immutable; archive
+extraction never overwrites legacy source or private configuration. Select the
+accepted release's Compose file for subsequent operations. The mandatory
+container stage includes actual backup creation and two fresh synthetic
+restore/export drills. See [operator handoff](milestone-0-operations.md) and
+the [gate record](pilot-release-record.md) for proof boundaries and pending work.

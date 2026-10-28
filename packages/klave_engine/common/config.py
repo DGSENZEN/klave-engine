@@ -68,9 +68,6 @@ class Settings(BaseSettings):
     # Es un freno, no un aviso: al llegar, la siguiente llamada se rechaza.
     ai_budget_usd: float = 0.0
 
-    auth_google_id: str | None = None
-    auth_google_secret: str | None = None
-
     # Workspace identity for this deployment: one taller per deploy; more can
     # be created from the CLI (apps.api.auth.cli) and share the server.
     workspace_slug: str = "taller"
