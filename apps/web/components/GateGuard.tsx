@@ -8,7 +8,7 @@ import { apiMessage, putGate, type TableroNodeKey } from "@/lib/api";
 import { canApproveGate } from "@/lib/gates";
 import { getBrowserActor } from "@/lib/collab";
 import { useTablero } from "@/lib/useProjectReport";
-import { Button, Card, Skeleton } from "@/components/ui";
+import { Button, Callout, Card, Skeleton } from "@/components/ui";
 
 /**
  * El candado se respeta: la sección bloqueada no se esconde — dice qué
@@ -22,8 +22,25 @@ export function GateGuard({ node, children }: { node: TableroNodeKey; children: 
   const { tablero, error, refetch } = useTablero(id);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  // A node closed while someone works inside keeps their screen mounted:
+  // the lock card is for the next entry, not for unsaved work.
+  const [estabaAbierto, setEstabaAbierto] = useState(false);
+  if (!estabaAbierto && tablero?.gates?.[node]) setEstabaAbierto(true);
 
   if (error && !tablero) return <>{children}</>;
+  if (tablero && !tablero.gates?.[node] && estabaAbierto) {
+    return (
+      <>
+        <div className="sticky top-0 z-20 px-6 pt-5 lg:px-8">
+          <Callout tone="warning">
+            Este nodo se cerró mientras trabajabas. Lo que guardes se conserva; la próxima
+            vez que entres verás el candado.
+          </Callout>
+        </div>
+        {children}
+      </>
+    );
+  }
   if (!tablero) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-10">

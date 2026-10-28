@@ -56,6 +56,7 @@ import {
   Select,
   Skeleton,
 } from "@/components/ui";
+import { ReprocesarDialog } from "@/components/ReprocesarDialog";
 import { useProjectLive } from "@/components/ProjectLive";
 import { useCostReport } from "@/lib/useProjectReport";
 import { ConceptPicker } from "@/components/ConceptPicker";
@@ -203,6 +204,7 @@ export default function PlanoPage() {
       : null;
   const [geomError, setGeomError] = useState<"missing" | "failed" | null>(null);
   const [reprocessing, setReprocessing] = useState(false);
+  const [confirmReprocess, setConfirmReprocess] = useState(false);
   const router = useRouter();
 
   // connectionEpoch: a reconnect may have skipped events, so reload everything.
@@ -510,6 +512,17 @@ export default function PlanoPage() {
     const missing = geomError === "missing";
     return (
       <div className="px-6 py-7 lg:px-8">
+        <ReprocesarDialog
+          open={confirmReprocess}
+          onConfirm={() => {
+            setConfirmReprocess(false);
+            setReprocessing(true);
+            processProject(id)
+              .then(() => router.push(`/proyecto/${id}`))
+              .catch(() => setReprocessing(false));
+          }}
+          onCancel={() => setConfirmReprocess(false)}
+        />
         <PageHeader title="Visor del plano" />
         <Callout
           tone={missing ? "warning" : "danger"}
@@ -518,12 +531,7 @@ export default function PlanoPage() {
               <Button
                 size="sm"
                 disabled={reprocessing}
-                onClick={() => {
-                  setReprocessing(true);
-                  processProject(id)
-                    .then(() => router.push(`/proyecto/${id}`))
-                    .catch(() => setReprocessing(false));
-                }}
+                onClick={() => setConfirmReprocess(true)}
               >
                 {reprocessing ? "Encolando…" : "Reprocesar"}
               </Button>

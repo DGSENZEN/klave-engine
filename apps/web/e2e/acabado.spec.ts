@@ -61,3 +61,28 @@ test("asentar una nota pide confirmación y un doble clic asienta una sola", asy
   await page.waitForTimeout(1500);
   expect(await notas(page, id)).toBe(antes + 1);
 });
+
+test("reprocesar pide confirmación y deja la pantalla abierta con el aviso", async ({ page }) => {
+  test.setTimeout(240_000);
+  const state = pilotState();
+  const id = await obraLista(page);
+
+  // Desde Inicio, el menú del proyecto pregunta antes de reprocesar.
+  await page.goto("/");
+  await page.getByRole("button", { name: /^Opciones de Obra de ejemplo/ }).first().click();
+  await page.getByRole("button", { name: /Reprocesar/ }).click();
+  const dialogo = page.getByRole("alertdialog");
+  await expect(dialogo).toContainText("vuelve a leer los planos para todos");
+  await dialogo.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await expect(dialogo).toHaveCount(0);
+
+  // Alguien más reprocesa mientras esta persona está en el Resumen: la
+  // pantalla se queda, con el aviso, y vuelve sola al terminar.
+  await page.goto(`/proyecto/${id}/resumen`);
+  await expect(page.getByRole("heading", { name: "Resumen del proyecto" })).toBeVisible();
+  const r = await page.request.post(`${state.api_url}/projects/${id}/process`, { data: {} });
+  expect(r.ok(), await r.text()).toBeTruthy();
+  await expect(page.getByText("Se está reprocesando. Lo que ves es la lectura anterior")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Resumen del proyecto" })).toBeVisible();
+  await expect(page.getByText("Se está reprocesando.")).toHaveCount(0, { timeout: 120_000 });
+});
