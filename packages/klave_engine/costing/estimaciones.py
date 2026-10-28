@@ -228,6 +228,31 @@ def calcular(estimacion: Estimacion) -> ResumenEstimacion:
     )
 
 
+def primera_desde_catalogo(
+    renglones: list[dict], inicio: str, fin: str, monto_contrato: float
+) -> Estimacion:
+    """La estimación 1, sembrada del catálogo del contrato.
+
+    Un renglón sin precio entra en cero en vez de detener la estimación: se ve
+    en la carátula y se corrige ahí, que es donde alguien lo va a buscar."""
+    return Estimacion(
+        numero=1,
+        periodo_inicio=inicio,
+        periodo_fin=fin,
+        monto_contrato=monto_contrato,
+        renglones=[
+            RenglonEstimado(
+                clave=str(r.get("clave") or ""),
+                description=str(r.get("description") or ""),
+                unit=str(r.get("unit") or ""),
+                unit_price=float(r.get("unit_price") or 0.0),
+                quantity_contract=float(r.get("quantity") or 0.0),
+            )
+            for r in renglones
+        ],
+    )
+
+
 def siguiente(
     estimacion: Estimacion, numero: int, inicio: str, fin: str
 ) -> Estimacion:
