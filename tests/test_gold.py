@@ -442,6 +442,13 @@ def test_capture_estructura_only_its_entry_keeps_reasons_and_transcription(tmp_p
     est["resumen"][0]["colocaciones"] = 22
     with pytest.raises(g.CambioDeCerca):
         g.capture_estructura(gold_dir, "x")
+    # R251: una entrada sin cerca estructural no la recibe entera del motor sin --acepto.
+    with pytest.raises(g.CambioDeCerca, match="no tiene cerca estructural"):
+        g.capture_estructura(gold_dir, "y")
+    assert (gold_dir / "y.json").read_bytes() == antes_y
+    g.capture_estructura(gold_dir, "y", acepto=True)
+    nueva = next(e for e in g.load_entries(gold_dir) if e.drawing_id == "y").estructura
+    assert nueva is not None and nueva.por_familia["pilote"]["colocaciones"] == 22
 
 
 def test_cli_refuses_to_recapture_an_existing_id_and_estructura_needs_only(tmp_path, capsys):

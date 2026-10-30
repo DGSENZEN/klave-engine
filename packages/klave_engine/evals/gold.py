@@ -907,12 +907,20 @@ def capture_estructura(
     with its reasons) and keeping its ``transcripcion``. Only for counts verified against the
     raw drawing: say which and how in the entry's notes. Every change is printed; one that
     touches a fenced value (the old fence would fail on this run) is refused unless
-    ``acepto``."""
+    ``acepto``. An entry with no ``estructura`` yet is refused too unless ``acepto`` (R251):
+    seed it first with what it excuses (its ``sin_cerca``), or the whole engine reading
+    becomes the fence."""
     settings = settings or get_settings()
     saved: list[Path] = []
     for entry in load_entries(gold_dir):
         if entry.drawing_id != only:
             continue
+        if entry.estructura is None and not acepto:
+            raise CambioDeCerca(
+                f"{entry.drawing_id} no tiene cerca estructural: siémbrala con lo que excusa "
+                "(sin_cerca, cada cosa con su razón) o, si toda la lectura del motor se verificó "
+                "contra el plano, captura con --acepto"
+            )
         source = Path(entry.source)
         if not (source / "drawings").is_dir():
             continue
