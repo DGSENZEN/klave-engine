@@ -1861,7 +1861,13 @@ def _vista_de(ctx: _Contexto, e: NormalizedEntity) -> str | None:
     if seg is None:
         return None
     centro = bbox_center(e.bbox)
-    for v in seg.structural_plan_views():
+    plantas = seg.structural_plan_views()
+    # Tarea 15c: dentro de la rejilla de una sola planta, es de esa planta (las cajas de las
+    # vistas, la unión de sus detecciones, pueden traslaparse).
+    suya = seg.vista_por_rejilla(centro)
+    if suya is not None and any(v.view_id == suya for v in plantas):
+        return suya
+    for v in plantas:
         if v.bbox is not None and bbox_contains_point(v.bbox, centro):
             return v.view_id
     return None
@@ -1878,10 +1884,13 @@ def _detectadas_fuera(ctx: _Contexto) -> list[Verificacion]:
     toda vista o en una planta que no es de estructura: el plano las dibuja y no se cuentan. Un
     aviso por motivo y familia (las de un detalle, un corte o un cuadro definen, no colocan)."""
     grupos: dict[tuple[str, str], list[Any]] = defaultdict(list)
+    en_duda: dict[str, list[Any]] = defaultdict(list)
     for x in excluidas(ctx.detections, ctx.segmentation):
         if x.motivo in _FUERA:
             grupos[(x.motivo, x.familia)].append(x)
-    salida = []
+        elif x.motivo == "vista_en_duda":
+            en_duda[x.familia].append(x)
+    salida = [_en_duda(ctx, familia, xs) for familia, xs in sorted(en_duda.items())]
     for (motivo, familia), xs in sorted(grupos.items()):
         marcas = Counter(x.marca or "sin marca" for x in xs)
         etiquetas = [
@@ -1905,6 +1914,32 @@ def _detectadas_fuera(ctx: _Contexto) -> list[Verificacion]:
             )
         )
     return salida
+
+
+def _en_duda(ctx: _Contexto, familia: str, xs: list[Any]) -> Verificacion:
+    """Tarea 15c: las colocaciones que están dentro de las rejillas de dos plantas sin dibujo que
+    diga de cuál son: ninguna de las dos las cuenta hasta que se decida (una duda de la 7: de su
+    planta dependen su altura y su nivel)."""
+    marcas = Counter(x.marca or "sin marca" for x in xs)
+    etiquetas = [
+        ctx.handle(ctx.deteccion[x.detection_id].source_entities[0])
+        for x in xs
+        if x.detection_id in ctx.deteccion and ctx.deteccion[x.detection_id].source_entities
+    ]
+    ejemplos = [f"{x.marca or 'sin marca'}: {x.texto}" for x in xs]
+    return _hallazgo(
+        7,
+        "duda",
+        f"{len(xs)} colocaciones de {familia} con vista en duda: no se sabe a qué planta "
+        "pertenecen y no se cuentan en ninguna hasta que se decida. "
+        + " | ".join(ejemplos[:_EJEMPLOS])
+        + (f" | y {len(ejemplos) - _EJEMPLOS} más" if len(ejemplos) > _EJEMPLOS else ""),
+        clave=f"vista en duda: {familia}",
+        marcas=sorted(m for m in marcas if m != "sin marca"),
+        campo="altura_m",
+        textos=etiquetas,
+        en_juego={"piezas": float(len(xs))},
+    )
 
 
 # ------------------------------------------------------------------- 7: los datos críticos

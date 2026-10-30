@@ -40,7 +40,12 @@ from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.results import Detection, layer_matches
 from klave_engine.detection.schedules import FAMILIAS_QUE_SE_ORDENAN
 from klave_engine.detection.text_patterns import TextPatternConfig
-from klave_engine.detection.views import AlturaDeEntrepiso, SheetSegmentation, ViewKind
+from klave_engine.detection.views import (
+    VISTA_EN_DUDA,
+    AlturaDeEntrepiso,
+    SheetSegmentation,
+    ViewKind,
+)
 from klave_engine.estructura.armado import FAMILIAS_CON_PARRILLA
 from klave_engine.estructura.dato import Dato, elegir, hojas_de, miembros, para_hoja
 from klave_engine.estructura.definiciones import Definicion, normalizar_marca
@@ -94,7 +99,12 @@ _CAMPO = {
 }
 
 Motivo = Literal[
-    "cuadro", "titulo_de_detalle", "vista_excluida", "planta_no_estructural", "sin_vista"
+    "cuadro",
+    "titulo_de_detalle",
+    "vista_excluida",
+    "planta_no_estructural",
+    "sin_vista",
+    "vista_en_duda",
 ]
 # R142: las capas de un castillo o una columna en planta (nunca la de un dado).
 _CAPAS_DE_CASTILLO = ["CASTILLO", "COLUMNA", "COLUMN", "COL", "COLS"]
@@ -301,6 +311,11 @@ def _separar(
         elif (d.properties or {}).get("role") == "cuadro":
             motivo = "cuadro"
             texto = "marca de cuadro o de detalle: sólo define la marca"
+        elif segmentada and vista == VISTA_EN_DUDA and segmentation is not None:
+            # Tarea 15c: dentro de las rejillas de dos plantas y sin dibujo que diga de cuál es:
+            # no es colocación de ninguna hasta que se decida (la verificación 7 lo pregunta).
+            motivo = "vista_en_duda"
+            texto = segmentation.vistas_dudosas.get(d.detection_id, "vista en duda")
         elif segmentada and vista is None:
             motivo = "sin_vista"
             texto = "la segmentación no la asignó a ninguna vista"

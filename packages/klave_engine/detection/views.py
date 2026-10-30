@@ -101,6 +101,9 @@ class AlturaDeEntrepiso(BaseModel):
 
 # El Voronoi de títulos tiene tope: 1.5× la separación mediana entre anclas.
 ANCHOR_ASSIGN_FACTOR = 1.5
+# Tarea 15c: la región aparte (no es planta) de lo que está dentro de las rejillas de dos plantas
+# sin dibujo que diga de cuál es: se cuenta una vez y no la cobra ninguna hasta que se decida.
+VISTA_EN_DUDA = "vista_en_duda"
 
 
 class SheetSegmentation(BaseModel):
@@ -112,6 +115,15 @@ class SheetSegmentation(BaseModel):
     # R165: detections whose two nearest titles are about as near and whose drawing does not
     # say which view they belong to: kept at the nearest title, with this aviso.
     vistas_dudosas: dict[str, str] = Field(default_factory=dict)
+    # Tarea 15c: la rejilla de ejes de cada planta que la tiene (su caja, la vista): lo que está
+    # dentro de la de una sola es de esa planta, aunque las cajas de las vistas se traslapen.
+    rejillas: list[tuple[BBox, str]] = Field(default_factory=list)
+
+    def vista_por_rejilla(self, punto: tuple[float, float]) -> str | None:
+        """Tarea 15c: la planta cuya rejilla, sola, contiene el punto; ninguna si son varias o
+        ninguna."""
+        dentro = {vid for caja, vid in self.rejillas if bbox_contains_point(caja, punto)}
+        return dentro.pop() if len(dentro) == 1 else None
 
     def plan_views(self) -> list[ViewRegion]:
         return [v for v in self.views if v.kind == ViewKind.plan]
@@ -524,9 +536,32 @@ def segment_views(
         cap_sq = cap * cap
     far_region: ViewRegion | None = None
 
+    # Tarea 15c: el dibujo de cada planta es su rejilla de ejes. Lo que está dentro de la rejilla
+    # de una sola planta es de esa planta, esté el título que esté más cerca (PRUEBA-1: el título
+    # de PLANTA ALTA, debajo de su planta, queda junto a la esquina de arriba de la AZOTEA); lo
+    # que está dentro de las de dos, lo decide su dibujo, o es una duda (``VISTA_EN_DUDA``).
+    rejillas = _rejillas_de_las_plantas(detections, regions)
+    por_rejilla: dict[str, str] = {}
+    en_dos: dict[str, tuple[str, ...]] = {}
+    for detection in detections:
+        punto = puntos.de(detection)
+        dentro = tuple(sorted({vid for caja, vid in rejillas if bbox_contains_point(caja, punto)}))
+        if len(dentro) == 1:
+            por_rejilla[detection.detection_id] = dentro[0]
+        elif dentro:
+            en_dos[detection.detection_id] = dentro
+
     assignment: dict[str, str] = {}
     member_boxes: dict[str, list[BBox]] = {vid: [] for vid in anchor_ids}
     for detection in detections:
+        if detection.detection_id in por_rejilla or detection.detection_id in en_dos:
+            suya = por_rejilla.get(detection.detection_id) or en_dos[detection.detection_id][0]
+            assignment[detection.detection_id] = suya
+            regions[suya].detection_ids.append(detection.detection_id)
+            regions[suya].detection_counts[detection.detection_type.value] = (
+                regions[suya].detection_counts.get(detection.detection_type.value, 0) + 1
+            )
+            continue
         cx, cy = puntos.de(detection)
         nearest_id = min(
             anchor_ids,
@@ -565,7 +600,15 @@ def segment_views(
     # panels into the legend): the drawing it belongs to decides — the linework it is part of,
     # and the view of the detections clearly assigned on that same drawing. If the drawing
     # cannot say, it stays at the nearest title with the aviso «vista dudosa».
-    dudosas = _desempatar(entities, detections, regions, assignment)
+    dudosas = _desempatar(entities, detections, regions, assignment, por_rejilla, en_dos)
+    if any(despues == VISTA_EN_DUDA for _a, despues, _x in dudosas.values()):
+        regions[VISTA_EN_DUDA] = ViewRegion(
+            view_id=VISTA_EN_DUDA,
+            title="En duda entre dos plantas",
+            kind=ViewKind.excluded,
+            level_key=None,
+            anchor=regions[anchor_ids[0]].anchor,
+        )
     tipos = {d.detection_id: d.detection_type.value for d in detections}
     for detection_id, (antes, despues, _aviso) in dudosas.items():
         if antes != despues:
@@ -600,6 +643,8 @@ def segment_views(
             if m
         }
     )
+    n_en_duda = sum(1 for x in dudosas.values() if x[1] == VISTA_EN_DUDA)
+    n_dudosas = sum(1 for x in dudosas.values() if x[2]) - n_en_duda
     return SheetSegmentation(
         views=list(regions.values()),
         assignment=assignment,
@@ -609,12 +654,10 @@ def segment_views(
             f"Se detectaron {len(plan_anchors)} vistas de planta y "
             f"{len(anchors) - len(plan_anchors)} regiones de detalle/tabla."
         ]
-        + (
-            [f"{sum(1 for x in dudosas.values() if x[2])} detecciones en vista dudosa"]
-            if any(x[2] for x in dudosas.values())
-            else []
-        ),
+        + ([f"{n_dudosas} detecciones en vista dudosa"] if n_dudosas else [])
+        + ([f"{n_en_duda} detecciones en vista en duda"] if n_en_duda else []),
         vistas_dudosas={k: x[2] for k, x in dudosas.items() if x[2]},
+        rejillas=rejillas,
     )
 
 
@@ -629,27 +672,44 @@ def _desempatar(
     detections: list[Detection],
     regions: dict[str, "ViewRegion"],
     assignment: dict[str, str],
+    por_rejilla: dict[str, str] | None = None,
+    en_dos: dict[str, tuple[str, ...]] | None = None,
 ) -> dict[str, tuple[str, str, str]]:
     """For every detection about as near two titles: (its nearest view, the view its drawing
     gives, the aviso «vista dudosa» when the drawing cannot say). The drawing is the connected
     linework the detection's own entities belong to (walls, outlines, the symbols that touch
-    them); its view is the vote of the clearly assigned detections on it."""
-    candidatos = {vid: r for vid, r in regions.items() if vid != "far_from_titles"}
+    them); its view is the vote of the clearly assigned detections on it.
+
+    Tarea 15c: what one planta's grid holds (``por_rejilla``) is decided — never a tie — and
+    votes for that planta. What the grids of several plantas hold (``en_dos``: the plantas) is
+    decided the same way among those plantas; when its drawing cannot say, it goes to
+    ``VISTA_EN_DUDA`` with the aviso «vista en duda» (no planta counts it until it is decided)."""
+    por_rejilla = por_rejilla or {}
+    en_dos = en_dos or {}
+    fuera = ("far_from_titles", VISTA_EN_DUDA)
+    candidatos = {vid: r for vid, r in regions.items() if vid not in fuera}
     if len(candidatos) < 2:
         return {}
     puntos = _Puntos(entities)
-    empatadas: dict[str, tuple[str, str]] = {}
+    empatadas: dict[str, tuple[str, ...]] = {}
     claras: dict[str, str] = {}
     for detection in detections:
-        vid = assignment.get(detection.detection_id)
+        did = detection.detection_id
+        if did in en_dos:
+            empatadas[did] = en_dos[did]
+            continue
+        if did in por_rejilla:
+            claras[did] = por_rejilla[did]
+            continue
+        vid = assignment.get(did)
         if vid not in candidatos:
             continue
         cx, cy = puntos.de(detection)
         cerca = sorted((math.dist((cx, cy), r.anchor), k) for k, r in candidatos.items())
         if cerca[1][0] <= EMPATE_DE_TITULOS * cerca[0][0]:
-            empatadas[detection.detection_id] = (cerca[0][1], cerca[1][1])
+            empatadas[did] = (cerca[0][1], cerca[1][1])
         else:
-            claras[detection.detection_id] = vid
+            claras[did] = vid
     if not empatadas:
         return {}
     anclas = [r.anchor for r in candidatos.values()]
@@ -663,16 +723,32 @@ def _desempatar(
         for c in dibujo.de(por_id[detection_id]):
             votos[c][vid] += 1
     salida: dict[str, tuple[str, str, str]] = {}
-    for detection_id, (primera, segunda) in empatadas.items():
+    for detection_id, opciones in empatadas.items():
         cuenta: dict[str, int] = defaultdict(int)
         for c in dibujo.de(por_id[detection_id]):
-            for vid in (primera, segunda):
+            for vid in opciones:
                 cuenta[vid] += votos[c].get(vid, 0)
-        total = cuenta[primera] + cuenta[segunda]
-        ganadora = max((primera, segunda), key=lambda v: (cuenta[v], v == primera))
-        if total >= 2 and cuenta[ganadora] >= _MAYORIA * total:
-            salida[detection_id] = (primera, ganadora, "")
+        total = sum(cuenta[v] for v in opciones)
+        primera = opciones[0]
+        ganadora = max(opciones, key=lambda v: (cuenta[v], v == primera))
+        empate = sum(1 for v in opciones if cuenta[v] == cuenta[ganadora]) > 1
+        if total >= 2 and cuenta[ganadora] >= _MAYORIA * total and not empate:
+            salida[detection_id] = (assignment[detection_id], ganadora, "")
+        elif detection_id in en_dos:
+            orden = sorted(opciones, key=lambda v: regions[v].title)
+            titulos = [f"«{regions[v].title}»" for v in orden]
+            cuentas = " contra ".join(str(cuenta[v]) for v in orden)
+            ninguna = "ninguna de las dos" if len(orden) == 2 else "ninguna de ellas"
+            salida[detection_id] = (
+                assignment[detection_id],
+                VISTA_EN_DUDA,
+                f"vista en duda: está dentro de la rejilla de {titulos[0]} y de la de "
+                + " y de la de ".join(titulos[1:])
+                + f", y su dibujo no dice de cuál es ({cuentas}); no se cuenta en {ninguna} "
+                "hasta que se decida",
+            )
         else:
+            segunda = opciones[1]
             titulo_a, titulo_b = regions[primera].title, regions[segunda].title
             salida[detection_id] = (
                 primera,
@@ -682,6 +758,75 @@ def _desempatar(
                 f"deja en «{titulo_a}»",
             )
     return salida
+
+
+# Tarea 15c: a grid is one planta's when that planta's title is at most half as far from it as
+# any other title (a title is drawn beside its own planta, below or above it).
+_TITULO_DE_SU_REJILLA = 2.0
+
+
+def _rejillas_de_las_plantas(
+    detections: list[Detection], regions: dict[str, "ViewRegion"]
+) -> list[tuple[BBox, str]]:
+    """Tarea 15c: each planta's drawn extent, its grid: the axes (``grid_line``) that cross one
+    another, at least two each way, and the box of their lines (they reach past the outer walls
+    to their bubbles). A grid is the planta's whose title is clearly the nearest to its box
+    (``_TITULO_DE_SU_REJILLA``); a grid nearest a detail's title, or about as near two titles,
+    places nothing."""
+    ejes = [
+        d
+        for d in detections
+        if d.detection_type.value == "grid_line"
+        and (d.properties or {}).get("axis") in ("horizontal", "vertical")
+    ]
+    if len(ejes) < 4 or len(regions) < 2:
+        return []
+    padre = list(range(len(ejes)))
+
+    def raiz(i: int) -> int:
+        while padre[i] != i:
+            padre[i] = padre[padre[i]]
+            i = padre[i]
+        return i
+
+    tol = 1e-6
+    for i, a in enumerate(ejes):
+        for j in range(i + 1, len(ejes)):
+            b = ejes[j]
+            if a.properties["axis"] == b.properties["axis"]:
+                continue
+            if (
+                a.bbox[0] <= b.bbox[2] + tol
+                and b.bbox[0] <= a.bbox[2] + tol
+                and a.bbox[1] <= b.bbox[3] + tol
+                and b.bbox[1] <= a.bbox[3] + tol
+            ):
+                padre[raiz(j)] = raiz(i)
+    grupos: dict[int, list[Detection]] = defaultdict(list)
+    for i, eje in enumerate(ejes):
+        grupos[raiz(i)].append(eje)
+    salida: list[tuple[BBox, str]] = []
+    for grupo in grupos.values():
+        sentidos = [e.properties["axis"] for e in grupo]
+        if sentidos.count("horizontal") < 2 or sentidos.count("vertical") < 2:
+            continue
+        caja = bbox_union_all([e.bbox for e in grupo])
+        cerca = sorted(
+            (_distancia_a_caja(r.anchor, caja), vid)
+            for vid, r in regions.items()
+            if vid not in ("far_from_titles", VISTA_EN_DUDA)
+        )
+        (d1, vid), (d2, _otra) = cerca[0], cerca[1]
+        if regions[vid].kind != ViewKind.plan or d2 <= _TITULO_DE_SU_REJILLA * d1:
+            continue
+        salida.append((caja, vid))
+    return salida
+
+
+def _distancia_a_caja(punto: tuple[float, float], caja: BBox) -> float:
+    dx = max(caja[0] - punto[0], 0.0, punto[0] - caja[2])
+    dy = max(caja[1] - punto[1], 0.0, punto[1] - caja[3])
+    return math.hypot(dx, dy)
 
 
 # Lines longer than this share of the titles' median spacing (sheet borders, grid axes, slab

@@ -549,3 +549,51 @@ def test_score_transcripcion_both_directions(tmp_path):
     ok, diffs = score_transcripcion(path, {"specs": ci})
     assert not ok and diffs == ["CI en ES-200 (muros de 30 cm): el motor la lee y la transcripción "
                                 "no la tiene"]
+
+
+# ------------------------------------------- Tarea 15c: las colocaciones por vista (planta)
+
+
+def _est_vistas(vistas: dict[str, int]) -> dict:
+    """Un ``estructura.json`` de una hoja con varias plantas (PRUEBA-1): todas las colocaciones en
+    el mismo archivo, cada una en su vista."""
+    est = _est({"castillo": {"hojas": {"a.dxf": sum(vistas.values())}}})
+    vistas_de = [v for v, n in vistas.items() for _ in range(n)]
+    est["elementos"] = [{**x, "vista": v} for x, v in zip(est["elementos"], vistas_de, strict=True)]
+    return est
+
+
+def test_estructura_fence_per_view_catches_a_placement_moving_between_plantas():
+    # Una hoja con cuatro plantas: por hoja no se ve que un castillo cambie de planta (su altura y
+    # su dinero sí cambian). La cerca por vista lo ve.
+    want = g.estructura_from_json(_est_vistas({"v_pa": 3, "v_az": 2}), por_vista_de=["castillo"])
+    assert want.por_vista == {"castillo": {"v_az": 2, "v_pa": 3}}
+    assert score_estructura(want, _est_vistas({"v_pa": 3, "v_az": 2})) == (True, [])
+    ok, diffs = score_estructura(want, _est_vistas({"v_pa": 4, "v_az": 1}))
+    assert not ok and sorted(diffs) == ["castillo en la vista v_az: esperado 2, motor 1",
+                                        "castillo en la vista v_pa: esperado 3, motor 4"]
+    # Opt-in: sin pedirla, la captura no cerca por vista.
+    assert g.estructura_from_json(_est_vistas({"v_pa": 3})).por_vista == {}
+
+
+@pytest.mark.parametrize("datos", [
+    {"por_vista": {"castillo": {"v_pa": 1}}},
+    {"por_familia": {"castillo": {"colocaciones": 2}}, "por_hoja": {"castillo": {"a.dxf": 2}},
+     "por_vista": {"castillo": {"v_pa": 1}}},
+])
+def test_estructura_fence_per_view_must_add_up(datos):
+    with pytest.raises(ValidationError):
+        EstructuraExpectation.model_validate(datos)
+
+
+def test_capture_estructura_keeps_fencing_per_view_what_was_fenced_per_view(tmp_path, monkeypatch):
+    gold_dir = tmp_path / "gold"
+    semilla = g.estructura_from_json(_est_vistas({"v_pa": 3, "v_az": 2}), por_vista_de=["castillo"])
+    g.save_entry(_entrada(tmp_path, estructura=semilla), gold_dir)
+    monkeypatch.setattr(g, "_fresh_run",
+                        lambda *_a, **_k: ([], None, _est_vistas({"v_pa": 2, "v_az": 3})))
+    with pytest.raises(g.CambioDeCerca):  # un castillo cambió de planta: cercado
+        g.capture_estructura(gold_dir, "x")
+    g.capture_estructura(gold_dir, "x", acepto=True)
+    again = g.load_entries(gold_dir)[0].estructura
+    assert again is not None and again.por_vista == {"castillo": {"v_az": 3, "v_pa": 2}}
