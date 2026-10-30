@@ -63,8 +63,7 @@ Qué REPRODUCE (reglas del motor aplicadas a mano sobre esos hechos; no son hech
     sección propia está dibujada y no se leyó (un «DADO D-n» fuera de su bloque de corte: R113, la
     medida es supuesto) o su contorno no es un rectángulo (área < 98 % de su caja);
   - la severidad de la verificación 1: sin definición y sin nota de su familia → bloquea; con nota
-    → duda; y su aviso: uno por familia con colocaciones sin marca (los muros de EST-MURO
-    CONCRETO; ningún dado);
+    → duda (su aviso, el de los muros «sin marca», queda sin cerca: R265);
   - la verificación 2: definida y nunca escrita en una planta (sólo las familias que la lectura lee
     y los dados D-);
   - la partición de la verificación 10 en duda (muros MC-, dados D-, CM-1: marca de elemento de
@@ -765,11 +764,11 @@ def main() -> int:
     leidas = {"castillo", "columna", "trabe", "contratrabe", "dala", "cerramiento", "pilote"}
     if set(por_hoja) - set(est["por_familia"]) - {"zapata", "dado", "muro_concreto"}:
         dif(f"familias con colocaciones fuera del gold: {set(por_hoja) - leidas}")
-    # 1/aviso (REPRODUCE: un aviso por familia con colocaciones sin marca). VERIFICA: ningún dado
-    # queda sin su D-n (arriba: 22 juntados, el 23.º contorno es D-X, más chico que una zapata). El
-    # que queda es el de los muros: el plano dibuja los suyos en EST-MURO CONCRETO y escribe sus
-    # MC-n sobre el achurado, y el motor coloca algunos de esos contornos sin juntarles su MC-n (la
-    # familia muro_concreto sigue sin cerca: cuántos coloca es suyo, no del plano).
+    # 1/aviso queda sin cerca (R265): su único aviso dice «sin marca» de los muros, y el plano
+    # dibuja los suyos en EST-MURO CONCRETO y escribe sus MC-n sobre el achurado; el motor coloca
+    # algunos de esos contornos sin juntarles su MC-n (muro_concreto sigue sin cerca). Sólo se
+    # imprime a la vista; que ningún dado quede sin su D-n se VERIFICA arriba (22 juntados, el
+    # 23.º contorno es D-X, más chico que una zapata) y lo cercan las colocaciones de dado.
     muros_c = sorted(e.dxf.handle for e in msp.query("LWPOLYLINE[layer=='EST-MURO CONCRETO']")
                      if e.closed and en_planta(*_centro(e)))
     print(f"contornos cerrados de EST-MURO CONCRETO en las plantas: {len(muros_c)} "
