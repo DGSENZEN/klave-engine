@@ -460,6 +460,30 @@ def test_cli_refuses_to_recapture_an_existing_id_and_estructura_needs_only(tmp_p
         g.main(["estructura", "--gold", str(gold_dir)])
 
 
+def test_capture_with_an_only_that_names_nothing_says_so_and_fails(tmp_path, capsys, monkeypatch):
+    """Un --only con un error de dedo no pasa por una captura hecha: lo dice y sale distinto de 0,
+    sin escribir ni correr el motor; tampoco si la entrada no tiene sus planos aquí."""
+    gold_dir = tmp_path / "gold"
+    g.save_entry(_entrada(tmp_path, estructura=g.EstructuraExpectation()), gold_dir)
+    antes = (gold_dir / "x.json").read_bytes()
+
+    def no_correr(*_a, **_k):
+        raise AssertionError("no debe correr el motor")
+
+    monkeypatch.setattr(g, "_fresh_run", no_correr)
+    for comando in ("money", "estructura"):
+        rc = g.main([comando, "--gold", str(gold_dir), "--only", "xx"])
+        assert rc == 2 and "«xx»" in capsys.readouterr().err
+    with pytest.raises(g.SinCaptura):
+        g.capture_money(gold_dir, only="xx")
+    with pytest.raises(g.SinCaptura):
+        g.capture_estructura(gold_dir, "xx")
+    (tmp_path / "src" / "drawings").rmdir()
+    rc = g.main(["estructura", "--gold", str(gold_dir), "--only", "x"])
+    assert rc == 2 and "sus planos no están" in capsys.readouterr().err
+    assert (gold_dir / "x.json").read_bytes() == antes
+
+
 def test_score_transcripcion_both_directions(tmp_path):
     from klave_engine.evals.gold import score_transcripcion
 

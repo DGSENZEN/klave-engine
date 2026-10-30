@@ -775,6 +775,29 @@ class CambioDeCerca(Exception):
     """Una captura cambiaría un valor que el gold ya cerca: no se escribe sin ``acepto``."""
 
 
+class SinCaptura(Exception):
+    """``--only`` nombra una entrada que no está en el gold, o cuyos planos no están aquí: no se
+    capturó nada (un error de dedo no pasa por una captura hecha)."""
+
+
+def _elegidas(gold_dir: Path, only: str | None) -> list[GoldEntry]:
+    """Las entradas a capturar: todas, o la que ``only`` nombra; si no hay tal, ``SinCaptura``.
+    Las que no tienen sus planos aquí se dicen y se saltan (con ``only``, ``SinCaptura``)."""
+    entradas = [e for e in load_entries(gold_dir) if only is None or e.drawing_id == only]
+    if only is not None and not entradas:
+        raise SinCaptura(f"ninguna entrada del gold ({gold_dir}) se llama «{only}»")
+    con_planos = []
+    for entry in entradas:
+        if (Path(entry.source) / "drawings").is_dir():
+            con_planos.append(entry)
+        elif only is not None:
+            raise SinCaptura(f"{entry.drawing_id}: sus planos no están en {entry.source}")
+        else:
+            print(f"{entry.drawing_id}: sin planos en {entry.source}, no se capturó",
+                  file=sys.stderr)
+    return con_planos
+
+
 def fusionar_dinero(anterior: MoneyExpectation | None, report: CostReport) -> MoneyExpectation:
     """The engine's money for a run, merged into an entry's money: verified rows (``human``,
     ``crudo``) are kept as they are, excused concepts stay out, and the engine's own rows
@@ -877,16 +900,13 @@ def capture_money(
     """Fresh engine run per entry; its quantities and direct cost become the
     entry's money fence. Verified rows (``human``, ``crudo``) and exclusions
     are kept: only the engine's own rows are refreshed. Every change is
-    printed; one that touches a fenced value is refused unless ``acepto``."""
+    printed; one that touches a fenced value is refused unless ``acepto``. An
+    ``only`` that names no entry here (or one without its drawings) raises
+    ``SinCaptura``."""
     settings = settings or get_settings()
     saved: list[Path] = []
-    for entry in load_entries(gold_dir):
-        if only is not None and entry.drawing_id != only:
-            continue
-        source = Path(entry.source)
-        if not (source / "drawings").is_dir():
-            continue
-        _detections, report, _estructura = _fresh_run(source, settings)
+    for entry in _elegidas(gold_dir, only):
+        _detections, report, _estructura = _fresh_run(Path(entry.source), settings)
         fresh = fusionar_dinero(entry.money, report)
         sin = (entry.money.sin_cerca if entry.money else None) or {}
         cambios, cercados = cambios_de_cerca(
@@ -912,19 +932,14 @@ def capture_estructura(
     becomes the fence."""
     settings = settings or get_settings()
     saved: list[Path] = []
-    for entry in load_entries(gold_dir):
-        if entry.drawing_id != only:
-            continue
+    for entry in _elegidas(gold_dir, only):
         if entry.estructura is None and not acepto:
             raise CambioDeCerca(
                 f"{entry.drawing_id} no tiene cerca estructural: siémbrala con lo que excusa "
                 "(sin_cerca, cada cosa con su razón) o, si toda la lectura del motor se verificó "
                 "contra el plano, captura con --acepto"
             )
-        source = Path(entry.source)
-        if not (source / "drawings").is_dir():
-            continue
-        _detections, _report, estructura_json = _fresh_run(source, settings)
+        _detections, _report, estructura_json = _fresh_run(Path(entry.source), settings)
         if estructura_json is None:
             raise RuntimeError(f"{entry.drawing_id}: la corrida no escribió estructura.json")
         anterior = entry.estructura
@@ -1207,7 +1222,7 @@ def main(argv: list[str] | None = None) -> int:
             for path in capture_estructura(Path(args.gold), args.only, acepto=args.acepto):
                 print(f"estructura → {path}")
             return 0
-    except CambioDeCerca as exc:
+    except (CambioDeCerca, SinCaptura) as exc:
         print(f"NO SE ESCRIBIÓ: {exc}", file=sys.stderr)
         return 2
     summary = run(Path(args.gold), only=args.only)
