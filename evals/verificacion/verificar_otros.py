@@ -26,28 +26,34 @@ Qué REPRODUCE (reglas del motor, no hechos del plano): la marca «C1» del dibu
 tarjeta); un hallazgo de la verificación 1 por marca sin definir, uno de aviso para todas las
 zapatas sin marca, uno de la 7/duda por hoja (la altura supuesta de sus columnas, juntas).
 
-prueba-1 (Tarea 15c: una etiqueta es de una sola vista). Qué VERIFICA (y compara): sus cuatro
-títulos de planta (textos de 0.5 con PLANTA o AZOTEA); la extensión dibujada de cada planta, su
-rejilla (las líneas de S-GRID que se cruzan, dos o más en cada sentido; la caja de sus líneas), de
-cada título la que le queda claramente más cerca (la otra, al menos al doble), y que ninguna caja
-toque a otra; cada etiqueta de castillo (capa castillos, «K-n»): la planta cuya rejilla la contiene,
-o, fuera de toda rejilla, la de la caja claramente más cercana —ninguna en dos, ninguna sin planta—
-y cuántas hay en cada planta contra ``por_vista`` y ``por_familia`` del gold, exactas. EST-001: la
-sección de cada castillo es el marcador cerrado más cercano a su etiqueta en la capa castillos (el
-cuadro de 15×15, el de 15×30 o el círculo), por la altura, en PLANTA BAJA, PLANTA ALTA y AZOTEA,
-contra el gold con 0.5 % (lo que difiere: el motor da a dos K-0 sobre el 15×30 de una K-2 ese
-marcador —R166— y a dos K-0 sin marcador junto el círculo de su símbolo: −0.046 m³). Los dos muros
-que la Tarea 15c cambia de planta: W39, el poniente exterior de PLANTA BAJA (sus líneas A-WALL
-en x 50.725–50.905 van de −62.298 a −45.473: 16.825 m), dentro de la rejilla de PLANTA BAJA; W18,
-el norte de la AZOTEA (su cara interior A-WALL en y −63.724, 5.22 m), dentro de la de AZOTEA.
+prueba-1 (Tarea 15c: una etiqueta es de una sola vista). Qué VERIFICA (y compara): sus encabezados
+(textos de 0.3 o más que nombran planta, detalle o simbología: las cuatro plantas, dos «ARMADO DE
+CASTILLOS» y dos «simbología»), cada uno en el centro de su texto (su ancho medido con la fuente de
+su estilo por ezdxf, su anclaje); la extensión dibujada de cada planta, su rejilla (las líneas de
+S-GRID que se cruzan, dos o más en cada sentido; la caja de sus líneas), del título de planta que le
+queda claramente más cerca entre TODOS los encabezados (el siguiente, al doble o más: el margen se
+imprime, también el de los puntos de inserción, que no decide: la cimentación tiene 2.40 por centros
+y 1.85 por inserciones, porque «ARMADO DE CASTILLOS» se ancla en su esquina de arriba a la
+izquierda; por centros se sostiene mientras ese texto mida 2.92 m o más, y mide 8.27), y que ninguna
+caja toque a otra; cada etiqueta de castillo (capa castillos, «K-n»): la planta cuya rejilla la
+contiene, o, fuera de toda rejilla, la de la caja claramente más cercana —ninguna en dos, ninguna
+sin planta— y cuántas hay en cada planta contra ``por_vista`` y ``por_familia`` del gold, exactas.
+EST-001: la sección de cada castillo es el marcador cerrado más cercano a su etiqueta en la capa
+castillos (el cuadro de 15×15, el de 15×30 o el círculo), por la altura, en PLANTA BAJA, PLANTA ALTA
+y AZOTEA, contra el gold con 0.5 % (lo que difiere: el motor da a dos K-0 sobre el 15×30 de una K-2
+ese marcador —R166— y a dos K-0 sin marcador junto el círculo de su símbolo: −0.046 m³). Los dos
+muros que la Tarea 15c cambia de planta: W39, el poniente exterior de PLANTA BAJA (sus líneas A-WALL
+en x 50.725–50.905 van de −62.298 a −45.473: 16.825 m), dentro de la rejilla de PLANTA BAJA; W18, el
+norte de la AZOTEA (su cara interior A-WALL en y −63.724, 5.22 m), dentro de la de AZOTEA.
 
 Qué REPRODUCE (reglas del motor, no hechos del plano): el nombre de la vista de cada planta en el
 motor (``VISTA_DEL_MOTOR``: por el orden de sus títulos); la altura de los castillos, 3.00 m, la
-supuesta (las vistas de esta hoja no juntan su N.P.T.); los muros, 2.70 m, y un muro de azotea es
-pretil de 0.90 m; criticos_total = 4 por castillo; con ellas, lo que la Tarea 15c movió del gold:
-EST-001 9.893 → 10.366 (+7 castillos de 15×15 de PLANTA BAJA × 3.00 m), EST-004 392.598 →
-428.630 (+16.825 × 2.70 de W39, −5.22 × 1.80 de W18 al volverse pretil), ACA-001 y ACA-002
-785.197 → 857.260 (dos caras).
+supuesta (las vistas de esta hoja no juntan su N.P.T.; el plano declara 0/3.45/6.60/7.80 — tarea
+15e: el volumen de EST-001 no es crudo, sus conteos y secciones sí); los muros, 2.70 m, y un muro de
+azotea es pretil de 0.90 m; criticos_total = 4 por castillo; con ellas, lo que la Tarea 15c movió
+del gold: EST-001 9.893 → 10.366 (+7 castillos de 15×15 de PLANTA BAJA × 3.00 m), EST-004 392.598 →
+428.630 (+16.825 × 2.70 de W39, −5.22 × 1.80 de W18 al volverse pretil), ACA-001 y ACA-002 785.197 →
+857.260 (dos caras).
 """
 
 import hashlib
@@ -58,6 +64,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from ezdxf.fonts import fonts
 from klave_engine.dxf.loader import load_dxf  # sólo para abrir el archivo
 
 LEIDA = re.compile(r"^(K|C|CTA|CE|CR|DA|D|P|TE|T\d?|B|Z)-?\d{1,2}[A-Z]?$|^CI$|^DC$")
@@ -157,9 +164,33 @@ def _lineas_a_wall(msp):
                     yield v
 
 
-def _rejillas(msp, titulos) -> tuple[dict[str, tuple], int]:
+# Los encabezados de la hoja: los textos de 0.3 o más que nombran una planta, un detalle o la
+# simbología (en PRUEBA-1: las 4 plantas, 2 «ARMADO DE CASTILLOS» y 2 «simbología»).
+ENCABEZADO = re.compile(r"PLANTA|AZOTEA|ARMADO|SIMBOLOG|DETALLE|CORTE|CUADRO|NOTAS|TABLA", re.I)
+
+
+def _centro_de_texto(doc, e) -> tuple[float, float]:
+    """El centro del texto por su propia extensión: su ancho medido con la fuente de su estilo
+    (ezdxf, sin el motor; una SHX como «txt» la mide ezdxf con su fuente de reemplazo), su alto, y
+    su punto de anclaje (MTEXT: 1–9, arriba/medio/abajo × izquierda/centro/derecha; TEXT:
+    izquierda sobre la línea base)."""
+    alto = e.dxf.char_height if e.dxftype() == "MTEXT" else e.dxf.height
+    estilo = doc.styles.get(e.dxf.get("style", "Standard"))
+    archivo = (estilo.dxf.font if estilo is not None else "") or "arial.ttf"
+    ancho = fonts.make_font(archivo, cap_height=alto).text_width(texto(e).replace("\t", " "))
+    x, y = e.dxf.insert.x, e.dxf.insert.y
+    if e.dxftype() == "MTEXT":
+        fila, columna = divmod(e.dxf.attachment_point - 1, 3)
+        return (x + ancho * (0.5 - columna / 2), y - alto * (0.5 - fila / 2))
+    return (x + ancho / 2, y + alto / 2)
+
+
+def _rejillas(msp, titulos, encabezados) -> tuple[dict[str, tuple], int]:
     """La rejilla de cada planta: las líneas de S-GRID que se cruzan (dos o más en cada sentido),
-    la caja de sus líneas, del título que le queda claramente más cerca."""
+    la caja de sus líneas, del título de planta que le queda claramente más cerca entre todos los
+    encabezados de la hoja (planta, detalle o simbología): el siguiente, al doble o más. Cada
+    encabezado está en el centro de su texto; se imprime también el margen por sus puntos de
+    inserción, que no deciden."""
     malos = 0
     ejes = [((e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y))
             for e in msp.query("LINE") if e.dxf.layer == "S-GRID"]  # fmt: skip
@@ -185,11 +216,15 @@ def _rejillas(msp, titulos) -> tuple[dict[str, tuple], int]:
         xs = [p[0] for a, b in g for p in (a, b)]
         ys = [p[1] for a, b in g for p in (a, b)]
         caja = (min(xs), min(ys), max(xs), max(ys))
-        cerca = sorted((_a_caja(p, caja), t) for t, p in titulos.items())
-        print(f"  rejilla de {len(g)} ejes, caja {tuple(round(c, 2) for c in caja)}: títulos a "
-              f"{[(t, round(d, 2)) for d, t in cerca[:2]]}")  # fmt: skip
-        if cerca[1][0] <= 2 * cerca[0][0] or cerca[0][1] in rejillas:
-            print("  ** DIFERENCIA: una rejilla sin un título claramente suyo")
+        cerca = sorted((_a_caja(c, caja), t) for t, c, _i in encabezados)
+        por_insercion = sorted((_a_caja(i, caja), t) for t, _c, i in encabezados)
+        margen = cerca[1][0] / cerca[0][0] if cerca[0][0] else math.inf
+        margen_i = por_insercion[1][0] / por_insercion[0][0] if por_insercion[0][0] else math.inf
+        print(f"  rejilla de {len(g)} ejes, caja {tuple(round(c, 2) for c in caja)}: encabezados "
+              f"a {[(t, round(d, 2)) for d, t in cerca[:2]]}, margen {margen:.2f} (por inserción "
+              f"{margen_i:.2f}: {[(t, round(d, 2)) for d, t in por_insercion[:2]]})")  # fmt: skip
+        if margen <= 2 or cerca[0][1] not in titulos or cerca[0][1] in rejillas:
+            print("  ** DIFERENCIA: una rejilla sin un título de planta claramente suyo")
             malos += 1
             continue
         rejillas[cerca[0][1]] = caja
@@ -226,19 +261,26 @@ def prueba_1(gold: dict) -> int:
     malos = 0
     path = Path(gold["source"]) / "drawings" / "Plano Prueba 1.dxf"
     print(f"  sha {hashlib.sha256(path.read_bytes()).hexdigest()[:12]}…")
-    msp = load_dxf(path).doc.modelspace()
-    titulos = {
-        texto(e): (e.dxf.insert.x, e.dxf.insert.y)
+    doc = load_dxf(path).doc
+    msp = doc.modelspace()
+    encabezados = [
+        (texto(e), _centro_de_texto(doc, e), (e.dxf.insert.x, e.dxf.insert.y))
         for e in msp.query("TEXT MTEXT")
-        if (e.dxf.char_height if e.dxftype() == "MTEXT" else e.dxf.height) >= 0.45
-        and re.search(r"PLANTA|AZOTEA", texto(e).upper())
-    }
-    donde = {t: tuple(round(c, 2) for c in p) for t, p in titulos.items()}
-    print(f"  títulos de planta: {donde}")
-    if sorted(titulos) != sorted(VISTA_DEL_MOTOR):
-        print(f"  ** DIFERENCIA: los títulos no son {sorted(VISTA_DEL_MOTOR)}")
+        if (e.dxf.char_height if e.dxftype() == "MTEXT" else e.dxf.height) >= 0.3
+        and ENCABEZADO.search(texto(e))
+    ]
+    titulos = {t: c for t, c, _i in encabezados if re.search(r"PLANTA|AZOTEA", t.upper())}
+    print("  encabezados (centro de su texto): "
+          f"{[(t, tuple(round(v, 2) for v in c)) for t, c, _i in encabezados]}")  # fmt: skip
+    otros = sorted(t for t, _c, _i in encabezados if t not in titulos)
+    if sorted(titulos) != sorted(VISTA_DEL_MOTOR) or len(encabezados) != len(titulos) + len(otros):
+        print(f"  ** DIFERENCIA: los títulos de planta no son {sorted(VISTA_DEL_MOTOR)}")
         return malos + 1
-    rejillas, malos = _rejillas(msp, titulos)
+    if otros != ["ARMADO DE CASTILLOS", "ARMADO DE CASTILLOS", "simbología", "simbología"]:
+        print(f"  ** DIFERENCIA: los demás encabezados son {otros}")
+        malos += 1
+    rejillas, m = _rejillas(msp, titulos, encabezados)
+    malos += m
     if sorted(rejillas) != sorted(titulos):
         print(f"  ** DIFERENCIA: plantas sin rejilla: {sorted(set(titulos) - set(rejillas))}")
         return malos + 1

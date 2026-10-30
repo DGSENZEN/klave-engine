@@ -603,7 +603,7 @@
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "marcadores de castillo: cada etiqueta toma el castillo dibujado junto a sus letras (su cuadro, su c\u00edrculo o su relleno), no el bloque de muros de la planta que la contiene; los castillos del muro poniente de PLANTA BAJA, casi igual de cerca de \u00absimbolog\u00eda\u00bb, son de la planta por su dibujo (R146, R165); antes, R133: el c\u00edrculo del castillo en vez de la caja del bloque que lo contiene; R179: a media altura de texto del marcador m\u00e1s cercano, el s\u00edmbolo en la capa de castillos le gana al contorno de otra capa: la K-1 (6701) toma su castillo de 15\u00d715 (66C1, capa castillos) y no el contorno de muro de arquitectura (A-WALL 871A, 0.0702); 10.037 \u2192 9.893, verificado en el crudo; Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: los 7 K-1 del muro poniente exterior de PLANTA BAJA (631C, 631D, 631E, 6320, 6324, 632F, 6330; antes en \u00absimbolog\u00eda\u00bb, no contaban) entran a su planta con su cuadro de 15\u00d715 \u00d7 3.00 m (la altura supuesta: las vistas de esta hoja no juntan su N.P.T.): +0.4725; los 4 K-1 de la esquina de arriba de la AZOTEA (6943, 6949, 694A, 694B) pasan de PLANTA ALTA a AZOTEA, misma altura supuesta: 0; 9.893 \u2192 10.366, verificado en el crudo (verificar_otros.py prueba-1: 10.3203 por el marcador m\u00e1s cercano, 0.44 %: R166)",
+        "note": "marcadores de castillo: cada etiqueta toma el castillo dibujado junto a sus letras (su cuadro, su c\u00edrculo o su relleno), no el bloque de muros de la planta que la contiene; los castillos del muro poniente de PLANTA BAJA, casi igual de cerca de \u00absimbolog\u00eda\u00bb, son de la planta por su dibujo (R146, R165); antes, R133: el c\u00edrculo del castillo en vez de la caja del bloque que lo contiene; R179: a media altura de texto del marcador m\u00e1s cercano, el s\u00edmbolo en la capa de castillos le gana al contorno de otra capa: la K-1 (6701) toma su castillo de 15\u00d715 (66C1, capa castillos) y no el contorno de muro de arquitectura (A-WALL 871A, 0.0702); 10.037 \u2192 9.893, verificado en el crudo; Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: los 7 K-1 del muro poniente exterior de PLANTA BAJA (631C, 631D, 631E, 6320, 6324, 632F, 6330; antes en \u00absimbolog\u00eda\u00bb, no contaban) entran a su planta con su cuadro de 15\u00d715 \u00d7 3.00 m (la altura supuesta: las vistas de esta hoja no juntan su N.P.T.): +0.4725; los 4 K-1 de la esquina de arriba de la AZOTEA (6943, 6949, 694A, 694B) pasan de PLANTA ALTA a AZOTEA, misma altura supuesta: 0; 9.893 \u2192 10.366: conteos y secciones verificados en el crudo (verificar_otros.py prueba-1: 10.3203 por el marcador m\u00e1s cercano, 0.44 %: R166), el volumen no: altura supuesta 3.00 m; el plano declara 0/3.45/6.60/7.80 \u2014 tarea 15e (R266)",
         "variants": {
           "EST-001.GEN": 10.366
         }
@@ -653,7 +653,7 @@
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165); Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: W39, el muro poniente exterior de PLANTA BAJA (A-WALL en x 50.725\u201350.905, de \u221262.298 a \u221245.473: 16.825 m; antes en \u00absimbolog\u00eda\u00bb), entra a su planta: +16.825 \u00d7 2.70; W18, el muro norte de la AZOTEA (cara interior A-WALL en y \u221263.724: 5.22 m; antes en PLANTA ALTA), es pretil: \u22125.22 \u00d7 (2.70 \u2212 0.90); 392.598 \u2192 428.630, verificado en el crudo. Las variantes se reparten a prorrata (Tarea 15d): BLOCK-16 225.508 \u2192 268.442, BLOCK-18 54.548 \u2192 47.438, las dem\u00e1s +0.01 a +0.11",
+        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165); Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: W39, el muro poniente exterior de PLANTA BAJA (A-WALL en x 50.725\u201350.905, de \u221262.298 a \u221245.473: 16.825 m, la uni\u00f3n de dos copias de sus l\u00edneas desfasadas 15 mm, cada una de 16.81: sobra 0.015 m; antes en \u00absimbolog\u00eda\u00bb), entra a su planta: +16.825 \u00d7 2.70; W18, el muro norte de la AZOTEA (cara interior A-WALL en y \u221263.724: 5.22 m; antes en PLANTA ALTA), es pretil: \u22125.22 \u00d7 (2.70 \u2212 0.90); 392.598 \u2192 428.630: longitudes y plantas verificadas en el crudo; las alturas (2.70 y el pretil de 0.90) son las supuestas del motor. Las variantes se reparten a prorrata (Tarea 15d): BLOCK-16 225.508 \u2192 268.442, BLOCK-18 54.548 \u2192 47.438, las dem\u00e1s +0.01 a +0.11",
         "variants": {
           "EST-004.BLOCK-19": 7.783,
           "EST-004.BLOCK-18": 47.438,
@@ -668,7 +668,7 @@
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165); Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: W39 (16.825 m) entra a PLANTA BAJA y W18 (5.22 m) es pretil de AZOTEA, dos caras: 2 \u00d7 (16.825 \u00d7 2.70 \u2212 5.22 \u00d7 1.80) = +72.063; 785.197 \u2192 857.260, verificado en el crudo",
+        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165); Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: W39 (16.825 m, la uni\u00f3n de dos copias de sus l\u00edneas desfasadas 15 mm, cada una de 16.81: sobra 0.015 m) entra a PLANTA BAJA y W18 (5.22 m) es pretil de AZOTEA, dos caras: 2 \u00d7 (16.825 \u00d7 2.70 \u2212 5.22 \u00d7 1.80) = +72.063; 785.197 \u2192 857.260: longitudes y plantas verificadas en el crudo; las alturas (2.70 y el pretil de 0.90) son las supuestas del motor",
         "variants": {
           "ACA-001.GEN": 857.26
         }
@@ -678,7 +678,7 @@
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165); Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: W39 (16.825 m) entra a PLANTA BAJA y W18 (5.22 m) es pretil de AZOTEA, dos caras: 2 \u00d7 (16.825 \u00d7 2.70 \u2212 5.22 \u00d7 1.80) = +72.063; 785.197 \u2192 857.260, verificado en el crudo",
+        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165); Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: W39 (16.825 m, la uni\u00f3n de dos copias de sus l\u00edneas desfasadas 15 mm, cada una de 16.81: sobra 0.015 m) entra a PLANTA BAJA y W18 (5.22 m) es pretil de AZOTEA, dos caras: 2 \u00d7 (16.825 \u00d7 2.70 \u2212 5.22 \u00d7 1.80) = +72.063; 785.197 \u2192 857.260: longitudes y plantas verificadas en el crudo; las alturas (2.70 y el pretil de 0.90) son las supuestas del motor",
         "variants": {
           "ACA-002.GEN": 857.26
         }
@@ -688,7 +688,7 @@
         "unit": "PZA",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: la cabeza del eje 1 de PLANTA BAJA (INSERT 6249, S-GRID-IDEN, \u00abRejilla - Extremo de rejilla\u2026\u00bb), que el motor lee como rejilla de aire, entra a su planta (antes en \u00absimbolog\u00eda\u00bb): 42 \u2192 43. Es un falso positivo que ya estaba (las otras cabezas de eje de la hoja ya se contaban): no son rejillas de aire",
+        "note": "Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: la cabeza del eje 1 de PLANTA BAJA (INSERT 6249, S-GRID-IDEN, \u00abRejilla - Extremo de rejilla\u2026\u00bb), que el motor lee como rejilla de aire, entra a su planta (antes en \u00absimbolog\u00eda\u00bb): 42 \u2192 43. Es un falso positivo conocido (R267), que ya estaba: las otras cabezas de eje de la hoja ya se contaban; no son rejillas de aire",
         "variants": {
           "AIR-004.GEN": 43.0
         }
@@ -698,7 +698,7 @@
         "unit": "PZA",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: entran a su planta la cabeza del eje 1 de PLANTA BAJA (INSERT 6249, \u00abRejilla - Extremo de rejilla\u2026\u00bb) y las dos flechas de la llamada de alzado A201 junto al eje 2 de la cimentaci\u00f3n (INSERT 5ACF y 5AD1, G-ANNO-SYMB, \u00abAlzado - Flecha rellenada\u2026\u00bb), que el motor lee como puertas: 33 \u2192 36. Son falsos positivos que ya estaban (las otras cabezas de eje ya se contaban): no son puertas",
+        "note": "Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: entran a su planta la cabeza del eje 1 de PLANTA BAJA (INSERT 6249, \u00abRejilla - Extremo de rejilla\u2026\u00bb) y las dos flechas de la llamada de alzado A201 junto al eje 2 de la cimentaci\u00f3n (INSERT 5ACF y 5AD1, G-ANNO-SYMB, \u00abAlzado - Flecha rellenada\u2026\u00bb), que el motor lee como puertas: 33 \u2192 36. Cada uno es un falso positivo conocido (R267), que ya estaba: las otras cabezas de eje ya se contaban; no son puertas",
         "variants": {
           "CAR-001.GEN": 36.0
         }
