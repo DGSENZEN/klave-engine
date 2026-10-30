@@ -978,3 +978,16 @@ Added by the controller from Task 15's review (R248, the PRUEBA-1 overlap note, 
 - [ ] **Step 4:** tests (caption per planta, missing caption, two disagreeing captions), recapture `prueba-1` EST-001 and every storey-height-driven line raw-verified, set PRUEBA-1 EST-001 source `crudo` once it is; commit states old → new.
 
 **Done when:** every PRUEBA-1 planta level comes from its caption or is a visible `supuesto`; castillo heights and EST-001 follow the declared levels; gold green with stated recapture.
+
+### Task 15f: a wall drawn twice is one wall
+
+**Why (Ruling R269):** PRUEBA-1's plan linework is drawn twice, the copies 15 mm apart. The wall detector reads three thickness classes (BLOCK-16/17/18) where the drawing shows one 0.165 m wall type, and W39 measures 16.825 m where each copy is 16.81 (0.015 m over). EST-004's variants (and their catálogo mapping) are therefore wrong even though the line total is close.
+
+**Files (expected):** `packages/klave_engine/detection/wall_detector.py` (fragment merging / thickness), `evals/verificacion/verificar_otros.py`, `evals/gold/prueba-1.json`, tests.
+
+- [ ] **Step 1 (raw truth):** engine-free, list PRUEBA-1's wall-layer line pairs: the duplicate copies (offset ≤ 20 mm, same length ± 20 mm, parallel) and the true faces; derive the wall thicknesses the drawing actually shows. Render and look.
+- [ ] **Step 2:** a line that duplicates another (parallel, overlapping ≥ 90 %, offset ≤ 20 mm) is the same line drawn twice: it is merged before pairing faces, never used as a face. Thickness comes from the real faces. Lengths take one copy.
+- [ ] **Step 3:** Marina, Torre, the minis must not move unless they also hold duplicate copies (confirm raw); tests (doubled wall, true thin wall of 20 mm that must NOT be merged — e.g. a cancel/acabado line on another layer — and a doubled wall with a door gap).
+- [ ] **Step 4:** recapture PRUEBA-1 EST-004 and its variants and the ACA lines raw-verified (lengths and thicknesses `crudo`; heights stay supuesto until 15e lands, R266), commit old → new.
+
+**Done when:** PRUEBA-1 walls show the thickness classes the drawing draws, lengths count one copy, gold green with stated recapture.
