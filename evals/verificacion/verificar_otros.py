@@ -38,30 +38,42 @@ izquierda; por centros se sostiene mientras ese texto mida 2.92 m o más, y mide
 caja toque a otra; cada etiqueta de castillo (capa castillos, «K-n»): la planta cuya rejilla la
 contiene, o, fuera de toda rejilla, la de la caja claramente más cercana —ninguna en dos, ninguna
 sin planta— y cuántas hay en cada planta contra ``por_vista`` y ``por_familia`` del gold, exactas.
+Los dos muros que la Tarea 15c cambió de planta: W39, el poniente exterior de PLANTA BAJA (sus
+líneas A-WALL en x 50.725–50.905 van de −62.298 a −45.473: 16.825 m), dentro de la rejilla de
+PLANTA BAJA; W18, el norte de la AZOTEA (su cara interior A-WALL en y −63.724, 5.22 m), dentro de
+la de AZOTEA.
+
+prueba-1, Tarea 15e (R270): cada planta toma el nivel que su plano declara. VERIFICA (y compara):
+cada leyenda «N.P.T.» de la hoja, con su handle, su texto y su inserción, y de qué planta es —la
+que está justo debajo de su título (a 1 m o menos debajo y de lado); las leyendas esquemáticas de
+niveles (A-FLOR-LEVL) y los cajetines (DAT) no son de ninguna—: una por planta, 0+00 / +3.45 /
++6.60 / +7.80. Y la evidencia de que el nivel de cada planta es la losa que dibuja (lectura B):
+dentro de su rejilla, PLANTA BAJA y PLANTA ALTA dibujan su losa (E-VIGUETAS) y la AZOTEA dibuja
+castillos y muros (A-WALL) sin ninguna línea de losa ni trabe (su pretil). Con eso, las alturas son
+del nivel de la planta de abajo al suyo: PLANTA BAJA 3.45, PLANTA ALTA 3.15, AZOTEA 1.20 (los
+castillos de la cimentación son el arranque de los de PLANTA BAJA y no se cuentan en EST-001).
 EST-001: la sección de cada castillo es el marcador cerrado más cercano a su etiqueta en la capa
-castillos (el cuadro de 15×15, el de 15×30 o el círculo), por la altura, en PLANTA BAJA, PLANTA ALTA
-y AZOTEA, contra el gold con 0.5 % (lo que difiere: el motor da a dos K-0 sobre el 15×30 de una K-2
-ese marcador —R166— y a dos K-0 sin marcador junto el círculo de su símbolo: −0.046 m³). Los dos
-muros que la Tarea 15c cambia de planta: W39, el poniente exterior de PLANTA BAJA (sus líneas A-WALL
-en x 50.725–50.905 van de −62.298 a −45.473: 16.825 m), dentro de la rejilla de PLANTA BAJA; W18, el
-norte de la AZOTEA (su cara interior A-WALL en y −63.724, 5.22 m), dentro de la de AZOTEA.
+castillos (el cuadro de 15×15, el de 15×30 o el círculo), por la altura de su planta, en PLANTA
+BAJA, PLANTA ALTA y AZOTEA, contra el gold con 0.6 %: los conteos y las alturas son crudos, las
+secciones del motor no lo son del todo (el motor da a dos K-0 sobre el 15×30 de una K-2 ese
+marcador —R166— y a dos K-0 sin marcador junto el círculo de su símbolo: PLANTA BAJA 1.7301 m²
+contra 1.7005 crudo, PLANTA ALTA 1.2302 contra 1.2446, AZOTEA 0.4950 igual; a 3.45/3.15/1.20,
+10.438 contra 10.381, 0.55 %), así que EST-001 no es crudo.
 
 Qué REPRODUCE (reglas del motor, no hechos del plano): el nombre de la vista de cada planta en el
-motor (``VISTA_DEL_MOTOR``: por el orden de sus títulos); la altura de los castillos, 3.00 m, la
-supuesta (las vistas de esta hoja no juntan su N.P.T.; el plano declara 0/3.45/6.60/7.80 — tarea
-15e: el volumen de EST-001 no es crudo, sus conteos y secciones sí); los muros, 2.70 m, y un muro de
-azotea es pretil de 0.90 m; criticos_total = 4 por castillo; con ellas, lo que la Tarea 15c movió
-del gold: EST-001 9.893 → 10.366 (+7 castillos de 15×15 de PLANTA BAJA × 3.00 m), EST-004 392.598 →
-428.630 (+16.825 × 2.70 de W39, −5.22 × 1.80 de W18 al volverse pretil), ACA-001 y ACA-002 785.197 →
-857.260 (dos caras).
+motor (``VISTA_DEL_MOTOR``: por el orden de sus títulos); criticos_total = 4 por castillo; los
+largos de los muros que EST-004 cuenta (``MUROS_CONTADOS``, del motor: tarea 15f) y los vanos
+leídos; con ellos y las alturas de las leyendas, lo que la Tarea 15e movió del gold: EST-004
+428.630 → 532.325 (antes 2.70 y pretil 0.90 supuestos, reproducido), ACA-001 y ACA-002 857.260 →
+1064.650 (dos caras).
 
 prueba-1, Tarea 15d (R269): las variantes de EST-004 son sólo de los muros que el renglón cuenta.
 VERIFICA (y compara) los 34 muros contados en su planta de superestructura, que W5, W31 y W33 (las
 variantes BLOCK-19/30/36 que se fueron) no tienen líneas en la superestructura, que cada vano leído
 (W40 0.77, W42 0.95, W47 1.00) es un hueco de ese ancho en una cara de su muro y que ningún muro de
 las clases 17 y 18 tiene un hueco de 0.5 m o más. REPRODUCE los largos y las clases de espesor (del
-motor: los 16/17/18 salen de la planta dibujada dos veces a 15 mm, tarea 15f) y con ellos las
-variantes del gold.
+motor: los 16/17/18 salen de la planta dibujada dos veces a 15 mm, tarea 15f) y con ellos y las
+alturas de las leyendas (Tarea 15e) las variantes del gold.
 """
 
 import hashlib
@@ -126,8 +138,74 @@ VISTA_DEL_MOTOR = {
     "AZOTEA": "view_03_azotea",
 }
 SUPERESTRUCTURA = ("PLANTA BAJA", "PLANTA ALTA", "AZOTEA")
-ALTURA_DE_CASTILLO_M = 3.00
+# Antes de la Tarea 15e (las supuestas de entonces, para reproducir lo que se movió): muros 2.70 m,
+# pretil 0.90 m (los castillos, 3.00 m).
 ALTURA_DE_MURO_M, ALTURA_DE_PRETIL_M = 2.70, 0.90
+# Tarea 15e: la leyenda de nivel de una planta y su valor («N.P.T.\t+3.45», «N.P.T.\t0+00»).
+LEYENDA = re.compile(r"N\.?\s*P\.?\s*T\.?\s*(?:(0\+00)|([+-]?\d+\.\d+))", re.I)
+# Lo que el renglón de cada planta movió con la Tarea 15e (los valores del gold de antes).
+ANTES_15E = {"EST-001": 10.366, "EST-004": 428.630, "ACA-001": 857.260, "ACA-002": 857.260}
+
+
+def _niveles_de_las_plantas(msp, titulos_insercion, rejillas) -> tuple[dict[str, float], int]:
+    """Tarea 15e (R270), VERIFICA: cada leyenda de nivel de la hoja, dónde está y de qué planta es.
+    Una leyenda es de una planta si está justo debajo de su título (su inserción a 1 m o menos
+    debajo de la del título y a 1 m o menos de lado); las demás (las leyendas esquemáticas de
+    niveles, los cajetines) no son de ninguna planta. Cada planta, exactamente una. Y la evidencia
+    de que el nivel es la losa que dibuja la planta: dentro de su rejilla, PLANTA BAJA y PLANTA ALTA
+    dibujan su losa (líneas y textos de E-VIGUETAS, trabes de E-TRABES) y castillos; la AZOTEA,
+    castillos y muros (A-WALL) y ninguna línea de losa ni de trabe."""
+    malos = 0
+    niveles: dict[str, list[tuple[str, str, float]]] = {t: [] for t in titulos_insercion}
+    print("  Tarea 15e — leyendas de nivel:")
+    for e in msp.query("TEXT MTEXT"):
+        m = LEYENDA.search(texto(e))
+        if not m:
+            continue
+        valor = 0.0 if m.group(1) else float(m.group(2))
+        p = (e.dxf.insert.x, e.dxf.insert.y)
+        suya = [t for t, q in titulos_insercion.items()
+                if 0 < q[1] - p[1] <= 1.0 and abs(q[0] - p[0]) <= 1.0]  # fmt: skip
+        donde = suya[0] if len(suya) == 1 else "ninguna planta"
+        print(f"    {e.dxf.handle} {e.dxf.layer} «{' '.join(texto(e).split())}» en "
+              f"({p[0]:.3f}, {p[1]:.3f}) → {donde}")
+        if len(suya) == 1:
+            niveles[suya[0]].append((e.dxf.handle, texto(e), valor))
+    salida = {}
+    for t, ls in niveles.items():
+        if len({v for _h, _t, v in ls}) != 1 or len(ls) != 1:
+            print(f"  ** DIFERENCIA: {t} tiene las leyendas {ls}")
+            malos += 1
+            continue
+        salida[t] = ls[0][2]
+    print(f"    nivel de cada planta: {salida}")
+    if salida != {"PLANTA DE CIMENTACIÓN": 0.0, "PLANTA BAJA": 3.45, "PLANTA ALTA": 6.6,
+                  "AZOTEA": 7.8}:  # fmt: skip
+        print("  ** DIFERENCIA en los niveles de las plantas")
+        malos += 1
+    # La evidencia de la lectura B, por la rejilla de cada planta.
+    cuenta: dict[str, Counter] = {t: Counter() for t in rejillas}
+    for e in msp:
+        if e.dxftype() == "LINE":
+            p = _medio(e)
+        elif e.dxftype() in ("TEXT", "MTEXT", "INSERT"):
+            p = (e.dxf.insert.x, e.dxf.insert.y)
+        else:
+            continue
+        for t, caja in rejillas.items():
+            if _dentro(p, caja):
+                cuenta[t][e.dxf.layer] += 1
+    for t in rejillas:
+        c = cuenta[t]
+        print(f"    {t}: E-VIGUETAS {c['E-VIGUETAS']}, E-TRABES {c['E-TRABES']}, castillos "
+              f"{c['castillos']}, A-WALL {c['A-WALL']}")
+    losa = {t: cuenta[t]["E-VIGUETAS"] > 0 for t in rejillas}
+    az = cuenta["AZOTEA"]
+    if not (losa["PLANTA BAJA"] and losa["PLANTA ALTA"] and not losa["AZOTEA"]
+            and az["E-TRABES"] == 0 and az["castillos"] > 0 and az["A-WALL"] > 0):  # fmt: skip
+        print("  ** DIFERENCIA: el dibujo no muestra que el nivel sea la losa de su planta")
+        malos += 1
+    return salida, malos
 
 
 def _a_caja(p, caja) -> float:
@@ -292,6 +370,15 @@ def prueba_1(gold: dict) -> int:
     if sorted(rejillas) != sorted(titulos):
         print(f"  ** DIFERENCIA: plantas sin rejilla: {sorted(set(titulos) - set(rejillas))}")
         return malos + 1
+    insercion = {t: i for t, _c, i in encabezados if t in titulos}
+    niveles, m = _niveles_de_las_plantas(msp, insercion, rejillas)
+    malos += m
+    if len(niveles) != 4:
+        return malos + 1
+    # Lectura B: cada planta, del nivel de la de abajo al suyo; la azotea, su pretil.
+    orden = ["PLANTA DE CIMENTACIÓN", *SUPERESTRUCTURA]
+    altura = {t: round(niveles[t] - niveles[orden[i]], 3) for i, t in enumerate(orden[1:])}
+    print(f"    alturas (del nivel de abajo al suyo): {altura}")
     # Cada etiqueta de castillo, en una sola planta; su sección, la de su marcador más cercano.
     marcadores = _marcadores(msp)
     por_planta: Counter = Counter()
@@ -328,13 +415,16 @@ def prueba_1(gold: dict) -> int:
     if est.get("por_hoja", {}).get("castillo") != {"drawings/Plano Prueba 1.dxf": total}:
         print("  ** DIFERENCIA por_hoja de castillo")
         malos += 1
-    # EST-001: sección del marcador × la altura supuesta, en la superestructura.
-    volumen = {t: round(float(seccion[t]) * ALTURA_DE_CASTILLO_M, 4) for t in SUPERESTRUCTURA}
+    # EST-001: sección del marcador × la altura de su planta (de las leyendas), en la
+    # superestructura (los de la cimentación son el arranque de los de PLANTA BAJA).
+    volumen = {t: round(float(seccion[t]) * altura[t], 4) for t in SUPERESTRUCTURA}
     est_001 = sum(volumen.values())
     concepts = (gold.get("money") or {}).get("concepts", {})
     gold_001 = concepts.get("EST-001", {}).get("quantity")
-    print(f"  EST-001 crudo {round(est_001, 4)} m³ {volumen}; gold {gold_001} (0.5 %)")
-    if gold_001 is None or abs(est_001 - gold_001) > 0.005 * gold_001:
+    print(f"  EST-001 crudo {round(est_001, 4)} m³ {volumen} (secciones "
+          f"{ {t: round(float(seccion[t]), 4) for t in SUPERESTRUCTURA} } m²); gold {gold_001} "
+          "(0.6 %)")  # fmt: skip
+    if gold_001 is None or abs(est_001 - gold_001) > 0.006 * gold_001:
         print("  ** DIFERENCIA EST-001")
         malos += 1
     # Los dos muros que la Tarea 15c cambia de planta.
@@ -355,21 +445,28 @@ def prueba_1(gold: dict) -> int:
     if (largo_39, largo_18, en_pb, en_az) != (16.825, 5.22, True, True):
         print("  ** DIFERENCIA en los muros que cambian de planta")
         malos += 1
-    # Lo que la Tarea 15c movió del gold, de esos hechos y las reglas del motor.
-    muros = largo_39 * ALTURA_DE_MURO_M - largo_18 * (ALTURA_DE_MURO_M - ALTURA_DE_PRETIL_M)
+    # Lo que la Tarea 15e movió del gold: los muros que el renglón cuenta (largos del motor,
+    # REPRODUCE: MUROS_CONTADOS) a las alturas de las leyendas (VERIFICA) en vez de 2.70/0.90.
+    largo = Counter()
+    for _clase, planta, _caja, metros in MUROS_CONTADOS.values():
+        largo[planta] += metros
+    vanos = sum(VANOS_LEIDOS.values()) * ALTURA_DE_VANO_M
+    antes = sum(m * (ALTURA_DE_PRETIL_M if p == "AZOTEA" else ALTURA_DE_MURO_M)
+                for p, m in largo.items()) - vanos  # fmt: skip
+    despues = sum(m * altura[p] for p, m in largo.items()) - vanos
+    print(f"    muros contados por planta {dict(largo)} m; vanos {round(vanos, 3)} m²")
     movido = {
-        "EST-001": (9.893, 7 * 0.0225 * ALTURA_DE_CASTILLO_M),
-        "EST-004": (392.598, muros),
-        "ACA-001": (785.197, 2 * muros),
-        "ACA-002": (785.197, 2 * muros),
+        "EST-004": (antes, despues),
+        "ACA-001": (2 * antes, 2 * despues),
+        "ACA-002": (2 * antes, 2 * despues),
     }
-    for code, (antes, delta) in movido.items():
+    for code, (de, a) in movido.items():
         q = concepts.get(code, {}).get("quantity")
-        print(f"  {code}: {antes} + {round(delta, 4)} = {round(antes + delta, 3)}; gold {q}")
-        if q is None or abs(antes + delta - q) > 0.001:
+        print(f"  {code}: {ANTES_15E[code]} (reproducido {round(de, 3)}) → {round(a, 4)}; gold {q}")
+        if q is None or abs(a - q) > 0.001 or abs(de - ANTES_15E[code]) > 0.001:
             print(f"  ** DIFERENCIA {code}")
             malos += 1
-    malos += _variantes_de_muros(msp, lineas, rejillas, concepts)
+    malos += _variantes_de_muros(msp, lineas, rejillas, concepts, altura)
     return malos
 
 
@@ -463,14 +560,15 @@ def _huecos_interiores(lineas, caja) -> dict[float, list[float]]:
     return huecos
 
 
-def _variantes_de_muros(msp, lineas, rejillas, concepts) -> int:
+def _variantes_de_muros(msp, lineas, rejillas, concepts, altura) -> int:
     """Tarea 15d (R269): qué muros cuenta EST-004 y cuáles salieron de su reparto; en qué muros
     están los vanos leídos. Lo que VERIFICA: cada muro contado tiene líneas A-WALL en su caja y
     todas son de su planta de superestructura; los que formaban BLOCK-36/30/19 no tienen ninguna
     línea en la superestructura; cada vano leído es un hueco interior de ese ancho en una cara de
     su muro, y ningún muro de las clases 17 y 18 tiene un hueco interior de 0.5 m o más. Lo que NO
-    verifica (REPRODUCE): las clases de espesor y los largos, lecturas del motor; las alturas
-    supuestas (2.70, pretil 0.90). Con ellas, compara las variantes del gold."""
+    verifica (REPRODUCE): las clases de espesor y los largos, lecturas del motor. Las alturas son
+    las de las leyendas de nivel (Tarea 15e, ``altura``: VERIFICA). Con ellas, compara las
+    variantes del gold."""
     malos = 0
     print("  Tarea 15d — EST-004, muros contados y vanos:")
     for muro, (clase, planta, caja, _largo) in MUROS_CONTADOS.items():
@@ -501,18 +599,18 @@ def _variantes_de_muros(msp, lineas, rejillas, concepts) -> int:
         elif clase in (17, 18) and any(h >= 0.5 for h in todos):
             print(f"  ** DIFERENCIA: {muro} (clase {clase}) tiene un hueco de {max(todos)} m")
             malos += 1
-    # REPRODUCE: las variantes, de los largos del motor × las alturas supuestas − los vanos leídos.
+    # REPRODUCE: las variantes, de los largos del motor × las alturas de las leyendas − los vanos.
     vanos = {16: sum(VANOS_LEIDOS.values()) * ALTURA_DE_VANO_M}
     gold = concepts.get("EST-004", {}).get("variants") or {}
     calculado = {}
     for clase in (16, 17, 18):
         cara = sum(
-            largo * (ALTURA_DE_PRETIL_M if planta == "AZOTEA" else ALTURA_DE_MURO_M)
+            largo * altura[planta]
             for c, planta, _caja, largo in MUROS_CONTADOS.values()
             if c == clase
         )
         calculado[f"EST-004.BLOCK-{clase}"] = round(cara - vanos.get(clase, 0.0), 3)
-    print(f"    variantes (largos del motor × 2.70 / pretil 0.90 − vanos × 2.10): {calculado}; "
+    print(f"    variantes (largos del motor × alturas {altura} − vanos × 2.10): {calculado}; "
           f"gold {gold}")
     if set(gold) != set(calculado) or any(abs(gold[k] - v) > 0.001 for k, v in calculado.items()):
         print("  ** DIFERENCIA en las variantes de EST-004")

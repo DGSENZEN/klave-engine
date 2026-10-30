@@ -667,6 +667,24 @@ def test_8_storeys_counted_two_ways_states_both_readings():
     assert not _con(_run(elementos=sin_base, defs=["K-1", "K-2"], seg=seg), 8, "entrepisos")
 
 
+def test_8_levels_that_cannot_be_measured_are_doubts_and_reading_b_is_said():
+    # Tarea 15e (R270): dos leyendas distintas para una planta, y un entrepiso que no es una
+    # altura de planta, son dudas; la lectura B (el dibujo la muestra) es un aviso.
+    seg = _seg(vistas=("v0", "v1", "v2"), niveles={"v0": 0.0, "v1": 3.45, "v2": 4.65})
+    seg.views[0].level_key = "planta_baja"
+    seg.views[2].nivel_en_duda = "«V2 · PLANTA» declara niveles distintos junto a su título"
+    els = [_el("K-1", vista="v1", hoja="V1")]
+    hallazgos = _all(_run(elementos=els, defs=["K-1"], seg=seg), 8)
+    dudas = [x for x in hallazgos if x.severidad == "duda"]
+    textos = " ".join(x.mensaje for x in dudas)
+    assert "niveles distintos" in textos and "mide 1.2 m" in textos
+    assert any(x.elementos == [els[0].element_id] for x in dudas)  # el de 1.2 m es de V1
+    seg.lectura_de_niveles = "el nivel es la losa que dibuja la planta: prueba"
+    avisos = _con(_run(elementos=els, defs=["K-1"], seg=seg), 8, "bajo su losa")
+    assert len(avisos) == 1 and avisos[0].severidad == "aviso"
+    assert "losa que dibuja la planta" in avisos[0].mensaje
+
+
 # --------------------------------------------------------------------- 11: lo que nadie leyó
 
 

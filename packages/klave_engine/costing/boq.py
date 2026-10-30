@@ -406,7 +406,11 @@ def _scoped_result(
                         for v in segmentation.superstructure_views() if v.view_id in heights
                     ),
                     _section_note(n_declared, n_measured, n_assumed, assumptions),
-                ]
+                ] + (
+                    [f"Niveles: {segmentation.lectura_de_niveles}"]
+                    if segmentation.lectura_de_niveles
+                    else []
+                )
                 total.by_view = split
                 total.supersedes.add(FALLBACK_HEIGHT)
                 if n_assumed == 0:
@@ -462,15 +466,28 @@ def _scoped_result(
             raw_sum = 0.0
             view_split: dict[str, float] = {}
             parapet_views: list[str] = []
+            declared_parapets: list[str] = []
+            alturas = segmentation.alturas_de_entrepiso()
             for view in segmentation.superstructure_views():
                 view_dets = in_views(dets, {view.view_id})
                 if not view_dets:
                     continue
                 height = heights.get(view.view_id)
                 if view.level_key == "azotea" and rule.roof_walls_are_parapets:
-                    # A wall on the azotea is a pretil, not another story.
-                    height = assumptions.parapet_height_m
-                    parapet_views.append(titles[view.view_id].split(" · ")[-1][:22])
+                    # A wall on the azotea is a pretil, not another story. Tarea 15e (R270): when
+                    # the drawing declares the pretil (the top planta draws no slab and its level
+                    # is the pretil's), its height is the declared one, not the assumed.
+                    entrepiso = alturas.get(view.view_id)
+                    name = titles[view.view_id].split(" · ")[-1][:22]
+                    if entrepiso is not None and entrepiso.pretil:
+                        height = entrepiso.altura_m
+                        declared_parapets.append(
+                            f"{name} {height:.2f} m (de {entrepiso.nivel_m:+.2f} a "
+                            f"{entrepiso.nivel_arriba_m or 0.0:+.2f}, declarado)"
+                        )
+                    else:
+                        height = assumptions.parapet_height_m
+                        parapet_views.append(name)
                 if rule.kind == QuantityKind.LINEAR_VOLUME and rule.section_height_m:
                     scoped = concept.model_copy(
                         update={
@@ -527,6 +544,13 @@ def _scoped_result(
                     f"Pretiles en {', '.join(parapet_views)}: altura "
                     f"{assumptions.parapet_height_m:.2f} m (muros de azotea)"
                 )
+            if declared_parapets:
+                notes.append(
+                    f"Pretiles en {', '.join(declared_parapets)}: altura del plano (muros de "
+                    "azotea)"
+                )
+            if segmentation.lectura_de_niveles:
+                notes.append(f"Niveles: {segmentation.lectura_de_niveles}")
             return _LineResult(
                 round(quantity_sum, 6), raw_sum, _contributing(concept, dets), notes,
                 view_split if len(view_split) > 1 else {},

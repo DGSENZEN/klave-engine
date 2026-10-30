@@ -2693,6 +2693,49 @@ def _contradicciones(ctx: _Contexto, ajenas: set[str]) -> list[Verificacion]:
     salida += _reglas_que_no_coinciden(ctx)
     salida += _codigos_de_hoja(ctx)
     salida += _entrepisos(ctx)
+    salida += _niveles(ctx)
+    return salida
+
+
+def _niveles(ctx: _Contexto) -> list[Verificacion]:
+    """Tarea 15e (R270): lo que los niveles que el plano declara no dejan medir (una planta con
+    leyendas de nivel distintas, un entrepiso que no es una altura de planta) es una duda; y, cuando
+    el dibujo muestra que el nivel de cada planta es la losa que dibuja, un aviso que lo dice."""
+    seg = ctx.segmentation
+    if seg is None:
+        return []
+    salida: list[Verificacion] = []
+    vistas = seg.structural_plan_views()
+    for texto in seg.dudas_de_nivel():
+        tocadas = {v.view_id for v in vistas if f"«{v.title}»" in texto}
+        afectados = [
+            e for e in ctx.elementos if e.familia in _CON_ALTURA and (e.vista or "") in tocadas
+        ]
+        titulos = sorted(v.title for v in vistas if v.view_id in tocadas)
+        salida.append(
+            _hallazgo(
+                8,
+                "duda",
+                texto[0].upper() + texto[1:] + ".",
+                clave="nivel:" + "|".join(titulos),
+                marcas=sorted({e.marca for e in afectados if e.marca}),
+                elementos=[e.element_id for e in afectados],
+                campo="altura_m",
+                en_juego={"piezas": float(len(afectados))},
+            )
+        )
+    if seg.lectura_de_niveles:
+        salida.append(
+            _hallazgo(
+                8,
+                "aviso",
+                "Los entrepisos se leen bajo su losa: "
+                + seg.lectura_de_niveles
+                + ". Las alturas de los castillos y los muros salen de esos niveles.",
+                clave="lectura_de_niveles",
+                campo="altura_m",
+            )
+        )
     return salida
 
 

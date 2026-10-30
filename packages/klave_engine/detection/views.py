@@ -54,6 +54,13 @@ _LEVEL_RE = re.compile(
     r"([+-]?\s*\d+(?:[.,]\d+)?)",
     re.I,
 )
+# Tarea 15e: la leyenda de nivel de una planta («N.P.T. +3.45», «N.P.T. 0+00», «NIVEL ±0.00»):
+# su prefijo y su valor, con signo, «±» (o «%%p» de AutoCAD) o el «0+00» del nivel cero.
+_LEYENDA_RE = re.compile(
+    r"\b(?:N\.?\s*P\.?\s*T\.?|N\.?\s*T\.?\s*C\.?|N\.?\s*I\.?\s*P\.?|NIVEL)\s*[:=]?\s*"
+    r"(?:(?P<cero>[±]?\s*0\s*\+\s*0{2})(?![\d.,])|(?:±|%%[pP]|\+/-)?\s*(?P<valor>[+-]?\s*\d+[.,]\d+))",
+    re.I,
+)
 
 _TITLE_HEIGHT_FACTOR = 2.5  # title text is at least this × median text height
 _MIN_TITLE_HEIGHT = 0.25
@@ -73,6 +80,11 @@ class ViewRegion(BaseModel):
     # M-4: every level the planta's texts declare, with how many say it (the most said first):
     # ``npt_level`` is the first; the others are what it was weighed against.
     niveles_leidos: list[tuple[float, int]] = Field(default_factory=list)
+    # Tarea 15e: la leyenda de nivel pegada a su título («N.P.T. +3.45» bajo «PLANTA BAJA»), dicha
+    # para la procedencia del nivel (``nota``); y, si sus leyendas dicen niveles distintos, la duda
+    # (``npt_level`` queda vacío: ni el mayor ni el primero).
+    leyenda_de_nivel: str = ""
+    nivel_en_duda: str = ""
     # False for plantas of non-structural sheets (cancelería, instalaciones…):
     # they are views for the levantamiento but never levels of the structure.
     structural: bool = True
@@ -96,6 +108,9 @@ class AlturaDeEntrepiso(BaseModel):
     nivel_m: float
     nivel_arriba_m: float | None = None
     repetida: bool = False
+    # Tarea 15e (R270), lectura B: la planta más alta no dibuja losa; sus castillos y muros son el
+    # pretil, del nivel de la planta de abajo hasta el suyo (``nivel_arriba_m``).
+    pretil: bool = False
     texto: str
 
 
@@ -118,6 +133,10 @@ class SheetSegmentation(BaseModel):
     # Tarea 15c: la rejilla de ejes de cada planta que la tiene (su caja, la vista): lo que está
     # dentro de la de una sola es de esa planta, aunque las cajas de las vistas se traslapen.
     rejillas: list[tuple[BBox, str]] = Field(default_factory=list)
+    # Tarea 15e (R270): el aviso que dice por qué el nivel de cada planta es la losa que dibuja
+    # (lectura B: sus castillos van del nivel de la planta de abajo al suyo); vacío cuando el
+    # dibujo no lo muestra y no se escoge (las alturas de siempre; la verificación 8 dice las dos).
+    lectura_de_niveles: str = ""
 
     def vista_por_rejilla(self, punto: tuple[float, float]) -> str | None:
         """Tarea 15c: la planta cuya rejilla, sola, contiene el punto; ninguna si son varias o
@@ -151,13 +170,26 @@ class SheetSegmentation(BaseModel):
 
     def alturas_de_entrepiso(self) -> dict[str, AlturaDeEntrepiso]:
         """``story_heights`` with where each height comes from (R73): between two declared
-        levels (named in ``texto``), or repeated from the planta below for the top one."""
+        levels (named in ``texto``), or repeated from the planta below for the top one. Tarea 15e
+        (R270): with ``lectura_de_niveles`` (the drawing shows each level is the slab its planta
+        draws) each planta goes from the level below up to its own, and the top one is its
+        pretil."""
+        return self._entrepisos()[0]
+
+    def dudas_de_nivel(self) -> list[str]:
+        """Tarea 15e (R270): lo que los niveles declarados no dejan medir y se dice como duda (la
+        verificación 8): una planta con leyendas de nivel que no coinciden, y un entrepiso que no
+        es una altura de planta (fuera de 1.8–8 m; ni la cimentación ni el pretil de arriba)."""
+        en_duda = [v.nivel_en_duda for v in self.structural_plan_views() if v.nivel_en_duda]
+        return en_duda + self._entrepisos()[1]
+
+    def _entrepisos(self) -> tuple[dict[str, AlturaDeEntrepiso], list[str]]:
         leveled = sorted(
             (v for v in self.structural_plan_views() if v.npt_level is not None),
             key=lambda v: v.npt_level or 0.0,
         )
         if len(leveled) < 2:
-            return {}
+            return {}, []
         clusters: list[list[ViewRegion]] = []
         for view in leveled:
             level = view.npt_level or 0.0
@@ -165,6 +197,19 @@ class SheetSegmentation(BaseModel):
                 clusters[-1].append(view)
             else:
                 clusters.append([view])
+        # Tarea 15e: una planta dibujada sin nivel entre dos que lo tienen: nadie mide a través de
+        # ella (su altura y la de su vecina por ese lado no se conocen).
+        sin_nivel = [
+            v for v in self.structural_plan_views() if v.npt_level is None and v.detection_ids
+        ]
+
+        def salta(abajo: list[ViewRegion], arriba: list[ViewRegion]) -> bool:
+            ordenes = [orden_de_planta(v) for v in (*abajo, *arriba)]
+            if any(o is None for o in ordenes):
+                return False
+            bajo = max(orden_de_planta(v) or 0 for v in abajo)
+            alto = min(orden_de_planta(v) or 0 for v in arriba)
+            return any(bajo < (orden_de_planta(u) or -1) < alto for u in sin_nivel)
 
         def nombre(cluster: list[ViewRegion]) -> str:
             """The cluster's level, its plantas and (M-4) how many texts say each level."""
@@ -175,12 +220,89 @@ class SheetSegmentation(BaseModel):
                 partes.append(f"{v.title}: {votos}" if votos else v.title)
             return f"{nivel:+.2f} ({'; '.join(partes)})"
 
+        def es_cimentacion(cluster: list[ViewRegion]) -> bool:
+            return all(v.level_key == "cimentacion" for v in cluster)
+
         heights: dict[str, AlturaDeEntrepiso] = {}
+        dudas: list[str] = []
+
+        def fuera_de_rango(cluster: list[ViewRegion], delta: float, de: float, a: float) -> None:
+            titulos = ", ".join(f"«{v.title}»" for v in cluster)
+            dudas.append(
+                f"el entrepiso de {titulos} mide {round(delta, 3):g} m (de {de:+.2f} a {a:+.2f}, "
+                "los niveles que el plano declara): no es una altura de planta; sus castillos y "
+                "muros no se miden con ella hasta que se decida"
+            )
+
+        if self.lectura_de_niveles:
+            for index, cluster in enumerate(clusters):
+                base = cluster[0].npt_level or 0.0
+                if index == 0:
+                    # La cimentación: sus castillos son el arranque de los de la planta de arriba
+                    # (las cantidades no los cuentan dos veces): de su nivel al de arriba.
+                    if len(clusters) < 2 or not es_cimentacion(cluster):
+                        continue
+                    if salta(cluster, clusters[1]):
+                        continue
+                    arriba = clusters[1][0].npt_level or 0.0
+                    delta = arriba - base
+                    if 1.8 <= delta <= 8.0:
+                        altura = AlturaDeEntrepiso(
+                            altura_m=round(delta, 3),
+                            nivel_m=base,
+                            nivel_arriba_m=arriba,
+                            texto=(
+                                f"el arranque de los castillos de {nombre(clusters[1])}, que "
+                                f"van de {nombre(cluster)} a la losa de su planta: "
+                                f"{round(delta, 3):g} m ({self.lectura_de_niveles})"
+                            ),
+                        )
+                        for view in cluster:
+                            heights[view.view_id] = altura
+                    continue
+                abajo = clusters[index - 1]
+                if salta(abajo, cluster):
+                    continue
+                debajo = abajo[0].npt_level or 0.0
+                delta = base - debajo
+                tope = index + 1 == len(clusters)
+                if tope:
+                    valida = 0.0 < delta <= 8.0
+                    texto = (
+                        f"el pretil de la planta más alta, {nombre(cluster)}: no dibuja losa; sus "
+                        f"castillos y muros van de {nombre(abajo)} hasta su nivel: "
+                        f"{round(delta, 3):g} m ({self.lectura_de_niveles})"
+                    )
+                else:
+                    valida = 1.8 <= delta <= 8.0
+                    texto = (
+                        f"bajo su losa: la planta dibuja la losa de su nivel {nombre(cluster)} y "
+                        f"sus castillos van desde {nombre(abajo)}: {round(delta, 3):g} m "
+                        f"({self.lectura_de_niveles})"
+                    )
+                if not valida:
+                    if not tope:
+                        fuera_de_rango(cluster, delta, debajo, base)
+                    continue
+                altura = AlturaDeEntrepiso(
+                    altura_m=round(delta, 3),
+                    nivel_m=debajo,
+                    nivel_arriba_m=base,
+                    pretil=tope,
+                    texto=texto,
+                )
+                for view in cluster:
+                    heights[view.view_id] = altura
+            return heights, dudas
+
         previous: AlturaDeEntrepiso | None = None
         previous_titulos: list[str] = []
         for index, cluster in enumerate(clusters):
             base = cluster[0].npt_level or 0.0
             if index + 1 < len(clusters):
+                if salta(cluster, clusters[index + 1]):
+                    previous = None
+                    continue
                 arriba = clusters[index + 1][0].npt_level or 0.0
                 delta = arriba - base
                 altura = AlturaDeEntrepiso(
@@ -194,14 +316,14 @@ class SheetSegmentation(BaseModel):
                 )
             elif previous is not None:
                 delta = previous.altura_m
-                abajo = ", ".join(t for t in previous_titulos)
+                abajo_ = ", ".join(t for t in previous_titulos)
                 altura = AlturaDeEntrepiso(
                     altura_m=delta,
                     nivel_m=base,
                     repetida=True,
                     texto=(
                         f"la planta más alta, {nombre(cluster)}, no tiene un nivel declarado "
-                        f"encima: repite la altura de la planta de abajo, «{abajo}» ({delta:g} m, "
+                        f"encima: repite la altura de la planta de abajo, «{abajo_}» ({delta:g} m, "
                         f"de {previous.nivel_m:+.2f} a {previous.nivel_arriba_m or base:+.2f})"
                     ),
                 )
@@ -212,7 +334,13 @@ class SheetSegmentation(BaseModel):
                     previous, previous_titulos = altura, [v.title for v in cluster]
                 for view in cluster:
                     heights[view.view_id] = altura
-        return heights
+            else:
+                # Tarea 15e: la planta de arriba no repite un entrepiso que no es una altura, y
+                # éste (salvo el de la cimentación) es una duda.
+                previous = None
+                if not altura.repetida and not es_cimentacion(cluster):
+                    fuera_de_rango(cluster, delta, base, altura.nivel_arriba_m or base)
+        return heights, dudas
 
     def total_height(self) -> float | None:
         """Top finished level (max NPT) when at least two distinct levels exist."""
@@ -390,6 +518,149 @@ def _npt_levels(entities: list[NormalizedEntity]) -> list[float]:
     )
 
 
+def nivel_de_leyenda(texto: str) -> float | None:
+    """Tarea 15e: el nivel que dice una leyenda («N.P.T. +3.45» → 3.45; «N.P.T. 0+00», «±0.00»,
+    «%%p0.00», «0.00» → 0), o nada si el texto no declara un nivel."""
+    m = _LEYENDA_RE.search(texto or "")
+    if m is None:
+        return None
+    if m.group("cero"):
+        return 0.0
+    valor = float(m.group("valor").replace(" ", "").replace(",", "."))
+    return 0.0 if valor == 0 else valor
+
+
+# Tarea 15e: el orden de las plantas de abajo arriba por su nombre (lo que no se nombra así no tiene
+# orden: no se decide nada que dependa de él).
+_ORDEN_DE_PLANTA = {
+    "cimentacion": 0,
+    "planta_baja": 1,
+    "entrepiso": 2,
+    "planta_alta": 3,
+    "roof_garden": 4,
+    "azotea": 5,
+}
+
+
+def orden_de_planta(vista: ViewRegion) -> int | None:
+    return _ORDEN_DE_PLANTA.get(vista.level_key or "")
+
+
+# Tarea 15e: una leyenda está pegada al título de su planta: su centro a no más de tantas alturas
+# del título por encima o por debajo, y de lado dentro de lo ancho de los dos textos; y ese título,
+# el más cercano a ella, al menos a la mitad de la distancia del siguiente.
+_LEYENDA_ALTOS = 3.0
+_LEYENDA_DEL_TITULO = 2.0
+
+
+def _ancho_de_texto(texto: str, alto: float) -> float:
+    return max(alto * 0.6 * max(len(texto), 1), alto)
+
+
+def _leyendas_de_nivel(
+    entities: list[NormalizedEntity], anchors: list["_TitleAnchor"]
+) -> dict[int, list[tuple[float, str]]]:
+    """Tarea 15e: las leyendas de nivel pegadas al título de cada planta (índice del ancla →
+    [(nivel, texto)]), por la geometría del dibujo: bajo o sobre su título, nunca por el orden."""
+    salida: dict[int, list[tuple[float, str]]] = defaultdict(list)
+    if not anchors:
+        return salida
+    for e in entities:
+        if not e.is_textual or not e.text:
+            continue
+        nivel = nivel_de_leyenda(e.text)
+        if nivel is None:
+            continue
+        texto = " ".join(e.text.split())
+        alto = float(e.properties.get("height", 0.0) or 0.0)
+        punto = punto_de_texto(e)
+        cerca = sorted(
+            (math.dist(punto, a.point), i) for i, a in enumerate(anchors)
+        )  # fmt: skip
+        d0, i0 = cerca[0]
+        if len(cerca) > 1 and cerca[1][0] < _LEYENDA_DEL_TITULO * d0:
+            continue
+        ancla = anchors[i0]
+        if ancla.kind != ViewKind.plan:
+            continue
+        dx = abs(punto[0] - ancla.point[0])
+        dy = abs(punto[1] - ancla.point[1])
+        holgura = (_ancho_de_texto(ancla.title, ancla.height) + _ancho_de_texto(texto, alto)) / 2
+        if dy <= _LEYENDA_ALTOS * ancla.height and dx <= holgura:
+            salida[i0].append((nivel, texto))
+    return salida
+
+
+def _nivel_de_sus_leyendas(
+    region: ViewRegion, leyendas: list[tuple[float, str]]
+) -> None:
+    """Tarea 15e: el nivel de la planta por sus leyendas (``nota``): el que dicen, si todas dicen
+    el mismo; si dicen distintos, ninguno y la duda (ni el mayor ni el primero)."""
+    cuentas: dict[float, int] = {}
+    for nivel, _t in leyendas:
+        clave = round(nivel, 3)
+        cuentas[clave] = cuentas.get(clave, 0) + 1
+    region.niveles_leidos = sorted(cuentas.items(), key=lambda vc: (-vc[1], vc[0]))
+    textos = ", ".join(f"«{t}»" for _n, t in leyendas)
+    if len(cuentas) == 1:
+        region.npt_level = next(iter(cuentas))
+        region.leyenda_de_nivel = f"{textos} bajo su título «{region.title}»"
+        return
+    region.npt_level = None
+    niveles = ", ".join(f"{n:+.2f}" for n in sorted(cuentas))
+    region.nivel_en_duda = (
+        f"«{region.title}» declara niveles distintos junto a su título ({textos}: {niveles}); "
+        "no se toma ninguno hasta que se decida"
+    )
+
+
+def _lectura_bajo_su_losa(
+    views: list[ViewRegion], assignment: dict[str, str], detections: list[Detection]
+) -> str:
+    """Tarea 15e (R270): el aviso de la lectura B cuando el dibujo la muestra, o nada. El nivel de
+    cada planta es la losa que dibuja (sus castillos van del nivel de la de abajo al suyo) sólo si
+    (i) la planta más alta dibuja castillos o muros y ninguna losa, y (ii) cada otra planta de
+    superestructura con castillos dibuja tableros de losa. Si no, no se escoge."""
+    plantas = [v for v in views if v.kind == ViewKind.plan and v.structural] or [
+        v for v in views if v.kind == ViewKind.plan
+    ]
+    if sum(1 for v in plantas if v.npt_level is not None) < 2:
+        return ""
+    tipos: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for d in detections:
+        vista = assignment.get(d.detection_id)
+        if vista is not None:
+            tipos[vista][d.detection_type.value] += 1
+
+    def castillos(v: ViewRegion) -> int:
+        return tipos[v.view_id]["column_tag"]
+
+    def losas(v: ViewRegion) -> int:
+        return tipos[v.view_id]["slab_region"]
+
+    con_dibujo = [v for v in plantas if castillos(v) or tipos[v.view_id]["wall"]]
+    if len(con_dibujo) < 2 or any(orden_de_planta(v) is None for v in con_dibujo):
+        return ""
+    alto = max(orden_de_planta(v) or 0 for v in con_dibujo)
+    tope = [v for v in con_dibujo if orden_de_planta(v) == alto]
+    if len(tope) != 1 or losas(tope[0]):
+        return ""
+    resto = [
+        v
+        for v in con_dibujo
+        if v is not tope[0] and v.level_key != "cimentacion" and castillos(v)
+    ]
+    if not resto or any(not losas(v) for v in resto):
+        return ""
+    nombres = " y ".join(f"«{v.title}»" for v in resto)
+    dibuja = "dibuja" if len(resto) == 1 else "dibujan"
+    return (
+        f"el nivel es la losa que dibuja la planta: {nombres} {dibuja} su losa y «{tope[0].title}» "
+        f"no (castillos y muros sin losa: su pretil); los castillos de cada planta van del nivel "
+        f"de la de abajo hasta el suyo"
+    )
+
+
 def _near_frame(frame: SheetFrame, point: tuple[float, float], margin: float = 0.05) -> bool:
     """Within a small margin of the frame (a mark drawn on its border)."""
     x0, y0, x1, y1 = frame.bbox
@@ -468,6 +739,7 @@ def _segment_by_frames(
         regions[outside.view_id] = outside
     plans = [r for r in regions.values() if r.kind == ViewKind.plan]
     levels = sorted({r.npt_level for r in plans if r.npt_level is not None})
+    lectura = _lectura_bajo_su_losa(list(regions.values()), assignment, detections)
     return SheetSegmentation(
         views=list(regions.values()),
         assignment=assignment,
@@ -476,7 +748,9 @@ def _segment_by_frames(
         notes=[
             f"{len(frames)} marcos de hoja detectados: {len(plans)} plantas, "
             f"{len(frames) - len(plans)} de detalle/corte/otros."
-        ],
+        ]
+        + ([f"Niveles: {lectura}"] if lectura else []),
+        lectura_de_niveles=lectura,
     )
 
 
@@ -517,6 +791,10 @@ def segment_views(
             anchor=anchor.point,
         )
     anchor_ids = list(regions.keys())
+    # Tarea 15e: el nivel de cada planta, de la leyenda pegada a su título («N.P.T. +3.45» bajo
+    # «PLANTA BAJA»), por la geometría del dibujo y nunca por el orden de las leyendas.
+    for index, leyendas in _leyendas_de_nivel(entities, anchors).items():
+        _nivel_de_sus_leyendas(regions[anchor_ids[index]], leyendas)
 
     # Un ancla no adopta lo que está lejos de todos los títulos: el Voronoi
     # tiene tope — más allá de 1.5× la separación mediana entre anclas, la
@@ -643,8 +921,12 @@ def segment_views(
             if m
         }
     )
+    npt_levels = sorted(
+        set(npt_levels) | {r.npt_level for r in regions.values() if r.npt_level is not None}
+    )
     n_en_duda = sum(1 for x in dudosas.values() if x[1] == VISTA_EN_DUDA)
     n_dudosas = sum(1 for x in dudosas.values() if x[2]) - n_en_duda
+    lectura = _lectura_bajo_su_losa(list(regions.values()), assignment, detections)
     return SheetSegmentation(
         views=list(regions.values()),
         assignment=assignment,
@@ -655,9 +937,11 @@ def segment_views(
             f"{len(anchors) - len(plan_anchors)} regiones de detalle/tabla."
         ]
         + ([f"{n_dudosas} detecciones en vista dudosa"] if n_dudosas else [])
-        + ([f"{n_en_duda} detecciones en vista en duda"] if n_en_duda else []),
+        + ([f"{n_en_duda} detecciones en vista en duda"] if n_en_duda else [])
+        + ([f"Niveles: {lectura}"] if lectura else []),
         vistas_dudosas={k: x[2] for k, x in dudosas.items() if x[2]},
         rejillas=rejillas,
+        lectura_de_niveles=lectura,
     )
 
 
