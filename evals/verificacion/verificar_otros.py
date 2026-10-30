@@ -54,6 +54,14 @@ azotea es pretil de 0.90 m; criticos_total = 4 por castillo; con ellas, lo que l
 del gold: EST-001 9.893 → 10.366 (+7 castillos de 15×15 de PLANTA BAJA × 3.00 m), EST-004 392.598 →
 428.630 (+16.825 × 2.70 de W39, −5.22 × 1.80 de W18 al volverse pretil), ACA-001 y ACA-002 785.197 →
 857.260 (dos caras).
+
+prueba-1, Tarea 15d (R269): las variantes de EST-004 son sólo de los muros que el renglón cuenta.
+VERIFICA (y compara) los 34 muros contados en su planta de superestructura, que W5, W31 y W33 (las
+variantes BLOCK-19/30/36 que se fueron) no tienen líneas en la superestructura, que cada vano leído
+(W40 0.77, W42 0.95, W47 1.00) es un hueco de ese ancho en una cara de su muro y que ningún muro de
+las clases 17 y 18 tiene un hueco de 0.5 m o más. REPRODUCE los largos y las clases de espesor (del
+motor: los 16/17/18 salen de la planta dibujada dos veces a 15 mm, tarea 15f) y con ellos las
+variantes del gold.
 """
 
 import hashlib
@@ -361,6 +369,158 @@ def prueba_1(gold: dict) -> int:
         if q is None or abs(antes + delta - q) > 0.001:
             print(f"  ** DIFERENCIA {code}")
             malos += 1
+    malos += _variantes_de_muros(msp, lineas, rejillas, concepts)
+    return malos
+
+
+# Tarea 15d (R269): las variantes de EST-004 se reparten sobre los muros que el renglón cuenta.
+# Cada muro: su caja (la del motor: el elemento bajo prueba), su clase de espesor (lectura del
+# motor, REPRODUCE: el plano dibuja la planta dos veces desfasada 15 mm y cada copia mide 0.165 m —
+# los 16/17/18 salen de juntar caras de copias distintas, tarea 15f), su planta esperada y su largo
+# (lectura del motor, REPRODUCE).
+MUROS_CONTADOS = {
+    # muro: (clase, planta, caja, largo)
+    "W11": (16, "AZOTEA", (90.832, -70.984, 92.812, -70.804), 1.98),
+    "W53": (16, "AZOTEA", (90.832, -70.984, 91.012, -69.004), 1.98),
+    "W55": (16, "AZOTEA", (92.632, -70.984, 92.812, -69.004), 1.98),
+    "W21": (16, "PLANTA BAJA", (51.89, -52.798, 53.84, -52.618), 1.95),
+    "W39": (16, "PLANTA BAJA", (50.725, -62.298, 50.905, -45.473), 16.825),
+    "W40": (16, "PLANTA BAJA", (51.725, -59.448, 51.905, -48.308), 11.14),
+    "W41": (16, "PLANTA BAJA", (53.175, -59.283, 53.355, -55.133), 4.15),
+    "W42": (16, "PLANTA BAJA", (55.375, -55.748, 55.555, -48.308), 7.44),
+    "W43": (16, "PLANTA BAJA", (56.715, -62.298, 56.895, -60.018), 2.28),
+    "W44": (16, "PLANTA BAJA", (58.245, -62.283, 58.41, -60.033), 2.25),
+    "W45": (16, "PLANTA BAJA", (60.545, -61.398, 60.725, -45.308), 16.09),
+    "W20": (16, "PLANTA ALTA", (78.163, -53.41, 80.563, -53.23), 2.4),
+    "W22": (16, "PLANTA ALTA", (74.028, -52.26, 78.178, -52.08), 4.15),
+    "W24": (16, "PLANTA ALTA", (77.513, -49.91, 79.443, -49.73), 1.93),
+    "W25": (16, "PLANTA ALTA", (80.403, -49.31, 82.698, -49.13), 2.295),
+    "W47": (16, "PLANTA ALTA", (76.263, -58.81, 76.443, -52.245), 6.565),
+    "W48": (16, "PLANTA ALTA", (77.513, -49.91, 77.693, -44.82), 5.09),
+    "W49": (16, "PLANTA ALTA", (79.263, -48.115, 79.443, -44.82), 3.295),
+    "W50": (16, "PLANTA ALTA", (80.383, -57.745, 80.563, -53.23), 4.515),
+    "W51": (16, "PLANTA ALTA", (82.683, -58.82, 82.863, -44.82), 14.0),
+    "W27": (17, "PLANTA BAJA", (48.227, -45.488, 63.866, -45.308), 15.639),
+    "W46": (17, "PLANTA ALTA", (73.863, -58.81, 74.043, -44.82), 13.99),
+    "W23": (18, "PLANTA ALTA", (80.173, -52.31, 82.683, -52.13), 2.51),
+    "W28": (18, "PLANTA ALTA", (75.193, -45.3, 77.513, -45.12), 2.32),
+    "W29": (18, "PLANTA ALTA", (79.443, -45.3, 81.763, -45.12), 2.32),
+    "W7": (18, "AZOTEA", (88.982, -77.534, 91.532, -77.354), 2.22),
+    "W8": (18, "AZOTEA", (91.382, -74.684, 97.982, -74.504), 6.6),
+    "W15": (18, "AZOTEA", (94.382, -66.184, 97.982, -66.004), 3.24),
+    "W17": (18, "AZOTEA", (94.562, -64.634, 97.072, -64.454), 2.33),
+    "W18": (18, "AZOTEA", (88.982, -63.724, 94.562, -63.544), 5.22),
+    "W52": (18, "AZOTEA", (88.982, -77.534, 89.162, -63.544), 13.99),
+    "W54": (18, "AZOTEA", (91.382, -77.534, 91.562, -74.504), 2.67),
+    "W56": (18, "AZOTEA", (94.382, -66.184, 94.562, -63.544), 2.28),
+    "W57": (18, "AZOTEA", (97.802, -74.684, 97.982, -66.004), 8.68),
+}
+# Los que formaban variante sin que el renglón los cuente (BLOCK-36, -30, -19): capa, caja.
+MUROS_FUERA = {
+    "W31": ("A-WALL", (-14.395, -61.779, -14.215, -50.639)),
+    "W33": ("A-WALL", (-10.745, -58.079, -10.565, -50.639)),
+    "W5": ("MUROS", (-5.937, -77.616, -2.181, -77.428)),
+}
+# Los vanos que el renglón leyó (ancho del motor): cada uno es un hueco interior de una cara del
+# muro en el crudo; ningún muro de las clases 17 y 18 tiene un hueco interior de 0.5 m o más.
+VANOS_LEIDOS = {"W40": 0.77, "W42": 0.95, "W47": 1.00}
+ALTURA_DE_VANO_M = 2.10
+
+
+def _en_caja(v, caja, tol=0.003) -> bool:
+    return all(caja[0] - tol <= p.x <= caja[2] + tol and caja[1] - tol <= p.y <= caja[3] + tol
+               for p in (v.dxf.start, v.dxf.end))  # fmt: skip
+
+
+def _planta_de(p, rejillas) -> str | None:
+    """La planta cuya rejilla contiene el punto; fuera de toda, la claramente más cercana."""
+    dentro = [t for t, caja in rejillas.items() if _dentro(p, caja)]
+    if len(dentro) == 1:
+        return dentro[0]
+    cerca = sorted((_a_caja(p, caja), t) for t, caja in rejillas.items())
+    return cerca[0][1] if not dentro and cerca[1][0] > 2 * cerca[0][0] else None
+
+
+def _huecos_interiores(lineas, caja) -> dict[float, list[float]]:
+    """Por cara (las líneas paralelas al largo de la caja, por su coordenada), los huecos entre sus
+    tramos, sin contar los de las puntas."""
+    vertical = (caja[3] - caja[1]) > (caja[2] - caja[0])
+    caras: dict[float, list[tuple[float, float]]] = {}
+    for v in lineas:
+        a, b = v.dxf.start, v.dxf.end
+        if vertical and abs(a.x - b.x) < 1e-4 and abs(a.y - b.y) > 1e-4:
+            caras.setdefault(round(a.x, 3), []).append(tuple(sorted((a.y, b.y))))
+        elif not vertical and abs(a.y - b.y) < 1e-4 and abs(a.x - b.x) > 1e-4:
+            caras.setdefault(round(a.y, 3), []).append(tuple(sorted((a.x, b.x))))
+    huecos: dict[float, list[float]] = {}
+    for cara, tramos in caras.items():
+        tramos.sort()
+        fin = tramos[0][1]
+        for ini, f in tramos[1:]:
+            if ini > fin + 1e-6:
+                huecos.setdefault(cara, []).append(round(ini - fin, 3))
+            fin = max(fin, f)
+    return huecos
+
+
+def _variantes_de_muros(msp, lineas, rejillas, concepts) -> int:
+    """Tarea 15d (R269): qué muros cuenta EST-004 y cuáles salieron de su reparto; en qué muros
+    están los vanos leídos. Lo que VERIFICA: cada muro contado tiene líneas A-WALL en su caja y
+    todas son de su planta de superestructura; los que formaban BLOCK-36/30/19 no tienen ninguna
+    línea en la superestructura; cada vano leído es un hueco interior de ese ancho en una cara de
+    su muro, y ningún muro de las clases 17 y 18 tiene un hueco interior de 0.5 m o más. Lo que NO
+    verifica (REPRODUCE): las clases de espesor y los largos, lecturas del motor; las alturas
+    supuestas (2.70, pretil 0.90). Con ellas, compara las variantes del gold."""
+    malos = 0
+    print("  Tarea 15d — EST-004, muros contados y vanos:")
+    for muro, (clase, planta, caja, _largo) in MUROS_CONTADOS.items():
+        suyas = [v for v in lineas if _en_caja(v, caja)]
+        plantas = {_planta_de(_medio(v), rejillas) for v in suyas}
+        if len(suyas) < 2 or plantas != {planta}:
+            print(f"  ** DIFERENCIA: {muro} ({clase}) con {len(suyas)} líneas A-WALL en {plantas}, "
+                  f"se esperaba {planta}")
+            malos += 1
+    print(f"    {len(MUROS_CONTADOS)} muros contados: cada uno con sus líneas A-WALL en su planta")
+    for muro, (capa, caja) in MUROS_FUERA.items():
+        candidatas = lineas if capa == "A-WALL" else msp.query(f"LINE[layer=='{capa}']")
+        suyas = [v for v in candidatas if _en_caja(v, caja)]
+        plantas = {_planta_de(_medio(v), rejillas) for v in suyas}
+        print(f"    {muro}: {len(suyas)} líneas {capa}, de {plantas}")
+        if not suyas or plantas & set(SUPERESTRUCTURA):
+            print(f"  ** DIFERENCIA: {muro} tiene líneas en la superestructura")
+            malos += 1
+    for muro, (clase, _planta, caja, _largo) in MUROS_CONTADOS.items():
+        huecos = _huecos_interiores([v for v in lineas if _en_caja(v, caja)], caja)
+        todos = sorted({h for hs in huecos.values() for h in hs})
+        if muro in VANOS_LEIDOS:
+            ok = any(abs(h - VANOS_LEIDOS[muro]) <= 0.002 for h in todos)
+            print(f"    {muro}: vano leído {VANOS_LEIDOS[muro]} m; huecos interiores {todos}")
+            if not ok:
+                print(f"  ** DIFERENCIA: {muro} no tiene un hueco de {VANOS_LEIDOS[muro]} m")
+                malos += 1
+        elif clase in (17, 18) and any(h >= 0.5 for h in todos):
+            print(f"  ** DIFERENCIA: {muro} (clase {clase}) tiene un hueco de {max(todos)} m")
+            malos += 1
+    # REPRODUCE: las variantes, de los largos del motor × las alturas supuestas − los vanos leídos.
+    vanos = {16: sum(VANOS_LEIDOS.values()) * ALTURA_DE_VANO_M}
+    gold = concepts.get("EST-004", {}).get("variants") or {}
+    calculado = {}
+    for clase in (16, 17, 18):
+        cara = sum(
+            largo * (ALTURA_DE_PRETIL_M if planta == "AZOTEA" else ALTURA_DE_MURO_M)
+            for c, planta, _caja, largo in MUROS_CONTADOS.values()
+            if c == clase
+        )
+        calculado[f"EST-004.BLOCK-{clase}"] = round(cara - vanos.get(clase, 0.0), 3)
+    print(f"    variantes (largos del motor × 2.70 / pretil 0.90 − vanos × 2.10): {calculado}; "
+          f"gold {gold}")
+    if set(gold) != set(calculado) or any(abs(gold[k] - v) > 0.001 for k, v in calculado.items()):
+        print("  ** DIFERENCIA en las variantes de EST-004")
+        malos += 1
+    total = concepts.get("EST-004", {}).get("quantity")
+    if total is None or abs(sum(calculado.values()) - total) > 0.002:
+        print(f"  ** DIFERENCIA: las variantes suman {sum(calculado.values())}, el renglón {total}")
+        malos += 1
     return malos
 
 

@@ -180,12 +180,11 @@
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "no verificado en crudo; protege contra deriva",
+        "note": "no verificado en crudo; protege contra deriva. Tarea 15d (R269): las variantes se reparten s\u00f3lo sobre los tableros que el rengl\u00f3n cuenta. MACIZA 0.5 se va: TAB50 y TAB51 (2.220 + 2.029 m\u00b2, sin H=) son de la planta de ES-000 y EST-013 (superestructura) no los cuenta; medidos solos se inventaban 4.249 \u00d7 0.12 m\u00b3 y las dem\u00e1s los devolv\u00edan a prorrata: MACIZA-20 10.748 \u2192 10.969, MACIZA-30 10.175 \u2192 10.384, MACIZA-12 3.409 \u2192 3.479. Verificado en crudo (verificar_marina.py): cada tablero contado est\u00e1 en su hoja de superestructura (y su H=, donde su caja trae uno solo); TAB50 y TAB51 est\u00e1n en la planta de ES-000, sin H=. NO verificado en crudo: las sumas por variante son las \u00e1reas del detector (celdas entre trabes), ni que TAB50/TAB51 sean maciza",
         "variants": {
-          "EST-013.MACIZA-20": 10.748,
-          "EST-013.MACIZA-30": 10.175,
-          "EST-013.MACIZA-12": 3.409,
-          "EST-013.MACIZA": 0.5
+          "EST-013.MACIZA-20": 10.969,
+          "EST-013.MACIZA-30": 10.384,
+          "EST-013.MACIZA-12": 3.479
         }
       },
       "EST-004": {
@@ -193,12 +192,12 @@
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "no verificado en crudo; protege contra deriva",
+        "note": "no verificado en crudo; protege contra deriva. Tarea 15d (R269): el rengl\u00f3n ley\u00f3 un solo vano (W31, 1.25 m) y cada variante descuenta los vanos de sus muros, no el 18 % supuesto que el rengl\u00f3n nunca tom\u00f3: BLOCK-10 21.517 \u2192 23.010, BLOCK-15 129.374 \u2192 138.350 y BLOCK-30 11.371 \u2192 12.160 (sin vanos); BLOCK-20 91.442 \u2192 80.185 (\u22121.25 \u00d7 2.10 del vano de W31). Verificado en crudo (verificar_marina.py): cada muro contado est\u00e1 en su hoja con l\u00edneas de MUROS1; el vano le\u00eddo es el hueco de 1.25 m de la cara sur de W31 (caras a 0.20 m, ES-200). NO verificado en crudo: las sumas por variante son los largos y espesores del detector con las alturas de entrepiso y el pretil supuesto; que no haya otro vano; el hueco es el castillo de 0.30 m\u00e1s 0.95 m bajo CR-2",
         "variants": {
-          "EST-004.BLOCK-30": 11.371,
-          "EST-004.BLOCK-20": 91.442,
-          "EST-004.BLOCK-15": 129.374,
-          "EST-004.BLOCK-10": 21.517
+          "EST-004.BLOCK-15": 138.35,
+          "EST-004.BLOCK-10": 23.01,
+          "EST-004.BLOCK-30": 12.16,
+          "EST-004.BLOCK-20": 80.185
         }
       },
       "ACA-001": {

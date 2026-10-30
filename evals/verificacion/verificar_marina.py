@@ -51,6 +51,11 @@ Qué VERIFICA (hechos del dibujo; una diferencia con lo esperado sale como «DIF
     las plantas de los dados (``LADOS_DE_PLANTA``) están bajo su título de PLANTA, no de CORTE;
   - CIM-002 = Σ (área del contorno de cada dado colocado × la altura de su corte), contra el gold
     (± 0.1 %, fuente crudo);
+  - Tarea 15d (R269, ``variantes_15d``): los tableros macizos que EST-013 cuenta están en su hoja
+    de superestructura y TAB50/TAB51 (la variante MACIZA que se fue) en la planta de ES-000, sin
+    H=; los 31 muros que EST-004 cuenta están en su hoja con líneas de MUROS1 y el único vano
+    leído es el hueco de 1.25 m de la cara sur de W31 (ES-200, caras a 0.20 m). Las áreas, largos
+    y clases son del motor (REPRODUCE); con ellas compara las variantes del gold;
   - R259: DC (EST-CADENAS Y DALAS de ES-200) se define en el detalle «D-C» AF02D porque el título
     de su bloque (el texto de una sola palabra de familia más cercano bajo él, en su columna) es
     «DALA» AF011, con su armado («#») en medio.
@@ -252,6 +257,172 @@ CUADROS_EN_PLANTA = {
     "AF02D": "D-C, el detalle de una dala dibujado dentro de la caja de ejes de ES-200",
 }
 TOLERANCIA_CONTORNO = 0.7  # m, de la etiqueta al rectángulo de su contorno
+
+
+# Tarea 15d (R269): las variantes se reparten sobre lo que el renglón cuenta. Cada elemento: su
+# caja (la del motor: el elemento bajo prueba), su clase (espesor H= de la losa; espesor del muro),
+# su hoja esperada y su área o largo (lecturas del motor, REPRODUCE: el crudo no las da solas — los
+# tableros son celdas entre trabes, no contornos cerrados).
+LOSAS_MACIZAS_CONTADAS = {
+    "TAB3": (20, "ES-100", (197.351, 50.677, 201.876, 52.952), 9.955),
+    "TAB33": (20, "ES-100", (202.026, 50.677, 204.076, 52.952), 4.664),
+    "TAB5": (30, "ES-200", (190.551, 8.277, 210.726, 18.277), 34.613),
+    "TAB9": (12, "ES-200", (193.076, 8.602, 194.551, 9.777), 1.733),
+    "TAB15": (20, "ES-300", (197.276, -20.648, 198.376, -19.398), 1.375),
+    "TAB16": (20, "ES-300", (192.776, -22.048, 196.976, -16.948), 21.42),
+    "TAB19": (20, "ES-300", (192.776, -26.498, 196.976, -22.348), 17.43),
+    "TAB22": (12, "ES-300", (197.051, -26.723, 212.551, -16.723), 27.259),
+}
+# Los dos tableros macizos de la planta de cimentación (sin H=): la variante EST-013.MACIZA.
+LOSAS_MACIZAS_FUERA = {
+    "TAB50": (190.851, 87.102, 193.626, 87.902),
+    "TAB51": (190.851, 86.152, 193.626, 86.902),
+}
+MUROS_CONTADOS = {
+    # muro: (clase en cm, hoja, caja, largo)
+    "W26": (10, "ES-400", (218.608, -49.168, 220.671, -49.108), 2.063),
+    "W33": (10, "ES-200", (218.608, 20.832, 220.671, 20.892), 2.063),
+    "W37": (10, "ES-100", (218.608, 55.832, 220.671, 55.892), 2.063),
+    "W59": (10, "ES-200", (204.426, 12.802, 204.526, 15.752), 1.75),
+    "W22": (15, "ES-400", (204.076, -57.198, 205.826, -57.048), 1.75),
+    "W23": (15, "ES-400", (205.676, -55.848, 208.426, -55.698), 2.6),
+    "W24": (15, "ES-400", (198.376, -54.398, 204.726, -54.248), 5.25),
+    "W25": (15, "ES-400", (205.826, -53.948, 208.426, -53.798), 2.6),
+    "W57": (15, "ES-400", (203.776, -54.248, 203.926, -52.398), 1.85),
+    "W61": (15, "ES-400", (205.676, -55.848, 205.826, -51.948), 1.85),
+    "W27": (15, "ES-300", (205.676, -22.648, 210.326, -22.498), 4.5),
+    "W29": (15, "ES-300", (206.776, -18.948, 210.526, -18.798), 3.6),
+    "W41": (15, "ES-300", (192.576, -24.648, 192.726, -22.048), 2.3),
+    "W52": (15, "ES-300", (198.376, -26.498, 198.526, -22.048), 4.05),
+    "W54": (15, "ES-300", (201.876, -26.498, 202.026, -22.048), 4.45),
+    "W60": (15, "ES-300", (204.576, -26.498, 204.726, -23.848), 2.65),
+    "W32": (15, "ES-200", (192.576, 16.052, 196.426, 16.202), 3.55),
+    "W42": (15, "ES-200", (192.576, 14.152, 192.726, 16.202), 1.9),
+    "W58": (15, "ES-200", (204.076, 12.802, 204.226, 15.752), 1.75),
+    "W36": (15, "ES-100", (198.676, 50.602, 201.876, 50.752), 1.6),
+    "W46": (15, "ES-100", (194.776, 49.152, 194.926, 51.502), 2.15),
+    "W50": (15, "ES-100", (197.276, 49.152, 197.426, 51.502), 2.15),
+    "W55": (15, "ES-100", (201.876, 49.152, 202.026, 52.952), 2.2),
+    "W48": (20, "ES-400", (196.926, -55.848, 197.126, -51.748), 3.9),
+    "W30": (20, "ES-300", (191.976, -16.948, 210.526, -16.748), 4.25),
+    "W49": (20, "ES-300", (196.976, -21.098, 197.176, -16.948), 4.05),
+    "W31": (20, "ES-200", (193.576, 14.152, 203.126, 14.352), 9.55),
+    "W34": (20, "ES-100", (192.576, 49.152, 194.326, 49.352), 1.55),
+    "W35": (20, "ES-100", (198.376, 49.152, 200.426, 49.352), 1.9),
+    "W43": (20, "ES-100", (192.576, 49.152, 192.776, 51.202), 1.65),
+    "W28": (30, "ES-300", (194.576, -22.348, 198.526, -22.048), 3.8),
+}
+# El único vano que EST-004 leyó (ancho del motor): en W31, ES-200.
+VANO_LEIDO = ("W31", 1.25)
+# REPRODUCE: altura de entrepiso por hoja (niveles NTC del plano, como los toma el motor) y el
+# pretil supuesto de la azotea; altura de vano supuesta.
+ALTURA_POR_HOJA = {"ES-100": 3.60, "ES-200": 3.60, "ES-300": 3.20, "ES-400": 0.90}
+ALTURA_DE_VANO_M = 2.10
+
+
+def _segmentos(msp, capa: str):
+    for e in msp.query(f"LINE[layer=='{capa}']"):
+        yield (e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)
+    for e in msp.query(f"LWPOLYLINE[layer=='{capa}']"):
+        pts = [(p[0], p[1]) for p in e.get_points()]
+        if e.closed:
+            pts.append(pts[0])
+        yield from zip(pts, pts[1:], strict=False)
+
+
+def _toca(seg, caja, tol: float = 0.01) -> bool:
+    return any(caja[0] - tol <= p[0] <= caja[2] + tol and caja[1] - tol <= p[1] <= caja[3] + tol
+               for p in seg)
+
+
+def variantes_15d(msp, gold: dict, hoja, en_planta) -> None:
+    """Tarea 15d (R269). VERIFICA: (EST-013) los tableros macizos contados están en su hoja de
+    superestructura y, donde la caja trae un solo «LOSA MACIZA … H=», es el de su clase; TAB50 y
+    TAB51 (la variante MACIZA que se fue) están en la planta de ES-000 y sin H=; (EST-004) cada muro
+    contado toca líneas de MUROS1 y su caja está en su hoja; el vano leído es el hueco de 1.25 m de
+    la cara sur de W31 (MUROS1, caras a 0.20 m) en ES-200. NO verifica (REPRODUCE): áreas, largos y
+    clases, lecturas del motor; que TAB50/TAB51 sean maciza; que no haya otro vano."""
+    conceptos = gold["money"]["concepts"]
+    print("\nTarea 15d — EST-013, tableros macizos:")
+    textos_h = []
+    for e in msp.query("TEXT MTEXT[layer=='EST-LOSA MACIZA']"):
+        if m := re.search(r"H=(\d+)", texto(e)):
+            textos_h.append((e.dxf.insert.x, e.dxf.insert.y, int(m.group(1))))
+    for tab, (h, hj, c, _area) in LOSAS_MACIZAS_CONTADAS.items():
+        cx, cy = (c[0] + c[2]) / 2, (c[1] + c[3]) / 2
+        dentro = {v for x, y, v in textos_h if c[0] <= x <= c[2] and c[1] <= y <= c[3]}
+        print(f"  {tab}: hoja {hoja(cx, cy)}, H= en su caja {sorted(dentro) or '—'} (clase {h})")
+        if hoja(cx, cy) != hj or en_planta(cx, cy) != hj:
+            dif(f"{tab} no está en la planta de {hj}")
+        if len(dentro) == 1 and dentro != {h}:
+            dif(f"{tab}: su caja dice H={dentro}, la clase es {h}")
+    achurado = list(_segmentos(msp, "EST-LOSA MACIZA"))
+    for tab, c in LOSAS_MACIZAS_FUERA.items():
+        cx, cy = (c[0] + c[2]) / 2, (c[1] + c[3]) / 2
+        trazos = sum(1 for s in achurado if _toca(s, c, 0.0))
+        con_h = [v for x, y, v in textos_h if c[0] <= x <= c[2] and c[1] <= y <= c[3]]
+        print(f"  {tab}: en la planta de {en_planta(cx, cy)} (hoja {hoja(cx, cy)}), H= "
+              f"{con_h or '—'}; a la vista: {trazos} trazos de EST-LOSA MACIZA con un punto en su "
+              "caja (que sea maciza es lectura del motor)")
+        if en_planta(cx, cy) != "ES-000" or hoja(cx, cy) != "ES-000" or con_h:
+            dif(f"{tab} no es un tablero de la planta de cimentación sin H=")
+    calculado = {}
+    for h, _hj, _c, area in LOSAS_MACIZAS_CONTADAS.values():
+        clave = f"EST-013.MACIZA-{h}"
+        calculado[clave] = calculado.get(clave, 0.0) + area * h / 100
+    calculado = {k: round(v, 3) for k, v in calculado.items()}
+    var = conceptos["EST-013"].get("variants") or {}
+    print(f"  variantes (áreas del motor × H): {calculado}; gold {var}")
+    if set(var) != set(calculado) or any(abs(var[k] - v) > 0.001 for k, v in calculado.items()):
+        dif("las variantes de EST-013")
+
+    print("\nTarea 15d — EST-004, muros contados y el vano leído:")
+    muros1 = list(_segmentos(msp, "MUROS1"))
+    for muro, (clase, hj, c, _largo) in MUROS_CONTADOS.items():
+        cx, cy = (c[0] + c[2]) / 2, (c[1] + c[3]) / 2
+        if hoja(cx, cy) != hj or not any(_toca(s, c) for s in muros1):
+            dif(f"{muro} ({clase} cm): hoja {hoja(cx, cy)}, se esperaba {hj} con líneas de MUROS1")
+    print(f"  {len(MUROS_CONTADOS)} muros contados: cada uno en su hoja, con líneas de MUROS1")
+    muro, ancho = VANO_LEIDO
+    clase, hj, c, _largo = MUROS_CONTADOS[muro]
+    caras: dict[float, list[tuple[float, float]]] = defaultdict(list)
+    for a, b in muros1:
+        if (abs(a[1] - b[1]) < 1e-3 and c[1] - 0.01 <= a[1] <= c[3] + 0.01
+                and all(c[0] - 0.01 <= p[0] <= c[2] + 0.01 for p in (a, b))):
+            caras[round(a[1], 3)].append(tuple(sorted((a[0], b[0]))))
+    huecos = {}
+    for y, tramos in caras.items():
+        tramos.sort()
+        fin, hs = tramos[0][1], []
+        for ini, f in tramos[1:]:
+            if ini > fin + 1e-6:
+                hs.append((round(fin, 3), round(ini, 3), round(ini - fin, 3)))
+            fin = max(fin, f)
+        huecos[y] = hs
+    print(f"  {muro}: caras de MUROS1 {sorted(caras)}, huecos interiores {huecos}")
+    ys = sorted(caras)
+    sur = huecos.get(ys[0], []) if ys else []
+    if (len(ys) != 2 or abs(ys[1] - ys[0] - clase / 100) > 0.002
+            or not any(abs(h[2] - ancho) <= 0.002 for h in sur) or hoja(c[0], c[1]) != hj):
+        dif(f"el vano leído de {ancho} m no es el hueco de la cara sur de {muro} "
+            f"({clase} cm, {hj})")
+    print("  a la vista: el hueco de 1.25 m es el castillo de 0.30 (196.976–197.276) más 0.95 m "
+          "bajo el cerramiento CR-2 (EST-CERRAMIENTOS 197.276–198.226); el ancho es el del motor")
+    calculado = {}
+    for _m, (clase, hj, _c, largo) in MUROS_CONTADOS.items():
+        clave = f"EST-004.BLOCK-{clase}"
+        calculado[clave] = calculado.get(clave, 0.0) + largo * ALTURA_POR_HOJA[hj]
+    clave = f"EST-004.BLOCK-{MUROS_CONTADOS[muro][0]}"
+    calculado[clave] -= ancho * ALTURA_DE_VANO_M
+    calculado = {k: round(v, 3) for k, v in calculado.items()}
+    var = conceptos["EST-004"].get("variants") or {}
+    print(f"  variantes (largos del motor × altura de su hoja − vano × 2.10): {calculado}; "
+          f"gold {var}")
+    if set(var) != set(calculado) or any(abs(var[k] - v) > 0.001 for k, v in calculado.items()):
+        dif("las variantes de EST-004")
+    if abs(sum(calculado.values()) - conceptos["EST-004"]["quantity"]) > 0.002:
+        dif(f"las variantes de EST-004 suman {sum(calculado.values())}, el renglón "
+            f"{conceptos['EST-004']['quantity']}")
 
 
 def main() -> int:
@@ -803,6 +974,7 @@ def main() -> int:
     if (cim2 is None or cim2["source"] != "crudo"
             or abs(cim2["quantity"] - cim_002) > 0.001 * cim_002):
         dif(f"CIM-002: crudo {cim_002:.4f}, gold {cim2 and (cim2['quantity'], cim2['source'])}")
+    variantes_15d(msp, gold, hoja, en_planta)
     print("\nDIFERENCIAS:", "ninguna" if not diferencias else len(diferencias))
     return 1 if diferencias else 0
 

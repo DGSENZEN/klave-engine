@@ -653,14 +653,11 @@
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165); Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: W39, el muro poniente exterior de PLANTA BAJA (A-WALL en x 50.725\u201350.905, de \u221262.298 a \u221245.473: 16.825 m, la uni\u00f3n de dos copias de sus l\u00edneas desfasadas 15 mm, cada una de 16.81: sobra 0.015 m; antes en \u00absimbolog\u00eda\u00bb), entra a su planta: +16.825 \u00d7 2.70; W18, el muro norte de la AZOTEA (cara interior A-WALL en y \u221263.724: 5.22 m; antes en PLANTA ALTA), es pretil: \u22125.22 \u00d7 (2.70 \u2212 0.90); 392.598 \u2192 428.630: longitudes y plantas verificadas en el crudo; las alturas (2.70 y el pretil de 0.90) son las supuestas del motor. Las variantes se reparten a prorrata (Tarea 15d): BLOCK-16 225.508 \u2192 268.442, BLOCK-18 54.548 \u2192 47.438, las dem\u00e1s +0.01 a +0.11",
+        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165); Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: W39, el muro poniente exterior de PLANTA BAJA (A-WALL en x 50.725\u201350.905, de \u221262.298 a \u221245.473: 16.825 m, la uni\u00f3n de dos copias de sus l\u00edneas desfasadas 15 mm, cada una de 16.81: sobra 0.015 m; antes en \u00absimbolog\u00eda\u00bb), entra a su planta: +16.825 \u00d7 2.70; W18, el muro norte de la AZOTEA (cara interior A-WALL en y \u221263.724: 5.22 m; antes en PLANTA ALTA), es pretil: \u22125.22 \u00d7 (2.70 \u2212 0.90); 392.598 \u2192 428.630: longitudes y plantas verificadas en el crudo; las alturas (2.70 y el pretil de 0.90) son las supuestas del motor. Tarea 15d (R269): las variantes se reparten s\u00f3lo sobre los 34 muros que el rengl\u00f3n cuenta y cada una descuenta los vanos que el rengl\u00f3n ley\u00f3 en sus muros. BLOCK-19 7.783, BLOCK-30 16.934 y BLOCK-36 26.637 se van (W5, W33 y W31 son de la planta de cimentaci\u00f3n: el rengl\u00f3n no los cuenta); BLOCK-16 268.442 \u2192 286.820 (sus 25 muros \u2212 los vanos de W40 0.77, W42 0.95 y W47 1.00 \u00d7 2.10); BLOCK-17 61.395 \u2192 79.998 y BLOCK-18 47.438 \u2192 61.812 (sin vanos: ya no descuentan el 18 % supuesto ni pagan el reparto a prorrata). Verificado en crudo (verificar_otros.py): qu\u00e9 muros cuenta cada variante y la planta de cada uno; que W5, W31 y W33 no tienen l\u00edneas en la superestructura; que cada vano le\u00eddo es un hueco de ese ancho en una cara de su muro y que ning\u00fan muro de 17 o 18 tiene un hueco de 0.5 m o m\u00e1s. NO verificado en crudo: las sumas por variante son los largos y las clases de espesor del detector, con las alturas supuestas. Las clases 16/17/18 salen de que el plano dibuja la planta dos veces desfasada 15 mm (cada copia mide 0.165 m): son un solo tipo de muro; lo corrige la tarea 15f",
         "variants": {
-          "EST-004.BLOCK-19": 7.783,
-          "EST-004.BLOCK-18": 47.438,
-          "EST-004.BLOCK-16": 268.442,
-          "EST-004.BLOCK-17": 61.395,
-          "EST-004.BLOCK-36": 26.637,
-          "EST-004.BLOCK-30": 16.934
+          "EST-004.BLOCK-18": 61.812,
+          "EST-004.BLOCK-16": 286.82,
+          "EST-004.BLOCK-17": 79.998
         }
       },
       "ACA-001": {

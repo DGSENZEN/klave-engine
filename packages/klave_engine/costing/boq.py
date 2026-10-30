@@ -14,6 +14,7 @@ import math
 import re
 from collections import defaultdict
 from collections.abc import Callable
+from functools import partial
 
 from klave_engine.common.logging import get_logger, log_stage
 from klave_engine.costing.earthwork import cut_fill_volumes, describe
@@ -151,6 +152,9 @@ class _LineResult:
         # made moot ("si no hay niveles N.P.T." when the levels were read).
         self.supersedes: set[str] = supersedes or set()
         self.sections = (0, 0, 0)  # declared, measured, assumed (columns only)
+        # How the walls' openings came off (``_deduct_openings``): True measured, False the
+        # assumed share, None none. A variant measured alone follows the line's choice.
+        self.vanos_medidos: bool | None = None
 
 
 FALLBACK_HEIGHT = "si no hay niveles"
@@ -230,13 +234,18 @@ def _deduct_openings(
     result: _LineResult,
     meters_factor: float,
     assumptions: CostingAssumptions,
+    vanos_medidos: bool | None = None,
 ) -> None:
     """Take the doors and windows off a wall face, and say how.
 
     Measured: the widths the wall detector bridged, × the opening height, ×
     the faces the concept covers. Assumed: the share in the assumptions.
     Either way the line states the deduction; a measured one never exceeds
-    half the face (a wall that is mostly hole is a reading to check)."""
+    half the face (a wall that is mostly hole is a reading to check).
+
+    ``vanos_medidos`` imposes the line's choice on one of its variants
+    (Tarea 15d): when the line read its openings, a variant whose walls have
+    none deducts nothing — not the assumed share, which the line never took."""
     rule = concept.rule
     assert rule is not None
     sides = rule.sides if rule.sides else 1.0
@@ -249,7 +258,11 @@ def _deduct_openings(
     def scale_views(ratio: float) -> None:
         result.by_view = {title: round(qty * ratio, 4) for title, qty in result.by_view.items()}
 
-    if measured_width > 0:
+    medidos = measured_width > 0 if vanos_medidos is None else vanos_medidos
+    if medidos:
+        result.vanos_medidos = True
+        if measured_width <= 0:
+            return
         area = measured_width * assumptions.opening_height_m * sides
         capped = min(area, before * 0.5)
         result.quantity = round(before - capped, 6)
@@ -264,6 +277,7 @@ def _deduct_openings(
         result.notes.append(note)
         result.supersedes.add("vanos supuestos")
     elif assumptions.opening_share_pct > 0:
+        result.vanos_medidos = False
         share = assumptions.opening_share_pct / 100.0
         result.quantity = round(before * (1.0 - share), 6)
         scale_views(1.0 - share)
@@ -566,14 +580,22 @@ def _scoped_result(
 def _variantes(
     concept: Concept,
     result: _LineResult,
-    matched: list[Detection],
     meters_factor: float,
     measure: Callable[[list[Detection]], _LineResult] | None,
 ) -> list[BoqVariant]:
     """El renglón separado por lo que el plano especifica de sus elementos.
     Un solo grupo no se vuelve a medir; varios se miden con la misma regla y
-    se reparten para que sumen exactamente el renglón."""
-    groups = agrupar(result.dets or matched, meters_factor) if separa(concept.code) else []
+    se reparten para que sumen exactamente el renglón.
+
+    Los grupos se forman sólo con las detecciones que el renglón cuenta
+    (``result.dets``), en todas las familias (Tarea 15d): una que el renglón no
+    cuenta —la de la cimentación en un renglón de superestructura, la de una
+    planta en uno de cimentación, la de un detalle— no es variante. Medida
+    sola, el respaldo del alcance (``… or matched_plan``, «la planta más
+    poblada») le inventaba cantidad y las demás variantes se la devolvían a
+    prorrata, sin aviso."""
+    contadas = result.dets
+    groups = agrupar(contadas, meters_factor) if separa(concept.code) else []
     if measure is None or len(groups) <= 1:
         sig = groups[0][0] if groups else {}
         return [BoqVariant(
@@ -587,16 +609,8 @@ def _variantes(
         part = measure(subset)
         return part.quantity, part.dets
 
-    # Columns (Tarea 12): a group made only of detections the line does not count (the
-    # cimentación planta's columns) is no variant; measured alone it would invent quantity that
-    # the rest then gives back pro rata.
-    agrupadas = (
-        result.dets or matched
-        if concept.view_scope == ViewScope.COLUMN_VOLUME
-        else matched
-    )
     rows, factor = dividir(
-        concept.code, concept.description, result.quantity, agrupadas, meters_factor, medir
+        concept.code, concept.description, result.quantity, contadas, meters_factor, medir
     )
     if abs(factor - 1.0) > 0.02:
         result.notes.append(
@@ -678,9 +692,14 @@ def generate_bill_of_quantities(
             result = _earthwork_result(concept, matched, meters_factor, assumptions)
             variant_measure = None
         else:
-            def measure(subset: list[Detection], concept: Concept = concept) -> _LineResult:
+            def measure(
+                subset: list[Detection],
+                concept: Concept = concept,
+                vanos_medidos: bool | None = None,
+            ) -> _LineResult:
                 """La regla del concepto sobre un subconjunto: el renglón entero o
-                una de sus variantes."""
+                una de sus variantes (que descuenta sus vanos como el renglón:
+                ``vanos_medidos``)."""
                 if seg is not None:
                     # The engineer's levantamiento manual has no place on the sheet —
                     # no bbox, no view assignment — so it bypasses the view scoping
@@ -726,11 +745,13 @@ def generate_bill_of_quantities(
 
                 rule = concept.rule
                 if rule is not None and rule.opening_deduction and result.quantity > 0:
-                    _deduct_openings(concept, result, meters_factor, assumptions)
+                    _deduct_openings(
+                        concept, result, meters_factor, assumptions, vanos_medidos
+                    )
                 return result
 
             result = measure(matched)
-            variant_measure = measure
+            variant_measure = partial(measure, vanos_medidos=result.vanos_medidos)
 
         # La nota del renglón no basta cuando el alcance entero se degradó:
         # cimentación calculada sobre todas las plantas se avisa una vez.
@@ -788,9 +809,7 @@ def generate_bill_of_quantities(
             if contributing
             else 0.0
         )
-        variants = _variantes(
-            concept, result, matched, meters_factor, variant_measure
-        )
+        variants = _variantes(concept, result, meters_factor, variant_measure)
         # La regla suma elemento por elemento; si las partes cuadran con el
         # total, cada renglón del respaldo dice la suya. Si no (alturas por
         # nivel, la mejor vista, un levantamiento que se suma aparte), nada:
