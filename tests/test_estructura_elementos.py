@@ -832,3 +832,49 @@ def test_a_perpendicular_wall_without_a_thickness_is_named_and_doubted():
         for a in el.avisos
     )
     assert any(d.startswith("variante de CI") for d in el.dudas)
+
+
+# ----------------------------------------------------------- Tarea 15b: los dados D-n
+
+
+def _dado(marca, x=0.0, lado=0.55, **props):
+    """Un contorno de EST-DADOS que el detector juntó con su etiqueta (o sin marca)."""
+    det = _tag(marca, "zapata", x=x, familia_de_capa="dado", rectangularity=1.0, **props)
+    det.bbox = (x, 0.0, x + lado, lado)
+    return det
+
+
+def _corte(marca, cm, hoja="ES-005"):
+    texto = f"{marca} / CORTE / Y-Y' · DADO {marca} · altura {cm} cm acotada en su corte (42766)"
+    return Definicion(
+        marca=marca, familia="dado", hojas=[hoja],
+        longitud_m=Dato(valor=cm / 100, fuente="detalle", hoja=hoja, texto=texto),
+    )  # fmt: skip
+
+
+def test_el_dado_juntado_con_su_d_n_toma_la_altura_de_su_corte():
+    (e,) = _construir([_dado("D-1")], por_marca={"D-1": _corte("D-1", 100)})
+    assert e.familia == "dado" and e.marca == "D-1" and e.definicion == "marca"
+    assert e.altura_m is not None and e.altura_m.valor == 1.0 and e.altura_m.fuente == "detalle"
+    # La planta da sus lados (55×55), nunca su altura.
+    assert e.seccion_cm is not None and e.seccion_cm.valor == (55, 55)
+    assert e.seccion_cm.fuente == "medido"
+    assert not [a for a in e.avisos if a.startswith(("familia", "altura"))]
+
+
+def test_un_dado_que_ningun_corte_acota_lleva_altura_supuesta_y_lo_dice():
+    supuesta = CostingAssumptions().footing_depth_m
+    sin_corte = Definicion(marca="D-9", familia="dado", hojas=["ES-005"])
+    juntado, sin_marca = _construir(
+        [_dado("D-9"), _dado("", x=3.0)], por_marca={"D-9": sin_corte}
+    )
+    for e in (juntado, sin_marca):
+        assert e.familia == "dado"
+        assert e.altura_m is not None and e.altura_m.fuente == "supuesto"
+        assert e.altura_m.valor == supuesta
+        assert any(a.startswith("altura:") for a in e.avisos)
+
+
+def test_una_zapata_que_no_es_dado_no_cambia():
+    (e,) = _construir([_tag("", "zapata", rectangularity=1.0)])
+    assert e.familia == "zapata" and e.altura_m is None

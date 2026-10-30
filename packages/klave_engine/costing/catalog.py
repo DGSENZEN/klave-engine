@@ -107,14 +107,21 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
             description="Concreto f'c=250 kg/cm² en zapatas y dados",
             unit="M3",
             phase="Cimentación",
+            # Tarea 15b: cada zapata o dado por su área en planta × su peralte: el que el modelo
+            # estructural leyó de su corte (``peralte_cm``) o, sin él, el supuesto.
             rule=QuantityRule(
                 detection_type=DetectionType.footing,
-                kind=QuantityKind.AREA,
+                kind=QuantityKind.VOLUME,
                 source_property="estimated_area",
+                thickness_property="peralte_cm",
+                default_thickness_m=footing_volume,
             ),
-            quantity_factor=footing_volume,
+            quantity_factor=1.0,
             view_scope=ViewScope.FOUNDATION_ONLY,
-            assumptions=[f"Peralte promedio de zapata/dado {a.footing_depth_m:.2f} m"],
+            assumptions=[
+                f"Peralte promedio de zapata/dado {a.footing_depth_m:.2f} m, salvo el que acota "
+                "el corte de cada una en el plano"
+            ],
             production_rate_per_day=5.0,
             sequence_order=1,
         ),

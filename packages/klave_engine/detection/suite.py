@@ -106,6 +106,8 @@ class DetectorSuiteConfig(BaseModel):
         config.footing.column_search_radius = m(2.0)
         config.footing.strip_max_width = m(1.5)
         config.footing.mark_search_radius = m(1.2)
+        # Tarea 15b: Marina's D-n tags lie 0.07–0.46 m off their dado's outline.
+        config.footing.layer_mark_reach = m(0.6)
         config.beam.line_search_radius = m(1.0)
         config.beam.min_beam_length = m(1.5)
         config.beam.max_beam_length = m(15.0)

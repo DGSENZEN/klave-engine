@@ -1773,3 +1773,60 @@ def test_a_wall_bound_and_the_storey_contradiction_name_each_other():
     )
     salida = {v.id: v for v in _referencias_cruzadas([entrepisos, muro])}
     assert entrepisos.id in salida["m"].mensaje
+
+
+# ----------------------------------------------------------- Tarea 15b: los dados D-n
+
+
+def test_7_un_dado_con_altura_supuesta_es_una_duda():
+    supuesta = _dato(0.35, "supuesto", "", "ningún corte acota su altura: supuesta 0.35 m")
+    dado = _el("D-9", "dado", altura=supuesta, longitudinales=None, estribos=None)
+    v = _run(elementos=[dado], defs={"D-9": _defn("D-9", "dado")})
+    assert [x for x in _all(v, 7) if "D-9" in x.marcas and "altura" in x.mensaje]
+
+
+def test_10_d_x_dentro_de_d_4_es_una_duda_que_la_lectura_no_decide():
+    # Marina ES-000: «D-X» (E2EC5) a la misma distancia de E2EC4 (45×45) y de 35521 (D-4, 80×80),
+    # y E2EC4 dibujado dentro de 35521.
+    tx = _texto("D-X", 1.0, 1.0, handle="E2EC5")
+    t4 = _texto("D-4", 1.5, 0.7, handle="35522")
+    d4 = _det(
+        "D-4", "zapata", x=1.3, y=0.8, entidades=["ent_35521", t4.entity_id],
+        familia_de_capa="dado",
+        anidados=[{"contorno": "E2EC4", "lados": [0.45, 0.45], "marcas": ["D-X"]}],
+        etiquetas_disputadas=[{"marca": "D-X", "entidad": tx.entity_id, "texto": "E2EC5",
+                               "contornos": ["E2EC4", "35521"]}],
+    )  # fmt: skip
+    v = _run(defs=["D-X"], **_planta_con(tx, t4, dets=[d4]))
+    (x,) = _con(v, 10, "D-X")
+    assert x.severidad == "duda" and x.marcas == ["D-X"]
+    assert "D-X dentro de D-4: ¿pedestal o dado aparte?" in x.mensaje
+    assert "E2EC4" in x.mensaje and "35521" in x.mensaje and "45x45" in x.mensaje
+
+
+def test_10_una_etiqueta_entre_dos_contornos_nombra_los_dos():
+    t = _texto("D-4", 1.0, 1.0, handle="T1")
+    disputa = {"marca": "D-4", "entidad": t.entity_id, "texto": "T1", "contornos": ["A", "B"]}
+    a = _det("", "zapata", x=0.5, y=1.0, familia_de_capa="dado", etiquetas_disputadas=[disputa])
+    b = _det("", "zapata", x=1.4, y=1.0, familia_de_capa="dado", etiquetas_disputadas=[disputa])
+    v = _run(defs=["D-4"], **_planta_con(t, dets=[a, b]))
+    (x,) = _con(v, 10, "D-4")
+    assert "dos contornos de su capa (A, B)" in x.mensaje and "no se junta" in x.mensaje
+
+
+def test_2_y_10_el_detalle_d_c_es_la_definicion_de_la_dc_colocada():
+    # R259: «D-C» (AF02D) sobre «6#3», bajo él «DALA»: su lectura es la de DC, y DC está colocada.
+    titulo = _texto("D-C", 1.0, 1.0, handle="AF02D").model_copy(
+        update={"layer": "EST-ESTRUCTURAL DETALLES"}
+    )
+    pila = _texto("6#3", 1.0, 0.6).model_copy(update={"layer": "EST-ESTRUCTURAL DETALLES"})
+    lectura = ElementSpec(
+        mark="DC", family="dala", source="detalle", metodo="cotas", hoja="ES-100",
+        source_text="«D-C» (DALA) · se escribe DC en planta", confidence=0.7,
+        entidades=[titulo.entity_id],
+    )  # fmt: skip
+    inv = ScheduleInventory(specs=[lectura], titulos_de_detalle=[titulo.entity_id])
+    dc = _el("DC", "dala")
+    v = _run(elementos=[dc], defs={"DC": _defn("DC", "dala")}, inv=inv,
+             **_planta_con(titulo, pila))  # fmt: skip
+    assert not [x for x in v if x.numero in (2, 10) and {"D-C", "DC"} & set(x.marcas)]

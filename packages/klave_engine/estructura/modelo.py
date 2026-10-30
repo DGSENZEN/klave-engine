@@ -202,8 +202,9 @@ class Escritura(BaseModel):
     marca: str
     familia: str
     hoja: str
-    # ``claro``: el de una viga; ``longitud_m``: la de un pilote (lo que mide CIM-011).
-    campo: Literal["seccion", "fuente", "claro", "armado", "longitud_m"]
+    # ``claro``: el de una viga; ``longitud_m``: la de un pilote (lo que mide CIM-011); ``peralte``:
+    # la altura de un dado o una zapata (lo que mide CIM-002, Tarea 15b).
+    campo: Literal["seccion", "fuente", "claro", "armado", "longitud_m", "peralte"]
     antes: str | None
     fuente_antes: str | None
     despues: str
@@ -1446,6 +1447,8 @@ def escribir_en_detecciones(
                 _escribir_claro(det, e, props, meters_factor, cambios, notas)
             elif e.familia == "pilote" and det.detection_type == DetectionType.pile:
                 _escribir_largo_de_pilote(det, e, props, cambios, notas)
+            elif e.familia in ("dado", "zapata") and det.detection_type == DetectionType.footing:
+                _escribir_peralte(det, e, props, cambios, notas)
         if cambios or restaurada:
             nueva = det.model_copy(deep=True)
             nueva.properties = props
@@ -1462,14 +1465,14 @@ def escribir_en_detecciones(
 # Lo que dicen las notas que el modelo agrega a una detección (para quitarlas al restaurar).
 _NOTA_DEL_MODELO = " del modelo estructural ("
 # Lo que el modelo escribe (además de lo que restaura de cada previa).
-_DEL_MODELO = ("seccion_del_modelo", "armado_del_modelo", "longitud_fuente")
+_DEL_MODELO = ("seccion_del_modelo", "armado_del_modelo", "longitud_fuente", "peralte_fuente")
 
 
 def _restaurar(props: dict) -> bool:
     """Deshace lo que una escritura del modelo dejó en ``props`` (R235): cada clave vuelve a lo
     que la detección traía (``None``: no la traía). Si había algo que deshacer."""
     hubo = False
-    for previa_de in ("seccion_previa", "claro_previo", "longitud_previa"):
+    for previa_de in ("seccion_previa", "claro_previo", "longitud_previa", "peralte_previo"):
         previa = props.pop(previa_de, None)
         if not isinstance(previa, dict):
             continue
@@ -1659,6 +1662,46 @@ def _escribir_largo_de_pilote(
     antes = f"{actual:g} m" if actual is not None else None
     cambios.append(_escritura(e, det, "longitud_m", antes, None, largo))
     notas.append(f"Longitud {metros:g} m del modelo estructural ({largo.fuente}: «{largo.texto}»)")
+
+
+def _escribir_peralte(
+    det: Detection, e: Elemento, props: dict, cambios: list[Escritura], notas: list[str]
+) -> None:
+    """Tarea 15b: la altura de un dado (o de una zapata) que el modelo leyó del plano —la cota de
+    su corte— o que alguien decidió: el peralte con que CIM-002 mide su concreto (``peralte_cm``,
+    la ``thickness_property`` de su regla). Una supuesta no se escribe: el presupuesto ya usa la
+    suya, la misma (``PERALTE_SUPUESTO_M``)."""
+    altura = e.altura_m
+    if altura is None or altura.fuente in ("supuesto", "ia") or altura.ilegible:
+        return
+    metros = _numero(altura.valor)
+    if metros is None or metros <= 0:
+        return
+    cm = round(metros * 100.0, 4)
+    cm_escrito: int | float = int(cm) if float(cm).is_integer() else cm
+    actual = _numero(props.get("peralte_cm"))
+    if actual is not None and abs(actual - cm) <= 1e-9:
+        return
+    props["peralte_previo"] = {"peralte_cm": props.get("peralte_cm")}
+    props["peralte_cm"] = cm_escrito
+    props["peralte_fuente"] = altura.fuente
+    cambios.append(
+        Escritura(
+            detection_id=det.detection_id,
+            marca=e.marca,
+            familia=e.familia,
+            hoja=e.hoja,
+            campo="peralte",
+            antes=f"{actual:g} cm" if actual is not None else None,
+            fuente_antes=None,
+            despues=f"{cm_escrito:g} cm",
+            fuente=altura.fuente,
+            texto=altura.texto,
+        )
+    )
+    notas.append(
+        f"Peralte {cm_escrito:g} cm del modelo estructural ({altura.fuente}: «{altura.texto}»)"
+    )
 
 
 def _escribir_seccion(

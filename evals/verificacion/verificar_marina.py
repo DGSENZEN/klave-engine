@@ -39,15 +39,32 @@ Qué VERIFICA (hechos del dibujo; una diferencia con lo esperado sale como «DIF
   - las marcas definidas que no se escriben en ninguna planta;
   - los pilotes de ES-000: contornos y su medida (CIM-010), su cuadro (renglones de armado y
     varillas dibujadas en cada corte) y que su longitud no se escribe (ES-001);
-  - los dados D-n: contornos de EST-DADOS, distancia etiqueta–contorno, D-X dentro de D-4, y la
-    altura acotada en sus cortes (cotas de COTAS-100 con texto «100»).
+  - los dados D-n (Tarea 15b): los 23 contornos cerrados de EST-DADOS de ES-000 y sus 23
+    etiquetas; cada etiqueta es del contorno más cercano a la caja de sus letras (≤ 0.6 m), sin
+    otro a menos de 1.25 veces esa distancia, uno por etiqueta (``JUNTA_ESPERADA``); «D-X» E2EC5
+    empata (± 0.01 m) entre E2EC4 y 35521, y E2EC4 está dentro de 35521 y es más chico que una
+    zapata; ningún contorno de dado queda sin etiqueta;
+  - las alturas de los dados en sus cortes (``CORTES_DE_DADO``): el título del corte
+    («D-n / CORTE / X-X'») y el de su bloque («DADO D-n»), la cota vertical de su texto y su hoja,
+    encima del título, y que mide el cuerpo del dado (dos trazos verticales del dibujo de punta a
+    punta de la cota, ± 0.03 m); que cada dado colocado tiene la suya; que los lados verticales de
+    las plantas de los dados (``LADOS_DE_PLANTA``) están bajo su título de PLANTA, no de CORTE;
+  - CIM-002 = Σ (área del contorno de cada dado colocado × la altura de su corte), contra el gold
+    (± 0.1 %, fuente crudo);
+  - R259: DC (EST-CADENAS Y DALAS de ES-200) se define en el detalle «D-C» AF02D porque el título
+    de su bloque (el texto de una sola palabra de familia más cercano bajo él, en su columna) es
+    «DALA» AF011, con su armado («#») en medio.
 
 Qué REPRODUCE (reglas del motor aplicadas a mano sobre esos hechos; no son hechos del plano):
   - criticos_total = 4 × colocaciones (la tarjeta tiene 4 datos críticos por elemento);
   - pilote criticos_del_plano = 3 por pilote (sección, longitudinales, estribos del cuadro; la
     longitud no) y «2E#3 VER CORTE» cuenta como estribo del plano;
+  - dado criticos_del_plano = su altura (del corte) + su sección medida en planta salvo donde su
+    sección propia está dibujada y no se leyó (un «DADO D-n» fuera de su bloque de corte: R113, la
+    medida es supuesto) o su contorno no es un rectángulo (área < 98 % de su caja);
   - la severidad de la verificación 1: sin definición y sin nota de su familia → bloquea; con nota
-    → duda;
+    → duda; y su aviso: uno por familia con colocaciones sin marca (los muros de EST-MURO
+    CONCRETO; ningún dado);
   - la verificación 2: definida y nunca escrita en una planta (sólo las familias que la lectura lee
     y los dados D-);
   - la partición de la verificación 10 en duda (muros MC-, dados D-, CM-1: marca de elemento de
@@ -55,11 +72,12 @@ Qué REPRODUCE (reglas del motor aplicadas a mano sobre esos hechos; no son hech
     placas PL- y conexiones CN-, referencias DET-, letras de corte R1/R1'): esa taxonomía es del
     motor; aquí se aplica por prefijo y capa, a la vista.
 
-Diferencia conocida (la cerca la tiene a sabiendas; R259 la lleva a la Tarea 15b): 10/duda D-C.
+Sin diferencias conocidas: la de 10/duda D-C se fue con la Tarea 15b (R259).
 
 Handles fijos que usa (cada uno se imprime con lo que el dibujo tiene en él; si no existe o no
-dice lo esperado, sale como diferencia o a la vista): 42766 y 429EA (cotas «100» de los cortes de
-D-1 y D-3, ES-005), E2EC4 y 35521 (contornos de D-X y de D-4), 98104 y 98102 («2#3» y «2#4» de
+dice lo esperado, sale como diferencia o a la vista): los de ``JUNTA_ESPERADA``,
+``CORTES_DE_DADO`` y ``LADOS_DE_PLANTA``, E2EC4 y 35521 (contornos de D-X y de D-4), 25DC7, 25DE4,
+C578B y C579B (los contornos de muro que el motor coloca sin marca), 98104 y 98102 («2#3» y «2#4» de
 CR-2 en el cuadro de ES-200), D8A3A y D8A4F (nota «CADENA DE ENRASE 15x25 4#3 E#2@15»),
 AF02D/AF011/AF025/AF026 (el detalle «D-C» «DALA» «6#3» «E#2@15» de ES-200), AF072 (la etiqueta
 «DC» de ES-200), 980E8/980FD/98117 (títulos de cuadro de CR en la caja de ES-200), CF1C5 («D-C» de
@@ -137,6 +155,91 @@ def entidades_de_texto(msp):
         yield from explotar(ins, ins.dxf.handle)
 
 
+# Tarea 15b: la junta de cada etiqueta de EST-DADOS de ES-000 con su contorno (handle de la
+# etiqueta → handle del contorno), sacada del listado crudo de distancias y revisada en un render;
+# la de D-X (E2EC5) no está: empata entre E2EC4 y 35521.
+JUNTA_ESPERADA = {
+    "353B8": "353B6", "D6E45": "D6E44", "C8E78": "C8E77", "3552C": "3552F", "3550B": "3550D",
+    "25F27": "25F29", "353D5": "2608F", "35522": "35521", "35547": "35542", "EB0C5": "3554C",
+    "F08F4": "F08F3", "EB0CB": "3555C", "353BD": "353BC", "353C4": "353C3", "353C9": "353C8",
+    "353CE": "353CD", "3551C": "35517", "EB0C9": "35559", "35527": "35526", "EB0C7": "35549",
+    "353B0": "35612", "35533": "35532",
+}
+ALCANCE_DADO = 0.6  # m, de la caja de letras de la etiqueta a su contorno
+# Los cortes de los dados (ES-005/006/007): título del corte → (marca, cota de su altura, su texto,
+# título del bloque «DADO D-n», hoja). Leídos en el render de cada hoja: la cota vertical junto al
+# cuerpo del dado en su corte; el título del bloque nombra la marca con la palabra DADO.
+CORTES_DE_DADO = {
+    "4274E": ("D-1", "42766", "100", "427C6", "ES-005"),
+    "42FFB": ("D-2A", "43016", "100", "42FB2", "ES-005"),
+    "429CF": ("D-3", "429EA", "100", "42A36", "ES-005"),
+    "43588": ("D-3A", "4357A", "100", "435C1", "ES-005"),
+    "4330F": ("D-3B", "43304", "120", "43332", "ES-005"),
+    "42DA5": ("D-4", "42DDE", "100", "42DD4", "ES-005"),
+    "44C24": ("D-4A", "44C1B", "100", "44C4B", "ES-006"),
+    "45A5F": ("D-4B", "45A56", "140", "45A86", "ES-006"),
+    "45F4E": ("D-4C", "45F7C", "120", "45F89", "ES-006"),
+    "D7449": ("D-5", "D743D", "100", "D7406", "ES-006"),
+    "450F9": ("D-5A", "450F0", "120", "45130", "ES-006"),
+    "4642D": ("D-5B", "46424", "140", "46464", "ES-006"),
+    "E46B8": ("D-1A", "E46D0", "100", "E472E", "ES-007"),
+    "E4CB8": ("D-1B", "E4CCF", "120", "E4D08", "ES-007"),
+    "E43F7": ("D-1C", "E440E", "100", "E444D", "ES-007"),
+}
+# Las cotas verticales de las plantas de los dados (sus lados, nunca su altura): D-3B «160»,
+# D-4B «170», D-5A «160», D-5B «180», D-1C «115», D-1B «145».
+LADOS_DE_PLANTA = {"4334C": "160", "45A14": "170", "450A9": "160", "463DD": "180",
+                   "E449A": "115", "E4D59": "145"}
+
+
+def contornos_de_dado(msp) -> list[dict]:
+    """Las polilíneas cerradas de EST-DADOS: handle, caja, centro, lados (cm), área (shoelace)."""
+    salida = []
+    for e in msp.query("LWPOLYLINE[layer=='EST-DADOS']"):
+        if not e.closed:
+            continue
+        pts = [(p[0], p[1]) for p in e.get_points()]
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        area = abs(sum(pts[i][0] * pts[i - 1][1] - pts[i - 1][0] * pts[i][1]
+                       for i in range(len(pts)))) / 2
+        caja = (min(xs), min(ys), max(xs), max(ys))
+        salida.append({"h": e.dxf.handle, "caja": caja, "cx": (caja[0] + caja[2]) / 2,
+                       "cy": (caja[1] + caja[3]) / 2, "area": area,
+                       "lados": f"{round((caja[2] - caja[0]) * 100)}x"
+                                f"{round((caja[3] - caja[1]) * 100)}",
+                       # REPRODUCE: un rectángulo a ejes si su área es ≥ 98 % la de su caja
+                       # (la regla del motor; 3555C de D-4A va chueco 2e-5, D6E44 de D-1A es un
+                       # trapecio: 0.80).
+                       "rect": area >= 0.98 * (caja[2] - caja[0]) * (caja[3] - caja[1])})
+    return salida
+
+
+def caja_de_letras(t: dict) -> tuple[float, float, float, float]:
+    """La caja de las letras de un texto (ezdxf, aproximada por su fuente)."""
+    from ezdxf import bbox
+
+    b = bbox.extents([t["ent"]], fast=True)
+    return (b.extmin.x, b.extmin.y, b.extmax.x, b.extmax.y)
+
+
+def dist_cajas(a, b) -> float:
+    dx = max(b[0] - a[2], 0.0, a[0] - b[2])
+    dy = max(b[1] - a[3], 0.0, a[1] - b[3])
+    return math.hypot(dx, dy)
+
+
+def _centro(e) -> tuple[float, float]:
+    pts = list(e.get_points())
+    xs, ys = [q[0] for q in pts], [q[1] for q in pts]
+    return ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+
+
+def caja_dentro(a, b, holgura: float = 1e-4) -> bool:
+    """Si la caja ``a`` está dentro de ``b`` (con una holgura de dibujo)."""
+    return (a[0] >= b[0] - holgura and a[1] >= b[1] - holgura
+            and a[2] <= b[2] + holgura and a[3] <= b[3] + holgura)
+
+
 DXF_POR_DEFECTO = Path(
     "data/uploads/marina_lote_04_estructural_d1cd5ec8/converted/"
     "01-02_estructural_l_04_-_26_01_15_001/01-02_estructural_l_04_-_26_01_15.dxf"
@@ -208,7 +311,8 @@ def main() -> int:
     for e, h in entidades_de_texto(msp):
         x, y = e.dxf.insert.x, e.dxf.insert.y
         textos.append({"h": h, "capa": e.dxf.layer, "t": texto(e), "x": x, "y": y,
-                       "hoja": hoja(x, y), "planta": en_planta(x, y), "bloque": "/" in h})
+                       "hoja": hoja(x, y), "planta": en_planta(x, y), "bloque": "/" in h,
+                       "ent": e})
     en_bloques = [t for t in textos if t["bloque"]]
     print(f"textos: {len(textos)} ({len(en_bloques)} dentro de bloques insertados; de ésos en una "
           f"planta: {sum(1 for t in en_bloques if t['planta'])})")
@@ -254,6 +358,50 @@ def main() -> int:
             dif(f"etiqueta rara en {t['capa']}: {t['h']} {t['t']!r}")
             continue
         etiquetas.append({**t, "familia": fam, "marca": t["t"].upper()})
+    # Tarea 15b: los dados D-n de ES-000. Cada etiqueta de EST-DADOS es del contorno de EST-DADOS
+    # más cercano a su caja de letras; la de D-X queda a la misma distancia de dos (E2EC4 y 35521)
+    # y no es de ninguno. Las juntadas son colocaciones de la familia dado (la capa lo dice).
+    dados_c = [c for c in contornos_de_dado(msp) if en_planta(c["cx"], c["cy"]) == "ES-000"]
+    tags_d = [t for t in textos if t["capa"] == "EST-DADOS" and t["planta"] == "ES-000"]
+    print(f"dados: {len(dados_c)} contornos cerrados de EST-DADOS en la planta de ES-000, "
+          f"{len(tags_d)} etiquetas en EST-DADOS")
+    if len(dados_c) != 23 or len(tags_d) != 23:
+        dif(f"dados: {len(dados_c)} contornos y {len(tags_d)} etiquetas, se esperaban 23 y 23")
+    junta: dict[str, str] = {}
+    for t in sorted(tags_d, key=lambda t: t["t"]):
+        caja_t = caja_de_letras(t)
+        ds = sorted((dist_cajas(caja_t, c["caja"]), c["h"]) for c in dados_c)
+        (d1, c1), (d2, c2) = ds[0], ds[1]
+        print(f"  {t['t']:5} {t['h']:6} → {c1} a {d1:.2f} m (el siguiente, {c2}, a {d2:.2f} m)")
+        if d1 > ALCANCE_DADO:
+            dif(f"{t['t']} {t['h']} a {d1:.2f} m de todo contorno de EST-DADOS")
+        if abs(d2 - d1) < 0.01:
+            empate = {c1, c2}
+            if (t["t"].upper(), t["h"], empate) != ("D-X", "E2EC5", {"E2EC4", "35521"}):
+                dif(f"{t['t']} {t['h']} empata entre {sorted(empate)}")
+            continue
+        if d2 < 1.25 * d1:
+            dif(f"{t['t']} {t['h']}: el segundo contorno ({c2}, {d2:.2f}) casi tan cerca")
+        junta[t["h"]] = c1
+    if junta != JUNTA_ESPERADA:
+        dif(f"junta etiqueta→dado: crudo {junta}, esperada {JUNTA_ESPERADA}")
+    if len(set(junta.values())) != len(junta):
+        dif("dos etiquetas de dado escogen el mismo contorno")
+    por_handle = {c["h"]: c for c in dados_c}
+    afuera, adentro = por_handle.get("35521"), por_handle.get("E2EC4")
+    if afuera is None or adentro is None or not caja_dentro(adentro["caja"], afuera["caja"]):
+        dif("E2EC4 (D-X) no está dibujado dentro de 35521 (D-4)")
+    else:
+        print(f"  E2EC4 ({adentro['lados']}) dentro de 35521 ({afuera['lados']}); su área "
+              f"{adentro['area']:.4f} m² es menor que la de una zapata (0.55² = 0.3025): no se "
+              "coloca, y su etiqueta D-X queda en duda")
+    sin_etiqueta = sorted(set(por_handle) - set(junta.values()) - {"E2EC4"})
+    if sin_etiqueta:
+        dif(f"dados sin etiqueta: {sin_etiqueta}")
+    for t in tags_d:
+        if t["h"] in junta:
+            etiquetas.append({**t, "familia": "dado", "marca": t["t"].upper(),
+                              "contorno": por_handle[junta[t["h"]]]})
     fuera_de_marco = [t for t in textos if t["capa"] in CAPAS_DE_FAMILIA and t["hoja"] is None]
     print(f"etiquetas de familia fuera de todo marco: {len(fuera_de_marco)}")
     otras_hojas = Counter(t["hoja"] for t in textos
@@ -348,6 +496,30 @@ def main() -> int:
             math.hypot(x - t["x"], y - t["y"]) <= 3.0 for x, y in cotas)
 
     definidas = {m for m in colocadas if any(tiene_armado_o_cota(o) for o in ocurrencias(m))}
+    # R259: una marca de tipo de dala sin guion («DC», en EST-CADENAS Y DALAS) se define en el
+    # detalle que la escribe con guion («D-C» AF02D) sólo si el título de su bloque —el texto más
+    # cercano bajo él, en su columna, que es sólo una palabra de familia— dice DALA, con su armado
+    # («#») en medio.
+    for m in sorted(colocadas - definidas):
+        if not re.fullmatch(r"CI|DC|DA\d{1,2}[A-Z]?", m):
+            continue
+        for t in textos:
+            escrito = t["t"].upper().strip()
+            if "-" not in escrito or escrito.replace("-", "") != m:
+                continue
+            bajo = sorted((u for u in textos if u["hoja"] == t["hoja"] and u is not t
+                           and abs(u["x"] - t["x"]) <= 0.8 and 0 < t["y"] - u["y"] <= 3.25),
+                          key=lambda u: t["y"] - u["y"])
+            titulo = next((u for u in bajo if re.fullmatch(
+                r"(DALAS?|CADENAS?|DADOS?|ZAPATAS?|TRABES?|CASTILLOS?|COLUMNAS?)",
+                u["t"].upper().strip())), None)
+            armado_entre = [u for u in bajo if titulo is not None and "#" in u["t"]
+                            and u["y"] > titulo["y"]]
+            print(f"  {m}: «{t['t']}» {t['h']} ({t['hoja']}), título de su bloque "
+                  f"{titulo and (titulo['h'], titulo['t'])}, armado entre "
+                  f"{[(u['h'], u['t']) for u in armado_entre]}")
+            if titulo is not None and titulo["t"].upper().startswith("DALA") and armado_entre:
+                definidas.add(m)
     sin_definir = sorted(colocadas - definidas)
     print(f"colocadas {len(colocadas)} marcas; sin definición: {sin_definir}")
     for m in sin_definir:
@@ -483,30 +655,93 @@ def main() -> int:
             print(f"  longitud, cota {e.dxf.handle} ({hoja(p.x, p.y)}): texto {e.dxf.text!r}, "
                   f"medida {e.get_measurement():.2f} (sin escala: el detalle es «pilote tipo»)")
 
-    # ---------------------------------------------------------------- dados
-    dados = [c for c in contornos("EST-DADOS") if en_planta((c[0] + c[2]) / 2,
-                                                             (c[1] + c[3]) / 2) == "ES-000"]
-    tags_d = [t for t in textos if t["capa"] == "EST-DADOS" and t["planta"] == "ES-000"]
-    ds = [min(distancia(c, t["x"], t["y"]) for c in dados) for t in tags_d]
-    print(f"dados: {len(dados)} contornos en EST-DADOS de ES-000, {len(tags_d)} etiquetas; "
-          f"etiqueta→contorno {min(ds):.2f}–{max(ds):.2f} m")
-    for h in ("E2EC4", "35521"):
-        e = doc.entitydb.get(h)
-        print(f"  {h}: {e.dxftype() if e else None} {e.dxf.layer if e else ''} "
-              f"{[(round(p[0], 2), round(p[1], 2)) for p in e.get_points()] if e else ''}")
-    for h in ("42766", "429EA"):
-        e = doc.entitydb.get(h)
-        if e is None or e.dxftype() != "DIMENSION":
-            dif(f"la cota {h} no está")
+    # ---------------------------------------------------------------- dados: alturas
+    # Tarea 15b. Cada corte «D-n / CORTE / X-X'» de ES-005/006/007 lleva su altura en una cota
+    # vertical junto al cuerpo del dado (``CORTES_DE_DADO``, leídos en el render). Se verifica:
+    # el título del corte y el de su bloque («DADO D-n»: la palabra DADO lo dice, R159), la cota
+    # (vertical, su texto, su hoja, encima del título) y que mide el cuerpo del dado dibujado en el
+    # corte: dos trazos verticales del dibujo (los lados del dado) van de su punto de abajo al de
+    # arriba (± 0.03). Su valor es su texto, no lo que mide: los cortes son «SIN ESCALA».
+    verticales = []
+    for e in msp.query("LINE"):
+        a0, b0 = e.dxf.start, e.dxf.end
+        if abs(a0.x - b0.x) < 1e-3 and abs(a0.y - b0.y) > 1.0:
+            verticales.append((a0.x, min(a0.y, b0.y), max(a0.y, b0.y)))
+    for e in msp.query("LWPOLYLINE"):
+        pts = list(e.get_points())
+        for i in range(len(pts) - (0 if e.closed else 1)):
+            p0, p1 = pts[i], pts[(i + 1) % len(pts)]
+            if abs(p0[0] - p1[0]) < 1e-3 and abs(p0[1] - p1[1]) > 1.0:
+                verticales.append((p0[0], min(p0[1], p1[1]), max(p0[1], p1[1])))
+    por_h = {t["h"]: t for t in textos}
+    altura_de: dict[str, float] = {}
+    for th, (marca, ch, valor, bh, hoja_e) in CORTES_DE_DADO.items():
+        t, b = por_h.get(th), por_h.get(bh)
+        renglones = [r.strip().upper() for r in (t["t"] if t else "").split("\n") if r.strip()]
+        if t is None or renglones[:2] != [marca, "CORTE"] or t["hoja"] != hoja_e:
+            dif(f"corte {th}: título {t and t['t']!r} en {t and t['hoja']}")
             continue
-        p = e.dxf.defpoint2
-        titulo = min((t for t in textos if t["t"].upper().startswith("DADO ")),
-                     key=lambda t: math.hypot(t["x"] - p.x, t["y"] - p.y))
-        lejos = math.hypot(titulo["x"] - p.x, titulo["y"] - p.y)
-        print(f"  cota {h}: capa {e.dxf.layer}, texto {e.dxf.text!r}, "
-              f"medida {e.get_measurement():.2f}, hoja {hoja(p.x, p.y)}, ángulo "
-              f"{e.dxf.get('angle')}; título más cercano {titulo['t']!r} {titulo['h']} a "
-              f"{lejos:.1f} m")
+        if b is None or " ".join(b["t"].upper().split()) != f"DADO {marca}" or b["hoja"] != hoja_e:
+            dif(f"corte {th}: título del bloque {bh} {b and b['t']!r}")
+        e = doc.entitydb.get(ch)
+        if e is None or e.dxftype() != "DIMENSION" or e.dimtype & 7 != 0:
+            dif(f"corte {th}: la cota {ch} no es una cota lineal")
+            continue
+        p2, p3 = e.dxf.defpoint2, e.dxf.defpoint3
+        y0, y1 = sorted((p2.y, p3.y))
+        x = min(p2.x, p3.x)
+        cuerpo = [v for v in verticales
+                  if x - 0.5 <= v[0] <= x + 6.0 and abs(v[1] - y0) <= 0.03
+                  and abs(v[2] - y1) <= 0.03]
+        ok = (round(float(e.dxf.get("angle") or 0)) % 180 == 90 and e.dxf.text == valor
+              and hoja(p2.x, p2.y) == hoja_e and y0 > t["y"] - 0.2 and len(cuerpo) >= 2)
+        print(f"  corte {marca:5} {th}: cota {ch} «{e.dxf.text}» (mide {e.get_measurement():.2f}, "
+              f"capa {e.dxf.layer}), {len(cuerpo)} lados del cuerpo de {y0:.2f} a {y1:.2f}; "
+              f"bloque {bh} «{b and b['t']}»")
+        if not ok:
+            dif(f"corte {marca} {th}: la cota {ch} no es su altura vertical «{valor}» sobre el "
+                "cuerpo del dado")
+            continue
+        altura_de[marca] = int(valor) / 100
+    for ch, valor in LADOS_DE_PLANTA.items():
+        e = doc.entitydb.get(ch)
+        if e is None or e.dxftype() != "DIMENSION" or e.dxf.text != valor:
+            dif(f"lado de planta {ch}: {e and e.dxf.get('text')!r}")
+            continue
+        p2, p3 = e.dxf.defpoint2, e.dxf.defpoint3
+        bajo = [t for t in textos if t["hoja"] == hoja(p2.x, p2.y)
+                and re.search(r"\b(PLANTA|CORTE)\b", t["t"].upper())
+                and t["y"] < min(p2.y, p3.y)]
+        suyo = min(bajo, key=lambda t: math.hypot(t["x"] - p2.x, t["y"] - p2.y), default=None)
+        if suyo is None or "PLANTA" not in suyo["t"].upper():
+            dif(f"lado de planta {ch}: su título más cercano abajo es {suyo and suyo['t']!r}")
+    print(f"  lados de planta (nunca alturas; su título más cercano abajo es una PLANTA): "
+          f"{LADOS_DE_PLANTA}")
+    colocadas_d = Counter(t["marca"] for t in etiquetas if t["familia"] == "dado")
+    sin_corte = sorted(set(colocadas_d) - set(altura_de))
+    if sin_corte:
+        dif(f"dados colocados sin la altura de su corte: {sin_corte}")
+    # CIM-002: el área de cada contorno colocado × la altura de su corte.
+    cim_002 = sum(t["contorno"]["area"] * altura_de.get(t["marca"], 0.0)
+                  for t in etiquetas if t["familia"] == "dado")
+    print(f"  CIM-002 = Σ área × altura de su corte = {cim_002:.4f} m³ "
+          f"({ {m: n for m, n in sorted(colocadas_d.items())} })")
+    # REPRODUCE (R113, regla del motor): la sección de un dado que tiene su propio dibujo de
+    # sección sin leer (un «DADO D-n» fuera de su bloque de corte y fuera de las plantas: las
+    # elevaciones de ES-500/501, el corte R1-R1' de ES-007) es la medida en planta como supuesto;
+    # las demás, medida en planta si su contorno es un rectángulo. criticos_del_plano de dado = una
+    # altura por dado + esas secciones medidas.
+    bloques = {bh for _m, _c, _v, bh, _h in CORTES_DE_DADO.values()}
+    con_dibujo: set[str] = set()
+    for t in textos:
+        palabras = re.split(r"[\s/]+", t["t"].upper())
+        if "DADO" in palabras and t["h"] not in bloques and t["planta"] is None:
+            con_dibujo |= {w for w in palabras if re.fullmatch(r"D-\w{1,3}", w)}
+    medidas_d = [t for t in etiquetas if t["familia"] == "dado"
+                 and t["marca"] not in con_dibujo and t["contorno"]["rect"]]
+    criticos_dado = sum(colocadas_d.values()) + len(medidas_d)
+    print(f"  marcas con su dibujo de sección sin leer: {sorted(con_dibujo)}; secciones medidas: "
+          f"{sorted(t['marca'] for t in medidas_d)}; criticos_del_plano de dado {criticos_dado}")
     for h in ("98104", "98102", "D8A3A", "D8A4F"):
         t = next((t for t in textos if t["h"] == h), None)
         print(f"  {h}: {t and (t['capa'], t['hoja'], t['t'])}")
@@ -522,21 +757,32 @@ def main() -> int:
         esperado = {"colocaciones": n, "con_definicion": con_def[fam], "criticos_total": 4 * n}
         if fam == "pilote":
             esperado["criticos_del_plano"] = 3 * n
+        if fam == "dado":
+            esperado["criticos_del_plano"] = criticos_dado
         for campo, v in campos.items():
             if esperado.get(campo) != v:
                 dif(f"{fam}.{campo}: crudo {esperado.get(campo)}, gold {v}")
     leidas = {"castillo", "columna", "trabe", "contratrabe", "dala", "cerramiento", "pilote"}
     if set(por_hoja) - set(est["por_familia"]) - {"zapata", "dado", "muro_concreto"}:
         dif(f"familias con colocaciones fuera del gold: {set(por_hoja) - leidas}")
-    crudo_hallazgos = {"1/bloquea": v1_bloquea, "1/duda": v1_duda, "2/aviso": v2,
-                       "10/duda": v10_duda}
+    # 1/aviso (REPRODUCE: un aviso por familia con colocaciones sin marca). VERIFICA: ningún dado
+    # queda sin su D-n (arriba: 22 juntados, el 23.º contorno es D-X, más chico que una zapata). El
+    # que queda es el de los muros: el plano dibuja los suyos en EST-MURO CONCRETO y escribe sus
+    # MC-n sobre el achurado, y el motor coloca algunos de esos contornos sin juntarles su MC-n (la
+    # familia muro_concreto sigue sin cerca: cuántos coloca es suyo, no del plano).
+    muros_c = sorted(e.dxf.handle for e in msp.query("LWPOLYLINE[layer=='EST-MURO CONCRETO']")
+                     if e.closed and en_planta(*_centro(e)))
+    print(f"contornos cerrados de EST-MURO CONCRETO en las plantas: {len(muros_c)} "
+          "(el motor coloca 25DC7, 25DE4, C578B y C579B, sin marca)")
+    for h in ("25DC7", "25DE4", "C578B", "C579B"):
+        if h not in muros_c:
+            dif(f"el contorno de muro {h} no está en una planta")
+    v1_aviso = ["(sin marca)"] if muros_c else []
+    crudo_hallazgos = {"1/bloquea": v1_bloquea, "1/duda": v1_duda, "1/aviso": v1_aviso,
+                       "2/aviso": v2, "10/duda": v10_duda}
     # Diferencias conocidas, cada una con su razón (el gold las cerca a sabiendas y lo dice en sus
     # notas): la cerca es la del motor de hoy, y se mueve cuando el motor deje de equivocarse.
-    conocidas = {
-        ("10/duda", "D-C"): "AF02D «D-C» es el título del detalle de una dala («DALA» AF011, «6#3» "
-        "AF025, «E#2@15» AF026) dibujado dentro de la caja de ejes de ES-200; el motor lo toma por "
-        "una marca escrita en planta (y el mismo hallazgo dice que la define ahí)",
-    }
+    conocidas: dict[tuple[str, str], str] = {}
     for clave, ids in est["hallazgos"].items():
         crudo = crudo_hallazgos.get(clave) or []
         sobran = [m for m in ids if m not in crudo]
@@ -554,6 +800,10 @@ def main() -> int:
     if cim["quantity"] != len(pilotes) or cim["variants"] != var or cim["source"] != "crudo":
         dif(f"CIM-010: crudo {len(pilotes)} {var}, gold {cim['quantity']} {cim['variants']} "
             f"({cim['source']})")
+    cim2 = gold["money"]["concepts"].get("CIM-002")
+    if (cim2 is None or cim2["source"] != "crudo"
+            or abs(cim2["quantity"] - cim_002) > 0.001 * cim_002):
+        dif(f"CIM-002: crudo {cim_002:.4f}, gold {cim2 and (cim2['quantity'], cim2['source'])}")
     print("\nDIFERENCIAS:", "ninguna" if not diferencias else len(diferencias))
     return 1 if diferencias else 0
 

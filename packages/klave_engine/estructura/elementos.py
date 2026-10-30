@@ -34,6 +34,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from klave_engine.costing.models import CostingAssumptions
 from klave_engine.costing.referencias import element_id
 from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.results import Detection, layer_matches
@@ -52,6 +53,7 @@ FAMILIAS_ESTRUCTURALES = (
     "trabe",
     "contratrabe",
     "zapata",
+    "dado",
     "pilote",
     "muro_concreto",
     "dala",
@@ -63,7 +65,10 @@ _CON_ALTURA = frozenset({"castillo", "columna"})
 _VIGAS = frozenset({"trabe", "contratrabe", "dala", "cerramiento"})
 # Las que extienden en vertical lo que su definición llama «longitud» (la extensión del §3.2: el
 # peralte de un dado, la altura de un muro): su altura.
-_EXTENSION_ES_ALTURA = frozenset({"zapata", "muro_concreto"})
+_EXTENSION_ES_ALTURA = frozenset({"zapata", "dado", "muro_concreto"})
+# Tarea 15b: la altura de un dado que ningún corte acota es la que supone el presupuesto (el peralte
+# de ``CostingAssumptions``), como ``supuesto`` y dicho: CIM-002 y el dado miden lo mismo.
+PERALTE_SUPUESTO_M = CostingAssumptions().footing_depth_m
 
 # La sección (b×h, cm) que Klave supone cuando nada la da: la misma de ``CostingAssumptions`` (sus
 # áreas en m², escritas aquí como sus lados). Las demás familias no tienen sección supuesta: sin
@@ -197,7 +202,7 @@ def construir_elementos(
     elementos: list[Elemento] = []
     for d in colocadas:
         vista = asignacion.get(d.detection_id)
-        familia = d.family
+        familia = _familia_de_la_colocacion(d)
         marca = normalizar_marca(d.mark, config) if d.mark.strip() else ""
         avisos = _avisos_de_la_deteccion(d, familia, marca, meters_factor)
         if segmentation is not None and d.detection_id in segmentation.vistas_dudosas:
@@ -327,6 +332,14 @@ def _separar(
     return colocadas, fuera
 
 
+def _familia_de_la_colocacion(d: Detection) -> str:
+    """La familia de la detección, salvo un contorno de cimentación cuya capa dice DADO (Tarea 15b:
+    EST-DADOS, ``familia_de_capa``): un dado. Lo dice el plano, nunca el prefijo D- (R159)."""
+    if d.family == "zapata" and (d.properties or {}).get("familia_de_capa") == "dado":
+        return "dado"
+    return d.family
+
+
 def _hoja(d: Detection, vista: str | None, frames: list[SheetFrame]) -> str:
     """El código del marco de la vista de la detección, o del marco más chico de su archivo que la
     contiene (su código o su id, como las reglas y las definiciones); sin marco, su archivo."""
@@ -358,7 +371,7 @@ def _seccion_medida(d: Detection, familia: str, factor: float | None) -> Dato | 
                 texto=f"cotas junto a la colocación en planta: {_cm(a)}x{_cm(b)}",
                 entidades=list(d.source_entities),
             )
-    if familia == "zapata" and factor:
+    if familia in ("zapata", "dado") and factor:
         if float(props.get("rectangularity") or 0.0) >= _RECTANGULO:
             x0, y0, x1, y1 = d.bbox
             a = round(min(x1 - x0, y1 - y0) * factor * 100, 1)
@@ -520,6 +533,23 @@ def _altura(familia: str, entrepiso: AlturaDeEntrepiso | None, supuesta_m: float
     )
 
 
+def _peralte_supuesto(ilegible: Dato | None, avisos: list[str]) -> Dato:
+    """Tarea 15b: la altura de un dado que ningún corte suyo acota (o que su corte acota y no se
+    leyó: queda como alternativa), supuesta y dicha."""
+    porque = (
+        "su corte la acota y no se leyó"
+        if ilegible is not None
+        else "ningún corte suyo la acota"
+    )
+    avisos.append(f"altura: {porque}; se supone {PERALTE_SUPUESTO_M:g} m (la del presupuesto)")
+    return Dato(
+        valor=PERALTE_SUPUESTO_M,
+        fuente="supuesto",
+        texto=f"{porque}: altura supuesta {PERALTE_SUPUESTO_M:g} m",
+        alternativas=_planas([ilegible]) if ilegible is not None else [],
+    )
+
+
 def _avisos_de_la_deteccion(
     d: Detection, familia: str, marca: str, factor: float | None
 ) -> list[str]:
@@ -642,6 +672,8 @@ class _Resolutor:
         elif familia in _EXTENSION_ES_ALTURA:
             longitud = col.longitud_m
             altura = extension
+            if familia == "dado" and (extension is None or extension.valor is None):
+                altura = _peralte_supuesto(extension, avisos)
         else:
             longitud = self._longitud(familia, extension, col, avisos)
             altura = None

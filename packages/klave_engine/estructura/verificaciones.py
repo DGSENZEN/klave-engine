@@ -91,6 +91,10 @@ CRITICOS: dict[str, tuple[str, ...]] = {
     "contratrabe": ("seccion_cm", "longitud_m", "longitudinales", "estribos"),
     "pilote": ("seccion_cm", "longitud_m", "longitudinales", "estribos"),
     "zapata": ("seccion_cm", "altura_m", "parrillas"),
+    # Tarea 15b: un dado lleva sus lados en planta, su altura (la de su corte) y su armado de
+    # columna corta: varillas verticales y estribos (diseño §4.1: «plan dimensions · peralte ·
+    # verticals · stirrups»).
+    "dado": ("seccion_cm", "altura_m", "longitudinales", "estribos"),
     "muro_concreto": ("seccion_cm", "altura_m", "longitud_m", "parrillas"),
     "dala": ("seccion_cm", "longitud_m", "longitudinales", "estribos"),
     "cerramiento": ("seccion_cm", "longitud_m", "longitudinales", "estribos"),
@@ -1015,6 +1019,21 @@ def _titulos_dibujados(ctx: _Contexto) -> dict[str, list[_Titulo]]:
     vigas metálicas) o nervadura (las nervaduras de una losa)."""
     salida: dict[str, list[_Titulo]] = defaultdict(list)
     sin_familia: dict[str, list[NormalizedEntity]] = {}
+    # R259: el título que una lectura del plano tomó como el de una marca escrita de otra manera
+    # («D-C» sobre su detalle, que es DC por su título DALA): se nombra como lo leyó la lectura.
+    leido_como = {
+        s.entidades[0]: normalizar_marca(s.mark, ctx.config)
+        for s in ctx.inv.specs
+        if s.source != "ia" and s.entidades
+    }
+
+    def nombre_de(e: NormalizedEntity, ficha: str) -> str:
+        nombre = normalizar_marca(ficha.rstrip("'"), ctx.config)
+        otro = leido_como.get(e.entity_id)
+        if otro is not None and otro != nombre and otro == nombre.replace("-", ""):
+            return otro
+        return nombre
+
     for e in ctx.entidades.values():
         if not e.is_textual or not e.text:
             continue
@@ -1040,11 +1059,9 @@ def _titulos_dibujados(ctx: _Contexto) -> dict[str, list[_Titulo]]:
             if m is not None and _nombre_de_marca(m.group(1)):
                 solos.append(m.group(1))
         for ficha, clase, de_familia in hallados:
-            nombre = normalizar_marca(ficha.rstrip("'"), ctx.config)
-            salida[nombre].append(_Titulo(e, ctx.hoja_de(e), clase, de_familia))
+            salida[nombre_de(e, ficha)].append(_Titulo(e, ctx.hoja_de(e), clase, de_familia))
         for ficha in solos:
-            nombre = normalizar_marca(ficha.rstrip("'"), ctx.config)
-            sin_familia.setdefault(nombre, []).append(e)
+            sin_familia.setdefault(nombre_de(e, ficha), []).append(e)
     # Un nombre solo es de la clase que dicen sus títulos con palabra de familia («VIGA V-E» y
     # «V-E»: acero); si no tiene ninguno, de concreto.
     for nombre, es in sin_familia.items():
@@ -1433,6 +1450,7 @@ def _escritas_sin_elemento(
         if colocadas.get(marca):
             otras = sorted({_nombre_de_hoja(e.hoja) for e in colocadas[marca]})
             estado += f" Sus colocaciones están en {', '.join(otras)}, lejos de estos textos."
+        estado += _etiqueta_disputada(ctx, marca, textos)
         junto = [t for t in textos if t.junto_sin_marca]
         if junto:
             familias = ", ".join(sorted({f for t in junto for f in t.junto_sin_marca}))
@@ -1482,6 +1500,49 @@ def _escritas_sin_elemento(
             )
         )
     return salida
+
+
+def _etiqueta_disputada(ctx: _Contexto, marca: str, textos: list[_Escrita]) -> str:
+    """Tarea 15b: lo que el detector dijo de una etiqueta de esta marca que no juntó con ningún
+    contorno de su capa porque dos la alcanzan casi igual (``etiquetas_disputadas``), nombrando
+    los dos; y si uno está dibujado dentro de otro que ya tiene su marca (``anidados``: D-X dentro
+    de D-4), la pregunta, que la lectura no decide: ni lo junta ni lo cuenta aparte."""
+    propios = {t.entidad.entity_id for t in textos}
+    frases: list[str] = []
+    for d in ctx.detections:
+        props = d.properties or {}
+        for disputa in props.get("etiquetas_disputadas") or []:
+            if disputa.get("entidad") not in propios or disputa.get("marca") != marca:
+                continue
+            contornos = [str(c) for c in disputa.get("contornos") or []]
+            if len(contornos) > 1:
+                frase = (
+                    f"La etiqueta {disputa.get('texto') or ''} queda casi a la misma distancia de "
+                    f"dos contornos de su capa ({', '.join(contornos)}): no se junta con ninguno."
+                )
+            else:
+                frase = (
+                    f"La etiqueta {disputa.get('texto') or ''} y otra escogen el mismo contorno "
+                    f"({', '.join(contornos)}): no se junta con él."
+                )
+            dentro = [
+                a
+                for a in props.get("anidados") or []
+                if a.get("contorno") in contornos and marca in (a.get("marcas") or [])
+            ]
+            if dentro and d.mark.strip():
+                factor = ctx.factor or 1.0
+                lados = "x".join(f"{float(v) * factor * 100:g}" for v in dentro[0]["lados"])
+                suyo = ctx.entidades.get(d.source_entities[0]) if d.source_entities else None
+                de_quien = f"{d.mark} ({suyo.raw_handle})" if suyo is not None else d.mark
+                frase += (
+                    f" {marca} dentro de {d.mark}: ¿pedestal o dado aparte? Su contorno "
+                    f"{dentro[0]['contorno']} ({lados}) está dibujado dentro del de {de_quien}; la "
+                    f"lectura no lo decide: no lo cuenta aparte ni lo suma a {d.mark}."
+                )
+            if frase not in frases:
+                frases.append(frase)
+    return "".join(f" {f}" for f in frases)
 
 
 def _familia_de_marca(ctx: _Contexto, marca: str, titulos: dict[str, list[_Titulo]]) -> str:

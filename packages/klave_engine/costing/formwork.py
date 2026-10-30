@@ -223,6 +223,7 @@ def compute_formwork(
     if footings is not None and footings.source_detections:
         area = 0.0
         plantilla = 0.0
+        del_plano = 0
         for det_id in footings.source_detections:
             det = by_id.get(det_id)
             if det is None:
@@ -240,14 +241,27 @@ def compute_formwork(
             else:
                 side = math.sqrt(float(props.get("estimated_area") or 0.0)) * factor
                 w = length = side
-            area += 2 * (w + length) * assumptions.footing_depth_m
+            # Tarea 15b: el peralte que acota su corte (el que mide su concreto, CIM-002).
+            peralte = props.get("peralte_cm")
+            if isinstance(peralte, (int, float)) and peralte > 0:
+                depth = float(peralte) / 100.0
+                del_plano += 1
+            else:
+                depth = assumptions.footing_depth_m
+            area += 2 * (w + length) * depth
             plantilla += (w + 2 * PLANTILLA_MARGIN_M) * (length + 2 * PLANTILLA_MARGIN_M)
+        n = len(footings.source_detections)
+        nota = (
+            f"Perímetro × peralte {assumptions.footing_depth_m:.2f} m en {n} zapatas"
+            if not del_plano
+            else f"Perímetro × peralte en {n} zapatas y dados: el de su corte en {del_plano}, "
+            f"{assumptions.footing_depth_m:.2f} m supuesto en {n - del_plano}"
+        )
         report.lines.append(
             FormworkLine(
                 concept_code=CODE_ZAPATAS, quantity=round(area, 2),
                 source_detections=list(footings.source_detections),
-                notes=[f"Perímetro × peralte {assumptions.footing_depth_m:.2f} m en "
-                       f"{len(footings.source_detections)} zapatas"],
+                notes=[nota],
             )
         )
         # Plantilla is its own concept (CIM-003), never inside the concrete

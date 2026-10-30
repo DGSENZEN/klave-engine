@@ -5,7 +5,7 @@ Evidencia de los valores cercados (Tarea 15, R260): independiente del motor. ``l
 cada archivo; lo demás es ezdxf a mano sobre el model space y los bloques insertados en él. Por
 cada entrada imprime el sha256 de cada DXF, $INSUNITS, sus textos (todos, si son pocos) y lo que
 importa, y compara con ``evals/gold/<id>.json``. Sale con 1 si las colocaciones por hoja del crudo
-no son las del gold.
+no son las del gold, o si una hoja tiene lo que leen la junta de los dados y sus cortes (Tarea 15b).
 
 Desde la raíz del repo (``data/`` son los planos locales; ``source`` de cada entrada):
 
@@ -17,7 +17,9 @@ S-COL-TAG, trabe = de S-BEAM, zapata = contornos de S-FOOTING—. Qué VERIFICA 
 vista): los textos y contornos de cada DXF, que los contornos de S-FOOTING no tengan texto, que no
 haya armado («#», «@»), cuadro, detalle, nota, nivel ni cota en ninguna hoja, y $INSUNITS 0; (minis)
 que no haya ninguna marca de las familias que la lectura lee (K-, C-, T, CTA-, CE-, CI, CR-, DA-,
-P-, D-, B-, Z-) ni ningún texto con varilla o separación («#», «@»).
+P-, D-, B-, Z-) ni ningún texto con varilla o separación («#», «@»). Qué VERIFICA (y compara), en
+todas: ninguna capa dice DADO, ningún título de corte nombra una marca y ningún texto es un tipo de
+dala escrito con guion (Tarea 15b, R259: lo que esa tarea lee no está aquí).
 
 Qué REPRODUCE (reglas del motor, no hechos del plano): la marca «C1» del dibujo es «C-1» en el gold
 (normalización del motor); criticos_total = 4 por columna y trabe, 3 por zapata (los datos de su
@@ -74,6 +76,7 @@ def una(path: Path) -> dict:
         "contornos": contornos,
         "cotas": len(msp.query("DIMENSION")),
         "tipos": Counter(e.dxftype() for e in msp),
+        "capas": sorted({e.dxf.layer for e in msp}),
     }
 
 
@@ -108,6 +111,19 @@ def main() -> int:
                             por_hoja.setdefault("trabe", Counter())[hoja] += 1
                 if "#" in t or "@" in t:
                     armado.append((path.name, capa, t[:80]))
+            # Tarea 15b: lo que la junta de los dados, sus alturas de corte y el detalle de un
+            # tipo de dala (R259) leen no está en estas hojas: ninguna capa dice DADO, ningún
+            # título de corte nombra una marca («D-1 / CORTE»), ningún texto escribe con guion un
+            # tipo de dala («D-C»). Si apareciera, su cerca podría moverse: sale como diferencia.
+            dados = [c for c in d["capas"] if re.search(r"(?<![A-Z])DADO", c.upper())]
+            cortes = [t for _c, t in d["textos"]
+                      if re.match(r"^[A-Z]{1,3}\d{0,2}-[A-Z0-9]{1,3}\b.*\bCORTE\b",
+                                  " ".join(t.upper().split()))]
+            tipos = [t for _c, t in d["textos"] if t.upper().strip() in ("D-C", "C-I")]
+            if dados or cortes or tipos:
+                print(f"  ** DIFERENCIA, lo de la Tarea 15b: capas {dados}, cortes {cortes}, "
+                      f"tipos de dala con guion {tipos}")
+                malos += 1
             zapatas = [c for c in d["contornos"] if c[0] == "S-FOOTING"]
             if zapatas:
                 por_hoja.setdefault("zapata", Counter())[hoja] += len(zapatas)
