@@ -3005,7 +3005,7 @@ def _sections_from_detail_cotas(
     specs = (
         _leer_secciones(
             etiquetas, entities, dims, unit_to_m, widths_by_family, sheet, rechazos, dibujadas,
-            duenas, libres=libres, reclamadas=reclamadas,
+            duenas, libres=libres, reclamadas=reclamadas, con_pila=duenos,
         )
         if etiquetas
         else []
@@ -3647,6 +3647,108 @@ def _con_cotas_cerca(etiquetas: list[_Etiqueta], dims: list[NormalizedEntity]) -
     ]
 
 
+def _de_lado(
+    etiquetas: list[_Etiqueta],
+    contornos: list[_Contorno],
+    es_seccion: Callable[[_Contorno, _Etiqueta], bool],
+    propios: dict[str, _Propio],
+    con_pila: Collection[str],
+) -> dict[str, _Propio]:
+    """R279: the section beside a definition label (one that owns a stack, ``con_pila``) that has
+    none on its convention's side (``sin_contorno``):
+    the nearest closed outline to its left or right, at the label's own height (their vertical
+    extents overlap), within reach (``_ALCANCE`` heights) and no bigger than a section, that is
+    a section and that no label owns. It is the label's only when it is an orphan: no other title
+    reaches it — above or below it by the rule of a section (``_propio``), or beside it by this
+    same rule (another definition label with no section on its side). A title that owns its own
+    section reaches nothing else (R129). If another does, it is claimed (a duda, as R111); a
+    section on each side, too. A
+    label never reaches past the nearest outline on a side (R129), and a label with an orphan
+    section above or below it (on the side its group's convention does not use) takes none
+    beside it.
+    Marina: in the castillo block
+    K-10's title sits left of its 15×85 section (task 9c: «nearest wins» read foreign stacks;
+    only orphan and doubt rules held)."""
+    duenas = [p.contorno.caja for p in propios.values() if p.contorno is not None]
+
+    def de_lado(e: _Etiqueta, c: _Contorno) -> float | None:
+        x0, y0, x1, y1 = c.caja
+        if y1 < e.y0 or y0 > e.y1 or max(x1 - x0, y1 - y0) > _TAMANO * e.alto:
+            return None
+        h = x0 - e.x1 if x0 >= e.x1 else e.x0 - x1 if x1 <= e.x0 else None
+        return h if h is not None and 0 < h <= _ALCANCE * e.alto else None
+
+    def encima(e: _Etiqueta, c: _Contorno) -> bool:
+        x0, y0, x1, y1 = c.caja
+        if _solape(e, c) < _ENCIMA_MINIMO or max(x1 - x0, y1 - y0) > _TAMANO * e.alto:
+            return False
+        return any(0 < h <= _ALCANCE * e.alto for h in (y0 - e.y, e.y - y1))
+
+    def de_otra(c: _Contorno) -> bool:
+        return any(_misma_caja(c.caja, o, 1e-6) for o in duenas)
+
+    def sin_la_suya(e: _Etiqueta) -> bool:
+        return propios[e.texto.entity_id].sin_contorno
+
+    salida: dict[str, _Propio] = {}
+    for e in etiquetas:
+        if e.texto.entity_id not in con_pila or not sin_la_suya(e):
+            continue
+        if any(encima(e, c) and es_seccion(c, e) and not de_otra(c) for c in contornos):
+            continue  # an orphan section above or below it: never one beside it
+        hallados: list[_Contorno] = []
+        for lado in (+1, -1):
+            cerca = [
+                (h, c)
+                for c in contornos
+                if (h := de_lado(e, c)) is not None
+                and (c.caja[0] >= e.x1 if lado > 0 else c.caja[2] <= e.x0)
+            ]
+            if not cerca:
+                continue
+            _h, c = min(cerca, key=lambda hc: hc[0])
+            if es_seccion(c, e) and not de_otra(c):
+                hallados.append(c)
+        if not hallados:
+            continue
+        if len(hallados) > 1:
+            salida[e.texto.entity_id] = _Propio(
+                None,
+                "no hay sección dibujada en su lado y tiene una a cada lado",
+                dudosa=True,
+                reclamados=[c.caja for c in hallados],
+            )
+            continue
+        c = hallados[0]
+        otras = sorted(
+            {
+                o.marca
+                for o in etiquetas
+                if o.llave == e.llave
+                and o.texto.entity_id != e.texto.entity_id
+                and propios[o.texto.entity_id].contorno is None
+                and (
+                    encima(o, c)
+                    or (
+                        o.texto.entity_id in con_pila
+                        and sin_la_suya(o)
+                        and de_lado(o, c) is not None
+                    )
+                )
+            }
+        )
+        if otras:
+            salida[e.texto.entity_id] = _Propio(
+                None,
+                f"la sección dibujada a su lado la alcanza también {', '.join(otras)}",
+                otras,
+                reclamados=[c.caja],
+            )
+        else:
+            salida[e.texto.entity_id] = _Propio(c)
+    return salida
+
+
 def _misma_caja(a: BBox, b: BBox, tol: float) -> bool:
     return all(abs(p - q) <= tol for p, q in zip(a, b, strict=True))
 
@@ -3665,9 +3767,11 @@ def _leer_secciones(
     ocupadas: list[BBox] | None = None,
     libres: list[BBox] | None = None,
     reclamadas: list[tuple[_Etiqueta, BBox]] | None = None,
+    con_pila: Collection[str] = (),
 ) -> list[ElementSpec]:
     """The readings of ``etiquetas``' sections (see ``_sections_from_detail_cotas``); ``duenas``
-    receives each label that owns a drawn section, with the section's box. ``solo_acotadas``
+    receives each label that owns a drawn section, with the section's box (R279: a label that owns
+    a stack, ``con_pila``, may own the orphan section beside it, ``_de_lado``). ``solo_acotadas``
     (R145, the labels tried apart): an outline is a section only if it carries cotas on its
     edges; ``ocupadas`` are the sections other labels own, never these labels'. ``libres``
     receives the dimensioned sections drawn here that no label owns (R150: the armado written
@@ -3708,6 +3812,9 @@ def _leer_secciones(
         return con_cotas[clave]
 
     propios = _propio(etiquetas, contornos, es_seccion)
+    # R279: a label with nothing on its convention's side may own the section beside it, only an
+    # orphan one (no other title reaches it); one another title reaches is claimed, a duda.
+    propios.update(_de_lado(etiquetas, contornos, es_seccion, propios, con_pila))
     # R106: the labels with no closed outline where their section goes, against the rectangles
     # of pairs of cotas, by the same side and claim rule.
     sin_contorno = [

@@ -21,6 +21,8 @@ La **IA** sólo llena un campo que ningún texto del plano toca, y queda *por co
 
 **Las reglas del proyecto** salen de la tabla de varillas y de las notas generales de cada hoja: recubrimiento por familia, ganchos, primer estribo, anclajes declarados, desde qué varilla se suelda y hasta cuál se traslapa. Cada hoja usa las de su propia nota (en Marina la cimentación traslapa hasta #6 y suelda desde #8; la superestructura traslapa hasta #8 y suelda desde #10).
 
+**Qué lee hoy (E0).** Las marcas que el plano define con una **pila** de armado junto a su título y su sección acotada: castillos, columnas, pilotes, cadenas y cerramientos de los cuadros. En Marina se comprobaron contra una transcripción hecha a mano, marca por marca y hoja por hoja: el motor las lee exactamente. Lo que el plano escribe con **líneas de llamada** (directrices hacia las varillas de un corte, los lechos y bastones de trabes y contratrabes en sus alzados, el armado de dados, zapatas y muros) es de una ronda posterior (E3): hoy queda como hallazgo y su acero no se inventa.
+
 **El armado se lee entero o se avisa.** «4#5+2#4» son dos grupos de varillas, «2E+1G#3EXT@10 / CENTRO@15» es un juego de dos estribos y una grapa con zona de extremos y de centro, «EYG#3@15» es estribo y grapa (nunca una malla). Lo que no se entiende se cita en un aviso; nunca se tira en silencio.
 
 ## Qué quiere decir cada hallazgo

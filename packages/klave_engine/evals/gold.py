@@ -406,7 +406,10 @@ def score_transcripcion(path: Path, schedules_json: dict | None) -> tuple[bool, 
     lecturas del plano del motor (``schedules.json``: fuentes cuadro, detalle o nota, nunca la IA),
     por (marca, marco, variante), en los dos sentidos: lo que la transcripción lee y el motor no
     —o lee distinto— y lo que el motor lee y la transcripción no tiene. Una lectura repetida en la
-    transcripción es un error; lo que deja en ``dudas`` no se compara. Los textos se comparan sin
+    transcripción es un error; lo que deja en ``dudas`` no se compara, ni lo que pone en
+    ``fuera_de_e0.lecturas`` (R281: las marcas que el plano define con llamadas en alzados y
+    cortes, de E3, cada una con su marca y hoja: nada falta en silencio); una lectura que además
+    está en ``dudas`` o fuera de E0 es un error. Los textos se comparan sin
     espacios y en mayúsculas; la sección sin el orden de sus lados, y sólo la que el plano escribe
     (no la medida en el dibujo ni la supuesta)."""
     from klave_engine.estructura.definiciones import normalizar_marca
@@ -455,6 +458,11 @@ def score_transcripcion(path: Path, schedules_json: dict | None) -> tuple[bool, 
         return next(iter(marcos)) if len(marcos) == 1 else hoja
 
     dudas = {(normalizar_marca(str(d["marca"])), llave_de_hoja(d)) for d in hecha.get("dudas", [])}
+    fuera = {
+        (normalizar_marca(str(d["marca"])), llave_de_hoja(d))
+        for d in (hecha.get("fuera_de_e0") or {}).get("lecturas", [])
+    }
+    excusadas = dudas | fuera
     esperado: dict[tuple[str, str, float | None], dict[str, Any]] = {}
     for lectura in hecha.get("lecturas", []):
         llave = (normalizar_marca(str(lectura["marca"])), llave_de_hoja(lectura),
@@ -463,6 +471,10 @@ def score_transcripcion(path: Path, schedules_json: dict | None) -> tuple[bool, 
             diffs.append(f"{lectura['marca']} en {lectura['hoja']}: la transcripción la lee dos "
                          "veces")  # fmt: skip
             continue
+        if llave[:2] in excusadas:
+            diffs.append(f"{lectura['marca']} en {lectura['hoja']}: la transcripción la lee y la "
+                         "excusa (dudas o fuera de E0) a la vez")  # fmt: skip
+            continue
         esperado[llave] = {
             "longitudinal": {t} if (t := _texto_canonico(lectura.get("longitudinal"))) else set(),
             "estribos": {t} if (t := _texto_canonico(lectura.get("estribos"))) else set(),
@@ -470,7 +482,7 @@ def score_transcripcion(path: Path, schedules_json: dict | None) -> tuple[bool, 
         }
     for llave in sorted(set(esperado) | set(motor), key=lambda k: (k[0], k[1], k[2] or 0.0)):
         marca, marco, muro = llave
-        if (marca, marco) in dudas:
+        if (marca, marco) in excusadas:
             continue
         nombre = f"{marca} en {hoja_de_llave.get(marco, marco)}" + (
             f" (muros de {muro:g} cm)" if muro is not None else ""

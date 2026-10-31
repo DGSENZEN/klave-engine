@@ -585,6 +585,43 @@ def test_score_transcripcion_compares_only_the_section_the_drawing_writes(tmp_pa
                                 "[(20.0, 40.0)]"]
 
 
+def test_score_transcripcion_excuses_the_listed_out_of_e0_readings_only(tmp_path):
+    # R280, R281 (Tarea 16): las marcas que el plano define con llamadas (trabes, contratrabes,
+    # dados, zapatas, muros; CR-2 en dudas) no se comparan, cada una por su marca y hoja; una que
+    # el motor lee y no está en la lista sigue fallando, y una lectura excusada a la vez es error.
+    from klave_engine.evals.gold import score_transcripcion
+
+    path = tmp_path / "t.json"
+    base: dict = {
+        "lecturas": [{"marca": "K-1", "hoja": "ES-000", "longitudinal": "4#3",
+                      "estribos": "E#2@15", "seccion_cm": [15, 15]}],
+        "dudas": [{"marca": "CR-2", "hoja": "ES-200",
+                   "motivo": "armado por línea de llamada (E3)"}],
+        "fuera_de_e0": {"por_familia": {"trabe": 1},
+                        "lecturas": [{"marca": "T1-1", "hoja": "ES-101"}]},
+    }  # fmt: skip
+    path.write_text(json.dumps(base))
+
+    def spec(marca, hoja, **campos):
+        return {"mark": marca, "hoja": hoja, "hoja_llave": f"f#{hoja}", "source": "detalle",
+                "rebar": None, "stirrups": None, "section_cm": None, **campos}  # fmt: skip
+
+    specs = [
+        spec("K-1", "ES-000", rebar="4#3", stirrups="E#2@15"),
+        spec("K-1", "ES-000", section_cm=[15, 15]),
+        spec("CR-2", "ES-200", stirrups="E#2@15"),
+        spec("T1-1", "ES-101", section_cm=[40, 20]),
+    ]
+    assert score_transcripcion(path, {"specs": specs}) == (True, [])
+    ok, diffs = score_transcripcion(path, {"specs": [*specs, spec("T1-2", "ES-101")]})
+    assert not ok and diffs == ["T1-2 en ES-101: el motor la lee y la transcripción no la tiene"]
+    base["lecturas"].append({"marca": "T1-1", "hoja": "ES-101", "longitudinal": None,
+                             "estribos": None, "seccion_cm": [40, 20]})  # fmt: skip
+    path.write_text(json.dumps(base))
+    ok, diffs = score_transcripcion(path, {"specs": specs})
+    assert not ok and "a la vez" in diffs[0]
+
+
 # ------------------------------------------- Tarea 15c: las colocaciones por vista (planta)
 
 

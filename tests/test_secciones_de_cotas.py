@@ -2180,3 +2180,69 @@ def test_a_rectangle_whose_fourth_corner_is_not_drawn_is_never_claimed():
     ]
     inv = build_schedule_inventory(ents, C, unit_to_m=1.0, detail_boxes=_DETALLE)
     assert {r.texto: r.posibles for r in inv.rechazos if r.motivo == "sin_dueno"} == {"E#3@15": []}
+
+
+# ------------------------------------------------- R279: la sección huérfana al lado de su título
+
+
+def _k10_del_bloque(otro_sin_la_suya=False, huerfana_debajo=False):
+    """El cuadro de castillos de Marina (bloque EST-CASTILLOS, ES-000) alrededor de K-10: K-9 y
+    K-11 con su sección encima de su pila (la costumbre); K-10 con su pila DEBAJO de la etiqueta y
+    su sección de 15 × 85 a su derecha, a su altura; debajo, la sección de K-16 (de K-16)."""
+    ents = [
+        *_castillo("k9", "K-9", 204.21, 69.21, ["4#6+2#4", "2E#3EXT@10", "CENTRO@15"],
+                   (203.75, 70.0, 204.75, 71.85), 20, 40),
+        *_castillo("k11", "K-11", 207.44, 68.74, ["8#6", "2E#3EXT@10", "CENTRO@20"],
+                   (206.9, 69.6, 207.95, 72.3), 20, 60),
+        _texto("k10m", "K-10", 204.83, 68.72),
+        _texto("k10r0", "6#6+4#4", 204.48, 68.46, alto=0.10, centrado=False),
+        _texto("k10r1", "2E+1G#3EXT@10", 204.24, 68.28, alto=0.10, centrado=False),
+        _texto("k10r2", "CENTRO@15", 204.37, 68.11, alto=0.10, centrado=False),
+        _rectangulo("k10c", 205.45, 68.6, 206.25, 72.33),
+        _cota("k10h", (205.45, 68.6), (206.25, 68.6), 15),
+        _cota("k10v", (206.25, 72.33), (206.25, 68.6), 85),
+        *_castillo("k16", "K-16", 205.29, 65.09, ["8#6", "2E#3EXT@10", "CENTRO@20"],
+                   (204.05, 66.05, 206.48, 67.64), 45, 30),
+    ]  # fmt: skip
+    if otro_sin_la_suya:
+        # Otra etiqueta con su pila y sin sección en su lado, que también alcanza la de 15 × 85.
+        ents += [
+            _texto("k8m", "K-8", 206.75, 68.72),
+            _texto("k8r0", "8#4", 206.6, 68.46, alto=0.10, centrado=False),
+            _texto("k8r1", "2E#3@20", 206.5, 68.28, alto=0.10, centrado=False),
+        ]
+    if huerfana_debajo:
+        # Una sección acotada que nadie toma, bajo K-10 a su alcance.
+        ents += [
+            _rectangulo("x", 204.6, 66.9, 205.1, 67.5),
+            _cota("xh", (204.6, 66.9), (205.1, 66.9), 25),
+            _cota("xv", (205.1, 67.5), (205.1, 66.9), 35),
+        ]
+    return ents
+
+
+def test_a_label_owns_the_orphan_section_beside_it():
+    # R279 (K-10 en el bloque de castillos de Marina, ES-000/100/200/300): nada encima de su
+    # etiqueta (su pila va debajo) y su sección de 15 × 85 a su derecha, que ningún otro título
+    # alcanza: es suya. Antes: «no hay sección dibujada encima», sin sección.
+    inv = build_schedule_inventory(_k10_del_bloque(), C, unit_to_m=1.0)
+    (k10,) = _cotas(inv, "K-10")
+    assert k10.section_cm == (15, 85)
+    assert [s.section_cm for s in _cotas(inv, "K-9")] == [(20, 40)]
+    assert [s.section_cm for s in _cotas(inv, "K-11")] == [(20, 60)]
+    assert [s.section_cm for s in _cotas(inv, "K-16")] == [(45, 30)]
+
+
+def test_a_section_beside_two_labels_is_a_doubt():
+    # R279: si otra etiqueta con su pila y sin sección en su lado también la alcanza, la sección
+    # de al lado no es de ninguna: las dos la reclaman (nunca «la más cercana gana», 9c).
+    inv = build_schedule_inventory(_k10_del_bloque(otro_sin_la_suya=True), C, unit_to_m=1.0)
+    for marca in ("K-10", "K-8"):
+        assert all(s.section_cm is None for s in _cotas(inv, marca)), marca
+
+
+def test_an_orphan_section_under_the_label_keeps_it_from_the_one_beside():
+    # R279: con una sección huérfana bajo la etiqueta (del lado que su costumbre no usa), la de al
+    # lado no se toma.
+    inv = build_schedule_inventory(_k10_del_bloque(huerfana_debajo=True), C, unit_to_m=1.0)
+    assert all(s.section_cm != (15, 85) for s in _cotas(inv, "K-10"))

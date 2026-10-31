@@ -2020,10 +2020,17 @@ def _lo_que_alcanza_cada_seccion(
     """R189, R196, R201: por renglón, las secciones que lo alcanzan de frente o de lado (su
     ensanche: el alcance con que leen), de cualquiera de sus dos lados (el de su título también:
     puede estar del lado equivocado), con el doble de su alcance (lo que casi alcanza, R56), sin
-    nada en medio más que otros renglones libres (ningún otro texto, salvo su propio título, ni
-    la caja de otra sección), con su hueco a él; y, del lado de su título, la columna entera que
-    tomaría con ese doble (R196: el mismo casi que del lado que lee), con el hueco de su primer
-    renglón. La sección de un cuadro no (su pila ya la leyó su etiqueta)."""
+    nada en medio más que otros renglones libres (ningún otro texto ni la caja de otra sección),
+    con su hueco a él; y, del lado de su título, la columna entera que tomaría con ese doble
+    (R196: el mismo casi que del lado que lee), con el hueco de su primer renglón. La sección de
+    un cuadro no (su pila ya la leyó su etiqueta).
+
+    R278: lo que una sección reclama de lado acaba en su propio título. Del lado de su título no
+    alcanza de lado nada que quede más allá de él (más arriba que su título, si va encima; más
+    abajo, si va debajo): eso es de la fila de detalles de ese lado (Marina, ES-100 y ES-300: el
+    título de CE-3, CE-4 o CI va a 0.4–0.7 m bajo las pilas de la fila de arriba, y su sección,
+    alcanzándolas de lado sobre él, las dejaba en duda). Lo que tiene de frente sí lo alcanza: una
+    pila del lado equivocado va de frente a su sección (la rejilla de detalles, semilla 80)."""
     lineas = [t for t in textos if t.clase == "linea" and t.id not in estorban]
     obstaculos = [t for t in textos if not (t.clase == "linea" and t.id not in estorban)]
     alcanzan: dict[str, list[tuple[_Seccion, float]]] = defaultdict(list)
@@ -2035,10 +2042,11 @@ def _lo_que_alcanza_cada_seccion(
         estorbos = [t for t in obstaculos if t.id != propio] + [
             o for o in secciones if o is not sec
         ]
+        tras_su_titulo = _mas_alla_de_su_titulo(sec, textos)
         for t in lineas:
             # R201: con el alcance con que lee: de frente o de lado (en su ensanche).
-            if not (_se_enciman(t, sec) or _en_la_etiqueta(sec, t)):
-                continue
+            if not (_se_enciman(t, sec) or _en_la_etiqueta(sec, t)) or tras_su_titulo(t):
+                continue  # R278: más allá de su título, sólo lo que tiene de frente
             if t.y0 >= sec.y1:
                 bajo, alto = sec.y1, t.y0
             elif t.y1 <= sec.y0:
@@ -2070,6 +2078,7 @@ def _lo_que_alcanza_cada_seccion(
             continue
         propio = sec.seccion.titulo_id if sec.seccion is not None else ""
         indice = _Indice([*lineas, *(t for t in obstaculos if t.id != propio)])
+        tras_su_titulo = _mas_alla_de_su_titulo(sec, textos)
         rivales = [*(t for t in etiquetas if t.id != propio), *secciones]
         for lado in (+1, -1):
             if lado in sec.sentidos:
@@ -2079,9 +2088,31 @@ def _lo_que_alcanza_cada_seccion(
             )
             if a is None:
                 continue
+            if tras_su_titulo(a.renglones[0]):
+                continue  # R278: su columna empieza de lado, más allá de su título
             for t in [*a.renglones, *a.despues]:
-                alcanzan[t.id].append((sec, a.hueco))
+                if not tras_su_titulo(t):
+                    alcanzan[t.id].append((sec, a.hueco))
     return alcanzan
+
+
+def _mas_alla_de_su_titulo(sec: _Seccion, textos: list[_Texto]) -> Callable[[_Texto], bool]:
+    """R278: si un texto queda de lado y más allá del título de ``sec``, del lado del título (por
+    encima de su título si va encima de la sección; por debajo, si va debajo): eso es de la fila de
+    detalles de ese lado. Lo que la sección tiene de frente (encimado con ella en al menos la mitad
+    del renglón) sigue a su alcance: una pila escrita del lado de su título, más allá de él, va de
+    frente a su sección (el título del lado equivocado, R196). Sin título, nada lo está."""
+    propio = sec.seccion.titulo_id if sec.seccion is not None else ""
+    titulo = next((t for t in textos if propio and t.id == propio), None)
+    if titulo is None:
+        return lambda _t: False
+    if titulo.cy >= sec.y1:
+        borde = titulo.y1
+        return lambda t: t.y0 >= borde and not _se_enciman(t, sec)
+    if titulo.cy <= sec.y0:
+        borde = titulo.y0
+        return lambda t: t.y1 <= borde and not _se_enciman(t, sec)
+    return lambda _t: False
 
 
 def _la_tiene_otra_mas_cerca(

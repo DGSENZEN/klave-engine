@@ -2,171 +2,670 @@
  "plano": "02 ESTRUCTURAL L.04 - 26.01.15.dxf (sha256 e72a3d87…)",
  "revisado_por": "Claude (Tarea 16), a mano: el borrador de scripts/transcribir_marcas.py y un render de cada cuadro, mirado marca por marca",
  "revisado_en": "2026-10-30",
- "alcance": "Todas las marcas que el plano define con una pila de armado junto a su título y su sección acotada: el cuadro de castillos (bloque EST-CASTILLOS en ES-000/100/200/300 y el cuadro propio de ES-400), columnas (ES-000/100/200), pilotes (ES-000), el dado D-X (ES-000), cadenas de enrase CE, cadenas intermedias CI (por espesor de muro), cerramientos CR, la dala D-C y la nota de cadena de ES-101. Los títulos de esas marcas que aparecen en otros detalles (C-1 en ES-101/ES-201, K-4 y K-8 en ES-301, K-5 en ES-201, K-7 y K-12 en ES-302, P-1/P-4/D-X en ES-004, P-1 en ES-007, P-5 en ES-003) son apoyos nombrados en alzados de trabes y contratrabes (revisado en sus renders), no definiciones.",
- "sin_transcribir": {
-  "razon": "Trabes (T*, TE-A), contratrabes (CTA-*), dados D-n (sus cortes), zapatas Z*, muros MC-* y la CE-2 del alzado de ES-501: el plano define su armado con llamadas (directrices) en alzados y cortes —lechos superior e inferior, bastones, distribuciones «1@6,8@10,10@15»— que el formato de la transcripción (un longitudinal y un estribo por marca) no puede decir sin inventar. Queda por decidir (Tarea 16, NEEDS_CONTEXT); mientras, el gold no lleva esta transcripción.",
-  "lecturas_del_motor_por_hoja": {
-   "ES-501": [
-    "CE-2",
-    "CTA-1",
-    "CTA-17",
-    "CTA-3",
-    "CTA-5",
-    "D-1",
-    "D-4",
-    "D-4B",
-    "MC-1",
-    "MC-2",
-    "T2-6",
-    "T2-6A"
-   ],
-   "ES-002": [
-    "CTA-1",
-    "CTA-2",
-    "MC-3",
-    "MC-4"
-   ],
-   "ES-004": [
-    "CTA-10",
-    "CTA-11",
-    "CTA-12",
-    "CTA-13",
-    "CTA-14",
-    "CTA-15",
-    "CTA-16",
-    "CTA-17",
-    "CTA-8",
-    "CTA-9"
-   ],
-   "ES-500": [
-    "CTA-10",
-    "CTA-11",
-    "CTA-15",
-    "CTA-16",
-    "CTA-6",
-    "CTA-7",
-    "CTA-8",
-    "D-1",
-    "D-1A",
-    "D-3",
-    "D-4",
-    "D-5",
-    "D-5A",
-    "MC-1",
-    "T2-13",
-    "T2-7",
-    "T3-8"
-   ],
-   "ES-003": [
-    "CTA-16",
-    "CTA-3",
-    "CTA-4",
-    "CTA-4A",
-    "CTA-5",
-    "CTA-6",
-    "CTA-7"
-   ],
-   "ES-005": [
-    "D-1",
-    "D-2A",
-    "D-3",
-    "D-3A",
-    "D-3B",
-    "D-4"
-   ],
-   "ES-007": [
-    "D-1A",
-    "D-1B",
-    "D-1C",
-    "MC-1",
-    "TE-A"
-   ],
-   "ES-006": [
-    "D-4A",
-    "D-4B",
-    "D-4C",
-    "D-5",
-    "D-5A",
-    "D-5B"
-   ],
-   "ES-101": [
-    "T1-1",
-    "T1-2",
-    "T1-3",
-    "T1-4",
-    "T1-5",
-    "T1-6",
-    "T1-7",
-    "T1-8",
-    "Z-1",
-    "Z-2",
-    "Z-3",
-    "Z-4",
-    "Z-5"
-   ],
-   "ES-201": [
-    "T2-1",
-    "T2-10",
-    "T2-11",
-    "T2-12",
-    "T2-2",
-    "T2-3",
-    "T2-4",
-    "T2-5",
-    "T2-6",
-    "T2-6A",
-    "T2-7",
-    "T2-8",
-    "T2-9"
-   ],
-   "ES-202": [
-    "T2-13",
-    "T2-14",
-    "T2-15",
-    "T2-8"
-   ],
-   "ES-203": [
-    "T2-13",
-    "Z-1",
-    "Z-2",
-    "Z-3"
-   ],
-   "ES-301": [
-    "T3-1",
-    "T3-10",
-    "T3-11",
-    "T3-12",
-    "T3-13",
-    "T3-14",
-    "T3-1A",
-    "T3-2",
-    "T3-3",
-    "T3-4",
-    "T3-5",
-    "T3-6",
-    "T3-7",
-    "T3-8",
-    "T3-9"
-   ],
-   "ES-302": [
-    "T3-12",
-    "T3-15",
-    "T3-16",
-    "T3-17",
-    "T3-18",
-    "T3-19",
-    "T3-20",
-    "T3-21",
-    "T3-22",
-    "T3-8",
-    "T3-9"
-   ],
-   "ES-401": [
-    "T4-1",
-    "T4-2",
-    "T4-4"
-   ]
-  }
+ "alcance": "R281: la transcripción de E0 cubre las familias de pila: todas las marcas que el plano define con una pila de armado junto a su título y su sección acotada —el cuadro de castillos (bloque EST-CASTILLOS en ES-000/100/200/300 y el cuadro propio de ES-400), columnas (ES-000/100/200), pilotes (ES-000), el dado D-X (ES-000), cadenas de enrase CE, cadenas intermedias CI (por espesor de muro), cerramientos CR, la dala D-C y la nota de cadena de ES-101—. «Todas las marcas» de E0 son éstas. Las llamadas (directrices) son E3: CR-2 va en dudas (R280) y las marcas definidas en alzados y cortes, en fuera_de_e0 (R281). Los títulos de marcas de pila que aparecen en otros detalles (C-1 en ES-101/ES-201, K-4 y K-8 en ES-301, K-5 en ES-201, K-7 y K-12 en ES-302, P-1/P-4/D-X en ES-004, P-1 en ES-007, P-5 en ES-003) son apoyos nombrados en alzados de trabes y contratrabes (revisado en sus renders), no definiciones.",
+ "fuera_de_e0": {
+  "razon": "R281: el plano define su armado con llamadas (directrices) en alzados y cortes —lechos superior e inferior, bastones, distribuciones «1@6,8@10,10@15»— que la transcripción de E0 no dice: son de E3. Cada (marca, hoja) que el motor lee de esas familias está aquí, para que nada falte en silencio (la CE-2 de ES-501 es la cadena nombrada en un alzado).",
+  "por_familia": {
+   "contratrabe": 30,
+   "dado": 24,
+   "dala": 1,
+   "muro_concreto": 6,
+   "trabe": 61,
+   "zapata": 8
+  },
+  "total": 130,
+  "lecturas": [
+   {
+    "marca": "CE-2",
+    "hoja": "ES-501",
+    "familia": "dala"
+   },
+   {
+    "marca": "CTA-1",
+    "hoja": "ES-002",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-1",
+    "hoja": "ES-501",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-10",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-10",
+    "hoja": "ES-500",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-11",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-11",
+    "hoja": "ES-500",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-12",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-13",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-14",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-15",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-15",
+    "hoja": "ES-500",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-16",
+    "hoja": "ES-003",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-16",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-16",
+    "hoja": "ES-500",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-17",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-17",
+    "hoja": "ES-501",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-2",
+    "hoja": "ES-002",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-3",
+    "hoja": "ES-003",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-3",
+    "hoja": "ES-501",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-4",
+    "hoja": "ES-003",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-4A",
+    "hoja": "ES-003",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-5",
+    "hoja": "ES-003",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-5",
+    "hoja": "ES-501",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-6",
+    "hoja": "ES-003",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-6",
+    "hoja": "ES-500",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-7",
+    "hoja": "ES-003",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-7",
+    "hoja": "ES-500",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-8",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-8",
+    "hoja": "ES-500",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-9",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "D-1",
+    "hoja": "ES-005",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-1",
+    "hoja": "ES-500",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-1",
+    "hoja": "ES-501",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-1A",
+    "hoja": "ES-007",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-1A",
+    "hoja": "ES-500",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-1B",
+    "hoja": "ES-007",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-1C",
+    "hoja": "ES-007",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-2A",
+    "hoja": "ES-005",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-3",
+    "hoja": "ES-005",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-3",
+    "hoja": "ES-500",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-3A",
+    "hoja": "ES-005",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-3B",
+    "hoja": "ES-005",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-4",
+    "hoja": "ES-005",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-4",
+    "hoja": "ES-500",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-4",
+    "hoja": "ES-501",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-4A",
+    "hoja": "ES-006",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-4B",
+    "hoja": "ES-006",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-4B",
+    "hoja": "ES-501",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-4C",
+    "hoja": "ES-006",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-5",
+    "hoja": "ES-006",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-5",
+    "hoja": "ES-500",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-5A",
+    "hoja": "ES-006",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-5A",
+    "hoja": "ES-500",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-5B",
+    "hoja": "ES-006",
+    "familia": "dado"
+   },
+   {
+    "marca": "MC-1",
+    "hoja": "ES-007",
+    "familia": "muro_concreto"
+   },
+   {
+    "marca": "MC-1",
+    "hoja": "ES-500",
+    "familia": "muro_concreto"
+   },
+   {
+    "marca": "MC-1",
+    "hoja": "ES-501",
+    "familia": "muro_concreto"
+   },
+   {
+    "marca": "MC-2",
+    "hoja": "ES-501",
+    "familia": "muro_concreto"
+   },
+   {
+    "marca": "MC-3",
+    "hoja": "ES-002",
+    "familia": "muro_concreto"
+   },
+   {
+    "marca": "MC-4",
+    "hoja": "ES-002",
+    "familia": "muro_concreto"
+   },
+   {
+    "marca": "T1-1",
+    "hoja": "ES-101",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T1-2",
+    "hoja": "ES-101",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T1-3",
+    "hoja": "ES-101",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T1-4",
+    "hoja": "ES-101",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T1-5",
+    "hoja": "ES-101",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T1-6",
+    "hoja": "ES-101",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T1-7",
+    "hoja": "ES-101",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T1-8",
+    "hoja": "ES-101",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-1",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-10",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-11",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-12",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-13",
+    "hoja": "ES-202",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-13",
+    "hoja": "ES-203",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-13",
+    "hoja": "ES-500",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-14",
+    "hoja": "ES-202",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-15",
+    "hoja": "ES-202",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-2",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-3",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-4",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-5",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-6",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-6",
+    "hoja": "ES-501",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-6A",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-6A",
+    "hoja": "ES-501",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-7",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-7",
+    "hoja": "ES-500",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-8",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-8",
+    "hoja": "ES-202",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-9",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-1",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-10",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-11",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-12",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-12",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-13",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-14",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-15",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-16",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-17",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-18",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-19",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-1A",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-2",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-20",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-21",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-22",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-3",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-4",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-5",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-6",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-7",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-8",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-8",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-8",
+    "hoja": "ES-500",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-9",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-9",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T4-1",
+    "hoja": "ES-401",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T4-2",
+    "hoja": "ES-401",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T4-4",
+    "hoja": "ES-401",
+    "familia": "trabe"
+   },
+   {
+    "marca": "TE-A",
+    "hoja": "ES-007",
+    "familia": "trabe"
+   },
+   {
+    "marca": "Z-1",
+    "hoja": "ES-101",
+    "familia": "zapata"
+   },
+   {
+    "marca": "Z-1",
+    "hoja": "ES-203",
+    "familia": "zapata"
+   },
+   {
+    "marca": "Z-2",
+    "hoja": "ES-101",
+    "familia": "zapata"
+   },
+   {
+    "marca": "Z-2",
+    "hoja": "ES-203",
+    "familia": "zapata"
+   },
+   {
+    "marca": "Z-3",
+    "hoja": "ES-101",
+    "familia": "zapata"
+   },
+   {
+    "marca": "Z-3",
+    "hoja": "ES-203",
+    "familia": "zapata"
+   },
+   {
+    "marca": "Z-4",
+    "hoja": "ES-101",
+    "familia": "zapata"
+   },
+   {
+    "marca": "Z-5",
+    "hoja": "ES-101",
+    "familia": "zapata"
+   }
+  ]
  },
  "lecturas": [
   {
@@ -2599,22 +3098,6 @@
    "nota": "cuadro «CERRAMIENTOS»: título encima de la sección, la pila debajo"
   },
   {
-   "marca": "CR-2",
-   "hoja": "ES-200",
-   "textos": [
-    "2#3",
-    "2#4",
-    "E#2@15"
-   ],
-   "longitudinal": "2#3+2#4",
-   "estribos": "E#2@15",
-   "seccion_cm": [
-    20,
-    20
-   ],
-   "nota": "2#3 (lecho superior) y 2#4 (lecho inferior) van a la derecha de la sección, cada uno con su línea de llamada a las dos varillas de su lecho; E#2@15 bajo la sección"
-  },
-  {
    "marca": "CR-3",
    "hoja": "ES-200",
    "textos": [
@@ -2645,22 +3128,6 @@
    "nota": "cuadro «CERRAMIENTOS»: título encima de la sección, la pila debajo"
   },
   {
-   "marca": "CR-2",
-   "hoja": "ES-300",
-   "textos": [
-    "2#3",
-    "2#4",
-    "E#2@15"
-   ],
-   "longitudinal": "2#3+2#4",
-   "estribos": "E#2@15",
-   "seccion_cm": [
-    20,
-    20
-   ],
-   "nota": "2#3 (lecho superior) y 2#4 (lecho inferior) van a la derecha de la sección, cada uno con su línea de llamada a las dos varillas de su lecho; E#2@15 bajo la sección"
-  },
-  {
    "marca": "CR-3",
    "hoja": "ES-300",
    "textos": [
@@ -2689,22 +3156,6 @@
     20
    ],
    "nota": "cuadro «CERRAMIENTOS»: título encima de la sección, la pila debajo"
-  },
-  {
-   "marca": "CR-2",
-   "hoja": "ES-400",
-   "textos": [
-    "2#3",
-    "2#4",
-    "E#2@15"
-   ],
-   "longitudinal": "2#3+2#4",
-   "estribos": "E#2@15",
-   "seccion_cm": [
-    20,
-    20
-   ],
-   "nota": "2#3 (lecho superior) y 2#4 (lecho inferior) van a la derecha de la sección, cada uno con su línea de llamada a las dos varillas de su lecho; E#2@15 bajo la sección"
   },
   {
    "marca": "DC",
@@ -2736,5 +3187,24 @@
    "nota": "nota de familia (D8A3A y su copia D8A4F, iguales); la marca es la familia"
   }
  ],
- "dudas": []
+ "dudas": [
+  {
+   "marca": "CR-2",
+   "hoja": "ES-200",
+   "motivo": "armado por línea de llamada (E3)",
+   "lo_que_escribe_el_plano": "«2#3» (lecho superior) y «2#4» (lecho inferior) con su directriz a las varillas de su sección; «E#2@15» bajo la sección; cotas 20 × 20"
+  },
+  {
+   "marca": "CR-2",
+   "hoja": "ES-300",
+   "motivo": "armado por línea de llamada (E3)",
+   "lo_que_escribe_el_plano": "«2#3» (lecho superior) y «2#4» (lecho inferior) con su directriz a las varillas de su sección; «E#2@15» bajo la sección; cotas 20 × 20"
+  },
+  {
+   "marca": "CR-2",
+   "hoja": "ES-400",
+   "motivo": "armado por línea de llamada (E3)",
+   "lo_que_escribe_el_plano": "«2#3» (lecho superior) y «2#4» (lecho inferior) con su directriz a las varillas de su sección; «E#2@15» bajo la sección; cotas 20 × 20"
+  }
+ ]
 }
