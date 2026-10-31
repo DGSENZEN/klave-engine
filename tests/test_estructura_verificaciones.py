@@ -696,6 +696,12 @@ def test_7_walls_at_the_full_storey_height_are_an_assumption_unless_the_slab_is_
     avisos = _con(_run(detections=[muro], seg=seg), 7, "muros")
     assert len(avisos) == 1 and avisos[0].severidad == "aviso"
     assert "peralte de la losa" in avisos[0].mensaje
+    # R286 (I2): lo que hizo el motor, no «el plano no acota … en ningún detalle».
+    mensaje = avisos[0].mensaje
+    assert "ningún detalle" not in mensaje and "el plano no acota" not in mensaje
+    seg.losas_leidas = True
+    (leida,) = _con(_run(detections=[muro], seg=seg), 7, "muros")
+    assert "no se leyó un peralte de losa acotado en un detalle" in leida.mensaje
     seg.losas_acotadas = [LosaAcotada(espesor_m=0.2, texto="«LOSA»: 20 = 15 + 5")]
     assert not _con(_run(detections=[muro], seg=seg), 7, "muros")
     # Sin niveles, la altura del muro es la supuesta de siempre (su propio aviso del presupuesto).

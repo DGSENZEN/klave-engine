@@ -2020,10 +2020,10 @@ def _lo_que_alcanza_cada_seccion(
     """R189, R196, R201: por renglón, las secciones que lo alcanzan de frente o de lado (su
     ensanche: el alcance con que leen), de cualquiera de sus dos lados (el de su título también:
     puede estar del lado equivocado), con el doble de su alcance (lo que casi alcanza, R56), sin
-    nada en medio más que otros renglones libres (ningún otro texto ni la caja de otra sección),
-    con su hueco a él; y, del lado de su título, la columna entera que tomaría con ese doble
-    (R196: el mismo casi que del lado que lee), con el hueco de su primer renglón. La sección de
-    un cuadro no (su pila ya la leyó su etiqueta).
+    nada en medio más que otros renglones libres (ningún otro texto, salvo su propio título, ni
+    la caja de otra sección), con su hueco a él; y, del lado de su título, la columna entera que
+    tomaría con ese doble (R196: el mismo casi que del lado que lee), con el hueco de su primer
+    renglón. La sección de un cuadro no (su pila ya la leyó su etiqueta).
 
     R278: lo que una sección reclama de lado acaba en su propio título. Del lado de su título no
     alcanza de lado nada que quede más allá de él (más arriba que su título, si va encima; más

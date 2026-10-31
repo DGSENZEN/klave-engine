@@ -171,8 +171,10 @@ def test_una_cota_sin_geometria_se_compara_con_la_nota():
     assert "revisa: la cota de 30 cm no es lo que dice la nota (15)" in aviso
 
 
-# R276: la nota vale para un muro de lo de la nota hasta dos aplanados más (+5 cm); el aplanado
-# sólo engruesa: uno más delgado es otro muro (un tabique de 10), como uno más grueso.
+# R276: la nota vale para un contorno de lo de la nota hasta dos aplanados más; el aplanado sólo
+# engruesa: uno más delgado es otro muro (un tabique de 10), como uno más grueso. R286 (M8): el
+# aplanado es el del detector, 2 cm por cara (+4 cm). R285: un núcleo ya no trae su aplanado; más
+# grueso que la nota es otro muro (un block de 20) y se queda lo medido.
 @pytest.mark.parametrize(
     ("espesor", "de", "toma", "dice"),
     [
@@ -180,10 +182,12 @@ def test_una_cota_sin_geometria_se_compara_con_la_nota():
         (0.135, "core", False, "más delgado que la nota (15): no es el muro de la nota"),
         (0.15, "core", True, None),
         (0.18, "outline", True, "el contorno incluye el aplanado"),
-        (0.18, "core", True, "manda la nota"),
-        (0.20, "core", True, "manda la nota"),
-        (0.20, "outline", True, "el contorno incluye el aplanado"),
-        (0.25, "core", False, "más grueso que la nota (15) y dos aplanados: no es el muro"),
+        (0.18, "core", False, "sin su aplanado, más grueso que la nota (15): no es el muro"),
+        (0.19, "outline", True, "el contorno incluye el aplanado"),
+        (0.20, "core", False, "sin su aplanado, más grueso que la nota (15): no es el muro"),
+        (0.20, "outline", False, "más grueso que la nota (15) y dos aplanados: no es el muro"),
+        (0.25, "core", False, "sin su aplanado, más grueso que la nota (15): no es el muro"),
+        (0.25, "outline", False, "más grueso que la nota (15) y dos aplanados: no es el muro"),
     ],
 )
 def test_la_nota_vale_de_su_espesor_a_dos_aplanados_mas(espesor, de, toma, dice):
@@ -220,3 +224,18 @@ def test_un_muro_dibujado_en_un_detalle_no_toma_la_nota():
     assert a.properties["estimated_thickness"] == pytest.approx(0.15)
     assert b.properties == en_detalle.properties
     assert len(avisos) == 1 and "w8" not in avisos[0]
+
+
+def test_el_detector_y_la_guarda_de_la_nota_usan_el_mismo_aplanado():
+    # R286 (M8): un solo límite de aplanado, 2 cm por cara, para el detector y para el modelo.
+    from klave_engine.detection.suite import DetectorSuiteConfig
+    from klave_engine.detection.wall_detector import APLANADO_MAXIMO_M
+    from klave_engine.dxf.units import DrawingUnits
+    from klave_engine.estructura import modelo
+
+    assert APLANADO_MAXIMO_M == pytest.approx(0.020)
+    assert modelo._APLANADO_MAXIMO_M == APLANADO_MAXIMO_M
+    for unidad, factor in (("m", 1.0), ("cm", 100.0), ("mm", 1000.0)):
+        unidades = DrawingUnits(unit=unidad, source="declared", confidence=1.0)
+        config = DetectorSuiteConfig.preset_for_units(unidades)
+        assert config.wall.finish_max == pytest.approx(APLANADO_MAXIMO_M * factor)

@@ -59,6 +59,7 @@ from klave_engine.detection.results import Detection, DetectionType
 from klave_engine.detection.schedules import FAMILIAS_QUE_SE_ORDENAN, ScheduleInventory
 from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.detection.views import SheetSegmentation
+from klave_engine.detection.wall_detector import APLANADO_MAXIMO_M
 from klave_engine.dxf.entities import NormalizedEntity
 from klave_engine.estructura.acero import acero_elemento
 from klave_engine.estructura.armado import (
@@ -1495,11 +1496,13 @@ def _restaurar(props: dict) -> bool:
 
 # Lo medido y la nota son el mismo espesor (en metros).
 _MISMO_ESPESOR_M = 0.005
-# Lo que un aplanado puede sumar por cara (R276): un muro que mide entre la nota y la nota + 2 ×
+# Lo que un aplanado puede sumar por cara (R276): un contorno que mide entre la nota y la nota + 2 ×
 # esto es el block de la nota con su aplanado; más grueso, otro muro (uno doble, uno de concreto);
-# más delgado, también (un tabique de 10): el aplanado sólo engruesa. ``_HOLGURA_M`` es la holgura
-# del borde, para que 0.20 contra 0.15 + 0.05 no lo decida el redondeo.
-_APLANADO_MAXIMO_M = 0.025
+# más delgado, también (un tabique de 10): el aplanado sólo engruesa. R286 (M8): es el mismo límite
+# con que el detector reconoce un aplanado (2 cm por cara), no otro. R285: un núcleo (el aplanado
+# ya quitado) más grueso que la nota es otro muro. ``_HOLGURA_M`` es la holgura del borde, para
+# que 0.19 contra 0.15 + 0.04 no lo decida el redondeo.
+_APLANADO_MAXIMO_M = APLANADO_MAXIMO_M
 _HOLGURA_M = 1e-6
 
 
@@ -1609,6 +1612,14 @@ def escribir_espesor_de_muros(
                 caso = (
                     f"el muro dibujado mide {mide} cm, más delgado que la nota ({dice}): no es "
                     "el muro de la nota, se queda lo medido"
+                )
+            elif props.get("thickness_from") == "core":
+                # R285: el núcleo ya no trae su aplanado; más grueso que la nota no es el block
+                # de la nota con aplanado: es otro muro (un block de 20 junto a la nota de 15).
+                toma = False
+                caso = (
+                    f"el núcleo dibujado mide {mide} cm sin su aplanado, más grueso que la nota "
+                    f"({dice}): no es el muro de la nota, se queda lo medido"
                 )
             elif exceso > 2 * _APLANADO_MAXIMO_M + _HOLGURA_M:
                 toma = False

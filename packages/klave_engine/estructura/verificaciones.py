@@ -2761,14 +2761,7 @@ def _muros_de_entrepiso_completo(ctx: _Contexto) -> list[Verificacion]:
     if not muros:
         return []
     plantas = sorted({vistas[seg.assignment[d.detection_id]].title for d in muros})
-    peraltes = sorted({round(losa.espesor_m * 100) for losa in seg.losas_acotadas})
-    lista = ", ".join(map(str, peraltes))
-    porque = (
-        f"los detalles del plano acotan peraltes de losa distintos ({lista} cm) y no dicen cuál "
-        "está sobre los muros de cada planta"
-        if peraltes
-        else "el plano no acota el peralte de la losa en ningún detalle"
-    )
+    porque = seg.sin_losa_acotada()
     return [
         _hallazgo(
             7,

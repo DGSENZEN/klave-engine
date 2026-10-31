@@ -3066,10 +3066,45 @@ _ALCANCE_DE_DIBUJO_Y = 80.0
 # on Marina ES-005/006): its centre within these many heights of the corte title's, up or down,
 # and ``_ALCANCE_DE_DIBUJO_X`` to a side.
 _ALCANCE_DEL_BLOQUE = 15.0
-# The families whose extension is their height, and whose corte dimensions it (§3.2).
-_ALTURA_EN_SU_CORTE = ("dado", "zapata")
+# The families whose extension is their height, and whose corte dimensions it (§3.2). Only the
+# dado (R286): a zapata's corte carries its desplante or an overall cota, longer than its peralte,
+# so its longest cota is not its height.
+_ALTURA_EN_SU_CORTE = ("dado",)
 # Two vertical cotas of one corte whose drawn lengths are this close (relative) tie.
 _EMPATE_DE_COTAS = 0.01
+
+
+def _es_cota_total(cotas: list[tuple[float, NormalizedEntity]], unit_to_m: float) -> bool:
+    """R286: the longest vertical cota of a corte (``cotas[0]``, sorted longest first) is an
+    overall one when at least two others are its parts: drawn inside its extent end to end so they
+    cover it, or written so their numbers add up to its own. Then it is not the dado's height.
+    One other cota inside it (Marina's firme «20» beside the dado's «100») says nothing."""
+    if len(cotas) < 3:
+        return False
+
+    def tramo(c: NormalizedEntity) -> tuple[float, float]:
+        (p, q) = c.properties["measured_segment"]
+        return min(float(p[1]), float(q[1])), max(float(p[1]), float(q[1]))
+
+    largo, total = cotas[0]
+    lo, hi = tramo(total)
+    tol = _EMPATE_DE_COTAS * largo
+    dentro = sorted(
+        t for _l, c in cotas[1:] if (t := tramo(c))[0] >= lo - tol and t[1] <= hi + tol
+    )
+    if len(dentro) >= 2 and dentro[0][0] <= lo + tol:
+        alcanza = dentro[0][1]
+        for a, b in dentro[1:]:
+            if a > alcanza + tol:
+                break
+            alcanza = max(alcanza, b)
+        if alcanza >= hi - tol:
+            return True
+    valores = [_cota_cm(c, unit_to_m) for _l, c in cotas]
+    if any(v is None for v in valores):
+        return False
+    suma = sum(v for v in valores[1:] if v is not None)
+    return valores[0] is not None and abs(suma - valores[0]) <= 1e-6 * max(valores[0], 1.0)
 
 
 def _titulos_de_dibujo(
@@ -3099,7 +3134,8 @@ def _alturas_de_cortes(
     unit_to_m: float,
     sheet: Sheet,
 ) -> list[ElementSpec]:
-    """Tarea 15b: the height of a dado (or a zapata) from its own corte. A corte is a drawing whose
+    """Tarea 15b: the height of a dado from its own corte (R286: never a zapata's — see
+    ``_ALTURA_EN_SU_CORTE``). A corte is a drawing whose
     title names marks before «CORTE» («D-1 / CORTE / Y-Y'»; «D-1 Y D-2 / CORTE» gives each its
     height; «CORTE X-X'» names none and attributes nothing). Its cotas are the vertical ones whose
     nearest drawing title under them (of the same sheet, within ``_ALCANCE_DE_DIBUJO_*`` of its
@@ -3107,9 +3143,10 @@ def _alturas_de_cortes(
     so a side («55») is never the height. The height is the longest of them as drawn (the dado;
     the others measure what stands on it, the firme's «20»), its value the cota's displayed number
     in the unit its style or its group's note says («ACOTACIONES EN CMS»; R151), never the length
-    it measures — the cortes are «SIN ESCALA». Two of the same drawn length: none is taken, said.
+    it measures — the cortes are «SIN ESCALA». Two of the same drawn length: none is taken, said;
+    a longest that is the total of the others (``_es_cota_total``): none is taken, said.
     R159: a corte is a dado's only where the drawing says so — the block title under it names the
-    mark with the word DADO (or ZAPATA): «DADO D-1»; the prefix never decides. A reading per mark,
+    mark with the word DADO: «DADO D-1»; the prefix never decides. A reading per mark,
     of the field «longitud» (the extension of a dado is its height, §3.2), from the detail."""
     textos = [e for e in entities if e.is_textual and e.text]
     titulos = _titulos_de_dibujo(textos, config)
@@ -3170,6 +3207,14 @@ def _alturas_de_cortes(
                     "altura: su corte tiene dos cotas verticales igual de largas («"
                     + "», «".join(str(c.properties.get("display_text")) for _l, c in cotas[:2])
                     + "»): no se toma ninguna"
+                )
+            elif _es_cota_total(cotas, unit_to_m):
+                avisos.append(
+                    "altura: la cota más larga de su corte («"
+                    + str(cotas[0][1].properties.get("display_text"))
+                    + "») es la total de otras («"
+                    + "», «".join(str(c.properties.get("display_text")) for _l, c in cotas[1:])
+                    + "»): no es la altura del dado y no se toma ninguna"
                 )
             else:
                 elegida = cotas[0][1]

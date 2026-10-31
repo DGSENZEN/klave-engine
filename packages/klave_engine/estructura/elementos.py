@@ -575,7 +575,12 @@ def _peralte_supuesto(ilegible: Dato | None, avisos: list[str]) -> Dato:
         if ilegible is not None
         else "ningún corte suyo la acota"
     )
-    avisos.append(f"altura: {porque}; se supone {PERALTE_SUPUESTO_M:g} m (la del presupuesto)")
+    # R286 (I2): Parámetros puede cambiar el peralte que usa el presupuesto; el aviso no le
+    # atribuye éste.
+    avisos.append(
+        f"altura: {porque}; se supone el peralte por defecto, {PERALTE_SUPUESTO_M:g} m "
+        "(el presupuesto usa el de Parámetros)"
+    )
     return Dato(
         valor=PERALTE_SUPUESTO_M,
         fuente="supuesto",

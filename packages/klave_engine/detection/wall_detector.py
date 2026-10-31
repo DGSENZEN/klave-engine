@@ -77,6 +77,13 @@ class WallDetectorConfig(BaseModel):
     face_tolerance: float = 0.0
 
 
+# R286 (M8): what a plaster (aplanado) adds per face, in meters — the one limit the wall detector
+# reads a finish line with (``finish_max``, in drawing units through the suite's factor) and the
+# structural model's wall-note guard allows (``escribir_espesor_de_muros``): PRUEBA-1 draws its
+# aplanado 15 mm outside the block.
+APLANADO_MAXIMO_M = 0.020
+
+
 Segment = tuple[tuple[float, float], tuple[float, float]]
 
 

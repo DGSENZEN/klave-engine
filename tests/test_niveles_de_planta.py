@@ -338,7 +338,7 @@ def test_slab_details_that_dimension_different_depths_give_none():
     assert iguales.losa_acotada() is not None
 
 
-def _boq_de_muros(losas):
+def _boq_de_muros(losas, leidas=True):
     from klave_engine.costing.apu import build_all_apus
     from klave_engine.costing.boq import generate_bill_of_quantities
     from klave_engine.costing.catalog import build_default_catalog
@@ -359,7 +359,7 @@ def _boq_de_muros(losas):
     vistas, lectura = _seg_b()
     seg = SheetSegmentation(
         views=vistas, is_segmented=True, lectura_de_niveles=lectura, losas_acotadas=losas,
-        assignment={"w1": "v1", "w2": "v2", "w3": "v3"},
+        losas_leidas=leidas, assignment={"w1": "v1", "w2": "v2", "w3": "v3"},
     )  # fmt: skip
     a = CostingAssumptions(opening_share_pct=0)
     catalog = [c for c in build_default_catalog(a) if c.code in {"EST-004", "ACA-001"}]
@@ -383,12 +383,50 @@ def test_a_block_wall_stops_under_the_slab_the_drawing_dimensions():
     notas = " ".join(lines["EST-004"].assumptions)
     assert "3.25" in notas and "2.95" in notas and "20" in notas
     assert "dala de remate" in notas  # no se descuenta (E2), y se dice
+    # M5 (R286): ningún código de ronda en una nota que ve el cliente.
+    assert "(E2)" not in notas and "ronda posterior" in notas
 
 
 def test_without_a_dimensioned_slab_the_wall_keeps_the_storey_height_as_an_assumption():
     lines = _boq_de_muros([])
     assert lines["EST-004"].quantity == pytest.approx(10.0 * 3.45 + 20.0 * 3.15 + 5.0 * 1.2)
     assert any("supuest" in n and "losa" in n for n in lines["EST-004"].assumptions)
+    # R286 (I2): dice lo que hizo el motor, nunca que el plano no acota la losa.
+    notas = " ".join(lines["EST-004"].assumptions)
+    assert "no se leyó un peralte de losa acotado en un detalle" in notas
+    assert "el plano no acota" not in notas
+
+
+def test_wall_line_notes_say_what_the_line_does():
+    # R286: ACA no dice «vanos no descontados» junto a su deducción, y la altura promedio de
+    # ALB-001 es sólo la de cuando no hay niveles N.P.T. (con niveles, la nota se va).
+    from klave_engine.costing.catalog import build_default_catalog
+    from klave_engine.costing.models import CostingAssumptions
+
+    conceptos = {c.code: c for c in build_default_catalog(CostingAssumptions())}
+    for codigo in ("ACA-001", "ACA-002"):
+        notas = " ".join(conceptos[codigo].assumptions)
+        assert "vanos no descontados" not in notas and "nota de vanos" in notas
+    alb = conceptos["ALB-001"].assumptions
+    assert any("Altura promedio de muro" in n and "(si no hay niveles N.P.T.)" in n for n in alb)
+    assert not any("(A4)" in n for n in alb)
+    lines = _boq_de_muros([])
+    assert not any("vanos no descontados" in n for n in lines["ACA-001"].assumptions)
+
+
+def test_an_old_run_without_slab_reading_does_not_claim_the_drawing_lacks_it():
+    # R286 (I2): un views.json de antes de leer las losas no trae el campo; al recalcular, la nota
+    # no dice que el plano no las acota: dice que esa lectura no las buscó.
+    vieja = SheetSegmentation.model_validate({"views": [], "assignment": {}, "is_segmented": True})
+    assert vieja.losas_leidas is False
+    notas = " ".join(_boq_de_muros([], leidas=False)["EST-004"].assumptions)
+    assert "no buscó el peralte de la losa" in notas and "reprocesa" in notas
+    assert "el plano no acota" not in notas and "no se leyó un peralte" not in notas
+
+
+def test_segmenting_says_it_looked_for_the_slab_depth(tmp_path):
+    seg = segment_views(_entities(tmp_path, _todas()), _dibujo(), [])
+    assert seg.losas_leidas is True
 
 
 # ------------------------------------- R272: el arranque de un castillo que sigue arriba
@@ -444,3 +482,73 @@ def test_a_cimentacion_castillo_with_no_castillo_above_has_no_noted_height(tmp_p
     assert sigue is not None and (sigue.valor, sigue.fuente) == (3.45, "nota")
     assert solo is not None and (solo.valor, solo.fuente) == (3.0, "supuesto")
     assert "no es el arranque" in solo.texto and "PLANTA BAJA" in solo.texto
+
+
+# ------------------------------------- R286 (M2): un dibujo en cm se lee como uno en m
+
+
+def test_a_slab_detail_drawn_in_centimetres_is_read_like_one_in_metres(tmp_path):
+    # La cadena 15 + 5 = 20 a 4 m de su título: en un dibujo en cm, 400 unidades. Comparar esas
+    # unidades con 6 m (sin el factor) no leería nada.
+    from klave_engine.detection.views import _losas_acotadas
+
+    doc = ezdxf.new("R2010")
+    msp = doc.modelspace()
+    x, y = 20000.0, 0.0
+    msp.add_mtext("LOSA DE VIGUETA Y BOVEDILLA 12-5",
+                  dxfattribs={"char_height": 20.0, "insert": (x, y)})  # fmt: skip
+    for i, (texto, y0, y1) in enumerate((("15", 0.0, 78.0), ("5", 78.0, 104.0),
+                                         ("20", 0.0, 104.0))):  # fmt: skip
+        cota = msp.add_linear_dim(
+            base=(x + 400.0 + 30.0 * i, y + 100.0), p1=(x + 400.0, y + 100.0 + y0),
+            p2=(x + 400.0, y + 100.0 + y1), angle=90, text=texto,
+        )  # fmt: skip
+        cota.render()
+    path = tmp_path / "losa_cm.dxf"
+    doc.saveas(path)
+    entidades = DxfParser().parse_file(path).entities
+    assert _losas_acotadas(entidades, 0.01)[0].espesor_m == pytest.approx(0.20)
+    assert _losas_acotadas(entidades, 1.0) == []  # leídas como metros, 4 m serían 400 m
+
+
+def test_a_castillo_continuation_drawn_in_centimetres_is_read_like_one_in_metres():
+    # La planta baja está corrida (40.5, 0.3) m de la cimentación; un castillo sigue a 0.0 m y
+    # otro no tiene nada encima. Todo en cm: 100 unidades por metro.
+    from klave_engine.detection.views import _continuaciones
+
+    def ejes(prefijo, x0, y0, k):
+        salida = []
+        for i, d in enumerate((1.0, 5.0, 9.0)):
+            for eje, coord in (("vertical", (x0 + d) * k), ("horizontal", (y0 + d) * k)):
+                salida.append(make_detection(
+                    f"{prefijo}_{eje[0]}{i}", DetectionType.grid_line, f"{prefijo}{i}",
+                    (coord, coord, coord, coord), 0.9, [], "m", [],
+                    {"axis": eje, "coordinate": coord},
+                ))  # fmt: skip
+        return salida
+
+    def castillo(det_id, x, y, k):
+        d = make_detection(det_id, DetectionType.column_tag, "K-1",
+                           ((x - 0.1) * k, (y - 0.1) * k, (x + 0.1) * k, (y + 0.1) * k),
+                           0.9, [], "m", [])  # fmt: skip
+        d.family = "castillo"
+        return d
+
+    vistas = [
+        ViewRegion(view_id="c", title="PLANTA DE CIMENTACIÓN", kind=ViewKind.plan,
+                   level_key="cimentacion", npt_level=0.0, anchor=(0, 0)),
+        ViewRegion(view_id="b", title="PLANTA BAJA", kind=ViewKind.plan,
+                   level_key="planta_baja", npt_level=3.45, anchor=(0, 0)),
+    ]  # fmt: skip
+    for k, factor in ((1.0, 1.0), (100.0, 0.01)):
+        dets = [
+            *ejes("c", 0.0, 5.0, k), *ejes("b", 40.5, 5.3, k),
+            castillo("k_sigue", 3.0, 8.0, k), castillo("k_solo", 6.0, 8.0, k),
+            castillo("k_pb", 43.5, 8.3, k),
+        ]  # fmt: skip
+        asignacion = {d.detection_id: d.detection_id.split("_")[0] for d in dets}
+        asignacion |= {"k_sigue": "c", "k_solo": "c", "k_pb": "b"}
+        siguen, sin = _continuaciones(vistas, asignacion, dets, [], factor)
+        assert siguen == {"k_sigue": ("k_pb", 0.0)}, k
+        assert set(sin) == {"k_solo"}, k
+        assert "(+40.50, +0.30 m)" in sin["k_solo"] and "3.00 m" in sin["k_solo"], k

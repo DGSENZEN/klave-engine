@@ -206,6 +206,72 @@ def test_sin_la_palabra_dado_el_prefijo_no_hace_dado_al_corte():
     assert not _altura(inv, "D-1")
 
 
+def test_el_corte_de_una_zapata_no_da_su_peralte():
+    # R286 (la sonda Z-1 de la revisión final): en el corte de una zapata la cota más larga es su
+    # desplante (150), no su peralte (30). Ninguna altura sale de ese corte.
+    ents = [
+        _cota("df", (-0.4, 8.44), (-0.4, 2.44), 150, 6.0, 90.0),
+        _cota("pe", (3.8, 3.64), (3.8, 2.44), 30, 1.2, 90.0),
+        _texto("co", "Z-1\nCORTE\nA-A'", 1.5, 0.0, alto=0.115, capa="ESTRUCTURAL"),
+        _texto("ti", "ZAPATA Z-1", 1.0, -0.9, alto=0.18, capa="TITULOS"),
+        _texto("no", "ACOTACIONES EN CMS, SIN ESCALA", 0.5, -1.3, alto=0.12),
+    ]
+    inv = build_schedule_inventory(ents, C, unit_to_m=1.0)
+    assert not [s for s in inv.specs if s.mark == "Z-1" and s.metodo == "cotas"]
+    assert not [s for s in inv.specs if s.length_m is not None]
+
+
+def _corte_con_total(total=120, partes=(100, 20), cubre=True):
+    """El corte de D-1 con una cota total a la izquierda y, a la derecha, sus partes en cadena: el
+    dado (abajo) y el firme (encima). ``cubre``: la cadena llena la total; si no, sólo la suman sus
+    números."""
+    ents = [
+        _cota("tot", (-0.4, 7.4), (-0.4, 2.44), total, 4.96, 90.0),
+        _texto("co", "D-1\nCORTE\nY-Y'", 1.5, 0.0, alto=0.115, capa="ESTRUCTURAL"),
+        _texto("ti", "DADO D-1", 1.0, -0.9, alto=0.18, capa="TITULOS"),
+        _texto("no", "ACOTACIONES EN CMS, SIN ESCALA", 0.5, -1.3, alto=0.12),
+    ]
+    abajo = 2.44 if cubre else 3.0
+    ents += [
+        _cota("dad", (3.8, abajo), (3.8, 6.34), partes[0], 6.34 - abajo, 90.0),
+        _cota("fir", (3.8, 6.34), (3.8, 7.4), partes[1], 1.06, 90.0),
+    ]
+    return ents
+
+
+def test_una_cota_total_sobre_su_cadena_no_es_la_altura_del_dado():
+    # R286: la más larga abarca la cadena dado + firme: es la total; no se toma ninguna, se dice.
+    inv = build_schedule_inventory(_corte_con_total(), C, unit_to_m=1.0)
+    assert not _altura(inv, "D-1")
+    (lectura,) = [s for s in inv.specs if s.mark == "D-1" and s.metodo == "cotas"]
+    assert lectura.length_m is None and lectura.source == "detalle"
+    assert any("es la total de otras" in a and "«120»" in a for a in lectura.avisos)
+
+
+def test_una_cota_que_vale_la_suma_de_las_otras_no_es_la_altura_del_dado():
+    # Aunque su cadena no la llene dibujada: sus números la suman (100 + 20 = 120).
+    inv = build_schedule_inventory(_corte_con_total(cubre=False), C, unit_to_m=1.0)
+    assert not _altura(inv, "D-1")
+
+
+def test_dos_cotas_que_no_son_su_total_dejan_la_mas_larga():
+    # 140 no es 100 + 20 y la cadena no la llena: la más larga sigue siendo la altura.
+    inv = build_schedule_inventory(_corte_con_total(total=140, cubre=False), C, unit_to_m=1.0)
+    assert [s.length_m for s in _altura(inv, "D-1")] == [1.4]
+
+
+def test_la_altura_sin_corte_leido_queda_supuesta_con_su_aviso():
+    from klave_engine.estructura.elementos import _peralte_supuesto
+
+    avisos: list[str] = []
+    dato = _peralte_supuesto(None, avisos)
+    assert dato.fuente == "supuesto"
+    (aviso,) = avisos
+    # R286 (I2): Parámetros puede cambiar el peralte del presupuesto; el aviso no se lo atribuye.
+    assert "la del presupuesto" not in aviso
+    assert "peralte por defecto" in aviso and "el presupuesto usa el de Parámetros" in aviso
+
+
 def test_cada_corte_toma_las_cotas_de_su_bloque():
     ents = _bloque_de_dado("a", 0.0) + _bloque_de_dado(
         "b", 9.0, marcas="D-4B", titulo="DADO D-4B", altura=140

@@ -575,12 +575,12 @@ def _scoped_result(
                 notes.append(
                     f"Muros bajo la losa: altura de entrepiso − {losa.espesor_m * 100:g} cm de "
                     f"losa ({losa.texto}): {', '.join(bajo_losa)}; no se descuenta la dala de "
-                    "remate (E2)"
+                    "remate (se mide en una ronda posterior)"
                 )
             if sin_losa_acotada:
                 notes.append(
                     f"Muros de {', '.join(sin_losa_acotada)}: altura de entrepiso completa, "
-                    "supuesta: el plano no acota un solo peralte de losa, no se descuenta"
+                    f"supuesta, sin descontar la losa: {segmentation.sin_losa_acotada()}"
                 )
             if segmentation.lectura_de_niveles:
                 notes.append(f"Niveles: {segmentation.lectura_de_niveles}")

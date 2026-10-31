@@ -148,6 +148,9 @@ class SheetSegmentation(BaseModel):
     lectura_de_niveles: str = ""
     # Tarea 15e (R271): los peraltes de losa que acotan los detalles del plano.
     losas_acotadas: list[LosaAcotada] = Field(default_factory=list)
+    # R286 (I2): esta corrida buscó esos peraltes. Un views.json de antes no lo trae: no se leyeron,
+    # y eso no quiere decir que el plano no los acote.
+    losas_leidas: bool = False
     # Tarea 15e (R272), lectura B: cada castillo de la cimentación que sigue en la planta de arriba
     # (detección → (la de arriba, a cuánto, ya corrida la rejilla)); y los que no, con su aviso.
     continuaciones: dict[str, tuple[str, float]] = Field(default_factory=dict)
@@ -159,6 +162,25 @@ class SheetSegmentation(BaseModel):
         sobre los muros de cada planta: ninguno."""
         distintos = {round(losa.espesor_m, 3) for losa in self.losas_acotadas}
         return self.losas_acotadas[0] if len(distintos) == 1 else None
+
+    def sin_losa_acotada(self) -> str:
+        """R286 (I2): por qué no se descuenta un peralte de losa (``losa_acotada`` es None), dicho
+        como lo que hizo el motor —nunca «el plano no la acota»: un detalle puede acotarla con una
+        sola cota, o en una cadena que no se leyó."""
+        if not self.losas_leidas:
+            return (
+                "esta lectura no buscó el peralte de la losa en los detalles (reprocesa el plano)"
+            )
+        peraltes = sorted({round(losa.espesor_m * 100) for losa in self.losas_acotadas})
+        if peraltes:
+            return (
+                f"los detalles acotan peraltes de losa distintos ({', '.join(map(str, peraltes))} "
+                "cm) y no dicen cuál está sobre los muros de cada planta"
+            )
+        return (
+            "no se leyó un peralte de losa acotado en un detalle (se lee una cadena de cotas "
+            "que suma su total)"
+        )
 
     def vista_por_rejilla(self, punto: tuple[float, float]) -> str | None:
         """Tarea 15c: la planta cuya rejilla, sola, contiene el punto; ninguna si son varias o
@@ -686,7 +708,8 @@ def _lectura_bajo_su_losa(
     )
 
 
-# Tarea 15e (R271): el título de un detalle de losa, y lo lejos que pueden estar sus cotas.
+# Tarea 15e (R271): el título de un detalle de losa, y lo lejos que pueden estar sus cotas (en
+# metros: R286, se compara con la distancia del dibujo pasada a metros).
 _TITULO_DE_LOSA = re.compile(r"^\s*LOSA\b", re.I)
 _COTAS_DE_SU_DETALLE_M = 6.0
 
@@ -701,7 +724,9 @@ def _cm_de_losa(valor: float) -> float | None:
     return None
 
 
-def _losas_acotadas(entities: list[NormalizedEntity]) -> list[LosaAcotada]:
+def _losas_acotadas(
+    entities: list[NormalizedEntity], unit_to_m: float = 1.0
+) -> list[LosaAcotada]:
     """Tarea 15e (R271): el peralte que acota cada detalle de losa («LOSA DE VIGUETA Y BOVEDILLA
     12-5»): de las cotas verticales más cercanas a su título que a otro título de losa, la que
     abarca a las demás, si las que están dentro de ella la llenan y suman lo que dice (15 + 5 =
@@ -731,7 +756,7 @@ def _losas_acotadas(entities: list[NormalizedEntity]) -> list[LosaAcotada]:
         for cota in verticales:
             medio = (cota[4], (cota[2] + cota[3]) / 2)
             d = math.dist(medio, centro)
-            if d > _COTAS_DE_SU_DETALLE_M:
+            if d * unit_to_m > _COTAS_DE_SU_DETALLE_M:
                 continue
             otros = (o for o in titulos if o is not titulo)
             if all(math.dist(medio, punto_de_texto(otro)) >= d for otro in otros):
@@ -767,20 +792,24 @@ def _losas_acotadas(entities: list[NormalizedEntity]) -> list[LosaAcotada]:
 
 
 # Tarea 15e (R272): un castillo de la cimentación sigue en la planta de arriba si, corrida la
-# rejilla, hay uno de ella a esta distancia o menos (el ancho de dos castillos), uno a uno.
+# rejilla, hay uno de ella a esta distancia o menos (el ancho de dos castillos), uno a uno. En
+# metros (R286): las distancias del dibujo se pasan a metros con el factor de su unidad.
 _CONTINUACION_M = 0.30
 _EJES_COINCIDEN_M = 0.02
 
 
-def _corrimiento(abajo: list[float], arriba: list[float]) -> float | None:
-    """Cuánto está corrida una rejilla de la otra en un sentido: la diferencia entre las
-    coordenadas de sus ejes que más pares de ejes juntan (dos o más)."""
+def _corrimiento(
+    abajo: list[float], arriba: list[float], unit_to_m: float = 1.0
+) -> float | None:
+    """Cuánto está corrida una rejilla de la otra en un sentido (en unidades del dibujo): la
+    diferencia entre las coordenadas de sus ejes que más pares de ejes juntan (dos o más)."""
+    coinciden = _EJES_COINCIDEN_M / unit_to_m
     mejor: tuple[int, float] | None = None
     for a in abajo:
         for b in arriba:
             delta = b - a
             pares = sum(
-                1 for x in abajo if any(abs(x + delta - y) <= _EJES_COINCIDEN_M for y in arriba)
+                1 for x in abajo if any(abs(x + delta - y) <= coinciden for y in arriba)
             )
             if pares >= 2 and (mejor is None or pares > mejor[0]):
                 mejor = (pares, delta)
@@ -792,11 +821,13 @@ def _continuaciones(
     assignment: dict[str, str],
     detections: list[Detection],
     entities: list[NormalizedEntity],
+    unit_to_m: float = 1.0,
 ) -> tuple[dict[str, tuple[str, float]], dict[str, str]]:
     """Tarea 15e (R272): de los castillos y columnas de la cimentación, los que siguen en la planta
     de superestructura más baja (corrida la rejilla de ejes de una a la otra, el de arriba a
     ``_CONTINUACION_M`` o menos, uno a uno, el más cercano primero) y los que no, con su aviso.
-    Cada uno está donde está su marcador (su símbolo), o su etiqueta si no tiene."""
+    Cada uno está donde está su marcador (su símbolo), o su etiqueta si no tiene. Las distancias,
+    en metros (``unit_to_m``: el dibujo puede estar en cm o mm)."""
     plantas = sorted(
         (v for v in views if v.kind == ViewKind.plan and v.npt_level is not None),
         key=lambda v: v.npt_level or 0.0,
@@ -831,8 +862,8 @@ def _continuaciones(
     abajo_c, arriba_c = de(cim, "column_tag"), de(arriba, "column_tag")
     if not abajo_c:
         return {}, {}
-    dx = _corrimiento(ejes(cim, "vertical"), ejes(arriba, "vertical"))
-    dy = _corrimiento(ejes(cim, "horizontal"), ejes(arriba, "horizontal"))
+    dx = _corrimiento(ejes(cim, "vertical"), ejes(arriba, "vertical"), unit_to_m)
+    dy = _corrimiento(ejes(cim, "horizontal"), ejes(arriba, "horizontal"), unit_to_m)
     if dx is None or dy is None:
         aviso = (
             f"no se sabe si sigue en «{arriba.title}»: las rejillas de ejes de «{cim.title}» y de "
@@ -840,7 +871,7 @@ def _continuaciones(
         )
         return {}, {d.detection_id: aviso for d in abajo_c}
     pares = sorted(
-        (math.dist((p[0] + dx, p[1] + dy), q), a.detection_id, b.detection_id)
+        (math.dist((p[0] + dx, p[1] + dy), q) * unit_to_m, a.detection_id, b.detection_id)
         for a in abajo_c
         for p in [punto(a)]
         for b in arriba_c
@@ -864,7 +895,8 @@ def _continuaciones(
         )  # fmt: skip
         donde = f"el más cercano está a {cerca:.2f} m" if cerca is not None else "no tiene ninguno"
         sin[a.detection_id] = (
-            f"no sigue en «{arriba.title}»: corrida la rejilla de ejes ({dx:+.2f}, {dy:+.2f}), no "
+            f"no sigue en «{arriba.title}»: corrida la rejilla de ejes ({dx * unit_to_m:+.2f}, "
+            f"{dy * unit_to_m:+.2f} m), no "
             f"hay castillo ni columna a {_CONTINUACION_M:g} m o menos ({donde}); no es el "
             "arranque de uno de arriba y su altura no la dice el plano"
         )
@@ -879,7 +911,10 @@ def _near_frame(frame: SheetFrame, point: tuple[float, float], margin: float = 0
 
 
 def _segment_by_frames(
-    entities: list[NormalizedEntity], detections: list[Detection], frames: list[SheetFrame]
+    entities: list[NormalizedEntity],
+    detections: list[Detection],
+    frames: list[SheetFrame],
+    unit_to_m: float = 1.0,
 ) -> SheetSegmentation | None:
     """Sheet frames are views: every detection belongs to the frame that
     contains it (or the nearest frame when it sits on its border). What lies
@@ -951,7 +986,7 @@ def _segment_by_frames(
     levels = sorted({r.npt_level for r in plans if r.npt_level is not None})
     lectura = _lectura_bajo_su_losa(list(regions.values()), assignment, detections)
     siguen, sin = (
-        _continuaciones(list(regions.values()), assignment, detections, entities)
+        _continuaciones(list(regions.values()), assignment, detections, entities, unit_to_m)
         if lectura
         else ({}, {})
     )
@@ -959,7 +994,8 @@ def _segment_by_frames(
         views=list(regions.values()),
         assignment=assignment,
         is_segmented=True,
-        losas_acotadas=_losas_acotadas(entities),
+        losas_acotadas=_losas_acotadas(entities, unit_to_m),
+        losas_leidas=True,
         continuaciones=siguen,
         sin_continuacion=sin,
         npt_levels=levels or _npt_levels(entities),
@@ -976,9 +1012,13 @@ def segment_views(
     entities: list[NormalizedEntity],
     detections: list[Detection],
     frames: list[SheetFrame] | None = None,
+    unit_to_m: float = 1.0,
 ) -> SheetSegmentation:
+    """``unit_to_m``: metros por unidad del dibujo (R286): las distancias que se comparan con un
+    umbral en metros (las cotas de un detalle de losa, la continuación de un castillo, los ejes
+    que coinciden) se pasan a metros, para que un dibujo en cm o mm se lea como uno en m."""
     if frames:
-        by_frames = _segment_by_frames(entities, detections, frames)
+        by_frames = _segment_by_frames(entities, detections, frames, unit_to_m)
         if by_frames is not None:
             return by_frames
     anchors = _merge_plan_anchors(_collect_anchors(entities))
@@ -1146,7 +1186,7 @@ def segment_views(
     n_dudosas = sum(1 for x in dudosas.values() if x[2]) - n_en_duda
     lectura = _lectura_bajo_su_losa(list(regions.values()), assignment, detections)
     siguen, sin = (
-        _continuaciones(list(regions.values()), assignment, detections, entities)
+        _continuaciones(list(regions.values()), assignment, detections, entities, unit_to_m)
         if lectura
         else ({}, {})
     )
@@ -1154,7 +1194,8 @@ def segment_views(
         views=list(regions.values()),
         assignment=assignment,
         is_segmented=True,
-        losas_acotadas=_losas_acotadas(entities),
+        losas_acotadas=_losas_acotadas(entities, unit_to_m),
+        losas_leidas=True,
         continuaciones=siguen,
         sin_continuacion=sin,
         npt_levels=npt_levels,

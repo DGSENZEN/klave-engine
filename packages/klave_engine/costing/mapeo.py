@@ -103,6 +103,32 @@ def _cuadrar(line: BoqLine) -> None:
         )
 
 
+def _avisar_variantes_que_no_estan(
+    boq: BillOfQuantities, line: BoqLine, mappings: dict[str, dict]
+) -> None:
+    """R286: un mapeo que una persona confirmó para una variante de este concepto que este plano
+    no tiene (el plano cambió —una nota de muro volvió BLOCK-18 en BLOCK-15— o es de otra obra)
+    no se aplica a ninguna variante de aquí; se dice, nombrando la clave, para que un precio
+    confirmado no deje de aplicarse en silencio."""
+    presentes = {v.key for v in line.variants}
+    ausentes = sorted(
+        key for key, mapping in mappings.items()
+        if key.startswith(f"{line.concept_code}.") and key not in presentes
+        and mapping.get("status") == "confirmada"
+    )  # fmt: skip
+    if not ausentes:
+        return
+    lista = ", ".join(f"«{k}»" for k in ausentes)
+    aqui = ", ".join(f"«{k}»" for k in sorted(presentes))
+    aviso = (
+        f"{line.concept_code}: tu catálogo tiene confirmado el mapeo de {lista}, que este plano "
+        f"no tiene (aquí: {aqui}); ese precio no se aplica. Revisa el mapeo de las variantes "
+        "de este renglón."
+    )
+    line.assumptions.append(aviso)
+    boq.warnings.append(aviso)
+
+
 def consolidar_variantes(
     boq: BillOfQuantities,
     mappings: dict[str, dict],
@@ -149,6 +175,7 @@ def consolidar_variantes(
             else:
                 variant.amount = round(variant.quantity * price, 2)
                 total += variant.amount
+        _avisar_variantes_que_no_estan(boq, line, mappings)
         if not mapped_any:
             continue  # sin decisiones de la oficina, el renglón queda como lo dejó el motor
         if all_priced:

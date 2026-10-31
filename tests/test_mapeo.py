@@ -81,6 +81,35 @@ def test_consolidar_rebalances_after_an_adjustment_and_adds_gen():
     assert first.amount == 12000.0
 
 
+def test_a_confirmed_mapping_for_a_variant_the_drawing_no_longer_has_is_said():
+    # R286: la nota de muro volvió BLOCK-18 en BLOCK-15; el precio confirmado de BLOCK-18 ya no
+    # se aplica a nada, y se dice nombrando su clave. Una propuesta o un mapeo de otro concepto
+    # no dicen nada.
+    boq = BillOfQuantities(project_id="p", lines=[
+        _line(code="EST-004", variants=[BoqVariant(key="EST-004.BLOCK-15", quantity=10.0)]),
+    ])  # fmt: skip
+    confirmado = {"status": "confirmada", "target_kind": "concept", "target_code": "MB-18",
+                  "clave": "MB-18", "description": "Muro de block 18", "reason": ""}
+    mappings = {
+        "EST-004.BLOCK-18": confirmado,
+        "EST-004.BLOCK-16": {**confirmado, "status": "propuesta"},
+        "EST-001.30X40": confirmado,
+    }
+    consolidar_variantes(boq, mappings, {"MB-18": _apu("MB-18", 900.0)})
+    (aviso,) = boq.warnings
+    assert "«EST-004.BLOCK-18»" in aviso and "no se aplica" in aviso
+    assert "BLOCK-16" not in aviso and "EST-001" not in aviso
+    assert aviso in boq.lines[0].assumptions
+    # La variante que sí está conserva el precio del motor.
+    assert boq.lines[0].variants[0].unit_price == 1000.0
+    # Con la variante presente, nada que decir.
+    otra = BillOfQuantities(project_id="p", lines=[
+        _line(code="EST-004", variants=[BoqVariant(key="EST-004.BLOCK-18", quantity=10.0)]),
+    ])  # fmt: skip
+    consolidar_variantes(otra, mappings, {"MB-18": _apu("MB-18", 900.0)})
+    assert otra.warnings == []
+
+
 def test_mapear_remembers_and_respects_a_person(data_dir):
     store = get_catalog_store(data_dir)
     store.upsert_insumo("MAT-X", description="X", unit="M3", resource_type="material",

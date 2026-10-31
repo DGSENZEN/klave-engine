@@ -36,7 +36,11 @@ from klave_engine.detection.slab_detector import SlabDetectorConfig, detect_slab
 from klave_engine.detection.slab_panels import SlabPanelConfig, detect_slab_panels
 from klave_engine.detection.terrain import TerrainDetectorConfig, detect_terrain
 from klave_engine.detection.text_patterns import TextPatternConfig
-from klave_engine.detection.wall_detector import WallDetectorConfig, detect_walls
+from klave_engine.detection.wall_detector import (
+    APLANADO_MAXIMO_M,
+    WallDetectorConfig,
+    detect_walls,
+)
 from klave_engine.dxf.entities import NormalizedEntity
 from klave_engine.dxf.units import METERS_FACTOR, DrawingUnits, vote_from_extent
 from klave_engine.geometry.bbox import BBox
@@ -136,7 +140,7 @@ class DetectorSuiteConfig(BaseModel):
         config.wall.merge_gap = m(0.30)
         config.wall.opening_gap_max = m(1.30)
         # Tarea 15f (R275): PRUEBA-1 draws each wall's plaster 15 mm outside its block.
-        config.wall.finish_max = m(0.020)
+        config.wall.finish_max = m(APLANADO_MAXIMO_M)
         config.wall.face_tolerance = m(0.001)
         config.room.min_area = m(1.0) * m(1.5)
         config.room.max_area = m(20.0) * m(20.0)
