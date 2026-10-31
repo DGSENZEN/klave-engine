@@ -551,6 +551,40 @@ def test_score_transcripcion_both_directions(tmp_path):
                                 "no la tiene"]
 
 
+def test_score_transcripcion_compares_only_the_section_the_drawing_writes(tmp_path):
+    # Tarea 16, Marina: K-11 de ES-000 acota 20 × 60 y su dibujo «SIN ESCALA» mide 22.6 × 59 a la
+    # escala de sus cotas. La medida es otra fuente (seccion_dibujada) y la tomada cuadrada de una
+    # sola cota es supuesto: la transcripción tiene sólo lo que el plano escribe.
+    from klave_engine.evals.gold import score_transcripcion
+
+    path = tmp_path / "t.json"
+    path.write_text(json.dumps({"lecturas": [
+        {"marca": "K-11", "hoja": "ES-000", "longitudinal": "8#6",
+         "estribos": "2E#3EXT@10 CENTRO@20", "seccion_cm": [20, 60]},
+        {"marca": "K-12", "hoja": "ES-000", "longitudinal": "4#6+4#4", "estribos": None,
+         "seccion_cm": None},
+    ]}))  # fmt: skip
+    L = "f.dxf#frame_00"
+    specs: list[dict] = [
+        {"mark": "K-11", "hoja": "ES-000", "hoja_llave": L, "source": "detalle", "metodo": "pila",
+         "rebar": "8#6", "stirrups": "2E#3 EXT@10 CENTRO@20", "section_cm": None},
+        {"mark": "K-11", "hoja": "ES-000", "hoja_llave": L, "source": "detalle", "metodo": "cotas",
+         "rebar": None, "stirrups": None, "section_cm": [20, 60]},
+        {"mark": "K-11", "hoja": "ES-000", "hoja_llave": L, "source": "detalle",
+         "metodo": "geometria", "rebar": None, "stirrups": None, "section_cm": [22.6, 59]},
+        {"mark": "K-12", "hoja": "ES-000", "hoja_llave": L, "source": "detalle", "metodo": "pila",
+         "rebar": "4#6+4#4", "stirrups": None, "section_cm": None},
+        {"mark": "K-12", "hoja": "ES-000", "hoja_llave": L, "source": "detalle", "metodo": "cotas",
+         "rebar": None, "stirrups": None, "section_cm": [30, 30], "seccion_supuesta": True},
+    ]
+    assert score_transcripcion(path, {"specs": specs}) == (True, [])
+    # Una cota escrita distinta sí se ve.
+    specs[1] = dict(specs[1], section_cm=[20, 40])
+    ok, diffs = score_transcripcion(path, {"specs": specs})
+    assert not ok and diffs == ["K-11 en ES-000, seccion_cm: transcripción [(20.0, 60.0)], motor "
+                                "[(20.0, 40.0)]"]
+
+
 # ------------------------------------------- Tarea 15c: las colocaciones por vista (planta)
 
 

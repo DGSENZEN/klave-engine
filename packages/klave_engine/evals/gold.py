@@ -407,7 +407,8 @@ def score_transcripcion(path: Path, schedules_json: dict | None) -> tuple[bool, 
     por (marca, marco, variante), en los dos sentidos: lo que la transcripción lee y el motor no
     —o lee distinto— y lo que el motor lee y la transcripción no tiene. Una lectura repetida en la
     transcripción es un error; lo que deja en ``dudas`` no se compara. Los textos se comparan sin
-    espacios y en mayúsculas; la sección sin el orden de sus lados."""
+    espacios y en mayúsculas; la sección sin el orden de sus lados, y sólo la que el plano escribe
+    (no la medida en el dibujo ni la supuesta)."""
     from klave_engine.estructura.definiciones import normalizar_marca
 
     if schedules_json is None:
@@ -435,7 +436,12 @@ def score_transcripcion(path: Path, schedules_json: dict | None) -> tuple[bool, 
             lecturas["longitudinal"].add(t)
         if (t := _texto_canonico(spec.get("stirrups"))) is not None:
             lecturas["estribos"].add(t)
-        if (s := _seccion_canonica(spec.get("section_cm"))) is not None:
+        # Tarea 16: la sección que el plano ESCRIBE (sus cotas); la medida en el dibujo
+        # («geometria», fuente seccion_dibujada) y la supuesta (una sola cota tomada cuadrada,
+        # fuente supuesto) son otras fuentes (FUENTE_DE_LECTURA, fuente_de_seccion): la
+        # transcripción no las tiene.
+        escrita = spec.get("metodo") != "geometria" and not spec.get("seccion_supuesta")
+        if escrita and (s := _seccion_canonica(spec.get("section_cm"))) is not None:
             lecturas["seccion_cm"].add(s)
 
     def llave_de_hoja(d: dict) -> str:
