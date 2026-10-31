@@ -131,12 +131,58 @@ def test_un_muro_de_concreto_no_toma_la_nota_de_block():
     assert avisos == []
 
 
-def test_un_espesor_acotado_manda_sobre_la_nota_y_se_dice():
-    # Una cota en planta es más que una nota: se queda, y el desacuerdo no es callado.
-    muro = _muro("w5", 0.36, "core", thickness_source="cota")
+def test_una_cota_que_no_es_el_muro_se_deja_y_el_aviso_pide_revisarla():
+    # R277 (W31 de PRUEBA-1): la «36» es una cota del eje del muro a otra cosa, no su espesor; el
+    # núcleo dibujado mide 15, lo de la nota. La cota se deja (asociarla bien es de E1), pero el
+    # aviso no la da por buena: dice lo que mide el muro y pide revisarla.
+    muro = _muro(
+        "w5", 0.3598, "core", thickness_source="cota", estimated_thickness_geometry=0.15
+    )
     (escrito,), (aviso,) = escribir_espesor_de_muros([muro], _con_nota(), 1.0)
-    assert escrito.properties["estimated_thickness"] == pytest.approx(0.36)
-    assert "w5" in aviso and "36" in aviso and "15" in aviso
+    assert escrito.properties["estimated_thickness"] == pytest.approx(0.3598)
+    assert "w5" in aviso
+    dicho = (
+        "revisa: la cota de 36 cm no es lo que mide el muro dibujado (15 cm, lo que dice la nota)"
+    )
+    assert dicho in aviso
+    assert "manda" not in aviso
+
+
+def test_una_cota_sin_geometria_se_compara_con_la_nota():
+    muro = _muro("w5", 0.30, None, thickness_source="cota")
+    (escrito,), (aviso,) = escribir_espesor_de_muros([muro], _con_nota(), 1.0)
+    assert escrito.properties["estimated_thickness"] == pytest.approx(0.30)
+    assert "revisa: la cota de 30 cm no es lo que dice la nota (15)" in aviso
+
+
+# R276: la nota vale para un muro de lo de la nota hasta dos aplanados más (+5 cm); el aplanado
+# sólo engruesa: uno más delgado es otro muro (un tabique de 10), como uno más grueso.
+@pytest.mark.parametrize(
+    ("espesor", "de", "toma", "dice"),
+    [
+        (0.10, "outline", False, "más delgado que la nota (15): no es el muro de la nota"),
+        (0.135, "core", False, "más delgado que la nota (15): no es el muro de la nota"),
+        (0.15, "core", True, None),
+        (0.18, "outline", True, "el contorno incluye el aplanado"),
+        (0.18, "core", True, "manda la nota"),
+        (0.20, "core", True, "manda la nota"),
+        (0.20, "outline", True, "el contorno incluye el aplanado"),
+        (0.25, "core", False, "más grueso que la nota (15) y dos aplanados: no es el muro"),
+    ],
+)
+def test_la_nota_vale_de_su_espesor_a_dos_aplanados_mas(espesor, de, toma, dice):
+    muro = _muro("w9", espesor, de)
+    (escrito,), avisos = escribir_espesor_de_muros([muro], _con_nota(), 1.0)
+    esperado = 0.15 if toma else espesor
+    assert escrito.properties["estimated_thickness"] == pytest.approx(esperado)
+    assert (escrito.properties.get("espesor_fuente") == "nota") is toma
+    if dice is None:
+        assert avisos == []
+    else:
+        (aviso,) = avisos
+        assert dice in aviso and "w9" in aviso
+        if not toma:
+            assert "se queda lo medido" in aviso
 
 
 def test_las_notas_de_la_regla_las_lee_la_lectura_de_reglas_y_el_presupuesto(tmp_path):

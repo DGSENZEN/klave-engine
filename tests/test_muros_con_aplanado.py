@@ -199,3 +199,41 @@ def test_un_muro_sin_aplanado_dice_el_eje_de_su_contorno(tmp_path):
     assert p["thickness_from"] == "outline"
     assert "finish_thickness" not in p
     assert p["centreline_length"] == pytest.approx(6.435)
+
+
+# --- lo que hoy pasa con un elemento delgado de verdad en la MISMA capa (revisión de la 15f) ---
+# En su misma capa y a 20 mm o menos, una línea que no es aplanado (una chapa de piedra, un
+# rodapié dibujado en A-WALL) se lee como si lo fuera: el traslape del 90 % se mide contra el tramo
+# MÁS CORTO, así que una línea de 3 m junto a un muro de 10 lo cumple. Estas pruebas fijan lo que
+# hace hoy, no lo que debería: el dibujo no dice qué es esa línea.
+
+
+def test_una_linea_delgada_afuera_en_la_misma_capa_se_lee_como_aplanado(tmp_path):
+    # Afuera del muro: el núcleo sigue siendo el par verdadero (15), y el largo y los vanos se leen
+    # de sus caras; sólo se le atribuye un aplanado que no es.
+    def dibujar(msp):
+        _h(msp, 0.0, 10.0, 0.0)
+        _h(msp, 0.0, 10.0, 0.15)
+        _h(msp, 2.0, 5.0, -0.015)  # 3 m en la misma capa, 15 mm afuera
+
+    (muro,), _ = _muros(tmp_path, dibujar)
+    p = muro.properties
+    assert p["thickness_from"] == "core"
+    assert p["estimated_thickness"] == pytest.approx(0.15)
+    assert p["finish_thickness"] == pytest.approx(0.015)
+    assert p["estimated_length"] == pytest.approx(10.0)
+
+
+def test_una_linea_delgada_adentro_en_la_misma_capa_adelgaza_el_muro(tmp_path):
+    # Adentro del muro (caras en 0, 0.135 y 0.15): la cara de 0.15 se toma por el aplanado de la
+    # de 0.135 y el muro se lee de 13.5 cm. Es el patrón de W44 (aplanado de un solo lado): el
+    # dibujo solo no los distingue. Con una nota de 15 el presupuesto no lo toma callado (R276:
+    # más delgado que la nota, se queda lo medido y se avisa).
+    def dibujar(msp):
+        _h(msp, 0.0, 10.0, 0.0)
+        _h(msp, 0.0, 10.0, 0.15)
+        _h(msp, 0.0, 10.0, 0.135)
+
+    (muro,), _ = _muros(tmp_path, dibujar)
+    assert muro.properties["thickness_from"] == "core"
+    assert muro.properties["estimated_thickness"] == pytest.approx(0.135)

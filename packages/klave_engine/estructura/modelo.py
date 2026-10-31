@@ -1495,13 +1495,39 @@ def _restaurar(props: dict) -> bool:
 
 # Lo medido y la nota son el mismo espesor (en metros).
 _MISMO_ESPESOR_M = 0.005
-# Lo que un aplanado puede sumar por cara: un contorno hasta 2 × esto más grueso que la nota es
-# el block de la nota con su aplanado; más allá, otro muro (uno doble, uno de concreto).
+# Lo que un aplanado puede sumar por cara (R276): un muro que mide entre la nota y la nota + 2 ×
+# esto es el block de la nota con su aplanado; más grueso, otro muro (uno doble, uno de concreto);
+# más delgado, también (un tabique de 10): el aplanado sólo engruesa. ``_HOLGURA_M`` es la holgura
+# del borde, para que 0.20 contra 0.15 + 0.05 no lo decida el redondeo.
 _APLANADO_MAXIMO_M = 0.025
+_HOLGURA_M = 1e-6
 
 
 def _metros_en_cm(metros: float) -> str:
     return f"{round(metros * 100, 1):g}"
+
+
+def _revisa_la_cota(
+    props: dict, meters_factor: float, mide: str, nota_m: float, dice: str
+) -> str:
+    """R277: el aviso de un muro cuyo espesor tomó una cota que no dice lo que el dibujo ni la
+    nota: se deja (la asociación de cotas a muros es de E1), pero se pide revisarla, con lo que el
+    muro dibujado mide de verdad."""
+    geometria = props.get("estimated_thickness_geometry")
+    if geometria:
+        dibujado_m = float(geometria) * meters_factor
+        como = (
+            ", lo que dice la nota" if abs(dibujado_m - nota_m) <= _MISMO_ESPESOR_M
+            else f"; la nota dice {dice}"
+        )
+        return (
+            f"revisa: la cota de {mide} cm no es lo que mide el muro dibujado "
+            f"({_metros_en_cm(dibujado_m)} cm{como}); quedó la cota hasta que se revise"
+        )
+    return (
+        f"revisa: la cota de {mide} cm no es lo que dice la nota ({dice}); quedó la cota hasta "
+        "que se revise"
+    )
 
 
 def escribir_espesor_de_muros(
@@ -1516,9 +1542,11 @@ def escribir_espesor_de_muros(
     fuente ``nota``), cada muro de block lo toma: la nota manda sobre lo medido. Donde el núcleo
     dibujado coincide no se dice nada más. Donde sólo está dibujado el contorno y mide más (hasta
     dos aplanados), el contorno incluye el aplanado: el muro toma el espesor de la nota y el
-    largo al eje (``centreline_length``), con un aviso que dice las dos medidas. Un espesor
-    acotado en el plano (``thickness_source == "cota"``) manda sobre la nota; un muro que mide
-    más que la nota y dos aplanados es otro muro: los dos se quedan con lo suyo y se avisa.
+    largo al eje (``centreline_length``), con un aviso que dice las dos medidas. R276: la nota
+    sólo vale para un muro que mide lo de la nota o hasta dos aplanados más; uno más delgado que
+    la nota o más grueso que eso es otro muro: se queda con lo medido y se avisa. R277: un
+    espesor tomado de una cota (``thickness_source == "cota"``) que no dice lo de la nota se deja
+    (asociarla es de E1) y el aviso pide revisarla con lo que mide el muro dibujado.
     Con la hoja segmentada, sólo los muros de una planta: un muro dibujado en un detalle o en la
     simbología no es un muro de la obra. Función pura (R235): lo escrito antes se deshace primero
     (``espesor_previo``)."""
@@ -1556,39 +1584,42 @@ def escribir_espesor_de_muros(
             caso: str | None = None
             toma = True
             dice = _metros_en_cm(nota_m)
+            mide = _metros_en_cm(medido_m) if medido_m is not None else ""
+            # R276: lo que el dibujo suma a la nota (un contorno que incluye el aplanado sólo
+            # puede ser más grueso), decidido con holgura explícita, nunca por el redondeo.
+            exceso = medido_m - nota_m if medido_m is not None else 0.0
             if medido_m is None:
                 caso = None
             elif props.get("thickness_source") == "cota":
+                # R277: la cota se deja (asociarla bien es de E1), pero el aviso no la da por
+                # buena: dice lo que el dibujo y la nota dicen y pide revisarla.
                 toma = False
-                if abs(medido_m - nota_m) > _MISMO_ESPESOR_M:
-                    caso = (
-                        f"la cota dice {_metros_en_cm(medido_m)} cm; la nota dice {dice}: la "
-                        "cota manda y se queda"
-                    )
-            elif abs(medido_m - nota_m) <= _MISMO_ESPESOR_M:
+                if abs(exceso) > _MISMO_ESPESOR_M:
+                    caso = _revisa_la_cota(props, meters_factor, mide, nota_m, dice)
+            elif abs(exceso) <= _MISMO_ESPESOR_M:
                 caso = None
-            elif (
-                props.get("thickness_from") == "outline"
-                and 0 < medido_m - nota_m <= 2 * _APLANADO_MAXIMO_M
-            ):
+            elif exceso < 0:
+                toma = False
                 caso = (
-                    f"el contorno dibujado mide {_metros_en_cm(medido_m)} cm; la nota dice "
-                    f"{dice}: el contorno incluye el aplanado (se toma el espesor de la nota y "
-                    "el largo al eje del contorno)"
+                    f"el muro dibujado mide {mide} cm, más delgado que la nota ({dice}): no es "
+                    "el muro de la nota, se queda lo medido"
+                )
+            elif exceso > 2 * _APLANADO_MAXIMO_M + _HOLGURA_M:
+                toma = False
+                caso = (
+                    f"el muro dibujado mide {mide} cm, más grueso que la nota ({dice}) y dos "
+                    "aplanados: no es el muro de la nota, se queda lo medido"
+                )
+            elif props.get("thickness_from") == "outline":
+                caso = (
+                    f"el contorno dibujado mide {mide} cm; la nota dice {dice}: el contorno "
+                    "incluye el aplanado (se toma el espesor de la nota y el largo al eje del "
+                    "contorno)"
                 )
                 if props.get("centreline_length"):
                     nuevo_largo = float(props["centreline_length"])
-            elif abs(medido_m - nota_m) <= 2 * _APLANADO_MAXIMO_M:
-                caso = (
-                    f"el muro dibujado mide {_metros_en_cm(medido_m)} cm; la nota dice {dice}: "
-                    "manda la nota"
-                )
             else:
-                toma = False
-                caso = (
-                    f"el muro dibujado mide {_metros_en_cm(medido_m)} cm; la nota dice {dice}: "
-                    "no es el muro de la nota, se queda lo medido"
-                )
+                caso = f"el muro dibujado mide {mide} cm; la nota dice {dice}: manda la nota"
             if caso is not None:
                 casos.setdefault((caso, dato.texto), []).append(nombre)
             if toma:
