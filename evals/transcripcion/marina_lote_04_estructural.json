@@ -1,0 +1,3210 @@
+{
+ "plano": "02 ESTRUCTURAL L.04 - 26.01.15.dxf (sha256 e72a3d87…)",
+ "revisado_por": "Claude (Tarea 16), a mano: el borrador de scripts/transcribir_marcas.py y un render de cada cuadro, mirado marca por marca",
+ "revisado_en": "2026-10-30",
+ "alcance": "R281: la transcripción de E0 cubre las familias de pila: todas las marcas que el plano define con una pila de armado junto a su título y su sección acotada —el cuadro de castillos (bloque EST-CASTILLOS en ES-000/100/200/300 y el cuadro propio de ES-400), columnas (ES-000/100/200), pilotes (ES-000), el dado D-X (ES-000), cadenas de enrase CE, cadenas intermedias CI (por espesor de muro), cerramientos CR, la dala D-C y la nota de cadena de ES-101—. «Todas las marcas» de E0 son éstas. Las llamadas (directrices) son E3: CR-2 va en dudas (R280) y las marcas definidas en alzados y cortes, en fuera_de_e0 (R281). Los títulos de marcas de pila que aparecen en otros detalles (C-1 en ES-101/ES-201, K-4 y K-8 en ES-301, K-5 en ES-201, K-7 y K-12 en ES-302, P-1/P-4/D-X en ES-004, P-1 en ES-007, P-5 en ES-003) son apoyos nombrados en alzados de trabes y contratrabes (revisado en sus renders), no definiciones.",
+ "fuera_de_e0": {
+  "razon": "R281: el plano define su armado con llamadas (directrices) en alzados y cortes —lechos superior e inferior, bastones, distribuciones «1@6,8@10,10@15»— que la transcripción de E0 no dice: son de E3. Cada (marca, hoja) que el motor lee de esas familias está aquí, para que nada falte en silencio (la CE-2 de ES-501 es la cadena nombrada en un alzado).",
+  "por_familia": {
+   "contratrabe": 30,
+   "dado": 24,
+   "dala": 1,
+   "muro_concreto": 6,
+   "trabe": 61,
+   "zapata": 8
+  },
+  "total": 130,
+  "lecturas": [
+   {
+    "marca": "CE-2",
+    "hoja": "ES-501",
+    "familia": "dala"
+   },
+   {
+    "marca": "CTA-1",
+    "hoja": "ES-002",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-1",
+    "hoja": "ES-501",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-10",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-10",
+    "hoja": "ES-500",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-11",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-11",
+    "hoja": "ES-500",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-12",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-13",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-14",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-15",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-15",
+    "hoja": "ES-500",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-16",
+    "hoja": "ES-003",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-16",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-16",
+    "hoja": "ES-500",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-17",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-17",
+    "hoja": "ES-501",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-2",
+    "hoja": "ES-002",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-3",
+    "hoja": "ES-003",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-3",
+    "hoja": "ES-501",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-4",
+    "hoja": "ES-003",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-4A",
+    "hoja": "ES-003",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-5",
+    "hoja": "ES-003",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-5",
+    "hoja": "ES-501",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-6",
+    "hoja": "ES-003",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-6",
+    "hoja": "ES-500",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-7",
+    "hoja": "ES-003",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-7",
+    "hoja": "ES-500",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-8",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-8",
+    "hoja": "ES-500",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "CTA-9",
+    "hoja": "ES-004",
+    "familia": "contratrabe"
+   },
+   {
+    "marca": "D-1",
+    "hoja": "ES-005",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-1",
+    "hoja": "ES-500",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-1",
+    "hoja": "ES-501",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-1A",
+    "hoja": "ES-007",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-1A",
+    "hoja": "ES-500",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-1B",
+    "hoja": "ES-007",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-1C",
+    "hoja": "ES-007",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-2A",
+    "hoja": "ES-005",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-3",
+    "hoja": "ES-005",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-3",
+    "hoja": "ES-500",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-3A",
+    "hoja": "ES-005",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-3B",
+    "hoja": "ES-005",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-4",
+    "hoja": "ES-005",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-4",
+    "hoja": "ES-500",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-4",
+    "hoja": "ES-501",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-4A",
+    "hoja": "ES-006",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-4B",
+    "hoja": "ES-006",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-4B",
+    "hoja": "ES-501",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-4C",
+    "hoja": "ES-006",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-5",
+    "hoja": "ES-006",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-5",
+    "hoja": "ES-500",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-5A",
+    "hoja": "ES-006",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-5A",
+    "hoja": "ES-500",
+    "familia": "dado"
+   },
+   {
+    "marca": "D-5B",
+    "hoja": "ES-006",
+    "familia": "dado"
+   },
+   {
+    "marca": "MC-1",
+    "hoja": "ES-007",
+    "familia": "muro_concreto"
+   },
+   {
+    "marca": "MC-1",
+    "hoja": "ES-500",
+    "familia": "muro_concreto"
+   },
+   {
+    "marca": "MC-1",
+    "hoja": "ES-501",
+    "familia": "muro_concreto"
+   },
+   {
+    "marca": "MC-2",
+    "hoja": "ES-501",
+    "familia": "muro_concreto"
+   },
+   {
+    "marca": "MC-3",
+    "hoja": "ES-002",
+    "familia": "muro_concreto"
+   },
+   {
+    "marca": "MC-4",
+    "hoja": "ES-002",
+    "familia": "muro_concreto"
+   },
+   {
+    "marca": "T1-1",
+    "hoja": "ES-101",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T1-2",
+    "hoja": "ES-101",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T1-3",
+    "hoja": "ES-101",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T1-4",
+    "hoja": "ES-101",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T1-5",
+    "hoja": "ES-101",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T1-6",
+    "hoja": "ES-101",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T1-7",
+    "hoja": "ES-101",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T1-8",
+    "hoja": "ES-101",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-1",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-10",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-11",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-12",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-13",
+    "hoja": "ES-202",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-13",
+    "hoja": "ES-203",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-13",
+    "hoja": "ES-500",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-14",
+    "hoja": "ES-202",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-15",
+    "hoja": "ES-202",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-2",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-3",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-4",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-5",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-6",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-6",
+    "hoja": "ES-501",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-6A",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-6A",
+    "hoja": "ES-501",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-7",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-7",
+    "hoja": "ES-500",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-8",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-8",
+    "hoja": "ES-202",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T2-9",
+    "hoja": "ES-201",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-1",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-10",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-11",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-12",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-12",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-13",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-14",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-15",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-16",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-17",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-18",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-19",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-1A",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-2",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-20",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-21",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-22",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-3",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-4",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-5",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-6",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-7",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-8",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-8",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-8",
+    "hoja": "ES-500",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-9",
+    "hoja": "ES-301",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T3-9",
+    "hoja": "ES-302",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T4-1",
+    "hoja": "ES-401",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T4-2",
+    "hoja": "ES-401",
+    "familia": "trabe"
+   },
+   {
+    "marca": "T4-4",
+    "hoja": "ES-401",
+    "familia": "trabe"
+   },
+   {
+    "marca": "TE-A",
+    "hoja": "ES-007",
+    "familia": "trabe"
+   },
+   {
+    "marca": "Z-1",
+    "hoja": "ES-101",
+    "familia": "zapata"
+   },
+   {
+    "marca": "Z-1",
+    "hoja": "ES-203",
+    "familia": "zapata"
+   },
+   {
+    "marca": "Z-2",
+    "hoja": "ES-101",
+    "familia": "zapata"
+   },
+   {
+    "marca": "Z-2",
+    "hoja": "ES-203",
+    "familia": "zapata"
+   },
+   {
+    "marca": "Z-3",
+    "hoja": "ES-101",
+    "familia": "zapata"
+   },
+   {
+    "marca": "Z-3",
+    "hoja": "ES-203",
+    "familia": "zapata"
+   },
+   {
+    "marca": "Z-4",
+    "hoja": "ES-101",
+    "familia": "zapata"
+   },
+   {
+    "marca": "Z-5",
+    "hoja": "ES-101",
+    "familia": "zapata"
+   }
+  ]
+ },
+ "lecturas": [
+  {
+   "marca": "K-0",
+   "hoja": "ES-000",
+   "textos": [
+    "CASTILLO AHOGADO",
+    "REFUERZO 1#3"
+   ],
+   "longitudinal": "1#3",
+   "estribos": null,
+   "seccion_cm": [
+    40,
+    15
+   ],
+   "nota": "castillo ahogado en el hueco de un block: la sección es la del block (40 × 15) con 1 varilla; sin estribo escrito"
+  },
+  {
+   "marca": "K-X",
+   "hoja": "ES-000",
+   "textos": [
+    "CASTILLO AHOGADO",
+    "REFUERZO 1#4"
+   ],
+   "longitudinal": "1#4",
+   "estribos": null,
+   "seccion_cm": [
+    40,
+    20
+   ],
+   "nota": "castillo ahogado en el hueco de un block: la sección es la del block (40 × 20) con 1 varilla; sin estribo escrito"
+  },
+  {
+   "marca": "K-1",
+   "hoja": "ES-000",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    15
+   ]
+  },
+  {
+   "marca": "K-2",
+   "hoja": "ES-000",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    20
+   ]
+  },
+  {
+   "marca": "K-2A",
+   "hoja": "ES-000",
+   "textos": [
+    "4#4",
+    "E#2@15"
+   ],
+   "longitudinal": "4#4",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    20,
+    20
+   ]
+  },
+  {
+   "marca": "K-3",
+   "hoja": "ES-000",
+   "textos": [
+    "6#3",
+    "EYG#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "EYG#2@15",
+   "seccion_cm": [
+    15,
+    30
+   ]
+  },
+  {
+   "marca": "K-3A",
+   "hoja": "ES-000",
+   "textos": [
+    "6#3",
+    "EYG#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "EYG#2@15",
+   "seccion_cm": [
+    15,
+    35
+   ]
+  },
+  {
+   "marca": "K-4",
+   "hoja": "ES-000",
+   "textos": [
+    "6#4",
+    "EYG#3@15"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "EYG#3@15",
+   "seccion_cm": [
+    15,
+    30
+   ]
+  },
+  {
+   "marca": "K-4A",
+   "hoja": "ES-000",
+   "textos": [
+    "4#4+2#3",
+    "EYG#3@20"
+   ],
+   "longitudinal": "4#4+2#3",
+   "estribos": "EYG#3@20",
+   "seccion_cm": [
+    15,
+    30
+   ]
+  },
+  {
+   "marca": "K-5",
+   "hoja": "ES-000",
+   "textos": [
+    "6#4",
+    "EYG#3@15"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "EYG#3@15",
+   "seccion_cm": [
+    20,
+    30
+   ]
+  },
+  {
+   "marca": "K-6",
+   "hoja": "ES-000",
+   "textos": [
+    "4#5+2#4",
+    "2E#3@15"
+   ],
+   "longitudinal": "4#5+2#4",
+   "estribos": "2E#3@15",
+   "seccion_cm": [
+    20,
+    40
+   ]
+  },
+  {
+   "marca": "K-6A",
+   "hoja": "ES-000",
+   "textos": [
+    "6#4",
+    "2E#2@15"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "2E#2@15",
+   "seccion_cm": [
+    15,
+    40
+   ]
+  },
+  {
+   "marca": "K-7",
+   "hoja": "ES-000",
+   "textos": [
+    "4#5+4#4",
+    "2E#3@20"
+   ],
+   "longitudinal": "4#5+4#4",
+   "estribos": "2E#3@20",
+   "seccion_cm": [
+    55,
+    20
+   ]
+  },
+  {
+   "marca": "K-7A",
+   "hoja": "ES-000",
+   "textos": [
+    "6#5+4#4",
+    "3E#3@20"
+   ],
+   "longitudinal": "6#5+4#4",
+   "estribos": "3E#3@20",
+   "seccion_cm": [
+    70,
+    20
+   ]
+  },
+  {
+   "marca": "K-8",
+   "hoja": "ES-000",
+   "textos": [
+    "8#4",
+    "2E#3@20"
+   ],
+   "longitudinal": "8#4",
+   "estribos": "2E#3@20",
+   "seccion_cm": [
+    15,
+    60
+   ]
+  },
+  {
+   "marca": "K-9",
+   "hoja": "ES-000",
+   "textos": [
+    "4#6+2#4",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "4#6+2#4",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    20,
+    40
+   ]
+  },
+  {
+   "marca": "K-10",
+   "hoja": "ES-000",
+   "textos": [
+    "6#6+4#4",
+    "2E+1G#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "6#6+4#4",
+   "estribos": "2E+1G#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    15,
+    85
+   ],
+   "nota": "en el cuadro del bloque la etiqueta queda a la izquierda de su sección (15 × 85, 10 varillas = 6#6+4#4) y su pila debajo de la etiqueta, no encima; en el cuadro propio de ES-400 la misma sección (15 × 85) lleva la etiqueta debajo, como las demás"
+  },
+  {
+   "marca": "K-11",
+   "hoja": "ES-000",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    20,
+    60
+   ]
+  },
+  {
+   "marca": "K-12",
+   "hoja": "ES-000",
+   "textos": [
+    "4#6+4#4",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "4#6+4#4",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    30,
+    30
+   ]
+  },
+  {
+   "marca": "K-14",
+   "hoja": "ES-000",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    40,
+    30
+   ]
+  },
+  {
+   "marca": "K-15",
+   "hoja": "ES-000",
+   "textos": [
+    "8#8",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#8",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    60,
+    30
+   ]
+  },
+  {
+   "marca": "K-15A",
+   "hoja": "ES-000",
+   "textos": [
+    "6#8+6#6",
+    "4E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "6#8+6#6",
+   "estribos": "4E#3EXT@10 CENTRO@20",
+   "seccion_cm": null,
+   "nota": "sección en L (60 de ancho; 30 + 25 = 55 de alto en el lado derecho): no es un rectángulo, sin seccion_cm"
+  },
+  {
+   "marca": "K-16",
+   "hoja": "ES-000",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    45,
+    30
+   ]
+  },
+  {
+   "marca": "K-17",
+   "hoja": "ES-000",
+   "textos": [
+    "8#3",
+    "2E#2@15"
+   ],
+   "longitudinal": "8#3",
+   "estribos": "2E#2@15",
+   "seccion_cm": [
+    15,
+    45
+   ]
+  },
+  {
+   "marca": "K-18",
+   "hoja": "ES-000",
+   "textos": [
+    "4#8+4#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "4#8+4#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    75,
+    25
+   ]
+  },
+  {
+   "marca": "K-19",
+   "hoja": "ES-000",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    30,
+    50
+   ]
+  },
+  {
+   "marca": "K-20",
+   "hoja": "ES-000",
+   "textos": [
+    "10#6",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "10#6",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    30,
+    40
+   ]
+  },
+  {
+   "marca": "K-20A",
+   "hoja": "ES-000",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    30,
+    30
+   ]
+  },
+  {
+   "marca": "K-0",
+   "hoja": "ES-100",
+   "textos": [
+    "CASTILLO AHOGADO",
+    "REFUERZO 1#3"
+   ],
+   "longitudinal": "1#3",
+   "estribos": null,
+   "seccion_cm": [
+    40,
+    15
+   ],
+   "nota": "castillo ahogado en el hueco de un block: la sección es la del block (40 × 15) con 1 varilla; sin estribo escrito"
+  },
+  {
+   "marca": "K-X",
+   "hoja": "ES-100",
+   "textos": [
+    "CASTILLO AHOGADO",
+    "REFUERZO 1#4"
+   ],
+   "longitudinal": "1#4",
+   "estribos": null,
+   "seccion_cm": [
+    40,
+    20
+   ],
+   "nota": "castillo ahogado en el hueco de un block: la sección es la del block (40 × 20) con 1 varilla; sin estribo escrito"
+  },
+  {
+   "marca": "K-1",
+   "hoja": "ES-100",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    15
+   ]
+  },
+  {
+   "marca": "K-2",
+   "hoja": "ES-100",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    20
+   ]
+  },
+  {
+   "marca": "K-2A",
+   "hoja": "ES-100",
+   "textos": [
+    "4#4",
+    "E#2@15"
+   ],
+   "longitudinal": "4#4",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    20,
+    20
+   ]
+  },
+  {
+   "marca": "K-3",
+   "hoja": "ES-100",
+   "textos": [
+    "6#3",
+    "EYG#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "EYG#2@15",
+   "seccion_cm": [
+    15,
+    30
+   ]
+  },
+  {
+   "marca": "K-3A",
+   "hoja": "ES-100",
+   "textos": [
+    "6#3",
+    "EYG#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "EYG#2@15",
+   "seccion_cm": [
+    15,
+    35
+   ]
+  },
+  {
+   "marca": "K-4",
+   "hoja": "ES-100",
+   "textos": [
+    "6#4",
+    "EYG#3@15"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "EYG#3@15",
+   "seccion_cm": [
+    15,
+    30
+   ]
+  },
+  {
+   "marca": "K-4A",
+   "hoja": "ES-100",
+   "textos": [
+    "4#4+2#3",
+    "EYG#3@20"
+   ],
+   "longitudinal": "4#4+2#3",
+   "estribos": "EYG#3@20",
+   "seccion_cm": [
+    15,
+    30
+   ]
+  },
+  {
+   "marca": "K-5",
+   "hoja": "ES-100",
+   "textos": [
+    "6#4",
+    "EYG#3@15"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "EYG#3@15",
+   "seccion_cm": [
+    20,
+    30
+   ]
+  },
+  {
+   "marca": "K-6",
+   "hoja": "ES-100",
+   "textos": [
+    "4#5+2#4",
+    "2E#3@15"
+   ],
+   "longitudinal": "4#5+2#4",
+   "estribos": "2E#3@15",
+   "seccion_cm": [
+    20,
+    40
+   ]
+  },
+  {
+   "marca": "K-6A",
+   "hoja": "ES-100",
+   "textos": [
+    "6#4",
+    "2E#2@15"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "2E#2@15",
+   "seccion_cm": [
+    15,
+    40
+   ]
+  },
+  {
+   "marca": "K-7",
+   "hoja": "ES-100",
+   "textos": [
+    "4#5+4#4",
+    "2E#3@20"
+   ],
+   "longitudinal": "4#5+4#4",
+   "estribos": "2E#3@20",
+   "seccion_cm": [
+    55,
+    20
+   ]
+  },
+  {
+   "marca": "K-7A",
+   "hoja": "ES-100",
+   "textos": [
+    "6#5+4#4",
+    "3E#3@20"
+   ],
+   "longitudinal": "6#5+4#4",
+   "estribos": "3E#3@20",
+   "seccion_cm": [
+    70,
+    20
+   ]
+  },
+  {
+   "marca": "K-8",
+   "hoja": "ES-100",
+   "textos": [
+    "8#4",
+    "2E#3@20"
+   ],
+   "longitudinal": "8#4",
+   "estribos": "2E#3@20",
+   "seccion_cm": [
+    15,
+    60
+   ]
+  },
+  {
+   "marca": "K-9",
+   "hoja": "ES-100",
+   "textos": [
+    "4#6+2#4",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "4#6+2#4",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    20,
+    40
+   ]
+  },
+  {
+   "marca": "K-10",
+   "hoja": "ES-100",
+   "textos": [
+    "6#6+4#4",
+    "2E+1G#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "6#6+4#4",
+   "estribos": "2E+1G#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    15,
+    85
+   ],
+   "nota": "en el cuadro del bloque la etiqueta queda a la izquierda de su sección (15 × 85, 10 varillas = 6#6+4#4) y su pila debajo de la etiqueta, no encima; en el cuadro propio de ES-400 la misma sección (15 × 85) lleva la etiqueta debajo, como las demás"
+  },
+  {
+   "marca": "K-11",
+   "hoja": "ES-100",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    20,
+    60
+   ]
+  },
+  {
+   "marca": "K-12",
+   "hoja": "ES-100",
+   "textos": [
+    "4#6+4#4",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "4#6+4#4",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    30,
+    30
+   ]
+  },
+  {
+   "marca": "K-14",
+   "hoja": "ES-100",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    40,
+    30
+   ]
+  },
+  {
+   "marca": "K-15",
+   "hoja": "ES-100",
+   "textos": [
+    "8#8",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#8",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    60,
+    30
+   ]
+  },
+  {
+   "marca": "K-15A",
+   "hoja": "ES-100",
+   "textos": [
+    "6#8+6#6",
+    "4E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "6#8+6#6",
+   "estribos": "4E#3EXT@10 CENTRO@20",
+   "seccion_cm": null,
+   "nota": "sección en L (60 de ancho; 30 + 25 = 55 de alto en el lado derecho): no es un rectángulo, sin seccion_cm"
+  },
+  {
+   "marca": "K-16",
+   "hoja": "ES-100",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    45,
+    30
+   ]
+  },
+  {
+   "marca": "K-17",
+   "hoja": "ES-100",
+   "textos": [
+    "8#3",
+    "2E#2@15"
+   ],
+   "longitudinal": "8#3",
+   "estribos": "2E#2@15",
+   "seccion_cm": [
+    15,
+    45
+   ]
+  },
+  {
+   "marca": "K-18",
+   "hoja": "ES-100",
+   "textos": [
+    "4#8+4#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "4#8+4#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    75,
+    25
+   ]
+  },
+  {
+   "marca": "K-19",
+   "hoja": "ES-100",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    30,
+    50
+   ]
+  },
+  {
+   "marca": "K-20",
+   "hoja": "ES-100",
+   "textos": [
+    "10#6",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "10#6",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    30,
+    40
+   ]
+  },
+  {
+   "marca": "K-20A",
+   "hoja": "ES-100",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    30,
+    30
+   ]
+  },
+  {
+   "marca": "K-0",
+   "hoja": "ES-200",
+   "textos": [
+    "CASTILLO AHOGADO",
+    "REFUERZO 1#3"
+   ],
+   "longitudinal": "1#3",
+   "estribos": null,
+   "seccion_cm": [
+    40,
+    15
+   ],
+   "nota": "castillo ahogado en el hueco de un block: la sección es la del block (40 × 15) con 1 varilla; sin estribo escrito"
+  },
+  {
+   "marca": "K-X",
+   "hoja": "ES-200",
+   "textos": [
+    "CASTILLO AHOGADO",
+    "REFUERZO 1#4"
+   ],
+   "longitudinal": "1#4",
+   "estribos": null,
+   "seccion_cm": [
+    40,
+    20
+   ],
+   "nota": "castillo ahogado en el hueco de un block: la sección es la del block (40 × 20) con 1 varilla; sin estribo escrito"
+  },
+  {
+   "marca": "K-1",
+   "hoja": "ES-200",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    15
+   ]
+  },
+  {
+   "marca": "K-2",
+   "hoja": "ES-200",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    20
+   ]
+  },
+  {
+   "marca": "K-2A",
+   "hoja": "ES-200",
+   "textos": [
+    "4#4",
+    "E#2@15"
+   ],
+   "longitudinal": "4#4",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    20,
+    20
+   ]
+  },
+  {
+   "marca": "K-3",
+   "hoja": "ES-200",
+   "textos": [
+    "6#3",
+    "EYG#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "EYG#2@15",
+   "seccion_cm": [
+    15,
+    30
+   ]
+  },
+  {
+   "marca": "K-3A",
+   "hoja": "ES-200",
+   "textos": [
+    "6#3",
+    "EYG#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "EYG#2@15",
+   "seccion_cm": [
+    15,
+    35
+   ]
+  },
+  {
+   "marca": "K-4",
+   "hoja": "ES-200",
+   "textos": [
+    "6#4",
+    "EYG#3@15"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "EYG#3@15",
+   "seccion_cm": [
+    15,
+    30
+   ]
+  },
+  {
+   "marca": "K-4A",
+   "hoja": "ES-200",
+   "textos": [
+    "4#4+2#3",
+    "EYG#3@20"
+   ],
+   "longitudinal": "4#4+2#3",
+   "estribos": "EYG#3@20",
+   "seccion_cm": [
+    15,
+    30
+   ]
+  },
+  {
+   "marca": "K-5",
+   "hoja": "ES-200",
+   "textos": [
+    "6#4",
+    "EYG#3@15"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "EYG#3@15",
+   "seccion_cm": [
+    20,
+    30
+   ]
+  },
+  {
+   "marca": "K-6",
+   "hoja": "ES-200",
+   "textos": [
+    "4#5+2#4",
+    "2E#3@15"
+   ],
+   "longitudinal": "4#5+2#4",
+   "estribos": "2E#3@15",
+   "seccion_cm": [
+    20,
+    40
+   ]
+  },
+  {
+   "marca": "K-6A",
+   "hoja": "ES-200",
+   "textos": [
+    "6#4",
+    "2E#2@15"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "2E#2@15",
+   "seccion_cm": [
+    15,
+    40
+   ]
+  },
+  {
+   "marca": "K-7",
+   "hoja": "ES-200",
+   "textos": [
+    "4#5+4#4",
+    "2E#3@20"
+   ],
+   "longitudinal": "4#5+4#4",
+   "estribos": "2E#3@20",
+   "seccion_cm": [
+    55,
+    20
+   ]
+  },
+  {
+   "marca": "K-7A",
+   "hoja": "ES-200",
+   "textos": [
+    "6#5+4#4",
+    "3E#3@20"
+   ],
+   "longitudinal": "6#5+4#4",
+   "estribos": "3E#3@20",
+   "seccion_cm": [
+    70,
+    20
+   ]
+  },
+  {
+   "marca": "K-8",
+   "hoja": "ES-200",
+   "textos": [
+    "8#4",
+    "2E#3@20"
+   ],
+   "longitudinal": "8#4",
+   "estribos": "2E#3@20",
+   "seccion_cm": [
+    15,
+    60
+   ]
+  },
+  {
+   "marca": "K-9",
+   "hoja": "ES-200",
+   "textos": [
+    "4#6+2#4",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "4#6+2#4",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    20,
+    40
+   ]
+  },
+  {
+   "marca": "K-10",
+   "hoja": "ES-200",
+   "textos": [
+    "6#6+4#4",
+    "2E+1G#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "6#6+4#4",
+   "estribos": "2E+1G#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    15,
+    85
+   ],
+   "nota": "en el cuadro del bloque la etiqueta queda a la izquierda de su sección (15 × 85, 10 varillas = 6#6+4#4) y su pila debajo de la etiqueta, no encima; en el cuadro propio de ES-400 la misma sección (15 × 85) lleva la etiqueta debajo, como las demás"
+  },
+  {
+   "marca": "K-11",
+   "hoja": "ES-200",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    20,
+    60
+   ]
+  },
+  {
+   "marca": "K-12",
+   "hoja": "ES-200",
+   "textos": [
+    "4#6+4#4",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "4#6+4#4",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    30,
+    30
+   ]
+  },
+  {
+   "marca": "K-14",
+   "hoja": "ES-200",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    40,
+    30
+   ]
+  },
+  {
+   "marca": "K-15",
+   "hoja": "ES-200",
+   "textos": [
+    "8#8",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#8",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    60,
+    30
+   ]
+  },
+  {
+   "marca": "K-15A",
+   "hoja": "ES-200",
+   "textos": [
+    "6#8+6#6",
+    "4E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "6#8+6#6",
+   "estribos": "4E#3EXT@10 CENTRO@20",
+   "seccion_cm": null,
+   "nota": "sección en L (60 de ancho; 30 + 25 = 55 de alto en el lado derecho): no es un rectángulo, sin seccion_cm"
+  },
+  {
+   "marca": "K-16",
+   "hoja": "ES-200",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    45,
+    30
+   ]
+  },
+  {
+   "marca": "K-17",
+   "hoja": "ES-200",
+   "textos": [
+    "8#3",
+    "2E#2@15"
+   ],
+   "longitudinal": "8#3",
+   "estribos": "2E#2@15",
+   "seccion_cm": [
+    15,
+    45
+   ]
+  },
+  {
+   "marca": "K-18",
+   "hoja": "ES-200",
+   "textos": [
+    "4#8+4#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "4#8+4#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    75,
+    25
+   ]
+  },
+  {
+   "marca": "K-19",
+   "hoja": "ES-200",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    30,
+    50
+   ]
+  },
+  {
+   "marca": "K-20",
+   "hoja": "ES-200",
+   "textos": [
+    "10#6",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "10#6",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    30,
+    40
+   ]
+  },
+  {
+   "marca": "K-20A",
+   "hoja": "ES-200",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    30,
+    30
+   ]
+  },
+  {
+   "marca": "K-0",
+   "hoja": "ES-300",
+   "textos": [
+    "CASTILLO AHOGADO",
+    "REFUERZO 1#3"
+   ],
+   "longitudinal": "1#3",
+   "estribos": null,
+   "seccion_cm": [
+    40,
+    15
+   ],
+   "nota": "castillo ahogado en el hueco de un block: la sección es la del block (40 × 15) con 1 varilla; sin estribo escrito"
+  },
+  {
+   "marca": "K-X",
+   "hoja": "ES-300",
+   "textos": [
+    "CASTILLO AHOGADO",
+    "REFUERZO 1#4"
+   ],
+   "longitudinal": "1#4",
+   "estribos": null,
+   "seccion_cm": [
+    40,
+    20
+   ],
+   "nota": "castillo ahogado en el hueco de un block: la sección es la del block (40 × 20) con 1 varilla; sin estribo escrito"
+  },
+  {
+   "marca": "K-1",
+   "hoja": "ES-300",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    15
+   ]
+  },
+  {
+   "marca": "K-2",
+   "hoja": "ES-300",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    20
+   ]
+  },
+  {
+   "marca": "K-2A",
+   "hoja": "ES-300",
+   "textos": [
+    "4#4",
+    "E#2@15"
+   ],
+   "longitudinal": "4#4",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    20,
+    20
+   ]
+  },
+  {
+   "marca": "K-3",
+   "hoja": "ES-300",
+   "textos": [
+    "6#3",
+    "EYG#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "EYG#2@15",
+   "seccion_cm": [
+    15,
+    30
+   ]
+  },
+  {
+   "marca": "K-3A",
+   "hoja": "ES-300",
+   "textos": [
+    "6#3",
+    "EYG#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "EYG#2@15",
+   "seccion_cm": [
+    15,
+    35
+   ]
+  },
+  {
+   "marca": "K-4",
+   "hoja": "ES-300",
+   "textos": [
+    "6#4",
+    "EYG#3@15"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "EYG#3@15",
+   "seccion_cm": [
+    15,
+    30
+   ]
+  },
+  {
+   "marca": "K-4A",
+   "hoja": "ES-300",
+   "textos": [
+    "4#4+2#3",
+    "EYG#3@20"
+   ],
+   "longitudinal": "4#4+2#3",
+   "estribos": "EYG#3@20",
+   "seccion_cm": [
+    15,
+    30
+   ]
+  },
+  {
+   "marca": "K-5",
+   "hoja": "ES-300",
+   "textos": [
+    "6#4",
+    "EYG#3@15"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "EYG#3@15",
+   "seccion_cm": [
+    20,
+    30
+   ]
+  },
+  {
+   "marca": "K-6",
+   "hoja": "ES-300",
+   "textos": [
+    "4#5+2#4",
+    "2E#3@15"
+   ],
+   "longitudinal": "4#5+2#4",
+   "estribos": "2E#3@15",
+   "seccion_cm": [
+    20,
+    40
+   ]
+  },
+  {
+   "marca": "K-6A",
+   "hoja": "ES-300",
+   "textos": [
+    "6#4",
+    "2E#2@15"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "2E#2@15",
+   "seccion_cm": [
+    15,
+    40
+   ]
+  },
+  {
+   "marca": "K-7",
+   "hoja": "ES-300",
+   "textos": [
+    "4#5+4#4",
+    "2E#3@20"
+   ],
+   "longitudinal": "4#5+4#4",
+   "estribos": "2E#3@20",
+   "seccion_cm": [
+    55,
+    20
+   ]
+  },
+  {
+   "marca": "K-7A",
+   "hoja": "ES-300",
+   "textos": [
+    "6#5+4#4",
+    "3E#3@20"
+   ],
+   "longitudinal": "6#5+4#4",
+   "estribos": "3E#3@20",
+   "seccion_cm": [
+    70,
+    20
+   ]
+  },
+  {
+   "marca": "K-8",
+   "hoja": "ES-300",
+   "textos": [
+    "8#4",
+    "2E#3@20"
+   ],
+   "longitudinal": "8#4",
+   "estribos": "2E#3@20",
+   "seccion_cm": [
+    15,
+    60
+   ]
+  },
+  {
+   "marca": "K-9",
+   "hoja": "ES-300",
+   "textos": [
+    "4#6+2#4",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "4#6+2#4",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    20,
+    40
+   ]
+  },
+  {
+   "marca": "K-10",
+   "hoja": "ES-300",
+   "textos": [
+    "6#6+4#4",
+    "2E+1G#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "6#6+4#4",
+   "estribos": "2E+1G#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    15,
+    85
+   ],
+   "nota": "en el cuadro del bloque la etiqueta queda a la izquierda de su sección (15 × 85, 10 varillas = 6#6+4#4) y su pila debajo de la etiqueta, no encima; en el cuadro propio de ES-400 la misma sección (15 × 85) lleva la etiqueta debajo, como las demás"
+  },
+  {
+   "marca": "K-11",
+   "hoja": "ES-300",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    20,
+    60
+   ]
+  },
+  {
+   "marca": "K-12",
+   "hoja": "ES-300",
+   "textos": [
+    "4#6+4#4",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "4#6+4#4",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    30,
+    30
+   ]
+  },
+  {
+   "marca": "K-14",
+   "hoja": "ES-300",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    40,
+    30
+   ]
+  },
+  {
+   "marca": "K-15",
+   "hoja": "ES-300",
+   "textos": [
+    "8#8",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#8",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    60,
+    30
+   ]
+  },
+  {
+   "marca": "K-15A",
+   "hoja": "ES-300",
+   "textos": [
+    "6#8+6#6",
+    "4E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "6#8+6#6",
+   "estribos": "4E#3EXT@10 CENTRO@20",
+   "seccion_cm": null,
+   "nota": "sección en L (60 de ancho; 30 + 25 = 55 de alto en el lado derecho): no es un rectángulo, sin seccion_cm"
+  },
+  {
+   "marca": "K-16",
+   "hoja": "ES-300",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    45,
+    30
+   ]
+  },
+  {
+   "marca": "K-17",
+   "hoja": "ES-300",
+   "textos": [
+    "8#3",
+    "2E#2@15"
+   ],
+   "longitudinal": "8#3",
+   "estribos": "2E#2@15",
+   "seccion_cm": [
+    15,
+    45
+   ]
+  },
+  {
+   "marca": "K-18",
+   "hoja": "ES-300",
+   "textos": [
+    "4#8+4#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "4#8+4#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    75,
+    25
+   ]
+  },
+  {
+   "marca": "K-19",
+   "hoja": "ES-300",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    30,
+    50
+   ]
+  },
+  {
+   "marca": "K-20",
+   "hoja": "ES-300",
+   "textos": [
+    "10#6",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "10#6",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    30,
+    40
+   ]
+  },
+  {
+   "marca": "K-20A",
+   "hoja": "ES-300",
+   "textos": [
+    "8#6",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    30,
+    30
+   ]
+  },
+  {
+   "marca": "K-0",
+   "hoja": "ES-400",
+   "textos": [
+    "CASTILLO AHOGADO",
+    "REFUERZO 1#3"
+   ],
+   "longitudinal": "1#3",
+   "estribos": null,
+   "seccion_cm": [
+    40,
+    15
+   ],
+   "nota": "castillo ahogado en el hueco de un block: la sección es la del block (40 × 15) con 1 varilla; sin estribo escrito"
+  },
+  {
+   "marca": "K-1",
+   "hoja": "ES-400",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    15
+   ]
+  },
+  {
+   "marca": "K-2",
+   "hoja": "ES-400",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    20
+   ]
+  },
+  {
+   "marca": "K-2A",
+   "hoja": "ES-400",
+   "textos": [
+    "4#4",
+    "E#2@15"
+   ],
+   "longitudinal": "4#4",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    20,
+    20
+   ]
+  },
+  {
+   "marca": "K-3",
+   "hoja": "ES-400",
+   "textos": [
+    "6#3",
+    "EYG#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "EYG#2@15",
+   "seccion_cm": [
+    15,
+    30
+   ]
+  },
+  {
+   "marca": "K-4",
+   "hoja": "ES-400",
+   "textos": [
+    "6#4",
+    "EYG#3@15"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "EYG#3@15",
+   "seccion_cm": [
+    15,
+    30
+   ]
+  },
+  {
+   "marca": "K-4A",
+   "hoja": "ES-400",
+   "textos": [
+    "4#4+2#3",
+    "EYG#3@20"
+   ],
+   "longitudinal": "4#4+2#3",
+   "estribos": "EYG#3@20",
+   "seccion_cm": [
+    15,
+    30
+   ]
+  },
+  {
+   "marca": "K-5",
+   "hoja": "ES-400",
+   "textos": [
+    "6#4",
+    "EYG#3@15"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "EYG#3@15",
+   "seccion_cm": [
+    20,
+    30
+   ]
+  },
+  {
+   "marca": "K-6",
+   "hoja": "ES-400",
+   "textos": [
+    "4#5+2#4",
+    "2E#3@15"
+   ],
+   "longitudinal": "4#5+2#4",
+   "estribos": "2E#3@15",
+   "seccion_cm": [
+    20,
+    40
+   ]
+  },
+  {
+   "marca": "K-6A",
+   "hoja": "ES-400",
+   "textos": [
+    "6#4",
+    "2E#2@15"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "2E#2@15",
+   "seccion_cm": [
+    15,
+    40
+   ]
+  },
+  {
+   "marca": "K-7",
+   "hoja": "ES-400",
+   "textos": [
+    "4#5+4#4",
+    "2E#3@20"
+   ],
+   "longitudinal": "4#5+4#4",
+   "estribos": "2E#3@20",
+   "seccion_cm": [
+    55,
+    20
+   ]
+  },
+  {
+   "marca": "K-8",
+   "hoja": "ES-400",
+   "textos": [
+    "8#4",
+    "2E#3@20"
+   ],
+   "longitudinal": "8#4",
+   "estribos": "2E#3@20",
+   "seccion_cm": [
+    15,
+    60
+   ]
+  },
+  {
+   "marca": "K-9",
+   "hoja": "ES-400",
+   "textos": [
+    "4#6+2#4",
+    "2E#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "4#6+2#4",
+   "estribos": "2E#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    20,
+    40
+   ]
+  },
+  {
+   "marca": "K-10",
+   "hoja": "ES-400",
+   "textos": [
+    "6#6+4#4",
+    "2E+1G#3EXT@10",
+    "CENTRO@15"
+   ],
+   "longitudinal": "6#6+4#4",
+   "estribos": "2E+1G#3EXT@10 CENTRO@15",
+   "seccion_cm": [
+    15,
+    85
+   ],
+   "nota": "cuadro propio de ES-400: etiqueta bajo su pila y su sección 15 × 85"
+  },
+  {
+   "marca": "K-X",
+   "hoja": "ES-400",
+   "textos": [
+    "CASTILLO AHOGADO",
+    "REFUERZO 1#4"
+   ],
+   "longitudinal": "1#4",
+   "estribos": null,
+   "seccion_cm": [
+    40,
+    20
+   ],
+   "nota": "castillo ahogado en el hueco de un block: la sección es la del block (40 × 20) con 1 varilla; sin estribo escrito"
+  },
+  {
+   "marca": "C-1",
+   "hoja": "ES-000",
+   "textos": [
+    "8#8",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#8",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    45,
+    45
+   ]
+  },
+  {
+   "marca": "C-2",
+   "hoja": "ES-000",
+   "textos": [
+    "10#8",
+    "3E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "10#8",
+   "estribos": "3E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    75,
+    35
+   ]
+  },
+  {
+   "marca": "C-3",
+   "hoja": "ES-000",
+   "textos": [
+    "8#8+4#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#8+4#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    45,
+    50
+   ]
+  },
+  {
+   "marca": "C-1",
+   "hoja": "ES-100",
+   "textos": [
+    "8#8",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#8",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    45,
+    45
+   ]
+  },
+  {
+   "marca": "C-2",
+   "hoja": "ES-100",
+   "textos": [
+    "10#8",
+    "3E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "10#8",
+   "estribos": "3E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    75,
+    35
+   ]
+  },
+  {
+   "marca": "C-3",
+   "hoja": "ES-100",
+   "textos": [
+    "8#8+4#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#8+4#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    45,
+    50
+   ]
+  },
+  {
+   "marca": "C-1",
+   "hoja": "ES-200",
+   "textos": [
+    "8#8",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#8",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    45,
+    45
+   ]
+  },
+  {
+   "marca": "C-2",
+   "hoja": "ES-200",
+   "textos": [
+    "10#8",
+    "3E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "10#8",
+   "estribos": "3E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    75,
+    35
+   ]
+  },
+  {
+   "marca": "C-3",
+   "hoja": "ES-200",
+   "textos": [
+    "8#8+4#6",
+    "2E#3EXT@10",
+    "CENTRO@20"
+   ],
+   "longitudinal": "8#8+4#6",
+   "estribos": "2E#3EXT@10 CENTRO@20",
+   "seccion_cm": [
+    45,
+    50
+   ]
+  },
+  {
+   "marca": "P-1",
+   "hoja": "ES-000",
+   "textos": [
+    "REFUERZO 4#5+4#4",
+    "2E#3 VER CORTE"
+   ],
+   "longitudinal": "4#5+4#4",
+   "estribos": "2E#3 VER CORTE",
+   "seccion_cm": [
+    35,
+    35
+   ],
+   "nota": "sección del corte (contorno acotado); estribos «VER CORTE»"
+  },
+  {
+   "marca": "P-2",
+   "hoja": "ES-000",
+   "textos": [
+    "REFUERZO 4#6+4#4",
+    "2E#3 VER CORTE"
+   ],
+   "longitudinal": "4#6+4#4",
+   "estribos": "2E#3 VER CORTE",
+   "seccion_cm": [
+    40,
+    40
+   ],
+   "nota": "sección del corte (contorno acotado); estribos «VER CORTE»"
+  },
+  {
+   "marca": "P-3",
+   "hoja": "ES-000",
+   "textos": [
+    "REFUERZO 4#8+4#4",
+    "2E#3 VER CORTE"
+   ],
+   "longitudinal": "4#8+4#4",
+   "estribos": "2E#3 VER CORTE",
+   "seccion_cm": [
+    50,
+    50
+   ],
+   "nota": "sección del corte (contorno acotado); estribos «VER CORTE»"
+  },
+  {
+   "marca": "P-4",
+   "hoja": "ES-000",
+   "textos": [
+    "REFUERZO 12#6",
+    "2E#3 VER CORTE"
+   ],
+   "longitudinal": "12#6",
+   "estribos": "2E#3 VER CORTE",
+   "seccion_cm": [
+    60,
+    60
+   ],
+   "nota": "sección del corte (contorno acotado); estribos «VER CORTE»"
+  },
+  {
+   "marca": "P-5",
+   "hoja": "ES-000",
+   "textos": [
+    "4#8 + 12#6",
+    "3E#3 VER CORTE"
+   ],
+   "longitudinal": "4#8+12#6",
+   "estribos": "3E#3 VER CORTE",
+   "seccion_cm": [
+    70,
+    70
+   ],
+   "nota": "el MTEXT 33AF5 «4#8 + 12#6 / 3E#3 VER CORTE» está dibujado encima de la pila de P-4 (a 0.43 m de su título), no bajo P-5; es de P-5: P-4 ya tiene la suya (33AA0 «REFUERZO 12#6», 33AA2 «2E#3 VER CORTE») y 12 varillas en su corte, P-5 no tiene otra y su corte dibuja 16 varillas (4 + 12). Va a la lista de Diego (texto fuera de lugar en el plano)"
+  },
+  {
+   "marca": "D-X",
+   "hoja": "ES-000",
+   "textos": [
+    "8#6",
+    "2E#3@10"
+   ],
+   "longitudinal": "8#6",
+   "estribos": "2E#3@10",
+   "seccion_cm": [
+    45,
+    45
+   ],
+   "nota": "cuadro «DADO» de ES-000 junto al de columnas"
+  },
+  {
+   "marca": "CE-1",
+   "hoja": "ES-100",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    30
+   ],
+   "nota": "cuadro «CADENAS DE ENRASE»: título encima de la sección, la pila debajo de ella"
+  },
+  {
+   "marca": "CE-2",
+   "hoja": "ES-100",
+   "textos": [
+    "6#3",
+    "E#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    20,
+    30
+   ],
+   "nota": "cuadro «CADENAS DE ENRASE»: título encima de la sección, la pila debajo de ella"
+  },
+  {
+   "marca": "CE-3",
+   "hoja": "ES-100",
+   "textos": [
+    "6#4",
+    "E#3@14"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "E#3@14",
+   "seccion_cm": [
+    30,
+    30
+   ],
+   "nota": "cuadro «CADENAS DE ENRASE»: título encima de la sección, la pila debajo de ella"
+  },
+  {
+   "marca": "CE-1",
+   "hoja": "ES-200",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    30
+   ],
+   "nota": "cuadro «CADENAS DE ENRASE»: título encima de la sección, la pila debajo de ella"
+  },
+  {
+   "marca": "CE-2",
+   "hoja": "ES-200",
+   "textos": [
+    "6#3",
+    "E#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    20,
+    30
+   ],
+   "nota": "cuadro «CADENAS DE ENRASE»: título encima de la sección, la pila debajo de ella"
+  },
+  {
+   "marca": "CE-3",
+   "hoja": "ES-200",
+   "textos": [
+    "6#4",
+    "E#3@14"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "E#3@14",
+   "seccion_cm": [
+    30,
+    30
+   ],
+   "nota": "cuadro «CADENAS DE ENRASE»: título encima de la sección, la pila debajo de ella"
+  },
+  {
+   "marca": "CE-1",
+   "hoja": "ES-300",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    30
+   ],
+   "nota": "cuadro «CADENAS DE ENRASE»: título encima de la sección, la pila debajo de ella"
+  },
+  {
+   "marca": "CE-2",
+   "hoja": "ES-300",
+   "textos": [
+    "6#3",
+    "E#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    20,
+    30
+   ],
+   "nota": "cuadro «CADENAS DE ENRASE»: título encima de la sección, la pila debajo de ella"
+  },
+  {
+   "marca": "CE-3",
+   "hoja": "ES-300",
+   "textos": [
+    "6#4",
+    "E#3@14"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "E#3@14",
+   "seccion_cm": [
+    30,
+    30
+   ],
+   "nota": "cuadro «CADENAS DE ENRASE»: título encima de la sección, la pila debajo de ella"
+  },
+  {
+   "marca": "CE-4",
+   "hoja": "ES-300",
+   "textos": [
+    "4#4",
+    "E#3@16"
+   ],
+   "longitudinal": "4#4",
+   "estribos": "E#3@16",
+   "seccion_cm": [
+    20,
+    35
+   ],
+   "nota": "cuadro «CADENAS DE ENRASE»: título encima de la sección, la pila debajo de ella"
+  },
+  {
+   "marca": "CE-5",
+   "hoja": "ES-300",
+   "textos": [
+    "4#3",
+    "E#3@16"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#3@16",
+   "seccion_cm": [
+    15,
+    35
+   ],
+   "nota": "cuadro «CADENAS DE ENRASE»: título encima de la sección, la pila debajo de ella"
+  },
+  {
+   "marca": "CE-1",
+   "hoja": "ES-400",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    30
+   ],
+   "nota": "cuadro «CADENAS DE ENRASE»: título encima de la sección, la pila debajo de ella"
+  },
+  {
+   "marca": "CE-2",
+   "hoja": "ES-400",
+   "textos": [
+    "6#3",
+    "E#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    20,
+    30
+   ],
+   "nota": "cuadro «CADENAS DE ENRASE»: título encima de la sección, la pila debajo de ella"
+  },
+  {
+   "marca": "CE-3",
+   "hoja": "ES-400",
+   "textos": [
+    "6#4",
+    "E#3@14"
+   ],
+   "longitudinal": "6#4",
+   "estribos": "E#3@14",
+   "seccion_cm": [
+    30,
+    30
+   ],
+   "nota": "cuadro «CADENAS DE ENRASE»: título encima de la sección, la pila debajo de ella"
+  },
+  {
+   "marca": "CI",
+   "hoja": "ES-200",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    20
+   ],
+   "para_muro_cm": 15,
+   "nota": "«CI (PARA MUROS DE 15CM)», cuadro «CADENAS INTERMEDIAS»: título encima de la sección, la pila debajo"
+  },
+  {
+   "marca": "CI",
+   "hoja": "ES-200",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    20,
+    20
+   ],
+   "para_muro_cm": 20,
+   "nota": "«CI (PARA MUROS DE 20CM)», cuadro «CADENAS INTERMEDIAS»: título encima de la sección, la pila debajo"
+  },
+  {
+   "marca": "CI",
+   "hoja": "ES-200",
+   "textos": [
+    "6#3",
+    "E#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    30,
+    20
+   ],
+   "para_muro_cm": 30,
+   "nota": "«CI (PARA MUROS DE 30CM)», cuadro «CADENAS INTERMEDIAS»: título encima de la sección, la pila debajo"
+  },
+  {
+   "marca": "CI",
+   "hoja": "ES-300",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    20
+   ],
+   "para_muro_cm": 15,
+   "nota": "«CI (PARA MUROS DE 15CM)», cuadro «CADENAS INTERMEDIAS»: título encima de la sección, la pila debajo"
+  },
+  {
+   "marca": "CI",
+   "hoja": "ES-300",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    20,
+    20
+   ],
+   "para_muro_cm": 20,
+   "nota": "«CI (PARA MUROS DE 20CM)», cuadro «CADENAS INTERMEDIAS»: título encima de la sección, la pila debajo"
+  },
+  {
+   "marca": "CI",
+   "hoja": "ES-300",
+   "textos": [
+    "6#3",
+    "E#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    30,
+    20
+   ],
+   "para_muro_cm": 30,
+   "nota": "«CI (PARA MUROS DE 30CM)», cuadro «CADENAS INTERMEDIAS»: título encima de la sección, la pila debajo"
+  },
+  {
+   "marca": "CI",
+   "hoja": "ES-400",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    20
+   ],
+   "para_muro_cm": 15,
+   "nota": "«CI (PARA MUROS DE 15CM)», cuadro «CADENAS INTERMEDIAS»: título encima de la sección, la pila debajo"
+  },
+  {
+   "marca": "CI",
+   "hoja": "ES-400",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    20,
+    20
+   ],
+   "para_muro_cm": 20,
+   "nota": "«CI (PARA MUROS DE 20CM)», cuadro «CADENAS INTERMEDIAS»: título encima de la sección, la pila debajo"
+  },
+  {
+   "marca": "CI",
+   "hoja": "ES-400",
+   "textos": [
+    "6#3",
+    "E#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    30,
+    20
+   ],
+   "para_muro_cm": 30,
+   "nota": "«CI (PARA MUROS DE 30CM)», cuadro «CADENAS INTERMEDIAS»: título encima de la sección, la pila debajo"
+  },
+  {
+   "marca": "CR-1",
+   "hoja": "ES-200",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    20
+   ],
+   "nota": "cuadro «CERRAMIENTOS»: título encima de la sección, la pila debajo"
+  },
+  {
+   "marca": "CR-3",
+   "hoja": "ES-200",
+   "textos": [
+    "6#3",
+    "E#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    30,
+    20
+   ],
+   "nota": "cuadro «CERRAMIENTOS»: título encima de la sección, la pila debajo"
+  },
+  {
+   "marca": "CR-1",
+   "hoja": "ES-300",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    20
+   ],
+   "nota": "cuadro «CERRAMIENTOS»: título encima de la sección, la pila debajo"
+  },
+  {
+   "marca": "CR-3",
+   "hoja": "ES-300",
+   "textos": [
+    "6#3",
+    "E#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    30,
+    20
+   ],
+   "nota": "cuadro «CERRAMIENTOS»: título encima de la sección, la pila debajo"
+  },
+  {
+   "marca": "CR-1",
+   "hoja": "ES-400",
+   "textos": [
+    "4#3",
+    "E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    20
+   ],
+   "nota": "cuadro «CERRAMIENTOS»: título encima de la sección, la pila debajo"
+  },
+  {
+   "marca": "DC",
+   "hoja": "ES-200",
+   "textos": [
+    "6#3",
+    "E#2@15"
+   ],
+   "longitudinal": "6#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    30,
+    20
+   ],
+   "nota": "el detalle se titula «D-C» (AF02D) bajo el título de bloque «DALA»; las colocaciones de ES-200 dicen «DC» (R259: D-C define DC)"
+  },
+  {
+   "marca": "DALA",
+   "hoja": "ES-101",
+   "textos": [
+    "CADENA DE ENRASE 15x25 4#3 E#2@15"
+   ],
+   "longitudinal": "4#3",
+   "estribos": "E#2@15",
+   "seccion_cm": [
+    15,
+    25
+   ],
+   "nota": "nota de familia (D8A3A y su copia D8A4F, iguales); la marca es la familia"
+  }
+ ],
+ "dudas": [
+  {
+   "marca": "CR-2",
+   "hoja": "ES-200",
+   "motivo": "armado por línea de llamada (E3)",
+   "lo_que_escribe_el_plano": "«2#3» (lecho superior) y «2#4» (lecho inferior) con su directriz a las varillas de su sección; «E#2@15» bajo la sección; cotas 20 × 20"
+  },
+  {
+   "marca": "CR-2",
+   "hoja": "ES-300",
+   "motivo": "armado por línea de llamada (E3)",
+   "lo_que_escribe_el_plano": "«2#3» (lecho superior) y «2#4» (lecho inferior) con su directriz a las varillas de su sección; «E#2@15» bajo la sección; cotas 20 × 20"
+  },
+  {
+   "marca": "CR-2",
+   "hoja": "ES-400",
+   "motivo": "armado por línea de llamada (E3)",
+   "lo_que_escribe_el_plano": "«2#3» (lecho superior) y «2#4» (lecho inferior) con su directriz a las varillas de su sección; «E#2@15» bajo la sección; cotas 20 × 20"
+  }
+ ]
+}

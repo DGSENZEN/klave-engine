@@ -18,6 +18,7 @@ import shutil
 import sys
 import tempfile
 from collections import Counter
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -112,6 +113,9 @@ class EstructuraExpectation(BaseModel):
     ``por_familia``: por familia, sus cuentas de la tarjeta (``CAMPOS_DE_FAMILIA``).
     ``por_hoja``: por familia cuyas colocaciones se cercan, cuántas hay en cada hoja (una
     colocación que se cambia de planta mueve su altura y su dinero aunque el total no cambie).
+    ``por_vista``: igual, por la vista (la planta) de cada colocación, para las familias que se
+    piden (Tarea 15c: una hoja con varias plantas, como PRUEBA-1, es una sola hoja); se pide al
+    sembrar la entrada y cada captura la conserva para esas familias.
     ``verificaciones``: cuántos hallazgos da cada verificación (1–11), por su número (``"7"``:
     todas sus severidades juntas) o por número y severidad (``"1/bloquea"``), nunca las dos para un
     mismo número. ``hallazgos``: por cada clave cercada con hallazgos, quiénes son —la identidad de
@@ -128,6 +132,7 @@ class EstructuraExpectation(BaseModel):
 
     por_familia: dict[str, dict[str, int]] = Field(default_factory=dict)
     por_hoja: dict[str, dict[str, int]] = Field(default_factory=dict)
+    por_vista: dict[str, dict[str, int]] = Field(default_factory=dict)
     verificaciones: dict[str, int] = Field(default_factory=dict)
     hallazgos: dict[str, list[str]] = Field(default_factory=dict)
     transcripcion: str | None = None
@@ -203,6 +208,12 @@ class EstructuraExpectation(BaseModel):
         for familia, campos in self.por_familia.items():
             if campos.get("colocaciones") and familia not in self.por_hoja:
                 raise ValueError(f"{familia}: se cercan sus colocaciones sin sus hojas")
+        for familia, vistas in self.por_vista.items():
+            total = self.por_familia.get(familia, {}).get("colocaciones")
+            if total is None:
+                raise ValueError(f"por_vista {familia}: sus colocaciones no están cercadas")
+            if sum(vistas.values()) != total:
+                raise ValueError(f"por_vista {familia}: suma {sum(vistas.values())}, son {total}")
         return self
 
 
@@ -242,8 +253,10 @@ def score_estructura(
     diffs: list[str] = []
     tarjetas = {t["familia"]: t for t in estructura_json.get("resumen", [])}
     hojas_reales: dict[str, Counter[str]] = {}
+    vistas_reales: dict[str, Counter[str]] = {}
     for x in estructura_json.get("elementos", []):
         hojas_reales.setdefault(str(x["familia"]), Counter())[str(x.get("hoja", ""))] += 1
+        vistas_reales.setdefault(str(x["familia"]), Counter())[str(x.get("vista") or "")] += 1
     for familia in sorted(set(tarjetas) | set(want.por_familia)):
         if f"por_familia.{familia}" in sin_cerca:
             continue
@@ -264,6 +277,15 @@ def score_estructura(
                 if esperadas.get(hoja, 0) != reales.get(hoja, 0):
                     diffs.append(f"{familia} en {hoja}: esperado {esperadas.get(hoja, 0)}, "
                                  f"motor {reales.get(hoja, 0)}")  # fmt: skip
+        if familia in want.por_vista:
+            esperadas = want.por_vista[familia]
+            reales = vistas_reales.get(familia, Counter())
+            for vista in sorted(set(esperadas) | set(reales)):
+                if esperadas.get(vista, 0) != reales.get(vista, 0):
+                    diffs.append(
+                        f"{familia} en la vista {vista}: esperado {esperadas.get(vista, 0)}, "
+                        f"motor {reales.get(vista, 0)}"
+                    )
     cuenta: Counter[tuple[int, str]] = Counter()
     ids: dict[str, list[str]] = {}
     for v in estructura_json.get("verificaciones", []):
@@ -302,12 +324,16 @@ def score_estructura(
 
 
 def estructura_from_json(
-    estructura_json: dict, sin_cerca: dict[str, str] | None = None
+    estructura_json: dict,
+    sin_cerca: dict[str, str] | None = None,
+    *,
+    por_vista_de: Iterable[str] = (),
 ) -> EstructuraExpectation:
     """La cerca que una corrida da, sin lo que ``sin_cerca`` excusa (que se conserva con su
-    razón): las tarjetas con algo distinto de cero, sus colocaciones por hoja, y cada
-    verificación por número y severidad con sus hallazgos. Sólo se captura de una corrida cuyas
-    cuentas se verificaron contra el plano crudo."""
+    razón): las tarjetas con algo distinto de cero, sus colocaciones por hoja (y por vista, para
+    las familias de ``por_vista_de`` cuyas colocaciones se cercan), y cada verificación por número
+    y severidad con sus hallazgos. Sólo se captura de una corrida cuyas cuentas se verificaron
+    contra el plano crudo."""
     sin_cerca = dict(sin_cerca or {})
     por_familia: dict[str, dict[str, int]] = {}
     for t in estructura_json.get("resumen", []):
@@ -321,10 +347,14 @@ def estructura_from_json(
         if any(campos.values()):
             por_familia[familia] = campos
     hojas: dict[str, Counter[str]] = {}
+    vistas: dict[str, Counter[str]] = {}
+    pedidas = set(por_vista_de)
     for x in estructura_json.get("elementos", []):
         familia = str(x["familia"])
         if por_familia.get(familia, {}).get("colocaciones"):
             hojas.setdefault(familia, Counter())[str(x.get("hoja", ""))] += 1
+            if familia in pedidas:
+                vistas.setdefault(familia, Counter())[str(x.get("vista") or "")] += 1
     ids: dict[str, list[str]] = {}
     for v in estructura_json.get("verificaciones", []):
         ids.setdefault(f"{int(v['numero'])}/{v['severidad']}", []).append(identidad_de_hallazgo(v))
@@ -336,6 +366,7 @@ def estructura_from_json(
     return EstructuraExpectation(
         por_familia=por_familia,
         por_hoja={f: dict(sorted(c.items())) for f, c in sorted(hojas.items())},
+        por_vista={f: dict(sorted(c.items())) for f, c in sorted(vistas.items())},
         verificaciones=verificaciones,
         hallazgos={clave: sorted(ids[clave]) for clave in verificaciones},
         sin_cerca=sin_cerca or None,
@@ -375,8 +406,12 @@ def score_transcripcion(path: Path, schedules_json: dict | None) -> tuple[bool, 
     lecturas del plano del motor (``schedules.json``: fuentes cuadro, detalle o nota, nunca la IA),
     por (marca, marco, variante), en los dos sentidos: lo que la transcripción lee y el motor no
     —o lee distinto— y lo que el motor lee y la transcripción no tiene. Una lectura repetida en la
-    transcripción es un error; lo que deja en ``dudas`` no se compara. Los textos se comparan sin
-    espacios y en mayúsculas; la sección sin el orden de sus lados."""
+    transcripción es un error; lo que deja en ``dudas`` no se compara, ni lo que pone en
+    ``fuera_de_e0.lecturas`` (R281: las marcas que el plano define con llamadas en alzados y
+    cortes, de E3, cada una con su marca y hoja: nada falta en silencio); una lectura que además
+    está en ``dudas`` o fuera de E0 es un error. Los textos se comparan sin
+    espacios y en mayúsculas; la sección sin el orden de sus lados, y sólo la que el plano escribe
+    (no la medida en el dibujo ni la supuesta)."""
     from klave_engine.estructura.definiciones import normalizar_marca
 
     if schedules_json is None:
@@ -404,7 +439,12 @@ def score_transcripcion(path: Path, schedules_json: dict | None) -> tuple[bool, 
             lecturas["longitudinal"].add(t)
         if (t := _texto_canonico(spec.get("stirrups"))) is not None:
             lecturas["estribos"].add(t)
-        if (s := _seccion_canonica(spec.get("section_cm"))) is not None:
+        # Tarea 16: la sección que el plano ESCRIBE (sus cotas); la medida en el dibujo
+        # («geometria», fuente seccion_dibujada) y la supuesta (una sola cota tomada cuadrada,
+        # fuente supuesto) son otras fuentes (FUENTE_DE_LECTURA, fuente_de_seccion): la
+        # transcripción no las tiene.
+        escrita = spec.get("metodo") != "geometria" and not spec.get("seccion_supuesta")
+        if escrita and (s := _seccion_canonica(spec.get("section_cm"))) is not None:
             lecturas["seccion_cm"].add(s)
 
     def llave_de_hoja(d: dict) -> str:
@@ -418,6 +458,11 @@ def score_transcripcion(path: Path, schedules_json: dict | None) -> tuple[bool, 
         return next(iter(marcos)) if len(marcos) == 1 else hoja
 
     dudas = {(normalizar_marca(str(d["marca"])), llave_de_hoja(d)) for d in hecha.get("dudas", [])}
+    fuera = {
+        (normalizar_marca(str(d["marca"])), llave_de_hoja(d))
+        for d in (hecha.get("fuera_de_e0") or {}).get("lecturas", [])
+    }
+    excusadas = dudas | fuera
     esperado: dict[tuple[str, str, float | None], dict[str, Any]] = {}
     for lectura in hecha.get("lecturas", []):
         llave = (normalizar_marca(str(lectura["marca"])), llave_de_hoja(lectura),
@@ -426,6 +471,10 @@ def score_transcripcion(path: Path, schedules_json: dict | None) -> tuple[bool, 
             diffs.append(f"{lectura['marca']} en {lectura['hoja']}: la transcripción la lee dos "
                          "veces")  # fmt: skip
             continue
+        if llave[:2] in excusadas:
+            diffs.append(f"{lectura['marca']} en {lectura['hoja']}: la transcripción la lee y la "
+                         "excusa (dudas o fuera de E0) a la vez")  # fmt: skip
+            continue
         esperado[llave] = {
             "longitudinal": {t} if (t := _texto_canonico(lectura.get("longitudinal"))) else set(),
             "estribos": {t} if (t := _texto_canonico(lectura.get("estribos"))) else set(),
@@ -433,7 +482,7 @@ def score_transcripcion(path: Path, schedules_json: dict | None) -> tuple[bool, 
         }
     for llave in sorted(set(esperado) | set(motor), key=lambda k: (k[0], k[1], k[2] or 0.0)):
         marca, marco, muro = llave
-        if (marca, marco) in dudas:
+        if (marca, marco) in excusadas:
             continue
         nombre = f"{marca} en {hoja_de_llave.get(marco, marco)}" + (
             f" (muros de {muro:g} cm)" if muro is not None else ""
@@ -775,6 +824,29 @@ class CambioDeCerca(Exception):
     """Una captura cambiaría un valor que el gold ya cerca: no se escribe sin ``acepto``."""
 
 
+class SinCaptura(Exception):
+    """``--only`` nombra una entrada que no está en el gold, o cuyos planos no están aquí: no se
+    capturó nada (un error de dedo no pasa por una captura hecha)."""
+
+
+def _elegidas(gold_dir: Path, only: str | None) -> list[GoldEntry]:
+    """Las entradas a capturar: todas, o la que ``only`` nombra; si no hay tal, ``SinCaptura``.
+    Las que no tienen sus planos aquí se dicen y se saltan (con ``only``, ``SinCaptura``)."""
+    entradas = [e for e in load_entries(gold_dir) if only is None or e.drawing_id == only]
+    if only is not None and not entradas:
+        raise SinCaptura(f"ninguna entrada del gold ({gold_dir}) se llama «{only}»")
+    con_planos = []
+    for entry in entradas:
+        if (Path(entry.source) / "drawings").is_dir():
+            con_planos.append(entry)
+        elif only is not None:
+            raise SinCaptura(f"{entry.drawing_id}: sus planos no están en {entry.source}")
+        else:
+            print(f"{entry.drawing_id}: sin planos en {entry.source}, no se capturó",
+                  file=sys.stderr)
+    return con_planos
+
+
 def fusionar_dinero(anterior: MoneyExpectation | None, report: CostReport) -> MoneyExpectation:
     """The engine's money for a run, merged into an entry's money: verified rows (``human``,
     ``crudo``) are kept as they are, excused concepts stay out, and the engine's own rows
@@ -814,6 +886,9 @@ def _plano_de_estructura(e: EstructuraExpectation | None) -> dict[str, Any]:
     for familia, hojas in e.por_hoja.items():
         for hoja, n in hojas.items():
             plano[f"por_hoja.{familia}.{hoja}"] = n
+    for familia, vistas in e.por_vista.items():
+        for vista, n in vistas.items():
+            plano[f"por_vista.{familia}.{vista}"] = n
     for clave, n in e.verificaciones.items():
         plano[f"verificaciones.{clave}"] = n
     for clave, ids in e.hallazgos.items():
@@ -829,9 +904,9 @@ def _excusado_en_dinero(llave: str, sin_cerca: dict[str, str]) -> bool:
 
 def _excusado_en_estructura(llave: str, sin_cerca: dict[str, str]) -> bool:
     tipo, _, resto = llave.partition(".")
-    if tipo in ("por_familia", "por_hoja"):
+    if tipo in ("por_familia", "por_hoja", "por_vista"):
         familia = resto.split(".", 1)[0]
-        campo = "colocaciones" if tipo == "por_hoja" else resto.split(".", 1)[1]
+        campo = "colocaciones" if tipo != "por_familia" else resto.split(".", 1)[1]
         return (
             f"por_familia.{familia}" in sin_cerca or f"por_familia.{familia}.{campo}" in sin_cerca
         )
@@ -877,16 +952,13 @@ def capture_money(
     """Fresh engine run per entry; its quantities and direct cost become the
     entry's money fence. Verified rows (``human``, ``crudo``) and exclusions
     are kept: only the engine's own rows are refreshed. Every change is
-    printed; one that touches a fenced value is refused unless ``acepto``."""
+    printed; one that touches a fenced value is refused unless ``acepto``. An
+    ``only`` that names no entry here (or one without its drawings) raises
+    ``SinCaptura``."""
     settings = settings or get_settings()
     saved: list[Path] = []
-    for entry in load_entries(gold_dir):
-        if only is not None and entry.drawing_id != only:
-            continue
-        source = Path(entry.source)
-        if not (source / "drawings").is_dir():
-            continue
-        _detections, report, _estructura = _fresh_run(source, settings)
+    for entry in _elegidas(gold_dir, only):
+        _detections, report, _estructura = _fresh_run(Path(entry.source), settings)
         fresh = fusionar_dinero(entry.money, report)
         sin = (entry.money.sin_cerca if entry.money else None) or {}
         cambios, cercados = cambios_de_cerca(
@@ -907,20 +979,27 @@ def capture_estructura(
     with its reasons) and keeping its ``transcripcion``. Only for counts verified against the
     raw drawing: say which and how in the entry's notes. Every change is printed; one that
     touches a fenced value (the old fence would fail on this run) is refused unless
-    ``acepto``."""
+    ``acepto``. An entry with no ``estructura`` yet is refused too unless ``acepto`` (R251):
+    seed it first with what it excuses (its ``sin_cerca``), or the whole engine reading
+    becomes the fence."""
     settings = settings or get_settings()
     saved: list[Path] = []
-    for entry in load_entries(gold_dir):
-        if entry.drawing_id != only:
-            continue
-        source = Path(entry.source)
-        if not (source / "drawings").is_dir():
-            continue
-        _detections, _report, estructura_json = _fresh_run(source, settings)
+    for entry in _elegidas(gold_dir, only):
+        if entry.estructura is None and not acepto:
+            raise CambioDeCerca(
+                f"{entry.drawing_id} no tiene cerca estructural: siémbrala con lo que excusa "
+                "(sin_cerca, cada cosa con su razón) o, si toda la lectura del motor se verificó "
+                "contra el plano, captura con --acepto"
+            )
+        _detections, _report, estructura_json = _fresh_run(Path(entry.source), settings)
         if estructura_json is None:
             raise RuntimeError(f"{entry.drawing_id}: la corrida no escribió estructura.json")
         anterior = entry.estructura
-        fresh = estructura_from_json(estructura_json, anterior.sin_cerca if anterior else None)
+        fresh = estructura_from_json(
+            estructura_json,
+            anterior.sin_cerca if anterior else None,
+            por_vista_de=anterior.por_vista if anterior else (),
+        )
         fresh.transcripcion = anterior.transcripcion if anterior else None
         sin = (anterior.sin_cerca if anterior else None) or {}
         cambios, cercados = cambios_de_cerca(
@@ -1199,7 +1278,7 @@ def main(argv: list[str] | None = None) -> int:
             for path in capture_estructura(Path(args.gold), args.only, acepto=args.acepto):
                 print(f"estructura → {path}")
             return 0
-    except CambioDeCerca as exc:
+    except (CambioDeCerca, SinCaptura) as exc:
         print(f"NO SE ESCRIBIÓ: {exc}", file=sys.stderr)
         return 2
     summary = run(Path(args.gold), only=args.only)

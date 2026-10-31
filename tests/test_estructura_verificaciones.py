@@ -667,6 +667,48 @@ def test_8_storeys_counted_two_ways_states_both_readings():
     assert not _con(_run(elementos=sin_base, defs=["K-1", "K-2"], seg=seg), 8, "entrepisos")
 
 
+def test_8_levels_that_cannot_be_measured_are_doubts_and_reading_b_is_said():
+    # Tarea 15e (R270): dos leyendas distintas para una planta, y un entrepiso que no es una
+    # altura de planta, son dudas; la lectura B (el dibujo la muestra) es un aviso.
+    seg = _seg(vistas=("v0", "v1", "v2"), niveles={"v0": 0.0, "v1": 3.45, "v2": 4.65})
+    seg.views[0].level_key = "planta_baja"
+    seg.views[2].nivel_en_duda = "«V2 · PLANTA» declara niveles distintos junto a su título"
+    els = [_el("K-1", vista="v1", hoja="V1")]
+    hallazgos = _all(_run(elementos=els, defs=["K-1"], seg=seg), 8)
+    dudas = [x for x in hallazgos if x.severidad == "duda"]
+    textos = " ".join(x.mensaje for x in dudas)
+    assert "niveles distintos" in textos and "mide 1.2 m" in textos
+    assert any(x.elementos == [els[0].element_id] for x in dudas)  # el de 1.2 m es de V1
+    seg.lectura_de_niveles = "el nivel es la losa que dibuja la planta: prueba"
+    avisos = _con(_run(elementos=els, defs=["K-1"], seg=seg), 8, "bajo su losa")
+    assert len(avisos) == 1 and avisos[0].severidad == "aviso"
+    assert "losa que dibuja la planta" in avisos[0].mensaje
+
+
+def test_7_walls_at_the_full_storey_height_are_an_assumption_unless_the_slab_is_dimensioned():
+    # Tarea 15e (R271): un muro de block llega bajo su losa; sin el peralte de la losa acotado en
+    # un detalle, se mide de nivel a nivel y es un supuesto (aviso de la 7).
+    from klave_engine.detection.views import LosaAcotada
+
+    seg = _seg(vistas=("v0", "v1", "v2"), niveles={"v0": 0.0, "v1": 3.0, "v2": 6.0},
+               asignacion={"w1": "v1"})  # fmt: skip
+    muro = make_detection("w1", DetectionType.wall, "W", (0, 0, 5, 0.15), 0.9, [], "m", [])
+    avisos = _con(_run(detections=[muro], seg=seg), 7, "muros")
+    assert len(avisos) == 1 and avisos[0].severidad == "aviso"
+    assert "peralte de la losa" in avisos[0].mensaje
+    # R286 (I2): lo que hizo el motor, no «el plano no acota … en ningún detalle».
+    mensaje = avisos[0].mensaje
+    assert "ningún detalle" not in mensaje and "el plano no acota" not in mensaje
+    seg.losas_leidas = True
+    (leida,) = _con(_run(detections=[muro], seg=seg), 7, "muros")
+    assert "no se leyó un peralte de losa acotado en un detalle" in leida.mensaje
+    seg.losas_acotadas = [LosaAcotada(espesor_m=0.2, texto="«LOSA»: 20 = 15 + 5")]
+    assert not _con(_run(detections=[muro], seg=seg), 7, "muros")
+    # Sin niveles, la altura del muro es la supuesta de siempre (su propio aviso del presupuesto).
+    sin_niveles = _seg(vistas=("v0", "v1"), asignacion={"w1": "v1"})
+    assert not _con(_run(detections=[muro], seg=sin_niveles), 7, "muros")
+
+
 # --------------------------------------------------------------------- 11: lo que nadie leyó
 
 
@@ -1773,3 +1815,60 @@ def test_a_wall_bound_and_the_storey_contradiction_name_each_other():
     )
     salida = {v.id: v for v in _referencias_cruzadas([entrepisos, muro])}
     assert entrepisos.id in salida["m"].mensaje
+
+
+# ----------------------------------------------------------- Tarea 15b: los dados D-n
+
+
+def test_7_un_dado_con_altura_supuesta_es_una_duda():
+    supuesta = _dato(0.35, "supuesto", "", "ningún corte acota su altura: supuesta 0.35 m")
+    dado = _el("D-9", "dado", altura=supuesta, longitudinales=None, estribos=None)
+    v = _run(elementos=[dado], defs={"D-9": _defn("D-9", "dado")})
+    assert [x for x in _all(v, 7) if "D-9" in x.marcas and "altura" in x.mensaje]
+
+
+def test_10_d_x_dentro_de_d_4_es_una_duda_que_la_lectura_no_decide():
+    # Marina ES-000: «D-X» (E2EC5) a la misma distancia de E2EC4 (45×45) y de 35521 (D-4, 80×80),
+    # y E2EC4 dibujado dentro de 35521.
+    tx = _texto("D-X", 1.0, 1.0, handle="E2EC5")
+    t4 = _texto("D-4", 1.5, 0.7, handle="35522")
+    d4 = _det(
+        "D-4", "zapata", x=1.3, y=0.8, entidades=["ent_35521", t4.entity_id],
+        familia_de_capa="dado",
+        anidados=[{"contorno": "E2EC4", "lados": [0.45, 0.45], "marcas": ["D-X"]}],
+        etiquetas_disputadas=[{"marca": "D-X", "entidad": tx.entity_id, "texto": "E2EC5",
+                               "contornos": ["E2EC4", "35521"]}],
+    )  # fmt: skip
+    v = _run(defs=["D-X"], **_planta_con(tx, t4, dets=[d4]))
+    (x,) = _con(v, 10, "D-X")
+    assert x.severidad == "duda" and x.marcas == ["D-X"]
+    assert "D-X dentro de D-4: ¿pedestal o dado aparte?" in x.mensaje
+    assert "E2EC4" in x.mensaje and "35521" in x.mensaje and "45x45" in x.mensaje
+
+
+def test_10_una_etiqueta_entre_dos_contornos_nombra_los_dos():
+    t = _texto("D-4", 1.0, 1.0, handle="T1")
+    disputa = {"marca": "D-4", "entidad": t.entity_id, "texto": "T1", "contornos": ["A", "B"]}
+    a = _det("", "zapata", x=0.5, y=1.0, familia_de_capa="dado", etiquetas_disputadas=[disputa])
+    b = _det("", "zapata", x=1.4, y=1.0, familia_de_capa="dado", etiquetas_disputadas=[disputa])
+    v = _run(defs=["D-4"], **_planta_con(t, dets=[a, b]))
+    (x,) = _con(v, 10, "D-4")
+    assert "dos contornos de su capa (A, B)" in x.mensaje and "no se junta" in x.mensaje
+
+
+def test_2_y_10_el_detalle_d_c_es_la_definicion_de_la_dc_colocada():
+    # R259: «D-C» (AF02D) sobre «6#3», bajo él «DALA»: su lectura es la de DC, y DC está colocada.
+    titulo = _texto("D-C", 1.0, 1.0, handle="AF02D").model_copy(
+        update={"layer": "EST-ESTRUCTURAL DETALLES"}
+    )
+    pila = _texto("6#3", 1.0, 0.6).model_copy(update={"layer": "EST-ESTRUCTURAL DETALLES"})
+    lectura = ElementSpec(
+        mark="DC", family="dala", source="detalle", metodo="cotas", hoja="ES-100",
+        source_text="«D-C» (DALA) · se escribe DC en planta", confidence=0.7,
+        entidades=[titulo.entity_id],
+    )  # fmt: skip
+    inv = ScheduleInventory(specs=[lectura], titulos_de_detalle=[titulo.entity_id])
+    dc = _el("DC", "dala")
+    v = _run(elementos=[dc], defs={"DC": _defn("DC", "dala")}, inv=inv,
+             **_planta_con(titulo, pila))  # fmt: skip
+    assert not [x for x in v if x.numero in (2, 10) and {"D-C", "DC"} & set(x.marcas)]

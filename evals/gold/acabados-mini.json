@@ -124,10 +124,7 @@
     "por_familia": {},
     "por_hoja": {},
     "verificaciones": {},
-    "hallazgos": {},
-    "sin_cerca": {
-      "verificaciones.11": "sus 10 dudas toman como armado los formatos de piso (\u00abFORMATO 20X20\u00bb, \u00ab30X60\u00bb\u2026); en crudo no hay ning\u00fan texto de armado: el motor se equivoca y 0 no pasar\u00eda"
-    }
+    "hallazgos": {}
   },
-  "notes": "Cerca estructural (tarea 15): en crudo no hay ninguna marca estructural ni texto de armado; sin colocaciones ni hallazgos, salvo la verificaci\u00f3n 11, que no se cerca (ver sin_cerca)."
+  "notes": "Cerca estructural (tarea 15): en crudo no hay ninguna marca estructural ni texto con varilla o separaci\u00f3n (\u00ab#\u00bb, \u00ab@\u00bb): sin colocaciones ni hallazgos. R253: la verificaci\u00f3n 11 ya no toma los formatos de piso (\u00abFORMATO 20X20\u00bb, \u00ab60X120\u00bb) por armado, as\u00ed que tambi\u00e9n se cerca en cero."
 }

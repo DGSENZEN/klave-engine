@@ -37,6 +37,7 @@ from pydantic import BaseModel, Field
 from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.results import Detection, DetectionType, layer_matches
 from klave_engine.detection.text_patterns import (
+    DALA_TYPE_TAG_PATTERN,
     FOOTING_MARK_PREFIXES,
     PILE_MARK_PREFIXES,
     TextPatternConfig,
@@ -3004,7 +3005,7 @@ def _sections_from_detail_cotas(
     specs = (
         _leer_secciones(
             etiquetas, entities, dims, unit_to_m, widths_by_family, sheet, rechazos, dibujadas,
-            duenas, libres=libres, reclamadas=reclamadas,
+            duenas, libres=libres, reclamadas=reclamadas, con_pila=duenos,
         )
         if etiquetas
         else []
@@ -3049,6 +3050,378 @@ def _sections_from_detail_cotas(
             duenas, reclamadas, libres, set(titulos or []), duenos, entities
         )
     return specs
+
+
+# Tarea 15b: the title of a drawing of a detail sheet, by what it shows («D-1 / CORTE / Y-Y'», «D-1
+# / PLANTA», «CORTE R1-R1' …», «SECCIÓN 1»); a short text, never a note.
+_VISTA_DE_DIBUJO = re.compile(r"(?<![A-ZÁÉÍÓÚÑ])(PLANTA|CORTE|SECCI[OÓ]N|ELEVACI[OÓ]N|DETALLE)\b")
+_LARGO_DE_TITULO = 60
+# A vertical cota belongs to the drawing whose title is the nearest under it, within these many
+# heights of that title: to each side and upwards (Marina's cortes: their height cota lies 1.5–4 m
+# from the title's centre and 2–7 m over it, at 0.115 m per line).
+_ALCANCE_DE_DIBUJO_X = 40.0
+_ALCANCE_DE_DIBUJO_Y = 80.0
+# The block title of a corte («DADO D-1» under «D-1 / CORTE / Y-Y'»; centred under the whole block,
+# plan and corte, when they lie side by side: 3.5–4 m to the side and level with the corte's title
+# on Marina ES-005/006): its centre within these many heights of the corte title's, up or down,
+# and ``_ALCANCE_DE_DIBUJO_X`` to a side.
+_ALCANCE_DEL_BLOQUE = 15.0
+# The families whose extension is their height, and whose corte dimensions it (§3.2). Only the
+# dado (R286): a zapata's corte carries its desplante or an overall cota, longer than its peralte,
+# so its longest cota is not its height.
+_ALTURA_EN_SU_CORTE = ("dado",)
+# Two vertical cotas of one corte whose drawn lengths are this close (relative) tie.
+_EMPATE_DE_COTAS = 0.01
+
+
+def _es_cota_total(cotas: list[tuple[float, NormalizedEntity]], unit_to_m: float) -> bool:
+    """R286: the longest vertical cota of a corte (``cotas[0]``, sorted longest first) is an
+    overall one when at least two others are its parts: drawn inside its extent end to end so they
+    cover it, or written so their numbers add up to its own. Then it is not the dado's height.
+    One other cota inside it (Marina's firme «20» beside the dado's «100») says nothing."""
+    if len(cotas) < 3:
+        return False
+
+    def tramo(c: NormalizedEntity) -> tuple[float, float]:
+        (p, q) = c.properties["measured_segment"]
+        return min(float(p[1]), float(q[1])), max(float(p[1]), float(q[1]))
+
+    largo, total = cotas[0]
+    lo, hi = tramo(total)
+    tol = _EMPATE_DE_COTAS * largo
+    dentro = sorted(
+        t for _l, c in cotas[1:] if (t := tramo(c))[0] >= lo - tol and t[1] <= hi + tol
+    )
+    if len(dentro) >= 2 and dentro[0][0] <= lo + tol:
+        alcanza = dentro[0][1]
+        for a, b in dentro[1:]:
+            if a > alcanza + tol:
+                break
+            alcanza = max(alcanza, b)
+        if alcanza >= hi - tol:
+            return True
+    valores = [_cota_cm(c, unit_to_m) for _l, c in cotas]
+    if any(v is None for v in valores):
+        return False
+    suma = sum(v for v in valores[1:] if v is not None)
+    return valores[0] is not None and abs(suma - valores[0]) <= 1e-6 * max(valores[0], 1.0)
+
+
+def _titulos_de_dibujo(
+    textos: list[NormalizedEntity], config: TextPatternConfig
+) -> list[tuple[NormalizedEntity, list[str], str]]:
+    """Each drawing title (``_VISTA_DE_DIBUJO``), with the marks written before its view word —
+    only marks and their connectors (``_titulo`` with no family word): «D-1», «D-1 Y D-2» — and
+    the view word."""
+    salida: list[tuple[NormalizedEntity, list[str], str]] = []
+    for t in textos:
+        linea = " ".join((t.text or "").upper().split())
+        if not linea or len(linea) > _LARGO_DE_TITULO:
+            continue
+        m = _VISTA_DE_DIBUJO.search(linea)
+        if m is None:
+            continue
+        antes = linea[: m.start()].strip(" /")
+        leido = _titulo(antes, config) if antes else None
+        marcas = leido[0] if leido is not None and leido[1] is None else []
+        salida.append((t, marcas, m.group(1)))
+    return salida
+
+
+def _alturas_de_cortes(
+    entities: list[NormalizedEntity],
+    config: TextPatternConfig,
+    unit_to_m: float,
+    sheet: Sheet,
+) -> list[ElementSpec]:
+    """Tarea 15b: the height of a dado from its own corte (R286: never a zapata's — see
+    ``_ALTURA_EN_SU_CORTE``). A corte is a drawing whose
+    title names marks before «CORTE» («D-1 / CORTE / Y-Y'»; «D-1 Y D-2 / CORTE» gives each its
+    height; «CORTE X-X'» names none and attributes nothing). Its cotas are the vertical ones whose
+    nearest drawing title under them (of the same sheet, within ``_ALCANCE_DE_DIBUJO_*`` of its
+    heights) is its title: the plan of the dado beside or above it («D-1 / PLANTA») keeps its own,
+    so a side («55») is never the height. The height is the longest of them as drawn (the dado;
+    the others measure what stands on it, the firme's «20»), its value the cota's displayed number
+    in the unit its style or its group's note says («ACOTACIONES EN CMS»; R151), never the length
+    it measures — the cortes are «SIN ESCALA». Two of the same drawn length: none is taken, said;
+    a longest that is the total of the others (``_es_cota_total``): none is taken, said.
+    R159: a corte is a dado's only where the drawing says so — the block title under it names the
+    mark with the word DADO: «DADO D-1»; the prefix never decides. A reading per mark,
+    of the field «longitud» (the extension of a dado is its height, §3.2), from the detail."""
+    textos = [e for e in entities if e.is_textual and e.text]
+    titulos = _titulos_de_dibujo(textos, config)
+    cortes = [(t, marcas) for t, marcas, vista in titulos if vista == "CORTE" and marcas]
+    if not cortes:
+        return []
+    dims = [e for e in entities if e.entity_type == EntityType.dimension]
+    dims = _con_unidad_declarada(dims, entities, unit_to_m, config) if dims else []
+    llave_de = {t.entity_id: sheet(t)[1] for t, _m, _v in titulos}
+    suyas: dict[str, list[tuple[float, NormalizedEntity]]] = defaultdict(list)
+    for d in dims:
+        tramo = (d.properties or {}).get("measured_segment")
+        if not tramo or len(tramo) != 2:
+            continue
+        p, q = (float(tramo[0][0]), float(tramo[0][1])), (float(tramo[1][0]), float(tramo[1][1]))
+        largo = abs(p[1] - q[1])
+        if largo <= 0 or _eje(d, p, q, 1e-6 * max(largo, 1.0)) != "y":
+            continue
+        abajo = min(p[1], q[1])
+        centro = bbox_center(d.bbox)
+        llave = sheet(d)[1]
+        candidatos = []
+        for t, _marcas, _vista in titulos:
+            alto = alto_de_texto(t)
+            tc = bbox_center(t.bbox)
+            if (
+                llave_de[t.entity_id] != llave
+                or t.bbox[3] > abajo + alto
+                or abs(tc[0] - centro[0]) > _ALCANCE_DE_DIBUJO_X * alto
+                or abajo - t.bbox[3] > _ALCANCE_DE_DIBUJO_Y * alto
+            ):
+                continue
+            candidatos.append((math.dist(tc, centro), t.entity_id))
+        if candidatos:
+            suyas[min(candidatos)[1]].append((largo, d))
+    specs: list[ElementSpec] = []
+    for corte, marcas in cortes:
+        alto = alto_de_texto(corte)
+        hoja, llave = sheet(corte)
+        bloques = []
+        for b in textos:
+            leido = _titulo(" ".join((b.text or "").upper().split()), config)
+            if leido is None or leido[1] not in _ALTURA_EN_SU_CORTE or sheet(b)[1] != llave:
+                continue
+            bc, cc = bbox_center(b.bbox), bbox_center(corte.bbox)
+            if (
+                abs(bc[1] - cc[1]) <= _ALCANCE_DEL_BLOQUE * alto
+                and abs(bc[0] - cc[0]) <= _ALCANCE_DE_DIBUJO_X * alto
+            ):
+                bloques.append((math.dist(bc, cc), b, leido[0], leido[1]))
+        cotas = sorted(suyas.get(corte.entity_id, []), key=lambda c: -c[0])
+        avisos: list[str] = []
+        elegida: NormalizedEntity | None = None
+        valor: float | None = None
+        if cotas:
+            if len(cotas) > 1 and cotas[1][0] >= (1 - _EMPATE_DE_COTAS) * cotas[0][0]:
+                avisos.append(
+                    "altura: su corte tiene dos cotas verticales igual de largas («"
+                    + "», «".join(str(c.properties.get("display_text")) for _l, c in cotas[:2])
+                    + "»): no se toma ninguna"
+                )
+            elif _es_cota_total(cotas, unit_to_m):
+                avisos.append(
+                    "altura: la cota más larga de su corte («"
+                    + str(cotas[0][1].properties.get("display_text"))
+                    + "») es la total de otras («"
+                    + "», «".join(str(c.properties.get("display_text")) for _l, c in cotas[1:])
+                    + "»): no es la altura del dado y no se toma ninguna"
+                )
+            else:
+                elegida = cotas[0][1]
+                valor = _cota_cm(elegida, unit_to_m)
+                if valor is None:
+                    avisos.append(_sin_unidad(elegida, unit_to_m) or "altura: cota sin unidad")
+        titulo = " / ".join(" ".join(r.split()) for r in (corte.text or "").split("\n") if r)
+        for marca in marcas:
+            de_la_marca = sorted(
+                ((h, b, f) for h, b, ms, f in bloques if _normal(marca, config) in
+                 {_normal(m, config) for m in ms}),
+                key=lambda x: (x[0], x[1].entity_id),
+            )  # fmt: skip
+            if not de_la_marca:
+                continue  # R159: nothing says it is a dado's corte
+            _lejos, bloque, familia = de_la_marca[0]
+            if not cotas:
+                continue  # the corte dimensions no height: nothing to read
+            nota = (
+                f"altura {valor:g} cm acotada en su corte ({elegida.raw_handle})"
+                if valor is not None and elegida is not None
+                else "altura acotada en su corte, sin leer"
+            )
+            specs.append(
+                ElementSpec(
+                    mark=_normal(marca, config),
+                    family=familia,
+                    familia_supuesta=False,
+                    length_m=round(valor / 100.0, 6) if valor is not None else None,
+                    source="detalle",
+                    metodo="cotas",
+                    hoja=hoja,
+                    hoja_llave=llave,
+                    entidades=[
+                        corte.entity_id,
+                        *([elegida.entity_id] if elegida is not None else []),
+                        bloque.entity_id,
+                    ],
+                    campos_con_texto=["longitud"],
+                    avisos=list(avisos),
+                    source_text=f"{titulo} · {(bloque.text or '').strip()} · {nota}"[:120],
+                    confidence=0.7,
+                )
+            )
+    return specs
+
+
+# R259: the hyphenated spelling of a dala's type tag («D-C» over its section, «DC» in planta), and
+# the family word a block title is made of («DALA»).
+_TIPO_DE_DALA_RE = re.compile(DALA_TYPE_TAG_PATTERN)
+_ALCANCE_DE_SU_TITULO = 25.0  # its block title, in heights of the type's title, under it
+_COLUMNA_DE_SU_TITULO = 6.0  # … with its centre this many heights to a side at most
+_ANCHO_DE_SU_DETALLE = 10.0  # the detail's cotas, this many heights to each side of its title
+
+
+def _detalles_de_tipo_de_dala(
+    entities: list[NormalizedEntity],
+    config: TextPatternConfig,
+    unit_to_m: float,
+    sheet: Sheet,
+) -> tuple[list[ElementSpec], list[BBox]]:
+    """R259: a dala type tag written with a hyphen over its own detail («D-C» on Marina ES-200,
+    which the mark grammar does not read) is the definition of the tag the planta writes without
+    it («DC», ``DALA_TYPE_TAG_PATTERN``) — only where the drawing says it is a dala: the block
+    title under the detail (the nearest family-word text under it, in its column) is «DALA» (or
+    «CADENA»); «D-» never decides (R159). Its section is the pair of cotas of the detail (the
+    horizontal one its width, the vertical one its depth, as drawn: b×h, R75), in the unit its
+    style or its group's note says (R151); its armado, the lines between its section and its
+    block title (``_reading``, lossless). One reading per detail; with it, its section's box (no
+    longer a free section, R150)."""
+    textos = [e for e in entities if e.is_textual and e.text]
+    specs: list[ElementSpec] = []
+    secciones: list[BBox] = []
+    dims: list[NormalizedEntity] | None = None
+    for t in textos:
+        escrito = con_guion(" ".join((t.text or "").upper().split()))
+        if "-" not in escrito or " " in escrito:
+            continue
+        tipo = escrito.replace("-", "")
+        if not _TIPO_DE_DALA_RE.fullmatch(tipo) or marca_en_texto(escrito, config) is not None:
+            continue
+        alto = alto_de_texto(t)
+        cx = bbox_center(t.bbox)[0]
+        llave = sheet(t)[1]
+        debajo = sorted(
+            (
+                u for u in textos
+                if u is not t and sheet(u)[1] == llave
+                and u.bbox[3] <= t.bbox[1] + 1e-9
+                and t.bbox[1] - u.bbox[3] <= _ALCANCE_DE_SU_TITULO * alto
+                and abs(bbox_center(u.bbox)[0] - cx) <= _COLUMNA_DE_SU_TITULO * alto
+            ),
+            key=lambda u: -u.bbox[3],
+        )  # fmt: skip
+        bloque = next((u for u in debajo if _familia_de_palabra_sola(u.text or "")), None)
+        if bloque is None or _familia_de_palabra_sola(bloque.text or "") != "dala":
+            continue
+        if dims is None:
+            todas = [e for e in entities if e.entity_type == EntityType.dimension]
+            dims = _con_unidad_declarada(todas, entities, unit_to_m, config) if todas else []
+        x0, x1 = cx - _ANCHO_DE_SU_DETALLE * alto, cx + _ANCHO_DE_SU_DETALLE * alto
+        y0, y1 = bloque.bbox[3], t.bbox[1]
+        anchos: list[tuple[float, NormalizedEntity, tuple[float, float, float, float]]] = []
+        peraltes: list[tuple[float, NormalizedEntity, tuple[float, float, float, float]]] = []
+        avisos: list[str] = []
+        for d in dims:
+            c = bbox_center(d.bbox)
+            tramo = (d.properties or {}).get("measured_segment")
+            if not (x0 <= c[0] <= x1 and y0 <= c[1] <= y1) or not tramo or len(tramo) != 2:
+                continue
+            if sheet(d)[1] != llave:
+                continue
+            p = (float(tramo[0][0]), float(tramo[0][1]))
+            q = (float(tramo[1][0]), float(tramo[1][1]))
+            eje = _eje(d, p, q, 1e-6 * max(math.dist(p, q), 1.0))
+            valor = _cota_cm(d, unit_to_m)
+            if valor is None:
+                avisos.append(_sin_unidad(d, unit_to_m) or "sección: cota sin unidad")
+                continue
+            tramo_de = (min(p[0], q[0]), min(p[1], q[1]), max(p[0], q[0]), max(p[1], q[1]))
+            if eje == "x":
+                anchos.append((valor, d, tramo_de))
+            elif eje == "y":
+                peraltes.append((valor, d, tramo_de))
+        section: tuple[int | float, int | float] | None = None
+        if len({v for v, _d, _c in anchos}) == 1 and len({v for v, _d, _c in peraltes}) == 1:
+            section = (_cm(anchos[0][0]), _cm(peraltes[0][0]))
+        elif anchos or peraltes:
+            avisos.append(
+                "sección: su detalle no tiene una sola cota de cada lado («"
+                + "», «".join(
+                    str(d.properties.get("display_text")) for _v, d, _c in [*anchos, *peraltes]
+                )
+                + "»): no se lee"
+            )
+        cajas = [c for _v, _d, c in [*anchos, *peraltes]]
+        caja: BBox | None = (
+            (
+                min(c[0] for c in cajas), min(c[1] for c in cajas),
+                max(c[2] for c in cajas), max(c[3] for c in cajas),
+            )
+            if cajas
+            else None
+        )  # fmt: skip
+        # Its armado: the lines between its section (its title, without one) and its block
+        # title, over its section's width — the detail's own stack, closed by its block title.
+        ax0, ax1 = (caja[0] - alto, caja[2] + alto) if caja is not None else (x0, x1)
+        techo = caja[1] if caja is not None else t.bbox[1]
+        renglones = sorted(
+            (
+                u for u in textos
+                if u is not t and u is not bloque and sheet(u)[1] == llave
+                and tiene_armado(u.text or "")
+                and ax0 <= bbox_center(u.bbox)[0] <= ax1
+                and bloque.bbox[3] <= bbox_center(u.bbox)[1] <= techo
+            ),
+            key=lambda u: -u.bbox[3],
+        )  # fmt: skip
+        lectura = _reading(
+            [" ".join((u.text or "").split()) for u in renglones], "dala",
+            section_of_the_element=False,
+        )  # fmt: skip
+        campos: list[Campo] = ["seccion", *lectura["campos_con_texto"]]
+        hoja, _llave = sheet(t)
+        specs.append(
+            ElementSpec(
+                mark=tipo,
+                family="dala",
+                familia_supuesta=False,
+                section_cm=section,
+                rebar=lectura["rebar"],
+                stirrups=lectura["stirrups"],
+                mesh=lectura["mesh"],
+                armado=lectura["armado"],
+                source="detalle",
+                metodo="cotas",
+                hoja=hoja,
+                hoja_llave=llave,
+                entidades=[
+                    t.entity_id,
+                    *(d.entity_id for _v, d, _c in [*anchos, *peraltes]),
+                    *(u.entity_id for u in renglones),
+                    bloque.entity_id,
+                ],
+                campos_con_texto=list(dict.fromkeys(campos)),
+                avisos=avisos + lectura["avisos"],
+                source_text=(
+                    f"«{escrito}» ({' '.join((bloque.text or '').split())}) · se escribe {tipo} "
+                    "en planta"
+                    + (f" · {section[0]:g}x{section[1]:g}" if section else "")
+                    + "".join(f" · {' '.join((u.text or '').split())}" for u in renglones)
+                )[:120],
+                confidence=0.7 if section is not None else 0.55,
+            )
+        )  # fmt: skip
+        if caja is not None:
+            secciones.append(caja)
+    return specs, secciones
+
+
+def _familia_de_palabra_sola(texto: str) -> str | None:
+    """The family of a block title made of its family word alone («DALA», «DADOS», «CADENA DE
+    ENRASE»: its first word, at most four words, no figures); None for anything else."""
+    palabras = " ".join(texto.upper().split()).split(" ")
+    if not palabras or not palabras[0] or len(palabras) > 4 or any(c.isdigit() for c in texto):
+        return None
+    return next((f for f, patron in _PALABRAS_DE_FAMILIA if patron.fullmatch(palabras[0])), None)
 
 
 # R168: a detail title's subtitle declaring the wall its variant is for: «(PARA MUROS DE 15CM)».
@@ -3319,6 +3692,108 @@ def _con_cotas_cerca(etiquetas: list[_Etiqueta], dims: list[NormalizedEntity]) -
     ]
 
 
+def _de_lado(
+    etiquetas: list[_Etiqueta],
+    contornos: list[_Contorno],
+    es_seccion: Callable[[_Contorno, _Etiqueta], bool],
+    propios: dict[str, _Propio],
+    con_pila: Collection[str],
+) -> dict[str, _Propio]:
+    """R279: the section beside a definition label (one that owns a stack, ``con_pila``) that has
+    none on its convention's side (``sin_contorno``):
+    the nearest closed outline to its left or right, at the label's own height (their vertical
+    extents overlap), within reach (``_ALCANCE`` heights) and no bigger than a section, that is
+    a section and that no label owns. It is the label's only when it is an orphan: no other title
+    reaches it — above or below it by the rule of a section (``_propio``), or beside it by this
+    same rule (another definition label with no section on its side). A title that owns its own
+    section reaches nothing else (R129). If another does, it is claimed (a duda, as R111); a
+    section on each side, too. A
+    label never reaches past the nearest outline on a side (R129), and a label with an orphan
+    section above or below it (on the side its group's convention does not use) takes none
+    beside it.
+    Marina: in the castillo block
+    K-10's title sits left of its 15×85 section (task 9c: «nearest wins» read foreign stacks;
+    only orphan and doubt rules held)."""
+    duenas = [p.contorno.caja for p in propios.values() if p.contorno is not None]
+
+    def de_lado(e: _Etiqueta, c: _Contorno) -> float | None:
+        x0, y0, x1, y1 = c.caja
+        if y1 < e.y0 or y0 > e.y1 or max(x1 - x0, y1 - y0) > _TAMANO * e.alto:
+            return None
+        h = x0 - e.x1 if x0 >= e.x1 else e.x0 - x1 if x1 <= e.x0 else None
+        return h if h is not None and 0 < h <= _ALCANCE * e.alto else None
+
+    def encima(e: _Etiqueta, c: _Contorno) -> bool:
+        x0, y0, x1, y1 = c.caja
+        if _solape(e, c) < _ENCIMA_MINIMO or max(x1 - x0, y1 - y0) > _TAMANO * e.alto:
+            return False
+        return any(0 < h <= _ALCANCE * e.alto for h in (y0 - e.y, e.y - y1))
+
+    def de_otra(c: _Contorno) -> bool:
+        return any(_misma_caja(c.caja, o, 1e-6) for o in duenas)
+
+    def sin_la_suya(e: _Etiqueta) -> bool:
+        return propios[e.texto.entity_id].sin_contorno
+
+    salida: dict[str, _Propio] = {}
+    for e in etiquetas:
+        if e.texto.entity_id not in con_pila or not sin_la_suya(e):
+            continue
+        if any(encima(e, c) and es_seccion(c, e) and not de_otra(c) for c in contornos):
+            continue  # an orphan section above or below it: never one beside it
+        hallados: list[_Contorno] = []
+        for lado in (+1, -1):
+            cerca = [
+                (h, c)
+                for c in contornos
+                if (h := de_lado(e, c)) is not None
+                and (c.caja[0] >= e.x1 if lado > 0 else c.caja[2] <= e.x0)
+            ]
+            if not cerca:
+                continue
+            _h, c = min(cerca, key=lambda hc: hc[0])
+            if es_seccion(c, e) and not de_otra(c):
+                hallados.append(c)
+        if not hallados:
+            continue
+        if len(hallados) > 1:
+            salida[e.texto.entity_id] = _Propio(
+                None,
+                "no hay sección dibujada en su lado y tiene una a cada lado",
+                dudosa=True,
+                reclamados=[c.caja for c in hallados],
+            )
+            continue
+        c = hallados[0]
+        otras = sorted(
+            {
+                o.marca
+                for o in etiquetas
+                if o.llave == e.llave
+                and o.texto.entity_id != e.texto.entity_id
+                and propios[o.texto.entity_id].contorno is None
+                and (
+                    encima(o, c)
+                    or (
+                        o.texto.entity_id in con_pila
+                        and sin_la_suya(o)
+                        and de_lado(o, c) is not None
+                    )
+                )
+            }
+        )
+        if otras:
+            salida[e.texto.entity_id] = _Propio(
+                None,
+                f"la sección dibujada a su lado la alcanza también {', '.join(otras)}",
+                otras,
+                reclamados=[c.caja],
+            )
+        else:
+            salida[e.texto.entity_id] = _Propio(c)
+    return salida
+
+
 def _misma_caja(a: BBox, b: BBox, tol: float) -> bool:
     return all(abs(p - q) <= tol for p, q in zip(a, b, strict=True))
 
@@ -3337,9 +3812,11 @@ def _leer_secciones(
     ocupadas: list[BBox] | None = None,
     libres: list[BBox] | None = None,
     reclamadas: list[tuple[_Etiqueta, BBox]] | None = None,
+    con_pila: Collection[str] = (),
 ) -> list[ElementSpec]:
     """The readings of ``etiquetas``' sections (see ``_sections_from_detail_cotas``); ``duenas``
-    receives each label that owns a drawn section, with the section's box. ``solo_acotadas``
+    receives each label that owns a drawn section, with the section's box (R279: a label that owns
+    a stack, ``con_pila``, may own the orphan section beside it, ``_de_lado``). ``solo_acotadas``
     (R145, the labels tried apart): an outline is a section only if it carries cotas on its
     edges; ``ocupadas`` are the sections other labels own, never these labels'. ``libres``
     receives the dimensioned sections drawn here that no label owns (R150: the armado written
@@ -3380,6 +3857,9 @@ def _leer_secciones(
         return con_cotas[clave]
 
     propios = _propio(etiquetas, contornos, es_seccion)
+    # R279: a label with nothing on its convention's side may own the section beside it, only an
+    # orphan one (no other title reaches it); one another title reaches is claimed, a duda.
+    propios.update(_de_lado(etiquetas, contornos, es_seccion, propios, con_pila))
     # R106: the labels with no closed outline where their section goes, against the rectangles
     # of pairs of cotas, by the same side and claim rule.
     sin_contorno = [
@@ -4903,6 +5383,20 @@ def build_schedule_inventory(
                     lectura.avisos = [a for a in lectura.avisos if a != _NO_RECTANGULAR]
             rechazos = rechazos + de_cotas
             inventory_cuadro_marks = cuadro_marks
+    if unit_to_m:
+        # Tarea 15b: a dado's height from its corte; R259: a dala type's hyphenated detail.
+        specs += _alturas_de_cortes(entities, config, unit_to_m, sheet)
+        de_tipo, secciones_de_tipo = _detalles_de_tipo_de_dala(entities, config, unit_to_m, sheet)
+        specs += de_tipo
+        # Its section is its title's now: the same box, free (R150), no longer competes, and
+        # what it read is no longer «sin dueño».
+        para_pilas = [
+            s for s in para_pilas
+            if s.marca or not any(_misma_caja(s.caja, c, 1e-6) for c in secciones_de_tipo)
+        ]  # fmt: skip
+        titulos_de_detalle += [s.entidades[0] for s in de_tipo]
+        leidas_de_tipo = {e for s in de_tipo for e in s.entidades}
+        rechazos = [r for r in rechazos if r.entidad_id not in leidas_de_tipo]
     # Lectores por disciplina (cuadro de cancelería, tablero eléctrico…):
     # sus entradas llegan con el rango que ellas declaren — normalmente
     # «cuadro», porque la tabla del plano es la autoridad de su disciplina.

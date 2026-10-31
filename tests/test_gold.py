@@ -442,6 +442,13 @@ def test_capture_estructura_only_its_entry_keeps_reasons_and_transcription(tmp_p
     est["resumen"][0]["colocaciones"] = 22
     with pytest.raises(g.CambioDeCerca):
         g.capture_estructura(gold_dir, "x")
+    # R251: una entrada sin cerca estructural no la recibe entera del motor sin --acepto.
+    with pytest.raises(g.CambioDeCerca, match="no tiene cerca estructural"):
+        g.capture_estructura(gold_dir, "y")
+    assert (gold_dir / "y.json").read_bytes() == antes_y
+    g.capture_estructura(gold_dir, "y", acepto=True)
+    nueva = next(e for e in g.load_entries(gold_dir) if e.drawing_id == "y").estructura
+    assert nueva is not None and nueva.por_familia["pilote"]["colocaciones"] == 22
 
 
 def test_cli_refuses_to_recapture_an_existing_id_and_estructura_needs_only(tmp_path, capsys):
@@ -451,6 +458,30 @@ def test_cli_refuses_to_recapture_an_existing_id_and_estructura_needs_only(tmp_p
     assert rc == 2 and "--acepto" in capsys.readouterr().err
     with pytest.raises(SystemExit):
         g.main(["estructura", "--gold", str(gold_dir)])
+
+
+def test_capture_with_an_only_that_names_nothing_says_so_and_fails(tmp_path, capsys, monkeypatch):
+    """Un --only con un error de dedo no pasa por una captura hecha: lo dice y sale distinto de 0,
+    sin escribir ni correr el motor; tampoco si la entrada no tiene sus planos aquí."""
+    gold_dir = tmp_path / "gold"
+    g.save_entry(_entrada(tmp_path, estructura=g.EstructuraExpectation()), gold_dir)
+    antes = (gold_dir / "x.json").read_bytes()
+
+    def no_correr(*_a, **_k):
+        raise AssertionError("no debe correr el motor")
+
+    monkeypatch.setattr(g, "_fresh_run", no_correr)
+    for comando in ("money", "estructura"):
+        rc = g.main([comando, "--gold", str(gold_dir), "--only", "xx"])
+        assert rc == 2 and "«xx»" in capsys.readouterr().err
+    with pytest.raises(g.SinCaptura):
+        g.capture_money(gold_dir, only="xx")
+    with pytest.raises(g.SinCaptura):
+        g.capture_estructura(gold_dir, "xx")
+    (tmp_path / "src" / "drawings").rmdir()
+    rc = g.main(["estructura", "--gold", str(gold_dir), "--only", "x"])
+    assert rc == 2 and "sus planos no están" in capsys.readouterr().err
+    assert (gold_dir / "x.json").read_bytes() == antes
 
 
 def test_score_transcripcion_both_directions(tmp_path):
@@ -518,3 +549,122 @@ def test_score_transcripcion_both_directions(tmp_path):
     ok, diffs = score_transcripcion(path, {"specs": ci})
     assert not ok and diffs == ["CI en ES-200 (muros de 30 cm): el motor la lee y la transcripción "
                                 "no la tiene"]
+
+
+def test_score_transcripcion_compares_only_the_section_the_drawing_writes(tmp_path):
+    # Tarea 16, Marina: K-11 de ES-000 acota 20 × 60 y su dibujo «SIN ESCALA» mide 22.6 × 59 a la
+    # escala de sus cotas. La medida es otra fuente (seccion_dibujada) y la tomada cuadrada de una
+    # sola cota es supuesto: la transcripción tiene sólo lo que el plano escribe.
+    from klave_engine.evals.gold import score_transcripcion
+
+    path = tmp_path / "t.json"
+    path.write_text(json.dumps({"lecturas": [
+        {"marca": "K-11", "hoja": "ES-000", "longitudinal": "8#6",
+         "estribos": "2E#3EXT@10 CENTRO@20", "seccion_cm": [20, 60]},
+        {"marca": "K-12", "hoja": "ES-000", "longitudinal": "4#6+4#4", "estribos": None,
+         "seccion_cm": None},
+    ]}))  # fmt: skip
+    L = "f.dxf#frame_00"
+    specs: list[dict] = [
+        {"mark": "K-11", "hoja": "ES-000", "hoja_llave": L, "source": "detalle", "metodo": "pila",
+         "rebar": "8#6", "stirrups": "2E#3 EXT@10 CENTRO@20", "section_cm": None},
+        {"mark": "K-11", "hoja": "ES-000", "hoja_llave": L, "source": "detalle", "metodo": "cotas",
+         "rebar": None, "stirrups": None, "section_cm": [20, 60]},
+        {"mark": "K-11", "hoja": "ES-000", "hoja_llave": L, "source": "detalle",
+         "metodo": "geometria", "rebar": None, "stirrups": None, "section_cm": [22.6, 59]},
+        {"mark": "K-12", "hoja": "ES-000", "hoja_llave": L, "source": "detalle", "metodo": "pila",
+         "rebar": "4#6+4#4", "stirrups": None, "section_cm": None},
+        {"mark": "K-12", "hoja": "ES-000", "hoja_llave": L, "source": "detalle", "metodo": "cotas",
+         "rebar": None, "stirrups": None, "section_cm": [30, 30], "seccion_supuesta": True},
+    ]
+    assert score_transcripcion(path, {"specs": specs}) == (True, [])
+    # Una cota escrita distinta sí se ve.
+    specs[1] = dict(specs[1], section_cm=[20, 40])
+    ok, diffs = score_transcripcion(path, {"specs": specs})
+    assert not ok and diffs == ["K-11 en ES-000, seccion_cm: transcripción [(20.0, 60.0)], motor "
+                                "[(20.0, 40.0)]"]
+
+
+def test_score_transcripcion_excuses_the_listed_out_of_e0_readings_only(tmp_path):
+    # R280, R281 (Tarea 16): las marcas que el plano define con llamadas (trabes, contratrabes,
+    # dados, zapatas, muros; CR-2 en dudas) no se comparan, cada una por su marca y hoja; una que
+    # el motor lee y no está en la lista sigue fallando, y una lectura excusada a la vez es error.
+    from klave_engine.evals.gold import score_transcripcion
+
+    path = tmp_path / "t.json"
+    base: dict = {
+        "lecturas": [{"marca": "K-1", "hoja": "ES-000", "longitudinal": "4#3",
+                      "estribos": "E#2@15", "seccion_cm": [15, 15]}],
+        "dudas": [{"marca": "CR-2", "hoja": "ES-200",
+                   "motivo": "armado por línea de llamada (E3)"}],
+        "fuera_de_e0": {"por_familia": {"trabe": 1},
+                        "lecturas": [{"marca": "T1-1", "hoja": "ES-101"}]},
+    }  # fmt: skip
+    path.write_text(json.dumps(base))
+
+    def spec(marca, hoja, **campos):
+        return {"mark": marca, "hoja": hoja, "hoja_llave": f"f#{hoja}", "source": "detalle",
+                "rebar": None, "stirrups": None, "section_cm": None, **campos}  # fmt: skip
+
+    specs = [
+        spec("K-1", "ES-000", rebar="4#3", stirrups="E#2@15"),
+        spec("K-1", "ES-000", section_cm=[15, 15]),
+        spec("CR-2", "ES-200", stirrups="E#2@15"),
+        spec("T1-1", "ES-101", section_cm=[40, 20]),
+    ]
+    assert score_transcripcion(path, {"specs": specs}) == (True, [])
+    ok, diffs = score_transcripcion(path, {"specs": [*specs, spec("T1-2", "ES-101")]})
+    assert not ok and diffs == ["T1-2 en ES-101: el motor la lee y la transcripción no la tiene"]
+    base["lecturas"].append({"marca": "T1-1", "hoja": "ES-101", "longitudinal": None,
+                             "estribos": None, "seccion_cm": [40, 20]})  # fmt: skip
+    path.write_text(json.dumps(base))
+    ok, diffs = score_transcripcion(path, {"specs": specs})
+    assert not ok and "a la vez" in diffs[0]
+
+
+# ------------------------------------------- Tarea 15c: las colocaciones por vista (planta)
+
+
+def _est_vistas(vistas: dict[str, int]) -> dict:
+    """Un ``estructura.json`` de una hoja con varias plantas (PRUEBA-1): todas las colocaciones en
+    el mismo archivo, cada una en su vista."""
+    est = _est({"castillo": {"hojas": {"a.dxf": sum(vistas.values())}}})
+    vistas_de = [v for v, n in vistas.items() for _ in range(n)]
+    est["elementos"] = [{**x, "vista": v} for x, v in zip(est["elementos"], vistas_de, strict=True)]
+    return est
+
+
+def test_estructura_fence_per_view_catches_a_placement_moving_between_plantas():
+    # Una hoja con cuatro plantas: por hoja no se ve que un castillo cambie de planta (su altura y
+    # su dinero sí cambian). La cerca por vista lo ve.
+    want = g.estructura_from_json(_est_vistas({"v_pa": 3, "v_az": 2}), por_vista_de=["castillo"])
+    assert want.por_vista == {"castillo": {"v_az": 2, "v_pa": 3}}
+    assert score_estructura(want, _est_vistas({"v_pa": 3, "v_az": 2})) == (True, [])
+    ok, diffs = score_estructura(want, _est_vistas({"v_pa": 4, "v_az": 1}))
+    assert not ok and sorted(diffs) == ["castillo en la vista v_az: esperado 2, motor 1",
+                                        "castillo en la vista v_pa: esperado 3, motor 4"]
+    # Opt-in: sin pedirla, la captura no cerca por vista.
+    assert g.estructura_from_json(_est_vistas({"v_pa": 3})).por_vista == {}
+
+
+@pytest.mark.parametrize("datos", [
+    {"por_vista": {"castillo": {"v_pa": 1}}},
+    {"por_familia": {"castillo": {"colocaciones": 2}}, "por_hoja": {"castillo": {"a.dxf": 2}},
+     "por_vista": {"castillo": {"v_pa": 1}}},
+])
+def test_estructura_fence_per_view_must_add_up(datos):
+    with pytest.raises(ValidationError):
+        EstructuraExpectation.model_validate(datos)
+
+
+def test_capture_estructura_keeps_fencing_per_view_what_was_fenced_per_view(tmp_path, monkeypatch):
+    gold_dir = tmp_path / "gold"
+    semilla = g.estructura_from_json(_est_vistas({"v_pa": 3, "v_az": 2}), por_vista_de=["castillo"])
+    g.save_entry(_entrada(tmp_path, estructura=semilla), gold_dir)
+    monkeypatch.setattr(g, "_fresh_run",
+                        lambda *_a, **_k: ([], None, _est_vistas({"v_pa": 2, "v_az": 3})))
+    with pytest.raises(g.CambioDeCerca):  # un castillo cambió de planta: cercado
+        g.capture_estructura(gold_dir, "x")
+    g.capture_estructura(gold_dir, "x", acepto=True)
+    again = g.load_entries(gold_dir)[0].estructura
+    assert again is not None and again.por_vista == {"castillo": {"v_az": 3, "v_pa": 2}}

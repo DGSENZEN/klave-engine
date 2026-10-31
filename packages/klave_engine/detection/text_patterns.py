@@ -19,6 +19,10 @@ PILE_MARK_PATTERN = rf"^(?:{'|'.join(PILE_MARK_PREFIXES)})-?\d{{1,2}}[A-Z]?$"
 # is one a placement (``es_tipo_de_dala``); on a detail it is the type's title.
 DALA_TYPE_TAG_PATTERN = r"^(?:CI|DC|DA-?\d{1,2}[A-Z]?)$"
 DALA_LAYER_HINTS = ("CADENA", "DALA")
+# Tarea 15b: the D-n tag of a dado (Marina, on EST-DADOS: D-1, D-4B, D-X). «D-» alone never says
+# dado or dala (R159): only on a layer whose name says DADO is it the dado's placement tag.
+DADO_MARK_PATTERN = r"^D-?(?:\d{1,2}[A-Z]?|[A-Z])$"
+DADO_LAYER_HINTS = ("DADO",)
 
 
 class TextPatternConfig(BaseModel):

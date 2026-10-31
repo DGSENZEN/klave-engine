@@ -14,6 +14,7 @@ import math
 import re
 from collections import defaultdict
 from collections.abc import Callable
+from functools import partial
 
 from klave_engine.common.logging import get_logger, log_stage
 from klave_engine.costing.earthwork import cut_fill_volumes, describe
@@ -151,6 +152,12 @@ class _LineResult:
         # made moot ("si no hay niveles N.P.T." when the levels were read).
         self.supersedes: set[str] = supersedes or set()
         self.sections = (0, 0, 0)  # declared, measured, assumed (columns only)
+        # How the walls' openings came off (``_deduct_openings``): True measured, False the
+        # assumed share, None none. A variant measured alone follows the line's choice.
+        self.vanos_medidos: bool | None = None
+        # The share of the measured openings the line took off (1.0, or less when the 50 % cap
+        # bit): each variant takes the same share of its own openings (Tarea 15f).
+        self.fraccion_de_vanos: float | None = None
 
 
 FALLBACK_HEIGHT = "si no hay niveles"
@@ -230,13 +237,22 @@ def _deduct_openings(
     result: _LineResult,
     meters_factor: float,
     assumptions: CostingAssumptions,
+    vanos_medidos: bool | None = None,
+    fraccion_de_vanos: float | None = None,
 ) -> None:
     """Take the doors and windows off a wall face, and say how.
 
     Measured: the widths the wall detector bridged, × the opening height, ×
     the faces the concept covers. Assumed: the share in the assumptions.
     Either way the line states the deduction; a measured one never exceeds
-    half the face (a wall that is mostly hole is a reading to check)."""
+    half the face (a wall that is mostly hole is a reading to check).
+
+    ``vanos_medidos`` imposes the line's choice on one of its variants
+    (Tarea 15d): when the line read its openings, a variant whose walls have
+    none deducts nothing — not the assumed share, which the line never took.
+    ``fraccion_de_vanos`` is the share of its measured openings the line took
+    off (Tarea 15f): the cap is the line's, never the variant's own, so the
+    variants add up to the line without a pro-rata spread."""
     rule = concept.rule
     assert rule is not None
     sides = rule.sides if rule.sides else 1.0
@@ -249,9 +265,18 @@ def _deduct_openings(
     def scale_views(ratio: float) -> None:
         result.by_view = {title: round(qty * ratio, 4) for title, qty in result.by_view.items()}
 
-    if measured_width > 0:
+    medidos = measured_width > 0 if vanos_medidos is None else vanos_medidos
+    if medidos:
+        result.vanos_medidos = True
+        if measured_width <= 0:
+            return
         area = measured_width * assumptions.opening_height_m * sides
-        capped = min(area, before * 0.5)
+        if fraccion_de_vanos is None:
+            capped = min(area, before * 0.5)
+            result.fraccion_de_vanos = capped / area
+        else:
+            capped = min(area * fraccion_de_vanos, before)
+            result.fraccion_de_vanos = fraccion_de_vanos
         result.quantity = round(before - capped, 6)
         scale_views(result.quantity / before if before else 1.0)
         note = (
@@ -259,11 +284,12 @@ def _deduct_openings(
             f"({measured_width:,.2f} m de ancho × {assumptions.opening_height_m:.2f} m"
             + (f" × {sides:g} caras" if sides != 1 else "") + ")"
         )
-        if capped < area:
-            note += " — tope del 50 % de la cara; revisa esos muros"
+        if capped < area - 1e-9:
+            note += " — tope del 50 % de la cara del renglón; revisa esos muros"
         result.notes.append(note)
         result.supersedes.add("vanos supuestos")
     elif assumptions.opening_share_pct > 0:
+        result.vanos_medidos = False
         share = assumptions.opening_share_pct / 100.0
         result.quantity = round(before * (1.0 - share), 6)
         scale_views(1.0 - share)
@@ -392,7 +418,11 @@ def _scoped_result(
                         for v in segmentation.superstructure_views() if v.view_id in heights
                     ),
                     _section_note(n_declared, n_measured, n_assumed, assumptions),
-                ]
+                ] + (
+                    [f"Niveles: {segmentation.lectura_de_niveles}"]
+                    if segmentation.lectura_de_niveles
+                    else []
+                )
                 total.by_view = split
                 total.supersedes.add(FALLBACK_HEIGHT)
                 if n_assumed == 0:
@@ -448,15 +478,39 @@ def _scoped_result(
             raw_sum = 0.0
             view_split: dict[str, float] = {}
             parapet_views: list[str] = []
+            declared_parapets: list[str] = []
+            bajo_losa: list[str] = []
+            sin_losa_acotada: list[str] = []
+            alturas = segmentation.alturas_de_entrepiso()
+            losa = segmentation.losa_acotada()
             for view in segmentation.superstructure_views():
                 view_dets = in_views(dets, {view.view_id})
                 if not view_dets:
                     continue
                 height = heights.get(view.view_id)
-                if view.level_key == "azotea" and rule.roof_walls_are_parapets:
+                entrepiso = alturas.get(view.view_id)
+                name = titles[view.view_id].split(" · ")[-1][:22]
+                if entrepiso is not None and entrepiso.sin_losa:
+                    # Tarea 15e (R270, R273): the top planta draws no slab; its walls go from the
+                    # level below up to its own declared level, whole (no slab above them).
+                    height = entrepiso.altura_m
+                    declared_parapets.append(
+                        f"{name} {height:.2f} m (de {entrepiso.nivel_m:+.2f} a su nivel "
+                        f"{entrepiso.nivel_arriba_m or 0.0:+.2f} declarado, sin losa en su planta)"
+                    )
+                elif view.level_key == "azotea" and rule.roof_walls_are_parapets:
                     # A wall on the azotea is a pretil, not another story.
                     height = assumptions.parapet_height_m
-                    parapet_views.append(titles[view.view_id].split(" · ")[-1][:22])
+                    parapet_views.append(name)
+                elif height is not None and rule.kind != QuantityKind.LINEAR_VOLUME:
+                    # Tarea 15e (R271): a block wall (and its plaster) stops under the slab: the
+                    # storey height less the slab depth a detail dimensions (``detalle``); without
+                    # it, the whole storey, an assumption (check 7 says so).
+                    if losa is not None:
+                        height = round(height - losa.espesor_m, 4)
+                        bajo_losa.append(f"{name} {height:.2f} m")
+                    else:
+                        sin_losa_acotada.append(f"{name} {height:.2f} m")
                 if rule.kind == QuantityKind.LINEAR_VOLUME and rule.section_height_m:
                     scoped = concept.model_copy(
                         update={
@@ -513,6 +567,23 @@ def _scoped_result(
                     f"Pretiles en {', '.join(parapet_views)}: altura "
                     f"{assumptions.parapet_height_m:.2f} m (muros de azotea)"
                 )
+            if declared_parapets:
+                notes.append(
+                    f"Muros de {', '.join(declared_parapets)}: altura del plano"
+                )
+            if bajo_losa and losa is not None:
+                notes.append(
+                    f"Muros bajo la losa: altura de entrepiso − {losa.espesor_m * 100:g} cm de "
+                    f"losa ({losa.texto}): {', '.join(bajo_losa)}; no se descuenta la dala de "
+                    "remate (se mide en una ronda posterior)"
+                )
+            if sin_losa_acotada:
+                notes.append(
+                    f"Muros de {', '.join(sin_losa_acotada)}: altura de entrepiso completa, "
+                    f"supuesta, sin descontar la losa: {segmentation.sin_losa_acotada()}"
+                )
+            if segmentation.lectura_de_niveles:
+                notes.append(f"Niveles: {segmentation.lectura_de_niveles}")
             return _LineResult(
                 round(quantity_sum, 6), raw_sum, _contributing(concept, dets), notes,
                 view_split if len(view_split) > 1 else {},
@@ -566,14 +637,22 @@ def _scoped_result(
 def _variantes(
     concept: Concept,
     result: _LineResult,
-    matched: list[Detection],
     meters_factor: float,
     measure: Callable[[list[Detection]], _LineResult] | None,
 ) -> list[BoqVariant]:
     """El renglón separado por lo que el plano especifica de sus elementos.
     Un solo grupo no se vuelve a medir; varios se miden con la misma regla y
-    se reparten para que sumen exactamente el renglón."""
-    groups = agrupar(result.dets or matched, meters_factor) if separa(concept.code) else []
+    se reparten para que sumen exactamente el renglón.
+
+    Los grupos se forman sólo con las detecciones que el renglón cuenta
+    (``result.dets``), en todas las familias (Tarea 15d): una que el renglón no
+    cuenta —la de la cimentación en un renglón de superestructura, la de una
+    planta en uno de cimentación, la de un detalle— no es variante. Medida
+    sola, el respaldo del alcance (``… or matched_plan``, «la planta más
+    poblada») le inventaba cantidad y las demás variantes se la devolvían a
+    prorrata, sin aviso."""
+    contadas = result.dets
+    groups = agrupar(contadas, meters_factor) if separa(concept.code) else []
     if measure is None or len(groups) <= 1:
         sig = groups[0][0] if groups else {}
         return [BoqVariant(
@@ -587,16 +666,8 @@ def _variantes(
         part = measure(subset)
         return part.quantity, part.dets
 
-    # Columns (Tarea 12): a group made only of detections the line does not count (the
-    # cimentación planta's columns) is no variant; measured alone it would invent quantity that
-    # the rest then gives back pro rata.
-    agrupadas = (
-        result.dets or matched
-        if concept.view_scope == ViewScope.COLUMN_VOLUME
-        else matched
-    )
     rows, factor = dividir(
-        concept.code, concept.description, result.quantity, agrupadas, meters_factor, medir
+        concept.code, concept.description, result.quantity, contadas, meters_factor, medir
     )
     if abs(factor - 1.0) > 0.02:
         result.notes.append(
@@ -678,9 +749,15 @@ def generate_bill_of_quantities(
             result = _earthwork_result(concept, matched, meters_factor, assumptions)
             variant_measure = None
         else:
-            def measure(subset: list[Detection], concept: Concept = concept) -> _LineResult:
+            def measure(
+                subset: list[Detection],
+                concept: Concept = concept,
+                vanos_medidos: bool | None = None,
+                fraccion_de_vanos: float | None = None,
+            ) -> _LineResult:
                 """La regla del concepto sobre un subconjunto: el renglón entero o
-                una de sus variantes."""
+                una de sus variantes (que descuenta sus vanos como el renglón:
+                ``vanos_medidos``)."""
                 if seg is not None:
                     # The engineer's levantamiento manual has no place on the sheet —
                     # no bbox, no view assignment — so it bypasses the view scoping
@@ -726,11 +803,17 @@ def generate_bill_of_quantities(
 
                 rule = concept.rule
                 if rule is not None and rule.opening_deduction and result.quantity > 0:
-                    _deduct_openings(concept, result, meters_factor, assumptions)
+                    _deduct_openings(
+                        concept, result, meters_factor, assumptions, vanos_medidos,
+                        fraccion_de_vanos,
+                    )
                 return result
 
             result = measure(matched)
-            variant_measure = measure
+            variant_measure = partial(
+                measure, vanos_medidos=result.vanos_medidos,
+                fraccion_de_vanos=result.fraccion_de_vanos,
+            )
 
         # La nota del renglón no basta cuando el alcance entero se degradó:
         # cimentación calculada sobre todas las plantas se avisa una vez.
@@ -788,9 +871,7 @@ def generate_bill_of_quantities(
             if contributing
             else 0.0
         )
-        variants = _variantes(
-            concept, result, matched, meters_factor, variant_measure
-        )
+        variants = _variantes(concept, result, meters_factor, variant_measure)
         # La regla suma elemento por elemento; si las partes cuadran con el
         # total, cada renglón del respaldo dice la suya. Si no (alturas por
         # nivel, la mejor vista, un levantamiento que se suma aparte), nada:

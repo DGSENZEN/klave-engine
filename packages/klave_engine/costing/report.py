@@ -345,10 +345,15 @@ def generate_cost_report(
     excluida en Revisión no es un elemento de este presupuesto)."""
     config = config or CostingConfig()
     modelo_notas: list[str] = []
+    avisos_de_muros: list[str] = []
     elementos_del_modelo: list = []
     if estructura is not None:
         from klave_engine.estructura.elementos import Elemento
-        from klave_engine.estructura.modelo import escribir_en_detecciones, notas_de_escritura
+        from klave_engine.estructura.modelo import (
+            escribir_en_detecciones,
+            escribir_espesor_de_muros,
+            notas_de_escritura,
+        )
 
         presentes = {d.detection_id for d in detections}
         elementos_del_modelo = [
@@ -363,6 +368,10 @@ def generate_cost_report(
             detections, elementos_del_modelo, units.to_meters()
         )
         modelo_notas = notas_de_escritura(detections)
+        # Tarea 15f (R275): el espesor de muro de block que dicen las notas.
+        detections, avisos_de_muros = escribir_espesor_de_muros(
+            detections, estructura["reglas"], units.to_meters(), segmentation
+        )
         estructura = {"reglas": estructura["reglas"], "elementos": elementos_del_modelo}
     assumptions, calibration_notes = _calibrate_assumptions(
         config.assumptions, dimensions, detections
@@ -394,6 +403,7 @@ def generate_cost_report(
         from klave_engine.estructura.modelo import diferencias_con_el_concreto
 
         boq.assumptions.extend(modelo_notas)
+        boq.warnings.extend(avisos_de_muros)
         # Donde el concreto (las detecciones) y el acero (los elementos) no miden lo mismo.
         en_lineas = {
             i

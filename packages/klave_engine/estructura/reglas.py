@@ -477,6 +477,9 @@ class Reglas(BaseModel):
     # R119: el fy de cada número de varilla que dicen las notas de materiales («ACERO DE REFUERZO
     # CON F'Y=4200KG/CM2 EN VARILLAS DEL No.3 EN ADELANTE Y F'Y=2530KG/CM2 EN VARILLAS DEL No.2»).
     fy_kg_cm2: dict[str, Dato] = {}
+    # Tarea 15f (R275): el espesor de los muros de block cuando las notas dicen uno solo («MURO DE
+    # BLOQUE DE CONCRETO DE 15 x 20 x 40 CM EN 15 CM. DE ESPESOR», PRUEBA-1), en metros.
+    muro_block_espesor_m: Dato | None = None
     contradicciones: list[str] = []
     avisos: list[str] = []
     # Los textos de los que se leyó una regla, con los renglones leídos (vacío: el texto entero):
@@ -513,6 +516,7 @@ class Reglas(BaseModel):
                 "anclajes_declarados_m": varias(self.anclajes_declarados_m),
                 "plantilla_espesor_m": una(self.plantilla_espesor_m),
                 "fy_kg_cm2": varias(self.fy_kg_cm2),
+                "muro_block_espesor_m": una(self.muro_block_espesor_m),
                 "textos_leidos": {k: list(v) for k, v in self.textos_leidos.items()},
             }
         )
@@ -1978,6 +1982,7 @@ def leer_reglas(entities: list[NormalizedEntity], frames: list[SheetFrame]) -> R
         )
         _leer_texto(origen, lecturas)
 
+    muro_block, avisos_de_muros = _espesor_de_muros_de_block(notas)
     por_regla = lecturas.por_regla
     conflictos: list[str] = []
 
@@ -2031,6 +2036,7 @@ def leer_reglas(entities: list[NormalizedEntity], frames: list[SheetFrame]) -> R
             if (dato := decidir(regla, f"el fy del #{regla[3:]}", lambda v: f"{v} kg/cm²"))
             is not None
         },
+        muro_block_espesor_m=muro_block,
         textos_leidos=lecturas.textos_leidos,
         contradicciones=[
             *contradicciones,
@@ -2038,8 +2044,54 @@ def leer_reglas(entities: list[NormalizedEntity], frames: list[SheetFrame]) -> R
             *de_las_notas,
             *conflictos,
         ],
-        avisos=list(dict.fromkeys([*avisos, *lecturas.avisos(), *_codigos_repetidos(frames)])),
+        avisos=list(
+            dict.fromkeys(
+                [*avisos, *lecturas.avisos(), *_codigos_repetidos(frames), *avisos_de_muros]
+            )
+        ),
     )
+
+
+# --- el espesor de los muros de block (Tarea 15f, R275) ------------------------------------------
+
+# «MURO DE BLOQUE DE CONCRETO DE 15 x 20 x 40 CM EN 15 CM. DE ESPESOR» (PRUEBA-1), «MUROS DE BLOCK
+# DE 15 CM DE ESPESOR», «MURO DE BLOCK … ESPESOR DE 15 CM»: un espesor dicho de un muro de block,
+# en la misma oración. «… DE 15x20x40 CM y 20x20x40 CM» (Marina) nombra piezas, no un espesor.
+_ESPESOR_DE_MURO_DE_BLOCK = re.compile(
+    rf"MUROS?\s+DE\s+(?:BLOQUE|BLOCK)\b[^.;]*?"
+    rf"(?:\b(?:EN|DE)\s+({_NUM})\s*CMS?\.?\s+DE\s+ESPESOR|\bESPESOR\s+(?:DE\s+)?({_NUM})\s*CMS?\b)"
+)
+
+
+def _espesor_de_muros_de_block(notas: list[Nota]) -> tuple[Dato | None, list[str]]:
+    """El espesor de los muros de block que dicen las notas numeradas (``nota``, en metros), si
+    dicen uno solo; si dicen varios no hay regla y se avisa: nunca se escoge uno."""
+    lecturas: list[tuple[float, Nota, str]] = []
+    for nota in notas:
+        texto = mayusculas_sin_acentos(nota.texto)
+        for m in _ESPESOR_DE_MURO_DE_BLOCK.finditer(texto):
+            cm = _numero(m.group(1) or m.group(2))
+            lecturas.append((cm, nota, _cita(texto, m.start(), m.end())))
+    if not lecturas:
+        return None, []
+    valores = sorted({cm for cm, _n, _c in lecturas})
+    if len(valores) > 1:
+        dichos = ", ".join(f"{v:g}" for v in valores)
+        return None, [
+            f"Las notas dicen espesores de muro de block distintos ({dichos} cm): ninguno se "
+            "aplica a los muros; cada muro queda con el espesor medido."
+        ]
+    cm, nota, cita = lecturas[0]
+    donde = f"La nota {nota.numero} de {nota.seccion}" if nota.seccion else f"La nota {nota.numero}"
+    return Dato(
+        valor=_metros(cm),
+        fuente="nota",
+        hoja=nota.hoja,
+        hojas=list(nota.hojas),
+        texto=f"{donde}: «{cita}»",
+        entidades=list(nota.entidades),
+        copias=nota.copias,
+    ), []
 
 
 def _leer_nota(nota: Nota, lecturas: _Lecturas) -> None:

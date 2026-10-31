@@ -59,6 +59,7 @@ from klave_engine.detection.results import Detection, DetectionType
 from klave_engine.detection.schedules import FAMILIAS_QUE_SE_ORDENAN, ScheduleInventory
 from klave_engine.detection.text_patterns import TextPatternConfig
 from klave_engine.detection.views import SheetSegmentation
+from klave_engine.detection.wall_detector import APLANADO_MAXIMO_M
 from klave_engine.dxf.entities import NormalizedEntity
 from klave_engine.estructura.acero import acero_elemento
 from klave_engine.estructura.armado import (
@@ -202,8 +203,9 @@ class Escritura(BaseModel):
     marca: str
     familia: str
     hoja: str
-    # ``claro``: el de una viga; ``longitud_m``: la de un pilote (lo que mide CIM-011).
-    campo: Literal["seccion", "fuente", "claro", "armado", "longitud_m"]
+    # ``claro``: el de una viga; ``longitud_m``: la de un pilote (lo que mide CIM-011); ``peralte``:
+    # la altura de un dado o una zapata (lo que mide CIM-002, Tarea 15b).
+    campo: Literal["seccion", "fuente", "claro", "armado", "longitud_m", "peralte"]
     antes: str | None
     fuente_antes: str | None
     despues: str
@@ -1446,6 +1448,8 @@ def escribir_en_detecciones(
                 _escribir_claro(det, e, props, meters_factor, cambios, notas)
             elif e.familia == "pilote" and det.detection_type == DetectionType.pile:
                 _escribir_largo_de_pilote(det, e, props, cambios, notas)
+            elif e.familia in ("dado", "zapata") and det.detection_type == DetectionType.footing:
+                _escribir_peralte(det, e, props, cambios, notas)
         if cambios or restaurada:
             nueva = det.model_copy(deep=True)
             nueva.properties = props
@@ -1462,14 +1466,16 @@ def escribir_en_detecciones(
 # Lo que dicen las notas que el modelo agrega a una detección (para quitarlas al restaurar).
 _NOTA_DEL_MODELO = " del modelo estructural ("
 # Lo que el modelo escribe (además de lo que restaura de cada previa).
-_DEL_MODELO = ("seccion_del_modelo", "armado_del_modelo", "longitud_fuente")
+_DEL_MODELO = ("seccion_del_modelo", "armado_del_modelo", "longitud_fuente", "peralte_fuente")
 
 
 def _restaurar(props: dict) -> bool:
     """Deshace lo que una escritura del modelo dejó en ``props`` (R235): cada clave vuelve a lo
     que la detección traía (``None``: no la traía). Si había algo que deshacer."""
     hubo = False
-    for previa_de in ("seccion_previa", "claro_previo", "longitud_previa"):
+    for previa_de in (
+        "seccion_previa", "claro_previo", "longitud_previa", "peralte_previo", "espesor_previo"
+    ):
         previa = props.pop(previa_de, None)
         if not isinstance(previa, dict):
             continue
@@ -1484,6 +1490,180 @@ def _restaurar(props: dict) -> bool:
             hubo = True
             props.pop(clave)
     return hubo
+
+
+# --- el espesor de los muros de block que dicen las notas (Tarea 15f, R275) ----------------------
+
+# Lo medido y la nota son el mismo espesor (en metros).
+_MISMO_ESPESOR_M = 0.005
+# Lo que un aplanado puede sumar por cara (R276): un contorno que mide entre la nota y la nota + 2 ×
+# esto es el block de la nota con su aplanado; más grueso, otro muro (uno doble, uno de concreto);
+# más delgado, también (un tabique de 10): el aplanado sólo engruesa. R286 (M8): es el mismo límite
+# con que el detector reconoce un aplanado (2 cm por cara), no otro. R285: un núcleo (el aplanado
+# ya quitado) más grueso que la nota es otro muro. ``_HOLGURA_M`` es la holgura del borde, para
+# que 0.19 contra 0.15 + 0.04 no lo decida el redondeo.
+_APLANADO_MAXIMO_M = APLANADO_MAXIMO_M
+_HOLGURA_M = 1e-6
+
+
+def _metros_en_cm(metros: float) -> str:
+    return f"{round(metros * 100, 1):g}"
+
+
+def _revisa_la_cota(
+    props: dict, meters_factor: float, cota_m: float, mide: str, nota_m: float, dice: str
+) -> str:
+    """R277: el aviso de un muro cuyo espesor tomó una cota que no dice lo que la nota: se deja
+    (la asociación de cotas a muros es de E1), pero se pide revisarla, diciendo lo que es cierto:
+    si la cota es lo que mide el muro dibujado, el desacuerdo es con la nota; si no, con el
+    dibujo, y se dice lo que el muro dibujado mide de verdad."""
+    geometria = props.get("estimated_thickness_geometry")
+    if geometria:
+        dibujado_m = float(geometria) * meters_factor
+        if abs(dibujado_m - cota_m) <= _MISMO_ESPESOR_M:
+            return (
+                f"la cota de {mide} cm es lo que mide el muro dibujado; la nota dice {dice}: "
+                "quedó la cota, revisa cuál vale"
+            )
+        como = (
+            ", lo que dice la nota" if abs(dibujado_m - nota_m) <= _MISMO_ESPESOR_M
+            else f"; la nota dice {dice}"
+        )
+        return (
+            f"revisa: la cota de {mide} cm no es lo que mide el muro dibujado "
+            f"({_metros_en_cm(dibujado_m)} cm{como}); quedó la cota hasta que se revise"
+        )
+    return (
+        f"revisa: la cota de {mide} cm no es lo que dice la nota ({dice}); quedó la cota hasta "
+        "que se revise"
+    )
+
+
+def escribir_espesor_de_muros(
+    detections: list[Detection],
+    reglas: Reglas | dict | None,
+    meters_factor: float | None,
+    segmentation: SheetSegmentation | None = None,
+) -> tuple[list[Detection], list[str]]:
+    """(las detecciones con el espesor de la nota escrito en cada muro de block, los avisos).
+
+    Cuando las notas dicen un solo espesor de muro de block (``Reglas.muro_block_espesor_m``,
+    fuente ``nota``), cada muro de block lo toma: la nota manda sobre lo medido. Donde el núcleo
+    dibujado coincide no se dice nada más. Donde sólo está dibujado el contorno y mide más (hasta
+    dos aplanados), el contorno incluye el aplanado: el muro toma el espesor de la nota y el
+    largo al eje (``centreline_length``), con un aviso que dice las dos medidas. R276: la nota
+    sólo vale para un muro que mide lo de la nota o hasta dos aplanados más; uno más delgado que
+    la nota o más grueso que eso es otro muro: se queda con lo medido y se avisa. R277: un
+    espesor tomado de una cota (``thickness_source == "cota"``) que no dice lo de la nota se deja
+    (asociarla es de E1) y el aviso pide revisarla con lo que mide el muro dibujado.
+    Con la hoja segmentada, sólo los muros de una planta: un muro dibujado en un detalle o en la
+    simbología no es un muro de la obra. Función pura (R235): lo escrito antes se deshace primero
+    (``espesor_previo``)."""
+    if isinstance(reglas, dict):
+        reglas = Reglas.model_validate(reglas)
+    dato = reglas.muro_block_espesor_m if reglas is not None else None
+    nota_m = float(dato.valor) if dato is not None and dato.valor else None
+    en_planta: set[str] | None = None
+    if segmentation is not None and segmentation.is_segmented:
+        de_planta = {v.view_id for v in segmentation.plan_views()}
+        en_planta = {d for d, v in segmentation.assignment.items() if v in de_planta}
+    salida: list[Detection] = []
+    casos: dict[tuple[str, str], list[str]] = {}
+    for det in detections:
+        if det.detection_type != DetectionType.wall:
+            salida.append(det)
+            continue
+        props = dict(det.properties or {})
+        restaurada = _restaurar(props)
+        notas: list[str] = []
+        escrito = False
+        if (
+            dato is not None and nota_m and meters_factor
+            and props.get("wall_kind", "block") == "block"
+            and (en_planta is None or det.detection_id in en_planta)
+        ):
+            nombre = det.display_label or det.label
+            medido = props.get("estimated_thickness")
+            medido_m = float(medido) * meters_factor if medido else None
+            previa: dict[str, Any] = {
+                "estimated_thickness": props.get("estimated_thickness"),
+                "espesor_fuente": props.get("espesor_fuente"),
+            }
+            nuevo_largo = None
+            caso: str | None = None
+            toma = True
+            dice = _metros_en_cm(nota_m)
+            mide = _metros_en_cm(medido_m) if medido_m is not None else ""
+            # R276: lo que el dibujo suma a la nota (un contorno que incluye el aplanado sólo
+            # puede ser más grueso), decidido con holgura explícita, nunca por el redondeo.
+            exceso = medido_m - nota_m if medido_m is not None else 0.0
+            if medido_m is None:
+                caso = None
+            elif props.get("thickness_source") == "cota":
+                # R277: la cota se deja (asociarla bien es de E1), pero el aviso no la da por
+                # buena: dice lo que el dibujo y la nota dicen y pide revisarla.
+                toma = False
+                if abs(exceso) > _MISMO_ESPESOR_M:
+                    caso = _revisa_la_cota(props, meters_factor, medido_m, mide, nota_m, dice)
+            elif abs(exceso) <= _MISMO_ESPESOR_M:
+                caso = None
+            elif exceso < 0:
+                toma = False
+                caso = (
+                    f"el muro dibujado mide {mide} cm, más delgado que la nota ({dice}): no es "
+                    "el muro de la nota, se queda lo medido"
+                )
+            elif props.get("thickness_from") == "core":
+                # R285: el núcleo ya no trae su aplanado; más grueso que la nota no es el block
+                # de la nota con aplanado: es otro muro (un block de 20 junto a la nota de 15).
+                toma = False
+                caso = (
+                    f"el núcleo dibujado mide {mide} cm sin su aplanado, más grueso que la nota "
+                    f"({dice}): no es el muro de la nota, se queda lo medido"
+                )
+            elif exceso > 2 * _APLANADO_MAXIMO_M + _HOLGURA_M:
+                toma = False
+                caso = (
+                    f"el muro dibujado mide {mide} cm, más grueso que la nota ({dice}) y dos "
+                    "aplanados: no es el muro de la nota, se queda lo medido"
+                )
+            elif props.get("thickness_from") == "outline":
+                caso = (
+                    f"el contorno dibujado mide {mide} cm; la nota dice {dice}: el contorno "
+                    "incluye el aplanado (se toma el espesor de la nota y el largo al eje del "
+                    "contorno)"
+                )
+                if props.get("centreline_length"):
+                    nuevo_largo = float(props["centreline_length"])
+            else:
+                caso = f"el muro dibujado mide {mide} cm; la nota dice {dice}: manda la nota"
+            if caso is not None:
+                casos.setdefault((caso, dato.texto), []).append(nombre)
+            if toma:
+                if nuevo_largo is not None:
+                    previa["estimated_length"] = props.get("estimated_length")
+                    props["estimated_length"] = round(nuevo_largo, 3)
+                props["estimated_thickness"] = round(nota_m / meters_factor, 6)
+                props["espesor_fuente"] = "nota"
+                props["espesor_previo"] = previa
+                notas.append(
+                    f"Espesor {_metros_en_cm(nota_m)} cm del modelo estructural ({dato.texto})"
+                )
+                escrito = True
+        if escrito or restaurada:
+            nueva = det.model_copy(deep=True)
+            nueva.properties = props
+            nueva.evidence.notes = [
+                n for n in nueva.evidence.notes if _NOTA_DEL_MODELO not in n
+            ] + notas
+            salida.append(nueva)
+        else:
+            salida.append(det)
+    avisos = [
+        f"Muros {', '.join(nombres)}: {caso}. {texto}."
+        for (caso, texto), nombres in casos.items()
+    ]
+    return salida, avisos
 
 
 def _pzas(n: int) -> str:
@@ -1659,6 +1839,46 @@ def _escribir_largo_de_pilote(
     antes = f"{actual:g} m" if actual is not None else None
     cambios.append(_escritura(e, det, "longitud_m", antes, None, largo))
     notas.append(f"Longitud {metros:g} m del modelo estructural ({largo.fuente}: «{largo.texto}»)")
+
+
+def _escribir_peralte(
+    det: Detection, e: Elemento, props: dict, cambios: list[Escritura], notas: list[str]
+) -> None:
+    """Tarea 15b: la altura de un dado (o de una zapata) que el modelo leyó del plano —la cota de
+    su corte— o que alguien decidió: el peralte con que CIM-002 mide su concreto (``peralte_cm``,
+    la ``thickness_property`` de su regla). Una supuesta no se escribe: el presupuesto ya usa la
+    suya, la misma (``PERALTE_SUPUESTO_M``)."""
+    altura = e.altura_m
+    if altura is None or altura.fuente in ("supuesto", "ia") or altura.ilegible:
+        return
+    metros = _numero(altura.valor)
+    if metros is None or metros <= 0:
+        return
+    cm = round(metros * 100.0, 4)
+    cm_escrito: int | float = int(cm) if float(cm).is_integer() else cm
+    actual = _numero(props.get("peralte_cm"))
+    if actual is not None and abs(actual - cm) <= 1e-9:
+        return
+    props["peralte_previo"] = {"peralte_cm": props.get("peralte_cm")}
+    props["peralte_cm"] = cm_escrito
+    props["peralte_fuente"] = altura.fuente
+    cambios.append(
+        Escritura(
+            detection_id=det.detection_id,
+            marca=e.marca,
+            familia=e.familia,
+            hoja=e.hoja,
+            campo="peralte",
+            antes=f"{actual:g} cm" if actual is not None else None,
+            fuente_antes=None,
+            despues=f"{cm_escrito:g} cm",
+            fuente=altura.fuente,
+            texto=altura.texto,
+        )
+    )
+    notas.append(
+        f"Peralte {cm_escrito:g} cm del modelo estructural ({altura.fuente}: «{altura.texto}»)"
+    )
 
 
 def _escribir_seccion(

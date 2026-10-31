@@ -965,3 +965,29 @@ Added by the controller from Task 15's review (R248, the PRUEBA-1 overlap note, 
 - [ ] **Step 3:** tests: one per family kind that has variants (column volume, wall area, beam length…) with an uncounted detection that must not shape the split.
 
 **Done when:** no line's variant split includes a detection the line does not count; gold green with stated recapture.
+
+### Task 15e: each planta takes the level its drawing declares (N.P.T.)
+
+**Why (Ruling R266):** after 15c every PRUEBA-1 castillo tag is in one planta, but every planta still uses the 3.00 m `supuesto` storey height: the N.P.T. captions the sheet writes (0 / 3.45 / 6.60 / 7.80) never attach to their plantas. A drawing value (`nota`) outranks a `supuesto`, so this is a reading gap. It changes castillo heights and EST-001 (and anything priced by storey height: walls, aplanados).
+
+**Files (expected; follow the code):** where plantas get their level (`detection/views.py`, the storey-height path in costing — see `tests/test_story_heights.py`), `evals/verificacion/verificar_otros.py`, `evals/gold/prueba-1.json`, tests.
+
+- [ ] **Step 1 (raw truth):** an engine-free assertion lists each N.P.T./NIVEL caption on PRUEBA-1, its position, and the planta it belongs to by the drawing (caption inside or directly under/over the planta's own content or title); render and look.
+- [ ] **Step 2:** a planta's level Dato is source `nota` when a caption belongs to it, else `supuesto` with check 7; storey height = next planta's level − this level (the top planta: its own declared height or `supuesto`). Two captions for one planta that disagree → duda (check 8), never the larger or the first.
+- [ ] **Step 3:** Marina and Torre: confirm their current level sources and that they do not regress (Marina declares levels in its frames; its storey-contradiction finding must stay).
+- [ ] **Step 4:** tests (caption per planta, missing caption, two disagreeing captions), recapture `prueba-1` EST-001 and every storey-height-driven line raw-verified, set PRUEBA-1 EST-001 source `crudo` once it is; commit states old → new.
+
+**Done when:** every PRUEBA-1 planta level comes from its caption or is a visible `supuesto`; castillo heights and EST-001 follow the declared levels; gold green with stated recapture.
+
+### Task 15f: a wall drawn twice is one wall
+
+**Why (Ruling R269):** PRUEBA-1's plan linework is drawn twice, the copies 15 mm apart. The wall detector reads three thickness classes (BLOCK-16/17/18) where the drawing shows one 0.165 m wall type, and W39 measures 16.825 m where each copy is 16.81 (0.015 m over). EST-004's variants (and their catálogo mapping) are therefore wrong even though the line total is close.
+
+**Files (expected):** `packages/klave_engine/detection/wall_detector.py` (fragment merging / thickness), `evals/verificacion/verificar_otros.py`, `evals/gold/prueba-1.json`, tests.
+
+- [ ] **Step 1 (raw truth):** engine-free, list PRUEBA-1's wall-layer line pairs: the duplicate copies (offset ≤ 20 mm, same length ± 20 mm, parallel) and the true faces; derive the wall thicknesses the drawing actually shows. Render and look.
+- [ ] **Step 2:** a line that duplicates another (parallel, overlapping ≥ 90 %, offset ≤ 20 mm) is the same line drawn twice: it is merged before pairing faces, never used as a face. Thickness comes from the real faces. Lengths take one copy.
+- [ ] **Step 3:** Marina, Torre, the minis must not move unless they also hold duplicate copies (confirm raw); tests (doubled wall, true thin wall of 20 mm that must NOT be merged — e.g. a cancel/acabado line on another layer — and a doubled wall with a door gap).
+- [ ] **Step 4:** recapture PRUEBA-1 EST-004 and its variants and the ACA lines raw-verified (lengths and thicknesses `crudo`; heights stay supuesto until 15e lands, R266), commit old → new.
+
+**Done when:** PRUEBA-1 walls show the thickness classes the drawing draws, lengths count one copy, gold green with stated recapture.

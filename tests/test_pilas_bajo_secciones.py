@@ -847,12 +847,11 @@ def _marco_grande(ents):
 
 
 @pytest.mark.parametrize("ce4_tiene_la_suya", [True, False])
-def test_a_stack_between_two_rows_of_details_is_in_doubt(ce4_tiene_la_suya):
-    # R196, R209 (ES-300): la pila de CE-2 («6#3» / «E#2@15») va a 0.71 de su sección y, del lado
-    # del título de CE-4 (que podría estar del lado equivocado), a 0.95 de la de CE-4: no está
-    # claramente (25 %) más pegada a CE-2; queda en duda, lea CE-4 su propia pila («4#4» /
-    # «E#3@16», que se lee) o no. Que la otra tenga la suya no la exime de disputarla: así dos
-    # secciones se cambiaban las pilas (la semilla 45408 de la rejilla, R209).
+def test_a_section_never_reaches_past_its_own_title_to_the_row_above(ce4_tiene_la_suya):
+    # R278 (ES-300; antes R196/R209 la dejaban en duda): la pila de CE-2 («6#3» / «E#2@15») va a
+    # 0.71 bajo su sección y, de lado, a 0.95 sobre la de CE-4, con el título de CE-4 en medio
+    # (a 0.4 m bajo la pila). Lo que una sección reclama de lado acaba en su propio título: la
+    # pila es de la fila de arriba, de CE-2, lea CE-4 la suya («4#4» / «E#3@16») o no.
     ents = [
         _en("t2", "CE-2", 218.861, -21.176, 219.433, -21.026),
         _en("a", "6#3", 219.0, -24.055, 219.253, -23.955),
@@ -870,17 +869,18 @@ def test_a_stack_between_two_rows_of_details_is_in_doubt(ce4_tiene_la_suya):
     ]
     libres = {e.entity_id for e in ents if not e.entity_id.startswith("t")}
     asoc, dudosos = asociar_secciones(ents, _marco_grande(ents), C, secciones, libres)
-    leidas = [("CE-4", ["4#4", "E#3@16"])] if ce4_tiene_la_suya else []
+    leidas = [("CE-2", ["6#3", "E#2@15"])]
+    if ce4_tiene_la_suya:
+        leidas.append(("CE-4", ["4#4", "E#3@16"]))
     assert sorted((a.marca, a.textos) for a in asoc) == leidas
-    assert dudosos["a"] == dudosos["b"] == {"CE-2"}
+    assert "a" not in dudosos and "b" not in dudosos
 
 
 @pytest.mark.parametrize("ce3_tiene_la_suya", [True, False])
-def test_the_sheets_convention_never_wins_a_contested_stack(ce3_tiene_la_suya):
-    # R196, R209 (ES-100): la pila de CE-1 va a 0.71 de su sección y a 0.82 de la de CE-3, bajo
-    # ella, con el título de CE-3 en medio. La costumbre de la hoja (los títulos encima) no gana
-    # una pila disputada: sólo la distancia, y 0.71 contra 0.82 no es claramente más pegada
-    # (25 %): queda en duda, lea CE-3 la suya (que se lee) o no.
+def test_the_row_below_never_takes_the_stack_above_its_title(ce3_tiene_la_suya):
+    # R278 (ES-100; antes R196/R209 la dejaban en duda): la pila de CE-1 va a 0.71 bajo su sección
+    # y, de lado, a 0.82 sobre la de CE-3, con el título de CE-3 en medio. CE-3 no la alcanza
+    # más allá de su título: CE-1 la lee, y CE-3 lee la suya si la tiene.
     ents = [
         _en("t1", "CE-1", 197.691, 38.342, 198.198, 38.492),
         _en("a", "4#3", 197.86, 35.462, 198.113, 35.562),
@@ -898,8 +898,19 @@ def test_the_sheets_convention_never_wins_a_contested_stack(ce3_tiene_la_suya):
     ]
     libres = {e.entity_id for e in ents if not e.entity_id.startswith("t")}
     asoc, _ = asociar_secciones(ents, _marco_grande(ents), C, secciones, libres)
-    leidas = [("CE-3", ["6#4", "E#3@14"])] if ce3_tiene_la_suya else []
+    leidas = [("CE-1", ["4#3", "E#2@15"])]
+    if ce3_tiene_la_suya:
+        leidas.append(("CE-3", ["6#4", "E#3@14"]))
     assert sorted((a.marca, a.textos) for a in asoc) == leidas
+
+
+def test_a_stack_in_front_beyond_a_wrong_side_title_still_competes():
+    # R278 sólo corta lo que la sección alcanza de lado: en la semilla 80 de la rejilla, K-1 lleva
+    # su título debajo (del lado equivocado) y su pila debajo de él, de frente; si K-1 no la
+    # alcanzara, K-4, que lee hacia arriba, se la llevaba junto con la suya.
+    leidas = _lee_la_rejilla(80)
+    assert leidas is not None
+    assert all(entera for _marca, _textos, entera in leidas), leidas
 
 
 def test_a_cuadro_section_never_almost_reaches_a_detail_stack():

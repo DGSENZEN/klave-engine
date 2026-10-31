@@ -34,12 +34,18 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from klave_engine.costing.models import CostingAssumptions
 from klave_engine.costing.referencias import element_id
 from klave_engine.detection.frames import SheetFrame
 from klave_engine.detection.results import Detection, layer_matches
 from klave_engine.detection.schedules import FAMILIAS_QUE_SE_ORDENAN
 from klave_engine.detection.text_patterns import TextPatternConfig
-from klave_engine.detection.views import AlturaDeEntrepiso, SheetSegmentation, ViewKind
+from klave_engine.detection.views import (
+    VISTA_EN_DUDA,
+    AlturaDeEntrepiso,
+    SheetSegmentation,
+    ViewKind,
+)
 from klave_engine.estructura.armado import FAMILIAS_CON_PARRILLA
 from klave_engine.estructura.dato import Dato, elegir, hojas_de, miembros, para_hoja
 from klave_engine.estructura.definiciones import Definicion, normalizar_marca
@@ -52,6 +58,7 @@ FAMILIAS_ESTRUCTURALES = (
     "trabe",
     "contratrabe",
     "zapata",
+    "dado",
     "pilote",
     "muro_concreto",
     "dala",
@@ -63,7 +70,10 @@ _CON_ALTURA = frozenset({"castillo", "columna"})
 _VIGAS = frozenset({"trabe", "contratrabe", "dala", "cerramiento"})
 # Las que extienden en vertical lo que su definición llama «longitud» (la extensión del §3.2: el
 # peralte de un dado, la altura de un muro): su altura.
-_EXTENSION_ES_ALTURA = frozenset({"zapata", "muro_concreto"})
+_EXTENSION_ES_ALTURA = frozenset({"zapata", "dado", "muro_concreto"})
+# Tarea 15b: la altura de un dado que ningún corte acota es la que supone el presupuesto (el peralte
+# de ``CostingAssumptions``), como ``supuesto`` y dicho: CIM-002 y el dado miden lo mismo.
+PERALTE_SUPUESTO_M = CostingAssumptions().footing_depth_m
 
 # La sección (b×h, cm) que Klave supone cuando nada la da: la misma de ``CostingAssumptions`` (sus
 # áreas en m², escritas aquí como sus lados). Las demás familias no tienen sección supuesta: sin
@@ -89,7 +99,12 @@ _CAMPO = {
 }
 
 Motivo = Literal[
-    "cuadro", "titulo_de_detalle", "vista_excluida", "planta_no_estructural", "sin_vista"
+    "cuadro",
+    "titulo_de_detalle",
+    "vista_excluida",
+    "planta_no_estructural",
+    "sin_vista",
+    "vista_en_duda",
 ]
 # R142: las capas de un castillo o una columna en planta (nunca la de un dado).
 _CAPAS_DE_CASTILLO = ["CASTILLO", "COLUMNA", "COLUMN", "COL", "COLS"]
@@ -197,7 +212,7 @@ def construir_elementos(
     elementos: list[Elemento] = []
     for d in colocadas:
         vista = asignacion.get(d.detection_id)
-        familia = d.family
+        familia = _familia_de_la_colocacion(d)
         marca = normalizar_marca(d.mark, config) if d.mark.strip() else ""
         avisos = _avisos_de_la_deteccion(d, familia, marca, meters_factor)
         if segmentation is not None and d.detection_id in segmentation.vistas_dudosas:
@@ -206,7 +221,14 @@ def construir_elementos(
             seccion_cm=_seccion_medida(d, familia, meters_factor),
             seccion_no_rectangular=_contorno_no_rectangular(d, familia, meters_factor),
             longitud_m=_longitud_medida(d, familia, meters_factor),
-            altura_m=_altura(familia, alturas.get(vista or ""), altura_supuesta_m),
+            altura_m=_altura(
+                familia,
+                alturas.get(vista or ""),
+                altura_supuesta_m,
+                segmentation.sin_continuacion.get(d.detection_id)
+                if segmentation is not None
+                else None,
+            ),
             avisos=avisos,
             muro_cm=_muro_medido(d, meters_factor),
             muro_sin_medir=d.properties.get("muro_sin_medir"),
@@ -296,6 +318,11 @@ def _separar(
         elif (d.properties or {}).get("role") == "cuadro":
             motivo = "cuadro"
             texto = "marca de cuadro o de detalle: sólo define la marca"
+        elif segmentada and vista == VISTA_EN_DUDA and segmentation is not None:
+            # Tarea 15c: dentro de las rejillas de dos plantas y sin dibujo que diga de cuál es:
+            # no es colocación de ninguna hasta que se decida (la verificación 7 lo pregunta).
+            motivo = "vista_en_duda"
+            texto = segmentation.vistas_dudosas.get(d.detection_id, "vista en duda")
         elif segmentada and vista is None:
             motivo = "sin_vista"
             texto = "la segmentación no la asignó a ninguna vista"
@@ -325,6 +352,14 @@ def _separar(
                 )
             )
     return colocadas, fuera
+
+
+def _familia_de_la_colocacion(d: Detection) -> str:
+    """La familia de la detección, salvo un contorno de cimentación cuya capa dice DADO (Tarea 15b:
+    EST-DADOS, ``familia_de_capa``): un dado. Lo dice el plano, nunca el prefijo D- (R159)."""
+    if d.family == "zapata" and (d.properties or {}).get("familia_de_capa") == "dado":
+        return "dado"
+    return d.family
 
 
 def _hoja(d: Detection, vista: str | None, frames: list[SheetFrame]) -> str:
@@ -358,7 +393,7 @@ def _seccion_medida(d: Detection, familia: str, factor: float | None) -> Dato | 
                 texto=f"cotas junto a la colocación en planta: {_cm(a)}x{_cm(b)}",
                 entidades=list(d.source_entities),
             )
-    if familia == "zapata" and factor:
+    if familia in ("zapata", "dado") and factor:
         if float(props.get("rectangularity") or 0.0) >= _RECTANGULO:
             x0, y0, x1, y1 = d.bbox
             a = round(min(x1 - x0, y1 - y0) * factor * 100, 1)
@@ -501,12 +536,24 @@ def _longitud_medida(d: Detection, familia: str, factor: float | None) -> Dato |
     )
 
 
-def _altura(familia: str, entrepiso: AlturaDeEntrepiso | None, supuesta_m: float) -> Dato | None:
+def _altura(
+    familia: str,
+    entrepiso: AlturaDeEntrepiso | None,
+    supuesta_m: float,
+    sin_continuacion: str | None = None,
+) -> Dato | None:
     """La altura de un castillo o una columna: la de su entrepiso entre dos niveles declarados
     (``nota``), la repetida de la planta de abajo en la más alta (``supuesto``) o, sin niveles, la
-    supuesta (R73)."""
+    supuesta (R73). Tarea 15e (R272): un castillo de la cimentación que no sigue en la planta de
+    arriba (``sin_continuacion``, su aviso) no es el arranque de ninguno: la supuesta."""
     if familia not in _CON_ALTURA:
         return None
+    if sin_continuacion:
+        return Dato(
+            valor=supuesta_m,
+            fuente="supuesto",
+            texto=f"{sin_continuacion}: altura supuesta {supuesta_m:g} m",
+        )
     if entrepiso is None:
         return Dato(
             valor=supuesta_m,
@@ -517,6 +564,28 @@ def _altura(familia: str, entrepiso: AlturaDeEntrepiso | None, supuesta_m: float
         valor=entrepiso.altura_m,
         fuente="supuesto" if entrepiso.repetida else "nota",
         texto=entrepiso.texto,
+    )
+
+
+def _peralte_supuesto(ilegible: Dato | None, avisos: list[str]) -> Dato:
+    """Tarea 15b: la altura de un dado que ningún corte suyo acota (o que su corte acota y no se
+    leyó: queda como alternativa), supuesta y dicha."""
+    porque = (
+        "su corte la acota y no se leyó"
+        if ilegible is not None
+        else "ningún corte suyo la acota"
+    )
+    # R286 (I2): Parámetros puede cambiar el peralte que usa el presupuesto; el aviso no le
+    # atribuye éste.
+    avisos.append(
+        f"altura: {porque}; se supone el peralte por defecto, {PERALTE_SUPUESTO_M:g} m "
+        "(el presupuesto usa el de Parámetros)"
+    )
+    return Dato(
+        valor=PERALTE_SUPUESTO_M,
+        fuente="supuesto",
+        texto=f"{porque}: altura supuesta {PERALTE_SUPUESTO_M:g} m",
+        alternativas=_planas([ilegible]) if ilegible is not None else [],
     )
 
 
@@ -642,6 +711,8 @@ class _Resolutor:
         elif familia in _EXTENSION_ES_ALTURA:
             longitud = col.longitud_m
             altura = extension
+            if familia == "dado" and (extension is None or extension.valor is None):
+                altura = _peralte_supuesto(extension, avisos)
         else:
             longitud = self._longitud(familia, extension, col, avisos)
             altura = None

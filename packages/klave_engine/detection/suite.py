@@ -36,7 +36,11 @@ from klave_engine.detection.slab_detector import SlabDetectorConfig, detect_slab
 from klave_engine.detection.slab_panels import SlabPanelConfig, detect_slab_panels
 from klave_engine.detection.terrain import TerrainDetectorConfig, detect_terrain
 from klave_engine.detection.text_patterns import TextPatternConfig
-from klave_engine.detection.wall_detector import WallDetectorConfig, detect_walls
+from klave_engine.detection.wall_detector import (
+    APLANADO_MAXIMO_M,
+    WallDetectorConfig,
+    detect_walls,
+)
 from klave_engine.dxf.entities import NormalizedEntity
 from klave_engine.dxf.units import METERS_FACTOR, DrawingUnits, vote_from_extent
 from klave_engine.geometry.bbox import BBox
@@ -106,6 +110,8 @@ class DetectorSuiteConfig(BaseModel):
         config.footing.column_search_radius = m(2.0)
         config.footing.strip_max_width = m(1.5)
         config.footing.mark_search_radius = m(1.2)
+        # Tarea 15b: Marina's D-n tags lie 0.07–0.46 m off their dado's outline.
+        config.footing.layer_mark_reach = m(0.6)
         config.beam.line_search_radius = m(1.0)
         config.beam.min_beam_length = m(1.5)
         config.beam.max_beam_length = m(15.0)
@@ -133,6 +139,9 @@ class DetectorSuiteConfig(BaseModel):
         config.wall.min_thickness = m(0.05)
         config.wall.merge_gap = m(0.30)
         config.wall.opening_gap_max = m(1.30)
+        # Tarea 15f (R275): PRUEBA-1 draws each wall's plaster 15 mm outside its block.
+        config.wall.finish_max = m(APLANADO_MAXIMO_M)
+        config.wall.face_tolerance = m(0.001)
         config.room.min_area = m(1.0) * m(1.5)
         config.room.max_area = m(20.0) * m(20.0)
         config.room.min_width = m(0.7)

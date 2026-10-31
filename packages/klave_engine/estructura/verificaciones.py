@@ -91,6 +91,10 @@ CRITICOS: dict[str, tuple[str, ...]] = {
     "contratrabe": ("seccion_cm", "longitud_m", "longitudinales", "estribos"),
     "pilote": ("seccion_cm", "longitud_m", "longitudinales", "estribos"),
     "zapata": ("seccion_cm", "altura_m", "parrillas"),
+    # Tarea 15b: un dado lleva sus lados en planta, su altura (la de su corte) y su armado de
+    # columna corta: varillas verticales y estribos (diseño §4.1: «plan dimensions · peralte ·
+    # verticals · stirrups»).
+    "dado": ("seccion_cm", "altura_m", "longitudinales", "estribos"),
     "muro_concreto": ("seccion_cm", "altura_m", "longitud_m", "parrillas"),
     "dala": ("seccion_cm", "longitud_m", "longitudinales", "estribos"),
     "cerramiento": ("seccion_cm", "longitud_m", "longitudinales", "estribos"),
@@ -1015,6 +1019,21 @@ def _titulos_dibujados(ctx: _Contexto) -> dict[str, list[_Titulo]]:
     vigas metálicas) o nervadura (las nervaduras de una losa)."""
     salida: dict[str, list[_Titulo]] = defaultdict(list)
     sin_familia: dict[str, list[NormalizedEntity]] = {}
+    # R259: el título que una lectura del plano tomó como el de una marca escrita de otra manera
+    # («D-C» sobre su detalle, que es DC por su título DALA): se nombra como lo leyó la lectura.
+    leido_como = {
+        s.entidades[0]: normalizar_marca(s.mark, ctx.config)
+        for s in ctx.inv.specs
+        if s.source != "ia" and s.entidades
+    }
+
+    def nombre_de(e: NormalizedEntity, ficha: str) -> str:
+        nombre = normalizar_marca(ficha.rstrip("'"), ctx.config)
+        otro = leido_como.get(e.entity_id)
+        if otro is not None and otro != nombre and otro == nombre.replace("-", ""):
+            return otro
+        return nombre
+
     for e in ctx.entidades.values():
         if not e.is_textual or not e.text:
             continue
@@ -1040,11 +1059,9 @@ def _titulos_dibujados(ctx: _Contexto) -> dict[str, list[_Titulo]]:
             if m is not None and _nombre_de_marca(m.group(1)):
                 solos.append(m.group(1))
         for ficha, clase, de_familia in hallados:
-            nombre = normalizar_marca(ficha.rstrip("'"), ctx.config)
-            salida[nombre].append(_Titulo(e, ctx.hoja_de(e), clase, de_familia))
+            salida[nombre_de(e, ficha)].append(_Titulo(e, ctx.hoja_de(e), clase, de_familia))
         for ficha in solos:
-            nombre = normalizar_marca(ficha.rstrip("'"), ctx.config)
-            sin_familia.setdefault(nombre, []).append(e)
+            sin_familia.setdefault(nombre_de(e, ficha), []).append(e)
     # Un nombre solo es de la clase que dicen sus títulos con palabra de familia («VIGA V-E» y
     # «V-E»: acero); si no tiene ninguno, de concreto.
     for nombre, es in sin_familia.items():
@@ -1433,6 +1450,7 @@ def _escritas_sin_elemento(
         if colocadas.get(marca):
             otras = sorted({_nombre_de_hoja(e.hoja) for e in colocadas[marca]})
             estado += f" Sus colocaciones están en {', '.join(otras)}, lejos de estos textos."
+        estado += _etiqueta_disputada(ctx, marca, textos)
         junto = [t for t in textos if t.junto_sin_marca]
         if junto:
             familias = ", ".join(sorted({f for t in junto for f in t.junto_sin_marca}))
@@ -1482,6 +1500,49 @@ def _escritas_sin_elemento(
             )
         )
     return salida
+
+
+def _etiqueta_disputada(ctx: _Contexto, marca: str, textos: list[_Escrita]) -> str:
+    """Tarea 15b: lo que el detector dijo de una etiqueta de esta marca que no juntó con ningún
+    contorno de su capa porque dos la alcanzan casi igual (``etiquetas_disputadas``), nombrando
+    los dos; y si uno está dibujado dentro de otro que ya tiene su marca (``anidados``: D-X dentro
+    de D-4), la pregunta, que la lectura no decide: ni lo junta ni lo cuenta aparte."""
+    propios = {t.entidad.entity_id for t in textos}
+    frases: list[str] = []
+    for d in ctx.detections:
+        props = d.properties or {}
+        for disputa in props.get("etiquetas_disputadas") or []:
+            if disputa.get("entidad") not in propios or disputa.get("marca") != marca:
+                continue
+            contornos = [str(c) for c in disputa.get("contornos") or []]
+            if len(contornos) > 1:
+                frase = (
+                    f"La etiqueta {disputa.get('texto') or ''} queda casi a la misma distancia de "
+                    f"dos contornos de su capa ({', '.join(contornos)}): no se junta con ninguno."
+                )
+            else:
+                frase = (
+                    f"La etiqueta {disputa.get('texto') or ''} y otra escogen el mismo contorno "
+                    f"({', '.join(contornos)}): no se junta con él."
+                )
+            dentro = [
+                a
+                for a in props.get("anidados") or []
+                if a.get("contorno") in contornos and marca in (a.get("marcas") or [])
+            ]
+            if dentro and d.mark.strip():
+                factor = ctx.factor or 1.0
+                lados = "x".join(f"{float(v) * factor * 100:g}" for v in dentro[0]["lados"])
+                suyo = ctx.entidades.get(d.source_entities[0]) if d.source_entities else None
+                de_quien = f"{d.mark} ({suyo.raw_handle})" if suyo is not None else d.mark
+                frase += (
+                    f" {marca} dentro de {d.mark}: ¿pedestal o dado aparte? Su contorno "
+                    f"{dentro[0]['contorno']} ({lados}) está dibujado dentro del de {de_quien}; la "
+                    f"lectura no lo decide: no lo cuenta aparte ni lo suma a {d.mark}."
+                )
+            if frase not in frases:
+                frases.append(frase)
+    return "".join(f" {f}" for f in frases)
 
 
 def _familia_de_marca(ctx: _Contexto, marca: str, titulos: dict[str, list[_Titulo]]) -> str:
@@ -1800,7 +1861,13 @@ def _vista_de(ctx: _Contexto, e: NormalizedEntity) -> str | None:
     if seg is None:
         return None
     centro = bbox_center(e.bbox)
-    for v in seg.structural_plan_views():
+    plantas = seg.structural_plan_views()
+    # Tarea 15c: dentro de la rejilla de una sola planta, es de esa planta (las cajas de las
+    # vistas, la unión de sus detecciones, pueden traslaparse).
+    suya = seg.vista_por_rejilla(centro)
+    if suya is not None and any(v.view_id == suya for v in plantas):
+        return suya
+    for v in plantas:
         if v.bbox is not None and bbox_contains_point(v.bbox, centro):
             return v.view_id
     return None
@@ -1817,10 +1884,13 @@ def _detectadas_fuera(ctx: _Contexto) -> list[Verificacion]:
     toda vista o en una planta que no es de estructura: el plano las dibuja y no se cuentan. Un
     aviso por motivo y familia (las de un detalle, un corte o un cuadro definen, no colocan)."""
     grupos: dict[tuple[str, str], list[Any]] = defaultdict(list)
+    en_duda: dict[str, list[Any]] = defaultdict(list)
     for x in excluidas(ctx.detections, ctx.segmentation):
         if x.motivo in _FUERA:
             grupos[(x.motivo, x.familia)].append(x)
-    salida = []
+        elif x.motivo == "vista_en_duda":
+            en_duda[x.familia].append(x)
+    salida = [_en_duda(ctx, familia, xs) for familia, xs in sorted(en_duda.items())]
     for (motivo, familia), xs in sorted(grupos.items()):
         marcas = Counter(x.marca or "sin marca" for x in xs)
         etiquetas = [
@@ -1844,6 +1914,32 @@ def _detectadas_fuera(ctx: _Contexto) -> list[Verificacion]:
             )
         )
     return salida
+
+
+def _en_duda(ctx: _Contexto, familia: str, xs: list[Any]) -> Verificacion:
+    """Tarea 15c: las colocaciones que están dentro de las rejillas de dos plantas sin dibujo que
+    diga de cuál son: ninguna de las dos las cuenta hasta que se decida (una duda de la 7: de su
+    planta dependen su altura y su nivel)."""
+    marcas = Counter(x.marca or "sin marca" for x in xs)
+    etiquetas = [
+        ctx.handle(ctx.deteccion[x.detection_id].source_entities[0])
+        for x in xs
+        if x.detection_id in ctx.deteccion and ctx.deteccion[x.detection_id].source_entities
+    ]
+    ejemplos = [f"{x.marca or 'sin marca'}: {x.texto}" for x in xs]
+    return _hallazgo(
+        7,
+        "duda",
+        f"{len(xs)} colocaciones de {familia} con vista en duda: no se sabe a qué planta "
+        "pertenecen y no se cuentan en ninguna hasta que se decida. "
+        + " | ".join(ejemplos[:_EJEMPLOS])
+        + (f" | y {len(ejemplos) - _EJEMPLOS} más" if len(ejemplos) > _EJEMPLOS else ""),
+        clave=f"vista en duda: {familia}",
+        marcas=sorted(m for m in marcas if m != "sin marca"),
+        campo="altura_m",
+        textos=etiquetas,
+        en_juego={"piezas": float(len(xs))},
+    )
 
 
 # ------------------------------------------------------------------- 7: los datos críticos
@@ -2597,7 +2693,87 @@ def _contradicciones(ctx: _Contexto, ajenas: set[str]) -> list[Verificacion]:
     salida += _reglas_que_no_coinciden(ctx)
     salida += _codigos_de_hoja(ctx)
     salida += _entrepisos(ctx)
+    salida += _niveles(ctx)
     return salida
+
+
+def _niveles(ctx: _Contexto) -> list[Verificacion]:
+    """Tarea 15e (R270): lo que los niveles que el plano declara no dejan medir (una planta con
+    leyendas de nivel distintas, un entrepiso que no es una altura de planta) es una duda; y, cuando
+    el dibujo muestra que el nivel de cada planta es la losa que dibuja, un aviso que lo dice."""
+    seg = ctx.segmentation
+    if seg is None:
+        return []
+    salida: list[Verificacion] = []
+    vistas = seg.structural_plan_views()
+    for texto in seg.dudas_de_nivel():
+        tocadas = {v.view_id for v in vistas if f"«{v.title}»" in texto}
+        afectados = [
+            e for e in ctx.elementos if e.familia in _CON_ALTURA and (e.vista or "") in tocadas
+        ]
+        titulos = sorted(v.title for v in vistas if v.view_id in tocadas)
+        salida.append(
+            _hallazgo(
+                8,
+                "duda",
+                texto[0].upper() + texto[1:] + ".",
+                clave="nivel:" + "|".join(titulos),
+                marcas=sorted({e.marca for e in afectados if e.marca}),
+                elementos=[e.element_id for e in afectados],
+                campo="altura_m",
+                en_juego={"piezas": float(len(afectados))},
+            )
+        )
+    if seg.lectura_de_niveles:
+        salida.append(
+            _hallazgo(
+                8,
+                "aviso",
+                "Los entrepisos se leen bajo su losa: "
+                + seg.lectura_de_niveles
+                + ". Las alturas de los castillos y los muros salen de esos niveles.",
+                clave="lectura_de_niveles",
+                campo="altura_m",
+            )
+        )
+    salida += _muros_de_entrepiso_completo(ctx)
+    return salida
+
+
+def _muros_de_entrepiso_completo(ctx: _Contexto) -> list[Verificacion]:
+    """Tarea 15e (R271): un muro de block llega bajo su losa. Si las plantas declaran sus niveles
+    y ningún detalle acota el peralte de la losa, los muros se miden de nivel a nivel: es un
+    supuesto, y se dice (aviso de la 7)."""
+    seg = ctx.segmentation
+    if seg is None or seg.losa_acotada() is not None:
+        return []
+    alturas = seg.alturas_de_entrepiso()
+    vistas = {
+        v.view_id: v
+        for v in seg.superstructure_views()
+        if v.view_id in alturas and not alturas[v.view_id].sin_losa and v.level_key != "azotea"
+    }
+    muros = [
+        d
+        for d in ctx.detections
+        if d.detection_type.value == "wall" and seg.assignment.get(d.detection_id) in vistas
+    ]
+    if not muros:
+        return []
+    plantas = sorted({vistas[seg.assignment[d.detection_id]].title for d in muros})
+    porque = seg.sin_losa_acotada()
+    return [
+        _hallazgo(
+            7,
+            "aviso",
+            f"La altura de los muros de {_listar([f'«{p}»' for p in plantas])} ({len(muros)}) es "
+            "la del entrepiso completo, de nivel a nivel: un supuesto. Un muro de block llega bajo "
+            f"su losa, y {porque}, así que no se descuenta.",
+            clave="muros_de_entrepiso_completo",
+            campo="altura_m",
+            en_juego={"piezas": float(len(muros))},
+        )
+    ]
 
 
 def _definiciones_que_no_coinciden(ctx: _Contexto, ajenas: set[str]) -> list[Verificacion]:

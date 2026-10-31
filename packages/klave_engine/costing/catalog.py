@@ -107,14 +107,21 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
             description="Concreto f'c=250 kg/cm² en zapatas y dados",
             unit="M3",
             phase="Cimentación",
+            # Tarea 15b: cada zapata o dado por su área en planta × su peralte: el que el modelo
+            # estructural leyó de su corte (``peralte_cm``) o, sin él, el supuesto.
             rule=QuantityRule(
                 detection_type=DetectionType.footing,
-                kind=QuantityKind.AREA,
+                kind=QuantityKind.VOLUME,
                 source_property="estimated_area",
+                thickness_property="peralte_cm",
+                default_thickness_m=footing_volume,
             ),
-            quantity_factor=footing_volume,
+            quantity_factor=1.0,
             view_scope=ViewScope.FOUNDATION_ONLY,
-            assumptions=[f"Peralte promedio de zapata/dado {a.footing_depth_m:.2f} m"],
+            assumptions=[
+                f"Peralte promedio de zapata/dado {a.footing_depth_m:.2f} m, salvo el que acota "
+                "el corte de cada una en el plano"
+            ],
             production_rate_per_day=5.0,
             sequence_order=1,
         ),
@@ -438,7 +445,9 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
             ),
             quantity_factor=a.wall_height_m,
             view_scope=ViewScope.SUPERSTRUCTURE_SUM,
-            assumptions=[f"Altura promedio de muro {a.wall_height_m:.2f} m"],
+            assumptions=[
+                f"Altura promedio de muro {a.wall_height_m:.2f} m (si no hay niveles N.P.T.)"
+            ],
             production_rate_per_day=14.0,
             sequence_order=3,
         ),
@@ -459,8 +468,8 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
             quantity_factor=a.wall_height_m,
             view_scope=ViewScope.SUPERSTRUCTURE_SUM,
             assumptions=[
-                f"Altura promedio de muro {a.wall_height_m:.2f} m; vanos descontados "
-                "según medición o 18 % supuesto (A4)"
+                f"Altura promedio de muro {a.wall_height_m:.2f} m (si no hay niveles N.P.T.)",
+                f"Vanos descontados según medición o {a.opening_share_pct:g} % supuesto",
             ],
             production_rate_per_day=9.0,
             sequence_order=3,
@@ -497,7 +506,8 @@ def _acabados(a: CostingAssumptions) -> list[Concept]:
             view_scope=ViewScope.SUPERSTRUCTURE_SUM,
             assumptions=[
                 f"Altura promedio de muro {a.wall_height_m:.2f} m (si no hay niveles N.P.T.)",
-                "Dos caras por muro; vanos no descontados (el plano no los acota)",
+                "Dos caras por muro; los vanos se descuentan como dice la nota de vanos (sin "
+                "esa nota, no se descontó ninguno)",
             ],
             production_rate_per_day=18.0,
             sequence_order=10,
@@ -521,7 +531,8 @@ def _acabados(a: CostingAssumptions) -> list[Concept]:
             view_scope=ViewScope.SUPERSTRUCTURE_SUM,
             assumptions=[
                 f"Altura promedio de muro {a.wall_height_m:.2f} m (si no hay niveles N.P.T.)",
-                "Dos caras por muro; vanos no descontados",
+                "Dos caras por muro; los vanos se descuentan como dice la nota de vanos (sin "
+                "esa nota, no se descontó ninguno)",
             ],
             production_rate_per_day=40.0,
             sequence_order=30,

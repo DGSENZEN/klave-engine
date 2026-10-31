@@ -599,13 +599,13 @@
         }
       },
       "EST-001": {
-        "quantity": 9.893,
+        "quantity": 10.438,
         "unit": "M3",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "marcadores de castillo: cada etiqueta toma el castillo dibujado junto a sus letras (su cuadro, su c\u00edrculo o su relleno), no el bloque de muros de la planta que la contiene; los castillos del muro poniente de PLANTA BAJA, casi igual de cerca de \u00absimbolog\u00eda\u00bb, son de la planta por su dibujo (R146, R165); antes, R133: el c\u00edrculo del castillo en vez de la caja del bloque que lo contiene; R179: a media altura de texto del marcador m\u00e1s cercano, el s\u00edmbolo en la capa de castillos le gana al contorno de otra capa: la K-1 (6701) toma su castillo de 15\u00d715 (66C1, capa castillos) y no el contorno de muro de arquitectura (A-WALL 871A, 0.0702); 10.037 \u2192 9.893, verificado en el crudo",
+        "note": "marcadores de castillo: cada etiqueta toma el castillo dibujado junto a sus letras (su cuadro, su c\u00edrculo o su relleno), no el bloque de muros de la planta que la contiene; los castillos del muro poniente de PLANTA BAJA, casi igual de cerca de \u00absimbolog\u00eda\u00bb, son de la planta por su dibujo (R146, R165); antes, R133: el c\u00edrculo del castillo en vez de la caja del bloque que lo contiene; R179: a media altura de texto del marcador m\u00e1s cercano, el s\u00edmbolo en la capa de castillos le gana al contorno de otra capa: la K-1 (6701) toma su castillo de 15\u00d715 (66C1, capa castillos) y no el contorno de muro de arquitectura (A-WALL 871A, 0.0702); 10.037 \u2192 9.893, verificado en el crudo; Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: los 7 K-1 del muro poniente exterior de PLANTA BAJA (631C, 631D, 631E, 6320, 6324, 632F, 6330; antes en \u00absimbolog\u00eda\u00bb, no contaban) entran a su planta con su cuadro de 15\u00d715 \u00d7 3.00 m (la altura supuesta: las vistas de esta hoja no juntan su N.P.T.): +0.4725; los 4 K-1 de la esquina de arriba de la AZOTEA (6943, 6949, 694A, 694B) pasan de PLANTA ALTA a AZOTEA, misma altura supuesta: 0; 9.893 \u2192 10.366: conteos y secciones verificados en el crudo (verificar_otros.py prueba-1: 10.3203 por el marcador m\u00e1s cercano, 0.44 %: R166), el volumen no: altura supuesta 3.00 m; el plano declara 0/3.45/6.60/7.80 \u2014 tarea 15e (R266); Tarea 15e (R270): cada planta toma el nivel de la leyenda bajo su t\u00edtulo (6A1A \u00abN.P.T. 0+00\u00bb CIMENTACI\u00d3N, 6A1B +3.45 PLANTA BAJA, 6A1C +6.60 PLANTA ALTA, 6A1D +7.80 AZOTEA: crudo) y el nivel es la losa que dibuja la planta (PLANTA BAJA y PLANTA ALTA dibujan su losa de viguetas, la AZOTEA castillos y muros sin losa en su planta: crudo): cada planta va del nivel de la de abajo al suyo, PLANTA BAJA 3.45, PLANTA ALTA 3.15, AZOTEA 1.20 (de +6.60 a su nivel +7.80; R273: el dibujo no dice que todo sea pretil). 10.366 \u2192 10.438: secciones del motor \u00d7 3.45 / 3.15 / 1.20 (PLANTA BAJA 1.730119 m\u00b2, PLANTA ALTA 1.230187, AZOTEA 0.495). Crudos: los conteos (72/61/22) y las alturas; las secciones son las del crudo (1.700513 / 1.244588 / 0.495) con las tres de R166 cambiadas, cada marcador verificado en crudo (6355 K-0: su c\u00edrculo 6315 0.015394, el motor el 15\u00d730 62D1 0.045; 6719 y 9636 K-0: sus cuadros 667C/667A 0.0225, el motor los sombreados 66C8/9635 0.015299): R273, a 0.001 m\u00b3. EST-001 sigue siendo del motor: R166 es una lectura que el crudo no da. Los castillos se miden de nivel a nivel, tambi\u00e9n dentro de la losa (la convenci\u00f3n la decide Diego). R272: de los 75 castillos y columnas de la cimentaci\u00f3n, 72 siguen en PLANTA BAJA (corrida la rejilla (+66.12, +2.33) de S-GRID, a 0.30 m o menos, uno a uno: 71 a 3 cm o menos; 5DB1 desplazado 0.20 m sobre su mismo muro) y son el arranque de los de PLANTA BAJA; 5DAA (K-1, sin castillo en PLANTA BAJA: ah\u00ed dibuja el cerramiento CR-2.35) y los dos C-1 del p\u00f3rtico de IPR (5DD1, 8849) no siguen: altura supuesta con su duda (verificaci\u00f3n 7). La cimentaci\u00f3n no est\u00e1 en EST-001",
         "variants": {
-          "EST-001.GEN": 9.893
+          "EST-001.GEN": 10.438
         }
       },
       "EST-002": {
@@ -649,58 +649,53 @@
         }
       },
       "EST-004": {
-        "quantity": 392.598,
+        "quantity": 496.388,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165)",
+        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165); Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: W39, el muro poniente exterior de PLANTA BAJA (A-WALL en x 50.725\u201350.905, de \u221262.298 a \u221245.473: 16.825 m, la uni\u00f3n de sus dos contornos \u2014el del block y el del aplanado, 15 mm afuera\u2014, cada uno de 16.81: sobraba 0.015 m, Tarea 15f; antes en \u00absimbolog\u00eda\u00bb), entra a su planta: +16.825 \u00d7 2.70; W18, el muro norte de la AZOTEA (cara interior A-WALL en y \u221263.724: 5.22 m; antes en PLANTA ALTA), es pretil: \u22125.22 \u00d7 (2.70 \u2212 0.90); 392.598 \u2192 428.630: longitudes y plantas verificadas en el crudo; las alturas (2.70 y el pretil de 0.90) son las supuestas del motor. Tarea 15d (R269): las variantes se reparten s\u00f3lo sobre los 34 muros que el rengl\u00f3n cuenta y cada una descuenta los vanos que el rengl\u00f3n ley\u00f3 en sus muros. BLOCK-19 7.783, BLOCK-30 16.934 y BLOCK-36 26.637 se van (W5, W33 y W31 son de la planta de cimentaci\u00f3n: el rengl\u00f3n no los cuenta); BLOCK-16 268.442 \u2192 286.820 (sus 20 muros de la clase 16 del detector \u2212 los vanos de W40 0.77, W42 0.95 y W47 1.00 \u00d7 2.10); BLOCK-17 61.395 \u2192 79.998 y BLOCK-18 47.438 \u2192 61.812 (sin vanos: ya no descuentan el 18 % supuesto ni pagan el reparto a prorrata). Verificado en crudo (verificar_otros.py): qu\u00e9 muros cuenta el rengl\u00f3n y la planta de cada uno (la clase de cada muro, y con ella qu\u00e9 muros cuenta cada variante, era la del detector); que W5, W31 y W33 no tienen l\u00edneas en la superestructura; que cada vano le\u00eddo es un hueco de ese ancho en una cara de su muro y que ning\u00fan muro de 17 o 18 tiene un hueco de 0.5 m o m\u00e1s. NO verificado en crudo entonces: las sumas por variante (los largos y las clases de espesor del detector, con las alturas supuestas). Las clases 16/17/18 sal\u00edan de juntar caras de los dos contornos de cada muro (el del block, 0.150, y el del aplanado, 0.180): ver Tarea 15f. Tarea 15e (R270): cada planta toma el nivel de la leyenda bajo su t\u00edtulo (6A1A \u00abN.P.T. 0+00\u00bb CIMENTACI\u00d3N, 6A1B +3.45 PLANTA BAJA, 6A1C +6.60 PLANTA ALTA, 6A1D +7.80 AZOTEA: crudo) y el nivel es la losa que dibuja la planta (PLANTA BAJA y PLANTA ALTA dibujan su losa de viguetas, la AZOTEA castillos y muros sin losa en su planta: crudo): cada planta va del nivel de la de abajo al suyo, PLANTA BAJA 3.45, PLANTA ALTA 3.15, AZOTEA 1.20 (de +6.60 a su nivel +7.80; R273: el dibujo no dice que todo sea pretil). R271: un muro de block llega bajo su losa: el detalle \u00abLOSA DE VIGUETA Y BOVEDILLA 12-5\u00bb (65B8) acota la losa en 20 cm (65C5 \u00ab20\u00bb = 65C3 \u00ab15\u00bb + 65C4 \u00ab5\u00bb; el de doble bovedilla 6617 igual, 6624 = 6622 + 6623: crudo, \u00abACOTACIONES EN CENTIMETROS\u00bb), y \u00abELEVACION DE MURO DE CARGA\u00bb (55EB) dibuja el block bajo la LOSA. Muros de PLANTA BAJA 3.45 \u2212 0.20 = 3.25, de PLANTA ALTA 3.15 \u2212 0.20 = 2.95 (fuente detalle); los de la AZOTEA, sin losa encima, 1.20 enteros. No se descuenta la dala de remate (E2): los muros contados (PLANTA BAJA 77.764 m, PLANTA ALTA 65.380 m, AZOTEA 53.170 m) a 3.25, 2.95 y 1.20 en vez de 2.70 y el pretil de 0.90 supuestos, menos los mismos vanos (5.712 m\u00b2): 428.630 \u2192 503.696; BLOCK-16 286.820 \u2192 333.830, BLOCK-17 79.998 \u2192 92.097, BLOCK-18 61.812 \u2192 77.769. Crudos: los niveles, la losa acotada y con ellos las alturas de muro (3.25 / 2.95 / 1.20). Del motor entonces (no crudos): los largos, las clases de espesor y los vanos le\u00eddos (los verifica la Tarea 15f). Tarea 15f (R275): un muro dibujado con su aplanado es un muro. El plano no dibuja la planta dos veces: dibuja cada muro con dos contornos en A-WALL, el del block (0.150) y, 15 mm afuera por cada lado, el del aplanado (0.180); las l\u00edneas iguales del model space y del bloque de Revit (desfase 0) cuentan una vez. La l\u00ednea del aplanado no es una cara: el espesor es el del n\u00facleo, el largo el eje del n\u00facleo (cada junta en T una sola vez: el n\u00facleo del muro que llega para en el n\u00facleo del que lo recibe) y los vanos los huecos de sus dos caras (el de W47 mide 1.03 en el block; los 1.00 de antes eran el hueco del aplanado, que da vuelta al vano). La nota 2 de NOTAS DE MUROS DE CARGA dice \u00abMURO DE BLOQUE DE CONCRETO DE 15 x 20 x 40 CM EN 15 CM. DE ESPESOR\u00bb (56D0/56CF y su copia 58BF/58BE; la leyenda \u00abMURO DE CARGA 15 CMS\u00bb, 5789/596C): 22 muros dibujan el n\u00facleo de 15 (coincide) y 12 s\u00f3lo el contorno de 18 (W23, W28 y W29 de PLANTA ALTA; W7, W8, W15, W17, W18, W52, W54, W56 y W57 de AZOTEA), que toman los 15 de la nota (fuente nota; 18 = 15 + 2 \u00d7 1.5 de aplanado) y el eje de su contorno, con el aviso \u00abel contorno dibujado mide 18 cm; la nota dice 15: el contorno incluye el aplanado\u00bb. Largos al eje: PLANTA BAJA 77.764 \u2192 76.507 m, PLANTA ALTA 65.380 \u2192 64.309 m, AZOTEA 53.170 \u2192 53.170 m; vanos 2.72 \u2192 2.75 m \u00d7 2.10: 503.696 \u2192 496.388, una sola variante: BLOCK-16 333.830, BLOCK-17 92.097 y BLOCK-18 77.769 \u2192 BLOCK-15 496.388. Verificado en crudo (verificar_otros.py): la nota y la leyenda (15 cm, dos copias cada una); por cada uno de los 34 muros, el n\u00facleo de 0.150 entre aplanados de 0.015 o el contorno de 0.180 (a 1 mm), su largo al eje (a 2 mm del motor), sus vanos (los huecos de las dos caras, de 0.30 a 1.30 m: W40 0.77, W42 0.95, W47 1.03, y ning\u00fan otro) y su clase, 15. Crudas: la clase y las alturas de muro (Tarea 15e); los largos, comparados a 2 mm con el crudo de los muros del motor (las caras crudas se recortan a sus cajas). NO verificado: la altura de vano (2.10, supuesta) y que no haya un vano que no deje hueco en las caras del block (el aplanado poniente de W40 lo cierra una l\u00ednea del bloque de Revit; los 1.10 de su cara oriente son el vano de 0.77 m\u00e1s los dos muros que llegan en T, 0.165 cada uno con su aplanado; los 1.03 de W47 son el mismo vano): el rengl\u00f3n sigue siendo del motor",
         "variants": {
-          "EST-004.BLOCK-19": 7.769,
-          "EST-004.BLOCK-18": 54.548,
-          "EST-004.BLOCK-16": 225.508,
-          "EST-004.BLOCK-17": 61.282,
-          "EST-004.BLOCK-36": 26.588,
-          "EST-004.BLOCK-30": 16.902
+          "EST-004.BLOCK-15": 496.388
         }
       },
       "ACA-001": {
-        "quantity": 785.197,
+        "quantity": 992.777,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165)",
+        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165); Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: W39 (16.825 m, la uni\u00f3n de sus dos contornos \u2014el del block y el del aplanado, 15 mm afuera\u2014, cada uno de 16.81: sobraba 0.015 m, Tarea 15f) entra a PLANTA BAJA y W18 (5.22 m) es pretil de AZOTEA, dos caras: 2 \u00d7 (16.825 \u00d7 2.70 \u2212 5.22 \u00d7 1.80) = +72.063; 785.197 \u2192 857.260: longitudes y plantas verificadas en el crudo; las alturas (2.70 y el pretil de 0.90) son las supuestas del motor. Tarea 15e (R270): cada planta toma el nivel de la leyenda bajo su t\u00edtulo (6A1A \u00abN.P.T. 0+00\u00bb CIMENTACI\u00d3N, 6A1B +3.45 PLANTA BAJA, 6A1C +6.60 PLANTA ALTA, 6A1D +7.80 AZOTEA: crudo) y el nivel es la losa que dibuja la planta (PLANTA BAJA y PLANTA ALTA dibujan su losa de viguetas, la AZOTEA castillos y muros sin losa en su planta: crudo): cada planta va del nivel de la de abajo al suyo, PLANTA BAJA 3.45, PLANTA ALTA 3.15, AZOTEA 1.20 (de +6.60 a su nivel +7.80; R273: el dibujo no dice que todo sea pretil). R271: un muro de block llega bajo su losa: el detalle \u00abLOSA DE VIGUETA Y BOVEDILLA 12-5\u00bb (65B8) acota la losa en 20 cm (65C5 \u00ab20\u00bb = 65C3 \u00ab15\u00bb + 65C4 \u00ab5\u00bb; el de doble bovedilla 6617 igual, 6624 = 6622 + 6623: crudo, \u00abACOTACIONES EN CENTIMETROS\u00bb), y \u00abELEVACION DE MURO DE CARGA\u00bb (55EB) dibuja el block bajo la LOSA. Muros de PLANTA BAJA 3.45 \u2212 0.20 = 3.25, de PLANTA ALTA 3.15 \u2212 0.20 = 2.95 (fuente detalle); los de la AZOTEA, sin losa encima, 1.20 enteros. No se descuenta la dala de remate (E2); el aplanado interior tambi\u00e9n se detiene bajo la losa: dos caras de los muros de EST-004 a 3.25 / 2.95 / 1.20: 857.260 \u2192 1007.392 (2 \u00d7 503.696). Crudas las alturas de muro; los largos, del motor entonces. Tarea 15f (R275): dos caras de los muros de EST-004 con su largo al eje del block (la l\u00ednea del aplanado no es una cara; cada junta en T una sola vez) y el vano de W47 medido en el block (1.03): 1007.392 \u2192 992.777 (2 \u00d7 496.388). Crudas las alturas; los largos, comparados a 2 mm con el crudo de los muros del motor (verificar_otros.py recorta las caras crudas a las cajas del motor); la altura de vano es supuesta: el rengl\u00f3n sigue siendo del motor",
         "variants": {
-          "ACA-001.GEN": 785.197
+          "ACA-001.GEN": 992.777
         }
       },
       "ACA-002": {
-        "quantity": 785.197,
+        "quantity": 992.777,
         "unit": "M2",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165)",
+        "note": "el muro poniente de PLANTA BAJA (W40, 11.14 m), casi igual de cerca de \u00absimbolog\u00eda\u00bb que de su planta, es de la planta por su dibujo (R165); Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: W39 (16.825 m, la uni\u00f3n de sus dos contornos \u2014el del block y el del aplanado, 15 mm afuera\u2014, cada uno de 16.81: sobraba 0.015 m, Tarea 15f) entra a PLANTA BAJA y W18 (5.22 m) es pretil de AZOTEA, dos caras: 2 \u00d7 (16.825 \u00d7 2.70 \u2212 5.22 \u00d7 1.80) = +72.063; 785.197 \u2192 857.260: longitudes y plantas verificadas en el crudo; las alturas (2.70 y el pretil de 0.90) son las supuestas del motor. Tarea 15e (R270): cada planta toma el nivel de la leyenda bajo su t\u00edtulo (6A1A \u00abN.P.T. 0+00\u00bb CIMENTACI\u00d3N, 6A1B +3.45 PLANTA BAJA, 6A1C +6.60 PLANTA ALTA, 6A1D +7.80 AZOTEA: crudo) y el nivel es la losa que dibuja la planta (PLANTA BAJA y PLANTA ALTA dibujan su losa de viguetas, la AZOTEA castillos y muros sin losa en su planta: crudo): cada planta va del nivel de la de abajo al suyo, PLANTA BAJA 3.45, PLANTA ALTA 3.15, AZOTEA 1.20 (de +6.60 a su nivel +7.80; R273: el dibujo no dice que todo sea pretil). R271: un muro de block llega bajo su losa: el detalle \u00abLOSA DE VIGUETA Y BOVEDILLA 12-5\u00bb (65B8) acota la losa en 20 cm (65C5 \u00ab20\u00bb = 65C3 \u00ab15\u00bb + 65C4 \u00ab5\u00bb; el de doble bovedilla 6617 igual, 6624 = 6622 + 6623: crudo, \u00abACOTACIONES EN CENTIMETROS\u00bb), y \u00abELEVACION DE MURO DE CARGA\u00bb (55EB) dibuja el block bajo la LOSA. Muros de PLANTA BAJA 3.45 \u2212 0.20 = 3.25, de PLANTA ALTA 3.15 \u2212 0.20 = 2.95 (fuente detalle); los de la AZOTEA, sin losa encima, 1.20 enteros. No se descuenta la dala de remate (E2); el aplanado interior tambi\u00e9n se detiene bajo la losa: dos caras de los muros de EST-004 a 3.25 / 2.95 / 1.20: 857.260 \u2192 1007.392 (2 \u00d7 503.696). Crudas las alturas de muro; los largos, del motor entonces. Tarea 15f (R275): dos caras de los muros de EST-004 con su largo al eje del block (la l\u00ednea del aplanado no es una cara; cada junta en T una sola vez) y el vano de W47 medido en el block (1.03): 1007.392 \u2192 992.777 (2 \u00d7 496.388). Crudas las alturas; los largos, comparados a 2 mm con el crudo de los muros del motor (verificar_otros.py recorta las caras crudas a las cajas del motor); la altura de vano es supuesta: el rengl\u00f3n sigue siendo del motor",
         "variants": {
-          "ACA-002.GEN": 785.197
+          "ACA-002.GEN": 992.777
         }
       },
       "AIR-004": {
-        "quantity": 42.0,
+        "quantity": 43.0,
         "unit": "PZA",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "",
+        "note": "Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: la cabeza del eje 1 de PLANTA BAJA (INSERT 6249, S-GRID-IDEN, \u00abRejilla - Extremo de rejilla\u2026\u00bb), que el motor lee como rejilla de aire, entra a su planta (antes en \u00absimbolog\u00eda\u00bb): 42 \u2192 43. Es un falso positivo conocido (R267), que ya estaba: las otras cabezas de eje de la hoja ya se contaban; no son rejillas de aire",
         "variants": {
-          "AIR-004.GEN": 42.0
+          "AIR-004.GEN": 43.0
         }
       },
       "CAR-001": {
-        "quantity": 33.0,
+        "quantity": 36.0,
         "unit": "PZA",
         "tolerance_pct": 10.0,
         "source": "engine",
-        "note": "",
+        "note": "Tarea 15c: lo que est\u00e1 dentro de la rejilla de ejes de una sola planta es de esa planta: entran a su planta la cabeza del eje 1 de PLANTA BAJA (INSERT 6249, \u00abRejilla - Extremo de rejilla\u2026\u00bb) y las dos flechas de la llamada de alzado A201 junto al eje 2 de la cimentaci\u00f3n (INSERT 5ACF y 5AD1, G-ANNO-SYMB, \u00abAlzado - Flecha rellenada\u2026\u00bb), que el motor lee como puertas: 33 \u2192 36. Cada uno es un falso positivo conocido (R267), que ya estaba: las otras cabezas de eje ya se contaban; no son puertas",
         "variants": {
-          "CAR-001.GEN": 33.0
+          "CAR-001.GEN": 36.0
         }
       },
       "CIM-003": {
@@ -755,5 +750,47 @@
       "PRE-001"
     ]
   },
-  "notes": "R166: ZCM-1: el MTEXT de la marca, anclado arriba a la derecha, cae dentro de la esquina de su zapata corrida; ejes F/G/H: cada letra es la de la l\u00ednea en cuyo extremo est\u00e1 escrita (el gold anterior ten\u00eda la letra de la vecina); el \u00ab1\u00bb de x \u22126.03 era un tramo de la capa cimentacion, no un eje (R146)"
+  "estructura": {
+    "por_familia": {
+      "castillo": {
+        "colocaciones": 228,
+        "criticos_total": 912
+      }
+    },
+    "por_hoja": {
+      "castillo": {
+        "drawings/Plano Prueba 1.dxf": 228
+      }
+    },
+    "por_vista": {
+      "castillo": {
+        "view_00_cimentacion": 73,
+        "view_01_planta_baja": 72,
+        "view_02_planta_alta": 61,
+        "view_03_azotea": 22
+      }
+    },
+    "verificaciones": {},
+    "hallazgos": {},
+    "sin_cerca": {
+      "por_familia.castillo.con_definicion": "el detalle ARMADO DE CASTILLOS dibuja K-0, K-1 y K-2 con su armado (\u00abV4#4 E#2 @20cms\u00bb) y el motor no las define (0): no se cerca una lectura que falta",
+      "por_familia.castillo.criticos_del_plano": "depende de las definiciones que el motor no lee (con_definicion)",
+      "por_familia.cerramiento": "Tarea 15c cerca de PRUEBA-1 s\u00f3lo los castillos por planta (verificados en crudo); esto no se verific\u00f3 contra el plano",
+      "por_familia.columna": "Tarea 15c cerca de PRUEBA-1 s\u00f3lo los castillos por planta (verificados en crudo); esto no se verific\u00f3 contra el plano",
+      "por_familia.trabe": "Tarea 15c cerca de PRUEBA-1 s\u00f3lo los castillos por planta (verificados en crudo); esto no se verific\u00f3 contra el plano",
+      "por_familia.zapata": "Tarea 15c cerca de PRUEBA-1 s\u00f3lo los castillos por planta (verificados en crudo); esto no se verific\u00f3 contra el plano",
+      "verificaciones.1": "Tarea 15c cerca de PRUEBA-1 s\u00f3lo los castillos por planta (verificados en crudo); esto no se verific\u00f3 contra el plano",
+      "verificaciones.2": "Tarea 15c cerca de PRUEBA-1 s\u00f3lo los castillos por planta (verificados en crudo); esto no se verific\u00f3 contra el plano",
+      "verificaciones.3": "Tarea 15c cerca de PRUEBA-1 s\u00f3lo los castillos por planta (verificados en crudo); esto no se verific\u00f3 contra el plano",
+      "verificaciones.4": "Tarea 15c cerca de PRUEBA-1 s\u00f3lo los castillos por planta (verificados en crudo); esto no se verific\u00f3 contra el plano",
+      "verificaciones.5": "Tarea 15c cerca de PRUEBA-1 s\u00f3lo los castillos por planta (verificados en crudo); esto no se verific\u00f3 contra el plano",
+      "verificaciones.6": "Tarea 15c cerca de PRUEBA-1 s\u00f3lo los castillos por planta (verificados en crudo); esto no se verific\u00f3 contra el plano",
+      "verificaciones.7": "Tarea 15c cerca de PRUEBA-1 s\u00f3lo los castillos por planta (verificados en crudo); esto no se verific\u00f3 contra el plano",
+      "verificaciones.8": "Tarea 15c cerca de PRUEBA-1 s\u00f3lo los castillos por planta (verificados en crudo); esto no se verific\u00f3 contra el plano",
+      "verificaciones.9": "Tarea 15c cerca de PRUEBA-1 s\u00f3lo los castillos por planta (verificados en crudo); esto no se verific\u00f3 contra el plano",
+      "verificaciones.10": "Tarea 15c cerca de PRUEBA-1 s\u00f3lo los castillos por planta (verificados en crudo); esto no se verific\u00f3 contra el plano",
+      "verificaciones.11": "Tarea 15c cerca de PRUEBA-1 s\u00f3lo los castillos por planta (verificados en crudo); esto no se verific\u00f3 contra el plano"
+    }
+  },
+  "notes": "R166: ZCM-1: el MTEXT de la marca, anclado arriba a la derecha, cae dentro de la esquina de su zapata corrida; ejes F/G/H: cada letra es la de la l\u00ednea en cuyo extremo est\u00e1 escrita (el gold anterior ten\u00eda la letra de la vecina); el \u00ab1\u00bb de x \u22126.03 era un tramo de la capa cimentacion, no un eje (R146); Tarea 15c: cada etiqueta en una sola planta, la de la rejilla de ejes que la contiene (PRUEBA-1 no tiene marcos; los t\u00edtulos est\u00e1n bajo sus plantas y el de PLANTA ALTA queda junto a la esquina de arriba de la AZOTEA). Castillos por planta 69/65/65/18 (y 11 en \u00absimbolog\u00eda\u00bb y \u00abARMADO DE CASTILLOS\u00bb) \u2192 73/72/61/22, los 228 de la capa castillos, cada uno en una; cercados por vista (estructura.por_vista), verificados en el crudo (evals/verificacion/verificar_otros.py prueba-1)"
 }

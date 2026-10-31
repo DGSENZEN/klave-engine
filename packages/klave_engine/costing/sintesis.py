@@ -181,15 +181,19 @@ def dividir(
     concept_code: str,
     base_description: str,
     total: float,
-    matched: list[Detection],
+    contadas: list[Detection],
     meters_factor: float,
     measure: Callable[[list[Detection]], tuple[float, list[Detection]]],
 ) -> tuple[list[dict], float]:
     """Las variantes de un renglón: cada grupo se mide con la misma regla
     (``measure`` devuelve cantidad y elementos que contribuyeron) y se
     reparte a ``total``. Devuelve las variantes y el factor de ajuste (1.0 si
-    los grupos ya sumaban el renglón)."""
-    groups = agrupar(matched, meters_factor)
+    los grupos ya sumaban el renglón).
+
+    ``contadas`` son exactamente las detecciones que el renglón cuenta (las
+    que dieron ``total``), nunca todas las que su regla empata: una que el
+    renglón no cuenta, medida sola, inventaría una variante (Tarea 15d)."""
+    groups = agrupar(contadas, meters_factor)
     medidas = [measure(dets) for _sig, dets in groups]
     quantities = [q for q, _dets in medidas]
     suma = sum(quantities)

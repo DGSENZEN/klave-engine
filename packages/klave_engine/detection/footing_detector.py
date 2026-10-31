@@ -19,7 +19,11 @@ from klave_engine.detection.results import (
     layer_matches,
     make_detection,
 )
-from klave_engine.detection.text_patterns import FOOTING_MARK_PATTERN
+from klave_engine.detection.text_patterns import (
+    DADO_LAYER_HINTS,
+    DADO_MARK_PATTERN,
+    FOOTING_MARK_PATTERN,
+)
 from klave_engine.dxf.entities import EntityType, NormalizedEntity
 from klave_engine.geometry.bbox import bbox_center, bbox_distance
 from klave_engine.geometry.forma import Formas
@@ -28,6 +32,14 @@ from klave_engine.geometry.spatial_index import SpatialIndex
 
 # Z-1, ZC-2, ZA-3, ZCM-1: zapata marks as the cuadro de zapatas names them.
 _ZAPATA_MARK_RE = re.compile(FOOTING_MARK_PATTERN)
+_DADO_MARK_RE = re.compile(DADO_MARK_PATTERN)
+# Tarea 15b: another outline of the tag's layer at no more than this many times the nearest one's
+# distance competes for the tag — the association's «25 % de lados opuestos». On Marina the next
+# outline lies 1.5 times as far or more (D-4B 3551C: 0.22 m from its own, 0.33 m from D-3A's),
+# except for «D-X», exactly as near D-4's outline as its own.
+_COMPITE = 1.25
+# One outline lies within another up to this share of the outer one's larger side.
+_HOLGURA = 1e-4
 
 
 class FootingDetectorConfig(BaseModel):
@@ -42,6 +54,12 @@ class FootingDetectorConfig(BaseModel):
     strip_min_aspect: float = 4.0
     # Z-1 / ZC-2 / ZA-3: the zapata's mark, read from the text nearest to it.
     mark_search_radius: float = 0.0  # drawing units; 0 disables mark linking
+    # Tarea 15b: on a layer whose name says DADO (Marina: EST-DADOS), the D-n tag written on that
+    # same layer labels the outline it lies beside (0.07–0.46 m off it, never on it), when that
+    # outline is the nearest of its layer within this reach and no other competes (``_COMPITE``).
+    # The layer, not the prefix, says it is a dado (R159). 0 disables it.
+    layer_mark_reach: float = 0.0  # drawing units
+    layer_mark_hints: list[str] = Field(default_factory=lambda: list(DADO_LAYER_HINTS))
     layer_hints: list[str] = Field(
         default_factory=lambda: ["FOOT", "FOUND", "FDN", "ZAPATA", "ZAP", "CIM", "CIMENT", "DADO"]
     )
@@ -77,6 +95,111 @@ def _distancia_a_la_etiqueta(
     if texto is None:
         return bbox_distance(contorno.bbox, columna.bbox)
     return formas.distancia(contorno, texto)
+
+
+class _EtiquetasDeCapa(BaseModel):
+    """Lo que las etiquetas de la capa de un dado dicen de cada contorno (por su entity_id): la que
+    lo rotula, las que se queda en duda y los contornos de su capa dibujados dentro de él."""
+
+    rotula: dict[str, NormalizedEntity] = Field(default_factory=dict)
+    disputadas: dict[str, list[dict]] = Field(default_factory=dict)
+    anidados: dict[str, list[dict]] = Field(default_factory=dict)
+
+
+def _etiquetas_de_capa(
+    closed: list[NormalizedEntity],
+    entities: list[NormalizedEntity],
+    config: FootingDetectorConfig,
+    formas: Formas,
+) -> _EtiquetasDeCapa:
+    """Tarea 15b: qué contorno rotula cada etiqueta D-n escrita en la capa de un dado (una capa
+    cuyo nombre dice DADO, ``layer_mark_hints``). La etiqueta es del contorno de su misma capa y
+    archivo más cercano a sus letras (la distancia a lo dibujado, R146), a lo más a
+    ``layer_mark_reach``, si ningún otro contorno de esa capa queda a no más de ``_COMPITE`` veces
+    esa distancia; si otro compite, no es de ninguno y cada uno lo dice nombrando a los dos. Un
+    contorno que dos etiquetas escogen tampoco se rotula. Compiten todos los contornos cerrados de
+    la capa del tamaño de una zapata o menores (D-X, de 45×45, no es colocación y sí compite); los
+    más grandes (un marco) no. Un contorno de la capa dibujado dentro de otro (D-X dentro de D-4)
+    se dice en el de afuera, con las etiquetas que lo tocan: nunca se decide ni se cuenta aparte."""
+    salida = _EtiquetasDeCapa()
+    if config.layer_mark_reach <= 0:
+        return salida
+    de_capa = [
+        e for e in closed
+        if layer_matches(e.layer, config.layer_mark_hints)
+        and polygon_area(e.points or []) <= config.max_area
+    ]  # fmt: skip
+    if not de_capa:
+        return salida
+    capas = {(e.source_file, e.layer) for e in de_capa}
+    etiquetas = [
+        e for e in entities
+        if e.is_textual and e.text and (e.source_file, e.layer) in capas
+        and _DADO_MARK_RE.match(e.text.strip().upper())
+    ]  # fmt: skip
+    escogido: dict[str, list[NormalizedEntity]] = {}
+    toca: dict[str, set[str]] = {}  # contorno → las marcas de las etiquetas que lo alcanzan
+    for t in etiquetas:
+        marca = t.text.strip().upper() if t.text else ""
+        cerca = sorted(
+            (
+                (formas.distancia(c, t), c)
+                for c in de_capa
+                if c.source_file == t.source_file
+                and c.layer == t.layer
+                and bbox_distance(c.bbox, t.bbox) <= config.layer_mark_reach
+            ),
+            key=lambda dc: (dc[0], dc[1].entity_id),
+        )
+        cerca = [(d, c) for d, c in cerca if d <= config.layer_mark_reach]
+        if not cerca:
+            continue
+        primera = cerca[0][0]
+        rivales = [c for d, c in cerca if d <= _COMPITE * primera + 1e-9]
+        for c in rivales:
+            toca.setdefault(c.entity_id, set()).add(marca)
+        if len(rivales) > 1:
+            disputa = {
+                "marca": marca,
+                "entidad": t.entity_id,
+                "texto": t.raw_handle,
+                "contornos": [c.raw_handle for c in rivales],
+            }
+            for c in rivales:
+                salida.disputadas.setdefault(c.entity_id, []).append(disputa)
+            continue
+        escogido.setdefault(rivales[0].entity_id, []).append(t)
+    for contorno, ts in escogido.items():
+        if len(ts) == 1:
+            salida.rotula[contorno] = ts[0]
+            continue
+        handle = next(c.raw_handle for c in de_capa if c.entity_id == contorno)
+        for t in ts:
+            salida.disputadas.setdefault(contorno, []).append({
+                "marca": (t.text or "").strip().upper(),
+                "entidad": t.entity_id,
+                "texto": t.raw_handle,
+                "contornos": [handle],
+            })  # fmt: skip
+    for afuera in de_capa:
+        # A drafting tolerance: Marina's D-X shares D-4's left edge 6e-6 units outside it.
+        x0, y0, x1, y1 = afuera.bbox
+        region = formas.de(afuera).buffer(_HOLGURA * max(x1 - x0, y1 - y0, 1e-9))
+        for adentro in de_capa:
+            if (
+                adentro is afuera
+                or adentro.source_file != afuera.source_file
+                or polygon_area(adentro.points or []) >= polygon_area(afuera.points or [])
+                or not region.covers(formas.de(adentro))
+            ):
+                continue
+            x0, y0, x1, y1 = adentro.bbox
+            salida.anidados.setdefault(afuera.entity_id, []).append({
+                "contorno": adentro.raw_handle,
+                "lados": [round(x1 - x0, 6), round(y1 - y0, 6)],
+                "marcas": sorted(toca.get(adentro.entity_id, set())),
+            })  # fmt: skip
+    return salida
 
 
 def detect_footings(
@@ -127,6 +250,7 @@ def detect_footings(
         e for e in entities
         if e.is_textual and e.text and _ZAPATA_MARK_RE.match(e.text.strip().upper())
     ] if config.mark_search_radius > 0 else []
+    de_capa = _etiquetas_de_capa(closed, entities, config, formas)
     footing_counter = 0
     for entity in candidates:
         area = polygon_area(entity.points or [])
@@ -163,7 +287,19 @@ def detect_footings(
                 f"Zapata corrida: {length:.2f} de largo × {width:.2f} de ancho (proporción "
                 f"{length / max(width, 1e-9):.1f})"
             )
-        if mark_texts:
+        if layer_matches(entity.layer, config.layer_mark_hints):
+            # Tarea 15b: its layer says DADO; the drawing, not the D- prefix, says what it is.
+            properties["familia_de_capa"] = "dado"
+        rotulo = de_capa.rotula.get(entity.entity_id)
+        if rotulo is not None:
+            properties["mark"] = (rotulo.text or "").strip().upper()
+            source_entities.append(rotulo.entity_id)
+            notes.append(f"Marca {properties['mark']} en su capa, junto al dado")
+        if entity.entity_id in de_capa.disputadas:
+            properties["etiquetas_disputadas"] = de_capa.disputadas[entity.entity_id]
+        if entity.entity_id in de_capa.anidados:
+            properties["anidados"] = de_capa.anidados[entity.entity_id]
+        if mark_texts and "mark" not in properties:
             cx, cy = bbox_center(entity.bbox)
             best: tuple[float, NormalizedEntity] | None = None
             for text in mark_texts:

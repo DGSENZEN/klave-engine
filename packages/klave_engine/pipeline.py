@@ -64,7 +64,12 @@ from klave_engine.dxf.entities import NormalizedEntity
 from klave_engine.dxf.harmonize import harmonize_units
 from klave_engine.dxf.layers import summarize_layers
 from klave_engine.dxf.parser import DxfParser, ParsedDrawing
-from klave_engine.dxf.units import UNKNOWN_UNIT, DrawingUnits
+from klave_engine.dxf.units import (
+    METERS_FACTOR,
+    UNKNOWN_UNIT,
+    DrawingUnits,
+    vote_from_extent,
+)
 from klave_engine.estructura.modelo import (
     Estructura,
     construir_estructura,
@@ -538,7 +543,15 @@ def run_full_pipeline(
     )
     write_json(processed / "risk_report.json", result.risk_report)
 
-    segmentation = segment_views(result.entities, result.detections, frames)
+    # R286: the segmentation compares drawing distances with thresholds in meters; the factor is
+    # the one the detector thresholds follow (the unit, else the one the extent most likely says).
+    metros_por_unidad = units.to_meters()
+    if metros_por_unidad is None:
+        adivinada = vote_from_extent(index.extent())
+        metros_por_unidad = METERS_FACTOR.get(adivinada[0]) if adivinada is not None else None
+    segmentation = segment_views(
+        result.entities, result.detections, frames, unit_to_m=metros_por_unidad or 1.0
+    )
     write_json(processed / "views.json", segmentation)
     # A wall drawn on the azotea planta is a pretil: knee-high, not a story.
     roof_views = {

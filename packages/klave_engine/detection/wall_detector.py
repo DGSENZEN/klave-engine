@@ -8,7 +8,18 @@ never pair; when the sheet has wall layers (A-WALL, MUROS, TABIQUE) only
 those pair; the gap must be a real thickness; and the fragments that CAD
 draws for one wall — broken at every door, axis and block boundary — are
 merged into one wall per run of collinear pairs.
+
+A wall drawn with its finish (Tarea 15f, R275): Revit draws a compound wall as two nested
+outlines on the same layer — the block (core) and, a finish thickness outside it on each side,
+the plaster. A line parallel to a wall face, on the wall's layer, ``finish_max`` or less outside
+it and overlapping it ``finish_min_overlap`` or more (of the shorter), is that face's finish
+boundary, never a face of its own: the wall's thickness is the core's, its length the core's
+centreline (each T-joint once: the core of the wall that arrives stops at the core of the one
+that receives it), and its openings the gaps both core faces share. A thin line on another
+layer (a cancel, an acabado) is never a finish.
 """
+
+from bisect import bisect_left, bisect_right
 
 from pydantic import BaseModel, Field
 from shapely.geometry import LineString
@@ -59,6 +70,18 @@ class WallDetectorConfig(BaseModel):
     merge_gap: float = 0.0
     merge_gap_thickness_factor: float = 2.0
     opening_gap_max: float = 0.0  # drawing units; 0 keeps the old split behaviour
+    # Tarea 15f (R275): a same-layer line this close outside a face is its finish (plaster)
+    # boundary, not a face (0 turns the reading off); two lines this close are one face.
+    finish_max: float = 0.0
+    finish_min_overlap: float = 0.9
+    face_tolerance: float = 0.0
+
+
+# R286 (M8): what a plaster (aplanado) adds per face, in meters — the one limit the wall detector
+# reads a finish line with (``finish_max``, in drawing units through the suite's factor) and the
+# structural model's wall-note guard allows (``escribir_espesor_de_muros``): PRUEBA-1 draws its
+# aplanado 15 mm outside the block.
+APLANADO_MAXIMO_M = 0.020
 
 
 Segment = tuple[tuple[float, float], tuple[float, float]]
@@ -78,6 +101,12 @@ class _WallPair(BaseModel):
     semantic: bool
     # Door/window gaps bridged inside this wall, along the wall (drawing units).
     openings: list[float] = []
+    # Tarea 15f: read from the wall's faces (``_leer_caras``). ``thickness_from`` is «core» (a
+    # finish outline around it was recognised) or «outline» (two faces, nothing else drawn).
+    thickness_from: str | None = None
+    finish: float | None = None
+    outline: float | None = None
+    centreline: float | None = None
 
 
 def _projection_overlap(a: Segment, b: Segment) -> float:
@@ -175,6 +204,197 @@ def _merge_run(run: list[_WallPair], openings: list[float] | None = None) -> _Wa
     )
 
 
+# A face line: (entity id, position across the wall, start and end along it, layer, whether it
+# is long enough to pair: only those make a face; the short ones complete a face's extent).
+_Cara = tuple[str, float, float, float, str, bool]
+_Tramo = tuple[float, float]
+
+
+def _caras_por_eje(
+    lineas: dict[str, tuple[NormalizedEntity, Segment, float]],
+    largas: set[str],
+    config: WallDetectorConfig,
+) -> dict[str, list[_Cara]]:
+    """Every wall line on an axis, by axis, sorted by its position across it."""
+    por_eje: dict[str, list[_Cara]] = {"horizontal": [], "vertical": []}
+    for eid, (entity, ((x1, y1), (x2, y2)), angle) in lineas.items():
+        axis = _orientation(angle, config.angle_tolerance_deg)
+        larga = eid in largas
+        if axis == "horizontal":
+            por_eje[axis].append(
+                (eid, (y1 + y2) / 2, min(x1, x2), max(x1, x2), entity.layer, larga)
+            )
+        elif axis == "vertical":
+            por_eje[axis].append(
+                (eid, (x1 + x2) / 2, min(y1, y2), max(y1, y2), entity.layer, larga)
+            )
+    for caras in por_eje.values():
+        caras.sort(key=lambda c: c[1])
+    return por_eje
+
+
+def _union(tramos: list[_Tramo]) -> list[_Tramo]:
+    juntos: list[_Tramo] = []
+    for ini, fin in sorted(tramos):
+        if juntos and ini <= juntos[-1][1]:
+            juntos[-1] = (juntos[-1][0], max(juntos[-1][1], fin))
+        else:
+            juntos.append((ini, fin))
+    return juntos
+
+
+def _largo(tramos: list[_Tramo]) -> float:
+    return sum(fin - ini for ini, fin in tramos)
+
+
+def _cruce(a: list[_Tramo], b: list[_Tramo]) -> float:
+    return sum(max(0.0, min(fa, fb) - max(ia, ib)) for ia, fa in a for ib, fb in b)
+
+
+def _huecos(tramos: list[_Tramo]) -> list[_Tramo]:
+    return [(a[1], b[0]) for a, b in zip(tramos, tramos[1:], strict=False)]
+
+
+class _Nivel(BaseModel):
+    """One face of a wall: every line at one position across it, clipped to the wall's span."""
+
+    posicion: float
+    tramos: list[_Tramo]
+    capas: set[str]
+
+    @property
+    def extension(self) -> float:
+        return self.tramos[-1][1] - self.tramos[0][0]
+
+
+def _niveles(
+    wall: _WallPair, por_eje: dict[str, list[_Cara]], tol: float, banda: float
+) -> list[_Nivel]:
+    """The wall's faces: the positions of its own lines and of every long wall line along its
+    span within ``banda`` outside them (a face the pairing left unpaired is still drawn: the
+    core line beside a finish line that took its partner), each with all its lines there, the
+    short fragments included."""
+    todas = por_eje.get(wall.axis, [])
+    suyas = set(wall.entity_ids)
+    # The wall's own lines lie inside its box, across it.
+    a0, a1 = (wall.bbox[1], wall.bbox[3]) if wall.axis == "horizontal" else (
+        wall.bbox[0], wall.bbox[2]
+    )
+    dentro = todas[
+        bisect_left(todas, a0 - tol, key=lambda c: c[1]) :
+        bisect_right(todas, a1 + tol, key=lambda c: c[1])
+    ]
+    propias = [c[1] for c in dentro if c[0] in suyas]
+    if not propias:
+        return []
+    lo, hi = wall.span
+    desde, hasta = min(propias) - banda - tol, max(propias) + banda + tol
+    caras = todas[
+        bisect_left(todas, desde - tol, key=lambda c: c[1]) :
+        bisect_right(todas, hasta + tol, key=lambda c: c[1])
+    ]
+    posiciones = sorted(
+        pos for _eid, pos, ini, fin, _capa, larga in caras
+        if larga and desde <= pos <= hasta and fin > lo + tol and ini < hi - tol
+    )
+    grupos: list[list[float]] = []
+    for pos in posiciones:
+        if grupos and pos - grupos[-1][-1] <= tol:
+            grupos[-1].append(pos)
+        else:
+            grupos.append([pos])
+    niveles: list[_Nivel] = []
+    for grupo in grupos:
+        a, b = grupo[0] - tol, grupo[-1] + tol
+        tramos: list[_Tramo] = []
+        capas: set[str] = set()
+        for _eid, pos, ini, fin, capa, _larga in caras:
+            if a <= pos <= b and fin >= lo - tol and ini <= hi + tol:
+                tramos.append((max(ini, lo), min(fin, hi)))
+                capas.add(capa)
+        tramos = [t for t in _union(tramos) if t[1] > t[0]]
+        if tramos:
+            niveles.append(_Nivel(posicion=sum(grupo) / len(grupo), tramos=tramos, capas=capas))
+    return niveles
+
+
+def _es_aplanado(
+    exterior: _Nivel, interior: _Nivel, config: WallDetectorConfig, tol: float
+) -> bool:
+    """``exterior`` is the finish boundary of the face ``interior``: on the same single layer,
+    ``finish_max`` or less away, overlapping it ``finish_min_overlap`` or more of the shorter."""
+    distancia = abs(interior.posicion - exterior.posicion)
+    if not (tol < distancia <= config.finish_max + tol):
+        return False
+    if len(exterior.capas) != 1 or exterior.capas != interior.capas:
+        return False
+    corto = min(_largo(exterior.tramos), _largo(interior.tramos))
+    return corto > 0 and _cruce(exterior.tramos, interior.tramos) >= (
+        config.finish_min_overlap * corto - 1e-9
+    )
+
+
+def _leer_caras(
+    wall: _WallPair, por_eje: dict[str, list[_Cara]], config: WallDetectorConfig
+) -> None:
+    """Tarea 15f: what the wall's drawn faces say. With a finish outline around a core: the
+    core's thickness, centreline length and shared gaps (its openings). With two faces only:
+    the outline's centreline, kept aside (``centreline``); the measured length stays."""
+    if wall.axis == "oblique":
+        return
+    tol = config.face_tolerance or 1e-9
+    niveles = _niveles(wall, por_eje, tol, config.finish_max)
+    nucleo = list(niveles)
+    aplanados: list[float] = []
+    if config.finish_max > 0:
+        if len(nucleo) >= 3 and _es_aplanado(nucleo[0], nucleo[1], config, tol):
+            aplanados.append(nucleo[1].posicion - nucleo[0].posicion)
+            nucleo = nucleo[1:]
+        if len(nucleo) >= 3 and _es_aplanado(nucleo[-1], nucleo[-2], config, tol):
+            aplanados.append(nucleo[-1].posicion - nucleo[-2].posicion)
+            nucleo = nucleo[:-1]
+    if len(nucleo) != 2:
+        return
+    a, b = nucleo
+    espesor = b.posicion - a.posicion
+    eje = (a.extension + b.extension) / 2
+    if not aplanados:
+        wall.thickness_from = "outline"
+        wall.centreline = eje
+        return
+    if not (config.min_thickness <= espesor <= config.max_thickness):
+        return
+    wall.thickness_from = "core"
+    wall.finish = sum(aplanados) / len(aplanados)
+    wall.outline = niveles[-1].posicion - niveles[0].posicion
+    wall.thickness = espesor
+    wall.coordinate = (a.posicion + b.posicion) / 2
+    wall.length = eje
+    wall.centreline = eje
+    if config.opening_gap_max > 0:
+        minimo = max(config.merge_gap, espesor * config.merge_gap_thickness_factor)
+        vanos: list[float] = []
+        for ia, fa in _huecos(a.tramos):
+            for ib, fb in _huecos(b.tramos):
+                ancho = min(fa, fb) - max(ia, ib)
+                if minimo < ancho <= config.opening_gap_max:
+                    vanos.append(ancho)
+        wall.openings = vanos
+
+
+def _lo_leido_de_las_caras(wall: _WallPair) -> dict[str, float | str]:
+    leido: dict[str, float | str] = {}
+    if wall.thickness_from is not None:
+        leido["thickness_from"] = wall.thickness_from
+    if wall.centreline is not None:
+        leido["centreline_length"] = round(wall.centreline, 3)
+    if wall.finish is not None:
+        leido["finish_thickness"] = round(wall.finish, 3)
+    if wall.outline is not None:
+        leido["outline_thickness"] = round(wall.outline, 3)
+    return leido
+
+
 def detect_walls(
     entities: list[NormalizedEntity],
     index: SpatialIndex,
@@ -197,12 +417,14 @@ def detect_walls(
         and not es_trazo_de_simbolo(e)
     }
     # Authority: with wall layers on the sheet, other layers do not pair.
+    solo_semanticas = False
     if config.prefer_semantic_layers:
         semantic_ids = {
             eid for eid, (e, _s, _a) in candidates.items()
             if layer_matches(e.layer, config.layer_hints)
         }
         if semantic_ids:
+            solo_semanticas = True
             dropped = len(candidates) - len(semantic_ids)
             candidates = {eid: v for eid, v in candidates.items() if eid in semantic_ids}
             if dropped:
@@ -260,6 +482,22 @@ def detect_walls(
             break
 
     walls = _merge_pairs(pairs, config)
+    # Tarea 15f: a face is drawn by every line on it, the short fragments too (between two
+    # doors, a castillo, a joint): the long ones pair, all of them say where the face runs.
+    lineas_de_muro = {
+        e.entity_id: (e, (e.points[0], e.points[1]),
+                      segment_angle_degrees(e.points[0], e.points[1]))
+        for e in entities
+        if e.entity_type == EntityType.line
+        and e.points
+        and (not solo_semanticas or layer_matches(e.layer, config.layer_hints))
+        and not layer_matches(e.layer, config.avoid_layer_hints)
+        and line_length(e.points[0], e.points[1]) > 0
+        and not es_trazo_de_simbolo(e)
+    }
+    por_eje = _caras_por_eje(lineas_de_muro, set(candidates), config)
+    for wall in walls:
+        _leer_caras(wall, por_eje, config)
     for counter, wall in enumerate(walls, start=1):
         features: dict[str, float] = {GEOM_PLAUSIBLE: 1.0}
         if wall.semantic:
@@ -271,6 +509,12 @@ def detect_walls(
         ]
         if segments > 1:
             notes.append(f"Muro unido a partir de {segments} tramos colineales")
+        if wall.thickness_from == "core" and wall.finish is not None:
+            notes.append(
+                f"Núcleo de {wall.thickness:.3f} entre las líneas del aplanado "
+                f"({wall.finish:.3f} por cara; el contorno de {wall.outline or 0.0:.3f} lo "
+                f"incluye): largo al eje del núcleo {wall.length:.3f}"
+            )
         if wall.openings:
             notes.append(
                 f"{len(wall.openings)} vanos (puerta/ventana) de "
@@ -300,6 +544,7 @@ def detect_walls(
                         "concreto" if layer_matches(wall.layer, config.concrete_layer_hints)
                         else "block"
                     ),
+                    **_lo_leido_de_las_caras(wall),
                 },
                 wall.source_file,
             )
