@@ -221,7 +221,14 @@ def construir_elementos(
             seccion_cm=_seccion_medida(d, familia, meters_factor),
             seccion_no_rectangular=_contorno_no_rectangular(d, familia, meters_factor),
             longitud_m=_longitud_medida(d, familia, meters_factor),
-            altura_m=_altura(familia, alturas.get(vista or ""), altura_supuesta_m),
+            altura_m=_altura(
+                familia,
+                alturas.get(vista or ""),
+                altura_supuesta_m,
+                segmentation.sin_continuacion.get(d.detection_id)
+                if segmentation is not None
+                else None,
+            ),
             avisos=avisos,
             muro_cm=_muro_medido(d, meters_factor),
             muro_sin_medir=d.properties.get("muro_sin_medir"),
@@ -529,12 +536,24 @@ def _longitud_medida(d: Detection, familia: str, factor: float | None) -> Dato |
     )
 
 
-def _altura(familia: str, entrepiso: AlturaDeEntrepiso | None, supuesta_m: float) -> Dato | None:
+def _altura(
+    familia: str,
+    entrepiso: AlturaDeEntrepiso | None,
+    supuesta_m: float,
+    sin_continuacion: str | None = None,
+) -> Dato | None:
     """La altura de un castillo o una columna: la de su entrepiso entre dos niveles declarados
     (``nota``), la repetida de la planta de abajo en la más alta (``supuesto``) o, sin niveles, la
-    supuesta (R73)."""
+    supuesta (R73). Tarea 15e (R272): un castillo de la cimentación que no sigue en la planta de
+    arriba (``sin_continuacion``, su aviso) no es el arranque de ninguno: la supuesta."""
     if familia not in _CON_ALTURA:
         return None
+    if sin_continuacion:
+        return Dato(
+            valor=supuesta_m,
+            fuente="supuesto",
+            texto=f"{sin_continuacion}: altura supuesta {supuesta_m:g} m",
+        )
     if entrepiso is None:
         return Dato(
             valor=supuesta_m,

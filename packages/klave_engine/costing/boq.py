@@ -467,27 +467,38 @@ def _scoped_result(
             view_split: dict[str, float] = {}
             parapet_views: list[str] = []
             declared_parapets: list[str] = []
+            bajo_losa: list[str] = []
+            sin_losa_acotada: list[str] = []
             alturas = segmentation.alturas_de_entrepiso()
+            losa = segmentation.losa_acotada()
             for view in segmentation.superstructure_views():
                 view_dets = in_views(dets, {view.view_id})
                 if not view_dets:
                     continue
                 height = heights.get(view.view_id)
-                if view.level_key == "azotea" and rule.roof_walls_are_parapets:
-                    # A wall on the azotea is a pretil, not another story. Tarea 15e (R270): when
-                    # the drawing declares the pretil (the top planta draws no slab and its level
-                    # is the pretil's), its height is the declared one, not the assumed.
-                    entrepiso = alturas.get(view.view_id)
-                    name = titles[view.view_id].split(" · ")[-1][:22]
-                    if entrepiso is not None and entrepiso.pretil:
-                        height = entrepiso.altura_m
-                        declared_parapets.append(
-                            f"{name} {height:.2f} m (de {entrepiso.nivel_m:+.2f} a "
-                            f"{entrepiso.nivel_arriba_m or 0.0:+.2f}, declarado)"
-                        )
+                entrepiso = alturas.get(view.view_id)
+                name = titles[view.view_id].split(" · ")[-1][:22]
+                if entrepiso is not None and entrepiso.sin_losa:
+                    # Tarea 15e (R270, R273): the top planta draws no slab; its walls go from the
+                    # level below up to its own declared level, whole (no slab above them).
+                    height = entrepiso.altura_m
+                    declared_parapets.append(
+                        f"{name} {height:.2f} m (de {entrepiso.nivel_m:+.2f} a su nivel "
+                        f"{entrepiso.nivel_arriba_m or 0.0:+.2f} declarado, sin losa en su planta)"
+                    )
+                elif view.level_key == "azotea" and rule.roof_walls_are_parapets:
+                    # A wall on the azotea is a pretil, not another story.
+                    height = assumptions.parapet_height_m
+                    parapet_views.append(name)
+                elif height is not None and rule.kind != QuantityKind.LINEAR_VOLUME:
+                    # Tarea 15e (R271): a block wall (and its plaster) stops under the slab: the
+                    # storey height less the slab depth a detail dimensions (``detalle``); without
+                    # it, the whole storey, an assumption (check 7 says so).
+                    if losa is not None:
+                        height = round(height - losa.espesor_m, 4)
+                        bajo_losa.append(f"{name} {height:.2f} m")
                     else:
-                        height = assumptions.parapet_height_m
-                        parapet_views.append(name)
+                        sin_losa_acotada.append(f"{name} {height:.2f} m")
                 if rule.kind == QuantityKind.LINEAR_VOLUME and rule.section_height_m:
                     scoped = concept.model_copy(
                         update={
@@ -546,8 +557,18 @@ def _scoped_result(
                 )
             if declared_parapets:
                 notes.append(
-                    f"Pretiles en {', '.join(declared_parapets)}: altura del plano (muros de "
-                    "azotea)"
+                    f"Muros de {', '.join(declared_parapets)}: altura del plano"
+                )
+            if bajo_losa and losa is not None:
+                notes.append(
+                    f"Muros bajo la losa: altura de entrepiso − {losa.espesor_m * 100:g} cm de "
+                    f"losa ({losa.texto}): {', '.join(bajo_losa)}; no se descuenta la dala de "
+                    "remate (E2)"
+                )
+            if sin_losa_acotada:
+                notes.append(
+                    f"Muros de {', '.join(sin_losa_acotada)}: altura de entrepiso completa, "
+                    "supuesta: el plano no acota un solo peralte de losa, no se descuenta"
                 )
             if segmentation.lectura_de_niveles:
                 notes.append(f"Niveles: {segmentation.lectura_de_niveles}")

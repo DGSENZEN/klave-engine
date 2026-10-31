@@ -2736,7 +2736,51 @@ def _niveles(ctx: _Contexto) -> list[Verificacion]:
                 campo="altura_m",
             )
         )
+    salida += _muros_de_entrepiso_completo(ctx)
     return salida
+
+
+def _muros_de_entrepiso_completo(ctx: _Contexto) -> list[Verificacion]:
+    """Tarea 15e (R271): un muro de block llega bajo su losa. Si las plantas declaran sus niveles
+    y ningún detalle acota el peralte de la losa, los muros se miden de nivel a nivel: es un
+    supuesto, y se dice (aviso de la 7)."""
+    seg = ctx.segmentation
+    if seg is None or seg.losa_acotada() is not None:
+        return []
+    alturas = seg.alturas_de_entrepiso()
+    vistas = {
+        v.view_id: v
+        for v in seg.superstructure_views()
+        if v.view_id in alturas and not alturas[v.view_id].sin_losa and v.level_key != "azotea"
+    }
+    muros = [
+        d
+        for d in ctx.detections
+        if d.detection_type.value == "wall" and seg.assignment.get(d.detection_id) in vistas
+    ]
+    if not muros:
+        return []
+    plantas = sorted({vistas[seg.assignment[d.detection_id]].title for d in muros})
+    peraltes = sorted({round(losa.espesor_m * 100) for losa in seg.losas_acotadas})
+    lista = ", ".join(map(str, peraltes))
+    porque = (
+        f"los detalles del plano acotan peraltes de losa distintos ({lista} cm) y no dicen cuál "
+        "está sobre los muros de cada planta"
+        if peraltes
+        else "el plano no acota el peralte de la losa en ningún detalle"
+    )
+    return [
+        _hallazgo(
+            7,
+            "aviso",
+            f"La altura de los muros de {_listar([f'«{p}»' for p in plantas])} ({len(muros)}) es "
+            "la del entrepiso completo, de nivel a nivel: un supuesto. Un muro de block llega bajo "
+            f"su losa, y {porque}, así que no se descuenta.",
+            clave="muros_de_entrepiso_completo",
+            campo="altura_m",
+            en_juego={"piezas": float(len(muros))},
+        )
+    ]
 
 
 def _definiciones_que_no_coinciden(ctx: _Contexto, ajenas: set[str]) -> list[Verificacion]:

@@ -685,6 +685,24 @@ def test_8_levels_that_cannot_be_measured_are_doubts_and_reading_b_is_said():
     assert "losa que dibuja la planta" in avisos[0].mensaje
 
 
+def test_7_walls_at_the_full_storey_height_are_an_assumption_unless_the_slab_is_dimensioned():
+    # Tarea 15e (R271): un muro de block llega bajo su losa; sin el peralte de la losa acotado en
+    # un detalle, se mide de nivel a nivel y es un supuesto (aviso de la 7).
+    from klave_engine.detection.views import LosaAcotada
+
+    seg = _seg(vistas=("v0", "v1", "v2"), niveles={"v0": 0.0, "v1": 3.0, "v2": 6.0},
+               asignacion={"w1": "v1"})  # fmt: skip
+    muro = make_detection("w1", DetectionType.wall, "W", (0, 0, 5, 0.15), 0.9, [], "m", [])
+    avisos = _con(_run(detections=[muro], seg=seg), 7, "muros")
+    assert len(avisos) == 1 and avisos[0].severidad == "aviso"
+    assert "peralte de la losa" in avisos[0].mensaje
+    seg.losas_acotadas = [LosaAcotada(espesor_m=0.2, texto="«LOSA»: 20 = 15 + 5")]
+    assert not _con(_run(detections=[muro], seg=seg), 7, "muros")
+    # Sin niveles, la altura del muro es la supuesta de siempre (su propio aviso del presupuesto).
+    sin_niveles = _seg(vistas=("v0", "v1"), asignacion={"w1": "v1"})
+    assert not _con(_run(detections=[muro], seg=sin_niveles), 7, "muros")
+
+
 # --------------------------------------------------------------------- 11: lo que nadie leyó
 
 

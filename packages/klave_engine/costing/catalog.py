@@ -445,7 +445,9 @@ def build_default_catalog(a: CostingAssumptions) -> list[Concept]:
             ),
             quantity_factor=a.wall_height_m,
             view_scope=ViewScope.SUPERSTRUCTURE_SUM,
-            assumptions=[f"Altura promedio de muro {a.wall_height_m:.2f} m"],
+            assumptions=[
+                f"Altura promedio de muro {a.wall_height_m:.2f} m (si no hay niveles N.P.T.)"
+            ],
             production_rate_per_day=14.0,
             sequence_order=3,
         ),

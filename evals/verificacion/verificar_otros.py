@@ -49,23 +49,35 @@ que está justo debajo de su título (a 1 m o menos debajo y de lado); las leyen
 niveles (A-FLOR-LEVL) y los cajetines (DAT) no son de ninguna—: una por planta, 0+00 / +3.45 /
 +6.60 / +7.80. Y la evidencia de que el nivel de cada planta es la losa que dibuja (lectura B):
 dentro de su rejilla, PLANTA BAJA y PLANTA ALTA dibujan su losa (E-VIGUETAS) y la AZOTEA dibuja
-castillos y muros (A-WALL) sin ninguna línea de losa ni trabe (su pretil). Con eso, las alturas son
-del nivel de la planta de abajo al suyo: PLANTA BAJA 3.45, PLANTA ALTA 3.15, AZOTEA 1.20 (los
-castillos de la cimentación son el arranque de los de PLANTA BAJA y no se cuentan en EST-001).
+castillos y muros (A-WALL) sin ninguna línea de losa ni trabe en su planta. Con eso, las alturas
+son del nivel de la planta de abajo al suyo: PLANTA BAJA 3.45, PLANTA ALTA 3.15, AZOTEA 1.20 (de
++6.60 a su nivel; R273: el dibujo no dice que todo sea pretil).
+R272, VERIFICA: qué castillos y columnas de la cimentación siguen en PLANTA BAJA: la rejilla de
+PLANTA BAJA corrida de la de la cimentación (las líneas S-GRID: la diferencia que más ejes junta a
+2 cm, +66.12, +2.33), cada marcador de la cimentación (el más cercano a cada etiqueta) contra los
+marcadores de la capa castillos de PLANTA BAJA, uno a uno, el par más cercano primero, a 0.30 m o
+menos (dos castillos de ancho). 72 de 75 siguen —71 a 3 cm o menos, 5DB1 a 0.20 sobre su mismo
+muro— y son el arranque de los de PLANTA BAJA; no siguen 5DAA (K-1: PLANTA BAJA dibuja ahí el
+cerramiento CR-2.35) ni los dos C-1 del pórtico de IPR (5DD1, 8849): el motor les da una altura
+supuesta con su duda. La cimentación no está en EST-001.
 EST-001: la sección de cada castillo es el marcador cerrado más cercano a su etiqueta en la capa
-castillos (el cuadro de 15×15, el de 15×30 o el círculo), por la altura de su planta, en PLANTA
-BAJA, PLANTA ALTA y AZOTEA, contra el gold con 0.6 %: los conteos y las alturas son crudos, las
-secciones del motor no lo son del todo (el motor da a dos K-0 sobre el 15×30 de una K-2 ese
-marcador —R166— y a dos K-0 sin marcador junto el círculo de su símbolo: PLANTA BAJA 1.7301 m²
-contra 1.7005 crudo, PLANTA ALTA 1.2302 contra 1.2446, AZOTEA 0.4950 igual; a 3.45/3.15/1.20,
-10.438 contra 10.381, 0.55 %), así que EST-001 no es crudo.
+castillos (el cuadro de 15×15, el de 15×30 o el círculo); R273, VERIFICA las tres en que el motor
+toma otro (R166, ``R166``: 6355 K-0, su círculo 6315 0.015394 m², el motor el 15×30 62D1 de una K-2,
+0.045; 6719 y 9636 K-0, sus cuadros 667C/667A 0.0225, el motor los sombreados 66C8/9635, 0.015299,
+cada área medida en crudo) y con ellas la sección del motor por planta, por la altura de su planta,
+contra el gold a 0.001 m³. Los conteos, las alturas y cada marcador son crudos; EST-001 no lo es
+porque R166 es una lectura del motor que el crudo no da.
+R271, VERIFICA: el peralte de la losa que acotan los detalles: «LOSA DE VIGUETA Y BOVEDILLA 12-5»
+(65B8), 65C5 «20» = 65C3 «15» + 65C4 «5»; el de doble bovedilla (6617), 6624 = 6622 + 6623: 20 cm.
+El muro de block llega bajo su losa: PLANTA BAJA 3.25, PLANTA ALTA 2.95; la AZOTEA, sin losa encima,
+1.20. La dala de remate no se descuenta (E2).
 
 Qué REPRODUCE (reglas del motor, no hechos del plano): el nombre de la vista de cada planta en el
 motor (``VISTA_DEL_MOTOR``: por el orden de sus títulos); criticos_total = 4 por castillo; los
 largos de los muros que EST-004 cuenta (``MUROS_CONTADOS``, del motor: tarea 15f) y los vanos
-leídos; con ellos y las alturas de las leyendas, lo que la Tarea 15e movió del gold: EST-004
-428.630 → 532.325 (antes 2.70 y pretil 0.90 supuestos, reproducido), ACA-001 y ACA-002 857.260 →
-1064.650 (dos caras).
+leídos; con ellos y las alturas de muro, lo que la Tarea 15e movió del gold: EST-004 428.630 →
+503.696 (antes 2.70 y pretil 0.90 supuestos, reproducido), ACA-001 y ACA-002 857.260 → 1007.392
+(dos caras).
 
 prueba-1, Tarea 15d (R269): las variantes de EST-004 son sólo de los muros que el renglón cuenta.
 VERIFICA (y compara) los 34 muros contados en su planta de superestructura, que W5, W31 y W33 (las
@@ -84,6 +96,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from ezdxf import path as ezpath
 from ezdxf.fonts import fonts
 from klave_engine.dxf.loader import load_dxf  # sólo para abrir el archivo
 
@@ -323,8 +336,13 @@ def _rejillas(msp, titulos, encabezados) -> tuple[dict[str, tuple], int]:
     return rejillas, malos
 
 
-def _marcadores(msp) -> list[tuple[tuple, float]]:
-    """Los marcadores cerrados de la capa castillos (cuadros y círculos), con su área."""
+def _area(pts) -> float:
+    return abs(sum(pts[i][0] * pts[i - 1][1] - pts[i - 1][0] * pts[i][1]
+                   for i in range(len(pts)))) / 2  # fmt: skip
+
+
+def _marcadores(msp) -> list[tuple[tuple, float, str]]:
+    """Los marcadores cerrados de la capa castillos (cuadros y círculos), con su área y handle."""
     salida = []
     for e in msp:
         if e.dxf.layer != "castillos":
@@ -332,14 +350,147 @@ def _marcadores(msp) -> list[tuple[tuple, float]]:
         if e.dxftype() == "LWPOLYLINE":
             pts = [(p[0], p[1]) for p in e.get_points()]
             if len(pts) >= 3 and (e.closed or math.dist(pts[0], pts[-1]) < 1e-6):
-                area = abs(sum(pts[i][0] * pts[i - 1][1] - pts[i - 1][0] * pts[i][1]
-                               for i in range(len(pts)))) / 2  # fmt: skip
                 xs, ys = [p[0] for p in pts], [p[1] for p in pts]
-                salida.append(((min(xs), min(ys), max(xs), max(ys)), area))
+                salida.append(((min(xs), min(ys), max(xs), max(ys)), _area(pts), e.dxf.handle))
         elif e.dxftype() == "CIRCLE":
             c, r = e.dxf.center, e.dxf.radius
-            salida.append(((c.x - r, c.y - r, c.x + r, c.y + r), math.pi * r * r))
+            salida.append(((c.x - r, c.y - r, c.x + r, c.y + r), math.pi * r * r, e.dxf.handle))
     return salida
+
+
+def _area_de_sombreado(e) -> float:
+    """El área de un sombreado (su primer contorno, aplanado)."""
+    pts = [(v.x, v.y) for v in ezpath.from_hatch_boundary_path(e.paths[0]).flattening(0.001)]
+    return _area(pts)
+
+
+# Tarea 15e (R273): R166, las tres secciones de castillo en que el motor no toma el marcador más
+# cercano a la etiqueta (por la mitad de su texto) y el crudo sí. Por etiqueta: su planta, el
+# marcador más cercano en crudo y el que toma el motor (handle, tipo). VERIFICA ambos marcadores y
+# sus áreas en crudo; con ellos la sección por planta del motor = crudo − el suyo + el del motor.
+R166 = {
+    "6355": ("PLANTA BAJA", "6315", "62D1"),  # K-0: su círculo; el motor, el 15×30 de una K-2
+    "6719": ("PLANTA ALTA", "667C", "66C8"),  # K-0: su cuadro; el motor, el sombreado
+    "9636": ("PLANTA ALTA", "667A", "9635"),  # K-0: su cuadro; el motor, el sombreado
+}
+# Tarea 15e (R272): un castillo (o columna) de la cimentación sigue en PLANTA BAJA si, corrida la
+# rejilla (de las líneas S-GRID de las dos), hay uno de PLANTA BAJA a esta distancia o menos.
+CONTINUACION_M = 0.30
+SIN_CONTINUACION = {"5DAA", "5DD1", "8849"}  # K-1 junto a ZC-1; los dos C-1 del pórtico de IPR
+DESPLAZADOS = {"5DB1": 0.20}  # sigue en el marcador de PLANTA BAJA de su mismo muro, a 0.20 m
+
+
+def _peralte_de_losa(msp) -> tuple[float | None, int]:
+    """Tarea 15e (R271), VERIFICA: el peralte que acotan los detalles de losa de la hoja. Cada
+    título «LOSA …» y las cotas verticales (DIMENSION) a 6 m o menos de su inserción: la que abarca
+    a las demás y las que la llenan, con sus textos (15 + 5 = 20, en centímetros: «ACOTACIONES EN
+    CENTIMETROS»). Los dos detalles de PRUEBA-1 (65B8 y 6617) acotan 20 cm."""
+    malos = 0
+    peraltes = []
+    cotas = []
+    for d in msp.query("DIMENSION"):
+        a, b = d.dxf.defpoint2, d.dxf.defpoint3
+        if abs(a.x - b.x) < 1e-6 and abs(a.y - b.y) > 1e-6:
+            cotas.append((d.dxf.handle, d.dxf.text, a.x, min(a.y, b.y), max(a.y, b.y)))
+    for e in msp.query("TEXT MTEXT"):
+        if not re.match(r"^\s*LOSA\b", texto(e), re.I):
+            continue
+        p = (e.dxf.insert.x, e.dxf.insert.y)
+        suyas = [c for c in cotas if math.dist(p, (c[2], (c[3] + c[4]) / 2)) <= 6.0]
+        if not suyas:
+            print(f"    {e.dxf.handle} «{texto(e)}»: sin cotas verticales")
+            continue
+        total = max(suyas, key=lambda c: c[4] - c[3])
+        partes = [c for c in suyas if c is not total and total[3] - 1e-6 <= c[3]
+                  and c[4] <= total[4] + 1e-6]  # fmt: skip
+        suma = sum(float(c[1]) for c in partes)
+        print(f"    {e.dxf.handle} «{' '.join(texto(e).split())}»: {total[0]} «{total[1]}» = "
+              f"{' + '.join(f'{c[0]} «{c[1]}»' for c in partes)}")
+        if len(partes) < 2:
+            print("      (no es una cadena: no acota el peralte)")
+            continue
+        if abs(suma - float(total[1])) > 1e-6:
+            print("  ** DIFERENCIA: la cadena no suma")
+            malos += 1
+            continue
+        peraltes.append(float(total[1]) / 100)
+    if sorted(peraltes) != [0.20, 0.20]:
+        print(f"  ** DIFERENCIA: peraltes de losa {peraltes}")
+        return None, malos + 1
+    return 0.20, malos
+
+
+def _corrimiento(abajo, arriba) -> tuple[float | None, int]:
+    mejor: tuple[int, float] | None = None
+    for a in abajo:
+        for b in arriba:
+            n = sum(1 for x in abajo if any(abs(x + b - a - y) <= 0.02 for y in arriba))
+            if n >= 2 and (mejor is None or n > mejor[0]):
+                mejor = (n, b - a)
+    return (mejor[1], mejor[0]) if mejor else (None, 0)
+
+
+def _continuacion(msp, rejillas, etiquetas) -> int:
+    """Tarea 15e (R272), VERIFICA: cada castillo o columna de la cimentación (su marcador más
+    cercano) contra los de PLANTA BAJA, corrida la rejilla: uno a uno, el par más cercano primero,
+    a ``CONTINUACION_M`` o menos. Los que no siguen son exactamente ``SIN_CONTINUACION``; los que
+    siguen, a 3 cm o menos, salvo ``DESPLAZADOS``."""
+    malos = 0
+    ejes = {"PLANTA DE CIMENTACIÓN": ([], []), "PLANTA BAJA": ([], [])}
+    for e in msp.query("LINE"):
+        if e.dxf.layer != "S-GRID":
+            continue
+        a, b = e.dxf.start, e.dxf.end
+        for t, (vert, horiz) in ejes.items():
+            if _dentro(_medio(e), rejillas[t]):
+                (vert if abs(a.x - b.x) < abs(a.y - b.y) else horiz).append(
+                    a.x if abs(a.x - b.x) < abs(a.y - b.y) else a.y
+                )
+    dx, nx = _corrimiento(*(ejes[t][0] for t in ejes))
+    dy, ny = _corrimiento(*(ejes[t][1] for t in ejes))
+    print(f"  Tarea 15e — la cimentación sigue en PLANTA BAJA: rejilla corrida ({dx:+.2f}, "
+          f"{dy:+.2f}) ({nx} ejes verticales y {ny} horizontales coinciden a 2 cm)")  # fmt: skip
+    if dx is None or dy is None:
+        return 1
+    # Los castillos son sus marcadores: los de las etiquetas de la cimentación (dos etiquetas con
+    # el mismo marcador más cercano son ese castillo, una vez) contra todos los marcadores de la
+    # capa castillos dentro de la rejilla de PLANTA BAJA.
+    de_cim: dict[tuple, list[str]] = {}
+    for h, (t, c, _x) in etiquetas.items():
+        if t == "PLANTA DE CIMENTACIÓN":
+            de_cim.setdefault(c, []).append(h)
+    pb = [(((m[0][0] + m[0][2]) / 2, (m[0][1] + m[0][3]) / 2), m[2]) for m in _marcadores(msp)]
+    pb = [(q, h) for q, h in pb if _dentro(q, rejillas["PLANTA BAJA"])]
+    pares = sorted(
+        (math.dist((c[0] + dx, c[1] + dy), q), c, h) for c in de_cim for q, h in pb
+    )  # fmt: skip
+    por_marcador: dict[tuple, tuple[str, float]] = {}
+    usados: set[str] = set()
+    for d, c, h in pares:
+        if d > CONTINUACION_M:
+            break
+        if c not in por_marcador and h not in usados:
+            por_marcador[c] = (h, d)
+            usados.add(h)
+    siguen = {h: por_marcador[c] for c, hs in de_cim.items() if c in por_marcador for h in hs}
+    cim = [(h, c) for c, hs in de_cim.items() for h in hs]
+    pares = [(d, h, j) for d, c, j in pares for h in de_cim[c]]
+    sin = {h for h, _c in cim} - set(siguen)
+    lejos = {h: round(d, 3) for h, (_k, d) in siguen.items() if d > 0.03}
+    for h in sorted(sin):
+        cerca = min(d for d, x, _k in pares if x == h)
+        print(f"    {h} {etiquetas[h][2]} no sigue: el más cercano de PLANTA BAJA está a "
+              f"{cerca:.3f}")  # fmt: skip
+    print(f"    {len(siguen)} de {len(cim)} siguen ({len(siguen) - len(lejos)} a 3 cm o menos; "
+          f"más lejos: { {h: (siguen[h][0], d) for h, d in lejos.items()} })")  # fmt: skip
+    if (
+        sin != SIN_CONTINUACION
+        or set(lejos) != set(DESPLAZADOS)
+        or any(abs(lejos[h] - d) > 0.005 for h, d in DESPLAZADOS.items())
+    ):
+        print(f"  ** DIFERENCIA: no siguen {sorted(sin)}, desplazados {lejos}")
+        malos += 1
+    return malos
 
 
 def prueba_1(gold: dict) -> int:
@@ -375,30 +526,51 @@ def prueba_1(gold: dict) -> int:
     malos += m
     if len(niveles) != 4:
         return malos + 1
-    # Lectura B: cada planta, del nivel de la de abajo al suyo; la azotea, su pretil.
+    # Lectura B: cada planta, del nivel de la de abajo al suyo; la azotea (sin losa en su planta)
+    # hasta su nivel.
     orden = ["PLANTA DE CIMENTACIÓN", *SUPERESTRUCTURA]
     altura = {t: round(niveles[t] - niveles[orden[i]], 3) for i, t in enumerate(orden[1:])}
     print(f"    alturas (del nivel de abajo al suyo): {altura}")
+    # R271: el muro de block llega bajo su losa: PB y PA, su entrepiso menos el peralte acotado;
+    # la azotea no tiene losa encima. La dala de remate no se descuenta (E2).
+    print("  Tarea 15e — el peralte de la losa:")
+    peralte, m = _peralte_de_losa(msp)
+    malos += m
+    if peralte is None:
+        return malos
+    altura_muro = {t: round(h - (peralte if t != "AZOTEA" else 0.0), 3) for t, h in altura.items()}
+    print(f"    altura de los muros: {altura_muro}")
     # Cada etiqueta de castillo, en una sola planta; su sección, la de su marcador más cercano.
     marcadores = _marcadores(msp)
     por_planta: Counter = Counter()
     seccion: Counter = Counter()
+    etiquetas: dict[str, tuple[str, tuple[float, float], str]] = {}
+    marcador_de: dict[str, tuple] = {}
     fuera = 0
     for e in msp.query("TEXT MTEXT"):
-        if e.dxf.layer != "castillos" or not re.match(r"^K-?\d$", texto(e).upper()):
+        es_columna = re.match(r"^C-?\d$", texto(e).upper()) is not None
+        if e.dxf.layer != "castillos" or not (re.match(r"^K-?\d$", texto(e).upper()) or es_columna):
             continue
         p = (e.dxf.insert.x, e.dxf.insert.y)
         dentro = [t for t, caja in rejillas.items() if _dentro(p, caja)]
         if not dentro:
-            fuera += 1
+            fuera += 0 if es_columna else 1
             cerca = sorted((_a_caja(p, caja), t) for t, caja in rejillas.items())
             dentro = [cerca[0][1]] if cerca[1][0] > 2 * cerca[0][0] else []
         if len(dentro) != 1:
             print(f"  ** DIFERENCIA: {e.dxf.handle} {texto(e)} en {dentro or 'ninguna planta'}")
             malos += 1
             continue
+        m = min(marcadores, key=lambda m, p=p: _a_caja(p, m[0]))
+        caja = m[0]
+        etiquetas[e.dxf.handle] = (
+            dentro[0], ((caja[0] + caja[2]) / 2, (caja[1] + caja[3]) / 2), texto(e)
+        )
+        marcador_de[e.dxf.handle] = m
+        if es_columna:
+            continue
         por_planta[dentro[0]] += 1
-        seccion[dentro[0]] += min(marcadores, key=lambda m, p=p: _a_caja(p, m[0]))[1]
+        seccion[dentro[0]] += m[1]
     crudo = {VISTA_DEL_MOTOR[t]: n for t, n in sorted(por_planta.items())}
     est = gold.get("estructura") or {}
     cercado = est.get("por_vista", {}).get("castillo")
@@ -415,16 +587,38 @@ def prueba_1(gold: dict) -> int:
     if est.get("por_hoja", {}).get("castillo") != {"drawings/Plano Prueba 1.dxf": total}:
         print("  ** DIFERENCIA por_hoja de castillo")
         malos += 1
+    # Tarea 15e (R272): qué castillos de la cimentación siguen en PLANTA BAJA.
+    malos += _continuacion(msp, rejillas, etiquetas)
     # EST-001: sección del marcador × la altura de su planta (de las leyendas), en la
-    # superestructura (los de la cimentación son el arranque de los de PLANTA BAJA).
+    # superestructura (los de la cimentación que siguen en PLANTA BAJA son su arranque y no se
+    # cuentan; los que no siguen tampoco: la cimentación no está en EST-001).
     volumen = {t: round(float(seccion[t]) * altura[t], 4) for t in SUPERESTRUCTURA}
-    est_001 = sum(volumen.values())
     concepts = (gold.get("money") or {}).get("concepts", {})
     gold_001 = concepts.get("EST-001", {}).get("quantity")
-    print(f"  EST-001 crudo {round(est_001, 4)} m³ {volumen} (secciones "
-          f"{ {t: round(float(seccion[t]), 4) for t in SUPERESTRUCTURA} } m²); gold {gold_001} "
-          "(0.6 %)")  # fmt: skip
-    if gold_001 is None or abs(est_001 - gold_001) > 0.006 * gold_001:
+    print(f"  EST-001 crudo {round(sum(volumen.values()), 4)} m³ {volumen} (secciones "
+          f"{ {t: round(float(seccion[t]), 6) for t in SUPERESTRUCTURA} } m²)")  # fmt: skip
+    # R273: las secciones del motor = las del crudo con las tres de R166 cambiadas (cada marcador,
+    # VERIFICADO en crudo); por la altura de cada planta, contra el gold (a 0.001 m³).
+    por_handle = {e.dxf.handle: e for e in msp}
+    del_motor = {t: float(seccion[t]) for t in SUPERESTRUCTURA}
+    for tag, (planta, suyo, motor) in R166.items():
+        m = marcador_de.get(tag)
+        motor_e = por_handle.get(motor)
+        if m is None or m[2] != suyo or etiquetas[tag][0] != planta or motor_e is None:
+            print(f"  ** DIFERENCIA R166: {tag} toma {m and m[2]}, se esperaba {suyo} en {planta}")
+            malos += 1
+            continue
+        if motor_e.dxftype() == "HATCH":
+            area_motor = _area_de_sombreado(motor_e)
+        else:
+            area_motor = _area([(p[0], p[1]) for p in motor_e.get_points()])
+        print(f"    R166 {tag} ({planta}): crudo {suyo} {m[1]:.6f} m², motor {motor} "
+              f"({motor_e.dxftype()}) {area_motor:.6f} m²")
+        del_motor[planta] += area_motor - m[1]
+    est_001 = sum(del_motor[t] * altura[t] for t in SUPERESTRUCTURA)
+    print(f"    secciones del motor {({t: round(v, 6) for t, v in del_motor.items()})} m² × "
+          f"{altura} = {round(est_001, 4)} m³; gold {gold_001}")
+    if gold_001 is None or abs(est_001 - gold_001) > 0.001:
         print("  ** DIFERENCIA EST-001")
         malos += 1
     # Los dos muros que la Tarea 15c cambia de planta.
@@ -446,14 +640,15 @@ def prueba_1(gold: dict) -> int:
         print("  ** DIFERENCIA en los muros que cambian de planta")
         malos += 1
     # Lo que la Tarea 15e movió del gold: los muros que el renglón cuenta (largos del motor,
-    # REPRODUCE: MUROS_CONTADOS) a las alturas de las leyendas (VERIFICA) en vez de 2.70/0.90.
+    # REPRODUCE: MUROS_CONTADOS) a las alturas de las leyendas menos el peralte acotado de la losa
+    # (VERIFICA) en vez de 2.70/0.90.
     largo = Counter()
     for _clase, planta, _caja, metros in MUROS_CONTADOS.values():
         largo[planta] += metros
     vanos = sum(VANOS_LEIDOS.values()) * ALTURA_DE_VANO_M
     antes = sum(m * (ALTURA_DE_PRETIL_M if p == "AZOTEA" else ALTURA_DE_MURO_M)
                 for p, m in largo.items()) - vanos  # fmt: skip
-    despues = sum(m * altura[p] for p, m in largo.items()) - vanos
+    despues = sum(m * altura_muro[p] for p, m in largo.items()) - vanos
     print(f"    muros contados por planta {dict(largo)} m; vanos {round(vanos, 3)} m²")
     movido = {
         "EST-004": (antes, despues),
@@ -466,7 +661,7 @@ def prueba_1(gold: dict) -> int:
         if q is None or abs(a - q) > 0.001 or abs(de - ANTES_15E[code]) > 0.001:
             print(f"  ** DIFERENCIA {code}")
             malos += 1
-    malos += _variantes_de_muros(msp, lineas, rejillas, concepts, altura)
+    malos += _variantes_de_muros(msp, lineas, rejillas, concepts, altura_muro)
     return malos
 
 

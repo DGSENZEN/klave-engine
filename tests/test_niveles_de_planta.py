@@ -5,7 +5,7 @@ PRUEBA-1 (una hoja, cuatro plantas, sin marcos) escribe bajo el título de cada 
 con los 3.00 m supuestos. La leyenda es de la planta a cuyo título está pegada, nunca por el orden.
 
 Qué nivel es: PRUEBA-1 dibuja en PLANTA BAJA y PLANTA ALTA la losa (viguetas, trabes) con los
-castillos debajo, y en la AZOTEA castillos y muros sin losa (el pretil). Ahí el nivel de una planta
+castillos debajo, y en la AZOTEA castillos y muros sin losa en su planta. Ahí el nivel de una planta
 es la losa que dibuja: sus castillos van del nivel de la planta de abajo hasta el suyo (lectura B,
 «cada juego está bajo su losa»). Sólo cuando el dibujo lo muestra; si no, no se escoge (Marina:
 la duda de la verificación 8 queda como está).
@@ -128,8 +128,8 @@ def test_reading_b_when_the_plantas_draw_their_slab_and_the_top_does_not(tmp_pat
         "PLANTA ALTA": 3.15,
         "AZOTEA": 1.2,
     }
-    assert alturas["AZOTEA"].pretil and not alturas["AZOTEA"].repetida
-    assert not alturas["PLANTA ALTA"].pretil
+    assert alturas["AZOTEA"].sin_losa and not alturas["AZOTEA"].repetida
+    assert not alturas["PLANTA ALTA"].sin_losa
     assert (alturas["PLANTA ALTA"].nivel_m, alturas["PLANTA ALTA"].nivel_arriba_m) == (3.45, 6.6)
     assert "+3.45" in alturas["PLANTA ALTA"].texto and "+6.60" in alturas["PLANTA ALTA"].texto
     assert seg.dudas_de_nivel() == []
@@ -144,7 +144,7 @@ def test_no_reading_b_when_the_top_planta_draws_a_slab(tmp_path):
     alturas = _alturas(seg)
     assert "PLANTA ALTA" not in alturas
     assert alturas["PLANTA BAJA"].altura_m == 3.15
-    assert not any(a.pretil for a in alturas.values())
+    assert not any(a.sin_losa for a in alturas.values())
     dudas = seg.dudas_de_nivel()
     assert len(dudas) == 1 and "PLANTA ALTA" in dudas[0] and "1.2 m" in dudas[0]
 
@@ -258,7 +258,7 @@ def test_the_budget_measures_castillos_and_walls_from_the_declared_levels():
         "t", dets, units, catalog, build_all_apus(catalog, LIBRO), segmentation=seg, assumptions=a
     )
     lines = {line.concept_code: line for line in boq.lines}
-    # PB bajo su losa de +3.45 (3.45 m), PA de +3.45 a +6.60 (3.15 m), el pretil de la azotea de
+    # PB bajo su losa de +3.45 (3.45 m), PA de +3.45 a +6.60 (3.15 m), los muros de la azotea de
     # +6.60 a +7.80 declarado (1.20 m, no los 0.90 supuestos).
     assert abs(lines["EST-004"].quantity - (10.0 * 3.45 + 20.0 * 3.15 + 5.0 * 1.2)) < 1e-6
     assert any("1.20 m" in n and "declarado" in n for n in lines["EST-004"].assumptions)
@@ -278,7 +278,169 @@ def test_the_castillo_heights_are_notes_that_say_where_they_come_from():
     alturas = seg.alturas_de_entrepiso()
     dato = _altura("castillo", alturas["v3"], 3.0)
     assert dato is not None and (dato.valor, dato.fuente) == (1.2, "nota")
-    assert "pretil" in dato.texto and "+6.60" in dato.texto and "+7.80" in dato.texto
+    assert "sin losa" in dato.texto and "+6.60" in dato.texto and "+7.80" in dato.texto
+    assert "pretil" not in dato.texto  # R273: el dibujo no dice que todo sea pretil
     cim = _altura("castillo", alturas["v0"], 3.0)
     assert cim is not None and (cim.valor, cim.fuente) == (3.45, "nota")
     assert "arranque" in cim.texto
+
+
+# ------------------------------------------------------- R271: el muro llega bajo su losa
+
+
+def _detalle_de_losa(msp, cotas=(("15", 0.0, 0.78), ("5", 0.78, 1.04), ("20", 0.0, 1.04))):
+    """El detalle de PRUEBA-1 (65B8): «LOSA DE VIGUETA Y BOVEDILLA 12-5» y, junto, la cadena de
+    cotas verticales de su peralte, dibujada sin escala (15 + 5 = 20)."""
+    x, y = 200.0, 0.0
+    msp.add_mtext("LOSA DE VIGUETA Y BOVEDILLA 12-5",
+                  dxfattribs={"char_height": 0.2, "insert": (x, y)})  # fmt: skip
+    for i, (texto, y0, y1) in enumerate(cotas):
+        cota = msp.add_linear_dim(
+            base=(x + 4.0 + 0.3 * i, y + 1.0), p1=(x + 4.0, y + 1.0 + y0),
+            p2=(x + 4.0, y + 1.0 + y1), angle=90, text=texto,
+        )  # fmt: skip
+        cota.render()
+    # Una cota horizontal (la separación de las viguetas, «63») no es el peralte.
+    horizontal = msp.add_linear_dim(base=(x, y + 2.5), p1=(x, y + 2.2), p2=(x + 3.3, y + 2.2),
+                                    text="63")  # fmt: skip
+    horizontal.render()
+
+
+def test_the_slab_depth_a_detail_dimensions_is_read(tmp_path):
+    seg = segment_views(_entities(tmp_path, _todas(), extra=_detalle_de_losa), _dibujo(), [])
+    losa = seg.losa_acotada()
+    assert losa is not None and losa.espesor_m == pytest.approx(0.20)
+    assert "LOSA DE VIGUETA Y BOVEDILLA 12-5" in losa.texto and "20" in losa.texto
+
+
+def test_no_slab_depth_without_a_vertical_chain_that_adds_up(tmp_path):
+    def sin_cadena(msp):
+        _detalle_de_losa(msp, cotas=(("15", 0.0, 0.78), ("5", 0.78, 1.04), ("25", 0.0, 1.04)))
+
+    def una_sola(msp):
+        # Una cota vertical sola junto al título puede ser cualquier cosa del detalle (Marina:
+        # «LOSA PLANA H=45» junto a una cota de 10): no es el peralte.
+        _detalle_de_losa(msp, cotas=(("20", 0.0, 1.04),))
+
+    for extra in (sin_cadena, una_sola, None):
+        seg = segment_views(_entities(tmp_path, _todas(), extra=extra), _dibujo(), [])
+        assert seg.losa_acotada() is None
+
+
+def test_slab_details_that_dimension_different_depths_give_none():
+    from klave_engine.detection.views import LosaAcotada
+
+    seg = SheetSegmentation(views=[], assignment={}, is_segmented=True, losas_acotadas=[
+        LosaAcotada(espesor_m=0.20, texto="a"), LosaAcotada(espesor_m=0.25, texto="b"),
+    ])  # fmt: skip
+    assert seg.losa_acotada() is None
+    iguales = seg.model_copy(update={"losas_acotadas": [LosaAcotada(espesor_m=0.2, texto="a")] * 2})
+    assert iguales.losa_acotada() is not None
+
+
+def _boq_de_muros(losas):
+    from klave_engine.costing.apu import build_all_apus
+    from klave_engine.costing.boq import generate_bill_of_quantities
+    from klave_engine.costing.catalog import build_default_catalog
+    from klave_engine.costing.models import CostingAssumptions
+    from klave_engine.detection.taxonomy import classify_family
+    from klave_engine.dxf.units import DrawingUnits
+
+    from tests.precios import LIBRO
+
+    def muro(det_id, largo):
+        d = make_detection(
+            det_id, DetectionType.wall, det_id, (0, 0, largo, 0.15), 0.9, [], "m", [],
+            {"estimated_length": largo, "estimated_thickness": 0.15, "wall_kind": "block"},
+        )  # fmt: skip
+        d.family = classify_family(d).value
+        return d
+
+    vistas, lectura = _seg_b()
+    seg = SheetSegmentation(
+        views=vistas, is_segmented=True, lectura_de_niveles=lectura, losas_acotadas=losas,
+        assignment={"w1": "v1", "w2": "v2", "w3": "v3"},
+    )  # fmt: skip
+    a = CostingAssumptions(opening_share_pct=0)
+    catalog = [c for c in build_default_catalog(a) if c.code in {"EST-004", "ACA-001"}]
+    units = DrawingUnits(unit="m", source="declared", confidence=1.0)
+    dets = [muro("w1", 10.0), muro("w2", 20.0), muro("w3", 5.0)]
+    boq = generate_bill_of_quantities(
+        "t", dets, units, catalog, build_all_apus(catalog, LIBRO), segmentation=seg, assumptions=a
+    )
+    return {line.concept_code: line for line in boq.lines}
+
+
+def test_a_block_wall_stops_under_the_slab_the_drawing_dimensions():
+    from klave_engine.detection.views import LosaAcotada
+
+    losa = LosaAcotada(espesor_m=0.20, texto="«LOSA DE VIGUETA Y BOVEDILLA 12-5»: 20 = 15 + 5")
+    lines = _boq_de_muros([losa])
+    # PB 3.45 − 0.20, PA 3.15 − 0.20; los muros de la azotea, sin losa encima, 1.20 enteros.
+    esperado = 10.0 * 3.25 + 20.0 * 2.95 + 5.0 * 1.2
+    assert lines["EST-004"].quantity == pytest.approx(esperado)
+    assert lines["ACA-001"].quantity == pytest.approx(2 * esperado)
+    notas = " ".join(lines["EST-004"].assumptions)
+    assert "3.25" in notas and "2.95" in notas and "20" in notas
+    assert "dala de remate" in notas  # no se descuenta (E2), y se dice
+
+
+def test_without_a_dimensioned_slab_the_wall_keeps_the_storey_height_as_an_assumption():
+    lines = _boq_de_muros([])
+    assert lines["EST-004"].quantity == pytest.approx(10.0 * 3.45 + 20.0 * 3.15 + 5.0 * 1.2)
+    assert any("supuest" in n and "losa" in n for n in lines["EST-004"].assumptions)
+
+
+# ------------------------------------- R272: el arranque de un castillo que sigue arriba
+
+
+def _ejes(prefijo, x0, y0):
+    """Tres ejes verticales y tres horizontales de una planta, desde (x0, y0)."""
+    salida = []
+    for i, d in enumerate((1.0, 5.0, 9.0)):
+        for eje, caja, coord in (
+            ("vertical", (x0 + d, y0, x0 + d, y0 + 10), x0 + d),
+            ("horizontal", (x0, y0 + d, x0 + 10, y0 + d), y0 + d),
+        ):
+            salida.append(make_detection(
+                f"{prefijo}_{eje[0]}{i}", DetectionType.grid_line, f"{prefijo}{i}", caja, 0.9,
+                [], "m", [], {"axis": eje, "coordinate": coord},
+            ))  # fmt: skip
+    return salida
+
+
+def _castillo(det_id, x, y):
+    d = _det(det_id, DetectionType.column_tag, x, y)
+    d.family = "castillo"
+    return d
+
+
+def test_a_cimentacion_castillo_with_no_castillo_above_has_no_noted_height(tmp_path):
+    # La rejilla de PLANTA BAJA está corrida (40.5, 0.3) de la de la cimentación. El castillo de
+    # (3, 8) sigue en PLANTA BAJA (43.5, 8.3); el de (6, 8) no tiene nada encima (PRUEBA-1: 5DAA,
+    # donde PLANTA BAJA dibuja un cerramiento).
+    dets = [
+        *_ejes("c", 0.0, 5.0), *_ejes("b", 40.5, 5.3),
+        _castillo("k_sigue", 3.0, 8.0), _castillo("k_solo", 6.0, 8.0),
+        _castillo("k_pb", 43.5, 8.3), _castillo("k_pa", 83.0, 8.0), _castillo("k_az", 123.0, 8.0),
+        _det("losa_pb", DetectionType.slab_region, 44.0, 9.0, "LOSA"),
+        _det("losa_pa", DetectionType.slab_region, 84.0, 9.0, "LOSA"),
+        _det("muro_az", DetectionType.wall, 125.0, 8.0, "W"),
+    ]  # fmt: skip
+    seg = segment_views(_entities(tmp_path, _todas()), dets, [])
+    assert seg.lectura_de_niveles
+    assert seg.continuaciones["k_sigue"][0] == "k_pb"
+    assert "k_solo" in seg.sin_continuacion and "k_sigue" not in seg.sin_continuacion
+    assert "PLANTA BAJA" in seg.sin_continuacion["k_solo"]
+
+    from klave_engine.estructura.elementos import construir_elementos
+    from klave_engine.estructura.reglas import reglas_estandar
+
+    els = {
+        e.detection_id: e
+        for e in construir_elementos(dets, seg, {}, {}, reglas_estandar(), 1.0, 3.0, frames=[])
+    }
+    sigue, solo = els["k_sigue"].colocacion.altura_m, els["k_solo"].colocacion.altura_m
+    assert sigue is not None and (sigue.valor, sigue.fuente) == (3.45, "nota")
+    assert solo is not None and (solo.valor, solo.fuente) == (3.0, "supuesto")
+    assert "no es el arranque" in solo.texto and "PLANTA BAJA" in solo.texto
