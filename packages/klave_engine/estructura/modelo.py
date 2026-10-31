@@ -1508,14 +1508,20 @@ def _metros_en_cm(metros: float) -> str:
 
 
 def _revisa_la_cota(
-    props: dict, meters_factor: float, mide: str, nota_m: float, dice: str
+    props: dict, meters_factor: float, cota_m: float, mide: str, nota_m: float, dice: str
 ) -> str:
-    """R277: el aviso de un muro cuyo espesor tomó una cota que no dice lo que el dibujo ni la
-    nota: se deja (la asociación de cotas a muros es de E1), pero se pide revisarla, con lo que el
-    muro dibujado mide de verdad."""
+    """R277: el aviso de un muro cuyo espesor tomó una cota que no dice lo que la nota: se deja
+    (la asociación de cotas a muros es de E1), pero se pide revisarla, diciendo lo que es cierto:
+    si la cota es lo que mide el muro dibujado, el desacuerdo es con la nota; si no, con el
+    dibujo, y se dice lo que el muro dibujado mide de verdad."""
     geometria = props.get("estimated_thickness_geometry")
     if geometria:
         dibujado_m = float(geometria) * meters_factor
+        if abs(dibujado_m - cota_m) <= _MISMO_ESPESOR_M:
+            return (
+                f"la cota de {mide} cm es lo que mide el muro dibujado; la nota dice {dice}: "
+                "quedó la cota, revisa cuál vale"
+            )
         como = (
             ", lo que dice la nota" if abs(dibujado_m - nota_m) <= _MISMO_ESPESOR_M
             else f"; la nota dice {dice}"
@@ -1595,7 +1601,7 @@ def escribir_espesor_de_muros(
                 # buena: dice lo que el dibujo y la nota dicen y pide revisarla.
                 toma = False
                 if abs(exceso) > _MISMO_ESPESOR_M:
-                    caso = _revisa_la_cota(props, meters_factor, mide, nota_m, dice)
+                    caso = _revisa_la_cota(props, meters_factor, medido_m, mide, nota_m, dice)
             elif abs(exceso) <= _MISMO_ESPESOR_M:
                 caso = None
             elif exceso < 0:

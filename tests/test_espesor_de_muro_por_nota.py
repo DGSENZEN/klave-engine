@@ -148,6 +148,22 @@ def test_una_cota_que_no_es_el_muro_se_deja_y_el_aviso_pide_revisarla():
     assert "manda" not in aviso
 
 
+def test_una_cota_que_es_el_muro_dibujado_se_deja_y_el_aviso_no_se_contradice():
+    # Un muro de 20 dibujado y acotado en 20 contra una nota de 15: la cota no está mal, el
+    # desacuerdo es con la nota. El aviso no dice que la cota «no es lo que mide el muro».
+    muro = _muro(
+        "w5", 0.20, "core", thickness_source="cota", estimated_thickness_geometry=0.20
+    )
+    (escrito,), (aviso,) = escribir_espesor_de_muros([muro], _con_nota(), 1.0)
+    assert escrito.properties["estimated_thickness"] == pytest.approx(0.20)
+    dicho = (
+        "la cota de 20 cm es lo que mide el muro dibujado; la nota dice 15: quedó la cota, "
+        "revisa cuál vale"
+    )
+    assert dicho in aviso and "w5" in aviso
+    assert "no es lo que mide" not in aviso
+
+
 def test_una_cota_sin_geometria_se_compara_con_la_nota():
     muro = _muro("w5", 0.30, None, thickness_source="cota")
     (escrito,), (aviso,) = escribir_espesor_de_muros([muro], _con_nota(), 1.0)
