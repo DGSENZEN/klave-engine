@@ -327,3 +327,40 @@ def test_muros_sin_vanos_leidos_cada_variante_descuenta_el_supuesto():
         "EST-004.BLOCK-20": pytest.approx(20.0 * 3.2 * resto),
     }
     _sin_ajuste(linea)
+
+
+# --- el tope del 50 %: cada variante descuenta la misma fracción que el renglón (Tarea 15f) ----
+
+
+def test_una_variante_con_mucho_vano_no_se_topa_si_el_renglon_no_se_topo():
+    # 9 m de vano (18.9 m²) en un muro de 10 m (36 m² de cara): la variante sola pasaba su
+    # propio tope del 50 % (18 m²); el renglón (100 m² de cara) no se topa y descuenta 18.9.
+    # Topada sola, las variantes sumaban 0.9 de más y el reparto a prorrata movía a las dos.
+    a = CostingAssumptions()
+    w1 = _muro("w1", 10.0, 0.15)
+    w1.properties.update(opening_length=9.0, openings=[9.0])
+    linea = _linea("EST-004", [w1, _muro("w2", 20.0, 0.20)], {"w1": "f1", "w2": "f2"}, a=a)
+    vano = 9.0 * a.opening_height_m
+    assert linea.quantity == pytest.approx(10.0 * 3.6 + 20.0 * 3.2 - vano)
+    assert _variantes(linea) == {
+        "EST-004.BLOCK-15": pytest.approx(10.0 * 3.6 - vano),
+        "EST-004.BLOCK-20": pytest.approx(20.0 * 3.2),
+    }
+    _sin_ajuste(linea)
+
+
+def test_si_el_renglon_se_topa_cada_variante_descuenta_su_misma_fraccion():
+    # 12 m de vano (25.2 m²) contra 42.4 m² de cara: el renglón descuenta su tope, 21.2 m²
+    # (84.1 % de lo leído). La variante con los vanos descuenta esa fracción de los suyos, no su
+    # propio tope del 50 % (18 m²).
+    a = CostingAssumptions()
+    w1 = _muro("w1", 10.0, 0.15)
+    w1.properties.update(opening_length=12.0, openings=[12.0])
+    linea = _linea("EST-004", [w1, _muro("w2", 2.0, 0.20)], {"w1": "f1", "w2": "f2"}, a=a)
+    cara = 10.0 * 3.6 + 2.0 * 3.2
+    assert linea.quantity == pytest.approx(cara / 2)
+    assert _variantes(linea) == {
+        "EST-004.BLOCK-15": pytest.approx(10.0 * 3.6 - cara / 2),
+        "EST-004.BLOCK-20": pytest.approx(2.0 * 3.2),
+    }
+    _sin_ajuste(linea)

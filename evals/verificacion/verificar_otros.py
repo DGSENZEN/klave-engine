@@ -73,19 +73,25 @@ El muro de block llega bajo su losa: PLANTA BAJA 3.25, PLANTA ALTA 2.95; la AZOT
 1.20. La dala de remate no se descuenta (E2).
 
 Qué REPRODUCE (reglas del motor, no hechos del plano): el nombre de la vista de cada planta en el
-motor (``VISTA_DEL_MOTOR``: por el orden de sus títulos); criticos_total = 4 por castillo; los
-largos de los muros que EST-004 cuenta (``MUROS_CONTADOS``, del motor: tarea 15f) y los vanos
-leídos; con ellos y las alturas de muro, lo que la Tarea 15e movió del gold: EST-004 428.630 →
-503.696 (antes 2.70 y pretil 0.90 supuestos, reproducido), ACA-001 y ACA-002 857.260 → 1007.392
-(dos caras).
+motor (``VISTA_DEL_MOTOR``: por el orden de sus títulos); criticos_total = 4 por castillo; con los
+largos que el motor leía entonces (``LARGOS_15E``) y las alturas de muro, lo que la Tarea 15e movió
+del gold: EST-004 428.630 → 503.696 (antes 2.70 y pretil 0.90 supuestos, reproducido), ACA-001 y
+ACA-002 857.260 → 1007.392 (dos caras).
 
 prueba-1, Tarea 15d (R269): las variantes de EST-004 son sólo de los muros que el renglón cuenta.
 VERIFICA (y compara) los 34 muros contados en su planta de superestructura, que W5, W31 y W33 (las
-variantes BLOCK-19/30/36 que se fueron) no tienen líneas en la superestructura, que cada vano leído
-(W40 0.77, W42 0.95, W47 1.00) es un hueco de ese ancho en una cara de su muro y que ningún muro de
-las clases 17 y 18 tiene un hueco de 0.5 m o más. REPRODUCE los largos y las clases de espesor (del
-motor: los 16/17/18 salen de la planta dibujada dos veces a 15 mm, tarea 15f) y con ellos y las
-alturas de las leyendas (Tarea 15e) las variantes del gold.
+variantes BLOCK-19/30/36 que se fueron) no tienen líneas en la superestructura y que cada vano leído
+(W40 0.77, W42 0.95, W47 1.03) es un hueco de ese ancho en una cara de su muro.
+
+prueba-1, Tarea 15f (R275): un muro dibujado con su aplanado es un muro. El plano no dibuja la
+planta dos veces: dibuja cada muro con dos contornos en la capa A-WALL, el del block y, 15 mm
+afuera por cada lado, el del aplanado (las copias exactas del model space y del bloque de Revit,
+desfase 0, se cuentan una vez). VERIFICA (y compara): la nota de los muros de block dice un solo
+espesor, 15 cm, y la leyenda lo repite; por cada muro contado, sus caras: el núcleo de 0.150 entre
+las líneas del aplanado de 0.015 (22 muros) o sólo el contorno de 0.180 = 0.150 + 2 × 0.015 (12),
+su largo al eje contra el del motor a 2 mm y sus vanos (los huecos de las dos caras); con eso la
+clase de cada muro (15 en los 34, la de la nota) sale del crudo. REPRODUCE EST-004, su variante
+BLOCK-15 y ACA-001/ACA-002 (la altura de vano, 2.10, es supuesta: los renglones siguen del motor).
 """
 
 import hashlib
@@ -158,6 +164,11 @@ ALTURA_DE_MURO_M, ALTURA_DE_PRETIL_M = 2.70, 0.90
 LEYENDA = re.compile(r"N\.?\s*P\.?\s*T\.?\s*(?:(0\+00)|([+-]?\d+\.\d+))", re.I)
 # Lo que el renglón de cada planta movió con la Tarea 15e (los valores del gold de antes).
 ANTES_15E = {"EST-001": 10.366, "EST-004": 428.630, "ACA-001": 857.260, "ACA-002": 857.260}
+# Lo que dejó la Tarea 15e, con los largos y los vanos que el motor leía entonces (antes de la
+# Tarea 15f: la unión de los dos contornos de cada muro, el vano de W47 a 1.00 en el aplanado).
+DESPUES_15E = {"EST-004": 503.696, "ACA-001": 1007.392, "ACA-002": 1007.392}
+LARGOS_15E = {"PLANTA BAJA": 77.764, "PLANTA ALTA": 65.380, "AZOTEA": 53.170}
+VANOS_15E_M = 0.77 + 0.95 + 1.00
 
 
 def _niveles_de_las_plantas(msp, titulos_insercion, rejillas) -> tuple[dict[str, float], int]:
@@ -639,73 +650,73 @@ def prueba_1(gold: dict) -> int:
     if (largo_39, largo_18, en_pb, en_az) != (16.825, 5.22, True, True):
         print("  ** DIFERENCIA en los muros que cambian de planta")
         malos += 1
-    # Lo que la Tarea 15e movió del gold: los muros que el renglón cuenta (largos del motor,
-    # REPRODUCE: MUROS_CONTADOS) a las alturas de las leyendas menos el peralte acotado de la losa
-    # (VERIFICA) en vez de 2.70/0.90.
-    largo = Counter()
-    for _clase, planta, _caja, metros in MUROS_CONTADOS.values():
-        largo[planta] += metros
-    vanos = sum(VANOS_LEIDOS.values()) * ALTURA_DE_VANO_M
+    # Lo que la Tarea 15e movió del gold, con los largos de entonces (los del motor antes de la
+    # Tarea 15f, REPRODUCE: LARGOS_15E) a las alturas de las leyendas menos el peralte acotado de
+    # la losa (VERIFICA) en vez de 2.70/0.90. Lo de hoy lo compara la Tarea 15f, abajo.
+    vanos = VANOS_15E_M * ALTURA_DE_VANO_M
     antes = sum(m * (ALTURA_DE_PRETIL_M if p == "AZOTEA" else ALTURA_DE_MURO_M)
-                for p, m in largo.items()) - vanos  # fmt: skip
-    despues = sum(m * altura_muro[p] for p, m in largo.items()) - vanos
-    print(f"    muros contados por planta {dict(largo)} m; vanos {round(vanos, 3)} m²")
+                for p, m in LARGOS_15E.items()) - vanos  # fmt: skip
+    despues = sum(m * altura_muro[p] for p, m in LARGOS_15E.items()) - vanos
+    print(f"    muros contados por planta (Tarea 15e) {LARGOS_15E} m; vanos {round(vanos, 3)} m²")
     movido = {
         "EST-004": (antes, despues),
         "ACA-001": (2 * antes, 2 * despues),
         "ACA-002": (2 * antes, 2 * despues),
     }
     for code, (de, a) in movido.items():
-        q = concepts.get(code, {}).get("quantity")
-        print(f"  {code}: {ANTES_15E[code]} (reproducido {round(de, 3)}) → {round(a, 4)}; gold {q}")
-        if q is None or abs(a - q) > 0.001 or abs(de - ANTES_15E[code]) > 0.001:
+        print(f"  {code}: {ANTES_15E[code]} (reproducido {round(de, 3)}) → {round(a, 4)} "
+              f"(Tarea 15e: {DESPUES_15E[code]})")  # fmt: skip
+        if abs(a - DESPUES_15E[code]) > 0.001 or abs(de - ANTES_15E[code]) > 0.001:
             print(f"  ** DIFERENCIA {code}")
             malos += 1
     malos += _variantes_de_muros(msp, lineas, rejillas, concepts, altura_muro)
+    malos += _muros_con_aplanado(msp, lineas, concepts, altura_muro)
     return malos
 
 
 # Tarea 15d (R269): las variantes de EST-004 se reparten sobre los muros que el renglón cuenta.
-# Cada muro: su caja (la del motor: el elemento bajo prueba), su clase de espesor (lectura del
-# motor, REPRODUCE: el plano dibuja la planta dos veces desfasada 15 mm y cada copia mide 0.165 m —
-# los 16/17/18 salen de juntar caras de copias distintas, tarea 15f), su planta esperada y su largo
-# (lectura del motor, REPRODUCE).
+# Tarea 15f (R275): cada muro está dibujado con dos contornos en la capa A-WALL —el del block y, a
+# 15 mm afuera por cada lado, el del aplanado— y la clase de espesor ya no es una lectura del
+# motor: es la del núcleo dibujado (o la del contorno menos los dos aplanados), contra la nota.
+# Cada muro: su planta, su caja (la del motor: el elemento bajo prueba), lo que se dibujó («nucleo»:
+# el block entre las líneas del aplanado; «contorno»: sólo el contorno de 18 cm) y su largo al eje
+# (el del motor, que se VERIFICA abajo contra las caras del crudo a 2 mm).
 MUROS_CONTADOS = {
-    # muro: (clase, planta, caja, largo)
-    "W11": (16, "AZOTEA", (90.832, -70.984, 92.812, -70.804), 1.98),
-    "W53": (16, "AZOTEA", (90.832, -70.984, 91.012, -69.004), 1.98),
-    "W55": (16, "AZOTEA", (92.632, -70.984, 92.812, -69.004), 1.98),
-    "W21": (16, "PLANTA BAJA", (51.89, -52.798, 53.84, -52.618), 1.95),
-    "W39": (16, "PLANTA BAJA", (50.725, -62.298, 50.905, -45.473), 16.825),
-    "W40": (16, "PLANTA BAJA", (51.725, -59.448, 51.905, -48.308), 11.14),
-    "W41": (16, "PLANTA BAJA", (53.175, -59.283, 53.355, -55.133), 4.15),
-    "W42": (16, "PLANTA BAJA", (55.375, -55.748, 55.555, -48.308), 7.44),
-    "W43": (16, "PLANTA BAJA", (56.715, -62.298, 56.895, -60.018), 2.28),
-    "W44": (16, "PLANTA BAJA", (58.245, -62.283, 58.41, -60.033), 2.25),
-    "W45": (16, "PLANTA BAJA", (60.545, -61.398, 60.725, -45.308), 16.09),
-    "W20": (16, "PLANTA ALTA", (78.163, -53.41, 80.563, -53.23), 2.4),
-    "W22": (16, "PLANTA ALTA", (74.028, -52.26, 78.178, -52.08), 4.15),
-    "W24": (16, "PLANTA ALTA", (77.513, -49.91, 79.443, -49.73), 1.93),
-    "W25": (16, "PLANTA ALTA", (80.403, -49.31, 82.698, -49.13), 2.295),
-    "W47": (16, "PLANTA ALTA", (76.263, -58.81, 76.443, -52.245), 6.565),
-    "W48": (16, "PLANTA ALTA", (77.513, -49.91, 77.693, -44.82), 5.09),
-    "W49": (16, "PLANTA ALTA", (79.263, -48.115, 79.443, -44.82), 3.295),
-    "W50": (16, "PLANTA ALTA", (80.383, -57.745, 80.563, -53.23), 4.515),
-    "W51": (16, "PLANTA ALTA", (82.683, -58.82, 82.863, -44.82), 14.0),
-    "W27": (17, "PLANTA BAJA", (48.227, -45.488, 63.866, -45.308), 15.639),
-    "W46": (17, "PLANTA ALTA", (73.863, -58.81, 74.043, -44.82), 13.99),
-    "W23": (18, "PLANTA ALTA", (80.173, -52.31, 82.683, -52.13), 2.51),
-    "W28": (18, "PLANTA ALTA", (75.193, -45.3, 77.513, -45.12), 2.32),
-    "W29": (18, "PLANTA ALTA", (79.443, -45.3, 81.763, -45.12), 2.32),
-    "W7": (18, "AZOTEA", (88.982, -77.534, 91.532, -77.354), 2.22),
-    "W8": (18, "AZOTEA", (91.382, -74.684, 97.982, -74.504), 6.6),
-    "W15": (18, "AZOTEA", (94.382, -66.184, 97.982, -66.004), 3.24),
-    "W17": (18, "AZOTEA", (94.562, -64.634, 97.072, -64.454), 2.33),
-    "W18": (18, "AZOTEA", (88.982, -63.724, 94.562, -63.544), 5.22),
-    "W52": (18, "AZOTEA", (88.982, -77.534, 89.162, -63.544), 13.99),
-    "W54": (18, "AZOTEA", (91.382, -77.534, 91.562, -74.504), 2.67),
-    "W56": (18, "AZOTEA", (94.382, -66.184, 94.562, -63.544), 2.28),
-    "W57": (18, "AZOTEA", (97.802, -74.684, 97.982, -66.004), 8.68),
+    # muro: (planta, caja, dibujo, largo al eje)
+    "W11": ("AZOTEA", (90.832, -70.984, 92.812, -70.804), "nucleo", 1.8),
+    "W53": ("AZOTEA", (90.832, -70.984, 91.012, -69.004), "nucleo", 1.8),
+    "W55": ("AZOTEA", (92.632, -70.984, 92.812, -69.004), "nucleo", 1.89),
+    "W7": ("AZOTEA", (88.982, -77.534, 91.532, -77.354), "contorno", 2.385),
+    "W8": ("AZOTEA", (91.382, -74.684, 97.982, -74.504), "contorno", 6.435),
+    "W15": ("AZOTEA", (94.382, -66.184, 97.982, -66.004), "contorno", 3.42),
+    "W17": ("AZOTEA", (94.562, -64.634, 97.072, -64.454), "contorno", 2.42),
+    "W18": ("AZOTEA", (88.982, -63.724, 94.562, -63.544), "contorno", 5.4),
+    "W52": ("AZOTEA", (88.982, -77.534, 89.162, -63.544), "contorno", 13.81),
+    "W54": ("AZOTEA", (91.382, -77.534, 91.562, -74.504), "contorno", 2.85),
+    "W56": ("AZOTEA", (94.382, -66.184, 94.562, -63.544), "contorno", 2.46),
+    "W57": ("AZOTEA", (97.802, -74.684, 97.982, -66.004), "contorno", 8.5),
+    "W21": ("PLANTA BAJA", (51.89, -52.798, 53.84, -52.618), "nucleo", 1.935),
+    "W27": ("PLANTA BAJA", (48.227, -45.488, 63.866, -45.308), "nucleo", 14.997),
+    "W39": ("PLANTA BAJA", (50.725, -62.298, 50.905, -45.473), "nucleo", 16.81),
+    "W40": ("PLANTA BAJA", (51.725, -59.448, 51.905, -48.308), "nucleo", 10.99),
+    "W41": ("PLANTA BAJA", (53.175, -59.283, 53.355, -55.133), "nucleo", 4.15),
+    "W42": ("PLANTA BAJA", (55.375, -55.748, 55.555, -48.308), "nucleo", 7.425),
+    "W43": ("PLANTA BAJA", (56.715, -62.298, 56.895, -60.018), "nucleo", 2.1),
+    "W44": ("PLANTA BAJA", (58.245, -62.283, 58.41, -60.033), "nucleo", 2.1),
+    "W45": ("PLANTA BAJA", (60.545, -61.398, 60.725, -45.308), "nucleo", 16.0),
+    "W20": ("PLANTA ALTA", (78.163, -53.41, 80.563, -53.23), "nucleo", 2.227),
+    "W22": ("PLANTA ALTA", (74.028, -52.26, 78.178, -52.08), "nucleo", 4.15),
+    "W24": ("PLANTA ALTA", (77.513, -49.91, 79.443, -49.73), "nucleo", 1.758),
+    "W25": ("PLANTA ALTA", (80.403, -49.31, 82.698, -49.13), "nucleo", 2.295),
+    "W46": ("PLANTA ALTA", (73.863, -58.81, 74.043, -44.82), "nucleo", 13.81),
+    "W47": ("PLANTA ALTA", (76.263, -58.81, 76.443, -52.245), "nucleo", 6.475),
+    "W48": ("PLANTA ALTA", (77.513, -49.91, 77.693, -44.82), "nucleo", 4.918),
+    "W49": ("PLANTA ALTA", (79.263, -48.115, 79.443, -44.82), "nucleo", 3.19),
+    "W50": ("PLANTA ALTA", (80.383, -57.745, 80.563, -53.23), "nucleo", 4.433),
+    "W51": ("PLANTA ALTA", (82.683, -58.82, 82.863, -44.82), "nucleo", 13.903),
+    "W23": ("PLANTA ALTA", (80.173, -52.31, 82.683, -52.13), "contorno", 2.51),
+    "W28": ("PLANTA ALTA", (75.193, -45.3, 77.513, -45.12), "contorno", 2.32),
+    "W29": ("PLANTA ALTA", (79.443, -45.3, 81.763, -45.12), "contorno", 2.32),
 }
 # Los que formaban variante sin que el renglón los cuente (BLOCK-36, -30, -19): capa, caja.
 MUROS_FUERA = {
@@ -713,10 +724,20 @@ MUROS_FUERA = {
     "W33": ("A-WALL", (-10.745, -58.079, -10.565, -50.639)),
     "W5": ("MUROS", (-5.937, -77.616, -2.181, -77.428)),
 }
-# Los vanos que el renglón leyó (ancho del motor): cada uno es un hueco interior de una cara del
-# muro en el crudo; ningún muro de las clases 17 y 18 tiene un hueco interior de 0.5 m o más.
-VANOS_LEIDOS = {"W40": 0.77, "W42": 0.95, "W47": 1.00}
+# Los vanos que el renglón leyó (ancho del motor): cada uno es un hueco de las dos caras del
+# núcleo de su muro en el crudo (Tarea 15f: el de W47 mide 1.03 en el block, 1.00 en el aplanado,
+# que da vuelta al vano).
+VANOS_LEIDOS = {"W40": 0.77, "W42": 0.95, "W47": 1.03}
 ALTURA_DE_VANO_M = 2.10
+# Tarea 15f: una cara es una posición con una línea de 1.5 m o más (el largo mínimo con el que el
+# detector junta caras); la línea del aplanado está a 20 mm o menos afuera de su cara y la traslapa
+# en 90 % o más del tramo más corto. Dos líneas a 1 mm o menos son la misma cara.
+CARA_MINIMA_M, APLANADO_MAXIMO_M, TRASLAPE_MINIMO, MISMA_CARA_M = 1.5, 0.020, 0.9, 0.001
+# Lo que puede ser un vano (como el detector): más que 2 espesores y que 0.30, hasta 1.30 m.
+VANO_MINIMO_M, VANO_MAXIMO_M = 0.30, 1.30
+# La nota que dice el espesor de los muros de block, y la leyenda que lo repite.
+ESPESOR_EN_NOTA = re.compile(r"\bEN\s+(\d+(?:\.\d+)?)\s*CMS?\.?\s+DE\s+ESPESOR", re.I)
+LEYENDA_DE_MURO = re.compile(r"MURO\s+DE\s+CARGA\s+(\d+)\s*CMS?\b", re.I)
 
 
 def _en_caja(v, caja, tol=0.003) -> bool:
@@ -760,17 +781,15 @@ def _variantes_de_muros(msp, lineas, rejillas, concepts, altura) -> int:
     están los vanos leídos. Lo que VERIFICA: cada muro contado tiene líneas A-WALL en su caja y
     todas son de su planta de superestructura; los que formaban BLOCK-36/30/19 no tienen ninguna
     línea en la superestructura; cada vano leído es un hueco interior de ese ancho en una cara de
-    su muro, y ningún muro de las clases 17 y 18 tiene un hueco interior de 0.5 m o más. Lo que NO
-    verifica (REPRODUCE): las clases de espesor y los largos, lecturas del motor. Las alturas son
-    las de las leyendas de nivel (Tarea 15e, ``altura``: VERIFICA). Con ellas, compara las
-    variantes del gold."""
+    su muro. Las clases de espesor, los largos y las variantes los VERIFICA la Tarea 15f
+    (``_muros_con_aplanado``)."""
     malos = 0
     print("  Tarea 15d — EST-004, muros contados y vanos:")
-    for muro, (clase, planta, caja, _largo) in MUROS_CONTADOS.items():
+    for muro, (planta, caja, _dibujo, _largo) in MUROS_CONTADOS.items():
         suyas = [v for v in lineas if _en_caja(v, caja)]
         plantas = {_planta_de(_medio(v), rejillas) for v in suyas}
         if len(suyas) < 2 or plantas != {planta}:
-            print(f"  ** DIFERENCIA: {muro} ({clase}) con {len(suyas)} líneas A-WALL en {plantas}, "
+            print(f"  ** DIFERENCIA: {muro} con {len(suyas)} líneas A-WALL en {plantas}, "
                   f"se esperaba {planta}")
             malos += 1
     print(f"    {len(MUROS_CONTADOS)} muros contados: cada uno con sus líneas A-WALL en su planta")
@@ -782,37 +801,180 @@ def _variantes_de_muros(msp, lineas, rejillas, concepts, altura) -> int:
         if not suyas or plantas & set(SUPERESTRUCTURA):
             print(f"  ** DIFERENCIA: {muro} tiene líneas en la superestructura")
             malos += 1
-    for muro, (clase, _planta, caja, _largo) in MUROS_CONTADOS.items():
+    for muro, ancho in VANOS_LEIDOS.items():
+        caja = MUROS_CONTADOS[muro][1]
         huecos = _huecos_interiores([v for v in lineas if _en_caja(v, caja)], caja)
         todos = sorted({h for hs in huecos.values() for h in hs})
-        if muro in VANOS_LEIDOS:
-            ok = any(abs(h - VANOS_LEIDOS[muro]) <= 0.002 for h in todos)
-            print(f"    {muro}: vano leído {VANOS_LEIDOS[muro]} m; huecos interiores {todos}")
-            if not ok:
-                print(f"  ** DIFERENCIA: {muro} no tiene un hueco de {VANOS_LEIDOS[muro]} m")
-                malos += 1
-        elif clase in (17, 18) and any(h >= 0.5 for h in todos):
-            print(f"  ** DIFERENCIA: {muro} (clase {clase}) tiene un hueco de {max(todos)} m")
+        print(f"    {muro}: vano leído {ancho} m; huecos interiores {todos}")
+        if not any(abs(h - ancho) <= 0.002 for h in todos):
+            print(f"  ** DIFERENCIA: {muro} no tiene un hueco de {ancho} m")
             malos += 1
-    # REPRODUCE: las variantes, de los largos del motor × las alturas de las leyendas − los vanos.
-    vanos = {16: sum(VANOS_LEIDOS.values()) * ALTURA_DE_VANO_M}
-    gold = concepts.get("EST-004", {}).get("variants") or {}
-    calculado = {}
-    for clase in (16, 17, 18):
-        cara = sum(
-            largo * altura[planta]
-            for c, planta, _caja, largo in MUROS_CONTADOS.values()
-            if c == clase
+    return malos
+
+
+def _caras_del_muro(lineas, caja) -> list[tuple[float, list[tuple[float, float]], bool]]:
+    """Las caras dibujadas en la caja del muro (sin las copias exactas: el model space y el
+    bloque de Revit traen la misma línea): por posición a lo ancho, sus tramos a lo largo
+    recortados a la caja, y si alguna de sus líneas mide 1.5 m o más."""
+    vertical = (caja[3] - caja[1]) > (caja[2] - caja[0])
+    a0, a1 = (caja[0], caja[2]) if vertical else (caja[1], caja[3])
+    l0, l1 = (caja[1], caja[3]) if vertical else (caja[0], caja[2])
+    unicas = set()
+    for v in lineas:
+        s, e = v.dxf.start, v.dxf.end
+        unicas.add(tuple(sorted([(round(s.x, 4), round(s.y, 4)), (round(e.x, 4), round(e.y, 4))])))
+    tramos: list[tuple[float, float, float, float]] = []  # (posición, inicio, fin, largo)
+    for (x1, y1), (x2, y2) in unicas:
+        if vertical and abs(x1 - x2) < 1e-4 and abs(y1 - y2) > 1e-4:
+            pos, ini, fin = x1, min(y1, y2), max(y1, y2)
+        elif not vertical and abs(y1 - y2) < 1e-4 and abs(x1 - x2) > 1e-4:
+            pos, ini, fin = y1, min(x1, x2), max(x1, x2)
+        else:
+            continue
+        if a0 - 0.0005 <= pos <= a1 + 0.0005 and fin > l0 + 1e-4 and ini < l1 - 1e-4:
+            tramos.append((pos, max(ini, l0), min(fin, l1), fin - ini))
+    tramos.sort()
+    grupos: list[list[tuple[float, float, float, float]]] = []
+    for t in tramos:
+        if grupos and t[0] - grupos[-1][-1][0] <= MISMA_CARA_M:
+            grupos[-1].append(t)
+        else:
+            grupos.append([t])
+    caras = []
+    for g in grupos:
+        juntos: list[tuple[float, float]] = []
+        for _p, ini, fin, _l in sorted(g, key=lambda t: t[1]):
+            if juntos and ini <= juntos[-1][1]:
+                juntos[-1] = (juntos[-1][0], max(juntos[-1][1], fin))
+            else:
+                juntos.append((ini, fin))
+        larga = any(t[3] >= CARA_MINIMA_M - 1e-9 for t in g)
+        caras.append((sum(t[0] for t in g) / len(g), juntos, larga))
+    return caras
+
+
+def _cubre(tramos) -> float:
+    return sum(f - i for i, f in tramos)
+
+
+def _es_aplanado(exterior, interior) -> bool:
+    if abs(interior[0] - exterior[0]) > APLANADO_MAXIMO_M + 1e-6:
+        return False
+    cruce = sum(max(0.0, min(fa, fb) - max(ia, ib))
+                for ia, fa in exterior[1] for ib, fb in interior[1])  # fmt: skip
+    return cruce >= TRASLAPE_MINIMO * min(_cubre(exterior[1]), _cubre(interior[1])) - 1e-9
+
+
+def _huecos_de(tramos) -> list[tuple[float, float]]:
+    return [(a[1], b[0]) for a, b in zip(tramos, tramos[1:], strict=False)]
+
+
+def _muros_con_aplanado(msp, lineas, concepts, altura) -> int:
+    """Tarea 15f (R275), VERIFICA en el crudo: (1) la nota de los muros de block dice un solo
+    espesor, 15 cm («… EN 15 CM. DE ESPESOR», dos copias) y la leyenda lo repite («MURO DE CARGA
+    15 CMS», dos copias); (2) por cada muro contado, sus caras A-WALL (sin copias exactas): el
+    núcleo de 0.150 m (a 1 mm) entre las líneas del aplanado (cada una a 0.015, a 1 mm, afuera de
+    su cara, traslapándola en 90 % o más) en los 22 de «nucleo», sólo el contorno de 0.180 en los
+    12 de «contorno» (0.180 = 0.150 + 2 × 0.015: el block de la nota con su aplanado); (3) el
+    largo al eje de cada uno (la media de lo que corren sus dos caras de block, o de su contorno,
+    dentro de su caja) contra el del motor, a 2 mm —cada junta en T una sola vez: el núcleo del
+    muro que llega para en el núcleo del que lo recibe—; (4) los vanos: los huecos que tienen las
+    dos caras (de 0.30 a 1.30 m) son exactamente los de VANOS_LEIDOS, a 2 mm, y ningún otro muro
+    tiene uno. Con eso la clase de cada muro sale del crudo (15 en todos, la de la nota) y
+    REPRODUCE: EST-004 = Σ largo × la altura de muro de su planta (Tarea 15e) − los vanos × 2.10
+    (la altura de vano es supuesta: el renglón sigue siendo del motor), su variante BLOCK-15 y
+    ACA-001/ACA-002 (dos caras), contra el gold a 0.001."""
+    malos = 0
+    print("  Tarea 15f — muros con su aplanado (R275):")
+    textos = [(e.dxf.handle, texto(e)) for e in msp.query("TEXT MTEXT")]
+    en_nota = [(h, t, ESPESOR_EN_NOTA.search(t)) for h, t in textos if ESPESOR_EN_NOTA.search(t)]
+    leyenda = [(h, t, LEYENDA_DE_MURO.search(t)) for h, t in textos if LEYENDA_DE_MURO.search(t)]
+    bloque = [h for h, t in textos if re.search(r"MURO DE BLOQUE DE CONCRETO DE 15 x 20 x 40", t)]
+    print(f"    nota: {[(h, t.strip()) for h, t, _m in en_nota]}; pieza {bloque}; leyenda: "
+          f"{[(h, t.strip()) for h, t, _m in leyenda]}")  # fmt: skip
+    nota_cm = {float(m.group(1)) for _h, _t, m in en_nota}
+    if nota_cm != {15.0} or len(en_nota) != 2 or len(bloque) != 2 or len(leyenda) != 2 or {
+        m.group(1) for _h, _t, m in leyenda
+    } != {"15"}:
+        print(f"  ** DIFERENCIA: la nota dice {nota_cm} cm en {len(en_nota)} copias")
+        return malos + 1
+    nota_m = 0.15
+    clases: Counter = Counter()
+    cara_por_planta: Counter = Counter()
+    vanos_m = 0.0
+    aplanados = set()
+    for muro, (planta, caja, dibujo, largo) in MUROS_CONTADOS.items():
+        caras = [c for c in _caras_del_muro(lineas, caja) if c[2]]
+        nucleo = list(caras)
+        aplanado = []
+        if len(nucleo) >= 3 and _es_aplanado(nucleo[0], nucleo[1]):
+            aplanado.append(round(nucleo[1][0] - nucleo[0][0], 4))
+            nucleo = nucleo[1:]
+        if len(nucleo) >= 3 and _es_aplanado(nucleo[-1], nucleo[-2]):
+            aplanado.append(round(nucleo[-1][0] - nucleo[-2][0], 4))
+            nucleo = nucleo[:-1]
+        visto = "nucleo" if aplanado else "contorno"
+        if len(nucleo) != 2:
+            posiciones = [round(c[0], 4) for c in caras]
+            print(f"  ** DIFERENCIA: {muro} tiene {len(nucleo)} caras: {posiciones}")
+            malos += 1
+            continue
+        a, b = nucleo
+        espesor = round(b[0] - a[0], 4)
+        eje = ((a[1][-1][1] - a[1][0][0]) + (b[1][-1][1] - b[1][0][0])) / 2
+        vanos = []
+        for ia, fa in _huecos_de(a[1]):
+            for ib, fb in _huecos_de(b[1]):
+                ancho = min(fa, fb) - max(ia, ib)
+                if max(VANO_MINIMO_M, 2 * espesor) < ancho <= VANO_MAXIMO_M:
+                    vanos.append(round(ancho, 3))
+        esperado = 0.150 if visto == "nucleo" else 0.180
+        aplanados.update(aplanado)
+        bien = (
+            visto == dibujo
+            and abs(espesor - esperado) <= 0.001
+            and all(abs(x - 0.015) <= 0.001 for x in aplanado)
+            and abs(eje - largo) <= 0.002
+            and (vanos == [VANOS_LEIDOS[muro]] if muro in VANOS_LEIDOS else vanos == [])
         )
-        calculado[f"EST-004.BLOCK-{clase}"] = round(cara - vanos.get(clase, 0.0), 3)
-    print(f"    variantes (largos del motor × alturas {altura} − vanos × 2.10): {calculado}; "
-          f"gold {gold}")
-    if set(gold) != set(calculado) or any(abs(gold[k] - v) > 0.001 for k, v in calculado.items()):
-        print("  ** DIFERENCIA en las variantes de EST-004")
+        if not bien:
+            print(f"  ** DIFERENCIA: {muro} {visto} {espesor} (aplanado {aplanado}), eje "
+                  f"{round(eje, 3)} (motor {largo}), vanos {vanos}")
+            malos += 1
+        # La clase: el núcleo dibujado, o el contorno menos sus dos aplanados de 15 mm.
+        cm = round((espesor if visto == "nucleo" else espesor - 2 * 0.015) * 100)
+        clases[cm] += 1
+        cara_por_planta[planta] += largo * altura[planta]
+        vanos_m += sum(vanos)
+    por_planta = {
+        p: round(sum(m[3] for m in MUROS_CONTADOS.values() if m[0] == p), 3)
+        for p in SUPERESTRUCTURA
+    }
+    print(f"    clases del crudo {dict(clases)} (la nota: {nota_m * 100:g}); aplanado "
+          f"{sorted(aplanados)}; largos al eje por planta {por_planta}")  # fmt: skip
+    if set(clases) != {round(nota_m * 100)} or aplanados != {0.015}:
+        print("  ** DIFERENCIA: las clases del crudo no son la de la nota")
         malos += 1
-    total = concepts.get("EST-004", {}).get("quantity")
-    if total is None or abs(sum(calculado.values()) - total) > 0.002:
-        print(f"  ** DIFERENCIA: las variantes suman {sum(calculado.values())}, el renglón {total}")
+    est_004 = sum(cara_por_planta.values()) - vanos_m * ALTURA_DE_VANO_M
+    gold = concepts.get("EST-004", {})
+    calculado = {
+        "EST-004": est_004,
+        "ACA-001": 2 * est_004,
+        "ACA-002": 2 * est_004,
+    }
+    print(f"    EST-004 = Σ largo × altura {altura} − {round(vanos_m, 3)} m × 2.10 = "
+          f"{round(est_004, 4)}; variantes del gold {gold.get('variants')}")
+    for code, valor in calculado.items():
+        q = concepts.get(code, {}).get("quantity")
+        print(f"  {code}: reproducido {round(valor, 4)}; gold {q}")
+        if q is None or abs(valor - q) > 0.001:
+            print(f"  ** DIFERENCIA {code}")
+            malos += 1
+    variantes = gold.get("variants") or {}
+    if set(variantes) != {"EST-004.BLOCK-15"} or abs(
+        variantes["EST-004.BLOCK-15"] - est_004
+    ) > 0.001:
+        print("  ** DIFERENCIA en las variantes de EST-004")
         malos += 1
     return malos
 

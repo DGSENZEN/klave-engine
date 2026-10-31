@@ -135,6 +135,9 @@ class DetectorSuiteConfig(BaseModel):
         config.wall.min_thickness = m(0.05)
         config.wall.merge_gap = m(0.30)
         config.wall.opening_gap_max = m(1.30)
+        # Tarea 15f (R275): PRUEBA-1 draws each wall's plaster 15 mm outside its block.
+        config.wall.finish_max = m(0.020)
+        config.wall.face_tolerance = m(0.001)
         config.room.min_area = m(1.0) * m(1.5)
         config.room.max_area = m(20.0) * m(20.0)
         config.room.min_width = m(0.7)

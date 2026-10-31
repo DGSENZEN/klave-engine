@@ -155,6 +155,9 @@ class _LineResult:
         # How the walls' openings came off (``_deduct_openings``): True measured, False the
         # assumed share, None none. A variant measured alone follows the line's choice.
         self.vanos_medidos: bool | None = None
+        # The share of the measured openings the line took off (1.0, or less when the 50 % cap
+        # bit): each variant takes the same share of its own openings (Tarea 15f).
+        self.fraccion_de_vanos: float | None = None
 
 
 FALLBACK_HEIGHT = "si no hay niveles"
@@ -235,6 +238,7 @@ def _deduct_openings(
     meters_factor: float,
     assumptions: CostingAssumptions,
     vanos_medidos: bool | None = None,
+    fraccion_de_vanos: float | None = None,
 ) -> None:
     """Take the doors and windows off a wall face, and say how.
 
@@ -245,7 +249,10 @@ def _deduct_openings(
 
     ``vanos_medidos`` imposes the line's choice on one of its variants
     (Tarea 15d): when the line read its openings, a variant whose walls have
-    none deducts nothing — not the assumed share, which the line never took."""
+    none deducts nothing — not the assumed share, which the line never took.
+    ``fraccion_de_vanos`` is the share of its measured openings the line took
+    off (Tarea 15f): the cap is the line's, never the variant's own, so the
+    variants add up to the line without a pro-rata spread."""
     rule = concept.rule
     assert rule is not None
     sides = rule.sides if rule.sides else 1.0
@@ -264,7 +271,12 @@ def _deduct_openings(
         if measured_width <= 0:
             return
         area = measured_width * assumptions.opening_height_m * sides
-        capped = min(area, before * 0.5)
+        if fraccion_de_vanos is None:
+            capped = min(area, before * 0.5)
+            result.fraccion_de_vanos = capped / area
+        else:
+            capped = min(area * fraccion_de_vanos, before)
+            result.fraccion_de_vanos = fraccion_de_vanos
         result.quantity = round(before - capped, 6)
         scale_views(result.quantity / before if before else 1.0)
         note = (
@@ -272,8 +284,8 @@ def _deduct_openings(
             f"({measured_width:,.2f} m de ancho × {assumptions.opening_height_m:.2f} m"
             + (f" × {sides:g} caras" if sides != 1 else "") + ")"
         )
-        if capped < area:
-            note += " — tope del 50 % de la cara; revisa esos muros"
+        if capped < area - 1e-9:
+            note += " — tope del 50 % de la cara del renglón; revisa esos muros"
         result.notes.append(note)
         result.supersedes.add("vanos supuestos")
     elif assumptions.opening_share_pct > 0:
@@ -741,6 +753,7 @@ def generate_bill_of_quantities(
                 subset: list[Detection],
                 concept: Concept = concept,
                 vanos_medidos: bool | None = None,
+                fraccion_de_vanos: float | None = None,
             ) -> _LineResult:
                 """La regla del concepto sobre un subconjunto: el renglón entero o
                 una de sus variantes (que descuenta sus vanos como el renglón:
@@ -791,12 +804,16 @@ def generate_bill_of_quantities(
                 rule = concept.rule
                 if rule is not None and rule.opening_deduction and result.quantity > 0:
                     _deduct_openings(
-                        concept, result, meters_factor, assumptions, vanos_medidos
+                        concept, result, meters_factor, assumptions, vanos_medidos,
+                        fraccion_de_vanos,
                     )
                 return result
 
             result = measure(matched)
-            variant_measure = partial(measure, vanos_medidos=result.vanos_medidos)
+            variant_measure = partial(
+                measure, vanos_medidos=result.vanos_medidos,
+                fraccion_de_vanos=result.fraccion_de_vanos,
+            )
 
         # La nota del renglón no basta cuando el alcance entero se degradó:
         # cimentación calculada sobre todas las plantas se avisa una vez.
